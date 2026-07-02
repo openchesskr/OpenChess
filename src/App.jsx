@@ -21,67 +21,6 @@ const T = {
 const PIECE = { K: "\u265A\uFE0E", Q: "\u265B\uFE0E", R: "\u265C\uFE0E", B: "\u265D\uFE0E", N: "\u265E\uFE0E", P: "\u265F\uFE0E" };
 const FILES = "abcdefgh";
 
-/* ============================================================ \uC800\uD3F4\uB9AC\uACE4 \uAE08\uC120 \uAE30\uBB3C \uC544\uC774\uCF58 ============================================================ */
-// (17\uCC28) \uC720\uB2C8\uCF54\uB4DC \uAE30\uBB3C \uAE00\uC790 \uB300\uC2E0, \uAC01\uC9C4(\uC800\uD3F4\uB9AC\uACE4) \uC2E4\uB8E8\uC5E3 + \uAE08\uC0C9 \uB0B4\uBD80 \uC120/\uC194\uB9AC\uB4DC \uD398\uC2EF\uC73C\uB85C \uC774\uB8E8\uC5B4\uC9C4 SVG \uAE30\uBB3C.
-// \uBAA8\uB4E0 \uAE30\uBB3C\uC740 \uB3D9\uC77C\uD55C \uBC11\uB2E8(BASE_SLAB/BASE_COLLAR)\uC744 \uACF5\uC720\uD558\uACE0, \uADF8 \uC704\uC5D0 \uAE30\uBB3C\uBCC4 \uBAB8\uD1B5\u00B7\uC0C1\uB2E8 \uC7A5\uC2DD\uC744 \uC313\uB294\uB2E4.
-const GEO_GOLD = "#C49A50";
-const BASE_SLAB = "M20,96 L80,96 L76,89 L24,89 Z";
-const BASE_COLLAR = "M28,89 L72,89 L67,82 L33,82 Z";
-const PIECE_GEO = {
-  K: {
-    body: ["M40,82 L60,82 L56,48 L44,48 Z", "M44,48 L56,48 L60,39 L40,39 Z", "M42,39 L58,39 L56,30 L44,30 Z"],
-    gold: ["M60,82 L60,48 L52,82 Z", "M58,39 L60,39 L54,30 Z"],
-    facets: ["M40,82 L56,48", "M44,48 L60,39", "M50,60 L50,48"],
-    ball: { cx: 50, cy: 22, r: 5.5 },
-    extra: ["M46,3 L54,3 L54,18 L46,18 Z", "M40,8 L60,8 L60,12.5 L40,12.5 Z"],
-  },
-  Q: {
-    body: ["M41,82 L59,82 L61,38 L39,38 Z", "M39,38 L44,15 L47,23 L50,15 L53,23 L56,15 L61,38 Z"],
-    gold: ["M59,82 L61,38 L50,82 Z", "M56,15 L61,38 L53,23 Z"],
-    facets: ["M41,82 L61,38", "M39,38 L50,60", "M50,60 L59,82", "M44,15 L50,23", "M56,15 L50,23"],
-    balls: [{ cx: 44, cy: 13, r: 2.6 }, { cx: 50, cy: 13, r: 2.6 }, { cx: 56, cy: 13, r: 2.6 }],
-  },
-  R: {
-    body: ["M39,82 L61,82 L61,50 L39,50 Z", "M39,50 L39,22 L45,22 L45,29 L48,29 L48,22 L52,22 L52,29 L55,29 L55,22 L61,22 L61,50 Z"],
-    gold: ["M61,82 L61,50 L48,82 Z", "M61,50 L61,22 L52,22 L52,50 Z"],
-    facets: ["M39,82 L61,50", "M39,50 L61,50", "M45,50 L45,22", "M55,50 L55,22"],
-  },
-  B: {
-    body: ["M42,84 L58,84 L61,52 L39,52 Z", "M50,20 L59,33 L58,52 L42,52 L41,33 Z"],
-    gold: ["M58,84 L61,52 L50,84 Z", "M59,33 L58,52 L50,45 Z"],
-    facets: ["M42,84 L58,52", "M50,20 L50,52", "M41,33 L59,33", "M45,27 L55,31"],
-    ball: { cx: 50, cy: 14, r: 4 },
-  },
-  N: {
-    body: ["M40,84 L60,84 L60,52 L40,52 Z", "M40,52 L38,38 L44,26 L40,18 L48,22 L56,14 L67,20 L62,27 L54,26 L58,34 L60,44 L60,52 Z"],
-    gold: ["M60,84 L60,52 L48,84 Z", "M67,20 L62,27 L58,20 Z"],
-    facets: ["M40,84 L60,52", "M38,38 L54,26", "M48,22 L56,14", "M54,26 L60,44"],
-  },
-  P: {
-    body: ["M44,84 L56,84 L58,60 L42,60 Z"],
-    gold: ["M56,84 L58,60 L50,84 Z"],
-    facets: ["M44,84 L58,60"],
-    ball: { cx: 50, cy: 46, r: 10 },
-  },
-};
-function PieceIcon({ type, color, size, style }) {
-  const geo = PIECE_GEO[type];
-  if (!geo) return null;
-  const fill = color === "w" ? "#FBF3E3" : "#1B120A";
-  const balls = geo.balls || (geo.ball ? [geo.ball] : []);
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" style={{ display: "block", overflow: "visible", flexShrink: 0, ...style }}>
-      <path d={BASE_SLAB} fill={fill} stroke={GEO_GOLD} strokeWidth="1.6" strokeLinejoin="round" />
-      <path d={BASE_COLLAR} fill={fill} stroke={GEO_GOLD} strokeWidth="1.6" strokeLinejoin="round" />
-      {geo.body.map((d, i) => <path key={"b" + i} d={d} fill={fill} stroke={GEO_GOLD} strokeWidth="1.6" strokeLinejoin="round" />)}
-      {balls.map((b, i) => <circle key={"c" + i} cx={b.cx} cy={b.cy} r={b.r} fill={fill} stroke={GEO_GOLD} strokeWidth="1.6" />)}
-      {(geo.extra || []).map((d, i) => <path key={"e" + i} d={d} fill={GEO_GOLD} stroke={GEO_GOLD} strokeWidth="1.6" strokeLinejoin="round" />)}
-      {geo.gold.map((d, i) => <path key={"g" + i} d={d} fill={GEO_GOLD} opacity="0.92" />)}
-      {geo.facets.map((d, i) => <path key={"f" + i} d={d} fill="none" stroke={GEO_GOLD} strokeWidth="1" opacity="0.8" strokeLinecap="round" />)}
-    </svg>
-  );
-}
-
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
 // 육각형 등을 페이지 전반(상단뿐 아니라 하단까지)에 흩뿌려 첨부 레퍼런스 이미지의 "떠있는 도형들" 느낌을 낸다.
 function GeoBackdrop() {
@@ -1171,7 +1110,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
                     <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
                   )}
                   {p && <span draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined}
-                    style={{ display: "inline-flex", cursor: interactive && onPieceDrag ? "grab" : "default", filter: p.c === "w" ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))" }}><PieceIcon type={p.t} color={p.c} size={cell * 0.74} /></span>}
+                    style={{ fontSize: cell * 0.74, lineHeight: 1, color: p.c === "w" ? T.ivoryHi : "#0E0907", cursor: interactive && onPieceDrag ? "grab" : "default", filter: p.c === "w" ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))" }}>{PIECE[p.t]}</span>}
                 </div>
               );
             })}
@@ -1636,10 +1575,10 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {rows.map((row, vr) => (
             <div key={vr} style={{ display: "flex" }}>
               {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <span key={"cap" + cyc} style={{ display: "inline-flex", opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }}><PieceIcon type={p.t} color={p.c} size={cell * 0.72} /></span>}</div>; })}
+                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <span key={"cap" + cyc} style={{ fontSize: cell * 0.72, lineHeight: 1, opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none", color: p.c === "w" ? T.ivoryHi : "#0E0907" }}>{PIECE[p.t]}</span>}</div>; })}
             </div>
           ))}
-          {mp && <span key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}><PieceIcon type={mp.t} color={mp.c} size={cell * 0.72} /></span>}
+          {mp && <span key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.72, lineHeight: 1, color: mp.c === "w" ? T.ivoryHi : "#0E0907", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}>{PIECE[mp.t]}</span>}
           <svg width={cell * 8} height={cell * 8} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
             <defs><marker id="dgr" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill={T.blunder} /></marker><marker id="idea" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill={T.brass} /></marker></defs>
             {extraArrows.map((a, i) => { const [x1, y1] = px(a.from[0], a.from[1]); const [x2, y2] = px(a.to[0], a.to[1]); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={a.kind === "danger" ? T.blunder : T.brass} strokeWidth={Math.max(3, cell * 0.1)} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />; })}
@@ -1875,7 +1814,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame }) {
         <button onClick={onBack} className="press" title="집중학습 종료" style={{ width: 36, height: 36, borderRadius: 10, background: T.ebony2, color: T.ivoryHi, border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
         <div className="flex items-center gap-2">
           {(canEdit || canAdd) && !isTheory && <button onClick={addAsTheory} className="press" title="이론 수로 추가" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Book size={14} /> 이론 수로 추가</button>}
-          {expectedPuzzleId && onOpenPuzzle && <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22" }}><Play size={14} /> 퍼즐 풀기</button>}
+          {expectedPuzzleId && onOpenPuzzle && <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press geo-cut" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22" }}><Play size={14} /> 퍼즐 풀기</button>}
         </div>
       </div>
       {/* 헤더: 아이콘 · 수/이름(크게) · 평가치 */}
@@ -2278,7 +2217,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <div>
-        <div style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
+        <div className="geo-card" style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
           <div className="mb-3 flex items-center justify-between gap-2">
             <SequenceBar sans={sans} onJump={focus ? undefined : jumpTo} />
             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -2294,7 +2233,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 <div className="flex gap-2">
                   {["Q", "R", "B", "N"].map((t) => (
                     <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                      <PieceIcon type={t} color="b" size={26} />
+                      <span style={{ fontSize: 26, lineHeight: 1, color: "#1A1009" }}>{PIECE[t]}</span>
                       <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
                     </button>
                   ))}
@@ -2742,11 +2681,11 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
           <div key={vr} style={{ display: "flex" }}>
             {row.map((p, vc) => {
               const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark }}>{p && !hideAt && <PieceIcon type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark }}>{p && !hideAt && <span style={{ fontSize: cell * 0.72, lineHeight: 1, color: p.c === "w" ? T.ivoryHi : "#0E0907" }}>{PIECE[p.t]}</span>}</div>;
             })}
           </div>
         ))}
-        {moving && <span style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}><PieceIcon type={moving.t} color={moving.c} size={cell * 0.72} /></span>}
+        {moving && <span style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.72, lineHeight: 1, color: moving.c === "w" ? T.ivoryHi : "#0E0907", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}>{PIECE[moving.t]}</span>}
       </div>
     </div>
   );
@@ -2945,7 +2884,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         </div>
       ) : allLines[reachedIdx] && (
         <div className="flex justify-center" style={{ marginTop: 14 }}>
-          <button onClick={() => switchLine(allLines[reachedIdx].tag)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>다음 단계로 — {STAGE_SHORT_LABEL[allLines[reachedIdx].tag] || allLines[reachedIdx].tag}</button>
+          <button onClick={() => switchLine(allLines[reachedIdx].tag)} className="press geo-cut" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>다음 단계로 — {STAGE_SHORT_LABEL[allLines[reachedIdx].tag] || allLines[reachedIdx].tag}</button>
         </div>
       ))}
     </div>
@@ -2957,7 +2896,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const hasPreview = p.setupSans && p.mistakeSan;
   const totalLines = (p.lines && p.lines.length) || 1;
   return (
-    <div onClick={onClick} className="press text-left" style={{ borderRadius: 14, padding: 14, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 4px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", display: "flex", flexDirection: "column", minHeight: 132, height: "100%" }}>
+    <div onClick={onClick} className="press text-left geo-card" style={{ borderRadius: 14, padding: 14, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 4px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", display: "flex", flexDirection: "column", minHeight: 132, height: "100%" }}>
       {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 6, right: 6, zIndex: 10, width: 24, height: 24, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 13, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       {hasPreview && <div style={{ marginBottom: 10 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={168} loopMs={2400} flip={flip} /></div>}
       <div className="flex items-center justify-between" style={{ flexShrink: 0 }}>
@@ -3021,7 +2960,7 @@ function PuzzleTab({ puzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEve
       <p style={{ fontSize: 13, color: T.inkSoft, margin: "6px 0 12px" }}>학습 탭에서 탁월한 수·부정확한 수·실수에 들어가면 기물 희생·우위 점하기·실수 응징 퍼즐이 자동 저장됩니다. ({cleared.length}/{themed.length} 해결)</p>
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByNumber()} inputMode="numeric" placeholder="퍼즐 번호로 풀기 (예: 123456)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
-        <button onClick={solveByNumber} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
+        <button onClick={solveByNumber} className="press geo-cut" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
       </div>
       {numMsg && <p style={{ fontSize: 11.5, color: T.blunder, margin: "-4px 0 10px" }}>{numMsg}</p>}
       <div className="flex flex-wrap gap-2" style={{ marginBottom: 14 }}>
@@ -3699,7 +3638,7 @@ function UserSearchModal({ onClose, me }) {
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
                   : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><Clock size={14} />친구 요청을 보냈습니다</span>
                     : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><UserCheck size={14} />이미 친구이거나 요청 중입니다</span>
-                      : <button onClick={doReq} disabled={reqBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5 }}><UserPlus size={14} />친구 요청</button>}
+                      : <button onClick={doReq} disabled={reqBusy} className="press geo-cut" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5 }}><UserPlus size={14} />친구 요청</button>}
               </div>
             )}
           </div>
@@ -4329,7 +4268,12 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}}"
+        /* (17차) 저폴리곤 레퍼런스의 각진 페싯 느낌을 버튼/카드 코너에 적용 — 사선으로 잘린 모서리(clip-path)로 표현 */
+        + " .geo-cut{clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}"
+        + " .geo-card{position:relative}"
+        + " .geo-card::before{content:'';position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 18px 18px 0;border-color:transparent " + T.brass + " transparent transparent;opacity:.85;pointer-events:none;z-index:0}"
+      }</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       <GeoBackdrop />
       {/* (UI1) 모바일(좁은 화면)에서 로고/닉네임/로그아웃 등이 너무 붙어 보이던 문제 —
@@ -4348,7 +4292,7 @@ export default function App() {
           ) : (
             <>
               <button onClick={() => openAuth("login")} className="press" style={{ padding: "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>로그인</button>
-              <button onClick={() => openAuth("signup")} className="press" style={{ padding: "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>회원가입</button>
+              <button onClick={() => openAuth("signup")} className="press geo-cut" style={{ padding: "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>회원가입</button>
             </>
           )}
           <span style={{ width: 1, height: 22, background: "linear-gradient(180deg,transparent," + T.brass + ",transparent)", opacity: .55 }} />
