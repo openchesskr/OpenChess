@@ -111,4 +111,42 @@ $$;
 
 grant select, insert, update on public.puzzle_solvers        to anon, authenticated;
 grant select, insert         on public.puzzle_solve_events   to anon, authenticated;
+
+-- ===== 17차 수정: 친구 채팅(+이모티콘), 알림 =====
+-- (기존 profiles/friend_edges 테이블이 이미 있다는 전제 하에 아래를 추가로 실행하세요.)
+
+-- 10) 친구 채팅 메시지
+create table if not exists public.chat_messages (
+  id bigint generated always as identity primary key,
+  from_uid uuid not null,
+  to_uid uuid not null,
+  body text,
+  emoji text,               -- 이모티콘 코드(예: "milku_3") — body 대신 또는 함께 쓸 수 있음
+  read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_chat_messages_pair on public.chat_messages(from_uid, to_uid, created_at);
+alter table public.chat_messages enable row level security;
+-- 로그인 토큰(auth.uid())을 anon 키 대신 Authorization 헤더로 실어 보내므로 auth.uid() 기준 정책이 유효함.
+create policy "chat select own"  on public.chat_messages for select using (auth.uid() = from_uid or auth.uid() = to_uid);
+create policy "chat insert own"  on public.chat_messages for insert with check (auth.uid() = from_uid);
+create policy "chat update own"  on public.chat_messages for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
+grant select, insert, update on public.chat_messages to authenticated;
+
+-- 11) 알림(받은/보낸 친구 요청 결과, 칭호 획득, 레벨 업 등)
+create table if not exists public.notifications (
+  id bigint generated always as identity primary key,
+  to_uid uuid not null,
+  kind text not null,        -- 'friend_request' | 'friend_accepted' | 'title_earned' | 'level_up'
+  payload jsonb not null default '{}'::jsonb,
+  read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_notifications_to_time on public.notifications(to_uid, created_at desc);
+alter table public.notifications enable row level security;
+create policy "notif select own" on public.notifications for select using (auth.uid() = to_uid);
+-- insert는 다른 유저에게 알림을 보내야 하는 경우(친구 요청 등)가 있어 to_uid 제한 없이, 로그인만 요구한다.
+create policy "notif insert auth" on public.notifications for insert with check (auth.uid() is not null);
+create policy "notif update own" on public.notifications for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
+grant select, insert, update on public.notifications to authenticated;
 grant execute on function public.puzzle_rank(text, int)       to anon, authenticated;
