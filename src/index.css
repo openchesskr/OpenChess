@@ -1,5 +1,5 @@
 /* (18차) Google Fonts — 본문은 Noto Sans KR(한글)/Noto Sans(라틴), 브랜드 워드마크는 Black Ops One,
-   영문 오프닝 이름 등 장식적인 라틴 텍스트는 Playfair Display를 개별적으로 적용한다(App.jsx 참고). */
+   착용한 칭호 텍스트에는 Playfair Display를 개별적으로 적용한다(App.jsx 참고). */
 html, body { font-family: "Noto Sans KR", "Noto Sans", -apple-system, BlinkMacSystemFont, sans-serif; }
 
 /* JSX 전역에서 Tailwind 스타일 className(flex, gap, items-center 등)을 쓰지만

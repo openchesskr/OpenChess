@@ -2409,7 +2409,7 @@ function DexMoveCard({ path, m, child, isUnlocked, hasChildren, wdl, cc, onOpen 
         <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(path.length)}{m.san}</span>
         {isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: T.best, fontSize: 11.5, fontWeight: 800 }}><Check size={15} /> 학습함</span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}
       </div>
-      {isUnlocked && label && <div style={{ fontFamily: "'Playfair Display', serif", fontStyle: "italic", fontSize: 13.5, fontWeight: 700, color: T.ink, marginTop: 3, wordBreak: "keep-all" }}>{label}</div>}
+      {isUnlocked && label && <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginTop: 3, wordBreak: "keep-all" }}>{label}</div>}
       {isUnlocked && wdl && <div style={{ marginTop: 8 }}><WinBar wdl={wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
         <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
@@ -2478,7 +2478,7 @@ function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earn
       </div>
       {opening && <div className="flex items-center gap-3 flex-wrap" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: "12px 16px", marginBottom: 14 }}>
         <Mascot name="kokoa" emotion="happy" size={70} />
-        <div><div style={{ fontFamily: "'Playfair Display', serif", fontStyle: "italic", fontSize: 18, fontWeight: 700, color: T.ivoryHi }}>{opening.name}</div></div>
+        <div><div style={{ fontSize: 16, fontWeight: 800, color: T.ivoryHi }}>{opening.name}</div></div>
         {lc && lc.wdl && <div style={{ marginLeft: "auto", width: 150 }}><WinBar wdl={lc.wdl} /></div>}
         {ccReady && (() => { const cc = chesscom.analyze(path); return cc && cc.total > 0 ? <div style={{ fontSize: 11.5, fontFamily: "ui-monospace,monospace", color: T.ivory, background: "rgba(60,138,60,.25)", border: "1px solid rgba(120,200,120,.4)", borderRadius: 8, padding: "6px 11px", letterSpacing: ".02em" }}>내 chess.com 승률 <b style={{ color: "#9FE39F" }}>{cc.winRate}%</b> · {cc.w}/{cc.d}/{cc.l}</div> : null; })()}
       </div>}
@@ -3074,7 +3074,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
           : <span style={{ width: 56, height: 56, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 24 }}>{(profile.nickname || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
           {/* (UI2) 설정 탭에서는 칭호를 고를 수 없고, 장착된 칭호만 닉네임 위에 작게 표시 */}
-          {currentTitle && <div style={{ fontSize: 11, color: T.brass, fontWeight: 800, marginBottom: 2 }}>{titleLabel(currentTitle)}</div>}
+          {currentTitle && <div style={{ fontFamily: "'Playfair Display', serif", fontStyle: "italic", fontSize: 12.5, color: T.brass, fontWeight: 700, marginBottom: 2 }}>{titleLabel(currentTitle)}</div>}
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{profile.nickname || "이름 미설정"}</div>
         </div>
       </div>
@@ -3661,7 +3661,7 @@ function UserSearchModal({ onClose, me }) {
                 <div className="flex items-center gap-2">
                   <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.username}</span>
                   {/* (UX5) 칭호는 닉네임 우측에 작게 표시(전체 카드가 아니라 텍스트로) */}
-                  {pub.title && <span style={{ fontSize: 11, color: T.brass, fontWeight: 800 }}>{titleLabel(pub.title)}</span>}
+                  {pub.title && <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: "italic", fontSize: 12.5, color: T.brass, fontWeight: 700 }}>{titleLabel(pub.title)}</span>}
                 </div>
                 <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{pub.username}</div>
               </div>
