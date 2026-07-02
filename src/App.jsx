@@ -51,7 +51,7 @@ function BrandIcon({ size = 40, style }) {
 function BrandWordmark({ compact }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: compact ? 0 : 4 }}>
-      <div style={{ fontWeight: 900, fontSize: compact ? 16 : 20, letterSpacing: ".01em", background: "linear-gradient(180deg,#F3E2C0,#C49A50)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>OpenChess</div>
+      <div style={{ fontFamily: "'Black Ops One', 'Noto Sans KR', sans-serif", fontWeight: 400, fontSize: compact ? 15 : 19, letterSpacing: ".01em", background: "linear-gradient(180deg,#F3E2C0,#C49A50)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>OpenChess</div>
       {!compact && (
         <div className="flex items-center" style={{ gap: 4 }}>
           <div style={{ flex: 1, height: 1.5, background: "linear-gradient(90deg,transparent,#C49A50)" }} />
@@ -2409,7 +2409,7 @@ function DexMoveCard({ path, m, child, isUnlocked, hasChildren, wdl, cc, onOpen 
         <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(path.length)}{m.san}</span>
         {isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: T.best, fontSize: 11.5, fontWeight: 800 }}><Check size={15} /> 학습함</span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}
       </div>
-      {isUnlocked && label && <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginTop: 3, wordBreak: "keep-all" }}>{label}</div>}
+      {isUnlocked && label && <div style={{ fontFamily: "'Playfair Display', serif", fontStyle: "italic", fontSize: 13.5, fontWeight: 700, color: T.ink, marginTop: 3, wordBreak: "keep-all" }}>{label}</div>}
       {isUnlocked && wdl && <div style={{ marginTop: 8 }}><WinBar wdl={wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
         <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
@@ -2478,7 +2478,7 @@ function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earn
       </div>
       {opening && <div className="flex items-center gap-3 flex-wrap" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: "12px 16px", marginBottom: 14 }}>
         <Mascot name="kokoa" emotion="happy" size={70} />
-        <div><div style={{ fontSize: 16, fontWeight: 800, color: T.ivoryHi }}>{opening.name}</div></div>
+        <div><div style={{ fontFamily: "'Playfair Display', serif", fontStyle: "italic", fontSize: 18, fontWeight: 700, color: T.ivoryHi }}>{opening.name}</div></div>
         {lc && lc.wdl && <div style={{ marginLeft: "auto", width: 150 }}><WinBar wdl={lc.wdl} /></div>}
         {ccReady && (() => { const cc = chesscom.analyze(path); return cc && cc.total > 0 ? <div style={{ fontSize: 11.5, fontFamily: "ui-monospace,monospace", color: T.ivory, background: "rgba(60,138,60,.25)", border: "1px solid rgba(120,200,120,.4)", borderRadius: 8, padding: "6px 11px", letterSpacing: ".02em" }}>내 chess.com 승률 <b style={{ color: "#9FE39F" }}>{cc.winRate}%</b> · {cc.w}/{cc.d}/{cc.l}</div> : null; })()}
       </div>}
