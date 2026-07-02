@@ -22,32 +22,7 @@ const PIECE = { K: "\u265A\uFE0E", Q: "\u265B\uFE0E", R: "\u265C\uFE0E", B: "\u2
 const FILES = "abcdefgh";
 
 /* ============================================================ 브랜드 로고 ============================================================ */
-// (18차) 마스코트 캐릭터와 별개의 정식 브랜드 아이콘 — 원형 배지 + 톱니형 금색 페싯 테두리 + 킹 엠블럼.
-// 파비콘/헤더 등 어디서든 재사용 가능하도록 순수 SVG 컴포넌트로 둔다.
-function BrandIcon({ size = 40, style }) {
-  const g = "#C49A50", gHi = "#ECCB86";
-  const spikes = Array.from({ length: 8 }, (_, i) => {
-    const a = (Math.PI / 4) * i;
-    const tipR = 49, baseR = 43, spread = 0.1;
-    const tip = [50 + tipR * Math.cos(a), 50 + tipR * Math.sin(a)];
-    const b1 = [50 + baseR * Math.cos(a - spread), 50 + baseR * Math.sin(a - spread)];
-    const b2 = [50 + baseR * Math.cos(a + spread), 50 + baseR * Math.sin(a + spread)];
-    return "M" + tip[0] + "," + tip[1] + " L" + b1[0] + "," + b1[1] + " L" + b2[0] + "," + b2[1] + " Z";
-  });
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" style={{ display: "block", flexShrink: 0, ...style }}>
-      <circle cx="50" cy="50" r="43" fill="#1B120A" stroke={g} strokeWidth="2.4" />
-      {spikes.map((d, i) => <path key={i} d={d} fill={g} opacity="0.92" />)}
-      <circle cx="50" cy="50" r="43" fill="none" stroke={gHi} strokeWidth="0.8" opacity="0.55" />
-      <path d="M47,19 L53,19 L53,32 L47,32 Z" fill={g} />
-      <path d="M40,23 L60,23 L60,28 L40,28 Z" fill={g} />
-      <path d="M38,38 L62,38 L58,32 L42,32 Z" fill="#FBF3E3" stroke={g} strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M34,55 L66,55 L61,38 L39,38 Z" fill="#FBF3E3" stroke={g} strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M30,63 L70,63 L65,55 L35,55 Z" fill="#FBF3E3" stroke={g} strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M39,38 L58,55 M61,38 L42,55 M35,55 L50,63 M65,55 L50,63" stroke={g} strokeWidth="1" opacity="0.75" fill="none" />
-    </svg>
-  );
-}
+// (19차) 아이콘은 사용자가 직접 제공한 저폴리곤 나이트 기물 이미지(public/logo-knight.png)를 사용한다.
 function BrandWordmark({ compact }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: compact ? 0 : 4 }}>
@@ -4322,7 +4297,7 @@ export default function App() {
           좁은 화면에서는 마스코트/글자 크기와 여백을 줄이고, 그래도 안 맞으면 다음 줄로 감싸(rowGap) 겹치지 않게 한다 */}
       <header className="flex items-center justify-between" style={{ padding: narrowHeader ? "12px 14px" : "16px 20px", borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)", flexWrap: "wrap", rowGap: 10, columnGap: narrowHeader ? 10 : 14 }}>
         <div className="flex items-center" style={{ gap: narrowHeader ? 8 : 12 }}>
-          <BrandIcon size={narrowHeader ? 34 : 46} style={{ filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <img src="/logo-knight.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 34 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <BrandWordmark compact={narrowHeader} />
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10 }}>
