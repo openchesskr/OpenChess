@@ -21,22 +21,111 @@ const T = {
 const PIECE = { K: "\u265A\uFE0E", Q: "\u265B\uFE0E", R: "\u265C\uFE0E", B: "\u265D\uFE0E", N: "\u265E\uFE0E", P: "\u265F\uFE0E" };
 const FILES = "abcdefgh";
 
+/* ============================================================ \uC800\uD3F4\uB9AC\uACE4 \uAE08\uC120 \uAE30\uBB3C \uC544\uC774\uCF58 ============================================================ */
+// (17\uCC28) \uC720\uB2C8\uCF54\uB4DC \uAE30\uBB3C \uAE00\uC790 \uB300\uC2E0, \uAC01\uC9C4(\uC800\uD3F4\uB9AC\uACE4) \uC2E4\uB8E8\uC5E3 + \uAE08\uC0C9 \uB0B4\uBD80 \uC120/\uC194\uB9AC\uB4DC \uD398\uC2EF\uC73C\uB85C \uC774\uB8E8\uC5B4\uC9C4 SVG \uAE30\uBB3C.
+// \uBAA8\uB4E0 \uAE30\uBB3C\uC740 \uB3D9\uC77C\uD55C \uBC11\uB2E8(BASE_SLAB/BASE_COLLAR)\uC744 \uACF5\uC720\uD558\uACE0, \uADF8 \uC704\uC5D0 \uAE30\uBB3C\uBCC4 \uBAB8\uD1B5\u00B7\uC0C1\uB2E8 \uC7A5\uC2DD\uC744 \uC313\uB294\uB2E4.
+const GEO_GOLD = "#C49A50";
+const BASE_SLAB = "M20,96 L80,96 L76,89 L24,89 Z";
+const BASE_COLLAR = "M28,89 L72,89 L67,82 L33,82 Z";
+const PIECE_GEO = {
+  K: {
+    body: ["M40,82 L60,82 L56,48 L44,48 Z", "M44,48 L56,48 L60,39 L40,39 Z", "M42,39 L58,39 L56,30 L44,30 Z"],
+    gold: ["M60,82 L60,48 L52,82 Z", "M58,39 L60,39 L54,30 Z"],
+    facets: ["M40,82 L56,48", "M44,48 L60,39", "M50,60 L50,48"],
+    ball: { cx: 50, cy: 22, r: 5.5 },
+    extra: ["M46,3 L54,3 L54,18 L46,18 Z", "M40,8 L60,8 L60,12.5 L40,12.5 Z"],
+  },
+  Q: {
+    body: ["M41,82 L59,82 L61,38 L39,38 Z", "M39,38 L44,15 L47,23 L50,15 L53,23 L56,15 L61,38 Z"],
+    gold: ["M59,82 L61,38 L50,82 Z", "M56,15 L61,38 L53,23 Z"],
+    facets: ["M41,82 L61,38", "M39,38 L50,60", "M50,60 L59,82", "M44,15 L50,23", "M56,15 L50,23"],
+    balls: [{ cx: 44, cy: 13, r: 2.6 }, { cx: 50, cy: 13, r: 2.6 }, { cx: 56, cy: 13, r: 2.6 }],
+  },
+  R: {
+    body: ["M39,82 L61,82 L61,50 L39,50 Z", "M39,50 L39,22 L45,22 L45,29 L48,29 L48,22 L52,22 L52,29 L55,29 L55,22 L61,22 L61,50 Z"],
+    gold: ["M61,82 L61,50 L48,82 Z", "M61,50 L61,22 L52,22 L52,50 Z"],
+    facets: ["M39,82 L61,50", "M39,50 L61,50", "M45,50 L45,22", "M55,50 L55,22"],
+  },
+  B: {
+    body: ["M42,84 L58,84 L61,52 L39,52 Z", "M50,20 L59,33 L58,52 L42,52 L41,33 Z"],
+    gold: ["M58,84 L61,52 L50,84 Z", "M59,33 L58,52 L50,45 Z"],
+    facets: ["M42,84 L58,52", "M50,20 L50,52", "M41,33 L59,33", "M45,27 L55,31"],
+    ball: { cx: 50, cy: 14, r: 4 },
+  },
+  N: {
+    body: ["M40,84 L60,84 L60,52 L40,52 Z", "M40,52 L38,38 L44,26 L40,18 L48,22 L56,14 L67,20 L62,27 L54,26 L58,34 L60,44 L60,52 Z"],
+    gold: ["M60,84 L60,52 L48,84 Z", "M67,20 L62,27 L58,20 Z"],
+    facets: ["M40,84 L60,52", "M38,38 L54,26", "M48,22 L56,14", "M54,26 L60,44"],
+  },
+  P: {
+    body: ["M44,84 L56,84 L58,60 L42,60 Z"],
+    gold: ["M56,84 L58,60 L50,84 Z"],
+    facets: ["M44,84 L58,60"],
+    ball: { cx: 50, cy: 46, r: 10 },
+  },
+};
+function PieceIcon({ type, color, size, style }) {
+  const geo = PIECE_GEO[type];
+  if (!geo) return null;
+  const fill = color === "w" ? "#FBF3E3" : "#1B120A";
+  const balls = geo.balls || (geo.ball ? [geo.ball] : []);
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" style={{ display: "block", overflow: "visible", flexShrink: 0, ...style }}>
+      <path d={BASE_SLAB} fill={fill} stroke={GEO_GOLD} strokeWidth="1.6" strokeLinejoin="round" />
+      <path d={BASE_COLLAR} fill={fill} stroke={GEO_GOLD} strokeWidth="1.6" strokeLinejoin="round" />
+      {geo.body.map((d, i) => <path key={"b" + i} d={d} fill={fill} stroke={GEO_GOLD} strokeWidth="1.6" strokeLinejoin="round" />)}
+      {balls.map((b, i) => <circle key={"c" + i} cx={b.cx} cy={b.cy} r={b.r} fill={fill} stroke={GEO_GOLD} strokeWidth="1.6" />)}
+      {(geo.extra || []).map((d, i) => <path key={"e" + i} d={d} fill={GEO_GOLD} stroke={GEO_GOLD} strokeWidth="1.6" strokeLinejoin="round" />)}
+      {geo.gold.map((d, i) => <path key={"g" + i} d={d} fill={GEO_GOLD} opacity="0.92" />)}
+      {geo.facets.map((d, i) => <path key={"f" + i} d={d} fill="none" stroke={GEO_GOLD} strokeWidth="1" opacity="0.8" strokeLinecap="round" />)}
+    </svg>
+  );
+}
+
+// (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
+// 육각형 등을 페이지 전반(상단뿐 아니라 하단까지)에 흩뿌려 첨부 레퍼런스 이미지의 "떠있는 도형들" 느낌을 낸다.
 function GeoBackdrop() {
   const g = "#C49A50";
   const dia = (x, y, sz, o) => <rect x={x} y={y} width={sz} height={sz} transform={"rotate(45 " + (x + sz / 2) + " " + (y + sz / 2) + ")"} fill="none" stroke={g} strokeWidth="1.2" opacity={o} />;
+  const tri = (x, y, sz, o, filled) => <path d={"M" + x + " " + (y - sz) + " L" + (x + sz * 0.87) + " " + (y + sz * 0.5) + " L" + (x - sz * 0.87) + " " + (y + sz * 0.5) + " Z"} fill={filled ? g : "none"} stroke={g} strokeWidth="1" opacity={o} />;
+  // 와이어프레임 큐브(등각투상 육각형 실루엣 + 내부 3면 경계선)
+  const cube = (x, y, sz, o) => (
+    <g opacity={o} fill="none" stroke={g} strokeWidth="1">
+      <path d={"M" + x + "," + (y - sz * 0.5) + " L" + (x + sz * 0.87) + "," + (y - sz) + " L" + (x + sz * 1.74) + "," + (y - sz * 0.5) + " L" + (x + sz * 1.74) + "," + (y + sz * 0.5) + " L" + (x + sz * 0.87) + "," + (y + sz) + " L" + x + "," + (y + sz * 0.5) + " Z"} />
+      <path d={"M" + x + "," + (y - sz * 0.5) + " L" + (x + sz * 0.87) + "," + y + " L" + (x + sz * 1.74) + "," + (y - sz * 0.5)} />
+      <line x1={x + sz * 0.87} y1={y} x2={x + sz * 0.87} y2={y + sz} />
+    </g>
+  );
+  // 정팔면체(가로선으로 나뉜 마름모) 실루엣
+  const octa = (x, y, w, h, o) => (
+    <g opacity={o} fill="none" stroke={g} strokeWidth="1">
+      <path d={"M" + x + "," + (y - h) + " L" + (x + w) + "," + y + " L" + x + "," + (y + h) + " L" + (x - w) + "," + y + " Z"} />
+      <line x1={x - w} y1={y} x2={x + w} y2={y} />
+    </g>
+  );
+  const hexOutline = (x, y, sz, o) => { const pts = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 3 * i - Math.PI / 6; return (x + sz * Math.cos(a)) + "," + (y + sz * Math.sin(a)); }).join(" "); return <polygon points={pts} fill="none" stroke={g} strokeWidth="1" opacity={o} />; };
   return (
     <svg aria-hidden="true" width="100%" height="100%" viewBox="0 0 1200 1600" preserveAspectRatio="xMidYMin slice" style={{ position: "fixed", inset: 0, zIndex: -1, pointerEvents: "none" }}>
       <g fill="none" stroke={g}>
         <circle cx="600" cy="230" r="360" strokeWidth="1.2" opacity="0.10" />
         <circle cx="600" cy="230" r="250" strokeWidth="1" opacity="0.07" strokeDasharray="2 9" />
+        <circle cx="120" cy="980" r="220" strokeWidth="1" opacity="0.06" strokeDasharray="2 9" />
+        <circle cx="1100" cy="1300" r="300" strokeWidth="1.1" opacity="0.07" />
         <line x1="0" y1="230" x2="1200" y2="230" strokeWidth="1" opacity="0.05" />
         <line x1="600" y1="-120" x2="600" y2="600" strokeWidth="1" opacity="0.05" />
         <line x1="110" y1="-60" x2="540" y2="370" strokeWidth="1" opacity="0.06" />
         <line x1="1090" y1="-60" x2="660" y2="370" strokeWidth="1" opacity="0.06" />
+        <line x1="80" y1="1480" x2="420" y2="1120" strokeWidth="1" opacity="0.05" />
+        <line x1="1150" y1="1500" x2="820" y2="1080" strokeWidth="1" opacity="0.05" />
       </g>
       {dia(150, 350, 28, 0.12)}{dia(1006, 286, 32, 0.12)}{dia(978, 520, 16, 0.09)}{dia(214, 560, 16, 0.08)}
+      {dia(90, 1180, 20, 0.09)}{dia(1120, 940, 24, 0.1)}{dia(760, 1460, 18, 0.08)}
       <path d="M120 940 L140 902 L160 940 Z" fill={g} opacity="0.08" />
       <path d="M1058 1010 L1078 972 L1098 1010 Z" fill={g} opacity="0.08" />
+      {tri(340, 1240, 16, 0.1, true)}{tri(980, 1180, 12, 0.08, false)}{tri(1140, 640, 14, 0.09, false)}
+      {cube(60, 500, 26, 0.09)}{cube(1000, 760, 22, 0.08)}{cube(300, 1360, 20, 0.07)}{cube(880, 1440, 24, 0.08)}
+      {octa(1080, 200, 22, 30, 0.09)}{octa(180, 800, 18, 26, 0.08)}{octa(620, 1000, 16, 22, 0.07)}{octa(1000, 1240, 20, 28, 0.08)}
+      {hexOutline(500, 880, 34, 0.06)}{hexOutline(1140, 480, 26, 0.07)}{hexOutline(220, 1480, 30, 0.06)}
     </svg>
   );
 }
@@ -1082,7 +1171,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
                     <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
                   )}
                   {p && <span draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined}
-                    style={{ fontSize: cell * 0.74, lineHeight: 1, color: p.c === "w" ? T.ivoryHi : "#0E0907", cursor: interactive && onPieceDrag ? "grab" : "default", filter: p.c === "w" ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))" }}>{PIECE[p.t]}</span>}
+                    style={{ display: "inline-flex", cursor: interactive && onPieceDrag ? "grab" : "default", filter: p.c === "w" ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))" }}><PieceIcon type={p.t} color={p.c} size={cell * 0.74} /></span>}
                 </div>
               );
             })}
@@ -1547,10 +1636,10 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {rows.map((row, vr) => (
             <div key={vr} style={{ display: "flex" }}>
               {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <span key={"cap" + cyc} style={{ fontSize: cell * 0.72, lineHeight: 1, opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none", color: p.c === "w" ? T.ivoryHi : "#0E0907" }}>{PIECE[p.t]}</span>}</div>; })}
+                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <span key={"cap" + cyc} style={{ display: "inline-flex", opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }}><PieceIcon type={p.t} color={p.c} size={cell * 0.72} /></span>}</div>; })}
             </div>
           ))}
-          {mp && <span key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.72, lineHeight: 1, color: mp.c === "w" ? T.ivoryHi : "#0E0907", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}>{PIECE[mp.t]}</span>}
+          {mp && <span key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}><PieceIcon type={mp.t} color={mp.c} size={cell * 0.72} /></span>}
           <svg width={cell * 8} height={cell * 8} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
             <defs><marker id="dgr" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill={T.blunder} /></marker><marker id="idea" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill={T.brass} /></marker></defs>
             {extraArrows.map((a, i) => { const [x1, y1] = px(a.from[0], a.from[1]); const [x2, y2] = px(a.to[0], a.to[1]); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={a.kind === "danger" ? T.blunder : T.brass} strokeWidth={Math.max(3, cell * 0.1)} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />; })}
@@ -2205,7 +2294,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 <div className="flex gap-2">
                   {["Q", "R", "B", "N"].map((t) => (
                     <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                      <span style={{ fontSize: 26, lineHeight: 1, color: "#1A1009" }}>{PIECE[t]}</span>
+                      <PieceIcon type={t} color="b" size={26} />
                       <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
                     </button>
                   ))}
@@ -2653,11 +2742,11 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
           <div key={vr} style={{ display: "flex" }}>
             {row.map((p, vc) => {
               const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark }}>{p && !hideAt && <span style={{ fontSize: cell * 0.72, lineHeight: 1, color: p.c === "w" ? T.ivoryHi : "#0E0907" }}>{PIECE[p.t]}</span>}</div>;
+              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark }}>{p && !hideAt && <PieceIcon type={p.t} color={p.c} size={cell * 0.72} />}</div>;
             })}
           </div>
         ))}
-        {moving && <span style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.72, lineHeight: 1, color: moving.c === "w" ? T.ivoryHi : "#0E0907", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}>{PIECE[moving.t]}</span>}
+        {moving && <span style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}><PieceIcon type={moving.t} color={moving.c} size={cell * 0.72} /></span>}
       </div>
     </div>
   );
