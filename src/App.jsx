@@ -3159,13 +3159,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
   const lab = { fontSize: 12, fontWeight: 800, color: T.ink, margin: "14px 0 6px" };
   return (
     <div style={card}>
-      <div className="flex items-center gap-3" style={{ marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid #E0CFA8" }}>
-        <span style={{ width: 42, height: 42, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, flexShrink: 0 }}>{(user || "?")[0].toUpperCase()}</span>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{user}{isDev && <span style={{ color: T.brass }}> 👑</span>}</div>
-          <div style={{ fontSize: 11, color: T.inkSoft, letterSpacing: ".01em" }}>{isDev ? "개발자 계정" : isCodev ? "공동 개발자" : "일반 회원"} · 진도가 서버에 저장됩니다</div>
-        </div>
-      </div>
+      {/* (17차 후속) 카드 상단의 계정 요약 줄(아바타+아이디+"진도가 서버에 저장됩니다")은 프로필 편집 정보와 중복이라 제거 */}
       <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>프로필 편집</div>
       <div className="flex items-center gap-3" style={{ margin: "12px 0" }}>
         {profile.photo ? <img src={profile.photo} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C" }} />
