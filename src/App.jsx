@@ -312,8 +312,11 @@ function useEngine() {
     tryNext();
     return () => { killed = true; try { worker && worker.terminate(); } catch (_) {} };
   }, [pump]);
-  const evaluate = useCallback((fen, depth = 14, onProgress) => new Promise((resolve) => {
-    queue.current.push({ resolve, last: null, onProgress, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + depth] }); pump();
+  // (분석 최적화) movetime(ms)을 주면 `go depth N movetime M`으로 보내 depth·시간 중 먼저 도달하는 쪽에서 멈춘다.
+  // 쉬운 포지션은 목표 depth까지 깊게, 복잡한 포지션은 movetime 상한에서 끊어 전체 분석 시간을 예측 가능하게 만든다.
+  const evaluate = useCallback((fen, depth = 14, onProgress, movetime) => new Promise((resolve) => {
+    const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
+    queue.current.push({ resolve, last: null, onProgress, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
   }), [pump]);
   const evaluateMulti = useCallback((fen, depth = 12, multipv = 5) => new Promise((resolve) => {
     queue.current.push({ resolve, multi: true, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + depth] }); pump();
@@ -1022,9 +1025,12 @@ function gameAccuracyFrom(accs, winsBefore) {
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
 const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : (l.cp != null ? l.cp : 0)) : 0;
-// 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교(MultiPV)해 손실을 구한다.
-// 이렇게 하면 실제로 최선수를 뒀을 때 손실이 정확히 0이 되어, 얕은 depth의 탐색 노이즈로 인한 가짜 실수가 사라진다.
-async function analyzeGame(fullSans, engine, depth, onProgress) {
+// 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
+// 실제 최선수를 뒀을 때 손실이 정확히 0이 되어, 얕은 depth 탐색 노이즈로 인한 가짜 실수가 사라진다.
+// (분석 최적화) MultiPV(3배 비용) 대신 단일 PV 평가로 최선수를 얻고, 둔 수가 최선수와 같으면 손실 0으로
+// 확정해 추가 평가를 생략한다(대부분의 수가 최선수인 게임은 포지션당 1회 평가 → 빨라진 만큼 depth를 높인다).
+// movetime 상한으로 포지션당 시간을 제한해 전체 분석 시간을 예측 가능하게 유지한다.
+async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 400) {
   const N = fullSans.length;
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
   const graphCp = new Array(N + 1).fill(0); // 백 관점 평가치 시퀀스(그래프용)
@@ -1033,14 +1039,15 @@ async function analyzeGame(fullSans, engine, depth, onProgress) {
     const preSans = fullSans.slice(0, i);
     const brd = boardFromSans(preSans);
     const color = moverWhite ? "w" : "b";
-    // 이 포지션의 상위 후보 3수(둘 차례=둔 사람 관점 평가치)
-    const lines = await withTimeout(engine.evaluateMulti(sansToFen(preSans), depth, 3), 7000);
-    const bestCp = lines && lines.length ? cpOfLine(lines[0]) : 0;
-    // 실제 둔 수의 평가치: 상위 후보에 있으면 그 값, 없으면 둔 뒤 포지션을 한 번 더 평가(상대 관점 → 부호 반전)
     const playedSan = stripSuffix(fullSans[i]);
-    let playedCp = null;
-    if (lines) for (const l of lines) { const s = uciToSan(brd, l.uci, color); if (s && stripSuffix(s) === playedSan) { playedCp = cpOfLine(l); break; } }
-    if (playedCp == null) { const after = await withTimeout(engine.evaluate(sansToFen(fullSans.slice(0, i + 1)), depth), 7000); playedCp = after ? -cpOfLine(after) : bestCp; }
+    // 이 포지션의 최선수 1개(둘 차례=둔 사람 관점 평가치 + 최선수 UCI)
+    const r = await withTimeout(engine.evaluate(sansToFen(preSans), depth, null, movetime), 8000);
+    const bestCp = cpOfLine(r);
+    const bestSan = r && r.best ? uciToSan(brd, r.best, color) : null;
+    // 둔 수가 엔진 최선수와 같으면 손실 0(추가 평가 생략), 아니면 둔 뒤 포지션을 한 번 더 평가(상대 관점 → 부호 반전)
+    let playedCp;
+    if (bestSan && stripSuffix(bestSan) === playedSan) playedCp = bestCp;
+    else { const after = await withTimeout(engine.evaluate(sansToFen(fullSans.slice(0, i + 1)), depth, null, movetime), 8000); playedCp = after ? -cpOfLine(after) : bestCp; }
     const loss = Math.max(0, bestCp - playedCp);
     if (i === 0) graphCp[0] = moverWhite ? bestCp : -bestCp;
     graphCp[i + 1] = moverWhite ? playedCp : -playedCp; // 둔 뒤 포지션(백 관점)
@@ -2129,28 +2136,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {engine && engine.status === "ready" ? "이 실수를 엔진이 분석해 응징 수순을 퍼즐 탭에 추가했습니다." : "엔진이 준비되면 이 실수의 응징 수순이 퍼즐로 저장됩니다."}
         </div>
       )}
-      {/* 이 수가 두어진 마스터 대국 — 클릭하면 집중학습을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 */}
-      <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>이 수가 두어진 마스터 대국</span></div>
-        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>불러오는 중…</p>
-          : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
-            : masterGames.map((g) => (
-              <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: openingGameId && openingGameId !== g.id ? 0.5 : 1 }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
-                    <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title="승리">👑</span>}</span>
-                    <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "½–½"}</span>
-                  </div>
-                  <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title="승리">👑</span>}</div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? " · 기보를 불러오는 중…" : ""}</div>
-                </div>
-                {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중학습에서 보던 수부터 보드에 표기 */}
-                <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: openingGameId ? "default" : "pointer" }}><Eye size={12} /> 보기</button>
-              </div>
-            ))}
-        {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
-      </div>
-      {/* (버그) 내 chess.com "최근 대국"과 "전적"을 하나의 블록으로 통합 — 통계 요약 + 이 수로 둔 내 대국 목록 */}
+      {/* (버그) 내 chess.com 통계를 마스터 대국보다 위에 표시 — 최근 대국 목록 + 전적 요약 통합 블록 */}
       <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>내 chess.com 대국 · 전적</span></div>
         {!chesscom || chesscom.status === "idle" ? <p style={{ fontSize: 12, color: T.inkSoft }}>설정 탭에서 chess.com 계정을 연동하면 이 수로 진행된 내 실제 대국과 통계가 표시됩니다.</p>
@@ -2216,6 +2202,27 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                     )}
                 </div>
                 )}
+      </div>
+      {/* 이 수가 두어진 마스터 대국 — 클릭하면 집중학습을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
+      <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>이 수가 두어진 마스터 대국</span></div>
+        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>불러오는 중…</p>
+          : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
+            : masterGames.map((g) => (
+              <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: openingGameId && openingGameId !== g.id ? 0.5 : 1 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
+                    <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title="승리">👑</span>}</span>
+                    <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "½–½"}</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title="승리">👑</span>}</div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? " · 기보를 불러오는 중…" : ""}</div>
+                </div>
+                {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중학습에서 보던 수부터 보드에 표기 */}
+                <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: openingGameId ? "default" : "pointer" }}><Eye size={12} /> 보기</button>
+              </div>
+            ))}
+        {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
       </div>
       {showExpl && (
         <div onClick={() => setShowExpl(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
@@ -2323,7 +2330,7 @@ function AnalysisModal({ sans, engine, onClose }) {
     if (!engine || engine.status !== "ready") { setErr(true); return; }
     if (!sans || sans.length < 1) { setErr(true); return; }
     (async () => {
-      try { const r = await analyzeGame(sans, engine, 11, (p) => { if (!cancelled) setProg(p); }); if (!cancelled) setResult(r); }
+      try { const r = await analyzeGame(sans, engine, 16, (p) => { if (!cancelled) setProg(p); }, 400); if (!cancelled) setResult(r); }
       catch (e) { if (!cancelled) setErr(true); }
     })();
     return () => { cancelled = true; };
@@ -4041,7 +4048,7 @@ function findOpeningPathByName(name) {   // (UX2) 이름이 같은 첫(최단) �
   }
   return null;
 }
-function AccountChessStats({ chesscom, username, onOpenOpening }) {
+function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -4103,6 +4110,26 @@ function AccountChessStats({ chesscom, username, onOpenOpening }) {
           </div>
         </div>
       )}
+      {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다 */}
+      {(() => {
+        const recent = [...chesscom.games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0)).slice(0, 5);
+        if (!recent.length) return null;
+        const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>최근 대국</div>
+            {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"} · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b></div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtD(g.endTime)}</div>
+                </div>
+                {onOpenGame && <button onClick={() => onOpenGame(g.moves)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 11, fontWeight: 800, border: "none", cursor: "pointer" }}><Eye size={12} /> 보기</button>}
+              </div>
+            ); })}
+          </div>
+        );
+      })()}
       {/* 가장 많이 둔 오프닝 */}
       {mostUsed.length > 0 && (
         <div style={{ marginBottom: 12 }}>
@@ -4132,7 +4159,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening }) {
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
-function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, chesscomUi, profileEditor }) {
+function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, chesscomUi, profileEditor }) {
   const [editOpen, setEditOpen] = useState(false);
   const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom } = chesscomUi;
@@ -4172,7 +4199,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
                   <button onClick={verifyChesscom} disabled={ccState === "checking"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: ccState === "failed" ? T.blunder : "linear-gradient(180deg,#3A2516,#241509)", color: ccState === "failed" ? "#fff" : T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{ccState === "checking" ? "확인 중…" : ccState === "failed" ? "연동 실패" : "연동하기"}</button>
                 </div>
               )}
-              {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} />}
+              {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} />}
             </div>
           </div>
         </div>
@@ -4180,7 +4207,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canAdd, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, treeFocus, setTreeFocus, totalXp, solvedCount }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canAdd, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, treeFocus, setTreeFocus, totalXp, solvedCount }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -4240,7 +4267,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, che
       )}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
-      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening}
+      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom }}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} />} />}
 
@@ -5601,6 +5628,11 @@ export default function App() {
     // (17차) 집중 학습에 들어간 오프닝도 "최근 오프닝" 풀에 추가 — 일일 퀘스트 후보로 사용됨.
     if (nm) setRecentOpenings((prev) => [nm, ...prev.filter((x) => x !== nm)].slice(0, 10));
   }, []);
+  // (프로필) chess.com 최근 대국의 "보기" — 그 대국 기보를 학습 보드로 불러온다(끝 포지션에서 뒤로 넘겨보기 가능).
+  const onOpenGame = useCallback((moves) => {
+    if (!moves || !moves.length) return;
+    setTab("learn"); setLearnFocus(null); setLearnSans(moves); setLearnFuture([]);
+  }, []);
   const onOpenPuzzle = useCallback(async (pzId, fallback) => {
     setTab("puzzle");
     let pz = await puzzleFetch(puzzleNo(pzId));   // (기능2) 서버(전역)에서 조회 — 생성자 무관
@@ -5722,7 +5754,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} unlocked={unlocked} mainQuest={mainQuest} onClaimStage={claimMainStage} />}
         {tab === "store" && <StoreTab coins={ocCoins} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canAdd={canAdd} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} treeFocus={treeFocus} setTreeFocus={setTreeFocus} totalXp={totalXp} solvedCount={solved.size} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canAdd={canAdd} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} treeFocus={treeFocus} setTreeFocus={setTreeFocus} totalXp={totalXp} solvedCount={solved.size} />}
       </main>
 
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderTop: "1px solid #000", height: 66, paddingBottom: "env(safe-area-inset-bottom)" }}>
