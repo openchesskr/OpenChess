@@ -599,10 +599,12 @@ function canCaptureSquareLegally(board, tr, tc, side) {
 // (16차→18차) color 진영 기물 중, 상대가 다음 수에 잡아 실질 손실(≥1)을 낼 수 있는 기물이 있는지 — 있다면 그 최대 손실값.
 // (18차) SEE 기하학 계산만으론 "체크 중이라 위협을 실행할 수 없는" 경우(예: Bxf7+ 이후 Qxg5는 체크 방치라 불법)를
 // 걸러내지 못해 탁월 오탐의 원인이 됐다 — 실제로 그 칸을 합법적으로 잡을 수 있을 때만 위협으로 인정한다.
-function hangingLoss(board, color) {
+// (20차) skip: 집계에서 제외할 칸 — 방금 이동한 기물의 도착 칸을 빼기 위해 사용(그 칸의 손익은 net에서 별도 계산).
+function hangingLoss(board, color, skip) {
   const enemy = color === "w" ? "b" : "w";
   let maxLoss = 0;
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (skip && skip[0] === r && skip[1] === c) continue;
     const p = board[r][c]; if (!p || p.c !== color || p.t === "K") continue;
     const gain = seeSquare(board, r, c, enemy);
     if (gain > maxLoss && canCaptureSquareLegally(board, r, c, enemy)) maxLoss = gain;
@@ -635,8 +637,11 @@ function isSacrifice(board, sanRaw, color) {
   }
   // (16차) 이 수 자체가 기물을 잡히는 칸으로 옮기지 않아도, 상대가 이미 걸고 있던 기물 잡는 위협을
   // (더 급한 수를 두느라) 그대로 무시했다면 — 그 역시 탁월한 수로 본다. (18차) 임계값도 2점 이상으로 강화.
+  // (20차) afterHang은 방금 이동한 기물의 도착 칸을 제외하고 집계한다 — 그 칸의 손익은 위의 net(capturedVal-oppGain)이
+  // 이미 정확히 계산했으므로, 동가 교환(net=0)인 잡는 수가 "기물을 방치했다"로 이중 집계돼 탁월 오탐을 내는 것을 막는다
+  // (예: 이탈리안에서 ...Nxf3+ — 나이트 교환+체크일 뿐인데 b4에 잡히는 Bc5와 f3 나이트가 함께 집계돼 희생으로 오판).
   const beforeHang = hangingLoss(board, color);
-  const afterHang = hangingLoss(after, color);
+  const afterHang = hangingLoss(after, color, [tr, tc]);
   if (beforeHang >= 2 && afterHang >= 2) {
     // (18차) 두 기물이 동시에 공격받는(포크) 상황에서 위협받던 기물 자신을 움직여 다른 기물을 내주는 것은,
     // 살린 기물이 내준 기물보다 가치가 "낮을" 때만 비직관적 선택으로 보고 탁월로 인정한다(동가·상위 구출은 당연한 수).
@@ -731,6 +736,22 @@ function buildSan(board, fr, fc, tr, tc, color, ep, promo) {
   const bare = buildSanBare(board, fr, fc, tr, tc, color, ep, promo);
   if (!bare) return null;
   return bare + checkSuffix(board, bare, color);
+}
+/* (20차) 수순 전체를 시작 위치부터 재생하며 각 수에 체크(+)/체크메이트(#) 기호를 보정 —
+   출처(과거 저장 퍼즐, 외부 PGN 등)와 무관하게 기보 '표시'가 항상 올바른 기호를 갖도록 한다.
+   재생 불가능한 수를 만나면 그 이후는 원본 그대로 반환(깨진 보드 상태로 잘못 붙이지 않음). */
+function decorateLine(sans) {
+  let b = startBoard(); let broken = false;
+  return (sans || []).map((s, i) => {
+    if (broken || !s) return s;
+    const color = i % 2 === 0 ? "w" : "b";
+    try {
+      if (!sanSrc(b, s, color)) { broken = true; return s; }
+      const d = decorateSan(b, s, color);
+      b = applySan(b, s, color);
+      return d || s;
+    } catch { broken = true; return s; }
+  });
 }
 
 
@@ -879,7 +900,9 @@ function parsePgnSans(pgn) {
     if (/^(1-0|0-1|1\/2-1\/2|\*)$/.test(t)) break;
     t = t.replace(/^\d+\.(\.\.)?/, "");
     if (!t) continue;
-    if (/^[a-hKQRBNO][a-h1-8xKQRBNO\-+#=]*$/.test(t)) out.push(t.replace(/[+#]/g, ""));
+    // (20차) 체크(+)·체크메이트(#) 기호를 제거하지 않고 보존한다 — 기호를 지우면 보드 상단 기보·분석 창에서
+    // 체크/메이트 표기가 사라지고, 접미사가 붙은 학습 탭 수순(buildSan)·스냅샷 트리 키와의 매칭도 어긋난다.
+    if (/^[a-hKQRBNO][a-h1-8xKQRBNO\-+#=]*$/.test(t)) out.push(t);
   }
   return out;
 }
@@ -948,7 +971,8 @@ function useChessCom(username) {
     return () => { cancelled = true; };
   }, [username]);
   const analyze = useCallback((pathSans) => {
-    const gs = state.games.filter((g) => g.moves.length >= pathSans.length && pathSans.every((s, i) => g.moves[i] === s));
+    // (20차) 기보에 +/#가 보존되므로, 출처(체스닷컴 PGN vs 학습 탭 buildSan)에 따른 접미사 차이에 흔들리지 않게 기호를 떼고 비교.
+    const gs = state.games.filter((g) => g.moves.length >= pathSans.length && pathSans.every((s, i) => stripSuffix(g.moves[i]) === stripSuffix(s)));
     if (!gs.length) return null;
     let w = 0, d = 0, l = 0; const next = {}, nextRes = {};
     for (const g of gs) {
@@ -970,7 +994,10 @@ function useChessCom(username) {
 function fmtEvalCp(cp, mate) {
   // (16차) "#"(체스 표기의 체크메이트 기호) 대신, 백/흑 수를 모두 합친 실제 남은 수(ply) 수를 M뒤에 붙여 표기한다.
   // 메이트를 부르는 쪽 기준 mate>0이면 그 쪽이 마지막 수를 두므로 2*mate-1수, mate<0(메이트 당하는 쪽 기준)이면 2*|mate|수.
-  if (mate != null) { const plies = mate > 0 ? 2 * mate - 1 : 2 * Math.abs(mate); return (mate > 0 ? "M" : "-M") + plies; }
+  if (mate != null) {
+    if (mate === 0) return "#";   // (20차) 이미 체크메이트(남은 수 0) — "-M0" 대신 메이트 기호로 표기
+    const plies = mate > 0 ? 2 * mate - 1 : 2 * Math.abs(mate); return (mate > 0 ? "M" : "-M") + plies;
+  }
   if (cp == null) return null;
   const v = cp / 100; return (v >= 0 ? "+" : "") + v.toFixed(2);
 }
@@ -990,12 +1017,17 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
   if (!best) return null;
   const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
   const mw = prevSans.length % 2 === 0; const col = mw ? "w" : "b";
+  // (20차) '최선의 수'(별)는 엔진 1순위 수를 그대로 뒀을 때만 부여한다 — 서로 다른 두 포지션 평가의
+  // depth 노이즈로 loss가 우연히 ≤10이 된 차선 수까지 별이 붙던 문제(가짜 최선 수) 수정.
+  const bestSan = best.best ? uciToSan(boardFromSans(prevSans), best.best, col) : null;
+  const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
   const after = await engine.evaluate(sansToFen([...prevSans, san]), depth);
   if (!after) return null;
   const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
   const ourCp = -afterOpp;
-  const loss = bestCp - ourCp;
+  const loss = matched ? 0 : bestCp - ourCp;   // 최선수 그 자체는 손실 0(노이즈 제거) — analyzeGame과 동일 규칙
   let kind = tierOf(loss);
+  if (kind === "best" && !matched) kind = "excellent";
   const decided = Math.abs(ourCp) > 200;
   const losing = ourCp <= -200;
   if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant";
@@ -1053,6 +1085,8 @@ const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : 
 // posEval[i] 하나로 최선수 손실(둔 수==1순위면 0)과 다음 포지션 평가치를 모두 얻는다. movetime 상한으로
 // 포지션당 시간을 제한해 전체 분석 시간을 예측 가능하게 한다.
 async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) {
+  // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
+  fullSans = decorateLine(fullSans);
   const N = fullSans.length;
   // MultiPV-2: 각 포지션을 한 번만 평가해 최선수(pv0)와 2순위(pv1)를 함께 얻는다(중복 평가 없음).
   // 2순위와의 격차로 "유일한 수(Great)"를 판정하고, movetime 상한으로 시간이 폭주하지 않게 한다.
@@ -1077,8 +1111,9 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     // 둔 수가 엔진 최선수면 손실 0(노이즈 제거), 아니면 둔 뒤 포지션(= posEval[i+1], 상대 관점) 부호 반전
     const playedCp = matched ? bestCp : -posEval[i + 1].cp;
     const loss = Math.max(0, bestCp - playedCp);
-    // 등급
+    // 등급 — (20차) '최선의 수'(별)는 엔진 1순위 수를 실제로 뒀을 때만(loss 노이즈로 차선 수에 별이 붙는 것 방지)
     let kind = tierOf(loss);
+    if (kind === "best" && !matched) kind = "excellent";
     const parent = snapNode(fullSans.slice(0, i));
     const mv = parent && parent.moves ? parent.moves.find((x) => stripSuffix(x.san) === playedSan) : null;
     if (mv && mv.book) kind = "book";
@@ -1147,14 +1182,23 @@ function moveNumber(ply) { return Math.floor(ply / 2) + 1 + (ply % 2 === 0 ? "."
 function fmtFull(n) { return n == null ? "—" : Number(n).toLocaleString("en-US"); }
 function moverEval(m, ply) {
   const sgn = ply % 2 === 0 ? 1 : -1;
-  if (m.live) return (m.live.mate != null ? (m.live.mate > 0 ? 1e5 : -1e5) : m.live.cp) * sgn;
+  if (m.live) return (m.live.mate != null ? (mateWhiteWins(m.live.mate, m.live.win) ? 1e5 : -1e5) : m.live.cp) * sgn;
   if (m.evalCp != null) return m.evalCp * sgn;
   if (m.mate != null) return (m.mate > 0 ? 1e5 : -1e5) * sgn;
   return null;
 }
 // (17차) 메이트로 이어지는 수를 null로 버려 평가치 바(fallbackEval)에서 최선의 수가 누락되던 버그 수정 —
 // posEval의 다른 경로(onEvalProgress)와 동일한 ±1000 표기 관례로 메이트도 값을 갖도록 한다.
-function whiteEval(m) { if (m.live) return m.live.mate != null ? (m.live.mate > 0 ? 1000 : -1000) : m.live.cp; if (m.evalCp != null) return m.evalCp; if (m.mate != null) return m.mate > 0 ? 1000 : -1000; return null; }
+// (20차) mate===0(이미 체크메이트인 포지션)은 부호를 잃으므로 live.win('w'|'b')으로 승자를 판별한다.
+const mateWhiteWins = (mate, win) => (win ? win === "w" : mate > 0);
+function whiteEval(m) { if (m.live) return m.live.mate != null ? (mateWhiteWins(m.live.mate, m.live.win) ? 1000 : -1000) : m.live.cp; if (m.evalCp != null) return m.evalCp; if (m.mate != null) return m.mate > 0 ? 1000 : -1000; return null; }
+// (20차) 평가치 바 표기용 — 숫자로 뭉개지 않고 {cp}|{mate,win}을 그대로 넘겨 메이트를 M수로 표기할 수 있게 한다.
+function whiteEvalObj(m) {
+  if (m.live) return m.live.mate != null ? { mate: m.live.mate, win: m.live.win || (m.live.mate > 0 ? "w" : "b") } : { cp: m.live.cp };
+  if (m.evalCp != null) return { cp: m.evalCp };
+  if (m.mate != null) return { mate: m.mate, win: m.mate > 0 ? "w" : "b" };
+  return null;
+}
 function hasRealEval(m) { return !!m.live || m.evalCp != null || m.mate != null; }
 function assignTiers(moves, ply, board, keyStr) {
   const color = ply % 2 === 0 ? "w" : "b";
@@ -1231,9 +1275,13 @@ function badgeIcon(kind, size = 14) {
 
 /* ============================================================ 평가 막대 (백=왼쪽, 숫자 항상 보이게) ============================================================ */
 function EvalBar({ cp, width, depth }) {
-  const e = cp == null ? 0 : Math.max(-4, Math.min(4, cp / 100));
+  // (20차) cp는 숫자(cp) 또는 {cp}|{mate,win} 객체 — 메이트 수순에서 +10.00이 아니라 M수로 표기한다.
+  const ev = cp == null ? null : (typeof cp === "number" ? { cp } : cp);
+  const num = ev == null ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : ev.cp);
+  const e = Math.max(-4, Math.min(4, num / 100));
   const whitePct = ((4 + e) / 8) * 100;
-  const txt = cp == null ? "0.00" : fmtEvalCp(cp);
+  // 이미 체크메이트인 포지션(mate===0)은 남은 수가 없으므로 결과 스코어로 표기.
+  const txt = ev == null ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate));
   // (18차 UX5) depth 숫자 대신, 타이핑 인디케이터풍 3-dot 바운스로 "엔진이 탐색 중"임을 표현하고
   // 옆의 흰색 도움말 아이콘을 누르면 말풍선으로 "n수 후까지 탐색 중.." 수치를 자세히 보여준다.
   const [tipOpen, setTipOpen] = useState(false);
@@ -1376,7 +1424,9 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
 /* 기보: "기보" 라벨 없이 굵은 흰색 텍스트만 */
 // (UI4) 기보의 각 수를 누르면 그 포지션으로 바로 이동한다(onJump). onJump가 없으면 예전처럼 순수 텍스트로 표시.
 function sansToPgnText(sans) {
-  const parts = []; sans.forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
+  // (20차) 표기 직전에 체크/체크메이트 기호를 보정 — 퍼즐 창 기보 등 어떤 출처의 수순이든 +/#가 올바르게 표시된다.
+  const deco = decorateLine(sans);
+  const parts = []; deco.forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
   return parts.join(" ");
 }
 // (18차 UI6) 기보는 Playfair Display 폰트로 표기한다.
@@ -1384,10 +1434,11 @@ const SEQ_FONT = "'Playfair Display', 'Noto Sans KR', serif";
 // (18차 UX3) 수를 되돌리거나 기보를 클릭해 이전 수로 돌아가도 이후 수들(future)이 기보에서 사라지지 않고
 // 흐리게 계속 표시되며, 현재 수만 볼드로 강조된다. future 수를 클릭하면 그 수까지 다시 진행한다.
 function SequenceBar({ sans, future = [], onJump }) {
-  const all = [...sans, ...(future || [])];
+  // (20차) 보드 상단 기보에 체크(+)/체크메이트(#) 기호가 항상 표시되도록 표기 직전에 보정한다.
+  const all = useMemo(() => decorateLine([...sans, ...(future || [])]), [sans.join(" "), (future || []).join(" ")]);
   if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
   if (!onJump) {
-    const parts = []; sans.forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
+    const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
     return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
@@ -1669,14 +1720,19 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     const childWhite = (ply + 1) % 2 === 0 ? 1 : -1;
     (async () => {
       // (기능1) 최종 depth까지 기다리지 않고, 얕은 depth부터 실시간으로 평가치를 갱신해 보여준다.
+      // (20차) 메이트를 ±1000cp 숫자로 뭉개지 않고 {mate,win} 객체로 보존 — 평가치 바가 M수로 표기한다.
+      // mate>0=둘 차례가 메이트를 부름, mate===0=둘 차례가 이미 메이트당한 상태.
+      const mkPosEval = (ev) => ev.mate != null
+        ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b" }
+        : { cp: ev.cp * baseWhite };
       const onEvalProgress = (partial) => {
         if (cancelled || !partial) return;
-        setPosEval(partial.mate != null ? (partial.mate > 0 ? 1000 : -1000) * baseWhite : partial.cp * baseWhite);
+        setPosEval(mkPosEval(partial));
         bumpDepth(partial.depth);
       };
       const be = await engine.evaluate(sansToFen(sans), 16, onEvalProgress);
       if (cancelled || !be) return;
-      setPosEval(be.mate != null ? (be.mate > 0 ? 1000 : -1000) * baseWhite : be.cp * baseWhite);
+      setPosEval(be.mate != null || be.cp != null ? mkPosEval(be) : null);
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
       const curNonbook = () => cur.filter((m) => !m.book).length;
@@ -1716,15 +1772,19 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         if (cancelled) break;
         // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게 갱신되며
         // "엔진이 계산하며 평가를 수정하는" 과정이 시각적으로 보인다. 최종 depth에서 한 번 더 확정.
+        // (20차) mate===0(그 수로 체크메이트 완성)일 때 부호가 사라지므로 win으로 승자를 함께 보존한다.
+        const mkLive = (ev2) => ev2.mate != null
+          ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b" }
+          : { cp: ev2.cp * childWhite };
         const onMoveProgress = (partial) => {
           if (cancelled || !partial) return;
-          const live = partial.mate != null ? { mate: partial.mate * childWhite } : { cp: partial.cp * childWhite };
+          const live = mkLive(partial);
           setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
           bumpDepth(partial.depth);
         };
         const ev = await engine.evaluate(sansToFen([...sans, san]), 15, onMoveProgress);
         if (cancelled || !ev) continue;
-        const live = ev.mate != null ? { mate: ev.mate * childWhite } : { cp: ev.cp * childWhite };
+        const live = mkLive(ev);
         setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
       }
     })();
@@ -1763,9 +1823,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // 서로 다르게 보이는" 문제의 원인이었다(스냅샷과 live는 서로 다른 depth의 값이라 직접 비교 불가).
   const fallbackEval = useMemo(() => {
     const liveActive = liveOn && engine && engine.status === "ready";
-    const whites = moves.filter((m) => !(liveActive && !m.live)).map((m) => whiteEval(m)).filter((v) => v != null);
-    if (!whites.length) return null;
-    return ply % 2 === 0 ? Math.max(...whites) : Math.min(...whites);
+    const cands = moves.filter((m) => !(liveActive && !m.live)).map((m) => ({ m, v: whiteEval(m) })).filter((x) => x.v != null);
+    if (!cands.length) return null;
+    // (20차) 숫자 비교로 최선 수를 고르되, 평가치 바에는 메이트 정보가 살아있는 객체를 넘긴다(M수 표기).
+    const pick = cands.reduce((a, b) => (ply % 2 === 0 ? (b.v > a.v ? b : a) : (b.v < a.v ? b : a)));
+    return whiteEvalObj(pick.m);
   }, [moves, ply, liveOn, engine && engine.status]);
 
   const board = useMemo(() => boardFromSans(sans), [key]);
@@ -1894,9 +1956,13 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       if (cancel || !best || !after) return;
       const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
-      const ourCp = -afterOpp; const loss = bestCp - ourCp;
-      let k = tierOf(loss);
       const col = sans.length % 2 === 0 ? "w" : "b";
+      // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 부여(가짜 최선 수 방지).
+      const bestSan = best.best ? uciToSan(boardFromSans(sans), best.best, col) : null;
+      const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
+      const ourCp = -afterOpp; const loss = matched ? 0 : bestCp - ourCp;
+      let k = tierOf(loss);
+      if (k === "best" && !matched) k = "excellent";
       const decided = Math.abs(ourCp) > 200, losing = ourCp <= -200;
       if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(decided && losing)) k = "brilliant";
       if (decided) { if (k === "blunder") k = "mistake"; else if (k === "mistake") k = "inaccuracy"; else if (k === "inaccuracy") k = "good"; }
@@ -2457,11 +2523,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     if (!best) return null;
     const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;     // 둘 차례(=우리) 관점 최선
     const mw = prevSans.length % 2 === 0; const col = mw ? "w" : "b";
+    // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 — depth 노이즈로 차선 수에 별이 붙던 문제 수정.
+    const bestSan = best.best ? uciToSan(boardFromSans(prevSans), best.best, col) : null;
+    const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
     const computeKind = (after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp; // 상대 관점
       const ourCp = -afterOpp;
-      const loss = bestCp - ourCp;
+      const loss = matched ? 0 : bestCp - ourCp;
       let kind = tierOf(loss);
+      if (kind === "best" && !matched) kind = "excellent";
       const decided = Math.abs(ourCp) > 200;   // 수를 둔 뒤에도 |평가|>2점 → 승부 기울어짐
       const losing = ourCp <= -200;            // 이 수를 둔 쪽이 불리
       if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant";
@@ -3434,7 +3504,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     const info = sanSrc(boardFromSans(prevSans), stripSuffix(mvSan), moverColor);
     if (!info || !info.to) { setMoveIcon(null); return; }
     const key = prevSans.join(",") + "|" + mvSan;
-    const fallback = isSacrifice(boardFromSans(prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : "best");
+    // (20차) 엔진을 못 쓰는 상황의 fallback을 'best'에서 '아이콘 없음'으로 — 아무 수에나 최선 별이 붙던 문제 수정.
+    const fallback = isSacrifice(boardFromSans(prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null);
+    if (!fallback) { setMoveIcon(null); return; }
     setMoveIcon({ key, to: info.to, kind: fallback });
     let cancelled = false;
     if (liveOn && engine && engine.status === "ready") {
