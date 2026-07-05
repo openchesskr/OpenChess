@@ -318,8 +318,9 @@ function useEngine() {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
     queue.current.push({ resolve, last: null, onProgress, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
   }), [pump]);
-  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5) => new Promise((resolve) => {
-    queue.current.push({ resolve, multi: true, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + depth] }); pump();
+  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime) => new Promise((resolve) => {
+    const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
+    queue.current.push({ resolve, multi: true, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump]);
   return { status, evaluate, evaluateMulti };
 }
@@ -999,6 +1000,14 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
   const losing = ourCp <= -200;
   if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant";
   if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+  // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데 그 이점을 응징 못 해 평가치가 감소하되,
+  // 결과가 뒤집힐(패배) 정도는 아닌 경우. 후보일 때만 직전 포지션을 1회 추가 평가해 상대 손실을 확인한다.
+  if (["inaccuracy", "mistake", "good"].includes(kind) && prevSans.length >= 1 && bestCp >= 120 && loss >= 100 && ourCp >= -30) {
+    try {
+      const oppBest = await engine.evaluate(sansToFen(prevSans.slice(0, -1)), depth);
+      if (oppBest) { const oppBestCp = oppBest.mate != null ? (oppBest.mate > 0 ? 1e5 : -1e5) : oppBest.cp; if (oppBestCp + bestCp >= 100) kind = "miss"; }
+    } catch { }
+  }
   return kind;
 }
 // (19차 기능3) chess.com 게임 리뷰식 정확도 — 공개된 승률 기대값 모델 기반 근사(오차 ~1% 이내 목표).
@@ -1020,59 +1029,82 @@ function gameAccuracyFrom(accs, winsBefore) {
     wsum += w; num += w * accs[i];
   }
   const weighted = wsum > 0 ? num / wsum : harmonic;
-  return Math.round(((weighted + harmonic) / 2) * 10) / 10;
+  return calibrateAccuracy((weighted + harmonic) / 2);
+}
+// (정확도 보정) chess.com(CAPS2)은 공개 승률 공식보다 체계적으로 낮게 나온다 — 실제 게임의 '평가치를
+// 그대로' 공식에 넣어도 우리 값이 ~13점 높았다(엔진 depth 문제가 아니라 모델 차이). 실측 정답지
+// (백 88.0→74.5, 흑 79.3→69.0)에 양끝 앵커(0→0, 100→100)를 더해 구간 선형으로 보정한다.
+// 표본이 늘면 앵커를 다듬는다.
+function calibrateAccuracy(a) {
+  if (a == null) return null;
+  let c;
+  if (a <= 79.3) c = a * (69.0 / 79.3);
+  else if (a <= 88.0) c = 69.0 + (a - 79.3) * (5.5 / 8.7);
+  else c = 74.5 + (a - 88.0) * (25.5 / 12.0);
+  return Math.round(Math.max(0, Math.min(100, c)) * 10) / 10;
 }
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
 const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : (l.cp != null ? l.cp : 0)) : 0;
 // 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
 // 실제 최선수를 뒀을 때 손실이 정확히 0이 되어, 얕은 depth 탐색 노이즈로 인한 가짜 실수가 사라진다.
-// (분석 최적화) MultiPV(3배 비용) 대신 단일 PV 평가로 최선수를 얻고, 둔 수가 최선수와 같으면 손실 0으로
-// 확정해 추가 평가를 생략한다(대부분의 수가 최선수인 게임은 포지션당 1회 평가 → 빨라진 만큼 depth를 높인다).
-// movetime 상한으로 포지션당 시간을 제한해 전체 분석 시간을 예측 가능하게 유지한다.
-async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 400) {
+// (분석 최적화) 각 포지션을 '딱 한 번'만 단일 PV로 평가해 캐싱한다. 예전엔 둔 수가 1순위가 아니면
+// "둔 뒤 포지션"을 추가로 평가했는데, 그 포지션은 다음 반복에서 또 평가돼(중복) 시간이 2배 가까이 들었다.
+// posEval[i] 하나로 최선수 손실(둔 수==1순위면 0)과 다음 포지션 평가치를 모두 얻는다. movetime 상한으로
+// 포지션당 시간을 제한해 전체 분석 시간을 예측 가능하게 한다.
+async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) {
   const N = fullSans.length;
+  // MultiPV-2: 각 포지션을 한 번만 평가해 최선수(pv0)와 2순위(pv1)를 함께 얻는다(중복 평가 없음).
+  // 2순위와의 격차로 "유일한 수(Great)"를 판정하고, movetime 상한으로 시간이 폭주하지 않게 한다.
+  const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
+  for (let i = 0; i <= N; i++) {
+    const lines = await withTimeout(engine.evaluateMulti(sansToFen(fullSans.slice(0, i)), depth, 2, movetime), 8000);
+    const p0 = lines && lines[0], p1 = lines && lines[1];
+    posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null };
+    onProgress && onProgress((i + 1) / (N + 1));
+  }
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
-  const graphCp = new Array(N + 1).fill(0); // 백 관점 평가치 시퀀스(그래프용)
+  const graphCp = new Array(N + 1);
+  for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
   for (let i = 0; i < N; i++) {
     const moverWhite = i % 2 === 0;
-    const preSans = fullSans.slice(0, i);
-    const brd = boardFromSans(preSans);
+    const brd = boardFromSans(fullSans.slice(0, i));
     const color = moverWhite ? "w" : "b";
     const playedSan = stripSuffix(fullSans[i]);
-    // 이 포지션의 최선수 1개(둘 차례=둔 사람 관점 평가치 + 최선수 UCI)
-    const r = await withTimeout(engine.evaluate(sansToFen(preSans), depth, null, movetime), 8000);
-    const bestCp = cpOfLine(r);
-    const bestSan = r && r.best ? uciToSan(brd, r.best, color) : null;
-    // 둔 수가 엔진 최선수와 같으면 손실 0(추가 평가 생략), 아니면 둔 뒤 포지션을 한 번 더 평가(상대 관점 → 부호 반전)
-    let playedCp;
-    if (bestSan && stripSuffix(bestSan) === playedSan) playedCp = bestCp;
-    else { const after = await withTimeout(engine.evaluate(sansToFen(fullSans.slice(0, i + 1)), depth, null, movetime), 8000); playedCp = after ? -cpOfLine(after) : bestCp; }
+    const bestCp = posEval[i].cp;                         // 이 포지션의 최선(둔 사람 관점)
+    const bestSan = posEval[i].best ? uciToSan(brd, posEval[i].best, color) : null;
+    const matched = !!(bestSan && stripSuffix(bestSan) === playedSan);
+    // 둔 수가 엔진 최선수면 손실 0(노이즈 제거), 아니면 둔 뒤 포지션(= posEval[i+1], 상대 관점) 부호 반전
+    const playedCp = matched ? bestCp : -posEval[i + 1].cp;
     const loss = Math.max(0, bestCp - playedCp);
-    if (i === 0) graphCp[0] = moverWhite ? bestCp : -bestCp;
-    graphCp[i + 1] = moverWhite ? playedCp : -playedCp; // 둔 뒤 포지션(백 관점)
     // 등급
     let kind = tierOf(loss);
-    const parent = snapNode(preSans);
+    const parent = snapNode(fullSans.slice(0, i));
     const mv = parent && parent.moves ? parent.moves.find((x) => stripSuffix(x.san) === playedSan) : null;
     if (mv && mv.book) kind = "book";
     else {
       const decided = Math.abs(playedCp) > 200, losing = playedCp <= -200;
       try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+      // 유일한 수(Great, 매우 좋아요): 최선수를 뒀는데 2순위가 분명히 열세라(대안이 없다) 반드시 그 수여야 했던 경우.
+      const gap = posEval[i].second == null ? 9999 : (bestCp - posEval[i].second);
+      if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
+      // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데, 그 이점을 응징 못 해 평가치가
+      // 의미있게 감소(loss≥100)하되, 결과가 뒤집힐(패배) 정도는 아닌 경우(playedCp≥-30).
+      if (["inaccuracy", "mistake", "good"].includes(kind) && i >= 1
+        && ["mistake", "blunder"].includes(moves[i - 1].kind)
+        && bestCp >= 120 && loss >= 100 && playedCp >= -30) kind = "miss";
     }
     const noPenalty = ["best", "only", "brilliant", "book"].includes(kind);
-    // 승률(둔 사람 관점): 손실이 0이면 before==after → 정확도 100
     const winBefore = winPctFromCp(bestCp), winAfter = winPctFromCp(playedCp);
     const acc = noPenalty ? 100 : moveAccuracy(winBefore, winAfter);
     moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc });
     if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
-    onProgress && onProgress((i + 1) / N);
   }
   return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp) };
 }
-const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
-const QCOLOR = { brilliant: T.brilliant, best: T.best, only: T.only, excellent: T.excellent, good: T.good, inaccuracy: T.inaccuracy, mistake: T.mistake, blunder: T.blunder, book: T.book, pending: T.inkSoft };
+const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
+const QCOLOR = { brilliant: T.brilliant, best: T.best, only: T.only, excellent: T.excellent, good: T.good, inaccuracy: T.inaccuracy, miss: "#C8562F", mistake: T.mistake, blunder: T.blunder, book: T.book, pending: T.inkSoft };
 const KW = {
   "NORMAL": { bg: "#E3EDD9", fg: "#3F5B33", desc: "가장 일반적으로 두어지는 수" },
   "TOP LEVEL": { bg: "#F3E6C2", fg: "#7A5A14", desc: "마스터가 압도적으로 선택" },
@@ -1192,6 +1224,7 @@ function badgeIcon(kind, size = 14) {
   if (kind === "best") return <Star size={size} fill="#fff" />;
   if (kind === "excellent") return <IconExcellent size={size} />;
   if (kind === "good") return <Check size={size} />;
+  if (kind === "miss") return <X size={size} strokeWidth={3.2} />;
   if (kind === "pending") return <span style={{ fontWeight: 800, fontSize: size - 2 }}>…</span>;
   return <span style={{ fontWeight: 800, fontSize: size - 1 }}>{kind === "inaccuracy" ? "?!" : kind === "mistake" ? "?" : "??"}</span>;
 }
@@ -1509,7 +1542,7 @@ const MASCOT_ART = {
 };
 const HAS_MASCOT_ART = Object.values(MASCOT_ART).some(Boolean);
 /* 수 품질·상황 → 마스코트 이모트 */
-const Q_MASCOT = { brilliant: ["kokoa", "celebrate"], best: ["milku", "great"], excellent: ["milku", "wink"], good: ["milku", "great"], book: ["milku", "wink"], only: ["milku", "surprise"], pending: ["milku", "think"], inaccuracy: ["kokoa", "think"], mistake: ["kokoa", "surprise"], blunder: ["kokoa", "angry"] };
+const Q_MASCOT = { brilliant: ["kokoa", "celebrate"], best: ["milku", "great"], excellent: ["milku", "wink"], good: ["milku", "great"], book: ["milku", "wink"], only: ["milku", "surprise"], pending: ["milku", "think"], inaccuracy: ["kokoa", "think"], miss: ["kokoa", "surprise"], mistake: ["kokoa", "surprise"], blunder: ["kokoa", "angry"] };
 function mascotForKind(kind) { return Q_MASCOT[kind] || ["milku", "great"]; }
 
 function MascotAvatar({ size = 44, name = "milku" }) {
@@ -2320,7 +2353,7 @@ function EvalGraph({ evalWin, moves }) {
   );
 }
 // (19차 기능3) 기보 분석 모드 — chess.com 게임 리뷰 레이아웃(정확도·수 체계별 개수·평가치 그래프).
-const ANALYSIS_KIND_ROWS = [["brilliant", "탁월합니다"], ["best", "최고"], ["excellent", "우수합니다"], ["good", "좋습니다"], ["book", "이론"], ["inaccuracy", "부정확"], ["mistake", "실수"], ["blunder", "블런더"]];
+const ANALYSIS_KIND_ROWS = [["brilliant", "탁월합니다"], ["only", "매우 좋아요"], ["best", "최고"], ["excellent", "우수합니다"], ["good", "좋습니다"], ["book", "이론"], ["inaccuracy", "부정확"], ["miss", "놓친 수"], ["mistake", "실수"], ["blunder", "블런더"]];
 function AnalysisModal({ sans, engine, onClose }) {
   const [prog, setProg] = useState(0);
   const [result, setResult] = useState(null);
@@ -2330,7 +2363,7 @@ function AnalysisModal({ sans, engine, onClose }) {
     if (!engine || engine.status !== "ready") { setErr(true); return; }
     if (!sans || sans.length < 1) { setErr(true); return; }
     (async () => {
-      try { const r = await analyzeGame(sans, engine, 16, (p) => { if (!cancelled) setProg(p); }, 400); if (!cancelled) setResult(r); }
+      try { const r = await analyzeGame(sans, engine, 18, (p) => { if (!cancelled) setProg(p); }, 250); if (!cancelled) setResult(r); }
       catch (e) { if (!cancelled) setErr(true); }
     })();
     return () => { cancelled = true; };
@@ -4178,7 +4211,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
           {myPub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={myPub.title} earned compact /></div>}
         </div>
       </div>
-      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} />
+      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} />
       {editOpen && (
         <div onClick={() => setEditOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", marginBottom: 40 }}>
@@ -4746,7 +4779,7 @@ function FirstMovesDisplay({ firstMoves }) {
 }
 // (17차) 프로필 정보 확장 — 레벨/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
 // UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다.
-function PublicProfileStats({ pub, onOpenOpening }) {
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame }) {
   const chesscom = useChessCom(pub.chesscom);
   const lv = levelFromXp(pub.xp || 0);
   return (
@@ -4756,11 +4789,11 @@ function PublicProfileStats({ pub, onOpenOpening }) {
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
-      {pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} />}
+      {pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} />}
     </div>
   );
 }
-function UserSearchModal({ onClose, me, myUid, onOpenOpening }) {
+function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
@@ -4800,7 +4833,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening }) {
                 {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
               </div>
             </div>
-            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} />
+            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
@@ -4901,7 +4934,7 @@ function ChatsModal({ me, myUid, onClose }) {
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -4994,7 +5027,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening }) {
                 </div>
               </div>
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} />
+              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} />
               <div style={{ display: "flex", gap: 8 }}>
                 {rel === "friend" && btn("친구 삭제", () => doRemove(sel.uid), "danger", busyId)}
                 {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
@@ -5631,6 +5664,7 @@ export default function App() {
   // (프로필) chess.com 최근 대국의 "보기" — 그 대국 기보를 학습 보드로 불러온다(끝 포지션에서 뒤로 넘겨보기 가능).
   const onOpenGame = useCallback((moves) => {
     if (!moves || !moves.length) return;
+    setSearchOpen(false); setFriendsOpen(false); // 타 유저 프로필 모달에서 열었을 때 모달을 닫고 보드로 이동
     setTab("learn"); setLearnFocus(null); setLearnSans(moves); setLearnFuture([]);
   }, []);
   const onOpenPuzzle = useCallback(async (pzId, fallback) => {
@@ -5693,8 +5727,8 @@ export default function App() {
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
-      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} />}
+      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} />}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} />}
       {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
