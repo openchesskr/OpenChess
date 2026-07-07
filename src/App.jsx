@@ -357,93 +357,174 @@ function isDevelopingMove(uci, san) {
   if (san.includes("x") || san.includes("+") || san.includes("#")) return false;
   return MINOR_HOME_SQUARES.has((uci || "").slice(0, 2));
 }
-/* 풀이 라인을 '해결자(시작 시 둘 차례)가 확실한 우위를 점할 때까지' 연장.
-   각 사용자 수 뒤 결과 포지션을 평가(상대 최선 응수 반영)해 사용자 관점 평가가 target(cp) 이상이면 종료.
-   희생 콤비처럼 일시적으로 불리해도 보상이 실현되는 지점까지 이어진다. 항상 사용자 수로 끝맺음.
-   (기능3) maxPlies를 늘리고, 테마별로 "확실한 이점"의 기준을 더 엄격하게 둘 수 있다:
-   requireMaterialRecovery(희생: 희생한 기물 점수를 실질적으로 회복해야 종료) / requireCapture(응징: 실제로
-   기물을 잡아내는 수가 나와야 종료) — 둘 다 없으면 평가치 target만으로 판단(우위 점하기). */
-async function genAdvantageLine(engine, startSans, opts) {
-  const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false } = opts || {};
-  const userWhite = startSans.length % 2 === 0;   // 시작 시 둘 차례 = 해결자
-  const userColor = userWhite ? "w" : "b";
-  const startMat = materialDiff(boardFromSans(startSans), userColor);
-  let cur = startSans.slice(); const out = [];
-  let sawUserCapture = false;
-  for (let i = 0; i < maxPlies; i++) {
-    const ev = await engine.evaluate(sansToFen(cur), 6);
-    if (!ev || !ev.best) break;
-    const movingWhite = cur.length % 2 === 0;
-    const san = uciToSan(boardFromSans(cur), ev.best, movingWhite ? "w" : "b");
-    if (!san) break;
-    // (15차 추가) 반드시 필요한 첫 수(i===0, 퍼즐의 핵심) 이후로는 전개하는 수/캐슬링이 나오면 그 앞에서 끊는다.
-    if (i >= 1 && isDevelopingMove(ev.best, san)) break;
-    const isUserMove = movingWhite === userWhite;
-    if (isUserMove && san.includes("x")) sawUserCapture = true;
-    out.push(san); cur = [...cur, san];
-    if (isUserMove) {              // 방금 둔 것이 사용자 수 → 우위 판정
-      const ev2 = await engine.evaluate(sansToFen(cur), 6);
-      let userCp;
-      if (!ev2) userCp = 0;
-      else if (ev2.mate != null) { if (ev2.mate < 0) break; userCp = -100000; }   // 상대가 메이트당함 = 사용자 승
-      else userCp = -(ev2.cp || 0);               // ev2는 상대 관점 → 부호 반전
-      const matOk = !requireMaterialRecovery || materialDiff(boardFromSans(cur), userColor) >= Math.min(0, startMat);
-      const capOk = !requireCapture || sawUserCapture;
-      if (userCp >= target && matOk && capOk) break;
+/* ── (20차 기능1) 퍼즐 트리 생성 ──
+   기존의 고정 3라인(최선/차선/채택) 대신, 다양한 응수에 대한 대응력을 기르도록 "분기 트리"를 만든다.
+   · 상대 차례: 최선 응수에 더해 채택률·평가치 혼합 점수 상위 응수를 골라 최대 3갈래로 분기.
+   · 사용자 차례: 최선의 수와 우수한 대안 수(pass=true, 이 수로만 다음 단계 진행 가능)에 더해,
+     실전에서 자주 두어지지만 통과할 수 없는 유혹 수(pass=false)를 모식도 표시용으로 함께 담는다.
+   · 각 노드에 수 체계 등급(kind)·백 관점 평가치(ev)·채택률(adopt, %)을 기록해 풀이 화면의 모식도가
+     엔진·네트워크 없이도 그대로 표기할 수 있게 한다.
+   · 라인 종료 규칙(예전 genAdvantageLine과 동일): 사용자 수 뒤 사용자 관점 평가가 target(cp) 이상이면 종료.
+     테마별 추가 조건 — requireMaterialRecovery(희생: 희생한 기물 점수를 실질적으로 회복해야 종료),
+     requireCapture(응징: 실제로 기물을 잡아내는 수가 나와야 종료). 첫 수 이후의 전개하는 수/캐슬링이
+     최선이 되면 그 앞에서 끊고, 라인은 항상 사용자 수로 끝맺는다.
+   반환: { tree: { children }, lines: [{ tag, solution }] } — lines는 통과 가능한 리프 경로(검증·구버전 호환용). */
+const PUZZLE_PASS_KINDS = ["brilliant", "best", "only", "excellent"];   // 사용자 진영에서 '통과'되는 수 체계
+async function genPuzzleTree(engine, preSans, opts) {
+  const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
+    firstSan = null, maxNodes = 34 } = opts || {};
+  const userColor = preSans.length % 2 === 0 ? "w" : "b";
+  const startMat = materialDiff(boardFromSans(preSans), userColor);
+  let nodeCount = 0;
+  const uciOf = (board, san, color) => {
+    const info = sanSrc(board, stripSuffix(san), color);
+    if (!info || !info.from) return "";
+    return FILES[info.from[1]] + (8 - info.from[0]) + FILES[info.to[1]] + (8 - info.to[0]);
+  };
+  // 부모 포지션의 PV(착수자 관점) → 그 수를 둔 뒤 포지션의 백 관점 평가({cp}|{mate,win,plies})
+  const pvEvToWhite = (pv, moverWhite) => {
+    if (!pv) return null;
+    if (pv.mate != null) return { mate: pv.mate * (moverWhite ? 1 : -1), win: (pv.mate > 0) === moverWhite ? "w" : "b", plies: Math.max(0, matePliesOf(pv.mate) - 1) };
+    return pv.cp != null ? { cp: pv.cp * (moverWhite ? 1 : -1) } : null;
+  };
+  // cur 위치의 후보 수들을 등급·채택률·평가치와 함께 수집
+  async function candidatesAt(cur) {
+    const brd = boardFromSans(cur);
+    const moverWhite = cur.length % 2 === 0;
+    const color = moverWhite ? "w" : "b";
+    let pvs = null;
+    try { pvs = await engine.evaluateMulti(sansToFen(cur), 11, 6, 3500); } catch { pvs = null; }
+    if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
+    const bestCp = cpOfLine(pvs[0]);
+    const adoptBy = {};
+    try { const lc = await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
+    const cands = []; const seen = new Set();
+    pvs.forEach((pv, i) => {
+      if (!pv || !pv.uci) return;
+      const san = uciToSan(brd, pv.uci, color); if (!san) return;
+      const k = stripSuffix(san); if (seen.has(k)) return; seen.add(k);
+      const mvCp = cpOfLine(pv);
+      const loss = Math.max(0, bestCp - mvCp);
+      let kind = i === 0 ? "best" : tierOf(loss);
+      if (i > 0 && kind === "best") kind = "excellent";
+      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40) kind = "brilliant"; } catch { }
+      cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: pvEvToWhite(pv, moverWhite), uci: pv.uci });
+    });
+    // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
+    const topAdopt = Object.entries(adoptBy).filter(([k]) => !seen.has(k)).sort((a, b) => b[1] - a[1])[0];
+    if (topAdopt && topAdopt[1] >= 10 && sanSrc(brd, topAdopt[0], color)) {
+      const san = decorateSan(brd, topAdopt[0], color);
+      try {
+        const evc = await engine.evaluate(sansToFen([...cur, san]), 9);
+        if (evc) {
+          const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
+          const loss = Math.max(0, bestCp - mvCp);
+          let kind = tierOf(loss); if (kind === "best") kind = "excellent";
+          cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san]), uci: uciOf(brd, san, color) });
+        }
+      } catch { }
     }
+    return cands;
   }
-  if (out.length) { const lastMoverWhite = (startSans.length + out.length - 1) % 2 === 0; if (lastMoverWhite !== userWhite) out.pop(); }   // 사용자 수로 끝맺음
-  return out;
-}
-// (기능1) 최선 라인 외에, 해결자의 첫 수 이후 "상대가 다르게 응수했다면" 가정한 라인을 추가로 만든다.
-// 하나는 상대 응수 후보 중 평가치 2위 수, 다른 하나는 실제로 가장 많이 채택된(Lichess) 수를 상대의 응수로 고정하고,
-// 그 이후는 다시 해결자 관점 최선 수순(genAdvantageLine)으로 이어 붙인다. 기존 최선 라인과 같은 응수는 제외한다.
-async function buildAltLines(engine, solverStartSans, solution, genOpts) {
-  if (!solution || solution.length < 2) return [];
-  const posAfterFirst = [...solverStartSans, solution[0]]; // 상대가 응수할 차례
-  const seen = new Set([stripSuffix(solution[1])]);
-  const cands = [];   // { tag, move }
-  const brd = boardFromSans(posAfterFirst);
-  const color = posAfterFirst.length % 2 === 0 ? "w" : "b";
-  const pushCand = (mv) => { const k = stripSuffix(mv); if (!seen.has(k)) { cands.push({ tag: cands.length === 0 ? "eval2" : "eval3", move: mv }); seen.add(k); } };
-  // (18차 보충 기능3) 단계가 2개뿐인 퍼즐(#348701, #629891 등)을 근본적으로 줄인다:
-  //  1) MultiPV를 8개로 크게 늘려 서로 다른 대안 응수 2개를 최대한 확보
-  //  2) 그래도 부족하면 Lichess 채택 응수로 보충
-  //  3) 최후엔 합법 응수 목록에서 직접 보충 → 응수가 실제로 여럿인 한 항상 3라인이 만들어진다
-  let pvs = null;
-  try { pvs = await engine.evaluateMulti(sansToFen(posAfterFirst), 11, 8); } catch { pvs = null; }
-  for (const pv of (pvs || [])) {
-    if (cands.length >= 2) break;
-    const sn = uciToSan(brd, pv.uci, color);
-    if (sn) pushCand(sn);
+  // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
+  async function expand(cur, depth, sawUserCapture) {
+    if (depth >= maxPlies || nodeCount >= maxNodes) return [];
+    const isUserTurn = depth % 2 === 0;
+    let cands = await candidatesAt(cur);
+    if (!cands || !cands.length) return [];
+    // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음)
+    if (depth >= 1 || firstSan) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));
+    if (!cands.length) return [];
+    const canBranch = nodeCount + 2 < maxNodes;
+    let chosen;
+    if (isUserTurn) {
+      const passables = cands.filter((c) => PUZZLE_PASS_KINDS.includes(c.kind));
+      if (!passables.length) return [];
+      // 통과 가능한 대안 수 분기는 퍼즐의 핵심인 첫 수(depth 0)에서만 — 깊은 수에서까지 사용자 대안으로
+      // 분기하면 "상대 응수가 다른" 라인 대신 "내 수만 다른" 라인이 늘어나 대응력 훈련 목적이 흐려진다.
+      chosen = passables.slice(0, canBranch && depth === 0 ? 2 : 1);
+      if (canBranch && chosen.length < 3) {
+        // 유혹 수: 실전에서 자주 두어지지만 통과할 수 없는 수 — 모식도에 막힌 가지로만 표시
+        const trap = cands.filter((c) => !PUZZLE_PASS_KINDS.includes(c.kind) && (c.adopt || 0) >= 8)
+          .sort((a, b) => (b.adopt || 0) - (a.adopt || 0))[0];
+        if (trap) chosen = [...chosen, trap];
+      }
+    } else {
+      // 상대 응수: 최선 응수는 반드시 포함 + 채택률·평가치 혼합 점수 상위 — 최대 3갈래.
+      // 큰 손실 수는 실전 채택률이 유의미할 때만 라인으로 인정한다(황당한 블런더 응수 방지).
+      const plausible = cands.filter((c, i) => i === 0 || c.loss <= 250 || (c.adopt || 0) >= 5);
+      const blend = (c) => (c.adopt || 0) * 2 + Math.max(0, 300 - c.loss) / 15;
+      const ranked = [...plausible].sort((a, b) => blend(b) - blend(a));
+      chosen = [plausible[0]];
+      for (const c of ranked) { if (chosen.length >= (canBranch ? 3 : 1)) break; if (!chosen.includes(c)) chosen.push(c); }
+    }
+    const out = [];
+    for (const c of chosen) {
+      if (nodeCount >= maxNodes && out.length) break;
+      const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(c.kind) : true;
+      const node = { san: c.san, kind: c.kind, ev: c.ev, adopt: c.adopt, pass, children: [] };
+      nodeCount++;
+      if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
+      const cur2 = [...cur, c.san];
+      if (isUserTurn) {
+        const captured = sawUserCapture || c.san.includes("x");
+        let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
+        if (!terminal) {
+          const ev2 = await engine.evaluate(sansToFen(cur2), 6);
+          if (ev2) {
+            const evw = posEvalToWhite(ev2, cur2); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
+            if (ev2.mate != null && ev2.mate < 0) terminal = true;           // 상대(둘 차례)가 메이트당하는 수순 = 사용자 승
+            else {
+              const userCp = ev2.mate != null ? -100000 : -(ev2.cp || 0);    // 상대 관점 → 사용자 관점
+              const matOk = !requireMaterialRecovery || materialDiff(boardFromSans(cur2), userColor) >= Math.min(0, startMat);
+              const capOk = !requireCapture || captured;
+              if (userCp >= target && matOk && capOk) terminal = true;
+            }
+          }
+        }
+        if (!terminal) node.children = await expand(cur2, depth + 1, captured);
+        // 상대 응수가 만들어지지 않아도(깊이 상한 등) 사용자 수로 끝나는 리프이므로 그대로 둔다
+      } else {
+        node.children = await expand(cur2, depth + 1, sawUserCapture);
+        if (!node.children.some((k) => k.pass !== false)) continue;   // 상대 수로 끝나는 가지는 버린다(항상 사용자 수로 끝맺음)
+      }
+      out.push(node);
+    }
+    return out;
   }
-  if (cands.length < 2) {
+  let children;
+  if (firstSan) {
+    // 희생(탁월한 수) 테마: 첫 수는 지정된 탁월한 수로 고정하고 그 이후부터 분기한다
+    const brd = boardFromSans(preSans);
+    const color = preSans.length % 2 === 0 ? "w" : "b";
+    if (!sanSrc(brd, stripSuffix(firstSan), color)) return null;
+    const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
+    nodeCount++;
+    const cur2 = [...preSans, firstSan];
+    try { const ev2 = await engine.evaluate(sansToFen(cur2), 8); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
-      const lc = await fetchLichess(posAfterFirst, false);
-      if (lc && lc.moves && lc.moves.length) {
-        for (const m of [...lc.moves].sort((a, b) => (b.adopt || 0) - (a.adopt || 0))) { if (cands.length >= 2) break; pushCand(m.san); }
-      }
-    } catch { /* 무시 */ }
+      const lc = await fetchLichess(preSans, false);
+      const hit = lc && lc.moves && lc.moves.find((m) => stripSuffix(m.san) === stripSuffix(firstSan));
+      if (hit) node.adopt = hit.adopt;
+    } catch { }
+    if (!/#$/.test(firstSan)) node.children = await expand(cur2, 1, firstSan.includes("x"));
+    children = [node];
+  } else {
+    children = await expand(preSans, 0, false);
   }
-  if (cands.length < 2) {
-    // 합법 응수 전체에서 보충(안전장치) — 응수가 정말 하나뿐인 강제 위치면 여기서도 못 채우고 라인이 적은 게 정상.
-    const ep = epTarget(posAfterFirst);
-    outer: for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-      const p = brd[r][c]; if (!p || p.c !== color) continue;
-      for (const [tr, tc] of legalDests(brd, r, c, color, ep)) {
-        const bare = buildSanBare(brd, r, c, tr, tc, color, ep, "Q");
-        if (bare) pushCand(bare);
-        if (cands.length >= 2) break outer;
-      }
-    }
-  }
+  if (!children || !children.some((n) => n.pass !== false)) return null;
+  const tree = { children };
   const lines = [];
-  for (const alt of cands.slice(0, 2)) {
-    const afterAlt = [...posAfterFirst, alt.move];
-    const rest = await genAdvantageLine(engine, afterAlt, genOpts);
-    lines.push({ tag: alt.tag, solution: [solution[0], alt.move, ...rest] });
-  }
-  return lines;
+  (function tagLeaves(node, path) {
+    const kids = (node.children || []).filter((k) => k.pass !== false);
+    if (!kids.length) {
+      if (path.length) { node.tag = "L" + (lines.length + 1); lines.push({ tag: node.tag, solution: path }); }
+      return;
+    }
+    for (const k of kids) tagLeaves(k, [...path, k.san]);
+  })(tree, []);
+  if (!lines.length) return null;
+  return { tree, lines };
 }
 
 /* ============================================================ 라이브 Lichess Explorer ============================================================ */
@@ -643,6 +724,10 @@ function isSacrifice(board, sanRaw, color) {
   const beforeHang = hangingLoss(board, color);
   const afterHang = hangingLoss(after, color, [tr, tc]);
   if (beforeHang >= 2 && afterHang >= 2) {
+    // (20차) 희생의 기본 정의는 "실질 손실"이다. 이 수 자체가 잡은 순이득(net)이 방치한 기물 손실(afterHang)을
+    // 상쇄하고 남는다면(예: 1.e4 e5 2.d4 exd4 3.Qxd4 Nc6 4.Qd5 Nf6 5.Qf5 d5 6.exd5 Bxf5 — 퀸(9점)을 잡으며
+    // Nc6(≈2점 손실)를 방치) 총합이 이득이므로 희생이 아니다. 총손익이 -2점 이하일 때만 희생으로 본다.
+    if (net - afterHang > -2) return false;
     // (18차) 두 기물이 동시에 공격받는(포크) 상황에서 위협받던 기물 자신을 움직여 다른 기물을 내주는 것은,
     // 살린 기물이 내준 기물보다 가치가 "낮을" 때만 비직관적 선택으로 보고 탁월로 인정한다(동가·상위 구출은 당연한 수).
     if (movedThreatLoss >= 1) return VAL[info.piece] < afterHang;
@@ -991,15 +1076,28 @@ function useChessCom(username) {
 }
 
 /* ============================================================ 품질·키워드 ============================================================ */
-function fmtEvalCp(cp, mate) {
+// (20차) 엔진 mate 값(둘 차례 관점)을 "메이트까지 남은 반수(ply)"로 변환. mate>0이면 그 쪽이 마지막 수를
+// 두므로 2*mate-1수, mate<0(메이트 당하는 쪽)이면 2*|mate|수. 이 값은 둘 차례가 누구든 한 수마다 1씩 줄어든다.
+function matePliesOf(mate) { return mate === 0 ? 0 : (mate > 0 ? 2 * mate - 1 : 2 * Math.abs(mate)); }
+function fmtEvalCp(cp, mate, plies) {
   // (16차) "#"(체스 표기의 체크메이트 기호) 대신, 백/흑 수를 모두 합친 실제 남은 수(ply) 수를 M뒤에 붙여 표기한다.
-  // 메이트를 부르는 쪽 기준 mate>0이면 그 쪽이 마지막 수를 두므로 2*mate-1수, mate<0(메이트 당하는 쪽 기준)이면 2*|mate|수.
+  // (20차) mate 값을 백 관점으로 정규화하면(부호 반전) 둘 차례 정보가 사라져 남은 반수를 복원할 수 없다
+  // (M5 다음이 M4가 아닌 M3으로 건너뛰던 원인). 정규화 시점에 계산해 둔 plies를 받으면 그대로 쓴다 —
+  // 백/흑 어느 쪽이 두든 M5, M4, M3, M2, M1처럼 한 칸씩 줄어든다.
   if (mate != null) {
-    if (mate === 0) return "#";   // (20차) 이미 체크메이트(남은 수 0) — "-M0" 대신 메이트 기호로 표기
-    const plies = mate > 0 ? 2 * mate - 1 : 2 * Math.abs(mate); return (mate > 0 ? "M" : "-M") + plies;
+    const p = plies != null ? plies : matePliesOf(mate);
+    if (p === 0) return "#";   // 이미 체크메이트(남은 수 0) — "-M0" 대신 메이트 기호로 표기
+    return (mate > 0 ? "M" : "-M") + p;
   }
   if (cp == null) return null;
   const v = cp / 100; return (v >= 0 ? "+" : "") + v.toFixed(2);
+}
+// (20차) 포지션 평가(둘 차례 관점 {cp,mate}) → 백 관점 {cp}|{mate,win,plies} 객체. sansAfter = 그 포지션까지의 수순.
+function posEvalToWhite(ev, sansAfter) {
+  if (!ev || (ev.cp == null && ev.mate == null)) return null;
+  const s = sansAfter.length % 2 === 0 ? 1 : -1;
+  if (ev.mate != null) return { mate: ev.mate * s, win: (ev.mate > 0) === (s === 1) ? "w" : "b", plies: matePliesOf(ev.mate) };
+  return { cp: (ev.cp || 0) * s };
 }
 function tierOf(loss) {
   if (loss <= 10) return "best";
@@ -1194,7 +1292,7 @@ const mateWhiteWins = (mate, win) => (win ? win === "w" : mate > 0);
 function whiteEval(m) { if (m.live) return m.live.mate != null ? (mateWhiteWins(m.live.mate, m.live.win) ? 1000 : -1000) : m.live.cp; if (m.evalCp != null) return m.evalCp; if (m.mate != null) return m.mate > 0 ? 1000 : -1000; return null; }
 // (20차) 평가치 바 표기용 — 숫자로 뭉개지 않고 {cp}|{mate,win}을 그대로 넘겨 메이트를 M수로 표기할 수 있게 한다.
 function whiteEvalObj(m) {
-  if (m.live) return m.live.mate != null ? { mate: m.live.mate, win: m.live.win || (m.live.mate > 0 ? "w" : "b") } : { cp: m.live.cp };
+  if (m.live) return m.live.mate != null ? { mate: m.live.mate, win: m.live.win || (m.live.mate > 0 ? "w" : "b"), plies: m.live.plies } : { cp: m.live.cp };
   if (m.evalCp != null) return { cp: m.evalCp };
   if (m.mate != null) return { mate: m.mate, win: m.mate > 0 ? "w" : "b" };
   return null;
@@ -1281,7 +1379,7 @@ function EvalBar({ cp, width, depth }) {
   const e = Math.max(-4, Math.min(4, num / 100));
   const whitePct = ((4 + e) / 8) * 100;
   // 이미 체크메이트인 포지션(mate===0)은 남은 수가 없으므로 결과 스코어로 표기.
-  const txt = ev == null ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate));
+  const txt = ev == null ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
   // (18차 UX5) depth 숫자 대신, 타이핑 인디케이터풍 3-dot 바운스로 "엔진이 탐색 중"임을 표현하고
   // 옆의 흰색 도움말 아이콘을 누르면 말풍선으로 "n수 후까지 탐색 중.." 수치를 자세히 보여준다.
   const [tipOpen, setTipOpen] = useState(false);
@@ -1540,7 +1638,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);   // 비이론 수는 개발자가 추가한 키워드만 표기
-  const evTxt = m.live ? fmtEvalCp(m.live.cp, m.live.mate) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null);
+  const evTxt = m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null);
   return (
     <div style={{ borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
@@ -1723,7 +1821,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (20차) 메이트를 ±1000cp 숫자로 뭉개지 않고 {mate,win} 객체로 보존 — 평가치 바가 M수로 표기한다.
       // mate>0=둘 차례가 메이트를 부름, mate===0=둘 차례가 이미 메이트당한 상태.
       const mkPosEval = (ev) => ev.mate != null
-        ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b" }
+        ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
         : { cp: ev.cp * baseWhite };
       const onEvalProgress = (partial) => {
         if (cancelled || !partial) return;
@@ -1774,7 +1872,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         // "엔진이 계산하며 평가를 수정하는" 과정이 시각적으로 보인다. 최종 depth에서 한 번 더 확정.
         // (20차) mate===0(그 수로 체크메이트 완성)일 때 부호가 사라지므로 win으로 승자를 함께 보존한다.
         const mkLive = (ev2) => ev2.mate != null
-          ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b" }
+          ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b", plies: matePliesOf(ev2.mate) }
           : { cp: ev2.cp * childWhite };
         const onMoveProgress = (partial) => {
           if (cancelled || !partial) return;
@@ -1972,7 +2070,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     return () => { cancel = true; };
   }, [active, sansKey, san, active && m.kind, active && m.book, engine && engine.status]);
   const kind = active ? (liveKind || m.kind || (m.book ? "book" : "good")) : null;
-  const evTxt = active ? (m.live ? fmtEvalCp(m.live.cp, m.live.mate) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null)) : null;
+  const evTxt = active ? (m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null)) : null;
   const extraArrows = active && kind === "brilliant" ? brilliantArrows(sans, san) : [];
   const mkKey = active ? sansKey + "|" + san : "";
   const ownExplain = active ? CONTENT.explains[mkKey] : null;
@@ -2036,17 +2134,20 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
   useEffect(() => {
     if (!active || !onSavePuzzle) return;
     const id = sansKey + "|" + san;
+    // (20차 기능1) 이미 트리 형식으로 저장된 퍼즐이면 재생성하지 않는다(트리 생성은 엔진 비용이 큼).
+    // 구버전(선형 라인) 퍼즐은 재생성해 트리 형식으로 업그레이드한다(onSavePuzzle이 교체 저장).
+    const expectedId = kind === "brilliant" ? "sac|" + id : kind === "inaccuracy" ? "adv|" + id : (isPunishable ? id : null);
+    const existing = expectedId && puzzles ? puzzles.find((p) => p.id === expectedId) : null;
+    if (existing && existing.tree) return;
     // 실수/블런더 → 실수 응징하기
     if (isPunishable) {
       if (curated) { onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
       if (engine && engine.status === "ready") {
         let cancelled = false;
-        const opts = { target: 170, maxPlies: 8, requireCapture: true };
-        genAdvantageLine(engine, [...sans, san], opts).then(async (line) => {
-          if (cancelled || line.length < 1) return;
+        genPuzzleTree(engine, [...sans, san], { target: 170, maxPlies: 8, requireCapture: true }).then((gen) => {
+          if (cancelled || !gen) return;
           const op = title || "오프닝";
-          const lines = [{ tag: "best", solution: line }, ...(await buildAltLines(engine, [...sans, san], line, opts))];
-          if (!cancelled) onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: line, lines, steps: [], auto: true });
+          onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
         });
         return () => { cancelled = true; };
       }
@@ -2055,26 +2156,21 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     // 부정확한 수 → 우위 점하기 (실수 응징과 동일 방식)
     if (kind === "inaccuracy" && engine && engine.status === "ready") {
       let cancelled = false;
-      const opts = { target: 220, maxPlies: 8 };
-      genAdvantageLine(engine, [...sans, san], opts).then(async (line) => {
-        if (cancelled || line.length < 1) return;
+      genPuzzleTree(engine, [...sans, san], { target: 220, maxPlies: 8 }).then((gen) => {
+        if (cancelled || !gen) return;
         const op = title || "오프닝";
-        const lines = [{ tag: "best", solution: line }, ...(await buildAltLines(engine, [...sans, san], line, opts))];
-        if (!cancelled) onSavePuzzle({ id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: line, lines, steps: [], auto: true });
+        onSavePuzzle({ id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
       });
       return () => { cancelled = true; };
     }
-    // 탁월한 수 → 기물 희생하기 (직전 수 애니메이션 후 탁월한 수 + 보상 실현까지 이어지는 라인)
+    // 탁월한 수 → 기물 희생하기 (직전 수 애니메이션 후 탁월한 수 + 보상 실현까지 이어지는 트리)
     if (kind === "brilliant" && sans.length >= 1 && engine && engine.status === "ready") {
       const op = title || "오프닝";
       let cancelled = false;
-      const opts = { target: 110, maxPlies: 8, requireMaterialRecovery: true };
-      genAdvantageLine(engine, [...sans, san], opts).then(async (line) => {
-        if (cancelled) return;
-        const solution = [san, ...line];
-        // (기능1) 희생 테마는 "희생 수 자체"가 solution[0]이며, sans 위치(=studied 수 san이 두어지기 직전)에서 둔다.
-        const lines = [{ tag: "best", solution }, ...(await buildAltLines(engine, sans, solution, opts))];
-        if (!cancelled) onSavePuzzle({ id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution, lines, steps: [], auto: true });
+      // (기능1) 희생 테마는 "희생 수 자체"가 첫 수(firstSan)로 고정되며, sans 위치(=studied 수 san이 두어지기 직전)에서 둔다.
+      genPuzzleTree(engine, sans, { target: 110, maxPlies: 8, requireMaterialRecovery: true, firstSan: san }).then((gen) => {
+        if (cancelled || !gen) return;
+        onSavePuzzle({ id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
       });
       return () => { cancelled = true; };
     }
@@ -3050,11 +3146,81 @@ function isSanSequenceValid(setup, solution) {
     return true;
   } catch { return false; }
 }
-// (기능1) puzzle.lines(다중 라인)가 있으면 그 라인 전부를, 없으면 기존 solution 하나만 검증한다.
+// (20차 기능1) 트리 퍼즐 검증 — 통과 불가(표시 전용) 가지를 포함한 모든 가지가 합법 수순이어야 한다.
+function isTreeSequenceValid(setup, tree) {
+  try {
+    if (!setup.length || !tree || !(tree.children || []).length) return false;
+    let board = startBoard(); let ply = 0;
+    for (const san of setup) {
+      const c = ply % 2 === 0 ? "w" : "b";
+      if (!sanSrc(board, san, c)) return false;
+      board = applySan(board, san, c); ply++;
+    }
+    const walk = (node, brd, p) => (node.children || []).every((k) => {
+      const c = p % 2 === 0 ? "w" : "b";
+      if (!k || !k.san || !sanSrc(brd, k.san, c)) return false;
+      return walk(k, applySan(brd, k.san, c), p + 1);
+    });
+    return walk(tree, board, ply);
+  } catch { return false; }
+}
+// (기능1) puzzle.tree(분기 트리)가 있으면 트리 전체를, puzzle.lines(다중 라인)가 있으면 그 라인 전부를,
+// 없으면 기존 solution 하나만 검증한다.
 function isPuzzleSequenceValid(pz) {
   const setup = [...(pz.setupSans || []), pz.mistakeSan].filter(Boolean);
+  if (pz.tree) return isTreeSequenceValid(setup, pz.tree);
   const lines = (pz.lines && pz.lines.length) ? pz.lines : [{ tag: "best", solution: pz.solution }];
   return lines.every((l) => isSanSequenceValid(setup, l.solution || []));
+}
+/* ── (20차 기능1) 퍼즐 트리 유틸 ──
+   구버전 퍼즐(lines/solution만 있는)도 공통 접두사를 병합해 동일한 트리 구조로 다룬다.
+   리프 노드의 tag가 풀이 기록(lineSolves)의 키 — 구버전 트리는 기존 태그(best/eval2/adopt)를
+   리프에 그대로 남겨 과거 풀이 기록이 계속 인정되도록 한다. */
+function linesToTree(lines) {
+  const root = { children: [] };
+  for (const l of lines || []) {
+    let cur = root;
+    const sol = l.solution || [];
+    sol.forEach((san, i) => {
+      const k = stripSuffix(san);
+      let child = cur.children.find((c) => stripSuffix(c.san) === k);
+      if (!child) { child = { san, pass: true, children: [] }; cur.children.push(child); }
+      cur = child;
+      if (i === sol.length - 1 && !cur.tag) cur.tag = l.tag;
+    });
+  }
+  return root;
+}
+// 퍼즐의 유효 트리: 개발자 재생성 결과(CONTENT.puzzleOverrides — 모든 유저에게 반영) > 저장된 tree > 구버전 lines/solution
+function puzzleTreeOf(p) {
+  const ov = (CONTENT.puzzleOverrides || {})[puzzleNo(p.id)] || {};
+  if (ov.tree) return ov.tree;
+  if (ov.lines && ov.lines.length) return linesToTree(ov.lines);
+  if (p.tree) return p.tree;
+  return linesToTree(p.lines && p.lines.length ? p.lines : [{ tag: "best", solution: p.solution || [] }]);
+}
+// 트리의 모든 라인(루트→리프, 통과 가능한 가지만): [{ tag, sans }]. tag가 없는 리프는 수순 자체를 키로 쓴다.
+function treeLinesOf(tree) {
+  const out = [];
+  const walk = (node, sans) => {
+    const kids = (node.children || []).filter((k) => k && k.pass !== false);
+    if (!kids.length) { if (sans.length) out.push({ tag: node.tag || sans.map(stripSuffix).join(" "), sans }); return; }
+    for (const k of kids) walk(k, [...sans, k.san]);
+  };
+  walk(tree, []);
+  return out;
+}
+// (20차 기능1) 별 산정: 한 개 이상의 라인 해결=★1, 전체 라인의 50% 이상=★2, 전체 라인 해결=★3
+function starsOf(solvedCount, totalLines) {
+  if (!totalLines || solvedCount <= 0) return 0;
+  if (solvedCount >= totalLines) return 3;
+  if (solvedCount * 2 >= totalLines) return 2;
+  return 1;
+}
+// 저장된 풀이 기록(구버전 태그 포함) 중 현재 트리의 라인과 실제로 일치하는 것만 집계
+function solvedLineTagsOf(p, savedArr) {
+  const valid = new Set(treeLinesOf(puzzleTreeOf(p)).map((l) => l.tag));
+  return new Set((savedArr || []).filter((t) => valid.has(t)));
 }
 // (UX6) 퍼즐 고유번호: id로부터 안정적으로 도출(같은 위치·수 → 같은 번호, 사용자 간 공통)
 function puzzleNo(id) { let h = 2166136261; const s = String(id); for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) % 900000 + 100000; } // 6자리
@@ -3365,83 +3531,225 @@ function LineStars({ total, solved }) {
   );
 }
 const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", adopt: "실전에서 가장 많이 둔 응수", eval3: "세 번째로 좋은 응수" };
-const STAGE_SHORT_LABEL = { best: "최선", eval2: "차선", adopt: "일반", eval3: "일반" };
-// (15차) 별 3단계(최선→차선→채택)를 반드시 순서대로 풀도록 강제하는 원-선 스테퍼.
-// 이미 해결한 단계와 "다음으로 풀 수 있는 한 단계"까지만 클릭 가능하고, 그 이후 단계는 잠금(회색)으로 표시한다.
-function StageStepper({ allLines, solvedNow, activeTag, reachedIdx, onSelect }) {
+/* ── (20차 기능1) 퍼즐 모식도 ──
+   퍼즐의 분기 트리를 오프닝 모식도와 같은 가로(직선) 다이어그램으로 그린다.
+   · 선 두께 = 그 수의 실전 채택률(%) — 많이 두어질수록 굵다
+   · 각 노드 = 수 체계 아이콘 + SAN + 평가치 + 채택률 %
+   · 해결한 라인은 초록색 선으로 칠하고 리프에 체크 표시
+   · 통과 불가(유혹) 수는 점선의 막힌 가지(✕) — 유저 진영에서는 최선·우수한 수만 다음 단계로 진행
+   · 노드를 클릭하면 그 가지의 라인으로 이동해 처음부터 풀이를 시작한다. 캔버스는 드래그로 이동. */
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, targetTag, curKeys, onPick }) {
+  const colW = 118, rowH = 56, boxW = 104, boxH = 46;
+  const { items, edges, width, height, curItem } = useMemo(() => {
+    let cursor = 0; const items = []; const edges = [];
+    const curKeyStr = curKeys.join(" ");
+    const visit = (node, path, depth) => {
+      const key = path.map((s) => stripSuffix(s)).join(" ");
+      const it = { node, path, depth, key };
+      const kids = node.children || [];
+      if (!kids.length) it.y = cursor++;
+      else {
+        const cs = kids.map((k) => visit(k, [...path, k.san], depth + 1));
+        it.y = (cs[0].y + cs[cs.length - 1].y) / 2;
+        cs.forEach((c) => edges.push([it, c]));
+      }
+      items.push(it);
+      return it;
+    };
+    visit({ san: null, children: tree.children || [] }, [], 0);
+    // 해결한 라인의 경로 키 집합(선·노드를 초록으로 표시)
+    const solvedKeys = new Set(); const solvedLeafKeys = new Set();
+    for (const l of allLines) {
+      if (!solvedNow.has(l.tag)) continue;
+      const ks = l.sans.map(stripSuffix);
+      for (let i = 1; i <= ks.length; i++) solvedKeys.add(ks.slice(0, i).join(" "));
+      solvedLeafKeys.add(ks.join(" "));
+    }
+    // 목표 라인 경로 키(나아갈 길을 옅게 강조)
+    const targetLine = allLines.find((l) => l.tag === targetTag);
+    const targetKeys = new Set();
+    if (targetLine) { const ks = targetLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) targetKeys.add(ks.slice(0, i).join(" ")); }
+    const curKeySet = new Set(); for (let i = 1; i <= curKeys.length; i++) curKeySet.add(curKeys.slice(0, i).join(" "));
+    items.forEach((it) => {
+      it.solved = it.depth > 0 && solvedKeys.has(it.key);
+      it.solvedLeaf = it.depth > 0 && solvedLeafKeys.has(it.key);
+      it.onCur = it.depth > 0 && curKeySet.has(it.key);
+      it.onTarget = it.depth > 0 && targetKeys.has(it.key);
+      it.isCur = it.key === curKeyStr;
+    });
+    const curItem = items.find((it) => it.isCur) || null;
+    const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 40;
+    const height = (Math.max(...items.map((it) => it.y)) + 1) * rowH + 20;
+    return { items, edges, width, height, curItem };
+  }, [tree, allLines, solvedNow, targetTag, curKeys.join(" ")]);
+  const [pan, setPan] = useState({ x: 8, y: 8 });
+  const dragRef = useRef(null);
+  const boxRef = useRef(null);
+  // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
+  useEffect(() => {
+    const vw = boxRef.current ? boxRef.current.clientWidth : 380;
+    const vh = boxRef.current ? boxRef.current.clientHeight : 208;
+    const cx = curItem ? curItem.depth : 0, cy = curItem ? curItem.y : 0;
+    setPan({ x: Math.min(8, (vw - boxW) / 2 - cx * colW), y: Math.min(8, (vh - boxH) / 2 - cy * rowH) });
+  }, [curItem && curItem.key, tree]);
+  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
+  const onPointerUp = () => { dragRef.current = null; };
   return (
-    <div className="flex items-start justify-center" style={{ marginBottom: 12, gap: 0 }}>
-      {allLines.map((l, i) => {
-        const isDone = solvedNow.has(l.tag);
-        const locked = i > reachedIdx;
-        const active = l.tag === activeTag;
-        return (
-          <div key={l.tag} className="flex items-start">
-            {i > 0 && <div style={{ width: 26, height: 2, marginTop: 15, background: i <= reachedIdx ? T.brass : "rgba(0,0,0,.15)" }} />}
-            <div className="flex flex-col items-center" style={{ width: 46 }}>
-              <button onClick={() => !locked && onSelect(l.tag)} disabled={locked} className={locked ? "" : "press"} style={{ width: 30, height: 30, borderRadius: "50%", background: isDone ? T.best : active ? T.brass : "transparent", color: isDone || active ? "#fff" : locked ? "rgba(0,0,0,.3)" : T.ink, border: "2px solid " + (active ? T.brassHi : isDone ? T.best : "rgba(0,0,0,.2)"), display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13, cursor: locked ? "default" : "pointer" }}>{isDone ? <Check size={15} /> : i + 1}</button>
-              <div style={{ fontSize: 9.5, marginTop: 3, textAlign: "center", color: locked ? "rgba(0,0,0,.3)" : T.inkSoft, fontWeight: active ? 800 : 600 }}>{STAGE_SHORT_LABEL[l.tag] || l.tag}</div>
-            </div>
-          </div>
-        );
-      })}
+    <div style={{ marginBottom: 12 }}>
+      <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
+        style={{ position: "relative", overflow: "hidden", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+        <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px)` }}>
+          <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+            {edges.map(([p, c], i) => {
+              const x1 = p.depth * colW + boxW, y1 = p.y * rowH + boxH / 2, x2 = c.depth * colW, y2 = c.y * rowH + boxH / 2;
+              const adopt = c.node.adopt != null ? c.node.adopt : (meta[c.key] && meta[c.key].adopt);
+              const wStroke = adopt == null ? 1.6 : 1.2 + Math.min(4.4, adopt / 9);   // 채택률에 따라 선 두께
+              const blockedC = c.node.pass === false;
+              const stroke = c.solved ? T.best : c.onCur ? T.brass : blockedC ? "#B9AA95" : "#C9B58C";
+              const op = c.solved ? 0.95 : c.onCur ? 1 : c.onTarget ? 0.85 : blockedC ? 0.5 : 0.6;
+              return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={wStroke} opacity={op} strokeDasharray={blockedC ? "4 3" : undefined} strokeLinecap="round" />;
+            })}
+          </svg>
+          {items.map((it, i) => {
+            const isRoot = it.depth === 0;
+            const m = meta[it.key] || {};
+            const kind = it.node.kind || m.kind;
+            const ev = it.node.ev || m.ev;
+            const adopt = it.node.adopt != null ? it.node.adopt : m.adopt;
+            const blocked = it.node.pass === false;
+            const evTxt = ev ? fmtEvalCp(ev.cp, ev.mate, ev.plies) : null;
+            return (
+              <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW, opacity: blocked ? 0.62 : 1 }}>
+                <button onClick={() => !isRoot && !blocked && onPick && onPick(it)} disabled={isRoot || blocked}
+                  className={isRoot || blocked ? "" : "press"} title={blocked ? "통과할 수 없는 수 — 최선·우수한 수만 다음 단계로 진행돼요" : undefined}
+                  style={{ width: "100%", textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
+                    border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : it.solved ? T.best : "#C9B58C"),
+                    background: isRoot ? "linear-gradient(180deg,#3A2516,#241509)" : it.solved ? "#EAF3E0" : "#fff",
+                    cursor: isRoot || blocked ? "default" : "pointer",
+                    boxShadow: it.isCur ? "0 0 0 3px rgba(196,154,80,.25)" : "none" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                    {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 8)}</span>}
+                    <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isRoot ? (rootLabel || "시작") : it.node.san}</span>
+                    {blocked && <X size={11} strokeWidth={3} style={{ color: T.blunder, flexShrink: 0 }} />}
+                    {it.solvedLeaf && <span style={{ marginLeft: "auto", flexShrink: 0, width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Check size={10} strokeWidth={3.5} /></span>}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
+                    <span>{isRoot ? "시작 위치" : (evTxt || "–")}</span>
+                    {!isRoot && <span style={{ marginLeft: "auto" }}>{adopt != null ? Math.round(adopt) + "%" : "–%"}</span>}
+                  </span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex items-center flex-wrap" style={{ gap: 10, marginTop: 6, fontSize: 9.5, color: T.inkSoft, fontWeight: 600 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 3, background: T.best, borderRadius: 2, display: "inline-block" }} />해결한 라인</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 3, background: T.brass, borderRadius: 2, display: "inline-block" }} />현재 진행</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 0, borderTop: "2px dashed #B9AA95", display: "inline-block" }} />통과 불가</span>
+        <span>선 두께 = 채택률 · 노드 클릭 = 그 라인 풀기</span>
+      </div>
     </div>
   );
 }
+/* (20차 기능1) 퍼즐 풀이 — 고정된 단일 라인이 아니라 분기 트리를 탐색한다.
+   · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
+   · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
+   · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
 function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, engine, liveOn, canEdit, bumpContent }) {
   const theme = puzzle.theme || "punish";
-  const setup = [...puzzle.setupSans, puzzle.mistakeSan];
+  const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
-  // (기능1) 최선/차선(평가치 2위)/채택률 최고 — 최대 3개 라인. 예전 단일-solution 퍼즐과도 호환.
-  // (16차) 저장 순서는 [최선,차선,일반]이지만, 풀이 단계는 역순(일반→차선→최선)으로 진행한다.
-  // (18차 보충 기능3) 개발자가 이 퍼즐의 수 길이를 재조정하면 CONTENT.puzzleOverrides에 저장되고, 즉시 overrideLines로도 반영된다.
-  const [overrideLines, setOverrideLines] = useState(null);
-  useEffect(() => { setOverrideLines(null); }, [puzzle.id]);
-  const allLines = useMemo(() => {
-    const ov = overrideLines || ((CONTENT.puzzleOverrides || {})[puzzleNo(puzzle.id)] || {}).lines;
-    const lines = ov && ov.length ? ov : (puzzle.lines && puzzle.lines.length ? puzzle.lines : [{ tag: "best", solution: puzzle.solution }]);
-    return [...lines].reverse();
-  }, [puzzle.id, overrideLines]);
-  const totalLines = allLines.length;
-  const solvedTagSet = useMemo(() => new Set(solvedTags || []), [solvedTags]);
+  // 분기 트리: 개발자 길이 재조정(CONTENT.puzzleOverrides — 모든 유저 공통) > 저장된 tree > 구버전 lines/solution
+  const [overrideTree, setOverrideTree] = useState(null);
+  useEffect(() => { setOverrideTree(null); }, [puzzle.id]);
+  const tree = useMemo(() => overrideTree || puzzleTreeOf(puzzle), [puzzle.id, overrideTree]);
+  const allLines = useMemo(() => treeLinesOf(tree), [tree]);
+  const totalLines = Math.max(1, allLines.length);
+  const solvedTagSet = useMemo(() => { const valid = new Set(allLines.map((l) => l.tag)); return new Set((solvedTags || []).filter((t) => valid.has(t))); }, [solvedTags, allLines]);
   const [sessionSolved, setSessionSolved] = useState(() => new Set());
-  useEffect(() => { setSessionSolved(new Set()); }, [puzzle.id]);
   const solvedNow = useMemo(() => new Set([...solvedTagSet, ...sessionSolved]), [solvedTagSet, sessionSolved]);
-  const [activeTag, setActiveTag] = useState(() => (allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0]).tag);
-  const activeLine = allLines.find((l) => l.tag === activeTag) || allLines[0];
-  const solution = activeLine.solution;
-  const [boardSize, boardRef] = useBoardSize(380);
-  const [idx, setIdx] = useState(0);
+  // 진행 상태: 트리를 따라 내려온 노드 경로(짝수 인덱스 = 사용자 수) + 지금 목표로 삼은 라인
+  const [pathNodes, setPathNodes] = useState([]);
+  const [targetTag, setTargetTag] = useState(null);
   const [intro, setIntro] = useState(true);   // (UX7) 진입/처음부터 시 직전 수를 1회 재생
-  useEffect(() => { setIntro(true); }, [puzzle.id, activeTag]);
-  useEffect(() => { if (!intro) return; const t = setTimeout(() => setIntro(false), 1400); return () => clearTimeout(t); }, [intro, puzzle.id, activeTag]);
   const [sel, setSel] = useState(null);
   const [wrong, setWrong] = useState(null);     // { board, at:[r,c], from:[r,c] }
   const [reverting, setReverting] = useState(false);   // (UX4) 오답 후 원위치로 되돌아가는 애니메이션 중
-  const [reply, setReply] = useState(null);      // { sans, san }  상대 응수 애니메이션
-  const cur = [...setup, ...solution.slice(0, idx)];
-  const board = useMemo(() => boardFromSans(cur), [idx, activeTag]);
-  const color = cur.length % 2 === 0 ? "w" : "b";
-  const ep = epTarget(cur);
-  const done = idx >= solution.length;
-  const userToMove = !done && idx % 2 === 0 && !wrong && !reply && !intro;
-  // (16차) 추천 랭킹용 이벤트는 이미 푼 라인을 다시 풀어도(중복 풀이) 매번 기록한다 — XP/별 지급과는 별개.
-  useEffect(() => { if (done && onLineSolved) onLineSolved(puzzle.id, activeTag, totalLines); if (done) { setSessionSolved((s) => (s.has(activeTag) ? s : new Set(s).add(activeTag))); if (onPuzzleSolveEvent) onPuzzleSolveEvent(puzzle.id); } }, [done]);
-  // 상대(컴퓨터) 응수: 보드 반전 없이 수 애니메이션을 보여준 뒤 진행
+  const [reply, setReply] = useState(null);      // { sans, san, node }  상대 응수 애니메이션
+  const [hintText, setHintText] = useState(null);
+  const [hintKey, setHintKey] = useState(0);
+  // 퍼즐/트리가 바뀌면 미해결 라인부터 새로 시작
   useEffect(() => {
-    if (done || wrong || idx % 2 !== 1) return;
+    setSessionSolved(new Set());
+    setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null);
+    const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
+    setTargetTag(first ? first.tag : null);
+  }, [puzzle.id, tree]);
+  const targetLine = allLines.find((l) => l.tag === targetTag) || allLines[0] || null;
+  const curNode = pathNodes.length ? pathNodes[pathNodes.length - 1] : tree;
+  const curSans = useMemo(() => [...setup, ...pathNodes.map((n) => n.san)], [setup, pathNodes]);
+  const board = useMemo(() => boardFromSans(curSans), [curSans.join(" ")]);
+  const color = curSans.length % 2 === 0 ? "w" : "b";
+  const ep = epTarget(curSans);
+  const isUserPly = pathNodes.length % 2 === 0;
+  const passKids = (curNode.children || []).filter((k) => k.pass !== false);
+  const done = pathNodes.length > 0 && pathNodes.length % 2 === 1 && passKids.length === 0;   // 리프(사용자 수)에 도달
+  const doneTag = done ? (curNode.tag || pathNodes.map((n) => stripSuffix(n.san)).join(" ")) : null;
+  const userToMove = !done && isUserPly && !wrong && !reply && !intro && allLines.length > 0;
+  const [boardSize, boardRef] = useBoardSize(380);
+  useEffect(() => { if (!intro) return; const t = setTimeout(() => setIntro(false), 1400); return () => clearTimeout(t); }, [intro, puzzle.id]);
+  // (16차) 추천 랭킹용 이벤트는 이미 푼 라인을 다시 풀어도(중복 풀이) 매번 기록한다 — XP/별 지급과는 별개.
+  useEffect(() => {
+    if (!done) return;
+    if (onLineSolved) onLineSolved(puzzle.id, doneTag, totalLines);
+    setSessionSolved((s) => (s.has(doneTag) ? s : new Set(s).add(doneTag)));
+    if (onPuzzleSolveEvent) onPuzzleSolveEvent(puzzle.id);
+  }, [done]);
+  // 이 가지 아래에 아직 해결하지 않은 리프가 남아 있는가
+  const subtreeUnsolved = (node, keyArr) => {
+    const kids = (node.children || []).filter((k) => k.pass !== false);
+    if (!kids.length) return !solvedNow.has(node.tag || keyArr.join(" "));
+    return kids.some((k) => subtreeUnsolved(k, [...keyArr, stripSuffix(k.san)]));
+  };
+  // 상대(컴퓨터) 응수: 목표 라인을 따라가되, 벗어났으면 미해결 가지 우선(채택률 순)으로 자동 선택
+  useEffect(() => {
+    if (done || wrong || intro || isUserPly || !passKids.length) return;
     let t2;
     const t1 = setTimeout(() => {   // (UI4) 정답 수 뒤 1초 후 컴퓨터 응수 — 사용자가 결과를 보도록
-      setReply({ sans: [...setup, ...solution.slice(0, idx)], san: solution[idx] });
-      t2 = setTimeout(() => { setReply(null); setIdx((i) => i + 1); }, 900);
+      const keyArr = pathNodes.map((n) => stripSuffix(n.san));
+      let next = null;
+      if (targetLine && targetLine.sans.length > pathNodes.length && targetLine.sans.slice(0, pathNodes.length).every((s, i) => stripSuffix(s) === keyArr[i])) {
+        const want = stripSuffix(targetLine.sans[pathNodes.length]);
+        next = passKids.find((k) => stripSuffix(k.san) === want) || null;
+      }
+      if (!next) {
+        const scored = passKids.map((k) => ({ k, un: subtreeUnsolved(k, [...keyArr, stripSuffix(k.san)]) ? 1 : 0, ad: k.adopt || 0 }));
+        scored.sort((a, b) => (b.un - a.un) || (b.ad - a.ad));
+        next = scored[0].k;
+      }
+      setReply({ sans: curSans, san: next.san, node: next });
+      t2 = setTimeout(() => { setReply(null); setPathNodes((p) => [...p, next]); }, 900);
     }, 1000);
     return () => { clearTimeout(t1); if (t2) clearTimeout(t2); };
-  }, [idx, done, wrong, activeTag]);
+  }, [pathNodes.length, done, wrong, intro, tree]);
+  // 진행 경로가 목표 라인에서 벗어나면(다른 우수 수 선택·상대의 다른 응수) 그 가지의 미해결 라인으로 목표 갱신
+  useEffect(() => {
+    if (!pathNodes.length || !allLines.length) return;
+    const keyArr = pathNodes.map((n) => stripSuffix(n.san));
+    const matches = allLines.filter((l) => l.sans.length >= keyArr.length && keyArr.every((s, i) => stripSuffix(l.sans[i]) === s));
+    if (!matches.length || matches.some((l) => l.tag === targetTag)) return;
+    const next = matches.find((l) => !solvedNow.has(l.tag)) || matches[0];
+    setTargetTag(next.tag);
+  }, [pathNodes]);
   const tryUserMove = (from, to) => {
     if (!userToMove) return;
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep); if (!san) return;
-    if (stripSuffix(san) === stripSuffix(solution[idx])) { setSel(null); setIdx((i) => i + 1); }
-    else { setWrong({ board: applySan(board, san, color), at: to, from }); setSel(null); }   // 틀린 수는 1초 뒤 자동으로 원위치로 되돌림(아래 effect)
+    const hit = (curNode.children || []).find((c) => stripSuffix(c.san) === stripSuffix(san));
+    // (기능1) 유저 진영에서는 '통과 가능(최선·우수)' 수만 다음 단계로 — 모식도에 표시만 되는 유혹 수도 오답 처리
+    if (hit && hit.pass !== false) { setSel(null); setPathNodes((p) => [...p, hit]); }
+    else { setWrong({ board: applySan(board, san, color), at: to, from }); setSel(null); }   // 틀린 수는 1초 뒤 자동으로 원위치(아래 effect)
   };
   const onSquareClick = (sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (sel) { if (legalDests(board, sel[0], sel[1], color, ep).some(([r, c]) => r === sq[0] && c === sq[1])) { tryUserMove(sel, sq); return; } if (p && p.c === color) { setSel(sq); return; } setSel(null); } else if (p && p.c === color) setSel(sq); };
   // (UX4) 재시도 버튼 없이, 오답을 두면 1초 후 자동으로 슬라이드 애니메이션과 함께 원위치로 되돌아간다.
@@ -3451,22 +3759,29 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     const t2 = setTimeout(() => { setWrong(null); setReverting(false); setSel(null); }, 1000 + 450);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [wrong]);
-  const restart = () => { setWrong(null); setReply(null); setSel(null); setIdx(0); setIntro(true); };
-  // (15차) 별 3단계는 반드시 순서대로: 이미 푼 단계들 + "다음으로 풀 수 있는 한 단계"까지만 전환을 허용한다.
-  const reachedIdx = useMemo(() => { const i = allLines.findIndex((l) => !solvedNow.has(l.tag)); return i === -1 ? allLines.length - 1 : i; }, [allLines, solvedNow]);
-  const switchLine = (tag) => {
-    const tagIdx = allLines.findIndex((l) => l.tag === tag);
-    if (tagIdx < 0 || tagIdx > reachedIdx) return;   // 아직 잠긴 단계로는 전환할 수 없다
-    setActiveTag(tag); setWrong(null); setReply(null); setSel(null); setIdx(0); setIntro(true); setHintText(null);
+  const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null); };
+  const restart = () => gotoLine(targetTag);
+  // 모식도 노드 클릭 → 그 가지를 지나는 라인(미해결 우선)을 목표로 처음부터 풀이
+  const onPickNode = (it) => {
+    const keyArr = it.path.map((s) => stripSuffix(s));
+    const matches = allLines.filter((l) => l.sans.length >= keyArr.length && keyArr.every((s, i) => stripSuffix(l.sans[i]) === s));
+    if (!matches.length) return;
+    const next = matches.find((l) => !solvedNow.has(l.tag)) || matches[0];
+    gotoLine(next.tag);
   };
-  // (기능2) 힌트 체계 전면 개편 — 더 이상 마스코트가 처음부터 힌트를 말하지 않는다. 하단 "힌트" 버튼을 누르면
-  // 그 시점(idx)에 실제로 두어야 할 수를 기준으로 "움직여야 할 기물" 또는 "중요한 칸" 중 하나를 무작위로 알려준다.
-  const [hintText, setHintText] = useState(null);
-  const [hintKey, setHintKey] = useState(0);
-  useEffect(() => { setHintText(null); }, [idx, activeTag, wrong]);
+  // (기능2) 힌트 — 그 시점에 실제로 두어야 할 수(목표 라인 기준)를 바탕으로 기물 또는 칸을 무작위로 알려준다.
+  useEffect(() => { setHintText(null); }, [pathNodes.length, targetTag, wrong]);
+  const expectedSan = (() => {
+    if (!isUserPly || done) return null;
+    if (targetLine && targetLine.sans.length > pathNodes.length) {
+      const keyArr = pathNodes.map((n) => stripSuffix(n.san));
+      if (targetLine.sans.slice(0, pathNodes.length).every((s, i) => stripSuffix(s) === keyArr[i])) return targetLine.sans[pathNodes.length];
+    }
+    return passKids[0] ? passKids[0].san : null;
+  })();
   const requestHint = () => {
-    if (!userToMove || !solution[idx]) return;
-    const info = sanSrc(board, stripSuffix(solution[idx]), color);
+    if (!userToMove || !expectedSan) return;
+    const info = sanSrc(board, stripSuffix(expectedSan), color);
     if (!info) return;
     const pk = PIECE_KOR[info.piece] || "기물";
     const dest = FILES[info.to[1]] + (8 - info.to[0]);
@@ -3475,90 +3790,132 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     setHintKey((k) => k + 1);
   };
   // (UX2) 마스코트 캐릭터는 둘 차례(백=MILKU, 흑=KOKOA), 표정은 풀이 상태에 따름
+  const fullyComplete = solvedNow.size >= totalLines;
   const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintText ? "wink"
     : theme === "sacrifice" ? "great" : theme === "advantage" ? "think" : "surprise";
   const pm = [color === "w" ? "milku" : "kokoa", pmEmotion];
   const prompt = intro ? "직전 수 재생 중…"
-    : done ? "✓ 완성! 모든 수를 찾았어요."
+    : done ? (fullyComplete ? "✓ 완성! 모든 라인을 정복했어요." : "✓ 라인 해결! 모든 수를 찾았어요.")
     : wrong ? "✕ 다른 수예요. 잠시 후 원래 위치로 되돌아갑니다."
       : reply ? "상대 응수 중…"
         : theme === "sacrifice" ? "당신 차례 — 기물을 희생하는 탁월한 수를 두세요."
           : theme === "advantage" ? "당신 차례 — 우위를 점하는 수를 두세요."
             : "당신 차례 — 실수를 응징하는 최선의 수를 두세요.";
   const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? "다른 수예요. 다시 시도해 보세요!" : reply ? "상대가 응수하고 있어요…" : "막히면 아래 힌트 버튼을 눌러보세요.";
-  const fullyComplete = solvedNow.size >= totalLines;
-  const doneBubble = totalLines <= 1 ? "훌륭해요! 다음 퍼즐도 도전해 보세요."
-    : fullyComplete ? "훌륭해요! 모든 단계를 정복했어요."
-    : "이 단계를 완료했어요! 위에서 다음 단계를 선택해 보세요.";
+  const doneBubble = fullyComplete ? "훌륭해요! 모든 라인을 정복했어요."
+    : "이 라인을 완료했어요! 모식도에서 다른 가지에 도전해 보세요.";
   const bubbleText = done ? doneBubble : (hintText || idleBubble);
-  // (18차 보충 UX10) 퍼즐에서 두어지는 "모든 수"를, 테마와 무관하게 그 수의 실제 평가치(loss) 기반 등급으로 표시.
-  // intro(컴퓨터 첫 수)·reply(컴퓨터 응수)·정답 수 모두 대상. 우선 즉시 표시할 fallback을 놓고, 엔진으로 정밀 갱신.
+  const nextTag = (allLines.find((l) => !solvedNow.has(l.tag)) || {}).tag;
+  const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
+  const lineLabel = targetLine ? (LINE_TAG_LABEL[targetLine.tag] || ("라인 " + (lineIdx + 1))) : "";
+  // (18차 보충 UX10→20차) 퍼즐에서 두어지는 모든 수의 수 체계 아이콘 — 트리에 저장된 등급을 즉시 쓰고,
+  // 등급이 없는 수(직전 실수 수·구버전 트리)만 엔진으로 정밀 판정한다.
   const [moveIcon, setMoveIcon] = useState(null);   // { key, to, kind }
   useEffect(() => {
-    let prevSans, mvSan;
-    if (intro) { prevSans = puzzle.setupSans; mvSan = puzzle.mistakeSan; }
-    else if (reply) { prevSans = reply.sans; mvSan = reply.san; }
-    else if (idx >= 1 && !wrong && !reverting) { prevSans = [...setup, ...solution.slice(0, idx - 1)]; mvSan = solution[idx - 1]; }
+    let prevSans, mvSan, knownKind = null;
+    if (intro) { prevSans = puzzle.setupSans || []; mvSan = puzzle.mistakeSan; }
+    else if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = reply.node && reply.node.kind; }
+    else if (pathNodes.length >= 1 && !wrong && !reverting) { prevSans = curSans.slice(0, -1); mvSan = pathNodes[pathNodes.length - 1].san; knownKind = pathNodes[pathNodes.length - 1].kind; }
     else { setMoveIcon(null); return; }
     const moverColor = prevSans.length % 2 === 0 ? "w" : "b";
     const info = sanSrc(boardFromSans(prevSans), stripSuffix(mvSan), moverColor);
     if (!info || !info.to) { setMoveIcon(null); return; }
     const key = prevSans.join(",") + "|" + mvSan;
-    // (20차) 엔진을 못 쓰는 상황의 fallback을 'best'에서 '아이콘 없음'으로 — 아무 수에나 최선 별이 붙던 문제 수정.
-    const fallback = isSacrifice(boardFromSans(prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null);
+    // (20차) 엔진을 못 쓰는 상황의 fallback을 'best'가 아닌 '아이콘 없음'으로 — 아무 수에나 최선 별이 붙지 않도록.
+    const fallback = knownKind || (isSacrifice(boardFromSans(prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null));
     if (!fallback) { setMoveIcon(null); return; }
     setMoveIcon({ key, to: info.to, kind: fallback });
     let cancelled = false;
-    if (liveOn && engine && engine.status === "ready") {
+    if (!knownKind && liveOn && engine && engine.status === "ready") {
       classifyMoveKind(engine, prevSans, stripSuffix(mvSan)).then((k) => {
         if (!cancelled && k) setMoveIcon((m) => (m && m.key === key ? { ...m, kind: k } : m));
       }).catch(() => {});
     }
     return () => { cancelled = true; };
-  }, [idx, wrong, reverting, reply, intro, activeTag, puzzle.id]);
+  }, [pathNodes.length, wrong, reverting, reply, intro, targetTag, puzzle.id]);
   const lastQpz = (!intro && !reply && !reverting && !wrong) ? moveIcon : null;
-  // (18차 보충 기능3) 개발자가 이 퍼즐의 수 길이를 직접 재조정 — 엔진으로 목표 반수에 맞춰 라인을 재생성한다.
+  // (20차 기능1) 구버전 퍼즐 트리(kind/ev/adopt 미기록)는 배경에서 보강 — 모식도의 아이콘·평가치·채택률 표기용
+  const [meta, setMeta] = useState({});
+  useEffect(() => { setMeta({}); }, [puzzle.id, tree]);
+  useEffect(() => {
+    const missing = [];
+    (function walk(node, path) {
+      for (const k of node.children || []) {
+        const p = [...path, k.san];
+        if (k.kind == null || k.ev == null || !("adopt" in k)) missing.push({ node: k, path: p });
+        walk(k, p);
+      }
+    })(tree, []);
+    if (!missing.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const it of missing) {
+        if (cancelled) return;
+        const key = it.path.map((s) => stripSuffix(s)).join(" ");
+        const prev = [...setup, ...it.path.slice(0, -1)];
+        const full = [...setup, ...it.path];
+        const m = {};
+        if (!("adopt" in it.node)) {
+          try { const lc = await fetchLichess(prev, false); const hit = lc && lc.moves && lc.moves.find((x) => stripSuffix(x.san) === stripSuffix(it.node.san)); m.adopt = hit ? hit.adopt : null; } catch { m.adopt = null; }
+        }
+        if (liveOn && engine && engine.status === "ready") {
+          if (it.node.ev == null) { try { const ev = await engine.evaluate(sansToFen(full), 10); const w = posEvalToWhite(ev, full); if (w) m.ev = w; } catch { } }
+          if (it.node.kind == null) { try { const k = await classifyMoveKind(engine, prev, stripSuffix(it.node.san), 10); if (k) m.kind = k; } catch { } }
+        }
+        if (cancelled) return;
+        if (Object.keys(m).length) setMeta((pm2) => ({ ...pm2, [key]: { ...pm2[key], ...m } }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [puzzle.id, tree, liveOn, engine && engine.status]);
+  // (18차 보충 기능3→20차) 개발자 전용 — 이 퍼즐의 수 길이를 직접 조정(엔진으로 트리 재생성).
+  // 결과는 CONTENT.puzzleOverrides로 저장되어 퍼즐을 푸는 "모든 유저"에게 반영된다.
   const [lenBusy, setLenBusy] = useState(false);
-  const bestLen = (allLines.find((l) => l.tag === "best") || allLines[allLines.length - 1] || { solution: [] }).solution.length;
+  const maxLen = allLines.reduce((mx, l) => Math.max(mx, l.sans.length), 0);
   const regenLength = async (targetPlies) => {
     if (!engine || engine.status !== "ready" || lenBusy) return;
     setLenBusy(true);
     try {
       const th = puzzle.theme || "punish";
       const optsMap = { punish: { target: 170, requireCapture: true }, advantage: { target: 220 }, sacrifice: { target: 110, requireMaterialRecovery: true } };
-      const opts = { ...(optsMap[th] || optsMap.punish), maxPlies: targetPlies };
-      const pre = [...puzzle.setupSans, puzzle.mistakeSan];
-      let sol;
-      if (th === "sacrifice") { const sacMove = puzzle.solution[0]; const rest = await genAdvantageLine(engine, [...pre, sacMove], opts); sol = [sacMove, ...rest]; }
-      else { sol = await genAdvantageLine(engine, pre, opts); }
-      if (!sol || sol.length < 1) { setLenBusy(false); return; }
-      const alts = await buildAltLines(engine, pre, sol, opts);
-      const newLines = [{ tag: "best", solution: sol }, ...alts];
+      const firstSan = th === "sacrifice" ? ((puzzle.solution && puzzle.solution[0]) || (allLines[0] && allLines[0].sans[0])) : null;
+      const gen = await genPuzzleTree(engine, setup, { ...(optsMap[th] || optsMap.punish), maxPlies: targetPlies, firstSan });
+      if (!gen) return;
       if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-      CONTENT.puzzleOverrides[puzzleNo(puzzle.id)] = { lines: newLines };
+      CONTENT.puzzleOverrides[puzzleNo(puzzle.id)] = { tree: gen.tree, lines: gen.lines };
       if (bumpContent) await bumpContent();
-      setOverrideLines(newLines);
-      setActiveTag("best"); setIdx(0); setIntro(true);
+      setOverrideTree(gen.tree);
     } finally { setLenBusy(false); }
   };
+  if (!allLines.length) return (
+    <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
+      <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
+      <p style={{ fontSize: 13, color: T.inkSoft, fontWeight: 700, textAlign: "center", padding: "30px 0" }}>퍼즐 데이터를 불러올 수 없어요.</p>
+    </div>
+  );
   return (
     <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
-      <div className="flex items-start justify-between" style={{ marginBottom: 12, paddingRight: 38, gap: 8 }}>
+      <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{THEME_LABEL[theme]}{totalLines > 1 && <span style={{ color: T.inkSoft, fontWeight: 600 }}> · {LINE_TAG_LABEL[activeTag] || activeTag}</span>}</div>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{THEME_LABEL[theme]}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{puzzle.name}</div>
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
+          {/* (20차 기능1) 별: 라인 1개 이상 ★1 · 50% 이상 ★2 · 전부 ★3 */}
+          <div className="flex items-center" style={{ gap: 7, marginTop: 5 }}>
+            <LineStars total={3} solved={starsOf(solvedNow.size, totalLines)} />
+            <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>라인 {solvedNow.size}/{totalLines} 해결</span>
+          </div>
         </div>
       </div>
-      {/* (15차) 별 3단계(최선→차선→채택)를 원-선 스테퍼로 시각화 — 순서대로만 진행 가능 */}
-      {totalLines > 1 && <StageStepper allLines={allLines} solvedNow={solvedNow} activeTag={activeTag} reachedIdx={reachedIdx} onSelect={switchLine} />}
+      {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
+      <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} targetTag={targetTag} curKeys={pathNodes.map((n) => stripSuffix(n.san))} onPick={onPickNode} />
       <div key={"bubble-" + hintKey} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
       {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
-      <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{sansToPgnText([...setup, ...solution.slice(0, idx)]) || " "}</div>
+      <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{sansToPgnText(curSans) || " "}</div>
       <div ref={boardRef} style={{ width: "100%", maxWidth: 380, margin: "0 auto" }}>
       {intro
-        ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
+        ? <AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
         : reply
           ? <AnimatedMove sans={reply.sans} san={reply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
         : reverting
@@ -3572,26 +3929,27 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       </div>
       {done && (fullyComplete ? (
         <div style={{ marginTop: 14, textAlign: "center", background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 12, padding: "12px 14px", border: "1px solid " + T.brass }}>
-          <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 13 }}>🎉 완전 해결! 별 {totalLines}개를 모두 모았어요.</div>
+          <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 13 }}>🎉 완전 해결! {totalLines}개 라인을 모두 정복해 별 3개를 모았어요.</div>
         </div>
-      ) : allLines[reachedIdx] && (
+      ) : nextTag != null && (
         <div className="flex justify-center" style={{ marginTop: 14 }}>
-          <button onClick={() => switchLine(allLines[reachedIdx].tag)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>다음 단계로 — {STAGE_SHORT_LABEL[allLines[reachedIdx].tag] || allLines[reachedIdx].tag}</button>
+          <button onClick={() => gotoLine(nextTag)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>다음 라인 풀기 — {LINE_TAG_LABEL[nextTag] || ("라인 " + (allLines.findIndex((l) => l.tag === nextTag) + 1))}</button>
         </div>
       ))}
-      {/* (18차 보충 기능3) 개발자 전용 — 이 퍼즐의 수 길이를 직접 조정(엔진 재생성). 전역 상한이 아니라 개별 퍼즐 단위. */}
+      {/* (18차 보충 기능3→20차) 개발자 전용 — 수 길이 조정(트리 재생성). 모든 유저에게 반영. */}
       {canEdit && (
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed #C9B58C" }}>
           <div className="flex items-center justify-between flex-wrap" style={{ gap: 8 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>개발자 · 수 길이 <span style={{ color: T.ink }}>(현재 {Math.ceil(bestLen / 2)}수)</span></span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>개발자 · 라인 길이 <span style={{ color: T.ink }}>(현재 최장 {Math.ceil(maxLen / 2)}수 · 라인 {totalLines}개)</span></span>
             <div className="flex items-center gap-2">
-              <select disabled={lenBusy} defaultValue={Math.max(2, Math.min(10, Math.ceil(bestLen / 2)))} onChange={(e) => regenLength(parseInt(e.target.value, 10) * 2)}
+              <select disabled={lenBusy} defaultValue={Math.max(2, Math.min(10, Math.ceil(maxLen / 2)))} onChange={(e) => regenLength(parseInt(e.target.value, 10) * 2)}
                 style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12 }}>
                 {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n}수</option>)}
               </select>
-              {lenBusy && <span style={{ fontSize: 11, color: T.inkSoft }}>재생성 중…</span>}
+              {lenBusy && <span style={{ fontSize: 11, color: T.inkSoft }}>트리 재생성 중…</span>}
             </div>
           </div>
+          <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 4 }}>재생성된 트리는 이 퍼즐을 푸는 모든 유저에게 반영됩니다.</div>
           {(!engine || engine.status !== "ready") && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>엔진이 준비되면 조정할 수 있어요.</div>}
         </div>
       )}
@@ -3602,7 +3960,9 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
   const hasPreview = p.setupSans && p.mistakeSan;
-  const totalLines = (p.lines && p.lines.length) || 1;
+  // (20차 기능1) 트리 기준 라인 수와 별(라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3)
+  const totalLines = useMemo(() => Math.max(1, treeLinesOf(puzzleTreeOf(p)).length), [p.id]);
+  const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   return (
     /* (18차 UI7) 카드 크기 축소 + 도감 탭처럼 정사각형 비율 — 한 화면에 더 많은 퍼즐이 보이도록.
        (18차 UI4) overflow hidden + aspectRatio 고정으로 카드끼리 겹치던 문제도 함께 해결. */
@@ -3612,11 +3972,11 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
       {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={104} loopMs={2400} flip={flip} /></div>}
       <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
         <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, wordBreak: "break-word" }}>{p.opening}</div>
-        {totalLines > 1 ? <LineStars total={totalLines} solved={(solvedTags || []).length} /> : (isSolved && <span style={{ display: "inline-flex", alignItems: "center", color: T.best, flexShrink: 0 }}><Check size={13} /></span>)}
+        <LineStars total={3} solved={stars} />
       </div>
       <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.35 }}>{p.name}</div>
       <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
-        <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{THEME_LABEL[p.theme || "punish"]} · {Math.ceil(p.solution.length / 2) || 1}수</span>
+        <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{THEME_LABEL[p.theme || "punish"]} · 라인 {totalLines}개</span>
         <span style={{ fontSize: 9, color: T.brass, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
       </div>
       {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, marginTop: 2, lineHeight: 1.3, wordBreak: "break-word" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
@@ -5583,7 +5943,20 @@ export default function App() {
   }, [user, logout]);
   const unlockOpening = useCallback((keyStr) => { let isNew = false; setUnlocked((p) => { if (p.has(keyStr)) return p; isNew = true; const n = new Set(p); const parts = keyStr.split(" ").filter(Boolean); for (let i = 1; i <= parts.length; i++) n.add(parts.slice(0, i).join(" ")); return n; }); if (isNew) setNewUnlocks((n) => n + 1); return isNew; }, []);
   const onLearned = useCallback((name) => { setToast({ name }); setTimeout(() => setToast(null), 2600); }, []);
-  const onSavePuzzle = useCallback((pz) => { if (deletedPuzzles.has(pz.id) && !solved.has(pz.id)) return; if (!isPuzzleSequenceValid(pz)) { console.warn("퍼즐 저장 거부(불법 수순):", pz.id); return; } setPuzzles((prev) => { if (prev.some((x) => x.id === pz.id)) return prev; puzzleShare(pz); return [...prev, pz]; }); }, [deletedPuzzles, solved]);
+  const onSavePuzzle = useCallback((pz) => {
+    if (deletedPuzzles.has(pz.id) && !solved.has(pz.id)) return;
+    if (!isPuzzleSequenceValid(pz)) { console.warn("퍼즐 저장 거부(불법 수순):", pz.id); return; }
+    setPuzzles((prev) => {
+      const i = prev.findIndex((x) => x.id === pz.id);
+      if (i >= 0) {
+        // (20차 기능1) 구버전(선형 라인) 퍼즐이 분기 트리 형식으로 재생성되면 교체(업그레이드)
+        if (pz.tree && !prev[i].tree) { puzzleShare(pz); const next = prev.slice(); next[i] = pz; return next; }
+        return prev;
+      }
+      puzzleShare(pz);
+      return [...prev, pz];
+    });
+  }, [deletedPuzzles, solved]);
   const onDeletePuzzle = useCallback((id) => { setPuzzles((prev) => prev.filter((x) => x.id !== id)); setDeletedPuzzles((p) => { const n = new Set(p); n.add(id); return n; }); }, []);
   const onSolved = useCallback((id) => {
     const already = solved.has(id);
@@ -5607,11 +5980,12 @@ export default function App() {
   // 기존 "해결완료" 트래킹(칭호·전역 풀이수 등)이 그대로 이어지도록 한다.
   // (15차 기능4) 새로 해결한 라인마다 경험치를 지급 — 해당 퍼즐에서 "기존에 이미 보유했던 별 수"를 기준으로 계산한다.
   // 획득량은 화면 중앙 토스트로 크게 표시한다(레벨업 토스트와 같은 자리를 공유 — 레벨업이 뒤이어 발생하면 그쪽으로 자연스럽게 대체됨).
-  const onLineSolved = useCallback((id, tag) => {
+  const onLineSolved = useCallback((id, tag, totalLines) => {
     setLineSolves((prev) => {
       const curArr = prev[id] || [];
       if (curArr.includes(tag)) return prev;
-      const existingStars = curArr.length;
+      // (20차 기능1) 경험치 배율은 이 퍼즐에서 "기존에 보유한 별 수"(0~3, 해결 라인 수/전체 라인 수 기준) 기준
+      const existingStars = starsOf(curArr.length, Math.max(totalLines || 1, curArr.length + 1));
       const gain = rollLineXp(existingStars);
       setTotalXp((x) => x + gain);
       setToast({ type: "xp", amount: gain });
@@ -5703,11 +6077,13 @@ export default function App() {
     setDailyQuest((dq) => (dq && !dq.bonusClaimed ? { ...dq, bonusClaimed: true } : dq));
   }, [dailyQuest && JSON.stringify(dailyQuest.claimed), dailyQuest && dailyQuest.bonusClaimed]);
   useEffect(() => {
+    // (20차 기능1) 트리 기준 전체 라인을 모두 해결하면(별 3개) '해결완료'로 승격. 현재 트리에 실제로
+    // 존재하는 라인 태그만 집계해, 라인이 재생성돼 태그가 바뀐 과거 기록으로 잘못 승격되지 않도록 한다.
     puzzles.forEach((p) => {
-      const total = (p.lines && p.lines.length) || 1;
-      if ((lineSolves[p.id] || []).length >= total && !solved.has(p.id)) onSolved(p.id);
+      const total = treeLinesOf(puzzleTreeOf(p)).length;
+      if (total > 0 && solvedLineTagsOf(p, lineSolves[p.id]).size >= total && !solved.has(p.id)) onSolved(p.id);
     });
-  }, [lineSolves, puzzles, solved, onSolved]);
+  }, [lineSolves, puzzles, solved, onSolved, contentVer]);
   const switchTab = (k) => {
     if (k === "dex") { setNewUnlocks(0); setNewTitles(0); }
     setNavNonce((n) => n + 1);
