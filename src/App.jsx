@@ -926,7 +926,7 @@ function roleIcon(username) {
 }
 const SYM2KIND = [["??", "blunder"], ["?!", "inaccuracy"], ["!!", "brilliant"], ["☆", "best"], ["★", "best"], ["👍", "excellent"], ["✅️", "good"], ["✅", "good"], ["?", "mistake"], ["!", "only"]];
 function splitSym(tok) { for (const [sym, kind] of SYM2KIND) { if (tok.endsWith(sym)) return { san: tok.slice(0, -sym.length), kind }; } return { san: tok, kind: null }; }
-let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
+let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, questChapters: {} };
 let CONTENT_SEEDED = false;
 function seedContent() {
   if (CONTENT_SEEDED) return; CONTENT_SEEDED = true;
@@ -958,10 +958,79 @@ function seedContent() {
   addMove("e4 d5 exd5 Qxd5 Nc3", "Qa5"); addMove("e4 d5 exd5 Qxd5 Nc3", "Qd6"); addMove("e4 d5 exd5 Qxd5 Nc3", "Qd8");
   CONTENT.mainline["e4 d5|exd5"] = true; CONTENT.mainline["e4 d5 exd5|Qxd5"] = true; CONTENT.mainline["e4 d5 exd5 Qxd5|Nc3"] = true;
   if (!("e4 d5" in CONTENT.explains)) CONTENT.explains["e4 d5"] = "스칸디나비안 디펜스. 흑이 즉시 d5로 중앙을 교환해 빠른 전개를 노린다. 백은 2.exd5 후 퀸/나이트 회수 라인으로 분기.";
+  seedQuestChapters();
+}
+/* ============================================================ 메인 퀘스트 · CHAPTER (20차 기능4) ============================================================ */
+// 챕터 하나 = { title, desc, parent(하위 챕터일 때 상위 챕터 key), reward(코인), items:[{ move, q, opts:[...], answer, note }] }
+// items의 각 질문은 사지선다·오지선다이며 answer는 opts 배열의 정답 인덱스. note는 정답 확인 뒤 보여주는 추가 설명(하위 오프닝 등).
+// 모든 필드는 개발자가 CMS(QuestChapterEditor)로 직접 입력·수정·삭제할 수 있고, CONTENT.questChapters에 저장되어 전 유저에 반영된다.
+function seedQuestChapters() {
+  if (Object.keys(CONTENT.questChapters).length) return;   // 이미 콘텐츠가 있으면(서버에서 불러온 경우 등) 시드로 덮어쓰지 않음
+  const firstMoveOpts = [
+    "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하며, 비숍과 퀸의 대각선을 열어 활발한 기물 전개와 이른 전술전을 지향한다",
+    "폰을 두 칸 전진시켜 중앙을 장악하되, e4보다 더 견고하고 점진적인 구조 싸움을 지향한다",
+    "중앙을 폰이 아닌 기물로 유연하게 통제하며, 전개 순서를 상대의 대응에 따라 나중에 정할 수 있다",
+    "중앙 폰을 아직 정하지 않고 나이트로 핵심 칸(e5·d4)을 미리 견제하며 유연하게 대응 방향을 정한다",
+  ];
+  CONTENT.questChapters.ch1 = {
+    title: "백이 자주 두는 첫 수", desc: "1.e4, 1.d4, 1.c4, 1.Nf3 — 백의 대표적인 첫 수마다 포지션의 성격과 하위 오프닝 갈래를 탐구합니다.", reward: 100,
+    items: [
+      { move: "e4", q: "1.e4의 포지션 성격으로 가장 알맞은 설명은?", opts: firstMoveOpts, answer: 0, note: "킹스 폰 오프닝. 이후 1...e5(오픈 게임), 1...c5(시칠리안), 1...e6(프렌치), 1...c6(카로칸) 등으로 갈립니다." },
+      { move: "d4", q: "1.d4의 포지션 성격으로 가장 알맞은 설명은?", opts: firstMoveOpts, answer: 1, note: "퀸스 폰 오프닝. 이후 1...d5(폐쇄형 퀸스 갬빗 등)와 1...Nf6(인디언 디펜스 계열)로 크게 갈립니다." },
+      { move: "c4", q: "1.c4의 포지션 성격으로 가장 알맞은 설명은?", opts: firstMoveOpts, answer: 2, note: "잉글리시 오프닝. 폰 구조를 늦게 정하며 d4·Nf3와도 자주 합류하는 유연한 오프닝입니다." },
+      { move: "Nf3", q: "1.Nf3의 포지션 성격으로 가장 알맞은 설명은?", opts: firstMoveOpts, answer: 3, note: "레티 오프닝. 흔히 이후 c4나 d4와 합류해 잉글리시·인디언 계열 구조로 전환됩니다." },
+    ],
+  };
+  const ch2Sub = (key, parentTitle, firstSan, list) => {
+    CONTENT.questChapters[key] = { title: firstSan + " 상대 흑의 응수", parent: "ch2", parentTitle, desc: "1." + firstSan + "에 대한 흑의 대표적인 첫 응수마다 폰 구조·전개·핵심 아이디어를 탐구합니다.", reward: 100, items: list };
+  };
+  const optsFor = (list) => list.map((x) => x.desc);
+  ch2Sub("ch2-1", "흑이 자주 두는 응수", "e4", (() => {
+    const rows = [
+      { san: "e5", desc: "중앙에서 폰을 맞세워 대칭적으로 공간을 나누고, 오픈된 전술전을 준비한다" },
+      { san: "c5", desc: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 흑이 능동적인 반격을 노리는 시칠리안 디펜스" },
+      { san: "e6", desc: "d5를 다음 수에 밀며 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격하는 프렌치 디펜스" },
+      { san: "c6", desc: "d5를 다음 수에 밀되 나이트 전개(Nc3 대응)에 유연하게 대비하는 카로칸 디펜스" },
+      { san: "d5", desc: "즉시 중앙에서 폰을 교환해 빠르게 기물을 전개하는 스칸디나비안 디펜스" },
+      { san: "d6", desc: "중앙을 견고히 지키며 늦게 전개하는 필리도 디펜스" },
+    ];
+    const opts = optsFor(rows);
+    return rows.map((r, i) => ({ move: r.san, q: "1.e4 " + r.san + " 포지션의 성격으로 가장 알맞은 설명은?", opts, answer: i }));
+  })());
+  ch2Sub("ch2-2", "흑이 자주 두는 응수", "d4", (() => {
+    const rows = [
+      { san: "d5", desc: "중앙에서 폰을 맞세워 견고한 구조를 만들고, 퀸스 갬빗 계열로 이어지는 정통 대응" },
+      { san: "Nf6", desc: "중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 인디언 디펜스 계열로 유연하게 대응한다" },
+      { san: "g6", desc: "비숍을 피앙케토(대각선 배치)하며 중앙을 기물로 견제하는 킹스 인디언·그륀펠트 계열" },
+      { san: "c5", desc: "중앙에서 곧바로 비대칭 반격을 노리는 베노니 계열" },
+      { san: "e5", desc: "폰을 희생해서라도 빠른 전개와 주도권을 노리는 부다페스트 갬빗" },
+      { san: "f5", desc: "퀸사이드보다 킹사이드 공간을 선점하며 공격적인 구조를 짜는 더치 디펜스" },
+    ];
+    const opts = optsFor(rows);
+    return rows.map((r, i) => ({ move: r.san, q: "1.d4 " + r.san + " 포지션의 성격으로 가장 알맞은 설명은?", opts, answer: i }));
+  })());
+  ch2Sub("ch2-3", "흑이 자주 두는 응수", "c4", (() => {
+    const rows = [
+      { san: "c5", desc: "양쪽 다 중앙을 기물로 통제하는 대칭 잉글리시 구조" },
+      { san: "e5", desc: "중앙을 폰으로 선점해 리버스드 시칠리안 유형의 구조를 만든다" },
+      { san: "c6", desc: "d5 전진을 준비하며 카로칸과 비슷한 구조로 합류하는 대응" },
+    ];
+    const opts = optsFor(rows);
+    return rows.map((r, i) => ({ move: r.san, q: "1.c4 " + r.san + " 포지션의 성격으로 가장 알맞은 설명은?", opts, answer: i }));
+  })());
+  ch2Sub("ch2-4", "흑이 자주 두는 응수", "Nf3", (() => {
+    const rows = [
+      { san: "Nc6", desc: "중앙 칸(e5·d4)을 두고 유연하게 맞서며 백의 다음 수를 기다린다" },
+      { san: "Nf6", desc: "대칭적으로 나이트를 전개해 인디언 계열 구조로 전환할 여지를 남긴다" },
+      { san: "d5", desc: "중앙을 폰으로 곧바로 선점해 퀸스 갬빗·슬라브 계열 구조로 합류할 수 있다" },
+    ];
+    const opts = optsFor(rows);
+    return rows.map((r, i) => ({ move: r.san, q: "1.Nf3 " + r.san + " 포지션의 성격으로 가장 알맞은 설명은?", opts, answer: i }));
+  })());
 }
 seedContent();
 async function loadContent() {
-  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
+  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, questChapters: {} };
   try {
     if (SB_ON) {
       try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
@@ -4380,68 +4449,218 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
     </div>
   );
 }
-/* ============================================================ 메인 퀘스트 (18차) ============================================================ */
-// (18차 기능1) 메인 퀘스트 — "진척도를 갖는 오프닝 수의 특징 탐구" 테마의 상시 퀘스트.
-// 우선 STAGE 1(백의 첫 수 탐구)·STAGE 2(흑의 첫 수 탐구)만 구현한다. 진척도는 도감 해금(unlocked) 기준.
-const MAIN_QUEST_STAGES = [
-  { key: "stage1", no: 1, title: "백의 첫 수 탐구", desc: "시작 위치에서 백이 둘 수 있는 이론 첫 수를 전부 직접 두어 해금하세요.", xp: 30 },
-  { key: "stage2", no: 2, title: "흑의 첫 수 탐구", desc: "각 첫 수에 대한 흑의 이론 응수를 전부 해금하세요.", xp: 50 },
-];
-function mainQuestProgress(unlocked, stageKey) {
-  const first = ((SNAP.tree[""] && SNAP.tree[""].moves) || []).filter((m) => m.book).map((m) => m.san);
-  if (stageKey === "stage1") return { done: first.filter((s) => unlocked.has(s)).length, total: first.length };
-  let total = 0, done = 0;
-  for (const f of first) {
-    const nd = SNAP.tree[f]; if (!nd) continue;
-    for (const m of nd.moves.filter((x) => x.book)) { total++; if (unlocked.has(f + " " + m.san)) done++; }
-  }
-  return { done, total };
+/* ============================================================ 메인 퀘스트 · CHAPTER (18차→20차 기능4) ============================================================ */
+// (20차 기능4) 메인 퀘스트를 STAGE(도감 해금 진행도) 방식에서 CHAPTER(사지선다 퀴즈) 방식으로 전면 개편.
+// 챕터·질문 콘텐츠는 CONTENT.questChapters에 저장되며 개발자가 QuestChapterEditor로 직접 입력·수정·삭제한다.
+function chapterProgress(mainQuest, key) {
+  const ch = CONTENT.questChapters[key];
+  if (!ch) return { done: 0, total: 0, complete: false };
+  const answered = ((mainQuest && mainQuest.answered) || {})[key] || {};
+  const total = ch.items.length;
+  const done = ch.items.filter((_, i) => answered[i]).length;
+  return { done, total, complete: total > 0 && done >= total };
 }
-function MainQuestCard({ unlocked, mainQuest, onClaimStage }) {
-  const claimed = (mainQuest && mainQuest.claimed) || {};
-  let prevDone = true; // STAGE 1은 항상 도전 가능, 이후 스테이지는 앞 스테이지 완료 후 공개
+function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit, sub }) {
+  const claimed = ((mainQuest && mainQuest.claimed) || {})[chKey];
+  const { done, total, complete } = chapterProgress(mainQuest, chKey);
+  const pct = total ? Math.round((100 * done) / total) : 0;
+  return (
+    <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), marginLeft: sub ? 14 : 0 }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: complete ? "#BEEAB0" : T.ivoryHi, minWidth: 0 }}>{ch.title}</span>
+        <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 7px", flexShrink: 0 }}><CoinIcon size={11} /> {ch.reward || 100}</span>
+        <span style={{ marginLeft: "auto", flexShrink: 0 }}>
+          {claimed ? <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>완료</span>
+            : complete ? <button onClick={() => onClaim(chKey)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: "pointer" }}>보상 받기</button>
+            : <button onClick={() => onOpenQuiz(chKey)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{done > 0 ? "이어서 풀기" : "도전하기"}</button>}
+        </span>
+        {canEdit && <button onClick={() => onEdit(chKey)} className="press" title="챕터 편집" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid #5A4630", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Settings size={12} /></button>}
+      </div>
+      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 7 }}>{ch.desc}</div>
+      <div className="flex items-center gap-2">
+        <div style={{ flex: 1, height: 7, borderRadius: 999, background: "rgba(0,0,0,.4)", overflow: "hidden", border: "1px solid #00000066" }}>
+          <div style={{ width: pct + "%", height: "100%", background: complete ? "linear-gradient(90deg,#3C8A3C,#5CB85C)" : "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brassHi, flexShrink: 0 }}>{done}/{total}</span>
+      </div>
+    </div>
+  );
+}
+function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, contentVer }) {
+  const [quizKey, setQuizKey] = useState(null);
+  const [editKey, setEditKey] = useState(null);
+  // (기능4 보강) 챕터 목록을 하드코딩된 5개 키가 아니라 CONTENT.questChapters 전체에서 매 렌더마다
+  // 다시 계산한다 — 그래야 개발자가 "+ 새 챕터 추가"로 만든 챕터도 실제로 화면에 노출된다.
+  // parent 필드가 있는 챕터는 같은 parent끼리 묶어 "CHAPTER N · 소제목"으로, parent가 없는
+  // 챕터는 ch1은 "CHAPTER 1"로, 그 외(신규 추가분)는 "추가 챕터"로 묶어 보여준다.
+  const entries = Object.entries(CONTENT.questChapters);
+  const ch1Entry = entries.find(([k]) => k === "ch1");
+  const groups = new Map();
+  const singles = [];
+  for (const [k, ch] of entries) {
+    if (k === "ch1") continue;
+    if (ch.parent) {
+      if (!groups.has(ch.parent)) groups.set(ch.parent, { heading: ch.parentTitle || "챕터 모음", rows: [] });
+      groups.get(ch.parent).rows.push([k, ch]);
+    } else singles.push([k, ch]);
+  }
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#33220F,#1E1206)", border: "1px solid " + T.brass }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, marginBottom: 2 }}>메인 퀘스트</div>
-      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>오프닝 수의 특징 탐구 — 스테이지를 완료하며 오프닝의 세계를 넓혀 보세요.</div>
+      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>오프닝 포지션의 성격을 탐구하는 챕터 퀴즈 — 챕터마다 OC 나이트 코인을 보상으로 드립니다.</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {MAIN_QUEST_STAGES.map((st) => {
-          const { done, total } = mainQuestProgress(unlocked, st.key);
-          const complete = total > 0 && done >= total;
-          const locked = !prevDone;
-          prevDone = prevDone && complete;
-          const pct = total ? Math.round((100 * done) / total) : 0;
-          return (
-            <div key={st.key} style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), opacity: locked ? 0.45 : 1 }}>
-              <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".06em", color: "#241509", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", borderRadius: 5, padding: "2px 7px", flexShrink: 0 }}>STAGE {st.no}</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: complete ? "#BEEAB0" : T.ivoryHi, minWidth: 0 }}>{locked ? "???" : st.title}</span>
-                <span style={{ marginLeft: "auto", flexShrink: 0 }}>
-                  {locked ? <Lock size={14} color={T.inkSoft} />
-                    : claimed[st.key] ? <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>완료 (+{st.xp} XP)</span>
-                    : complete ? <button onClick={() => onClaimStage(st.key, st.xp)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: "pointer" }}>보상 받기 +{st.xp} XP</button>
-                    : <span style={{ fontSize: 10.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brassHi }}>{done}/{total}</span>}
-                </span>
-              </div>
-              {!locked && <>
-                <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 7 }}>{st.desc}</div>
-                <div style={{ height: 7, borderRadius: 999, background: "rgba(0,0,0,.4)", overflow: "hidden", border: "1px solid #00000066" }}>
-                  <div style={{ width: pct + "%", height: "100%", background: complete ? "linear-gradient(90deg,#3C8A3C,#5CB85C)" : "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
-                </div>
-              </>}
+        {ch1Entry && <><span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi }}>CHAPTER 1</span>
+          <ChapterRow ch={ch1Entry[1]} chKey="ch1" mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} /></>}
+        {[...groups.entries()].map(([pk, g], gi) => (
+          <React.Fragment key={pk}>
+            <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi, marginTop: 4 }}>{"CHAPTER " + (gi + 2) + " · " + g.heading}</span>
+            {g.rows.map(([k, ch]) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub />)}
+          </React.Fragment>
+        ))}
+        {singles.length > 0 && <>
+          <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi, marginTop: 4 }}>추가 챕터</span>
+          {singles.map(([k, ch]) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} />)}
+        </>}
+        {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 4, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 새 챕터 추가</button>}
+      </div>
+      {quizKey && <QuizModal chKey={quizKey} ch={CONTENT.questChapters[quizKey]} mainQuest={mainQuest} onAnswer={onAnswer} onClose={() => setQuizKey(null)} />}
+      {editKey && <QuestChapterEditor chKey={editKey} bumpContent={bumpContent} onClose={() => setEditKey(null)} />}
+    </div>
+  );
+}
+/* (20차 기능4) 챕터 퀴즈 — 사지선다·오지선다, 듀오링고 스타일로 한 문항씩 진행하며 틀리면 그 자리에서 다시 시도한다.
+   이미 정답을 맞힌 문항은 건너뛰고, 전부 맞히면 챕터 완료(보상 받기는 MainQuestCard의 별도 버튼에서). */
+function QuizModal({ chKey, ch, mainQuest, onAnswer, onClose }) {
+  // (20차 기능4) 문항 대기열은 모달을 여는 시점에 한 번만 고정한다 — 정답을 맞힐 때마다 answered가
+  // 즉시 갱신되는데, 그때마다 pending을 다시 계산하면 "다음 문항" 클릭 전에 이미 배열이 한 칸
+  // 당겨져 있어 pos를 증가시키는 순간 바로 다음 문항을 건너뛰는 버그가 생긴다.
+  const initialAnsweredRef = useRef(null);
+  if (initialAnsweredRef.current == null || initialAnsweredRef.current.chKey !== chKey) {
+    initialAnsweredRef.current = { chKey, set: new Set(Object.keys((((mainQuest && mainQuest.answered) || {})[chKey]) || {}).map(Number)) };
+  }
+  const queue = useMemo(() => (ch ? ch.items.map((it, i) => ({ it, i })).filter((x) => !initialAnsweredRef.current.set.has(x.i)) : []), [ch, chKey]);
+  const [pos, setPos] = useState(0);
+  const [picked, setPicked] = useState(null);
+  const [feedback, setFeedback] = useState(null); // "correct" | "wrong" | null
+  useEffect(() => { setPos(0); setPicked(null); setFeedback(null); }, [chKey]);
+  if (!ch) return null;
+  const done = pos >= queue.length;
+  const cur = !done ? queue[pos] : null;
+  const pick = (oi) => {
+    if (feedback === "correct") return;
+    setPicked(oi);
+    if (oi === cur.it.answer) { setFeedback("correct"); onAnswer(chKey, cur.i); }
+    else setFeedback("wrong");
+  };
+  const next = () => { setPos((p) => p + 1); setPicked(null); setFeedback(null); };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
+        <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, marginBottom: 4 }}>{ch.title}</div>
+        {done ? (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.best, marginBottom: 6 }}>🎉 이 챕터의 모든 문항을 맞혔어요!</div>
+            <div style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>퀘스트 화면에서 보상을 받아보세요.</div>
+            <button onClick={onClose} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>닫기</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginBottom: 10 }}>{pos + 1} / {queue.length}문항</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 12, lineHeight: 1.4 }}>{cur.it.q}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {cur.it.opts.map((op, oi) => {
+                const isPicked = picked === oi;
+                const showCorrect = feedback && oi === cur.it.answer;
+                const showWrong = feedback === "wrong" && isPicked;
+                return (
+                  <button key={oi} onClick={() => pick(oi)} disabled={feedback === "correct"} className={feedback ? "" : "press"}
+                    style={{ textAlign: "left", padding: "10px 12px", borderRadius: 9, fontSize: 12.5, lineHeight: 1.4, cursor: feedback === "correct" ? "default" : "pointer",
+                      border: "1.5px solid " + (showCorrect ? T.best : showWrong ? T.blunder : "#C9B58C"),
+                      background: showCorrect ? "#EAF3E0" : showWrong ? "#FBEAEA" : "#fff", color: T.ink }}>{op}</button>
+                );
+              })}
             </div>
-          );
-        })}
+            {feedback === "wrong" && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginTop: 10 }}>✕ 다른 설명이에요. 다시 골라보세요.</div>}
+            {feedback === "correct" && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11.5, color: T.best, fontWeight: 700, marginBottom: 6 }}>✓ 정답이에요!{cur.it.note ? " " + cur.it.note : ""}</div>
+                <button onClick={next} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>다음 문항</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+/* (20차 기능4) 개발자 전용 — 챕터의 제목·설명·보상과 문항(질문·보기·정답·설명)을 직접 입력·수정·삭제하는 CMS. */
+function QuestChapterEditor({ chKey, bumpContent, onClose }) {
+  const isNew = chKey === "__new__";
+  const [key, setKey] = useState(isNew ? "" : chKey);
+  const existing = !isNew ? CONTENT.questChapters[chKey] : null;
+  const [draft, setDraft] = useState(existing || { title: "", desc: "", reward: 100, items: [] });
+  const [saving, setSaving] = useState(false);
+  const save = async (next) => {
+    setDraft(next); setSaving(true);
+    const k = isNew ? key.trim() : chKey;
+    if (k) { CONTENT.questChapters[k] = next; await bumpContent(); }
+    setSaving(false);
+  };
+  const updateItem = (i, patch) => { const items = draft.items.map((it, idx) => idx === i ? { ...it, ...patch } : it); save({ ...draft, items }); };
+  const updateOpt = (i, oi, v) => { const opts = draft.items[i].opts.map((o, x) => x === oi ? v : o); updateItem(i, { opts }); };
+  const addItem = () => save({ ...draft, items: [...draft.items, { move: "", q: "", opts: ["", "", "", ""], answer: 0, note: "" }] });
+  const delItem = (i) => save({ ...draft, items: draft.items.filter((_, idx) => idx !== i) });
+  const delChapter = async () => { if (!isNew) { delete CONTENT.questChapters[chKey]; await bumpContent(); } onClose(); };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{isNew ? "새 챕터 추가" : "챕터 편집"} {saving && <span style={{ fontSize: 10, color: T.inkSoft, fontWeight: 600 }}>저장 중…</span>}</div>
+        {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder="챕터 키 (예: ch2-5)" style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }} />}
+        <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => save(draft)} placeholder="챕터 제목" style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 13, fontWeight: 700, marginBottom: 6, boxSizing: "border-box" }} />
+        <textarea value={draft.desc} onChange={(e) => setDraft({ ...draft, desc: e.target.value })} onBlur={() => save(draft)} placeholder="챕터 설명" rows={2} style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box", resize: "vertical" }} />
+        <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
+          <span style={{ fontSize: 11, color: T.inkSoft }}>클리어 보상</span>
+          <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
+          <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={13} /> OC 나이트 코인</span>
+        </div>
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>문항 {draft.items.length}개</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {draft.items.map((it, i) => (
+            <div key={i} style={{ border: "1px dashed #C9B58C", borderRadius: 10, padding: 10 }}>
+              <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+                <input value={it.move} onChange={(e) => updateItem(i, { move: e.target.value })} placeholder="수(예: e4)" style={{ width: 60, padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 11.5 }} />
+                <button onClick={() => delItem(i)} className="press" style={{ marginLeft: "auto", width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
+              </div>
+              <textarea value={it.q} onChange={(e) => updateItem(i, { q: e.target.value })} placeholder="질문" rows={2} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box", resize: "vertical" }} />
+              {it.opts.map((op, oi) => (
+                <div key={oi} className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+                  <input type="radio" checked={it.answer === oi} onChange={() => updateItem(i, { answer: oi })} title="정답으로 표시" />
+                  <input value={op} onChange={(e) => updateOpt(i, oi, e.target.value)} placeholder={"보기 " + (oi + 1)} style={{ flex: 1, minWidth: 0, padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5 }} />
+                </div>
+              ))}
+              <div className="flex items-center gap-2" style={{ marginTop: 4 }}>
+                <button onClick={() => updateItem(i, { opts: [...it.opts, ""] })} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>+ 보기 추가</button>
+              </div>
+              <textarea value={it.note} onChange={(e) => updateItem(i, { note: e.target.value })} placeholder="정답 후 보여줄 추가 설명(선택)" rows={2} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 11.5, marginTop: 6, boxSizing: "border-box", resize: "vertical" }} />
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between" style={{ marginTop: 10 }}>
+          <button onClick={addItem} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 문항 추가</button>
+          {!isNew && <button onClick={delChapter} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>챕터 삭제</button>}
+        </div>
       </div>
     </div>
   );
 }
 // (18차 UI2) 퀘스트 탭 — 일일 퀘스트를 퍼즐 탭에서 분리하고 메인 퀘스트와 함께 표시.
-function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, unlocked, mainQuest, onClaimStage }) {
+function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, bumpContent, contentVer }) {
   return (
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><Mascot name="milku" emotion="great" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
-      <MainQuestCard unlocked={unlocked} mainQuest={mainQuest} onClaimStage={onClaimStage} />
+      <MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />
       <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} />
     </div>
   );
@@ -6336,15 +6555,25 @@ export default function App() {
       return { ...dq, claimed: { ...dq.claimed, [questKey]: true } };
     });
   }, []);
-  // (18차 기능1) 메인 퀘스트 스테이지 보상 — 완료된 스테이지의 XP를 1회 지급.
-  const claimMainStage = useCallback((stageKey, amount) => {
+  // (20차 기능4) 메인 퀘스트 챕터 — 문항을 맞힐 때마다 기록하고, 챕터를 모두 맞히면 코인 보상을 1회 지급한다.
+  const onAnswerChapter = useCallback((chKey, itemIdx) => {
+    setMainQuest((mq) => {
+      const answered = (mq && mq.answered) || {};
+      const chAns = answered[chKey] || {};
+      if (chAns[itemIdx]) return mq;
+      return { ...mq, answered: { ...answered, [chKey]: { ...chAns, [itemIdx]: true } } };
+    });
+  }, []);
+  const claimMainChapter = useCallback((chKey) => {
     setMainQuest((mq) => {
       const claimed = (mq && mq.claimed) || {};
-      if (claimed[stageKey]) return mq;
-      setTotalXp((x) => x + amount);
-      setToast({ type: "xp", amount });
-      setTimeout(() => setToast((t) => (t && t.type === "xp" ? null : t)), 1400);
-      return { ...mq, claimed: { ...claimed, [stageKey]: true } };
+      if (claimed[chKey]) return mq;
+      const ch = CONTENT.questChapters[chKey];
+      const amount = (ch && ch.reward) || 100;
+      setOcCoins((c) => c + amount);
+      setToast({ type: "coins", amount });
+      setTimeout(() => setToast((t) => (t && t.type === "coins" ? null : t)), 1800);
+      return { ...mq, claimed: { ...claimed, [chKey]: true } };
     });
   }, []);
   // 퍼즐 퀘스트 목표 달성 시 지급
@@ -6549,7 +6778,7 @@ export default function App() {
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlocked={unlocked} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
-        {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} unlocked={unlocked} mainQuest={mainQuest} onClaimStage={claimMainStage} />}
+        {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canAdd={canAdd} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} treeFocus={treeFocus} setTreeFocus={setTreeFocus} totalXp={totalXp} solvedCount={solved.size} />}
       </main>
