@@ -5004,7 +5004,7 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     </div>
   );
 }
-function PuzzleTab({ puzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, active, setActive, engine, liveOn, canEdit, bumpContent }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, active, setActive, engine, liveOn, canEdit, bumpContent }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -5032,14 +5032,30 @@ function PuzzleTab({ puzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEve
   }, [rankPeriod]);
   // (18차 UX9) 테마 칩을 선택하면 추천 퍼즐도 그 테마만 표시. (18차 UI4) 이미 해결한 퍼즐은
   // 추천에서 빼고 아래 "해결 완료" 섹션에만 나오도록 분리한다.
-  const recommended = useMemo(() => {
+  // (20차 UX6) 추천 퍼즐은 "미해결" 목록과 별도 알고리즘 — 내 퍼즐 탭에서 삭제해도(친구/본인 미해결
+  // 이라도) 풀이자가 많으면 계속 후보로 남도록, 현재 puzzles뿐 아니라 삭제했던 퍼즐의 보존본
+  // (archivedPuzzles)까지 함께 후보 풀로 합친다. 추천 카드는 삭제 버튼 자체가 없어 여기서 지울 수 없다.
+  const [recSeed, setRecSeed] = useState(0);
+  const recommendedPool = useMemo(() => {
     const m = rankMap[rankPeriod];
     if (!m) return [];
-    return puzzles
+    const byId = new Map();
+    for (const p of puzzles) byId.set(p.id, p);
+    for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
+    return [...byId.values()]
       .filter((p) => filter === "all" || (p.theme || "punish") === filter)
       .filter((p) => !solved.has(p.id))
-      .map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).slice(0, 6).map((x) => x.p);
-  }, [puzzles, rankMap, rankPeriod, filter, solved]);
+      .map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).slice(0, 12).map((x) => x.p);
+  }, [puzzles, archivedPuzzles, rankMap, rankPeriod, filter, solved]);
+  // (20차 UX6) "새로고침"을 누르면 후보 풀(최대 12개) 안에서 다른 6개를 결정적으로 다시 뽑아 보여준다.
+  const recommended = useMemo(() => {
+    if (recommendedPool.length <= 6) return recommendedPool;
+    const arr = [...recommendedPool];
+    let seed = (recSeed + 1) * 2654435761;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    return arr.slice(0, 6);
+  }, [recommendedPool, recSeed]);
   if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
   const themed = filter === "all" ? puzzles : puzzles.filter((p) => (p.theme || "punish") === filter);
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
@@ -5075,10 +5091,12 @@ function PuzzleTab({ puzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEve
         <div style={{ marginBottom: 18 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>🔥 추천 퍼즐</div>
-            <div className="flex gap-1">
+            <div className="flex items-center gap-1">
               {[["day", "일간"], ["week", "주간"], ["month", "월간"]].map(([k, lb]) => { const on = rankPeriod === k; return (
                 <button key={k} onClick={() => setRankPeriod(k)} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "4px 9px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
               ); })}
+              {/* (20차 UX6) 지금 보이는 6개가 마음에 안 들면 후보 풀(최대 12개) 안에서 다른 6개로 새로고침 */}
+              {recommendedPool.length > 6 && <button onClick={() => setRecSeed((s) => s + 1)} className="press" title="다른 추천 보기" aria-label="추천 퍼즐 새로고침" style={{ width: 24, height: 24, borderRadius: 999, border: "1px solid #5A4630", background: "transparent", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><RotateCcw size={12} /></button>}
             </div>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
@@ -6763,6 +6781,9 @@ export default function App() {
   const [puzzleActive, setPuzzleActive] = useState(null);   // (UX4) 탭 이동에도 퍼즐 창 유지
   const [treeFocus, setTreeFocus] = useState([]);   // (UX4) 새로고침해도 이론 트리 에디터의 탐색 위치 유지
   const [deletedPuzzles, setDeletedPuzzles] = useState(new Set()); // (UX5) 삭제한 퍼즐(자동 재생성 방지)
+  // (20차 UX6) 추천 퍼즐은 "미해결" 목록과 별도 알고리즘으로 동작한다 — 퍼즐 탭에서 삭제해도 이미
+  // 알고 있던 퍼즐 데이터는 여기 보존해 두어, 추천 목록에서는 계속 후보로 남는다(id -> 퍼즐 객체).
+  const [archivedPuzzles, setArchivedPuzzles] = useState({});
   const [solveCounts, setSolveCounts] = useState({});              // (UX6) 번호별 전역 풀이수
   const [friendUids, setFriendUids] = useState([]);                // (16차) 수락된 친구 uid 목록
   const [puzzleSolvers, setPuzzleSolvers] = useState({});          // (16차) { [puzzleNo]: uid[] } — 그 퍼즐을 푼 사람들
@@ -6880,19 +6901,19 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); setDeletedPuzzles(new Set(d.deleted || [])); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (d.puzzleActive) setPuzzleActive(d.puzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     setLoaded(true);
   })(); }, []);
   // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 레벨/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "" }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus })); }, [unlocked, profile, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings }); }, [unlocked, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus })); }, [unlocked, profile, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings }); }, [unlocked, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded]);
   // (16차) 퍼즐 카드에 "친구 N명이 풀었습니다" 표기를 위해, 로그인 시 내 친구 목록과 각 퍼즐의 해결자 uid를 한 번에 조회.
   useEffect(() => {
     if (!loaded || !uid || !puzzles.length) return;
@@ -6942,13 +6963,13 @@ export default function App() {
   const equipSkin = useCallback((kind, id) => { (kind === "board" ? setBoardSkin : setPieceSkin)(id); }, []);
   const skinValue = useMemo(() => ({ boardSkin, pieceSkin }), [boardSkin, pieceSkin]);
 
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
-    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLineSolves({}); prevLevelRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set());
+    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLineSolves({}); prevLevelRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
   }, []);
@@ -6978,7 +6999,14 @@ export default function App() {
       return [...prev, pz];
     });
   }, [deletedPuzzles, solved]);
-  const onDeletePuzzle = useCallback((id) => { setPuzzles((prev) => prev.filter((x) => x.id !== id)); setDeletedPuzzles((p) => { const n = new Set(p); n.add(id); return n; }); }, []);
+  const onDeletePuzzle = useCallback((id) => {
+    setPuzzles((prev) => {
+      const removed = prev.find((x) => x.id === id);
+      if (removed) setArchivedPuzzles((a) => (a[id] ? a : { ...a, [id]: removed }));
+      return prev.filter((x) => x.id !== id);
+    });
+    setDeletedPuzzles((p) => { const n = new Set(p); n.add(id); return n; });
+  }, []);
   const onSolved = useCallback((id) => {
     const already = solved.has(id);
     if (!already) setSolved((p) => { const n = new Set(p); n.add(id); return n; });
@@ -7270,7 +7298,7 @@ export default function App() {
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 110px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlocked={unlocked} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canAdd={canAdd} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} treeFocus={treeFocus} setTreeFocus={setTreeFocus} totalXp={totalXp} solvedCount={solved.size} />}
