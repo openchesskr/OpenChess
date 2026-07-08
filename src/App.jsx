@@ -347,15 +347,19 @@ function sansToUci(sans) {
   });
   return out;
 }
-function sansToFen(sans) {
-  const b = boardFromSans(sans); const rows = [];
+// (20차 기능5) 이미 만들어진 board를 그대로 FEN으로 직렬화 — sansToFen처럼 매번 sans 전체를
+// 처음부터 재생(boardFromSans)하지 않아도 되므로, 이미 진행 중인 보드가 있는 호출부(analyzeGame 등)에서
+// O(n²) 재생을 피할 수 있다. plyCount는 sans.length와 동일한 의미(선수 결정·풀무브 번호 계산용).
+function boardToFen(b, plyCount) {
+  const rows = [];
   for (let r = 0; r < 8; r++) {
     let row = "", empty = 0;
     for (let c = 0; c < 8; c++) { const p = b[r][c]; if (!p) empty++; else { if (empty) { row += empty; empty = 0; } const ch = p.t; row += p.c === "w" ? ch : ch.toLowerCase(); } }
     if (empty) row += empty; rows.push(row);
   }
-  return rows.join("/") + " " + (sans.length % 2 === 0 ? "w" : "b") + " KQkq - 0 " + (Math.floor(sans.length / 2) + 1);
+  return rows.join("/") + " " + (plyCount % 2 === 0 ? "w" : "b") + " KQkq - 0 " + (Math.floor(plyCount / 2) + 1);
 }
+function sansToFen(sans) { return boardToFen(boardFromSans(sans), sans.length); }
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 
@@ -1383,18 +1387,25 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   // MultiPV-2: 각 포지션을 한 번만 평가해 최선수(pv0)와 2순위(pv1)를 함께 얻는다(중복 평가 없음).
   // 2순위와의 격차로 "유일한 수(Great)"를 판정하고, movetime 상한으로 시간이 폭주하지 않게 한다.
   const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
-  for (let i = 0; i <= N; i++) {
-    const lines = await withTimeout(engine.evaluateMulti(sansToFen(fullSans.slice(0, i)), depth, 2, movetime), 8000);
-    const p0 = lines && lines[0], p1 = lines && lines[1];
-    posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null };
-    onProgress && onProgress((i + 1) / (N + 1));
+  // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
+  // 기보가 길어질수록 분석이 급격히 느려진다 — 보드를 한 번만 만들어 한 수씩 전진시키며 재사용한다.
+  {
+    let board = startBoard();
+    for (let i = 0; i <= N; i++) {
+      const lines = await withTimeout(engine.evaluateMulti(boardToFen(board, i), depth, 2, movetime), 8000);
+      const p0 = lines && lines[0], p1 = lines && lines[1];
+      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null };
+      onProgress && onProgress((i + 1) / (N + 1));
+      if (i < N) board = applySan(board, fullSans[i], i % 2 === 0 ? "w" : "b");
+    }
   }
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
   const graphCp = new Array(N + 1);
   for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
+  let gradeBoard = startBoard();
   for (let i = 0; i < N; i++) {
     const moverWhite = i % 2 === 0;
-    const brd = boardFromSans(fullSans.slice(0, i));
+    const brd = gradeBoard;
     const color = moverWhite ? "w" : "b";
     const playedSan = stripSuffix(fullSans[i]);
     const bestCp = posEval[i].cp;                         // 이 포지션의 최선(둔 사람 관점)
@@ -1427,6 +1438,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     const acc = noPenalty ? 100 : moveAccuracy(winBefore, winAfter);
     moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc });
     if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
+    gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
   return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp) };
 }
