@@ -75,6 +75,6 @@ npm run refresh   # Lichess Explorer + Stockfish 로 openings.json 재생성 (LI
    - Vercel: Project → Settings → Environment Variables 에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 추가 후 재배포
    - GitHub Pages: 저장소 Settings → Secrets and variables → Actions 에 같은 이름의 Secret 2개 추가(워크플로가 빌드시 주입)
 
-설계: 비밀번호는 SHA-256으로 해시 후 전송, `accounts` 테이블은 RLS로 직접 접근을 막고 `app_signup`/`app_login`/`app_save` RPC(SECURITY DEFINER)로만 접근하여 해시가 외부로 노출되지 않습니다. 진도 저장은 비밀번호 해시가 일치해야만 가능합니다. 공유 콘텐츠(`app_content`)는 모든 방문자가 읽고, 편집 UI는 개발자/공동개발자에게만 노출됩니다.
+설계: 회원가입·로그인은 Supabase Auth(GoTrue, `/auth/v1/signup`·`/auth/v1/token`)를 직접 호출합니다 — 비밀번호는 Supabase가 서버 측에서 안전하게 해시·저장하며, 클라이언트/DB 어디에도 평문이나 자체 해시가 노출되지 않습니다. 로그인 성공 시 발급되는 access token(`auth.uid()`)이 이후 모든 요청의 신원 증명이 되고, `chat_messages`/`notifications`처럼 사용자별로 보호돼야 하는 테이블은 `auth.uid()` 기반 RLS 정책으로 서버에서 강제됩니다. 공유 콘텐츠(`app_content`)는 모든 방문자가 읽되, 쓰기는(20차 수정부터) `app_content` 정책이 `is_content_editor(auth.uid())`를 확인해 개발자/공동개발자 계정만 허용하도록 서버에서 막습니다 — `supabase-setup.sql`의 "20차 수정" 블록을 실행해야 적용됩니다.
 
-보안 주의(취미 프로젝트 기준): `app_content` 는 anon 키로 쓰기가 가능하므로(편집 UI 게이팅은 클라이언트), 민감 서비스라면 콘텐츠 쓰기도 RPC+자격 검증으로 막고, 인증은 Supabase Auth(이메일/OAuth)로 전환하는 것을 권장합니다. 현재 해시는 솔트 없는 SHA-256입니다.
+참고: `accounts`/`app_signup`/`app_login`/`app_save`(솔트 없는 SHA-256 해시 방식)는 GoTrue 전환 이전의 구버전 인증 방식으로, 현재 App.jsx는 더 이상 호출하지 않는 죽은 코드입니다. `supabase-setup.sql` 하단의 정리용 주석(`revoke`/`drop`)을 실행해 불필요한 공격 표면을 없애는 것을 권장합니다(예전 계정 데이터가 남아있다면 먼저 백업하세요). 보안 헤더(CSP 등)는 `vercel.json`을 참고하세요 — CSP는 우선 Report-Only로 넣어 두었으니, 배포 후 브라우저 콘솔에서 위반 항목이 없는지 확인한 뒤 `Content-Security-Policy`로 바꿔 실제로 적용하세요.
