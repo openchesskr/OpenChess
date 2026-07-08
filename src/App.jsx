@@ -370,67 +370,68 @@ function isDevelopingMove(uci, san) {
      최선이 되면 그 앞에서 끊고, 라인은 항상 사용자 수로 끝맺는다.
    반환: { tree: { children }, lines: [{ tag, solution }] } — lines는 통과 가능한 리프 경로(검증·구버전 호환용). */
 const PUZZLE_PASS_KINDS = ["brilliant", "best", "only", "excellent"];   // 사용자 진영에서 '통과'되는 수 체계
+function puzzleUciOf(board, san, color) {
+  const info = sanSrc(board, stripSuffix(san), color);
+  if (!info || !info.from) return "";
+  return FILES[info.from[1]] + (8 - info.from[0]) + FILES[info.to[1]] + (8 - info.to[0]);
+}
+// 부모 포지션의 PV(착수자 관점) → 그 수를 둔 뒤 포지션의 백 관점 평가({cp}|{mate,win,plies})
+function puzzlePvEvToWhite(pv, moverWhite) {
+  if (!pv) return null;
+  if (pv.mate != null) return { mate: pv.mate * (moverWhite ? 1 : -1), win: (pv.mate > 0) === moverWhite ? "w" : "b", plies: Math.max(0, matePliesOf(pv.mate) - 1) };
+  return pv.cp != null ? { cp: pv.cp * (moverWhite ? 1 : -1) } : null;
+}
+// (20차 기능1) cur 위치의 후보 수들을 등급·채택률·평가치와 함께 수집 — genPuzzleTree와 개발자의
+// "한 수 추가" 기능(extendPuzzleLeaf)이 함께 쓰는 공용 헬퍼.
+async function puzzleCandidatesAt(engine, cur) {
+  const brd = boardFromSans(cur);
+  const moverWhite = cur.length % 2 === 0;
+  const color = moverWhite ? "w" : "b";
+  let pvs = null;
+  try { pvs = await engine.evaluateMulti(sansToFen(cur), 11, 6, 3500); } catch { pvs = null; }
+  if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
+  const bestCp = cpOfLine(pvs[0]);
+  const adoptBy = {};
+  try { const lc = await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
+  const cands = []; const seen = new Set();
+  pvs.forEach((pv, i) => {
+    if (!pv || !pv.uci) return;
+    const san = uciToSan(brd, pv.uci, color); if (!san) return;
+    const k = stripSuffix(san); if (seen.has(k)) return; seen.add(k);
+    const mvCp = cpOfLine(pv);
+    const loss = Math.max(0, bestCp - mvCp);
+    let kind = i === 0 ? "best" : tierOf(loss);
+    if (i > 0 && kind === "best") kind = "excellent";
+    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40) kind = "brilliant"; } catch { }
+    cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
+  });
+  // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
+  const topAdopt = Object.entries(adoptBy).filter(([k]) => !seen.has(k)).sort((a, b) => b[1] - a[1])[0];
+  if (topAdopt && topAdopt[1] >= 10 && sanSrc(brd, topAdopt[0], color)) {
+    const san = decorateSan(brd, topAdopt[0], color);
+    try {
+      const evc = await engine.evaluate(sansToFen([...cur, san]), 9);
+      if (evc) {
+        const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
+        const loss = Math.max(0, bestCp - mvCp);
+        let kind = tierOf(loss); if (kind === "best") kind = "excellent";
+        cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san]), uci: puzzleUciOf(brd, san, color) });
+      }
+    } catch { }
+  }
+  return cands;
+}
 async function genPuzzleTree(engine, preSans, opts) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
     firstSan = null, maxNodes = 34 } = opts || {};
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
-  const uciOf = (board, san, color) => {
-    const info = sanSrc(board, stripSuffix(san), color);
-    if (!info || !info.from) return "";
-    return FILES[info.from[1]] + (8 - info.from[0]) + FILES[info.to[1]] + (8 - info.to[0]);
-  };
-  // 부모 포지션의 PV(착수자 관점) → 그 수를 둔 뒤 포지션의 백 관점 평가({cp}|{mate,win,plies})
-  const pvEvToWhite = (pv, moverWhite) => {
-    if (!pv) return null;
-    if (pv.mate != null) return { mate: pv.mate * (moverWhite ? 1 : -1), win: (pv.mate > 0) === moverWhite ? "w" : "b", plies: Math.max(0, matePliesOf(pv.mate) - 1) };
-    return pv.cp != null ? { cp: pv.cp * (moverWhite ? 1 : -1) } : null;
-  };
-  // cur 위치의 후보 수들을 등급·채택률·평가치와 함께 수집
-  async function candidatesAt(cur) {
-    const brd = boardFromSans(cur);
-    const moverWhite = cur.length % 2 === 0;
-    const color = moverWhite ? "w" : "b";
-    let pvs = null;
-    try { pvs = await engine.evaluateMulti(sansToFen(cur), 11, 6, 3500); } catch { pvs = null; }
-    if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
-    const bestCp = cpOfLine(pvs[0]);
-    const adoptBy = {};
-    try { const lc = await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
-    const cands = []; const seen = new Set();
-    pvs.forEach((pv, i) => {
-      if (!pv || !pv.uci) return;
-      const san = uciToSan(brd, pv.uci, color); if (!san) return;
-      const k = stripSuffix(san); if (seen.has(k)) return; seen.add(k);
-      const mvCp = cpOfLine(pv);
-      const loss = Math.max(0, bestCp - mvCp);
-      let kind = i === 0 ? "best" : tierOf(loss);
-      if (i > 0 && kind === "best") kind = "excellent";
-      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40) kind = "brilliant"; } catch { }
-      cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: pvEvToWhite(pv, moverWhite), uci: pv.uci });
-    });
-    // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
-    const topAdopt = Object.entries(adoptBy).filter(([k]) => !seen.has(k)).sort((a, b) => b[1] - a[1])[0];
-    if (topAdopt && topAdopt[1] >= 10 && sanSrc(brd, topAdopt[0], color)) {
-      const san = decorateSan(brd, topAdopt[0], color);
-      try {
-        const evc = await engine.evaluate(sansToFen([...cur, san]), 9);
-        if (evc) {
-          const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
-          const loss = Math.max(0, bestCp - mvCp);
-          let kind = tierOf(loss); if (kind === "best") kind = "excellent";
-          cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san]), uci: uciOf(brd, san, color) });
-        }
-      } catch { }
-    }
-    return cands;
-  }
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
   async function expand(cur, depth, sawUserCapture) {
     if (depth >= maxPlies || nodeCount >= maxNodes) return [];
     const isUserTurn = depth % 2 === 0;
-    let cands = await candidatesAt(cur);
+    let cands = await puzzleCandidatesAt(engine, cur);
     if (!cands || !cands.length) return [];
     // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음)
     if (depth >= 1 || firstSan) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));
@@ -3210,6 +3211,59 @@ function treeLinesOf(tree) {
   walk(tree, []);
   return out;
 }
+// (20차 기능1) 트리를 JSON으로 깊은 복제(모든 필드가 순수 데이터라 안전) — 개발자의 "한 수 추가" 편집은
+// 항상 복제본을 수정한 뒤 통째로 교체 저장한다(원본 CONTENT.puzzleOverrides를 직접 변형하지 않음).
+function cloneTree(tree) { return JSON.parse(JSON.stringify(tree)); }
+// path(그 리프까지의 san 배열)를 따라 실제 트리 노드 객체를 찾는다(clone된 트리에 대해 사용 — 원본을 직접 수정).
+function findTreeNode(tree, path) {
+  let node = tree;
+  for (const san of path) {
+    const k = stripSuffix(san);
+    node = (node.children || []).find((c) => stripSuffix(c.san) === k);
+    if (!node) return null;
+  }
+  return node;
+}
+// 트리 전체에서 이미 쓰인 "L숫자" 리프 태그 중 가장 큰 번호+1 — 다른 라인의 기존 태그(그리고 그 해결
+// 기록)를 건드리지 않고 새로 추가하는 리프에만 고유 태그를 부여한다.
+function nextLeafTag(tree) {
+  let max = 0;
+  (function walk(node) {
+    if (node.tag) { const m = /^L(\d+)$/.exec(node.tag); if (m) max = Math.max(max, parseInt(m[1], 10)); }
+    (node.children || []).forEach(walk);
+  })(tree);
+  return "L" + (max + 1);
+}
+// (20차 기능1) 개발자 전용 — 모식도의 리프(라인의 끝)에 수를 하나 직접 추가한다. 전체 트리를 다시
+// 생성하지 않고 그 라인 하나만 한 수 연장한다. 결과는 CONTENT.puzzleOverrides에 저장되어 이 퍼즐을
+// 푸는 모든 유저에게 반영된다. kind/ev/adopt는 여기서 계산하지 않고 비워 둔다 — 풀이 화면의 기존
+// "구버전 트리 보강" 로직이 배경에서 엔진·Lichess로 채워 넣는다(중복 계산 방지).
+function extendPuzzleLeaf(tree, preSans, leafPath, sanRaw) {
+  const board = boardFromSans([...preSans, ...leafPath]);
+  const color = (preSans.length + leafPath.length) % 2 === 0 ? "w" : "b";
+  if (!sanSrc(board, sanRaw, color)) return { error: "불법 수입니다." };
+  const decorated = decorateSan(board, sanRaw, color);
+  const clone = cloneTree(tree);
+  const leaf = findTreeNode(clone, leafPath);
+  if (!leaf) return { error: "라인을 찾을 수 없습니다." };
+  if (leaf.children && leaf.children.some((c) => c.pass !== false)) return { error: "이미 다음 수가 있는 라인입니다." };
+  const tag = nextLeafTag(clone);
+  delete leaf.tag;
+  leaf.children = [{ san: decorated, pass: true, children: [], tag }];
+  return { tree: clone };
+}
+// (20차 기능1) 모식도·메타 보강 효과가 공유하는 "공개된(이미 실제로 두어진) 경로 키" 집합 —
+// 해결한 라인의 전체 경로 + 현재 시도 중인 경로(prefix)만 공개하고, 그 밖의 미래 수는 다루지 않는다.
+function revealedPuzzleKeys(allLines, solvedNow, curKeys) {
+  const s = new Set();
+  for (const l of allLines) {
+    if (!solvedNow.has(l.tag)) continue;
+    const ks = l.sans.map(stripSuffix);
+    for (let i = 1; i <= ks.length; i++) s.add(ks.slice(0, i).join(" "));
+  }
+  for (let i = 1; i <= curKeys.length; i++) s.add(curKeys.slice(0, i).join(" "));
+  return s;
+}
 // (20차 기능1) 별 산정: 한 개 이상의 라인 해결=★1, 전체 라인의 50% 이상=★2, 전체 라인 해결=★3
 function starsOf(solvedCount, totalLines) {
   if (!totalLines || solvedCount <= 0) return 0;
@@ -3538,21 +3592,26 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
    · 해결한 라인은 초록색 선으로 칠하고 리프에 체크 표시
    · 통과 불가(유혹) 수는 점선의 막힌 가지(✕) — 유저 진영에서는 최선·우수한 수만 다음 단계로 진행
    · 노드를 클릭하면 그 가지의 라인으로 이동해 처음부터 풀이를 시작한다. 캔버스는 드래그로 이동. */
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, targetTag, curKeys, onPick }) {
+// (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
+// 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
+// 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, setupLen, onPick, canEdit, onAddMove }) {
   const colW = 118, rowH = 56, boxW = 104, boxH = 46;
   const { items, edges, width, height, curItem } = useMemo(() => {
+    const revealed = revealedPuzzleKeys(allLines, solvedNow, curKeys);
     let cursor = 0; const items = []; const edges = [];
     const curKeyStr = curKeys.join(" ");
     const visit = (node, path, depth) => {
       const key = path.map((s) => stripSuffix(s)).join(" ");
+      if (depth > 0 && !revealed.has(key)) return null;   // 아직 두지 않은 수는 트리에서 아예 제외
       const it = { node, path, depth, key };
-      const kids = node.children || [];
+      const kids = (node.children || []).map((k) => visit(k, [...path, k.san], depth + 1)).filter(Boolean);
       if (!kids.length) it.y = cursor++;
       else {
-        const cs = kids.map((k) => visit(k, [...path, k.san], depth + 1));
-        it.y = (cs[0].y + cs[cs.length - 1].y) / 2;
-        cs.forEach((c) => edges.push([it, c]));
+        it.y = (kids[0].y + kids[kids.length - 1].y) / 2;
+        kids.forEach((c) => edges.push([it, c]));
       }
+      it.isLeaf = !kids.length;
       items.push(it);
       return it;
     };
@@ -3565,23 +3624,18 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, targetTag
       for (let i = 1; i <= ks.length; i++) solvedKeys.add(ks.slice(0, i).join(" "));
       solvedLeafKeys.add(ks.join(" "));
     }
-    // 목표 라인 경로 키(나아갈 길을 옅게 강조)
-    const targetLine = allLines.find((l) => l.tag === targetTag);
-    const targetKeys = new Set();
-    if (targetLine) { const ks = targetLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) targetKeys.add(ks.slice(0, i).join(" ")); }
     const curKeySet = new Set(); for (let i = 1; i <= curKeys.length; i++) curKeySet.add(curKeys.slice(0, i).join(" "));
     items.forEach((it) => {
       it.solved = it.depth > 0 && solvedKeys.has(it.key);
       it.solvedLeaf = it.depth > 0 && solvedLeafKeys.has(it.key);
       it.onCur = it.depth > 0 && curKeySet.has(it.key);
-      it.onTarget = it.depth > 0 && targetKeys.has(it.key);
       it.isCur = it.key === curKeyStr;
     });
     const curItem = items.find((it) => it.isCur) || null;
     const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 40;
     const height = (Math.max(...items.map((it) => it.y)) + 1) * rowH + 20;
     return { items, edges, width, height, curItem };
-  }, [tree, allLines, solvedNow, targetTag, curKeys.join(" ")]);
+  }, [tree, allLines, solvedNow, curKeys.join(" ")]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
   const dragRef = useRef(null);
   const boxRef = useRef(null);
@@ -3592,9 +3646,23 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, targetTag
     const cx = curItem ? curItem.depth : 0, cy = curItem ? curItem.y : 0;
     setPan({ x: Math.min(8, (vw - boxW) / 2 - cx * colW), y: Math.min(8, (vh - boxH) / 2 - cy * rowH) });
   }, [curItem && curItem.key, tree]);
-  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, input, .no-pan")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
   const onPointerUp = () => { dragRef.current = null; };
+  // (20차 기능1) 개발자 전용 — 리프(라인의 끝)에 "+"를 누르면 그 라인에 수를 하나 직접 추가한다.
+  const [addAt, setAddAt] = useState(null);   // path(array)|null
+  const [sanIn, setSanIn] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const openAdd = (path) => { setAddAt(path); setSanIn(""); setErr(""); };
+  const submitAdd = async () => {
+    const san = sanIn.trim(); if (!san || busy) return;
+    setBusy(true);
+    const errMsg = await onAddMove(addAt, san);
+    setBusy(false);
+    if (errMsg) { setErr(errMsg); return; }
+    setAddAt(null); setSanIn(""); setErr("");
+  };
   return (
     <div style={{ marginBottom: 12 }}>
       <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
@@ -3607,7 +3675,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, targetTag
               const wStroke = adopt == null ? 1.6 : 1.2 + Math.min(4.4, adopt / 9);   // 채택률에 따라 선 두께
               const blockedC = c.node.pass === false;
               const stroke = c.solved ? T.best : c.onCur ? T.brass : blockedC ? "#B9AA95" : "#C9B58C";
-              const op = c.solved ? 0.95 : c.onCur ? 1 : c.onTarget ? 0.85 : blockedC ? 0.5 : 0.6;
+              const op = c.solved ? 0.95 : c.onCur ? 1 : blockedC ? 0.5 : 0.6;
               return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={wStroke} opacity={op} strokeDasharray={blockedC ? "4 3" : undefined} strokeLinecap="round" />;
             })}
           </svg>
@@ -3619,36 +3687,54 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, targetTag
             const adopt = it.node.adopt != null ? it.node.adopt : m.adopt;
             const blocked = it.node.pass === false;
             const evTxt = ev ? fmtEvalCp(ev.cp, ev.mate, ev.plies) : null;
+            // 수 번호(예: "3.Nxe5"/"3...fxe5") — setup에 이어지는 전체 수순에서의 위치로 계산
+            const label = isRoot ? (rootLabel ? moveNumber(setupLen - 1) + rootLabel : "시작") : moveNumber(setupLen + it.depth - 1) + it.node.san;
+            const canAddHere = canEdit && !isRoot && it.isLeaf && !blocked;
             return (
               <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW, opacity: blocked ? 0.62 : 1 }}>
-                <button onClick={() => !isRoot && !blocked && onPick && onPick(it)} disabled={isRoot || blocked}
-                  className={isRoot || blocked ? "" : "press"} title={blocked ? "통과할 수 없는 수 — 최선·우수한 수만 다음 단계로 진행돼요" : undefined}
-                  style={{ width: "100%", textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
-                    border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : it.solved ? T.best : "#C9B58C"),
-                    background: isRoot ? "linear-gradient(180deg,#3A2516,#241509)" : it.solved ? "#EAF3E0" : "#fff",
-                    cursor: isRoot || blocked ? "default" : "pointer",
-                    boxShadow: it.isCur ? "0 0 0 3px rgba(196,154,80,.25)" : "none" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                    {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 8)}</span>}
-                    <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isRoot ? (rootLabel || "시작") : it.node.san}</span>
-                    {blocked && <X size={11} strokeWidth={3} style={{ color: T.blunder, flexShrink: 0 }} />}
-                    {it.solvedLeaf && <span style={{ marginLeft: "auto", flexShrink: 0, width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Check size={10} strokeWidth={3.5} /></span>}
-                  </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
-                    <span>{isRoot ? "시작 위치" : (evTxt || "–")}</span>
-                    {!isRoot && <span style={{ marginLeft: "auto" }}>{adopt != null ? Math.round(adopt) + "%" : "–%"}</span>}
-                  </span>
-                </button>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => !isRoot && !blocked && onPick && onPick(it)} disabled={isRoot || blocked}
+                    className={isRoot || blocked ? "" : "press"} title={blocked ? "통과할 수 없는 수 — 최선·우수한 수만 다음 단계로 진행돼요" : undefined}
+                    style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
+                      border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : it.solved ? T.best : "#C9B58C"),
+                      background: isRoot ? "linear-gradient(180deg,#3A2516,#241509)" : it.solved ? "#EAF3E0" : "#fff",
+                      cursor: isRoot || blocked ? "default" : "pointer",
+                      boxShadow: it.isCur ? "0 0 0 3px rgba(196,154,80,.25)" : "none" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                      {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 8)}</span>}
+                      <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                      {blocked && <X size={11} strokeWidth={3} style={{ color: T.blunder, flexShrink: 0 }} />}
+                      {it.solvedLeaf && <span style={{ marginLeft: "auto", flexShrink: 0, width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Check size={10} strokeWidth={3.5} /></span>}
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
+                      <span>{isRoot ? "시작 위치" : (evTxt || "–")}</span>
+                      {!isRoot && <span style={{ marginLeft: "auto" }}>{adopt != null ? Math.round(adopt) + "%" : "–%"}</span>}
+                    </span>
+                  </button>
+                  {/* (20차 기능1) 개발자 전용 — 이 라인 끝에 수를 하나 직접 추가(전체 재생성 없이 라인별 1수 연장) */}
+                  {canAddHere && <button onClick={() => openAdd(it.path)} className="press no-pan" title="이 라인에 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
+                </div>
               </div>
             );
           })}
         </div>
+        {addAt && (
+          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(300px, calc(100% - 20px))", padding: 10, borderRadius: 10, border: "1px solid " + T.brass, background: "#fff", boxShadow: "0 10px 24px -8px rgba(0,0,0,.4)" }}>
+            <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>다음 수를 직접 입력하세요</div>
+            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+              <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} autoFocus placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
+              <button onClick={submitAdd} disabled={busy} className="press" style={{ padding: "6px 12px", borderRadius: 7, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{busy ? "추가 중…" : "추가"}</button>
+              <button onClick={() => setAddAt(null)} className="press" style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>취소</button>
+            </div>
+            {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{err}</div>}
+          </div>
+        )}
       </div>
       <div className="flex items-center flex-wrap" style={{ gap: 10, marginTop: 6, fontSize: 9.5, color: T.inkSoft, fontWeight: 600 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 3, background: T.best, borderRadius: 2, display: "inline-block" }} />해결한 라인</span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 3, background: T.brass, borderRadius: 2, display: "inline-block" }} />현재 진행</span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 0, borderTop: "2px dashed #B9AA95", display: "inline-block" }} />통과 불가</span>
-        <span>선 두께 = 채택률 · 노드 클릭 = 그 라인 풀기</span>
+        <span>선 두께 = 채택률 · 아직 두지 않은 수는 표시되지 않아요</span>
       </div>
     </div>
   );
@@ -3834,14 +3920,19 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     return () => { cancelled = true; };
   }, [pathNodes.length, wrong, reverting, reply, intro, targetTag, puzzle.id]);
   const lastQpz = (!intro && !reply && !reverting && !wrong) ? moveIcon : null;
-  // (20차 기능1) 구버전 퍼즐 트리(kind/ev/adopt 미기록)는 배경에서 보강 — 모식도의 아이콘·평가치·채택률 표기용
+  // (20차 기능1) 구버전 퍼즐 트리(kind/ev/adopt 미기록)는 배경에서 보강 — 모식도의 아이콘·평가치·채택률 표기용.
+  // 아직 두지 않은(공개되지 않은) 노드는 계산하지 않는다 — 모식도에 어차피 보이지 않을뿐더러, 불필요한
+  // 엔진·네트워크 호출로 미리 답을 계산해 두는 것 자체가 "아직 두지 않은 수를 다루지 않는다"는 원칙에 어긋난다.
   const [meta, setMeta] = useState({});
   useEffect(() => { setMeta({}); }, [puzzle.id, tree]);
   useEffect(() => {
+    const revealed = revealedPuzzleKeys(allLines, solvedNow, pathNodes.map((n) => stripSuffix(n.san)));
     const missing = [];
     (function walk(node, path) {
       for (const k of node.children || []) {
         const p = [...path, k.san];
+        const key = p.map((s) => stripSuffix(s)).join(" ");
+        if (!revealed.has(key)) continue;
         if (k.kind == null || k.ev == null || !("adopt" in k)) missing.push({ node: k, path: p });
         walk(k, p);
       }
@@ -3867,25 +3958,19 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       }
     })();
     return () => { cancelled = true; };
-  }, [puzzle.id, tree, liveOn, engine && engine.status]);
-  // (18차 보충 기능3→20차) 개발자 전용 — 이 퍼즐의 수 길이를 직접 조정(엔진으로 트리 재생성).
-  // 결과는 CONTENT.puzzleOverrides로 저장되어 퍼즐을 푸는 "모든 유저"에게 반영된다.
-  const [lenBusy, setLenBusy] = useState(false);
-  const maxLen = allLines.reduce((mx, l) => Math.max(mx, l.sans.length), 0);
-  const regenLength = async (targetPlies) => {
-    if (!engine || engine.status !== "ready" || lenBusy) return;
-    setLenBusy(true);
-    try {
-      const th = puzzle.theme || "punish";
-      const optsMap = { punish: { target: 170, requireCapture: true }, advantage: { target: 220 }, sacrifice: { target: 110, requireMaterialRecovery: true } };
-      const firstSan = th === "sacrifice" ? ((puzzle.solution && puzzle.solution[0]) || (allLines[0] && allLines[0].sans[0])) : null;
-      const gen = await genPuzzleTree(engine, setup, { ...(optsMap[th] || optsMap.punish), maxPlies: targetPlies, firstSan });
-      if (!gen) return;
-      if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-      CONTENT.puzzleOverrides[puzzleNo(puzzle.id)] = { tree: gen.tree, lines: gen.lines };
-      if (bumpContent) await bumpContent();
-      setOverrideTree(gen.tree);
-    } finally { setLenBusy(false); }
+  }, [puzzle.id, tree, liveOn, engine && engine.status, pathNodes.length, solvedNow.size]);
+  // (20차 기능1) 개발자 전용 — 모식도의 리프(라인의 끝)에서 "+"를 누르면 그 라인에 수를 하나 직접
+  // 추가한다. 전체 트리를 다시 만드는 대신 그 리프 하나만 연장하며, kind/ev/adopt는 위 메타 보강
+  // 효과가 배경에서 채운다. 결과는 CONTENT.puzzleOverrides로 저장되어 이 퍼즐을 푸는 모든 유저에게 반영된다.
+  const addMoveToLeaf = async (path, sanRaw) => {
+    if (!path) return "라인을 찾을 수 없습니다.";
+    const res = extendPuzzleLeaf(tree, setup, path, sanRaw);
+    if (res.error) return res.error;
+    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+    CONTENT.puzzleOverrides[puzzleNo(puzzle.id)] = { tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
+    if (bumpContent) await bumpContent();
+    setOverrideTree(res.tree);
+    return null;
   };
   if (!allLines.length) return (
     <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
@@ -3909,7 +3994,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         </div>
       </div>
       {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-      <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} targetTag={targetTag} curKeys={pathNodes.map((n) => stripSuffix(n.san))} onPick={onPickNode} />
+      <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} />
       <div key={"bubble-" + hintKey} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
       {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
       <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{sansToPgnText(curSans) || " "}</div>
@@ -3936,22 +4021,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           <button onClick={() => gotoLine(nextTag)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>다음 라인 풀기 — {LINE_TAG_LABEL[nextTag] || ("라인 " + (allLines.findIndex((l) => l.tag === nextTag) + 1))}</button>
         </div>
       ))}
-      {/* (18차 보충 기능3→20차) 개발자 전용 — 수 길이 조정(트리 재생성). 모든 유저에게 반영. */}
-      {canEdit && (
-        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed #C9B58C" }}>
-          <div className="flex items-center justify-between flex-wrap" style={{ gap: 8 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>개발자 · 라인 길이 <span style={{ color: T.ink }}>(현재 최장 {Math.ceil(maxLen / 2)}수 · 라인 {totalLines}개)</span></span>
-            <div className="flex items-center gap-2">
-              <select disabled={lenBusy} defaultValue={Math.max(2, Math.min(10, Math.ceil(maxLen / 2)))} onChange={(e) => regenLength(parseInt(e.target.value, 10) * 2)}
-                style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12 }}>
-                {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n}수</option>)}
-              </select>
-              {lenBusy && <span style={{ fontSize: 11, color: T.inkSoft }}>트리 재생성 중…</span>}
-            </div>
-          </div>
-          <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 4 }}>재생성된 트리는 이 퍼즐을 푸는 모든 유저에게 반영됩니다.</div>
-          {(!engine || engine.status !== "ready") && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>엔진이 준비되면 조정할 수 있어요.</div>}
-        </div>
+      {/* (20차 기능1) 라인 길이 조정은 모식도의 각 라인 끝(리프)에 있는 "+" 버튼으로 한 수씩 직접 추가한다. */}
+      {canEdit && (!engine || engine.status !== "ready") && (
+        <div style={{ marginTop: 12, fontSize: 10.5, color: T.blunder, textAlign: "center" }}>엔진이 준비되면 모식도에서 라인에 수를 추가할 수 있어요.</div>
       )}
     </div>
   );
