@@ -370,6 +370,17 @@ function isDevelopingMove(uci, san) {
      최선이 되면 그 앞에서 끊고, 라인은 항상 사용자 수로 끝맺는다.
    반환: { tree: { children }, lines: [{ tag, solution }] } — lines는 통과 가능한 리프 경로(검증·구버전 호환용). */
 const PUZZLE_PASS_KINDS = ["brilliant", "best", "only", "excellent"];   // 사용자 진영에서 '통과'되는 수 체계
+// (20차 기능3) 테마별 자동 생성 기본값 — "확실한 이점"의 기준(target, 백분 폰 단위 cp)과 종료 조건.
+// 퍼즐마다 target은 CONTENT.puzzleOverrides[no].target로 덮어쓸 수 있다(개발자가 직접 설정하는 기본값).
+const PUZZLE_THEME_OPTS = {
+  punish: { target: 170, maxPlies: 8, requireCapture: true },
+  advantage: { target: 220, maxPlies: 8 },
+  sacrifice: { target: 110, maxPlies: 8, requireMaterialRecovery: true },
+};
+function puzzleThemeOpts(theme, overrideTarget) {
+  const base = PUZZLE_THEME_OPTS[theme] || PUZZLE_THEME_OPTS.punish;
+  return overrideTarget != null ? { ...base, target: overrideTarget } : base;
+}
 function puzzleUciOf(board, san, color) {
   const info = sanSrc(board, stripSuffix(san), color);
   if (!info || !info.from) return "";
@@ -423,7 +434,7 @@ async function puzzleCandidatesAt(engine, cur) {
 }
 async function genPuzzleTree(engine, preSans, opts) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
-    firstSan = null, maxNodes = 34 } = opts || {};
+    firstSan = null, maxNodes = 34, tagSeq = 0 } = opts || {};
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
@@ -516,16 +527,19 @@ async function genPuzzleTree(engine, preSans, opts) {
   if (!children || !children.some((n) => n.pass !== false)) return null;
   const tree = { children };
   const lines = [];
+  // (20차 기능3) tagSeq부터 이어서 번호를 매긴다 — 이 퍼즐이 재생성 전에 이미 발급했던 태그 번호
+  // 이후부터 시작해, 재생성으로 예전 해결 기록의 태그 문자열과 우연히 같은 번호가 나와 완전히 다른
+  // 새 라인이 "이미 해결됨"으로 잘못 표시되는 것을 막는다.
   (function tagLeaves(node, path) {
     const kids = (node.children || []).filter((k) => k.pass !== false);
     if (!kids.length) {
-      if (path.length) { node.tag = "L" + (lines.length + 1); lines.push({ tag: node.tag, solution: path }); }
+      if (path.length) { node.tag = "L" + (tagSeq + lines.length + 1); lines.push({ tag: node.tag, solution: path }); }
       return;
     }
     for (const k of kids) tagLeaves(k, [...path, k.san]);
   })(tree, []);
   if (!lines.length) return null;
-  return { tree, lines };
+  return { tree, lines, seq: tagSeq + lines.length };
 }
 
 /* ============================================================ 라이브 Lichess Explorer ============================================================ */
@@ -2145,7 +2159,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       if (curated) { onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
       if (engine && engine.status === "ready") {
         let cancelled = false;
-        genPuzzleTree(engine, [...sans, san], { target: 170, maxPlies: 8, requireCapture: true }).then((gen) => {
+        genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("punish")).then((gen) => {
           if (cancelled || !gen) return;
           const op = title || "오프닝";
           onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
@@ -2157,7 +2171,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     // 부정확한 수 → 우위 점하기 (실수 응징과 동일 방식)
     if (kind === "inaccuracy" && engine && engine.status === "ready") {
       let cancelled = false;
-      genPuzzleTree(engine, [...sans, san], { target: 220, maxPlies: 8 }).then((gen) => {
+      genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("advantage")).then((gen) => {
         if (cancelled || !gen) return;
         const op = title || "오프닝";
         onSavePuzzle({ id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
@@ -2169,7 +2183,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       const op = title || "오프닝";
       let cancelled = false;
       // (기능1) 희생 테마는 "희생 수 자체"가 첫 수(firstSan)로 고정되며, sans 위치(=studied 수 san이 두어지기 직전)에서 둔다.
-      genPuzzleTree(engine, sans, { target: 110, maxPlies: 8, requireMaterialRecovery: true, firstSan: san }).then((gen) => {
+      genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }).then((gen) => {
         if (cancelled || !gen) return;
         onSavePuzzle({ id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
       });
@@ -3205,7 +3219,12 @@ function treeLinesOf(tree) {
   const out = [];
   const walk = (node, sans) => {
     const kids = (node.children || []).filter((k) => k && k.pass !== false);
-    if (!kids.length) { if (sans.length) out.push({ tag: node.tag || sans.map(stripSuffix).join(" "), sans }); return; }
+    if (!kids.length) {
+      // (20차 기능3) 라인은 항상 사용자 수로 끝맺어야 완결된다(짝수 길이=상대 수로 끝남은 개발자가
+      // 아직 다음 수를 추가하지 않은 "미완성" 편집 상태 — 정식 라인으로 집계하지 않는다).
+      if (sans.length && sans.length % 2 === 1) out.push({ tag: node.tag || sans.map(stripSuffix).join(" "), sans });
+      return;
+    }
     for (const k of kids) walk(k, [...sans, k.san]);
   };
   walk(tree, []);
@@ -3224,21 +3243,29 @@ function findTreeNode(tree, path) {
   }
   return node;
 }
-// 트리 전체에서 이미 쓰인 "L숫자" 리프 태그 중 가장 큰 번호+1 — 다른 라인의 기존 태그(그리고 그 해결
-// 기록)를 건드리지 않고 새로 추가하는 리프에만 고유 태그를 부여한다.
-function nextLeafTag(tree) {
-  let max = 0;
+// 트리 전체에서 이미 쓰인 "L숫자" 리프 태그 중 가장 큰 번호와, 이 퍼즐에서 지금까지 한 번이라도
+// 발급된 태그 번호(seedSeq, CONTENT.puzzleOverrides[no].tagSeq — 트리에서 사라진 뒤에도 유지)
+// 중 더 큰 값 다음 번호를 새 태그로 쓴다. 트리만 스캔하면, 라인을 삭제했다가 도로 완결시켰을 때
+// 카운터가 리셋되어 예전에 다른 라인이 쓰던 번호가 재사용되고, 그 번호로 이미 "해결"했던 사용자가
+// 전혀 다른 새 라인을 자동으로 푼 것처럼 오판될 수 있다 — seedSeq로 항상 단조 증가시켜 막는다.
+function nextLeafTag(tree, seedSeq) {
+  let max = seedSeq || 0;
   (function walk(node) {
     if (node.tag) { const m = /^L(\d+)$/.exec(node.tag); if (m) max = Math.max(max, parseInt(m[1], 10)); }
     (node.children || []).forEach(walk);
   })(tree);
-  return "L" + (max + 1);
+  const seq = max + 1;
+  return { tag: "L" + seq, seq };
 }
-// (20차 기능1) 개발자 전용 — 모식도의 리프(라인의 끝)에 수를 하나 직접 추가한다. 전체 트리를 다시
+// (20차 기능1→3) 개발자 전용 — 모식도의 리프(라인의 끝)에 수를 하나 직접 추가한다. 전체 트리를 다시
 // 생성하지 않고 그 라인 하나만 한 수 연장한다. 결과는 CONTENT.puzzleOverrides에 저장되어 이 퍼즐을
 // 푸는 모든 유저에게 반영된다. kind/ev/adopt는 여기서 계산하지 않고 비워 둔다 — 풀이 화면의 기존
 // "구버전 트리 보강" 로직이 배경에서 엔진·Lichess로 채워 넣는다(중복 계산 방지).
-function extendPuzzleLeaf(tree, preSans, leafPath, sanRaw) {
+// (기능3) 라인은 항상 사용자 수로 끝나야 하므로, 추가한 수가 상대 수(짝수 길이)라면 아직 "미완성"
+// 상태로 두고(태그 없음 — treeLinesOf가 정식 라인으로 세지 않음) 새 리프에도 "+"를 남겨 이어서
+// 사용자 수를 마저 추가하도록 유도한다. 사용자 수(홀수 길이)로 끝나야만 새 고유 태그를 부여한다.
+// seedSeq/반환된 seq — 위 nextLeafTag 주석 참고(태그 번호 재사용 방지용 단조 증가 카운터).
+function extendPuzzleLeaf(tree, preSans, leafPath, sanRaw, seedSeq) {
   const board = boardFromSans([...preSans, ...leafPath]);
   const color = (preSans.length + leafPath.length) % 2 === 0 ? "w" : "b";
   if (!sanSrc(board, sanRaw, color)) return { error: "불법 수입니다." };
@@ -3247,10 +3274,37 @@ function extendPuzzleLeaf(tree, preSans, leafPath, sanRaw) {
   const leaf = findTreeNode(clone, leafPath);
   if (!leaf) return { error: "라인을 찾을 수 없습니다." };
   if (leaf.children && leaf.children.some((c) => c.pass !== false)) return { error: "이미 다음 수가 있는 라인입니다." };
-  const tag = nextLeafTag(clone);
+  const isValidTerminus = (leafPath.length + 1) % 2 === 1;
   delete leaf.tag;
-  leaf.children = [{ san: decorated, pass: true, children: [], tag }];
-  return { tree: clone };
+  const child = { san: decorated, pass: true, children: [] };
+  let seq = seedSeq || 0;
+  if (isValidTerminus) { const r = nextLeafTag(clone, seedSeq); child.tag = r.tag; seq = r.seq; }
+  leaf.children = [child];
+  return { tree: clone, seq };
+}
+// (20차 기능3) 개발자 전용 — 라인의 마지막 수를 하나씩 삭제해 그 라인을 한 수 짧게 만든다. 실수로
+// 라인 전체가 한 번에 사라지지 않도록, 한 번에 정확히 한 수만(그 리프 자신) 지운다. 삭제 후 남는
+// 마지막 지점이 사용자 수(홀수 길이)로 끝나면 새 고유 태그를 부여해 다시 완결된 라인이 되고,
+// 상대 수(짝수 길이)로 끝나면 add와 동일하게 "미완성" 상태(태그 없음)로 남아 이어서 정리해야 한다.
+// 최소 1수는 항상 남겨(빈 라인 방지) 편집 실수로 라인 전체가 통째로 유실되지 않게 한다.
+function removeLastMoveOfLine(tree, path, seedSeq) {
+  if (!path || path.length <= 1) return { error: "더 이상 줄일 수 없어요 — 라인에는 최소 1수가 있어야 해요." };
+  const clone = cloneTree(tree);
+  const parentPath = path.slice(0, -1);
+  const parent = findTreeNode(clone, parentPath);
+  if (!parent) return { error: "라인을 찾을 수 없습니다." };
+  const leafKey = stripSuffix(path[path.length - 1]);
+  const idx = (parent.children || []).findIndex((c) => stripSuffix(c.san) === leafKey);
+  if (idx < 0) return { error: "라인을 찾을 수 없습니다." };
+  const leaf = parent.children[idx];
+  if (leaf.children && leaf.children.some((c) => c.pass !== false)) return { error: "이 수 뒤에 더 진행된 갈래가 있어 삭제할 수 없습니다." };
+  parent.children.splice(idx, 1);
+  let seq = seedSeq || 0;
+  if (!parent.children.length) {
+    if (parentPath.length % 2 === 1) { const r = nextLeafTag(clone, seedSeq); parent.tag = r.tag; seq = r.seq; }
+    else delete parent.tag;
+  }
+  return { tree: clone, seq };
 }
 // (20차 기능1) 모식도·메타 보강 효과가 공유하는 "공개된(이미 실제로 두어진) 경로 키" 집합 —
 // 해결한 라인의 전체 경로 + 현재 시도 중인 경로(prefix)만 공개하고, 그 밖의 미래 수는 다루지 않는다.
@@ -3595,10 +3649,15 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, setupLen, onPick, canEdit, onAddMove, celebrateTag, shakeTag }) {
-  const colW = 118, rowH = 56, boxW = 104, boxH = 46;
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, celebrateTag, shakeTag }) {
+  // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
+  // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
+  const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
   const { items, edges, width, height, curItem } = useMemo(() => {
-    const revealed = revealedPuzzleKeys(allLines, solvedNow, curKeys);
+    // (20차 기능3) 개발자(canEdit)는 편집을 위해 트리 전체를 항상 볼 수 있어야 한다 — 그렇지 않으면
+    // 라인을 삭제/추가한 직후 자기가 방금 만든 결과(미완성 상태 포함)조차 안 보여 계속 편집할 수 없다.
+    // 일반 유저에게만 "아직 두지 않은 수는 고스트로 가린다" 원칙을 적용한다.
+    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys);
     let cursor = 0; const items = []; const edges = [];
     const curKeyStr = curKeys.join(" ");
     // 실제로 둔 수(revealed)는 그대로 펼쳐 보이고, 아직 두지 않은 자식은 "고스트"(내용은 가리되 갈래가
@@ -3611,7 +3670,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       for (const k of rawKids) {
         const kpath = [...path, k.san];
         const kkey = kpath.map((s) => stripSuffix(s)).join(" ");
-        if (revealed.has(kkey)) kids.push(visit(k, kpath, depth + 1));
+        if (!revealed || revealed.has(kkey)) kids.push(visit(k, kpath, depth + 1));
         else { const ghost = { node: null, path: kpath, depth: depth + 1, key: kkey, ghost: true, y: cursor++ }; items.push(ghost); kids.push(ghost); }
       }
       it.isLeaf = rawKids.length === 0;   // 실제 데이터 기준 리프(고스트로 가려진 자식이 있으면 리프가 아님)
@@ -3681,6 +3740,16 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     if (errMsg) { setErr(errMsg); return; }
     setAddAt(null); setSanIn(""); setErr("");
   };
+  // (20차 기능3) 개발자 전용 — 리프에서 "－"를 누르면 그 라인의 마지막 수를 하나 지운다(한 번에 한 수씩).
+  const [delBusyKey, setDelBusyKey] = useState(null);
+  const [delErrKey, setDelErrKey] = useState(null);
+  const submitDelete = async (it) => {
+    if (delBusyKey) return;
+    setDelBusyKey(it.key); setDelErrKey(null);
+    const errMsg = await onDeleteMove(it.path);
+    setDelBusyKey(null);
+    if (errMsg) setDelErrKey({ key: it.key, msg: errMsg });
+  };
   return (
     <div style={{ marginBottom: 12 }}>
       <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
@@ -3722,13 +3791,18 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             // 수 번호(예: "3.Nxe5"/"3...fxe5") — setup에 이어지는 전체 수순에서의 위치로 계산
             const label = isRoot ? (rootLabel ? moveNumber(setupLen - 1) + rootLabel : "시작") : moveNumber(setupLen + it.depth - 1) + it.node.san;
             const canAddHere = canEdit && !isRoot && it.isLeaf;
+            // (20차 기능3) 라인은 항상 사용자 수(홀수 깊이)로 끝나야 완결된다 — 짝수 깊이에서 끝난
+            // 리프는 개발자가 상대 응수만 추가하고 뒤이을 사용자 수를 아직 안 넣은 "미완성" 상태.
+            const incomplete = !isRoot && it.isLeaf && it.depth % 2 === 0 && !it.node.tag;
+            // (20차 기능3) 라인 길이 삭제 — 리프에서만, 최소 1수는 남도록(라인 자체가 사라지지 않게)
+            const canDeleteHere = canEdit && !isRoot && it.isLeaf && it.path.length > 1;
             return (
               <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW, animation: it.celebrate ? "questclear 1s ease" : "none" }}>
                 <div className="flex items-center gap-1">
                   <button onClick={() => !isRoot && onPick && onPick(it)} disabled={isRoot}
                     className={isRoot ? "" : "press"}
                     style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
-                      border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : it.solved ? T.best : "#C9B58C"),
+                      border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : incomplete ? "#D79A2F" : it.solved ? T.best : "#C9B58C"),
                       background: isRoot ? "linear-gradient(180deg,#3A2516,#241509)" : it.solved ? "#EAF3E0" : "#fff",
                       cursor: isRoot ? "default" : "pointer",
                       boxShadow: it.isCur ? "0 0 0 3px rgba(196,154,80,.25)" : "none" }}>
@@ -3741,10 +3815,14 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                       <span>{isRoot ? "시작 위치" : (evTxt || "–")}</span>
                       {!isRoot && <span style={{ marginLeft: "auto" }}>{adopt != null ? Math.round(adopt) + "%" : "–%"}</span>}
                     </span>
+                    {incomplete && <div style={{ fontSize: 8.5, fontWeight: 800, color: "#9A6A18", marginTop: 1 }}>미완성 — 다음 수 필요</div>}
                   </button>
                   {/* (20차 기능1) 개발자 전용 — 이 라인 끝에 수를 하나 직접 추가(전체 재생성 없이 라인별 1수 연장) */}
                   {canAddHere && <button onClick={() => openAdd(it.path)} className="press no-pan" title="이 라인에 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
+                  {/* (20차 기능3) 개발자 전용 — 이 라인의 마지막 수를 하나 삭제(라인 길이 단축, 한 번에 한 수씩) */}
+                  {canDeleteHere && <button onClick={() => submitDelete(it)} disabled={delBusyKey === it.key} className="press no-pan" title="이 라인의 마지막 수 삭제" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={13} /></button>}
                 </div>
+                {delErrKey && delErrKey.key === it.key && <div className="no-pan" style={{ fontSize: 9.5, color: T.blunder, marginTop: 3, background: "#fff", borderRadius: 6, padding: "2px 6px", border: "1px solid " + T.blunder }}>{delErrKey.msg}</div>}
               </div>
             );
           })}
@@ -3854,10 +3932,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   }, [done]);
   // 클리어·흔들림 애니메이션은 잠깐만 재생하고 스스로 꺼진다(반복 재생 방지).
   useEffect(() => { if (!celebrate) return; const t = setTimeout(() => setCelebrate(null), 2400); return () => clearTimeout(t); }, [celebrate]);
-  // 이 가지 아래에 아직 해결하지 않은 리프가 남아 있는가
+  // 이 가지 아래에 아직 해결하지 않은 리프가 남아 있는가.
+  // (20차 기능3) 개발자가 수 추가/삭제 중 잠시 남기는 "미완성" 리프(상대 수로 끝남 = 짝수 길이)는
+  // 정식 라인이 아니므로 여기서 "미해결"로 잘못 취급해 추천하지 않는다 — 그러지 않으면 상대 응수
+  // 선택 로직이 막다른 미완성 가지로 사용자를 몰아넣어 더 이상 둘 수 있는 수가 없는 상태에 빠뜨린다.
   const subtreeUnsolved = (node, keyArr) => {
     const kids = (node.children || []).filter((k) => k.pass !== false);
-    if (!kids.length) return !solvedNow.has(node.tag || keyArr.join(" "));
+    if (!kids.length) return keyArr.length % 2 === 1 && !solvedNow.has(node.tag || keyArr.join(" "));
     return kids.some((k) => subtreeUnsolved(k, [...keyArr, stripSuffix(k.san)]));
   };
   // 상대(컴퓨터) 응수: 목표 라인을 따라가되, 벗어났으면 미해결 가지 우선(채택률 순)으로 자동 선택
@@ -3987,13 +4068,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const [meta, setMeta] = useState({});
   useEffect(() => { setMeta({}); }, [puzzle.id, tree]);
   useEffect(() => {
-    const revealed = revealedPuzzleKeys(allLines, solvedNow, pathNodes.map((n) => stripSuffix(n.san)));
+    // (20차 기능3) 개발자는 트리 전체를 보므로(위 PuzzleSchematic 참고) 메타 보강도 전체 트리를 대상으로 한다.
+    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, pathNodes.map((n) => stripSuffix(n.san)));
     const missing = [];
     (function walk(node, path) {
       for (const k of node.children || []) {
         const p = [...path, k.san];
         const key = p.map((s) => stripSuffix(s)).join(" ");
-        if (!revealed.has(key)) continue;
+        if (revealed && !revealed.has(key)) continue;
         if (k.kind == null || k.ev == null || !("adopt" in k)) missing.push({ node: k, path: p });
         walk(k, p);
       }
@@ -4023,20 +4105,91 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // (20차 기능1) 개발자 전용 — 모식도의 리프(라인의 끝)에서 "+"를 누르면 그 라인에 수를 하나 직접
   // 추가한다. 전체 트리를 다시 만드는 대신 그 리프 하나만 연장하며, kind/ev/adopt는 위 메타 보강
   // 효과가 배경에서 채운다. 결과는 CONTENT.puzzleOverrides로 저장되어 이 퍼즐을 푸는 모든 유저에게 반영된다.
+  // (20차 기능3) 이 퍼즐에서 지금까지 발급된 태그 번호(tagSeq)를 이어서 쓴다 — 삭제로 트리가
+  // 비어도 카운터가 리셋되지 않아, 예전 라인이 쓰던 번호를 새 라인이 재사용해 "이미 해결됨"으로
+  // 잘못 표시되는 사고를 막는다(nextLeafTag 주석 참고).
+  const puzzleNoForTag = puzzleNo(puzzle.id);
+  const persistTagSeq = (seq) => {
+    if (seq == null) return;
+    const cur = (CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {};
+    if ((cur.tagSeq || 0) >= seq) return;
+    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tagSeq: seq };
+  };
   const addMoveToLeaf = async (path, sanRaw) => {
     if (!path) return "라인을 찾을 수 없습니다.";
-    const res = extendPuzzleLeaf(tree, setup, path, sanRaw);
+    const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
+    const res = extendPuzzleLeaf(tree, setup, path, sanRaw, seedSeq);
     if (res.error) return res.error;
     if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-    CONTENT.puzzleOverrides[puzzleNo(puzzle.id)] = { tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
+    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
+    persistTagSeq(res.seq);
     if (bumpContent) await bumpContent();
     setOverrideTree(res.tree);
     return null;
   };
-  if (!allLines.length) return (
+  // (20차 기능3) 개발자 전용 — 모식도의 리프에서 "삭제"를 누르면 그 라인의 마지막 수를 하나 지운다.
+  // 실수로 라인 전체가 한 번에 사라지지 않도록 항상 정확히 한 수만(그 리프 자신) 지운다.
+  const deleteMoveFromLeaf = async (path) => {
+    if (!path) return "라인을 찾을 수 없습니다.";
+    const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
+    const res = removeLastMoveOfLine(tree, path, seedSeq);
+    if (res.error) return res.error;
+    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
+    persistTagSeq(res.seq);
+    if (bumpContent) await bumpContent();
+    setOverrideTree(res.tree);
+    return null;
+  };
+  // (20차 기능3) 개발자 전용 — 이 퍼즐의 "기본 이점 기준"(자동 생성이 확실한 이점으로 볼 cp 기준)을
+  // 퍼즐마다 직접 설정한다. 값을 바꾸는 것만으로는 아무 일도 벌어지지 않고(저장만 됨), 명시적으로
+  // "이 기준으로 기본 트리 재생성"을 눌러야 실제로 트리 전체를 새로 만든다 — 수동으로 추가/삭제한
+  // 내용이 전부 사라지는 되돌릴 수 없는 동작이므로 실수로 발동하지 않도록 별도 버튼으로 분리한다.
+  const savedTarget = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).target;
+  const defaultTarget = savedTarget != null ? savedTarget : puzzleThemeOpts(theme).target;
+  const [targetInput, setTargetInput] = useState(defaultTarget);
+  useEffect(() => { setTargetInput(defaultTarget); }, [puzzle.id, savedTarget]);
+  const [regenBusy, setRegenBusy] = useState(false);
+  const [regenErr, setRegenErr] = useState("");
+  const saveDefaultTarget = async (v) => {
+    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, target: v };
+    if (bumpContent) await bumpContent();
+  };
+  const regenerateWithTarget = async () => {
+    if (!engine || engine.status !== "ready" || regenBusy) return;
+    setRegenBusy(true); setRegenErr("");
+    try {
+      const th = puzzle.theme || "punish";
+      const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
+      const opts = { ...puzzleThemeOpts(th, targetInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedSeq };
+      const gen = await genPuzzleTree(engine, setup, opts);
+      if (!gen) { setRegenErr("이 기준으로는 트리를 만들 수 없어요(기준을 낮춰보세요)."); return; }
+      if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+      const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: gen.tree, lines: gen.lines, target: targetInput, tagSeq: gen.seq };
+      if (bumpContent) await bumpContent();
+      setOverrideTree(gen.tree);
+    } finally { setRegenBusy(false); }
+  };
+  // (20차 기능3) allLines(완결된 라인)가 0개여도, 트리 자체에 내용이 있으면(개발자가 삭제로 잠시
+  // "미완성" 상태를 만든 경우) 퍼즐 화면 자체를 닫아버리면 안 된다 — 그러면 다시 수를 추가해 완성할
+  // 방법이 없어져 편집이 막힌다. 트리에 아무 내용도 없을 때만(진짜 손상된 퍼즐) 이 화면을 보여준다.
+  const treeIsEmpty = !tree || !tree.children || !tree.children.length;
+  if (treeIsEmpty) return (
     <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
       <p style={{ fontSize: 13, color: T.inkSoft, fontWeight: 700, textAlign: "center", padding: "30px 0" }}>퍼즐 데이터를 불러올 수 없어요.</p>
+    </div>
+  );
+  if (!allLines.length && !canEdit) return (
+    <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
+      <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
+      <p style={{ fontSize: 13, color: T.inkSoft, fontWeight: 700, textAlign: "center", padding: "30px 0" }}>이 퍼즐은 아직 준비 중이에요.</p>
     </div>
   );
   return (
@@ -4080,10 +4233,21 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           </div>
           <div style={{ width: "50%", boxSizing: "border-box", paddingLeft: 3 }}>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
-            {/* (20차 기능1) 라인 길이 조정은 모식도의 각 라인 끝(리프)에 있는 "+" 버튼으로 한 수씩 직접 추가한다. */}
-            {canEdit && (!engine || engine.status !== "ready") && (
-              <div style={{ marginTop: 8, fontSize: 10.5, color: T.blunder, textAlign: "center" }}>엔진이 준비되면 모식도에서 라인에 수를 추가할 수 있어요.</div>
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
+            {canEdit && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
+                <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                  <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
+                    style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
+                  <span style={{ fontSize: 10.5, color: T.inkSoft }}>cp (현재 기본값 {defaultTarget})</span>
+                  <button onClick={regenerateWithTarget} disabled={!engine || engine.status !== "ready" || regenBusy} className="press" style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 11.5, opacity: (!engine || engine.status !== "ready") ? 0.5 : 1 }}>{regenBusy ? "재생성 중…" : "이 기준으로 기본 트리 재생성"}</button>
+                </div>
+                <div style={{ fontSize: 9.5, color: T.blunder, marginTop: 5 }}>재생성하면 이 퍼즐의 트리가 통째로 새로 만들어져 수동으로 추가·삭제한 내용이 모두 사라져요.</div>
+                {regenErr && <div style={{ fontSize: 10, color: T.blunder, marginTop: 3 }}>{regenErr}</div>}
+                {(!engine || engine.status !== "ready") && <div style={{ fontSize: 10, color: T.blunder, marginTop: 3 }}>엔진이 준비되면 라인에 수를 추가·삭제하거나 재생성할 수 있어요.</div>}
+              </div>
             )}
           </div>
         </div>
