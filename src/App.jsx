@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
 import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
@@ -45,29 +45,55 @@ const PIECE_ACCENT = "M30,88 L70,88 L50,100 Z";
 const PIECE_CROSS = "M47,48 L47,36 L40,36 L40,30 L47,30 L47,22 L53,22 L53,30 L60,30 L60,36 L53,36 L53,48 Z";
 /* (20\uCC28 \uAE30\uB2A54 \uB300\uBE44) \uBCF4\uB4DC/\uAE30\uBB3C \uC2A4\uD0A8 \uB808\uC9C0\uC2A4\uD2B8\uB9AC \u2014 \uAE30\uBCF8(classic) \uD558\uB098\uB9CC \uC6B0\uC120 \uB450\uACE0, \uC0C1\uC810\uC5D0\uC11C \uD30C\uB294
    \uBC14\uB2E4(ocean) \uC2A4\uD0A8 \uB4F1 \uCD94\uAC00 \uC2A4\uD0A8\uC740 \uC774 \uAC1D\uCCB4\uC5D0 \uD56D\uBAA9\uB9CC \uB298\uB9AC\uBA74 PieceGlyph\u00B7Board\uAC00 \uADF8\uB300\uB85C \uC9C0\uC6D0\uD55C\uB2E4. */
-const SKINS = {
-  classic: {
-    label: "\uAE30\uBCF8", price: 0,
-    boardLight: T.boardLight, boardDark: T.boardDark,
-    pieceLight: T.ivoryHi, pieceDark: "#0E0907", pieceStroke: "#6B4F22",
-    accent: T.brass, accentOpacity: 0.92,
+/* (20\uCC28 \uAE30\uB2A54) \uCCB4\uC2A4\uBCF4\uB4DC \uC2A4\uD0A8\u00B7\uAE30\uBB3C \uC2A4\uD0A8\uC740 \uAC01\uAC01 \uB3C5\uB9BD\uC801\uC73C\uB85C \uC0AC\uACE0\uD314\uACE0 \uC7A5\uCC29\uD55C\uB2E4(\uC11E\uC5B4\uC11C \uCC29\uC6A9 \uAC00\uB2A5).
+   ocean\uC740 \uCCA8\uBD80 \uB808\uC9C4 \uCCB4\uC2A4\uBCF4\uB4DC \uB808\uD37C\uB7F0\uC2A4\uCC98\uB7FC \uBC18\uD22C\uBA85\u00B7\uAD11\uD0DD \uC788\uB294 \uD30C\uB780 \uC720\uB9AC \uB290\uB08C \u2014 \uBCF4\uB4DC\uB294 \uC0AC\uAC01\uD615 \uBC30\uACBD\uC5D0
+   \uB300\uAC01\uC120 \uD558\uC774\uB77C\uC774\uD2B8\uB97C \uACB9\uCE5C \uADF8\uB77C\uB514\uC5B8\uD2B8, \uAE30\uBB3C\uC740 \uBC18\uD22C\uBA85 rgba \uCC44\uC6C0 \uC704\uC5D0 \uD074\uB9BD\uB41C \uC720\uB9AC \uD558\uC774\uB77C\uC774\uD2B8\uB97C \uC5B9\uB294\uB2E4. */
+const BOARD_SKINS = {
+  classic: { label: "\uAE30\uBCF8", price: 0, light: T.boardLight, dark: T.boardDark },
+  ocean: {
+    label: "\uD478\uB978 \uBC14\uB2E4", price: 500,
+    light: "linear-gradient(135deg, rgba(255,255,255,.55), transparent 45%), linear-gradient(160deg, #BFE6F7, #6FB9DE)",
+    dark: "linear-gradient(135deg, rgba(255,255,255,.28), transparent 45%), linear-gradient(160deg, #1E75A8, #0A3C5C)",
   },
 };
+const PIECE_SKINS = {
+  classic: { label: "\uAE30\uBCF8", price: 0, light: T.ivoryHi, dark: "#0E0907", stroke: "#6B4F22", accent: T.brass, accentOpacity: 0.92, glossy: false },
+  ocean: {
+    label: "\uD478\uB978 \uBC14\uB2E4", price: 500,
+    light: "rgba(205,236,250,.72)", dark: "rgba(15,66,102,.82)", stroke: "#1B7BAE",
+    accent: "#8FE0F2", accentOpacity: 0.85, glossy: true,
+  },
+};
+/* \uC7A5\uCC29\uB41C \uC2A4\uD0A8\uC740 Context\uB85C \uD758\uB824\uBCF4\uB0B4 Board\u00B7PieceGlyph \uC5B4\uB514\uC11C\uB4E0(\uD504\uB86D \uC548 \uB118\uACA8\uB3C4) \uC790\uB3D9 \uC801\uC6A9\uB418\uAC8C \uD55C\uB2E4 \u2014
+   \uBCF4\uB4DC\uAC00 \uD559\uC2B5 \uD0ED\u00B7\uD37C\uC990 \uD480\uC774\u00B7\uBBF8\uB2C8 \uD504\uB9AC\uBDF0 \uB4F1 \uC218\uC2ED \uACF3\uC5D0\uC11C \uC4F0\uC774\uBBC0\uB85C \uB9E4 \uD638\uCD9C\uBD80\uB9C8\uB2E4 prop\uC744 \uAF42\uB294 \uB300\uC2E0
+   \uCD5C\uC0C1\uC704 App\uC5D0\uC11C \uD55C \uBC88\uB9CC Provider\uB85C \uAC10\uC2FC\uB2E4. */
+const SkinContext = createContext({ boardSkin: "classic", pieceSkin: "classic" });
 function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
-function PieceGlyph({ type, color, size, style, draggable, onDragStart, skin }) {
-  const sk = SKINS[skin] || SKINS.classic;
+function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSkin }) {
+  const ctx = useContext(SkinContext);
+  const sk = PIECE_SKINS[pieceSkin || ctx.pieceSkin] || PIECE_SKINS.classic;
   const light = color === "w";
   const mid = PIECE_MID[type];
+  const rawId = useId();
+  const clipId = "pg" + rawId.replace(/[^a-zA-Z0-9]/g, "");
   if (!mid) return null;
-  const fill = light ? sk.pieceLight : sk.pieceDark;
+  const fill = light ? sk.light : sk.dark;
+  const bodyPoints = PIECE_BASE_R + " " + mid + " " + PIECE_BASE_L;
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} draggable={draggable} onDragStart={onDragStart}
       style={{ display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }}>
-      <polygon points={PIECE_BASE_R + " " + mid + " " + PIECE_BASE_L} fill={fill} stroke={sk.pieceStroke} strokeWidth={2.6} strokeLinejoin="round" />
-      {type === "K" && <path d={PIECE_CROSS} fill={fill} stroke={sk.pieceStroke} strokeWidth={2.2} strokeLinejoin="round" />}
+      {sk.glossy && <defs><clipPath id={clipId}><polygon points={bodyPoints} />{type === "K" && <path d={PIECE_CROSS} />}</clipPath></defs>}
+      <polygon points={bodyPoints} fill={fill} stroke={sk.stroke} strokeWidth={2.6} strokeLinejoin="round" />
+      {type === "K" && <path d={PIECE_CROSS} fill={fill} stroke={sk.stroke} strokeWidth={2.2} strokeLinejoin="round" />}
       <path d={PIECE_ACCENT} fill={sk.accent} opacity={sk.accentOpacity} />
       <line x1={30} y1={88} x2={70} y2={88} stroke={sk.accent} strokeWidth={1.4} opacity={0.85} />
       {PIECE_LINES[type].map((d, i) => <path key={i} d={d} fill="none" stroke={sk.accent} strokeWidth={1.5} opacity={0.8} strokeLinecap="round" />)}
+      {sk.glossy && (
+        <g clipPath={"url(#" + clipId + ")"}>
+          <ellipse cx={40} cy={40} rx={26} ry={40} fill="rgba(255,255,255,.4)" />
+          <ellipse cx={64} cy={72} rx={12} ry={20} fill="rgba(255,255,255,.18)" />
+        </g>
+      )}
     </svg>
   );
 }
@@ -152,10 +178,32 @@ function GeoBackdrop() {
 }
 
 const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-const ENGINE_URLS = [
-  ENGINE_BASE + "engine/stockfish-nnue-16-single.js",
-  "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js",
-];
+/* (20차 기능2) 엔진 선택 — 설정 탭에서 두 엔진 중 고를 수 있다. "full"은 기존 Stockfish 16(NNUE, 강력
+   하지만 40MB 신경망 로딩·연산량이 커서 느림), "lite"는 Stockfish 18 Lite(단일 스레드, 7MB대 경량
+   빌드로 로딩·연산 모두 빠름). 기본값은 기기 종류로 자동 결정하되(모바일→full, PC→lite), 설정에서
+   언제든 바꿀 수 있고 이후에는 그 선택을 기억한다. */
+const ENGINE_PROFILES = {
+  full: {
+    id: "full", label: "Stockfish 16 (NNUE)", desc: "정확도가 가장 높지만 로딩이 느려요",
+    urls: [ENGINE_BASE + "engine/stockfish-nnue-16-single.js", "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js"],
+  },
+  lite: {
+    id: "lite", label: "Stockfish 18 Lite", desc: "가볍고 빨라요(경량 빌드)",
+    urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
+  },
+};
+const ENGINE_PREF_KEY = "occ_engine_pref";
+function isMobileDevice() {
+  if (typeof navigator === "undefined") return false;
+  if (navigator.userAgentData && typeof navigator.userAgentData.mobile === "boolean") return navigator.userAgentData.mobile;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+}
+function defaultEnginePref() { return isMobileDevice() ? "full" : "lite"; }
+function loadEnginePref() {
+  try { const v = window.localStorage.getItem(ENGINE_PREF_KEY); if (v && ENGINE_PROFILES[v]) return v; } catch { }
+  return defaultEnginePref();
+}
+function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, v); } catch { } }
 // Lichess Explorer가 로그인(OAuth 토큰)을 요구하므로, 토큰을 서버에만 보관하는
 // /api/lichess 프록시(Vercel 서버리스 함수, api/lichess.js)를 거쳐 호출한다.
 const LICHESS_API = "/api/lichess";
@@ -312,7 +360,7 @@ function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 
 /* ============================================================ 라이브 Stockfish (Web Worker) ============================================================ */
-function useEngine() {
+function useEngine(enginePref) {
   const ref = useRef(null);
   const [status, setStatus] = useState("loading");
   const queue = useRef([]);
@@ -327,6 +375,11 @@ function useEngine() {
   }, []);
   useEffect(() => {
     let worker = null, killed = false, idx = 0;
+    // (20차 기능2) 엔진 선택이 바뀌면 이 effect가 다시 돌면서 기존 워커를 정리하고 새로 붙는다 —
+    // 이때 이전 워커를 가리키던 참조·상태를 반드시 초기화해야, 막 종료된 워커에 메시지를 보내
+    // 응답이 영영 오지 않는 채로 남는 사고를 막는다.
+    ref.current = null; offRef.current = false; running.current = false; setStatus("loading");
+    const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
     function handleLine(line) {
       const cb = queue.current[0]; if (!cb) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
@@ -347,8 +400,8 @@ function useEngine() {
       }
     }
     function tryNext() {
-      if (idx >= ENGINE_URLS.length) { offRef.current = true; setStatus("off"); pump(); return; }
-      const url = ENGINE_URLS[idx++];
+      if (idx >= urls.length) { offRef.current = true; setStatus("off"); pump(); return; }
+      const url = urls[idx++];
       try {
         let w;
         if (url.startsWith("/")) w = new Worker(url);
@@ -361,8 +414,14 @@ function useEngine() {
       } catch (_) { tryNext(); }
     }
     tryNext();
-    return () => { killed = true; try { worker && worker.terminate(); } catch (_) {} };
-  }, [pump]);
+    return () => {
+      killed = true;
+      try { worker && worker.terminate(); } catch (_) { }
+      // 엔진 전환 중 대기 중이던 요청이 있다면 영영 응답이 안 오므로 빈 결과로 정리해 콜러가 멈추지 않게 한다.
+      while (queue.current.length) { const j = queue.current.shift(); j.resolve(j.multi ? [] : null); }
+      running.current = false;
+    };
+  }, [pump, enginePref]);
   // (분석 최적화) movetime(ms)을 주면 `go depth N movetime M`으로 보내 depth·시간 중 먼저 도달하는 쪽에서 멈춘다.
   // 쉬운 포지션은 목표 depth까지 깊게, 복잡한 포지션은 movetime 상한에서 끊어 전체 분석 시간을 예측 가능하게 만든다.
   const evaluate = useCallback((fen, depth = 14, onProgress, movetime) => new Promise((resolve) => {
@@ -1578,8 +1637,10 @@ function useBoardSize(max = 360) {
 }
 
 /* ============================================================ 보드 ============================================================ */
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, skin }) {
-  const sk = SKINS[skin] || SKINS.classic;
+function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin }) {
+  const ctx = useContext(SkinContext);
+  const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
+  const effPieceSkin = pieceSkin || ctx.pieceSkin;
   const cell = Math.floor(size / 8);
   const inner = cell * 8;
   const rows = flip ? [...board].reverse().map((r) => [...r].reverse()) : board;
@@ -1616,7 +1677,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
                   {wrongAt && wrongAt[0] === r && wrongAt[1] === c && (
                     <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
                   )}
-                  {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} skin={skin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default" }} />}
+                  {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default" }} />}
                 </div>
               );
             })}
@@ -2095,6 +2156,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
 
 /* ============================================================ 집중 학습 모드 ============================================================ */
 function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, flip = false, badge = null }) {
+  const skCtx = useContext(SkinContext);
+  const sk = BOARD_SKINS[skCtx.boardSkin] || BOARD_SKINS.classic;
   const cell = Math.floor(size / 8);
   const before = useMemo(() => boardFromSans(sans), [sans.join(" ")]);
   const color = sans.length % 2 === 0 ? "w" : "b";
@@ -2125,7 +2188,7 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {rows.map((row, vr) => (
             <div key={vr} style={{ display: "flex" }}>
               {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
+                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
             </div>
           ))}
           {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
@@ -3699,6 +3762,8 @@ function TitleBadge({ id, earned = true, equipped = false, progress = null, onEq
 // (UX4) 오답을 둔 뒤 원래 위치로 되돌아가는 걸 슬라이드 애니메이션으로 보여준다.
 // board는 오답을 반영한 현재(잘못된) 보드, from/to는 방금 둔(잘못된) 수의 출발/도착 칸.
 function RevertSlide({ board, from, to, size = 380, flip = false }) {
+  const skCtx = useContext(SkinContext);
+  const sk = BOARD_SKINS[skCtx.boardSkin] || BOARD_SKINS.classic;
   const cell = Math.floor(size / 8);
   const [slid, setSlid] = useState(false);
   useEffect(() => {
@@ -3721,7 +3786,7 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
           <div key={vr} style={{ display: "flex" }}>
             {row.map((p, vc) => {
               const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
             })}
           </div>
         ))}
@@ -5289,7 +5354,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canAdd, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, treeFocus, setTreeFocus, totalXp, solvedCount }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canAdd, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, treeFocus, setTreeFocus, totalXp, solvedCount }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -5352,6 +5417,35 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, che
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom }}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} />} />}
+
+      {/* (20차 기능2) 엔진 선택 — 정확도가 높지만 무거운 Stockfish 16과, 가볍고 빠른 Stockfish 18 Lite
+          중에서 고를 수 있다. 기기 종류(모바일/PC)에 따라 자동으로 다른 기본값이 선택되어 있다. */}
+      <div style={card}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>분석 엔진</div>
+          <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: engineStatus === "ready" ? T.best : engineStatus === "off" ? T.blunder : T.inkSoft }}>
+            {engineStatus === "ready" ? <Wifi size={12} /> : engineStatus === "off" ? <WifiOff size={12} /> : <Cpu size={12} />}
+            {engineStatus === "ready" ? "연결됨" : engineStatus === "off" ? "연결 실패" : "불러오는 중…"}
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {Object.values(ENGINE_PROFILES).map((p) => {
+            const on = enginePref === p.id;
+            return (
+              <button key={p.id} onClick={() => setEnginePref(p.id)} className="press"
+                style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+                  border: "1.5px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.12)" : "#fff" }}>
+                <div className="flex items-center gap-2">
+                  <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (on ? T.brass : "#C9B58C"), background: on ? T.brass : "transparent", flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{p.label}</span>
+                </div>
+                <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, marginLeft: 24 }}>{p.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(이 기기에서만 기억돼요).</p>
+      </div>
 
       {/* (18차 보충 기능3) 전역 퍼즐 수 길이 상한 설정은 삭제 — 개별 퍼즐의 수 길이는 퍼즐 풀이 창에서 개발자가 직접 조정한다. */}
 
@@ -6467,7 +6561,9 @@ export default function App() {
   const [learnSans, setLearnSans] = useState([]);
   const [learnFuture, setLearnFuture] = useState([]);
   const [learnExtra, setLearnExtra] = useState({});
-  const engine = useEngine();
+  const [enginePref, setEnginePrefState] = useState(loadEnginePref);
+  const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
+  const engine = useEngine(enginePref);
   const chesscom = useChessCom(profile.chesscom);
 
   useEffect(() => { loadContent().then(() => setContentVer((v) => v + 1)); }, []);
@@ -6863,7 +6959,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canAdd={canAdd} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} treeFocus={treeFocus} setTreeFocus={setTreeFocus} totalXp={totalXp} solvedCount={solved.size} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canAdd={canAdd} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} treeFocus={treeFocus} setTreeFocus={setTreeFocus} totalXp={totalXp} solvedCount={solved.size} />}
       </main>
 
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderTop: "1px solid #000", height: 66, paddingBottom: "env(safe-area-inset-bottom)" }}>
