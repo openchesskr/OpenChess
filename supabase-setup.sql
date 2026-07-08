@@ -150,3 +150,50 @@ create policy "notif insert auth" on public.notifications for insert with check 
 create policy "notif update own" on public.notifications for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
 grant select, insert, update on public.notifications to authenticated;
 grant execute on function public.puzzle_rank(text, int)       to anon, authenticated;
+
+-- ===== 20차 수정: 보안 강화 — app_content 쓰기 권한을 개발자/공동개발자로 제한 =====
+-- 기존 "content insert"/"content update" 정책은 with check (true) 라, anon 키만 있으면(=누구나,
+-- 프런트엔드 번들에 공개된 키이므로) REST API를 직접 호출해 모든 방문자가 공유 콘텐츠(오프닝 트리·
+-- 퍼즐 해설·키워드 등)를 마음대로 덮어쓸 수 있었습니다. 실제 편집 UI는 개발자 모드로 가려져 있지만,
+-- 이는 "화면에 버튼이 안 보인다"일 뿐 서버가 막아주는 게 아니므로 상용 서비스 기준으로는 취약점입니다.
+-- 아래를 실행하면 auth.uid() 가 개발자 계정이거나 app_content.value.codev 배열에 포함된 사용자일
+-- 때만 쓰기가 허용되도록 서버(RLS)에서 강제합니다. DEV_ACCOUNT 값은 src/App.jsx 의 DEV_ACCOUNT
+-- 상수와 반드시 같아야 합니다("openchesskr"). 계정을 옮기면(18차 안내 참고) 아래 문자열도 함께 바꾸세요.
+--
+-- 주의: 이 정책은 이미 배포된 Supabase 프로젝트에서 이 SQL 블록을 직접 실행해야만 적용됩니다.
+-- 실행 전 기존 콘텐츠 편집이 정상 동작하는지(개발자 계정으로 로그인 후 이론 수 추가 등) 확인하세요.
+create or replace function public.is_content_editor(p_uid uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles pr
+    where pr.id = p_uid
+    and (
+      pr.username = 'openchesskr'
+      or pr.username in (
+        select jsonb_array_elements_text(
+          coalesce((select value from public.app_content where key = 'global') -> 'codev', '[]'::jsonb)
+        )
+      )
+    )
+  );
+$$;
+grant execute on function public.is_content_editor(uuid) to anon, authenticated;
+
+drop policy if exists "content insert" on public.app_content;
+drop policy if exists "content update" on public.app_content;
+create policy "content insert (dev/codev only)" on public.app_content for insert with check (public.is_content_editor(auth.uid()));
+create policy "content update (dev/codev only)" on public.app_content for update using (true) with check (public.is_content_editor(auth.uid()));
+-- 읽기는 그대로 모든 방문자 허용("content read" 정책 유지, 별도 조치 불필요).
+
+-- (선택) 더 이상 쓰이지 않는 구버전 인증 시스템 정리 — src/App.jsx 는 현재 Supabase Auth(GoTrue,
+-- /auth/v1/signup·token)로 회원가입/로그인하며, 아래 accounts 테이블·RPC(app_signup/app_login/app_save)는
+-- 예전(솔트 없는 SHA-256 해시) 방식의 잔재로 더 이상 호출되지 않습니다. anon 키로 실행 가능한 RPC를
+-- 그대로 두면 불필요한 공격 표면이 되므로, 실제로 쓰지 않는다면 아래로 정리하는 것을 권장합니다.
+-- (주의: 되돌릴 수 없습니다 — 혹시 예전 계정 데이터가 남아있다면 먼저 백업하세요.)
+-- revoke execute on function public.app_signup(text, text)      from anon, authenticated;
+-- revoke execute on function public.app_login(text, text)       from anon, authenticated;
+-- revoke execute on function public.app_save(text, text, jsonb) from anon, authenticated;
+-- drop function if exists public.app_signup(text, text);
+-- drop function if exists public.app_login(text, text);
+-- drop function if exists public.app_save(text, text, jsonb);
+-- drop table if exists public.accounts;
