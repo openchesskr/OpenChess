@@ -1842,13 +1842,15 @@ function CircleBadge({ kind, big }) {
   );
 }
 
-function MoveTile({ m, ply, onClick, onFocus, posGames }) {
+function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);   // 비이론 수는 개발자가 추가한 키워드만 표기
   const evTxt = m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null);
   return (
     <div style={{ borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
+      {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지 */}
+      {questBadge && <span title="오늘의 퀘스트 오프닝" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5 }}><MaterialIcon name="assignment" size={12} color="#241509" /></span>}
       <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
         <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={kind} /></span>
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -2804,7 +2806,13 @@ function AnalysisModal({ sans, engine, onClose }) {
     </div>
   );
 }
-function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, autoAnalyzeGame, onConsumeAutoAnalyze }) {
+function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, autoAnalyzeGame, onConsumeAutoAnalyze, dailyQuest }) {
+  // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
+  // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
+  // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
+  // 한쪽이 다른 쪽을 포함하면 같은 오프닝으로 간주한다.
+  const questOpeningNames = useMemo(() => (dailyQuest && dailyQuest.quests || []).filter((q) => q.type === "opening").map((q) => q.opening).filter(Boolean), [dailyQuest]);
+  const matchesQuestOpening = (name) => !!name && questOpeningNames.some((q) => name.includes(q) || q.includes(name));
   const [flip, setFlip] = useState(false);
   const [boardSize, boardRef] = useBoardSize(360);
   const [sel, setSel] = useState(null);
@@ -3212,7 +3220,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 const shown = [...bk, ...shownNb];
                 return (
                   <>
-                    {shown.map((m) => <MoveTile key={m.san} m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} />)}
+                    {shown.map((m) => <MoveTile key={m.san} m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestOpening(m.name)} />)}
                     {nb.length > 3 && (
                       <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                         <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -3666,7 +3674,51 @@ function seedRand(str) {
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h |= 0; return ((h >>> 0) % 100000) / 100000; };
 }
-const DEFAULT_QUEST_OPENINGS = ["Italian Game", "Sicilian Defense", "French Defense", "Queen's Gambit", "Caro-Kann Defense", "Ruy Lopez", "London System", "Scotch Game"];
+// (20차 UI4) 오프닝 플레이 퀘스트 후보 풀 — 예전엔 8개 대표 오프닝만 돌려썼는데, 훨씬 다양한 하위
+// 오프닝(변형)까지 등장하도록 확장. 각 항목의 moves는 퀘스트 박스에 클리어 조건(수순)으로 작게 표기한다.
+const QUEST_OPENING_POOL = [
+  { name: "Italian Game", moves: "1.e4 e5 2.Nf3 Nc6 3.Bc4" },
+  { name: "Ruy Lopez", moves: "1.e4 e5 2.Nf3 Nc6 3.Bb5" },
+  { name: "Ruy Lopez: Berlin Defense", moves: "1.e4 e5 2.Nf3 Nc6 3.Bb5 Nf6" },
+  { name: "Ruy Lopez: Morphy Defense", moves: "1.e4 e5 2.Nf3 Nc6 3.Bb5 a6" },
+  { name: "Scotch Game", moves: "1.e4 e5 2.Nf3 Nc6 3.d4" },
+  { name: "Petrov's Defense", moves: "1.e4 e5 2.Nf3 Nf6" },
+  { name: "Vienna Game", moves: "1.e4 e5 2.Nc3" },
+  { name: "King's Gambit", moves: "1.e4 e5 2.f4" },
+  { name: "Sicilian Defense", moves: "1.e4 c5" },
+  { name: "Sicilian Defense: Najdorf Variation", moves: "1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 a6" },
+  { name: "Sicilian Defense: Dragon Variation", moves: "1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 g6" },
+  { name: "Sicilian Defense: Sveshnikov Variation", moves: "1.e4 c5 2.Nf3 Nc6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 e5" },
+  { name: "Sicilian Defense: Accelerated Dragon", moves: "1.e4 c5 2.Nf3 Nc6 3.d4 cxd4 4.Nxd4 g6" },
+  { name: "French Defense", moves: "1.e4 e6" },
+  { name: "French Defense: Winawer Variation", moves: "1.e4 e6 2.d4 d5 3.Nc3 Bb4" },
+  { name: "French Defense: Advance Variation", moves: "1.e4 e6 2.d4 d5 3.e5" },
+  { name: "Caro-Kann Defense", moves: "1.e4 c6" },
+  { name: "Caro-Kann Defense: Advance Variation", moves: "1.e4 c6 2.d4 d5 3.e5" },
+  { name: "Caro-Kann Defense: Classical Variation", moves: "1.e4 c6 2.d4 d5 3.Nc3 dxe4 4.Nxe4 Bf5" },
+  { name: "Pirc Defense", moves: "1.e4 d6" },
+  { name: "Scandinavian Defense", moves: "1.e4 d5" },
+  { name: "Alekhine's Defense", moves: "1.e4 Nf6" },
+  { name: "Queen's Gambit", moves: "1.d4 d5 2.c4" },
+  { name: "Queen's Gambit Declined", moves: "1.d4 d5 2.c4 e6" },
+  { name: "Queen's Gambit Accepted", moves: "1.d4 d5 2.c4 dxc4" },
+  { name: "Slav Defense", moves: "1.d4 d5 2.c4 c6" },
+  { name: "King's Indian Defense", moves: "1.d4 Nf6 2.c4 g6" },
+  { name: "Grünfeld Defense", moves: "1.d4 Nf6 2.c4 g6 3.Nc3 d5" },
+  { name: "Nimzo-Indian Defense", moves: "1.d4 Nf6 2.c4 e6 3.Nc3 Bb4" },
+  { name: "Queen's Indian Defense", moves: "1.d4 Nf6 2.c4 e6 3.Nf3 b6" },
+  { name: "Bogo-Indian Defense", moves: "1.d4 Nf6 2.c4 e6 3.Nf3 Bb4+" },
+  { name: "Benoni Defense", moves: "1.d4 Nf6 2.c4 c5" },
+  { name: "Dutch Defense", moves: "1.d4 f5" },
+  { name: "London System", moves: "1.d4 d5 2.Bf4" },
+  { name: "Catalan Opening", moves: "1.d4 Nf6 2.c4 e6 3.g3" },
+  { name: "English Opening", moves: "1.c4" },
+  { name: "English Opening: Reversed Sicilian", moves: "1.c4 e5" },
+  { name: "Réti Opening", moves: "1.Nf3 d5 2.c4" },
+  { name: "Bird's Opening", moves: "1.f4" },
+];
+const QUEST_OPENING_MOVES = Object.fromEntries(QUEST_OPENING_POOL.map((o) => [o.name, o.moves]));
+const DEFAULT_QUEST_OPENINGS = QUEST_OPENING_POOL.map((o) => o.name);
 // (18차 보충 UX2) 오프닝 플레이 외의 chess.com 활동 퀘스트 — 오프닝 무관.
 function questLabel(q) {
   if (!q) return "";
@@ -4655,7 +4707,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
           const canReroll = !((dq.rerolled || {})[i]) && !dq.claimed["cc_" + i];
           return (
             <div key={i} onClick={() => isOpening && onOpenOpening && onOpenOpening(q.opening)} className={isOpening ? "press" : undefined} style={{ cursor: isOpening ? "pointer" : "default" }}>
-              {row("cc_" + i, questLabel(q), hasChesscom ? null : "설정에서 chess.com 계정을 연동해야 확인할 수 있어요",
+              {row("cc_" + i, questLabel(q), !hasChesscom ? "설정에서 chess.com 계정을 연동해야 확인할 수 있어요" : (isOpening ? QUEST_OPENING_MOVES[q.opening] : null),
                 /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
                 canReroll ? (
                   <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title="이 퀘스트만 교체(퀘스트당 1회)"
@@ -5615,6 +5667,20 @@ const store = {
   },
 };
 // (19차 기능5/UI5) OC 나이트 코인 아이콘 — public/oc-coin.png 사용, 파일이 없으면 🪙 이모지로 폴백.
+// (20차 UI4) Google Fonts의 Material Symbols "Assignment" 계열 아이콘 — 외부 웹폰트 CDN에 매 로드마다
+// 의존하면(느린/막힌 네트워크에서) 텍스트만 깨져 보이므로, 같은 글리프의 공식 SVG 패스 데이터를 그대로
+// 가져와 이 앱의 다른 아이콘(lucide-react)들과 동일하게 번들 SVG로 렌더링한다.
+const ASSIGNMENT_ICON_PATHS = {
+  assignment: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
+  assignment_late: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm1 15h-2v-2h2v2zm0-4h-2V8h2v6z",
+  assignment_turned_in: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-1.06 14L7.4 12.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41-5.64 5.66z",
+};
+function MaterialIcon({ name, size = 20, color = "currentColor", style }) {
+  const d = ASSIGNMENT_ICON_PATHS[name] || ASSIGNMENT_ICON_PATHS.assignment;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "inline-block", flexShrink: 0, ...style }}><path d={d} fill={color} /></svg>
+  );
+}
 function CoinIcon({ size = 16 }) {
   const [err, setErr] = useState(false);
   if (err) return <span style={{ fontSize: Math.round(size * 0.95), lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>🪙</span>;
@@ -5678,7 +5744,7 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
     </div>
   );
 }
-const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: Sparkles }, { key: "quest", label: "퀘스트", Icon: Target }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
+const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: Sparkles }, { key: "quest", label: "퀘스트", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 const TAB_PATH = { learn: "/learn", dex: "/book", puzzle: "/puzzle", quest: "/quest", store: "/store", set: "/setting" };
 const PATH_TAB = { "/learn": "learn", "/book": "dex", "/puzzle": "puzzle", "/quest": "quest", "/store": "store", "/setting": "set" };
@@ -6655,6 +6721,16 @@ export default function App() {
   const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 레벨/진행률은 levelFromXp로 매번 도출
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
   const [dailyQuest, setDailyQuest] = useState(null);  // (17차) 오늘의 퀘스트 — { date, featured, puzzleTarget, puzzleCount, ccDone, claimed, bonusClaimed, seen, resetUsed, banned }
+  // (20차 UI4) 하단 "퀘스트" 탭 아이콘 상태 — 전부 클리어하면 assignment_turned_in, 클리어했지만
+  // 아직 확인(seen) 안 한 항목이 있으면 assignment_late, 그 외엔 기본 assignment.
+  const questIconName = useMemo(() => {
+    if (!dailyQuest || !dailyQuest.claimed) return "assignment";
+    const keys = ["puzzle", "cc_0", "cc_1", "cc_2"];
+    const allDone = keys.every((k) => dailyQuest.claimed[k]);
+    if (allDone) return "assignment_turned_in";
+    const hasUnseen = keys.some((k) => dailyQuest.claimed[k] && !((dailyQuest.seen || {})[k]));
+    return hasUnseen ? "assignment_late" : "assignment";
+  }, [dailyQuest]);
   const [mainQuest, setMainQuest] = useState({ claimed: {} }); // (18차 기능1) 메인 퀘스트 스테이지 보상 수령 여부
   const [recentOpenings, setRecentOpenings] = useState([]);  // (17차) 최근 푼 퍼즐/집중학습한 오프닝 — 일일 퀘스트 후보 풀
   const [user, setUser] = useState(null); // username (표시/검색)
@@ -7129,7 +7205,7 @@ export default function App() {
       )}
 
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 110px" }}>
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlocked={unlocked} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
@@ -7144,7 +7220,7 @@ export default function App() {
             {TABS.map(({ key, label, Icon }) => { const on = tab === key; const badge = key === "dex" ? newUnlocks + newTitles : 0; return (
               <button key={key} onClick={() => switchTab(key)} className="flex flex-col items-center justify-center gap-1" style={{ flex: 1, minWidth: 0, maxWidth: 96, color: on ? T.brassHi : "#8A7458", position: "relative", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                 {on && <span style={{ position: "absolute", top: 0, height: 3, width: 30, borderRadius: 3, background: T.brass }} />}
-                <span style={{ position: "relative" }}><Icon size={20} />{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}</span>
+                <span style={{ position: "relative" }}>{key === "quest" ? <MaterialIcon name={questIconName} size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}</span>
                 <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, whiteSpace: "nowrap" }}>{label}</span>
               </button>); })}
           </div>
