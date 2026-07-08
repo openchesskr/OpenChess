@@ -5942,15 +5942,34 @@ function NotificationBell({ myUid, onAccept, onReject }) {
   );
 }
 // (17차) 이모티콘 24종(MILKU/KOKOA 각 12종) — 정사각형으로 잘라 public/emoji에 미리 저장해둔 것을 사용.
-const EMOJI_CODES = [...Array.from({ length: 12 }, (_, i) => "milku_" + (i + 1)), ...Array.from({ length: 12 }, (_, i) => "kokoa_" + (i + 1))];
+// (20차 UI3) 한 번에 24개를 다 보여주면 아이콘이 너무 작아 잘 안 보이던 문제 — MILKU/KOKOA를
+// 각각 한 페이지씩 좌우로 넘겨보도록 나눠, 페이지당 12개만 훨씬 크게 표시한다.
+const EMOJI_GROUPS = [
+  { label: "MILKU", codes: Array.from({ length: 12 }, (_, i) => "milku_" + (i + 1)) },
+  { label: "KOKOA", codes: Array.from({ length: 12 }, (_, i) => "kokoa_" + (i + 1)) },
+];
+const EMOJI_CODES = EMOJI_GROUPS.flatMap((g) => g.codes);
 function EmojiPicker({ onPick, onClose }) {
+  const [page, setPage] = useState(0);
+  const group = EMOJI_GROUPS[page];
+  const goto = (p) => setPage((p + EMOJI_GROUPS.length) % EMOJI_GROUPS.length);
   return (
-    <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: 46, left: 0, width: 260, maxHeight: 220, overflowY: "auto", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", padding: 8, zIndex: 95 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4 }}>
-        {EMOJI_CODES.map((code) => (
-          <button key={code} onClick={() => { onPick(code); onClose(); }} className="press" style={{ padding: 2, border: "none", background: "transparent", cursor: "pointer", borderRadius: 6 }}>
+    <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: 46, left: 0, width: 260, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", padding: 8, zIndex: 95 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+        <button onClick={() => goto(page - 1)} aria-label="이전 이모티콘 세트" className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brass }}>{group.label}</span>
+        <button onClick={() => goto(page + 1)} aria-label="다음 이모티콘 세트" className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+        {group.codes.map((code) => (
+          <button key={code} onClick={() => { onPick(code); onClose(); }} className="press" style={{ padding: 3, border: "none", background: "transparent", cursor: "pointer", borderRadius: 8 }}>
             <img src={"/emoji/" + code + ".png"} alt={code} style={{ width: "100%", display: "block" }} />
           </button>
+        ))}
+      </div>
+      <div className="flex items-center justify-center gap-2" style={{ marginTop: 6 }}>
+        {EMOJI_GROUPS.map((g, i) => (
+          <button key={i} onClick={() => setPage(i)} aria-label={g.label + " 페이지"} className="press" style={{ width: page === i ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === i ? T.brass : "rgba(0,0,0,.2)", transition: "width .2s ease, background .2s ease" }} />
         ))}
       </div>
     </div>
