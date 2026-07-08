@@ -2849,7 +2849,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
   const { moves, posGames, engineNote, posEval, curDepth } = useMergedMoves(sans, engine, liveOn && !analyzeOpen, extra[key], contentVer, mode, sortBy);
-  useEffect(() => { onFocusActive && onFocusActive(!!focus); }, [focus]);
+  // (20차 UX4) 스크롤이 많이 내려간 상태(예: 깊은 수 블록 클릭)에서 집중 학습에 들어가면, 페이지
+  // 스크롤 위치가 그대로 유지되어 미니 보드가 화면 아래로 밀려 하단 탭에 가려 보이는 문제가 있었다 —
+  // 진입 시 맨 위로 스크롤해 보드가 항상 하단 탭 위쪽 여유 공간 안에서 시작하도록 한다.
+  useEffect(() => {
+    onFocusActive && onFocusActive(!!focus);
+    if (!focus) return;
+    window.scrollTo({ top: 0, behavior: "auto" });
+    if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "auto" });
+  }, [focus]);
   useEffect(() => { setShowAllNb(false); }, [key]);   // (UX1) 위치가 바뀌면 더보기 접기
   // (기능2) 퍼즐 자동 생성은 사용자가 "학습" 버튼을 눌러 FocusMode에 실제로 진입했을 때만 일어난다.
   // 예전엔 이 트리 탐색 화면을 그냥 넘겨보기만 해도(학습 버튼을 누르지 않아도) moves 배열이
@@ -3081,7 +3089,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             </div>
           </div>
           {analyzeOpen && <AnalysisModal sans={[...sans, ...future]} engine={engine} onClose={() => setAnalyzeOpen(false)} />}
-          <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative" }}>
+          <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
             <Board board={board} flip={flip} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
@@ -4247,6 +4255,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 분기 트리: 개발자 길이 재조정(CONTENT.puzzleOverrides — 모든 유저 공통) > 저장된 tree > 구버전 lines/solution
   const [overrideTree, setOverrideTree] = useState(null);
   useEffect(() => { setOverrideTree(null); }, [puzzle.id]);
+  // (20차 UX4) 퍼즐 목록에서 스크롤을 내린 채로 카드를 눌러 들어오면 이전 스크롤 위치가 그대로 남아
+  // 보드(특히 응수 애니메이션 중인 기물)가 화면 아래 하단 탭 뒤로 가려지던 문제 — 진입 시 맨 위로 스크롤.
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "auto" }); }, [puzzle.id]);
   const tree = useMemo(() => overrideTree || puzzleTreeOf(puzzle), [puzzle.id, overrideTree]);
   const allLines = useMemo(() => treeLinesOf(tree), [tree]);
   const totalLines = Math.max(1, allLines.length);
@@ -4306,6 +4317,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const doneTag = done ? (curNode.tag || pathNodes.map((n) => stripSuffix(n.san)).join(" ")) : null;
   const userToMove = !done && isUserPly && !wrong && !reply && !intro && allLines.length > 0;
   const [boardSize, boardRef] = useBoardSize(380);
+  // (20차 UX4) 화면이 짧아 스크롤을 맨 위로 올려도 보드 하단이 여전히 하단 탭 뒤에 걸치는 경우를
+  // 대비해, 보드의 scrollMarginBottom(아래 style)만큼 여유를 두고 딱 필요한 만큼만 아래로 더 스크롤한다.
+  useEffect(() => { if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "auto" }); }, [puzzle.id]);
   useEffect(() => { if (!intro) return; const t = setTimeout(() => setIntro(false), 1400); return () => clearTimeout(t); }, [intro, puzzle.id]);
   // (16차) 추천 랭킹용 이벤트는 이미 푼 라인을 다시 풀어도(중복 풀이) 매번 기록한다 — XP/별 지급과는 별개.
   useEffect(() => {
@@ -4603,7 +4617,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             <div key={"bubble-" + hintKey} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
             {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
             <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{sansToPgnText(curSans) || " "}</div>
-            <div ref={boardRef} style={{ width: "100%", maxWidth: 380, margin: "0 auto" }}>
+            <div ref={boardRef} style={{ width: "100%", maxWidth: 380, margin: "0 auto", scrollMarginBottom: 84 }}>
             {intro
               ? <AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
               : reply
