@@ -1657,13 +1657,13 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
               const isSel = selected && selected[0] === r && selected[1] === c;
               const isTarget = targetSet.has(r + "," + c);
-              const coordCol = light ? sk.boardDark : sk.boardLight;
+              const coordCol = light ? sk.dark : sk.light;
               return (
                 <div key={ci}
                   onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
                   onDragOver={interactive ? (e) => e.preventDefault() : undefined}
                   onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
-                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.boardLight : sk.boardDark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
+                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
                   {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{8 - r}</span>}
                   {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{FILES[c]}</span>}
                   {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
@@ -5531,7 +5531,41 @@ function CoinIcon({ size = 16 }) {
   return <img src="/oc-coin.png" alt="OC 나이트 코인" onError={() => setErr(true)} style={{ width: size, height: size, objectFit: "contain", display: "inline-block", verticalAlign: "middle" }} />;
 }
 // (19차 UI5) 상점 탭 — 보유 코인 표기 + 아이템(체스보드/기물 스킨)은 추후 추가 예정.
-function StoreTab({ coins }) {
+/* (20차 기능4) 스킨 상점 카드 — 보드/기물 공용. 미리보기(작은 체크보드 4칸 또는 기물 2개) + 가격/보유/
+   장착 상태에 따라 버튼이 "구매"→"장착"→"장착됨"으로 바뀐다. */
+function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
+  const isFree = sk.price === 0;
+  const preview = kind === "board" ? (
+    <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", border: "1px solid #00000033", flexShrink: 0 }}>
+      {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; const light = (r + c) % 2 === 0; return <div key={i} style={{ background: light ? sk.light : sk.dark }} />; })}
+    </div>
+  ) : (
+    <div className="flex items-center gap-1" style={{ width: 64, height: 64, borderRadius: 8, background: "#2E1B10", flexShrink: 0, justifyContent: "center" }}>
+      <PieceGlyph type="K" color="w" size={28} pieceSkin={id} />
+      <PieceGlyph type="N" color="b" size={28} pieceSkin={id} />
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", gap: 12, padding: 12, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
+      {preview}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{sk.label}</div>
+        <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
+          {isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>무료 · 기본 제공</span>
+            : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={13} /> {sk.price}</span>}
+        </div>
+        {equipped ? (
+          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>✓ 장착됨</button>
+        ) : owned || isFree ? (
+          <button onClick={() => onEquip(kind, id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>장착하기</button>
+        ) : (
+          <button onClick={() => onBuy(kind, id)} disabled={coins < sk.price} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: coins < sk.price ? "#8A7458" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: coins < sk.price ? "not-allowed" : "pointer" }}>{coins < sk.price ? "코인 부족" : "구매하기"}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
   return (
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 12 }}><Mascot name="milku" emotion="happy" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
@@ -5539,9 +5573,17 @@ function StoreTab({ coins }) {
         <CoinIcon size={44} />
         <div><div style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>보유 중인 OC 나이트 코인</div><div style={{ fontSize: 26, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1.1 }}>{fmtFull(coins || 0)}</div></div>
       </div>
-      <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 22, textAlign: "center", color: T.inkSoft, fontSize: 13, lineHeight: 1.6 }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><ShoppingBag size={30} style={{ color: T.brass }} /></div>
-        체스보드 스킨 · 기물 스킨 상품을 준비 중입니다.<br />일일 퀘스트를 모두 완료하면 <b style={{ color: T.brass }}>OC 나이트 코인 50개</b>를 받아요!
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+        {Object.entries(BOARD_SKINS).map(([id, sk]) => (
+          <SkinShopCard key={id} kind="board" id={id} sk={sk} owned={ownedSkins.has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+        ))}
+      </div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>기물 스킨</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {Object.entries(PIECE_SKINS).map(([id, sk]) => (
+          <SkinShopCard key={id} kind="piece" id={id} sk={sk} owned={ownedSkins.has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+        ))}
       </div>
     </div>
   );
@@ -6489,6 +6531,11 @@ export default function App() {
   const [solverNames, setSolverNames] = useState({});              // (16차) uid -> username (친구 중 해결자만)
   const [earnedTitles, setEarnedTitles] = useState(new Set());     // (기능4) 획득 칭호(영구)
   const [currentTitle, setCurrentTitle] = useState(null);         // 장착 칭호
+  // (20차 기능4) 보드 스킨·기물 스킨은 독립적으로 구매·장착한다 — ownedSkins는 "board:ocean" 같은
+  // "종류:id" 키 집합(영구), boardSkin/pieceSkin은 지금 장착 중인 스킨 id(기본 "classic").
+  const [ownedSkins, setOwnedSkins] = useState(new Set());
+  const [boardSkin, setBoardSkin] = useState("classic");
+  const [pieceSkin, setPieceSkin] = useState("classic");
   const [profile, setProfile] = useState({ nickname: "", chesscom: "" });
   const [loaded, setLoaded] = useState(false);
   const [liveOn, setLiveOn] = useState(true);
@@ -6585,19 +6632,19 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); setDeletedPuzzles(new Set(d.deleted || [])); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); setDeletedPuzzles(new Set(d.deleted || [])); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (d.puzzleActive) setPuzzleActive(d.puzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     setLoaded(true);
   })(); }, []);
   // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 레벨/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "" }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], titles: [...earnedTitles], currentTitle, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus })); }, [unlocked, profile, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, earnedTitles, currentTitle, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], titles: [...earnedTitles], currentTitle, dailyQuest, mainQuest, recentOpenings }); }, [unlocked, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, earnedTitles, currentTitle, dailyQuest, mainQuest, recentOpenings, uid, loaded]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus })); }, [unlocked, profile, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings }); }, [unlocked, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded]);
   // (16차) 퍼즐 카드에 "친구 N명이 풀었습니다" 표기를 위해, 로그인 시 내 친구 목록과 각 퍼즐의 해결자 uid를 한 번에 조회.
   useEffect(() => {
     if (!loaded || !uid || !puzzles.length) return;
@@ -6633,6 +6680,19 @@ export default function App() {
     if (uid) notifyCreate(uid, "title_earned", { titleId: top }); // (17차) 알림 기록에도 남긴다(토스트는 사라지므로)
   }, [titleCounts, ccTitleCounts, loaded]);
   const equipTitle = useCallback((id) => { setCurrentTitle(id); setToast((t) => (t && t.type === "title" ? null : t)); }, []);
+  // (20차 기능4) 스킨 구매·장착 — 보드 스킨과 기물 스킨은 독립적으로 사고팔고 섞어서 장착할 수 있다.
+  const buySkin = useCallback((kind, id) => {
+    const registry = kind === "board" ? BOARD_SKINS : PIECE_SKINS;
+    const sk = registry[id]; if (!sk) return false;
+    const key = kind + ":" + id;
+    if (ownedSkins.has(key)) return true;
+    if (ocCoins < sk.price) return false;
+    setOcCoins((c) => c - sk.price);
+    setOwnedSkins((prev) => new Set(prev).add(key));
+    return true;
+  }, [ocCoins, ownedSkins]);
+  const equipSkin = useCallback((kind, id) => { (kind === "board" ? setBoardSkin : setPieceSkin)(id); }, []);
+  const skinValue = useMemo(() => ({ boardSkin, pieceSkin }), [boardSkin, pieceSkin]);
 
   const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
@@ -6641,7 +6701,7 @@ export default function App() {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
     setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLineSolves({}); prevLevelRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set());
-    setEarnedTitles(new Set()); setCurrentTitle(null); setProfile({ nickname: "", chesscom: "" });
+    setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
   }, []);
   // (UX7) 일정 시간 활동이 없으면 자동 로그아웃 — 로그인 상태가 무기한 유지되던 보안 문제 수정
@@ -6847,6 +6907,7 @@ export default function App() {
   useEffect(() => { if (!puzzleActive) return; setPuzzles((prev) => prev.some((x) => x.id === puzzleActive.id) ? prev : ((deletedPuzzles.has(puzzleActive.id) && !solved.has(puzzleActive.id)) ? prev : [...prev, puzzleActive])); }, [puzzleActive]);   // (UX3) 열어본 퍼즐은 로컬 탭에 추가
 
   return (
+    <SkinContext.Provider value={skinValue}>
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
@@ -6958,7 +7019,7 @@ export default function App() {
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlocked={unlocked} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
-        {tab === "store" && <StoreTab coins={ocCoins} />}
+        {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canAdd={canAdd} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} treeFocus={treeFocus} setTreeFocus={setTreeFocus} totalXp={totalXp} solvedCount={solved.size} />}
       </main>
 
@@ -6976,5 +7037,6 @@ export default function App() {
         )}
       </nav>
     </div>
+    </SkinContext.Provider>
   );
 }
