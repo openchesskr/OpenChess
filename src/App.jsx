@@ -5275,7 +5275,10 @@ function SchematicEditor({ bumpContent, contentVer, canAdd, focusPath, setFocusP
   };
   const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
   const onPointerUp = () => { dragRef.current = null; };
-  const openAdd = (path) => { setAddAt(path); setSanIn(""); setNameIn(""); setErr(""); };
+  // (20차 UX5) 방금 이름 붙인 수 바로 다음에 새 이론 수를 추가할 때, 매번 새로 타이핑하지 않아도
+  // 되도록 그 수(부모 노드)의 이름을 다음 수 이름의 기본값으로 미리 채워 둔다(같은 오프닝 체계를
+  // 이어서 명명하는 경우가 많음 — 필요하면 그대로 덮어써서 바꿀 수 있다).
+  const openAdd = (path, defaultName = "") => { setAddAt(path); setSanIn(""); setNameIn(defaultName); setErr(""); };
   const submitAdd = async () => {
     const san = sanIn.trim(); if (!san) return;
     const path = addAt; const board = boardFromSans(path); const color = path.length % 2 === 0 ? "w" : "b";
@@ -5335,7 +5338,7 @@ function SchematicEditor({ bumpContent, contentVer, canAdd, focusPath, setFocusP
               <div key={i} style={{ position: "absolute", left: n.x * colW, top: n.y * rowH, width: boxW }}>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setFocusPath(n.path)} className="press" title={n.name || label} style={{ flex: 1, minWidth: 0, height: boxH, padding: "0 8px", borderRadius: 7, border: "1px solid " + (isRoot ? T.brass : "#C9B58C"), background: isRoot ? T.brass : "#fff", color: isRoot ? "#241509" : T.ink, fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</button>
-                  {canAdd && <button onClick={() => openAdd(n.path)} className="press" title="이 위치에 이론 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
+                  {canAdd && <button onClick={() => openAdd(n.path, n.name || "")} className="press" title="이 위치에 이론 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
                 </div>
                 {n.name && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.name}</div>}
               </div>
