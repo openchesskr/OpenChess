@@ -3595,23 +3595,31 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, setupLen, onPick, canEdit, onAddMove }) {
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, setupLen, onPick, canEdit, onAddMove, celebrateTag, shakeTag }) {
   const colW = 118, rowH = 56, boxW = 104, boxH = 46;
   const { items, edges, width, height, curItem } = useMemo(() => {
     const revealed = revealedPuzzleKeys(allLines, solvedNow, curKeys);
     let cursor = 0; const items = []; const edges = [];
     const curKeyStr = curKeys.join(" ");
+    // 실제로 둔 수(revealed)는 그대로 펼쳐 보이고, 아직 두지 않은 자식은 "고스트"(내용은 가리되 갈래가
+    // 있다는 사실만 보여주는 자리표시자)로 만든다 — 라인이 하나뿐인 것처럼 보이지 않도록.
     const visit = (node, path, depth) => {
       const key = path.map((s) => stripSuffix(s)).join(" ");
-      if (depth > 0 && !revealed.has(key)) return null;   // 아직 두지 않은 수는 트리에서 아예 제외
       const it = { node, path, depth, key };
-      const kids = (node.children || []).map((k) => visit(k, [...path, k.san], depth + 1)).filter(Boolean);
+      const rawKids = node.children || [];
+      const kids = [];
+      for (const k of rawKids) {
+        const kpath = [...path, k.san];
+        const kkey = kpath.map((s) => stripSuffix(s)).join(" ");
+        if (revealed.has(kkey)) kids.push(visit(k, kpath, depth + 1));
+        else { const ghost = { node: null, path: kpath, depth: depth + 1, key: kkey, ghost: true, y: cursor++ }; items.push(ghost); kids.push(ghost); }
+      }
+      it.isLeaf = rawKids.length === 0;   // 실제 데이터 기준 리프(고스트로 가려진 자식이 있으면 리프가 아님)
       if (!kids.length) it.y = cursor++;
       else {
         it.y = (kids[0].y + kids[kids.length - 1].y) / 2;
         kids.forEach((c) => edges.push([it, c]));
       }
-      it.isLeaf = !kids.length;
       items.push(it);
       return it;
     };
@@ -3624,18 +3632,28 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       for (let i = 1; i <= ks.length; i++) solvedKeys.add(ks.slice(0, i).join(" "));
       solvedLeafKeys.add(ks.join(" "));
     }
+    // 방금 해결한 라인(클리어 애니메이션용) 경로
+    const celebrateKeys = new Set();
+    const celebrateLine = celebrateTag && allLines.find((l) => l.tag === celebrateTag);
+    if (celebrateLine) { const ks = celebrateLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) celebrateKeys.add(ks.slice(0, i).join(" ")); }
+    // 새로 도전 가능해진 라인의 "첫 고스트"(아직 안 보이는 첫 갈림길)에 흔들림 강조
+    let shakeKey = null;
+    const shakeLine = shakeTag && allLines.find((l) => l.tag === shakeTag);
+    if (shakeLine) { const ks = shakeLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) { const k = ks.slice(0, i).join(" "); if (!revealed.has(k)) { shakeKey = k; break; } } }
     const curKeySet = new Set(); for (let i = 1; i <= curKeys.length; i++) curKeySet.add(curKeys.slice(0, i).join(" "));
     items.forEach((it) => {
       it.solved = it.depth > 0 && solvedKeys.has(it.key);
       it.solvedLeaf = it.depth > 0 && solvedLeafKeys.has(it.key);
       it.onCur = it.depth > 0 && curKeySet.has(it.key);
       it.isCur = it.key === curKeyStr;
+      it.celebrate = celebrateKeys.has(it.key);
+      it.shake = it.key === shakeKey;
     });
     const curItem = items.find((it) => it.isCur) || null;
     const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 40;
     const height = (Math.max(...items.map((it) => it.y)) + 1) * rowH + 20;
     return { items, edges, width, height, curItem };
-  }, [tree, allLines, solvedNow, curKeys.join(" ")]);
+  }, [tree, allLines, solvedNow, curKeys.join(" "), celebrateTag, shakeTag]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
   const dragRef = useRef(null);
   const boxRef = useRef(null);
@@ -3671,39 +3689,52 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {edges.map(([p, c], i) => {
               const x1 = p.depth * colW + boxW, y1 = p.y * rowH + boxH / 2, x2 = c.depth * colW, y2 = c.y * rowH + boxH / 2;
+              if (c.ghost) return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#C9B58C" strokeWidth={1.3} opacity={0.4} strokeDasharray="3 3" strokeLinecap="round" />;
               const adopt = c.node.adopt != null ? c.node.adopt : (meta[c.key] && meta[c.key].adopt);
               const wStroke = adopt == null ? 1.6 : 1.2 + Math.min(4.4, adopt / 9);   // 채택률에 따라 선 두께
-              const blockedC = c.node.pass === false;
-              const stroke = c.solved ? T.best : c.onCur ? T.brass : blockedC ? "#B9AA95" : "#C9B58C";
-              const op = c.solved ? 0.95 : c.onCur ? 1 : blockedC ? 0.5 : 0.6;
-              return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={wStroke} opacity={op} strokeDasharray={blockedC ? "4 3" : undefined} strokeLinecap="round" />;
+              const stroke = c.solved ? T.best : c.onCur ? T.brass : "#C9B58C";
+              const op = c.solved ? 0.95 : c.onCur ? 1 : 0.6;
+              return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={wStroke} opacity={op} strokeLinecap="round" />;
             })}
           </svg>
           {items.map((it, i) => {
+            // (20차 기능2) 고스트 — 아직 두지 않은 갈래가 존재한다는 사실만 보여주고 수 정보는 가린다.
+            // 트랩(통과 불가) 수는 실제 플레이로만 드러나므로 이 자리표시자와 구별 없이 함께 뭉뚱그려진다.
+            if (it.ghost) {
+              return (
+                <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW }}>
+                  <button onClick={() => onPick && onPick(it)} title="아직 두지 않은 갈래예요 — 두어 보면 드러나요" className="press"
+                    style={{ width: "100%", minHeight: boxH, borderRadius: 8, border: "1.5px dashed #C9B58C",
+                      background: "repeating-linear-gradient(135deg, rgba(0,0,0,.035) 0 6px, rgba(0,0,0,.07) 6px 12px)",
+                      color: T.inkSoft, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                      animation: it.shake ? "lineShake .55s ease 3" : "none" }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, opacity: 0.55 }}>?</span>
+                  </button>
+                </div>
+              );
+            }
             const isRoot = it.depth === 0;
             const m = meta[it.key] || {};
             const kind = it.node.kind || m.kind;
             const ev = it.node.ev || m.ev;
             const adopt = it.node.adopt != null ? it.node.adopt : m.adopt;
-            const blocked = it.node.pass === false;
             const evTxt = ev ? fmtEvalCp(ev.cp, ev.mate, ev.plies) : null;
             // 수 번호(예: "3.Nxe5"/"3...fxe5") — setup에 이어지는 전체 수순에서의 위치로 계산
             const label = isRoot ? (rootLabel ? moveNumber(setupLen - 1) + rootLabel : "시작") : moveNumber(setupLen + it.depth - 1) + it.node.san;
-            const canAddHere = canEdit && !isRoot && it.isLeaf && !blocked;
+            const canAddHere = canEdit && !isRoot && it.isLeaf;
             return (
-              <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW, opacity: blocked ? 0.62 : 1 }}>
+              <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW, animation: it.celebrate ? "questclear 1s ease" : "none" }}>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => !isRoot && !blocked && onPick && onPick(it)} disabled={isRoot || blocked}
-                    className={isRoot || blocked ? "" : "press"} title={blocked ? "통과할 수 없는 수 — 최선·우수한 수만 다음 단계로 진행돼요" : undefined}
+                  <button onClick={() => !isRoot && onPick && onPick(it)} disabled={isRoot}
+                    className={isRoot ? "" : "press"}
                     style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
                       border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : it.solved ? T.best : "#C9B58C"),
                       background: isRoot ? "linear-gradient(180deg,#3A2516,#241509)" : it.solved ? "#EAF3E0" : "#fff",
-                      cursor: isRoot || blocked ? "default" : "pointer",
+                      cursor: isRoot ? "default" : "pointer",
                       boxShadow: it.isCur ? "0 0 0 3px rgba(196,154,80,.25)" : "none" }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
                       {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 8)}</span>}
                       <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                      {blocked && <X size={11} strokeWidth={3} style={{ color: T.blunder, flexShrink: 0 }} />}
                       {it.solvedLeaf && <span style={{ marginLeft: "auto", flexShrink: 0, width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Check size={10} strokeWidth={3.5} /></span>}
                     </span>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
@@ -3733,8 +3764,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       <div className="flex items-center flex-wrap" style={{ gap: 10, marginTop: 6, fontSize: 9.5, color: T.inkSoft, fontWeight: 600 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 3, background: T.best, borderRadius: 2, display: "inline-block" }} />해결한 라인</span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 3, background: T.brass, borderRadius: 2, display: "inline-block" }} />현재 진행</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 0, borderTop: "2px dashed #B9AA95", display: "inline-block" }} />통과 불가</span>
-        <span>선 두께 = 채택률 · 아직 두지 않은 수는 표시되지 않아요</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 0, borderTop: "2px dashed #C9B58C", display: "inline-block" }} />?</span>
+        <span>미확인 갈래(수 정보는 두어야 드러나요)</span>
+        <span>선 두께 = 채택률</span>
       </div>
     </div>
   );
@@ -3766,10 +3798,34 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const [reply, setReply] = useState(null);      // { sans, san, node }  상대 응수 애니메이션
   const [hintText, setHintText] = useState(null);
   const [hintKey, setHintKey] = useState(0);
+  // (20차 기능2) 보드 페이지(0)/모식도 페이지(1) 좌우 넘기기 — 모식도가 보드 위를 차지해 한눈에
+  // 안 들어오던 문제를 해결한다. celebrate는 방금 해결한 라인의 클리어 애니메이션(모식도 페이지),
+  // shakeTag는 그 직후 도전 가능해진 다음 라인을 살짝 흔들어 "클릭하면 바로 풀 수 있다"를 강조한다.
+  const [page, setPage] = useState(0);
+  const [celebrate, setCelebrate] = useState(null);   // { tag } | null
+  const pagerRef = useRef(null);
+  const dragRef = useRef(null);
+  const [dragPx, setDragPx] = useState(0);
+  const dragging = !!dragRef.current;
+  const onPagerPointerDown = (e) => {
+    if (e.target.closest && e.target.closest("button, input, .no-pan, .no-swipe")) return;
+    dragRef.current = { x: e.clientX, w: pagerRef.current ? pagerRef.current.clientWidth : 380 };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPagerPointerMove = (e) => { if (!dragRef.current) return; setDragPx(e.clientX - dragRef.current.x); };
+  const onPagerPointerUp = () => {
+    const st = dragRef.current; dragRef.current = null;
+    if (!st) { setDragPx(0); return; }
+    const threshold = st.w * 0.16;
+    if (dragPx <= -threshold && page === 0) setPage(1);
+    else if (dragPx >= threshold && page === 1) setPage(0);
+    setDragPx(0);
+  };
   // 퍼즐/트리가 바뀌면 미해결 라인부터 새로 시작
   useEffect(() => {
     setSessionSolved(new Set());
     setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null);
+    setPage(0); setCelebrate(null);
     const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
     setTargetTag(first ? first.tag : null);
   }, [puzzle.id, tree]);
@@ -3792,7 +3848,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     if (onLineSolved) onLineSolved(puzzle.id, doneTag, totalLines);
     setSessionSolved((s) => (s.has(doneTag) ? s : new Set(s).add(doneTag)));
     if (onPuzzleSolveEvent) onPuzzleSolveEvent(puzzle.id);
+    // (20차 기능2) 보드에서 결과를 잠깐 보여준 뒤 모식도 페이지로 자동 전환 — 클리어 애니메이션 재생.
+    const t = setTimeout(() => { setPage(1); setCelebrate({ tag: doneTag }); }, 900);
+    return () => clearTimeout(t);
   }, [done]);
+  // 클리어·흔들림 애니메이션은 잠깐만 재생하고 스스로 꺼진다(반복 재생 방지).
+  useEffect(() => { if (!celebrate) return; const t = setTimeout(() => setCelebrate(null), 2400); return () => clearTimeout(t); }, [celebrate]);
   // 이 가지 아래에 아직 해결하지 않은 리프가 남아 있는가
   const subtreeUnsolved = (node, keyArr) => {
     const kids = (node.children || []).filter((k) => k.pass !== false);
@@ -3845,7 +3906,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     const t2 = setTimeout(() => { setWrong(null); setReverting(false); setSel(null); }, 1000 + 450);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [wrong]);
-  const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null); };
+  const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null); setPage(0); setCelebrate(null); };
   const restart = () => gotoLine(targetTag);
   // 모식도 노드 클릭 → 그 가지를 지나는 라인(미해결 우선)을 목표로 처음부터 풀이
   const onPickNode = (it) => {
@@ -3993,38 +4054,56 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           </div>
         </div>
       </div>
-      {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-      <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} />
-      <div key={"bubble-" + hintKey} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
-      {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
-      <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{sansToPgnText(curSans) || " "}</div>
-      <div ref={boardRef} style={{ width: "100%", maxWidth: 380, margin: "0 auto" }}>
-      {intro
-        ? <AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
-        : reply
-          ? <AnimatedMove sans={reply.sans} san={reply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
-        : reverting
-          ? <RevertSlide board={wrong.board} from={wrong.from} to={wrong.at} size={boardSize} flip={userColor === "b"} />
-        : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove} />}
+      {/* (20차 기능2) 보드 페이지 ↔ 모식도 페이지 좌우 넘기기. 모식도가 보드 위쪽을 다 차지해 한눈에
+          안 들어오던 문제를 없애기 위해 별도 페이지로 분리하고, 드래그(스와이프)·화살표·점 인디케이터로 넘긴다. */}
+      <div ref={pagerRef} onPointerDown={onPagerPointerDown} onPointerMove={onPagerPointerMove} onPointerUp={onPagerPointerUp} onPointerLeave={onPagerPointerUp} onPointerCancel={onPagerPointerUp}
+        style={{ position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
+        <div style={{ display: "flex", width: "200%", transform: `translateX(calc(${-page * 50}% + ${dragPx}px))`, transition: dragging ? "none" : "transform .34s cubic-bezier(.22,.9,.32,1)" }}>
+          <div style={{ width: "50%", boxSizing: "border-box", paddingRight: 3 }}>
+            <div key={"bubble-" + hintKey} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
+            {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
+            <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{sansToPgnText(curSans) || " "}</div>
+            <div ref={boardRef} style={{ width: "100%", maxWidth: 380, margin: "0 auto" }}>
+            {intro
+              ? <AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
+              : reply
+                ? <AnimatedMove sans={reply.sans} san={reply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
+              : reverting
+                ? <RevertSlide board={wrong.board} from={wrong.from} to={wrong.at} size={boardSize} flip={userColor === "b"} />
+              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove} />}
+            </div>
+            <p style={{ fontSize: 13, color: done ? T.best : wrong ? T.blunder : T.ink, fontWeight: 700, marginTop: 12, textAlign: "center" }}>{prompt}</p>
+            <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
+              <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
+              {userToMove && <button onClick={requestHint} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: "transparent", color: "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트</button>}
+            </div>
+          </div>
+          <div style={{ width: "50%", boxSizing: "border-box", paddingLeft: 3 }}>
+            {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            {/* (20차 기능1) 라인 길이 조정은 모식도의 각 라인 끝(리프)에 있는 "+" 버튼으로 한 수씩 직접 추가한다. */}
+            {canEdit && (!engine || engine.status !== "ready") && (
+              <div style={{ marginTop: 8, fontSize: 10.5, color: T.blunder, textAlign: "center" }}>엔진이 준비되면 모식도에서 라인에 수를 추가할 수 있어요.</div>
+            )}
+          </div>
+        </div>
+        {page === 1 && <button onClick={() => setPage(0)} aria-label="보드 보기" className="press" style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={16} /></button>}
+        {page === 0 && <button onClick={() => setPage(1)} aria-label="모식도 보기" className="press" style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={16} /></button>}
       </div>
-      <p style={{ fontSize: 13, color: done ? T.best : wrong ? T.blunder : T.ink, fontWeight: 700, marginTop: 12, textAlign: "center" }}>{prompt}</p>
-      <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
-        <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
-        {userToMove && <button onClick={requestHint} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: "transparent", color: "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트</button>}
-      </div>
+      {/* (20차 기능2) 라인 해결 배너는 어느 페이지에 있든(자동 전환 중이어도) 항상 보이도록 페이저 바깥(공통 영역)에 둔다. */}
       {done && (fullyComplete ? (
-        <div style={{ marginTop: 14, textAlign: "center", background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 12, padding: "12px 14px", border: "1px solid " + T.brass }}>
+        <div style={{ marginTop: 12, textAlign: "center", background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 12, padding: "12px 14px", border: "1px solid " + T.brass }}>
           <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 13 }}>🎉 완전 해결! {totalLines}개 라인을 모두 정복해 별 3개를 모았어요.</div>
         </div>
       ) : nextTag != null && (
-        <div className="flex justify-center" style={{ marginTop: 14 }}>
+        <div className="flex justify-center" style={{ marginTop: 12 }}>
           <button onClick={() => gotoLine(nextTag)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>다음 라인 풀기 — {LINE_TAG_LABEL[nextTag] || ("라인 " + (allLines.findIndex((l) => l.tag === nextTag) + 1))}</button>
         </div>
       ))}
-      {/* (20차 기능1) 라인 길이 조정은 모식도의 각 라인 끝(리프)에 있는 "+" 버튼으로 한 수씩 직접 추가한다. */}
-      {canEdit && (!engine || engine.status !== "ready") && (
-        <div style={{ marginTop: 12, fontSize: 10.5, color: T.blunder, textAlign: "center" }}>엔진이 준비되면 모식도에서 라인에 수를 추가할 수 있어요.</div>
-      )}
+      <div className="flex items-center justify-center gap-2" style={{ marginTop: 8, marginBottom: 4 }}>
+        <button onClick={() => setPage(0)} aria-label="보드 페이지" className="press" style={{ width: page === 0 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 0 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
+        <button onClick={() => setPage(1)} aria-label="모식도 페이지" className="press" style={{ width: page === 1 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 1 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
+      </div>
     </div>
   );
 }
@@ -6199,7 +6278,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       <GeoBackdrop />
       {/* (UI1) 모바일(좁은 화면)에서 로고/닉네임/로그아웃 등이 너무 붙어 보이던 문제 —
