@@ -3321,7 +3321,9 @@ function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earn
         </div>
       ) : dexView === "titles" ? (
         <div>
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>각 오프닝의 퍼즐 해결(1·5·10·50·100개)과 <b>chess.com에서 그 오프닝을 플레이한 횟수</b>(5·10·50·100·1000회)를 <b>함께</b> 달성하면 등급별 칭호를 영구히 획득합니다. 획득한 칭호는 ‘장착’해 현재 칭호로 설정할 수 있어요. (chess.com 아이디 연동 필요)</p>
+          {/* (20차 UX2) 획득 조건 설명을 상시 노출하던 문단은 삭제 — 칭호를 클릭하면 그 칭호의 조건만
+              애니메이션으로 잠깐 떴다 사라진다(TitleBadge 내부). 여기는 그 상호작용을 안내하는 짧은 힌트만. */}
+          <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 14px" }}>칭호를 클릭하면 획득 조건이 잠깐 표시돼요. 획득한 칭호는 클릭해 장착할 수 있어요.</p>
           {/* (18차 UI5) "현재 칭호" 블록 삭제 — 장착 상태는 목록의 "장착됨" 배지로만 표시 */}
           {/* (17차) 칭호 이미지가 오프닝당 세로로 이어지는 5단계 배너로 디자인되어 있어,
               오프닝을 가로로 나열하고 각 오프닝 내부에서는 등급을 위→아래로 쌓는다.
@@ -3851,19 +3853,34 @@ const TITLE_IMG = {"italian":["data:image/webp;base64,UklGRsoSAABXRUJQVlA4WAoAAA
 function TitleBadge({ id, earned = true, equipped = false, progress = null, onEquip, compact = false, locked = false }) {
   const [famKey, rank] = id.split(":");
   const fam = TITLE_OPENINGS.find((f) => f.key === famKey); const tier = TITLE_TIERS.find((t) => t.rank === rank);
+  // (20차 UX2) 획득 조건을 상시 텍스트로 깔아두는 대신, 클릭할 때만 잠깐 떴다 사라지는 애니메이션으로 보여준다.
+  const [showCond, setShowCond] = useState(false);
+  const condTimerRef = useRef(null);
   if (!fam || !tier) return null;
+  const progPrefix = (!earned && progress != null) ? (fmtFull(Math.min(progress, tier.min)) + "/" + fmtFull(tier.min) + " · ") : "";
+  const condText = progPrefix + "퍼즐 " + fmtFull(tier.min) + "개 해결 + chess.com " + fmtFull(tier.ccMin) + "회 플레이 필요";
+  const handleClick = () => {
+    setShowCond(true);
+    if (condTimerRef.current) clearTimeout(condTimerRef.current);
+    condTimerRef.current = setTimeout(() => setShowCond(false), 2200);
+    if (earned && onEquip) onEquip(id);
+  };
+  const condOverlay = showCond && (
+    <div style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(20,12,6,.9)", borderRadius: 6, padding: 6, animation: "condPop 2.2s ease", pointerEvents: "none" }}>
+      <span style={{ fontSize: compact ? 9.5 : 11, fontWeight: 800, color: "#fff", textAlign: "center", lineHeight: 1.35 }}>{condText}</span>
+    </div>
+  );
   const _ti = TITLE_TIERS.indexOf(tier);
   const _img = TITLE_IMG[famKey] && TITLE_IMG[famKey][_ti];
   // (UI9) 3단계 표기: 해금됨(정상) / 바로 다음 단계(회색+진행도) / 그 이후(잠금 아이콘, 정보 숨김)
   if (_img) {
-    const _clk = earned && onEquip;
     return (
-      <div onClick={_clk ? () => onEquip(id) : undefined} className={_clk ? "press" : undefined}
-        style={{ position: "relative", width: "100%", borderRadius: 6, cursor: _clk ? "pointer" : "default", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "0 0 0 2.5px rgba(255,255,255,.95)" : "none" }}>
+      <div onClick={handleClick} className="press"
+        style={{ position: "relative", width: "100%", borderRadius: 6, cursor: "pointer", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "0 0 0 2.5px rgba(255,255,255,.95)" : "none" }}>
         <img src={_img} alt={fam.label + " " + tier.suffix} draggable={false} style={{ display: "block", width: "100%", height: "auto" }} />
         {equipped && <span style={{ position: "absolute", right: 10, bottom: 6, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>장착됨</span>}
-        {!earned && !locked && progress != null && <span style={{ position: "absolute", right: 10, bottom: 6, fontSize: 9.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: "#fff", background: "rgba(0,0,0,.5)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{fmtFull(Math.min(progress, tier.min))}/{fmtFull(tier.min)}</span>}
         {locked && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.25)", borderRadius: 6 }}><Lock size={20} style={{ color: "#fff" }} /></div>}
+        {condOverlay}
       </div>
     );
   }
@@ -3884,10 +3901,9 @@ function TitleBadge({ id, earned = true, equipped = false, progress = null, onEq
   // 좌측 하단 삼각형
   const tris = []; for (let i = 0; i < 6; i++) { const tx = 8 + (i % 3) * 9, ty = H - 22 + Math.floor(i / 3) * 9; tris.push(<path key={"t" + i} d={`M${tx} ${ty + 6} L${tx + 4} ${ty} L${tx + 8} ${ty + 6} Z`} fill={deco} opacity="0.8" />); }
   const clip = "polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 13px 100%, 0 calc(100% - 13px))";
-  const clickable = earned && onEquip;
   return (
-    <div onClick={clickable ? () => onEquip(id) : undefined} className={clickable ? "press" : undefined}
-      style={{ position: "relative", height: H, width: "100%", clipPath: clip, background: "linear-gradient(120deg," + st.bg[0] + "," + st.bg[1] + ")", cursor: clickable ? "pointer" : "default", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "inset 0 0 0 2.5px rgba(255,255,255,.95)" : "inset 0 1px 0 rgba(255,255,255,.18)", display: "flex", alignItems: "center" }}>
+    <div onClick={handleClick} className="press"
+      style={{ position: "relative", height: H, width: "100%", clipPath: clip, background: "linear-gradient(120deg," + st.bg[0] + "," + st.bg[1] + ")", cursor: "pointer", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "inset 0 0 0 2.5px rgba(255,255,255,.95)" : "inset 0 1px 0 rgba(255,255,255,.18)", display: "flex", alignItems: "center" }}>
       <svg width="100%" height="100%" viewBox={`0 0 ${VB_W} ${H}`} preserveAspectRatio="none" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{dots}{tris}{shapes}</svg>
       {/* 좌측 다이아몬드 + 기호 */}
       <div style={{ position: "relative", flexShrink: 0, width: H, height: H, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -3901,7 +3917,7 @@ function TitleBadge({ id, earned = true, equipped = false, progress = null, onEq
         <span style={{ fontSize: compact ? 10.5 : 12.5, fontWeight: 900, letterSpacing: "1px", color: st.label, textTransform: "uppercase", whiteSpace: "nowrap", flexShrink: 0 }}>{tier.suffix}</span>
       </div>
       {equipped && <span style={{ position: "absolute", right: 14, bottom: 5, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.28)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>장착됨</span>}
-      {!earned && !locked && progress != null && <span style={{ position: "absolute", right: 14, bottom: 5, fontSize: 9.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: "#fff", background: "rgba(0,0,0,.4)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{fmtFull(Math.min(progress, tier.min))}/{fmtFull(tier.min)}</span>}
+      {condOverlay}
     </div>
   );
 }
@@ -7117,7 +7133,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       <GeoBackdrop />
       {/* (UI1) 모바일(좁은 화면)에서 로고/닉네임/로그아웃 등이 너무 붙어 보이던 문제 —
