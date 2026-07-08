@@ -3327,6 +3327,46 @@ function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earn
 /* ============================================================ 퍼즐 탭 ============================================================ */
 const PIECE_KOR = { K: "킹", Q: "퀸", R: "룩", B: "비숍", N: "나이트", P: "폰" };
 const THEME_LABEL = { sacrifice: "기물 희생하기", advantage: "우위 점하기", punish: "실수 응징하기" };
+/* (20차 UI1) 퍼즐 테마별 카드 색감·기하학 패턴 차별화 — 희생(위험을 감수하는 대담한 수)은 붉은 대각선
+   칼날(X) 패턴, 우위 점하기(꾸준히 앞서나감)는 초록 상승 쐐기 줄무늬, 실수 응징(정확한 일격)은
+   호박색 스파크(방사형 다이아몬드) 패턴을 카드 배경에 옅게 깔아 한눈에 테마를 구분할 수 있게 한다. */
+const PUZZLE_THEME_STYLE = {
+  sacrifice: {
+    accent: "#C8453B",
+    pattern: (id) => (
+      <>
+        <line x1="10" y1="10" x2="90" y2="50" stroke="#C8453B" strokeWidth="5" strokeLinecap="round" />
+        <line x1="90" y1="10" x2="10" y2="50" stroke="#C8453B" strokeWidth="5" strokeLinecap="round" />
+        <line x1="10" y1="60" x2="90" y2="100" stroke="#C8453B" strokeWidth="5" strokeLinecap="round" />
+        <line x1="90" y1="60" x2="10" y2="100" stroke="#C8453B" strokeWidth="5" strokeLinecap="round" />
+      </>
+    ),
+  },
+  advantage: {
+    accent: "#3F7A3A",
+    pattern: () => (
+      <>
+        {[0, 1, 2, 3].map((i) => <path key={i} d={"M-10," + (110 - i * 30) + " L40," + (60 - i * 30) + " L90," + (110 - i * 30)} fill="none" stroke="#3F7A3A" strokeWidth="6" strokeLinecap="round" />)}
+      </>
+    ),
+  },
+  punish: {
+    accent: "#D9822B",
+    pattern: () => (
+      <>
+        {[[22, 22], [70, 18], [50, 55], [16, 78], [82, 72]].map(([cx, cy], i) => <rect key={i} x={cx - 7} y={cy - 7} width="14" height="14" fill="#D9822B" transform={"rotate(45 " + cx + " " + cy + ")"} />)}
+      </>
+    ),
+  },
+};
+function PuzzleThemePattern({ theme, opacity = 0.1 }) {
+  const st = PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish;
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity, pointerEvents: "none" }}>
+      {st.pattern()}
+    </svg>
+  );
+}
 // (UI4) 퍼즐 이름 규칙: 직전 수들 중 '가장 마지막으로 이름이 있는 수'의 오프닝 이름을 기준으로 짓는다.
 function lastNamedOpening(sans) {
   let nm = null;
@@ -4507,23 +4547,30 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   // (20차 기능1) 트리 기준 라인 수와 별(라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3)
   const totalLines = useMemo(() => Math.max(1, treeLinesOf(puzzleTreeOf(p)).length), [p.id]);
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
+  // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
+  // 위쪽 얇은 띠·번호 색·옅은 배경 패턴만 테마색으로 물들인다.
+  const theme = p.theme || "punish";
+  const themeAccent = (PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish).accent;
   return (
     /* (18차 UI7) 카드 크기 축소 + 도감 탭처럼 정사각형 비율 — 한 화면에 더 많은 퍼즐이 보이도록.
        (18차 UI4) overflow hidden + aspectRatio 고정으로 카드끼리 겹치던 문제도 함께 해결. */
     /* (19차 UI2) 정사각 고정을 풀고(오프닝 이름·"n명이 풀었습니다"가 잘리지 않도록) 내용 높이에 맞춰 늘어나게 한다. */
-    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", display: "flex", flexDirection: "column" }}>
+    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), borderTop: "3px solid " + themeAccent, cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <PuzzleThemePattern theme={theme} opacity={isSolved ? 0.05 : 0.11} />
       {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
-      {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={104} loopMs={2400} flip={flip} /></div>}
-      <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
-        <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, wordBreak: "break-word" }}>{p.opening}</div>
-        <LineStars total={3} solved={stars} />
+      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={104} loopMs={2400} flip={flip} /></div>}
+        <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
+          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, wordBreak: "break-word" }}>{p.opening}</div>
+          <LineStars total={3} solved={stars} />
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.35 }}>{p.name}</div>
+        <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
+          <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{THEME_LABEL[theme]} · 라인 {totalLines}개</span>
+          <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
+        </div>
+        {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, marginTop: 2, lineHeight: 1.3, wordBreak: "break-word" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
       </div>
-      <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.35 }}>{p.name}</div>
-      <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
-        <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{THEME_LABEL[p.theme || "punish"]} · 라인 {totalLines}개</span>
-        <span style={{ fontSize: 9, color: T.brass, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
-      </div>
-      {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, marginTop: 2, lineHeight: 1.3, wordBreak: "break-word" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
     </div>
   );
 }
