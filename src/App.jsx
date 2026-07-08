@@ -18,8 +18,59 @@ const T = {
   inaccuracy: "#E0B53A", mistake: "#D9822B", blunder: "#C8453B",
   book: "#8A5A2B", arrow: "#C49A50",
 };
-const PIECE = { K: "\u265A\uFE0E", Q: "\u265B\uFE0E", R: "\u265C\uFE0E", B: "\u265D\uFE0E", N: "\u265E\uFE0E", P: "\u265F\uFE0E" };
 const FILES = "abcdefgh";
+/* (20\uCC28 \uAE30\uB2A53) \uAE30\uBB3C SVG \uC138\uD2B8 \u2014 \uC720\uB2C8\uCF54\uB4DC \uD14D\uC2A4\uD2B8 \uAE30\uBB3C(\u2654\u2655\u2656\u2657\u2658\u2659)\uC744 \uCCA8\uBD80 \uB808\uD37C\uB7F0\uC2A4(\uB85C\uC6B0\uD3F4\uB9AC\u00B7\uAE08\uC7A5 \uB300\uAC01\uC120
+   \uD3F4\uB4DC \uB77C\uC778) \uC2A4\uD0C0\uC77C\uC758 \uBCA1\uD130 \uC544\uC774\uCF58\uC73C\uB85C \uAD50\uCCB4\uD55C\uB2E4. \uBAA8\uB4E0 \uAE30\uBB3C\uC774 \uACF5\uC720\uD558\uB294 \uBC11\uB2E8(base)\u00B7\uBAA9(neck) \uB2E4\uAC01\uD615\uC5D0
+   \uAE30\uBB3C\uBCC4 \uBAB8\uD1B5(mid) \uC810 \uBAA9\uB85D\uC744 \uC774\uC5B4\uBD99\uC778 \uB2E8\uC77C \uC2E4\uB8E8\uC5E3 \uD558\uB098 + \uB300\uAC01\uC120 \uD3F4\uB4DC \uB77C\uC778 2\uAC1C + \uBC11\uB2E8 \uAE08\uC7A5 \uC0BC\uAC01 \uD3EC\uC778\uD2B8
+   \uB85C \uAD6C\uC131\uD574, \uC720\uB2C8\uCF54\uB4DC \uAE00\uB9AC\uD504\uC640 \uBE44\uC2B7\uD55C \uC815\uC0AC\uAC01 \uBE44\uC728(viewBox 0 0 100 100)\uB85C \uC5B4\uB290 \uD06C\uAE30\uC5D0\uC11C\uB3C4 \uB610\uB837\uD558\uB2E4. */
+const PIECE_BASE_R = "22,100 78,100 78,94 70,88 62,78";
+const PIECE_BASE_L = "38,78 30,88 22,94";
+const PIECE_MID = {
+  P: "58,66 60,54 50,44 40,54 42,66",
+  R: "66,68 66,30 66,18 58,18 58,30 54,30 54,18 46,18 46,30 42,30 42,18 34,18 34,30 34,68",
+  B: "58,66 62,54 54,40 50,26 46,40 38,54 42,66",
+  N: "60,64 66,54 64,40 54,28 44,30 34,40 24,46 28,52 36,52 38,60 34,66",
+  Q: "58,68 62,58 66,50 66,34 62,44 58,30 54,44 50,22 46,44 42,30 38,44 34,34 34,50 38,58 42,68",
+  K: "58,68 64,56 66,48 34,48 36,56 42,68",
+};
+const PIECE_LINES = {
+  P: ["M42,66 L60,54", "M38,78 L58,66"],
+  R: ["M34,68 L66,30", "M34,30 L66,68"],
+  B: ["M38,78 L54,40", "M62,78 L46,40"],
+  N: ["M38,78 L54,28", "M60,64 L38,60"],
+  Q: ["M38,78 L58,30", "M62,78 L42,30"],
+  K: ["M42,68 L64,56", "M58,68 L36,56"],
+};
+const PIECE_ACCENT = "M30,88 L70,88 L50,100 Z";
+const PIECE_CROSS = "M47,48 L47,36 L40,36 L40,30 L47,30 L47,22 L53,22 L53,30 L60,30 L60,36 L53,36 L53,48 Z";
+/* (20\uCC28 \uAE30\uB2A54 \uB300\uBE44) \uBCF4\uB4DC/\uAE30\uBB3C \uC2A4\uD0A8 \uB808\uC9C0\uC2A4\uD2B8\uB9AC \u2014 \uAE30\uBCF8(classic) \uD558\uB098\uB9CC \uC6B0\uC120 \uB450\uACE0, \uC0C1\uC810\uC5D0\uC11C \uD30C\uB294
+   \uBC14\uB2E4(ocean) \uC2A4\uD0A8 \uB4F1 \uCD94\uAC00 \uC2A4\uD0A8\uC740 \uC774 \uAC1D\uCCB4\uC5D0 \uD56D\uBAA9\uB9CC \uB298\uB9AC\uBA74 PieceGlyph\u00B7Board\uAC00 \uADF8\uB300\uB85C \uC9C0\uC6D0\uD55C\uB2E4. */
+const SKINS = {
+  classic: {
+    label: "\uAE30\uBCF8", price: 0,
+    boardLight: T.boardLight, boardDark: T.boardDark,
+    pieceLight: T.ivoryHi, pieceDark: "#0E0907", pieceStroke: "#6B4F22",
+    accent: T.brass, accentOpacity: 0.92,
+  },
+};
+function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
+function PieceGlyph({ type, color, size, style, draggable, onDragStart, skin }) {
+  const sk = SKINS[skin] || SKINS.classic;
+  const light = color === "w";
+  const mid = PIECE_MID[type];
+  if (!mid) return null;
+  const fill = light ? sk.pieceLight : sk.pieceDark;
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} draggable={draggable} onDragStart={onDragStart}
+      style={{ display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }}>
+      <polygon points={PIECE_BASE_R + " " + mid + " " + PIECE_BASE_L} fill={fill} stroke={sk.pieceStroke} strokeWidth={2.6} strokeLinejoin="round" />
+      {type === "K" && <path d={PIECE_CROSS} fill={fill} stroke={sk.pieceStroke} strokeWidth={2.2} strokeLinejoin="round" />}
+      <path d={PIECE_ACCENT} fill={sk.accent} opacity={sk.accentOpacity} />
+      <line x1={30} y1={88} x2={70} y2={88} stroke={sk.accent} strokeWidth={1.4} opacity={0.85} />
+      {PIECE_LINES[type].map((d, i) => <path key={i} d={d} fill="none" stroke={sk.accent} strokeWidth={1.5} opacity={0.8} strokeLinecap="round" />)}
+    </svg>
+  );
+}
 
 /* ============================================================ 브랜드 로고 ============================================================ */
 // (19차) 아이콘은 사용자가 직접 제공한 저폴리곤 나이트 기물 이미지(public/logo-knight.png)를 사용한다.
@@ -1527,7 +1578,8 @@ function useBoardSize(max = 360) {
 }
 
 /* ============================================================ 보드 ============================================================ */
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt }) {
+function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, skin }) {
+  const sk = SKINS[skin] || SKINS.classic;
   const cell = Math.floor(size / 8);
   const inner = cell * 8;
   const rows = flip ? [...board].reverse().map((r) => [...r].reverse()) : board;
@@ -1544,13 +1596,13 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
               const isSel = selected && selected[0] === r && selected[1] === c;
               const isTarget = targetSet.has(r + "," + c);
-              const coordCol = light ? T.boardDark : T.boardLight;
+              const coordCol = light ? sk.boardDark : sk.boardLight;
               return (
                 <div key={ci}
                   onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
                   onDragOver={interactive ? (e) => e.preventDefault() : undefined}
                   onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
-                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
+                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.boardLight : sk.boardDark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
                   {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{8 - r}</span>}
                   {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{FILES[c]}</span>}
                   {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
@@ -1564,8 +1616,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
                   {wrongAt && wrongAt[0] === r && wrongAt[1] === c && (
                     <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
                   )}
-                  {p && <span draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined}
-                    style={{ fontSize: cell * 0.74, lineHeight: 1, color: p.c === "w" ? T.ivoryHi : "#0E0907", cursor: interactive && onPieceDrag ? "grab" : "default", filter: p.c === "w" ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))" }}>{PIECE[p.t]}</span>}
+                  {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} skin={skin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default" }} />}
                 </div>
               );
             })}
@@ -2074,10 +2125,10 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {rows.map((row, vr) => (
             <div key={vr} style={{ display: "flex" }}>
               {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <span key={"cap" + cyc} style={{ fontSize: cell * 0.72, lineHeight: 1, opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none", color: p.c === "w" ? T.ivoryHi : "#0E0907" }}>{PIECE[p.t]}</span>}</div>; })}
+                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
             </div>
           ))}
-          {mp && <span key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.72, lineHeight: 1, color: mp.c === "w" ? T.ivoryHi : "#0E0907", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}>{PIECE[mp.t]}</span>}
+          {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
           {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
           {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: dto0 * cell - cell * 0.16, left: dto1 * cell + cell * 0.7, width: cell * 0.42, height: cell * 0.42, borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.2)}</div>}
           <svg width={cell * 8} height={cell * 8} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
@@ -2921,7 +2972,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 <div className="flex gap-2">
                   {["Q", "R", "B", "N"].map((t) => (
                     <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                      <span style={{ fontSize: 26, lineHeight: 1, color: "#1A1009" }}>{PIECE[t]}</span>
+                      <PieceGlyph type={t} color="b" size={26} />
                       <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
                     </button>
                   ))}
@@ -3670,11 +3721,11 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
           <div key={vr} style={{ display: "flex" }}>
             {row.map((p, vc) => {
               const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark }}>{p && !hideAt && <span style={{ fontSize: cell * 0.72, lineHeight: 1, color: p.c === "w" ? T.ivoryHi : "#0E0907" }}>{PIECE[p.t]}</span>}</div>;
+              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? T.boardLight : T.boardDark }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
             })}
           </div>
         ))}
-        {moving && <span style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.72, lineHeight: 1, color: moving.c === "w" ? T.ivoryHi : "#0E0907", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", zIndex: 5 }}>{PIECE[moving.t]}</span>}
+        {moving && <div style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
       </div>
     </div>
   );
@@ -3783,18 +3834,52 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     return { items, edges, width, height, curItem };
   }, [tree, allLines, solvedNow, curKeys.join(" "), celebrateTag, shakeTag]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
+  const [zoom, setZoom] = useState(1);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
+  const pointersRef = useRef(new Map());   // pointerId -> {x,y} — 두 손가락이면 핀치 확대/축소
+  const pinchRef = useRef(null);           // { dist, zoom } 핀치 시작 시점 기준값
+  const clampZoom = (z) => Math.min(2.5, Math.max(0.5, z));
   // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
   useEffect(() => {
     const vw = boxRef.current ? boxRef.current.clientWidth : 380;
     const vh = boxRef.current ? boxRef.current.clientHeight : 208;
     const cx = curItem ? curItem.depth : 0, cy = curItem ? curItem.y : 0;
-    setPan({ x: Math.min(8, (vw - boxW) / 2 - cx * colW), y: Math.min(8, (vh - boxH) / 2 - cy * rowH) });
+    setPan({ x: Math.min(8, (vw - boxW) / 2 - cx * colW * zoom), y: Math.min(8, (vh - boxH) / 2 - cy * rowH * zoom) });
   }, [curItem && curItem.key, tree]);
-  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, input, .no-pan")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
-  const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
-  const onPointerUp = () => { dragRef.current = null; };
+  // (20차 기능1) 페이지 넘김(좌우 스와이프)과 모식도 내부 드래그(팬)가 같은 손가락 동작을 두고
+  // 경쟁하던 문제 — 이 박스는 바깥 페이저의 onPagerPointerDown이 ".no-swipe"를 보고 아예
+  // 손을 떼도록(아래 JSX의 className="no-swipe") 만들어 팬 동작만 여기서 전담하게 한다.
+  const onPointerDown = (e) => {
+    if (e.target.closest && e.target.closest("button, input, .no-pan")) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    e.currentTarget.setPointerCapture(e.pointerId);
+    if (pointersRef.current.size === 2) {
+      const [a, b] = [...pointersRef.current.values()];
+      pinchRef.current = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
+      dragRef.current = null;
+    } else {
+      dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
+    }
+  };
+  const onPointerMove = (e) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const [a, b] = [...pointersRef.current.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      setZoom(clampZoom(pinchRef.current.zoom * (dist / Math.max(1, pinchRef.current.dist))));
+      return;
+    }
+    if (!dragRef.current) return;
+    setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) });
+  };
+  const onPointerUp = (e) => {
+    if (e && e.pointerId != null) pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+    if (pointersRef.current.size === 0) dragRef.current = null;
+  };
+  const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
   // (20차 기능1) 개발자 전용 — 리프(라인의 끝)에 "+"를 누르면 그 라인에 수를 하나 직접 추가한다.
   const [addAt, setAddAt] = useState(null);   // path(array)|null
   const [sanIn, setSanIn] = useState("");
@@ -3821,9 +3906,14 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
+      <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheelZoom}
         style={{ position: "relative", overflow: "hidden", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
-        <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px)` }}>
+        <div className="no-pan flex" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
+          <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+          <button onClick={() => setZoom(1)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
+          <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+        </div>
+        <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {edges.map(([p, c], i) => {
               const x1 = p.depth * colW + boxW, y1 = p.y * rowH + boxH / 2, x2 = c.depth * colW, y2 = c.y * rowH + boxH / 2;
@@ -3907,13 +3997,6 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{err}</div>}
           </div>
         )}
-      </div>
-      <div className="flex items-center flex-wrap" style={{ gap: 10, marginTop: 6, fontSize: 9.5, color: T.inkSoft, fontWeight: 600 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 3, background: T.best, borderRadius: 2, display: "inline-block" }} />해결한 라인</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 3, background: T.brass, borderRadius: 2, display: "inline-block" }} />현재 진행</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 0, borderTop: "2px dashed #C9B58C", display: "inline-block" }} />?</span>
-        <span>미확인 갈래(수 정보는 두어야 드러나요)</span>
-        <span>선 두께 = 채택률</span>
       </div>
     </div>
   );
