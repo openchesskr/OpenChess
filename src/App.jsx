@@ -3282,10 +3282,10 @@ function DexMoveCard({ path, m, child, isUnlocked, hasChildren, wdl, cc, onOpen 
     </div>
   );
 }
-function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle }) {
+function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
   const [path, setPath] = useState([]);
   const [lc, setLc] = useState(null);
-  const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호
+  const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const node = snapNode(path);
   const baseMoves = node ? node.moves.slice() : (SNAP.tree[""] ? SNAP.tree[""].moves.slice() : []);
@@ -3299,11 +3299,27 @@ function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earn
   return (
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
-        {[["openings", "오프닝"], ["titles", "칭호"]].map(([k, lb]) => { const on = dexView === k; return (
+        {[["openings", "오프닝"], ["titles", "칭호"], ["skins", "스킨"]].map(([k, lb]) => { const on = dexView === k; return (
           <button key={k} onClick={() => setDexView(k)} className="press" style={{ fontSize: 13, fontWeight: 800, padding: "7px 16px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
         ); })}
       </div>
-      {dexView === "titles" ? (
+      {dexView === "skins" ? (
+        <div>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>보드 스킨과 기물 스킨을 모아볼 수 있어요. 기본 스킨은 누구나 바로 장착할 수 있고, 상점에서 구매한 스킨은 여기서도 장착·구매할 수 있습니다. 아직 얻지 못한 스킨도 미리 볼 수 있어요.</p>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+            {Object.entries(BOARD_SKINS).map(([id, sk]) => (
+              <SkinShopCard key={id} kind="board" id={id} sk={sk} owned={(ownedSkins || new Set()).has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+            ))}
+          </div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>기물 스킨</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {Object.entries(PIECE_SKINS).map(([id, sk]) => (
+              <SkinShopCard key={id} kind="piece" id={id} sk={sk} owned={(ownedSkins || new Set()).has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+            ))}
+          </div>
+        </div>
+      ) : dexView === "titles" ? (
         <div>
           <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>각 오프닝의 퍼즐 해결(1·5·10·50·100개)과 <b>chess.com에서 그 오프닝을 플레이한 횟수</b>(5·10·50·100·1000회)를 <b>함께</b> 달성하면 등급별 칭호를 영구히 획득합니다. 획득한 칭호는 ‘장착’해 현재 칭호로 설정할 수 있어요. (chess.com 아이디 연동 필요)</p>
           {/* (18차 UI5) "현재 칭호" 블록 삭제 — 장착 상태는 목록의 "장착됨" 배지로만 표시 */}
@@ -7206,7 +7222,7 @@ export default function App() {
 
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 110px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
-        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlocked={unlocked} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} />}
+        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlocked={unlocked} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
