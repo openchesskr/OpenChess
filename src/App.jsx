@@ -43,6 +43,24 @@ const PIECE_LINES = {
 };
 const PIECE_ACCENT = "M30,88 L70,88 L50,100 Z";
 const PIECE_CROSS = "M47,48 L47,36 L40,36 L40,30 L47,30 L47,22 L53,22 L53,30 L60,30 L60,36 L53,36 L53,48 Z";
+// (20차 개편) SVG 기반 기물 스킨(바다 등)의 기물별 세로 배율 — 사용자가 만든 실제 이미지 세트에서
+// 측정한 "받침(base) 폭 대비 전체 높이" 비율을 그대로 반영해, 킹·퀸은 크고 폰·비숍은 아담한 실제
+// 체스 세트 비율에 가깝게 만든다(받침 폭은 항상 1배로 고정, 세로만 이 배율만큼 늘어남).
+const PIECE_HEIGHT_FACTOR = { P: 1.18, N: 1.40, B: 1.26, R: 1.28, Q: 1.50, K: 1.70 };
+// (20차 기능3 개편) 사용자가 직접 제작한 기물 이미지(public/pieces) — 기본(classic) 스킨은 SVG 대신
+// 이 이미지를 쓴다. 모든 이미지가 공유하는 "받침" 폭이 원본에서 정확히 79px이므로(색상·기물 종류
+// 무관하게 전부 동일), 이 값을 기준으로 스케일을 맞추면 기물마다 높이는 자연스럽게 달라도(킹·퀸은
+// 크고 폰은 작고) 받침 크기만큼은 실제 체스 세트처럼 항상 같은 화면 폭으로 놓인다.
+const PIECE_IMG_BASE_PX = 79;
+const PIECE_IMG_BASE_RATIO = 0.56; // 기존 SVG 기물의 받침(22~78, 폭 56/100)과 동일한 시각적 비중을 유지
+const PIECE_IMG = {
+  P: { w: { src: "/pieces/white-pawn.png", w: 80, h: 93 }, b: { src: "/pieces/black-pawn.png", w: 80, h: 93 } },
+  N: { w: { src: "/pieces/white-knight.png", w: 93, h: 112 }, b: { src: "/pieces/black-knight.png", w: 134, h: 110 } },
+  B: { w: { src: "/pieces/white-bishop.png", w: 80, h: 99 }, b: { src: "/pieces/black-bishop.png", w: 80, h: 100 } },
+  R: { w: { src: "/pieces/white-rook.png", w: 80, h: 101 }, b: { src: "/pieces/black-rook.png", w: 80, h: 101 } },
+  Q: { w: { src: "/pieces/white-queen.png", w: 119, h: 117 }, b: { src: "/pieces/black-queen.png", w: 120, h: 116 } },
+  K: { w: { src: "/pieces/white-king.png", w: 106, h: 134 }, b: { src: "/pieces/black-king.png", w: 105, h: 133 } },
+};
 /* (20\uCC28 \uAE30\uB2A54 \uB300\uBE44) \uBCF4\uB4DC/\uAE30\uBB3C \uC2A4\uD0A8 \uB808\uC9C0\uC2A4\uD2B8\uB9AC \u2014 \uAE30\uBCF8(classic) \uD558\uB098\uB9CC \uC6B0\uC120 \uB450\uACE0, \uC0C1\uC810\uC5D0\uC11C \uD30C\uB294
    \uBC14\uB2E4(ocean) \uC2A4\uD0A8 \uB4F1 \uCD94\uAC00 \uC2A4\uD0A8\uC740 \uC774 \uAC1D\uCCB4\uC5D0 \uD56D\uBAA9\uB9CC \uB298\uB9AC\uBA74 PieceGlyph\u00B7Board\uAC00 \uADF8\uB300\uB85C \uC9C0\uC6D0\uD55C\uB2E4. */
 /* (20\uCC28 \uAE30\uB2A54) \uCCB4\uC2A4\uBCF4\uB4DC \uC2A4\uD0A8\u00B7\uAE30\uBB3C \uC2A4\uD0A8\uC740 \uAC01\uAC01 \uB3C5\uB9BD\uC801\uC73C\uB85C \uC0AC\uACE0\uD314\uACE0 \uC7A5\uCC29\uD55C\uB2E4(\uC11E\uC5B4\uC11C \uCC29\uC6A9 \uAC00\uB2A5).
@@ -57,7 +75,7 @@ const BOARD_SKINS = {
   },
 };
 const PIECE_SKINS = {
-  classic: { label: "\uAE30\uBCF8", price: 0, light: T.ivoryHi, dark: "#0E0907", stroke: "#6B4F22", accent: T.brass, accentOpacity: 0.92, glossy: false },
+  classic: { label: "\uAE30\uBCF8", price: 0, image: true, light: T.ivoryHi, dark: "#0E0907", stroke: "#6B4F22", accent: T.brass, accentOpacity: 0.92, glossy: false },
   ocean: {
     label: "\uD478\uB978 \uBC14\uB2E4", price: 500,
     light: "rgba(205,236,250,.72)", dark: "rgba(15,66,102,.82)", stroke: "#1B7BAE",
@@ -73,27 +91,48 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
   const ctx = useContext(SkinContext);
   const sk = PIECE_SKINS[pieceSkin || ctx.pieceSkin] || PIECE_SKINS.classic;
   const light = color === "w";
-  const mid = PIECE_MID[type];
+  // (버그) useId는 스킨(이미지/SVG)에 따라 조건부로 호출하면 안 된다 — 기물 스킨을 갈아 끼우면
+  // 같은 컴포넌트 인스턴스가 두 분기 사이를 오가며 훅 호출 개수가 달라져 React 규칙을 어기게 된다.
   const rawId = useId();
+  if (sk.image) {
+    const meta = PIECE_IMG[type] && PIECE_IMG[type][color];
+    if (!meta) return null;
+    // size는 다른 스킨과 동일하게 "칸에 맞춘 정사각형 박스" 한 변 길이로 전달된다. 그 안에서 받침이
+    // BASE_RATIO만큼을 차지하도록 스케일을 정하면, 모든 기물의 받침이 항상 같은 화면 폭이 된다.
+    const scale = (size * PIECE_IMG_BASE_RATIO) / PIECE_IMG_BASE_PX;
+    return (
+      <img src={meta.src} alt={type} draggable={draggable} onDragStart={onDragStart}
+        style={{ width: meta.w * scale, height: meta.h * scale, display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }} />
+    );
+  }
+  const mid = PIECE_MID[type];
   const clipId = "pg" + rawId.replace(/[^a-zA-Z0-9]/g, "");
   if (!mid) return null;
   const fill = light ? sk.light : sk.dark;
   const bodyPoints = PIECE_BASE_R + " " + mid + " " + PIECE_BASE_L;
+  // (20차 개편) 바다 스킨 등 SVG 기반 기물은 그동안 전부 100x100 정사각 박스에 눌려 담겨 있어, 실제
+  // 사용자가 만든 이미지(킹·퀸은 크고 폰은 작은)와 비율이 달랐다. 기존 실루엣(폴리곤 좌표)은 그대로
+  // 두고, 받침(y=100)을 고정한 채 세로로만 기물별 배율(PIECE_HEIGHT_FACTOR)만큼 늘여, 이미지 세트와
+  // 비슷한 비율이 되도록 한다 — matrix(1,0,0,F,0,100(1-F))는 y=100을 그대로 두고 그 위쪽만 F배 늘인다.
+  const hf = PIECE_HEIGHT_FACTOR[type] || 1;
+  const vbY = 100 * (1 - hf);
   return (
-    <svg viewBox="0 0 100 100" width={size} height={size} draggable={draggable} onDragStart={onDragStart}
+    <svg viewBox={"0 " + vbY + " 100 " + (100 * hf)} width={size} height={size * hf} draggable={draggable} onDragStart={onDragStart}
       style={{ display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }}>
-      {sk.glossy && <defs><clipPath id={clipId}><polygon points={bodyPoints} />{type === "K" && <path d={PIECE_CROSS} />}</clipPath></defs>}
-      <polygon points={bodyPoints} fill={fill} stroke={sk.stroke} strokeWidth={2.6} strokeLinejoin="round" />
-      {type === "K" && <path d={PIECE_CROSS} fill={fill} stroke={sk.stroke} strokeWidth={2.2} strokeLinejoin="round" />}
-      <path d={PIECE_ACCENT} fill={sk.accent} opacity={sk.accentOpacity} />
-      <line x1={30} y1={88} x2={70} y2={88} stroke={sk.accent} strokeWidth={1.4} opacity={0.85} />
-      {PIECE_LINES[type].map((d, i) => <path key={i} d={d} fill="none" stroke={sk.accent} strokeWidth={1.5} opacity={0.8} strokeLinecap="round" />)}
-      {sk.glossy && (
-        <g clipPath={"url(#" + clipId + ")"}>
-          <ellipse cx={40} cy={40} rx={26} ry={40} fill="rgba(255,255,255,.4)" />
-          <ellipse cx={64} cy={72} rx={12} ry={20} fill="rgba(255,255,255,.18)" />
-        </g>
-      )}
+      <g transform={"matrix(1,0,0," + hf + ",0," + vbY + ")"}>
+        {sk.glossy && <defs><clipPath id={clipId}><polygon points={bodyPoints} />{type === "K" && <path d={PIECE_CROSS} />}</clipPath></defs>}
+        <polygon points={bodyPoints} fill={fill} stroke={sk.stroke} strokeWidth={2.6} strokeLinejoin="round" />
+        {type === "K" && <path d={PIECE_CROSS} fill={fill} stroke={sk.stroke} strokeWidth={2.2} strokeLinejoin="round" />}
+        <path d={PIECE_ACCENT} fill={sk.accent} opacity={sk.accentOpacity} />
+        <line x1={30} y1={88} x2={70} y2={88} stroke={sk.accent} strokeWidth={1.4} opacity={0.85} />
+        {PIECE_LINES[type].map((d, i) => <path key={i} d={d} fill="none" stroke={sk.accent} strokeWidth={1.5} opacity={0.8} strokeLinecap="round" />)}
+        {sk.glossy && (
+          <g clipPath={"url(#" + clipId + ")"}>
+            <ellipse cx={40} cy={40} rx={26} ry={40} fill="rgba(255,255,255,.4)" />
+            <ellipse cx={64} cy={72} rx={12} ry={20} fill="rgba(255,255,255,.18)" />
+          </g>
+        )}
+      </g>
     </svg>
   );
 }
@@ -767,6 +806,9 @@ function ownDefenders(board, r, c, color) {
    한 칸에서 일어나는 연속 교환을 '최소 가치 공격자' 규칙으로 끝까지 풀어
    side(둘 차례)가 그 칸을 공격해서 얻는 순이득(≥0)을 반환한다.
    보드를 실제로 복제·이동하며 풀기 때문에 슬라이딩 기물의 x-ray(가려졌다 열리는 공격)가 자연히 반영된다. */
+// (20차) 기하학적으로는 그 칸을 공격하는 것처럼 보여도, 그 기물이 핀에 걸려 있어(자신의 킹이
+// 체크에 노출되어) 실제로는 그 수를 둘 수 없다면 진짜 공격자가 아니다 — exposesKing으로 걸러낸다.
+// (예: ...Bb4+에 Nc3로 막은 뒤 상대가 e4를 잡아도, 핀에 걸린 Nc3는 되잡을 수 없다.)
 function lva(board, tr, tc, side) {
   let best = null;
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
@@ -775,6 +817,7 @@ function lva(board, tr, tc, side) {
     if (p.t === "P") { const dir = side === "w" ? -1 : 1; can = (tr - r === dir && Math.abs(tc - c) === 1); }
     else if (p.t === "K") can = Math.abs(tr - r) <= 1 && Math.abs(tc - c) <= 1;
     else can = canMove(board, p.t, side, r, c, tr, tc, true);
+    if (can && exposesKing(board, r, c, tr, tc, side, null)) can = false;
     if (can && (best == null || VAL[p.t] < best.val)) best = { r, c, t: p.t, val: VAL[p.t] };
   }
   return best;
@@ -1683,7 +1726,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
                   onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
                   onDragOver={interactive ? (e) => e.preventDefault() : undefined}
                   onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
-                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
+                  style={{ width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", background: light ? sk.light : sk.dark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
                   {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{8 - r}</span>}
                   {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{FILES[c]}</span>}
                   {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
@@ -2210,10 +2253,10 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {rows.map((row, vr) => (
             <div key={vr} style={{ display: "flex" }}>
               {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
+                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", background: light ? sk.light : sk.dark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
             </div>
           ))}
-          {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
+          {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
           {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
           {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: dto0 * cell - cell * 0.16, left: dto1 * cell + cell * 0.7, width: cell * 0.42, height: cell * 0.42, borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.2)}</div>}
           <svg width={cell * 8} height={cell * 8} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
@@ -3964,11 +4007,11 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
           <div key={vr} style={{ display: "flex" }}>
             {row.map((p, vc) => {
               const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", background: light ? sk.light : sk.dark }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
             })}
           </div>
         ))}
-        {moving && <div style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
+        {moving && <div style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
       </div>
     </div>
   );
@@ -5777,7 +5820,7 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
       {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; const light = (r + c) % 2 === 0; return <div key={i} style={{ background: light ? sk.light : sk.dark }} />; })}
     </div>
   ) : (
-    <div className="flex items-center gap-1" style={{ width: 64, height: 64, borderRadius: 8, background: "#2E1B10", flexShrink: 0, justifyContent: "center" }}>
+    <div className="flex items-end gap-1" style={{ width: 64, height: 64, borderRadius: 8, background: "#2E1B10", flexShrink: 0, justifyContent: "center", paddingBottom: 6, boxSizing: "border-box" }}>
       <PieceGlyph type="K" color="w" size={28} pieceSkin={id} />
       <PieceGlyph type="N" color="b" size={28} pieceSkin={id} />
     </div>
