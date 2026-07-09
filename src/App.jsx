@@ -47,12 +47,19 @@ const PIECE_CROSS = "M47,48 L47,36 L40,36 L40,30 L47,30 L47,22 L53,22 L53,30 L60
 // 측정한 "받침(base) 폭 대비 전체 높이" 비율을 그대로 반영해, 킹·퀸은 크고 폰·비숍은 아담한 실제
 // 체스 세트 비율에 가깝게 만든다(받침 폭은 항상 1배로 고정, 세로만 이 배율만큼 늘어남).
 const PIECE_HEIGHT_FACTOR = { P: 1.18, N: 1.40, B: 1.26, R: 1.28, Q: 1.50, K: 1.70 };
+// 위 배율을 g-transform에 그대로 곱하면 기물별 원본 실루엣이 이미 서로 다른 높이(예: 폰은 y=44부터,
+// 룩은 y=18부터 시작)를 갖고 있어 배율이 중복 적용돼 지나치게 커진다(특히 킹 십자가가 보드 밖으로
+// 잘림). 각 기물의 "늘이기 전 원래 높이"를 기준으로 역산한 배율을 써야 최종 높이가 정확히
+// PIECE_HEIGHT_FACTOR × 받침 폭이 된다.
+const PIECE_NATURAL_TOP_Y = { P: 44, N: 28, B: 26, R: 18, Q: 22, K: 22 };
 // (20차 기능3 개편) 사용자가 직접 제작한 기물 이미지(public/pieces) — 기본(classic) 스킨은 SVG 대신
 // 이 이미지를 쓴다. 모든 이미지가 공유하는 "받침" 폭이 원본에서 정확히 79px이므로(색상·기물 종류
 // 무관하게 전부 동일), 이 값을 기준으로 스케일을 맞추면 기물마다 높이는 자연스럽게 달라도(킹·퀸은
 // 크고 폰은 작고) 받침 크기만큼은 실제 체스 세트처럼 항상 같은 화면 폭으로 놓인다.
 const PIECE_IMG_BASE_PX = 79;
-const PIECE_IMG_BASE_RATIO = 0.56; // 기존 SVG 기물의 받침(22~78, 폭 56/100)과 동일한 시각적 비중을 유지
+// (버그) 기물이 칸에 비해 작고, 받침 기준 정렬 때문에 칸 아래쪽에 치우쳐 보이던 문제 — 크기를
+// 키우고(0.56→0.74) SVG 기물도 같은 비율을 쓰도록 통일했다. 정렬은 다시 칸 정중앙으로 되돌린다.
+const PIECE_BASE_RATIO = 0.74; // 칸 크기(size) 대비 기물 받침 폭의 비율 — 이미지·SVG 기물 공통 기준
 const PIECE_IMG = {
   P: { w: { src: "/pieces/white-pawn.png", w: 80, h: 93 }, b: { src: "/pieces/black-pawn.png", w: 80, h: 93 } },
   N: { w: { src: "/pieces/white-knight.png", w: 93, h: 112 }, b: { src: "/pieces/black-knight.png", w: 134, h: 110 } },
@@ -99,7 +106,7 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
     if (!meta) return null;
     // size는 다른 스킨과 동일하게 "칸에 맞춘 정사각형 박스" 한 변 길이로 전달된다. 그 안에서 받침이
     // BASE_RATIO만큼을 차지하도록 스케일을 정하면, 모든 기물의 받침이 항상 같은 화면 폭이 된다.
-    const scale = (size * PIECE_IMG_BASE_RATIO) / PIECE_IMG_BASE_PX;
+    const scale = (size * PIECE_BASE_RATIO) / PIECE_IMG_BASE_PX;
     return (
       <img src={meta.src} alt={type} draggable={draggable} onDragStart={onDragStart}
         style={{ width: meta.w * scale, height: meta.h * scale, display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }} />
@@ -115,11 +122,20 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
   // 두고, 받침(y=100)을 고정한 채 세로로만 기물별 배율(PIECE_HEIGHT_FACTOR)만큼 늘여, 이미지 세트와
   // 비슷한 비율이 되도록 한다 — matrix(1,0,0,F,0,100(1-F))는 y=100을 그대로 두고 그 위쪽만 F배 늘인다.
   const hf = PIECE_HEIGHT_FACTOR[type] || 1;
-  const vbY = 100 * (1 - hf);
+  // 원본 실루엣의 "늘이기 전 높이"(받침 y=100 기준, 기물별 꼭대기 y좌표까지) 대비 목표 높이(hf×56)에
+  // 맞도록 실제 stretch 배율(m)을 역산 — 그래야 기물마다 원본 높이가 달라도 최종 렌더링 높이는
+  // 항상 정확히 hf × 받침 폭이 된다(받침은 항상 1배 고정, matrix는 y=100을 고정점으로 늘인다).
+  const naturalH = 100 - (PIECE_NATURAL_TOP_Y[type] ?? 0);
+  const m = (hf * 56) / naturalH;
+  const vbY = 100 - hf * 56;
+  // 받침(폴리곤 x=22~78, 100단위 중 56)이 이미지 기물과 동일하게 size*PIECE_BASE_RATIO 폭으로
+  // 보이도록 역산 — 100단위 viewBox 전체가 svgW 픽셀에 대응하므로 56단위(받침)는 svgW*0.56이 된다.
+  const svgW = size * PIECE_BASE_RATIO * (100 / 56);
+  const svgH = size * PIECE_BASE_RATIO * hf;
   return (
-    <svg viewBox={"0 " + vbY + " 100 " + (100 * hf)} width={size} height={size * hf} draggable={draggable} onDragStart={onDragStart}
+    <svg viewBox={"0 " + vbY + " 100 " + (hf * 56)} width={svgW} height={svgH} draggable={draggable} onDragStart={onDragStart}
       style={{ display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }}>
-      <g transform={"matrix(1,0,0," + hf + ",0," + vbY + ")"}>
+      <g transform={"matrix(1,0,0," + m + ",0," + (100 * (1 - m)) + ")"}>
         {sk.glossy && <defs><clipPath id={clipId}><polygon points={bodyPoints} />{type === "K" && <path d={PIECE_CROSS} />}</clipPath></defs>}
         <polygon points={bodyPoints} fill={fill} stroke={sk.stroke} strokeWidth={2.6} strokeLinejoin="round" />
         {type === "K" && <path d={PIECE_CROSS} fill={fill} stroke={sk.stroke} strokeWidth={2.2} strokeLinejoin="round" />}
@@ -1726,7 +1742,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
                   onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
                   onDragOver={interactive ? (e) => e.preventDefault() : undefined}
                   onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
-                  style={{ width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", background: light ? sk.light : sk.dark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
+                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
                   {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{8 - r}</span>}
                   {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{FILES[c]}</span>}
                   {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
@@ -2253,10 +2269,10 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {rows.map((row, vr) => (
             <div key={vr} style={{ display: "flex" }}>
               {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", background: light ? sk.light : sk.dark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
+                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
             </div>
           ))}
-          {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
+          {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
           {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
           {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: dto0 * cell - cell * 0.16, left: dto1 * cell + cell * 0.7, width: cell * 0.42, height: cell * 0.42, borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.2)}</div>}
           <svg width={cell * 8} height={cell * 8} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
@@ -4007,11 +4023,11 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
           <div key={vr} style={{ display: "flex" }}>
             {row.map((p, vc) => {
               const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", background: light ? sk.light : sk.dark }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
             })}
           </div>
         ))}
-        {moving && <div style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.05, boxSizing: "border-box", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
+        {moving && <div style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
       </div>
     </div>
   );
@@ -5820,7 +5836,7 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
       {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; const light = (r + c) % 2 === 0; return <div key={i} style={{ background: light ? sk.light : sk.dark }} />; })}
     </div>
   ) : (
-    <div className="flex items-end gap-1" style={{ width: 64, height: 64, borderRadius: 8, background: "#2E1B10", flexShrink: 0, justifyContent: "center", paddingBottom: 6, boxSizing: "border-box" }}>
+    <div className="flex items-center gap-1" style={{ width: 64, height: 64, borderRadius: 8, background: "#2E1B10", flexShrink: 0, justifyContent: "center" }}>
       <PieceGlyph type="K" color="w" size={28} pieceSkin={id} />
       <PieceGlyph type="N" color="b" size={28} pieceSkin={id} />
     </div>
@@ -6948,7 +6964,7 @@ export default function App() {
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (d.puzzleActive) setPuzzleActive(d.puzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); else if (acc.username === DEV_ACCOUNT) setOcCoins(10000); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     setLoaded(true);
@@ -7006,7 +7022,7 @@ export default function App() {
   const equipSkin = useCallback((kind, id) => { (kind === "board" ? setBoardSkin : setPieceSkin)(id); }, []);
   const skinValue = useMemo(() => ({ boardSkin, pieceSkin }), [boardSkin, pieceSkin]);
 
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); else if (acc.username === DEV_ACCOUNT) setOcCoins(10000); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
