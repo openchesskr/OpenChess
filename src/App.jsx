@@ -132,24 +132,30 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
   // 보이도록 역산 — 100단위 viewBox 전체가 svgW 픽셀에 대응하므로 56단위(받침)는 svgW*0.56이 된다.
   const svgW = size * PIECE_BASE_RATIO * (100 / 56);
   const svgH = size * PIECE_BASE_RATIO * hf;
+  // (버그) 네이티브 HTML5 드래그는 <svg> 루트 요소를 드래그 시작점으로 안정적으로 인식하지 못하는
+  // 브라우저(크로미움 포함)가 있어, 바다 스킨처럼 SVG로 그리는 기물은 실제 마우스 드래그로 옮겨지지
+  // 않는 문제가 있었다(클릭으로는 정상 작동해 눈에 덜 띔). img 기물처럼 항상 드래그를 인식하는
+  // <div>로 감싸고, 애니메이션에 쓰이는 opacity·transform 등 style도 이 바깥 div로 옮긴다.
   return (
-    <svg viewBox={"0 " + vbY + " 100 " + (hf * 56)} width={svgW} height={svgH} draggable={draggable} onDragStart={onDragStart}
-      style={{ display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }}>
-      <g transform={"matrix(1,0,0," + m + ",0," + (100 * (1 - m)) + ")"}>
-        {sk.glossy && <defs><clipPath id={clipId}><polygon points={bodyPoints} />{type === "K" && <path d={PIECE_CROSS} />}</clipPath></defs>}
-        <polygon points={bodyPoints} fill={fill} stroke={sk.stroke} strokeWidth={2.6} strokeLinejoin="round" />
-        {type === "K" && <path d={PIECE_CROSS} fill={fill} stroke={sk.stroke} strokeWidth={2.2} strokeLinejoin="round" />}
-        <path d={PIECE_ACCENT} fill={sk.accent} opacity={sk.accentOpacity} />
-        <line x1={30} y1={88} x2={70} y2={88} stroke={sk.accent} strokeWidth={1.4} opacity={0.85} />
-        {PIECE_LINES[type].map((d, i) => <path key={i} d={d} fill="none" stroke={sk.accent} strokeWidth={1.5} opacity={0.8} strokeLinecap="round" />)}
-        {sk.glossy && (
-          <g clipPath={"url(#" + clipId + ")"}>
-            <ellipse cx={40} cy={40} rx={26} ry={40} fill="rgba(255,255,255,.4)" />
-            <ellipse cx={64} cy={72} rx={12} ry={20} fill="rgba(255,255,255,.18)" />
-          </g>
-        )}
-      </g>
-    </svg>
+    <div draggable={draggable} onDragStart={onDragStart}
+      style={{ display: "block", flexShrink: 0, width: svgW, height: svgH, filter: pieceShadow(light), ...style }}>
+      <svg viewBox={"0 " + vbY + " 100 " + (hf * 56)} width={svgW} height={svgH} style={{ display: "block", pointerEvents: "none" }}>
+        <g transform={"matrix(1,0,0," + m + ",0," + (100 * (1 - m)) + ")"}>
+          {sk.glossy && <defs><clipPath id={clipId}><polygon points={bodyPoints} />{type === "K" && <path d={PIECE_CROSS} />}</clipPath></defs>}
+          <polygon points={bodyPoints} fill={fill} stroke={sk.stroke} strokeWidth={2.6} strokeLinejoin="round" />
+          {type === "K" && <path d={PIECE_CROSS} fill={fill} stroke={sk.stroke} strokeWidth={2.2} strokeLinejoin="round" />}
+          <path d={PIECE_ACCENT} fill={sk.accent} opacity={sk.accentOpacity} />
+          <line x1={30} y1={88} x2={70} y2={88} stroke={sk.accent} strokeWidth={1.4} opacity={0.85} />
+          {PIECE_LINES[type].map((d, i) => <path key={i} d={d} fill="none" stroke={sk.accent} strokeWidth={1.5} opacity={0.8} strokeLinecap="round" />)}
+          {sk.glossy && (
+            <g clipPath={"url(#" + clipId + ")"}>
+              <ellipse cx={40} cy={40} rx={26} ry={40} fill="rgba(255,255,255,.4)" />
+              <ellipse cx={64} cy={72} rx={12} ry={20} fill="rgba(255,255,255,.18)" />
+            </g>
+          )}
+        </g>
+      </svg>
+    </div>
   );
 }
 
