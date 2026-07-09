@@ -2885,7 +2885,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
   // 한쪽이 다른 쪽을 포함하면 같은 오프닝으로 간주한다.
   const questOpeningNames = useMemo(() => (dailyQuest && dailyQuest.quests || []).filter((q) => q.type === "opening").map((q) => q.opening).filter(Boolean), [dailyQuest]);
-  const matchesQuestOpening = (name) => !!name && questOpeningNames.some((q) => name.includes(q) || q.includes(name));
+  // (버그) 배지가 해당 오프닝을 "완성하는" 마지막 수 블록에만 표시돼, 그 오프닝으로 가는 상위 수순
+  // (예: Italian Game이 목표면 1.e4, 1...e5, 2.Nf3, 2...Nc6)에는 표시되지 않았다. 오프닝의 전체 수순
+  // 경로를 미리 구해두고, 지금 두려는 수가 그 경로의 접두사(prefix)이기만 하면(= 그 방향으로 가는
+  // 수라면) 배지를 표시한다.
+  const questPaths = useMemo(() => questOpeningNames.map((name) => findOpeningPathByFuzzyName(name)).filter(Boolean), [questOpeningNames]);
+  const matchesQuestPath = (path) => questPaths.some((qp) => qp.length >= path.length && path.every((s, i) => qp[i] === s));
   const [flip, setFlip] = useState(false);
   const [boardSize, boardRef] = useBoardSize(360);
   const [sel, setSel] = useState(null);
@@ -3301,7 +3306,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 const shown = [...bk, ...shownNb];
                 return (
                   <>
-                    {shown.map((m) => <MoveTile key={m.san} m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestOpening(m.name)} />)}
+                    {shown.map((m) => <MoveTile key={m.san} m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} />)}
                     {nb.length > 3 && (
                       <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                         <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -3334,22 +3339,48 @@ function WinBar({ wdl, height = 8 }) {
     </div>
   );
 }
-function DexMoveCard({ path, m, child, isUnlocked, hasChildren, wdl, cc, onOpen }) {
-  // (기능3) 개발자가 이름을 바꾸면 도감에도 즉시 반영되도록 override를 최우선으로 본다.
-  const label = nameOverride(path.join(" "), m.san) ?? m.name ?? (child && child.opening ? child.opening.name : null) ?? (m.isMain ? "Main Line" : null);
-  const childSans = [...path, m.san];
+// (개편) 도감 오프닝 해금 기준 — 예전에는 학습 탭에서 "집중 학습"에 진입하면 해금됐지만, 이제는
+// chess.com 대국 기록에 그 수순이 실제로 한 번이라도 나온 적이 있어야 해금된다(개발자 devUnlockAll은
+// 예외). chess.com 연동이 안 되어 있으면 시작 위치를 제외한 모든 수가 잠긴 채로 보인다.
+function dexIsUnlocked(chesscom, ccReady, unlockAll, pathSans) {
+  if (unlockAll) return true;
+  if (!pathSans.length) return true;
+  if (!ccReady) return false;
+  const r = chesscom.analyze(pathSans);
+  return !!(r && r.total > 0);
+}
+// (개편) 도감 오프닝 상세 블록 — 모식도에서 노드를 클릭하면 열린다. 기존 카드 내용(미리보기·해금
+// 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 추가로 보여준다.
+function DexMoveBlock({ path, m, isUnlocked, wdl, adopt, games, cc, onClose }) {
+  const label = nameOverride(path.join(" "), m.san) ?? m.name ?? (m.isMain ? "Main Line" : null);
+  const ply = path.length;
+  const board = useMemo(() => boardFromSans(path), [path.join(" ")]);
+  const tier = useMemo(() => {
+    const node = snapNode(path);
+    const rawMoves = node ? node.moves.slice() : [];
+    addsFor(path.join(" ")).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
+    const tiered = assignTiers(rawMoves, ply, board, path.join(" "));
+    return tiered.find((x) => x.san === m.san) || null;
+  }, [path.join(" "), m.san, board]);
+  const kind = (tier && tier.kind) || (m.book ? "book" : "pending");
+  const kws = m.book ? deriveKeywords({ ...m, adopt: adopt ?? m.adopt }) : (Array.isArray(m.kw) ? m.kw : []);
+  const evTxt = m.evalCp != null ? fmtEvalCp(m.evalCp) : null;
   return (
-    <div style={{ borderRadius: 16, padding: 12, background: isUnlocked ? "linear-gradient(180deg,#FBF5E8,#E2D2B2)" : "linear-gradient(180deg,#33261A,#221610)", boxShadow: isUnlocked ? "0 5px 0 #B59A6E, 0 10px 18px -10px rgba(0,0,0,.5)" : "inset 0 1px 0 rgba(255,255,255,.05)", border: "1px solid " + (isUnlocked ? "#CDB98E" : "#000") }}>
+    <div style={{ borderRadius: 16, padding: 12, marginTop: 10, background: isUnlocked ? "linear-gradient(180deg,#FBF5E8,#E2D2B2)" : "linear-gradient(180deg,#33261A,#221610)", boxShadow: isUnlocked ? "0 5px 0 #B59A6E, 0 10px 18px -10px rgba(0,0,0,.5)" : "inset 0 1px 0 rgba(255,255,255,.05)", border: "1px solid " + (isUnlocked ? "#CDB98E" : "#000"), position: "relative" }}>
+      <button onClick={onClose} aria-label="블록 닫기" className="press" style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: 7, border: "none", background: "rgba(0,0,0,.15)", color: isUnlocked ? T.ink : T.ivory, cursor: "pointer" }}>✕</button>
       <div style={{ position: "relative" }}>
         {isUnlocked ? <AnimatedMove sans={path} san={m.san} size={200} />
-          : <div style={{ width: 150 + 12, height: 150 + 12, margin: "0 auto", borderRadius: 9, background: "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 8px,#33261A 8px,#33261A 16px)", display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={28} style={{ color: T.brass }} /></div>}
+          : <div style={{ width: 162, height: 162, margin: "0 auto", borderRadius: 9, background: "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 8px,#33261A 8px,#33261A 16px)", display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={28} style={{ color: T.brass }} /></div>}
       </div>
-      <div className="flex items-center justify-between" style={{ marginTop: 10 }}>
-        <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(path.length)}{m.san}</span>
-        {/* (18차 UI5) "학습함" 텍스트 삭제 — 체크 아이콘만 유지 */}
-        {isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}
+      <div className="flex items-center gap-2" style={{ marginTop: 10, flexWrap: "wrap" }}>
+        <CircleBadge kind={kind} />
+        <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>
+        {evTxt && <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
+        <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
       </div>
-      {isUnlocked && label && <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginTop: 3, wordBreak: "keep-all" }}>{label}</div>}
+      {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}</div>}
+      {label && <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>}
+      {games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>채택률 {adopt != null ? adopt.toFixed(1) + "%" : "—"} · {fmtFull(games)}국</div>}
       {isUnlocked && wdl && <div style={{ marginTop: 8 }}><WinBar wdl={wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
         <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
@@ -3357,26 +3388,114 @@ function DexMoveCard({ path, m, child, isUnlocked, hasChildren, wdl, cc, onOpen 
           <span><span style={{ color: T.best }}>{cc.w}승</span> {cc.d}무 <span style={{ color: T.blunder }}>{cc.l}패</span> · {fmtFull(cc.total)}판</span>
         </div>
       )}
-      <button onClick={onOpen} disabled={!hasChildren} className="press" style={{ marginTop: 10, width: "100%", padding: "8px 0", borderRadius: 9, border: "none", cursor: hasChildren ? "pointer" : "default", background: hasChildren ? "linear-gradient(180deg,#3A2516,#241509)" : "rgba(0,0,0,.12)", color: hasChildren ? T.brassHi : (isUnlocked ? "#A8906A" : "#5E4E38"), fontWeight: 700, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-        {hasChildren ? <>다음 수 살펴보기 <ChevronRight size={14} /></> : "마지막 수록 수"}
-      </button>
     </div>
   );
 }
-function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
-  const [path, setPath] = useState([]);
-  const [lc, setLc] = useState(null);
+// (개편) 전체 수 트리 모식도 — 데스크톱은 가로(왼쪽→오른쪽), 모바일은 세로(위→아래)로 뻗어나간다.
+// 처음에는 시작 위치의 다음 수(1수)만 펼쳐져 있고, 노드의 화살표를 누르면 그 수의 다음 수가
+// 펼쳐지며 점점 더 깊이 탐색할 수 있다(비이론 수·개발자가 추가한 수 포함, node.moves 전체 기준).
+// 노드 자체를 클릭하면 그 수의 상세 블록이 열리고 닫힌다.
+function OpeningSchematic({ expanded, onToggleExpand, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical }) {
+  const colW = vertical ? 92 : 124, rowH = vertical ? 58 : 44;
+  const { items, edges, maxDepth, maxPos } = useMemo(() => {
+    let cursor = 0; const items = []; const edges = [];
+    const visit = (san, path, depth) => {
+      const key = path.join(" ");
+      const node = snapNode(path);
+      const rawMoves = node ? node.moves.slice() : [];
+      addsFor(key).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
+      const it = { san, path, depth, key, hasChildren: rawMoves.length > 0, unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      const isOpenBranch = depth === 0 || expanded.has(key);
+      const kids = [];
+      if (isOpenBranch) for (const m of rawMoves) kids.push(visit(m.san, [...path, m.san], depth + 1));
+      if (!kids.length) it.pos = cursor++;
+      else { it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; kids.forEach((c) => edges.push([it, c])); }
+      items.push(it);
+      return it;
+    };
+    visit(null, [], 0);
+    const visible = items.filter((it) => it.depth > 0);
+    const maxDepth = visible.length ? Math.max(...visible.map((it) => it.depth)) : 1;
+    const maxPos = items.length ? Math.max(...items.map((it) => it.pos)) : 0;
+    return { items: visible, edges, maxDepth, maxPos };
+  }, [expanded, chesscom, ccReady, unlockAll]);
+  const coord = (it) => vertical ? { x: it.pos * colW, y: (it.depth - 1) * rowH } : { x: (it.depth - 1) * colW, y: it.pos * rowH };
+  const boxW = 78, boxH = 30;
+  const width = (vertical ? maxPos * colW : (maxDepth - 1) * colW) + boxW + 30;
+  const height = (vertical ? (maxDepth - 1) * rowH : maxPos * rowH) + boxH + 30;
+  const [pan, setPan] = useState({ x: 12, y: 12 });
+  const [zoom, setZoom] = useState(1);
+  const dragRef = useRef(null);
+  const clampZoom = (z) => Math.min(2, Math.max(0.4, z));
+  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
+  const onPointerUp = () => { dragRef.current = null; };
+  const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
+  return (
+    <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheelZoom}
+      style={{ position: "relative", overflow: "hidden", height: 340, borderRadius: 12, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
+        <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+        <button onClick={() => setZoom(1)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
+        <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+      </div>
+      <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0" }}>
+        <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+          {edges.map(([p, c], i) => {
+            if (p.depth === 0) return null;
+            const pc = coord(p), cc2 = coord(c);
+            const x1 = vertical ? pc.x + boxW / 2 : pc.x + boxW, y1 = vertical ? pc.y + boxH : pc.y + boxH / 2;
+            const x2 = vertical ? cc2.x + boxW / 2 : cc2.x, y2 = vertical ? cc2.y : cc2.y + boxH / 2;
+            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={c.unlocked ? T.brass : "#C9B58C"} strokeWidth={1.6} opacity={c.unlocked ? 0.85 : 0.4} strokeLinecap="round" />;
+          })}
+        </svg>
+        {items.map((it) => {
+          const { x, y } = coord(it);
+          const isOpen = openKey === it.key;
+          const isExpanded = expanded.has(it.key);
+          return (
+            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH, display: "flex", alignItems: "center", gap: 2 }}>
+              <button onClick={() => onToggleOpen(it.key)} className="press" style={{ flex: 1, height: boxH, borderRadius: 8, border: "1px solid " + (isOpen ? T.brass : it.unlocked ? "#CDB98E" : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : it.unlocked ? T.paper : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", color: isOpen ? "#241509" : it.unlocked ? T.ink : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 11.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, padding: 0 }}>
+                {!it.unlocked && <Lock size={10} />}{moveNumber(it.path.length - 1)}{it.san}
+              </button>
+              {it.hasChildren && (
+                <button onClick={() => onToggleExpand(it.key)} aria-label={isExpanded ? "접기" : "펼치기"} className="press" style={{ width: 20, height: boxH, borderRadius: 6, border: "1px solid " + T.brass, background: isExpanded ? T.brass : T.ivoryHi, color: isExpanded ? "#241509" : T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <ChevronRight size={13} strokeWidth={3} style={{ transform: (vertical ? "rotate(90deg) " : "") + (isExpanded ? "rotate(180deg)" : "rotate(0deg)"), transition: "transform .15s" }} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
-  const node = snapNode(path);
-  const baseMoves = node ? node.moves.slice() : (SNAP.tree[""] ? SNAP.tree[""].moves.slice() : []);
-  addsFor(path.join(" ")).forEach((a) => { if (!baseMoves.some((x) => x.san === a.san)) baseMoves.push({ san: a.san }); });
-  const opening = node && node.opening ? node.opening : null;
-  const key = path.join(" ");
-  useEffect(() => { let cc = false; setLc(null); if (!liveOn) return; fetchLichess(path).then((r) => { if (!cc) setLc(r); }).catch(() => {}); return () => { cc = true; }; }, [key, liveOn]);
-  const wdlFor = (san) => { if (!lc) return null; const mm = lc.moves.find((x) => x.san === san); return mm ? mm.wdl : null; };
-  const crumb = ["오프닝", ...path.map((s, i) => moveNumber(i) + s)];
   const earned = earnedTitles || new Set();
+  // (개편) 도감 오프닝 — 드릴다운 대신 전체 수 트리 모식도. expanded: 자식이 펼쳐진 노드 경로(key) 집합,
+  // openKey: 지금 블록으로 열려 있는 노드의 경로(key). 모바일(≤768px)은 세로, 그 외는 가로 모식도.
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [openKey, setOpenKey] = useState(null);
+  const vertical = useNarrow(768);
+  const onToggleExpand = useCallback((k) => setExpanded((prev) => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; }), []);
+  const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
+  const openPath = openKey ? openKey.split(" ") : null;
+  const openParentPath = openPath ? openPath.slice(0, -1) : null;
+  const openSan = openPath ? openPath[openPath.length - 1] : null;
+  const openM = useMemo(() => {
+    if (!openPath) return null;
+    const pnode = snapNode(openParentPath);
+    const list = pnode ? pnode.moves.slice() : (openParentPath.length === 0 ? (SNAP.tree[""] ? SNAP.tree[""].moves.slice() : []) : []);
+    addsFor(openParentPath.join(" ")).forEach((a) => { if (!list.some((x) => x.san === a.san)) list.push({ san: a.san, dev: true }); });
+    return list.find((x) => x.san === openSan) || null;
+  }, [openKey]);
+  const [openLc, setOpenLc] = useState(null);
+  useEffect(() => { let cc = false; setOpenLc(null); if (!openPath) return; fetchLichess(openParentPath).then((r) => { if (!cc) setOpenLc(r); }).catch(() => {}); return () => { cc = true; }; }, [openKey]);
+  const openLcMove = openLc && openSan ? openLc.moves.find((x) => x.san === openSan) : null;
+  const openCc = ccReady && openPath ? chesscom.analyze(openPath) : null;
+  const openUnlocked = openPath ? dexIsUnlocked(chesscom, ccReady, unlockAll, openPath) : false;
   return (
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
@@ -3434,24 +3553,12 @@ function CollectionTab({ unlocked, unlockAll, liveOn, contentVer, chesscom, earn
           </div>
         </div>
       ) : (<>
-      <div className="flex items-center flex-wrap gap-1" style={{ marginBottom: 14, fontSize: 13 }}>
-        {crumb.map((c, i) => <span key={i} className="inline-flex items-center">{i > 0 && <Crumb size={13} style={{ color: T.inkSoft, margin: "0 2px" }} />}<button onClick={() => setPath(path.slice(0, i))} className="press" style={{ color: i === crumb.length - 1 ? T.brass : T.inkSoft, fontWeight: i === crumb.length - 1 ? 800 : 600, fontFamily: i ? "ui-monospace,monospace" : "inherit", background: "none", border: "none", cursor: "pointer" }}>{c}</button></span>)}
-      </div>
-      {opening && <div className="flex items-center gap-3 flex-wrap" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: "12px 16px", marginBottom: 14 }}>
-        <Mascot name="kokoa" emotion="happy" size={70} />
-        <div><div style={{ fontSize: 16, fontWeight: 800, color: T.ivoryHi }}>{opening.name}</div></div>
-        {lc && lc.wdl && <div style={{ marginLeft: "auto", width: 150 }}><WinBar wdl={lc.wdl} /></div>}
-        {ccReady && (() => { const cc = chesscom.analyze(path); return cc && cc.total > 0 ? <div style={{ fontSize: 11.5, fontFamily: "ui-monospace,monospace", color: T.ivory, background: "rgba(60,138,60,.25)", border: "1px solid rgba(120,200,120,.4)", borderRadius: 8, padding: "6px 11px", letterSpacing: ".02em" }}>내 chess.com 승률 <b style={{ color: "#9FE39F" }}>{cc.winRate}%</b> · {cc.w}/{cc.d}/{cc.l}</div> : null; })()}
-      </div>}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {baseMoves.map((m) => {
-          const childSans = [...path, m.san]; const child = snapNode(childSans);
-          const hasChildren = (child && child.moves && child.moves.length > 0) || addsFor(childSans.join(" ")).length > 0;
-          const isUnlocked = unlockAll || unlocked.has(childSans.join(" "));
-          const cc = ccReady ? chesscom.analyze(childSans) : null;
-          return <DexMoveCard key={m.san} path={path} m={m} child={child} isUnlocked={isUnlocked} hasChildren={hasChildren} wdl={wdlFor(m.san)} cc={cc} onOpen={() => hasChildren && setPath(childSans)} />;
-        })}
-      </div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 10px" }}>
+        {ccReady ? "내 chess.com 대국에 실제로 나온 수만 해금돼요. 마디를 클릭하면 상세 정보가, 화살표를 누르면 다음 수가 펼쳐집니다."
+          : "설정 탭에서 chess.com 계정을 연동하면, 실제로 둔 적 있는 수만큼 해금돼 보여요."}
+      </p>
+      <OpeningSchematic expanded={expanded} onToggleExpand={onToggleExpand} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} />
+      {openM && openPath && <DexMoveBlock path={openParentPath} m={openM} isUnlocked={openUnlocked} wdl={openLcMove ? openLcMove.wdl : null} adopt={openLcMove ? openLcMove.adopt : null} games={openLcMove ? openLcMove.games : null} cc={openCc} onClose={() => setOpenKey(null)} />}
       </>)}
     </div>
   );
@@ -4864,17 +4971,18 @@ function chapterProgress(mainQuest, key) {
   const done = ch.items.filter((_, i) => answered[i]).length;
   return { done, total, complete: total > 0 && done >= total };
 }
-function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit, sub }) {
+function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit, sub, locked }) {
   const claimed = ((mainQuest && mainQuest.claimed) || {})[chKey];
   const { done, total, complete } = chapterProgress(mainQuest, chKey);
   const pct = total ? Math.round((100 * done) / total) : 0;
   return (
-    <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), marginLeft: sub ? 14 : 0 }}>
+    <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), marginLeft: sub ? 14 : 0, opacity: locked ? .55 : 1 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: complete ? "#BEEAB0" : T.ivoryHi, minWidth: 0 }}>{ch.title}</span>
         <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 7px", flexShrink: 0 }}><CoinIcon size={11} /> {ch.reward || 100}</span>
         <span style={{ marginLeft: "auto", flexShrink: 0 }}>
-          {claimed ? <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>완료</span>
+          {locked ? <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}><Lock size={12} /> 잠김</span>
+            : claimed ? <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>완료</span>
             : complete ? <button onClick={() => onClaim(chKey)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: "pointer" }}>보상 받기</button>
             : <button onClick={() => onOpenQuiz(chKey)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{done > 0 ? "이어서 풀기" : "도전하기"}</button>}
         </span>
@@ -4890,43 +4998,102 @@ function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit
     </div>
   );
 }
+function isChapterClaimed(mainQuest, key) { return !!((mainQuest && mainQuest.claimed) || {})[key]; }
 function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, contentVer }) {
   const [quizKey, setQuizKey] = useState(null);
   const [editKey, setEditKey] = useState(null);
   // (기능4 보강) 챕터 목록을 하드코딩된 5개 키가 아니라 CONTENT.questChapters 전체에서 매 렌더마다
   // 다시 계산한다 — 그래야 개발자가 "+ 새 챕터 추가"로 만든 챕터도 실제로 화면에 노출된다.
-  // parent 필드가 있는 챕터는 같은 parent끼리 묶어 "CHAPTER N · 소제목"으로, parent가 없는
-  // 챕터는 ch1은 "CHAPTER 1"로, 그 외(신규 추가분)는 "추가 챕터"로 묶어 보여준다.
-  const entries = Object.entries(CONTENT.questChapters);
-  const ch1Entry = entries.find(([k]) => k === "ch1");
-  const groups = new Map();
-  const singles = [];
-  for (const [k, ch] of entries) {
-    if (k === "ch1") continue;
-    if (ch.parent) {
-      if (!groups.has(ch.parent)) groups.set(ch.parent, { heading: ch.parentTitle || "챕터 모음", rows: [] });
-      groups.get(ch.parent).rows.push([k, ch]);
-    } else singles.push([k, ch]);
-  }
+  // parent 필드가 있는 챕터는 같은 parent끼리 묶어 한 페이지(CHAPTER N)로, parent가 없는 챕터는
+  // ch1은 "CHAPTER 1"로, 그 외(신규 추가분)는 각각 별도 페이지가 된다.
+  // (개편) 챕터 하나하나를 세로로 늘어놓던 목록을, 챕터당 한 "페이지"로 만들어 좌우로 넘기는 방식으로
+  // 바꾸고, 이전 페이지(챕터)를 모두 클리어(보상까지 수령)해야 다음 페이지가 열리도록 순차 잠금을 건다.
+  const pages = useMemo(() => {
+    const entries = Object.entries(CONTENT.questChapters);
+    const ch1Entry = entries.find(([k]) => k === "ch1");
+    const groups = new Map();
+    const singles = [];
+    for (const [k, ch] of entries) {
+      if (k === "ch1") continue;
+      if (ch.parent) {
+        if (!groups.has(ch.parent)) groups.set(ch.parent, { heading: ch.parentTitle || "챕터 모음", rows: [] });
+        groups.get(ch.parent).rows.push([k, ch]);
+      } else singles.push([k, ch]);
+    }
+    const list = [];
+    if (ch1Entry) list.push({ pageKey: "ch1", heading: null, rows: [ch1Entry] });
+    for (const [pk, g] of groups) list.push({ pageKey: pk, heading: g.heading, rows: g.rows });
+    for (const [k, ch] of singles) list.push({ pageKey: k, heading: ch.title, rows: [[k, ch]] });
+    return list;
+  }, [contentVer]);
+  const n = pages.length;
+  const pageComplete = (pg) => pg.rows.every(([k]) => isChapterClaimed(mainQuest, k));
+  const unlockedUpTo = useMemo(() => {
+    let idx = 0;
+    for (let i = 1; i < n; i++) { if (pageComplete(pages[i - 1])) idx = i; else break; }
+    return idx;
+  }, [pages, mainQuest]);
+  const [page, setPage] = useState(0);
+  useEffect(() => { setPage((p) => Math.min(p, unlockedUpTo)); }, [unlockedUpTo]);
+  const pagerRef = useRef(null);
+  const dragRef = useRef(null);
+  const [dragPx, setDragPx] = useState(0);
+  const dragging = !!dragRef.current;
+  const clampPage = (p) => Math.max(0, Math.min(unlockedUpTo, p));
+  const onPagerPointerDown = (e) => {
+    if (e.target.closest && e.target.closest("button, input, .no-pan, .no-swipe")) return;
+    dragRef.current = { x: e.clientX, w: pagerRef.current ? pagerRef.current.clientWidth : 380 };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  // 잠긴 다음 페이지 쪽·첫 페이지보다 앞쪽으로는 살짝만(1/3만큼) 저항감 있게 끌리게 해 "여기서 막힌다"는 걸 보여준다.
+  const onPagerPointerMove = (e) => {
+    if (!dragRef.current) return;
+    let d = e.clientX - dragRef.current.x;
+    if ((d < 0 && page >= unlockedUpTo) || (d > 0 && page <= 0)) d *= 0.3;
+    setDragPx(d);
+  };
+  const onPagerPointerUp = () => {
+    const st = dragRef.current; dragRef.current = null;
+    if (!st) { setDragPx(0); return; }
+    const threshold = st.w * 0.16;
+    if (dragPx <= -threshold) setPage((p) => clampPage(p + 1));
+    else if (dragPx >= threshold) setPage((p) => clampPage(p - 1));
+    setDragPx(0);
+  };
+  const goPage = (i) => setPage(clampPage(i));
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#33220F,#1E1206)", border: "1px solid " + T.brass }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, marginBottom: 2 }}>메인 퀘스트</div>
-      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>오프닝 포지션의 성격을 탐구하는 챕터 퀴즈 — 챕터마다 OC 나이트 코인을 보상으로 드립니다.</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {ch1Entry && <><span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi }}>CHAPTER 1</span>
-          <ChapterRow ch={ch1Entry[1]} chKey="ch1" mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} /></>}
-        {[...groups.entries()].map(([pk, g], gi) => (
-          <React.Fragment key={pk}>
-            <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi, marginTop: 4 }}>{"CHAPTER " + (gi + 2) + " · " + g.heading}</span>
-            {g.rows.map(([k, ch]) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub />)}
-          </React.Fragment>
-        ))}
-        {singles.length > 0 && <>
-          <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi, marginTop: 4 }}>추가 챕터</span>
-          {singles.map(([k, ch]) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} />)}
-        </>}
-        {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 4, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 새 챕터 추가</button>}
-      </div>
+      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>오프닝 포지션의 성격을 탐구하는 챕터 퀴즈 — 이전 챕터를 클리어해야 다음 챕터가 열립니다.</div>
+      {n > 0 && (
+        <div ref={pagerRef} onPointerDown={onPagerPointerDown} onPointerMove={onPagerPointerMove} onPointerUp={onPagerPointerUp} onPointerLeave={onPagerPointerUp} onPointerCancel={onPagerPointerUp}
+          style={{ position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
+          <div style={{ display: "flex", width: n * 100 + "%", transform: "translateX(calc(" + (-page * (100 / n)) + "% + " + dragPx + "px))", transition: dragging ? "none" : "transform .34s cubic-bezier(.22,.9,.32,1)" }}>
+            {pages.map((pg, i) => {
+              const locked = i > unlockedUpTo;
+              return (
+                <div key={pg.pageKey} style={{ width: 100 / n + "%", boxSizing: "border-box", padding: "0 2px", flexShrink: 0 }}>
+                  <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi }}>{"CHAPTER " + (i + 1) + (pg.heading ? " · " + pg.heading : "")}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                    {pg.rows.map(([k, ch]) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={locked ? () => {} : setQuizKey} onClaim={locked ? () => {} : onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={locked} />)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {page > 0 && <button onClick={() => goPage(page - 1)} aria-label="이전 챕터" className="press" style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={16} /></button>}
+          {page < unlockedUpTo && <button onClick={() => goPage(page + 1)} aria-label="다음 챕터" className="press" style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={16} /></button>}
+        </div>
+      )}
+      {n > 1 && (
+        <div className="flex items-center justify-center gap-2" style={{ marginTop: 10 }}>
+          {pages.map((pg, i) => (
+            <button key={pg.pageKey} onClick={() => goPage(i)} disabled={i > unlockedUpTo} aria-label={"CHAPTER " + (i + 1)} className={i <= unlockedUpTo ? "press" : ""}
+              style={{ width: page === i ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: i <= unlockedUpTo ? "pointer" : "not-allowed", background: page === i ? T.brass : (i <= unlockedUpTo ? "rgba(255,255,255,.35)" : "rgba(255,255,255,.14)"), transition: "width .25s ease, background .25s ease" }} />
+          ))}
+        </div>
+      )}
+      {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 새 챕터 추가</button>}
       {quizKey && <QuizModal chKey={quizKey} ch={CONTENT.questChapters[quizKey]} mainQuest={mainQuest} onAnswer={onAnswer} onClose={() => setQuizKey(null)} />}
       {editKey && <QuestChapterEditor chKey={editKey} bumpContent={bumpContent} onClose={() => setEditKey(null)} />}
     </div>
@@ -5468,6 +5635,19 @@ function findOpeningPathByName(name) {   // (UX2) 이름이 같은 첫(최단) �
     const path = queue.shift(); steps++;
     const nd = snapNode(path);
     if (path.length && nd && nd.opening && nd.opening.name === name) return path;
+    if (nd && nd.moves) for (const mv of nd.moves) { const np = [...path, mv.san]; const k = np.join(" "); if (!seen.has(k) && np.length <= 12) { seen.add(k); queue.push(np); } }
+  }
+  return null;
+}
+// (20차 UI4 보충) 일일 퀘스트는 "London System"처럼 짧은 이름을 쓰지만 트리의 실제 오프닝 이름은
+// 더 세부적일 수 있어(예: "Queen's Pawn Game: Accelerated London System"), findOpeningPathByName의
+// 정확 일치 대신 부분 일치로 첫 경로를 찾는다.
+function findOpeningPathByFuzzyName(name) {
+  let queue = [[]]; const seen = new Set([""]); let steps = 0;
+  while (queue.length && steps < 8000) {
+    const path = queue.shift(); steps++;
+    const nd = snapNode(path);
+    if (path.length && nd && nd.opening && (nd.opening.name.includes(name) || name.includes(nd.opening.name))) return path;
     if (nd && nd.moves) for (const mv of nd.moves) { const np = [...path, mv.san]; const k = np.join(" "); if (!seen.has(k) && np.length <= 12) { seen.add(k); queue.push(np); } }
   }
   return null;
@@ -6869,6 +7049,10 @@ export default function App() {
   const [lineSolves, setLineSolves] = useState({});   // (기능1) { [puzzleId]: string[] } — 라인(tag)별 해결 기록. 전체 라인이 다 모이면 solved로 승격.
   const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 레벨/진행률은 levelFromXp로 매번 도출
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
+  // (버그) 개발자 계정 코인 지급을 "코인 기록이 아예 없을 때"로만 한정했더니, 이미 로그인해 progress가
+  // 저장돼 있던 기존 개발자·공동 개발자 계정에는 소급 적용되지 않았다. 대신 "1회 지급 여부" 플래그를
+  // 따로 저장해, 이미 progress가 있는 계정이라도 아직 못 받았으면 로그인 시 10000개까지 채워준다.
+  const [devBonusGranted, setDevBonusGranted] = useState(false);
   const [dailyQuest, setDailyQuest] = useState(null);  // (17차) 오늘의 퀘스트 — { date, featured, puzzleTarget, puzzleCount, ccDone, claimed, bonusClaimed, seen, resetUsed, banned }
   // (20차 UI4) 하단 "퀘스트" 탭 아이콘 상태 — 전부 클리어하면 assignment_turned_in, 클리어했지만
   // 아직 확인(seen) 안 한 항목이 있으면 assignment_late, 그 외엔 기본 assignment.
@@ -6966,19 +7150,28 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (d.puzzleActive) setPuzzleActive(d.puzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); else if (acc.username === DEV_ACCOUNT) setOcCoins(10000); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     setLoaded(true);
   })(); }, []);
   // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 레벨/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "" }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus })); }, [unlocked, profile, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings }); }, [unlocked, puzzles, solved, lineSolves, totalXp, ocCoins, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus })); }, [unlocked, profile, puzzles, solved, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings }); }, [unlocked, puzzles, solved, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded]);
+  // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
+  // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
+  // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
+  useEffect(() => {
+    if (!loaded || !uid || devBonusGranted) return;
+    if (!isDev && !isCodev) return;
+    setOcCoins((c) => Math.max(c, 10000));
+    setDevBonusGranted(true);
+  }, [loaded, uid, isDev, isCodev, devBonusGranted]);
   // (16차) 퍼즐 카드에 "친구 N명이 풀었습니다" 표기를 위해, 로그인 시 내 친구 목록과 각 퍼즐의 해결자 uid를 한 번에 조회.
   useEffect(() => {
     if (!loaded || !uid || !puzzles.length) return;
@@ -7028,7 +7221,7 @@ export default function App() {
   const equipSkin = useCallback((kind, id) => { (kind === "board" ? setBoardSkin : setPieceSkin)(id); }, []);
   const skinValue = useMemo(() => ({ boardSkin, pieceSkin }), [boardSkin, pieceSkin]);
 
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); else if (acc.username === DEV_ACCOUNT) setOcCoins(10000); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
@@ -7362,7 +7555,7 @@ export default function App() {
 
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 110px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
-        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlocked={unlocked} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
+        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
