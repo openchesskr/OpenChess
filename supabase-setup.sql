@@ -50,6 +50,9 @@ grant insert, update on public.profiles to authenticated;
 -- 이메일/비밀번호로 가입할 때(user_metadata.username 포함) auth.users insert와 같은 트랜잭션에서
 -- profiles 행을 원자적으로 생성 — username이 이미 있으면(UNIQUE 위반) 가입 전체가 롤백됨(레이스 방지).
 -- Google OAuth 가입은 이 시점에 username이 없으므로 건너뛰고, 이후 claim_username()으로 확정한다.
+-- 이미 다른 시그니처/반환형으로 만들어져 있을 수 있으므로(예: 이전에 대시보드에서 직접 만든 경우),
+-- create or replace 가 "cannot change return type" 오류를 내지 않도록 먼저 지우고 새로 만든다.
+drop function if exists public.handle_new_user() cascade;
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare v_uname text := lower(coalesce(new.raw_user_meta_data->>'username', ''));
@@ -65,6 +68,7 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- 가입 폼에서 아이디 중복을 실시간으로 확인(로그인 전이라 anon 필요)
+drop function if exists public.username_available(text) cascade;
 create or replace function public.username_available(p_username text)
 returns boolean language sql stable security definer set search_path = public as $$
   select not exists (select 1 from public.profiles where username = lower(p_username));
@@ -72,6 +76,7 @@ $$;
 grant execute on function public.username_available(text) to anon, authenticated;
 
 -- 아이디로 로그인 시 GoTrue token 엔드포인트에 넘길 이메일을 찾기 위한 조회(로그인 전이라 anon 필요)
+drop function if exists public.email_for_username(text) cascade;
 create or replace function public.email_for_username(p_username text)
 returns text language plpgsql security definer set search_path = public as $$
 declare v_email text;
@@ -83,6 +88,7 @@ end; $$;
 grant execute on function public.email_for_username(text) to anon, authenticated;
 
 -- 이메일이 어떤 방식(email/google)으로 가입돼 있는지 — 같은 메일로 다른 방식 재가입 시 안내용
+drop function if exists public.account_providers(text) cascade;
 create or replace function public.account_providers(p_email text)
 returns text[] language plpgsql security definer set search_path = public as $$
 declare v_uid uuid; v_providers text[];
@@ -95,6 +101,7 @@ end; $$;
 grant execute on function public.account_providers(text) to anon, authenticated;
 
 -- Google 최초 로그인 후 아이디를 확정해 profiles 행을 만든다(로그인된 상태 = authenticated).
+drop function if exists public.claim_username(text) cascade;
 create or replace function public.claim_username(p_username text)
 returns text language plpgsql security definer set search_path = public as $$
 declare v_uid uuid := auth.uid(); v_uname text := lower(p_username);
@@ -139,6 +146,7 @@ alter table public.app_content enable row level security;
 -- 개발자 계정(DEV_ACCOUNT, src/App.jsx와 동일한 값으로 유지) 또는 현재 콘텐츠의
 -- value.codev 배열에 포함된 공동개발자만 쓰기를 허용 — 편집 UI가 아니라 서버(RLS)가 강제한다.
 -- anon 키만으로는(REST를 직접 호출해도) 읽기만 가능하고 쓰기는 불가능하다.
+drop function if exists public.is_content_editor(uuid) cascade;
 create or replace function public.is_content_editor(p_uid uuid)
 returns boolean language sql stable security definer set search_path = public as $$
   select exists (
@@ -182,6 +190,7 @@ grant select on public.friend_edges to authenticated;
 -- insert/update/delete는 아래 RPC로만 가능(SECURITY DEFINER) — 테이블 직접 쓰기 권한은 부여하지 않는다.
 
 -- 요청 상대가 이미 나에게 보낸 요청이 있으면 자동으로 서로 수락(맞요청) 처리한다.
+drop function if exists public.friend_request(text) cascade;
 create or replace function public.friend_request(p_to_username text)
 returns text language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_to uuid; v_existing text;
@@ -206,6 +215,7 @@ begin
 end; $$;
 grant execute on function public.friend_request(text) to authenticated;
 
+drop function if exists public.friend_accept(uuid) cascade;
 create or replace function public.friend_accept(p_other_uid uuid)
 returns boolean language plpgsql security definer set search_path = public as $$
 begin
@@ -215,6 +225,7 @@ begin
 end; $$;
 grant execute on function public.friend_accept(uuid) to authenticated;
 
+drop function if exists public.friend_remove(uuid) cascade;
 create or replace function public.friend_remove(p_other_uid uuid)
 returns boolean language plpgsql security definer set search_path = public as $$
 begin
@@ -324,6 +335,7 @@ create policy "solve events insert" on public.puzzle_solve_events for insert wit
 grant select, insert on public.puzzle_solve_events to anon, authenticated;
 
 -- 퍼즐 해결 시 solves 카운터를 원자적으로 1 증가(행이 없으면 새로 만들며 1로 시작)
+drop function if exists public.puzzle_solve(bigint) cascade;
 create or replace function public.puzzle_solve(p_no bigint)
 returns bigint language plpgsql security definer set search_path = public as $$
 declare v_solves bigint;
@@ -336,6 +348,7 @@ end; $$;
 grant execute on function public.puzzle_solve(bigint) to anon, authenticated;
 
 -- 기간별(day/week/month) 인기 퍼즐 랭킹 — 상위 N개를 풀이수 내림차순으로 반환
+drop function if exists public.puzzle_rank(text, int) cascade;
 create or replace function public.puzzle_rank(p_period text, p_limit int default 12)
 returns table(no bigint, cnt bigint) language sql stable as $$
   select no, count(*) as cnt
