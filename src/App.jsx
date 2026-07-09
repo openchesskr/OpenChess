@@ -3349,9 +3349,54 @@ function dexIsUnlocked(chesscom, ccReady, unlockAll, pathSans) {
   const r = chesscom.analyze(pathSans);
   return !!(r && r.total > 0);
 }
-// (개편) 도감 오프닝 상세 블록 — 모식도에서 노드를 클릭하면 열린다. 기존 카드 내용(미리보기·해금
-// 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 추가로 보여준다.
-function DexMoveBlock({ path, m, isUnlocked, wdl, adopt, games, cc, onClose }) {
+// (2차 개편) 클릭으로 한 단계씩 펼치던 방식을 버리고, 모든 갈래를 최소 3수까지는 무조건, 그 이후는
+// 채택률이 20% 이상으로 유지되는 한 계속 자동으로 탐색해 미리 다 펼쳐진 거대한 트리를 만든다.
+// Lichess 오프닝 탐색기는 위치 하나당 호출 1번으로 그 자리의 모든 후보 수와 채택률을 함께 주므로,
+// 그 결과를 큐에 넣어 동시 5개까지 재귀적으로 펼쳐나간다(안전장치로 최대 노드 수를 제한).
+function useOpeningTreeAuto() {
+  const [version, setVersion] = useState(0);
+  const mapRef = useRef(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    mapRef.current = new Map();
+    setVersion((v) => v + 1);
+    const MAX_CONCURRENT = 5, MAX_NODES = 600;
+    let active = 0, started = 0;
+    const queue = [{ path: [], depth: 0 }];
+    const runNext = () => {
+      if (cancelled) return;
+      while (active < MAX_CONCURRENT && queue.length && started < MAX_NODES) {
+        const job = queue.shift();
+        started++; active++;
+        run(job).finally(() => { active--; runNext(); });
+      }
+    };
+    async function run({ path, depth }) {
+      const key = path.join(" ");
+      const node = snapNode(path);
+      const rawMoves = node ? node.moves.slice() : (path.length === 0 && SNAP.tree[""] ? SNAP.tree[""].moves.slice() : []);
+      addsFor(key).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
+      if (!rawMoves.length) { mapRef.current.set(key, []); if (!cancelled) setVersion((v) => v + 1); return; }
+      let lcMoves = [];
+      try { const lc = await fetchLichess(path); lcMoves = (lc && lc.moves) || []; } catch { }
+      if (cancelled) return;
+      const merged = rawMoves.map((m) => {
+        const hit = lcMoves.find((x) => x.san === m.san);
+        return { ...m, adopt: hit ? hit.adopt : 0, games: hit ? hit.games : 0, wdl: hit ? hit.wdl : null, name: m.name || (hit && hit.name) || null };
+      });
+      mapRef.current.set(key, merged);
+      setVersion((v) => v + 1);
+      for (const m of merged) { if (depth < 3 || m.adopt >= 20) queue.push({ path: [...path, m.san], depth: depth + 1 }); }
+      runNext();
+    }
+    runNext();
+    return () => { cancelled = true; };
+  }, []);
+  return { data: mapRef.current, version };
+}
+// (개편) 도감 오프닝 상세 블록 — 모식도 안, 그 수 노드 옆에 인라인으로 열리고 닫힌다. 기존 카드 내용
+// (미리보기·해금 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 더해 보여준다.
+function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style }) {
   const label = nameOverride(path.join(" "), m.san) ?? m.name ?? (m.isMain ? "Main Line" : null);
   const ply = path.length;
   const board = useMemo(() => boardFromSans(path), [path.join(" ")]);
@@ -3363,10 +3408,10 @@ function DexMoveBlock({ path, m, isUnlocked, wdl, adopt, games, cc, onClose }) {
     return tiered.find((x) => x.san === m.san) || null;
   }, [path.join(" "), m.san, board]);
   const kind = (tier && tier.kind) || (m.book ? "book" : "pending");
-  const kws = m.book ? deriveKeywords({ ...m, adopt: adopt ?? m.adopt }) : (Array.isArray(m.kw) ? m.kw : []);
+  const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
   const evTxt = m.evalCp != null ? fmtEvalCp(m.evalCp) : null;
   return (
-    <div style={{ borderRadius: 16, padding: 12, marginTop: 10, background: isUnlocked ? "linear-gradient(180deg,#FBF5E8,#E2D2B2)" : "linear-gradient(180deg,#33261A,#221610)", boxShadow: isUnlocked ? "0 5px 0 #B59A6E, 0 10px 18px -10px rgba(0,0,0,.5)" : "inset 0 1px 0 rgba(255,255,255,.05)", border: "1px solid " + (isUnlocked ? "#CDB98E" : "#000"), position: "relative" }}>
+    <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ width: 280, borderRadius: 16, padding: 12, background: isUnlocked ? "linear-gradient(180deg,#FBF5E8,#E2D2B2)" : "linear-gradient(180deg,#33261A,#221610)", boxShadow: "0 10px 30px -8px rgba(0,0,0,.65)", border: "1px solid " + (isUnlocked ? "#CDB98E" : "#000"), position: "absolute", zIndex: 50, ...style }}>
       <button onClick={onClose} aria-label="블록 닫기" className="press" style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: 7, border: "none", background: "rgba(0,0,0,.15)", color: isUnlocked ? T.ink : T.ivory, cursor: "pointer" }}>✕</button>
       <div style={{ position: "relative" }}>
         {isUnlocked ? <AnimatedMove sans={path} san={m.san} size={200} />
@@ -3380,8 +3425,8 @@ function DexMoveBlock({ path, m, isUnlocked, wdl, adopt, games, cc, onClose }) {
       </div>
       {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}</div>}
       {label && <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>}
-      {games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>채택률 {adopt != null ? adopt.toFixed(1) + "%" : "—"} · {fmtFull(games)}국</div>}
-      {isUnlocked && wdl && <div style={{ marginTop: 8 }}><WinBar wdl={wdl} /></div>}
+      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>채택률 {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"} · {fmtFull(m.games)}국</div>}
+      {isUnlocked && m.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={m.wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
         <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
           <span style={{ fontWeight: 800, color: "#2E6E2E" }}>내 승률 {cc.winRate}%</span>
@@ -3391,50 +3436,74 @@ function DexMoveBlock({ path, m, isUnlocked, wdl, adopt, games, cc, onClose }) {
     </div>
   );
 }
+// (2차 개편) 채택률이 높은 수일수록 형제 수들 사이에서 중앙에 오도록 재배치 — 실제 나무처럼 인기
+// 있는 핵심 라인이 줄기(중심)를 이루고, 인기 없는 라인이 양옆으로 곁가지처럼 갈라지게 하기 위함.
+function centerOrderByAdopt(kids) {
+  const sorted = kids.slice().sort((a, b) => (b.adopt || 0) - (a.adopt || 0));
+  const left = [], right = [];
+  sorted.forEach((k, i) => { if (i === 0) return; (i % 2 === 1 ? right : left).push(k); });
+  left.reverse();
+  return sorted.length ? [...left, sorted[0], ...right] : [];
+}
 // (개편) 전체 수 트리 모식도 — 데스크톱은 가로(왼쪽→오른쪽), 모바일은 세로(위→아래)로 뻗어나간다.
-// 처음에는 시작 위치의 다음 수(1수)만 펼쳐져 있고, 노드의 화살표를 누르면 그 수의 다음 수가
-// 펼쳐지며 점점 더 깊이 탐색할 수 있다(비이론 수·개발자가 추가한 수 포함, node.moves 전체 기준).
-// 노드 자체를 클릭하면 그 수의 상세 블록이 열리고 닫힌다.
-function OpeningSchematic({ expanded, onToggleExpand, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical }) {
-  const colW = vertical ? 92 : 124, rowH = vertical ? 58 : 44;
+// 클릭으로 펼칠 필요 없이 최소 3수 + 채택률 20% 이상 라인까지 미리 다 펼쳐진 트리가 렌더링되고,
+// 노드를 클릭하면 그 수의 상세 블록이 모식도 안, 그 노드 옆에 바로 열리고 닫힌다.
+function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical }) {
+  const colW = vertical ? 104 : 150, rowH = vertical ? 68 : 50;
   const { items, edges, maxDepth, maxPos } = useMemo(() => {
     let cursor = 0; const items = []; const edges = [];
-    const visit = (san, path, depth) => {
+    const visit = (san, path, depth, adopt) => {
       const key = path.join(" ");
-      const node = snapNode(path);
-      const rawMoves = node ? node.moves.slice() : [];
-      addsFor(key).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
-      const it = { san, path, depth, key, hasChildren: rawMoves.length > 0, unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
-      const isOpenBranch = depth === 0 || expanded.has(key);
+      const rawMoves = treeData.get(key);
+      const it = { san, path, depth, key, adopt, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
-      if (isOpenBranch) for (const m of rawMoves) kids.push(visit(m.san, [...path, m.san], depth + 1));
+      if (rawMoves && rawMoves.length) {
+        const ordered = centerOrderByAdopt(rawMoves.filter((m) => treeData.has([...path, m.san].join(" "))));
+        for (const m of ordered) kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0));
+      }
       if (!kids.length) it.pos = cursor++;
       else { it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; kids.forEach((c) => edges.push([it, c])); }
       items.push(it);
       return it;
     };
-    visit(null, [], 0);
+    visit(null, [], 0, 100);
     const visible = items.filter((it) => it.depth > 0);
     const maxDepth = visible.length ? Math.max(...visible.map((it) => it.depth)) : 1;
     const maxPos = items.length ? Math.max(...items.map((it) => it.pos)) : 0;
     return { items: visible, edges, maxDepth, maxPos };
-  }, [expanded, chesscom, ccReady, unlockAll]);
+  }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
   const coord = (it) => vertical ? { x: it.pos * colW, y: (it.depth - 1) * rowH } : { x: (it.depth - 1) * colW, y: it.pos * rowH };
-  const boxW = 78, boxH = 30;
-  const width = (vertical ? maxPos * colW : (maxDepth - 1) * colW) + boxW + 30;
-  const height = (vertical ? (maxDepth - 1) * rowH : maxPos * rowH) + boxH + 30;
-  const [pan, setPan] = useState({ x: 12, y: 12 });
+  const boxW = 92, boxH = 34;
+  const width = (vertical ? maxPos * colW : (maxDepth - 1) * colW) + boxW + 320;
+  const height = (vertical ? (maxDepth - 1) * rowH : maxPos * rowH) + boxH + 320;
+  const [pan, setPan] = useState({ x: 16, y: 16 });
   const [zoom, setZoom] = useState(1);
   const dragRef = useRef(null);
-  const clampZoom = (z) => Math.min(2, Math.max(0.4, z));
-  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const boxRef = useRef(null);
+  const centeredRef = useRef(false);
+  // (2차 개편) 트리가 채택률 기준으로 무게중심을 잡다 보니, 시작 위치(1.e4 등)가 캔버스 한참 아래로
+  // 밀려나 있을 수 있다 — 데이터가 어느 정도 쌓이면(트리 전체 세로/가로 폭 기준) 뷰포트 중앙이 트리
+  // 중앙을 보도록 한 번만 자동으로 맞춰준다(그 뒤로는 사용자가 직접 팬한 위치를 존중).
+  useEffect(() => {
+    if (centeredRef.current || items.length < 20 || maxDepth < 3) return;
+    const vw = boxRef.current ? boxRef.current.clientWidth : 1100;
+    const vh = boxRef.current ? boxRef.current.clientHeight : 640;
+    const contentW = vertical ? maxPos * colW + boxW : (maxDepth - 1) * colW + boxW;
+    const contentH = vertical ? (maxDepth - 1) * rowH + boxH : maxPos * rowH + boxH;
+    setPan({ x: Math.max(16, (vw - contentW) / 2), y: Math.max(16, (vh - contentH) / 2) });
+    centeredRef.current = true;
+  }, [items.length, maxDepth]);
+  const clampZoom = (z) => Math.min(2, Math.max(0.3, z));
+  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
   const onPointerUp = () => { dragRef.current = null; };
   const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
+  const openItem = openKey ? items.find((it) => it.key === openKey) : null;
+  const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
-    <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheelZoom}
-      style={{ position: "relative", overflow: "hidden", height: 340, borderRadius: 12, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
-      <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
+    <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheelZoom}
+      style={{ position: "relative", overflow: "hidden", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
         <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => setZoom(1)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
         <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
@@ -3446,26 +3515,29 @@ function OpeningSchematic({ expanded, onToggleExpand, openKey, onToggleOpen, che
             const pc = coord(p), cc2 = coord(c);
             const x1 = vertical ? pc.x + boxW / 2 : pc.x + boxW, y1 = vertical ? pc.y + boxH : pc.y + boxH / 2;
             const x2 = vertical ? cc2.x + boxW / 2 : cc2.x, y2 = vertical ? cc2.y : cc2.y + boxH / 2;
-            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={c.unlocked ? T.brass : "#C9B58C"} strokeWidth={1.6} opacity={c.unlocked ? 0.85 : 0.4} strokeLinecap="round" />;
+            // (2차 개편) 채택률에 비례한 굵기 — 채택률 높은 핵심 라인은 굵은 줄기처럼, 낮은 라인은 가는 곁가지처럼.
+            const wStroke = 1 + Math.min(7, (c.adopt || 0) / 12);
+            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={c.unlocked ? T.brass : "#C9B58C"} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round" />;
           })}
         </svg>
         {items.map((it) => {
           const { x, y } = coord(it);
           const isOpen = openKey === it.key;
-          const isExpanded = expanded.has(it.key);
+          const boxScale = 0.85 + Math.min(0.35, (it.adopt || 0) / 100);
+          const w = boxW * boxScale, h = boxH * boxScale;
           return (
-            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH, display: "flex", alignItems: "center", gap: 2 }}>
-              <button onClick={() => onToggleOpen(it.key)} className="press" style={{ flex: 1, height: boxH, borderRadius: 8, border: "1px solid " + (isOpen ? T.brass : it.unlocked ? "#CDB98E" : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : it.unlocked ? T.paper : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", color: isOpen ? "#241509" : it.unlocked ? T.ink : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 11.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, padding: 0 }}>
-                {!it.unlocked && <Lock size={10} />}{moveNumber(it.path.length - 1)}{it.san}
-              </button>
-              {it.hasChildren && (
-                <button onClick={() => onToggleExpand(it.key)} aria-label={isExpanded ? "접기" : "펼치기"} className="press" style={{ width: 20, height: boxH, borderRadius: 6, border: "1px solid " + T.brass, background: isExpanded ? T.brass : T.ivoryHi, color: isExpanded ? "#241509" : T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <ChevronRight size={13} strokeWidth={3} style={{ transform: (vertical ? "rotate(90deg) " : "") + (isExpanded ? "rotate(180deg)" : "rotate(0deg)"), transition: "transform .15s" }} />
-                </button>
-              )}
-            </div>
+            <button key={it.key} onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: x + (boxW - w) / 2, top: y + (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: "1.5px solid " + (isOpen ? T.brass : it.unlocked ? "#CDB98E" : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : it.unlocked ? T.paper : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", color: isOpen ? "#241509" : it.unlocked ? T.ink : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 11.5 + Math.min(3, (it.adopt || 0) / 30), cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, padding: 0, zIndex: isOpen ? 40 : 1 }}>
+              {!it.unlocked && <Lock size={10} />}{moveNumber(it.path.length - 1)}{it.san}
+            </button>
           );
         })}
+        {openItem && openParentM && (
+          <DexMoveBlock path={openItem.path.slice(0, -1)} m={openParentM} isUnlocked={openItem.unlocked}
+            cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)}
+            style={vertical
+              ? { left: Math.max(0, coord(openItem).x + boxW / 2 - 140), top: coord(openItem).y + boxH + 10 }
+              : { left: coord(openItem).x + boxW + 10, top: Math.max(0, coord(openItem).y + boxH / 2 - 150) }} />
+        )}
       </div>
     </div>
   );
@@ -3474,28 +3546,13 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
-  // (개편) 도감 오프닝 — 드릴다운 대신 전체 수 트리 모식도. expanded: 자식이 펼쳐진 노드 경로(key) 집합,
-  // openKey: 지금 블록으로 열려 있는 노드의 경로(key). 모바일(≤768px)은 세로, 그 외는 가로 모식도.
-  const [expanded, setExpanded] = useState(() => new Set());
+  // (2차 개편) 도감 오프닝 — 클릭으로 펼치던 방식을 버리고 최소 3수+채택률 20% 이상 라인까지 자동으로
+  // 미리 다 펼쳐진 트리(useOpeningTreeAuto)를 사용. openKey: 지금 블록으로 열려 있는 노드의 경로(key).
+  // 모바일(≤768px)은 세로, 그 외는 가로 모식도.
+  const { data: treeData, version: treeVersion } = useOpeningTreeAuto();
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
-  const onToggleExpand = useCallback((k) => setExpanded((prev) => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; }), []);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
-  const openPath = openKey ? openKey.split(" ") : null;
-  const openParentPath = openPath ? openPath.slice(0, -1) : null;
-  const openSan = openPath ? openPath[openPath.length - 1] : null;
-  const openM = useMemo(() => {
-    if (!openPath) return null;
-    const pnode = snapNode(openParentPath);
-    const list = pnode ? pnode.moves.slice() : (openParentPath.length === 0 ? (SNAP.tree[""] ? SNAP.tree[""].moves.slice() : []) : []);
-    addsFor(openParentPath.join(" ")).forEach((a) => { if (!list.some((x) => x.san === a.san)) list.push({ san: a.san, dev: true }); });
-    return list.find((x) => x.san === openSan) || null;
-  }, [openKey]);
-  const [openLc, setOpenLc] = useState(null);
-  useEffect(() => { let cc = false; setOpenLc(null); if (!openPath) return; fetchLichess(openParentPath).then((r) => { if (!cc) setOpenLc(r); }).catch(() => {}); return () => { cc = true; }; }, [openKey]);
-  const openLcMove = openLc && openSan ? openLc.moves.find((x) => x.san === openSan) : null;
-  const openCc = ccReady && openPath ? chesscom.analyze(openPath) : null;
-  const openUnlocked = openPath ? dexIsUnlocked(chesscom, ccReady, unlockAll, openPath) : false;
   return (
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
@@ -3554,11 +3611,10 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
         </div>
       ) : (<>
       <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 10px" }}>
-        {ccReady ? "내 chess.com 대국에 실제로 나온 수만 해금돼요. 마디를 클릭하면 상세 정보가, 화살표를 누르면 다음 수가 펼쳐집니다."
+        {ccReady ? "내 chess.com 대국에 실제로 나온 수만 해금돼요. 마디를 클릭하면 상세 정보가 그 자리에 열립니다. 굵은 줄기일수록 채택률이 높은 핵심 라인이에요."
           : "설정 탭에서 chess.com 계정을 연동하면, 실제로 둔 적 있는 수만큼 해금돼 보여요."}
       </p>
-      <OpeningSchematic expanded={expanded} onToggleExpand={onToggleExpand} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} />
-      {openM && openPath && <DexMoveBlock path={openParentPath} m={openM} isUnlocked={openUnlocked} wdl={openLcMove ? openLcMove.wdl : null} adopt={openLcMove ? openLcMove.adopt : null} games={openLcMove ? openLcMove.games : null} cc={openCc} onClose={() => setOpenKey(null)} />}
+      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} />
       </>)}
     </div>
   );
