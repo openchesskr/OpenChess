@@ -46,7 +46,7 @@ const PIECE_CROSS = "M47,48 L47,36 L40,36 L40,30 L47,30 L47,22 L53,22 L53,30 L60
 // (20차 개편) SVG 기반 기물 스킨(바다 등)의 기물별 세로 배율 — 사용자가 만든 실제 이미지 세트에서
 // 측정한 "받침(base) 폭 대비 전체 높이" 비율을 그대로 반영해, 킹·퀸은 크고 폰·비숍은 아담한 실제
 // 체스 세트 비율에 가깝게 만든다(받침 폭은 항상 1배로 고정, 세로만 이 배율만큼 늘어남).
-const PIECE_HEIGHT_FACTOR = { P: 1.18, N: 1.40, B: 1.26, R: 1.28, Q: 1.50, K: 1.70 };
+const PIECE_HEIGHT_FACTOR = { P: 1.15, N: 1.30, B: 1.32, R: 1.23, Q: 1.45, K: 1.49 };
 // 위 배율을 g-transform에 그대로 곱하면 기물별 원본 실루엣이 이미 서로 다른 높이(예: 폰은 y=44부터,
 // 룩은 y=18부터 시작)를 갖고 있어 배율이 중복 적용돼 지나치게 커진다(특히 킹 십자가가 보드 밖으로
 // 잘림). 각 기물의 "늘이기 전 원래 높이"를 기준으로 역산한 배율을 써야 최종 높이가 정확히
@@ -60,13 +60,32 @@ const PIECE_IMG_BASE_PX = 79;
 // (버그) 기물이 칸에 비해 작고, 받침 기준 정렬 때문에 칸 아래쪽에 치우쳐 보이던 문제 — 크기를
 // 키우고(0.56→0.74) SVG 기물도 같은 비율을 쓰도록 통일했다. 정렬은 다시 칸 정중앙으로 되돌린다.
 const PIECE_BASE_RATIO = 0.74; // 칸 크기(size) 대비 기물 받침 폭의 비율 — 이미지·SVG 기물 공통 기준
-const PIECE_IMG = {
-  P: { w: { src: "/pieces/white-pawn.png", w: 80, h: 93 }, b: { src: "/pieces/black-pawn.png", w: 80, h: 93 } },
-  N: { w: { src: "/pieces/white-knight.png", w: 93, h: 112 }, b: { src: "/pieces/black-knight.png", w: 134, h: 110 } },
-  B: { w: { src: "/pieces/white-bishop.png", w: 80, h: 99 }, b: { src: "/pieces/black-bishop.png", w: 80, h: 100 } },
-  R: { w: { src: "/pieces/white-rook.png", w: 80, h: 101 }, b: { src: "/pieces/black-rook.png", w: 80, h: 101 } },
-  Q: { w: { src: "/pieces/white-queen.png", w: 119, h: 117 }, b: { src: "/pieces/black-queen.png", w: 120, h: 116 } },
-  K: { w: { src: "/pieces/white-king.png", w: 106, h: 134 }, b: { src: "/pieces/black-king.png", w: 105, h: 133 } },
+// (2차 개편) 기물 스킨이 여러 개(기본·바다)로 늘어나 이미지 세트도 스킨별로 따로 관리한다.
+// basePx: 그 스킨 이미지 세트가 공유하는 "받침" 폭(원본 픽셀) — 스킨마다 실제 이미지가 다르므로
+// 값도 다르다(기본은 정확히 79px, 바다는 제작 특성상 187~195px 사이로 약간의 편차가 있어 평균값 사용).
+const PIECE_IMG_SETS = {
+  classic: {
+    basePx: 79,
+    images: {
+      P: { w: { src: "/pieces/white-pawn.png", w: 79, h: 91 }, b: { src: "/pieces/black-pawn.png", w: 79, h: 91 } },
+      N: { w: { src: "/pieces/white-knight.png", w: 79, h: 106 }, b: { src: "/pieces/black-knight.png", w: 79, h: 100 } },
+      B: { w: { src: "/pieces/white-bishop.png", w: 79, h: 104 }, b: { src: "/pieces/black-bishop.png", w: 79, h: 104 } },
+      R: { w: { src: "/pieces/white-rook.png", w: 79, h: 97 }, b: { src: "/pieces/black-rook.png", w: 79, h: 97 } },
+      Q: { w: { src: "/pieces/white-queen.png", w: 119, h: 115 }, b: { src: "/pieces/black-queen.png", w: 119, h: 114 } },
+      K: { w: { src: "/pieces/white-king.png", w: 105, h: 117 }, b: { src: "/pieces/black-king.png", w: 104, h: 118 } },
+    },
+  },
+  ocean: {
+    basePx: 190,
+    images: {
+      P: { w: { src: "/pieces/ocean/white-pawn.png", w: 190, h: 219 }, b: { src: "/pieces/ocean/black-pawn.png", w: 192, h: 219 } },
+      N: { w: { src: "/pieces/ocean/white-knight.png", w: 189, h: 255 }, b: { src: "/pieces/ocean/black-knight.png", w: 196, h: 242 } },
+      B: { w: { src: "/pieces/ocean/white-bishop.png", w: 189, h: 251 }, b: { src: "/pieces/ocean/black-bishop.png", w: 193, h: 251 } },
+      R: { w: { src: "/pieces/ocean/white-rook.png", w: 190, h: 234 }, b: { src: "/pieces/ocean/black-rook.png", w: 194, h: 233 } },
+      Q: { w: { src: "/pieces/ocean/white-queen.png", w: 283, h: 272 }, b: { src: "/pieces/ocean/black-queen.png", w: 284, h: 277 } },
+      K: { w: { src: "/pieces/ocean/white-king.png", w: 248, h: 281 }, b: { src: "/pieces/ocean/black-king.png", w: 254, h: 282 } },
+    },
+  },
 };
 /* (20\uCC28 \uAE30\uB2A54 \uB300\uBE44) \uBCF4\uB4DC/\uAE30\uBB3C \uC2A4\uD0A8 \uB808\uC9C0\uC2A4\uD2B8\uB9AC \u2014 \uAE30\uBCF8(classic) \uD558\uB098\uB9CC \uC6B0\uC120 \uB450\uACE0, \uC0C1\uC810\uC5D0\uC11C \uD30C\uB294
    \uBC14\uB2E4(ocean) \uC2A4\uD0A8 \uB4F1 \uCD94\uAC00 \uC2A4\uD0A8\uC740 \uC774 \uAC1D\uCCB4\uC5D0 \uD56D\uBAA9\uB9CC \uB298\uB9AC\uBA74 PieceGlyph\u00B7Board\uAC00 \uADF8\uB300\uB85C \uC9C0\uC6D0\uD55C\uB2E4. */
@@ -75,19 +94,21 @@ const PIECE_IMG = {
    \uB300\uAC01\uC120 \uD558\uC774\uB77C\uC774\uD2B8\uB97C \uACB9\uCE5C \uADF8\uB77C\uB514\uC5B8\uD2B8, \uAE30\uBB3C\uC740 \uBC18\uD22C\uBA85 rgba \uCC44\uC6C0 \uC704\uC5D0 \uD074\uB9BD\uB41C \uC720\uB9AC \uD558\uC774\uB77C\uC774\uD2B8\uB97C \uC5B9\uB294\uB2E4. */
 const BOARD_SKINS = {
   classic: { label: "\uAE30\uBCF8", price: 0, light: T.boardLight, dark: T.boardDark },
-  ocean: {
-    label: "\uD478\uB978 \uBC14\uB2E4", price: 500,
-    light: "linear-gradient(135deg, rgba(255,255,255,.55), transparent 45%), linear-gradient(160deg, #BFE6F7, #6FB9DE)",
-    dark: "linear-gradient(135deg, rgba(255,255,255,.28), transparent 45%), linear-gradient(160deg, #1E75A8, #0A3C5C)",
-  },
+  // (2\uCC28 \uAC1C\uD3B8) \uC0AC\uC6A9\uC790\uAC00 \uC9C1\uC811 \uB9CC\uB4E0 \uBC14\uB2E4 \uD14C\uB9C8 \uCE74\uD3B8(\uBAA8\uB798\uBE5B/\uBB3C\uACB0\u00B7\uBAA8\uB798) \uC774\uBBF8\uC9C0\uB85C \uAD50\uCCB4 \u2014
+  // \uCE78\uB9C8\uB2E4 \uC804\uCCB4 8x8 \uC774\uBBF8\uC9C0\uC5D0\uC11C \uC790\uAE30 \uC704\uCE58\uC758 \uC870\uAC01\uB9CC background-position\uC73C\uB85C \uC798\uB77C \uBCF4\uC5EC\uC900\uB2E4(boardSquareBg).
+  ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: "/boards/ocean-board.jpg" },
 };
+// (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
+// \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
+function boardSquareBg(sk, light, r, c, cell) {
+  if (sk.image) return { backgroundImage: "url(" + sk.image + ")", backgroundSize: (cell * 8) + "px " + (cell * 8) + "px", backgroundPosition: (-(((c % 8) + 8) % 8) * cell) + "px " + (-(((r % 8) + 8) % 8) * cell) + "px" };
+  return { background: light ? sk.light : sk.dark };
+}
 const PIECE_SKINS = {
   classic: { label: "\uAE30\uBCF8", price: 0, image: true, light: T.ivoryHi, dark: "#0E0907", stroke: "#6B4F22", accent: T.brass, accentOpacity: 0.92, glossy: false },
-  ocean: {
-    label: "\uD478\uB978 \uBC14\uB2E4", price: 500,
-    light: "rgba(205,236,250,.72)", dark: "rgba(15,66,102,.82)", stroke: "#1B7BAE",
-    accent: "#8FE0F2", accentOpacity: 0.85, glossy: true,
-  },
+  // (2\uCC28 \uAC1C\uD3B8) \uBC14\uB2E4 \uAE30\uBB3C\uB3C4 \uC0AC\uC6A9\uC790\uAC00 \uB9CC\uB4E0 \uC774\uBBF8\uC9C0 \uC138\uD2B8(public/pieces/ocean)\uB85C \uAD50\uCCB4 \u2014 classic\uACFC \uB3D9\uC77C\uD558\uAC8C
+  // image:true\uB85C PieceGlyph\uC758 \uC774\uBBF8\uC9C0 \uB80C\uB354\uB9C1 \uACBD\uB85C\uB97C \uD0C0\uB418, PIECE_IMG_SETS.ocean\uC758 \uC790\uAE30 \uC774\uBBF8\uC9C0\uB97C \uC4F4\uB2E4.
+  ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: true },
 };
 /* \uC7A5\uCC29\uB41C \uC2A4\uD0A8\uC740 Context\uB85C \uD758\uB824\uBCF4\uB0B4 Board\u00B7PieceGlyph \uC5B4\uB514\uC11C\uB4E0(\uD504\uB86D \uC548 \uB118\uACA8\uB3C4) \uC790\uB3D9 \uC801\uC6A9\uB418\uAC8C \uD55C\uB2E4 \u2014
    \uBCF4\uB4DC\uAC00 \uD559\uC2B5 \uD0ED\u00B7\uD37C\uC990 \uD480\uC774\u00B7\uBBF8\uB2C8 \uD504\uB9AC\uBDF0 \uB4F1 \uC218\uC2ED \uACF3\uC5D0\uC11C \uC4F0\uC774\uBBC0\uB85C \uB9E4 \uD638\uCD9C\uBD80\uB9C8\uB2E4 prop\uC744 \uAF42\uB294 \uB300\uC2E0
@@ -96,17 +117,20 @@ const SkinContext = createContext({ boardSkin: "classic", pieceSkin: "classic" }
 function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
 function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSkin }) {
   const ctx = useContext(SkinContext);
-  const sk = PIECE_SKINS[pieceSkin || ctx.pieceSkin] || PIECE_SKINS.classic;
+  const skinId = pieceSkin || ctx.pieceSkin;
+  const sk = PIECE_SKINS[skinId] || PIECE_SKINS.classic;
   const light = color === "w";
   // (버그) useId는 스킨(이미지/SVG)에 따라 조건부로 호출하면 안 된다 — 기물 스킨을 갈아 끼우면
   // 같은 컴포넌트 인스턴스가 두 분기 사이를 오가며 훅 호출 개수가 달라져 React 규칙을 어기게 된다.
   const rawId = useId();
   if (sk.image) {
-    const meta = PIECE_IMG[type] && PIECE_IMG[type][color];
+    // (2차 개편) 이미지 세트를 스킨별로 분리 — 기본(classic)과 바다(ocean)가 서로 다른 이미지·받침 폭을 쓴다.
+    const imgSet = PIECE_IMG_SETS[skinId] || PIECE_IMG_SETS.classic;
+    const meta = imgSet.images[type] && imgSet.images[type][color];
     if (!meta) return null;
     // size는 다른 스킨과 동일하게 "칸에 맞춘 정사각형 박스" 한 변 길이로 전달된다. 그 안에서 받침이
     // BASE_RATIO만큼을 차지하도록 스케일을 정하면, 모든 기물의 받침이 항상 같은 화면 폭이 된다.
-    const scale = (size * PIECE_BASE_RATIO) / PIECE_IMG_BASE_PX;
+    const scale = (size * PIECE_BASE_RATIO) / imgSet.basePx;
     return (
       <img src={meta.src} alt={type} draggable={draggable} onDragStart={onDragStart}
         style={{ width: meta.w * scale, height: meta.h * scale, display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }} />
@@ -155,23 +179,6 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
           )}
         </g>
       </svg>
-    </div>
-  );
-}
-
-/* ============================================================ 브랜드 로고 ============================================================ */
-// (19차) 아이콘은 사용자가 직접 제공한 저폴리곤 나이트 기물 이미지(public/logo-knight.png)를 사용한다.
-function BrandWordmark({ compact }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: compact ? 0 : 4 }}>
-      <div style={{ fontFamily: "'Black Ops One', 'Noto Sans KR', sans-serif", fontWeight: 400, fontSize: compact ? 15 : 19, letterSpacing: ".01em", background: "linear-gradient(180deg,#F3E2C0,#C49A50)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>OpenChess</div>
-      {!compact && (
-        <div className="flex items-center" style={{ gap: 4 }}>
-          <div style={{ flex: 1, height: 1.5, background: "linear-gradient(90deg,transparent,#C49A50)" }} />
-          <div style={{ width: 4, height: 4, background: "#C49A50", transform: "rotate(45deg)", flexShrink: 0 }} />
-          <div style={{ flex: 1, height: 1.5, background: "linear-gradient(90deg,#C49A50,transparent)" }} />
-        </div>
-      )}
     </div>
   );
 }
@@ -1742,15 +1749,15 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
               const isSel = selected && selected[0] === r && selected[1] === c;
               const isTarget = targetSet.has(r + "," + c);
-              const coordCol = light ? sk.dark : sk.light;
+              const coordCol = sk.image ? "rgba(255,255,255,.9)" : (light ? sk.dark : sk.light);
               return (
                 <div key={ci}
                   onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
                   onDragOver={interactive ? (e) => e.preventDefault() : undefined}
                   onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
-                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark, position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
-                  {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{8 - r}</span>}
-                  {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol }}>{FILES[c]}</span>}
+                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c, cell), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
+                  {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{8 - r}</span>}
+                  {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{FILES[c]}</span>}
                   {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
                   {lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
                     <>
@@ -2275,7 +2282,7 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {rows.map((row, vr) => (
             <div key={vr} style={{ display: "flex" }}>
               {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark, boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
+                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c, cell), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
             </div>
           ))}
           {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
@@ -3360,7 +3367,10 @@ function useOpeningTreeAuto() {
     let cancelled = false;
     mapRef.current = new Map();
     setVersion((v) => v + 1);
-    const MAX_CONCURRENT = 5, MAX_NODES = 600;
+    // (버그) 트리가 너무 금방 끊겨 보인다는 피드백 — 최소 깊이(모든 갈래가 무조건 펼쳐지는 수)를
+    // 3수에서 4수로, 그 이후 계속 펼쳐지는 채택률 기준도 20%에서 15%로 낮춰 조금 더 길게 이어지게 한다.
+    const MIN_DEPTH = 4, ADOPT_CUTOFF = 15;
+    const MAX_CONCURRENT = 5, MAX_NODES = 900;
     let active = 0, started = 0;
     const queue = [{ path: [], depth: 0 }];
     const runNext = () => {
@@ -3386,7 +3396,7 @@ function useOpeningTreeAuto() {
       });
       mapRef.current.set(key, merged);
       setVersion((v) => v + 1);
-      for (const m of merged) { if (depth < 3 || m.adopt >= 20) queue.push({ path: [...path, m.san], depth: depth + 1 }); }
+      for (const m of merged) { if (depth < MIN_DEPTH || m.adopt >= ADOPT_CUTOFF) queue.push({ path: [...path, m.san], depth: depth + 1 }); }
       runNext();
     }
     runNext();
@@ -3485,7 +3495,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 밀려나 있을 수 있다 — 데이터가 어느 정도 쌓이면(트리 전체 세로/가로 폭 기준) 뷰포트 중앙이 트리
   // 중앙을 보도록 한 번만 자동으로 맞춰준다(그 뒤로는 사용자가 직접 팬한 위치를 존중).
   useEffect(() => {
-    if (centeredRef.current || items.length < 20 || maxDepth < 3) return;
+    if (centeredRef.current || items.length < 20 || maxDepth < 4) return;
     const vw = boxRef.current ? boxRef.current.clientWidth : 1100;
     const vh = boxRef.current ? boxRef.current.clientHeight : 640;
     const contentW = vertical ? maxPos * colW + boxW : (maxDepth - 1) * colW + boxW;
@@ -3542,7 +3552,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     </div>
   );
 }
-function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
+function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus }) {
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
@@ -3553,6 +3563,8 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
+  // (2차 개편) 설정 탭에 있던 "이론 수 체계 추가"를 여기로 옮겨왔다 — 기본은 접혀 있고 개발자가 필요할 때만 연다.
+  const [showEditor, setShowEditor] = useState(false);
   return (
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
@@ -3615,6 +3627,19 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
           : "설정 탭에서 chess.com 계정을 연동하면, 실제로 둔 적 있는 수만큼 해금돼 보여요."}
       </p>
       <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} />
+      {/* (2차 개편) 이론 수 체계 편집 — 설정 탭에 있던 개발자 전용 기능을 도감(오프닝)으로 옮겨 통합. */}
+      {canAdd && (
+        <div style={{ marginTop: 16 }}>
+          <button onClick={() => setShowEditor((v) => !v)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 800, padding: "7px 14px", borderRadius: 9, border: "1px solid " + T.brass, background: showEditor ? T.brass : "transparent", color: showEditor ? "#241509" : T.brassHi, cursor: "pointer" }}>
+            <Settings size={13} /> 이론 수 체계 편집 {showEditor ? "닫기" : "열기"}
+          </button>
+          {showEditor && (
+            <div style={{ marginTop: 10, padding: 14, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
+              <SchematicEditor bumpContent={bumpContent} contentVer={contentVer} canAdd={canAdd} focusPath={treeFocus} setFocusPath={setTreeFocus} />
+            </div>
+          )}
+        </div>
+      )}
       </>)}
     </div>
   );
@@ -4192,7 +4217,7 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
           <div key={vr} style={{ display: "flex" }}>
             {row.map((p, vc) => {
               const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", background: light ? sk.light : sk.dark }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c, cell) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
             })}
           </div>
         ))}
@@ -5875,7 +5900,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canAdd, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, treeFocus, setTreeFocus, totalXp, solvedCount }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -5973,13 +5998,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
 
       {/* (18차 보충 기능3) 전역 퍼즐 수 길이 상한 설정은 삭제 — 개별 퍼즐의 수 길이는 퍼즐 풀이 창에서 개발자가 직접 조정한다. */}
 
-      {/* (기능6) 이론 수 체계 추가 (개발자/공동 개발자 모드) */}
-      {canAdd && (
-        <div style={card}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>이론 수 체계 추가</div>
-          <SchematicEditor bumpContent={bumpContent} contentVer={contentVer} canAdd={canAdd} focusPath={treeFocus} setFocusPath={setTreeFocus} />
-        </div>
-      )}
+      {/* (2차 개편) 이론 수 체계 추가는 도감 탭(오프닝)으로 이동 — 설정 탭에는 더 이상 두지 않는다. */}
 
       {/* 공동 개발자 관리 (개발자 모드 한정) */}
       {canManageCodev && (
@@ -6074,9 +6093,13 @@ function CoinIcon({ size = 16 }) {
 function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
   const isFree = sk.price === 0;
   const preview = kind === "board" ? (
-    <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", border: "1px solid #00000033", flexShrink: 0 }}>
-      {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; const light = (r + c) % 2 === 0; return <div key={i} style={{ background: light ? sk.light : sk.dark }} />; })}
-    </div>
+    sk.image ? (
+      <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", border: "1px solid #00000033", flexShrink: 0, backgroundImage: "url(" + sk.image + ")", backgroundSize: "cover", backgroundPosition: "center" }} />
+    ) : (
+      <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", border: "1px solid #00000033", flexShrink: 0 }}>
+        {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; const light = (r + c) % 2 === 0; return <div key={i} style={{ background: light ? sk.light : sk.dark }} />; })}
+      </div>
+    )
   ) : (
     <div className="flex items-center gap-1" style={{ width: 64, height: 64, borderRadius: 8, background: "#2E1B10", flexShrink: 0, justifyContent: "center" }}>
       <PieceGlyph type="K" color="w" size={28} pieceSkin={id} />
@@ -7517,8 +7540,10 @@ export default function App() {
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
       <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: narrowHeader ? "12px 14px" : "16px 20px", flexWrap: "wrap", rowGap: 10, columnGap: narrowHeader ? 10 : 14 }}>
         <div className="flex items-center" style={{ gap: narrowHeader ? 8 : 12 }}>
-          <img src="/logo-knight.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 34 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-          <BrandWordmark compact={narrowHeader} />
+          {/* (버그) 사용자가 아이콘+워드마크가 합쳐진 새 로고(OpenChessLogo.png)를 제공해, 따로 그리던
+              별도 나이트 아이콘 이미지 + BrandWordmark 텍스트 조합을 이 로고 하나로 교체한다
+              (같이 쓰면 "OpenChess" 글자가 두 번 겹쳐 보임). */}
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 30 : 40, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10 }}>
           {/* (18차 UI8) 레벨 UI를 아이디 왼쪽으로 이동, 레벨 텍스트·게이지는 좌우로 나란히 배치 */}
@@ -7611,11 +7636,11 @@ export default function App() {
 
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 110px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
-        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
+        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canAdd={canAdd} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} treeFocus={treeFocus} setTreeFocus={setTreeFocus} totalXp={totalXp} solvedCount={solved.size} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} />}
       </main>
 
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderTop: "1px solid #000", height: 66, paddingBottom: "env(safe-area-inset-bottom)" }}>
