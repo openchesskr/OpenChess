@@ -825,21 +825,6 @@ function hangingLoss(board, color, skip) {
   }
   return maxLoss;
 }
-// (20차) 이동한 기물이 상대에게 잡힐 위협에 놓이더라도, 그 기물 자신이 동시에 자신과 같거나 더
-// 비싼 상대 기물을 공격하고 있다면 그건 일방적인 희생이 아니라 되받아치는 카운터어택(반격)이다.
-function maxAttackedEnemyVal(board, tr, tc, color) {
-  const p = board[tr][tc]; if (!p) return 0;
-  const enemy = color === "w" ? "b" : "w";
-  let maxVal = 0;
-  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-    const q = board[r][c]; if (!q || q.c !== enemy || q.t === "K") continue;
-    let can;
-    if (p.t === "P") { const dir = color === "w" ? -1 : 1; can = (r - tr === dir && Math.abs(c - tc) === 1); }
-    else can = canMove(board, p.t, color, tr, tc, r, c, true);
-    if (can && VAL[q.t] > maxVal) maxVal = VAL[q.t];
-  }
-  return maxVal;
-}
 function isSacrifice(board, sanRaw, color) {
   const info = sanSrc(board, sanRaw, color);
   if (!info || info.castle) return false;
@@ -849,9 +834,6 @@ function isSacrifice(board, sanRaw, color) {
   const capturedVal = info.isCap ? (board[tr][tc] ? VAL[board[tr][tc].t] : 1) : 0;
   const after = applySan(board, sanRaw, color);
   const enemy = color === "w" ? "b" : "w";
-  // 이동한 기물이 도착 칸에서 자신과 같거나 더 비싼 상대 기물을 되받아 공격하고 있다면(카운터어택),
-  // 상대가 이 기물을 잡더라도 일방적인 손해가 아니므로 희생으로 보지 않는다.
-  if (maxAttackedEnemyVal(after, tr, tc, color) >= VAL[info.piece]) return false;
   let oppGain = seeSquare(after, tr, tc, enemy);       // 상대가 이 칸에서 얻는 순이득(기하학적 계산)
   // (16차) 상대가 체크 상태라 체크를 해소하며 이 칸을 잡는 수가 하나도 legal하지 않다면(더블체크로 반드시
   // 킹을 움직여야 하는 경우 등), 실제로는 되잡을 수 없으므로 순이득을 0으로 취급한다.
