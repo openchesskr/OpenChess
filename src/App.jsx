@@ -2269,6 +2269,7 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
   const skCtx = useContext(SkinContext);
   const sk = BOARD_SKINS[skCtx.boardSkin] || BOARD_SKINS.classic;
   const cell = Math.floor(size / 8);
+  const inner = cell * 8;
   const before = useMemo(() => boardFromSans(sans), [sans.join(" ")]);
   const color = sans.length % 2 === 0 ? "w" : "b";
   const geo = useMemo(() => sanSrc(before, san, color), [before, san, color]);
@@ -2287,26 +2288,34 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
   const tx = (vr, vc) => (flip ? [7 - vr, 7 - vc] : [vr, vc]);
   const rows = flip ? [...before].reverse().map((r) => [...r].reverse()) : before;
   const [dfr0, dfr1] = dv(fr[0], fr[1]); const [dto0, dto1] = dv(to[0], to[1]);
-  const dx = (dto1 - dfr1) * cell, dy = (dto0 - dfr0) * cell;
-  const px = (r, c) => { const [vr, vc] = dv(r, c); return [vc * cell + cell / 2, vr * cell + cell / 2]; };
+  // (버그 수정) Board와 동일하게 px(cell) 대신 그리드 전체 대비 퍼센트로 옮겨 슬라이드 이동을 계산 —
+  // 이동 기물 요소 자신의 너비(12.5% = 칸 1개)를 기준으로 translate(N*100%)하면 실제 렌더 크기와
+  // 무관하게 항상 정확히 N칸만큼 이동한다.
+  const dxPct = (dto1 - dfr1) * 100, dyPct = (dto0 - dfr0) * 100;
+  const pxu = (r, c) => { const [vr, vc] = dv(r, c); return [vc + 0.5, vr + 0.5]; };  // 화살표용 보드 칸 단위(0~8) 좌표
   return (
     <div>
       {/* (UI4) Board와 정확히 같은 padding/width 공식을 써서 퍼즐에서 애니메이션↔인터랙티브 보드 전환 시
           바깥 박스 크기가 바뀌어(도합 16px 차이) 보드가 "흔들리는" 것처럼 보이던 문제를 없앤다. */}
-      <div style={{ width: cell * 8 + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto" }}>
-        <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "2px solid " + T.brass }}>
-          {rows.map((row, vr) => (
-            <div key={vr} style={{ display: "flex" }}>
-              {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
-            </div>
-          ))}
-          {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
+      {/* (버그 수정) Board와 마찬가지로 flex row 고정 px 대신 aspectRatio 그리드로 바꾸고, 겹쳐 그리는
+          이동 기물·배지·화살표도 그리드 전체 대비 퍼센트/논리 좌표(0~8)로 옮겨, 컨테이너가 좁아져도
+          (집중학습·퍼즐 화면 등) 칸이 정사각형을 벗어나거나 좌표·화살표가 어긋나지 않게 한다. */}
+      <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
+        <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+          {rows.map((row, vr) => row.map((p, vc) => {
+            const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
+            return (
+              <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
+                {p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}
+              </div>
+            );
+          }))}
+          {mp && <div key={cyc} style={{ position: "absolute", top: (dfr0 / 8 * 100) + "%", left: (dfr1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dxPct + "%," + dyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
           {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
-          {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: dto0 * cell - cell * 0.16, left: dto1 * cell + cell * 0.7, width: cell * 0.42, height: cell * 0.42, borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.2)}</div>}
-          <svg width={cell * 8} height={cell * 8} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
-            <defs><marker id="dgr" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill={T.blunder} /></marker><marker id="idea" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill={T.brass} /></marker></defs>
-            {extraArrows.map((a, i) => { const [x1, y1] = px(a.from[0], a.from[1]); const [x2, y2] = px(a.to[0], a.to[1]); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={a.kind === "danger" ? T.blunder : T.brass} strokeWidth={Math.max(3, cell * 0.1)} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />; })}
+          {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: ((dto0 - 0.16) / 8 * 100) + "%", left: ((dto1 + 0.7) / 8 * 100) + "%", width: "5.25%", height: "5.25%", borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.2)}</div>}
+          <svg viewBox="0 0 8 8" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
+            <defs><marker id="dgr" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.blunder} /></marker><marker id="idea" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.brass} /></marker></defs>
+            {extraArrows.map((a, i) => { const [x1, y1] = pxu(a.from[0], a.from[1]); const [x2, y2] = pxu(a.to[0], a.to[1]); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={a.kind === "danger" ? T.blunder : T.brass} strokeWidth={0.1} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />; })}
           </svg>
         </div>
       </div>
@@ -3539,31 +3548,40 @@ function centerOrderByAdopt(kids) {
 // 클릭으로 펼칠 필요 없이 최소 3수 + 채택률 20% 이상 라인까지 미리 다 펼쳐진 트리가 렌더링되고,
 // 노드를 클릭하면 그 수의 상세 블록이 모식도 안, 그 노드 옆에 바로 열리고 닫힌다.
 function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical }) {
-  const colW = vertical ? 104 : 150, rowH = vertical ? 68 : 50;
+  // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
+  // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
+  // kind/evalCp를 한 번에 계산해 넘겨준다(이미 불러온 rawMoves를 재사용하므로 추가 요청은 없음).
+  const colW = vertical ? 108 : 158, rowH = vertical ? 78 : 58;
   const { items, edges, maxDepth, maxPos } = useMemo(() => {
     let cursor = 0; const items = []; const edges = [];
-    const visit = (san, path, depth, adopt) => {
+    const visit = (san, path, depth, adopt, kind, evalCp) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
-      const it = { san, path, depth, key, adopt, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      const it = { san, path, depth, key, adopt, kind, evalCp, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
       if (rawMoves && rawMoves.length) {
-        const ordered = centerOrderByAdopt(rawMoves.filter((m) => treeData.has([...path, m.san].join(" "))));
-        for (const m of ordered) kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0));
+        const filtered = rawMoves.filter((m) => treeData.has([...path, m.san].join(" ")));
+        const ordered = centerOrderByAdopt(filtered);
+        const board = boardFromSans(path);
+        const tiered = assignTiers(filtered, path.length, board, key);
+        for (const m of ordered) {
+          const t = tiered.find((x) => x.san === m.san);
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null));
+        }
       }
       if (!kids.length) it.pos = cursor++;
       else { it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; kids.forEach((c) => edges.push([it, c])); }
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100);
+    visit(null, [], 0, 100, null, null);
     const visible = items.filter((it) => it.depth > 0);
     const maxDepth = visible.length ? Math.max(...visible.map((it) => it.depth)) : 1;
     const maxPos = items.length ? Math.max(...items.map((it) => it.pos)) : 0;
     return { items: visible, edges, maxDepth, maxPos };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
   const coord = (it) => vertical ? { x: it.pos * colW, y: (it.depth - 1) * rowH } : { x: (it.depth - 1) * colW, y: it.pos * rowH };
-  const boxW = 92, boxH = 34;
+  const boxW = 98, boxH = 44;
   const width = (vertical ? maxPos * colW : (maxDepth - 1) * colW) + boxW + 320;
   const height = (vertical ? (maxDepth - 1) * rowH : maxPos * rowH) + boxH + 320;
   const [pan, setPan] = useState({ x: 16, y: 16 });
@@ -3615,9 +3633,22 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           const isOpen = openKey === it.key;
           const boxScale = 0.85 + Math.min(0.35, (it.adopt || 0) / 100);
           const w = boxW * boxScale, h = boxH * boxScale;
+          const kind = it.kind || "pending";
+          const sub = isOpen ? "#241509" : it.unlocked ? QCOLOR[kind] : "#8A7458";
+          const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
+          // (버그 수정) 예전엔 노드를 눌러 상세 블록을 열어야만 수 체계 아이콘·평가치·채택률을 볼 수
+          // 있었다 — 부모 방문 시 이미 계산해 둔 kind/evalCp(assignTiers)를 각 블록에 기본으로 표시한다.
           return (
-            <button key={it.key} onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: x + (boxW - w) / 2, top: y + (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: "1.5px solid " + (isOpen ? T.brass : it.unlocked ? "#CDB98E" : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : it.unlocked ? T.paper : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", color: isOpen ? "#241509" : it.unlocked ? T.ink : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 11.5 + Math.min(3, (it.adopt || 0) / 30), cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, padding: 0, zIndex: isOpen ? 40 : 1 }}>
-              {!it.unlocked && <Lock size={10} />}{moveNumber(it.path.length - 1)}{it.san}
+            <button key={it.key} onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: x + (boxW - w) / 2, top: y + (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: "1.5px solid " + (isOpen ? T.brass : it.unlocked ? "#CDB98E" : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : it.unlocked ? T.paper : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", color: isOpen ? "#241509" : it.unlocked ? T.ink : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 + Math.min(3, (it.adopt || 0) / 30) }}>
+                {!it.unlocked && <Lock size={10} />}
+                <span style={{ display: "inline-flex", color: sub }}>{badgeIcon(kind, 10)}</span>
+                {moveNumber(it.path.length - 1)}{it.san}
+              </span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>
+                {evTxt && <span>{evTxt}</span>}
+                <span>{(it.adopt || 0).toFixed(0)}%</span>
+              </span>
             </button>
           );
         })}
@@ -4276,6 +4307,7 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
   const skCtx = useContext(SkinContext);
   const sk = BOARD_SKINS[skCtx.boardSkin] || BOARD_SKINS.classic;
   const cell = Math.floor(size / 8);
+  const inner = cell * 8;
   const [slid, setSlid] = useState(false);
   useEffect(() => {
     setSlid(false);
@@ -4287,21 +4319,20 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
   const tx = (vr, vc) => (flip ? [7 - vr, 7 - vc] : [vr, vc]);
   const rows = flip ? [...board].reverse().map((r) => [...r].reverse()) : board;
   const [ffr, ffc] = dv(from[0], from[1]); const [ttr, ttc] = dv(to[0], to[1]);
-  const dx = slid ? (ffc - ttc) * cell : 0, dy = slid ? (ffr - ttr) * cell : 0;
+  // (버그 수정) AnimatedMove와 동일하게 px(cell) 대신 그리드 전체 대비 퍼센트로 이동을 계산.
+  const dxPct = slid ? (ffc - ttc) * 100 : 0, dyPct = slid ? (ffr - ttr) * 100 : 0;
   const moving = board[to[0]][to[1]];   // 잘못된 수를 두어 지금 도착 칸에 있는 기물 — 원래 칸으로 되돌아감
   // (UI4) Board와 동일한 padding/width 공식(보드 크기 불일치로 인한 흔들림 방지)
+  // (버그 수정) flex row 고정 px 대신 aspectRatio 그리드로 바꿔, 컨테이너가 좁아져도 칸이
+  // 정사각형을 벗어나지 않게 한다(AnimatedMove·Board와 동일한 방식).
   return (
-    <div style={{ width: cell * 8 + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto" }}>
-      <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "2px solid " + T.brass }}>
-        {rows.map((row, vr) => (
-          <div key={vr} style={{ display: "flex" }}>
-            {row.map((p, vc) => {
-              const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
-            })}
-          </div>
-        ))}
-        {moving && <div style={{ position: "absolute", top: ttr * cell, left: ttc * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dx + "px," + dy + "px)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
+    <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
+      <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+        {rows.map((row, vr) => row.map((p, vc) => {
+          const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
+          return <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+        }))}
+        {moving && <div style={{ position: "absolute", top: (ttr / 8 * 100) + "%", left: (ttc / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dxPct + "%," + dyPct + "%)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
       </div>
     </div>
   );
@@ -7380,7 +7411,10 @@ export default function App() {
   const equipSkin = useCallback((kind, id) => { (kind === "board" ? setBoardSkin : setPieceSkin)(id); }, []);
   const skinValue = useMemo(() => ({ boardSkin, pieceSkin }), [boardSkin, pieceSkin]);
 
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+  // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
+  // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
+  // 다시 로그인하면 보유 스킨·장착 상태가 기본값으로 되돌아가 마치 구매 내역이 저장 안 된 것처럼 보였다.
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
@@ -7625,7 +7659,7 @@ export default function App() {
               (같이 쓰면 "OpenChess" 글자가 두 번 겹쳐 보임). */}
           {/* (버그 수정) 헤더 세로 여백(narrowHeader 기준 12px, 아니면 16px)에 비해 로고 높이가
               30~40px로 너무 작게 잡혀 있어 좌상단 로고가 눈에 띄지 않았다 — 헤더를 꽉 채우도록 키운다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 38 : 52, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 46 : 68, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10 }}>
           {/* (18차 UI8) 레벨 UI를 아이디 왼쪽으로 이동, 레벨 텍스트·게이지는 좌우로 나란히 배치 */}
