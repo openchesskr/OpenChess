@@ -100,8 +100,15 @@ const BOARD_SKINS = {
 };
 // (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
 // \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
-function boardSquareBg(sk, light, r, c, cell) {
-  if (sk.image) return { backgroundImage: "url(" + sk.image + ")", backgroundSize: (cell * 8) + "px " + (cell * 8) + "px", backgroundPosition: (-(((c % 8) + 8) % 8) * cell) + "px " + (-(((r % 8) + 8) % 8) * cell) + "px" };
+// (bugfix) px(cell) based slicing drifted out of sync whenever the actual rendered cell size
+// differed even slightly from the JS-estimated `cell` (e.g. a squeezed layout) — the texture's
+// seams no longer lined up. Percent-based background-size/position always matches the real
+// rendered box exactly, no matter what size it actually ends up being.
+function boardSquareBg(sk, light, r, c) {
+  if (sk.image) {
+    const cc = ((c % 8) + 8) % 8, rr = ((r % 8) + 8) % 8;
+    return { backgroundImage: "url(" + sk.image + ")", backgroundSize: "800% 800%", backgroundPosition: (cc / 7 * 100) + "% " + (rr / 7 * 100) + "%" };
+  }
   return { background: light ? sk.light : sk.dark };
 }
 const PIECE_SKINS = {
@@ -778,7 +785,9 @@ async function fetchLichess(sans, master) {
   return { posTotal, opening: j.opening || null, moves, wdl: { w: j.white || 0, d: j.draws || 0, b: j.black || 0 }, master: !!master };
 }
 // (기능) 집중학습의 "마스터 대국" 목록 — 이 수가 두어진 실제 마스터 게임(대국자·레이팅·결과).
-async function fetchMasterTopGames(sans, count = 12) {
+// (버그 보충) 예전엔 12개만 가져와 전부를 한 화면에 나열했다 — Lichess 마스터 DB 익스플로러가
+// 실제로 내려주는 최대치(15개)까지 가져와, 화면에서는 페이지를 넘기며(+ 정렬) 볼 수 있게 한다.
+async function fetchMasterTopGames(sans, count = 15) {
   const uci = sansToUci(sans).join(",");
   const url = LICHESS_API + "?master=1&play=" + uci + "&moves=0&topGames=" + count;
   const j = await lichessFetchJson(url);
@@ -1324,7 +1333,11 @@ function useChessCom(username) {
               const res = side && side.result;
               const result = res === "win" ? "win" : (["checkmated", "resigned", "timeout", "lose", "abandoned"].includes(res) ? "loss" : "draw");
               // (19차 기능6) ECO URL(g.eco)에서 오프닝 이름 슬러그를 뽑아 저장 — 칭호 조건의 오프닝별 플레이 횟수 집계에 사용.
-              games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco) });
+              // (버그 보충) 레이팅 증감치·정확도 표기를 위해 이 대국에서의 내 레이팅(side.rating),
+              // 타임클래스(레이팅 풀이 종류별로 나뉘므로 증감 계산 시 같은 클래스끼리만 비교해야 함),
+              // chess.com이 게임 리뷰로 계산해 둔 정확도(g.accuracies, 있는 경우만)를 함께 저장한다.
+              const acc = g.accuracies ? (userIsWhite ? g.accuracies.white : g.accuracies.black) : null;
+              games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, accuracy: acc != null ? acc : null });
             }
           } catch (_) {}
         }
@@ -1742,39 +1755,42 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
   return (
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
       {showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}
-      <div style={{ position: "relative", borderRadius: 4, overflow: "visible", border: "2px solid " + T.brass }}>
-        {rows.map((row, ri) => (
-          <div key={ri} style={{ display: "flex" }}>
-            {row.map((p, ci) => {
-              const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
-              const isSel = selected && selected[0] === r && selected[1] === c;
-              const isTarget = targetSet.has(r + "," + c);
-              const coordCol = sk.image ? "rgba(255,255,255,.9)" : (light ? sk.dark : sk.light);
-              return (
-                <div key={ci}
-                  onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
-                  onDragOver={interactive ? (e) => e.preventDefault() : undefined}
-                  onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
-                  style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c, cell), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
-                  {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{8 - r}</span>}
-                  {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{FILES[c]}</span>}
-                  {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
-                  {lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
-                    <>
-                      <div style={{ position: "absolute", inset: 0, background: QCOLOR[lastQ.kind], opacity: 0.5, pointerEvents: "none" }} />
-                      {/* (UI5) 수 블록과 동일한 아이콘(badgeIcon)으로 통일 — 예전엔 QSYM 텍스트/이모지를 따로 썼음 */}
-                      <div style={{ position: "absolute", top: -cell * 0.18, right: -cell * 0.18, width: cell * 0.44, height: cell * 0.44, borderRadius: "50%", background: QCOLOR[lastQ.kind], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", pointerEvents: "none", zIndex: 6 }}>{badgeIcon(lastQ.kind, cell * 0.22)}</div>
-                    </>
-                  )}
-                  {wrongAt && wrongAt[0] === r && wrongAt[1] === c && (
-                    <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
-                  )}
-                  {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default" }} />}
-                </div>
-              );
-            })}
-          </div>
-        ))}
+      {/* (버그) 예전에는 각 칸을 flex row 안의 고정 px(width:cell,height:cell)로 두었는데, 이 그리드를
+          담는 바깥 레이아웃이 계산된 폭보다 조금이라도 좁아지면(반응형 계산 오차 등) flex-shrink가
+          가로 폭만 줄이고 세로 높이는 그대로 둬 칸이 정사각형이 아니게 눌렸다 — 좌표 라벨이 칸 경계를
+          벗어나고, 칸 하나에 꽉 채운 SVG 화살표(viewBox 0 0 8 8, preserveAspectRatio="none")도 가로세로
+          비율이 달라진 상자에 맞춰 늘어나며 왜곡됐다(바다 스킨처럼 이어진 이미지 텍스처에서 특히 눈에
+          띔). aspectRatio:"1/1"인 CSS 그리드로 바꾸면 실제 렌더링 폭이 얼마로 계산되든 높이가 항상
+          똑같이 따라가 칸이 항상 정사각형으로 유지된다. */}
+      <div style={{ position: "relative", borderRadius: 4, overflow: "visible", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+        {rows.map((row, ri) => row.map((p, ci) => {
+          const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
+          const isSel = selected && selected[0] === r && selected[1] === c;
+          const isTarget = targetSet.has(r + "," + c);
+          const coordCol = sk.image ? "rgba(255,255,255,.9)" : (light ? sk.dark : sk.light);
+          return (
+            <div key={ri + "_" + ci}
+              onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
+              onDragOver={interactive ? (e) => e.preventDefault() : undefined}
+              onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
+              style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
+              {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{8 - r}</span>}
+              {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{FILES[c]}</span>}
+              {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
+              {lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
+                <>
+                  <div style={{ position: "absolute", inset: 0, background: QCOLOR[lastQ.kind], opacity: 0.5, pointerEvents: "none" }} />
+                  {/* (UI5) 수 블록과 동일한 아이콘(badgeIcon)으로 통일 — 예전엔 QSYM 텍스트/이모지를 따로 썼음 */}
+                  <div style={{ position: "absolute", top: -cell * 0.18, right: -cell * 0.18, width: cell * 0.44, height: cell * 0.44, borderRadius: "50%", background: QCOLOR[lastQ.kind], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", pointerEvents: "none", zIndex: 6 }}>{badgeIcon(lastQ.kind, cell * 0.22)}</div>
+                </>
+              )}
+              {wrongAt && wrongAt[0] === r && wrongAt[1] === c && (
+                <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
+              )}
+              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default" }} />}
+            </div>
+          );
+        }))}
         {/* (17차) 화살표 끝이 칸 중앙에서 어긋나던 문제 — 픽셀 좌표(cell 값) 대신 보드 칸 단위(0~8)의
             논리 좌표계를 viewBox로 선언해, 실제 렌더링 크기(반응형 축소 등)와 무관하게 항상 정확히 칸
             중앙을 가리키도록 한다. */}
@@ -2282,7 +2298,7 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {rows.map((row, vr) => (
             <div key={vr} style={{ display: "flex" }}>
               {row.map((p, vc) => { const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
-                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c, cell), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
+                return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>{p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}</div>; })}
             </div>
           ))}
           {mp && <div key={cyc} style={{ position: "absolute", top: dfr0 * cell, left: dfr1 * cell, width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dx + "px," + dy + "px)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
@@ -2511,6 +2527,18 @@ function BestMoveJumpButton({ onClick, disabled }) {
     </button>
   );
 }
+// (버그 보충) 마스터 대국·내 대국 목록에 공용으로 쓰는 작은 페이지 넘김 버튼 — 이모티콘 피커의
+// 좌우 화살표 버튼과 같은 크기감으로 통일.
+function ListPager({ page, setPage, pageCount }) {
+  if (pageCount <= 1) return null;
+  return (
+    <div className="flex items-center justify-center gap-2" style={{ marginTop: 8 }}>
+      <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label="이전 페이지" className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: page === 0 ? "#D8C9A8" : T.inkSoft, cursor: page === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={13} /></button>
+      <span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{page + 1} / {pageCount}</span>
+      <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1} aria-label="다음 페이지" className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: page >= pageCount - 1 ? "#D8C9A8" : T.inkSoft, cursor: page >= pageCount - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={13} /></button>
+    </div>
+  );
+}
 // 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 오른쪽 칼럼은
 // 집중학습 여부와 무관하게 항상 수 블록 목록을 보여준다(LearnTab에서 분기하지 않음).
 function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMyGame, onOpenMyGameAnalyze }) {
@@ -2525,16 +2553,49 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   const punish = curated;
   const [openingGameId, setOpeningGameId] = useState(null);
   const [gameOpenError, setGameOpenError] = useState(false);
-  // (19차 기능2) 이 수([...sans, san])가 실제로 두어진 내 chess.com 대국 — 최근순으로 나열, 클릭 시 그 대국 기보를 보드에 로드.
+  // (19차 기능2) 이 수([...sans, san])가 실제로 두어진 내 chess.com 대국 — 최근순으로 나열.
+  // (버그 보충) 예전엔 최근 8판까지만 잘라 보여줬다 — 이제 전부 가져오고 화면에서 페이지를 넘겨 본다.
   const myGames = useMemo(() => {
     if (!chesscom || chesscom.status !== "ready") return [];
     const path = [...sans, san];
     return chesscom.games
       .filter((g) => g.moves.length >= path.length && path.every((s, i) => g.moves[i] === s))
-      .sort((a, b) => (b.endTime || 0) - (a.endTime || 0))
-      .slice(0, 8);
+      .sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
   }, [chesscom && chesscom.games, chesscom && chesscom.status, sans.join(","), san]);
+  const MY_GAMES_PAGE_SIZE = 5;
+  const [myGamesPage, setMyGamesPage] = useState(0);
+  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san]);
+  const myGamesPageCount = Math.max(1, Math.ceil(myGames.length / MY_GAMES_PAGE_SIZE));
+  const myGamesPageItems = myGames.slice(myGamesPage * MY_GAMES_PAGE_SIZE, myGamesPage * MY_GAMES_PAGE_SIZE + MY_GAMES_PAGE_SIZE);
+  // (버그 보충) 레이팅 증감치 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
+  // 직전 대국 대비 이번 대국에서의 내 레이팅 변화량을 미리 계산해 둔다(레이팅 풀이 다르면 의미가
+  // 없으므로 클래스별로 나눠서 비교). chess.com API가 대국별 레이팅을 주므로 별도 요청 없이 계산 가능.
+  const ratingChanges = useMemo(() => {
+    const map = new Map();
+    if (!chesscom || chesscom.status !== "ready") return map;
+    const byClass = {};
+    for (const g of chesscom.games) { if (!g.timeClass) continue; (byClass[g.timeClass] = byClass[g.timeClass] || []).push(g); }
+    for (const arr of Object.values(byClass)) {
+      const sorted = [...arr].sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].rating != null && sorted[i - 1].rating != null) map.set(sorted[i], sorted[i].rating - sorted[i - 1].rating);
+      }
+    }
+    return map;
+  }, [chesscom && chesscom.games, chesscom && chesscom.status]);
   const fmtGameDate = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
+  // (버그 보충) 마스터 대국 정렬(최신순/레이팅순) + 페이지네이션.
+  const MASTER_PAGE_SIZE = 5;
+  const [masterSort, setMasterSort] = useState("default"); // default(원래 채택률순) | recent(최신순) | rating(레이팅순)
+  const [masterPage, setMasterPage] = useState(0);
+  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort]);
+  const sortedMasterGames = useMemo(() => {
+    if (masterSort === "recent") return [...masterGames].sort((a, b) => (b.year || 0) - (a.year || 0));
+    if (masterSort === "rating") return [...masterGames].sort((a, b) => Math.max((b.white && b.white.rating) || 0, (b.black && b.black.rating) || 0) - Math.max((a.white && a.white.rating) || 0, (a.black && a.black.rating) || 0));
+    return masterGames;
+  }, [masterGames, masterSort]);
+  const masterPageCount = Math.max(1, Math.ceil(sortedMasterGames.length / MASTER_PAGE_SIZE));
+  const masterPageItems = sortedMasterGames.slice(masterPage * MASTER_PAGE_SIZE, masterPage * MASTER_PAGE_SIZE + MASTER_PAGE_SIZE);
   const handleOpenGame = async (id) => {
     if (!onOpenMasterGame || openingGameId) return;
     setOpeningGameId(id); setGameOpenError(false);
@@ -2645,12 +2706,16 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                   {/* 이 수가 두어진 내 최근 대국 — 없으면 "없다"고 표시 */}
                   <div className="flex items-center gap-2" style={{ marginBottom: 6 }}><span style={{ fontSize: 11.5, fontWeight: 800, color: T.brass }}>이 수가 두어진 내 최근 대국</span>{myGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{myGames.length}판</span>}</div>
                   {myGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 10px" }}>이 수로 최근에 둔 대국이 없습니다.</p>
-                    : <div style={{ marginBottom: 10 }}>{myGames.map((g, i) => {
+                    : <div style={{ marginBottom: 10 }}>{myGamesPageItems.map((g, i) => {
                         const won = g.result === "win", lost = g.result === "loss";
+                        const rc = ratingChanges.get(g);
                         return (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: i === 0 ? "none" : "1px solid #E4D5B6" }}>
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"}으로 플레이 · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b></div>
+                              <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"}으로 플레이 · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                                {rc != null && <span style={{ marginLeft: 6, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>{rc > 0 ? "+" + rc : rc}</span>}
+                                {g.accuracy != null && <span style={{ marginLeft: 6, fontSize: 11, color: T.inkSoft }}>정확도 {g.accuracy.toFixed(1)}%</span>}
+                              </div>
                               <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtGameDate(g.endTime)}</div>
                             </div>
                             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -2659,7 +2724,9 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                             </div>
                           </div>
                         );
-                      })}</div>}
+                      })}
+                      <ListPager page={myGamesPage} setPage={setMyGamesPage} pageCount={myGamesPageCount} />
+                    </div>}
                   {/* 전적 요약 */}
                   {!stats ? <p style={{ fontSize: 12, color: T.inkSoft, margin: 0, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>이 수순으로 둔 대국 통계가 없습니다.</p>
                     : (
@@ -2706,10 +2773,21 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
       </div>
       {/* 이 수가 두어진 마스터 대국 — 클릭하면 집중학습을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
       <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>이 수가 두어진 마스터 대국</span></div>
+        <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>이 수가 두어진 마스터 대국</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{masterGames.length}판</span>}</div>
+          {/* (버그 보충) 정렬 — 기본(채택률 순, API 원래 순서) / 최신순(연도) / 레이팅순(더 높은 쪽 레이팅) */}
+          {masterGames.length > 1 && (
+            <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
+              {[["default", "기본"], ["recent", "최신순"], ["rating", "레이팅순"]].map(([k, label]) => (
+                <button key={k} onClick={() => setMasterSort(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: masterSort === k ? T.brass : "transparent", color: masterSort === k ? "#241509" : T.inkSoft }}>{label}</button>
+              ))}
+            </div>
+          )}
+        </div>
         {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>불러오는 중…</p>
           : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
-            : masterGames.map((g) => (
+            : (<>
+            {masterPageItems.map((g) => (
               <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: openingGameId && openingGameId !== g.id ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
@@ -2723,6 +2801,8 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                 <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId} aria-label="대국 보기" title="대국 보기" className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: openingGameId ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
               </div>
             ))}
+            <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} />
+            </>)}
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
       </div>
       {showExpl && (
@@ -4217,7 +4297,7 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
           <div key={vr} style={{ display: "flex" }}>
             {row.map((p, vc) => {
               const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c, cell) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+              return <div key={vc} style={{ width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
             })}
           </div>
         ))}
@@ -7543,7 +7623,9 @@ export default function App() {
           {/* (버그) 사용자가 아이콘+워드마크가 합쳐진 새 로고(OpenChessLogo.png)를 제공해, 따로 그리던
               별도 나이트 아이콘 이미지 + BrandWordmark 텍스트 조합을 이 로고 하나로 교체한다
               (같이 쓰면 "OpenChess" 글자가 두 번 겹쳐 보임). */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 30 : 40, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          {/* (버그 수정) 헤더 세로 여백(narrowHeader 기준 12px, 아니면 16px)에 비해 로고 높이가
+              30~40px로 너무 작게 잡혀 있어 좌상단 로고가 눈에 띄지 않았다 — 헤더를 꽉 채우도록 키운다. */}
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 38 : 52, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10 }}>
           {/* (18차 UI8) 레벨 UI를 아이디 왼쪽으로 이동, 레벨 텍스트·게이지는 좌우로 나란히 배치 */}
