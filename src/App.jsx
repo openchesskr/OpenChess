@@ -1281,6 +1281,23 @@ function addsFor(key) { return CONTENT.treeAdds[key] || []; }
 function nameOverride(key, san) { const v = CONTENT.names[key + "|" + stripSuffix(san)]; return v === undefined ? null : v; }
 function kwOverride(key, san) { const v = CONTENT.keywords[key + "|" + stripSuffix(san)]; return Array.isArray(v) ? v : null; }
 function isUnbooked(key, san) { return !!CONTENT.unbook[key + "|" + stripSuffix(san)]; }
+// (버그 수정) 어떤 포지션(keyStr: 수순을 공백으로 이은 키)의 특정 수(san)가 '이론'인지 판정한다.
+// 예전엔 게임 리뷰(analyzeGame)가 정적 스냅샷 트리(SNAP.tree)만 보고 book을 판정해서, 개발자 모드에서
+// 새로 추가한 이론 수(CONTENT.treeAdds의 theory)나 강제 지정(forceKind "book")이 이론으로 잡히지
+// 않았다(예: 개발자가 스칸디나비안 3수까지 이론으로 등록해도 리뷰에선 우수/최선으로 나옴). LearnTab의
+// 병합 규칙(2310행 등)과 동일하게 맞춘다: unbook이면 제외 → forceKind "book"이거나 개발자 추가
+// 이론이면 이론 → 그 외엔 (강제 지정이 없을 때) 스냅샷 트리의 book 플래그를 따른다.
+function isBookMoveAt(keyStr, san) {
+  if (keyStr == null) return false;
+  if (isUnbooked(keyStr, san)) return false;
+  const forced = forceKindFor(keyStr, san);
+  if (forced === "book") return true;
+  if (addsFor(keyStr).some((a) => stripSuffix(a.san) === stripSuffix(san) && a.theory)) return true;
+  if (forced != null) return false;
+  const node = SNAP.tree[keyStr];
+  const snapMv = node && node.moves ? node.moves.find((x) => stripSuffix(x.san) === stripSuffix(san)) : null;
+  return !!(snapMv && snapMv.book);
+}
 
 /* ============================================================ chess.com 프로필 빅데이터 ============================================================ */
 function parsePgnSans(pgn) {
@@ -1557,9 +1574,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     // 등급 — (20차) '최선의 수'(별)는 엔진 1순위 수를 실제로 뒀을 때만(loss 노이즈로 차선 수에 별이 붙는 것 방지)
     let kind = tierOf(loss);
     if (kind === "best" && !matched) kind = "excellent";
-    const parent = snapNode(fullSans.slice(0, i));
-    const mv = parent && parent.moves ? parent.moves.find((x) => stripSuffix(x.san) === playedSan) : null;
-    if (mv && mv.book) kind = "book";
+    if (isBookMoveAt(fullSans.slice(0, i).join(" "), fullSans[i])) kind = "book";
     else {
       const decided = Math.abs(playedCp) > 200, losing = playedCp <= -200;
       try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
