@@ -2528,21 +2528,26 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
   // 이 수가 실제로 두어진 마스터 대국(대국자/레이팅/결과) — 목록에서 클릭하면 그 대국의 마지막 포지션을 연다.
   const [masterGames, setMasterGames] = useState([]);
   const [loadingMasterGames, setLoadingMasterGames] = useState(false);
+  // (버그 수정) fetch가 실패해도(네트워크 오류 등) masterGames가 그냥 빈 배열([])로 남아, "결과가
+  // 없다"는 메시지와 "요청이 실패했다"는 상황을 화면에서 구분할 수 없었다 — 별도 에러 상태를 둬서
+  // 다르게 안내하고, 재시도 버튼으로 다시 불러올 수 있게 한다.
+  const [masterGamesError, setMasterGamesError] = useState(false);
+  const [masterRetry, setMasterRetry] = useState(0);
   useEffect(() => {
-    setMasterGames([]); setLoadingMasterGames(false);
+    setMasterGames([]); setLoadingMasterGames(false); setMasterGamesError(false);
     if (!active) return;
     let cancelled = false;
     setLoadingMasterGames(true);
-    fetchMasterTopGames([...sans, san]).then((gs) => { if (!cancelled) { setMasterGames(gs); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) setLoadingMasterGames(false); });
+    fetchMasterTopGames([...sans, san]).then((gs) => { if (!cancelled) { setMasterGames(gs); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
     return () => { cancelled = true; };
-  }, [active, sansKey, san]);
+  }, [active, sansKey, san, masterRetry]);
   return {
     active, sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain,
     editing, setEditing, draft, setDraft, canEditExpl, saveExpl, delExpl, explainLong,
     showExpl, setShowExpl, editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
     openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
     expectedPuzzleId, existingPuzzle, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
-    masterGames, loadingMasterGames,
+    masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
 // (20차 UI2) 최선 수(연두색+별) 바로가기 버튼 — 누르면 그 대국을 즉시 분석 모드로 연다.
@@ -2577,7 +2582,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
     canEditExpl, saveExpl, delExpl, explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
     stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, expectedPuzzleId, existingPuzzle,
-    masterGames, loadingMasterGames,
+    masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
   const [openingGameId, setOpeningGameId] = useState(null);
@@ -2813,7 +2818,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
             </div>
           )}
         </div>
-        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>불러오는 중…</p>
+        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 기록 탐색 중…</p>
+          : masterGamesError ? (
+            <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 정보를 불러오지 못했습니다. <button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>다시 시도</button></p>
+          )
           : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
             : (<>
             {masterPageItems.map((g) => (
@@ -3574,10 +3582,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const colW = vertical ? 108 : 158, rowH = vertical ? 78 : 58;
   const { items, edges, maxDepth, maxPos } = useMemo(() => {
     let cursor = 0; const items = []; const edges = [];
-    const visit = (san, path, depth, adopt, kind, evalCp) => {
+    const visit = (san, path, depth, adopt, kind, evalCp, name) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
-      const it = { san, path, depth, key, adopt, kind, evalCp, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      const it = { san, path, depth, key, adopt, kind, evalCp, name, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
       if (rawMoves && rawMoves.length) {
         const filtered = rawMoves.filter((m) => treeData.has([...path, m.san].join(" ")));
@@ -3586,7 +3594,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         const tiered = assignTiers(filtered, path.length, board, key);
         for (const m of ordered) {
           const t = tiered.find((x) => x.san === m.san);
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null));
+          const nm = nameOverride(key, m.san) ?? m.name ?? null;
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm));
         }
       }
       if (!kids.length) it.pos = cursor++;
@@ -3594,7 +3603,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null);
+    visit(null, [], 0, 100, null, null, null);
     const visible = items.filter((it) => it.depth > 0);
     const maxDepth = visible.length ? Math.max(...visible.map((it) => it.depth)) : 1;
     const maxPos = items.length ? Math.max(...items.map((it) => it.pos)) : 0;
@@ -3664,18 +3673,22 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           // 있었다 — 부모 방문 시 이미 계산해 둔 kind/evalCp(assignTiers)를 각 블록에 기본으로 표시한다.
           // (디자인) 이론 수(book) 블록은 이론 수 아이콘과 같은 가죽 갈색(T.book) 테두리·그러데이션·
           // 글자색을 입혀, 큐레이션된 핵심 라인이 나머지 곁가지 수와 뚜렷이 구분되게 한다.
+          // (버그 수정) 채택률 %는 블록에서 빼고, 수 체계 아이콘은 글자와 나란히 두지 않고 블록
+          // 좌상단에 작은 배지로 얹는다. 오프닝 이름은 블록 안이 아니라 바로 아래 빈 공간에 표시.
           return (
-            <button key={it.key} onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: x + (boxW - w) / 2, top: y + (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 + Math.min(3, (it.adopt || 0) / 30) }}>
-                {!it.unlocked && <Lock size={10} />}
-                <span style={{ display: "inline-flex", color: sub }}>{badgeIcon(kind, 10)}</span>
-                {moveNumber(it.path.length - 1)}{it.san}
-              </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>
-                {evTxt && <span>{evTxt}</span>}
-                <span>{(it.adopt || 0).toFixed(0)}%</span>
-              </span>
-            </button>
+            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
+              <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 10)}</span>
+              <button onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 + Math.min(3, (it.adopt || 0) / 30) }}>
+                  {!it.unlocked && <Lock size={10} />}
+                  {moveNumber(it.path.length - 1)}{it.san}
+                </span>
+                {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
+              </button>
+              {it.name && (
+                <div style={{ position: "absolute", left: -8, top: boxH + 2, width: boxW + 16, textAlign: "center", fontSize: 8.5, fontWeight: 700, color: "rgba(122,102,80,.85)", lineHeight: 1.15, wordBreak: "keep-all", pointerEvents: "none" }}>{it.name}</div>
+              )}
+            </div>
           );
         })}
         {openItem && openParentM && (
@@ -5448,7 +5461,7 @@ function QuestChapterEditor({ chKey, bumpContent, onClose }) {
 function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, bumpContent, contentVer }) {
   return (
     <div>
-      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><Mascot name="milku" emotion="great" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><TabHeaderIcon><MaterialIcon name="assignment" size={22} /></TabHeaderIcon><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
       <MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />
       <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} />
     </div>
@@ -6075,7 +6088,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
   const removeCodev = async (id) => { CONTENT.codev = CONTENT.codev.filter((x) => x !== id); await bumpContent(); };
   return (
     <div className="max-w-xl">
-      <div className="flex items-center gap-2"><Mascot name="milku" emotion="wink" size={64} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
+      <div className="flex items-center gap-2"><TabHeaderIcon><Settings size={22} /></TabHeaderIcon><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
 
       {/* 계정 — 로그아웃 상태에서만 표시(로그인 시 아래 프로필 카드에 통합) */}
       {!user && (
@@ -6219,6 +6232,15 @@ function MaterialIcon({ name, size = 20, color = "currentColor", style }) {
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "inline-block", flexShrink: 0, ...style }}><path d={d} fill={color} /></svg>
   );
 }
+// (디자인) 학습·퍼즐 탭 이외의 탭 제목에는 마스코트 대신, 하단 내비게이션과 같은 아이콘을 원형 배지로
+// 통일해 보여준다(퀘스트·상점·설정 등) — 마스코트는 학습/퍼즐 탭에서만 등장하도록 정리.
+function TabHeaderIcon({ size = 44, children }) {
+  return (
+    <span style={{ width: size, height: size, borderRadius: "50%", background: "linear-gradient(160deg,#3A2516,#1B1009)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", color: T.brassHi, flexShrink: 0 }}>
+      {children}
+    </span>
+  );
+}
 function CoinIcon({ size = 16 }) {
   const [err, setErr] = useState(false);
   if (err) return <span style={{ fontSize: Math.round(size * 0.95), lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>🪙</span>;
@@ -6229,18 +6251,17 @@ function CoinIcon({ size = 16 }) {
    장착 상태에 따라 버튼이 "구매"→"장착"→"장착됨"으로 바뀐다. */
 function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
   const isFree = sk.price === 0;
+  // (디자인) 보드 스킨 미리보기 — 기본(단색) 스킨은 4x4 견본 대신, 이미지 스킨과 동일하게 실제
+  // 보드처럼 보이는 8x8 격자로 표시한다(boardSquareBg로 이미지 스킨은 이어붙인 텍스처가 그대로 나옴).
   const preview = kind === "board" ? (
-    sk.image ? (
-      <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", border: "1px solid #00000033", flexShrink: 0, backgroundImage: "url(" + sk.image + ")", backgroundSize: "cover", backgroundPosition: "center" }} />
-    ) : (
-      <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", border: "1px solid #00000033", flexShrink: 0 }}>
-        {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; const light = (r + c) % 2 === 0; return <div key={i} style={{ background: light ? sk.light : sk.dark }} />; })}
-      </div>
-    )
+    <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", border: "1px solid #00000033", flexShrink: 0 }}>
+      {Array.from({ length: 64 }).map((_, i) => { const r = Math.floor(i / 8), c = i % 8; const light = (r + c) % 2 === 0; return <div key={i} style={boardSquareBg(sk, light, r, c)} />; })}
+    </div>
   ) : (
-    <div className="flex items-center gap-1" style={{ width: 64, height: 64, borderRadius: 8, background: "#2E1B10", flexShrink: 0, justifyContent: "center" }}>
-      <PieceGlyph type="K" color="w" size={28} pieceSkin={id} />
-      <PieceGlyph type="N" color="b" size={28} pieceSkin={id} />
+    // (디자인) 기물 스킨 미리보기 — 여러 기물을 어두운 배경에 늘어놓던 것 대신, 흰 배경에 흑 나이트
+    // 하나만 크게 보여준다(스킨 특유의 디테일이 잘 드러남).
+    <div className="flex items-center justify-center" style={{ width: 64, height: 64, borderRadius: 8, background: "#fff", flexShrink: 0 }}>
+      <PieceGlyph type="N" color="b" size={44} pieceSkin={id} />
     </div>
   );
   return (
@@ -6266,10 +6287,13 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
 function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
   return (
     <div>
-      <div className="flex items-center gap-2" style={{ marginBottom: 12 }}><Mascot name="milku" emotion="happy" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
-      <div style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: "16px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
-        <CoinIcon size={44} />
-        <div><div style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>보유 중인 OC 나이트 코인</div><div style={{ fontSize: 26, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1.1 }}>{fmtFull(coins || 0)}</div></div>
+      {/* (디자인) 코인 보유 UI를 화면을 가로지르는 큰 배너 대신, 제목 옆 우상단의 작은 칩으로 축소. */}
+      <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+        <div className="flex items-center gap-2"><TabHeaderIcon><ShoppingBag size={22} /></TabHeaderIcon><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
+        <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
+          <CoinIcon size={18} />
+          <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(coins || 0)}</span>
+        </div>
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
@@ -6910,7 +6934,12 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
               {sel ? <button onClick={() => setSel(null)} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? "프로필" : "친구"}</span>
             </span>
-            <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+            {/* (버그 수정) 친구 삭제는 목록 줄마다 노출하지 않고, 그 사람 프로필을 클릭해 들어갔을 때만
+                우상단(닫기 버튼 옆)에 아이콘으로 노출한다. */}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              {sel && relOf(sel.uid) === "friend" && <button onClick={() => doRemove(sel.uid)} disabled={!!pending[sel.uid]} aria-label="친구 삭제" title="친구 삭제" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
+              <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+            </span>
           </div>
         )}
 
@@ -6931,7 +6960,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
               <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
               <div style={{ display: "flex", gap: 8 }}>
-                {rel === "friend" && btn("친구 삭제", () => doRemove(sel.uid), "danger", busyId)}
+                {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
                 {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
                 {rel === "incoming" && <>{btn("수락", () => doAccept(sel.uid), "gold", busyId)}{btn("거절", () => doRemove(sel.uid), "ghost", busyId)}</>}
                 {rel === "none" && btn("친구 요청", () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
@@ -6951,7 +6980,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 : tab === "friends" ? (
                   friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 친구가 없습니다. ‘추가’에서 아이디로 검색해 요청을 보내세요.</div>
                     : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{friends.map((u) => (
-                        <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("채팅", () => setChatWith({ uid: u, username: uname(u) }), "dark", false)}{btn("삭제", () => doRemove(u), "danger", !!pending[u])}</>} />
+                        // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
+                        // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
+                        <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u) })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} />
                       ))}</div>
                 ) : tab === "requests" ? (
                   incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>
@@ -7150,9 +7181,10 @@ function AuthModal({ onClose, onAuth, initialMode }) {
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 340, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         {/* (UI6) 창 닫기 버튼은 항상 블록 우상단 고정 */}
         <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 2, marginBottom: 6, marginTop: -4 }}>
-          <Mascot name="milku" emotion={mode === "login" ? "wink" : mode === "signup" ? "great" : "surprise"} size={92} />
-          <Mascot name="kokoa" emotion={mode === "signup" ? "celebrate" : "happy"} size={92} />
+        {/* (디자인) 로그인/회원가입 창의 마스코트 캐릭터 대신 OpenChess 로고를 표시 — 학습·퍼즐 탭
+            바깥에서는 마스코트를 쓰지 않는다는 원칙에 맞춘다. */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14, marginTop: 4 }}>
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 56, width: "auto" }} />
         </div>
         <div style={{ marginBottom: 14, paddingRight: 30 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{title}</div>
