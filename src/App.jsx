@@ -902,6 +902,18 @@ function hangingLoss(board, color, skip) {
   }
   return maxLoss;
 }
+// (21차) 내 기물이 걸려 있는 걸 방치한 수라도, 그 대신 그보다 더 비싼 상대 기물을 진짜로(=이 교환이
+// 나에게 순이득인) 위협했다면 — 도망 대신 반격을 택한 찾기 어려운 수이므로 탁월로 인정하기 위한 판정.
+// 단순히 기하학적으로 노리는 것만으론 부족하고(예: 똑같이 되잡혀 동가교환이면 진짜 위협이 아님),
+// SEE상 순이득(> 0)이 나야 "진짜 위협"으로 센다.
+function attacksPricier(board, color, minVal) {
+  const enemy = color === "w" ? "b" : "w";
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== enemy || p.t === "K") continue;
+    if (VAL[p.t] > minVal && seeSquare(board, r, c, color) > 0) return true;
+  }
+  return false;
+}
 function isSacrifice(board, sanRaw, color) {
   const info = sanSrc(board, sanRaw, color);
   if (!info || info.castle) return false;
@@ -938,9 +950,17 @@ function isSacrifice(board, sanRaw, color) {
     // 상쇄하고 남는다면(예: 1.e4 e5 2.d4 exd4 3.Qxd4 Nc6 4.Qd5 Nf6 5.Qf5 d5 6.exd5 Bxf5 — 퀸(9점)을 잡으며
     // Nc6(≈2점 손실)를 방치) 총합이 이득이므로 희생이 아니다. 총손익이 -2점 이하일 때만 희생으로 본다.
     if (net - afterHang > -2) return false;
+    // (21차) 방치한 내 기물(afterHang 상당)보다 더 비싼 상대 기물을 이 수로 실제 위협했는지 — 도망 대신
+    // 반격을 택한 경우, 아래 두 분기 모두에서 탁월로 인정하는 근거가 된다.
+    const counterAttack = attacksPricier(after, color, afterHang);
     // (18차) 두 기물이 동시에 공격받는(포크) 상황에서 위협받던 기물 자신을 움직여 다른 기물을 내주는 것은,
     // 살린 기물이 내준 기물보다 가치가 "낮을" 때만 비직관적 선택으로 보고 탁월로 인정한다(동가·상위 구출은 당연한 수).
-    if (movedThreatLoss >= 1) return VAL[info.piece] < afterHang;
+    // (21차) 살린 기물 쪽이 더 비싸더라도, 그 대신 상대의 더 비싼 기물을 반격으로 위협했다면 역시 탁월.
+    if (movedThreatLoss >= 1) return VAL[info.piece] < afterHang || counterAttack;
+    // (21차) beforeHang(이 수를 두기 전부터 이미 걸려 있던 손실) 이상으로 afterHang이 커지지 않았다면,
+    // 이 수는 새로 무언가를 희생한 게 아니라 이미 정해진 손실을 그대로 둔 것뿐이다(예: 사잇수로 체크메이트를
+    // 막느라 이미 걸려 있던 기물을 뒤늦게 내주는 수) — 반격으로 상쇄하지 못했다면 희생으로 보지 않는다.
+    if (beforeHang >= afterHang) return counterAttack;
     return true;
   }
   return false;
@@ -3610,7 +3630,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
     <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheelZoom}
-      style={{ position: "relative", overflow: "hidden", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
+      // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
+      style={{ position: "relative", overflow: "hidden", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
         <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => setZoom(1)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
@@ -3625,7 +3647,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const x2 = vertical ? cc2.x + boxW / 2 : cc2.x, y2 = vertical ? cc2.y : cc2.y + boxH / 2;
             // (2차 개편) 채택률에 비례한 굵기 — 채택률 높은 핵심 라인은 굵은 줄기처럼, 낮은 라인은 가는 곁가지처럼.
             const wStroke = 1 + Math.min(7, (c.adopt || 0) / 12);
-            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={c.unlocked ? T.brass : "#C9B58C"} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round" />;
+            const eStroke = c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
+            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={eStroke} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round" />;
           })}
         </svg>
         {items.map((it) => {
@@ -3634,12 +3657,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           const boxScale = 0.85 + Math.min(0.35, (it.adopt || 0) / 100);
           const w = boxW * boxScale, h = boxH * boxScale;
           const kind = it.kind || "pending";
+          const isBook = kind === "book";
           const sub = isOpen ? "#241509" : it.unlocked ? QCOLOR[kind] : "#8A7458";
           const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
           // (버그 수정) 예전엔 노드를 눌러 상세 블록을 열어야만 수 체계 아이콘·평가치·채택률을 볼 수
           // 있었다 — 부모 방문 시 이미 계산해 둔 kind/evalCp(assignTiers)를 각 블록에 기본으로 표시한다.
+          // (디자인) 이론 수(book) 블록은 이론 수 아이콘과 같은 가죽 갈색(T.book) 테두리·그러데이션·
+          // 글자색을 입혀, 큐레이션된 핵심 라인이 나머지 곁가지 수와 뚜렷이 구분되게 한다.
           return (
-            <button key={it.key} onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: x + (boxW - w) / 2, top: y + (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: "1.5px solid " + (isOpen ? T.brass : it.unlocked ? "#CDB98E" : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : it.unlocked ? T.paper : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", color: isOpen ? "#241509" : it.unlocked ? T.ink : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
+            <button key={it.key} onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: x + (boxW - w) / 2, top: y + (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 + Math.min(3, (it.adopt || 0) / 30) }}>
                 {!it.unlocked && <Lock size={10} />}
                 <span style={{ display: "inline-flex", color: sub }}>{badgeIcon(kind, 10)}</span>
@@ -7659,7 +7685,7 @@ export default function App() {
               (같이 쓰면 "OpenChess" 글자가 두 번 겹쳐 보임). */}
           {/* (버그 수정) 헤더 세로 여백(narrowHeader 기준 12px, 아니면 16px)에 비해 로고 높이가
               30~40px로 너무 작게 잡혀 있어 좌상단 로고가 눈에 띄지 않았다 — 헤더를 꽉 채우도록 키운다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 46 : 68, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 92 : 136, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10 }}>
           {/* (18차 UI8) 레벨 UI를 아이디 왼쪽으로 이동, 레벨 텍스트·게이지는 좌우로 나란히 배치 */}
