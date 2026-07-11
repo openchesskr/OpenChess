@@ -2812,8 +2812,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                     {stats.top.length > 0 && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{ fontWeight: 800, color: T.inkSoft, fontSize: 11.5, marginBottom: 2 }}>자주 둔 다음 수</div>
+                        {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
+                            onJump로 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
                         {stats.top.map((t) => (
-                          <div key={t.san} style={{ fontFamily: "ui-monospace,monospace", fontSize: 12 }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</div>
+                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: "ui-monospace,monospace", fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
                         ))}
                       </div>
                     )}
@@ -3253,7 +3255,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     const isNew = m.book ? unlockOpening(childKey, name) : false;   // (UX2) 비이론 수는 도감 해금/알림 없음
     setFocus({ sans: [...sans], san: m.san, m, ply, isNew, name });
   };
-  const exitFocus = () => { if (focus && focus.isNew) onLearned(focus.name); setFocus(null); };
+  // (버그 수정) 집중학습 중 다른 수의 집중학습으로 이동(onJump)했다가 나가면, 보드가 원래 진입했던
+  // 위치로 돌아가 버려 방금 살펴본 수순이 사라졌었다 — 나갈 때 보드를 마지막으로 보던 집중학습
+  // 위치(수순)로 맞춘다.
+  const exitFocus = () => {
+    if (focus && focus.isNew) onLearned(focus.name);
+    if (focus) { setSans([...focus.sans, focus.san]); setFuture([]); setSel(null); setLastQ(null); }
+    setFocus(null);
+  };
   const enterFocusAt = (tSans, tSan) => {
     const node2 = snapNode([...tSans, tSan]);
     const name = (node2 && node2.opening) ? node2.opening.name : tSan;
@@ -3530,8 +3539,10 @@ function useOpeningTreeAuto() {
     setVersion((v) => v + 1);
     // (버그) 트리가 너무 금방 끊겨 보인다는 피드백 — 최소 깊이(모든 갈래가 무조건 펼쳐지는 수)를
     // 3수에서 4수로, 그 이후 계속 펼쳐지는 채택률 기준도 20%에서 15%로 낮춰 조금 더 길게 이어지게 한다.
-    const MIN_DEPTH = 4, ADOPT_CUTOFF = 15;
-    const MAX_CONCURRENT = 5, MAX_NODES = 900;
+    // (버그 수정) 그래도 하위 라인이 금방 끊긴다는 피드백 — 깊이를 5수까지 무조건 펼치고, 채택률
+    // 기준도 10%까지 낮추고, 최대 노드 수도 두 배로 늘려 하위 라인이 계속 이어지게 한다.
+    const MIN_DEPTH = 5, ADOPT_CUTOFF = 10;
+    const MAX_CONCURRENT = 5, MAX_NODES = 1800;
     let active = 0, started = 0;
     const queue = [{ path: [], depth: 0 }];
     const runNext = () => {
@@ -3567,7 +3578,7 @@ function useOpeningTreeAuto() {
 }
 // (개편) 도감 오프닝 상세 블록 — 모식도 안, 그 수 노드 옆에 인라인으로 열리고 닫힌다. 기존 카드 내용
 // (미리보기·해금 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 더해 보여준다.
-function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style }) {
+function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening }) {
   const label = nameOverride(path.join(" "), m.san) ?? m.name ?? (m.isMain ? "Main Line" : null);
   const ply = path.length;
   const board = useMemo(() => boardFromSans(path), [path.join(" ")]);
@@ -3583,7 +3594,10 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style }) {
   const evTxt = m.evalCp != null ? fmtEvalCp(m.evalCp) : null;
   return (
     <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ width: 280, borderRadius: 16, padding: 12, background: isUnlocked ? "linear-gradient(180deg,#FBF5E8,#E2D2B2)" : "linear-gradient(180deg,#33261A,#221610)", boxShadow: "0 10px 30px -8px rgba(0,0,0,.65)", border: "1px solid " + (isUnlocked ? "#CDB98E" : "#000"), position: "absolute", zIndex: 50, ...style }}>
-      <button onClick={onClose} aria-label="블록 닫기" className="press" style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: 7, border: "none", background: "rgba(0,0,0,.15)", color: isUnlocked ? T.ink : T.ivory, cursor: "pointer" }}>✕</button>
+      {/* (버그 수정) 아래 보드 미리보기 래퍼(position:relative)가 z-index 없이도 DOM 순서상 이 버튼
+          위에 그려져, 카드 폭 전체에 걸친 그 래퍼의 투명 영역이 X 버튼 클릭을 가로채고 있었다 —
+          명시적 z-index로 항상 위에 오도록 고정한다. */}
+      <button onClick={onClose} aria-label="블록 닫기" className="press" style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: 7, border: "none", background: "rgba(0,0,0,.15)", color: isUnlocked ? T.ink : T.ivory, cursor: "pointer", zIndex: 5 }}>✕</button>
       <div style={{ position: "relative" }}>
         {isUnlocked ? <AnimatedMove sans={path} san={m.san} size={200} />
           : <div style={{ width: 162, height: 162, margin: "0 auto", borderRadius: 9, background: "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 8px,#33261A 8px,#33261A 16px)", display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={28} style={{ color: T.brass }} /></div>}
@@ -3595,7 +3609,10 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style }) {
         <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
       </div>
       {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}</div>}
-      {label && <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>}
+      {/* (버그 수정) 오프닝 이름을 누르면 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
+      {label && (onOpenOpening
+        ? <button onClick={() => onOpenOpening(label)} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
+        : <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>)}
       {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>채택률 {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"} · {fmtFull(m.games)}국</div>}
       {isUnlocked && m.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={m.wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
@@ -3619,7 +3636,7 @@ function centerOrderByAdopt(kids) {
 // (개편) 전체 수 트리 모식도 — 데스크톱은 가로(왼쪽→오른쪽), 모바일은 세로(위→아래)로 뻗어나간다.
 // 클릭으로 펼칠 필요 없이 최소 3수 + 채택률 20% 이상 라인까지 미리 다 펼쳐진 트리가 렌더링되고,
 // 노드를 클릭하면 그 수의 상세 블록이 모식도 안, 그 노드 옆에 바로 열리고 닫힌다.
-function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical }) {
+function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening }) {
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
   // kind/evalCp를 한 번에 계산해 넘겨준다(이미 불러온 rawMoves를 재사용하므로 추가 요청은 없음).
@@ -3633,7 +3650,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       const kids = [];
       if (rawMoves && rawMoves.length) {
         const filtered = rawMoves.filter((m) => treeData.has([...path, m.san].join(" ")));
-        const ordered = centerOrderByAdopt(filtered);
+        // (버그 수정) 루트(첫 수) 단계는 채택률 기준 가운데 정렬(centerOrderByAdopt) 대신, 1.e4가 항상
+        // 맨 처음(맨 위/왼쪽)에 오도록 정렬한다 — 채택률이 가장 높아도 가운데로 배치되면 트리를 열자마자
+        // 화면 아래로 밀려나 있어 찾기 어려웠다.
+        const ordered = path.length === 0
+          ? [...filtered].sort((a, b) => (stripSuffix(a.san) === "e4" ? -1 : stripSuffix(b.san) === "e4" ? 1 : (b.adopt || 0) - (a.adopt || 0)))
+          : centerOrderByAdopt(filtered);
         const board = boardFromSans(path);
         const tiered = assignTiers(filtered, path.length, board, key);
         for (const m of ordered) {
@@ -3661,21 +3683,20 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const [zoom, setZoom] = useState(1);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
-  const centeredRef = useRef(false);
-  // (2차 개편) 트리가 채택률 기준으로 무게중심을 잡다 보니, 시작 위치(1.e4 등)가 캔버스 한참 아래로
-  // 밀려나 있을 수 있다 — 데이터가 어느 정도 쌓이면(트리 전체 세로/가로 폭 기준) 뷰포트 중앙이 트리
-  // 중앙을 보도록 한 번만 자동으로 맞춰준다(그 뒤로는 사용자가 직접 팬한 위치를 존중).
+  const userPannedRef = useRef(false);
+  // (버그 수정) 1.e4를 형제 수들 중 맨 앞으로 정렬해도, 트리 레이아웃 자체는 부모 노드를 "자식들의
+  // 세로/가로 중간"에 배치하는 방식이라 1.e4 자신의 좌표는 그 아래로 갈래가 계속 로드되며 늘어날수록
+  // 계속 화면 밖으로 밀려난다(한 번만 맞추면 이후 더 로드되며 다시 밀려남) — 사용자가 직접 팬하기
+  // 전까지는, 데이터가 들어올 때마다 뷰포트가 1.e4 좌표를 계속 따라가도록 한다.
   useEffect(() => {
-    if (centeredRef.current || items.length < 20 || maxDepth < 4) return;
-    const vw = boxRef.current ? boxRef.current.clientWidth : 1100;
-    const vh = boxRef.current ? boxRef.current.clientHeight : 640;
-    const contentW = vertical ? maxPos * colW + boxW : (maxDepth - 1) * colW + boxW;
-    const contentH = vertical ? (maxDepth - 1) * rowH + boxH : maxPos * rowH + boxH;
-    setPan({ x: Math.max(16, (vw - contentW) / 2), y: Math.max(16, (vh - contentH) / 2) });
-    centeredRef.current = true;
-  }, [items.length, maxDepth]);
+    if (userPannedRef.current) return;
+    const e4 = items.find((it) => it.depth === 1 && stripSuffix(it.san) === "e4");
+    if (!e4) return;
+    const c = coord(e4);
+    setPan({ x: 16 - c.x, y: 16 - c.y });
+  }, [items]);
   const clampZoom = (z) => Math.min(2, Math.max(0.3, z));
-  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
   const onPointerUp = () => { dragRef.current = null; };
   const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
@@ -3737,7 +3758,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         })}
         {openItem && openParentM && (
           <DexMoveBlock path={openItem.path.slice(0, -1)} m={openParentM} isUnlocked={openItem.unlocked}
-            cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)}
+            cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)} onOpenOpening={onOpenOpening}
             style={vertical
               ? { left: Math.max(0, coord(openItem).x + boxW / 2 - 140), top: coord(openItem).y + boxH + 10 }
               : { left: coord(openItem).x + boxW + 10, top: Math.max(0, coord(openItem).y + boxH / 2 - 150) }} />
@@ -3746,7 +3767,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     </div>
   );
 }
-function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus }) {
+function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening }) {
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
@@ -3820,7 +3841,7 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
         {ccReady ? "내 chess.com 대국에 실제로 나온 수만 해금돼요. 마디를 클릭하면 상세 정보가 그 자리에 열립니다. 굵은 줄기일수록 채택률이 높은 핵심 라인이에요."
           : "설정 탭에서 chess.com 계정을 연동하면, 실제로 둔 적 있는 수만큼 해금돼 보여요."}
       </p>
-      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} />
+      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} />
       {/* (2차 개편) 이론 수 체계 편집 — 설정 탭에 있던 개발자 전용 기능을 도감(오프닝)으로 옮겨 통합. */}
       {canAdd && (
         <div style={{ marginTop: 16 }}>
@@ -7883,7 +7904,7 @@ export default function App() {
 
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 110px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
-        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} />}
+        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
