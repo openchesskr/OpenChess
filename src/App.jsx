@@ -453,12 +453,29 @@ function useEngine(enginePref) {
   const queue = useRef([]);
   const running = useRef(false);
   const offRef = useRef(false);
+  const swallowBest = useRef(0); // 강제 해제된 작업의 뒤늦은 bestmove를 무시할 개수
+  const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+  const resultOf = (job, bm) => job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : (job.last ? { ...job.last, best: bm || "" } : (bm ? { best: bm } : null));
   const pump = useCallback(() => {
     if (running.current) return;
     const job = queue.current[0]; if (!job) return;
-    if (!ref.current) { if (offRef.current) { queue.current.shift(); job.resolve(job.multi ? [] : null); pump(); } return; }
+    if (!ref.current) { if (offRef.current) { queue.current.shift(); settle(job, job.multi ? [] : null); pump(); } return; }
     running.current = true;
     job.cmds.forEach((c) => ref.current.postMessage(c));
+    // (버그 수정) 워치독 — 배치 분석 중 특정 포지션에서 엔진이 bestmove를 끝내 안 보내면 running이
+    // true로 굳어 이후 모든 요청이 큐에서 멈춘다(그래프가 도중부터 일자·정확도 100). 제한 시간 안에
+    // bestmove가 없으면 부분 결과로 마무리하고 'stop'을 보내 큐를 다시 흐르게 한다. stop 후에도 응답이
+    // 없으면(워커 완전 정지) 큐를 강제로 흘려보내 분석 전체가 멈추지 않게 한다.
+    clearTimeout(job.watch);
+    job.watch = setTimeout(() => {
+      if (queue.current[0] !== job || job.settled) return;
+      settle(job, resultOf(job, ""));                  // 콜러(analyzeGame 등)는 부분 결과로 즉시 진행
+      try { ref.current && ref.current.postMessage("stop"); } catch (_) { }
+      job.hardWatch = setTimeout(() => {
+        if (queue.current[0] !== job) return;
+        queue.current.shift(); running.current = false; swallowBest.current++; pump();
+      }, 1500);
+    }, job.watchMs || 15000);
   }, []);
   useEffect(() => {
     let worker = null, killed = false, idx = 0;
@@ -481,8 +498,9 @@ function useEngine(enginePref) {
         if (cb.onProgress) { const dm = line.match(/^info depth (\d+)/); cb.onProgress({ ...cb.last, depth: dm ? parseInt(dm[1], 10) : null }); }
       }
       if (line.startsWith("bestmove")) {
+        if (swallowBest.current > 0) { swallowBest.current--; return; } // 강제 해제된 작업의 뒤늦은 응답 무시
         const bm = (line.split(" ")[1] || "").trim(); const d = queue.current.shift(); running.current = false;
-        if (d) { if (d.multi) d.resolve(Object.keys(d.lines).sort((a, b) => a - b).map((k) => d.lines[k])); else d.resolve(d.last ? { ...d.last, best: bm } : (bm ? { best: bm } : null)); }
+        if (d) settle(d, resultOf(d, bm));
         pump();
       }
     }
@@ -505,19 +523,21 @@ function useEngine(enginePref) {
       killed = true;
       try { worker && worker.terminate(); } catch (_) { }
       // 엔진 전환 중 대기 중이던 요청이 있다면 영영 응답이 안 오므로 빈 결과로 정리해 콜러가 멈추지 않게 한다.
-      while (queue.current.length) { const j = queue.current.shift(); j.resolve(j.multi ? [] : null); }
-      running.current = false;
+      while (queue.current.length) { const j = queue.current.shift(); settle(j, j.multi ? [] : null); }
+      running.current = false; swallowBest.current = 0;
     };
   }, [pump, enginePref]);
   // (분석 최적화) movetime(ms)을 주면 `go depth N movetime M`으로 보내 depth·시간 중 먼저 도달하는 쪽에서 멈춘다.
   // 쉬운 포지션은 목표 depth까지 깊게, 복잡한 포지션은 movetime 상한에서 끊어 전체 분석 시간을 예측 가능하게 만든다.
+  // watchMs: 이 요청의 워치독 제한. movetime을 준 배치 분석은 짧게(+버퍼), movetime 없는 실시간
+  // 평가는 depth까지 오래 걸릴 수 있으므로 넉넉히 둔다.
   const evaluate = useCallback((fen, depth = 14, onProgress, movetime) => new Promise((resolve) => {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, last: null, onProgress, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
+    queue.current.push({ resolve, last: null, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
   }), [pump]);
   const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime) => new Promise((resolve) => {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+    queue.current.push({ resolve, multi: true, lines: {}, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump]);
   return { status, evaluate, evaluateMulti };
 }
@@ -1500,27 +1520,21 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
 // cp는 백 관점(양수=백 우세). 반환은 백의 기대 승률(0~100).
 function winPctFromCp(cp) { const c = Math.max(-1200, Math.min(1200, cp)); return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1); }
 // 둔 사람 관점의 승률 하락(before-after)으로 그 수의 정확도(0~100)를 산출.
-function moveAccuracy(winBefore, winAfter) { const drop = Math.max(0, winBefore - winAfter); return Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * drop) - 3.1669)); }
-// 게임 정확도 = '국면 변동성 가중 조화평균'.
-// (정확도 모델 개편 · (B)) chess.com은 실수·블런더가 여러 번 나온 대국을 훨씬 낮게 준다. 예전엔
-// 조화평균과 '변동성 가중 산술평균'의 평균을 썼는데, 산술평균 성분이 사실상 단순평균이라 나쁜 대국
-// 점수를 위로 끌어올렸다(실측: chess.com 흑 68.5인데 우리는 79). 그래서 산술 성분을 버리고 조화평균에
-// 변동성 가중을 결합한다 — 조화평균은 낮은 정확도(실수)에 민감하고, 변동성이 큰(승부가 걸린) 국면의
-// 실수에 더 큰 가중을 줘 chess.com의 국면 변동성 반영 방식에 가깝다. VOL_STRENGTH로 변동성 가중의
-// 세기를 조절한다(빅데이터로 미세조정 예정).
-const VOL_STRENGTH = 1;
+// (정확도 모델 개편 · (B)) 감쇠 계수 ACC_DECAY로 실수의 감점 세기를 조절한다. Lichess 기본값
+// 0.04354는 chess.com보다 관대해 실수가 있는 대국을 높게 준다 — 실측 2대국(chess.com 값)에
+// 맞춰 0.055로 키웠다(실수 하나당 감점이 더 커짐). acc(0)=100은 그대로 유지된다.
+const ACC_DECAY = 0.055;
+function moveAccuracy(winBefore, winAfter) { const drop = Math.max(0, winBefore - winAfter); return Math.max(0, Math.min(100, 103.1668 * Math.exp(-ACC_DECAY * drop) - 3.1669)); }
+// 게임 정확도 = 수별 정확도의 조화평균.
+// (정확도 모델 개편 · (B)) chess.com은 실수·블런더가 여러 번 나온 대국을 훨씬 낮게 준다. 조화평균은
+// 낮은 값(실수)에 민감해 실수가 쌓일수록 점수가 크게 내려간다. 예전엔 여기에 '변동성 가중 산술평균'을
+// 섞었는데(사실상 단순평균이라 나쁜 대국을 위로 끌어올림), 실측 결과 순수 조화평균 + 더 가파른 감점
+// (ACC_DECAY)이 chess.com에 더 가까웠다(총오차 24.8→16.8). winsBefore는 향후 국면 가중 실험을 위해
+// 시그니처에 남겨둔다.
 function gameAccuracyFrom(accs, winsBefore) {
   if (!accs.length) return null;
-  let wsum = 0, den = 0;
-  for (let i = 0; i < accs.length; i++) {
-    const lo = Math.max(0, i - 2), hi = Math.min(winsBefore.length - 1, i + 2);
-    const seg = winsBefore.slice(lo, hi + 1);
-    const mean = seg.reduce((s, x) => s + x, 0) / seg.length;
-    const sd = Math.sqrt(seg.reduce((s, x) => s + (x - mean) * (x - mean), 0) / seg.length);
-    const w = Math.pow(Math.max(0.5, sd), VOL_STRENGTH);
-    wsum += w; den += w / Math.max(accs[i], 1);
-  }
-  return calibrateAccuracy(den > 0 ? wsum / den : null);
+  const harmonic = accs.length / accs.reduce((s, a) => s + 1 / Math.max(a, 1), 0);
+  return calibrateAccuracy(harmonic);
 }
 // (정확도 보정) 예전에는 잘못된 집계(단순평균에 가까운 성분)를 억지로 끌어올리는 선형 보정을 뒀지만,
 // 집계를 '변동성 가중 조화평균'으로 바꾼 뒤로는 그 역할이 사라졌다. 지금은 항등(보정 없음) — 집계 자체가
