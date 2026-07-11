@@ -1587,6 +1587,77 @@ const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유�
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중학습의 대국 목록에서 공용.
 const TIME_CLASS_LABEL = { rapid: "래피드", blitz: "블리츠", bullet: "불릿", daily: "일일" };
 const QCOLOR = { brilliant: T.brilliant, best: T.best, only: T.only, excellent: T.excellent, good: T.good, inaccuracy: T.inaccuracy, miss: "#C8562F", mistake: T.mistake, blunder: T.blunder, book: T.book, pending: T.inkSoft };
+// (디자인/기능) 프로필·집중학습의 대국 목록에서 각 대국의 탁월한 수·유일한 수·실수·블런더 개수를
+// 보여주기 위해, 자체 엔진(analyzeGame)으로 그 대국 전체를 분석한다. 목록 요약용이라 "게임 리뷰"
+// 전체 화면(depth 18)보다 얕게(depth 12) + movetime을 줄여 상대적으로 빠르게 훑는다. 화면에 여러
+// 대국이 동시에 나타날 수 있으므로, 같은 엔진 인스턴스를 두고 여러 분석이 동시에 경합하지 않도록
+// 전역 큐로 한 번에 한 대국씩만 분석하고, 결과는 캐시해 같은 대국을 다시 열어도 재분석하지 않는다.
+const gameQualityCache = new Map(); // key(수순 join) -> "running" | {moves,...} | "error"
+const gameQualityQueue = [];
+let gameQualityRunning = false;
+const gameQualityListeners = new Set();
+function gameQualityNotify() { gameQualityListeners.forEach((fn) => { try { fn(); } catch { } }); }
+async function gameQualityRun() {
+  if (gameQualityRunning) return;
+  gameQualityRunning = true;
+  while (gameQualityQueue.length) {
+    const job = gameQualityQueue.shift();
+    if (gameQualityCache.get(job.key) === "canceled") continue;
+    gameQualityCache.set(job.key, "running");
+    gameQualityNotify();
+    try {
+      const r = await analyzeGame(job.sans, job.engine, 12, null, 120);
+      gameQualityCache.set(job.key, r);
+    } catch { gameQualityCache.set(job.key, "error"); }
+    gameQualityNotify();
+  }
+  gameQualityRunning = false;
+}
+function gameQualityEnqueue(key, sans, engine) {
+  if (gameQualityCache.has(key)) return;
+  gameQualityCache.set(key, "queued");
+  gameQualityQueue.push({ key, sans, engine });
+  gameQualityRun();
+}
+// sans: 이 대국의 전체 수순(SAN 배열). active(예: 이 대국이 현재 페이지에 보이는 중)일 때만 분석을 건다.
+function useGameQuality(sans, engine, active) {
+  const key = useMemo(() => (sans || []).join(" "), [sans]);
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const listener = () => bump((v) => v + 1);
+    gameQualityListeners.add(listener);
+    return () => gameQualityListeners.delete(listener);
+  }, []);
+  useEffect(() => {
+    if (!active || !engine || engine.status !== "ready" || !key) return;
+    gameQualityEnqueue(key, sans, engine);
+  }, [key, active, engine && engine.status]);
+  const entry = key ? gameQualityCache.get(key) : null;
+  if (!entry || entry === "queued" || entry === "running") return { status: "pending" };
+  if (entry === "error") return { status: "error" };
+  const counts = { brilliant: 0, only: 0, mistake: 0, blunder: 0 };
+  entry.moves.forEach((m) => { if (counts[m.kind] != null) counts[m.kind]++; });
+  return { status: "ready", counts };
+}
+// (디자인) 탁월한 수·유일한 수·실수·블런더 개수를 각각의 수 체계 아이콘과 함께 작게 표기.
+// 0개인 항목은 표시하지 않고, 넷 다 0이면 아무것도 렌더링하지 않는다(대국 목록 줄이 늘어지지 않게).
+const GAME_QUALITY_KINDS = ["brilliant", "only", "mistake", "blunder"];
+function GameQualityBadges({ sans, engine, active }) {
+  const { status, counts } = useGameQuality(sans, engine, active);
+  if (status === "pending") return <span title="대국 분석 중…" style={{ display: "inline-flex", alignItems: "center", color: T.inkSoft }}><PendingDots size={11} /></span>;
+  if (status !== "ready") return null;
+  const any = GAME_QUALITY_KINDS.some((k) => counts[k] > 0);
+  if (!any) return null;
+  return (
+    <span className="inline-flex items-center" style={{ gap: 6 }}>
+      {GAME_QUALITY_KINDS.map((k) => counts[k] > 0 && (
+        <span key={k} title={QLABEL[k] + " " + counts[k] + "개"} style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10.5, fontWeight: 800, color: QCOLOR[k] }}>
+          {badgeIcon(k, 11)}{counts[k]}
+        </span>
+      ))}
+    </span>
+  );
+}
 const KW = {
   "NORMAL": { bg: "#E3EDD9", fg: "#3F5B33", desc: "가장 일반적으로 두어지는 수" },
   "TOP LEVEL": { bg: "#F3E6C2", fg: "#7A5A14", desc: "마스터가 압도적으로 선택" },
@@ -2633,7 +2704,7 @@ function ListPager({ page, setPage, pageCount }) {
 }
 // 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 오른쪽 칼럼은
 // 집중학습 여부와 무관하게 항상 수 블록 목록을 보여준다(LearnTab에서 분기하지 않음).
-function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMyGame, onOpenMyGameAnalyze }) {
+function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMyGame, onOpenMyGameAnalyze, liveOn }) {
   if (!fa.active) return null;
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain, editing, setEditing, draft, setDraft,
@@ -2799,6 +2870,9 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                                 {g.accuracy != null && <span style={{ marginLeft: 6, fontSize: 11, color: T.inkSoft }}>정확도 {g.accuracy.toFixed(1)}%</span>}
                               </div>
                               <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtGameDate(g.endTime)}</div>
+                              {/* (디자인) 탁월한 수·유일한 수·실수·블런더 개수 — 자체 엔진으로 이 대국 전체를
+                                  분석해 표기(수 체계 아이콘). 실시간 분석이 꺼져 있으면 분석하지 않는다. */}
+                              {liveOn && <div style={{ marginTop: 3 }}><GameQualityBadges sans={g.moves} engine={engine} active /></div>}
                             </div>
                             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                               <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
@@ -3373,7 +3447,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
+              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} liveOn={liveOn} />
             </div>
           </div>
         )}
@@ -5986,7 +6060,7 @@ function findOpeningPathByFuzzyName(name) {
   }
   return null;
 }
-function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, engine, liveOn }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -6067,6 +6141,9 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                     {g.accuracy != null && <span style={{ marginLeft: 6, fontSize: 11, color: T.inkSoft }}>정확도 {g.accuracy.toFixed(1)}%</span>}
                   </div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtD(g.endTime)}</div>
+                  {/* (디자인) 집중학습의 대국 목록과 동일하게, 자체 엔진으로 이 대국을 분석한 탁월한 수·
+                      유일한 수·실수·블런더 개수를 수 체계 아이콘으로 표기. */}
+                  {liveOn && <div style={{ marginTop: 3 }}><GameQualityBadges sans={g.moves} engine={engine} active /></div>}
                 </div>
                 {onOpenGame && (
                   <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -6108,7 +6185,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
-function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor }) {
+function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, engine, liveOn }) {
   const [editOpen, setEditOpen] = useState(false);
   const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft } = chesscomUi;
@@ -6128,7 +6205,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
           <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
         </div>
       </div>
-      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />
       {editOpen && (
         <div onClick={() => setEditOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", marginBottom: 40 }}>
@@ -6152,7 +6229,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
                   <button onClick={verifyChesscom} disabled={ccState === "checking"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: ccState === "failed" ? T.blunder : "linear-gradient(180deg,#3A2516,#241509)", color: ccState === "failed" ? "#fff" : T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{ccState === "checking" ? "확인 중…" : ccState === "failed" ? "연동 실패" : "연동하기"}</button>
                 </div>
               )}
-              {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+              {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />}
             </div>
           </div>
         </div>
@@ -6160,7 +6237,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount, engine }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -6223,7 +6300,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       )}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
-      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
+      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} />} />}
 
@@ -6815,7 +6892,7 @@ function FirstMovesDisplay({ firstMoves }) {
 }
 // (17차) 프로필 정보 확장 — 레벨/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
 // UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, engine, liveOn }) {
   const chesscom = useChessCom(pub.chesscom);
   const lv = levelFromXp(pub.xp || 0);
   return (
@@ -6825,11 +6902,11 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze 
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
-      {pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+      {pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />}
     </div>
   );
 }
-function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, engine, liveOn }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
@@ -6880,7 +6957,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
               </div>
             </div>
-            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
@@ -6981,7 +7058,7 @@ function ChatsModal({ me, myUid, onClose }) {
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, engine, liveOn }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -7079,7 +7156,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 </div>
               </div>
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />
               <div style={{ display: "flex", gap: 8 }}>
                 {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
                 {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
@@ -7877,8 +7954,8 @@ export default function App() {
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
-      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />}
       {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -7941,7 +8018,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} engine={engine} />}
       </main>
 
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderTop: "1px solid #000", height: 66, paddingBottom: "env(safe-area-inset-bottom)" }}>
