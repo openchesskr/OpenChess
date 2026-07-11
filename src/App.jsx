@@ -4837,13 +4837,20 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   }, [wrong]);
   const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null); setPage(0); setCelebrate(null); };
   const restart = () => gotoLine(targetTag);
-  // 모식도 노드 클릭 → 그 가지를 지나는 라인(미해결 우선)을 목표로 처음부터 풀이
+  // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
+  // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
+  // 대신 모식도 페이지에 새로 생긴 미니보드에서 그 수를 애니메이션으로 재생해 바로 복기할 수 있게 한다.
+  const [previewNode, setPreviewNode] = useState(null);
   const onPickNode = (it) => {
-    const keyArr = it.path.map((s) => stripSuffix(s));
-    const matches = allLines.filter((l) => l.sans.length >= keyArr.length && keyArr.every((s, i) => stripSuffix(l.sans[i]) === s));
-    if (!matches.length) return;
-    const next = matches.find((l) => !solvedNow.has(l.tag)) || matches[0];
-    gotoLine(next.tag);
+    if (it.ghost || !it.node) {
+      const keyArr = it.path.map((s) => stripSuffix(s));
+      const matches = allLines.filter((l) => l.sans.length >= keyArr.length && keyArr.every((s, i) => stripSuffix(l.sans[i]) === s));
+      if (!matches.length) return;
+      const next = matches.find((l) => !solvedNow.has(l.tag)) || matches[0];
+      gotoLine(next.tag);
+      return;
+    }
+    setPreviewNode(it);
   };
   // (기능2) 힌트 — 그 시점에 실제로 두어야 할 수(목표 라인 기준)를 바탕으로 기물 또는 칸을 무작위로 알려준다.
   useEffect(() => { setHintText(null); }, [pathNodes.length, targetTag, wrong]);
@@ -5080,6 +5087,18 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             </div>
           </div>
           <div style={{ width: "50%", boxSizing: "border-box", paddingLeft: 3 }}>
+            {/* (기능) 모식도 페이지에도 보드 페이지와 같은 크기·y좌표의 미니보드를 둔다. 모식도에서
+                이미 둔(공개된) 노드를 클릭하면, 보드 페이지로 옮기지 않고 여기서 그 수를 바로
+                애니메이션으로 재생해 복기할 수 있다(아직 안 둔 갈래는 예전처럼 그 라인을 풀도록 이동). */}
+            <div style={{ marginBottom: 10, minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700, textAlign: "center" }}>{previewNode ? "모식도에서 고른 수" : "모식도의 수를 눌러 다시 보기"}</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{previewNode ? sansToPgnText([...setup, ...previewNode.path]) : " "}</div>
+            <div style={{ width: "100%", maxWidth: 380, margin: "0 auto 12px" }}>
+              {previewNode
+                ? <AnimatedMove key={previewNode.key} sans={[...setup, ...previewNode.path.slice(0, -1)]} san={previewNode.path[previewNode.path.length - 1]} size={boardSize} loopMs={2200} flip={userColor === "b"} />
+                : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
+            </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
             <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
