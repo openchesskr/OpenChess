@@ -1325,6 +1325,21 @@ function ecoOpeningName(ecoUrl) {
   if (!m) return null;
   return decodeURIComponent(m[1]).replace(/-\d.*$/, "").replace(/-/g, " ").trim();
 }
+// (디자인) 레이팅 증감치 계산 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
+// 직전 대국 대비 이번 대국에서의 레이팅 변화량을 구한다. 집중학습·프로필의 "최근 대국" 목록에서
+// 공용으로 써서 두 화면의 표기를 통일한다.
+function computeRatingChanges(games) {
+  const map = new Map();
+  const byClass = {};
+  for (const g of games || []) { if (!g.timeClass) continue; (byClass[g.timeClass] = byClass[g.timeClass] || []).push(g); }
+  for (const arr of Object.values(byClass)) {
+    const sorted = [...arr].sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].rating != null && sorted[i - 1].rating != null) map.set(sorted[i], sorted[i].rating - sorted[i - 1].rating);
+    }
+  }
+  return map;
+}
 function useChessCom(username) {
   const [state, setState] = useState({ status: "idle", games: [] });
   useEffect(() => {
@@ -1556,6 +1571,8 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp) };
 }
 const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
+// (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중학습의 대국 목록에서 공용.
+const TIME_CLASS_LABEL = { rapid: "래피드", blitz: "블리츠", bullet: "불릿", daily: "일일" };
 const QCOLOR = { brilliant: T.brilliant, best: T.best, only: T.only, excellent: T.excellent, good: T.good, inaccuracy: T.inaccuracy, miss: "#C8562F", mistake: T.mistake, blunder: T.blunder, book: T.book, pending: T.inkSoft };
 const KW = {
   "NORMAL": { bg: "#E3EDD9", fg: "#3F5B33", desc: "가장 일반적으로 두어지는 수" },
@@ -2604,19 +2621,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   // (버그 보충) 레이팅 증감치 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
   // 직전 대국 대비 이번 대국에서의 내 레이팅 변화량을 미리 계산해 둔다(레이팅 풀이 다르면 의미가
   // 없으므로 클래스별로 나눠서 비교). chess.com API가 대국별 레이팅을 주므로 별도 요청 없이 계산 가능.
-  const ratingChanges = useMemo(() => {
-    const map = new Map();
-    if (!chesscom || chesscom.status !== "ready") return map;
-    const byClass = {};
-    for (const g of chesscom.games) { if (!g.timeClass) continue; (byClass[g.timeClass] = byClass[g.timeClass] || []).push(g); }
-    for (const arr of Object.values(byClass)) {
-      const sorted = [...arr].sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
-      for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i].rating != null && sorted[i - 1].rating != null) map.set(sorted[i], sorted[i].rating - sorted[i - 1].rating);
-      }
-    }
-    return map;
-  }, [chesscom && chesscom.games, chesscom && chesscom.status]);
+  const ratingChanges = useMemo(() => (chesscom && chesscom.status === "ready" ? computeRatingChanges(chesscom.games) : new Map()), [chesscom && chesscom.games, chesscom && chesscom.status]);
   const fmtGameDate = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
   // (버그 보충) 마스터 대국 정렬(최신순/레이팅순) + 페이지네이션.
   const MASTER_PAGE_SIZE = 5;
@@ -2746,8 +2751,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         return (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: i === 0 ? "none" : "1px solid #E4D5B6" }}>
                             <div style={{ minWidth: 0, flex: 1 }}>
+                              {/* (디자인) 타임컨트롤 표기 + 레이팅 증감폭은 게임 결과 뒤 소괄호로 통일. */}
                               <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"}으로 플레이 · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
-                                {rc != null && <span style={{ marginLeft: 6, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>{rc > 0 ? "+" + rc : rc}</span>}
+                                {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
+                                {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
                                 {g.accuracy != null && <span style={{ marginLeft: 6, fontSize: 11, color: T.inkSoft }}>정확도 {g.accuracy.toFixed(1)}%</span>}
                               </div>
                               <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtGameDate(g.endTime)}</div>
@@ -5893,6 +5900,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   }, [username]);
   const ready = chesscom && chesscom.status === "ready";
   const overall = useMemo(() => (ready ? chesscom.analyze([]) : null), [ready, chesscom && chesscom.games]);
+  const ratingChanges = useMemo(() => (ready ? computeRatingChanges(chesscom.games) : new Map()), [ready, chesscom && chesscom.games]);
   const openingStats = useMemo(() => {
     if (!ready) return [];
     const agg = {};
@@ -5945,7 +5953,8 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         </div>
       )}
-      {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다 */}
+      {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
+          (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
         const recent = [...chesscom.games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0)).slice(0, 5);
         if (!recent.length) return null;
@@ -5953,10 +5962,14 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         return (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>최근 대국</div>
-            {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; return (
+            {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; const rc = ratingChanges.get(g); return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"} · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b></div>
+                  <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"} · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                    {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
+                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                    {g.accuracy != null && <span style={{ marginLeft: 6, fontSize: 11, color: T.inkSoft }}>정확도 {g.accuracy.toFixed(1)}%</span>}
+                  </div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtD(g.endTime)}</div>
                 </div>
                 {onOpenGame && (
@@ -6013,9 +6026,10 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
         {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
           : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(myPub.nickname || user || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
+          {/* (디자인) 칭호는 이름 위에 표시 */}
+          {myPub.title && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={myPub.title} earned compact /></div>}
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{myPub.nickname || myPub.displayId || user}</div>
           <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
-          {myPub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={myPub.title} earned compact /></div>}
         </div>
       </div>
       <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
@@ -7719,12 +7733,15 @@ export default function App() {
               30~40px로 너무 작게 잡혀 있어 좌상단 로고가 눈에 띄지 않았다 — 헤더를 꽉 채우도록 키운다. */}
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 92 : 136, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
         </div>
-        <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10 }}>
+        {/* (버그 수정) 로그인 상태에서는 레벨 배지·아이디·로그아웃·구분선·검색·친구·채팅·알림까지 8개
+            요소가 한 줄에 들어가, 폭이 좁은 화면에서 오른쪽 끝이 화면 밖으로 잘려 나갔다 — 줄바꿈을
+            허용해 좁은 화면에서는 두 줄로 자연스럽게 내려가게 한다. */}
+        <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10, flexWrap: "wrap", rowGap: 6, justifyContent: "flex-end" }}>
           {/* (18차 UI8) 레벨 UI를 아이디 왼쪽으로 이동, 레벨 텍스트·게이지는 좌우로 나란히 배치 */}
           <LevelBadge totalXp={totalXp} compact={narrowHeader} />
           {user ? (
             <>
-              <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(profile.displayId || user) + roleIcon(user)}</span>
+              <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: narrowHeader ? 70 : 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(profile.displayId || user) + roleIcon(user)}</span>
               <button onClick={() => setConfirmLogout(true)} className="press" style={{ padding: "6px 11px", borderRadius: 8, background: T.ebony3, color: T.ivory, border: "1px solid #000", fontSize: 12, cursor: "pointer" }}>로그아웃</button>
             </>
           ) : (
