@@ -902,6 +902,18 @@ function hangingLoss(board, color, skip) {
   }
   return maxLoss;
 }
+// (21차) 내 기물이 걸려 있는 걸 방치한 수라도, 그 대신 그보다 더 비싼 상대 기물을 진짜로(=이 교환이
+// 나에게 순이득인) 위협했다면 — 도망 대신 반격을 택한 찾기 어려운 수이므로 탁월로 인정하기 위한 판정.
+// 단순히 기하학적으로 노리는 것만으론 부족하고(예: 똑같이 되잡혀 동가교환이면 진짜 위협이 아님),
+// SEE상 순이득(> 0)이 나야 "진짜 위협"으로 센다.
+function attacksPricier(board, color, minVal) {
+  const enemy = color === "w" ? "b" : "w";
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== enemy || p.t === "K") continue;
+    if (VAL[p.t] > minVal && seeSquare(board, r, c, color) > 0) return true;
+  }
+  return false;
+}
 function isSacrifice(board, sanRaw, color) {
   const info = sanSrc(board, sanRaw, color);
   if (!info || info.castle) return false;
@@ -938,9 +950,17 @@ function isSacrifice(board, sanRaw, color) {
     // 상쇄하고 남는다면(예: 1.e4 e5 2.d4 exd4 3.Qxd4 Nc6 4.Qd5 Nf6 5.Qf5 d5 6.exd5 Bxf5 — 퀸(9점)을 잡으며
     // Nc6(≈2점 손실)를 방치) 총합이 이득이므로 희생이 아니다. 총손익이 -2점 이하일 때만 희생으로 본다.
     if (net - afterHang > -2) return false;
+    // (21차) 방치한 내 기물(afterHang 상당)보다 더 비싼 상대 기물을 이 수로 실제 위협했는지 — 도망 대신
+    // 반격을 택한 경우, 아래 두 분기 모두에서 탁월로 인정하는 근거가 된다.
+    const counterAttack = attacksPricier(after, color, afterHang);
     // (18차) 두 기물이 동시에 공격받는(포크) 상황에서 위협받던 기물 자신을 움직여 다른 기물을 내주는 것은,
     // 살린 기물이 내준 기물보다 가치가 "낮을" 때만 비직관적 선택으로 보고 탁월로 인정한다(동가·상위 구출은 당연한 수).
-    if (movedThreatLoss >= 1) return VAL[info.piece] < afterHang;
+    // (21차) 살린 기물 쪽이 더 비싸더라도, 그 대신 상대의 더 비싼 기물을 반격으로 위협했다면 역시 탁월.
+    if (movedThreatLoss >= 1) return VAL[info.piece] < afterHang || counterAttack;
+    // (21차) beforeHang(이 수를 두기 전부터 이미 걸려 있던 손실) 이상으로 afterHang이 커지지 않았다면,
+    // 이 수는 새로 무언가를 희생한 게 아니라 이미 정해진 손실을 그대로 둔 것뿐이다(예: 사잇수로 체크메이트를
+    // 막느라 이미 걸려 있던 기물을 뒤늦게 내주는 수) — 반격으로 상쇄하지 못했다면 희생으로 보지 않는다.
+    if (beforeHang >= afterHang) return counterAttack;
     return true;
   }
   return false;
