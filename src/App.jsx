@@ -19,6 +19,14 @@ const T = {
   book: "#8A5A2B", arrow: "#C49A50",
 };
 const FILES = "abcdefgh";
+// (디자인) 보드 테두리에 금색 광택(gloss) 효과 — 단색 브라스 테두리 대신 대각선 그러데이션
+// borderImage + 안쪽 하이라이트/바깥 그림자 boxShadow로 금속 광택감을 낸다. 메인 보드와
+// 사이트 전체의 모든 미니 체스보드(애니메이션·되돌리기·퍼즐 등)에서 공용으로 쓴다.
+const BOARD_GLOSS = {
+  border: "2px solid transparent",
+  borderImage: "linear-gradient(135deg, #F3DFAE, #C49A50 45%, #8A6C2F) 1",
+  boxShadow: "0 0 0 1px rgba(196,154,80,.3), inset 0 1px 3px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.3)",
+};
 /* (20\uCC28 \uAE30\uB2A53) \uAE30\uBB3C SVG \uC138\uD2B8 \u2014 \uC720\uB2C8\uCF54\uB4DC \uD14D\uC2A4\uD2B8 \uAE30\uBB3C(\u2654\u2655\u2656\u2657\u2658\u2659)\uC744 \uCCA8\uBD80 \uB808\uD37C\uB7F0\uC2A4(\uB85C\uC6B0\uD3F4\uB9AC\u00B7\uAE08\uC7A5 \uB300\uAC01\uC120
    \uD3F4\uB4DC \uB77C\uC778) \uC2A4\uD0C0\uC77C\uC758 \uBCA1\uD130 \uC544\uC774\uCF58\uC73C\uB85C \uAD50\uCCB4\uD55C\uB2E4. \uBAA8\uB4E0 \uAE30\uBB3C\uC774 \uACF5\uC720\uD558\uB294 \uBC11\uB2E8(base)\u00B7\uBAA9(neck) \uB2E4\uAC01\uD615\uC5D0
    \uAE30\uBB3C\uBCC4 \uBAB8\uD1B5(mid) \uC810 \uBAA9\uB85D\uC744 \uC774\uC5B4\uBD99\uC778 \uB2E8\uC77C \uC2E4\uB8E8\uC5E3 \uD558\uB098 + \uB300\uAC01\uC120 \uD3F4\uB4DC \uB77C\uC778 2\uAC1C + \uBC11\uB2E8 \uAE08\uC7A5 \uC0BC\uAC01 \uD3EC\uC778\uD2B8
@@ -445,12 +453,29 @@ function useEngine(enginePref) {
   const queue = useRef([]);
   const running = useRef(false);
   const offRef = useRef(false);
+  const swallowBest = useRef(0); // 강제 해제된 작업의 뒤늦은 bestmove를 무시할 개수
+  const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+  const resultOf = (job, bm) => job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : (job.last ? { ...job.last, best: bm || "" } : (bm ? { best: bm } : null));
   const pump = useCallback(() => {
     if (running.current) return;
     const job = queue.current[0]; if (!job) return;
-    if (!ref.current) { if (offRef.current) { queue.current.shift(); job.resolve(job.multi ? [] : null); pump(); } return; }
+    if (!ref.current) { if (offRef.current) { queue.current.shift(); settle(job, job.multi ? [] : null); pump(); } return; }
     running.current = true;
     job.cmds.forEach((c) => ref.current.postMessage(c));
+    // (버그 수정) 워치독 — 배치 분석 중 특정 포지션에서 엔진이 bestmove를 끝내 안 보내면 running이
+    // true로 굳어 이후 모든 요청이 큐에서 멈춘다(그래프가 도중부터 일자·정확도 100). 제한 시간 안에
+    // bestmove가 없으면 부분 결과로 마무리하고 'stop'을 보내 큐를 다시 흐르게 한다. stop 후에도 응답이
+    // 없으면(워커 완전 정지) 큐를 강제로 흘려보내 분석 전체가 멈추지 않게 한다.
+    clearTimeout(job.watch);
+    job.watch = setTimeout(() => {
+      if (queue.current[0] !== job || job.settled) return;
+      settle(job, resultOf(job, ""));                  // 콜러(analyzeGame 등)는 부분 결과로 즉시 진행
+      try { ref.current && ref.current.postMessage("stop"); } catch (_) { }
+      job.hardWatch = setTimeout(() => {
+        if (queue.current[0] !== job) return;
+        queue.current.shift(); running.current = false; swallowBest.current++; pump();
+      }, 1500);
+    }, job.watchMs || 15000);
   }, []);
   useEffect(() => {
     let worker = null, killed = false, idx = 0;
@@ -473,8 +498,9 @@ function useEngine(enginePref) {
         if (cb.onProgress) { const dm = line.match(/^info depth (\d+)/); cb.onProgress({ ...cb.last, depth: dm ? parseInt(dm[1], 10) : null }); }
       }
       if (line.startsWith("bestmove")) {
+        if (swallowBest.current > 0) { swallowBest.current--; return; } // 강제 해제된 작업의 뒤늦은 응답 무시
         const bm = (line.split(" ")[1] || "").trim(); const d = queue.current.shift(); running.current = false;
-        if (d) { if (d.multi) d.resolve(Object.keys(d.lines).sort((a, b) => a - b).map((k) => d.lines[k])); else d.resolve(d.last ? { ...d.last, best: bm } : (bm ? { best: bm } : null)); }
+        if (d) settle(d, resultOf(d, bm));
         pump();
       }
     }
@@ -497,19 +523,21 @@ function useEngine(enginePref) {
       killed = true;
       try { worker && worker.terminate(); } catch (_) { }
       // 엔진 전환 중 대기 중이던 요청이 있다면 영영 응답이 안 오므로 빈 결과로 정리해 콜러가 멈추지 않게 한다.
-      while (queue.current.length) { const j = queue.current.shift(); j.resolve(j.multi ? [] : null); }
-      running.current = false;
+      while (queue.current.length) { const j = queue.current.shift(); settle(j, j.multi ? [] : null); }
+      running.current = false; swallowBest.current = 0;
     };
   }, [pump, enginePref]);
   // (분석 최적화) movetime(ms)을 주면 `go depth N movetime M`으로 보내 depth·시간 중 먼저 도달하는 쪽에서 멈춘다.
   // 쉬운 포지션은 목표 depth까지 깊게, 복잡한 포지션은 movetime 상한에서 끊어 전체 분석 시간을 예측 가능하게 만든다.
+  // watchMs: 이 요청의 워치독 제한. movetime을 준 배치 분석은 짧게(+버퍼), movetime 없는 실시간
+  // 평가는 depth까지 오래 걸릴 수 있으므로 넉넉히 둔다.
   const evaluate = useCallback((fen, depth = 14, onProgress, movetime) => new Promise((resolve) => {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, last: null, onProgress, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
+    queue.current.push({ resolve, last: null, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
   }), [pump]);
   const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime) => new Promise((resolve) => {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+    queue.current.push({ resolve, multi: true, lines: {}, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump]);
   return { status, evaluate, evaluateMulti };
 }
@@ -1273,6 +1301,23 @@ function addsFor(key) { return CONTENT.treeAdds[key] || []; }
 function nameOverride(key, san) { const v = CONTENT.names[key + "|" + stripSuffix(san)]; return v === undefined ? null : v; }
 function kwOverride(key, san) { const v = CONTENT.keywords[key + "|" + stripSuffix(san)]; return Array.isArray(v) ? v : null; }
 function isUnbooked(key, san) { return !!CONTENT.unbook[key + "|" + stripSuffix(san)]; }
+// (버그 수정) 어떤 포지션(keyStr: 수순을 공백으로 이은 키)의 특정 수(san)가 '이론'인지 판정한다.
+// 예전엔 게임 리뷰(analyzeGame)가 정적 스냅샷 트리(SNAP.tree)만 보고 book을 판정해서, 개발자 모드에서
+// 새로 추가한 이론 수(CONTENT.treeAdds의 theory)나 강제 지정(forceKind "book")이 이론으로 잡히지
+// 않았다(예: 개발자가 스칸디나비안 3수까지 이론으로 등록해도 리뷰에선 우수/최선으로 나옴). LearnTab의
+// 병합 규칙(2310행 등)과 동일하게 맞춘다: unbook이면 제외 → forceKind "book"이거나 개발자 추가
+// 이론이면 이론 → 그 외엔 (강제 지정이 없을 때) 스냅샷 트리의 book 플래그를 따른다.
+function isBookMoveAt(keyStr, san) {
+  if (keyStr == null) return false;
+  if (isUnbooked(keyStr, san)) return false;
+  const forced = forceKindFor(keyStr, san);
+  if (forced === "book") return true;
+  if (addsFor(keyStr).some((a) => stripSuffix(a.san) === stripSuffix(san) && a.theory)) return true;
+  if (forced != null) return false;
+  const node = SNAP.tree[keyStr];
+  const snapMv = node && node.moves ? node.moves.find((x) => stripSuffix(x.san) === stripSuffix(san)) : null;
+  return !!(snapMv && snapMv.book);
+}
 
 /* ============================================================ chess.com 프로필 빅데이터 ============================================================ */
 function parsePgnSans(pgn) {
@@ -1325,6 +1370,21 @@ function ecoOpeningName(ecoUrl) {
   if (!m) return null;
   return decodeURIComponent(m[1]).replace(/-\d.*$/, "").replace(/-/g, " ").trim();
 }
+// (디자인) 레이팅 증감치 계산 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
+// 직전 대국 대비 이번 대국에서의 레이팅 변화량을 구한다. 집중학습·프로필의 "최근 대국" 목록에서
+// 공용으로 써서 두 화면의 표기를 통일한다.
+function computeRatingChanges(games) {
+  const map = new Map();
+  const byClass = {};
+  for (const g of games || []) { if (!g.timeClass) continue; (byClass[g.timeClass] = byClass[g.timeClass] || []).push(g); }
+  for (const arr of Object.values(byClass)) {
+    const sorted = [...arr].sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].rating != null && sorted[i - 1].rating != null) map.set(sorted[i], sorted[i].rating - sorted[i - 1].rating);
+    }
+  }
+  return map;
+}
 function useChessCom(username) {
   const [state, setState] = useState({ status: "idle", games: [] });
   useEffect(() => {
@@ -1339,7 +1399,11 @@ function useChessCom(username) {
         const aj = await arc.json();
         // (19차 기능6) 칭호 조건에 오프닝별 chess.com 플레이 횟수를 반영하기 위해
         // 최근 12개월이 아니라 계정 개설 이후 전체 기간의 모든 아카이브를 불러온다.
-        const months = (aj.archives || []);
+        // (버그 수정) chess.com의 archives 목록은 오래된 달부터 최신 달 순으로 온다 — 그대로 불러오면
+        // 대국이 많은 계정에서 "최근 대국"이 표시되기까지 전체 기간을 다 불러올 때까지 기다려야 했다.
+        // 최신 달부터 거꾸로 불러오고, 달 하나를 불러올 때마다 즉시 화면에 반영(status:"ready")해
+        // 나머지 과거 달은 백그라운드에서 이어서 불러오는 동안에도 최근 대국부터 바로 보이게 한다.
+        const months = (aj.archives || []).slice().reverse();
         const games = [];
         for (const url of months) {
           if (cancelled) return;
@@ -1359,6 +1423,7 @@ function useChessCom(username) {
               const acc = g.accuracies ? (userIsWhite ? g.accuracies.white : g.accuracies.black) : null;
               games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, accuracy: acc != null ? acc : null });
             }
+            if (!cancelled) setState({ status: "ready", games: [...games] });
           } catch (_) {}
         }
         if (!cancelled) setState({ status: "ready", games });
@@ -1455,34 +1520,28 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
 // cp는 백 관점(양수=백 우세). 반환은 백의 기대 승률(0~100).
 function winPctFromCp(cp) { const c = Math.max(-1200, Math.min(1200, cp)); return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1); }
 // 둔 사람 관점의 승률 하락(before-after)으로 그 수의 정확도(0~100)를 산출.
-function moveAccuracy(winBefore, winAfter) { const drop = Math.max(0, winBefore - winAfter); return Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * drop) - 3.1669)); }
-// 게임 정확도 = 변동성 가중 평균과 조화 평균의 산술 평균(chess.com 방식 근사).
+// (정확도 모델 개편 · (B)) 감쇠 계수 ACC_DECAY로 실수의 감점 세기를 조절한다. Lichess 기본값
+// 0.04354는 chess.com보다 관대해 실수가 있는 대국을 높게 준다 — 실측 2대국(chess.com 값)에
+// 맞춰 0.055로 키웠다(실수 하나당 감점이 더 커짐). acc(0)=100은 그대로 유지된다.
+const ACC_DECAY = 0.055;
+function moveAccuracy(winBefore, winAfter) { const drop = Math.max(0, winBefore - winAfter); return Math.max(0, Math.min(100, 103.1668 * Math.exp(-ACC_DECAY * drop) - 3.1669)); }
+// 게임 정확도 = 수별 정확도의 조화평균.
+// (정확도 모델 개편 · (B)) chess.com은 실수·블런더가 여러 번 나온 대국을 훨씬 낮게 준다. 조화평균은
+// 낮은 값(실수)에 민감해 실수가 쌓일수록 점수가 크게 내려간다. 예전엔 여기에 '변동성 가중 산술평균'을
+// 섞었는데(사실상 단순평균이라 나쁜 대국을 위로 끌어올림), 실측 결과 순수 조화평균 + 더 가파른 감점
+// (ACC_DECAY)이 chess.com에 더 가까웠다(총오차 24.8→16.8). winsBefore는 향후 국면 가중 실험을 위해
+// 시그니처에 남겨둔다.
 function gameAccuracyFrom(accs, winsBefore) {
   if (!accs.length) return null;
   const harmonic = accs.length / accs.reduce((s, a) => s + 1 / Math.max(a, 1), 0);
-  let wsum = 0, num = 0;
-  for (let i = 0; i < accs.length; i++) {
-    const lo = Math.max(0, i - 2), hi = Math.min(winsBefore.length - 1, i + 2);
-    const seg = winsBefore.slice(lo, hi + 1);
-    const mean = seg.reduce((s, x) => s + x, 0) / seg.length;
-    const sd = Math.sqrt(seg.reduce((s, x) => s + (x - mean) * (x - mean), 0) / seg.length);
-    const w = Math.max(0.5, sd);
-    wsum += w; num += w * accs[i];
-  }
-  const weighted = wsum > 0 ? num / wsum : harmonic;
-  return calibrateAccuracy((weighted + harmonic) / 2);
+  return calibrateAccuracy(harmonic);
 }
-// (정확도 보정) chess.com(CAPS2)은 공개 승률 공식보다 체계적으로 낮게 나온다 — 실제 게임의 '평가치를
-// 그대로' 공식에 넣어도 우리 값이 ~13점 높았다(엔진 depth 문제가 아니라 모델 차이). 실측 정답지
-// (백 88.0→74.5, 흑 79.3→69.0)에 양끝 앵커(0→0, 100→100)를 더해 구간 선형으로 보정한다.
-// 표본이 늘면 앵커를 다듬는다.
+// (정확도 보정) 예전에는 잘못된 집계(단순평균에 가까운 성분)를 억지로 끌어올리는 선형 보정을 뒀지만,
+// 집계를 '변동성 가중 조화평균'으로 바꾼 뒤로는 그 역할이 사라졌다. 지금은 항등(보정 없음) — 집계 자체가
+// chess.com에 맞도록 하고, 향후 빅데이터로 잔차가 확인되면 여기서 다시 보정한다.
 function calibrateAccuracy(a) {
   if (a == null) return null;
-  let c;
-  if (a <= 79.3) c = a * (69.0 / 79.3);
-  else if (a <= 88.0) c = 69.0 + (a - 79.3) * (5.5 / 8.7);
-  else c = 74.5 + (a - 88.0) * (25.5 / 12.0);
-  return Math.round(Math.max(0, Math.min(100, c)) * 10) / 10;
+  return Math.round(Math.max(0, Math.min(100, a)) * 10) / 10;
 }
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
@@ -1507,7 +1566,8 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     for (let i = 0; i <= N; i++) {
       const lines = await withTimeout(engine.evaluateMulti(boardToFen(board, i), depth, 2, movetime), 8000);
       const p0 = lines && lines[0], p1 = lines && lines[1];
-      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null };
+      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
+      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
       onProgress && onProgress((i + 1) / (N + 1));
       if (i < N) board = applySan(board, fullSans[i], i % 2 === 0 ? "w" : "b");
     }
@@ -1524,15 +1584,21 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     const bestCp = posEval[i].cp;                         // 이 포지션의 최선(둔 사람 관점)
     const bestSan = posEval[i].best ? uciToSan(brd, posEval[i].best, color) : null;
     const matched = !!(bestSan && stripSuffix(bestSan) === playedSan);
+    // (버그 수정) 엔진이 이 포지션(또는 둔 수 판정에 필요한 다음 포지션)을 평가하지 못했으면 채점을
+    // 건너뛴다. 예전엔 평가 실패 시 cp=0으로 취급돼 loss=0 → '최선의 수' → 정확도 100이 되어, 엔진이
+    // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 pending으로 두고 정확도 집계에서 뺀다.
+    if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
+      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null });
+      gradeBoard = applySan(gradeBoard, fullSans[i], color);
+      continue;
+    }
     // 둔 수가 엔진 최선수면 손실 0(노이즈 제거), 아니면 둔 뒤 포지션(= posEval[i+1], 상대 관점) 부호 반전
     const playedCp = matched ? bestCp : -posEval[i + 1].cp;
     const loss = Math.max(0, bestCp - playedCp);
     // 등급 — (20차) '최선의 수'(별)는 엔진 1순위 수를 실제로 뒀을 때만(loss 노이즈로 차선 수에 별이 붙는 것 방지)
     let kind = tierOf(loss);
     if (kind === "best" && !matched) kind = "excellent";
-    const parent = snapNode(fullSans.slice(0, i));
-    const mv = parent && parent.moves ? parent.moves.find((x) => stripSuffix(x.san) === playedSan) : null;
-    if (mv && mv.book) kind = "book";
+    if (isBookMoveAt(fullSans.slice(0, i).join(" "), fullSans[i])) kind = "book";
     else {
       const decided = Math.abs(playedCp) > 200, losing = playedCp <= -200;
       try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
@@ -1556,7 +1622,80 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp) };
 }
 const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
+// (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중학습의 대국 목록에서 공용.
+const TIME_CLASS_LABEL = { rapid: "래피드", blitz: "블리츠", bullet: "불릿", daily: "일일" };
 const QCOLOR = { brilliant: T.brilliant, best: T.best, only: T.only, excellent: T.excellent, good: T.good, inaccuracy: T.inaccuracy, miss: "#C8562F", mistake: T.mistake, blunder: T.blunder, book: T.book, pending: T.inkSoft };
+// (디자인/기능) 프로필·집중학습의 대국 목록에서 각 대국의 탁월한 수·유일한 수·실수·블런더 개수를
+// 보여주기 위해, 자체 엔진(analyzeGame)으로 그 대국 전체를 분석한다. 목록 요약용이라 "게임 리뷰"
+// 전체 화면(depth 18)보다 얕게(depth 12) + movetime을 줄여 상대적으로 빠르게 훑는다. 화면에 여러
+// 대국이 동시에 나타날 수 있으므로, 같은 엔진 인스턴스를 두고 여러 분석이 동시에 경합하지 않도록
+// 전역 큐로 한 번에 한 대국씩만 분석하고, 결과는 캐시해 같은 대국을 다시 열어도 재분석하지 않는다.
+const gameQualityCache = new Map(); // key(수순 join) -> "running" | {moves,...} | "error"
+const gameQualityQueue = [];
+let gameQualityRunning = false;
+const gameQualityListeners = new Set();
+function gameQualityNotify() { gameQualityListeners.forEach((fn) => { try { fn(); } catch { } }); }
+async function gameQualityRun() {
+  if (gameQualityRunning) return;
+  gameQualityRunning = true;
+  while (gameQualityQueue.length) {
+    const job = gameQualityQueue.shift();
+    if (gameQualityCache.get(job.key) === "canceled") continue;
+    gameQualityCache.set(job.key, "running");
+    gameQualityNotify();
+    try {
+      const r = await analyzeGame(job.sans, job.engine, 12, null, 120);
+      gameQualityCache.set(job.key, r);
+    } catch { gameQualityCache.set(job.key, "error"); }
+    gameQualityNotify();
+  }
+  gameQualityRunning = false;
+}
+function gameQualityEnqueue(key, sans, engine) {
+  if (gameQualityCache.has(key)) return;
+  gameQualityCache.set(key, "queued");
+  gameQualityQueue.push({ key, sans, engine });
+  gameQualityRun();
+}
+// sans: 이 대국의 전체 수순(SAN 배열). active(예: 이 대국이 현재 페이지에 보이는 중)일 때만 분석을 건다.
+function useGameQuality(sans, engine, active) {
+  const key = useMemo(() => (sans || []).join(" "), [sans]);
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const listener = () => bump((v) => v + 1);
+    gameQualityListeners.add(listener);
+    return () => gameQualityListeners.delete(listener);
+  }, []);
+  useEffect(() => {
+    if (!active || !engine || engine.status !== "ready" || !key) return;
+    gameQualityEnqueue(key, sans, engine);
+  }, [key, active, engine && engine.status]);
+  const entry = key ? gameQualityCache.get(key) : null;
+  if (!entry || entry === "queued" || entry === "running") return { status: "pending" };
+  if (entry === "error") return { status: "error" };
+  const counts = { brilliant: 0, only: 0, mistake: 0, blunder: 0 };
+  entry.moves.forEach((m) => { if (counts[m.kind] != null) counts[m.kind]++; });
+  return { status: "ready", counts };
+}
+// (디자인) 탁월한 수·유일한 수·실수·블런더 개수를 각각의 수 체계 아이콘과 함께 작게 표기.
+// 0개인 항목은 표시하지 않고, 넷 다 0이면 아무것도 렌더링하지 않는다(대국 목록 줄이 늘어지지 않게).
+const GAME_QUALITY_KINDS = ["brilliant", "only", "mistake", "blunder"];
+function GameQualityBadges({ sans, engine, active }) {
+  const { status, counts } = useGameQuality(sans, engine, active);
+  if (status === "pending") return <span title="대국 분석 중…" style={{ display: "inline-flex", alignItems: "center", color: T.inkSoft }}><PendingDots size={11} /></span>;
+  if (status !== "ready") return null;
+  const any = GAME_QUALITY_KINDS.some((k) => counts[k] > 0);
+  if (!any) return null;
+  return (
+    <span className="inline-flex items-center" style={{ gap: 6 }}>
+      {GAME_QUALITY_KINDS.map((k) => counts[k] > 0 && (
+        <span key={k} title={QLABEL[k] + " " + counts[k] + "개"} style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10.5, fontWeight: 800, color: QCOLOR[k] }}>
+          {badgeIcon(k, 11)}{counts[k]}
+        </span>
+      ))}
+    </span>
+  );
+}
 const KW = {
   "NORMAL": { bg: "#E3EDD9", fg: "#3F5B33", desc: "가장 일반적으로 두어지는 수" },
   "TOP LEVEL": { bg: "#F3E6C2", fg: "#7A5A14", desc: "마스터가 압도적으로 선택" },
@@ -1686,8 +1825,18 @@ function badgeIcon(kind, size = 14) {
   if (kind === "excellent") return <IconExcellent size={size} />;
   if (kind === "good") return <Check size={size} />;
   if (kind === "miss") return <X size={size} strokeWidth={3.2} />;
-  if (kind === "pending") return <span style={{ fontWeight: 800, fontSize: size - 2 }}>…</span>;
+  // (디자인) 수 체계 아이콘이 정해지기 전(엔진 계산 중)에는 정적인 "…" 대신, 평가 막대의 탐색
+  // 인디케이터와 같은 3-dot bounce 애니메이션으로 "계산 중"임을 더 또렷하게 보여준다.
+  if (kind === "pending") return <PendingDots size={size} />;
   return <span style={{ fontWeight: 800, fontSize: size - 1 }}>{kind === "inaccuracy" ? "?!" : kind === "mistake" ? "?" : "??"}</span>;
+}
+function PendingDots({ size = 14 }) {
+  const d = Math.max(2.5, size * 0.22);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: Math.max(1.5, size * 0.12) }}>
+      {[0, 1, 2].map((i) => <span key={i} style={{ width: d, height: d, borderRadius: "50%", background: "currentColor", display: "inline-block", animation: "dotbounce 1.1s ease-in-out " + (i * 0.18) + "s infinite" }} />)}
+    </span>
+  );
 }
 
 /* ============================================================ 평가 막대 (백=왼쪽, 숫자 항상 보이게) ============================================================ */
@@ -1782,7 +1931,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
           비율이 달라진 상자에 맞춰 늘어나며 왜곡됐다(바다 스킨처럼 이어진 이미지 텍스처에서 특히 눈에
           띔). aspectRatio:"1/1"인 CSS 그리드로 바꾸면 실제 렌더링 폭이 얼마로 계산되든 높이가 항상
           똑같이 따라가 칸이 항상 정사각형으로 유지된다. */}
-      <div style={{ position: "relative", borderRadius: 4, overflow: "visible", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+      <div style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
         {rows.map((row, ri) => row.map((p, ci) => {
           const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
           const isSel = selected && selected[0] === r && selected[1] === c;
@@ -1793,10 +1942,15 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
               onDragOver={interactive ? (e) => e.preventDefault() : undefined}
               onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
-              style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
+              // (버그 수정) 기물을 칸 안에서 수직 중앙 정렬하면, 기물마다 실제 렌더링 높이가 달라
+              // (킹은 크고 폰은 작음) 밑동(받침) 높이가 기물마다 제각각으로 보였다 — 하단 정렬로
+              // 바꿔 모든 기물의 받침이 항상 같은 높이(칸 바닥 기준)에 놓이도록 한다.
+              style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.04, boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
               {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{8 - r}</span>}
               {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{FILES[c]}</span>}
-              {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
+              {/* (버그 수정) 기물이 하단 정렬로 바뀌면서, top/left 없이 정적 위치에 의존하던 이 점도
+                  칸 바닥 쪽으로 딸려 내려가 버렸다 — 칸 정중앙에 고정되도록 명시적으로 중앙 정렬한다. */}
+              {isTarget && <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
               {lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
                 <>
                   <div style={{ position: "absolute", inset: 0, background: QCOLOR[lastQ.kind], opacity: 0.5, pointerEvents: "none" }} />
@@ -2126,6 +2280,19 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           return { san: l.san, adopt: l.adopt, games: l.games, wdl: l.wdl, book, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) };
         };
         const all = active.moves.map(mk);
+        // (버그 수정) Lichess가 이 위치의 후보 수 목록에 큐레이션된 이론 수를 포함하지 않으면(희귀한
+        // 변형 등) 그 수가 통째로 빠져, 보드 위 추천 화살표가 아예 안 그려지거나(채택률 데이터가 없는
+        // 수만 남아) 두께·투명도가 전부 최솟값으로 뭉개져 보이는 문제가 있었다 — 스냅샷의 이론 수는
+        // Lichess 응답에 없어도 항상 포함되도록 보강한다.
+        const coveredSans = new Set(all.map((m) => stripSuffix(m.san)));
+        for (const s of base) {
+          if (!s.book) continue;
+          const k = stripSuffix(s.san);
+          if (coveredSans.has(k)) continue;
+          const dev = devAddsBy[k];
+          all.push({ san: s.san, adopt: null, games: null, wdl: null, book: true, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) });
+          coveredSans.add(k);
+        }
         const books = all.filter((m) => m.book);
         const nonbook = all.filter((m) => !m.book);
         // Lichess가 응답한 비이론 수는 전부 유지(임의 캡 금지) — 수 체계와 무관하게 표시되는 모든 수가 통계를 가져야 함
@@ -2321,11 +2488,11 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           이동 기물·배지·화살표도 그리드 전체 대비 퍼센트/논리 좌표(0~8)로 옮겨, 컨테이너가 좁아져도
           (집중학습·퍼즐 화면 등) 칸이 정사각형을 벗어나거나 좌표·화살표가 어긋나지 않게 한다. */}
       <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
-        <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+        <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
           {rows.map((row, vr) => row.map((p, vc) => {
             const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
             return (
-              <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
+              <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.04, boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
                 {p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}
               </div>
             );
@@ -2528,21 +2695,26 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
   // 이 수가 실제로 두어진 마스터 대국(대국자/레이팅/결과) — 목록에서 클릭하면 그 대국의 마지막 포지션을 연다.
   const [masterGames, setMasterGames] = useState([]);
   const [loadingMasterGames, setLoadingMasterGames] = useState(false);
+  // (버그 수정) fetch가 실패해도(네트워크 오류 등) masterGames가 그냥 빈 배열([])로 남아, "결과가
+  // 없다"는 메시지와 "요청이 실패했다"는 상황을 화면에서 구분할 수 없었다 — 별도 에러 상태를 둬서
+  // 다르게 안내하고, 재시도 버튼으로 다시 불러올 수 있게 한다.
+  const [masterGamesError, setMasterGamesError] = useState(false);
+  const [masterRetry, setMasterRetry] = useState(0);
   useEffect(() => {
-    setMasterGames([]); setLoadingMasterGames(false);
+    setMasterGames([]); setLoadingMasterGames(false); setMasterGamesError(false);
     if (!active) return;
     let cancelled = false;
     setLoadingMasterGames(true);
-    fetchMasterTopGames([...sans, san]).then((gs) => { if (!cancelled) { setMasterGames(gs); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) setLoadingMasterGames(false); });
+    fetchMasterTopGames([...sans, san]).then((gs) => { if (!cancelled) { setMasterGames(gs); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
     return () => { cancelled = true; };
-  }, [active, sansKey, san]);
+  }, [active, sansKey, san, masterRetry]);
   return {
     active, sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain,
     editing, setEditing, draft, setDraft, canEditExpl, saveExpl, delExpl, explainLong,
     showExpl, setShowExpl, editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
     openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
     expectedPuzzleId, existingPuzzle, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
-    masterGames, loadingMasterGames,
+    masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
 // (20차 UI2) 최선 수(연두색+별) 바로가기 버튼 — 누르면 그 대국을 즉시 분석 모드로 연다.
@@ -2570,14 +2742,14 @@ function ListPager({ page, setPage, pageCount }) {
 }
 // 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 오른쪽 칼럼은
 // 집중학습 여부와 무관하게 항상 수 블록 목록을 보여준다(LearnTab에서 분기하지 않음).
-function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMyGame, onOpenMyGameAnalyze }) {
+function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMyGame, onOpenMyGameAnalyze, liveOn }) {
   if (!fa.active) return null;
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain, editing, setEditing, draft, setDraft,
     canEditExpl, saveExpl, delExpl, explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
     stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, expectedPuzzleId, existingPuzzle,
-    masterGames, loadingMasterGames,
+    masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
   const [openingGameId, setOpeningGameId] = useState(null);
@@ -2599,19 +2771,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   // (버그 보충) 레이팅 증감치 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
   // 직전 대국 대비 이번 대국에서의 내 레이팅 변화량을 미리 계산해 둔다(레이팅 풀이 다르면 의미가
   // 없으므로 클래스별로 나눠서 비교). chess.com API가 대국별 레이팅을 주므로 별도 요청 없이 계산 가능.
-  const ratingChanges = useMemo(() => {
-    const map = new Map();
-    if (!chesscom || chesscom.status !== "ready") return map;
-    const byClass = {};
-    for (const g of chesscom.games) { if (!g.timeClass) continue; (byClass[g.timeClass] = byClass[g.timeClass] || []).push(g); }
-    for (const arr of Object.values(byClass)) {
-      const sorted = [...arr].sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
-      for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i].rating != null && sorted[i - 1].rating != null) map.set(sorted[i], sorted[i].rating - sorted[i - 1].rating);
-      }
-    }
-    return map;
-  }, [chesscom && chesscom.games, chesscom && chesscom.status]);
+  const ratingChanges = useMemo(() => (chesscom && chesscom.status === "ready" ? computeRatingChanges(chesscom.games) : new Map()), [chesscom && chesscom.games, chesscom && chesscom.status]);
   const fmtGameDate = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
   // (버그 보충) 마스터 대국 정렬(최신순/레이팅순) + 페이지네이션.
   const MASTER_PAGE_SIZE = 5;
@@ -2741,11 +2901,16 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         return (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: i === 0 ? "none" : "1px solid #E4D5B6" }}>
                             <div style={{ minWidth: 0, flex: 1 }}>
+                              {/* (디자인) 타임컨트롤 표기 + 레이팅 증감폭은 게임 결과 뒤 소괄호로 통일. */}
                               <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"}으로 플레이 · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
-                                {rc != null && <span style={{ marginLeft: 6, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>{rc > 0 ? "+" + rc : rc}</span>}
+                                {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
+                                {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
                                 {g.accuracy != null && <span style={{ marginLeft: 6, fontSize: 11, color: T.inkSoft }}>정확도 {g.accuracy.toFixed(1)}%</span>}
                               </div>
                               <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtGameDate(g.endTime)}</div>
+                              {/* (디자인) 탁월한 수·유일한 수·실수·블런더 개수 — 자체 엔진으로 이 대국 전체를
+                                  분석해 표기(수 체계 아이콘). 실시간 분석이 꺼져 있으면 분석하지 않는다. */}
+                              {liveOn && <div style={{ marginTop: 3 }}><GameQualityBadges sans={g.moves} engine={engine} active /></div>}
                             </div>
                             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                               <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
@@ -2764,8 +2929,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                     {stats.top.length > 0 && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{ fontWeight: 800, color: T.inkSoft, fontSize: 11.5, marginBottom: 2 }}>자주 둔 다음 수</div>
+                        {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
+                            onJump로 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
                         {stats.top.map((t) => (
-                          <div key={t.san} style={{ fontFamily: "ui-monospace,monospace", fontSize: 12 }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</div>
+                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: "ui-monospace,monospace", fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
                         ))}
                       </div>
                     )}
@@ -2813,7 +2980,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
             </div>
           )}
         </div>
-        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>불러오는 중…</p>
+        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 기록 탐색 중…</p>
+          : masterGamesError ? (
+            <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 정보를 불러오지 못했습니다. <button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>다시 시도</button></p>
+          )
           : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
             : (<>
             {masterPageItems.map((g) => (
@@ -3008,7 +3178,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const questPaths = useMemo(() => questOpeningNames.map((name) => findOpeningPathByFuzzyName(name)).filter(Boolean), [questOpeningNames]);
   const matchesQuestPath = (path) => questPaths.some((qp) => qp.length >= path.length && path.every((s, i) => qp[i] === s));
   const [flip, setFlip] = useState(false);
-  const [boardSize, boardRef] = useBoardSize(360);
+  // (디자인) 학습 탭 메인 보드를 조금 더 키운다.
+  const [boardSize, boardRef] = useBoardSize(400);
   const [sel, setSel] = useState(null);
   const [analyzeOpen, setAnalyzeOpen] = useState(false); // (19차 기능3) 기보 분석 모드
   // (20차 UI2) "최선 수" 바로가기로 진입했을 때 — 엔진이 준비되는 대로 분석 모드를 자동으로 연다.
@@ -3201,7 +3372,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     const isNew = m.book ? unlockOpening(childKey, name) : false;   // (UX2) 비이론 수는 도감 해금/알림 없음
     setFocus({ sans: [...sans], san: m.san, m, ply, isNew, name });
   };
-  const exitFocus = () => { if (focus && focus.isNew) onLearned(focus.name); setFocus(null); };
+  // (버그 수정) 집중학습 중 다른 수의 집중학습으로 이동(onJump)했다가 나가면, 보드가 원래 진입했던
+  // 위치로 돌아가 버려 방금 살펴본 수순이 사라졌었다 — 나갈 때 보드를 마지막으로 보던 집중학습
+  // 위치(수순)로 맞춘다.
+  const exitFocus = () => {
+    if (focus && focus.isNew) onLearned(focus.name);
+    if (focus) { setSans([...focus.sans, focus.san]); setFuture([]); setSel(null); setLastQ(null); }
+    setFocus(null);
+  };
   const enterFocusAt = (tSans, tSan) => {
     const node2 = snapNode([...tSans, tSan]);
     const name = (node2 && node2.opening) ? node2.opening.name : tSan;
@@ -3307,7 +3485,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
+              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} liveOn={liveOn} />
             </div>
           </div>
         )}
@@ -3478,8 +3656,10 @@ function useOpeningTreeAuto() {
     setVersion((v) => v + 1);
     // (버그) 트리가 너무 금방 끊겨 보인다는 피드백 — 최소 깊이(모든 갈래가 무조건 펼쳐지는 수)를
     // 3수에서 4수로, 그 이후 계속 펼쳐지는 채택률 기준도 20%에서 15%로 낮춰 조금 더 길게 이어지게 한다.
-    const MIN_DEPTH = 4, ADOPT_CUTOFF = 15;
-    const MAX_CONCURRENT = 5, MAX_NODES = 900;
+    // (버그 수정) 그래도 하위 라인이 금방 끊긴다는 피드백 — 깊이를 5수까지 무조건 펼치고, 채택률
+    // 기준도 10%까지 낮추고, 최대 노드 수도 두 배로 늘려 하위 라인이 계속 이어지게 한다.
+    const MIN_DEPTH = 5, ADOPT_CUTOFF = 10;
+    const MAX_CONCURRENT = 5, MAX_NODES = 1800;
     let active = 0, started = 0;
     const queue = [{ path: [], depth: 0 }];
     const runNext = () => {
@@ -3515,7 +3695,7 @@ function useOpeningTreeAuto() {
 }
 // (개편) 도감 오프닝 상세 블록 — 모식도 안, 그 수 노드 옆에 인라인으로 열리고 닫힌다. 기존 카드 내용
 // (미리보기·해금 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 더해 보여준다.
-function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style }) {
+function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening }) {
   const label = nameOverride(path.join(" "), m.san) ?? m.name ?? (m.isMain ? "Main Line" : null);
   const ply = path.length;
   const board = useMemo(() => boardFromSans(path), [path.join(" ")]);
@@ -3531,7 +3711,10 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style }) {
   const evTxt = m.evalCp != null ? fmtEvalCp(m.evalCp) : null;
   return (
     <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ width: 280, borderRadius: 16, padding: 12, background: isUnlocked ? "linear-gradient(180deg,#FBF5E8,#E2D2B2)" : "linear-gradient(180deg,#33261A,#221610)", boxShadow: "0 10px 30px -8px rgba(0,0,0,.65)", border: "1px solid " + (isUnlocked ? "#CDB98E" : "#000"), position: "absolute", zIndex: 50, ...style }}>
-      <button onClick={onClose} aria-label="블록 닫기" className="press" style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: 7, border: "none", background: "rgba(0,0,0,.15)", color: isUnlocked ? T.ink : T.ivory, cursor: "pointer" }}>✕</button>
+      {/* (버그 수정) 아래 보드 미리보기 래퍼(position:relative)가 z-index 없이도 DOM 순서상 이 버튼
+          위에 그려져, 카드 폭 전체에 걸친 그 래퍼의 투명 영역이 X 버튼 클릭을 가로채고 있었다 —
+          명시적 z-index로 항상 위에 오도록 고정한다. */}
+      <button onClick={onClose} aria-label="블록 닫기" className="press" style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: 7, border: "none", background: "rgba(0,0,0,.15)", color: isUnlocked ? T.ink : T.ivory, cursor: "pointer", zIndex: 5 }}>✕</button>
       <div style={{ position: "relative" }}>
         {isUnlocked ? <AnimatedMove sans={path} san={m.san} size={200} />
           : <div style={{ width: 162, height: 162, margin: "0 auto", borderRadius: 9, background: "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 8px,#33261A 8px,#33261A 16px)", display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={28} style={{ color: T.brass }} /></div>}
@@ -3543,7 +3726,10 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style }) {
         <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
       </div>
       {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}</div>}
-      {label && <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>}
+      {/* (버그 수정) 오프닝 이름을 누르면 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
+      {label && (onOpenOpening
+        ? <button onClick={() => onOpenOpening(label)} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
+        : <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>)}
       {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>채택률 {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"} · {fmtFull(m.games)}국</div>}
       {isUnlocked && m.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={m.wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
@@ -3567,26 +3753,32 @@ function centerOrderByAdopt(kids) {
 // (개편) 전체 수 트리 모식도 — 데스크톱은 가로(왼쪽→오른쪽), 모바일은 세로(위→아래)로 뻗어나간다.
 // 클릭으로 펼칠 필요 없이 최소 3수 + 채택률 20% 이상 라인까지 미리 다 펼쳐진 트리가 렌더링되고,
 // 노드를 클릭하면 그 수의 상세 블록이 모식도 안, 그 노드 옆에 바로 열리고 닫힌다.
-function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical }) {
+function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening }) {
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
   // kind/evalCp를 한 번에 계산해 넘겨준다(이미 불러온 rawMoves를 재사용하므로 추가 요청은 없음).
   const colW = vertical ? 108 : 158, rowH = vertical ? 78 : 58;
   const { items, edges, maxDepth, maxPos } = useMemo(() => {
     let cursor = 0; const items = []; const edges = [];
-    const visit = (san, path, depth, adopt, kind, evalCp) => {
+    const visit = (san, path, depth, adopt, kind, evalCp, name) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
-      const it = { san, path, depth, key, adopt, kind, evalCp, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      const it = { san, path, depth, key, adopt, kind, evalCp, name, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
       if (rawMoves && rawMoves.length) {
         const filtered = rawMoves.filter((m) => treeData.has([...path, m.san].join(" ")));
-        const ordered = centerOrderByAdopt(filtered);
+        // (버그 수정) 루트(첫 수) 단계는 채택률 기준 가운데 정렬(centerOrderByAdopt) 대신, 1.e4가 항상
+        // 맨 처음(맨 위/왼쪽)에 오도록 정렬한다 — 채택률이 가장 높아도 가운데로 배치되면 트리를 열자마자
+        // 화면 아래로 밀려나 있어 찾기 어려웠다.
+        const ordered = path.length === 0
+          ? [...filtered].sort((a, b) => (stripSuffix(a.san) === "e4" ? -1 : stripSuffix(b.san) === "e4" ? 1 : (b.adopt || 0) - (a.adopt || 0)))
+          : centerOrderByAdopt(filtered);
         const board = boardFromSans(path);
         const tiered = assignTiers(filtered, path.length, board, key);
         for (const m of ordered) {
           const t = tiered.find((x) => x.san === m.san);
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null));
+          const nm = nameOverride(key, m.san) ?? m.name ?? null;
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm));
         }
       }
       if (!kids.length) it.pos = cursor++;
@@ -3594,7 +3786,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null);
+    visit(null, [], 0, 100, null, null, null);
     const visible = items.filter((it) => it.depth > 0);
     const maxDepth = visible.length ? Math.max(...visible.map((it) => it.depth)) : 1;
     const maxPos = items.length ? Math.max(...items.map((it) => it.pos)) : 0;
@@ -3608,21 +3800,20 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const [zoom, setZoom] = useState(1);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
-  const centeredRef = useRef(false);
-  // (2차 개편) 트리가 채택률 기준으로 무게중심을 잡다 보니, 시작 위치(1.e4 등)가 캔버스 한참 아래로
-  // 밀려나 있을 수 있다 — 데이터가 어느 정도 쌓이면(트리 전체 세로/가로 폭 기준) 뷰포트 중앙이 트리
-  // 중앙을 보도록 한 번만 자동으로 맞춰준다(그 뒤로는 사용자가 직접 팬한 위치를 존중).
+  const userPannedRef = useRef(false);
+  // (버그 수정) 1.e4를 형제 수들 중 맨 앞으로 정렬해도, 트리 레이아웃 자체는 부모 노드를 "자식들의
+  // 세로/가로 중간"에 배치하는 방식이라 1.e4 자신의 좌표는 그 아래로 갈래가 계속 로드되며 늘어날수록
+  // 계속 화면 밖으로 밀려난다(한 번만 맞추면 이후 더 로드되며 다시 밀려남) — 사용자가 직접 팬하기
+  // 전까지는, 데이터가 들어올 때마다 뷰포트가 1.e4 좌표를 계속 따라가도록 한다.
   useEffect(() => {
-    if (centeredRef.current || items.length < 20 || maxDepth < 4) return;
-    const vw = boxRef.current ? boxRef.current.clientWidth : 1100;
-    const vh = boxRef.current ? boxRef.current.clientHeight : 640;
-    const contentW = vertical ? maxPos * colW + boxW : (maxDepth - 1) * colW + boxW;
-    const contentH = vertical ? (maxDepth - 1) * rowH + boxH : maxPos * rowH + boxH;
-    setPan({ x: Math.max(16, (vw - contentW) / 2), y: Math.max(16, (vh - contentH) / 2) });
-    centeredRef.current = true;
-  }, [items.length, maxDepth]);
+    if (userPannedRef.current) return;
+    const e4 = items.find((it) => it.depth === 1 && stripSuffix(it.san) === "e4");
+    if (!e4) return;
+    const c = coord(e4);
+    setPan({ x: 16 - c.x, y: 16 - c.y });
+  }, [items]);
   const clampZoom = (z) => Math.min(2, Math.max(0.3, z));
-  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
   const onPointerUp = () => { dragRef.current = null; };
   const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
@@ -3664,23 +3855,27 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           // 있었다 — 부모 방문 시 이미 계산해 둔 kind/evalCp(assignTiers)를 각 블록에 기본으로 표시한다.
           // (디자인) 이론 수(book) 블록은 이론 수 아이콘과 같은 가죽 갈색(T.book) 테두리·그러데이션·
           // 글자색을 입혀, 큐레이션된 핵심 라인이 나머지 곁가지 수와 뚜렷이 구분되게 한다.
+          // (버그 수정) 채택률 %는 블록에서 빼고, 수 체계 아이콘은 글자와 나란히 두지 않고 블록
+          // 좌상단에 작은 배지로 얹는다. 오프닝 이름은 블록 안이 아니라 바로 아래 빈 공간에 표시.
           return (
-            <button key={it.key} onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: x + (boxW - w) / 2, top: y + (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 + Math.min(3, (it.adopt || 0) / 30) }}>
-                {!it.unlocked && <Lock size={10} />}
-                <span style={{ display: "inline-flex", color: sub }}>{badgeIcon(kind, 10)}</span>
-                {moveNumber(it.path.length - 1)}{it.san}
-              </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>
-                {evTxt && <span>{evTxt}</span>}
-                <span>{(it.adopt || 0).toFixed(0)}%</span>
-              </span>
-            </button>
+            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
+              <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 10)}</span>
+              <button onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 + Math.min(3, (it.adopt || 0) / 30) }}>
+                  {!it.unlocked && <Lock size={10} />}
+                  {moveNumber(it.path.length - 1)}{it.san}
+                </span>
+                {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
+              </button>
+              {it.name && (
+                <div style={{ position: "absolute", left: -8, top: boxH + 2, width: boxW + 16, textAlign: "center", fontSize: 8.5, fontWeight: 700, color: "rgba(122,102,80,.85)", lineHeight: 1.15, wordBreak: "keep-all", pointerEvents: "none" }}>{it.name}</div>
+              )}
+            </div>
           );
         })}
         {openItem && openParentM && (
           <DexMoveBlock path={openItem.path.slice(0, -1)} m={openParentM} isUnlocked={openItem.unlocked}
-            cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)}
+            cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)} onOpenOpening={onOpenOpening}
             style={vertical
               ? { left: Math.max(0, coord(openItem).x + boxW / 2 - 140), top: coord(openItem).y + boxH + 10 }
               : { left: coord(openItem).x + boxW + 10, top: Math.max(0, coord(openItem).y + boxH / 2 - 150) }} />
@@ -3689,7 +3884,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     </div>
   );
 }
-function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus }) {
+function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening }) {
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
@@ -3763,7 +3958,7 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
         {ccReady ? "내 chess.com 대국에 실제로 나온 수만 해금돼요. 마디를 클릭하면 상세 정보가 그 자리에 열립니다. 굵은 줄기일수록 채택률이 높은 핵심 라인이에요."
           : "설정 탭에서 chess.com 계정을 연동하면, 실제로 둔 적 있는 수만큼 해금돼 보여요."}
       </p>
-      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} />
+      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} />
       {/* (2차 개편) 이론 수 체계 편집 — 설정 탭에 있던 개발자 전용 기능을 도감(오프닝)으로 옮겨 통합. */}
       {canAdd && (
         <div style={{ marginTop: 16 }}>
@@ -4353,10 +4548,10 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
   // 정사각형을 벗어나지 않게 한다(AnimatedMove·Board와 동일한 방식).
   return (
     <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
-      <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+      <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
         {rows.map((row, vr) => row.map((p, vc) => {
           const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-          return <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+          return <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.04, boxSizing: "border-box", ...boardSquareBg(sk, light, r, c) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
         }))}
         {moving && <div style={{ position: "absolute", top: (ttr / 8 * 100) + "%", left: (ttc / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dxPct + "%," + dyPct + "%)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
       </div>
@@ -4780,13 +4975,20 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   }, [wrong]);
   const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null); setPage(0); setCelebrate(null); };
   const restart = () => gotoLine(targetTag);
-  // 모식도 노드 클릭 → 그 가지를 지나는 라인(미해결 우선)을 목표로 처음부터 풀이
+  // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
+  // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
+  // 대신 모식도 페이지에 새로 생긴 미니보드에서 그 수를 애니메이션으로 재생해 바로 복기할 수 있게 한다.
+  const [previewNode, setPreviewNode] = useState(null);
   const onPickNode = (it) => {
-    const keyArr = it.path.map((s) => stripSuffix(s));
-    const matches = allLines.filter((l) => l.sans.length >= keyArr.length && keyArr.every((s, i) => stripSuffix(l.sans[i]) === s));
-    if (!matches.length) return;
-    const next = matches.find((l) => !solvedNow.has(l.tag)) || matches[0];
-    gotoLine(next.tag);
+    if (it.ghost || !it.node) {
+      const keyArr = it.path.map((s) => stripSuffix(s));
+      const matches = allLines.filter((l) => l.sans.length >= keyArr.length && keyArr.every((s, i) => stripSuffix(l.sans[i]) === s));
+      if (!matches.length) return;
+      const next = matches.find((l) => !solvedNow.has(l.tag)) || matches[0];
+      gotoLine(next.tag);
+      return;
+    }
+    setPreviewNode(it);
   };
   // (기능2) 힌트 — 그 시점에 실제로 두어야 할 수(목표 라인 기준)를 바탕으로 기물 또는 칸을 무작위로 알려준다.
   useEffect(() => { setHintText(null); }, [pathNodes.length, targetTag, wrong]);
@@ -5023,6 +5225,18 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             </div>
           </div>
           <div style={{ width: "50%", boxSizing: "border-box", paddingLeft: 3 }}>
+            {/* (기능) 모식도 페이지에도 보드 페이지와 같은 크기·y좌표의 미니보드를 둔다. 모식도에서
+                이미 둔(공개된) 노드를 클릭하면, 보드 페이지로 옮기지 않고 여기서 그 수를 바로
+                애니메이션으로 재생해 복기할 수 있다(아직 안 둔 갈래는 예전처럼 그 라인을 풀도록 이동). */}
+            <div style={{ marginBottom: 10, minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700, textAlign: "center" }}>{previewNode ? "모식도에서 고른 수" : "모식도의 수를 눌러 다시 보기"}</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{previewNode ? sansToPgnText([...setup, ...previewNode.path]) : " "}</div>
+            <div style={{ width: "100%", maxWidth: 380, margin: "0 auto 12px" }}>
+              {previewNode
+                ? <AnimatedMove key={previewNode.key} sans={[...setup, ...previewNode.path.slice(0, -1)]} san={previewNode.path[previewNode.path.length - 1]} size={boardSize} loopMs={2200} flip={userColor === "b"} />
+                : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
+            </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
             <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
@@ -5448,7 +5662,7 @@ function QuestChapterEditor({ chKey, bumpContent, onClose }) {
 function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, bumpContent, contentVer }) {
   return (
     <div>
-      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><Mascot name="milku" emotion="great" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><TabHeaderIcon><MaterialIcon name="assignment" size={22} /></TabHeaderIcon><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
       <MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />
       <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} />
     </div>
@@ -5470,16 +5684,29 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // (16차) 퍼즐 추천 — 일간/주간/월간 풀이 랭킹(중복 풀이 포함) 상위 퍼즐을 미해결/해결됨보다 위에 노출.
   const [rankPeriod, setRankPeriod] = useState("day");
   const [rankMap, setRankMap] = useState({});
+  // (버그 수정) 랭킹에 오른 퍼즐이 "내가 예전에 열어봤거나 삭제해 본 적 있는 퍼즐"(puzzles/archivedPuzzles,
+  // 둘 다 로컬 계정 한정)에 없으면 추천 후보에서 통째로 빠졌다 — 대부분의 유저는 랭킹 1~12위 퍼즐을
+  // 전혀 열어본 적이 없으므로, 사실상 추천 퍼즐이 거의 항상 비어 보이는(제목조차 안 뜨는) 원인이었다.
+  // 번호만 있고 로컬에 없는 랭킹 퍼즐은 서버(Supabase, 전역 저장소)에서 직접 가져와 채운다.
+  const [rankPuzzles, setRankPuzzles] = useState({}); // no -> 퍼즐 데이터(서버에서 보강)
   useEffect(() => {
-    if (rankMap[rankPeriod]) return;
     let cancelled = false;
-    puzzleRank(rankPeriod, 12).then((rows) => {
+    (async () => {
+      let m = rankMap[rankPeriod];
+      if (!m) {
+        const rows = await puzzleRank(rankPeriod, 12);
+        if (cancelled) return;
+        m = {}; rows.forEach((r) => { m[r.no] = r.cnt; });
+        setRankMap((prev) => ({ ...prev, [rankPeriod]: m }));
+      }
+      const nos = Object.keys(m).filter((no) => !rankPuzzles[no]);
+      if (!nos.length) return;
+      const fetched = await Promise.all(nos.map((no) => puzzleFetch(no)));
       if (cancelled) return;
-      const m = {}; rows.forEach((r) => { m[r.no] = r.cnt; });
-      setRankMap((prev) => ({ ...prev, [rankPeriod]: m }));
-    });
+      setRankPuzzles((prev) => { const n = { ...prev }; nos.forEach((no, i) => { if (fetched[i]) n[no] = fetched[i]; }); return n; });
+    })();
     return () => { cancelled = true; };
-  }, [rankPeriod]);
+  }, [rankPeriod, rankMap]);
   // (18차 UX9) 테마 칩을 선택하면 추천 퍼즐도 그 테마만 표시. (18차 UI4) 이미 해결한 퍼즐은
   // 추천에서 빼고 아래 "해결 완료" 섹션에만 나오도록 분리한다.
   // (20차 UX6) 추천 퍼즐은 "미해결" 목록과 별도 알고리즘 — 내 퍼즐 탭에서 삭제해도(친구/본인 미해결
@@ -5492,11 +5719,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     const byId = new Map();
     for (const p of puzzles) byId.set(p.id, p);
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
+    for (const no of Object.keys(m)) { const p = rankPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
     return [...byId.values()]
       .filter((p) => filter === "all" || (p.theme || "punish") === filter)
       .filter((p) => !solved.has(p.id))
       .map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).slice(0, 12).map((x) => x.p);
-  }, [puzzles, archivedPuzzles, rankMap, rankPeriod, filter, solved]);
+  }, [puzzles, archivedPuzzles, rankMap, rankPeriod, filter, solved, rankPuzzles]);
   // (20차 UX6) "새로고침"을 누르면 후보 풀(최대 12개) 안에서 다른 6개를 결정적으로 다시 뽑아 보여준다.
   const recommended = useMemo(() => {
     if (recommendedPool.length <= 6) return recommendedPool;
@@ -5870,7 +6098,7 @@ function findOpeningPathByFuzzyName(name) {
   }
   return null;
 }
-function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, engine, liveOn }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -5880,6 +6108,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   }, [username]);
   const ready = chesscom && chesscom.status === "ready";
   const overall = useMemo(() => (ready ? chesscom.analyze([]) : null), [ready, chesscom && chesscom.games]);
+  const ratingChanges = useMemo(() => (ready ? computeRatingChanges(chesscom.games) : new Map()), [ready, chesscom && chesscom.games]);
   const openingStats = useMemo(() => {
     if (!ready) return [];
     const agg = {};
@@ -5932,7 +6161,8 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         </div>
       )}
-      {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다 */}
+      {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
+          (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
         const recent = [...chesscom.games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0)).slice(0, 5);
         if (!recent.length) return null;
@@ -5940,11 +6170,18 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         return (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>최근 대국</div>
-            {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; return (
+            {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; const rc = ratingChanges.get(g); return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"} · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b></div>
+                  <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"} · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                    {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
+                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                    {g.accuracy != null && <span style={{ marginLeft: 6, fontSize: 11, color: T.inkSoft }}>정확도 {g.accuracy.toFixed(1)}%</span>}
+                  </div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtD(g.endTime)}</div>
+                  {/* (디자인) 집중학습의 대국 목록과 동일하게, 자체 엔진으로 이 대국을 분석한 탁월한 수·
+                      유일한 수·실수·블런더 개수를 수 체계 아이콘으로 표기. */}
+                  {liveOn && <div style={{ marginTop: 3 }}><GameQualityBadges sans={g.moves} engine={engine} active /></div>}
                 </div>
                 {onOpenGame && (
                   <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -5986,7 +6223,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
-function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor }) {
+function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, engine, liveOn }) {
   const [editOpen, setEditOpen] = useState(false);
   const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft } = chesscomUi;
@@ -6000,12 +6237,13 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
         {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
           : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(myPub.nickname || user || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
+          {/* (디자인) 칭호는 이름 위에 표시 */}
+          {myPub.title && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={myPub.title} earned compact /></div>}
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{myPub.nickname || myPub.displayId || user}</div>
           <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
-          {myPub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={myPub.title} earned compact /></div>}
         </div>
       </div>
-      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />
       {editOpen && (
         <div onClick={() => setEditOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", marginBottom: 40 }}>
@@ -6029,7 +6267,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
                   <button onClick={verifyChesscom} disabled={ccState === "checking"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: ccState === "failed" ? T.blunder : "linear-gradient(180deg,#3A2516,#241509)", color: ccState === "failed" ? "#fff" : T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{ccState === "checking" ? "확인 중…" : ccState === "failed" ? "연동 실패" : "연동하기"}</button>
                 </div>
               )}
-              {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+              {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />}
             </div>
           </div>
         </div>
@@ -6037,7 +6275,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount, engine }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -6075,7 +6313,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
   const removeCodev = async (id) => { CONTENT.codev = CONTENT.codev.filter((x) => x !== id); await bumpContent(); };
   return (
     <div className="max-w-xl">
-      <div className="flex items-center gap-2"><Mascot name="milku" emotion="wink" size={64} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
+      <div className="flex items-center gap-2"><TabHeaderIcon><Settings size={22} /></TabHeaderIcon><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
 
       {/* 계정 — 로그아웃 상태에서만 표시(로그인 시 아래 프로필 카드에 통합) */}
       {!user && (
@@ -6100,7 +6338,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       )}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
-      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
+      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} />} />}
 
@@ -6219,6 +6457,15 @@ function MaterialIcon({ name, size = 20, color = "currentColor", style }) {
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "inline-block", flexShrink: 0, ...style }}><path d={d} fill={color} /></svg>
   );
 }
+// (디자인) 학습·퍼즐 탭 이외의 탭 제목에는 마스코트 대신, 하단 내비게이션과 같은 아이콘을 원형 배지로
+// 통일해 보여준다(퀘스트·상점·설정 등) — 마스코트는 학습/퍼즐 탭에서만 등장하도록 정리.
+function TabHeaderIcon({ size = 44, children }) {
+  return (
+    <span style={{ width: size, height: size, borderRadius: "50%", background: "linear-gradient(160deg,#3A2516,#1B1009)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", color: T.brassHi, flexShrink: 0 }}>
+      {children}
+    </span>
+  );
+}
 function CoinIcon({ size = 16 }) {
   const [err, setErr] = useState(false);
   if (err) return <span style={{ fontSize: Math.round(size * 0.95), lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>🪙</span>;
@@ -6229,18 +6476,17 @@ function CoinIcon({ size = 16 }) {
    장착 상태에 따라 버튼이 "구매"→"장착"→"장착됨"으로 바뀐다. */
 function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
   const isFree = sk.price === 0;
+  // (디자인) 보드 스킨 미리보기 — 기본(단색) 스킨은 4x4 견본 대신, 이미지 스킨과 동일하게 실제
+  // 보드처럼 보이는 8x8 격자로 표시한다(boardSquareBg로 이미지 스킨은 이어붙인 텍스처가 그대로 나옴).
   const preview = kind === "board" ? (
-    sk.image ? (
-      <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", border: "1px solid #00000033", flexShrink: 0, backgroundImage: "url(" + sk.image + ")", backgroundSize: "cover", backgroundPosition: "center" }} />
-    ) : (
-      <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", border: "1px solid #00000033", flexShrink: 0 }}>
-        {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; const light = (r + c) % 2 === 0; return <div key={i} style={{ background: light ? sk.light : sk.dark }} />; })}
-      </div>
-    )
+    <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", flexShrink: 0, ...BOARD_GLOSS }}>
+      {Array.from({ length: 64 }).map((_, i) => { const r = Math.floor(i / 8), c = i % 8; const light = (r + c) % 2 === 0; return <div key={i} style={boardSquareBg(sk, light, r, c)} />; })}
+    </div>
   ) : (
-    <div className="flex items-center gap-1" style={{ width: 64, height: 64, borderRadius: 8, background: "#2E1B10", flexShrink: 0, justifyContent: "center" }}>
-      <PieceGlyph type="K" color="w" size={28} pieceSkin={id} />
-      <PieceGlyph type="N" color="b" size={28} pieceSkin={id} />
+    // (디자인) 기물 스킨 미리보기 — 여러 기물을 어두운 배경에 늘어놓던 것 대신, 흰 배경에 흑 나이트
+    // 하나만 크게 보여준다(스킨 특유의 디테일이 잘 드러남).
+    <div className="flex items-center justify-center" style={{ width: 64, height: 64, borderRadius: 8, background: "#fff", flexShrink: 0 }}>
+      <PieceGlyph type="N" color="b" size={44} pieceSkin={id} />
     </div>
   );
   return (
@@ -6266,10 +6512,13 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
 function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
   return (
     <div>
-      <div className="flex items-center gap-2" style={{ marginBottom: 12 }}><Mascot name="milku" emotion="happy" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
-      <div style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: "16px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
-        <CoinIcon size={44} />
-        <div><div style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>보유 중인 OC 나이트 코인</div><div style={{ fontSize: 26, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1.1 }}>{fmtFull(coins || 0)}</div></div>
+      {/* (디자인) 코인 보유 UI를 화면을 가로지르는 큰 배너 대신, 제목 옆 우상단의 작은 칩으로 축소. */}
+      <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+        <div className="flex items-center gap-2"><TabHeaderIcon><ShoppingBag size={22} /></TabHeaderIcon><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
+        <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
+          <CoinIcon size={18} />
+          <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(coins || 0)}</span>
+        </div>
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
@@ -6681,7 +6930,7 @@ function FirstMovesDisplay({ firstMoves }) {
 }
 // (17차) 프로필 정보 확장 — 레벨/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
 // UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, engine, liveOn }) {
   const chesscom = useChessCom(pub.chesscom);
   const lv = levelFromXp(pub.xp || 0);
   return (
@@ -6691,14 +6940,22 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze 
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
-      {pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+      {pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />}
     </div>
   );
 }
-function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, engine, liveOn }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
+  // (버그 수정) 검색 버튼을 눌러야만 검색되던 것 — 입력할 때마다(살짝 debounce해) 자동으로
+  // 실시간 검색되도록 한다. 검색 버튼은 그대로 두어 즉시 재검색하고 싶을 때도 쓸 수 있게 한다.
+  useEffect(() => {
+    if (!q.trim()) { setResults([]); setSearched(false); return; }
+    setBusy(true);
+    const id = setTimeout(() => { run(); }, 300);
+    return () => clearTimeout(id);
+  }, [q]);
   const open = async (username) => { setReqState(null); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
   const doReq = async () => {
     const pub = sel || {}; if (!me || !pub.username) return; setReqBusy(true);
@@ -6712,9 +6969,12 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
   const pub = sel || {};
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+      {/* (버그 수정) 모달 카드에 높이 제한·스크롤이 없어, 프로필 내용이 화면보다 길면 카드가 뷰포트
+          밖으로 그냥 넘쳐 하단 내용을 볼 수 없었고, 스크롤하면 카드 뒤의 탭 본문이 대신 스크롤됐다 —
+          카드 자체에 최대 높이와 세로 스크롤을 줘서 모달 안에서 스크롤이 끝나도록 한다. */}
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         {/* (19차 UX3) 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리한다. */}
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8 }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
           <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
             {sel && <button onClick={() => setSel(null)} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>}
             <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? "프로필" : "유저 검색"}</span>
@@ -6722,7 +6982,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
         </div>
         {sel ? (
-          <div style={{ padding: 18 }}>
+          <div style={{ padding: 18, overflowY: "auto" }}>
             <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
               {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
                 : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
@@ -6735,7 +6995,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
               </div>
             </div>
-            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
@@ -6746,7 +7006,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
             )}
           </div>
         ) : (
-          <div style={{ padding: 16 }}>
+          <div style={{ padding: 16, overflowY: "auto" }}>
             <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
               <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="아이디로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
               <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
@@ -6836,7 +7096,7 @@ function ChatsModal({ me, myUid, onClose }) {
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, engine, liveOn }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -6910,7 +7170,12 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
               {sel ? <button onClick={() => setSel(null)} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? "프로필" : "친구"}</span>
             </span>
-            <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+            {/* (버그 수정) 친구 삭제는 목록 줄마다 노출하지 않고, 그 사람 프로필을 클릭해 들어갔을 때만
+                우상단(닫기 버튼 옆)에 아이콘으로 노출한다. */}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              {sel && relOf(sel.uid) === "friend" && <button onClick={() => doRemove(sel.uid)} disabled={!!pending[sel.uid]} aria-label="친구 삭제" title="친구 삭제" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
+              <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+            </span>
           </div>
         )}
 
@@ -6929,9 +7194,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 </div>
               </div>
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />
               <div style={{ display: "flex", gap: 8 }}>
-                {rel === "friend" && btn("친구 삭제", () => doRemove(sel.uid), "danger", busyId)}
+                {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
                 {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
                 {rel === "incoming" && <>{btn("수락", () => doAccept(sel.uid), "gold", busyId)}{btn("거절", () => doRemove(sel.uid), "ghost", busyId)}</>}
                 {rel === "none" && btn("친구 요청", () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
@@ -6951,7 +7216,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 : tab === "friends" ? (
                   friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 친구가 없습니다. ‘추가’에서 아이디로 검색해 요청을 보내세요.</div>
                     : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{friends.map((u) => (
-                        <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("채팅", () => setChatWith({ uid: u, username: uname(u) }), "dark", false)}{btn("삭제", () => doRemove(u), "danger", !!pending[u])}</>} />
+                        // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
+                        // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
+                        <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u) })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} />
                       ))}</div>
                 ) : tab === "requests" ? (
                   incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>
@@ -7150,9 +7417,10 @@ function AuthModal({ onClose, onAuth, initialMode }) {
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 340, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         {/* (UI6) 창 닫기 버튼은 항상 블록 우상단 고정 */}
         <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 2, marginBottom: 6, marginTop: -4 }}>
-          <Mascot name="milku" emotion={mode === "login" ? "wink" : mode === "signup" ? "great" : "surprise"} size={92} />
-          <Mascot name="kokoa" emotion={mode === "signup" ? "celebrate" : "happy"} size={92} />
+        {/* (디자인) 로그인/회원가입 창의 마스코트 캐릭터 대신 OpenChess 로고를 표시 — 학습·퍼즐 탭
+            바깥에서는 마스코트를 쓰지 않는다는 원칙에 맞춘다. */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14, marginTop: 4 }}>
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 56, width: "auto" }} />
         </div>
         <div style={{ marginBottom: 14, paddingRight: 30 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{title}</div>
@@ -7687,12 +7955,15 @@ export default function App() {
               30~40px로 너무 작게 잡혀 있어 좌상단 로고가 눈에 띄지 않았다 — 헤더를 꽉 채우도록 키운다. */}
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 92 : 136, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
         </div>
-        <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10 }}>
+        {/* (버그 수정) 로그인 상태에서는 레벨 배지·아이디·로그아웃·구분선·검색·친구·채팅·알림까지 8개
+            요소가 한 줄에 들어가, 폭이 좁은 화면에서 오른쪽 끝이 화면 밖으로 잘려 나갔다 — 줄바꿈을
+            허용해 좁은 화면에서는 두 줄로 자연스럽게 내려가게 한다. */}
+        <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 10, flexWrap: "wrap", rowGap: 6, justifyContent: "flex-end" }}>
           {/* (18차 UI8) 레벨 UI를 아이디 왼쪽으로 이동, 레벨 텍스트·게이지는 좌우로 나란히 배치 */}
           <LevelBadge totalXp={totalXp} compact={narrowHeader} />
           {user ? (
             <>
-              <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(profile.displayId || user) + roleIcon(user)}</span>
+              <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: narrowHeader ? 70 : 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(profile.displayId || user) + roleIcon(user)}</span>
               <button onClick={() => setConfirmLogout(true)} className="press" style={{ padding: "6px 11px", borderRadius: 8, background: T.ebony3, color: T.ivory, border: "1px solid #000", fontSize: 12, cursor: "pointer" }}>로그아웃</button>
             </>
           ) : (
@@ -7721,8 +7992,8 @@ export default function App() {
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
-      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} engine={engine} liveOn={liveOn} />}
       {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -7776,13 +8047,16 @@ export default function App() {
         </div>
       )}
 
-      <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 110px" }}>
+      {/* (버그 수정) 하단 고정 내비게이션(66px + safe-area) 위 여백이 아슬아슬해, 실기기(특히 주소창이
+          동적으로 접히는 안드로이드 브라우저)에서 목록 맨 마지막 카드가 하단 탭에 살짝 가려 보이는
+          경우가 있었다 — 여유를 더 둔다. */}
+      <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
-        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} />}
+        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} engine={engine} />}
       </main>
 
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderTop: "1px solid #000", height: 66, paddingBottom: "env(safe-area-inset-bottom)" }}>
