@@ -19,6 +19,14 @@ const T = {
   book: "#8A5A2B", arrow: "#C49A50",
 };
 const FILES = "abcdefgh";
+// (디자인) 보드 테두리에 금색 광택(gloss) 효과 — 단색 브라스 테두리 대신 대각선 그러데이션
+// borderImage + 안쪽 하이라이트/바깥 그림자 boxShadow로 금속 광택감을 낸다. 메인 보드와
+// 사이트 전체의 모든 미니 체스보드(애니메이션·되돌리기·퍼즐 등)에서 공용으로 쓴다.
+const BOARD_GLOSS = {
+  border: "2px solid transparent",
+  borderImage: "linear-gradient(135deg, #F3DFAE, #C49A50 45%, #8A6C2F) 1",
+  boxShadow: "0 0 0 1px rgba(196,154,80,.3), inset 0 1px 3px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.3)",
+};
 /* (20\uCC28 \uAE30\uB2A53) \uAE30\uBB3C SVG \uC138\uD2B8 \u2014 \uC720\uB2C8\uCF54\uB4DC \uD14D\uC2A4\uD2B8 \uAE30\uBB3C(\u2654\u2655\u2656\u2657\u2658\u2659)\uC744 \uCCA8\uBD80 \uB808\uD37C\uB7F0\uC2A4(\uB85C\uC6B0\uD3F4\uB9AC\u00B7\uAE08\uC7A5 \uB300\uAC01\uC120
    \uD3F4\uB4DC \uB77C\uC778) \uC2A4\uD0C0\uC77C\uC758 \uBCA1\uD130 \uC544\uC774\uCF58\uC73C\uB85C \uAD50\uCCB4\uD55C\uB2E4. \uBAA8\uB4E0 \uAE30\uBB3C\uC774 \uACF5\uC720\uD558\uB294 \uBC11\uB2E8(base)\u00B7\uBAA9(neck) \uB2E4\uAC01\uD615\uC5D0
    \uAE30\uBB3C\uBCC4 \uBAB8\uD1B5(mid) \uC810 \uBAA9\uB85D\uC744 \uC774\uC5B4\uBD99\uC778 \uB2E8\uC77C \uC2E4\uB8E8\uC5E3 \uD558\uB098 + \uB300\uAC01\uC120 \uD3F4\uB4DC \uB77C\uC778 2\uAC1C + \uBC11\uB2E8 \uAE08\uC7A5 \uC0BC\uAC01 \uD3EC\uC778\uD2B8
@@ -1703,8 +1711,18 @@ function badgeIcon(kind, size = 14) {
   if (kind === "excellent") return <IconExcellent size={size} />;
   if (kind === "good") return <Check size={size} />;
   if (kind === "miss") return <X size={size} strokeWidth={3.2} />;
-  if (kind === "pending") return <span style={{ fontWeight: 800, fontSize: size - 2 }}>…</span>;
+  // (디자인) 수 체계 아이콘이 정해지기 전(엔진 계산 중)에는 정적인 "…" 대신, 평가 막대의 탐색
+  // 인디케이터와 같은 3-dot bounce 애니메이션으로 "계산 중"임을 더 또렷하게 보여준다.
+  if (kind === "pending") return <PendingDots size={size} />;
   return <span style={{ fontWeight: 800, fontSize: size - 1 }}>{kind === "inaccuracy" ? "?!" : kind === "mistake" ? "?" : "??"}</span>;
+}
+function PendingDots({ size = 14 }) {
+  const d = Math.max(2.5, size * 0.22);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: Math.max(1.5, size * 0.12) }}>
+      {[0, 1, 2].map((i) => <span key={i} style={{ width: d, height: d, borderRadius: "50%", background: "currentColor", display: "inline-block", animation: "dotbounce 1.1s ease-in-out " + (i * 0.18) + "s infinite" }} />)}
+    </span>
+  );
 }
 
 /* ============================================================ 평가 막대 (백=왼쪽, 숫자 항상 보이게) ============================================================ */
@@ -1799,7 +1817,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
           비율이 달라진 상자에 맞춰 늘어나며 왜곡됐다(바다 스킨처럼 이어진 이미지 텍스처에서 특히 눈에
           띔). aspectRatio:"1/1"인 CSS 그리드로 바꾸면 실제 렌더링 폭이 얼마로 계산되든 높이가 항상
           똑같이 따라가 칸이 항상 정사각형으로 유지된다. */}
-      <div style={{ position: "relative", borderRadius: 4, overflow: "visible", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+      <div style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
         {rows.map((row, ri) => row.map((p, ci) => {
           const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
           const isSel = selected && selected[0] === r && selected[1] === c;
@@ -1810,10 +1828,15 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
               onDragOver={interactive ? (e) => e.preventDefault() : undefined}
               onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
-              style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
+              // (버그 수정) 기물을 칸 안에서 수직 중앙 정렬하면, 기물마다 실제 렌더링 높이가 달라
+              // (킹은 크고 폰은 작음) 밑동(받침) 높이가 기물마다 제각각으로 보였다 — 하단 정렬로
+              // 바꿔 모든 기물의 받침이 항상 같은 높이(칸 바닥 기준)에 놓이도록 한다.
+              style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.04, boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none" }}>
               {showCoords && ci === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{8 - r}</span>}
               {showCoords && ri === 7 && <span style={{ position: "absolute", bottom: 0, right: 2, fontSize: 9, fontWeight: 800, color: coordCol, textShadow: sk.image ? "0 1px 2px rgba(0,0,0,.65)" : "none" }}>{FILES[c]}</span>}
-              {isTarget && <span style={{ position: "absolute", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
+              {/* (버그 수정) 기물이 하단 정렬로 바뀌면서, top/left 없이 정적 위치에 의존하던 이 점도
+                  칸 바닥 쪽으로 딸려 내려가 버렸다 — 칸 정중앙에 고정되도록 명시적으로 중앙 정렬한다. */}
+              {isTarget && <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
               {lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
                 <>
                   <div style={{ position: "absolute", inset: 0, background: QCOLOR[lastQ.kind], opacity: 0.5, pointerEvents: "none" }} />
@@ -2143,6 +2166,19 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           return { san: l.san, adopt: l.adopt, games: l.games, wdl: l.wdl, book, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) };
         };
         const all = active.moves.map(mk);
+        // (버그 수정) Lichess가 이 위치의 후보 수 목록에 큐레이션된 이론 수를 포함하지 않으면(희귀한
+        // 변형 등) 그 수가 통째로 빠져, 보드 위 추천 화살표가 아예 안 그려지거나(채택률 데이터가 없는
+        // 수만 남아) 두께·투명도가 전부 최솟값으로 뭉개져 보이는 문제가 있었다 — 스냅샷의 이론 수는
+        // Lichess 응답에 없어도 항상 포함되도록 보강한다.
+        const coveredSans = new Set(all.map((m) => stripSuffix(m.san)));
+        for (const s of base) {
+          if (!s.book) continue;
+          const k = stripSuffix(s.san);
+          if (coveredSans.has(k)) continue;
+          const dev = devAddsBy[k];
+          all.push({ san: s.san, adopt: null, games: null, wdl: null, book: true, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) });
+          coveredSans.add(k);
+        }
         const books = all.filter((m) => m.book);
         const nonbook = all.filter((m) => !m.book);
         // Lichess가 응답한 비이론 수는 전부 유지(임의 캡 금지) — 수 체계와 무관하게 표시되는 모든 수가 통계를 가져야 함
@@ -2338,11 +2374,11 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           이동 기물·배지·화살표도 그리드 전체 대비 퍼센트/논리 좌표(0~8)로 옮겨, 컨테이너가 좁아져도
           (집중학습·퍼즐 화면 등) 칸이 정사각형을 벗어나거나 좌표·화살표가 어긋나지 않게 한다. */}
       <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
-        <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+        <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
           {rows.map((row, vr) => row.map((p, vc) => {
             const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
             return (
-              <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
+              <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.04, boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
                 {p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}
               </div>
             );
@@ -3023,7 +3059,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const questPaths = useMemo(() => questOpeningNames.map((name) => findOpeningPathByFuzzyName(name)).filter(Boolean), [questOpeningNames]);
   const matchesQuestPath = (path) => questPaths.some((qp) => qp.length >= path.length && path.every((s, i) => qp[i] === s));
   const [flip, setFlip] = useState(false);
-  const [boardSize, boardRef] = useBoardSize(360);
+  // (디자인) 학습 탭 메인 보드를 조금 더 키운다.
+  const [boardSize, boardRef] = useBoardSize(400);
   const [sel, setSel] = useState(null);
   const [analyzeOpen, setAnalyzeOpen] = useState(false); // (19차 기능3) 기보 분석 모드
   // (20차 UI2) "최선 수" 바로가기로 진입했을 때 — 엔진이 준비되는 대로 분석 모드를 자동으로 연다.
@@ -4373,10 +4410,10 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
   // 정사각형을 벗어나지 않게 한다(AnimatedMove·Board와 동일한 방식).
   return (
     <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
-      <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "2px solid " + T.brass, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+      <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
         {rows.map((row, vr) => row.map((p, vc) => {
           const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideAt = r === to[0] && c === to[1];
-          return <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, c) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
+          return <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: cell * 0.04, boxSizing: "border-box", ...boardSquareBg(sk, light, r, c) }}>{p && !hideAt && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} />}</div>;
         }))}
         {moving && <div style={{ position: "absolute", top: (ttr / 8 * 100) + "%", left: (ttc / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: "translate(" + dxPct + "%," + dyPct + "%)", transition: "transform .42s cubic-bezier(.4,1.1,.5,1)", zIndex: 5 }}><PieceGlyph type={moving.t} color={moving.c} size={cell * 0.72} /></div>}
       </div>
@@ -6268,7 +6305,7 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
   // (디자인) 보드 스킨 미리보기 — 기본(단색) 스킨은 4x4 견본 대신, 이미지 스킨과 동일하게 실제
   // 보드처럼 보이는 8x8 격자로 표시한다(boardSquareBg로 이미지 스킨은 이어붙인 텍스처가 그대로 나옴).
   const preview = kind === "board" ? (
-    <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", border: "1px solid #00000033", flexShrink: 0 }}>
+    <div style={{ width: 64, height: 64, borderRadius: 8, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", flexShrink: 0, ...BOARD_GLOSS }}>
       {Array.from({ length: 64 }).map((_, i) => { const r = Math.floor(i / 8), c = i % 8; const light = (r + c) % 2 === 0; return <div key={i} style={boardSquareBg(sk, light, r, c)} />; })}
     </div>
   ) : (
