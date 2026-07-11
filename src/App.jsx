@@ -1552,7 +1552,8 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     for (let i = 0; i <= N; i++) {
       const lines = await withTimeout(engine.evaluateMulti(boardToFen(board, i), depth, 2, movetime), 8000);
       const p0 = lines && lines[0], p1 = lines && lines[1];
-      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null };
+      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
+      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
       onProgress && onProgress((i + 1) / (N + 1));
       if (i < N) board = applySan(board, fullSans[i], i % 2 === 0 ? "w" : "b");
     }
@@ -1569,6 +1570,14 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     const bestCp = posEval[i].cp;                         // 이 포지션의 최선(둔 사람 관점)
     const bestSan = posEval[i].best ? uciToSan(brd, posEval[i].best, color) : null;
     const matched = !!(bestSan && stripSuffix(bestSan) === playedSan);
+    // (버그 수정) 엔진이 이 포지션(또는 둔 수 판정에 필요한 다음 포지션)을 평가하지 못했으면 채점을
+    // 건너뛴다. 예전엔 평가 실패 시 cp=0으로 취급돼 loss=0 → '최선의 수' → 정확도 100이 되어, 엔진이
+    // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 pending으로 두고 정확도 집계에서 뺀다.
+    if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
+      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null });
+      gradeBoard = applySan(gradeBoard, fullSans[i], color);
+      continue;
+    }
     // 둔 수가 엔진 최선수면 손실 0(노이즈 제거), 아니면 둔 뒤 포지션(= posEval[i+1], 상대 관점) 부호 반전
     const playedCp = matched ? bestCp : -posEval[i + 1].cp;
     const loss = Math.max(0, bestCp - playedCp);
