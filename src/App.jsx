@@ -1362,7 +1362,11 @@ function useChessCom(username) {
         const aj = await arc.json();
         // (19차 기능6) 칭호 조건에 오프닝별 chess.com 플레이 횟수를 반영하기 위해
         // 최근 12개월이 아니라 계정 개설 이후 전체 기간의 모든 아카이브를 불러온다.
-        const months = (aj.archives || []);
+        // (버그 수정) chess.com의 archives 목록은 오래된 달부터 최신 달 순으로 온다 — 그대로 불러오면
+        // 대국이 많은 계정에서 "최근 대국"이 표시되기까지 전체 기간을 다 불러올 때까지 기다려야 했다.
+        // 최신 달부터 거꾸로 불러오고, 달 하나를 불러올 때마다 즉시 화면에 반영(status:"ready")해
+        // 나머지 과거 달은 백그라운드에서 이어서 불러오는 동안에도 최근 대국부터 바로 보이게 한다.
+        const months = (aj.archives || []).slice().reverse();
         const games = [];
         for (const url of months) {
           if (cancelled) return;
@@ -1382,6 +1386,7 @@ function useChessCom(username) {
               const acc = g.accuracies ? (userIsWhite ? g.accuracies.white : g.accuracies.black) : null;
               games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, accuracy: acc != null ? acc : null });
             }
+            if (!cancelled) setState({ status: "ready", games: [...games] });
           } catch (_) {}
         }
         if (!cancelled) setState({ status: "ready", games });
@@ -6814,6 +6819,14 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
+  // (버그 수정) 검색 버튼을 눌러야만 검색되던 것 — 입력할 때마다(살짝 debounce해) 자동으로
+  // 실시간 검색되도록 한다. 검색 버튼은 그대로 두어 즉시 재검색하고 싶을 때도 쓸 수 있게 한다.
+  useEffect(() => {
+    if (!q.trim()) { setResults([]); setSearched(false); return; }
+    setBusy(true);
+    const id = setTimeout(() => { run(); }, 300);
+    return () => clearTimeout(id);
+  }, [q]);
   const open = async (username) => { setReqState(null); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
   const doReq = async () => {
     const pub = sel || {}; if (!me || !pub.username) return; setReqBusy(true);
@@ -6827,9 +6840,12 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
   const pub = sel || {};
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+      {/* (버그 수정) 모달 카드에 높이 제한·스크롤이 없어, 프로필 내용이 화면보다 길면 카드가 뷰포트
+          밖으로 그냥 넘쳐 하단 내용을 볼 수 없었고, 스크롤하면 카드 뒤의 탭 본문이 대신 스크롤됐다 —
+          카드 자체에 최대 높이와 세로 스크롤을 줘서 모달 안에서 스크롤이 끝나도록 한다. */}
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         {/* (19차 UX3) 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리한다. */}
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8 }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
           <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
             {sel && <button onClick={() => setSel(null)} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>}
             <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? "프로필" : "유저 검색"}</span>
@@ -6837,7 +6853,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
         </div>
         {sel ? (
-          <div style={{ padding: 18 }}>
+          <div style={{ padding: 18, overflowY: "auto" }}>
             <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
               {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
                 : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
@@ -6861,7 +6877,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
             )}
           </div>
         ) : (
-          <div style={{ padding: 16 }}>
+          <div style={{ padding: 16, overflowY: "auto" }}>
             <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
               <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="아이디로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
               <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
