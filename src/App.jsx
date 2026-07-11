@@ -1501,32 +1501,33 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
 function winPctFromCp(cp) { const c = Math.max(-1200, Math.min(1200, cp)); return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1); }
 // 둔 사람 관점의 승률 하락(before-after)으로 그 수의 정확도(0~100)를 산출.
 function moveAccuracy(winBefore, winAfter) { const drop = Math.max(0, winBefore - winAfter); return Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * drop) - 3.1669)); }
-// 게임 정확도 = 변동성 가중 평균과 조화 평균의 산술 평균(chess.com 방식 근사).
+// 게임 정확도 = '국면 변동성 가중 조화평균'.
+// (정확도 모델 개편 · (B)) chess.com은 실수·블런더가 여러 번 나온 대국을 훨씬 낮게 준다. 예전엔
+// 조화평균과 '변동성 가중 산술평균'의 평균을 썼는데, 산술평균 성분이 사실상 단순평균이라 나쁜 대국
+// 점수를 위로 끌어올렸다(실측: chess.com 흑 68.5인데 우리는 79). 그래서 산술 성분을 버리고 조화평균에
+// 변동성 가중을 결합한다 — 조화평균은 낮은 정확도(실수)에 민감하고, 변동성이 큰(승부가 걸린) 국면의
+// 실수에 더 큰 가중을 줘 chess.com의 국면 변동성 반영 방식에 가깝다. VOL_STRENGTH로 변동성 가중의
+// 세기를 조절한다(빅데이터로 미세조정 예정).
+const VOL_STRENGTH = 1;
 function gameAccuracyFrom(accs, winsBefore) {
   if (!accs.length) return null;
-  const harmonic = accs.length / accs.reduce((s, a) => s + 1 / Math.max(a, 1), 0);
-  let wsum = 0, num = 0;
+  let wsum = 0, den = 0;
   for (let i = 0; i < accs.length; i++) {
     const lo = Math.max(0, i - 2), hi = Math.min(winsBefore.length - 1, i + 2);
     const seg = winsBefore.slice(lo, hi + 1);
     const mean = seg.reduce((s, x) => s + x, 0) / seg.length;
     const sd = Math.sqrt(seg.reduce((s, x) => s + (x - mean) * (x - mean), 0) / seg.length);
-    const w = Math.max(0.5, sd);
-    wsum += w; num += w * accs[i];
+    const w = Math.pow(Math.max(0.5, sd), VOL_STRENGTH);
+    wsum += w; den += w / Math.max(accs[i], 1);
   }
-  const weighted = wsum > 0 ? num / wsum : harmonic;
-  return calibrateAccuracy((weighted + harmonic) / 2);
+  return calibrateAccuracy(den > 0 ? wsum / den : null);
 }
-// (정확도 보정) 평가치 그래프(승률)는 chess.com과 거의 같은데 최종 정확도 점수만 체계적으로 '낮게'
-// 나온다 — chess.com은 오프닝 이론수 등 여러 수를 감점 없이 처리하는데 우리는 그만큼 못 잡아 값이
-// 눌린다. 실측 2대국에서 (원시 정확도 → chess.com 정확도) 4점을 모아 선형 회귀했다:
-//   (58.4→65.1),(64.1→68.5),(75.1→77.4),(80.7→86.9)  ⇒  c ≈ 0.944·a + 8.79 (잔차 ±2.3 이내)
-// 저구간(<40)은 표본이 없어 원점(0,0)으로 선형 연결하고, 상한 100으로 클램프한다. 대국이 더 모이면
-// 계수를 다듬는다.
+// (정확도 보정) 예전에는 잘못된 집계(단순평균에 가까운 성분)를 억지로 끌어올리는 선형 보정을 뒀지만,
+// 집계를 '변동성 가중 조화평균'으로 바꾼 뒤로는 그 역할이 사라졌다. 지금은 항등(보정 없음) — 집계 자체가
+// chess.com에 맞도록 하고, 향후 빅데이터로 잔차가 확인되면 여기서 다시 보정한다.
 function calibrateAccuracy(a) {
   if (a == null) return null;
-  const c = a <= 40 ? a * (46.55 / 40) : 0.9441 * a + 8.789;
-  return Math.round(Math.max(0, Math.min(100, c)) * 10) / 10;
+  return Math.round(Math.max(0, Math.min(100, a)) * 10) / 10;
 }
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
