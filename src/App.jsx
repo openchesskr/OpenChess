@@ -5572,16 +5572,29 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // (16차) 퍼즐 추천 — 일간/주간/월간 풀이 랭킹(중복 풀이 포함) 상위 퍼즐을 미해결/해결됨보다 위에 노출.
   const [rankPeriod, setRankPeriod] = useState("day");
   const [rankMap, setRankMap] = useState({});
+  // (버그 수정) 랭킹에 오른 퍼즐이 "내가 예전에 열어봤거나 삭제해 본 적 있는 퍼즐"(puzzles/archivedPuzzles,
+  // 둘 다 로컬 계정 한정)에 없으면 추천 후보에서 통째로 빠졌다 — 대부분의 유저는 랭킹 1~12위 퍼즐을
+  // 전혀 열어본 적이 없으므로, 사실상 추천 퍼즐이 거의 항상 비어 보이는(제목조차 안 뜨는) 원인이었다.
+  // 번호만 있고 로컬에 없는 랭킹 퍼즐은 서버(Supabase, 전역 저장소)에서 직접 가져와 채운다.
+  const [rankPuzzles, setRankPuzzles] = useState({}); // no -> 퍼즐 데이터(서버에서 보강)
   useEffect(() => {
-    if (rankMap[rankPeriod]) return;
     let cancelled = false;
-    puzzleRank(rankPeriod, 12).then((rows) => {
+    (async () => {
+      let m = rankMap[rankPeriod];
+      if (!m) {
+        const rows = await puzzleRank(rankPeriod, 12);
+        if (cancelled) return;
+        m = {}; rows.forEach((r) => { m[r.no] = r.cnt; });
+        setRankMap((prev) => ({ ...prev, [rankPeriod]: m }));
+      }
+      const nos = Object.keys(m).filter((no) => !rankPuzzles[no]);
+      if (!nos.length) return;
+      const fetched = await Promise.all(nos.map((no) => puzzleFetch(no)));
       if (cancelled) return;
-      const m = {}; rows.forEach((r) => { m[r.no] = r.cnt; });
-      setRankMap((prev) => ({ ...prev, [rankPeriod]: m }));
-    });
+      setRankPuzzles((prev) => { const n = { ...prev }; nos.forEach((no, i) => { if (fetched[i]) n[no] = fetched[i]; }); return n; });
+    })();
     return () => { cancelled = true; };
-  }, [rankPeriod]);
+  }, [rankPeriod, rankMap]);
   // (18차 UX9) 테마 칩을 선택하면 추천 퍼즐도 그 테마만 표시. (18차 UI4) 이미 해결한 퍼즐은
   // 추천에서 빼고 아래 "해결 완료" 섹션에만 나오도록 분리한다.
   // (20차 UX6) 추천 퍼즐은 "미해결" 목록과 별도 알고리즘 — 내 퍼즐 탭에서 삭제해도(친구/본인 미해결
@@ -5594,11 +5607,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     const byId = new Map();
     for (const p of puzzles) byId.set(p.id, p);
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
+    for (const no of Object.keys(m)) { const p = rankPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
     return [...byId.values()]
       .filter((p) => filter === "all" || (p.theme || "punish") === filter)
       .filter((p) => !solved.has(p.id))
       .map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).slice(0, 12).map((x) => x.p);
-  }, [puzzles, archivedPuzzles, rankMap, rankPeriod, filter, solved]);
+  }, [puzzles, archivedPuzzles, rankMap, rankPeriod, filter, solved, rankPuzzles]);
   // (20차 UX6) "새로고침"을 누르면 후보 풀(최대 12개) 안에서 다른 6개를 결정적으로 다시 뽑아 보여준다.
   const recommended = useMemo(() => {
     if (recommendedPool.length <= 6) return recommendedPool;
