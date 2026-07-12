@@ -3713,6 +3713,15 @@ function useOpeningTreeAuto() {
   useEffect(() => {
     let cancelled = false;
     mapRef.current = new Map();
+    // (성능) 응답이 캐시에서 오거나 실패로 즉시 끝나면 setVersion이 노드 수만큼(최대 4000번) 연달아
+    // 불려, 그때마다 모식도 전체(items/edges)를 처음부터 다시 계산·렌더링해 트리가 무겁게 그려졌다 —
+    // 짧은 시간(80ms) 안에 몰린 갱신은 한 번으로 모아, 실제 리렌더 횟수를 데이터가 들어오는 속도가
+    // 아니라 화면이 그릴 수 있는 속도에 맞춘다.
+    let bumpTimer = null;
+    const bumpVersion = () => {
+      if (bumpTimer) return;
+      bumpTimer = setTimeout(() => { bumpTimer = null; setVersion((v) => v + 1); }, 80);
+    };
     setVersion((v) => v + 1);
     // (버그) 트리가 너무 금방 끊겨 보인다는 피드백 — 최소 깊이(모든 갈래가 무조건 펼쳐지는 수)를
     // 3수에서 4수로, 그 이후 계속 펼쳐지는 채택률 기준도 20%에서 15%로 낮춰 조금 더 길게 이어지게 한다.
@@ -3737,7 +3746,7 @@ function useOpeningTreeAuto() {
       const node = snapNode(path);
       const rawMoves = node ? node.moves.slice() : (path.length === 0 && SNAP.tree[""] ? SNAP.tree[""].moves.slice() : []);
       addsFor(key).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
-      if (!rawMoves.length) { mapRef.current.set(key, []); if (!cancelled) setVersion((v) => v + 1); return; }
+      if (!rawMoves.length) { mapRef.current.set(key, []); if (!cancelled) bumpVersion(); return; }
       let lcMoves = [];
       try { const lc = await fetchLichess(path); lcMoves = (lc && lc.moves) || []; } catch { }
       if (cancelled) return;
@@ -3746,7 +3755,7 @@ function useOpeningTreeAuto() {
         return { ...m, adopt: hit ? hit.adopt : 0, games: hit ? hit.games : 0, wdl: hit ? hit.wdl : null, name: m.name || (hit && hit.name) || null };
       });
       mapRef.current.set(key, merged);
-      setVersion((v) => v + 1);
+      bumpVersion();
       // (버그 수정) 이론 수(book)는 채택률/깊이 상한(MIN_DEPTH·ADOPT_CUTOFF)과 무관하게 항상 계속
       // 펼친다 — 이론 수는 개발자가 큐레이션한 유한한 집합이라(엔진/커뮤니티 수와 달리 무한히
       // 늘어나지 않음) 모든 이론 수가 트리에 나올 때까지 이어가도 안전하다. 채택률 낮은 비이론
@@ -3755,7 +3764,7 @@ function useOpeningTreeAuto() {
       runNext();
     }
     runNext();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; if (bumpTimer) clearTimeout(bumpTimer); };
   }, []);
   return { data: mapRef.current, version };
 }
@@ -3911,7 +3920,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
   const onPointerUp = () => { dragRef.current = null; };
-  const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
+  // (버그 수정) React의 onWheel prop은 브라우저 스크롤 성능을 위해 passive 리스너로 등록되어,
+  // 핸들러 안에서 e.preventDefault()를 불러도 실제로는 무시돼 모식도를 휠로 확대/축소하려 할 때마다
+  // 웹사이트 전체가 같이 위아래로 스크롤됐다 — ref에 직접 { passive: false } 리스너를 달아야
+  // preventDefault가 실제로 페이지 스크롤을 막는다.
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const handleWheel = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
   // (버그 수정) 오프닝이 많아지면 원하는 갈래를 캔버스에서 손으로 찾아 팬/줌해야 했다 — 이름으로
   // 검색하면 그 오프닝으로 가는 수순만 남기고(focusPath) 나머지 갈래는 숨긴다. 검색은 항상 전체
   // 트리(fullItems) 기준으로 해야, 이미 한 갈래에 포커스된 상태에서도 다른 오프닝을 다시 찾을 수 있다.
@@ -3941,10 +3960,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
-    <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheelZoom}
+    <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
       // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
-      style={{ position: "relative", overflow: "hidden", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
       <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)" }}>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
         {query.trim() ? (
@@ -3974,25 +3993,19 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const pc = coord(p), cc2 = coord(c);
             const x1 = vertical ? pc.x + boxW / 2 : pc.x + boxW, y1 = vertical ? pc.y + boxH : pc.y + boxH / 2;
             const x2 = vertical ? cc2.x + boxW / 2 : cc2.x, y2 = vertical ? cc2.y : cc2.y + boxH / 2;
-            // (2차 개편) 채택률에 비례한 굵기 — 채택률 높은 핵심 라인은 굵은 줄기처럼, 낮은 라인은 가는 곁가지처럼.
-            const wStroke = 1 + Math.min(7, (c.adopt || 0) / 12);
+            // (버그 수정) 선 굵기가 채택률에 따라 제각각이라 트리 전체가 정신없어 보였다 — 굵기를
+            // 하나로 통일해, 굵기가 아니라 실제 트리 구조로만 위계가 드러나게 한다.
+            const wStroke = 2;
             const eStroke = c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
-            // (기능) 트리가 펼쳐질 때 선이 한꺼번에 나타나지 않고 펜으로 긋듯 그려지게 — 길이만큼
-            // stroke-dasharray/dashoffset을 걸어 두고 dashoffset을 0으로 애니메이션한다. 부모·자식
-            // 키 조합으로 키를 고정해, 이미 그려진 선은 데이터가 갱신돼도 리마운트(=다시 그려짐)되지
-            // 않고 새로 나타나는 선만 애니메이션이 걸린다. 길이에 비례해 걸리는 시간도 다르게 둬
-            // 짧은 가지는 빠르게, 긴 가지는 손으로 긋듯 조금 더 걸리게 한다.
-            const len = Math.hypot(x2 - x1, y2 - y1);
-            const dur = Math.max(140, Math.min(600, len * 1.1));
-            return <line key={p.key + "→" + c.key} className="dex-line" x1={x1} y1={y1} x2={x2} y2={y2} stroke={eStroke} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round"
-              style={{ strokeDasharray: len, strokeDashoffset: len, animation: "dexLineDraw " + dur + "ms ease-out forwards" }} />;
+            return <line key={p.key + "→" + c.key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={eStroke} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round" />;
           })}
         </svg>
         {items.map((it) => {
           const { x, y } = coord(it);
           const isOpen = openKey === it.key;
-          const boxScale = 0.85 + Math.min(0.35, (it.adopt || 0) / 100);
-          const w = boxW * boxScale, h = boxH * boxScale;
+          // (버그 수정) 채택률에 따라 블록 크기가 제각각이라 트리가 정신없어 보였다 — 모든 블록을
+          // 같은 크기로 통일한다.
+          const w = boxW, h = boxH;
           const kind = it.kind || "pending";
           const isBook = kind === "book";
           const sub = isOpen ? "#241509" : it.unlocked ? QCOLOR[kind] : "#8A7458";
@@ -4007,7 +4020,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
               <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
               <button onClick={() => onToggleOpen(it.key)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11 + Math.min(3, (it.adopt || 0) / 30) }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
                   {!it.unlocked && <Lock size={10} />}
                   {moveNumber(it.path.length - 1)}{it.san}
                 </span>
@@ -8265,7 +8278,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} @keyframes dexLineDraw{to{stroke-dashoffset:0}} @media (prefers-reduced-motion: reduce){.dex-line{animation:none !important;stroke-dashoffset:0 !important}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       <GeoBackdrop />
       {/* (UI1) 모바일(좁은 화면)에서 로고/닉네임/로그아웃 등이 너무 붙어 보이던 문제 —
