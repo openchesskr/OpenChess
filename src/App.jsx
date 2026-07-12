@@ -3720,12 +3720,15 @@ function useOpeningTreeAuto(priorityRef) {
     mapRef.current = new Map();
     // (성능) 응답이 캐시에서 오거나 실패로 즉시 끝나면 setVersion이 노드 수만큼(최대 4000번) 연달아
     // 불려, 그때마다 모식도 전체(items/edges)를 처음부터 다시 계산·렌더링해 트리가 무겁게 그려졌다 —
-    // 짧은 시간(80ms) 안에 몰린 갱신은 한 번으로 모아, 실제 리렌더 횟수를 데이터가 들어오는 속도가
-    // 아니라 화면이 그릴 수 있는 속도에 맞춘다.
+    // 짧은 시간 안에 몰린 갱신은 한 번으로 모아, 실제 리렌더 횟수를 데이터가 들어오는 속도가 아니라
+    // 화면이 그릴 수 있는 속도에 맞춘다.
+    // (버그 수정) 나침반 트리는 방향별 좌표를 매번 처음부터 다시 매기므로, 너무 잦게(80ms) 다시
+    // 그리면 블록이 계속 움찔거려 깜빡이는 느낌이 들었다 — 간격을 넉넉히 늘려 눈에 띄게 덜 자주,
+    // 대신 한 번에 여러 개씩 모아 반영되게 한다(위치 변화 자체는 CSS 트랜지션으로 부드럽게 이어짐).
     let bumpTimer = null;
     const bumpVersion = () => {
       if (bumpTimer) return;
-      bumpTimer = setTimeout(() => { bumpTimer = null; setVersion((v) => v + 1); }, 80);
+      bumpTimer = setTimeout(() => { bumpTimer = null; setVersion((v) => v + 1); }, 220);
     };
     setVersion((v) => v + 1);
     // (버그) 트리가 너무 금방 끊겨 보인다는 피드백 — 최소 깊이(모든 갈래가 무조건 펼쳐지는 수)를
@@ -3863,33 +3866,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 겹치지 않을 정도의 여유를 준다.
   const VCOL = 108, VROW = 86, HCOL = 158, HROW = 68;
   const ROOT_GAP = 90;
-  // (버그 수정) 블록을 잇는 선이 지나치게 길어지던 문제 — 원인은 "퍼짐(spread)" 좌표를 매기는
-  // 번호 공간을 네 방향이 공유하고, 게다가 아직 화면에 나오지도 않을 수백~수천 개 노드분까지
-  // 번호를 벌려 놓던 것: 실제로 그려지는 형제 둘이 슬롯 5번과 800번을 받아, 그 사이 795칸(약
-  // 5만px)이 텅 빈 채 초장거리 선이 생겼다. 방향(N/S/E/W)마다 독립된 번호 공간을 쓰고, 지금
-  // 실제로 그려지는 leaf에만 0,1,2… 빽빽하게(dense) 번호를 매기면, 형제는 항상 바로 옆 칸이라
-  // 선이 구조적으로 가능한 가장 짧아진다.
-  // (버그 수정, 흔들림 방지) 한 번 배정한 leaf 슬롯은 캐시에 박아 두어 절대 안 옮기고, leaf가
-  // 자식을 얻어 internal로 바뀌면 그 슬롯을 freeList에 반납해 다음 새 leaf가 재사용한다 —
-  // 방향별로 따로 관리하므로 각 팔의 번호가 늘 빽빽하게 채워진다.
-  const posCacheRef = useRef({ N: new Map(), S: new Map(), E: new Map(), W: new Map() });
-  const nextPosRef = useRef({ N: 0, S: 0, E: 0, W: 0 });
-  const freeListRef = useRef({ N: [], S: [], E: [], W: [] });
+  // (버그 수정) 블록이 무질서하게 흩어지고 새 블록이 생길 때마다 화면이 깜빡이던 문제 — 원인은
+  // "한 번 배정한 자리는 캐시로 고정하고, 자리가 필요 없어지면 다른 노드가 재사용" 하는 방식에
+  // 있었다. leaf였던 노드가 자식을 얻어 internal이 되면, 그 노드의 화면 위치(자식들 평균)는
+  // 이제 완전히 새로운(멀리 떨어진) 자식들 자리를 따라가는데, 원래 그 노드가 있던 자리(원래
+  // 이웃들 사이)는 전혀 상관없는 다른 갈래가 차지해 버려 — 정작 그 노드는 원래 이웃과 무관한
+  // 엉뚱한 곳에 나타나고(무질서), 트리 구조가 바뀔 때마다 재사용 대상이 계속 달라져 여러 블록이
+  // 동시에 자리를 옮겨 다녔다(깜빡임). 캐시·재사용을 걷어내고, 매번 방향별로 지금 보이는 형제
+  // 순서 그대로(채택률 정렬 결과) 왼쪽부터 빈틈없이 번호를 다시 매기는 단순한 방식으로 바꾼다 —
+  // 이러면 항상 실제 트리 구조와 화면 위치가 정확히 일치해 무질서·겹침이 원천적으로 없다.
+  // 이렇게 매길 때마다 위치가 살짝씩 바뀔 수 있는 건, 아래 CSS 트랜지션으로 블록이 스르륵
+  // 옮겨가듯 보이게 해(순간이동처럼 깜빡이지 않고) 감수한다.
   const { items, edges, width, height, centerX, centerY } = useMemo(() => {
     const items = []; const edges = [];
-    const takeSlot = (dir, key) => {
-      const cache = posCacheRef.current[dir];
-      if (cache.has(key)) return cache.get(key);
-      const free = freeListRef.current[dir];
-      const p = free.length ? free.pop() : nextPosRef.current[dir]++;
-      cache.set(key, p);
-      return p;
-    };
-    const freeSlot = (dir, key) => {
-      const cache = posCacheRef.current[dir];
-      if (cache.has(key)) { freeListRef.current[dir].push(cache.get(key)); cache.delete(key); }
-    };
-    // 방향별로 leaf에 빽빽한 슬롯(pos)을 주고, internal 노드는 자식들 pos의 가운데로 둔다.
+    let cursor = { N: 0, S: 0, E: 0, W: 0 };
+    // 방향별로 leaf에 왼쪽부터 빈틈없는 슬롯(pos)을 주고, internal 노드는 자식들 pos의 가운데로 둔다.
     const visit = (san, path, depth, adopt, kind, evalCp, name, dir) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
@@ -3910,8 +3901,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         }
       }
       if (depth >= 1) {
-        if (!kids.length) it.pos = takeSlot(dir, key);
-        else { freeSlot(dir, key); it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; }
+        if (!kids.length) it.pos = cursor[dir]++;
+        else it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2;
       } else it.pos = 0;
       for (const c of kids) edges.push([it, c]);
       items.push(it);
@@ -3922,6 +3913,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 각 방향의 루트(깊이 1) 퍼짐을 0으로 맞춰, 네 팔이 정확히 나침반 중심에서 뻗어나가게 한다.
     const rootPos = {};
     for (const it of visible) if (it.depth === 1) rootPos[it.dir] = it.pos;
+    let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
       const spread = it.pos - (rootPos[it.dir] || 0);
       const ld = it.depth - 1;
@@ -3930,35 +3922,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       else if (it.dir === "E") { it.x = ROOT_GAP + ld * HCOL; it.y = spread * HROW; }
       else { it.x = -(ROOT_GAP + ld * HCOL); it.y = spread * HROW; }
     }
-    // (버그 수정) 블록끼리 겹치는 문제 — 두 종류의 원인이 있었다.
-    // (1) 같은 팔(방향)·같은 깊이(같은 행/열)에 형제가 몰릴 때: internal 노드 좌표가 자식들
-    //     pos의 "평균"이다 보니 형제 사이 실제 간격이 최소 폭보다 좁아질 수 있었다 — 같은
-    //     행/열끼리 퍼짐 좌표순으로 정렬해 한 번에 쭉 밀어내는 스윕으로 해결(칸이 여러 개
-    //     한꺼번에 몰려 있어도 한 패스로 전부 벌어짐).
-    const bands = new Map();
-    for (const it of visible) {
-      const bk = it.dir + "|" + it.depth;
-      if (!bands.has(bk)) bands.set(bk, []);
-      bands.get(bk).push(it);
-    }
-    for (const arr of bands.values()) {
-      if (arr.length < 2) continue;
-      const dir = arr[0].dir;
-      const axis = (dir === "N" || dir === "S") ? "x" : "y";
-      const minGap = (dir === "N" || dir === "S") ? VCOL : HROW;
-      arr.sort((a, b) => a[axis] - b[axis]);
-      for (let i = 1; i < arr.length; i++) {
-        const gap = arr[i][axis] - arr[i - 1][axis];
-        if (gap < minGap) arr[i][axis] = arr[i - 1][axis] + minGap;
-      }
-    }
-    // (2) 서로 다른 두 팔(예: 북쪽과 동쪽)이 중심에서 멀리 떨어진 곳에서 우연히 화면상 거의 같은
-    //     좌표에 만나는 경우(방향·깊이가 다르니 위 스윕으로는 못 잡음) — 방향·깊이 구분 없이
-    //     화면 좌표가 실제로 가까운 블록끼리 전부 비교해 밀어내는 공간 격자(그리드) 기반 겹침
-    //     해소를 추가로 돌린다. 격자로 주변 셀만 비교하므로 노드가 수천 개라도 가볍게 동작한다.
+    // (버그 수정) 형제(직계)끼리는 늘 연속된 빈틈없는 번호를 받아 안 겹치지만, "평균"으로 정해지는
+    // internal 노드 좌표는 트리가 한쪽으로 몹시 치우치면(예: 한 갈래는 leaf 100개, 바로 옆 갈래는
+    // leaf 1개) 자기 범위의 가장자리 바로 앞까지 붙을 수 있어 — 같은 팔·같은 깊이의 사촌끼리도,
+    // 서로 다른 팔(예: 북쪽과 동쪽)이 중심에서 멀리 떨어진 곳에서 우연히 만나는 경우도 둘 다
+    // 남을 수 있다. 두 경우 모두, 그 노드의 "깊이 축"(N/S는 y, E/W는 x)은 절대 건드리지 않고
+    // (건드리면 열/행 정렬이 깨져 무질서해 보임) 각자의 "퍼짐 축"(N/S는 x, E/W는 y)만 밀어내
+    // 해소한다. 격자로 주변 셀만 비교해 노드가 수천 개라도 가볍게 동작한다.
     const CELL = Math.max(boxW, boxH) + 4;
     const cellKey = (x, y) => Math.floor(x / CELL) + "," + Math.floor(y / CELL);
-    for (let pass = 0; pass < 12; pass++) {
+    for (let pass = 0; pass < 30; pass++) {
       const grid = new Map();
       for (const it of visible) {
         const k = cellKey(it.x, it.y);
@@ -3976,19 +3949,22 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               if (other === it || other.key <= it.key) continue; // 각 쌍은 한 번만 비교
               const dx = it.x - other.x, dy = it.y - other.y;
               const ox = boxW - Math.abs(dx), oy = boxH - Math.abs(dy);
-              if (ox > 2 && oy > 2) {
-                // 겹치는 정도가 더 적은 축으로만 밀어내(다른 축은 그대로 둬 구조를 최대한 보존).
-                if (ox < oy) { const push = ox / 2 + 1; if (dx >= 0) { it.x += push; other.x -= push; } else { it.x -= push; other.x += push; } }
-                else { const push = oy / 2 + 1; if (dy >= 0) { it.y += push; other.y -= push; } else { it.y -= push; other.y += push; } }
-                moved = true;
-              }
+              if (ox <= 2 || oy <= 2) continue;
+              const itFreeIsX = it.dir === "N" || it.dir === "S";
+              const otherFreeIsX = other.dir === "N" || other.dir === "S";
+              // 두 팔 다 같은 축이 자유축이면(드묾) 그 축으로 나눠 밀고, 다르면 덜 밀어도 되는
+              // 쪽(자기 자유축)만 옮겨 상대의 깊이 축 정렬은 그대로 둔다.
+              if (itFreeIsX && otherFreeIsX) { const push = ox / 2 + 1; if (dx >= 0) { it.x += push; other.x -= push; } else { it.x -= push; other.x += push; } }
+              else if (!itFreeIsX && !otherFreeIsX) { const push = oy / 2 + 1; if (dy >= 0) { it.y += push; other.y -= push; } else { it.y -= push; other.y += push; } }
+              else if (itFreeIsX) { const push = ox + 2; if (dx >= 0) it.x += push; else it.x -= push; }
+              else { const push = oy + 2; if (dy >= 0) it.y += push; else it.y -= push; }
+              moved = true;
             }
           }
         }
       }
       if (!moved) break;
     }
-    let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
       if (it.x < minX) minX = it.x; if (it.x > maxX) maxX = it.x;
       if (it.y < minY) minY = it.y; if (it.y > maxY) maxY = it.y;
@@ -4265,7 +4241,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           // (버그 수정) 채택률 %는 블록에서 빼고, 수 체계 아이콘은 글자와 나란히 두지 않고 블록
           // 좌상단에 작은 배지로 얹는다. 오프닝 이름은 블록 안이 아니라 바로 아래 빈 공간에 표시.
           return (
-            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
+            // (버그 수정) 트리 구조가 바뀌면서 블록 위치가 살짝씩 재조정될 때, 순간이동하듯 튀어
+            // 깜빡이는 느낌이 들었다 — key가 노드 경로로 고정돼 있어 같은 DOM 요소가 재사용되는
+            // 점을 이용해, 위치(left/top) 변화에 짧은 트랜지션을 줘 스르륵 옮겨가는 것처럼 보이게 한다.
+            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH, transition: "left .35s ease, top .35s ease" }}>
               <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
               <button onClick={() => selectNode(it)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
