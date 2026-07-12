@@ -6350,20 +6350,32 @@ function findOpeningPathByFuzzyName(name) {
   }
   return null;
 }
-// (버그 수정) "오프닝별 승률" 한 행 — 하위 오프닝을 상위 오프닝 아래 들여써서(depth) 재귀적으로
-// 그린다. 각 노드의 수치는 자신 + 모든 하위 갈래의 합산(AccountChessStats의 rollup)이라, 상위 행이
-// 곧 그 아래 중첩된 하위 행들의 총합으로 보인다.
+// (버그 수정) 줄바꿈(들여쓰기)만으로는 상위-하위 오프닝의 관계가 잘 안 보인다는 피드백 — 하위
+// 오프닝 묶음을 왼쪽 세로선(트리 가지)으로 잇고, 각 행에서 그 세로선까지 짧은 가로선(elbow)을 그어
+// 파일 탐색기 같은 계통도 느낌을 준다. 각 노드의 수치는 자신 + 모든 하위 갈래의 합산(rollup)이라,
+// 상위 행이 곧 그 아래 중첩된 하위 행들의 총합으로 보인다.
+// (버그 수정) 이름이 길면 한 줄 말줄임에 잘려 전혀 안 보이던 문제 — 이름을 통계 줄과 분리해 자기
+// 줄에서 최대 2줄까지 감싸 보여주고(그래도 넘치면 말줄임), title 속성으로 전체 이름도 항상 볼 수 있게 한다.
 function OpeningWinrateRow({ node, depth, onOpenOpening }) {
-  const row = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "5px 0", paddingLeft: depth * 14, borderTop: "1px solid #E4D5B6", fontSize: depth === 0 ? 12.5 : 11.5 };
+  const isRoot = depth === 0;
+  const nameStyle = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "keep-all", lineHeight: 1.3, minWidth: 0, flex: "1 1 auto" };
   return (
-    <>
-      <div style={row}>
-        {onOpenOpening ? <button onClick={() => onOpenOpening(node.name)} className="press" style={{ color: T.cocoa || "#5A3A22", fontWeight: depth === 0 ? 700 : 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "56%", background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0, fontSize: "inherit" }}>{node.name}</button>
-          : <span style={{ color: T.ink, fontWeight: depth === 0 ? 700 : 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "56%" }}>{node.name}</span>}
-        <span style={{ fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+    <div style={{ position: "relative" }}>
+      {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
+      <div style={{ padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, fontSize: isRoot ? 12.5 : 11.5 }}>
+          {onOpenOpening
+            ? <button onClick={() => onOpenOpening(node.name)} title={node.name} className="press" style={{ ...nameStyle, color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0, fontSize: "inherit" }}>{node.name}</button>
+            : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
+          <span style={{ fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0, paddingTop: 1 }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+        </div>
       </div>
-      {node.children.map((c) => <OpeningWinrateRow key={c.name} node={c} depth={depth + 1} onOpenOpening={onOpenOpening} />)}
-    </>
+      {node.children.length > 0 && (
+        <div style={{ marginLeft: 15, borderLeft: "1.5px solid #D9C7A0", paddingLeft: 9 }}>
+          {node.children.map((c) => <OpeningWinrateRow key={c.name} node={c} depth={depth + 1} onOpenOpening={onOpenOpening} />)}
+        </div>
+      )}
+    </div>
   );
 }
 function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
