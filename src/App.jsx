@@ -3969,7 +3969,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0" }}>
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-          {edges.map(([p, c], i) => {
+          {edges.map(([p, c]) => {
             if (p.depth === 0) return null;
             const pc = coord(p), cc2 = coord(c);
             const x1 = vertical ? pc.x + boxW / 2 : pc.x + boxW, y1 = vertical ? pc.y + boxH : pc.y + boxH / 2;
@@ -3977,7 +3977,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             // (2차 개편) 채택률에 비례한 굵기 — 채택률 높은 핵심 라인은 굵은 줄기처럼, 낮은 라인은 가는 곁가지처럼.
             const wStroke = 1 + Math.min(7, (c.adopt || 0) / 12);
             const eStroke = c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
-            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={eStroke} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round" />;
+            // (기능) 트리가 펼쳐질 때 선이 한꺼번에 나타나지 않고 펜으로 긋듯 그려지게 — 길이만큼
+            // stroke-dasharray/dashoffset을 걸어 두고 dashoffset을 0으로 애니메이션한다. 부모·자식
+            // 키 조합으로 키를 고정해, 이미 그려진 선은 데이터가 갱신돼도 리마운트(=다시 그려짐)되지
+            // 않고 새로 나타나는 선만 애니메이션이 걸린다. 길이에 비례해 걸리는 시간도 다르게 둬
+            // 짧은 가지는 빠르게, 긴 가지는 손으로 긋듯 조금 더 걸리게 한다.
+            const len = Math.hypot(x2 - x1, y2 - y1);
+            const dur = Math.max(140, Math.min(600, len * 1.1));
+            return <line key={p.key + "→" + c.key} className="dex-line" x1={x1} y1={y1} x2={x2} y2={y2} stroke={eStroke} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round"
+              style={{ strokeDasharray: len, strokeDashoffset: len, animation: "dexLineDraw " + dur + "ms ease-out forwards" }} />;
           })}
         </svg>
         {items.map((it) => {
@@ -8257,7 +8265,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} @keyframes dexLineDraw{to{stroke-dashoffset:0}} @media (prefers-reduced-motion: reduce){.dex-line{animation:none !important;stroke-dashoffset:0 !important}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       <GeoBackdrop />
       {/* (UI1) 모바일(좁은 화면)에서 로고/닉네임/로그아웃 등이 너무 붙어 보이던 문제 —
