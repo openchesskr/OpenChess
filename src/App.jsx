@@ -539,7 +539,10 @@ function useEngine(enginePref) {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
     queue.current.push({ resolve, multi: true, lines: {}, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump]);
-  return { status, evaluate, evaluateMulti };
+  // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
+  // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
+  const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
+  return { status, evaluate, evaluateMulti, profile: enginePref, urls };
 }
 /* UCI -> SAN (보드 기준) */
 function uciToSan(board, uci, color) {
@@ -1579,6 +1582,61 @@ function calibrateAccuracy(a) {
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
 const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : (l.cp != null ? l.cp : 0)) : 0;
+// (성능) 게임 리뷰(analyzeGame)가 포지션들을 나눠 동시에 계산할 워커 풀 크기 — "full"(Stockfish 16
+// NNUE, 40MB 신경망)은 워커 하나당 메모리·로딩 부담이 커서 2개로, "lite"(7MB, 경량 빌드)는 4개까지
+// 동시에 띄운다. depth·movetime은 그대로 두므로 정확도 손실 없이 총 분석 시간만 줄어든다.
+const ANALYZE_POOL_SIZE = { full: 2, lite: 4 };
+// analyzeGame 전용 보조 워커 — useEngine과 달리 React 상태 없이 단발성 배치 작업 하나만 순서대로
+// 처리하다가(evaluateMulti) 분석이 끝나면 바로 종료(terminate)된다. useEngine의 워커 부팅(URL
+// 폴백)·MultiPV 라인 파싱 로직과 동일한 프로토콜을 쓰되, 훅 상태 없이 독립적으로 여러 개 띄울 수 있다.
+function bootAnalysisWorker(urls) {
+  return new Promise((resolve) => {
+    let idx = 0, booted = false, worker = null;
+    const queue = []; let running = false;
+    function pump() { if (running || !queue.length) return; running = true; queue[0].cmds.forEach((c) => worker.postMessage(c)); }
+    function handleLine(line) {
+      const job = queue[0]; if (!job) return;
+      const sc = line.match(/score (cp|mate) (-?\d+)/);
+      if (line.startsWith("info")) {
+        const mp = line.match(/multipv (\d+)/); const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+        if (mp && pv && sc) job.lines[parseInt(mp[1], 10)] = { uci: pv[1], cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+      } else if (line.startsWith("bestmove")) {
+        queue.shift(); running = false;
+        job.resolve(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]));
+        pump();
+      }
+    }
+    function tryNext() {
+      if (idx >= urls.length) { resolve(null); return; }
+      const url = urls[idx++];
+      try {
+        let w;
+        if (url.startsWith("/")) w = new Worker(url);
+        else { const blob = new Blob(["importScripts('" + url + "');"], { type: "text/javascript" }); w = new Worker(URL.createObjectURL(blob)); }
+        w.onmessage = (e) => {
+          const line = typeof e.data === "string" ? e.data : "";
+          if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) {
+            booted = true; worker = w;
+            resolve({
+              evaluateMulti(fen, d, multipv, mt) {
+                return new Promise((res) => {
+                  queue.push({ resolve: res, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  pump();
+                });
+              },
+              terminate() { try { w.terminate(); } catch (_) { } },
+            });
+          }
+          handleLine(line);
+        };
+        w.onerror = () => { try { w.terminate(); } catch (_) { } if (!booted) tryNext(); };
+        w.postMessage("uci"); w.postMessage("isready");
+        setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
+      } catch (_) { tryNext(); }
+    }
+    tryNext();
+  });
+}
 // 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
 // 실제 최선수를 뒀을 때 손실이 정확히 0이 되어, 얕은 depth 탐색 노이즈로 인한 가짜 실수가 사라진다.
 // (분석 최적화) 각 포지션을 '딱 한 번'만 단일 PV로 평가해 캐싱한다. 예전엔 둔 수가 1순위가 아니면
@@ -1589,28 +1647,43 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
   fullSans = decorateLine(fullSans);
   const N = fullSans.length;
-  // (버그 수정) 포지션당 시간(movetime)이 기보 길이와 무관하게 고정이면, 평가해야 할 포지션 수(N+1)가
-  // 순전히 선형으로 총 분석 시간에 곱해져 긴 대국(수순이 많은 기보)일수록 분석이 끝없이 느려지다
-  // 멈춘 것처럼 보인다. 전체 분석 시간이 기보 길이와 무관하게 일정 범위(예산) 안에 들어오도록,
-  // 포지션 수가 많을수록 포지션당 시간을 그만큼 줄인다 — 호출자가 준 movetime은 상한으로만 쓴다.
-  const ANALYZE_BUDGET_MS = 25000;
-  const perMoveMs = Math.max(60, Math.min(movetime, Math.round(ANALYZE_BUDGET_MS / (N + 1))));
   // MultiPV-2: 각 포지션을 한 번만 평가해 최선수(pv0)와 2순위(pv1)를 함께 얻는다(중복 평가 없음).
   // 2순위와의 격차로 "유일한 수(Great)"를 판정하고, movetime 상한으로 시간이 폭주하지 않게 한다.
   const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
-  // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
-  // 기보가 길어질수록 분석이 급격히 느려진다 — 보드를 한 번만 만들어 한 수씩 전진시키며 재사용한다.
+  // (버그 수정) 워커 하나로 포지션을 순서대로 평가하면 총 분석 시간이 포지션 수(N+1)에 정비례해
+  // 늘어나 긴 대국일수록 끝없이 느려진다. depth·movetime(정확도)은 손대지 않고, 같은 엔진 프로필의
+  // 워커를 몇 개 더 띄워(이미 떠 있는 메인 워커 engine도 유휴 상태이므로 풀의 한 자리로 함께 쓴다)
+  // 포지션들을 나눠 동시에 계산해 총 시간만 줄인다.
+  const fens = new Array(N + 1);
   {
+    // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
+    // 기보가 길어질수록 분석이 급격히 느려진다 — 보드를 한 번만 만들어 한 수씩 전진시키며 재사용한다.
     let board = startBoard();
     for (let i = 0; i <= N; i++) {
-      const lines = await withTimeout(engine.evaluateMulti(boardToFen(board, i), depth, 2, perMoveMs), perMoveMs + 4000);
-      const p0 = lines && lines[0], p1 = lines && lines[1];
-      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
-      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
-      onProgress && onProgress((i + 1) / (N + 1));
+      fens[i] = boardToFen(board, i);
       if (i < N) board = applySan(board, fullSans[i], i % 2 === 0 ? "w" : "b");
     }
   }
+  const poolTarget = Math.min(ANALYZE_POOL_SIZE[engine.profile] || 2, N + 1);
+  const extraCount = Math.max(0, poolTarget - 1);
+  const extraWorkers = extraCount > 0
+    ? (await Promise.all(Array.from({ length: extraCount }, () => bootAnalysisWorker(engine.urls)))).filter(Boolean)
+    : [];
+  const workers = [{ evaluateMulti: engine.evaluateMulti }, ...extraWorkers];
+  let nextIdx = 0, doneCount = 0;
+  async function runWorker(w) {
+    for (;;) {
+      const i = nextIdx++; if (i > N) return;
+      const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
+      const p0 = lines && lines[0], p1 = lines && lines[1];
+      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
+      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
+      doneCount++;
+      onProgress && onProgress(doneCount / (N + 1));
+    }
+  }
+  await Promise.all(workers.map(runWorker));
+  extraWorkers.forEach((w) => w.terminate());
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
   const graphCp = new Array(N + 1);
   for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
