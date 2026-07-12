@@ -6406,6 +6406,52 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
     </div>
   );
 }
+// (기능) 문의/FAQ — 아직 등록된 FAQ는 없고(개발진이 추후 이 배열에 직접 채워 넣음), "문의하기"를
+// 누르면 Gmail 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
+const FAQ_ITEMS = [];
+function openInquiryEmail(user) {
+  const subject = "[OpenChess 문의]";
+  const body = [
+    "문의 내용을 아래에 자세히 적어주세요.",
+    "",
+    "─────────────",
+    "아이디: " + (user || ""),
+    "문의 유형: (버그 제보 / 기능 제안 / 기타)",
+    "─────────────",
+  ].join("\n");
+  const url = "https://mail.google.com/mail/?view=cm&fs=1&to=openchesskr@gmail.com&su=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+function FaqAccordionItem({ q, a }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderTop: "1px solid #E4D5B6" }}>
+      <button onClick={() => setOpen((v) => !v)} className="press" style={{ width: "100%", textAlign: "left", padding: "10px 2px", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{q}</span>
+        <ChevronDown size={14} style={{ color: T.inkSoft, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+      </button>
+      {open && <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 10px", lineHeight: 1.5 }}>{a}</p>}
+    </div>
+  );
+}
+function InquiryModal({ onClose, user }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><HelpCircle size={17} style={{ color: T.brass }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>문의 / FAQ</span></div>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>자주 묻는 질문을 먼저 확인해 보시고, 해결되지 않으면 아래 문의하기 버튼으로 이메일을 보내주세요.</p>
+        <div style={{ marginBottom: 14 }}>
+          {FAQ_ITEMS.length === 0
+            ? <p style={{ fontSize: 12, color: T.inkSoft }}>아직 등록된 FAQ가 없습니다.</p>
+            : FAQ_ITEMS.map((f, i) => <FaqAccordionItem key={i} q={f.q} a={f.a} />)}
+        </div>
+        <button onClick={() => openInquiryEmail(user)} className="press" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><MessageCircle size={16} /> 문의하기</button>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>Gmail 작성 화면으로 이동합니다 (openchesskr@gmail.com)</p>
+      </div>
+    </div>
+  );
+}
 function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
@@ -6413,6 +6459,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
   const [codevBusy, setCodevBusy] = useState(false);
   const [ccState, setCcState] = useState("idle");   // idle | checking | failed
   const [pending, setPending] = useState(null);
+  const [inquiryOpen, setInquiryOpen] = useState(false);
   useEffect(() => { setCc(profile.chesscom || ""); }, [profile.chesscom]);
   const linked = !!profile.chesscom;
   const verifyChesscom = async () => {
@@ -6534,6 +6581,16 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       </div>
 
       {/* (18차 UI10) chess.com 연동 UI는 프로필 편집 모달 안으로 이동 */}
+
+      {/* 문의 / FAQ */}
+      <div style={card}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2"><HelpCircle size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>문의 / FAQ</span></div>
+          <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>열기</button>
+        </div>
+        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문을 확인하거나, 이메일로 직접 문의할 수 있어요.</p>
+      </div>
+      {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
 
       {/* chess.com 계정 확인 모달 */}
       {pending && (
