@@ -1,4 +1,4 @@
-# 오프닝 연구소 (OpenChess)
+# OpenChess
 
 React + Vite 기반 체스 오프닝 트레이너. 실시간 Stockfish(단일 스레드 WASM) · Lichess Explorer · ECO 스냅샷(최대 10수)으로 동작하는 정적 SPA.
 
