@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft,
+  GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronDown,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3,
@@ -6817,7 +6817,7 @@ function notifIcon(kind) {
   if (kind === "level_up") return <Sparkles size={15} style={{ color: T.brassHi }} />;
   return <Info size={15} style={{ color: T.inkSoft }} />;
 }
-function NotificationBell({ myUid, onAccept, onReject }) {
+function NotificationBell({ myUid, onAccept, onReject, compact }) {
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   // (18차 UX4) 읽음/응답 처리한 알림이 30초 폴링(서버 반영 지연)으로 다시 미확인으로 되살아나지 않도록
@@ -6857,8 +6857,8 @@ function NotificationBell({ myUid, onAccept, onReject }) {
   const clearAll = () => { setItems([]); if (myUid) notifyDeleteAll(myUid); };
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: 34, height: 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-        <Bell size={16} />
+      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
       {open && (
@@ -6889,6 +6889,35 @@ function NotificationBell({ myUid, onAccept, onReject }) {
               ); })}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+// (버그 수정) 헤더의 "아이디 + 로그아웃"을 아바타 알약 하나로 묶는다 — 좁은 화면에서는 아바타만
+// 보여주고(이니셜), 이름은 펼침 메뉴 안에서만 보여줘 한 줄 폭을 아낀다. 넓은 화면에서는 아바타 옆에
+// 이름도 함께 표시한다. NotificationBell과 동일하게 바깥 클릭 시 자동으로 닫힌다.
+function HeaderProfileMenu({ name, compact, onLogoutClick }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+  const initial = (name || "?")[0].toUpperCase();
+  return (
+    <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
+      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, padding: compact ? "3px 5px" : "4px 10px 4px 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
+        <span style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: compact ? 10.5 : 12, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initial}</span>
+        {!compact && <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
+        <ChevronDown size={compact ? 12 : 14} style={{ color: T.brassHi, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+      </button>
+      {open && (
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, minWidth: 160, background: T.paper, borderRadius: 10, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", zIndex: 90, overflow: "hidden" }}>
+          <div style={{ padding: "9px 12px", fontSize: 12, fontWeight: 800, color: T.ink, borderBottom: "1px solid #E4D5B6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+          <button onClick={() => { setOpen(false); onLogoutClick(); }} className="press" style={{ width: "100%", textAlign: "left", padding: "9px 12px", background: "transparent", border: "none", color: T.blunder, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
         </div>
       )}
     </div>
@@ -8052,48 +8081,45 @@ export default function App() {
           넓은 데스크탑 화면에서는 우측 버튼들이 본문 오른쪽 경계를 훌쩍 넘어 화면 맨 끝에 몰려 보였다.
           본문과 동일한 maxWidth 컨테이너로 헤더 내용을 감싸 정렬을 맞춘다. */}
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
-      <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: narrowHeader ? "8px 14px" : "10px 20px", flexWrap: "wrap", rowGap: 6, columnGap: narrowHeader ? 10 : 14 }}>
-        <div className="flex items-center" style={{ gap: narrowHeader ? 8 : 12 }}>
-          {/* (버그 수정) 로고 PNG 원본에 상하 약 25%씩 투명 여백이 박혀 있어, height를 크게 잡아도
-              실제 보이는 그림은 절반 정도뿐이었다(헤더가 불필요하게 커 보이는 주된 원인). 이미지 자체를
-              그 여백 없이 다시 잘라냈으므로, 이제 height 값이 곧 실제 로고 크기와 거의 같다 — 헤더를
-              불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 34 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-        </div>
-        {/* (버그 수정) 레벨 배지·아이디·로그아웃·검색·친구·채팅·알림까지 7개 요소를 한 flex 줄에 몰아넣고
-            줄바꿈에 맡겼더니, 좁은 화면에서 줄이 어디서 끊길지 예측할 수 없어 아이콘 한두 개만 외로이
-            세 번째 줄로 밀려나며 헤더가 불필요하게 커졌다(여백처럼 보이는 원인). 계정 정보 줄과 아이콘
-            줄을 처음부터 분리해 항상 최대 두 줄로만 끝나게 한다. */}
-        <div className="flex flex-col items-end" style={{ gap: 5 }}>
-          <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
-            {/* (18차 UI8) 레벨 UI를 아이디 왼쪽으로 이동, 레벨 텍스트·게이지는 좌우로 나란히 배치 */}
-            <LevelBadge totalXp={totalXp} compact={narrowHeader} />
-            {user ? (
-              <>
-                <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: narrowHeader ? 70 : 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(profile.displayId || user) + roleIcon(user)}</span>
-                <button onClick={() => setConfirmLogout(true)} className="press" style={{ padding: narrowHeader ? "5px 9px" : "6px 11px", borderRadius: 8, background: T.ebony3, color: T.ivory, border: "1px solid #000", fontSize: 12, cursor: "pointer" }}>로그아웃</button>
-              </>
-            ) : (
-              <>
-                <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 10px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>로그인</button>
-                <button onClick={() => openAuth("signup")} className="press" style={{ padding: narrowHeader ? "5px 10px" : "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>회원가입</button>
-              </>
-            )}
-          </div>
-          <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
-            <button onClick={() => setSearchOpen(true)} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 30 : 34, height: narrowHeader ? 30 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={16} /></button>
-            {user && <button onClick={() => setFriendsOpen(true)} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 30 : 34, height: narrowHeader ? 30 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-              <Users size={16} />
+      {/* (버그 수정) 계정 정보 줄과 아이콘 줄을 따로 두고 줄바꿈에 맡겼더니 헤더가 항상 2줄로 보였다 —
+          레벨 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
+          space-between으로 중앙 공백을 그룹 사이 여백으로 흡수한다. 모바일에서는 아이디 텍스트를
+          숨기고 아바타로, 요소 크기를 한 단계씩 줄여 폭이 좁아도 항상 한 줄을 유지한다. */}
+      <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: narrowHeader ? "8px 12px" : "10px 20px", flexWrap: "nowrap", columnGap: narrowHeader ? 6 : 14 }}>
+        {/* (버그 수정) 로고 PNG 원본에 상하 약 25%씩 투명 여백이 박혀 있어, height를 크게 잡아도
+            실제 보이는 그림은 절반 정도뿐이었다(헤더가 불필요하게 커 보이는 주된 원인). 이미지 자체를
+            그 여백 없이 다시 잘라냈으므로, 이제 height 값이 곧 실제 로고 크기와 거의 같다 — 헤더를
+            불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
+        <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+        <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
+          {/* (18차 UI8) 레벨 UI — 레벨 텍스트와 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지). */}
+          <LevelBadge totalXp={totalXp} compact={narrowHeader} />
+          {/* 검색·친구·채팅을 하나의 세그먼트로 묶는다 — 비로그인 상태에선 검색만 남아 평범한 버튼처럼 보인다.
+              (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
+              오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
+              모서리 radius를 직접 주고 컨테이너는 overflow:visible로 둬 배지가 잘리지 않게 한다. */}
+          <div className="flex items-center" style={{ borderRadius: 9, border: "1px solid " + T.brass, overflow: "visible", flexShrink: 0 }}>
+            <button onClick={() => setSearchOpen(true)} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => setFriendsOpen(true)} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+              <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
-            {/* (18차 UX7) 채팅 모아보기 버튼 — 친구 버튼 옆 */}
-            {user && <button onClick={() => setChatsOpen(true)} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 30 : 34, height: narrowHeader ? 30 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-              <MessageCircle size={16} />
+            {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
+            {user && <button onClick={() => setChatsOpen(true)} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+              <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
-            {/* (17차) 알림 종 아이콘 — 검색/친구 버튼 옆 */}
-            {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} />}
           </div>
+          {/* (버그 수정) 알림은 시급성이 다른 정보라 세그먼트에 묶지 않고 오른쪽에 따로 분리해 둔다. */}
+          {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
+          {user ? (
+            <HeaderProfileMenu name={(profile.displayId || user) + roleIcon(user)} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} />
+          ) : (
+            <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
+              <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>로그인</button>
+              <button onClick={() => openAuth("signup")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>회원가입</button>
+            </div>
+          )}
         </div>
       </div>
       </header>
