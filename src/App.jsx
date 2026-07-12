@@ -1589,6 +1589,12 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
   fullSans = decorateLine(fullSans);
   const N = fullSans.length;
+  // (버그 수정) 포지션당 시간(movetime)이 기보 길이와 무관하게 고정이면, 평가해야 할 포지션 수(N+1)가
+  // 순전히 선형으로 총 분석 시간에 곱해져 긴 대국(수순이 많은 기보)일수록 분석이 끝없이 느려지다
+  // 멈춘 것처럼 보인다. 전체 분석 시간이 기보 길이와 무관하게 일정 범위(예산) 안에 들어오도록,
+  // 포지션 수가 많을수록 포지션당 시간을 그만큼 줄인다 — 호출자가 준 movetime은 상한으로만 쓴다.
+  const ANALYZE_BUDGET_MS = 25000;
+  const perMoveMs = Math.max(60, Math.min(movetime, Math.round(ANALYZE_BUDGET_MS / (N + 1))));
   // MultiPV-2: 각 포지션을 한 번만 평가해 최선수(pv0)와 2순위(pv1)를 함께 얻는다(중복 평가 없음).
   // 2순위와의 격차로 "유일한 수(Great)"를 판정하고, movetime 상한으로 시간이 폭주하지 않게 한다.
   const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
@@ -1597,7 +1603,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   {
     let board = startBoard();
     for (let i = 0; i <= N; i++) {
-      const lines = await withTimeout(engine.evaluateMulti(boardToFen(board, i), depth, 2, movetime), 8000);
+      const lines = await withTimeout(engine.evaluateMulti(boardToFen(board, i), depth, 2, perMoveMs), perMoveMs + 4000);
       const p0 = lines && lines[0], p1 = lines && lines[1];
       // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
       posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
