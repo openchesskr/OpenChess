@@ -269,12 +269,38 @@ const ENGINE_PROFILES = {
   full: {
     id: "full", label: "Stockfish 16 (NNUE)", desc: "정확도가 가장 높지만 로딩이 느려요",
     urls: [ENGINE_BASE + "engine/stockfish-nnue-16-single.js", "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js"],
+    // (성능) 교차 출처 격리(COOP/COEP)가 된 환경에서만 시도하는 멀티스레드 빌드 — CDN 폴백 없이
+    // 같은 출처(public/engine) 파일만 쓴다(교차 출처 워커 스크립트는 격리 요건과 맞물려 불확실하다).
+    mtUrl: ENGINE_BASE + "engine/stockfish-nnue-16.js",
   },
   lite: {
     id: "lite", label: "Stockfish 18 Lite", desc: "가볍고 빨라요(경량 빌드)",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
+    mtUrl: ENGINE_BASE + "engine/lite/stockfish-18-lite.js",
   },
 };
+// (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
+// Policy)가 걸린 페이지에서만 쓸 수 있다 — vite.config.js(개발)·vercel.json(배포)에서 헤더를 설정해
+// 뒀을 때만 true가 된다. 격리가 안 된 환경(구형 브라우저, 헤더 미지원 배포지 등)에서는 이 값이
+// false라 아래 engineBootList가 조용히 기존 단일 스레드 빌드로만 폴백한다.
+function crossOriginIsolatedOK() {
+  return typeof SharedArrayBuffer !== "undefined" && typeof window !== "undefined" && window.crossOriginIsolated === true;
+}
+// 실시간(집중 학습 등) 평가는 항상 활성 포지션이 하나뿐이라, 포지션 하나를 여러 코어로 동시에 탐색하는
+// 멀티스레드가 그대로 이득이다. UI 렌더링용 코어 하나는 남겨 둔다.
+function mainEngineThreads() {
+  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
+  return Math.max(1, cores - 1);
+}
+// 부팅 시도 목록 — 격리가 가능하면 멀티스레드 빌드(같은 출처만)를 맨 앞에 두고, 그 뒤로 기존
+// 단일 스레드 빌드(로컬 → CDN)를 그대로 이어 붙여, 멀티스레드 부팅이 실패해도 기존 폴백 경로가
+// 그대로 살아있게 한다.
+function engineBootList(profileId, threads) {
+  const profile = ENGINE_PROFILES[profileId] || ENGINE_PROFILES.full;
+  const list = profile.urls.map((url) => ({ url, threads: 1 }));
+  if (profile.mtUrl && crossOriginIsolatedOK()) list.unshift({ url: profile.mtUrl, threads });
+  return list;
+}
 const ENGINE_PREF_KEY = "occ_engine_pref";
 function isMobileDevice() {
   if (typeof navigator === "undefined") return false;
@@ -483,7 +509,7 @@ function useEngine(enginePref) {
     // 이때 이전 워커를 가리키던 참조·상태를 반드시 초기화해야, 막 종료된 워커에 메시지를 보내
     // 응답이 영영 오지 않는 채로 남는 사고를 막는다.
     ref.current = null; offRef.current = false; running.current = false; setStatus("loading");
-    const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
+    const bootList = engineBootList(enginePref, mainEngineThreads());
     function handleLine(line) {
       const cb = queue.current[0]; if (!cb) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
@@ -505,8 +531,8 @@ function useEngine(enginePref) {
       }
     }
     function tryNext() {
-      if (idx >= urls.length) { offRef.current = true; setStatus("off"); pump(); return; }
-      const url = urls[idx++];
+      if (idx >= bootList.length) { offRef.current = true; setStatus("off"); pump(); return; }
+      const { url, threads } = bootList[idx++];
       try {
         let w;
         if (url.startsWith("/")) w = new Worker(url);
@@ -514,7 +540,9 @@ function useEngine(enginePref) {
         let booted = false;
         w.onmessage = (e) => { const line = typeof e.data === "string" ? e.data : ""; if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) { booted = true; ref.current = w; setStatus("ready"); pump(); } handleLine(line); };
         w.onerror = () => { try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
-        w.postMessage("uci"); w.postMessage("isready"); worker = w;
+        w.postMessage("uci");
+        if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
+        w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, 4000);
       } catch (_) { tryNext(); }
     }
