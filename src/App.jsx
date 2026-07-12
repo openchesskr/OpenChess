@@ -6211,6 +6211,11 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   }, [ready, chesscom && chesscom.games]);
   const mostUsed = useMemo(() => [...openingStats].sort((a, b) => b.n - a.n), [openingStats]);
   const byWinrate = useMemo(() => openingStats.filter((o) => o.n >= 3).sort((a, b) => b.wr - a.wr || b.n - a.n), [openingStats]);
+  // (버그 보충) "최근 대국"이 최신 5판만 보여주고 더 예전 대국은 볼 방법이 없었다 — 전부 가져와
+  // 두고 5판씩 페이지를 넘겨 보게 한다(내 대국 목록·집중학습의 ListPager와 동일한 방식).
+  const RECENT_GAMES_PAGE_SIZE = 5;
+  const [recentPage, setRecentPage] = useState(0);
+  useEffect(() => { setRecentPage(0); }, [username]);
 
   if (chesscom && chesscom.status === "loading") return <p style={{ fontSize: 12, color: T.inkSoft, marginTop: 10 }}>기보를 불러오는 중…</p>;
   if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>;
@@ -6252,12 +6257,15 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
-        const recent = [...chesscom.games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0)).slice(0, 5);
-        if (!recent.length) return null;
+        const allGames = [...chesscom.games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
+        if (!allGames.length) return null;
+        const pageCount = Math.max(1, Math.ceil(allGames.length / RECENT_GAMES_PAGE_SIZE));
+        const page = Math.min(recentPage, pageCount - 1);
+        const recent = allGames.slice(page * RECENT_GAMES_PAGE_SIZE, page * RECENT_GAMES_PAGE_SIZE + RECENT_GAMES_PAGE_SIZE);
         const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
         return (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>최근 대국</div>
+            <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><span style={{ fontSize: 12, fontWeight: 800, color: T.brass }}>최근 대국</span><span style={{ fontSize: 10.5, color: T.inkSoft }}>{allGames.length}판</span></div>
             {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; const rc = ratingChanges.get(g); return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -6275,6 +6283,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                 )}
               </div>
             ); })}
+            <ListPager page={page} setPage={setRecentPage} pageCount={pageCount} />
           </div>
         );
       })()}
