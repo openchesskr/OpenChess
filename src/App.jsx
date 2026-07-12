@@ -3885,6 +3885,23 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
   const onPointerUp = () => { dragRef.current = null; };
   const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
+  // (버그 수정) 오프닝이 많아지면 원하는 갈래를 캔버스에서 손으로 찾아 팬/줌해야 했다 — 이름으로
+  // 검색해 바로 그 위치로 이동(+ 상세 블록 자동으로 열기)하는 기능을 추가한다.
+  const [query, setQuery] = useState("");
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return items.filter((it) => it.name && it.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [items, query]);
+  const jumpTo = (it) => {
+    userPannedRef.current = true;
+    const c = coord(it);
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    setZoom(1);
+    setPan({ x: rect.width / 2 - (c.x + boxW / 2), y: rect.height / 2 - (c.y + boxH / 2) });
+    onToggleOpen(it.key);
+    setQuery("");
+  };
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
@@ -3892,6 +3909,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
       // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
       style={{ position: "relative", overflow: "hidden", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)" }}>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
+        {query.trim() && (
+          <div style={{ marginTop: 4, maxHeight: 280, overflowY: "auto", background: "#fff", borderRadius: 8, border: "1px solid #DCCBA8", boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)" }}>
+            {matches.length === 0
+              ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>일치하는 오프닝이 없어요.</div>
+              : matches.map((it) => (
+                <button key={it.key} onClick={() => jumpTo(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid #F0E6D2", cursor: "pointer" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
+                  <div style={{ fontSize: 10, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sansToPgnText(it.path)}</div>
+                </button>
+              ))}
+          </div>
+        )}
+      </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
         <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => setZoom(1)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
