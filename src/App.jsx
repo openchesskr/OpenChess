@@ -6185,6 +6185,22 @@ function findOpeningPathByFuzzyName(name) {
   }
   return null;
 }
+// (버그 수정) "오프닝별 승률" 한 행 — 하위 오프닝을 상위 오프닝 아래 들여써서(depth) 재귀적으로
+// 그린다. 각 노드의 수치는 자신 + 모든 하위 갈래의 합산(AccountChessStats의 rollup)이라, 상위 행이
+// 곧 그 아래 중첩된 하위 행들의 총합으로 보인다.
+function OpeningWinrateRow({ node, depth, onOpenOpening }) {
+  const row = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "5px 0", paddingLeft: depth * 14, borderTop: "1px solid #E4D5B6", fontSize: depth === 0 ? 12.5 : 11.5 };
+  return (
+    <>
+      <div style={row}>
+        {onOpenOpening ? <button onClick={() => onOpenOpening(node.name)} className="press" style={{ color: T.cocoa || "#5A3A22", fontWeight: depth === 0 ? 700 : 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "56%", background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0, fontSize: "inherit" }}>{node.name}</button>
+          : <span style={{ color: T.ink, fontWeight: depth === 0 ? 700 : 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "56%" }}>{node.name}</span>}
+        <span style={{ fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+      </div>
+      {node.children.map((c) => <OpeningWinrateRow key={c.name} node={c} depth={depth + 1} onOpenOpening={onOpenOpening} />)}
+    </>
+  );
+}
 function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
@@ -6196,21 +6212,49 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   const ready = chesscom && chesscom.status === "ready";
   const overall = useMemo(() => (ready ? chesscom.analyze([]) : null), [ready, chesscom && chesscom.games]);
   const ratingChanges = useMemo(() => (ready ? computeRatingChanges(chesscom.games) : new Map()), [ready, chesscom && chesscom.games]);
-  const openingStats = useMemo(() => {
-    if (!ready) return [];
-    const agg = {};
+  // (버그 수정) 예전엔 대국 하나를 "가장 깊이 매칭된 오프닝 이름" 딱 하나에만 집계했다 — 정석에서
+  // 일찍 이탈하는 대다수 대국이 얕은 상위 갈래(King's Pawn Game 등)로 몰려 표본이 커지고, 정석을
+  // 끝까지 따라간 소수 대국만 깊은 하위 갈래(Marshall Attack 등)에 잡혀 표본이 1~2판으로 작아진다.
+  // 그 결과 하위 갈래의 승률이 0%/100%로 요동쳐 보였다. 승률 숫자 자체는 왜곡이 아니라 실제 결과이므로
+  // 그대로 두되(1판 1승이면 100%가 맞다), 대국이 실제로 지나온 순서(얕은 이름→깊은 이름)에서 부모-자식
+  // 관계를 추론해 하위 오프닝을 상위 오프닝 아래 중첩해서 보여준다 — "이 100%는 상위 오프닝 전체
+  // 표본 중 1판짜리 하위 갈래"라는 맥락이 함께 보이도록.
+  const { openingStats, openingTree } = useMemo(() => {
+    if (!ready) return { openingStats: [], openingTree: [] };
+    const leaf = {};       // 이름별 "가장 깊이 매칭된" 대국만 집계(가장 많이 둔 오프닝에서 그대로 사용)
+    const parentOf = {};   // 이름 -> 그 이름 바로 앞에 나온(더 얕은) 이름
     for (const g of chesscom.games) {
-      let name = null;
+      const chain = []; let last = null;
       const lim = Math.min(g.moves.length, 16);
-      for (let i = 1; i <= lim; i++) { const nd = snapNode(g.moves.slice(0, i)); if (nd && nd.opening) name = nd.opening.name; }
-      if (!name) continue;
-      if (!agg[name]) agg[name] = { name, n: 0, w: 0, d: 0, l: 0 };
-      agg[name].n++; agg[name][g.result === "win" ? "w" : g.result === "loss" ? "l" : "d"]++;
+      for (let i = 1; i <= lim; i++) {
+        const nd = snapNode(g.moves.slice(0, i));
+        if (nd && nd.opening && nd.opening.name !== last) { chain.push(nd.opening.name); last = nd.opening.name; }
+      }
+      if (!chain.length) continue;
+      for (let i = 1; i < chain.length; i++) { if (!parentOf[chain[i]]) parentOf[chain[i]] = chain[i - 1]; }
+      const name = chain[chain.length - 1];
+      if (!leaf[name]) leaf[name] = { name, n: 0, w: 0, d: 0, l: 0 };
+      leaf[name].n++; leaf[name][g.result === "win" ? "w" : g.result === "loss" ? "l" : "d"]++;
     }
-    return Object.values(agg).map((o) => ({ ...o, wr: Math.round(100 * o.w / o.n) }));
+    const openingStats = Object.values(leaf).map((o) => ({ ...o, wr: o.n ? Math.round(100 * o.w / o.n) : 0 }));
+    const childrenOf = {};
+    for (const child in parentOf) { const p = parentOf[child]; (childrenOf[p] || (childrenOf[p] = [])).push(child); }
+    const allNames = new Set([...Object.keys(leaf), ...Object.keys(parentOf), ...Object.values(parentOf)]);
+    const memo = {};
+    // 노드의 표시 통계 = 자신의 대국 + 모든 하위 갈래 대국의 합 — 상위 오프닝 행이 곧 그 아래
+    // 중첩된 하위 오프닝들의 총합이 되도록(승률 보정이 아니라 단순 합산).
+    const rollup = (name) => {
+      if (memo[name]) return memo[name];
+      const own = leaf[name] || { n: 0, w: 0, d: 0, l: 0 };
+      let n = own.n, w = own.w, d = own.d, l = own.l;
+      for (const c of (childrenOf[name] || [])) { const cr = rollup(c); n += cr.n; w += cr.w; d += cr.d; l += cr.l; }
+      return (memo[name] = { name, n, w, d, l, wr: n ? Math.round(100 * w / n) : 0 });
+    };
+    const buildNode = (name) => ({ ...rollup(name), children: (childrenOf[name] || []).map(buildNode).sort((a, b) => b.n - a.n) });
+    const openingTree = [...allNames].filter((nm) => !parentOf[nm]).map(buildNode).filter((r) => r.n > 0).sort((a, b) => b.n - a.n);
+    return { openingStats, openingTree };
   }, [ready, chesscom && chesscom.games]);
   const mostUsed = useMemo(() => [...openingStats].sort((a, b) => b.n - a.n), [openingStats]);
-  const byWinrate = useMemo(() => openingStats.filter((o) => o.n >= 3).sort((a, b) => b.wr - a.wr || b.n - a.n), [openingStats]);
   // (버그 보충) "최근 대국"이 최신 5판만 보여주고 더 예전 대국은 볼 방법이 없었다 — 전부 가져와
   // 두고 5판씩 페이지를 넘겨 보게 한다(내 대국 목록·집중학습의 ListPager와 동일한 방식).
   const RECENT_GAMES_PAGE_SIZE = 5;
@@ -6221,7 +6265,6 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>;
   if (!ready) return null;
 
-  const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderTop: "1px solid #E4D5B6", fontSize: 12 };
   return (
     <div style={{ marginTop: 12 }}>
       {/* 프로필 */}
@@ -6295,18 +6338,13 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           <div style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{mostUsed[0].n}판 · 승률 {mostUsed[0].wr}%</div>
         </div>
       )}
-      {/* 오프닝별 승률(높은→낮은) */}
-      {byWinrate.length > 0 && (
+      {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
+          그 아래 하위 갈래들의 합산임을 보여준다. */}
+      {openingTree.length > 0 && (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 2 }}>오프닝별 승률 <span style={{ fontWeight: 600, color: T.inkSoft }}>(3판 이상)</span></div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 2 }}>오프닝별 승률</div>
           <div>
-            {byWinrate.map((o) => (
-              <div key={o.name} style={rowStyle}>
-                {onOpenOpening ? <button onClick={() => onOpenOpening(o.name)} className="press" style={{ color: T.cocoa || "#5A3A22", fontWeight: 700, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "62%", background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0, fontSize: "inherit" }}>{o.name}</button>
-                  : <span style={{ color: T.ink, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "62%" }}>{o.name}</span>}
-                <span style={{ fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap" }}><b style={{ color: o.wr >= 55 ? T.best : o.wr >= 45 ? T.brass : T.blunder }}>{o.wr}%</b> · {o.w}/{o.d}/{o.l}</span>
-              </div>
-            ))}
+            {openingTree.map((node) => <OpeningWinrateRow key={node.name} node={node} depth={0} onOpenOpening={onOpenOpening} />)}
           </div>
         </div>
       )}
