@@ -3845,13 +3845,24 @@ function centerOrderByAdopt(kids) {
 // (개편) 전체 수 트리 모식도 — 데스크톱은 가로(왼쪽→오른쪽), 모바일은 세로(위→아래)로 뻗어나간다.
 // 클릭으로 펼칠 필요 없이 최소 3수 + 채택률 20% 이상 라인까지 미리 다 펼쳐진 트리가 렌더링되고,
 // 노드를 클릭하면 그 수의 상세 블록이 모식도 안, 그 노드 옆에 바로 열리고 닫힌다.
+// (버그 수정) 트리가 한쪽 방향(가로 한 줄)으로만 계속 길어져 세로 폭이 지나치게 커지고
+// 괴랄해 보인다는 피드백 — 주요 첫 수 4개(1.e4/1.d4/1.c4/1.Nf3)만 정중앙에 모아 두고, 그
+// 아래 갈래를 각각 동서남북 한 방향으로 뻗어나가게 한다. 나머지 덜 주요한(SIDESTEPPING) 첫 수
+// (1.Nc3/1.b4/1.f4/1.g3)는 이 나침반형 모식도에서는 아예 다루지 않는다.
+const ROOT_ORDER = ["e4", "d4", "c4", "Nf3"];
+const DIR_OF_ROOT = { e4: "N", d4: "E", c4: "S", Nf3: "W" };
+const SCHEMATIC_BOX_W = 98, SCHEMATIC_BOX_H = 44;
 function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, priorityRef }) {
+  const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
   // kind/evalCp를 한 번에 계산해 넘겨준다(이미 불러온 rawMoves를 재사용하므로 추가 요청은 없음).
-  // (버그 수정) 블록 아래 오프닝 이름 라벨이 길면(특히 2줄 이상) 다음 줄(형제 노드) 블록과 겹쳤다 —
-  // 줄 간격(rowH)을 넉넉히 늘리고, 라벨 글자 크기를 살짝 줄여 겹침을 없앤다.
-  const colW = vertical ? 108 : 158, rowH = vertical ? 86 : 68;
+  // (기능) 나침반형 레이아웃 — 남/북(세로) 방향으로 뻗는 서브트리는 깊이축이 세로라 라벨이 다음
+  // 깊이의 블록과 겹치지 않도록 깊이 간격(VROW)을 넉넉히 주고, 형제 퍼짐(가로)은 좀 더 촘촘히
+  // (VCOL). 동/서(가로) 방향은 반대로 깊이 간격(HCOL)은 촘촘히, 형제 퍼짐(세로, HROW)에 라벨이
+  // 겹치지 않을 정도의 여유를 준다.
+  const VCOL = 108, VROW = 86, HCOL = 158, HROW = 68;
+  const ROOT_GAP = 90;
   // (버그 수정) 새 수가 계속 로드될 때마다 화면이 위아래로 심하게 흔들린다는 피드백 — 원인은 leaf
   // 노드의 좌표(pos)를 매번 커서를 0부터 다시 매겨 전부 재배정하던 것: 트리 중간 어딘가에 새 형제
   // 수가 끼어들면(채택률 순 정렬 위치가 바뀌면) 그 뒤에 있던 이미 그려진 노드 수백 개의 pos가
@@ -3867,27 +3878,26 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const posCacheRef = useRef(new Map());
   const nextPosRef = useRef(0);
   const freeListRef = useRef([]);
-  const { items: fullItems, edges: fullEdges, maxDepth: fullMaxDepth, maxPos: fullMaxPos } = useMemo(() => {
+  const { items, edges, width, height, centerX, centerY } = useMemo(() => {
     const items = []; const edges = [];
-    const visit = (san, path, depth, adopt, kind, evalCp, name) => {
+    const visit = (san, path, depth, adopt, kind, evalCp, name, dir) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
-      const it = { san, path, depth, key, adopt, kind, evalCp, name, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
       if (rawMoves && rawMoves.length) {
-        const filtered = rawMoves.filter((m) => treeData.has([...path, m.san].join(" ")));
-        // (버그 수정) 루트(첫 수) 단계는 채택률 기준 가운데 정렬(centerOrderByAdopt) 대신, 1.e4가 항상
-        // 맨 처음(맨 위/왼쪽)에 오도록 정렬한다 — 채택률이 가장 높아도 가운데로 배치되면 트리를 열자마자
-        // 화면 아래로 밀려나 있어 찾기 어려웠다.
-        const ordered = path.length === 0
-          ? [...filtered].sort((a, b) => (stripSuffix(a.san) === "e4" ? -1 : stripSuffix(b.san) === "e4" ? 1 : (b.adopt || 0) - (a.adopt || 0)))
-          : centerOrderByAdopt(filtered);
+        let filtered = rawMoves.filter((m) => treeData.has([...path, m.san].join(" ")));
+        // (버그 수정) 루트(첫 수) 단계는 8개 첫 수 전부를 채택률 순으로 보여주던 것을 버리고,
+        // 주요 4개(e4/d4/c4/Nf3)만 고정된 순서로 골라 각각 동/서/남/북 방향을 배정한다.
+        if (path.length === 0) filtered = ROOT_ORDER.map((s) => filtered.find((m) => stripSuffix(m.san) === s)).filter(Boolean);
+        const ordered = path.length === 0 ? filtered : centerOrderByAdopt(filtered);
         const board = boardFromSans(path);
         const tiered = assignTiers(filtered, path.length, board, key);
         for (const m of ordered) {
           const t = tiered.find((x) => x.san === m.san);
           const nm = nameOverride(key, m.san) ?? m.name ?? null;
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm));
+          const childDir = path.length === 0 ? DIR_OF_ROOT[stripSuffix(m.san)] : dir;
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir));
         }
       }
       if (!kids.length) {
@@ -3900,16 +3910,35 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null, null);
+    visit(null, [], 0, 100, null, null, null, null);
     const visible = items.filter((it) => it.depth > 0);
-    const maxDepth = visible.length ? Math.max(...visible.map((it) => it.depth)) : 1;
-    const maxPos = items.length ? Math.max(...items.map((it) => it.pos)) : 0;
-    return { items: visible, edges, maxDepth, maxPos };
+    // 방향별 형제 퍼짐(pos)의 중앙값을 구해, 각 방향의 서브트리가 그 방향 중심축을 기준으로
+    // 고르게 퍼지도록 한다(즉 e4/d4/c4/Nf3 자신도 정확히 중앙이 아니라 자기 서브트리의
+    // "무게중심" 축에 놓인다 — 자연스러운 나뭇가지 모양).
+    const mid = {};
+    for (const d of ["N", "S", "E", "W"]) {
+      const arr = visible.filter((it) => it.dir === d);
+      mid[d] = arr.length ? (Math.min(...arr.map((it) => it.pos)) + Math.max(...arr.map((it) => it.pos))) / 2 : 0;
+    }
+    for (const it of visible) {
+      const localDepth = it.depth - 1;
+      const spread = it.pos - mid[it.dir];
+      if (it.dir === "N") { it.x = spread * VCOL; it.y = -(ROOT_GAP + localDepth * VROW); }
+      else if (it.dir === "S") { it.x = spread * VCOL; it.y = ROOT_GAP + localDepth * VROW; }
+      else if (it.dir === "E") { it.x = ROOT_GAP + localDepth * HCOL; it.y = spread * HROW; }
+      else { it.x = -(ROOT_GAP + localDepth * HCOL); it.y = spread * HROW; }
+    }
+    const PAD = 200;
+    const xs = visible.map((it) => it.x), ys = visible.map((it) => it.y);
+    const minX = visible.length ? Math.min(...xs) : 0, maxX = visible.length ? Math.max(...xs) : 0;
+    const minY = visible.length ? Math.min(...ys) : 0, maxY = visible.length ? Math.max(...ys) : 0;
+    const centerX = -minX + PAD, centerY = -minY + PAD;
+    for (const it of visible) { it.x += centerX; it.y += centerY; }
+    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
   // (버그 수정) 검색해서 오프닝을 고르면 그 갈래만 남기고 나머지를 다 숨기던 방식이 오히려 트리
   // 전체 맥락을 잃게 해 불편하다는 피드백 — 이제 트리는 항상 전체를 보여주고, 대신 고른 오프닝으로
   // 가는 수순(selectedPath)만 전선에 전류가 흐르듯 색이 강조되도록 한다.
-  const items = fullItems, edges = fullEdges, maxDepth = fullMaxDepth, maxPos = fullMaxPos;
   const [selectedPath, setSelectedPath] = useState(null);
   const selectedKeySet = useMemo(() => {
     if (!selectedPath) return null;
@@ -3917,13 +3946,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (let i = 1; i <= selectedPath.length; i++) s.add(selectedPath.slice(0, i).join(" "));
     return s;
   }, [selectedPath]);
-  const coord = (it) => vertical ? { x: it.pos * colW, y: (it.depth - 1) * rowH } : { x: (it.depth - 1) * colW, y: it.pos * rowH };
-  const boxW = 98, boxH = 44;
+  const coord = (it) => ({ x: it.x, y: it.y });
   // (기능) 선택된 오프닝으로 가는 수순을 강조하는 "전류" 색 — 나머지(브라스/이론 갈색) 톤과 뚜렷이
   // 구분되는 전기적인 청록색을 쓴다.
   const ELECTRIC = "#22D3F0";
-  const width = (vertical ? maxPos * colW : (maxDepth - 1) * colW) + boxW + 320;
-  const height = (vertical ? (maxDepth - 1) * rowH : maxPos * rowH) + boxH + 320;
   const [pan, setPan] = useState({ x: 16, y: 16 });
   const [zoom, setZoom] = useState(1);
   const dragRef = useRef(null);
@@ -3942,25 +3968,24 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => { panRef.current = pan; }, [pan]);
   const zoomRef = useRef(zoom);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-  // (버그 수정) 1.e4를 형제 수들 중 맨 앞으로 정렬해도, 트리 레이아웃 자체는 부모 노드를 "자식들의
-  // 세로/가로 중간"에 배치하는 방식이라 1.e4 자신의 좌표는 그 아래로 갈래가 계속 로드되며 늘어날수록
-  // 계속 화면 밖으로 밀려난다(한 번만 맞추면 이후 더 로드되며 다시 밀려남) — 사용자가 직접 팬하기
-  // 전까지는, 데이터가 들어올 때마다 뷰포트가 1.e4 좌표를 계속 따라가도록 한다.
-  // (버그 수정) items는 최대 4000개 노드까지 Lichess API 응답이 들어올 때마다 계속 갱신되는데,
-  // 응답이 캐시(10분)에서 오거나 네트워크가 실패해 즉시 응답하면 매우 짧은 시간에 수백~수천 번
-  // 연쇄로 갱신될 수 있다. 이 effect가 매번 즉시 setPan을 부르면 브라우저가 그릴 틈도 없이 리렌더가
-  // 몰려 React의 "Maximum update depth exceeded" 안전장치에 걸린다 — 짧게(120ms) 디바운스해서
-  // 데이터가 몰아쳐 들어와도 실제 상태 갱신은 한 번에 모아 처리하게 한다.
+  // (기능) 나침반형 레이아웃에서는 e4/d4/c4/Nf3 네 수가 모두 정중앙 부근에 모여 있으므로, 처음
+  // 보여줄 기본 화면은 그 중심(centerX, centerY)을 뷰포트 가운데에 맞춘다. 사용자가 직접 팬하기
+  // 전까지는 계속 다시 맞춘다.
+  // (버그 수정) items 변경에 반응하는 디바운스(setTimeout)로 구현했더니, 배경 로딩이 80ms
+  // (bumpVersion 주기)마다 계속 items를 갱신하는 동안은 디바운스가 매번 취소되기만 하고 끝내
+  // 한 번도 실행되지 못해(디바운스 기아) 화면이 초기값(16,16)에 멈춰서 중심이 전혀 안 맞았다 —
+  // 선택 고정 재중앙 정렬과 동일하게, items 변경 빈도와 무관하게 도는 setInterval로 바꾼다.
+  const centerRef = useRef({ x: centerX, y: centerY });
+  useEffect(() => { centerRef.current = { x: centerX, y: centerY }; }, [centerX, centerY]);
   useEffect(() => {
-    if (userPannedRef.current) return;
-    const id = setTimeout(() => {
-      const e4 = items.find((it) => it.depth === 1 && stripSuffix(it.san) === "e4");
-      if (!e4) return;
-      const c = coord(e4);
-      setPan({ x: 16 - c.x, y: 16 - c.y });
-    }, 120);
-    return () => clearTimeout(id);
-  }, [items]);
+    const id = setInterval(() => {
+      if (userPannedRef.current) return;
+      const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+      const z = zoomRef.current;
+      setPan({ x: rect.width / 2 - centerRef.current.x * z, y: rect.height / 2 - centerRef.current.y * z });
+    }, 150);
+    return () => clearInterval(id);
+  }, []);
   const clampZoom = (z) => Math.min(2, Math.max(0.3, z));
   // (기능) selectionLockRef가 걸려 있는 동안 팬/줌이 바뀔 때마다, 선택된 노드가 화면 중앙에서 얼마나
   // 벗어났는지 검사한다 — 많이 벗어나면(사용자가 직접 화면을 옮긴 것) 확대 강조만 풀고(100%로),
@@ -4029,14 +4054,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     }, 150);
     return () => clearInterval(id);
   }, [selectedPath]);
-  // (기능) 검색은 항상 전체 트리(fullItems) 기준 — 트리를 더 이상 필터링해서 숨기지 않으니, 이미
-  // 한 오프닝을 선택한 상태에서도 다른 오프닝을 계속 검색할 수 있다.
+  // (기능) 트리를 더 이상 필터링해서 숨기지 않으니, 이미 한 오프닝을 선택한 상태에서도 다른
+  // 오프닝을 계속 검색할 수 있다.
   const [query, setQuery] = useState("");
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return fullItems.filter((it) => it.name && it.name.toLowerCase().includes(q)).slice(0, 8);
-  }, [fullItems, query]);
+    return items.filter((it) => it.name && it.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [items, query]);
   // (기능) 검색 결과를 고르거나(jumpTo) 트리에서 수 블록을 직접 클릭해도(아래 button onClick)
   // 완전히 같은 효과를 낸다 — 그 수까지의 경로를 강조(selectedPath)하고, 화면 중앙으로 이동+확대하고,
   // 상세 블록을 연다.
@@ -4103,8 +4128,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           {edges.map(([p, c]) => {
             if (p.depth === 0) return null;
             const pc = coord(p), cc2 = coord(c);
-            const x1 = vertical ? pc.x + boxW / 2 : pc.x + boxW, y1 = vertical ? pc.y + boxH : pc.y + boxH / 2;
-            const x2 = vertical ? cc2.x + boxW / 2 : cc2.x, y2 = vertical ? cc2.y : cc2.y + boxH / 2;
+            // (기능) 나침반형 레이아웃 — 부모→자식 연결선이 그 갈래가 뻗어나가는 방향(c.dir)에 맞는
+            // 변끼리 이어지도록 한다(동/서는 좌우 변, 남/북은 위아래 변).
+            let x1, y1, x2, y2;
+            if (c.dir === "E") { x1 = pc.x + boxW; y1 = pc.y + boxH / 2; x2 = cc2.x; y2 = cc2.y + boxH / 2; }
+            else if (c.dir === "W") { x1 = pc.x; y1 = pc.y + boxH / 2; x2 = cc2.x + boxW; y2 = cc2.y + boxH / 2; }
+            else if (c.dir === "N") { x1 = pc.x + boxW / 2; y1 = pc.y; x2 = cc2.x + boxW / 2; y2 = cc2.y + boxH; }
+            else { x1 = pc.x + boxW / 2; y1 = pc.y + boxH; x2 = cc2.x + boxW / 2; y2 = cc2.y; }
             // (버그 수정) 선 굵기가 채택률에 따라 제각각이라 트리 전체가 정신없어 보였다 — 굵기를
             // 하나로 통일해, 굵기가 아니라 실제 트리 구조로만 위계가 드러나게 한다.
             // (기능) 선택된 오프닝으로 가는 수순의 선만, 전선에 전류가 흐르듯 색이 바뀌고 흐르는
