@@ -3707,10 +3707,11 @@ function dexIsUnlocked(chesscom, ccReady, unlockAll, pathSans) {
 // 채택률이 20% 이상으로 유지되는 한 계속 자동으로 탐색해 미리 다 펼쳐진 거대한 트리를 만든다.
 // Lichess 오프닝 탐색기는 위치 하나당 호출 1번으로 그 자리의 모든 후보 수와 채택률을 함께 주므로,
 // 그 결과를 큐에 넣어 동시 5개까지 재귀적으로 펼쳐나간다(안전장치로 최대 노드 수를 제한).
-// (기능) priorityRef: { selectedKey, isVisible } — OpeningSchematic이 매 렌더마다 채워 넣는 참조.
-// 선택된 오프닝의 바리에이션(그 노드 자신 및 그 아래로 이어지는 수)을 최우선으로 펼치고, 나머지
-// 갈래 중에서는 지금 화면에 보이지 않는 노드부터 먼저 펼쳐(화면 안에서 갑자기 새 블록이 튀어나와
-// 산만해 보이는 걸 피하고), 이미 화면에 보이는 노드는 가장 나중에 펼친다.
+// (기능) priorityRef: { selectedKey, distanceOf } — OpeningSchematic이 매 렌더마다 채워 넣는 참조.
+// 고정(선택)된 오프닝의 바리에이션(그 노드 자신 및 그 아래로 이어지는 수)을 최우선으로 펼치고,
+// 나머지 갈래는 지금 보고 있는 화면(뷰포트 중심)에서 먼 노드부터 먼저 펼친다 — 화면 가까이, 눈에
+// 잘 띄는 곳에서 새 블록이 튀어나오면 산만하니 그런 노드는 가장 나중으로 미루고, 어차피 안 보이는
+// 먼 갈래부터 조용히 채워 넣는다.
 function useOpeningTreeAuto(priorityRef) {
   const [version, setVersion] = useState(0);
   const mapRef = useRef(new Map());
@@ -3739,10 +3740,10 @@ function useOpeningTreeAuto(priorityRef) {
     const queue = [{ path: [], depth: 0 }];
     const scoreOf = (path) => {
       const p = priorityRef && priorityRef.current;
-      if (!p) return 1;
+      if (!p) return 0;
       const key = path.join(" ");
-      if (p.selectedKey && (key === p.selectedKey || key.startsWith(p.selectedKey + " "))) return 3;
-      return p.isVisible && p.isVisible(key) ? 1 : 2;
+      if (p.selectedKey && (key === p.selectedKey || key.startsWith(p.selectedKey + " "))) return Infinity;
+      return p.distanceOf ? p.distanceOf(key) : 0;
     };
     const runNext = () => {
       if (cancelled) return;
@@ -3851,8 +3852,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (버그 수정) 블록 아래 오프닝 이름 라벨이 길면(특히 2줄 이상) 다음 줄(형제 노드) 블록과 겹쳤다 —
   // 줄 간격(rowH)을 넉넉히 늘리고, 라벨 글자 크기를 살짝 줄여 겹침을 없앤다.
   const colW = vertical ? 108 : 158, rowH = vertical ? 86 : 68;
+  // (버그 수정) 새 수가 계속 로드될 때마다 화면이 위아래로 심하게 흔들린다는 피드백 — 원인은 leaf
+  // 노드의 좌표(pos)를 매번 커서를 0부터 다시 매겨 전부 재배정하던 것: 트리 중간 어딘가에 새 형제
+  // 수가 끼어들면(채택률 순 정렬 위치가 바뀌면) 그 뒤에 있던 이미 그려진 노드 수백 개의 pos가
+  // 한꺼번에 밀려나 버렸다 — 한 번 배정된 pos는 이 컴포넌트가 살아있는 동안 절대 바뀌지 않도록
+  // ref에 캐싱하고, 정말 새로 생긴 노드만 계속 증가하는 카운터로 새 pos를 받게 한다.
+  const posCacheRef = useRef(new Map());
+  const nextPosRef = useRef(0);
   const { items: fullItems, edges: fullEdges, maxDepth: fullMaxDepth, maxPos: fullMaxPos } = useMemo(() => {
-    let cursor = 0; const items = []; const edges = [];
+    const items = []; const edges = [];
     const visit = (san, path, depth, adopt, kind, evalCp, name) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
@@ -3874,7 +3882,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm));
         }
       }
-      if (!kids.length) it.pos = cursor++;
+      if (!kids.length) {
+        if (posCacheRef.current.has(key)) it.pos = posCacheRef.current.get(key);
+        else { it.pos = nextPosRef.current++; posCacheRef.current.set(key, it.pos); }
+      }
       else { it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; kids.forEach((c) => edges.push([it, c])); }
       items.push(it);
       return it;
@@ -4026,9 +4037,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     centerOn(it, SELECT_ZOOM);
     onToggleOpen(it.key);
   };
-  // (기능) 지금 선택된 오프닝과, 지금 화면에 보이는 영역을 트리 자동 확장 큐(useOpeningTreeAuto)에
-  // 알려준다 — 선택된 오프닝의 바리에이션을 최우선으로, 화면 밖 갈래를 그다음으로, 이미 화면에 보이는
-  // 갈래를 가장 나중에 펼치게 해 화면 안에서 갑자기 새 블록이 튀어나오는 산만함을 줄인다.
+  // (기능) 지금 선택(고정)된 오프닝과, 지금 보고 있는 화면(뷰포트 중심)을 트리 자동 확장 큐
+  // (useOpeningTreeAuto)에 알려준다 — 선택된 오프닝의 바리에이션을 최우선으로, 나머지는 화면
+  // 중심에서 먼 갈래부터 먼저 펼치고 가까운(눈에 잘 띄는) 갈래는 가장 나중에 펼치게 해 화면 안,
+  // 특히 지금 보고 있는 근처에서 갑자기 새 블록이 튀어나오는 산만함을 줄인다.
   useEffect(() => {
     if (!priorityRef) return;
     priorityRef.current.selectedKey = selectedPath ? selectedPath.join(" ") : null;
@@ -4036,13 +4048,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => {
     if (!priorityRef) return;
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const centerX = rect.width / 2, centerY = rect.height / 2;
     const posByKey = new Map(items.map((it) => [it.key, coord(it)]));
     const p = pan, z = zoom;
-    priorityRef.current.isVisible = (key) => {
+    priorityRef.current.distanceOf = (key) => {
       const c = posByKey.get(key);
-      if (!c) return false;
+      if (!c) return 1e6; // 아직 위치를 모르는 노드는 화면과 무관하다고 보고 우선 펼친다.
       const sx = p.x + z * (c.x + boxW / 2), sy = p.y + z * (c.y + boxH / 2);
-      return sx > -boxW * z && sx < rect.width + boxW * z && sy > -boxH * z && sy < rect.height + boxH * z;
+      return Math.hypot(sx - centerX, sy - centerY);
     };
   }, [items, pan, zoom, priorityRef]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
@@ -4148,7 +4161,7 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
   // 모바일(≤768px)은 세로, 그 외는 가로 모식도.
   // (기능) 지금 선택(강조)된 오프닝과 화면에 보이는 영역을 트리 자동 확장 큐에 알려줘, 선택된
   // 오프닝의 바리에이션을 먼저, 화면 밖 갈래를 그다음, 화면에 이미 보이는 갈래를 가장 나중에 펼치게 한다.
-  const genPriorityRef = useRef({ selectedKey: null, isVisible: null });
+  const genPriorityRef = useRef({ selectedKey: null, distanceOf: null });
   const { data: treeData, version: treeVersion } = useOpeningTreeAuto(genPriorityRef);
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
