@@ -3919,6 +3919,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => { selectedPathRef.current = selectedPath; }, [selectedPath]);
   const panRef = useRef(pan);
   useEffect(() => { panRef.current = pan; }, [pan]);
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   // (버그 수정) 1.e4를 형제 수들 중 맨 앞으로 정렬해도, 트리 레이아웃 자체는 부모 노드를 "자식들의
   // 세로/가로 중간"에 배치하는 방식이라 1.e4 자신의 좌표는 그 아래로 갈래가 계속 로드되며 늘어날수록
   // 계속 화면 밖으로 밀려난다(한 번만 맞추면 이후 더 로드되며 다시 밀려남) — 사용자가 직접 팬하기
@@ -3975,15 +3977,36 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
   }, []);
+  // (버그 수정) 확대 정도(1.35배)가 너무 크다는 피드백 — 살짝만 확대되도록 낮춘다.
   // (기능) 검색·클릭으로 오프닝을 선택하면 그 노드를 화면 중앙으로 옮기고 살짝 확대해(SELECT_ZOOM)
   // "선택됨"이 시각적으로 드러나게 한다.
-  const SELECT_ZOOM = 1.35;
+  const SELECT_ZOOM = 1.15;
   const centerOn = (it, z) => {
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const c = coord(it);
     setZoom(z);
     setPan({ x: rect.width / 2 - (c.x + boxW / 2) * z, y: rect.height / 2 - (c.y + boxH / 2) * z });
   };
+  // (버그 수정) 선택 직후 딱 한 번만 중앙으로 옮기면, 트리가 아직 배경에서 계속 자라는 중일 때
+  // (최대 4000개 노드가 계속 로드되며 다른 노드들의 좌표(pos)도 함께 밀려남) 선택한 노드가 금방
+  // 중앙에서 벗어나 버려 "고정이 안 된다"고 느껴졌다. items 변경에 반응하는 디바운스 effect로
+  // 재정렬을 시도했지만, 배경 로딩이 80ms(bumpVersion 주기)마다 계속 items를 갱신하는 동안은
+  // 120ms 디바운스가 매번 취소되기만 하고 끝내 한 번도 실행되지 못했다(디바운스 기아) — items
+  // 변경 빈도와 무관하게 일정 주기로 도는 setInterval로 바꿔, 트리가 계속 자라는 중에도 확실히
+  // 재중앙 정렬되게 한다. 사용자가 직접 손대면(selectionLockRef) 더 이상 재정렬하지 않는다.
+  useEffect(() => {
+    if (!selectedPath) return;
+    const id = setInterval(() => {
+      if (!selectionLockRef.current) return;
+      const target = itemsRef.current.find((it) => it.key === selectedPath.join(" "));
+      if (!target) return;
+      const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+      const c = coord(target);
+      const z = zoomRef.current;
+      setPan({ x: rect.width / 2 - (c.x + boxW / 2) * z, y: rect.height / 2 - (c.y + boxH / 2) * z });
+    }, 150);
+    return () => clearInterval(id);
+  }, [selectedPath]);
   // (기능) 검색은 항상 전체 트리(fullItems) 기준 — 트리를 더 이상 필터링해서 숨기지 않으니, 이미
   // 한 오프닝을 선택한 상태에서도 다른 오프닝을 계속 검색할 수 있다.
   const [query, setQuery] = useState("");
@@ -4031,7 +4054,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
       <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)" }}>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
-        {query.trim() ? (
+        {/* (버그 수정) "강조 해제" 버튼을 따로 둘 필요 없다는 피드백 — 화면을 손으로 옮기면
+            (checkSelectionDrift) 확대 강조가 자동으로 풀리니, 검색 결과 드롭다운만 남긴다. */}
+        {query.trim() && (
           <div style={{ marginTop: 4, maxHeight: 280, overflowY: "auto", background: "#fff", borderRadius: 8, border: "1px solid #DCCBA8", boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)" }}>
             {matches.length === 0
               ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>일치하는 오프닝이 없어요.</div>
@@ -4042,8 +4067,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
                 </button>
               ))}
           </div>
-        ) : selectedPath && (
-          <button onClick={() => setSelectedPath(null)} className="press" style={{ marginTop: 4, width: "100%", padding: "6px 9px", borderRadius: 8, border: "1px solid " + ELECTRIC, background: "rgba(255,255,255,.95)", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>강조 해제</button>
         )}
       </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
