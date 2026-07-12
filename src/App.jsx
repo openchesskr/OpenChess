@@ -3826,7 +3826,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (버그 수정) 블록 아래 오프닝 이름 라벨이 길면(특히 2줄 이상) 다음 줄(형제 노드) 블록과 겹쳤다 —
   // 줄 간격(rowH)을 넉넉히 늘리고, 라벨 글자 크기를 살짝 줄여 겹침을 없앤다.
   const colW = vertical ? 108 : 158, rowH = vertical ? 86 : 68;
-  const { items, edges, maxDepth, maxPos } = useMemo(() => {
+  const { items: fullItems, edges: fullEdges, maxDepth: fullMaxDepth, maxPos: fullMaxPos } = useMemo(() => {
     let cursor = 0; const items = []; const edges = [];
     const visit = (san, path, depth, adopt, kind, evalCp, name) => {
       const key = path.join(" ");
@@ -3860,6 +3860,25 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const maxPos = items.length ? Math.max(...items.map((it) => it.pos)) : 0;
     return { items: visible, edges, maxDepth, maxPos };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
+  // (기능) 검색으로 특정 오프닝을 찾았을 때, 전체 트리를 다 보여주면 찾던 갈래가 아닌 수 블록들이
+  // 그대로 화면을 채워 지저분해 보인다 — focusPath가 설정되면 그 오프닝으로 가는 수순 한 줄만
+  // 남기고(가지 없이 직선으로) 나머지는 아예 그리지 않는다. 위치(pos)는 전체 트리의 값을 재사용하지
+  // 않고 0,1,2...로 다시 매겨 간격이 고르게 나오도록 한다.
+  const [focusPath, setFocusPath] = useState(null);
+  const { items, edges, maxDepth, maxPos } = useMemo(() => {
+    if (!focusPath) return { items: fullItems, edges: fullEdges, maxDepth: fullMaxDepth, maxPos: fullMaxPos };
+    const chain = [];
+    for (let i = 1; i <= focusPath.length; i++) {
+      const key = focusPath.slice(0, i).join(" ");
+      const found = fullItems.find((it) => it.key === key);
+      if (found) chain.push({ ...found, pos: chain.length });
+    }
+    const chainEdges = [];
+    for (let i = 1; i < chain.length; i++) chainEdges.push([chain[i - 1], chain[i]]);
+    const maxDepth = chain.length ? Math.max(...chain.map((it) => it.depth)) : 1;
+    const maxPos = chain.length ? chain.length - 1 : 0;
+    return { items: chain, edges: chainEdges, maxDepth, maxPos };
+  }, [focusPath, fullItems, fullEdges, fullMaxDepth, fullMaxPos]);
   const coord = (it) => vertical ? { x: it.pos * colW, y: (it.depth - 1) * rowH } : { x: (it.depth - 1) * colW, y: it.pos * rowH };
   const boxW = 98, boxH = 44;
   const width = (vertical ? maxPos * colW : (maxDepth - 1) * colW) + boxW + 320;
@@ -3894,22 +3913,31 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const onPointerUp = () => { dragRef.current = null; };
   const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
   // (버그 수정) 오프닝이 많아지면 원하는 갈래를 캔버스에서 손으로 찾아 팬/줌해야 했다 — 이름으로
-  // 검색해 바로 그 위치로 이동(+ 상세 블록 자동으로 열기)하는 기능을 추가한다.
+  // 검색하면 그 오프닝으로 가는 수순만 남기고(focusPath) 나머지 갈래는 숨긴다. 검색은 항상 전체
+  // 트리(fullItems) 기준으로 해야, 이미 한 갈래에 포커스된 상태에서도 다른 오프닝을 다시 찾을 수 있다.
   const [query, setQuery] = useState("");
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return items.filter((it) => it.name && it.name.toLowerCase().includes(q)).slice(0, 8);
-  }, [items, query]);
+    return fullItems.filter((it) => it.name && it.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [fullItems, query]);
   const jumpTo = (it) => {
     userPannedRef.current = true;
-    const c = coord(it);
+    setFocusPath(it.path);
+    setQuery("");
+  };
+  // focusPath가 바뀌어 위(useMemo)에서 그 오프닝만 남긴 새 items/좌표가 계산된 뒤, 그 마지막
+  // 노드(찾던 오프닝)를 화면 중앙으로 옮기고 상세 블록을 자동으로 연다.
+  useEffect(() => {
+    if (!focusPath) return;
+    const target = items.find((it) => it.key === focusPath.join(" "));
+    if (!target) return;
+    const c = coord(target);
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     setZoom(1);
     setPan({ x: rect.width / 2 - (c.x + boxW / 2), y: rect.height / 2 - (c.y + boxH / 2) });
-    onToggleOpen(it.key);
-    setQuery("");
-  };
+    onToggleOpen(target.key);
+  }, [focusPath]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
@@ -3919,7 +3947,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       style={{ position: "relative", overflow: "hidden", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
       <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)" }}>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
-        {query.trim() && (
+        {query.trim() ? (
           <div style={{ marginTop: 4, maxHeight: 280, overflowY: "auto", background: "#fff", borderRadius: 8, border: "1px solid #DCCBA8", boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)" }}>
             {matches.length === 0
               ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>일치하는 오프닝이 없어요.</div>
@@ -3930,6 +3958,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
                 </button>
               ))}
           </div>
+        ) : focusPath && (
+          <button onClick={() => setFocusPath(null)} className="press" style={{ marginTop: 4, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "6px 9px", borderRadius: 8, border: "1px solid " + T.brass, background: "rgba(255,255,255,.95)", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" }}><ArrowLeft size={12} /> 전체 트리 보기</button>
         )}
       </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
