@@ -39,11 +39,11 @@ Node 18 이상 필요. 단일 스레드 엔진이라 COOP/COEP 헤더가 필요 
 3. Framework: Vite 자동 감지 / Build: `npm run build` / Output: `dist`
 4. Deploy. 이후 main 에 푸시할 때마다 자동 재배포
 
-### B. GitHub Pages (저장소에 포함된 워크플로 사용)
-1. GitHub 저장소로 푸시 (.github/workflows/deploy.yml 포함됨)
-2. 저장소 Settings → Pages → Source: GitHub Actions
+### B. GitHub Pages (현재 미사용 — 별도 설정 필요)
+1. 이 저장소에는 아직 `.github/workflows/deploy.yml`이 포함되어 있지 않습니다. 직접 빌드 후 `dist/`를 GitHub Pages에 배포하는 워크플로를 추가해야 합니다.
+2. 워크플로 추가 후 저장소 Settings → Pages → Source: GitHub Actions
 3. main 에 푸시하면 자동 빌드/배포. 주소: https://<사용자명>.github.io/<저장소이름>/
-4. 워크플로가 하위 경로에 맞춰 VITE_BASE 를 주입하므로 엔진/에셋 경로가 깨지지 않습니다.
+4. 하위 경로(`/<저장소이름>/`)에 배포되므로, 워크플로에서 빌드 시 `VITE_BASE`를 해당 경로로 주입하도록 구성해야 엔진/에셋 경로가 깨지지 않습니다.
 
 ### C. Netlify / Cloudflare Pages
 Build command `npm run build`, Publish directory `dist`. 나머지는 Vercel 과 동일.
@@ -89,7 +89,7 @@ npm run refresh   # Lichess Explorer + Stockfish 로 openings.json 재생성 (LI
 4. 로컬: `.env.example` 를 `.env` 로 복사해 두 값을 채움 → `npm run dev`
 5. 배포:
    - Vercel: Project → Settings → Environment Variables 에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 추가 후 재배포
-   - GitHub Pages: 저장소 Settings → Secrets and variables → Actions 에 같은 이름의 Secret 2개 추가(워크플로가 빌드시 주입)
+   - GitHub Pages(워크플로를 직접 추가해 사용할 경우): 저장소 Settings → Secrets and variables → Actions 에 같은 이름의 Secret 2개 추가(워크플로가 빌드시 주입)
 
 `supabase-setup.sql`은 예전엔 차수(16차/17차/18차/20차)별로 나뉘어 있었지만, 지금은 **테이블·함수·정책 전체를 한 파일로 통합**했습니다. 새 프로젝트든 기존 프로젝트를 밀고 새로 만들든 이 파일 하나만 SQL Editor에 붙여넣고 RUN 하면 됩니다(파일 맨 위 주석에 전체 초기화용 `drop` 블록도 있습니다 — 필요할 때만 주석 해제).
 
