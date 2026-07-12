@@ -3857,8 +3857,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 수가 끼어들면(채택률 순 정렬 위치가 바뀌면) 그 뒤에 있던 이미 그려진 노드 수백 개의 pos가
   // 한꺼번에 밀려나 버렸다 — 한 번 배정된 pos는 이 컴포넌트가 살아있는 동안 절대 바뀌지 않도록
   // ref에 캐싱하고, 정말 새로 생긴 노드만 계속 증가하는 카운터로 새 pos를 받게 한다.
+  // (버그 수정) 위 캐싱만 하면, leaf였던 노드가 자기 데이터를 받아 internal로 바뀔 때마다 그
+  // 자리의 pos 번호가 영영 안 쓰이고 버려졌다(internal 노드는 자식 pos의 평균으로 다시 계산되므로).
+  // 강제 최소 깊이(MIN_DEPTH=5) 때문에 거의 모든 갈래가 로딩 도중 leaf→internal을 여러 번 반복해,
+  // 버려지는 번호가 계속 쌓여 트리 전체 캔버스 크기(maxPos)가 실제 leaf 수보다 훨씬 크게 부풀고
+  // 블록 사이 빈 공간만 늘어났다 — leaf였던 노드가 internal로 바뀌는 순간 그 번호를 freeList에
+  // 반납해, 다음에 새로 생기는 leaf가 그 번호를 재사용하게 한다(이미 배정된 다른 노드의 pos는
+  // 전혀 건드리지 않으므로 흔들림 없이 캔버스 크기만 실제 leaf 수에 맞게 유지된다).
   const posCacheRef = useRef(new Map());
   const nextPosRef = useRef(0);
+  const freeListRef = useRef([]);
   const { items: fullItems, edges: fullEdges, maxDepth: fullMaxDepth, maxPos: fullMaxPos } = useMemo(() => {
     const items = []; const edges = [];
     const visit = (san, path, depth, adopt, kind, evalCp, name) => {
@@ -3884,9 +3892,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       }
       if (!kids.length) {
         if (posCacheRef.current.has(key)) it.pos = posCacheRef.current.get(key);
-        else { it.pos = nextPosRef.current++; posCacheRef.current.set(key, it.pos); }
+        else { it.pos = freeListRef.current.length ? freeListRef.current.pop() : nextPosRef.current++; posCacheRef.current.set(key, it.pos); }
+      } else {
+        if (posCacheRef.current.has(key)) { freeListRef.current.push(posCacheRef.current.get(key)); posCacheRef.current.delete(key); }
+        it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; kids.forEach((c) => edges.push([it, c]));
       }
-      else { it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; kids.forEach((c) => edges.push([it, c])); }
       items.push(it);
       return it;
     };
@@ -3974,16 +3984,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     checkSelectionDrift(next, zoom);
   };
   const onPointerUp = () => { dragRef.current = null; };
-  // (버그 수정) React의 onWheel prop은 브라우저 스크롤 성능을 위해 passive 리스너로 등록되어,
-  // 핸들러 안에서 e.preventDefault()를 불러도 실제로는 무시돼 모식도를 휠로 확대/축소하려 할 때마다
-  // 웹사이트 전체가 같이 위아래로 스크롤됐다 — ref에 직접 { passive: false } 리스너를 달아야
-  // preventDefault가 실제로 페이지 스크롤을 막는다.
+  // (버그 수정) 마우스 휠을 확대/축소에 쓰니 확대/축소는 우상단 버튼으로만 하게 하고, 휠은 그냥
+  // 세로 스크롤(팬)로 바꿔달라는 요청 — 휠을 굴리면 y좌표만 이동시킨다(확대/축소는 버튼 전용).
+  // React의 onWheel prop은 브라우저 스크롤 성능을 위해 passive 리스너로 등록되어, 핸들러 안에서
+  // e.preventDefault()를 불러도 실제로는 무시돼 웹사이트 전체가 같이 스크롤됐다 — ref에 직접
+  // { passive: false } 리스너를 달아야 preventDefault가 실제로 페이지 스크롤을 막는다.
   useEffect(() => {
     const el = boxRef.current;
     if (!el) return;
     const handleWheel = (e) => {
       e.preventDefault();
-      setZoom((z) => { const nz = clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12)); checkSelectionDrift(panRef.current, nz); return nz; });
+      setPan((p) => { const next = { x: p.x - e.deltaX, y: p.y - e.deltaY }; checkSelectionDrift(next, zoomRef.current); return next; });
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
@@ -4064,7 +4075,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
       // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
-      style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
       <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)" }}>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
         {/* (버그 수정) "강조 해제" 버튼을 따로 둘 필요 없다는 피드백 — 화면을 손으로 옮기면
