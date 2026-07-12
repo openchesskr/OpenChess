@@ -3922,7 +3922,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 각 방향의 루트(깊이 1) 퍼짐을 0으로 맞춰, 네 팔이 정확히 나침반 중심에서 뻗어나가게 한다.
     const rootPos = {};
     for (const it of visible) if (it.depth === 1) rootPos[it.dir] = it.pos;
-    let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
       const spread = it.pos - (rootPos[it.dir] || 0);
       const ld = it.depth - 1;
@@ -3930,6 +3929,67 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       else if (it.dir === "S") { it.x = spread * VCOL; it.y = ROOT_GAP + ld * VROW; }
       else if (it.dir === "E") { it.x = ROOT_GAP + ld * HCOL; it.y = spread * HROW; }
       else { it.x = -(ROOT_GAP + ld * HCOL); it.y = spread * HROW; }
+    }
+    // (버그 수정) 블록끼리 겹치는 문제 — 두 종류의 원인이 있었다.
+    // (1) 같은 팔(방향)·같은 깊이(같은 행/열)에 형제가 몰릴 때: internal 노드 좌표가 자식들
+    //     pos의 "평균"이다 보니 형제 사이 실제 간격이 최소 폭보다 좁아질 수 있었다 — 같은
+    //     행/열끼리 퍼짐 좌표순으로 정렬해 한 번에 쭉 밀어내는 스윕으로 해결(칸이 여러 개
+    //     한꺼번에 몰려 있어도 한 패스로 전부 벌어짐).
+    const bands = new Map();
+    for (const it of visible) {
+      const bk = it.dir + "|" + it.depth;
+      if (!bands.has(bk)) bands.set(bk, []);
+      bands.get(bk).push(it);
+    }
+    for (const arr of bands.values()) {
+      if (arr.length < 2) continue;
+      const dir = arr[0].dir;
+      const axis = (dir === "N" || dir === "S") ? "x" : "y";
+      const minGap = (dir === "N" || dir === "S") ? VCOL : HROW;
+      arr.sort((a, b) => a[axis] - b[axis]);
+      for (let i = 1; i < arr.length; i++) {
+        const gap = arr[i][axis] - arr[i - 1][axis];
+        if (gap < minGap) arr[i][axis] = arr[i - 1][axis] + minGap;
+      }
+    }
+    // (2) 서로 다른 두 팔(예: 북쪽과 동쪽)이 중심에서 멀리 떨어진 곳에서 우연히 화면상 거의 같은
+    //     좌표에 만나는 경우(방향·깊이가 다르니 위 스윕으로는 못 잡음) — 방향·깊이 구분 없이
+    //     화면 좌표가 실제로 가까운 블록끼리 전부 비교해 밀어내는 공간 격자(그리드) 기반 겹침
+    //     해소를 추가로 돌린다. 격자로 주변 셀만 비교하므로 노드가 수천 개라도 가볍게 동작한다.
+    const CELL = Math.max(boxW, boxH) + 4;
+    const cellKey = (x, y) => Math.floor(x / CELL) + "," + Math.floor(y / CELL);
+    for (let pass = 0; pass < 12; pass++) {
+      const grid = new Map();
+      for (const it of visible) {
+        const k = cellKey(it.x, it.y);
+        if (!grid.has(k)) grid.set(k, []);
+        grid.get(k).push(it);
+      }
+      let moved = false;
+      for (const it of visible) {
+        const cx = Math.floor(it.x / CELL), cy = Math.floor(it.y / CELL);
+        for (let gx = cx - 1; gx <= cx + 1; gx++) {
+          for (let gy = cy - 1; gy <= cy + 1; gy++) {
+            const arr = grid.get(gx + "," + gy);
+            if (!arr) continue;
+            for (const other of arr) {
+              if (other === it || other.key <= it.key) continue; // 각 쌍은 한 번만 비교
+              const dx = it.x - other.x, dy = it.y - other.y;
+              const ox = boxW - Math.abs(dx), oy = boxH - Math.abs(dy);
+              if (ox > 2 && oy > 2) {
+                // 겹치는 정도가 더 적은 축으로만 밀어내(다른 축은 그대로 둬 구조를 최대한 보존).
+                if (ox < oy) { const push = ox / 2 + 1; if (dx >= 0) { it.x += push; other.x -= push; } else { it.x -= push; other.x += push; } }
+                else { const push = oy / 2 + 1; if (dy >= 0) { it.y += push; other.y -= push; } else { it.y -= push; other.y += push; } }
+                moved = true;
+              }
+            }
+          }
+        }
+      }
+      if (!moved) break;
+    }
+    let minX = 0, maxX = 0, minY = 0, maxY = 0;
+    for (const it of visible) {
       if (it.x < minX) minX = it.x; if (it.x > maxX) maxX = it.x;
       if (it.y < minY) minY = it.y; if (it.y > maxY) maxY = it.y;
     }
@@ -4077,6 +4137,37 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     centerOn(it, SELECT_ZOOM);
     onToggleOpen(it.key);
   };
+  // (기능) 특정 수 블록을 선택한 상태에서는 WASD·방향키로 화면상 그 방향에 있는 가장 가까운
+  // 블록으로 곧장 이동할 수 있게 한다 — 눌린 방향으로 실제 진행한 거리에 벗어난 정도(수직 편차)를
+  // 페널티로 더해, "그 방향으로 곧장" 있는 블록을 우선 고른다. itemsRef/selectedPathRef로 항상
+  // 최신 값을 읽으므로 이 effect는 마운트 시 한 번만 등록해도 된다.
+  useEffect(() => {
+    const KEY_DIR = { arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
+    const onKeyDown = (e) => {
+      if (!selectedPathRef.current) return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+      const dirVec = KEY_DIR[e.key.toLowerCase()];
+      if (!dirVec) return;
+      e.preventDefault();
+      const from = itemsRef.current.find((it) => it.key === selectedPathRef.current.join(" "));
+      if (!from) return;
+      const [dx, dy] = dirVec;
+      let best = null, bestScore = Infinity;
+      for (const it of itemsRef.current) {
+        if (it.key === from.key) continue;
+        const ddx = it.x - from.x, ddy = it.y - from.y;
+        const primary = dx !== 0 ? ddx * dx : ddy * dy;
+        if (primary <= 1) continue;
+        const perp = dx !== 0 ? ddy : ddx;
+        const score = primary + Math.abs(perp) * 2.5;
+        if (score < bestScore) { bestScore = score; best = it; }
+      }
+      if (best) selectNode(best);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
   // (기능) 지금 선택(고정)된 오프닝과, 지금 보고 있는 화면(뷰포트 중심)을 트리 자동 확장 큐
   // (useOpeningTreeAuto)에 알려준다 — 선택된 오프닝의 바리에이션을 최우선으로, 나머지는 화면
   // 중심에서 먼 갈래부터 먼저 펼치고 가까운(눈에 잘 띄는) 갈래는 가장 나중에 펼치게 해 화면 안,
