@@ -3873,12 +3873,20 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 세로/가로 중간"에 배치하는 방식이라 1.e4 자신의 좌표는 그 아래로 갈래가 계속 로드되며 늘어날수록
   // 계속 화면 밖으로 밀려난다(한 번만 맞추면 이후 더 로드되며 다시 밀려남) — 사용자가 직접 팬하기
   // 전까지는, 데이터가 들어올 때마다 뷰포트가 1.e4 좌표를 계속 따라가도록 한다.
+  // (버그 수정) items는 최대 4000개 노드까지 Lichess API 응답이 들어올 때마다 계속 갱신되는데,
+  // 응답이 캐시(10분)에서 오거나 네트워크가 실패해 즉시 응답하면 매우 짧은 시간에 수백~수천 번
+  // 연쇄로 갱신될 수 있다. 이 effect가 매번 즉시 setPan을 부르면 브라우저가 그릴 틈도 없이 리렌더가
+  // 몰려 React의 "Maximum update depth exceeded" 안전장치에 걸린다 — 짧게(120ms) 디바운스해서
+  // 데이터가 몰아쳐 들어와도 실제 상태 갱신은 한 번에 모아 처리하게 한다.
   useEffect(() => {
     if (userPannedRef.current) return;
-    const e4 = items.find((it) => it.depth === 1 && stripSuffix(it.san) === "e4");
-    if (!e4) return;
-    const c = coord(e4);
-    setPan({ x: 16 - c.x, y: 16 - c.y });
+    const id = setTimeout(() => {
+      const e4 = items.find((it) => it.depth === 1 && stripSuffix(it.san) === "e4");
+      if (!e4) return;
+      const c = coord(e4);
+      setPan({ x: 16 - c.x, y: 16 - c.y });
+    }, 120);
+    return () => clearTimeout(id);
   }, [items]);
   const clampZoom = (z) => Math.min(2, Math.max(0.3, z));
   const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
