@@ -3863,23 +3863,33 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 겹치지 않을 정도의 여유를 준다.
   const VCOL = 108, VROW = 86, HCOL = 158, HROW = 68;
   const ROOT_GAP = 90;
-  // (버그 수정) 새 수가 계속 로드될 때마다 화면이 위아래로 심하게 흔들린다는 피드백 — 원인은 leaf
-  // 노드의 좌표(pos)를 매번 커서를 0부터 다시 매겨 전부 재배정하던 것: 트리 중간 어딘가에 새 형제
-  // 수가 끼어들면(채택률 순 정렬 위치가 바뀌면) 그 뒤에 있던 이미 그려진 노드 수백 개의 pos가
-  // 한꺼번에 밀려나 버렸다 — 한 번 배정된 pos는 이 컴포넌트가 살아있는 동안 절대 바뀌지 않도록
-  // ref에 캐싱하고, 정말 새로 생긴 노드만 계속 증가하는 카운터로 새 pos를 받게 한다.
-  // (버그 수정) 위 캐싱만 하면, leaf였던 노드가 자기 데이터를 받아 internal로 바뀔 때마다 그
-  // 자리의 pos 번호가 영영 안 쓰이고 버려졌다(internal 노드는 자식 pos의 평균으로 다시 계산되므로).
-  // 강제 최소 깊이(MIN_DEPTH=5) 때문에 거의 모든 갈래가 로딩 도중 leaf→internal을 여러 번 반복해,
-  // 버려지는 번호가 계속 쌓여 트리 전체 캔버스 크기(maxPos)가 실제 leaf 수보다 훨씬 크게 부풀고
-  // 블록 사이 빈 공간만 늘어났다 — leaf였던 노드가 internal로 바뀌는 순간 그 번호를 freeList에
-  // 반납해, 다음에 새로 생기는 leaf가 그 번호를 재사용하게 한다(이미 배정된 다른 노드의 pos는
-  // 전혀 건드리지 않으므로 흔들림 없이 캔버스 크기만 실제 leaf 수에 맞게 유지된다).
-  const posCacheRef = useRef(new Map());
-  const nextPosRef = useRef(0);
-  const freeListRef = useRef([]);
+  // (버그 수정) 블록을 잇는 선이 지나치게 길어지던 문제 — 원인은 "퍼짐(spread)" 좌표를 매기는
+  // 번호 공간을 네 방향이 공유하고, 게다가 아직 화면에 나오지도 않을 수백~수천 개 노드분까지
+  // 번호를 벌려 놓던 것: 실제로 그려지는 형제 둘이 슬롯 5번과 800번을 받아, 그 사이 795칸(약
+  // 5만px)이 텅 빈 채 초장거리 선이 생겼다. 방향(N/S/E/W)마다 독립된 번호 공간을 쓰고, 지금
+  // 실제로 그려지는 leaf에만 0,1,2… 빽빽하게(dense) 번호를 매기면, 형제는 항상 바로 옆 칸이라
+  // 선이 구조적으로 가능한 가장 짧아진다.
+  // (버그 수정, 흔들림 방지) 한 번 배정한 leaf 슬롯은 캐시에 박아 두어 절대 안 옮기고, leaf가
+  // 자식을 얻어 internal로 바뀌면 그 슬롯을 freeList에 반납해 다음 새 leaf가 재사용한다 —
+  // 방향별로 따로 관리하므로 각 팔의 번호가 늘 빽빽하게 채워진다.
+  const posCacheRef = useRef({ N: new Map(), S: new Map(), E: new Map(), W: new Map() });
+  const nextPosRef = useRef({ N: 0, S: 0, E: 0, W: 0 });
+  const freeListRef = useRef({ N: [], S: [], E: [], W: [] });
   const { items, edges, width, height, centerX, centerY } = useMemo(() => {
     const items = []; const edges = [];
+    const takeSlot = (dir, key) => {
+      const cache = posCacheRef.current[dir];
+      if (cache.has(key)) return cache.get(key);
+      const free = freeListRef.current[dir];
+      const p = free.length ? free.pop() : nextPosRef.current[dir]++;
+      cache.set(key, p);
+      return p;
+    };
+    const freeSlot = (dir, key) => {
+      const cache = posCacheRef.current[dir];
+      if (cache.has(key)) { freeListRef.current[dir].push(cache.get(key)); cache.delete(key); }
+    };
+    // 방향별로 leaf에 빽빽한 슬롯(pos)을 주고, internal 노드는 자식들 pos의 가운데로 둔다.
     const visit = (san, path, depth, adopt, kind, evalCp, name, dir) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
@@ -3887,8 +3897,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       const kids = [];
       if (rawMoves && rawMoves.length) {
         let filtered = rawMoves.filter((m) => treeData.has([...path, m.san].join(" ")));
-        // (버그 수정) 루트(첫 수) 단계는 8개 첫 수 전부를 채택률 순으로 보여주던 것을 버리고,
-        // 주요 4개(e4/d4/c4/Nf3)만 고정된 순서로 골라 각각 동/서/남/북 방향을 배정한다.
+        // 루트(첫 수) 단계는 주요 4개(e4/d4/c4/Nf3)만 — 각각 북/동/남/서 방향의 팔이 된다.
         if (path.length === 0) filtered = ROOT_ORDER.map((s) => filtered.find((m) => stripSuffix(m.san) === s)).filter(Boolean);
         const ordered = path.length === 0 ? filtered : centerOrderByAdopt(filtered);
         const board = boardFromSans(path);
@@ -3900,38 +3909,31 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir));
         }
       }
-      if (!kids.length) {
-        if (posCacheRef.current.has(key)) it.pos = posCacheRef.current.get(key);
-        else { it.pos = freeListRef.current.length ? freeListRef.current.pop() : nextPosRef.current++; posCacheRef.current.set(key, it.pos); }
-      } else {
-        if (posCacheRef.current.has(key)) { freeListRef.current.push(posCacheRef.current.get(key)); posCacheRef.current.delete(key); }
-        it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; kids.forEach((c) => edges.push([it, c]));
-      }
+      if (depth >= 1) {
+        if (!kids.length) it.pos = takeSlot(dir, key);
+        else { freeSlot(dir, key); it.pos = (kids[0].pos + kids[kids.length - 1].pos) / 2; }
+      } else it.pos = 0;
+      for (const c of kids) edges.push([it, c]);
       items.push(it);
       return it;
     };
     visit(null, [], 0, 100, null, null, null, null);
     const visible = items.filter((it) => it.depth > 0);
-    // 방향별 형제 퍼짐(pos)의 중앙값을 구해, 각 방향의 서브트리가 그 방향 중심축을 기준으로
-    // 고르게 퍼지도록 한다(즉 e4/d4/c4/Nf3 자신도 정확히 중앙이 아니라 자기 서브트리의
-    // "무게중심" 축에 놓인다 — 자연스러운 나뭇가지 모양).
-    const mid = {};
-    for (const d of ["N", "S", "E", "W"]) {
-      const arr = visible.filter((it) => it.dir === d);
-      mid[d] = arr.length ? (Math.min(...arr.map((it) => it.pos)) + Math.max(...arr.map((it) => it.pos))) / 2 : 0;
-    }
+    // 각 방향의 루트(깊이 1) 퍼짐을 0으로 맞춰, 네 팔이 정확히 나침반 중심에서 뻗어나가게 한다.
+    const rootPos = {};
+    for (const it of visible) if (it.depth === 1) rootPos[it.dir] = it.pos;
+    let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
-      const localDepth = it.depth - 1;
-      const spread = it.pos - mid[it.dir];
-      if (it.dir === "N") { it.x = spread * VCOL; it.y = -(ROOT_GAP + localDepth * VROW); }
-      else if (it.dir === "S") { it.x = spread * VCOL; it.y = ROOT_GAP + localDepth * VROW; }
-      else if (it.dir === "E") { it.x = ROOT_GAP + localDepth * HCOL; it.y = spread * HROW; }
-      else { it.x = -(ROOT_GAP + localDepth * HCOL); it.y = spread * HROW; }
+      const spread = it.pos - (rootPos[it.dir] || 0);
+      const ld = it.depth - 1;
+      if (it.dir === "N") { it.x = spread * VCOL; it.y = -(ROOT_GAP + ld * VROW); }
+      else if (it.dir === "S") { it.x = spread * VCOL; it.y = ROOT_GAP + ld * VROW; }
+      else if (it.dir === "E") { it.x = ROOT_GAP + ld * HCOL; it.y = spread * HROW; }
+      else { it.x = -(ROOT_GAP + ld * HCOL); it.y = spread * HROW; }
+      if (it.x < minX) minX = it.x; if (it.x > maxX) maxX = it.x;
+      if (it.y < minY) minY = it.y; if (it.y > maxY) maxY = it.y;
     }
     const PAD = 200;
-    const xs = visible.map((it) => it.x), ys = visible.map((it) => it.y);
-    const minX = visible.length ? Math.min(...xs) : 0, maxX = visible.length ? Math.max(...xs) : 0;
-    const minY = visible.length ? Math.min(...ys) : 0, maxY = visible.length ? Math.max(...ys) : 0;
     const centerX = -minX + PAD, centerY = -minY + PAD;
     for (const it of visible) { it.x += centerX; it.y += centerY; }
     return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY };
@@ -3982,7 +3984,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       if (userPannedRef.current) return;
       const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
       const z = zoomRef.current;
-      setPan({ x: rect.width / 2 - centerRef.current.x * z, y: rect.height / 2 - centerRef.current.y * z });
+      // 나침반 중심(네 루트 블록의 중심)은 origin(centerX,centerY)에서 블록 반 칸만큼 떨어져 있으므로
+      // 그만큼 더해 정확히 뷰포트 한가운데에 오게 한다.
+      setPan({ x: rect.width / 2 - (centerRef.current.x + boxW / 2) * z, y: rect.height / 2 - (centerRef.current.y + boxH / 2) * z });
     }, 150);
     return () => clearInterval(id);
   }, []);
@@ -4130,11 +4134,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const pc = coord(p), cc2 = coord(c);
             // (기능) 나침반형 레이아웃 — 부모→자식 연결선이 그 갈래가 뻗어나가는 방향(c.dir)에 맞는
             // 변끼리 이어지도록 한다(동/서는 좌우 변, 남/북은 위아래 변).
-            let x1, y1, x2, y2;
-            if (c.dir === "E") { x1 = pc.x + boxW; y1 = pc.y + boxH / 2; x2 = cc2.x; y2 = cc2.y + boxH / 2; }
-            else if (c.dir === "W") { x1 = pc.x; y1 = pc.y + boxH / 2; x2 = cc2.x + boxW; y2 = cc2.y + boxH / 2; }
-            else if (c.dir === "N") { x1 = pc.x + boxW / 2; y1 = pc.y; x2 = cc2.x + boxW / 2; y2 = cc2.y + boxH; }
-            else { x1 = pc.x + boxW / 2; y1 = pc.y + boxH; x2 = cc2.x + boxW / 2; y2 = cc2.y; }
+            // (버그 수정) 곁가지가 부모에서 멀리(수만 px) 떨어지는 건 실제 나무처럼 트리가 넓기
+            // 때문에 피할 수 없다 — 대신 한 줄 대각선으로 길게 가로지르면 캔버스를 마구 관통해
+            // 지저분해 보이므로, 성장축을 따라 짧게 나온 뒤 직각으로 꺾어 자식까지 가는 ㄱ자(elbow)
+            // 커넥터로 그린다. 꺾이는 지점을 깊이 사이 중간에 두면 같은 열의 세로선들이 나란히 정렬돼
+            // 훨씬 정돈돼 보인다.
+            let pts;
+            if (c.dir === "E") { const x1 = pc.x + boxW, y1 = pc.y + boxH / 2, x2 = cc2.x, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
+            else if (c.dir === "W") { const x1 = pc.x, y1 = pc.y + boxH / 2, x2 = cc2.x + boxW, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
+            else if (c.dir === "N") { const x1 = pc.x + boxW / 2, y1 = pc.y, x2 = cc2.x + boxW / 2, y2 = cc2.y + boxH, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
+            else { const x1 = pc.x + boxW / 2, y1 = pc.y + boxH, x2 = cc2.x + boxW / 2, y2 = cc2.y, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
             // (버그 수정) 선 굵기가 채택률에 따라 제각각이라 트리 전체가 정신없어 보였다 — 굵기를
             // 하나로 통일해, 굵기가 아니라 실제 트리 구조로만 위계가 드러나게 한다.
             // (기능) 선택된 오프닝으로 가는 수순의 선만, 전선에 전류가 흐르듯 색이 바뀌고 흐르는
@@ -4143,7 +4152,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const isSel = selectedKeySet && selectedKeySet.has(c.key);
             const wStroke = isSel ? 3 : 2;
             const eStroke = isSel ? ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
-            return <line key={p.key + "→" + c.key} className={isSel ? "dex-current-line" : undefined} x1={x1} y1={y1} x2={x2} y2={y2} stroke={eStroke} strokeWidth={wStroke} opacity={isSel ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round"
+            return <polyline key={p.key + "→" + c.key} className={isSel ? "dex-current-line" : undefined} points={pts.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={isSel ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
               style={isSel ? { strokeDasharray: "7 5" } : undefined} />;
           })}
         </svg>
