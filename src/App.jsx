@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft,
+  GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronDown,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3,
@@ -269,12 +269,38 @@ const ENGINE_PROFILES = {
   full: {
     id: "full", label: "Stockfish 16 (NNUE)", desc: "정확도가 가장 높지만 로딩이 느려요",
     urls: [ENGINE_BASE + "engine/stockfish-nnue-16-single.js", "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js"],
+    // (성능) 교차 출처 격리(COOP/COEP)가 된 환경에서만 시도하는 멀티스레드 빌드 — CDN 폴백 없이
+    // 같은 출처(public/engine) 파일만 쓴다(교차 출처 워커 스크립트는 격리 요건과 맞물려 불확실하다).
+    mtUrl: ENGINE_BASE + "engine/stockfish-nnue-16.js",
   },
   lite: {
     id: "lite", label: "Stockfish 18 Lite", desc: "가볍고 빨라요(경량 빌드)",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
+    mtUrl: ENGINE_BASE + "engine/lite/stockfish-18-lite.js",
   },
 };
+// (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
+// Policy)가 걸린 페이지에서만 쓸 수 있다 — vite.config.js(개발)·vercel.json(배포)에서 헤더를 설정해
+// 뒀을 때만 true가 된다. 격리가 안 된 환경(구형 브라우저, 헤더 미지원 배포지 등)에서는 이 값이
+// false라 아래 engineBootList가 조용히 기존 단일 스레드 빌드로만 폴백한다.
+function crossOriginIsolatedOK() {
+  return typeof SharedArrayBuffer !== "undefined" && typeof window !== "undefined" && window.crossOriginIsolated === true;
+}
+// 실시간(집중 학습 등) 평가는 항상 활성 포지션이 하나뿐이라, 포지션 하나를 여러 코어로 동시에 탐색하는
+// 멀티스레드가 그대로 이득이다. UI 렌더링용 코어 하나는 남겨 둔다.
+function mainEngineThreads() {
+  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
+  return Math.max(1, cores - 1);
+}
+// 부팅 시도 목록 — 격리가 가능하면 멀티스레드 빌드(같은 출처만)를 맨 앞에 두고, 그 뒤로 기존
+// 단일 스레드 빌드(로컬 → CDN)를 그대로 이어 붙여, 멀티스레드 부팅이 실패해도 기존 폴백 경로가
+// 그대로 살아있게 한다.
+function engineBootList(profileId, threads) {
+  const profile = ENGINE_PROFILES[profileId] || ENGINE_PROFILES.full;
+  const list = profile.urls.map((url) => ({ url, threads: 1 }));
+  if (profile.mtUrl && crossOriginIsolatedOK()) list.unshift({ url: profile.mtUrl, threads });
+  return list;
+}
 const ENGINE_PREF_KEY = "occ_engine_pref";
 function isMobileDevice() {
   if (typeof navigator === "undefined") return false;
@@ -483,7 +509,7 @@ function useEngine(enginePref) {
     // 이때 이전 워커를 가리키던 참조·상태를 반드시 초기화해야, 막 종료된 워커에 메시지를 보내
     // 응답이 영영 오지 않는 채로 남는 사고를 막는다.
     ref.current = null; offRef.current = false; running.current = false; setStatus("loading");
-    const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
+    const bootList = engineBootList(enginePref, mainEngineThreads());
     function handleLine(line) {
       const cb = queue.current[0]; if (!cb) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
@@ -505,8 +531,8 @@ function useEngine(enginePref) {
       }
     }
     function tryNext() {
-      if (idx >= urls.length) { offRef.current = true; setStatus("off"); pump(); return; }
-      const url = urls[idx++];
+      if (idx >= bootList.length) { offRef.current = true; setStatus("off"); pump(); return; }
+      const { url, threads } = bootList[idx++];
       try {
         let w;
         if (url.startsWith("/")) w = new Worker(url);
@@ -514,7 +540,9 @@ function useEngine(enginePref) {
         let booted = false;
         w.onmessage = (e) => { const line = typeof e.data === "string" ? e.data : ""; if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) { booted = true; ref.current = w; setStatus("ready"); pump(); } handleLine(line); };
         w.onerror = () => { try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
-        w.postMessage("uci"); w.postMessage("isready"); worker = w;
+        w.postMessage("uci");
+        if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
+        w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, 4000);
       } catch (_) { tryNext(); }
     }
@@ -539,7 +567,10 @@ function useEngine(enginePref) {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
     queue.current.push({ resolve, multi: true, lines: {}, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump]);
-  return { status, evaluate, evaluateMulti };
+  // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
+  // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
+  const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
+  return { status, evaluate, evaluateMulti, profile: enginePref, urls };
 }
 /* UCI -> SAN (보드 기준) */
 function uciToSan(board, uci, color) {
@@ -1579,6 +1610,61 @@ function calibrateAccuracy(a) {
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
 const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : (l.cp != null ? l.cp : 0)) : 0;
+// (성능) 게임 리뷰(analyzeGame)가 포지션들을 나눠 동시에 계산할 워커 풀 크기 — "full"(Stockfish 16
+// NNUE, 40MB 신경망)은 워커 하나당 메모리·로딩 부담이 커서 2개로, "lite"(7MB, 경량 빌드)는 4개까지
+// 동시에 띄운다. depth·movetime은 그대로 두므로 정확도 손실 없이 총 분석 시간만 줄어든다.
+const ANALYZE_POOL_SIZE = { full: 2, lite: 4 };
+// analyzeGame 전용 보조 워커 — useEngine과 달리 React 상태 없이 단발성 배치 작업 하나만 순서대로
+// 처리하다가(evaluateMulti) 분석이 끝나면 바로 종료(terminate)된다. useEngine의 워커 부팅(URL
+// 폴백)·MultiPV 라인 파싱 로직과 동일한 프로토콜을 쓰되, 훅 상태 없이 독립적으로 여러 개 띄울 수 있다.
+function bootAnalysisWorker(urls) {
+  return new Promise((resolve) => {
+    let idx = 0, booted = false, worker = null;
+    const queue = []; let running = false;
+    function pump() { if (running || !queue.length) return; running = true; queue[0].cmds.forEach((c) => worker.postMessage(c)); }
+    function handleLine(line) {
+      const job = queue[0]; if (!job) return;
+      const sc = line.match(/score (cp|mate) (-?\d+)/);
+      if (line.startsWith("info")) {
+        const mp = line.match(/multipv (\d+)/); const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+        if (mp && pv && sc) job.lines[parseInt(mp[1], 10)] = { uci: pv[1], cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+      } else if (line.startsWith("bestmove")) {
+        queue.shift(); running = false;
+        job.resolve(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]));
+        pump();
+      }
+    }
+    function tryNext() {
+      if (idx >= urls.length) { resolve(null); return; }
+      const url = urls[idx++];
+      try {
+        let w;
+        if (url.startsWith("/")) w = new Worker(url);
+        else { const blob = new Blob(["importScripts('" + url + "');"], { type: "text/javascript" }); w = new Worker(URL.createObjectURL(blob)); }
+        w.onmessage = (e) => {
+          const line = typeof e.data === "string" ? e.data : "";
+          if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) {
+            booted = true; worker = w;
+            resolve({
+              evaluateMulti(fen, d, multipv, mt) {
+                return new Promise((res) => {
+                  queue.push({ resolve: res, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  pump();
+                });
+              },
+              terminate() { try { w.terminate(); } catch (_) { } },
+            });
+          }
+          handleLine(line);
+        };
+        w.onerror = () => { try { w.terminate(); } catch (_) { } if (!booted) tryNext(); };
+        w.postMessage("uci"); w.postMessage("isready");
+        setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
+      } catch (_) { tryNext(); }
+    }
+    tryNext();
+  });
+}
 // 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
 // 실제 최선수를 뒀을 때 손실이 정확히 0이 되어, 얕은 depth 탐색 노이즈로 인한 가짜 실수가 사라진다.
 // (분석 최적화) 각 포지션을 '딱 한 번'만 단일 PV로 평가해 캐싱한다. 예전엔 둔 수가 1순위가 아니면
@@ -1592,19 +1678,40 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   // MultiPV-2: 각 포지션을 한 번만 평가해 최선수(pv0)와 2순위(pv1)를 함께 얻는다(중복 평가 없음).
   // 2순위와의 격차로 "유일한 수(Great)"를 판정하고, movetime 상한으로 시간이 폭주하지 않게 한다.
   const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
-  // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
-  // 기보가 길어질수록 분석이 급격히 느려진다 — 보드를 한 번만 만들어 한 수씩 전진시키며 재사용한다.
+  // (버그 수정) 워커 하나로 포지션을 순서대로 평가하면 총 분석 시간이 포지션 수(N+1)에 정비례해
+  // 늘어나 긴 대국일수록 끝없이 느려진다. depth·movetime(정확도)은 손대지 않고, 같은 엔진 프로필의
+  // 워커를 몇 개 더 띄워(이미 떠 있는 메인 워커 engine도 유휴 상태이므로 풀의 한 자리로 함께 쓴다)
+  // 포지션들을 나눠 동시에 계산해 총 시간만 줄인다.
+  const fens = new Array(N + 1);
   {
+    // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
+    // 기보가 길어질수록 분석이 급격히 느려진다 — 보드를 한 번만 만들어 한 수씩 전진시키며 재사용한다.
     let board = startBoard();
     for (let i = 0; i <= N; i++) {
-      const lines = await withTimeout(engine.evaluateMulti(boardToFen(board, i), depth, 2, movetime), 8000);
-      const p0 = lines && lines[0], p1 = lines && lines[1];
-      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
-      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
-      onProgress && onProgress((i + 1) / (N + 1));
+      fens[i] = boardToFen(board, i);
       if (i < N) board = applySan(board, fullSans[i], i % 2 === 0 ? "w" : "b");
     }
   }
+  const poolTarget = Math.min(ANALYZE_POOL_SIZE[engine.profile] || 2, N + 1);
+  const extraCount = Math.max(0, poolTarget - 1);
+  const extraWorkers = extraCount > 0
+    ? (await Promise.all(Array.from({ length: extraCount }, () => bootAnalysisWorker(engine.urls)))).filter(Boolean)
+    : [];
+  const workers = [{ evaluateMulti: engine.evaluateMulti }, ...extraWorkers];
+  let nextIdx = 0, doneCount = 0;
+  async function runWorker(w) {
+    for (;;) {
+      const i = nextIdx++; if (i > N) return;
+      const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
+      const p0 = lines && lines[0], p1 = lines && lines[1];
+      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
+      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
+      doneCount++;
+      onProgress && onProgress(doneCount / (N + 1));
+    }
+  }
+  await Promise.all(workers.map(runWorker));
+  extraWorkers.forEach((w) => w.terminate());
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
   const graphCp = new Array(N + 1);
   for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
@@ -3719,7 +3826,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (버그 수정) 블록 아래 오프닝 이름 라벨이 길면(특히 2줄 이상) 다음 줄(형제 노드) 블록과 겹쳤다 —
   // 줄 간격(rowH)을 넉넉히 늘리고, 라벨 글자 크기를 살짝 줄여 겹침을 없앤다.
   const colW = vertical ? 108 : 158, rowH = vertical ? 86 : 68;
-  const { items, edges, maxDepth, maxPos } = useMemo(() => {
+  const { items: fullItems, edges: fullEdges, maxDepth: fullMaxDepth, maxPos: fullMaxPos } = useMemo(() => {
     let cursor = 0; const items = []; const edges = [];
     const visit = (san, path, depth, adopt, kind, evalCp, name) => {
       const key = path.join(" ");
@@ -3753,6 +3860,25 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const maxPos = items.length ? Math.max(...items.map((it) => it.pos)) : 0;
     return { items: visible, edges, maxDepth, maxPos };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
+  // (기능) 검색으로 특정 오프닝을 찾았을 때, 전체 트리를 다 보여주면 찾던 갈래가 아닌 수 블록들이
+  // 그대로 화면을 채워 지저분해 보인다 — focusPath가 설정되면 그 오프닝으로 가는 수순 한 줄만
+  // 남기고(가지 없이 직선으로) 나머지는 아예 그리지 않는다. 위치(pos)는 전체 트리의 값을 재사용하지
+  // 않고 0,1,2...로 다시 매겨 간격이 고르게 나오도록 한다.
+  const [focusPath, setFocusPath] = useState(null);
+  const { items, edges, maxDepth, maxPos } = useMemo(() => {
+    if (!focusPath) return { items: fullItems, edges: fullEdges, maxDepth: fullMaxDepth, maxPos: fullMaxPos };
+    const chain = [];
+    for (let i = 1; i <= focusPath.length; i++) {
+      const key = focusPath.slice(0, i).join(" ");
+      const found = fullItems.find((it) => it.key === key);
+      if (found) chain.push({ ...found, pos: chain.length });
+    }
+    const chainEdges = [];
+    for (let i = 1; i < chain.length; i++) chainEdges.push([chain[i - 1], chain[i]]);
+    const maxDepth = chain.length ? Math.max(...chain.map((it) => it.depth)) : 1;
+    const maxPos = chain.length ? chain.length - 1 : 0;
+    return { items: chain, edges: chainEdges, maxDepth, maxPos };
+  }, [focusPath, fullItems, fullEdges, fullMaxDepth, fullMaxPos]);
   const coord = (it) => vertical ? { x: it.pos * colW, y: (it.depth - 1) * rowH } : { x: (it.depth - 1) * colW, y: it.pos * rowH };
   const boxW = 98, boxH = 44;
   const width = (vertical ? maxPos * colW : (maxDepth - 1) * colW) + boxW + 320;
@@ -3766,18 +3892,52 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 세로/가로 중간"에 배치하는 방식이라 1.e4 자신의 좌표는 그 아래로 갈래가 계속 로드되며 늘어날수록
   // 계속 화면 밖으로 밀려난다(한 번만 맞추면 이후 더 로드되며 다시 밀려남) — 사용자가 직접 팬하기
   // 전까지는, 데이터가 들어올 때마다 뷰포트가 1.e4 좌표를 계속 따라가도록 한다.
+  // (버그 수정) items는 최대 4000개 노드까지 Lichess API 응답이 들어올 때마다 계속 갱신되는데,
+  // 응답이 캐시(10분)에서 오거나 네트워크가 실패해 즉시 응답하면 매우 짧은 시간에 수백~수천 번
+  // 연쇄로 갱신될 수 있다. 이 effect가 매번 즉시 setPan을 부르면 브라우저가 그릴 틈도 없이 리렌더가
+  // 몰려 React의 "Maximum update depth exceeded" 안전장치에 걸린다 — 짧게(120ms) 디바운스해서
+  // 데이터가 몰아쳐 들어와도 실제 상태 갱신은 한 번에 모아 처리하게 한다.
   useEffect(() => {
     if (userPannedRef.current) return;
-    const e4 = items.find((it) => it.depth === 1 && stripSuffix(it.san) === "e4");
-    if (!e4) return;
-    const c = coord(e4);
-    setPan({ x: 16 - c.x, y: 16 - c.y });
+    const id = setTimeout(() => {
+      const e4 = items.find((it) => it.depth === 1 && stripSuffix(it.san) === "e4");
+      if (!e4) return;
+      const c = coord(e4);
+      setPan({ x: 16 - c.x, y: 16 - c.y });
+    }, 120);
+    return () => clearTimeout(id);
   }, [items]);
   const clampZoom = (z) => Math.min(2, Math.max(0.3, z));
   const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
   const onPointerUp = () => { dragRef.current = null; };
   const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
+  // (버그 수정) 오프닝이 많아지면 원하는 갈래를 캔버스에서 손으로 찾아 팬/줌해야 했다 — 이름으로
+  // 검색하면 그 오프닝으로 가는 수순만 남기고(focusPath) 나머지 갈래는 숨긴다. 검색은 항상 전체
+  // 트리(fullItems) 기준으로 해야, 이미 한 갈래에 포커스된 상태에서도 다른 오프닝을 다시 찾을 수 있다.
+  const [query, setQuery] = useState("");
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return fullItems.filter((it) => it.name && it.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [fullItems, query]);
+  const jumpTo = (it) => {
+    userPannedRef.current = true;
+    setFocusPath(it.path);
+    setQuery("");
+  };
+  // focusPath가 바뀌어 위(useMemo)에서 그 오프닝만 남긴 새 items/좌표가 계산된 뒤, 그 마지막
+  // 노드(찾던 오프닝)를 화면 중앙으로 옮기고 상세 블록을 자동으로 연다.
+  useEffect(() => {
+    if (!focusPath) return;
+    const target = items.find((it) => it.key === focusPath.join(" "));
+    if (!target) return;
+    const c = coord(target);
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    setZoom(1);
+    setPan({ x: rect.width / 2 - (c.x + boxW / 2), y: rect.height / 2 - (c.y + boxH / 2) });
+    onToggleOpen(target.key);
+  }, [focusPath]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
@@ -3785,6 +3945,23 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
       // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
       style={{ position: "relative", overflow: "hidden", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)" }}>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
+        {query.trim() ? (
+          <div style={{ marginTop: 4, maxHeight: 280, overflowY: "auto", background: "#fff", borderRadius: 8, border: "1px solid #DCCBA8", boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)" }}>
+            {matches.length === 0
+              ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>일치하는 오프닝이 없어요.</div>
+              : matches.map((it) => (
+                <button key={it.key} onClick={() => jumpTo(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid #F0E6D2", cursor: "pointer" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
+                  <div style={{ fontSize: 10, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sansToPgnText(it.path)}</div>
+                </button>
+              ))}
+          </div>
+        ) : focusPath && (
+          <button onClick={() => setFocusPath(null)} className="press" style={{ marginTop: 4, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "6px 9px", borderRadius: 8, border: "1px solid " + T.brass, background: "rgba(255,255,255,.95)", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" }}><ArrowLeft size={12} /> 전체 트리 보기</button>
+        )}
+      </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
         <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => setZoom(1)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
@@ -3792,7 +3969,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0" }}>
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-          {edges.map(([p, c], i) => {
+          {edges.map(([p, c]) => {
             if (p.depth === 0) return null;
             const pc = coord(p), cc2 = coord(c);
             const x1 = vertical ? pc.x + boxW / 2 : pc.x + boxW, y1 = vertical ? pc.y + boxH : pc.y + boxH / 2;
@@ -3800,7 +3977,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             // (2차 개편) 채택률에 비례한 굵기 — 채택률 높은 핵심 라인은 굵은 줄기처럼, 낮은 라인은 가는 곁가지처럼.
             const wStroke = 1 + Math.min(7, (c.adopt || 0) / 12);
             const eStroke = c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
-            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={eStroke} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round" />;
+            // (기능) 트리가 펼쳐질 때 선이 한꺼번에 나타나지 않고 펜으로 긋듯 그려지게 — 길이만큼
+            // stroke-dasharray/dashoffset을 걸어 두고 dashoffset을 0으로 애니메이션한다. 부모·자식
+            // 키 조합으로 키를 고정해, 이미 그려진 선은 데이터가 갱신돼도 리마운트(=다시 그려짐)되지
+            // 않고 새로 나타나는 선만 애니메이션이 걸린다. 길이에 비례해 걸리는 시간도 다르게 둬
+            // 짧은 가지는 빠르게, 긴 가지는 손으로 긋듯 조금 더 걸리게 한다.
+            const len = Math.hypot(x2 - x1, y2 - y1);
+            const dur = Math.max(140, Math.min(600, len * 1.1));
+            return <line key={p.key + "→" + c.key} className="dex-line" x1={x1} y1={y1} x2={x2} y2={y2} stroke={eStroke} strokeWidth={wStroke} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round"
+              style={{ strokeDasharray: len, strokeDashoffset: len, animation: "dexLineDraw " + dur + "ms ease-out forwards" }} />;
           })}
         </svg>
         {items.map((it) => {
@@ -6078,6 +6263,22 @@ function findOpeningPathByFuzzyName(name) {
   }
   return null;
 }
+// (버그 수정) "오프닝별 승률" 한 행 — 하위 오프닝을 상위 오프닝 아래 들여써서(depth) 재귀적으로
+// 그린다. 각 노드의 수치는 자신 + 모든 하위 갈래의 합산(AccountChessStats의 rollup)이라, 상위 행이
+// 곧 그 아래 중첩된 하위 행들의 총합으로 보인다.
+function OpeningWinrateRow({ node, depth, onOpenOpening }) {
+  const row = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "5px 0", paddingLeft: depth * 14, borderTop: "1px solid #E4D5B6", fontSize: depth === 0 ? 12.5 : 11.5 };
+  return (
+    <>
+      <div style={row}>
+        {onOpenOpening ? <button onClick={() => onOpenOpening(node.name)} className="press" style={{ color: T.cocoa || "#5A3A22", fontWeight: depth === 0 ? 700 : 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "56%", background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0, fontSize: "inherit" }}>{node.name}</button>
+          : <span style={{ color: T.ink, fontWeight: depth === 0 ? 700 : 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "56%" }}>{node.name}</span>}
+        <span style={{ fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+      </div>
+      {node.children.map((c) => <OpeningWinrateRow key={c.name} node={c} depth={depth + 1} onOpenOpening={onOpenOpening} />)}
+    </>
+  );
+}
 function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
@@ -6089,27 +6290,59 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   const ready = chesscom && chesscom.status === "ready";
   const overall = useMemo(() => (ready ? chesscom.analyze([]) : null), [ready, chesscom && chesscom.games]);
   const ratingChanges = useMemo(() => (ready ? computeRatingChanges(chesscom.games) : new Map()), [ready, chesscom && chesscom.games]);
-  const openingStats = useMemo(() => {
-    if (!ready) return [];
-    const agg = {};
+  // (버그 수정) 예전엔 대국 하나를 "가장 깊이 매칭된 오프닝 이름" 딱 하나에만 집계했다 — 정석에서
+  // 일찍 이탈하는 대다수 대국이 얕은 상위 갈래(King's Pawn Game 등)로 몰려 표본이 커지고, 정석을
+  // 끝까지 따라간 소수 대국만 깊은 하위 갈래(Marshall Attack 등)에 잡혀 표본이 1~2판으로 작아진다.
+  // 그 결과 하위 갈래의 승률이 0%/100%로 요동쳐 보였다. 승률 숫자 자체는 왜곡이 아니라 실제 결과이므로
+  // 그대로 두되(1판 1승이면 100%가 맞다), 대국이 실제로 지나온 순서(얕은 이름→깊은 이름)에서 부모-자식
+  // 관계를 추론해 하위 오프닝을 상위 오프닝 아래 중첩해서 보여준다 — "이 100%는 상위 오프닝 전체
+  // 표본 중 1판짜리 하위 갈래"라는 맥락이 함께 보이도록.
+  const { openingStats, openingTree } = useMemo(() => {
+    if (!ready) return { openingStats: [], openingTree: [] };
+    const leaf = {};       // 이름별 "가장 깊이 매칭된" 대국만 집계(가장 많이 둔 오프닝에서 그대로 사용)
+    const parentOf = {};   // 이름 -> 그 이름 바로 앞에 나온(더 얕은) 이름
     for (const g of chesscom.games) {
-      let name = null;
+      const chain = []; let last = null;
       const lim = Math.min(g.moves.length, 16);
-      for (let i = 1; i <= lim; i++) { const nd = snapNode(g.moves.slice(0, i)); if (nd && nd.opening) name = nd.opening.name; }
-      if (!name) continue;
-      if (!agg[name]) agg[name] = { name, n: 0, w: 0, d: 0, l: 0 };
-      agg[name].n++; agg[name][g.result === "win" ? "w" : g.result === "loss" ? "l" : "d"]++;
+      for (let i = 1; i <= lim; i++) {
+        const nd = snapNode(g.moves.slice(0, i));
+        if (nd && nd.opening && nd.opening.name !== last) { chain.push(nd.opening.name); last = nd.opening.name; }
+      }
+      if (!chain.length) continue;
+      for (let i = 1; i < chain.length; i++) { if (!parentOf[chain[i]]) parentOf[chain[i]] = chain[i - 1]; }
+      const name = chain[chain.length - 1];
+      if (!leaf[name]) leaf[name] = { name, n: 0, w: 0, d: 0, l: 0 };
+      leaf[name].n++; leaf[name][g.result === "win" ? "w" : g.result === "loss" ? "l" : "d"]++;
     }
-    return Object.values(agg).map((o) => ({ ...o, wr: Math.round(100 * o.w / o.n) }));
+    const openingStats = Object.values(leaf).map((o) => ({ ...o, wr: o.n ? Math.round(100 * o.w / o.n) : 0 }));
+    const childrenOf = {};
+    for (const child in parentOf) { const p = parentOf[child]; (childrenOf[p] || (childrenOf[p] = [])).push(child); }
+    const allNames = new Set([...Object.keys(leaf), ...Object.keys(parentOf), ...Object.values(parentOf)]);
+    const memo = {};
+    // 노드의 표시 통계 = 자신의 대국 + 모든 하위 갈래 대국의 합 — 상위 오프닝 행이 곧 그 아래
+    // 중첩된 하위 오프닝들의 총합이 되도록(승률 보정이 아니라 단순 합산).
+    const rollup = (name) => {
+      if (memo[name]) return memo[name];
+      const own = leaf[name] || { n: 0, w: 0, d: 0, l: 0 };
+      let n = own.n, w = own.w, d = own.d, l = own.l;
+      for (const c of (childrenOf[name] || [])) { const cr = rollup(c); n += cr.n; w += cr.w; d += cr.d; l += cr.l; }
+      return (memo[name] = { name, n, w, d, l, wr: n ? Math.round(100 * w / n) : 0 });
+    };
+    const buildNode = (name) => ({ ...rollup(name), children: (childrenOf[name] || []).map(buildNode).sort((a, b) => b.n - a.n) });
+    const openingTree = [...allNames].filter((nm) => !parentOf[nm]).map(buildNode).filter((r) => r.n > 0).sort((a, b) => b.n - a.n);
+    return { openingStats, openingTree };
   }, [ready, chesscom && chesscom.games]);
   const mostUsed = useMemo(() => [...openingStats].sort((a, b) => b.n - a.n), [openingStats]);
-  const byWinrate = useMemo(() => openingStats.filter((o) => o.n >= 3).sort((a, b) => b.wr - a.wr || b.n - a.n), [openingStats]);
+  // (버그 보충) "최근 대국"이 최신 5판만 보여주고 더 예전 대국은 볼 방법이 없었다 — 전부 가져와
+  // 두고 5판씩 페이지를 넘겨 보게 한다(내 대국 목록·집중학습의 ListPager와 동일한 방식).
+  const RECENT_GAMES_PAGE_SIZE = 5;
+  const [recentPage, setRecentPage] = useState(0);
+  useEffect(() => { setRecentPage(0); }, [username]);
 
   if (chesscom && chesscom.status === "loading") return <p style={{ fontSize: 12, color: T.inkSoft, marginTop: 10 }}>기보를 불러오는 중…</p>;
   if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>;
   if (!ready) return null;
 
-  const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderTop: "1px solid #E4D5B6", fontSize: 12 };
   return (
     <div style={{ marginTop: 12 }}>
       {/* 프로필 */}
@@ -6145,12 +6378,15 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
-        const recent = [...chesscom.games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0)).slice(0, 5);
-        if (!recent.length) return null;
+        const allGames = [...chesscom.games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
+        if (!allGames.length) return null;
+        const pageCount = Math.max(1, Math.ceil(allGames.length / RECENT_GAMES_PAGE_SIZE));
+        const page = Math.min(recentPage, pageCount - 1);
+        const recent = allGames.slice(page * RECENT_GAMES_PAGE_SIZE, page * RECENT_GAMES_PAGE_SIZE + RECENT_GAMES_PAGE_SIZE);
         const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
         return (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>최근 대국</div>
+            <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><span style={{ fontSize: 12, fontWeight: 800, color: T.brass }}>최근 대국</span><span style={{ fontSize: 10.5, color: T.inkSoft }}>{allGames.length}판</span></div>
             {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; const rc = ratingChanges.get(g); return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -6168,6 +6404,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                 )}
               </div>
             ); })}
+            <ListPager page={page} setPage={setRecentPage} pageCount={pageCount} />
           </div>
         );
       })()}
@@ -6179,18 +6416,13 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           <div style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{mostUsed[0].n}판 · 승률 {mostUsed[0].wr}%</div>
         </div>
       )}
-      {/* 오프닝별 승률(높은→낮은) */}
-      {byWinrate.length > 0 && (
+      {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
+          그 아래 하위 갈래들의 합산임을 보여준다. */}
+      {openingTree.length > 0 && (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 2 }}>오프닝별 승률 <span style={{ fontWeight: 600, color: T.inkSoft }}>(3판 이상)</span></div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 2 }}>오프닝별 승률</div>
           <div>
-            {byWinrate.map((o) => (
-              <div key={o.name} style={rowStyle}>
-                {onOpenOpening ? <button onClick={() => onOpenOpening(o.name)} className="press" style={{ color: T.cocoa || "#5A3A22", fontWeight: 700, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "62%", background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0, fontSize: "inherit" }}>{o.name}</button>
-                  : <span style={{ color: T.ink, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "62%" }}>{o.name}</span>}
-                <span style={{ fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap" }}><b style={{ color: o.wr >= 55 ? T.best : o.wr >= 45 ? T.brass : T.blunder }}>{o.wr}%</b> · {o.w}/{o.d}/{o.l}</span>
-              </div>
-            ))}
+            {openingTree.map((node) => <OpeningWinrateRow key={node.name} node={node} depth={0} onOpenOpening={onOpenOpening} />)}
           </div>
         </div>
       )}
@@ -6252,6 +6484,52 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
     </div>
   );
 }
+// (기능) 문의/FAQ — 아직 등록된 FAQ는 없고(개발진이 추후 이 배열에 직접 채워 넣음), "문의하기"를
+// 누르면 Gmail 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
+const FAQ_ITEMS = [];
+function openInquiryEmail(user) {
+  const subject = "[OpenChess 문의]";
+  const body = [
+    "문의 내용을 아래에 자세히 적어주세요.",
+    "",
+    "─────────────",
+    "아이디: " + (user || ""),
+    "문의 유형: (버그 제보 / 기능 제안 / 기타)",
+    "─────────────",
+  ].join("\n");
+  const url = "https://mail.google.com/mail/?view=cm&fs=1&to=openchesskr@gmail.com&su=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+function FaqAccordionItem({ q, a }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderTop: "1px solid #E4D5B6" }}>
+      <button onClick={() => setOpen((v) => !v)} className="press" style={{ width: "100%", textAlign: "left", padding: "10px 2px", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{q}</span>
+        <ChevronDown size={14} style={{ color: T.inkSoft, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+      </button>
+      {open && <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 10px", lineHeight: 1.5 }}>{a}</p>}
+    </div>
+  );
+}
+function InquiryModal({ onClose, user }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><HelpCircle size={17} style={{ color: T.brass }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>문의 / FAQ</span></div>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>자주 묻는 질문을 먼저 확인해 보시고, 해결되지 않으면 아래 문의하기 버튼으로 이메일을 보내주세요.</p>
+        <div style={{ marginBottom: 14 }}>
+          {FAQ_ITEMS.length === 0
+            ? <p style={{ fontSize: 12, color: T.inkSoft }}>아직 등록된 FAQ가 없습니다.</p>
+            : FAQ_ITEMS.map((f, i) => <FaqAccordionItem key={i} q={f.q} a={f.a} />)}
+        </div>
+        <button onClick={() => openInquiryEmail(user)} className="press" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><MessageCircle size={16} /> 문의하기</button>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>Gmail 작성 화면으로 이동합니다 (openchesskr@gmail.com)</p>
+      </div>
+    </div>
+  );
+}
 function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
@@ -6259,6 +6537,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
   const [codevBusy, setCodevBusy] = useState(false);
   const [ccState, setCcState] = useState("idle");   // idle | checking | failed
   const [pending, setPending] = useState(null);
+  const [inquiryOpen, setInquiryOpen] = useState(false);
   useEffect(() => { setCc(profile.chesscom || ""); }, [profile.chesscom]);
   const linked = !!profile.chesscom;
   const verifyChesscom = async () => {
@@ -6380,6 +6659,16 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       </div>
 
       {/* (18차 UI10) chess.com 연동 UI는 프로필 편집 모달 안으로 이동 */}
+
+      {/* 문의 / FAQ */}
+      <div style={card}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2"><HelpCircle size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>문의 / FAQ</span></div>
+          <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>열기</button>
+        </div>
+        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문을 확인하거나, 이메일로 직접 문의할 수 있어요.</p>
+      </div>
+      {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
 
       {/* chess.com 계정 확인 모달 */}
       {pending && (
@@ -6701,7 +6990,7 @@ function notifIcon(kind) {
   if (kind === "level_up") return <Sparkles size={15} style={{ color: T.brassHi }} />;
   return <Info size={15} style={{ color: T.inkSoft }} />;
 }
-function NotificationBell({ myUid, onAccept, onReject }) {
+function NotificationBell({ myUid, onAccept, onReject, compact }) {
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   // (18차 UX4) 읽음/응답 처리한 알림이 30초 폴링(서버 반영 지연)으로 다시 미확인으로 되살아나지 않도록
@@ -6741,8 +7030,8 @@ function NotificationBell({ myUid, onAccept, onReject }) {
   const clearAll = () => { setItems([]); if (myUid) notifyDeleteAll(myUid); };
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: 34, height: 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-        <Bell size={16} />
+      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
       {open && (
@@ -6773,6 +7062,55 @@ function NotificationBell({ myUid, onAccept, onReject }) {
               ); })}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+// (버그 수정) 헤더의 "아이디 + 로그아웃"을 아바타 알약 하나로 묶는다 — 좁은 화면에서는 아바타만
+// 보여주고(이니셜), 이름은 펼침 메뉴 안에서만 보여줘 한 줄 폭을 아낀다. 넓은 화면에서는 아바타 옆에
+// 이름도 함께 표시한다. NotificationBell과 동일하게 바깥 클릭 시 자동으로 닫힌다.
+// (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·레벨·퍼즐 수·
+// 자주 두는 첫 수 — PublicProfileStats 재사용)를 보여주고, 그 아래 로그아웃 버튼을 둔다. 아바타/이름/
+// 아이디를 누르면 메뉴를 닫고 설정 탭의 내 프로필로 이동한다.
+function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+  const name = (profile.displayId || user) + roleIcon(user);
+  const initial = (profile.nickname || profile.displayId || user || "?")[0].toUpperCase();
+  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId };
+  const goToProfile = () => { setOpen(false); onGoToProfile(); };
+  return (
+    <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
+      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, padding: compact ? "3px 5px" : "4px 10px 4px 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
+        {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, objectFit: "cover", flexShrink: 0 }} />
+          : <span style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: compact ? 10.5 : 12, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initial}</span>}
+        {!compact && <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
+        <ChevronDown size={compact ? 12 : 14} style={{ color: T.brassHi, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+      </button>
+      {open && (
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: 300, maxWidth: "90vw", maxHeight: 460, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90, padding: 14 }}>
+          <div className="flex items-center gap-3 press" onClick={goToProfile} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") goToProfile(); }} style={{ marginBottom: 12, cursor: "pointer" }}>
+            {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
+              : <span style={{ width: 52, height: 52, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 21, flexShrink: 0 }}>{initial}</span>}
+            <div style={{ minWidth: 0 }}>
+              {myPub.title && <div style={{ maxWidth: 180, marginBottom: 3 }}><TitleBadge id={myPub.title} earned compact /></div>}
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.nickname || myPub.displayId || user}</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
+            </div>
+          </div>
+          <PublicProfileStats pub={myPub}
+            onOpenOpening={onOpenOpening && ((n) => { setOpen(false); onOpenOpening(n); })}
+            onOpenGame={onOpenGame && ((m) => { setOpen(false); onOpenGame(m); })}
+            onOpenGameAnalyze={onOpenGameAnalyze && ((m) => { setOpen(false); onOpenGameAnalyze(m); })}
+          />
+          <button onClick={() => { setOpen(false); onLogoutClick(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
         </div>
       )}
     </div>
@@ -7927,7 +8265,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} @keyframes dexLineDraw{to{stroke-dashoffset:0}} @media (prefers-reduced-motion: reduce){.dex-line{animation:none !important;stroke-dashoffset:0 !important}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       <GeoBackdrop />
       {/* (UI1) 모바일(좁은 화면)에서 로고/닉네임/로그아웃 등이 너무 붙어 보이던 문제 —
@@ -7936,48 +8274,45 @@ export default function App() {
           넓은 데스크탑 화면에서는 우측 버튼들이 본문 오른쪽 경계를 훌쩍 넘어 화면 맨 끝에 몰려 보였다.
           본문과 동일한 maxWidth 컨테이너로 헤더 내용을 감싸 정렬을 맞춘다. */}
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
-      <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: narrowHeader ? "8px 14px" : "10px 20px", flexWrap: "wrap", rowGap: 6, columnGap: narrowHeader ? 10 : 14 }}>
-        <div className="flex items-center" style={{ gap: narrowHeader ? 8 : 12 }}>
-          {/* (버그 수정) 로고 PNG 원본에 상하 약 25%씩 투명 여백이 박혀 있어, height를 크게 잡아도
-              실제 보이는 그림은 절반 정도뿐이었다(헤더가 불필요하게 커 보이는 주된 원인). 이미지 자체를
-              그 여백 없이 다시 잘라냈으므로, 이제 height 값이 곧 실제 로고 크기와 거의 같다 — 헤더를
-              불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 34 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-        </div>
-        {/* (버그 수정) 레벨 배지·아이디·로그아웃·검색·친구·채팅·알림까지 7개 요소를 한 flex 줄에 몰아넣고
-            줄바꿈에 맡겼더니, 좁은 화면에서 줄이 어디서 끊길지 예측할 수 없어 아이콘 한두 개만 외로이
-            세 번째 줄로 밀려나며 헤더가 불필요하게 커졌다(여백처럼 보이는 원인). 계정 정보 줄과 아이콘
-            줄을 처음부터 분리해 항상 최대 두 줄로만 끝나게 한다. */}
-        <div className="flex flex-col items-end" style={{ gap: 5 }}>
-          <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
-            {/* (18차 UI8) 레벨 UI를 아이디 왼쪽으로 이동, 레벨 텍스트·게이지는 좌우로 나란히 배치 */}
-            <LevelBadge totalXp={totalXp} compact={narrowHeader} />
-            {user ? (
-              <>
-                <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: narrowHeader ? 70 : 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(profile.displayId || user) + roleIcon(user)}</span>
-                <button onClick={() => setConfirmLogout(true)} className="press" style={{ padding: narrowHeader ? "5px 9px" : "6px 11px", borderRadius: 8, background: T.ebony3, color: T.ivory, border: "1px solid #000", fontSize: 12, cursor: "pointer" }}>로그아웃</button>
-              </>
-            ) : (
-              <>
-                <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 10px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>로그인</button>
-                <button onClick={() => openAuth("signup")} className="press" style={{ padding: narrowHeader ? "5px 10px" : "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>회원가입</button>
-              </>
-            )}
-          </div>
-          <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
-            <button onClick={() => setSearchOpen(true)} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 30 : 34, height: narrowHeader ? 30 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={16} /></button>
-            {user && <button onClick={() => setFriendsOpen(true)} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 30 : 34, height: narrowHeader ? 30 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-              <Users size={16} />
+      {/* (버그 수정) 계정 정보 줄과 아이콘 줄을 따로 두고 줄바꿈에 맡겼더니 헤더가 항상 2줄로 보였다 —
+          레벨 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
+          space-between으로 중앙 공백을 그룹 사이 여백으로 흡수한다. 모바일에서는 아이디 텍스트를
+          숨기고 아바타로, 요소 크기를 한 단계씩 줄여 폭이 좁아도 항상 한 줄을 유지한다. */}
+      <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: narrowHeader ? "8px 12px" : "10px 20px", flexWrap: "nowrap", columnGap: narrowHeader ? 6 : 14 }}>
+        {/* (버그 수정) 로고 PNG 원본에 상하 약 25%씩 투명 여백이 박혀 있어, height를 크게 잡아도
+            실제 보이는 그림은 절반 정도뿐이었다(헤더가 불필요하게 커 보이는 주된 원인). 이미지 자체를
+            그 여백 없이 다시 잘라냈으므로, 이제 height 값이 곧 실제 로고 크기와 거의 같다 — 헤더를
+            불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
+        <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+        <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
+          {/* (18차 UI8) 레벨 UI — 레벨 텍스트와 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지). */}
+          <LevelBadge totalXp={totalXp} compact={narrowHeader} />
+          {/* 검색·친구·채팅을 하나의 세그먼트로 묶는다 — 비로그인 상태에선 검색만 남아 평범한 버튼처럼 보인다.
+              (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
+              오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
+              모서리 radius를 직접 주고 컨테이너는 overflow:visible로 둬 배지가 잘리지 않게 한다. */}
+          <div className="flex items-center" style={{ borderRadius: 9, border: "1px solid " + T.brass, overflow: "visible", flexShrink: 0 }}>
+            <button onClick={() => setSearchOpen(true)} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => setFriendsOpen(true)} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+              <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
-            {/* (18차 UX7) 채팅 모아보기 버튼 — 친구 버튼 옆 */}
-            {user && <button onClick={() => setChatsOpen(true)} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 30 : 34, height: narrowHeader ? 30 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-              <MessageCircle size={16} />
+            {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
+            {user && <button onClick={() => setChatsOpen(true)} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+              <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
-            {/* (17차) 알림 종 아이콘 — 검색/친구 버튼 옆 */}
-            {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} />}
           </div>
+          {/* (버그 수정) 알림은 시급성이 다른 정보라 세그먼트에 묶지 않고 오른쪽에 따로 분리해 둔다. */}
+          {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
+          {user ? (
+            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setTab("set")} />
+          ) : (
+            <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
+              <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>로그인</button>
+              <button onClick={() => openAuth("signup")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>회원가입</button>
+            </div>
+          )}
         </div>
       </div>
       </header>
