@@ -4883,12 +4883,26 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
+  // (버그 수정, 도감 모식도와 동일) 퍼즐을 풀어 새 갈래가 고스트에서 실제 노드로 바뀔 때마다 y좌표를
+  // 커서 0부터 다시 매기면, 그 뒤에 있던 이미 그려진 노드들이 한꺼번에 밀려나 흔들려 보인다 — 한 번
+  // 배정된 y는 계속 캐싱해 절대 안 바뀌게 하고, 고스트가 실제 내부 노드로 바뀌어 더 이상 그 번호가
+  // 필요 없어지면(자식 위치의 평균으로 재계산되므로) 번호를 반납해 다음 새 리프/고스트가 재사용하게 한다.
+  const posCacheRef = useRef(new Map());
+  const nextPosRef = useRef(0);
+  const freeListRef = useRef([]);
   const { items, edges, width, height, curItem } = useMemo(() => {
+    const getPos = (key) => {
+      if (posCacheRef.current.has(key)) return posCacheRef.current.get(key);
+      const p = freeListRef.current.length ? freeListRef.current.pop() : nextPosRef.current++;
+      posCacheRef.current.set(key, p);
+      return p;
+    };
+    const reclaimPos = (key) => { if (posCacheRef.current.has(key)) { freeListRef.current.push(posCacheRef.current.get(key)); posCacheRef.current.delete(key); } };
     // (20차 기능3) 개발자(canEdit)는 편집을 위해 트리 전체를 항상 볼 수 있어야 한다 — 그렇지 않으면
     // 라인을 삭제/추가한 직후 자기가 방금 만든 결과(미완성 상태 포함)조차 안 보여 계속 편집할 수 없다.
     // 일반 유저에게만 "아직 두지 않은 수는 고스트로 가린다" 원칙을 적용한다.
     const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys);
-    let cursor = 0; const items = []; const edges = [];
+    const items = []; const edges = [];
     const curKeyStr = curKeys.join(" ");
     // 실제로 둔 수(revealed)는 그대로 펼쳐 보이고, 아직 두지 않은 자식은 "고스트"(내용은 가리되 갈래가
     // 있다는 사실만 보여주는 자리표시자)로 만든다 — 라인이 하나뿐인 것처럼 보이지 않도록.
@@ -4901,11 +4915,12 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
         const kpath = [...path, k.san];
         const kkey = kpath.map((s) => stripSuffix(s)).join(" ");
         if (!revealed || revealed.has(kkey)) kids.push(visit(k, kpath, depth + 1));
-        else { const ghost = { node: null, path: kpath, depth: depth + 1, key: kkey, ghost: true, y: cursor++ }; items.push(ghost); kids.push(ghost); }
+        else { const ghost = { node: null, path: kpath, depth: depth + 1, key: kkey, ghost: true, y: getPos(kkey) }; items.push(ghost); kids.push(ghost); }
       }
       it.isLeaf = rawKids.length === 0;   // 실제 데이터 기준 리프(고스트로 가려진 자식이 있으면 리프가 아님)
-      if (!kids.length) it.y = cursor++;
+      if (!kids.length) it.y = getPos(key);
       else {
+        reclaimPos(key);
         it.y = (kids[0].y + kids[kids.length - 1].y) / 2;
         kids.forEach((c) => edges.push([it, c]));
       }
@@ -4989,7 +5004,17 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     if (pointersRef.current.size < 2) pinchRef.current = null;
     if (pointersRef.current.size === 0) dragRef.current = null;
   };
-  const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z + (e.deltaY > 0 ? -0.12 : 0.12))); };
+  // (버그 수정, 도감 모식도와 동일) 마우스 휠은 확대/축소가 아니라 화면 이동(팬)으로 쓰고, 확대/축소는
+  // 우상단 버튼(과 두 손가락 핀치)으로만 하게 한다. React의 onWheel prop은 브라우저 스크롤 성능을
+  // 위해 passive 리스너로 등록되어 e.preventDefault()가 무시되므로(휠을 굴리면 웹사이트 전체가
+  // 같이 스크롤됨), ref에 직접 { passive: false } 리스너를 달아야 실제로 페이지 스크롤을 막는다.
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const handleWheel = (e) => { e.preventDefault(); setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY })); };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
   // (20차 기능1) 개발자 전용 — 리프(라인의 끝)에 "+"를 누르면 그 라인에 수를 하나 직접 추가한다.
   const [addAt, setAddAt] = useState(null);   // path(array)|null
   const [sanIn, setSanIn] = useState("");
@@ -5016,8 +5041,8 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheelZoom}
-        style={{ position: "relative", overflow: "hidden", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
+        style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
         <div className="no-pan flex" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
           <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
           <button onClick={() => setZoom(1)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
