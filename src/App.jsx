@@ -7192,7 +7192,10 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
               <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
             </div>
           </div>
-          <PublicProfileStats pub={myPub}
+          {/* (버그 수정) 이 드롭다운은 로그아웃 버튼까지 한눈에 보여야 하는데, chess.com 최근 대국·
+              오프닝별 승률까지 다 표시하면 내용이 너무 길어져 로그아웃 버튼이 화면 아래로 밀려났다 —
+              여기서는 chess.com 정보를 빼고, 자세한 내용은 "내 프로필"(설정 탭)에서 보게 한다. */}
+          <PublicProfileStats pub={myPub} hideChesscom
             onOpenOpening={onOpenOpening && ((n) => { setOpen(false); onOpenOpening(n); })}
             onOpenGame={onOpenGame && ((m) => { setOpen(false); onOpenGame(m); })}
             onOpenGameAnalyze={onOpenGameAnalyze && ((m) => { setOpen(false); onOpenGameAnalyze(m); })}
@@ -7335,7 +7338,7 @@ function FirstMovesDisplay({ firstMoves }) {
 }
 // (17차) 프로필 정보 확장 — 레벨/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
 // UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, hideChesscom }) {
   const chesscom = useChessCom(pub.chesscom);
   const lv = levelFromXp(pub.xp || 0);
   return (
@@ -7345,7 +7348,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze 
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
-      {pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+      {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
   );
 }
