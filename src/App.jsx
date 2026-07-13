@@ -3724,6 +3724,13 @@ const DEX_MIN_DEPTH = 5, DEX_ADOPT_CUTOFF = 10;
 // 눈에 띔). 한 부모의 형제 수를 이 상수로 못박아, 이론 수(book)는 전부 포함하고 나머지는 채택률
 // 상위 순으로만 채운다 — 실제 렌더링되는 형제 수를 늘 감당 가능한 범위로 유지한다.
 const DEX_MAX_CHILDREN = 8;
+// (버그 수정) 위 상한(8)도 MIN_DEPTH 구간(채택률과 무관하게 전부 후보인 자리)에서는 여전히 매
+// 깊이마다 최대치를 다 채울 수 있어, 그런 자리가 3~4단 연속되면(얕은 깊이일수록 흔함) 8^3~8^4 규모로
+// 부풀어 물려받은 자리 여유를 압도해 버렸다. 채택률로 이미 추려진(깊이 5 이후) 자리는 실제로 이
+// 상한까지 차는 경우가 드물어 그대로 두고, MIN_DEPTH 안(추려지지 않은) 자리만 상한을 더 낮게 잡아
+// 복합 증가의 밑수 자체를 줄인다.
+const DEX_MAX_CHILDREN_SHALLOW = 4;
+function dexCapFor(depth) { return depth < DEX_MIN_DEPTH ? DEX_MAX_CHILDREN_SHALLOW : DEX_MAX_CHILDREN; }
 function useOpeningTreeAuto(priorityRef) {
   const [version, setVersion] = useState(0);
   const mapRef = useRef(new Map());
@@ -3952,17 +3959,18 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         if (path.length === 0) ordered = filtered;
         else {
           let sanOrder = orderCacheRef.current.get(key);
+          const cap = dexCapFor(depth);
           if (!sanOrder) {
             let initial = centerOrderByAdopt(filtered).map((m) => m.san);
-            // (버그 수정) 위 DEX_MAX_CHILDREN 주석 참고 — 이론 수는 전부 남기고, 나머지는 채택률
-            // 상위 순으로만 상한까지 채운다.
-            if (initial.length > DEX_MAX_CHILDREN) {
+            // (버그 수정) 위 DEX_MAX_CHILDREN/dexCapFor 주석 참고 — 이론 수는 전부 남기고, 나머지는
+            // 채택률 상위 순으로만 상한까지 채운다.
+            if (initial.length > cap) {
               const book = initial.filter((s) => isBookMoveAt(key, s));
               const nonBook = initial.filter((s) => !isBookMoveAt(key, s))
                 .map((s) => filtered.find((m) => m.san === s))
                 .sort((a, b) => (b.adopt || 0) - (a.adopt || 0))
                 .map((m) => m.san);
-              const keep = new Set([...book, ...nonBook.slice(0, Math.max(0, DEX_MAX_CHILDREN - book.length))]);
+              const keep = new Set([...book, ...nonBook.slice(0, Math.max(0, cap - book.length))]);
               initial = initial.filter((s) => keep.has(s));
             }
             sanOrder = initial;
@@ -3971,7 +3979,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const newOnes = filtered.filter((m) => !sanOrder.includes(m.san)).map((m) => m.san);
             // (버그 수정) 이미 상한을 채운 뒤에 새로 나타난 수는, 이론 수가 아니면 더 안 늘린다 —
             // 이론 수는 큐레이션된 유한한 집합이라 예외로 항상 끼워 준다.
-            const toAdd = newOnes.filter((s) => isBookMoveAt(key, s) || sanOrder.length < DEX_MAX_CHILDREN);
+            const toAdd = newOnes.filter((s) => isBookMoveAt(key, s) || sanOrder.length < cap);
             if (toAdd.length) { sanOrder = [...sanOrder, ...toAdd]; orderCacheRef.current.set(key, sanOrder); }
           }
           ordered = sanOrder.map((s) => filtered.find((m) => m.san === s)).filter(Boolean);
@@ -4002,10 +4010,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // (버그 수정) 새 leaf에게 정확히 "1칸"만 주면, 그 leaf가 나중에 internal이 될 때(자식을 여러 개
     // 얻을 때) 물려줄 수 있는 여유가 전혀 없어 곧바로 그 좁은 1칸 안에 자식들이 눌려 들어갔다 —
     // 형제 수 상한(DEX_MAX_CHILDREN)만큼은 나중에 internal이 되어도 무리 없이 나눠 가질 수 있도록,
-    // leaf 하나가 처음 생길 때 "1칸"이 아니라 "상한만큼의 여유"를 미리 예약해 둔다(간단한 종점
-    // leaf만 남는 대부분의 경우엔 그냥 다소 넉넉한 간격으로 보일 뿐이고, 실제로 갈라지는 자리는
-    // 더 이상 극단적으로 좁아지지 않는다).
-    const LEAF_RESERVE = Math.max(2, Math.round(DEX_MAX_CHILDREN / 2));
+    // leaf 하나가 처음 생길 때 "1칸"이 아니라 "상한만큼의 여유"를 미리 예약해 둔다.
+    // (버그 수정) 그래도 MIN_DEPTH(5) 구간은 채택률과 무관하게 매 깊이마다 상한(8개)까지 형제가
+    // 생길 수 있어, 그런 자리가 3~4단 연속으로 이어지면(예: 킹스 갬빗처럼 얕은 깊이에서부터 넓게
+    // 갈라지는 라인) 물려받은 여유가 세대를 거칠 때마다 8배씩 줄어들어 결국 몇 px 안에 뭉쳤다 —
+    // 상한을 도입하기 전(최대 20~40갈래)보다는 훨씬 드물지만, 여전히 남아 있는 경우가 있다. 형제
+    // 수 상한 덕분에 이제 한 번에 필요한 폭이 최대 "상한+1"칸으로 작고 예측 가능해졌으므로, 물려받은
+    // 자리가 그보다 좁을 때만 그 뒤쪽 전체(이 방향의 캐시값 중 그 이상인 것 전부)를 필요한 만큼만
+    // 통째로 미는 것을 다시 허용한다 — 상한이 없던 예전 시도와 달리 한 번에 미는 양이 작고
+    // 유한해서(최대 8칸 안팎), 이 정도는 화면이 "흔들린다"고 느껴질 만큼 크지 않다.
+    const LEAF_RESERVE = DEX_MAX_CHILDREN * 3;
+    const MIN_GAP = 1;
     for (const dir of ["N", "S", "E", "W"]) {
       const cache = posCacheRef.current[dir];
       const order = leafList[dir];
@@ -4016,7 +4031,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         while (j < order.length && !cache.has(order[j].key)) j++;
         const count = j - i;
         const leftVal = i > 0 ? cache.get(order[i - 1].key) : -LEAF_RESERVE;
-        const rightVal = j < order.length ? cache.get(order[j].key) : leftVal + (count + 1) * LEAF_RESERVE;
+        let rightVal = j < order.length ? cache.get(order[j].key) : leftVal + (count + 1) * LEAF_RESERVE;
+        const needed = MIN_GAP * (count + 1);
+        if (rightVal - leftVal < needed) {
+          const delta = needed - (rightVal - leftVal);
+          for (const [k, v] of cache) { if (v >= rightVal) cache.set(k, v + delta); }
+          rightVal += delta;
+        }
         for (let k = 0; k < count; k++) cache.set(order[i + k].key, leftVal + (rightVal - leftVal) * (k + 1) / (count + 1));
         i = j;
       }
@@ -4033,9 +4054,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 절대 다시 갱신하지 않는다 — 루트 자신의 평균이 흔들려도 다른 블록들의 좌표계는 안 흔들린다.
     const rootPos = rootPosRef.current;
     for (const it of visible) if (it.depth === 1 && rootPos[it.dir] === undefined) rootPos[it.dir] = it.pos;
+    // (버그 수정) 위에서 기준점(rootPos)은 고정했지만, 정작 루트 자신(e4/d4/c4/Nf3)의 화면 위치는
+    // "그 순간의 자기 자신 pos(자식 평균, 매 렌더 다시 계산됨) - 고정된 기준점"으로 계산되고 있었다
+    // — 자기 자신의 평균은 트리가 자라며 계속 바뀌는데 기준점만 고정돼 있으니, 시간이 지날수록 루트
+    // 블록 자신이 "퍼짐 0"(칩 바로 옆) 자리에서 점점 벗어나 버렸다(정작 그 칩과 이어지는 회로
+    // 트레이스는 고정된 자리를 가리키므로, 결국 "정중앙에 첫 수가 없는" 것처럼 보였다). 루트는
+    // 정의상 항상 퍼짐 0이어야 하므로, 자기 자신의 평균과 무관하게 못박는다.
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
-      const spread = it.pos - (rootPos[it.dir] || 0);
+      const spread = it.depth === 1 ? 0 : it.pos - (rootPos[it.dir] || 0);
       const ld = it.depth - 1;
       if (it.dir === "N") { it.x = spread * VCOL; it.y = -(ROOT_GAP + ld * VROW); }
       else if (it.dir === "S") { it.x = spread * VCOL; it.y = ROOT_GAP + ld * VROW; }
