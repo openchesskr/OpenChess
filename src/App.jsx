@@ -680,12 +680,16 @@ async function puzzleCandidatesAt(engine, cur) {
   }
   return cands;
 }
-async function genPuzzleTree(engine, preSans, opts) {
+// (UX) onProgress(0~1) — 트리 확장 중 지금까지 만든 노드 수를 maxNodes 대비 대략적인 진행률로
+// 알려준다. 최종 노드 수는 미리 알 수 없어(재귀적으로 조건에 따라 가지치기) 정확한 %는 아니지만,
+// "퍼즐을 생성하는 중입니다" 게이지가 완전히 멈춰 있지 않고 자연스럽게 움직이는 정도로는 충분하다.
+async function genPuzzleTree(engine, preSans, opts, onProgress) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
     firstSan = null, maxNodes = 34, tagSeq = 0 } = opts || {};
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
+  const bumpNode = () => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes)); };
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
   async function expand(cur, depth, sawUserCapture) {
     if (depth >= maxPlies || nodeCount >= maxNodes) return [];
@@ -723,7 +727,7 @@ async function genPuzzleTree(engine, preSans, opts) {
       if (nodeCount >= maxNodes && out.length) break;
       const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(c.kind) : true;
       const node = { san: c.san, kind: c.kind, ev: c.ev, adopt: c.adopt, pass, children: [] };
-      nodeCount++;
+      bumpNode();
       if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       const cur2 = [...cur, c.san];
       if (isUserTurn) {
@@ -759,7 +763,7 @@ async function genPuzzleTree(engine, preSans, opts) {
     const color = preSans.length % 2 === 0 ? "w" : "b";
     if (!sanSrc(brd, stripSuffix(firstSan), color)) return null;
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
-    nodeCount++;
+    bumpNode();
     const cur2 = [...preSans, firstSan];
     try { const ev2 = await engine.evaluate(sansToFen(cur2), 8); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
@@ -787,6 +791,7 @@ async function genPuzzleTree(engine, preSans, opts) {
     for (const k of kids) tagLeaves(k, [...path, k.san]);
   })(tree, []);
   if (!lines.length) return null;
+  onProgress && onProgress(1);
   return { tree, lines, seq: tagSeq + lines.length };
 }
 
@@ -2617,7 +2622,7 @@ function brilliantArrows(sans, san) {
 // (UI/UX) 집중학습을 별개의 전체 창으로 띄우지 않고, 기존에 쓰던 집중학습 UI를 그대로
 // 체스보드 하단(왼쪽 칼럼)에 배치한다 — 오른쪽 칼럼은 집중학습 중에도 항상 수 블록 목록을 보여준다.
 // 상태/부수효과(퍼즐 자동저장 등)는 하나의 훅(useFocusAnalysis)에 모아 중복 실행을 막는다.
-function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canAdd, bumpContent, puzzles, contentVer }) {
+function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canAdd, bumpContent, puzzles, contentVer, requestPuzzleGen, puzzleGenProgress }) {
   const active = !!focus;
   const sans = active ? focus.sans : [];
   const san = active ? focus.san : "";
@@ -2730,8 +2735,13 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     })();
     return () => { cancelled = true; setAnalyzing(false); };
   }, [active, sansKey, san, engine && engine.status, chesscom && chesscom.status, stats && stats.total]);
+  // (버그 수정) 예전엔 생성 진행 중에 이 컴포넌트(집중 학습 화면)가 언마운트되면(예: 탭 전환) 이
+  // effect의 cleanup이 걸려 결과가 나와도 그냥 버려졌다 — 실제 엔진 계산은 App 최상단에 항상 떠 있는
+  // engine 큐에서 계속 진행되는데도(탭을 바꿔도 엔진 워커는 안 죽는다), "다 만들었으니 저장하라"는
+  // 신호만 컴포넌트 수명에 묶여 사라진 것. requestPuzzleGen(App 레벨, 항상 마운트)에 생성을 맡겨
+  // 이 컴포넌트가 사라져도 생성이 끝까지 진행되고 결과가 저장되도록 한다.
   useEffect(() => {
-    if (!active || !onSavePuzzle) return;
+    if (!active || !onSavePuzzle || !requestPuzzleGen) return;
     const id = sansKey + "|" + san;
     // (20차 기능1) 이미 트리 형식으로 저장된 퍼즐이면 재생성하지 않는다(트리 생성은 엔진 비용이 큼).
     // 구버전(선형 라인) 퍼즐은 재생성해 트리 형식으로 업그레이드한다(onSavePuzzle이 교체 저장).
@@ -2742,41 +2752,35 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     if (isPunishable) {
       if (curated) { onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
       if (engine && engine.status === "ready") {
-        let cancelled = false;
-        genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("punish")).then((gen) => {
-          if (cancelled || !gen) return;
-          const op = title || "오프닝";
-          onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
-        });
-        return () => { cancelled = true; };
+        const op = title || "오프닝";
+        requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("punish"), onProgress).then((gen) => gen && (
+          { id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+        )));
       }
       return;
     }
     // 부정확한 수 → 우위 점하기 (실수 응징과 동일 방식)
     if (kind === "inaccuracy" && engine && engine.status === "ready") {
-      let cancelled = false;
-      genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("advantage")).then((gen) => {
-        if (cancelled || !gen) return;
-        const op = title || "오프닝";
-        onSavePuzzle({ id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
-      });
-      return () => { cancelled = true; };
+      const op = title || "오프닝";
+      requestPuzzleGen("adv|" + id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("advantage"), onProgress).then((gen) => gen && (
+        { id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+      )));
+      return;
     }
     // 탁월한 수 → 기물 희생하기 (직전 수 애니메이션 후 탁월한 수 + 보상 실현까지 이어지는 트리)
     if (kind === "brilliant" && sans.length >= 1 && engine && engine.status === "ready") {
       const op = title || "오프닝";
-      let cancelled = false;
       // (기능1) 희생 테마는 "희생 수 자체"가 첫 수(firstSan)로 고정되며, sans 위치(=studied 수 san이 두어지기 직전)에서 둔다.
-      genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }).then((gen) => {
-        if (cancelled || !gen) return;
-        onSavePuzzle({ id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
-      });
-      return () => { cancelled = true; };
+      requestPuzzleGen("sac|" + id, (onProgress) => genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }, onProgress).then((gen) => gen && (
+        { id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+      )));
     }
-  }, [active, sansKey, san, kind, engine && engine.status]);
+  }, [active, sansKey, san, kind, engine && engine.status, requestPuzzleGen]);
   const baseId = active ? sansKey + "|" + san : "";
   const expectedPuzzleId = active ? (kind === "brilliant" ? "sac|" + baseId : kind === "inaccuracy" ? "adv|" + baseId : (["mistake", "blunder"].includes(kind) ? baseId : null)) : null;
   const existingPuzzle = (expectedPuzzleId && puzzles) ? puzzles.find((p) => p.id === expectedPuzzleId) : null;
+  // (UX) 아직 생성이 안 끝난 퍼즐의 진행률 — "퍼즐 풀기" 버튼 대신 진행 상황을 보여주는 데 쓴다.
+  const puzzleGenProgressVal = (expectedPuzzleId && !(existingPuzzle && existingPuzzle.tree) && puzzleGenProgress) ? puzzleGenProgress[expectedPuzzleId] : null;
   // (UI1) 집중 학습 중인 수를 이론 수로 등록 — 스냅샷의 기존 이론 수와 구분 없이 동일하게 취급됨(기능3)
   const posKey = sansKey;
   const addAsTheory = async () => {
@@ -2808,7 +2812,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     editing, setEditing, draft, setDraft, canEditExpl, saveExpl, delExpl, explainLong,
     showExpl, setShowExpl, editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
     openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
-    expectedPuzzleId, existingPuzzle, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
+    expectedPuzzleId, existingPuzzle, puzzleGenProgress: puzzleGenProgressVal, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
     masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
@@ -2843,7 +2847,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain, editing, setEditing, draft, setDraft,
     canEditExpl, saveExpl, delExpl, explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
-    stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, expectedPuzzleId, existingPuzzle,
+    stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, expectedPuzzleId, existingPuzzle, puzzleGenProgress,
     masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
@@ -2893,7 +2897,21 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {(canEdit || canAdd) && !isTheory && <button onClick={addAsTheory} className="press" title="이론 수로 추가" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Book size={14} /> 이론 수로 추가</button>}
           {/* (18차 UX8) 이 수가 이론 수라면 개발자 모드에서 삭제(비이론화) 가능 — 추가 버튼과 동일 레이아웃 */}
           {canEdit && isTheory && <button onClick={toggleUnbook} className="press" title="이론 수에서 삭제" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: "#F4A8A8", fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Trash2 size={14} /> 이론 수에서 삭제</button>}
-          {expectedPuzzleId && onOpenPuzzle && <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22" }}><Play size={14} /> 퍼즐 풀기</button>}
+          {/* (버그 수정) 퍼즐 생성이 끝나기 전에는 눌러도 아무 일도 안 벌어지던 "퍼즐 풀기" 버튼 대신,
+              지금 생성 중이라는 문구와 진행 게이지를 보여준다 — 탭을 옮겨도(App 레벨 큐 덕에) 생성은
+              계속 진행되므로, 다시 돌아오면 게이지가 이어서 채워지다 완료되면 정상 버튼으로 바뀐다. */}
+          {expectedPuzzleId && onOpenPuzzle && (
+            existingPuzzle && existingPuzzle.tree ? (
+              <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22" }}><Play size={14} /> 퍼즐 풀기</button>
+            ) : (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 13px", borderRadius: 10, background: T.ebony2, border: "1px solid #000" }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: T.brassHi, whiteSpace: "nowrap" }}>퍼즐을 생성하는 중입니다…</span>
+                <div style={{ width: 56, height: 6, borderRadius: 999, background: "rgba(255,255,255,.18)", overflow: "hidden", flexShrink: 0 }}>
+                  <div style={{ width: Math.round((puzzleGenProgress || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
+                </div>
+              </div>
+            )
+          )}
         </div>
       </div>
       {/* 헤더: 아이콘 · 수/이름(크게) · 평가치 */}
@@ -3249,7 +3267,7 @@ function AnalysisModal({ sans, engine, onClose }) {
     </div>
   );
 }
-function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, autoAnalyzeGame, onConsumeAutoAnalyze, dailyQuest }) {
+function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, autoAnalyzeGame, onConsumeAutoAnalyze, dailyQuest }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -3526,7 +3544,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     return () => { cc = true; };
   }, [key, liveOn]);
 
-  const fa = useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
+  const fa = useFocusAnalysis(focus, { chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -8418,6 +8436,12 @@ export default function App() {
   const [newUnlocks, setNewUnlocks] = useState(0);
   const [newTitles, setNewTitles] = useState(0); // (버그) 새로 획득한 칭호 수 — 도감 탭 빨간 배지
   const [puzzles, setPuzzles] = useState([]);
+  // (버그 수정) 퍼즐 생성(genPuzzleTree)이 집중 학습 화면의 effect에 묶여 있으면, 그 화면이 언마운트되는
+  // 탭 전환만으로 아직 안 끝난 생성이 통째로 버려졌다(엔진 자체는 App에 항상 떠 있어 계속 도는데도).
+  // 생성 요청·진행률을 이 항상-마운트된 App으로 끌어올려, 어느 탭에 있든 생성이 끝까지 이어지고
+  // 완료되면 저장되도록 한다. puzzleGenProgress: 퍼즐 id -> 진행률(0~1, 완료되면 항목 제거).
+  const [puzzleGenProgress, setPuzzleGenProgress] = useState({});
+  const puzzleGenInFlightRef = useRef(new Set());
   const [learnFocus, setLearnFocus] = useState(null);   // (UX4) 탭 이동에도 집중 학습 유지
   const [puzzleActive, setPuzzleActive] = useState(null);   // (UX4) 탭 이동에도 퍼즐 창 유지
   const [treeFocus, setTreeFocus] = useState([]);   // (UX4) 새로고침해도 이론 트리 에디터의 탐색 위치 유지
@@ -8656,6 +8680,21 @@ export default function App() {
       return [...prev, pz];
     });
   }, [deletedPuzzles, solved]);
+  // (버그 수정) 퍼즐 생성 요청의 단일 창구 — id별로 딱 한 번만 시작하고(다른 컴포넌트가 같은 퍼즐을
+  // 다시 요청해도 무시), 요청한 컴포넌트가 이후 언마운트되어도(탭 전환) 이 App은 항상 떠 있으므로
+  // run()이 끝까지 실행되어 결과가 저장된다. run은 (onProgress) => Promise<퍼즐객체|null>.
+  const requestPuzzleGen = useCallback((id, run) => {
+    if (puzzleGenInFlightRef.current.has(id)) return;
+    puzzleGenInFlightRef.current.add(id);
+    setPuzzleGenProgress((prev) => ({ ...prev, [id]: 0 }));
+    run((p) => setPuzzleGenProgress((prev) => (id in prev ? { ...prev, [id]: p } : prev)))
+      .then((pz) => { if (pz) onSavePuzzle(pz); })
+      .catch((e) => console.warn("퍼즐 생성 실패:", id, e))
+      .finally(() => {
+        puzzleGenInFlightRef.current.delete(id);
+        setPuzzleGenProgress((prev) => { if (!(id in prev)) return prev; const n = { ...prev }; delete n[id]; return n; });
+      });
+  }, [onSavePuzzle]);
   const onDeletePuzzle = useCallback((id) => {
     setPuzzles((prev) => {
       const removed = prev.find((x) => x.id === id);
@@ -8965,7 +9004,7 @@ export default function App() {
           동적으로 접히는 안드로이드 브라우저)에서 목록 맨 마지막 카드가 하단 탭에 살짝 가려 보이는
           경우가 있었다 — 여유를 더 둔다. */}
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
