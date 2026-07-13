@@ -1680,8 +1680,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
   // (버그 수정) 워커 하나로 포지션을 순서대로 평가하면 총 분석 시간이 포지션 수(N+1)에 정비례해
   // 늘어나 긴 대국일수록 끝없이 느려진다. depth·movetime(정확도)은 손대지 않고, 같은 엔진 프로필의
-  // 워커를 몇 개 더 띄워(이미 떠 있는 메인 워커 engine도 유휴 상태이므로 풀의 한 자리로 함께 쓴다)
-  // 포지션들을 나눠 동시에 계산해 총 시간만 줄인다.
+  // 전용 워커를 여러 개 띄워 포지션들을 나눠 동시에 계산해 총 시간만 줄인다.
   const fens = new Array(N + 1);
   {
     // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
@@ -1693,11 +1692,14 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     }
   }
   const poolTarget = Math.min(ANALYZE_POOL_SIZE[engine.profile] || 2, N + 1);
-  const extraCount = Math.max(0, poolTarget - 1);
-  const extraWorkers = extraCount > 0
-    ? (await Promise.all(Array.from({ length: extraCount }, () => bootAnalysisWorker(engine.urls)))).filter(Boolean)
-    : [];
-  const workers = [{ evaluateMulti: engine.evaluateMulti }, ...extraWorkers];
+  // (버그 수정) 예전엔 풀의 첫 자리로 앱 전역에서 공유하는 메인 엔진(engine.evaluateMulti)을 "유휴
+  // 상태이므로" 그대로 재사용했는데, 이 가정이 항상 맞지는 않았다 — 집중 학습의 실수 분석
+  // (useFocusAnalysis)처럼 게임 리뷰 모달과 무관하게 같은 큐에 평가를 계속 넣는 경로가 있어, 이미
+  // 보드에 긴 기보·많은 후보 수가 떠 있던 상태였다면 그 배경 작업 뒤에서 게임 리뷰의 워커 한 자리가
+  // 계속 대기해 전체 분석이 느려졌다. 지금은 메인 엔진 큐를 아예 재사용하지 않고 완전히 독립된
+  // 워커들로만 풀을 구성한다(부팅 실패로 하나도 못 띄우면 그때만 메인 엔진으로 폴백).
+  const dedicated = (await Promise.all(Array.from({ length: poolTarget }, () => bootAnalysisWorker(engine.urls)))).filter(Boolean);
+  const workers = dedicated.length ? dedicated : [{ evaluateMulti: engine.evaluateMulti }];
   let nextIdx = 0, doneCount = 0;
   async function runWorker(w) {
     for (;;) {
@@ -1711,7 +1713,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     }
   }
   await Promise.all(workers.map(runWorker));
-  extraWorkers.forEach((w) => w.terminate());
+  dedicated.forEach((w) => w.terminate());
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
   const graphCp = new Array(N + 1);
   for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
