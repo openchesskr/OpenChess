@@ -4112,11 +4112,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (const it of visible) {
       if (!it.groupKey) continue;
       let g = groupMap.get(it.groupKey);
-      if (!g) { g = { key: it.groupKey, name: it.groupName, minX: it.x, maxX: it.x + boxW, minY: it.y, maxY: it.y + boxH, count: 0 }; groupMap.set(it.groupKey, g); }
+      if (!g) { g = { key: it.groupKey, name: it.groupName, minX: it.x, maxX: it.x + boxW, minY: it.y, maxY: it.y + boxH, count: 0, rootX: it.x, rootY: it.y }; groupMap.set(it.groupKey, g); }
       if (it.x < g.minX) g.minX = it.x;
       if (it.x + boxW > g.maxX) g.maxX = it.x + boxW;
       if (it.y < g.minY) g.minY = it.y;
       if (it.y + boxH > g.maxY) g.maxY = it.y + boxH;
+      // (기능) 방향 안내판(edgeIndicators)에서 이 자리를 눌렀을 때, 바운딩 박스 한가운데(실제로는
+      // 아무 블록도 없는 빈 자리일 수 있음)가 아니라 이 오프닝이 실제로 "시작되는" 자리(이 이름이
+      // 처음 붙은 노드)로 정확히 이동하도록, 그 노드의 좌표를 따로 기억해 둔다.
+      if (it.isGroupRoot) { g.rootX = it.x; g.rootY = it.y; }
       g.count++;
     }
     // (버그 수정) 이론상 한 오프닝 이름은 더 구체적인 하위 이름이 나오기 전까지 얼마든지 깊고
@@ -4126,10 +4130,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 이내)의 영역만 점선으로 표시하고, 그보다 훨씬 넓게 퍼진 상위 오프닝은 표시를 건너뛴다(대신
     // 그 안의 더 구체적인 하위 오프닝들은 각자 적당한 크기라면 정상적으로 표시된다).
     const MAX_GROUP_SPAN = 2600;
-    const groups = [...groupMap.values()]
+    const candidates = [...groupMap.values()]
       .map((g) => ({ ...g, minX: g.minX - GROUP_PAD, minY: g.minY - GROUP_PAD, maxX: g.maxX + GROUP_PAD, maxY: g.maxY + GROUP_PAD }))
       .filter((g) => g.maxX - g.minX <= MAX_GROUP_SPAN && g.maxY - g.minY <= MAX_GROUP_SPAN)
       .sort((a, b) => (b.maxX - b.minX) * (b.maxY - b.minY) - (a.maxX - a.minX) * (a.maxY - a.minY));
+    // (버그 수정) 부모-자식(중첩) 관계가 아닌 서로 다른 오프닝의 영역이 완전히 겹치지 않으면서도
+    // 살짝 걸쳐 있으면(형제 갈래끼리 자리가 가까울 때 흔함) 점선 테두리끼리 지저분하게 교차해
+    // 보였다 — 넓이가 큰 것부터 순서대로 "이미 그리기로 한 영역들"과 비교해, 완전히 포함되는
+    // 관계(중첩, 정상)가 아니면서 겹치기만 하는 영역은 그리지 않고 건너뛴다.
+    const contains = (outer, inner) => inner.minX >= outer.minX && inner.maxX <= outer.maxX && inner.minY >= outer.minY && inner.maxY <= outer.maxY;
+    const overlaps = (a, b) => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
+    const groups = [];
+    for (const g of candidates) {
+      const conflict = groups.some((p) => overlaps(g, p) && !contains(p, g) && !contains(g, p));
+      if (!conflict) groups.push(g);
+    }
     return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
   // (버그 수정) 검색해서 오프닝을 고르면 그 갈래만 남기고 나머지를 다 숨기던 방식이 오히려 트리
@@ -4331,6 +4346,53 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       return Math.hypot(sx - centerX, sy - centerY);
     };
   }, [items, pan, zoom, priorityRef]);
+  // (기능) 건물 청사진의 방향 안내판처럼, 지금 화면 밖에 있는 주요 오프닝 갈래가 어느 방향에
+  // 있는지 뷰포트 가장자리에 화살표+이름으로 표시한다 — 점선 영역(위 groups)은 화면 안에 보이는
+  // 갈래를 구분해 주지만, 화면 밖으로 팬/줌해 나간 갈래는 어디 있는지 전혀 알 수 없었다. 형제가
+  // 어느 정도(3개 이상) 있는 그룹만 후보로 삼아(너무 자잘한 갈래로 화살표가 도배되지 않도록),
+  // 화면 중심에서 그 그룹 중심으로 향하는 각도를 구해 가장자리에 배치한다. 같은 방향(22.5도 단위)에
+  // 여러 갈래가 겹치면 가장 가까운 것 하나만 남긴다.
+  const edgeIndicators = useMemo(() => {
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const w = rect.width, h = rect.height;
+    const cx = w / 2, cy = h / 2;
+    // (버그 수정) 화살표 알약(pill)이 방향에 따라 회전하면서 그 자신의 너비만큼 중심점에서 더
+    // 밀려나올 수 있어(가로로 눕는 방향일수록 특히), 여백을 너무 좁게 잡으면 뷰포트 테두리
+    // (overflow:hidden)에 잘려 보였다 — 알약 자신의 대략적인 반너비만큼 넉넉히 여백을 둔다.
+    const MARGIN = 100;
+    const halfW = w / 2 - MARGIN, halfH = h / 2 - MARGIN;
+    const candidates = [];
+    for (const g of groups) {
+      if (g.count < 3) continue;
+      const gcx = (g.minX + g.maxX) / 2, gcy = (g.minY + g.maxY) / 2;
+      const sx = pan.x + gcx * zoom, sy = pan.y + gcy * zoom;
+      const gw = (g.maxX - g.minX) * zoom, gh = (g.maxY - g.minY) * zoom;
+      // 이미 화면 안에 (일부라도) 보이는 그룹은 점선 영역 자체로 충분히 구분되니 화살표가 필요 없다.
+      const onScreen = sx + gw / 2 > 0 && sx - gw / 2 < w && sy + gh / 2 > 0 && sy - gh / 2 < h;
+      if (onScreen) continue;
+      const dx = sx - cx, dy = sy - cy;
+      if (dx === 0 && dy === 0) continue;
+      const angle = Math.atan2(dy, dx);
+      // (버그 수정) 눌렀을 때 바운딩 박스 한가운데(실제로는 블록이 없는 빈 자리일 수 있음)가
+      // 아니라, 이 오프닝 이름이 실제로 시작되는 노드(rootX/rootY)로 정확히 이동하게 한다.
+      candidates.push({ key: g.key, name: g.name, angle, dist: Math.hypot(dx, dy), dx, dy, targetX: g.rootX, targetY: g.rootY });
+    }
+    const BUCKET = Math.PI / 8;
+    const buckets = new Map();
+    for (const c of candidates) {
+      const b = Math.round(c.angle / BUCKET);
+      const cur = buckets.get(b);
+      if (!cur || c.dist < cur.dist) buckets.set(b, c);
+    }
+    return [...buckets.values()].map((c) => {
+      const len = Math.hypot(c.dx, c.dy) || 1;
+      const dirX = c.dx / len, dirY = c.dy / len;
+      const scale = Math.min(dirX !== 0 ? Math.abs(halfW / dirX) : Infinity, dirY !== 0 ? Math.abs(halfH / dirY) : Infinity);
+      const px = cx + dirX * scale, py = cy + dirY * scale;
+      const angleDeg = Math.atan2(dirY, dirX) * 180 / Math.PI;
+      return { key: c.key, name: c.name, x: px, y: py, angleDeg, targetX: c.targetX, targetY: c.targetY };
+    });
+  }, [groups, pan, zoom]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
@@ -4384,7 +4446,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             먼저 그려 중첩된 더 좁은(대체로 안쪽, 더 구체적인) 하위 오프닝 영역이 그 위에 오게 한다. */}
         {groups.map((g) => (
           <div key={"group-" + g.key} style={{ position: "absolute", left: g.minX, top: g.minY, width: g.maxX - g.minX, height: g.maxY - g.minY, border: "1.5px dashed rgba(138,90,43,.45)", borderRadius: 12, background: "rgba(196,154,80,.05)", pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
-            <span style={{ position: "absolute", left: 10, top: 6, fontSize: 15, fontWeight: 800, color: "rgba(122,90,43,.28)", whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{g.name}</span>
+            {/* (버그 수정) 이름을 한 줄로 고정(nowrap)해 두면 영역 폭보다 긴 이름이 잘려서 읽을 수
+                없었다 — 영역 폭 안에서 줄바꿈되게 하고, 그래도 다 못 담을 만큼 길면(아주 좁은 영역)
+                말줄임(ellipsis)으로 최소 앞부분은 읽히게 한다. */}
+            <span style={{ position: "absolute", left: 10, top: 6, right: 8, fontSize: 14, fontWeight: 800, color: "rgba(122,90,43,.32)", whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.25, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden", fontFamily: "ui-monospace,monospace" }}>{g.name}</span>
           </div>
         ))}
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
@@ -4495,6 +4560,22 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               : { left: coord(openItem).x + boxW + 10, top: Math.max(0, coord(openItem).y + boxH / 2 - 150) }} />
         )}
       </div>
+      {/* (기능) 건물 청사진의 방향 안내판 — 화면 밖으로 나간 주요 오프닝 갈래가 어느 방향에 있는지
+          뷰포트 가장자리에 화살표+이름으로 알려준다. 팬/줌과 무관하게 뷰포트에 고정되도록, 팬/줌이
+          적용되는 트랜스폼 div 바깥(화면 좌표계)에 그린다. 눌러서 바로 그 방향으로 이동할 수 있다. */}
+      {edgeIndicators.map((ind) => (
+        // (버그 수정) 알약 전체를 방향대로 돌리고 글자만 반대로 되돌리면(중첩 transform), 회전한
+        // 부모의 flex 배치 축을 따라 글자가 비스듬히 놓인 것처럼 보여 오히려 읽기 어려웠다 — 알약
+        // 자체는 항상 수평으로 두고(늘 똑바로 읽힘), 작은 화살표 아이콘 하나만 방향대로 돌린다.
+        <button key={"edge-" + ind.key} className="no-pan" onClick={() => {
+          userPannedRef.current = true;
+          const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+          setPan({ x: rect.width / 2 - (ind.targetX + boxW / 2) * zoom, y: rect.height / 2 - (ind.targetY + boxH / 2) * zoom });
+        }} style={{ position: "absolute", left: ind.x, top: ind.y, transform: "translate(-50%,-50%)", zIndex: 55, display: "flex", alignItems: "center", gap: 4, padding: "3px 9px 3px 6px", borderRadius: 999, background: "rgba(36,21,9,.88)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 10.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", cursor: "pointer", boxShadow: "0 2px 8px -2px rgba(0,0,0,.6)", whiteSpace: "nowrap" }}>
+          <ChevronRight size={12} style={{ flexShrink: 0, transform: "rotate(" + ind.angleDeg + "deg)" }} />
+          <span style={{ display: "inline-block", maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis" }}>{ind.name}</span>
+        </button>
+      ))}
     </div>
   );
 }
