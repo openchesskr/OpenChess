@@ -3879,6 +3879,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 겹치지 않을 정도의 여유를 준다.
   const VCOL = 108, VROW = 86, HCOL = 158, HROW = 68;
   const ROOT_GAP = 90;
+  // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
+  const CHIP_SIZE = 60;
   // (버그 수정) 세 가지 방식을 각각 시도했지만 모두 문제가 있었다.
   // · "매번 방향별로 빈틈없이 처음부터 정수 번호를 다시 매기는" 방식은 구조는 항상 올바르지만,
   //   형제 하나만 새로 생겨도 그 뒤(오른쪽/아래)의 무관한 블록 수백 개까지 번호가 밀려 화면
@@ -3914,6 +3916,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (그 방향의 첫 렌더에서) 영원히 고정한다 — 루트 자신의 평균이 그 뒤로 계속 흔들려도 다른
   // 블록들의 좌표계 원점은 더 이상 따라 흔들리지 않는다.
   const rootPosRef = useRef({});
+  // (버그 수정) 나침반 네 팔의 "안쪽" 상대 좌표는 rootPosRef로 안정시켰지만, 트리 전체를 캔버스
+  // 안에 담기 위한 이동량(centerX/centerY, "그리는 원점")은 매 렌더 현재 bounding box(minX/minY)
+  // 로부터 매번 새로 계산돼, 어느 방향으로든 트리가 조금만 더 뻗어도(흔한 일 — 20초 가까이 계속
+  // 새 수가 생김) 화면에 보이는 모든 블록이 그 변화량만큼 통째로 미끄러지듯 이동했다 — 개별 블록
+  // 겹침·순서와는 무관한, "카메라(시점) 자체가 자동으로 움직이는" 별도의 원인이었다. bounding box가
+  // 얼마나 자라든, 트리를 얹는 원점은 처음 자리 잡을 때 한 번만 정하고 그 뒤로는 절대 다시 옮기지
+  // 않는다 — 이후 더 뻗어나가는 블록은 (필요하면) 캔버스의 처음 예상 못 한 여백 밖으로도 그냥
+  // 그려지고(SVG는 overflow:visible, 블록 div들도 잘리지 않음), 사용자가 팬해서 보면 된다.
+  const centerFrozenRef = useRef(null);
   const { items, edges, width, height, centerX, centerY } = useMemo(() => {
     const items = []; const edges = [];
     const leafList = { N: [], S: [], E: [], W: [] };
@@ -4041,7 +4052,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       if (it.y < minY) minY = it.y; if (it.y > maxY) maxY = it.y;
     }
     const PAD = 200;
-    const centerX = -minX + PAD, centerY = -minY + PAD;
+    if (!centerFrozenRef.current) centerFrozenRef.current = { x: -minX + PAD, y: -minY + PAD };
+    const centerX = centerFrozenRef.current.x, centerY = centerFrozenRef.current.y;
     for (const it of visible) { it.x += centerX; it.y += centerY; }
     return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
@@ -4292,6 +4304,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+          {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
+              "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
+              짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
+          {(() => {
+            const ccx = centerX + boxW / 2, ccy = centerY + boxH / 2, half = CHIP_SIZE / 2;
+            const traces = {
+              N: [ccx, ccy - half, ccx, centerY - ROOT_GAP + boxH],
+              S: [ccx, ccy + half, ccx, centerY + ROOT_GAP],
+              E: [ccx + half, ccy, centerX + ROOT_GAP, ccy],
+              W: [ccx - half, ccy, centerX - ROOT_GAP + boxW, ccy],
+            };
+            return Object.entries(traces).map(([dir, [x1, y1, x2, y2]]) => (
+              <line key={"chip-trace-" + dir} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.brass} strokeWidth={2} opacity={0.5} strokeLinecap="round" />
+            ));
+          })()}
           {edges.map(([p, c]) => {
             if (p.depth === 0) return null;
             const pc = coord(p), cc2 = coord(c);
@@ -4319,6 +4346,22 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               style={isSel ? { strokeDasharray: "7 5" } : undefined} />;
           })}
         </svg>
+        {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
+            보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
+        <div style={{ position: "absolute", left: centerX + boxW / 2 - CHIP_SIZE / 2, top: centerY + boxH / 2 - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, pointerEvents: "none", zIndex: 2 }}>
+          <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + T.brass, boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
+          {[0, 1, 2].map((i) => (
+            <React.Fragment key={i}>
+              <div style={{ position: "absolute", left: 11 + i * 15, top: -4, width: 6, height: 4, background: T.brass, borderRadius: 1, opacity: 0.75 }} />
+              <div style={{ position: "absolute", left: 11 + i * 15, bottom: -4, width: 6, height: 4, background: T.brass, borderRadius: 1, opacity: 0.75 }} />
+              <div style={{ position: "absolute", top: 11 + i * 15, left: -4, width: 4, height: 6, background: T.brass, borderRadius: 1, opacity: 0.75 }} />
+              <div style={{ position: "absolute", top: 11 + i * 15, right: -4, width: 4, height: 6, background: T.brass, borderRadius: 1, opacity: 0.75 }} />
+            </React.Fragment>
+          ))}
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: T.brassHi }}>
+            <Cpu size={26} strokeWidth={1.6} />
+          </div>
+        </div>
         {items.map((it) => {
           const { x, y } = coord(it);
           const isOpen = openKey === it.key;
