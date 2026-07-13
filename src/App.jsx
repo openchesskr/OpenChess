@@ -3885,7 +3885,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (VCOL). 동/서(가로) 방향은 반대로 깊이 간격(HCOL)은 촘촘히, 형제 퍼짐(세로, HROW)에 라벨이
   // 겹치지 않을 정도의 여유를 준다.
   const VCOL = 108, VROW = 86, HCOL = 158, HROW = 68;
-  const ROOT_GAP = 90;
+  // (버그 수정) 남/북 팔은 "가로로 퍼진(spread) x"가, 동/서 팔은 "깊이로 뻗은(depth) x"가 같은
+  // 화면 x축을 공유한다(y축도 마찬가지, 역할만 바뀜) — 즉 네 팔은 서로 독립적으로 얼마든지
+  // 넓어지거나 깊어질 수 있는데, 트리가 아주 커지면(수천 개) 한 팔이 충분히 넓어지고 이웃 팔이
+  // 충분히 깊어져 우연히 같은 좌표에서 서로 다른 갈래의 블록이 겹치는 경우가 생겼다(연결선이
+  // 서로 다른 오프닝을 가로질러 어지럽게 겹쳐 보이는 원인). 각 팔이 중심에서 시작하는 최소 거리를
+  // 넉넉히 늘려, 실제 사용 범위에서는 이런 교차 충돌이 일어나기 전에 트리 로딩이 끝나거나 사용자가
+  // 이미 다른 곳을 보고 있을 만큼 여유를 둔다(완전한 보장은 아니지만, 실사용에서 충분히 드물게 만든다).
+  const ROOT_GAP = 260;
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
   // (버그 수정) 세 가지 방식을 각각 시도했지만 모두 문제가 있었다.
@@ -3932,14 +3939,27 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 않는다 — 이후 더 뻗어나가는 블록은 (필요하면) 캔버스의 처음 예상 못 한 여백 밖으로도 그냥
   // 그려지고(SVG는 overflow:visible, 블록 div들도 잘리지 않음), 사용자가 팬해서 보면 된다.
   const centerFrozenRef = useRef(null);
-  const { items, edges, width, height, centerX, centerY } = useMemo(() => {
+  const { items, edges, width, height, centerX, centerY, groups } = useMemo(() => {
     const items = []; const edges = [];
     const leafList = { N: [], S: [], E: [], W: [] };
     // 트리 구조(부모-자식, 방향)만 먼저 만들고, leaf 좌표는 아래에서 보간으로 채운다.
-    const visit = (san, path, depth, adopt, kind, evalCp, name, dir) => {
+    // (기능) 오프닝 이름은 한 번 붙으면(예: "Caro-Kann Defense: Advance Variation") 더 구체적인
+    // 하위 이름이 나오기 전까지 그 아래 모든 수에 똑같이 반복해서 붙는다 — 블록마다 매번 같은 긴
+    // 이름을 라벨로 달면 화면이 지저분해진다. 부모로부터 물려받은 "지금까지의 이름"(ancestorGroup)과
+    // 비교해, 이 수에서 처음으로 (더 구체적인) 새 이름이 붙었는지(isGroupRoot) 판정하고, 같은
+    // groupKey(그 이름이 처음 붙은 조상의 key)를 공유하는 노드들을 나중에 하나의 점선 영역으로
+    // 묶어 배경에 이름을 한 번만 표시한다(아래 groups 계산 참고). 부모의 이름과 자식의 이름이
+    // 같으면(반복) 그룹을 이어가고, 다르면(새 이름) 새 그룹을 연다.
+    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, ancestorGroup) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
-      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      // (기능) 깊이 1(e4/d4/c4/Nf3 자신)은 나침반 정중앙 바로 옆이라 그 자리에서 점선 영역이
+      // 시작되면 칩 장식과 겹쳐 지저분해 보인다 — 루트 자신의 이름(King's Pawn Game 등)은 예전처럼
+      // 블록 바로 아래 한 줄 라벨로만 보여주고, 점선 그룹 묶기는 깊이 2부터 시작한다.
+      const isGroupRoot = depth >= 2 && !!(name && name !== (ancestorGroup ? ancestorGroup.name : null));
+      const groupKey = isGroupRoot ? key : (ancestorGroup ? ancestorGroup.key : null);
+      const groupName = isGroupRoot ? name : (ancestorGroup ? ancestorGroup.name : null);
+      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, groupKey, groupName, isGroupRoot, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
       if (rawMoves && rawMoves.length) {
         // (버그 수정) 예전엔 "자식 자신의 데이터가 이미 로드됐는지"(treeData.has(자식 키))로
@@ -3990,7 +4010,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           const t = tiered.find((x) => x.san === m.san);
           const nm = nameOverride(key, m.san) ?? m.name ?? null;
           const childDir = path.length === 0 ? DIR_OF_ROOT[stripSuffix(m.san)] : dir;
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir));
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey ? { key: groupKey, name: groupName } : null));
         }
       }
       if (depth >= 1) { if (!kids.length) leafList[dir].push(it); else it.kids = kids; }
@@ -3999,7 +4019,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null, null, null);
+    visit(null, [], 0, 100, null, null, null, null, null);
     // 방향별로, 지금 실제로 보이는 leaf들을 현재 형제 순서(DFS 순서) 그대로 훑으면서 좌표 캐시를
     // 채운다. 이미 캐시에 있는 값은 절대 다시 바꾸지 않는다(그래야 흔들리지 않는다) — 새로 나타난
     // leaf만, 바로 앞뒤로 이미 확정된 이웃의 캐시 값 "사이"를 보간해 끼워 넣는다. 자리를 넓히려고
@@ -4082,7 +4102,35 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     if (!centerFrozenRef.current) centerFrozenRef.current = { x: -minX + PAD, y: -minY + PAD };
     const centerX = centerFrozenRef.current.x, centerY = centerFrozenRef.current.y;
     for (const it of visible) { it.x += centerX; it.y += centerY; }
-    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY };
+    // (기능) 같은 오프닝 이름을 공유하는 노드들(부모로부터 물려받아 groupKey가 같은 것들)의
+    // 바운딩 박스를 모아, 그 오프닝의 하위 갈래 전체를 점선 영역 하나로 묶어 배경에 이름을 한 번만
+    // 보여준다 — 블록마다 반복해서 이름을 달지 않아도 된다. 더 구체적인(중첩된) 하위 오프닝은
+    // 부모 오프닝의 영역 안에 더 작은 자기 영역을 갖는데, 넓이가 큰 순으로(대체로 바깥쪽) 먼저
+    // 그려서 좁은(대체로 안쪽) 영역이 그 위에 겹쳐 보이게 한다.
+    const GROUP_PAD = 22;
+    const groupMap = new Map();
+    for (const it of visible) {
+      if (!it.groupKey) continue;
+      let g = groupMap.get(it.groupKey);
+      if (!g) { g = { key: it.groupKey, name: it.groupName, minX: it.x, maxX: it.x + boxW, minY: it.y, maxY: it.y + boxH, count: 0 }; groupMap.set(it.groupKey, g); }
+      if (it.x < g.minX) g.minX = it.x;
+      if (it.x + boxW > g.maxX) g.maxX = it.x + boxW;
+      if (it.y < g.minY) g.minY = it.y;
+      if (it.y + boxH > g.maxY) g.maxY = it.y + boxH;
+      g.count++;
+    }
+    // (버그 수정) 이론상 한 오프닝 이름은 더 구체적인 하위 이름이 나오기 전까지 얼마든지 깊고
+    // 넓게 이어질 수 있어(예: "Caro-Kann Defense"처럼 세부 변형이 갈리기 전까지의 큰 갈래), 그
+    // 영역을 그대로 다 묶으면 캔버스 대부분을 덮는 거대한 점선 상자가 되어 오히려 더 지저분해
+    // 보였다 — 한눈에 "이 구간이 묶여 있다"고 알아볼 수 있는 적당한 크기(가로세로 각각 이 정도
+    // 이내)의 영역만 점선으로 표시하고, 그보다 훨씬 넓게 퍼진 상위 오프닝은 표시를 건너뛴다(대신
+    // 그 안의 더 구체적인 하위 오프닝들은 각자 적당한 크기라면 정상적으로 표시된다).
+    const MAX_GROUP_SPAN = 2600;
+    const groups = [...groupMap.values()]
+      .map((g) => ({ ...g, minX: g.minX - GROUP_PAD, minY: g.minY - GROUP_PAD, maxX: g.maxX + GROUP_PAD, maxY: g.maxY + GROUP_PAD }))
+      .filter((g) => g.maxX - g.minX <= MAX_GROUP_SPAN && g.maxY - g.minY <= MAX_GROUP_SPAN)
+      .sort((a, b) => (b.maxX - b.minX) * (b.maxY - b.minY) - (a.maxX - a.minX) * (a.maxY - a.minY));
+    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
   // (버그 수정) 검색해서 오프닝을 고르면 그 갈래만 남기고 나머지를 다 숨기던 방식이 오히려 트리
   // 전체 맥락을 잃게 해 불편하다는 피드백 — 이제 트리는 항상 전체를 보여주고, 대신 고른 오프닝으로
@@ -4330,6 +4378,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
+        {/* (기능) 오프닝 이름이 하위 갈래까지 계속 반복돼(예: "Caro-Kann Defense: Advance Variation"이
+            블록마다 매번 붙는 문제) 화면이 지저분해지는 대신, 같은 이름을 공유하는 갈래 전체를 점선
+            영역 하나로 묶고 배경에 이름을 한 번만 크게(옅게) 띄운다. 넓이가 큰(대체로 바깥쪽) 영역을
+            먼저 그려 중첩된 더 좁은(대체로 안쪽, 더 구체적인) 하위 오프닝 영역이 그 위에 오게 한다. */}
+        {groups.map((g) => (
+          <div key={"group-" + g.key} style={{ position: "absolute", left: g.minX, top: g.minY, width: g.maxX - g.minX, height: g.maxY - g.minY, border: "1.5px dashed rgba(138,90,43,.45)", borderRadius: 12, background: "rgba(196,154,80,.05)", pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+            <span style={{ position: "absolute", left: 10, top: 6, fontSize: 15, fontWeight: 800, color: "rgba(122,90,43,.28)", whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{g.name}</span>
+          </div>
+        ))}
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
@@ -4421,7 +4478,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               </button>
               {/* (버그 수정) rowH를 늘려 아래쪽 여유를 벌렸지만, 그래도 극단적으로 긴 이름이 들어오면
                   안전하게 2줄에서 말줄임(ellipsis)해 다음 줄 블록과 절대 겹치지 않도록 한다. */}
-              {it.name && (
+              {/* (기능) 깊이 2부터는 오프닝 이름을 블록마다 반복해서 보여주지 않는다 — 위 groups
+                  점선 영역과 배경 워터마크가 그 역할을 대신한다. 깊이 1(첫 수) 자신만 예전처럼
+                  블록 바로 아래 라벨을 유지한다. */}
+              {it.depth === 1 && it.name && (
                 <div style={{ position: "absolute", left: -8, top: boxH + 2, width: boxW + 16, maxHeight: 8 * 1.15 * 2, textAlign: "center", fontSize: 8, fontWeight: 700, color: "rgba(122,102,80,.85)", lineHeight: 1.15, wordBreak: "keep-all", pointerEvents: "none", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", textOverflow: "ellipsis" }}>{it.name}</div>
               )}
             </div>
