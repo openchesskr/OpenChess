@@ -6807,10 +6807,13 @@ function findOpeningPathByFuzzyName(name) {
 // 파일 탐색기 같은 계통도 느낌을 준다. 각 노드의 수치는 자신 + 모든 하위 갈래의 합산(rollup)이라,
 // 상위 행이 곧 그 아래 중첩된 하위 행들의 총합으로 보인다.
 // (버그 수정) 이름이 길면 한 줄 말줄임에 잘려 전혀 안 보이던 문제 — 이름을 통계 줄과 분리해 자기
-// 줄에서 최대 2줄까지 감싸 보여주고(그래도 넘치면 말줄임), title 속성으로 전체 이름도 항상 볼 수 있게 한다.
+// 줄에서 감싸 보여준다. (버그 수정) 예전엔 여기서도 최대 2줄까지만 보여주고 그 이상은 말줄임(…)
+// 처리했는데, 모바일처럼 화면이 좁고 깊이 중첩된(들여쓰기가 누적된) 오프닝일수록 2줄로도 모자라
+// 이름이 중간에 잘려 보였다(title 속성은 모바일 터치 환경에서 아예 작동하지 않아 전체 이름을
+// 확인할 방법도 없었다). 줄 수 제한을 없애 이름이 몇 줄이 되든 항상 끝까지 그대로 보이게 한다.
 function OpeningWinrateRow({ node, depth, onOpenOpening }) {
   const isRoot = depth === 0;
-  const nameStyle = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "keep-all", lineHeight: 1.3, minWidth: 0, flex: "1 1 auto" };
+  const nameStyle = { wordBreak: "keep-all", lineHeight: 1.3, minWidth: 0, flex: "1 1 auto" };
   return (
     <div style={{ position: "relative" }}>
       {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
