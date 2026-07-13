@@ -3939,14 +3939,18 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 않는다 — 이후 더 뻗어나가는 블록은 (필요하면) 캔버스의 처음 예상 못 한 여백 밖으로도 그냥
   // 그려지고(SVG는 overflow:visible, 블록 div들도 잘리지 않음), 사용자가 팬해서 보면 된다.
   const centerFrozenRef = useRef(null);
-  const { items, edges, width, height, centerX, centerY } = useMemo(() => {
+  const { items, edges, width, height, centerX, centerY, groups } = useMemo(() => {
     const items = []; const edges = [];
     const leafList = { N: [], S: [], E: [], W: [] };
     // 트리 구조(부모-자식, 방향)만 먼저 만들고, leaf 좌표는 아래에서 보간으로 채운다.
-    const visit = (san, path, depth, adopt, kind, evalCp, name, dir) => {
+    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
-      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      // (기능) 칭호(오프닝 이름)가 있는 노드만 새 그룹의 뿌리가 되고, 이름 없는 중간 수는 가장
+      // 가까운 이름 붙은 조상의 그룹에 그대로 속한다 — 더 구체적인 이름이 다시 나타나면 그 지점부터
+      // 새 그룹이 시작된다(중첩 가능).
+      const groupKey = name ? key : parentGroupKey;
+      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, groupKey, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
       if (rawMoves && rawMoves.length) {
         // (버그 수정) 예전엔 "자식 자신의 데이터가 이미 로드됐는지"(treeData.has(자식 키))로
@@ -3997,7 +4001,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           const t = tiered.find((x) => x.san === m.san);
           const nm = nameOverride(key, m.san) ?? m.name ?? null;
           const childDir = path.length === 0 ? DIR_OF_ROOT[stripSuffix(m.san)] : dir;
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir));
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey));
         }
       }
       if (depth >= 1) { if (!kids.length) leafList[dir].push(it); else it.kids = kids; }
@@ -4006,7 +4010,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null, null, null);
+    visit(null, [], 0, 100, null, null, null, null, null);
     // 방향별로, 지금 실제로 보이는 leaf들을 현재 형제 순서(DFS 순서) 그대로 훑으면서 좌표 캐시를
     // 채운다. 이미 캐시에 있는 값은 절대 다시 바꾸지 않는다(그래야 흔들리지 않는다) — 새로 나타난
     // leaf만, 바로 앞뒤로 이미 확정된 이웃의 캐시 값 "사이"를 보간해 끼워 넣는다. 자리를 넓히려고
@@ -4089,7 +4093,47 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     if (!centerFrozenRef.current) centerFrozenRef.current = { x: -minX + PAD, y: -minY + PAD };
     const centerX = centerFrozenRef.current.x, centerY = centerFrozenRef.current.y;
     for (const it of visible) { it.x += centerX; it.y += centerY; }
-    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY };
+    // (기능) 칭호가 있는 오프닝만 하나의 단위로 묶어 점선 영역으로 표시 — groupKey별로 그 그룹에
+    // 속한 모든 노드(뿌리 + 자손)의 바운딩 박스를 구한다.
+    const groupMembers = new Map();
+    for (const it of visible) {
+      if (!it.groupKey) continue;
+      if (!groupMembers.has(it.groupKey)) groupMembers.set(it.groupKey, []);
+      groupMembers.get(it.groupKey).push(it);
+    }
+    const GROUP_PAD = 26;
+    // (버그 수정) 하위 갈래로 갈라지기 전의 대분류 이름(예: 세부 바리에이션 이전의 "카로칸 방어"
+    // 자체)이 아주 넓은 범위에 걸쳐 남아 있으면 캔버스 대부분을 뒤덮는 거대한 점선 상자가 생겨
+    // 오히려 방해가 된다 — 지나치게 큰 영역은 그리지 않는다(더 구체적인 하위 그룹은 정상 표시).
+    const MAX_GROUP_SPAN = 2600;
+    let groupBoxes = [];
+    for (const [gk, members] of groupMembers) {
+      const root = members.find((m) => m.key === gk);
+      if (!root) continue;
+      let gminX = Infinity, gminY = Infinity, gmaxX = -Infinity, gmaxY = -Infinity;
+      for (const m of members) {
+        if (m.x < gminX) gminX = m.x; if (m.y < gminY) gminY = m.y;
+        if (m.x + boxW > gmaxX) gmaxX = m.x + boxW; if (m.y + boxH > gmaxY) gmaxY = m.y + boxH;
+      }
+      const gx = gminX - GROUP_PAD, gy = gminY - GROUP_PAD, gw = gmaxX - gminX + GROUP_PAD * 2, gh = gmaxY - gminY + GROUP_PAD * 2;
+      if (gw > MAX_GROUP_SPAN || gh > MAX_GROUP_SPAN) continue;
+      groupBoxes.push({ key: gk, name: root.name, dir: root.dir, x: gx, y: gy, w: gw, h: gh, rootX: root.x, rootY: root.y });
+    }
+    // (버그 수정) 포함 관계(상위 오프닝 안의 하위 오프닝)가 아닌, 서로 다른 갈래끼리 일부만 겹치는
+    // 경우는 더 큰 쪽만 남겨 지저분해 보이지 않게 한다 — 진짜 중첩은 그대로 둔다.
+    const gContains = (a, b) => a.x <= b.x && a.y <= b.y && a.x + a.w >= b.x + b.w && a.y + a.h >= b.y + b.h;
+    const gOverlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    groupBoxes.sort((a, b) => b.w * b.h - a.w * a.h);
+    const groups = [];
+    for (const g of groupBoxes) {
+      let ok = true;
+      for (const p of groups) {
+        if (gContains(g, p) || gContains(p, g)) continue;
+        if (gOverlaps(g, p)) { ok = false; break; }
+      }
+      if (ok) groups.push(g);
+    }
+    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
   // (버그 수정) 검색해서 오프닝을 고르면 그 갈래만 남기고 나머지를 다 숨기던 방식이 오히려 트리
   // 전체 맥락을 잃게 해 불편하다는 피드백 — 이제 트리는 항상 전체를 보여주고, 대신 고른 오프닝으로
@@ -4131,6 +4175,19 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => { panRef.current = pan; }, [pan]);
   const zoomRef = useRef(zoom);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  // (기능) 검색창 밑 작은 미니맵을 클릭하면 모식도 창 전체를 덮는 반투명 전체화면 미니맵을 띄운다 —
+  // 열려 있는 동안은 모식도 자체의 팬/줌/키보드 이동을 잠시 막는다(아래 onPointerDown·wheel·WASD
+  // 핸들러의 가드 참고). 네이티브 휠 리스너·마운트 시 한 번만 등록되는 키보드 리스너는 클로저가
+  // 오래된 값을 볼 수 있으므로 ref로도 함께 들고 있는다.
+  const [showMinimapFull, setShowMinimapFull] = useState(false);
+  const showMinimapFullRef = useRef(false);
+  useEffect(() => { showMinimapFullRef.current = showMinimapFull; }, [showMinimapFull]);
+  useEffect(() => {
+    if (!showMinimapFull) return;
+    const onEsc = (e) => { if (e.key === "Escape") setShowMinimapFull(false); };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [showMinimapFull]);
   // (기능) 나침반형 레이아웃에서는 e4/d4/c4/Nf3 네 수가 모두 정중앙 부근에 모여 있으므로, 처음
   // 보여줄 기본 화면은 그 중심(centerX, centerY)을 뷰포트 가운데에 맞춘다. 사용자가 직접 팬하기
   // 전까지는 계속 다시 맞춘다.
@@ -4166,7 +4223,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const sx = nextPan.x + (c.x + boxW / 2) * nextZoom, sy = nextPan.y + (c.y + boxH / 2) * nextZoom;
     if (Math.hypot(sx - rect.width / 2, sy - rect.height / 2) > 80) { selectionLockRef.current = false; setZoom(1); }
   };
-  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerDown = (e) => { if (showMinimapFull) return; if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
     const next = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
@@ -4183,6 +4240,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const el = boxRef.current;
     if (!el) return;
     const handleWheel = (e) => {
+      if (showMinimapFullRef.current) return;
       e.preventDefault();
       setPan((p) => { const next = { x: p.x - e.deltaX, y: p.y - e.deltaY }; checkSelectionDrift(next, zoomRef.current); return next; });
     };
@@ -4245,6 +4303,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => {
     const KEY_DIR = { arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
     const onKeyDown = (e) => {
+      if (showMinimapFullRef.current) return;
       if (!selectedPathRef.current) return;
       const tag = (e.target && e.target.tagName) || "";
       if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
@@ -4297,6 +4356,42 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   }, [items, priorityRef]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
+  // (기능) 검색창 밑 작은 미니맵 — 나침반 중심, 네 팔(e4/d4/c4/Nf3)이 뻗어나가는 방향, 지금 보고
+  // 있는 화면 범위(현재 위치), 그리고 칭호가 붙은 오프닝들의 위치(점선 영역 박스만, 개별 수 블록은
+  // 표시하지 않는다)를 한눈에 보여준다. 작은 미니맵과 클릭 시 뜨는 전체화면 미니맵이 같은 렌더
+  // 함수를 크기만 다르게 써서 항상 서로 일치한다.
+  const MM_PAD = 8;
+  const renderMinimap = (mmW, mmH) => {
+    const scale = Math.min((mmW - MM_PAD * 2) / Math.max(1, width), (mmH - MM_PAD * 2) / Math.max(1, height));
+    const offX = (mmW - width * scale) / 2, offY = (mmH - height * scale) / 2;
+    const w2m = (wx, wy) => ({ x: offX + wx * scale, y: offY + wy * scale });
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const vx = -pan.x / zoom, vy = -pan.y / zoom, vw = rect.width / zoom, vh = rect.height / zoom;
+    const tl = w2m(vx, vy), br = w2m(vx + vw, vy + vh);
+    const center = w2m(centerX + boxW / 2, centerY + boxH / 2);
+    const armLabel = { fontSize: 8, fontWeight: 800, color: T.inkSoft, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", pointerEvents: "none", position: "absolute" };
+    // (버그 수정) 트리가 한쪽 팔로 훨씬 더 넓게 자라면(흔함) 나침반 중심점 자체가 전체 바운딩
+    // 박스의 가로/세로 한가운데에서 크게 벗어난다 — 방향 라벨을 그 실제 중심점에 맞춰 두면 라벨이
+    // 미니맵 패널 가장자리 바깥으로 밀려나 잘려 보였다. 방향 라벨은 실제 중심점과 무관하게 항상
+    // 패널 네 변 한가운데(나침반 로즈처럼)에 고정해, 트리 모양과 상관없이 절대 잘리지 않게 한다.
+    return (
+      <>
+        {groups.map((g) => {
+          const a = w2m(g.x, g.y), b = w2m(g.x + g.w, g.y + g.h);
+          // (버그 수정) 트리 전체 크기에 비해 오프닝 하나의 영역은 아주 작아, 배율을 그대로 적용하면
+          // 1~2px짜리 점이 되어 양피지 배경과 색이 비슷해 거의 안 보였다 — 최소 크기를 보장하고
+          // 테두리·채우기 색을 더 진하게 해 축소된 상태에서도 또렷이 보이게 한다.
+          return <div key={"mm-g-" + g.key} style={{ position: "absolute", left: a.x, top: a.y, width: Math.max(3, b.x - a.x), height: Math.max(3, b.y - a.y), border: "1px solid rgba(120,74,26,.9)", background: "rgba(196,154,80,.6)", borderRadius: 1, pointerEvents: "none" }} />;
+        })}
+        <div style={{ position: "absolute", left: Math.min(tl.x, br.x), top: Math.min(tl.y, br.y), width: Math.max(2, Math.abs(br.x - tl.x)), height: Math.max(2, Math.abs(br.y - tl.y)), border: "1.5px solid " + T.book, background: "rgba(138,90,43,.10)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", left: center.x - 3, top: center.y - 3, width: 6, height: 6, borderRadius: "50%", background: T.brass, boxShadow: "0 0 0 2px rgba(196,154,80,.35)", pointerEvents: "none" }} />
+        <div style={{ ...armLabel, left: mmW / 2, top: 3, transform: "translateX(-50%)" }}>↑ e4</div>
+        <div style={{ ...armLabel, right: 3, top: mmH / 2, transform: "translateY(-50%)" }}>d4 →</div>
+        <div style={{ ...armLabel, left: mmW / 2, bottom: 3, transform: "translateX(-50%)" }}>↓ c4</div>
+        <div style={{ ...armLabel, left: 3, top: mmH / 2, transform: "translateY(-50%)" }}>← Nf3</div>
+      </>
+    );
+  };
   return (
     <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
@@ -4335,6 +4430,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               ))}
           </div>
         )}
+        {/* (기능) 검색창 바로 밑 작은 미니맵 — 클릭하면 전체화면 미니맵을 띄운다. */}
+        <div onClick={() => setShowMinimapFull(true)} title="미니맵 — 눌러서 전체화면으로 보기" className="press" style={{ position: "relative", marginTop: 6, width: 178, height: 108, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.92)", overflow: "hidden", cursor: "pointer", boxShadow: "0 2px 6px -2px rgba(0,0,0,.3)" }}>
+          {renderMinimap(178, 108)}
+        </div>
       </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
         <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
@@ -4342,6 +4441,20 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
+        {/* (기능) 칭호(이름)가 붙은 오프닝만 점선 테두리로 한 단위로 묶어 표시하고, 박스 왼쪽 위
+            바깥의 빈 여백에 화살표와 함께 그 오프닝 이름을 장식체로 적는다(박스 안에 글자를 넣으면
+            자손 블록들과 겹치므로, 늘 비어 있는 바깥 여백에 둔다). */}
+        {groups.map((g) => (
+          <div key={"group-" + g.key} style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h, border: "1.5px dashed rgba(138,90,43,.5)", borderRadius: 14, pointerEvents: "none", zIndex: 0 }} />
+        ))}
+        {groups.map((g) => (
+          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.x - 6, top: g.y - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
+            <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200, background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+              ✦ {g.name} ✦
+            </span>
+            <ChevronRight size={13} strokeWidth={2.5} style={{ color: T.brass, transform: "rotate(45deg)", flexShrink: 0, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.3))" }} />
+          </div>
+        ))}
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
@@ -4431,11 +4544,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
                 </span>
                 {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
               </button>
-              {/* (버그 수정) rowH를 늘려 아래쪽 여유를 벌렸지만, 그래도 극단적으로 긴 이름이 들어오면
-                  안전하게 2줄에서 말줄임(ellipsis)해 다음 줄 블록과 절대 겹치지 않도록 한다. */}
-              {it.name && (
-                <div style={{ position: "absolute", left: -8, top: boxH + 2, width: boxW + 16, maxHeight: 8 * 1.15 * 2, textAlign: "center", fontSize: 8, fontWeight: 700, color: "rgba(122,102,80,.85)", lineHeight: 1.15, wordBreak: "keep-all", pointerEvents: "none", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", textOverflow: "ellipsis" }}>{it.name}</div>
-              )}
+              {/* (기능) 칭호(이름) 붙은 오프닝은 이제 블록 아래 대신, 그 오프닝 전체를 묶는 점선
+                  영역 바깥 여백에 화살표와 함께 장식체로 표시된다(위 groups 렌더 참고) — 블록마다
+                  중복으로 작은 글자를 또 넣지 않는다. */}
             </div>
           );
         })}
@@ -4447,6 +4558,26 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               : { left: coord(openItem).x + boxW + 10, top: Math.max(0, coord(openItem).y + boxH / 2 - 150) }} />
         )}
       </div>
+      {/* (기능) 미니맵을 클릭하면 모식도 창 전체를 덮는 반투명 전체화면 미니맵을 띄운다 — 열려
+          있는 동안은 위 onPointerDown·wheel·WASD 핸들러가 showMinimapFull(Ref)을 보고 모식도의
+          팬/줌/키보드 이동을 잠시 막는다. className="no-pan"이라 이 영역에서 시작한 포인터
+          드래그도 onPointerDown에서 걸러진다. */}
+      {showMinimapFull && (() => {
+        const hostRect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+        const fullW = Math.max(240, hostRect.width - 56), fullH = Math.max(240, hostRect.height - 56);
+        return (
+          <div className="no-pan" style={{ position: "absolute", inset: 0, zIndex: 200, background: "rgba(20,12,6,.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+            onWheel={(e) => e.stopPropagation()}>
+            <div style={{ position: "relative", width: fullW, height: fullH, background: "rgba(251,245,232,.98)", borderRadius: 16, border: "1px solid " + T.brass, boxShadow: "0 20px 60px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 10, left: 14, zIndex: 5, fontSize: 12.5, fontWeight: 800, color: T.ink }}>미니맵</div>
+              <button onClick={() => setShowMinimapFull(false)} className="press" title="닫기" style={{ position: "absolute", top: 8, right: 8, zIndex: 5, width: 30, height: 30, borderRadius: 9, border: "1px solid " + T.brass, background: "rgba(255,255,255,.92)", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <X size={16} />
+              </button>
+              <div style={{ position: "absolute", inset: 0 }}>{renderMinimap(fullW, fullH)}</div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
