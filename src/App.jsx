@@ -3920,6 +3920,15 @@ function centerOrderByAdopt(kids) {
 const ROOT_ORDER = ["e4", "d4", "c4", "Nf3"];
 const DIR_OF_ROOT = { e4: "N", d4: "E", c4: "S", Nf3: "W" };
 const SCHEMATIC_BOX_W = 98, SCHEMATIC_BOX_H = 44;
+// (기능) 사이트 전체 모식도(도감 오프닝 트리·퍼즐 모식도·개발자 트리 에디터)의 확대/축소를
+// 25%p 단위(25~200%)로만 고정한다 — 버튼 클릭은 물론 핀치·휠 같은 연속 제스처로 나온 값도
+// 이 함수로 가장 가까운 단계에 스냅해, 어디서든 항상 8단계(25/50/75/100/125/150/175/200%) 중
+// 하나로만 보이게 한다.
+const SCHEMATIC_ZOOM_STEP = 0.25, SCHEMATIC_ZOOM_MIN = 0.25, SCHEMATIC_ZOOM_MAX = 2;
+function snapSchematicZoom(z) {
+  const clamped = Math.min(SCHEMATIC_ZOOM_MAX, Math.max(SCHEMATIC_ZOOM_MIN, z));
+  return Math.round(clamped / SCHEMATIC_ZOOM_STEP) * SCHEMATIC_ZOOM_STEP;
+}
 function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, priorityRef }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
@@ -4257,7 +4266,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     }, 150);
     return () => clearInterval(id);
   }, []);
-  const clampZoom = (z) => Math.min(2, Math.max(0.3, z));
+  const clampZoom = snapSchematicZoom;
   // (기능) selectionLockRef가 걸려 있는 동안 팬/줌이 바뀔 때마다, 선택된 노드가 화면 중앙에서 얼마나
   // 벗어났는지 검사한다 — 많이 벗어나면(사용자가 직접 화면을 옮긴 것) 확대 강조만 풀고(100%로),
   // 강조 색은 selectedPath가 그대로라 계속 유지된다. ref만 참조하므로 어느 렌더의 클로저에서
@@ -4298,12 +4307,36 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (버그 수정) 확대 정도(1.35배)가 너무 크다는 피드백 — 살짝만 확대되도록 낮춘다.
   // (기능) 검색·클릭으로 오프닝을 선택하면 그 노드를 화면 중앙으로 옮기고 살짝 확대해(SELECT_ZOOM)
   // "선택됨"이 시각적으로 드러나게 한다.
-  const SELECT_ZOOM = 1.15;
-  const centerOn = (it, z) => {
+  const SELECT_ZOOM = 1.25;   // (버그 수정) 25%p 단위 고정 정책에 맞춰 그리드에 없던 1.15 대신 1.25 사용
+  // (기능) 검색으로 오프닝을 고르면 예전엔 시점이 그 자리로 즉시 순간이동했다 — 지금은 지금 보고
+  // 있던 화면 중심에서 목표 위치까지 파란 선을 그어 보여주고, 그 선을 따라 아주 빠르게(220ms)
+  // 화면(pan/zoom)이 이동하는 것처럼 애니메이션한다. 선은 콘텐츠 좌표계(SVG 안)에 그리므로 이동
+  // 중에도 pan/zoom 변환을 그대로 따라 자연스럽게 화면에 맞춰 움직인다.
+  const flightRafRef = useRef(null);
+  const [flightLine, setFlightLine] = useState(null);   // { x1, y1, x2, y2 } (콘텐츠 좌표) | null
+  const FLIGHT_MS = 220;
+  const flyTo = (targetContentX, targetContentY, targetZoom) => {
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const fromZoom = zoomRef.current, fromPan = panRef.current;
+    const fromContentX = (rect.width / 2 - fromPan.x) / fromZoom, fromContentY = (rect.height / 2 - fromPan.y) / fromZoom;
+    const toPan = { x: rect.width / 2 - targetContentX * targetZoom, y: rect.height / 2 - targetContentY * targetZoom };
+    if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
+    setFlightLine({ x1: fromContentX, y1: fromContentY, x2: targetContentX, y2: targetContentY });
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / FLIGHT_MS);
+      const ease = 1 - Math.pow(1 - t, 3);   // ease-out — 빠르게 출발해 목표에서 부드럽게 멈춤
+      setPan({ x: fromPan.x + (toPan.x - fromPan.x) * ease, y: fromPan.y + (toPan.y - fromPan.y) * ease });
+      setZoom(fromZoom + (targetZoom - fromZoom) * ease);
+      if (t < 1) { flightRafRef.current = requestAnimationFrame(step); }
+      else { flightRafRef.current = null; setFlightLine(null); }
+    };
+    flightRafRef.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => { if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current); }, []);
+  const centerOn = (it, z) => {
     const c = coord(it);
-    setZoom(z);
-    setPan({ x: rect.width / 2 - (c.x + boxW / 2) * z, y: rect.height / 2 - (c.y + boxH / 2) * z });
+    flyTo(c.x + boxW / 2, c.y + boxH / 2, z);
   };
   // (버그 수정) 선택 직후 딱 한 번만 중앙으로 옮기면, 트리가 아직 배경에서 계속 자라는 중일 때
   // (최대 4000개 노드가 계속 로드되며 다른 노드들의 좌표(pos)도 함께 밀려남) 선택한 노드가 금방
@@ -4463,6 +4496,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           </div>
         ))}
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+          {/* (기능) 검색으로 오프닝을 선택했을 때, 원래 보고 있던 위치 → 목표 위치를 잇는 파란
+              안내선 — flyTo가 애니메이션 도중에만 채워 두고 도착하면 지운다. */}
+          {flightLine && <line x1={flightLine.x1} y1={flightLine.y1} x2={flightLine.x2} y2={flightLine.y2} stroke="#3E7CC4" strokeWidth={3} opacity={0.85} strokeLinecap="round" strokeDasharray="2 10" />}
           {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
               짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
@@ -4586,17 +4622,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     </div>
   );
 }
-function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening }) {
+function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
   // (2차 개편) 도감 오프닝 — 클릭으로 펼치던 방식을 버리고 최소 3수+채택률 20% 이상 라인까지 자동으로
   // 미리 다 펼쳐진 트리(useOpeningTreeAuto)를 사용. openKey: 지금 블록으로 열려 있는 노드의 경로(key).
   // 모바일(≤768px)은 세로, 그 외는 가로 모식도.
-  // (기능) 지금 선택(강조)된 오프닝과 화면에 보이는 영역을 트리 자동 확장 큐에 알려줘, 선택된
-  // 오프닝의 바리에이션을 먼저, 화면 밖 갈래를 그다음, 화면에 이미 보이는 갈래를 가장 나중에 펼치게 한다.
-  const genPriorityRef = useRef({ selectedKey: null, distanceOf: null });
-  const { data: treeData, version: treeVersion } = useOpeningTreeAuto(genPriorityRef);
+  // (버그 수정) treeData/treeVersion/genPriorityRef는 이제 App(항상 마운트)에서 내려오는 props다 —
+  // 예전처럼 이 컴포넌트 안에서 useOpeningTreeAuto를 직접 호출하면, 탭을 전환할 때마다 이 컴포넌트가
+  // 통째로 언마운트되어 지금까지 쌓인 트리 깊이가 매번 사라졌다.
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
@@ -5394,7 +5429,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   const boxRef = useRef(null);
   const pointersRef = useRef(new Map());   // pointerId -> {x,y} — 두 손가락이면 핀치 확대/축소
   const pinchRef = useRef(null);           // { dist, zoom } 핀치 시작 시점 기준값
-  const clampZoom = (z) => Math.min(2.5, Math.max(0.5, z));
+  const clampZoom = snapSchematicZoom;
   // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
   useEffect(() => {
     const vw = boxRef.current ? boxRef.current.clientWidth : 380;
@@ -6729,7 +6764,7 @@ function SchematicEditor({ bumpContent, contentVer, canAdd, focusPath, setFocusP
   // (17차) 모식도를 전체 화면으로 띄우고, 확대/축소해 자유롭게 편집할 수 있게 한다.
   const [fullscreen, setFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const clampZoom = (z) => Math.max(0.4, Math.min(2.5, z));
+  const clampZoom = snapSchematicZoom;
   const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z - e.deltaY * 0.0015)); };
   const colW = 148, rowH = 42, boxW = 108, boxH = 30;
   const { nodes, edges, truncated } = useMemo(() => {
@@ -6782,9 +6817,9 @@ function SchematicEditor({ bumpContent, contentVer, canAdd, focusPath, setFocusP
         </div>
         {/* (17차) 전체 화면 + 확대/축소 컨트롤 */}
         <div className="flex items-center gap-1">
-          <button onClick={() => setZoom((z) => clampZoom(z - 0.2))} className="press" title="축소" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>−</button>
+          <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} className="press" title="축소" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>−</button>
           <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", width: 36, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((z) => clampZoom(z + 0.2))} className="press" title="확대" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>+</button>
+          <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} className="press" title="확대" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>+</button>
           <button onClick={() => setFullscreen((v) => !v)} className="press" title={fullscreen ? "전체 화면 닫기" : "전체 화면"} style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: fullscreen ? T.brass : "transparent", color: fullscreen ? "#241509" : T.brassHi, cursor: "pointer", fontSize: 11, fontWeight: 800 }}>{fullscreen ? "닫기" : "전체 화면"}</button>
         </div>
       </div>
@@ -8545,6 +8580,14 @@ export default function App() {
   // (16차) 주소창의 서브패스(/learn, /book, /puzzle, /setting)로 직접 들어온 경우 그 탭을 우선한다.
   const urlTabRef = useRef(typeof window !== "undefined" ? tabFromPath(window.location.pathname) : null);
   const [tab, setTab] = useState(() => urlTabRef.current || "learn");
+  // (버그 수정) 도감 오프닝 트리를 배경에서 계속 더 깊이 채워나가는 useOpeningTreeAuto가 도감 탭
+  // 컴포넌트(CollectionTab) 안에서 호출되고 있었다 — {tab === "dex" && <CollectionTab .../>}처럼
+  // 탭을 조건부로 마운트하는 구조라, 다른 탭으로 갔다가 돌아오기만 해도(퍼즐 확인 등 흔한 사용
+  // 패턴) 이 컴포넌트가 통째로 언마운트·재마운트되어 지금까지 쌓인 깊이가 전부 사라지고 처음부터
+  // 다시 시작됐다 — 그래서 짧게 훑어보면 항상 얕은 수(약 6수)에서 멈춘 것처럼 보였다. 항상
+  // 마운트돼 있는 App으로 끌어올려, 어느 탭에 있든(도감을 벗어나도) 계속 더 깊이 채워지도록 한다.
+  const dexGenPriorityRef = useRef({ selectedKey: null, distanceOf: null });
+  const { data: dexTreeData, version: dexTreeVersion } = useOpeningTreeAuto(dexGenPriorityRef);
   const [unlocked, setUnlocked] = useState(new Set());
   const [newUnlocks, setNewUnlocks] = useState(0);
   const [newTitles, setNewTitles] = useState(0); // (버그) 새로 획득한 칭호 수 — 도감 탭 빨간 배지
@@ -9126,7 +9169,7 @@ export default function App() {
           경우가 있었다 — 여유를 더 둔다. */}
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
-        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} />}
+        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
