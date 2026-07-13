@@ -4029,14 +4029,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 얻을 때) 물려줄 수 있는 여유가 전혀 없어 곧바로 그 좁은 1칸 안에 자식들이 눌려 들어갔다 —
     // 형제 수 상한(DEX_MAX_CHILDREN)만큼은 나중에 internal이 되어도 무리 없이 나눠 가질 수 있도록,
     // leaf 하나가 처음 생길 때 "1칸"이 아니라 "상한만큼의 여유"를 미리 예약해 둔다.
-    // (버그 수정) 그래도 MIN_DEPTH(5) 구간은 채택률과 무관하게 매 깊이마다 상한(8개)까지 형제가
-    // 생길 수 있어, 그런 자리가 3~4단 연속으로 이어지면(예: 킹스 갬빗처럼 얕은 깊이에서부터 넓게
-    // 갈라지는 라인) 물려받은 여유가 세대를 거칠 때마다 8배씩 줄어들어 결국 몇 px 안에 뭉쳤다 —
-    // 상한을 도입하기 전(최대 20~40갈래)보다는 훨씬 드물지만, 여전히 남아 있는 경우가 있다. 형제
-    // 수 상한 덕분에 이제 한 번에 필요한 폭이 최대 "상한+1"칸으로 작고 예측 가능해졌으므로, 물려받은
-    // 자리가 그보다 좁을 때만 그 뒤쪽 전체(이 방향의 캐시값 중 그 이상인 것 전부)를 필요한 만큼만
-    // 통째로 미는 것을 다시 허용한다 — 상한이 없던 예전 시도와 달리 한 번에 미는 양이 작고
-    // 유한해서(최대 8칸 안팎), 이 정도는 화면이 "흔들린다"고 느껴질 만큼 크지 않다.
+    // (버그 수정) 새로 끼워 넣는 leaf들에게도 항상 "상한만큼의 여유"를 강제로 미리 예약해보려
+    // 했지만, 그러면 거의 모든 삽입마다(기존 틈이 이미 충분해도) 매번 그 뒤쪽 전체를 미는 일이
+    // 벌어져서 오히려 훨씬 더 자주, 훨씬 더 크게 흔들렸다(직접 측정으로 확인) — 기존 틈이 이미
+    // 충분할 때는 밀지 않는 지금 방식이 실제로는 더 안정적이다. 정말 여유가 부족할 때만(형제 수
+    // 상한 안에서) 최소한으로 미는 아래 방식을 그대로 유지한다.
     const LEAF_RESERVE = DEX_MAX_CHILDREN * 3;
     const MIN_GAP = 1;
     for (const dir of ["N", "S", "E", "W"]) {
@@ -4063,8 +4060,20 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     }
     // internal 노드는 자식들 pos의 가운데 — items가 후위 순서(자식이 부모보다 먼저 옴)이므로
     // 한 번 더 훑으면 이 시점엔 모든 자식의 pos가 이미 확정돼 있다.
+    // (버그 수정) 원래는 이 값을 매 렌더 다시 계산해서 자식이 새로 생길 때마다(특히 맨 앞/맨 뒤
+    // 자식이 바뀔 때) 그 부모(그리고 거기 이어진 연결선·라벨·이 부모를 포함하는 칭호 점선 영역)가
+    // 계속 미세하게 움직였다 — 배경 로딩이 이어지는 동안 내내 화면이 흔들리는 것처럼 보인 핵심
+    // 원인. 게다가 leaf였던 노드가 처음으로 자식을 얻어 internal이 되는 순간, "leaf로서 캐싱된
+    // 자리"에서 "자식 평균 자리"로 불연속적으로 한 번 튀는 문제도 있었다 — leaf 캐시(posCacheRef)를
+    // 그대로 재사용해, 이 노드가 leaf였을 때 이미 값이 있으면 그 값을 그대로 쓰고(점프 없음), 처음
+    // 부터 internal로 나타난 노드만 이번에 한 번 계산해 캐시에 고정한다 — 그 뒤로는 자식이 몇 명
+    // 더 늘어도 이 부모의 자리는 절대 다시 안 바뀐다.
     for (const it of items) {
-      if (it.depth >= 1 && it.kids) it.pos = (it.kids[0].pos + it.kids[it.kids.length - 1].pos) / 2;
+      if (it.depth >= 1 && it.kids) {
+        const cache = posCacheRef.current[it.dir];
+        if (!cache.has(it.key)) cache.set(it.key, (it.kids[0].pos + it.kids[it.kids.length - 1].pos) / 2);
+        it.pos = cache.get(it.key);
+      }
     }
     const visible = items.filter((it) => it.depth > 0);
     // 각 방향의 루트(깊이 1) 퍼짐을 0으로 맞춰, 네 팔이 정확히 나침반 중심에서 뻗어나가게 한다.
@@ -4109,10 +4118,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       groupMembers.get(it.groupKey).push(it);
     }
     const GROUP_PAD = 26;
-    // (버그 수정) 칭호 탭의 13개 오프닝 중 하나가 아주 이른 단계(예: 세부 바리에이션으로 갈라지기
-    // 전의 "카로칸 방어" 자체)에서 시작해 그 자손이 극단적으로 넓게 퍼지면, 캔버스 대부분을
-    // 뒤덮는 거대한 점선 상자가 생겨 오히려 방해가 된다 — 지나치게 큰 영역은 그리지 않는다.
-    const MAX_GROUP_SPAN = 2600;
+    // (버그 수정) 예전엔 영역이 너무 커지면(MAX_GROUP_SPAN) 아예 그리지 않고 건너뛰었는데, 칭호
+    // 탭 13개는 원래도 이 필터가 막으려던 "아무 상관 없는 광범위한 영역"이 아니라 사용자가 정확히
+    // 보고 싶어하는 오프닝 하나의 진짜 경계다 — 배경 로딩이 계속되며 자손이 늘어 영역이 커질수록
+    // 오히려 점점 사라졌다가 다시 나타나길 반복하는 것처럼 보였다(트리가 전개될수록 점선이
+    // 사라지는 문제). 크기 제한 없이 항상 그린다.
     let groupBoxes = [];
     for (const [gk, members] of groupMembers) {
       const root = members.find((m) => m.key === gk);
@@ -4123,7 +4133,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         if (m.x + boxW > gmaxX) gmaxX = m.x + boxW; if (m.y + boxH > gmaxY) gmaxY = m.y + boxH;
       }
       const gx = gminX - GROUP_PAD, gy = gminY - GROUP_PAD, gw = gmaxX - gminX + GROUP_PAD * 2, gh = gmaxY - gminY + GROUP_PAD * 2;
-      if (gw > MAX_GROUP_SPAN || gh > MAX_GROUP_SPAN) continue;
       groupBoxes.push({ key: gk, name: root.groupFamLabel, dir: root.dir, x: gx, y: gy, w: gw, h: gh, rootX: root.x, rootY: root.y });
     }
     // (버그 수정) 서로 다른 갈래끼리 영역이 일부만 겹치면 지저분해 보인다 — 더 큰 쪽만 남긴다
@@ -4485,10 +4494,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           // (버그 수정) 채택률 %는 블록에서 빼고, 수 체계 아이콘은 글자와 나란히 두지 않고 블록
           // 좌상단에 작은 배지로 얹는다. 오프닝 이름은 블록 안이 아니라 바로 아래 빈 공간에 표시.
           return (
-            // (버그 수정) 트리 구조가 바뀌면서 블록 위치가 살짝씩 재조정될 때, 순간이동하듯 튀어
-            // 깜빡이는 느낌이 들었다 — key가 노드 경로로 고정돼 있어 같은 DOM 요소가 재사용되는
-            // 점을 이용해, 위치(left/top) 변화에 짧은 트랜지션을 줘 스르륵 옮겨가는 것처럼 보이게 한다.
-            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH, transition: "left .35s ease, top .35s ease" }}>
+            // (버그 수정) 예전엔 위치(left/top) 변화에 짧은 트랜지션(.35s)을 줘 스르륵 옮겨가는
+            // 것처럼 보이게 했는데, 배경 로딩 중(useOpeningTreeAuto가 ~80ms마다 트리를 갱신)에는
+            // 이런 재조정이 초당 여러 번, 20초 가까이 계속 일어난다 — 개별 이동은 작아도 그때마다
+            // 매번 새 트랜지션이 이어 걸리며 몇 초에 걸쳐 화면이 계속 미끄러지듯 움직이는 것처럼
+            // 보였다(사용자가 보고한 "흔들림"). 애니메이션을 없애 위치가 바뀔 때 부드럽게 미끄러지는
+            // 대신 조용히 순간 이동하게 해, 눈에 띄는 지속적인 움직임 자체를 없앤다.
+            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
               <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
               <button onClick={() => selectNode(it)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
