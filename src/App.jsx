@@ -3880,30 +3880,19 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
   // kind/evalCp를 한 번에 계산해 넘겨준다(이미 불러온 rawMoves를 재사용하므로 추가 요청은 없음).
-  // (기능) 나침반형 레이아웃을 "직선 격자"가 아니라 부채꼴(건물 청사진의 방향 안내판처럼, 네
-  // 팔이 각자 자기 몫의 각도 범위 안에서만 뻗어나가는 모양)로 바꾼다. 예전엔 남/북 팔의 "가로
-  // 퍼짐"과 동/서 팔의 "가로 깊이"가 같은 화면 x축을 공유해(y축도 마찬가지), 트리가 아주 커지면
-  // 서로 다른 팔의 블록이 우연히 같은 좌표에서 겹치는 문제가 있었다 — 각 팔을 처음부터 자기만의
-  // 각도 범위(WEDGE_HALF)에 가둬 놓으면, 그 범위를 벗어날 수가 없으므로 이웃 팔과 절대 겹칠 수
-  // 없다(격자 방식은 "어쩌다 안 겹치길" 기대했지만, 부채꼴은 구조적으로 겹칠 수 없다).
-  // · WEDGE_HALF: 각 팔이 차지하는 부채꼴의 절반각(90°보다 충분히 좁게 잡아 이웃 팔과 사이에
-  //   여백을 둔다).
-  // · SPREAD_K: 형제(퍼짐) 값을 각도로 바꿀 때 쓰는 완충 상수 — atan(퍼짐/K)는 퍼짐이 아무리
-  //   커져도 항상 ±90° 안에 머무르므로(그래서 부채꼴 절반각을 절대 못 벗어남) 형제가 아주 많아지면
-  //   결국 가장자리로 몰려 각도 차이가 빽빽해진다. 이 매핑은 각 노드 자신의 퍼짐 값만으로 정해져
-  //   전체 형제 수와 무관하므로, 나중에 형제가 더 생겨도 이미 배치된 형제의 각도는 안 바뀐다(안정성
-  //   유지) — 대신 아래 FLARE로 각도가 빽빽해지는 만큼 반지름을 더 벌려 실제 픽셀 간격을 보충한다.
-  // · FLARE: 퍼짐 절댓값이 클수록(부채꼴 가장자리로 몰릴수록) 반지름도 함께 늘려, 각도만으로는
-  //   좁아지는 실제 간격(호의 길이 = 반지름×각도)을 보충한다 — 그래서 부채꼴이 중심 쪽은 좁고
-  //   가장자리로 갈수록 둥그렇게 더 벌어지는 모양이 된다(스케치의 "2단계"가 더 넓게 벌어지는 것과
-  //   같은 효과).
-  // · ROW_STEP: 깊이 한 단계마다 중심에서 멀어지는 기본 반지름 증가량.
-  const WEDGE_HALF = (34 * Math.PI) / 180;
-  const SPREAD_K = 1.1;
-  const FLARE = 160;
-  const ROW_STEP = 132;
-  const ANGLE_CENTER = { N: -Math.PI / 2, E: 0, S: Math.PI / 2, W: Math.PI };
-  const ROOT_GAP = 200;
+  // (기능) 나침반형 레이아웃 — 남/북(세로) 방향으로 뻗는 서브트리는 깊이축이 세로라 라벨이 다음
+  // 깊이의 블록과 겹치지 않도록 깊이 간격(VROW)을 넉넉히 주고, 형제 퍼짐(가로)은 좀 더 촘촘히
+  // (VCOL). 동/서(가로) 방향은 반대로 깊이 간격(HCOL)은 촘촘히, 형제 퍼짐(세로, HROW)에 라벨이
+  // 겹치지 않을 정도의 여유를 준다.
+  const VCOL = 108, VROW = 86, HCOL = 158, HROW = 68;
+  // (버그 수정) 남/북 팔은 "가로로 퍼진(spread) x"가, 동/서 팔은 "깊이로 뻗은(depth) x"가 같은
+  // 화면 x축을 공유한다(y축도 마찬가지, 역할만 바뀜) — 즉 네 팔은 서로 독립적으로 얼마든지
+  // 넓어지거나 깊어질 수 있는데, 트리가 아주 커지면(수천 개) 한 팔이 충분히 넓어지고 이웃 팔이
+  // 충분히 깊어져 우연히 같은 좌표에서 서로 다른 갈래의 블록이 겹치는 경우가 생겼다(연결선이
+  // 서로 다른 오프닝을 가로질러 어지럽게 겹쳐 보이는 원인). 각 팔이 중심에서 시작하는 최소 거리를
+  // 넉넉히 늘려, 실제 사용 범위에서는 이런 교차 충돌이 일어나기 전에 트리 로딩이 끝나거나 사용자가
+  // 이미 다른 곳을 보고 있을 만큼 여유를 둔다(완전한 보장은 아니지만, 실사용에서 충분히 드물게 만든다).
+  const ROOT_GAP = 260;
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
   // (버그 수정) 세 가지 방식을 각각 시도했지만 모두 문제가 있었다.
@@ -3950,27 +3939,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 않는다 — 이후 더 뻗어나가는 블록은 (필요하면) 캔버스의 처음 예상 못 한 여백 밖으로도 그냥
   // 그려지고(SVG는 overflow:visible, 블록 div들도 잘리지 않음), 사용자가 팬해서 보면 된다.
   const centerFrozenRef = useRef(null);
-  const { items, edges, width, height, centerX, centerY, groups } = useMemo(() => {
+  const { items, edges, width, height, centerX, centerY } = useMemo(() => {
     const items = []; const edges = [];
     const leafList = { N: [], S: [], E: [], W: [] };
     // 트리 구조(부모-자식, 방향)만 먼저 만들고, leaf 좌표는 아래에서 보간으로 채운다.
-    // (기능) 오프닝 이름은 한 번 붙으면(예: "Caro-Kann Defense: Advance Variation") 더 구체적인
-    // 하위 이름이 나오기 전까지 그 아래 모든 수에 똑같이 반복해서 붙는다 — 블록마다 매번 같은 긴
-    // 이름을 라벨로 달면 화면이 지저분해진다. 부모로부터 물려받은 "지금까지의 이름"(ancestorGroup)과
-    // 비교해, 이 수에서 처음으로 (더 구체적인) 새 이름이 붙었는지(isGroupRoot) 판정하고, 같은
-    // groupKey(그 이름이 처음 붙은 조상의 key)를 공유하는 노드들을 나중에 하나의 점선 영역으로
-    // 묶어 배경에 이름을 한 번만 표시한다(아래 groups 계산 참고). 부모의 이름과 자식의 이름이
-    // 같으면(반복) 그룹을 이어가고, 다르면(새 이름) 새 그룹을 연다.
-    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, ancestorGroup) => {
+    const visit = (san, path, depth, adopt, kind, evalCp, name, dir) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
-      // (기능) 깊이 1(e4/d4/c4/Nf3 자신)은 나침반 정중앙 바로 옆이라 그 자리에서 점선 영역이
-      // 시작되면 칩 장식과 겹쳐 지저분해 보인다 — 루트 자신의 이름(King's Pawn Game 등)은 예전처럼
-      // 블록 바로 아래 한 줄 라벨로만 보여주고, 점선 그룹 묶기는 깊이 2부터 시작한다.
-      const isGroupRoot = depth >= 2 && !!(name && name !== (ancestorGroup ? ancestorGroup.name : null));
-      const groupKey = isGroupRoot ? key : (ancestorGroup ? ancestorGroup.key : null);
-      const groupName = isGroupRoot ? name : (ancestorGroup ? ancestorGroup.name : null);
-      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, groupKey, groupName, isGroupRoot, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
       if (rawMoves && rawMoves.length) {
         // (버그 수정) 예전엔 "자식 자신의 데이터가 이미 로드됐는지"(treeData.has(자식 키))로
@@ -4021,7 +3997,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           const t = tiered.find((x) => x.san === m.san);
           const nm = nameOverride(key, m.san) ?? m.name ?? null;
           const childDir = path.length === 0 ? DIR_OF_ROOT[stripSuffix(m.san)] : dir;
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey ? { key: groupKey, name: groupName } : null));
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir));
         }
       }
       if (depth >= 1) { if (!kids.length) leafList[dir].push(it); else it.kids = kids; }
@@ -4030,7 +4006,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null, null, null, null);
+    visit(null, [], 0, 100, null, null, null, null);
     // 방향별로, 지금 실제로 보이는 leaf들을 현재 형제 순서(DFS 순서) 그대로 훑으면서 좌표 캐시를
     // 채운다. 이미 캐시에 있는 값은 절대 다시 바꾸지 않는다(그래야 흔들리지 않는다) — 새로 나타난
     // leaf만, 바로 앞뒤로 이미 확정된 이웃의 캐시 값 "사이"를 보간해 끼워 넣는다. 자리를 넓히려고
@@ -4095,21 +4071,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (const it of visible) {
       const spread = it.depth === 1 ? 0 : it.pos - (rootPos[it.dir] || 0);
       const ld = it.depth - 1;
-      // (기능) 부채꼴 레이아웃 — 퍼짐(spread)은 atan로 완충해 항상 자기 팔의 각도 범위(±WEDGE_HALF)
-      // 안에 머무는 각도로 바꾸고, 깊이(ld)는 중심에서 멀어지는 반지름의 기본값이 된다. it.x/it.y는
-      // 블록의 "중심" 좌표이므로, 실제 렌더링(top-left 기준)에서는 boxW/2, boxH/2를 빼서 쓴다.
-      // (버그 수정) K를 반지름에 비례시켜 봤지만(반지름이 클수록 더 여유롭게), 그러면 반대로 "퍼짐
-      // 값이 고정된 채 깊이만 깊어지는" 노드의 각도가 깊어질수록 계속 중심축 쪽으로 수렴해 버려,
-      // 서로 다른 갈래의 깊은 노드들이 전부 중심축 근처의 거의 같은 곡선 위로 몰려 겹쳤다 — K는
-      // 고정하고, 대신 퍼짐이 큰(부채꼴 가장자리로 몰리는) 노드일수록 반지름 자체도 조금씩 더
-      // 벌려서(FLARE) 각도가 빽빽해지는 만큼 반지름으로 벌어지는 실제 거리(호의 길이)를 보충한다.
-      const radius = ROOT_GAP + ld * ROW_STEP + FLARE * Math.abs(spread);
-      const angleOffset = Math.atan(spread / SPREAD_K) * (WEDGE_HALF / (Math.PI / 2));
-      const angle = ANGLE_CENTER[it.dir] + angleOffset;
-      it.cx = radius * Math.cos(angle);
-      it.cy = radius * Math.sin(angle);
-      it.x = it.cx - boxW / 2;
-      it.y = it.cy - boxH / 2;
+      if (it.dir === "N") { it.x = spread * VCOL; it.y = -(ROOT_GAP + ld * VROW); }
+      else if (it.dir === "S") { it.x = spread * VCOL; it.y = ROOT_GAP + ld * VROW; }
+      else if (it.dir === "E") { it.x = ROOT_GAP + ld * HCOL; it.y = spread * HROW; }
+      else { it.x = -(ROOT_GAP + ld * HCOL); it.y = spread * HROW; }
     }
     // (버그 수정) 겹침을 매번 다시 계산해 밀어내는 방식(격자 기반 충돌 해소)을 몇 차례 시도했지만,
     // 그때그때 새로 발견되는 충돌 쌍·필요한 이동량이 매번 달라져 오히려 안정성을 해쳤다(심하면
@@ -4124,50 +4089,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     if (!centerFrozenRef.current) centerFrozenRef.current = { x: -minX + PAD, y: -minY + PAD };
     const centerX = centerFrozenRef.current.x, centerY = centerFrozenRef.current.y;
     for (const it of visible) { it.x += centerX; it.y += centerY; }
-    // (기능) 같은 오프닝 이름을 공유하는 노드들(부모로부터 물려받아 groupKey가 같은 것들)의
-    // 바운딩 박스를 모아, 그 오프닝의 하위 갈래 전체를 점선 영역 하나로 묶어 배경에 이름을 한 번만
-    // 보여준다 — 블록마다 반복해서 이름을 달지 않아도 된다. 더 구체적인(중첩된) 하위 오프닝은
-    // 부모 오프닝의 영역 안에 더 작은 자기 영역을 갖는데, 넓이가 큰 순으로(대체로 바깥쪽) 먼저
-    // 그려서 좁은(대체로 안쪽) 영역이 그 위에 겹쳐 보이게 한다.
-    const GROUP_PAD = 22;
-    const groupMap = new Map();
-    for (const it of visible) {
-      if (!it.groupKey) continue;
-      let g = groupMap.get(it.groupKey);
-      if (!g) { g = { key: it.groupKey, name: it.groupName, minX: it.x, maxX: it.x + boxW, minY: it.y, maxY: it.y + boxH, count: 0, rootX: it.x, rootY: it.y }; groupMap.set(it.groupKey, g); }
-      if (it.x < g.minX) g.minX = it.x;
-      if (it.x + boxW > g.maxX) g.maxX = it.x + boxW;
-      if (it.y < g.minY) g.minY = it.y;
-      if (it.y + boxH > g.maxY) g.maxY = it.y + boxH;
-      // (기능) 방향 안내판(edgeIndicators)에서 이 자리를 눌렀을 때, 바운딩 박스 한가운데(실제로는
-      // 아무 블록도 없는 빈 자리일 수 있음)가 아니라 이 오프닝이 실제로 "시작되는" 자리(이 이름이
-      // 처음 붙은 노드)로 정확히 이동하도록, 그 노드의 좌표를 따로 기억해 둔다.
-      if (it.isGroupRoot) { g.rootX = it.x; g.rootY = it.y; }
-      g.count++;
-    }
-    // (버그 수정) 이론상 한 오프닝 이름은 더 구체적인 하위 이름이 나오기 전까지 얼마든지 깊고
-    // 넓게 이어질 수 있어(예: "Caro-Kann Defense"처럼 세부 변형이 갈리기 전까지의 큰 갈래), 그
-    // 영역을 그대로 다 묶으면 캔버스 대부분을 덮는 거대한 점선 상자가 되어 오히려 더 지저분해
-    // 보였다 — 한눈에 "이 구간이 묶여 있다"고 알아볼 수 있는 적당한 크기(가로세로 각각 이 정도
-    // 이내)의 영역만 점선으로 표시하고, 그보다 훨씬 넓게 퍼진 상위 오프닝은 표시를 건너뛴다(대신
-    // 그 안의 더 구체적인 하위 오프닝들은 각자 적당한 크기라면 정상적으로 표시된다).
-    const MAX_GROUP_SPAN = 2600;
-    const candidates = [...groupMap.values()]
-      .map((g) => ({ ...g, minX: g.minX - GROUP_PAD, minY: g.minY - GROUP_PAD, maxX: g.maxX + GROUP_PAD, maxY: g.maxY + GROUP_PAD }))
-      .filter((g) => g.maxX - g.minX <= MAX_GROUP_SPAN && g.maxY - g.minY <= MAX_GROUP_SPAN)
-      .sort((a, b) => (b.maxX - b.minX) * (b.maxY - b.minY) - (a.maxX - a.minX) * (a.maxY - a.minY));
-    // (버그 수정) 부모-자식(중첩) 관계가 아닌 서로 다른 오프닝의 영역이 완전히 겹치지 않으면서도
-    // 살짝 걸쳐 있으면(형제 갈래끼리 자리가 가까울 때 흔함) 점선 테두리끼리 지저분하게 교차해
-    // 보였다 — 넓이가 큰 것부터 순서대로 "이미 그리기로 한 영역들"과 비교해, 완전히 포함되는
-    // 관계(중첩, 정상)가 아니면서 겹치기만 하는 영역은 그리지 않고 건너뛴다.
-    const contains = (outer, inner) => inner.minX >= outer.minX && inner.maxX <= outer.maxX && inner.minY >= outer.minY && inner.maxY <= outer.maxY;
-    const overlaps = (a, b) => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
-    const groups = [];
-    for (const g of candidates) {
-      const conflict = groups.some((p) => overlaps(g, p) && !contains(p, g) && !contains(g, p));
-      if (!conflict) groups.push(g);
-    }
-    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups };
+    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
   // (버그 수정) 검색해서 오프닝을 고르면 그 갈래만 남기고 나머지를 다 숨기던 방식이 오히려 트리
   // 전체 맥락을 잃게 해 불편하다는 피드백 — 이제 트리는 항상 전체를 보여주고, 대신 고른 오프닝으로
@@ -4373,53 +4295,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       return Math.hypot(sx - rect.width / 2, sy - rect.height / 2);
     };
   }, [items, priorityRef]);
-  // (기능) 건물 청사진의 방향 안내판처럼, 지금 화면 밖에 있는 주요 오프닝 갈래가 어느 방향에
-  // 있는지 뷰포트 가장자리에 화살표+이름으로 표시한다 — 점선 영역(위 groups)은 화면 안에 보이는
-  // 갈래를 구분해 주지만, 화면 밖으로 팬/줌해 나간 갈래는 어디 있는지 전혀 알 수 없었다. 형제가
-  // 어느 정도(3개 이상) 있는 그룹만 후보로 삼아(너무 자잘한 갈래로 화살표가 도배되지 않도록),
-  // 화면 중심에서 그 그룹 중심으로 향하는 각도를 구해 가장자리에 배치한다. 같은 방향(22.5도 단위)에
-  // 여러 갈래가 겹치면 가장 가까운 것 하나만 남긴다.
-  const edgeIndicators = useMemo(() => {
-    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-    const w = rect.width, h = rect.height;
-    const cx = w / 2, cy = h / 2;
-    // (버그 수정) 화살표 알약(pill)이 방향에 따라 회전하면서 그 자신의 너비만큼 중심점에서 더
-    // 밀려나올 수 있어(가로로 눕는 방향일수록 특히), 여백을 너무 좁게 잡으면 뷰포트 테두리
-    // (overflow:hidden)에 잘려 보였다 — 알약 자신의 대략적인 반너비만큼 넉넉히 여백을 둔다.
-    const MARGIN = 100;
-    const halfW = w / 2 - MARGIN, halfH = h / 2 - MARGIN;
-    const candidates = [];
-    for (const g of groups) {
-      if (g.count < 3) continue;
-      const gcx = (g.minX + g.maxX) / 2, gcy = (g.minY + g.maxY) / 2;
-      const sx = pan.x + gcx * zoom, sy = pan.y + gcy * zoom;
-      const gw = (g.maxX - g.minX) * zoom, gh = (g.maxY - g.minY) * zoom;
-      // 이미 화면 안에 (일부라도) 보이는 그룹은 점선 영역 자체로 충분히 구분되니 화살표가 필요 없다.
-      const onScreen = sx + gw / 2 > 0 && sx - gw / 2 < w && sy + gh / 2 > 0 && sy - gh / 2 < h;
-      if (onScreen) continue;
-      const dx = sx - cx, dy = sy - cy;
-      if (dx === 0 && dy === 0) continue;
-      const angle = Math.atan2(dy, dx);
-      // (버그 수정) 눌렀을 때 바운딩 박스 한가운데(실제로는 블록이 없는 빈 자리일 수 있음)가
-      // 아니라, 이 오프닝 이름이 실제로 시작되는 노드(rootX/rootY)로 정확히 이동하게 한다.
-      candidates.push({ key: g.key, name: g.name, angle, dist: Math.hypot(dx, dy), dx, dy, targetX: g.rootX, targetY: g.rootY });
-    }
-    const BUCKET = Math.PI / 8;
-    const buckets = new Map();
-    for (const c of candidates) {
-      const b = Math.round(c.angle / BUCKET);
-      const cur = buckets.get(b);
-      if (!cur || c.dist < cur.dist) buckets.set(b, c);
-    }
-    return [...buckets.values()].map((c) => {
-      const len = Math.hypot(c.dx, c.dy) || 1;
-      const dirX = c.dx / len, dirY = c.dy / len;
-      const scale = Math.min(dirX !== 0 ? Math.abs(halfW / dirX) : Infinity, dirY !== 0 ? Math.abs(halfH / dirY) : Infinity);
-      const px = cx + dirX * scale, py = cy + dirY * scale;
-      const angleDeg = Math.atan2(dirY, dirX) * 180 / Math.PI;
-      return { key: c.key, name: c.name, x: px, y: py, angleDeg, targetX: c.targetX, targetY: c.targetY };
-    });
-  }, [groups, pan, zoom]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
@@ -4467,33 +4342,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
-        {/* (기능) 오프닝 이름이 하위 갈래까지 계속 반복돼(예: "Caro-Kann Defense: Advance Variation"이
-            블록마다 매번 붙는 문제) 화면이 지저분해지는 대신, 같은 이름을 공유하는 갈래 전체를 점선
-            영역 하나로 묶고 배경에 이름을 한 번만 크게(옅게) 띄운다. 넓이가 큰(대체로 바깥쪽) 영역을
-            먼저 그려 중첩된 더 좁은(대체로 안쪽, 더 구체적인) 하위 오프닝 영역이 그 위에 오게 한다. */}
-        {groups.map((g) => (
-          <div key={"group-" + g.key} style={{ position: "absolute", left: g.minX, top: g.minY, width: g.maxX - g.minX, height: g.maxY - g.minY, border: "1.5px dashed rgba(138,90,43,.45)", borderRadius: 12, background: "rgba(196,154,80,.05)", pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
-            {/* (버그 수정) 이름을 한 줄로 고정(nowrap)해 두면 영역 폭보다 긴 이름이 잘려서 읽을 수
-                없었다 — 영역 폭 안에서 줄바꿈되게 하고, 그래도 다 못 담을 만큼 길면(아주 좁은 영역)
-                말줄임(ellipsis)으로 최소 앞부분은 읽히게 한다. */}
-            <span style={{ position: "absolute", left: 10, top: 6, right: 8, fontSize: 14, fontWeight: 800, color: "rgba(122,90,43,.32)", whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.25, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden", fontFamily: "ui-monospace,monospace" }}>{g.name}</span>
-          </div>
-        ))}
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
               짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
           {(() => {
-            // (기능) 부채꼴 레이아웃에서는 칩 자신의 중심이 곧 공유 원점(centerX,centerY)이고,
-            // 각 방향 루트(퍼짐 0)는 그 원점에서 정확히 ROOT_GAP만큼 떨어진 자기 중심각 위에
-            // 블록 "중심"이 오도록 배치된다(위 좌표 계산 참고) — 칩 가장자리에서 루트 블록의
-            // 칩 쪽 변까지만 짧게 이으면 된다.
-            const half = CHIP_SIZE / 2;
+            const ccx = centerX + boxW / 2, ccy = centerY + boxH / 2, half = CHIP_SIZE / 2;
             const traces = {
-              N: [centerX, centerY - half, centerX, centerY - ROOT_GAP + boxH / 2],
-              S: [centerX, centerY + half, centerX, centerY + ROOT_GAP - boxH / 2],
-              E: [centerX + half, centerY, centerX + ROOT_GAP - boxW / 2, centerY],
-              W: [centerX - half, centerY, centerX - ROOT_GAP + boxW / 2, centerY],
+              N: [ccx, ccy - half, ccx, centerY - ROOT_GAP + boxH],
+              S: [ccx, ccy + half, ccx, centerY + ROOT_GAP],
+              E: [ccx + half, ccy, centerX + ROOT_GAP, ccy],
+              W: [ccx - half, ccy, centerX - ROOT_GAP + boxW, ccy],
             };
             return Object.entries(traces).map(([dir, [x1, y1, x2, y2]]) => (
               <line key={"chip-trace-" + dir} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.brass} strokeWidth={2} opacity={0.5} strokeLinecap="round" />
@@ -4501,11 +4360,19 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           })()}
           {edges.map(([p, c]) => {
             if (p.depth === 0) return null;
-            // (기능) 부채꼴 레이아웃에서는 부모→자식이 더 이상 순수한 수평/수직 관계가 아니라
-            // (깊이=반지름, 퍼짐=각도이므로 형제마다 각도가 조금씩 다름) 예전의 ㄱ자(elbow) 커넥터
-            // 규칙(동/서는 좌우 변, 남/북은 위아래 변)이 더는 성립하지 않는다 — 부모 중심에서 자식
-            // 중심까지 곧은 선으로 이어, 실제 부채꼴/방사형 트리처럼 자연스럽게 갈라지는 모양이 되게 한다.
-            const pts = [[p.cx, p.cy], [c.cx, c.cy]];
+            const pc = coord(p), cc2 = coord(c);
+            // (기능) 나침반형 레이아웃 — 부모→자식 연결선이 그 갈래가 뻗어나가는 방향(c.dir)에 맞는
+            // 변끼리 이어지도록 한다(동/서는 좌우 변, 남/북은 위아래 변).
+            // (버그 수정) 곁가지가 부모에서 멀리(수만 px) 떨어지는 건 실제 나무처럼 트리가 넓기
+            // 때문에 피할 수 없다 — 대신 한 줄 대각선으로 길게 가로지르면 캔버스를 마구 관통해
+            // 지저분해 보이므로, 성장축을 따라 짧게 나온 뒤 직각으로 꺾어 자식까지 가는 ㄱ자(elbow)
+            // 커넥터로 그린다. 꺾이는 지점을 깊이 사이 중간에 두면 같은 열의 세로선들이 나란히 정렬돼
+            // 훨씬 정돈돼 보인다.
+            let pts;
+            if (c.dir === "E") { const x1 = pc.x + boxW, y1 = pc.y + boxH / 2, x2 = cc2.x, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
+            else if (c.dir === "W") { const x1 = pc.x, y1 = pc.y + boxH / 2, x2 = cc2.x + boxW, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
+            else if (c.dir === "N") { const x1 = pc.x + boxW / 2, y1 = pc.y, x2 = cc2.x + boxW / 2, y2 = cc2.y + boxH, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
+            else { const x1 = pc.x + boxW / 2, y1 = pc.y + boxH, x2 = cc2.x + boxW / 2, y2 = cc2.y, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
             // (버그 수정) 선 굵기가 채택률에 따라 제각각이라 트리 전체가 정신없어 보였다 — 굵기를
             // 하나로 통일해, 굵기가 아니라 실제 트리 구조로만 위계가 드러나게 한다.
             // (기능) 선택된 오프닝으로 가는 수순의 선만, 전선에 전류가 흐르듯 색이 바뀌고 흐르는
@@ -4520,7 +4387,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
-        <div style={{ position: "absolute", left: centerX - CHIP_SIZE / 2, top: centerY - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, pointerEvents: "none", zIndex: 2 }}>
+        <div style={{ position: "absolute", left: centerX + boxW / 2 - CHIP_SIZE / 2, top: centerY + boxH / 2 - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, pointerEvents: "none", zIndex: 2 }}>
           <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + T.brass, boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
           {[0, 1, 2].map((i) => (
             <React.Fragment key={i}>
@@ -4566,10 +4433,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               </button>
               {/* (버그 수정) rowH를 늘려 아래쪽 여유를 벌렸지만, 그래도 극단적으로 긴 이름이 들어오면
                   안전하게 2줄에서 말줄임(ellipsis)해 다음 줄 블록과 절대 겹치지 않도록 한다. */}
-              {/* (기능) 깊이 2부터는 오프닝 이름을 블록마다 반복해서 보여주지 않는다 — 위 groups
-                  점선 영역과 배경 워터마크가 그 역할을 대신한다. 깊이 1(첫 수) 자신만 예전처럼
-                  블록 바로 아래 라벨을 유지한다. */}
-              {it.depth === 1 && it.name && (
+              {it.name && (
                 <div style={{ position: "absolute", left: -8, top: boxH + 2, width: boxW + 16, maxHeight: 8 * 1.15 * 2, textAlign: "center", fontSize: 8, fontWeight: 700, color: "rgba(122,102,80,.85)", lineHeight: 1.15, wordBreak: "keep-all", pointerEvents: "none", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", textOverflow: "ellipsis" }}>{it.name}</div>
               )}
             </div>
@@ -4583,22 +4447,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               : { left: coord(openItem).x + boxW + 10, top: Math.max(0, coord(openItem).y + boxH / 2 - 150) }} />
         )}
       </div>
-      {/* (기능) 건물 청사진의 방향 안내판 — 화면 밖으로 나간 주요 오프닝 갈래가 어느 방향에 있는지
-          뷰포트 가장자리에 화살표+이름으로 알려준다. 팬/줌과 무관하게 뷰포트에 고정되도록, 팬/줌이
-          적용되는 트랜스폼 div 바깥(화면 좌표계)에 그린다. 눌러서 바로 그 방향으로 이동할 수 있다. */}
-      {edgeIndicators.map((ind) => (
-        // (버그 수정) 알약 전체를 방향대로 돌리고 글자만 반대로 되돌리면(중첩 transform), 회전한
-        // 부모의 flex 배치 축을 따라 글자가 비스듬히 놓인 것처럼 보여 오히려 읽기 어려웠다 — 알약
-        // 자체는 항상 수평으로 두고(늘 똑바로 읽힘), 작은 화살표 아이콘 하나만 방향대로 돌린다.
-        <button key={"edge-" + ind.key} className="no-pan" onClick={() => {
-          userPannedRef.current = true;
-          const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-          setPan({ x: rect.width / 2 - (ind.targetX + boxW / 2) * zoom, y: rect.height / 2 - (ind.targetY + boxH / 2) * zoom });
-        }} style={{ position: "absolute", left: ind.x, top: ind.y, transform: "translate(-50%,-50%)", zIndex: 55, display: "flex", alignItems: "center", gap: 4, padding: "3px 9px 3px 6px", borderRadius: 999, background: "rgba(36,21,9,.88)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 10.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", cursor: "pointer", boxShadow: "0 2px 8px -2px rgba(0,0,0,.6)", whiteSpace: "nowrap" }}>
-          <ChevronRight size={12} style={{ flexShrink: 0, transform: "rotate(" + ind.angleDeg + "deg)" }} />
-          <span style={{ display: "inline-block", maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis" }}>{ind.name}</span>
-        </button>
-      ))}
     </div>
   );
 }
