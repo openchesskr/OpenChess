@@ -3880,19 +3880,30 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
   // kind/evalCp를 한 번에 계산해 넘겨준다(이미 불러온 rawMoves를 재사용하므로 추가 요청은 없음).
-  // (기능) 나침반형 레이아웃 — 남/북(세로) 방향으로 뻗는 서브트리는 깊이축이 세로라 라벨이 다음
-  // 깊이의 블록과 겹치지 않도록 깊이 간격(VROW)을 넉넉히 주고, 형제 퍼짐(가로)은 좀 더 촘촘히
-  // (VCOL). 동/서(가로) 방향은 반대로 깊이 간격(HCOL)은 촘촘히, 형제 퍼짐(세로, HROW)에 라벨이
-  // 겹치지 않을 정도의 여유를 준다.
-  const VCOL = 108, VROW = 86, HCOL = 158, HROW = 68;
-  // (버그 수정) 남/북 팔은 "가로로 퍼진(spread) x"가, 동/서 팔은 "깊이로 뻗은(depth) x"가 같은
-  // 화면 x축을 공유한다(y축도 마찬가지, 역할만 바뀜) — 즉 네 팔은 서로 독립적으로 얼마든지
-  // 넓어지거나 깊어질 수 있는데, 트리가 아주 커지면(수천 개) 한 팔이 충분히 넓어지고 이웃 팔이
-  // 충분히 깊어져 우연히 같은 좌표에서 서로 다른 갈래의 블록이 겹치는 경우가 생겼다(연결선이
-  // 서로 다른 오프닝을 가로질러 어지럽게 겹쳐 보이는 원인). 각 팔이 중심에서 시작하는 최소 거리를
-  // 넉넉히 늘려, 실제 사용 범위에서는 이런 교차 충돌이 일어나기 전에 트리 로딩이 끝나거나 사용자가
-  // 이미 다른 곳을 보고 있을 만큼 여유를 둔다(완전한 보장은 아니지만, 실사용에서 충분히 드물게 만든다).
-  const ROOT_GAP = 260;
+  // (기능) 나침반형 레이아웃을 "직선 격자"가 아니라 부채꼴(건물 청사진의 방향 안내판처럼, 네
+  // 팔이 각자 자기 몫의 각도 범위 안에서만 뻗어나가는 모양)로 바꾼다. 예전엔 남/북 팔의 "가로
+  // 퍼짐"과 동/서 팔의 "가로 깊이"가 같은 화면 x축을 공유해(y축도 마찬가지), 트리가 아주 커지면
+  // 서로 다른 팔의 블록이 우연히 같은 좌표에서 겹치는 문제가 있었다 — 각 팔을 처음부터 자기만의
+  // 각도 범위(WEDGE_HALF)에 가둬 놓으면, 그 범위를 벗어날 수가 없으므로 이웃 팔과 절대 겹칠 수
+  // 없다(격자 방식은 "어쩌다 안 겹치길" 기대했지만, 부채꼴은 구조적으로 겹칠 수 없다).
+  // · WEDGE_HALF: 각 팔이 차지하는 부채꼴의 절반각(90°보다 충분히 좁게 잡아 이웃 팔과 사이에
+  //   여백을 둔다).
+  // · SPREAD_K: 형제(퍼짐) 값을 각도로 바꿀 때 쓰는 완충 상수 — atan(퍼짐/K)는 퍼짐이 아무리
+  //   커져도 항상 ±90° 안에 머무르므로(그래서 부채꼴 절반각을 절대 못 벗어남) 형제가 아주 많아지면
+  //   결국 가장자리로 몰려 각도 차이가 빽빽해진다. 이 매핑은 각 노드 자신의 퍼짐 값만으로 정해져
+  //   전체 형제 수와 무관하므로, 나중에 형제가 더 생겨도 이미 배치된 형제의 각도는 안 바뀐다(안정성
+  //   유지) — 대신 아래 FLARE로 각도가 빽빽해지는 만큼 반지름을 더 벌려 실제 픽셀 간격을 보충한다.
+  // · FLARE: 퍼짐 절댓값이 클수록(부채꼴 가장자리로 몰릴수록) 반지름도 함께 늘려, 각도만으로는
+  //   좁아지는 실제 간격(호의 길이 = 반지름×각도)을 보충한다 — 그래서 부채꼴이 중심 쪽은 좁고
+  //   가장자리로 갈수록 둥그렇게 더 벌어지는 모양이 된다(스케치의 "2단계"가 더 넓게 벌어지는 것과
+  //   같은 효과).
+  // · ROW_STEP: 깊이 한 단계마다 중심에서 멀어지는 기본 반지름 증가량.
+  const WEDGE_HALF = (34 * Math.PI) / 180;
+  const SPREAD_K = 1.1;
+  const FLARE = 160;
+  const ROW_STEP = 132;
+  const ANGLE_CENTER = { N: -Math.PI / 2, E: 0, S: Math.PI / 2, W: Math.PI };
+  const ROOT_GAP = 200;
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
   // (버그 수정) 세 가지 방식을 각각 시도했지만 모두 문제가 있었다.
@@ -4084,10 +4095,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (const it of visible) {
       const spread = it.depth === 1 ? 0 : it.pos - (rootPos[it.dir] || 0);
       const ld = it.depth - 1;
-      if (it.dir === "N") { it.x = spread * VCOL; it.y = -(ROOT_GAP + ld * VROW); }
-      else if (it.dir === "S") { it.x = spread * VCOL; it.y = ROOT_GAP + ld * VROW; }
-      else if (it.dir === "E") { it.x = ROOT_GAP + ld * HCOL; it.y = spread * HROW; }
-      else { it.x = -(ROOT_GAP + ld * HCOL); it.y = spread * HROW; }
+      // (기능) 부채꼴 레이아웃 — 퍼짐(spread)은 atan로 완충해 항상 자기 팔의 각도 범위(±WEDGE_HALF)
+      // 안에 머무는 각도로 바꾸고, 깊이(ld)는 중심에서 멀어지는 반지름의 기본값이 된다. it.x/it.y는
+      // 블록의 "중심" 좌표이므로, 실제 렌더링(top-left 기준)에서는 boxW/2, boxH/2를 빼서 쓴다.
+      // (버그 수정) K를 반지름에 비례시켜 봤지만(반지름이 클수록 더 여유롭게), 그러면 반대로 "퍼짐
+      // 값이 고정된 채 깊이만 깊어지는" 노드의 각도가 깊어질수록 계속 중심축 쪽으로 수렴해 버려,
+      // 서로 다른 갈래의 깊은 노드들이 전부 중심축 근처의 거의 같은 곡선 위로 몰려 겹쳤다 — K는
+      // 고정하고, 대신 퍼짐이 큰(부채꼴 가장자리로 몰리는) 노드일수록 반지름 자체도 조금씩 더
+      // 벌려서(FLARE) 각도가 빽빽해지는 만큼 반지름으로 벌어지는 실제 거리(호의 길이)를 보충한다.
+      const radius = ROOT_GAP + ld * ROW_STEP + FLARE * Math.abs(spread);
+      const angleOffset = Math.atan(spread / SPREAD_K) * (WEDGE_HALF / (Math.PI / 2));
+      const angle = ANGLE_CENTER[it.dir] + angleOffset;
+      it.cx = radius * Math.cos(angle);
+      it.cy = radius * Math.sin(angle);
+      it.x = it.cx - boxW / 2;
+      it.y = it.cy - boxH / 2;
     }
     // (버그 수정) 겹침을 매번 다시 계산해 밀어내는 방식(격자 기반 충돌 해소)을 몇 차례 시도했지만,
     // 그때그때 새로 발견되는 충돌 쌍·필요한 이동량이 매번 달라져 오히려 안정성을 해쳤다(심하면
@@ -4333,19 +4355,24 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     if (!priorityRef) return;
     priorityRef.current.selectedKey = selectedPath ? selectedPath.join(" ") : null;
   }, [selectedPath, priorityRef]);
+  // (버그 수정) items(전체 노드 수천 개)로부터 Map을 새로 만드는 게 꽤 무거운데, 이 effect가
+  // pan/zoom에도 의존해서, 화면을 드래그하거나 휠을 굴릴 때마다(포인터가 움직일 때마다 연달아)
+  // 그 무거운 Map 생성이 매번 다시 실행되고 있었다 — 이게 "움직일 때 렉 걸리는" 느낌의 핵심
+  // 원인이었다. Map은 실제로 트리 구조(items)가 바뀔 때만 다시 만들면 되고, pan/zoom의 "지금
+  // 값"은 이미 있는 panRef/zoomRef로 매번 새로 읽으면 되므로, effect 의존성에서 pan/zoom을 빼고
+  // ref로 대체한다 — 드래그 중에는 이 무거운 재계산이 전혀 일어나지 않는다.
   useEffect(() => {
     if (!priorityRef) return;
-    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-    const centerX = rect.width / 2, centerY = rect.height / 2;
     const posByKey = new Map(items.map((it) => [it.key, coord(it)]));
-    const p = pan, z = zoom;
     priorityRef.current.distanceOf = (key) => {
       const c = posByKey.get(key);
       if (!c) return 1e6; // 아직 위치를 모르는 노드는 화면과 무관하다고 보고 우선 펼친다.
+      const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+      const p = panRef.current, z = zoomRef.current;
       const sx = p.x + z * (c.x + boxW / 2), sy = p.y + z * (c.y + boxH / 2);
-      return Math.hypot(sx - centerX, sy - centerY);
+      return Math.hypot(sx - rect.width / 2, sy - rect.height / 2);
     };
-  }, [items, pan, zoom, priorityRef]);
+  }, [items, priorityRef]);
   // (기능) 건물 청사진의 방향 안내판처럼, 지금 화면 밖에 있는 주요 오프닝 갈래가 어느 방향에
   // 있는지 뷰포트 가장자리에 화살표+이름으로 표시한다 — 점선 영역(위 groups)은 화면 안에 보이는
   // 갈래를 구분해 주지만, 화면 밖으로 팬/줌해 나간 갈래는 어디 있는지 전혀 알 수 없었다. 형제가
@@ -4457,12 +4484,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
               짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
           {(() => {
-            const ccx = centerX + boxW / 2, ccy = centerY + boxH / 2, half = CHIP_SIZE / 2;
+            // (기능) 부채꼴 레이아웃에서는 칩 자신의 중심이 곧 공유 원점(centerX,centerY)이고,
+            // 각 방향 루트(퍼짐 0)는 그 원점에서 정확히 ROOT_GAP만큼 떨어진 자기 중심각 위에
+            // 블록 "중심"이 오도록 배치된다(위 좌표 계산 참고) — 칩 가장자리에서 루트 블록의
+            // 칩 쪽 변까지만 짧게 이으면 된다.
+            const half = CHIP_SIZE / 2;
             const traces = {
-              N: [ccx, ccy - half, ccx, centerY - ROOT_GAP + boxH],
-              S: [ccx, ccy + half, ccx, centerY + ROOT_GAP],
-              E: [ccx + half, ccy, centerX + ROOT_GAP, ccy],
-              W: [ccx - half, ccy, centerX - ROOT_GAP + boxW, ccy],
+              N: [centerX, centerY - half, centerX, centerY - ROOT_GAP + boxH / 2],
+              S: [centerX, centerY + half, centerX, centerY + ROOT_GAP - boxH / 2],
+              E: [centerX + half, centerY, centerX + ROOT_GAP - boxW / 2, centerY],
+              W: [centerX - half, centerY, centerX - ROOT_GAP + boxW / 2, centerY],
             };
             return Object.entries(traces).map(([dir, [x1, y1, x2, y2]]) => (
               <line key={"chip-trace-" + dir} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.brass} strokeWidth={2} opacity={0.5} strokeLinecap="round" />
@@ -4470,19 +4501,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           })()}
           {edges.map(([p, c]) => {
             if (p.depth === 0) return null;
-            const pc = coord(p), cc2 = coord(c);
-            // (기능) 나침반형 레이아웃 — 부모→자식 연결선이 그 갈래가 뻗어나가는 방향(c.dir)에 맞는
-            // 변끼리 이어지도록 한다(동/서는 좌우 변, 남/북은 위아래 변).
-            // (버그 수정) 곁가지가 부모에서 멀리(수만 px) 떨어지는 건 실제 나무처럼 트리가 넓기
-            // 때문에 피할 수 없다 — 대신 한 줄 대각선으로 길게 가로지르면 캔버스를 마구 관통해
-            // 지저분해 보이므로, 성장축을 따라 짧게 나온 뒤 직각으로 꺾어 자식까지 가는 ㄱ자(elbow)
-            // 커넥터로 그린다. 꺾이는 지점을 깊이 사이 중간에 두면 같은 열의 세로선들이 나란히 정렬돼
-            // 훨씬 정돈돼 보인다.
-            let pts;
-            if (c.dir === "E") { const x1 = pc.x + boxW, y1 = pc.y + boxH / 2, x2 = cc2.x, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
-            else if (c.dir === "W") { const x1 = pc.x, y1 = pc.y + boxH / 2, x2 = cc2.x + boxW, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
-            else if (c.dir === "N") { const x1 = pc.x + boxW / 2, y1 = pc.y, x2 = cc2.x + boxW / 2, y2 = cc2.y + boxH, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
-            else { const x1 = pc.x + boxW / 2, y1 = pc.y + boxH, x2 = cc2.x + boxW / 2, y2 = cc2.y, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
+            // (기능) 부채꼴 레이아웃에서는 부모→자식이 더 이상 순수한 수평/수직 관계가 아니라
+            // (깊이=반지름, 퍼짐=각도이므로 형제마다 각도가 조금씩 다름) 예전의 ㄱ자(elbow) 커넥터
+            // 규칙(동/서는 좌우 변, 남/북은 위아래 변)이 더는 성립하지 않는다 — 부모 중심에서 자식
+            // 중심까지 곧은 선으로 이어, 실제 부채꼴/방사형 트리처럼 자연스럽게 갈라지는 모양이 되게 한다.
+            const pts = [[p.cx, p.cy], [c.cx, c.cy]];
             // (버그 수정) 선 굵기가 채택률에 따라 제각각이라 트리 전체가 정신없어 보였다 — 굵기를
             // 하나로 통일해, 굵기가 아니라 실제 트리 구조로만 위계가 드러나게 한다.
             // (기능) 선택된 오프닝으로 가는 수순의 선만, 전선에 전류가 흐르듯 색이 바뀌고 흐르는
@@ -4497,7 +4520,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
-        <div style={{ position: "absolute", left: centerX + boxW / 2 - CHIP_SIZE / 2, top: centerY + boxH / 2 - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, pointerEvents: "none", zIndex: 2 }}>
+        <div style={{ position: "absolute", left: centerX - CHIP_SIZE / 2, top: centerY - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, pointerEvents: "none", zIndex: 2 }}>
           <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + T.brass, boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
           {[0, 1, 2].map((i) => (
             <React.Fragment key={i}>
