@@ -3946,11 +3946,18 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
-      // (기능) 칭호(오프닝 이름)가 있는 노드만 새 그룹의 뿌리가 되고, 이름 없는 중간 수는 가장
-      // 가까운 이름 붙은 조상의 그룹에 그대로 속한다 — 더 구체적인 이름이 다시 나타나면 그 지점부터
-      // 새 그룹이 시작된다(중첩 가능).
-      const groupKey = name ? key : parentGroupKey;
-      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, groupKey, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      // (버그 수정) 처음엔 이름 붙은 노드마다(하위 바리에이션 포함) 전부 그룹을 새로 만들었는데,
+      // 실제로 원한 건 칭호 탭에 있는 13개 대표 오프닝(TITLE_OPENINGS)만 하나의 영역으로 묶는
+      // 것이었다 — 이미 그 13개 중 하나의 영역 안에 들어와 있으면(parentGroupKey가 있으면) 그
+      // 안의 더 구체적인 바리에이션 이름은 새 그룹을 만들지 않고 그대로 부모 그룹에 속한다. 아직
+      // 어떤 그룹에도 속하지 않았고, 이름이 그 13개 중 하나와 일치할 때만 새 그룹이 시작된다.
+      let groupKey = parentGroupKey;
+      let groupFamLabel = null;
+      if (!parentGroupKey && name) {
+        const fam = TITLE_OPENINGS.find((f) => f.rx.test(name));
+        if (fam) { groupKey = key; groupFamLabel = fam.label; }
+      }
+      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, groupKey, groupFamLabel, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
       const kids = [];
       if (rawMoves && rawMoves.length) {
         // (버그 수정) 예전엔 "자식 자신의 데이터가 이미 로드됐는지"(treeData.has(자식 키))로
@@ -4102,14 +4109,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       groupMembers.get(it.groupKey).push(it);
     }
     const GROUP_PAD = 26;
-    // (버그 수정) 하위 갈래로 갈라지기 전의 대분류 이름(예: 세부 바리에이션 이전의 "카로칸 방어"
-    // 자체)이 아주 넓은 범위에 걸쳐 남아 있으면 캔버스 대부분을 뒤덮는 거대한 점선 상자가 생겨
-    // 오히려 방해가 된다 — 지나치게 큰 영역은 그리지 않는다(더 구체적인 하위 그룹은 정상 표시).
+    // (버그 수정) 칭호 탭의 13개 오프닝 중 하나가 아주 이른 단계(예: 세부 바리에이션으로 갈라지기
+    // 전의 "카로칸 방어" 자체)에서 시작해 그 자손이 극단적으로 넓게 퍼지면, 캔버스 대부분을
+    // 뒤덮는 거대한 점선 상자가 생겨 오히려 방해가 된다 — 지나치게 큰 영역은 그리지 않는다.
     const MAX_GROUP_SPAN = 2600;
     let groupBoxes = [];
     for (const [gk, members] of groupMembers) {
       const root = members.find((m) => m.key === gk);
-      if (!root) continue;
+      if (!root || !root.groupFamLabel) continue;
       let gminX = Infinity, gminY = Infinity, gmaxX = -Infinity, gmaxY = -Infinity;
       for (const m of members) {
         if (m.x < gminX) gminX = m.x; if (m.y < gminY) gminY = m.y;
@@ -4117,10 +4124,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       }
       const gx = gminX - GROUP_PAD, gy = gminY - GROUP_PAD, gw = gmaxX - gminX + GROUP_PAD * 2, gh = gmaxY - gminY + GROUP_PAD * 2;
       if (gw > MAX_GROUP_SPAN || gh > MAX_GROUP_SPAN) continue;
-      groupBoxes.push({ key: gk, name: root.name, dir: root.dir, x: gx, y: gy, w: gw, h: gh, rootX: root.x, rootY: root.y });
+      groupBoxes.push({ key: gk, name: root.groupFamLabel, dir: root.dir, x: gx, y: gy, w: gw, h: gh, rootX: root.x, rootY: root.y });
     }
-    // (버그 수정) 포함 관계(상위 오프닝 안의 하위 오프닝)가 아닌, 서로 다른 갈래끼리 일부만 겹치는
-    // 경우는 더 큰 쪽만 남겨 지저분해 보이지 않게 한다 — 진짜 중첩은 그대로 둔다.
+    // (버그 수정) 서로 다른 갈래끼리 영역이 일부만 겹치면 지저분해 보인다 — 더 큰 쪽만 남긴다
+    // (13개 오프닝은 서로 중첩되지 않으므로 진짜 포함 관계가 생길 일은 없지만, 레이아웃이 우연히
+    // 겹치는 경우에 대비한 안전장치로 남겨둔다).
     const gContains = (a, b) => a.x <= b.x && a.y <= b.y && a.x + a.w >= b.x + b.w && a.y + a.h >= b.y + b.h;
     const gOverlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
     groupBoxes.sort((a, b) => b.w * b.h - a.w * a.h);
