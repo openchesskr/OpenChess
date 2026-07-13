@@ -4515,14 +4515,29 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             </div>
           );
         })}
-        {openItem && openParentM && (
+      </div>
+      {/* (버그 수정) 수 설명 카드가 팬/줌 트랜스폼이 걸린(scale(zoom)) 안쪽에 있으면 카드 자신도
+          모식도 확대/축소를 그대로 따라가 축소 시엔 잘리고 확대 시엔 지나치게 커졌다 — 트랜스폼
+          바깥(화면 좌표계)으로 꺼내, 앵커(그 수 블록)의 화면상 위치만 pan/zoom으로 계산해 따라가되
+          카드 자신의 크기는 항상 창(boxRef) 크기에 비례한 고정 비율로 유지한다. */}
+      {openItem && openParentM && (() => {
+        const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+        const oc = coord(openItem);
+        const nodeScreenX = pan.x + zoom * oc.x, nodeScreenY = pan.y + zoom * oc.y;
+        const nodeScreenW = boxW * zoom, nodeScreenH = boxH * zoom;
+        const CARD_W = Math.max(240, Math.min(300, rect.width - 32));
+        const CARD_H_EST = 460;
+        let left, top;
+        if (vertical) { left = nodeScreenX + nodeScreenW / 2 - CARD_W / 2; top = nodeScreenY + nodeScreenH + 10; }
+        else { left = nodeScreenX + nodeScreenW + 10; top = nodeScreenY + nodeScreenH / 2 - CARD_H_EST / 2; }
+        left = Math.max(4, Math.min(left, rect.width - CARD_W - 4));
+        top = Math.max(4, Math.min(top, rect.height - CARD_H_EST - 4));
+        return (
           <DexMoveBlock path={openItem.path.slice(0, -1)} m={openParentM} isUnlocked={openItem.unlocked}
             cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)} onOpenOpening={onOpenOpening}
-            style={vertical
-              ? { left: Math.max(0, coord(openItem).x + boxW / 2 - 140), top: coord(openItem).y + boxH + 10 }
-              : { left: coord(openItem).x + boxW + 10, top: Math.max(0, coord(openItem).y + boxH / 2 - 150) }} />
-        )}
-      </div>
+            style={{ left, top, width: CARD_W }} />
+        );
+      })()}
     </div>
   );
 }
