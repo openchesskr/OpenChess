@@ -3717,6 +3717,13 @@ function dexIsUnlocked(chesscom, ccReady, unlockAll, pathSans) {
 // 정확히 같은 상수를 모듈 스코프로 꺼내 공유한다 — MIN_DEPTH/ADOPT_CUTOFF 값이 서로 갈라지면 트리에
 // 표시되는 자식 집합과 실제로 데이터가 채워지는 자식 집합이 어긋난다.
 const DEX_MIN_DEPTH = 5, DEX_ADOPT_CUTOFF = 10;
+// (버그 수정) MIN_DEPTH 안에서는 채택률과 무관하게 "그 위치의 후보 수 전부"를 보여주는데, 시실리안
+// 2...c5처럼 리체스 탐색기가 후보를 20~40개씩 돌려주는 자리는 한 부모 밑에 형제가 수십 개가 되어,
+// 이미 확정된 이웃 사이의 좁은 틈(자세한 이유는 OpeningSchematic의 posCacheRef 주석 참고)에 억지로
+// 다 끼워 넣다 보니 블록 몇 개가 몇 px 안에 겹쳐 보이는 심각한 무질서가 생겼다(모바일에서 특히
+// 눈에 띔). 한 부모의 형제 수를 이 상수로 못박아, 이론 수(book)는 전부 포함하고 나머지는 채택률
+// 상위 순으로만 채운다 — 실제 렌더링되는 형제 수를 늘 감당 가능한 범위로 유지한다.
+const DEX_MAX_CHILDREN = 8;
 function useOpeningTreeAuto(priorityRef) {
   const [version, setVersion] = useState(0);
   const mapRef = useRef(new Map());
@@ -3934,10 +3941,27 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         if (path.length === 0) ordered = filtered;
         else {
           let sanOrder = orderCacheRef.current.get(key);
-          if (!sanOrder) { sanOrder = centerOrderByAdopt(filtered).map((m) => m.san); orderCacheRef.current.set(key, sanOrder); }
-          else {
+          if (!sanOrder) {
+            let initial = centerOrderByAdopt(filtered).map((m) => m.san);
+            // (버그 수정) 위 DEX_MAX_CHILDREN 주석 참고 — 이론 수는 전부 남기고, 나머지는 채택률
+            // 상위 순으로만 상한까지 채운다.
+            if (initial.length > DEX_MAX_CHILDREN) {
+              const book = initial.filter((s) => isBookMoveAt(key, s));
+              const nonBook = initial.filter((s) => !isBookMoveAt(key, s))
+                .map((s) => filtered.find((m) => m.san === s))
+                .sort((a, b) => (b.adopt || 0) - (a.adopt || 0))
+                .map((m) => m.san);
+              const keep = new Set([...book, ...nonBook.slice(0, Math.max(0, DEX_MAX_CHILDREN - book.length))]);
+              initial = initial.filter((s) => keep.has(s));
+            }
+            sanOrder = initial;
+            orderCacheRef.current.set(key, sanOrder);
+          } else {
             const newOnes = filtered.filter((m) => !sanOrder.includes(m.san)).map((m) => m.san);
-            if (newOnes.length) { sanOrder = [...sanOrder, ...newOnes]; orderCacheRef.current.set(key, sanOrder); }
+            // (버그 수정) 이미 상한을 채운 뒤에 새로 나타난 수는, 이론 수가 아니면 더 안 늘린다 —
+            // 이론 수는 큐레이션된 유한한 집합이라 예외로 항상 끼워 준다.
+            const toAdd = newOnes.filter((s) => isBookMoveAt(key, s) || sanOrder.length < DEX_MAX_CHILDREN);
+            if (toAdd.length) { sanOrder = [...sanOrder, ...toAdd]; orderCacheRef.current.set(key, sanOrder); }
           }
           ordered = sanOrder.map((s) => filtered.find((m) => m.san === s)).filter(Boolean);
         }
@@ -3964,6 +3988,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 깊은 라인은 여러 단계에 걸쳐 반복적으로 자리를 넓혀야 해서 그 누적으로 결국 화면이 계속
     // 흔들렸다 — 안정성이 최우선이므로, 아주 드물게 이론이 극단적으로 깊고 넓은 라인에서 블록
     // 몇 개가 다소 촘촘히 붙는 것을 감수하고 "이미 놓인 블록은 절대 안 움직인다"를 지킨다.
+    // (버그 수정) 새 leaf에게 정확히 "1칸"만 주면, 그 leaf가 나중에 internal이 될 때(자식을 여러 개
+    // 얻을 때) 물려줄 수 있는 여유가 전혀 없어 곧바로 그 좁은 1칸 안에 자식들이 눌려 들어갔다 —
+    // 형제 수 상한(DEX_MAX_CHILDREN)만큼은 나중에 internal이 되어도 무리 없이 나눠 가질 수 있도록,
+    // leaf 하나가 처음 생길 때 "1칸"이 아니라 "상한만큼의 여유"를 미리 예약해 둔다(간단한 종점
+    // leaf만 남는 대부분의 경우엔 그냥 다소 넉넉한 간격으로 보일 뿐이고, 실제로 갈라지는 자리는
+    // 더 이상 극단적으로 좁아지지 않는다).
+    const LEAF_RESERVE = Math.max(2, Math.round(DEX_MAX_CHILDREN / 2));
     for (const dir of ["N", "S", "E", "W"]) {
       const cache = posCacheRef.current[dir];
       const order = leafList[dir];
@@ -3972,9 +4003,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         if (cache.has(order[i].key)) { i++; continue; }
         let j = i;
         while (j < order.length && !cache.has(order[j].key)) j++;
-        const leftVal = i > 0 ? cache.get(order[i - 1].key) : -1;
-        const rightVal = j < order.length ? cache.get(order[j].key) : leftVal + (j - i) + 1;
         const count = j - i;
+        const leftVal = i > 0 ? cache.get(order[i - 1].key) : -LEAF_RESERVE;
+        const rightVal = j < order.length ? cache.get(order[j].key) : leftVal + (count + 1) * LEAF_RESERVE;
         for (let k = 0; k < count; k++) cache.set(order[i + k].key, leftVal + (rightVal - leftVal) * (k + 1) / (count + 1));
         i = j;
       }
@@ -4028,6 +4059,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (기능) 선택된 오프닝으로 가는 수순을 강조하는 "전류" 색 — 나머지(브라스/이론 갈색) 톤과 뚜렷이
   // 구분되는 전기적인 청록색을 쓴다.
   const ELECTRIC = "#22D3F0";
+  // (버그 수정) 트리가 열리자마자 아주 짧은 순간(0~2초 안팎) 동안은, 정적 스냅샷/캐시에서 한꺼번에
+  // 쏟아져 들어오는 여러 노드가 같은 렌더에서 동시에 leaf→internal로 바뀌며 그 조상들의 "자식 평균"
+  // 좌표가 연쇄적으로 크게 움직인다(leaf 자신의 좌표는 캐싱돼 안 바뀌지만, internal 노드는 항상
+  // 그 순간의 자식 평균으로 다시 계산되기 때문 — 트리가 자라며 자연히 생기는, leaf 겹침과는 다른
+  // 종류의 움직임). 이 초반 급변 구간이 지나가기 전까지는 화면에 트리를 그리지 않고 짧게
+  // "불러오는 중…"만 보여줘, 사용자가 그 흔들리는 과정 자체를 보지 않게 한다.
+  const [ready, setReady] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setReady(true), 3200); return () => clearTimeout(t); }, []);
   const [pan, setPan] = useState({ x: 16, y: 16 });
   const [zoom, setZoom] = useState(1);
   const dragRef = useRef(null);
@@ -4212,8 +4251,25 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
       // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
       style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
-      <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)" }}>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ width: "100%", boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
+      {!ready && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</div>
+      )}
+      <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)", visibility: ready ? "visible" : "hidden" }}>
+        <div style={{ display: "flex", gap: 4 }}>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
+          {/* (기능) 검색·드래그·확대로 화면이 흐트러졌을 때, 첫 4수(e4/d4/c4/Nf3)가 보이는 정중앙
+              기본 화면으로 한 번에 되돌리는 버튼 — 줌을 100%로, 팬은 나침반 중심으로 되돌리고
+              userPannedRef를 풀어 이후 트리가 자라도 다시 자동으로 중앙을 따라가게 한다. */}
+          <button onClick={() => {
+            userPannedRef.current = false;
+            selectionLockRef.current = false;
+            setZoom(1);
+            const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+            setPan({ x: rect.width / 2 - (centerRef.current.x + boxW / 2), y: rect.height / 2 - (centerRef.current.y + boxH / 2) });
+          }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <RotateCcw size={13} />
+          </button>
+        </div>
         {/* (버그 수정) "강조 해제" 버튼을 따로 둘 필요 없다는 피드백 — 화면을 손으로 옮기면
             (checkSelectionDrift) 확대 강조가 자동으로 풀리니, 검색 결과 드롭다운만 남긴다. */}
         {query.trim() && (
@@ -4229,12 +4285,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           </div>
         )}
       </div>
-      <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
+      <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
         <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => setZoom(1)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
         <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
-      <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0" }}>
+      <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {edges.map(([p, c]) => {
             if (p.depth === 0) return null;
