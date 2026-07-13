@@ -4175,19 +4175,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => { panRef.current = pan; }, [pan]);
   const zoomRef = useRef(zoom);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-  // (기능) 검색창 밑 작은 미니맵을 클릭하면 모식도 창 전체를 덮는 반투명 전체화면 미니맵을 띄운다 —
-  // 열려 있는 동안은 모식도 자체의 팬/줌/키보드 이동을 잠시 막는다(아래 onPointerDown·wheel·WASD
-  // 핸들러의 가드 참고). 네이티브 휠 리스너·마운트 시 한 번만 등록되는 키보드 리스너는 클로저가
-  // 오래된 값을 볼 수 있으므로 ref로도 함께 들고 있는다.
-  const [showMinimapFull, setShowMinimapFull] = useState(false);
-  const showMinimapFullRef = useRef(false);
-  useEffect(() => { showMinimapFullRef.current = showMinimapFull; }, [showMinimapFull]);
-  useEffect(() => {
-    if (!showMinimapFull) return;
-    const onEsc = (e) => { if (e.key === "Escape") setShowMinimapFull(false); };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [showMinimapFull]);
   // (기능) 나침반형 레이아웃에서는 e4/d4/c4/Nf3 네 수가 모두 정중앙 부근에 모여 있으므로, 처음
   // 보여줄 기본 화면은 그 중심(centerX, centerY)을 뷰포트 가운데에 맞춘다. 사용자가 직접 팬하기
   // 전까지는 계속 다시 맞춘다.
@@ -4223,7 +4210,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const sx = nextPan.x + (c.x + boxW / 2) * nextZoom, sy = nextPan.y + (c.y + boxH / 2) * nextZoom;
     if (Math.hypot(sx - rect.width / 2, sy - rect.height / 2) > 80) { selectionLockRef.current = false; setZoom(1); }
   };
-  const onPointerDown = (e) => { if (showMinimapFull) return; if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
     const next = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
@@ -4240,7 +4227,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const el = boxRef.current;
     if (!el) return;
     const handleWheel = (e) => {
-      if (showMinimapFullRef.current) return;
       e.preventDefault();
       setPan((p) => { const next = { x: p.x - e.deltaX, y: p.y - e.deltaY }; checkSelectionDrift(next, zoomRef.current); return next; });
     };
@@ -4303,7 +4289,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => {
     const KEY_DIR = { arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] };
     const onKeyDown = (e) => {
-      if (showMinimapFullRef.current) return;
       if (!selectedPathRef.current) return;
       const tag = (e.target && e.target.tagName) || "";
       if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
@@ -4356,42 +4341,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   }, [items, priorityRef]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
-  // (기능) 검색창 밑 작은 미니맵 — 나침반 중심, 네 팔(e4/d4/c4/Nf3)이 뻗어나가는 방향, 지금 보고
-  // 있는 화면 범위(현재 위치), 그리고 칭호가 붙은 오프닝들의 위치(점선 영역 박스만, 개별 수 블록은
-  // 표시하지 않는다)를 한눈에 보여준다. 작은 미니맵과 클릭 시 뜨는 전체화면 미니맵이 같은 렌더
-  // 함수를 크기만 다르게 써서 항상 서로 일치한다.
-  const MM_PAD = 8;
-  const renderMinimap = (mmW, mmH) => {
-    const scale = Math.min((mmW - MM_PAD * 2) / Math.max(1, width), (mmH - MM_PAD * 2) / Math.max(1, height));
-    const offX = (mmW - width * scale) / 2, offY = (mmH - height * scale) / 2;
-    const w2m = (wx, wy) => ({ x: offX + wx * scale, y: offY + wy * scale });
-    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-    const vx = -pan.x / zoom, vy = -pan.y / zoom, vw = rect.width / zoom, vh = rect.height / zoom;
-    const tl = w2m(vx, vy), br = w2m(vx + vw, vy + vh);
-    const center = w2m(centerX + boxW / 2, centerY + boxH / 2);
-    const armLabel = { fontSize: 8, fontWeight: 800, color: T.inkSoft, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", pointerEvents: "none", position: "absolute" };
-    // (버그 수정) 트리가 한쪽 팔로 훨씬 더 넓게 자라면(흔함) 나침반 중심점 자체가 전체 바운딩
-    // 박스의 가로/세로 한가운데에서 크게 벗어난다 — 방향 라벨을 그 실제 중심점에 맞춰 두면 라벨이
-    // 미니맵 패널 가장자리 바깥으로 밀려나 잘려 보였다. 방향 라벨은 실제 중심점과 무관하게 항상
-    // 패널 네 변 한가운데(나침반 로즈처럼)에 고정해, 트리 모양과 상관없이 절대 잘리지 않게 한다.
-    return (
-      <>
-        {groups.map((g) => {
-          const a = w2m(g.x, g.y), b = w2m(g.x + g.w, g.y + g.h);
-          // (버그 수정) 트리 전체 크기에 비해 오프닝 하나의 영역은 아주 작아, 배율을 그대로 적용하면
-          // 1~2px짜리 점이 되어 양피지 배경과 색이 비슷해 거의 안 보였다 — 최소 크기를 보장하고
-          // 테두리·채우기 색을 더 진하게 해 축소된 상태에서도 또렷이 보이게 한다.
-          return <div key={"mm-g-" + g.key} style={{ position: "absolute", left: a.x, top: a.y, width: Math.max(3, b.x - a.x), height: Math.max(3, b.y - a.y), border: "1px solid rgba(120,74,26,.9)", background: "rgba(196,154,80,.6)", borderRadius: 1, pointerEvents: "none" }} />;
-        })}
-        <div style={{ position: "absolute", left: Math.min(tl.x, br.x), top: Math.min(tl.y, br.y), width: Math.max(2, Math.abs(br.x - tl.x)), height: Math.max(2, Math.abs(br.y - tl.y)), border: "1.5px solid " + T.book, background: "rgba(138,90,43,.10)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", left: center.x - 3, top: center.y - 3, width: 6, height: 6, borderRadius: "50%", background: T.brass, boxShadow: "0 0 0 2px rgba(196,154,80,.35)", pointerEvents: "none" }} />
-        <div style={{ ...armLabel, left: mmW / 2, top: 3, transform: "translateX(-50%)" }}>↑ e4</div>
-        <div style={{ ...armLabel, right: 3, top: mmH / 2, transform: "translateY(-50%)" }}>d4 →</div>
-        <div style={{ ...armLabel, left: mmW / 2, bottom: 3, transform: "translateX(-50%)" }}>↓ c4</div>
-        <div style={{ ...armLabel, left: 3, top: mmH / 2, transform: "translateY(-50%)" }}>← Nf3</div>
-      </>
-    );
-  };
   return (
     <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
@@ -4430,10 +4379,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               ))}
           </div>
         )}
-        {/* (기능) 검색창 바로 밑 작은 미니맵 — 클릭하면 전체화면 미니맵을 띄운다. */}
-        <div onClick={() => setShowMinimapFull(true)} title="미니맵 — 눌러서 전체화면으로 보기" className="press" style={{ position: "relative", marginTop: 6, width: 178, height: 108, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.92)", overflow: "hidden", cursor: "pointer", boxShadow: "0 2px 6px -2px rgba(0,0,0,.3)" }}>
-          {renderMinimap(178, 108)}
-        </div>
       </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
         <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
@@ -4558,26 +4503,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               : { left: coord(openItem).x + boxW + 10, top: Math.max(0, coord(openItem).y + boxH / 2 - 150) }} />
         )}
       </div>
-      {/* (기능) 미니맵을 클릭하면 모식도 창 전체를 덮는 반투명 전체화면 미니맵을 띄운다 — 열려
-          있는 동안은 위 onPointerDown·wheel·WASD 핸들러가 showMinimapFull(Ref)을 보고 모식도의
-          팬/줌/키보드 이동을 잠시 막는다. className="no-pan"이라 이 영역에서 시작한 포인터
-          드래그도 onPointerDown에서 걸러진다. */}
-      {showMinimapFull && (() => {
-        const hostRect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-        const fullW = Math.max(240, hostRect.width - 56), fullH = Math.max(240, hostRect.height - 56);
-        return (
-          <div className="no-pan" style={{ position: "absolute", inset: 0, zIndex: 200, background: "rgba(20,12,6,.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
-            onWheel={(e) => e.stopPropagation()}>
-            <div style={{ position: "relative", width: fullW, height: fullH, background: "rgba(251,245,232,.98)", borderRadius: 16, border: "1px solid " + T.brass, boxShadow: "0 20px 60px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
-              <div style={{ position: "absolute", top: 10, left: 14, zIndex: 5, fontSize: 12.5, fontWeight: 800, color: T.ink }}>미니맵</div>
-              <button onClick={() => setShowMinimapFull(false)} className="press" title="닫기" style={{ position: "absolute", top: 8, right: 8, zIndex: 5, width: 30, height: 30, borderRadius: 9, border: "1px solid " + T.brass, background: "rgba(255,255,255,.92)", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                <X size={16} />
-              </button>
-              <div style={{ position: "absolute", inset: 0 }}>{renderMinimap(fullW, fullH)}</div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
