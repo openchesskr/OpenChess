@@ -707,12 +707,10 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
       // 통과 가능한 대안 수 분기는 퍼즐의 핵심인 첫 수(depth 0)에서만 — 깊은 수에서까지 사용자 대안으로
       // 분기하면 "상대 응수가 다른" 라인 대신 "내 수만 다른" 라인이 늘어나 대응력 훈련 목적이 흐려진다.
       chosen = passables.slice(0, canBranch && depth === 0 ? 2 : 1);
-      if (canBranch && chosen.length < 3) {
-        // 유혹 수: 실전에서 자주 두어지지만 통과할 수 없는 수 — 모식도에 막힌 가지로만 표시
-        const trap = cands.filter((c) => !PUZZLE_PASS_KINDS.includes(c.kind) && (c.adopt || 0) >= 8)
-          .sort((a, b) => (b.adopt || 0) - (a.adopt || 0))[0];
-        if (trap) chosen = [...chosen, trap];
-      }
+      // (버그 수정) 예전엔 여기서 "유혹 수"(실전에서 자주 두어지지만 통과할 수 없는 수)를 모식도에
+      // 막힌 가지로 보여주려고 일부러 끼워 넣었는데, 실제로는 사용자가 그 가지를 시도해 보면(고스트를
+      // 눌러 두어 보게 되므로) 어디로도 이어지지 않는 리프가 그대로 모식도에 남아 "풀 수 없는 라인이
+      // 표시된다"는 혼란만 남겼다. 통과 가능한 수만 분기에 남긴다.
     } else {
       // 상대 응수: 최선 응수는 반드시 포함 + 채택률·평가치 혼합 점수 상위 — 최대 3갈래.
       // 큰 손실 수는 실전 채택률이 유의미할 때만 라인으로 인정한다(황당한 블런더 응수 방지).
@@ -4903,7 +4901,10 @@ function removeLastMoveOfLine(tree, path, seedSeq) {
 }
 // (20차 기능1) 모식도·메타 보강 효과가 공유하는 "공개된(이미 실제로 두어진) 경로 키" 집합 —
 // 해결한 라인의 전체 경로 + 현재 시도 중인 경로(prefix)만 공개하고, 그 밖의 미래 수는 다루지 않는다.
-function revealedPuzzleKeys(allLines, solvedNow, curKeys) {
+// (버그 수정) exploredKeys — 이번 세션에서 한 번이라도 실제로 두어 본 수의 전체 경로 키 집합(누적,
+// curKeys처럼 "처음부터"로 비워지지 않는다). 이게 없으면 라인을 풀다 만 상태에서 재시작할 때 이미
+// 들여다본 수들이 모식도에서 도로 가려져 "진행 상황이 초기화된 것처럼" 보인다.
+function revealedPuzzleKeys(allLines, solvedNow, curKeys, exploredKeys) {
   const s = new Set();
   for (const l of allLines) {
     if (!solvedNow.has(l.tag)) continue;
@@ -4911,6 +4912,7 @@ function revealedPuzzleKeys(allLines, solvedNow, curKeys) {
     for (let i = 1; i <= ks.length; i++) s.add(ks.slice(0, i).join(" "));
   }
   for (let i = 1; i <= curKeys.length; i++) s.add(curKeys.slice(0, i).join(" "));
+  if (exploredKeys) for (const k of exploredKeys) s.add(k);
   return s;
 }
 // (20차 기능1) 별 산정: 한 개 이상의 라인 해결=★1, 전체 라인의 50% 이상=★2, 전체 라인 해결=★3
@@ -5304,7 +5306,7 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, celebrateTag, shakeTag }) {
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, celebrateTag, shakeTag }) {
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
@@ -5326,7 +5328,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     // (20차 기능3) 개발자(canEdit)는 편집을 위해 트리 전체를 항상 볼 수 있어야 한다 — 그렇지 않으면
     // 라인을 삭제/추가한 직후 자기가 방금 만든 결과(미완성 상태 포함)조차 안 보여 계속 편집할 수 없다.
     // 일반 유저에게만 "아직 두지 않은 수는 고스트로 가린다" 원칙을 적용한다.
-    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys);
+    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys, exploredKeys);
     const items = []; const edges = [];
     const curKeyStr = curKeys.join(" ");
     // 실제로 둔 수(revealed)는 그대로 펼쳐 보이고, 아직 두지 않은 자식은 "고스트"(내용은 가리되 갈래가
@@ -5334,7 +5336,10 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const visit = (node, path, depth) => {
       const key = path.map((s) => stripSuffix(s)).join(" ");
       const it = { node, path, depth, key };
-      const rawKids = node.children || [];
+      // (버그 수정) pass:false(유혹 수 — 통과 불가) 자식은 어차피 어디로도 이어지지 않는 막다른
+      // 리프라 모식도에 "풀 수 없는 라인"으로만 보였다 — 지금은 아예 생성하지 않지만(genPuzzleTree),
+      // 예전에 만들어져 이미 저장된 퍼즐에도 그대로 적용되도록 렌더링 단계에서도 완전히 건너뛴다.
+      const rawKids = (node.children || []).filter((k) => k.pass !== false);
       const kids = [];
       for (const k of rawKids) {
         const kpath = [...path, k.san];
@@ -5382,7 +5387,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 40;
     const height = (Math.max(...items.map((it) => it.y)) + 1) * rowH + 20;
     return { items, edges, width, height, curItem };
-  }, [tree, allLines, solvedNow, curKeys.join(" "), celebrateTag, shakeTag]);
+  }, [tree, allLines, solvedNow, curKeys.join(" "), exploredKeys, celebrateTag, shakeTag]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
   const [zoom, setZoom] = useState(1);
   const dragRef = useRef(null);
@@ -5617,11 +5622,29 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 퍼즐/트리가 바뀌면 미해결 라인부터 새로 시작
   useEffect(() => {
     setSessionSolved(new Set());
+    setEverRevealed(new Set());
     setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null);
     setPage(0); setCelebrate(null);
     const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
     setTargetTag(first ? first.tag : null);
   }, [puzzle.id, tree]);
+  // (버그 수정) 모식도는 "실제로 두어진 수"만 보여주는데, 그 기준이 지금 진행 중인 pathNodes였다 —
+  // 그래서 라인을 몇 수 두어 보다가(아직 못 풀고) "처음부터"를 누르면 pathNodes가 비워지면서 그
+  // 라인에서 이미 드러났던 수들이 모식도에서 도로 고스트(가려짐)로 돌아가, 마치 진행 상황이 통째로
+  // 사라진 것처럼 보였다. pathNodes와 별개로 "이 세션에서 한 번이라도 실제로 둔 수" 전체를 계속
+  // 누적해 두고, 모식도의 공개 여부는 이 누적 집합(+해결한 라인) 기준으로만 판단한다 — 재시작해도
+  // 보드 진행(pathNodes)만 초기화될 뿐, 이미 들여다본 모식도 부분은 그대로 남는다.
+  const [everRevealed, setEverRevealed] = useState(() => new Set());
+  useEffect(() => {
+    if (!pathNodes.length) return;
+    setEverRevealed((prev) => {
+      const keyArr = pathNodes.map((n) => stripSuffix(n.san));
+      let changed = false;
+      const next = new Set(prev);
+      for (let i = 1; i <= keyArr.length; i++) { const k = keyArr.slice(0, i).join(" "); if (!next.has(k)) { next.add(k); changed = true; } }
+      return changed ? next : prev;
+    });
+  }, [pathNodes]);
   const targetLine = allLines.find((l) => l.tag === targetTag) || allLines[0] || null;
   const curNode = pathNodes.length ? pathNodes[pathNodes.length - 1] : tree;
   const curSans = useMemo(() => [...setup, ...pathNodes.map((n) => n.san)], [setup, pathNodes]);
@@ -5764,11 +5787,16 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // (18차 보충 UX10→20차) 퍼즐에서 두어지는 모든 수의 수 체계 아이콘 — 트리에 저장된 등급을 즉시 쓰고,
   // 등급이 없는 수(직전 실수 수·구버전 트리)만 엔진으로 정밀 판정한다.
   const [moveIcon, setMoveIcon] = useState(null);   // { key, to, kind }
+  // (버그 수정) intro(직전 수 재생) 동안에만 "컴퓨터가 둔 첫 수"(mistakeSan)의 아이콘을 계산해 두고,
+  // intro가 끝나는 순간(아직 사용자가 한 수도 안 둔 상태)엔 이 조건에 안 걸려 그냥 null로 지워버렸다 —
+  // 그 결과 아이콘이 재생 중에만 잠깐 보였다 정적 보드로 바뀌자마자 사라졌다. intro 여부와 무관하게
+  // "아직 아무 수도 안 둔 상태"라면 계속 mistakeSan을 기준으로 삼아, 사용자가 실제로 수를 두기
+  // 전까지는 시간이 지나도 아이콘이 그대로 유지되게 한다.
   useEffect(() => {
     let prevSans, mvSan, knownKind = null;
-    if (intro) { prevSans = puzzle.setupSans || []; mvSan = puzzle.mistakeSan; }
-    else if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = reply.node && reply.node.kind; }
+    if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = reply.node && reply.node.kind; }
     else if (pathNodes.length >= 1 && !wrong && !reverting) { prevSans = curSans.slice(0, -1); mvSan = pathNodes[pathNodes.length - 1].san; knownKind = pathNodes[pathNodes.length - 1].kind; }
+    else if (pathNodes.length === 0 && puzzle.setupSans && puzzle.mistakeSan) { prevSans = puzzle.setupSans; mvSan = puzzle.mistakeSan; }
     else { setMoveIcon(null); return; }
     const moverColor = prevSans.length % 2 === 0 ? "w" : "b";
     const info = sanSrc(boardFromSans(prevSans), stripSuffix(mvSan), moverColor);
@@ -5794,7 +5822,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   useEffect(() => { setMeta({}); }, [puzzle.id, tree]);
   useEffect(() => {
     // (20차 기능3) 개발자는 트리 전체를 보므로(위 PuzzleSchematic 참고) 메타 보강도 전체 트리를 대상으로 한다.
-    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, pathNodes.map((n) => stripSuffix(n.san)));
+    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, pathNodes.map((n) => stripSuffix(n.san)), everRevealed);
     const missing = [];
     (function walk(node, path) {
       for (const k of node.children || []) {
@@ -5826,7 +5854,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       }
     })();
     return () => { cancelled = true; };
-  }, [puzzle.id, tree, liveOn, engine && engine.status, pathNodes.length, solvedNow.size]);
+  }, [puzzle.id, tree, liveOn, engine && engine.status, pathNodes.length, solvedNow.size, everRevealed]);
   // (20차 기능1) 개발자 전용 — 모식도의 리프(라인의 끝)에서 "+"를 누르면 그 라인에 수를 하나 직접
   // 추가한다. 전체 트리를 다시 만드는 대신 그 리프 하나만 연장하며, kind/ev/adopt는 위 메타 보강
   // 효과가 배경에서 채운다. 결과는 CONTENT.puzzleOverrides로 저장되어 이 퍼즐을 푸는 모든 유저에게 반영된다.
@@ -5975,7 +6003,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
             </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
             {canEdit && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
