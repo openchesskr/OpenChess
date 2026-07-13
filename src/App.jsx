@@ -2296,6 +2296,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // 포지션(key)이 바뀔 때만 0으로 리셋하고, 이후엔 max로만 갱신한다.
   const depthKeyRef = useRef(null);
   const bumpDepth = useCallback((d) => { if (d == null) return; setCurDepth((prev) => (prev == null || d > prev) ? d : prev); }, []);
+  // (성능) 아래 실시간 평가 effect는 dep에 moves.length가 있어, 이 effect 자신이 후보 수를 채워
+  // moves가 늘어날 때마다 처음부터 다시 실행된다. 예전엔 재실행될 때마다 이 포지션 평가(be)와
+  // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
+  // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
+  const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, live: new Map() });
   const [engineNote, setEngineNote] = useState("");
   const [masterEmpty, setMasterEmpty] = useState(false); // 마스터 기보가 실제로 없는 경우(엔진 추천 허용)
   const extraKey = (extraSans || []).join(",");
@@ -2388,7 +2393,20 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         setPosEval(mkPosEval(partial));
         bumpDepth(partial.depth);
       };
-      const be = await engine.evaluate(sansToFen(sans), 16, onEvalProgress);
+      // (성능) 예전엔 movetime 없이 depth만 줘서, 복잡한 포지션에서는 depth에 도달할 때까지 무제한으로
+      // 오래 걸릴 수 있었다(수를 둘 때마다 이 effect가 다시 돌아 체감 지연으로 이어짐). analyzeGame·
+      // puzzleCandidatesAt처럼 movetime 상한을 둬 depth·시간 중 먼저 도달하는 쪽에서 멈추게 한다 —
+      // 대부분의 평범한 포지션은 이 시간 안에 목표 depth에 이미 도달하므로 체감 변화가 없고, 유독
+      // 오래 걸리던 복잡한 포지션만 실제로 빨라진다.
+      // (버그 수정) moves.length가 빠르게 연달아 바뀌면(예: 초반 이론 수가 순차 도착) 이 effect도
+      // 연달아 재실행되는데, 앞선 실행의 엔진 요청이 아직 끝나기 전(=캐시에 값이 채워지기 전)에
+      // 다음 실행이 시작되면 "값이 없으니 또 요청"하게 되어 캐시가 무력화된다. 값이 아니라 진행 중인
+      // Promise 자체를 즉시(await 전에) 캐시해 둬야, 뒤이은 재실행들이 새 요청 대신 같은 Promise를
+      // 기다리게 되어 중복 요청이 완전히 사라진다.
+      if (posCacheRef.current.key !== key) posCacheRef.current = { key, bePromise: null, pvsPromise: null, live: new Map() };
+      const cache = posCacheRef.current;
+      if (!cache.bePromise) cache.bePromise = engine.evaluate(sansToFen(sans), 16, onEvalProgress, 1200);
+      const be = await cache.bePromise;
       if (cancelled || !be) return;
       setPosEval(be.mate != null || be.cp != null ? mkPosEval(be) : null);
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
@@ -2401,7 +2419,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         // 한다 — 그렇지 않으면 스냅샷/Lichess에 없는 dev 전용 이론 수가 엔진 보충으로 뒤늦게 채워질 때
         // book 플래그가 빠진 채(비이론으로) 들어가는 경우가 생긴다.
         const devAddsBy2 = Object.fromEntries(addsFor(key).map((a) => [stripSuffix(a.san), a]));
-        const pvs = await engine.evaluateMulti(sansToFen(sans), 13, 10);
+        if (!cache.pvsPromise) cache.pvsPromise = engine.evaluateMulti(sansToFen(sans), 13, 10, 2500);
+        const pvs = await cache.pvsPromise;
         if (!cancelled && pvs && pvs.length) {
           const have = new Set(cur.map((m) => m.san));
           const add = [];
@@ -2425,7 +2444,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           }
         }
       }
-      const list = cur.map((m) => m.san);
+      // (성능) moves.length가 늘어 이 effect가 재실행되어도, 이전 실행에서 이미 live 평가를 받은
+      // 수는 다시 계산하지 않고 새로 추가된(아직 live가 없는) 수만 평가한다.
+      const list = cur.filter((m) => m.live == null).map((m) => m.san);
       for (const san of list) {
         if (cancelled) break;
         // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게 갱신되며
@@ -2440,7 +2461,13 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
           bumpDepth(partial.depth);
         };
-        const ev = await engine.evaluate(sansToFen([...sans, san]), 15, onMoveProgress);
+        // (성능) 이 루프는 화면에 보이는 모든 후보 수(캡 없이 최대 수십 개)를 순서대로 평가한다 —
+        // 한 수라도 movetime 없이 depth 15까지 오래 걸리면 그 뒤 모든 수의 평가가 줄줄이 밀린다.
+        // 수 하나당 상한을 짧게 둬 전체 루프가 예측 가능한 시간 안에 끝나게 한다. (버그 수정) 위의
+        // be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번 물어보는 걸 막기 위해 진행 중인
+        // Promise를 수(san)별로 캐시한다.
+        if (!cache.live.has(san)) cache.live.set(san, engine.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700));
+        const ev = await cache.live.get(san);
         if (cancelled || !ev) continue;
         const live = mkLive(ev);
         setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
