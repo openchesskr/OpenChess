@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { createClient } from "@supabase/supabase-js";
 import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronDown,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
@@ -200,7 +201,9 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
 
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
 // 육각형 등을 페이지 전반(상단뿐 아니라 하단까지)에 흩뿌려 첨부 레퍼런스 이미지의 "떠있는 도형들" 느낌을 낸다.
-function GeoBackdrop() {
+// (v0.0.5 성능) props 없는 순수 장식 SVG인데도 memo가 없으면 App이 리렌더될 때마다(3~30초 폴링 등)
+// 매번 다시 그려졌다 — React.memo로 최초 한 번만 계산하도록 고정.
+const GeoBackdrop = React.memo(function GeoBackdrop() {
   const g = "#C49A50";
   const dia = (x, y, sz, o) => <rect x={x} y={y} width={sz} height={sz} transform={"rotate(45 " + (x + sz / 2) + " " + (y + sz / 2) + ")"} fill="none" stroke={g} strokeWidth="1.2" opacity={o} />;
   const tri = (x, y, sz, o, filled) => <path d={"M" + x + " " + (y - sz) + " L" + (x + sz * 0.87) + " " + (y + sz * 0.5) + " L" + (x - sz * 0.87) + " " + (y + sz * 0.5) + " Z"} fill={filled ? g : "none"} stroke={g} strokeWidth="1" opacity={o} />;
@@ -258,7 +261,7 @@ function GeoBackdrop() {
       <circle cx="900" cy="1440" r="3" fill={g} opacity="0.14" />
     </svg>
   );
-}
+});
 
 const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
 /* (20차 기능2) 엔진 선택 — 설정 탭에서 두 엔진 중 고를 수 있다. "full"은 기존 Stockfish 16(NNUE, 강력
@@ -325,6 +328,29 @@ const SB_KEY = (typeof import.meta !== "undefined" && import.meta.env && import.
 const SB_ON = !!(SB_URL && SB_KEY);
 let SB_TOKEN = null; // Supabase Auth access_token (로그인 시 채워짐; 없으면 anon 으로 동작)
 const sbHeaders = () => ({ apikey: SB_KEY, Authorization: "Bearer " + (SB_TOKEN || SB_KEY), "Content-Type": "application/json" });
+// (v0.0.5 성능) 나머지 REST 호출은 그대로 fetch 기반(sbSelect/sbInsert 등)을 쓰되, Realtime(WebSocket)
+// 구독에만 공식 SDK 클라이언트를 둔다 — 자체 세션 관리(persistSession/autoRefreshToken)는 이미
+// SB_TOKEN/refresh_token 로 직접 하고 있으므로 꺼서 두 세션 소스가 어긋나지 않게 한다.
+const sbClient = SB_ON ? createClient(SB_URL, SB_KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
+// RLS가 auth.uid() 기준이라 Realtime 소켓도 같은 access_token으로 인증해야 내 알림/채팅만 필터링되어 온다 —
+// 로그인·로그아웃·토큰 갱신이 일어나는 모든 지점에서 SB_TOKEN을 직접 대입하지 않고 이 함수를 거치게 한다.
+function setSbToken(token) { SB_TOKEN = token || null; if (sbClient) sbClient.realtime.setAuth(SB_TOKEN || SB_KEY); }
+// (v0.0.5 성능) 알림·채팅·친구요청처럼 "다른 유저 행동으로 내 화면이 바뀌어야 하는" 데이터는 3~30초
+// 폴링 대신 Postgres 변경을 실시간으로 밀어받는다. filter는 PostgREST 문법 그대로(예: "to_uid=eq.<uid>").
+// 소켓이 끊긴 채 조용히 죽는 경우를 대비해 아주 느슨한 간격(fallbackMs)으로 안전망 재조회도 겸한다.
+function useRealtimeTable(table, filter, onEvent, enabled, fallbackMs) {
+  const cbRef = useRef(onEvent);
+  cbRef.current = onEvent;
+  useEffect(() => {
+    if (!enabled || !sbClient || !filter) return;
+    const channel = sbClient
+      .channel("rt:" + table + ":" + filter)
+      .on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => cbRef.current && cbRef.current(payload))
+      .subscribe();
+    const id = fallbackMs ? setInterval(() => cbRef.current && cbRef.current(null), fallbackMs) : null;
+    return () => { sbClient.removeChannel(channel); if (id) clearInterval(id); };
+  }, [table, filter, enabled, fallbackMs]);
+}
 async function sbRpc(fn, args) { const r = await fetch(SB_URL + "/rest/v1/rpc/" + fn, { method: "POST", headers: sbHeaders(), body: JSON.stringify(args || {}) }); if (!r.ok) throw new Error("rpc " + r.status); return await r.json(); }
 async function sbSelect(path) { const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: sbHeaders() }); if (!r.ok) throw new Error("sel " + r.status); return await r.json(); }
 async function sbUpsert(table, row) { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHeaders(), Prefer: "resolution=merge-duplicates" }, body: JSON.stringify(row) }); if (!r.ok) throw new Error("up " + r.status); }
@@ -7620,8 +7646,8 @@ async function gotrue(path, body) {
   const j = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, data: j };
 }
-function applySession(d) { if (!d || !d.access_token) return null; SB_TOKEN = d.access_token; saveRefresh(d.refresh_token || null); return (d.user && d.user.id) || null; }
-function clearSession() { SB_TOKEN = null; saveRefresh(null); }
+function applySession(d) { if (!d || !d.access_token) return null; setSbToken(d.access_token); saveRefresh(d.refresh_token || null); return (d.user && d.user.id) || null; }
+function clearSession() { setSbToken(null); saveRefresh(null); }
 /* uid → { uid, username, pub, progress } */
 async function loadAccount(uid) {
   let username = "", pub = {}, progress = {};
@@ -7715,7 +7741,7 @@ function parseRecoveryHash() {
 /* 새 비밀번호 설정(복구 세션 사용) → 성공 시 자동 로그인 account 반환 */
 async function authSetPassword(recovery, password) {
   if (!SB_ON) return { ok: false, error: "offline" };
-  SB_TOKEN = recovery.access_token;
+  setSbToken(recovery.access_token);
   try {
     const r = await fetch(SB_URL + "/auth/v1/user", { method: "PUT", headers: sbHeaders(), body: JSON.stringify({ password }) });
     const j = await r.json().catch(() => null);
@@ -7799,7 +7825,10 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
     payload: localResultRef.current[n.id] ? { ...(n.payload || {}), result: localResultRef.current[n.id] } : n.payload,
   }));
   const refresh = useCallback(async () => { if (!myUid) return; setItems(applyLocal(await notifyList(myUid))); }, [myUid]);
-  useEffect(() => { refresh(); const id = setInterval(refresh, 30000); return () => clearInterval(id); }, [refresh]);
+  useEffect(() => { refresh(); }, [refresh]);
+  // (v0.0.5 성능) 30초 폴링 대신 내 알림(to_uid=나) 변경을 Realtime으로 즉시 반영, 소켓이 끊겼을 때를
+  // 대비해 2분 간격의 느슨한 안전망만 남긴다.
+  useRealtimeTable("notifications", myUid ? "to_uid=eq." + myUid : null, refresh, !!myUid, 120000);
   // (18차 UX4) 패널 밖(검색·친구 버튼 포함) 아무 곳이나 클릭하면 알림 패널이 자동으로 닫힌다.
   useEffect(() => {
     if (!open) return;
@@ -7964,7 +7993,17 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack }) {
     const unread = rows.filter((m) => m.to_uid === myUid && !m.read);
     if (unread.length) chatMarkRead(unread);
   }, [myUid, otherUid]);
-  useEffect(() => { load(); const id = setInterval(load, 3000); return () => clearInterval(id); }, [load]);
+  useEffect(() => { load(); }, [load]);
+  // (v0.0.5 성능) 3초 폴링 대신 이 대화(나↔상대) 관련 chat_messages 변경(새 메시지 수신·읽음 표시)을
+  // Realtime으로 즉시 반영 — 안전망으로 1분 간격 재조회만 남긴다. postgres_changes 필터는 단일 컬럼
+  // 비교만 지원해 "나에게 온 메시지"/"내가 보낸 메시지의 읽음 갱신"을 각각 구독해야 한다.
+  const onRt = useCallback((payload) => {
+    const row = payload && (payload.new || payload.old);
+    if (row && row.from_uid !== otherUid && row.to_uid !== otherUid) return; // 이 대화 상대 관련 변경이 아니면 무시
+    load();
+  }, [load, otherUid]);
+  useRealtimeTable("chat_messages", myUid ? "to_uid=eq." + myUid : null, onRt, !!(myUid && otherUid), 60000);
+  useRealtimeTable("chat_messages", myUid ? "from_uid=eq." + myUid : null, onRt, !!(myUid && otherUid), 60000);
   useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [msgs.length]);
   const send = async (body, emoji) => {
     if (sending) return; if (!body && !emoji) return;
@@ -8406,7 +8445,7 @@ function parseOAuthHash() {
 /* OAuth 해시 → 세션 적용 + 계정 로드. username 이 비어 있으면(최초 구글 로그인) 아이디 설정 필요 */
 async function authFromHash(h) {
   if (!SB_ON) return null;
-  SB_TOKEN = h.access_token; saveRefresh(h.refresh_token || null);
+  setSbToken(h.access_token); saveRefresh(h.refresh_token || null);
   let uid = null;
   try { const r = await fetch(SB_URL + "/auth/v1/user", { headers: sbHeaders() }); if (r.ok) { const u = await r.json(); uid = (u && u.id) || null; } } catch { }
   if (!uid) { clearSession(); return null; }
@@ -8707,34 +8746,28 @@ export default function App() {
   const [chatsOpen, setChatsOpen] = useState(false); // (18차 UX7) 채팅 모아보기
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
   // (UI8) 메인 화면 친구 버튼에 보류 중인 요청 수를 배지로 표시 — 요청 탭을 열지 않아도 보이도록
-  useEffect(() => {
+  const checkPending = useCallback(async () => {
     if (!uid) { setPendingFriendCount(0); return; }
-    let cancelled = false;
-    const check = async () => {
-      const e = await friendEdges();
-      if (cancelled) return;
-      setPendingFriendCount(e.filter((x) => x.status !== "accepted" && x.to_uid === uid).length);
-    };
-    check();
-    const id = setInterval(check, 30000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [uid, friendsOpen]);
+    const e = await friendEdges();
+    setPendingFriendCount(e.filter((x) => x.status !== "accepted" && x.to_uid === uid).length);
+  }, [uid]);
+  useEffect(() => { checkPending(); }, [checkPending, friendsOpen]);
+  // (v0.0.5 성능) 30초 폴링 대신 나에게 온 친구 요청(friend_edges.to_uid=나) 변경을 Realtime으로 즉시
+  // 반영하고, 소켓이 끊겼을 때를 대비해 2분 간격의 느슨한 안전망만 남긴다.
+  useRealtimeTable("friend_edges", uid ? "to_uid=eq." + uid : null, checkPending, !!uid, 120000);
   // (18차 보충 UX7) 채팅 버튼에 표시할 "안읽은 채팅" 총 수 — 상대별로 안읽은 메시지가 있는 대화 상대 수(빨간 배지).
   const [unreadChatTotal, setUnreadChatTotal] = useState(0);
-  useEffect(() => {
+  const checkUnreadChat = useCallback(async () => {
     if (!uid) { setUnreadChatTotal(0); return; }
-    let cancelled = false;
-    const check = async () => {
-      const rows = await chatFetchAll(uid);
-      if (cancelled) return;
-      const senders = new Set();
-      for (const m of rows) { if (m.to_uid === uid && !m.read) senders.add(m.from_uid); }
-      setUnreadChatTotal(senders.size);
-    };
-    check();
-    const id = setInterval(check, 15000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [uid, chatsOpen]);
+    const rows = await chatFetchAll(uid);
+    const senders = new Set();
+    for (const m of rows) { if (m.to_uid === uid && !m.read) senders.add(m.from_uid); }
+    setUnreadChatTotal(senders.size);
+  }, [uid]);
+  useEffect(() => { checkUnreadChat(); }, [checkUnreadChat, chatsOpen]);
+  // (v0.0.5 성능) 15초 폴링 대신 나에게 온 채팅(chat_messages.to_uid=나) 변경을 Realtime으로 즉시 반영,
+  // 안전망으로 2분 간격 재조회만 남긴다.
+  useRealtimeTable("chat_messages", uid ? "to_uid=eq." + uid : null, checkUnreadChat, !!uid, 120000);
   // (17차) 알림 창에서 친구 요청을 바로 수락/거절
   const onAcceptNotif = useCallback(async (n) => {
     const fromUid = n.payload && n.payload.fromUid; if (!fromUid) return;
