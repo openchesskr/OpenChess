@@ -2,6 +2,17 @@
 
 체스 오프닝 학습·연습 애플리케이션.
 
+## 개발자용 배포 체크리스트
+
+### v0.0.5 반영 시
+
+- [ ] Supabase 대시보드 SQL Editor에 `supabase-setup.sql` 전체를 다시 실행할 것 — 특히 puzzles/notifications/chat_messages 정책과 맨 아래 "8) Realtime" 블록은 기존 운영 DB에 소급 적용해야 함(파일을 실행해야 반영되는 수동 마이그레이션이며, PR 머지·배포만으로는 DB에 반영되지 않음).
+- [ ] Realtime publication(`supabase_realtime`)에 notifications/chat_messages/friend_edges가 포함됐는지 위 SQL 실행 후 Supabase 대시보드 Database → Replication에서 눈으로도 확인할 것 — 빠지면 에러 없이 조용히 1~2분 안전망 폴링으로만 동작해 누락을 알아채기 어려움.
+- [ ] `npm install` 실행할 것 — `@supabase/supabase-js`가 새 의존성으로 추가됨(Realtime 구독 전용, 기존 REST 호출은 그대로 fetch 기반 유지).
+- [ ] 배포 환경(Vercel 등)에 `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`가 설정돼 있는지 확인할 것 — Realtime 소켓도 이 값으로 연결되므로 누락 시 알림/채팅이 안전망 폴링 주기로만 갱신됨(기능은 죽지 않지만 체감 지연이 커짐).
+- [ ] 배포 후 서로 다른 두 계정으로 실제 확인할 것: (1) 친구 요청을 보내면 상대 화면에 새로고침 없이 배지가 뜨는지, (2) 채팅을 열어둔 상태에서 메시지가 폴링 없이 즉시 도착하는지, (3) 칭호/레벨업 알림이 본인에게만 오는지.
+- [ ] 만약 puzzles.solves/likes를 서버 함수가 아니라 대시보드나 외부 스크립트로 직접 PATCH해 온 운영 습관이 있었다면, 이제 컬럼 grant가 없어 401/403이 남을 인지할 것 — 필요하면 `puzzle_solve`/`puzzle_like_toggle` RPC를 쓰도록 바꿀 것.
+
 ## 버전 기록
 
 ### OpenChess v0.0.5 — 2026/7/14

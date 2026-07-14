@@ -446,3 +446,23 @@ begin
   return query select v_liked, coalesce(v_likes, 0);
 end; $$;
 grant execute on function public.puzzle_like_toggle(bigint, uuid) to authenticated;
+
+-- ============================================================================
+-- 8) Realtime — 알림/채팅/친구요청 배지가 폴링 대신 실시간으로 갱신되려면(src/App.jsx의
+--    useRealtimeTable, v0.0.5) 아래 3개 테이블이 supabase_realtime publication에 포함돼 있어야
+--    한다. 신규 프로젝트는 기본적으로 포함돼 있지 않으므로 반드시 실행할 것 — 빠지면 클라이언트는
+--    postgres_changes 이벤트를 받지 못하고 1~2분 안전망 재조회에만 의존하게 된다(조용히 느려질 뿐
+--    에러는 나지 않아 누락을 알아채기 어려움).
+-- ============================================================================
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'notifications') then
+    alter publication supabase_realtime add table public.notifications;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_messages') then
+    alter publication supabase_realtime add table public.chat_messages;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'friend_edges') then
+    alter publication supabase_realtime add table public.friend_edges;
+  end if;
+end $$;
