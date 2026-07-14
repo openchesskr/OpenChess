@@ -2,6 +2,10 @@
 
 체스 오프닝 학습·연습 애플리케이션.
 
+## 머지 대기 중
+
+- `supabase-setup.sql`: v0.0.5에서 추가한 "puzzles insert" 정책이 `likes` 컬럼을 참조하는데, 그 컬럼을 추가하는 `alter table`이 스크립트 뒷부분(퍼즐 좋아요 절)에 있어 SQL Editor에서 위에서부터 순서대로 실행하면 "column likes does not exist" 오류로 중간에 멈추던 문제를 고침(`claude/openchess-v0-0-5-u4xdra` 브랜치에 커밋됨, 아직 main 미반영). v0.0.6 PR을 만들 때 함께 머지할 것.
+
 ## 버전 기록
 
 ### OpenChess v0.0.5 — 2026/7/14
