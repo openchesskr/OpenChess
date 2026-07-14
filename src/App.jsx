@@ -6250,6 +6250,13 @@ function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit
   );
 }
 function isChapterClaimed(mainQuest, key) { return !!((mainQuest && mainQuest.claimed) || {})[key]; }
+// (기능5) 같은 챕터(페이지) 안에 하위 챕터가 여러 개(예: CHAPTER 2의 e4/d4/c4/Nf3 응수)일 때도,
+// 페이지끼리와 마찬가지로 앞 번호부터 순서대로 클리어해야 다음 하위 챕터가 열리도록 한다.
+function rowUnlockedUpTo(rows, mainQuest) {
+  let idx = 0;
+  for (let i = 1; i < rows.length; i++) { if (isChapterClaimed(mainQuest, rows[i - 1][0])) idx = i; else break; }
+  return idx;
+}
 function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, contentVer }) {
   const [quizKey, setQuizKey] = useState(null);
   const [editKey, setEditKey] = useState(null);
@@ -6257,8 +6264,6 @@ function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, con
   // 다시 계산한다 — 그래야 개발자가 "+ 새 챕터 추가"로 만든 챕터도 실제로 화면에 노출된다.
   // parent 필드가 있는 챕터는 같은 parent끼리 묶어 한 페이지(CHAPTER N)로, parent가 없는 챕터는
   // ch1은 "CHAPTER 1"로, 그 외(신규 추가분)는 각각 별도 페이지가 된다.
-  // (개편) 챕터 하나하나를 세로로 늘어놓던 목록을, 챕터당 한 "페이지"로 만들어 좌우로 넘기는 방식으로
-  // 바꾸고, 이전 페이지(챕터)를 모두 클리어(보상까지 수령)해야 다음 페이지가 열리도록 순차 잠금을 건다.
   const pages = useMemo(() => {
     const entries = Object.entries(CONTENT.questChapters);
     const ch1Entry = entries.find(([k]) => k === "ch1");
@@ -6279,71 +6284,49 @@ function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, con
   }, [contentVer]);
   const n = pages.length;
   const pageComplete = (pg) => pg.rows.every(([k]) => isChapterClaimed(mainQuest, k));
+  // 이전 페이지(챕터)를 모두 클리어(보상까지 수령)해야 다음 페이지가 열리는 순차 잠금은 그대로 유지.
   const unlockedUpTo = useMemo(() => {
     let idx = 0;
     for (let i = 1; i < n; i++) { if (pageComplete(pages[i - 1])) idx = i; else break; }
     return idx;
   }, [pages, mainQuest]);
-  const [page, setPage] = useState(0);
-  useEffect(() => { setPage((p) => Math.min(p, unlockedUpTo)); }, [unlockedUpTo]);
-  const pagerRef = useRef(null);
-  const dragRef = useRef(null);
-  const [dragPx, setDragPx] = useState(0);
-  const dragging = !!dragRef.current;
-  const clampPage = (p) => Math.max(0, Math.min(unlockedUpTo, p));
-  const onPagerPointerDown = (e) => {
-    if (e.target.closest && e.target.closest("button, input, .no-pan, .no-swipe")) return;
-    dragRef.current = { x: e.clientX, w: pagerRef.current ? pagerRef.current.clientWidth : 380 };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  // 잠긴 다음 페이지 쪽·첫 페이지보다 앞쪽으로는 살짝만(1/3만큼) 저항감 있게 끌리게 해 "여기서 막힌다"는 걸 보여준다.
-  const onPagerPointerMove = (e) => {
-    if (!dragRef.current) return;
-    let d = e.clientX - dragRef.current.x;
-    if ((d < 0 && page >= unlockedUpTo) || (d > 0 && page <= 0)) d *= 0.3;
-    setDragPx(d);
-  };
-  const onPagerPointerUp = () => {
-    const st = dragRef.current; dragRef.current = null;
-    if (!st) { setDragPx(0); return; }
-    const threshold = st.w * 0.16;
-    if (dragPx <= -threshold) setPage((p) => clampPage(p + 1));
-    else if (dragPx >= threshold) setPage((p) => clampPage(p - 1));
-    setDragPx(0);
-  };
-  const goPage = (i) => setPage(clampPage(i));
+  // (기능5) 모바일에서 메인 퀘스트가 세로로 너무 길어지던 문제 — 챕터마다 한 페이지씩 좌우로
+  // 넘기는 방식이었는데, 넘기기 위해 모든 챕터가 한 줄(flex row)에 나란히 있어야 했고 기본 정렬
+  // (stretch) 때문에 지금 보고 있는 챕터가 짧아도 가장 긴 챕터의 높이에 항상 맞춰 늘어나 있었다.
+  // 좌우 넘기기 대신 아코디언(접기/펼치기)으로 세로 나열해, 기본으로는 진행 중인 챕터만 펼쳐지고
+  // 나머지는 제목 줄만 보이도록 접어 전체 높이를 크게 줄인다.
+  const [openKey, setOpenKey] = useState(null);
+  useEffect(() => { setOpenKey(pages[unlockedUpTo] ? pages[unlockedUpTo].pageKey : null); }, [unlockedUpTo]);
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#33220F,#1E1206)", border: "1px solid " + T.brass }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, marginBottom: 2 }}>메인 퀘스트</div>
       <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>오프닝 포지션의 성격을 탐구하는 챕터 퀴즈 — 이전 챕터를 클리어해야 다음 챕터가 열립니다.</div>
-      {n > 0 && (
-        <div ref={pagerRef} onPointerDown={onPagerPointerDown} onPointerMove={onPagerPointerMove} onPointerUp={onPagerPointerUp} onPointerLeave={onPagerPointerUp} onPointerCancel={onPagerPointerUp}
-          style={{ position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
-          <div style={{ display: "flex", width: n * 100 + "%", transform: "translateX(calc(" + (-page * (100 / n)) + "% + " + dragPx + "px))", transition: dragging ? "none" : "transform .34s cubic-bezier(.22,.9,.32,1)" }}>
-            {pages.map((pg, i) => {
-              const locked = i > unlockedUpTo;
-              return (
-                <div key={pg.pageKey} style={{ width: 100 / n + "%", boxSizing: "border-box", padding: "0 2px", flexShrink: 0 }}>
-                  <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi }}>{"CHAPTER " + (i + 1) + (pg.heading ? " · " + pg.heading : "")}</span>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
-                    {pg.rows.map(([k, ch]) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={locked ? () => {} : setQuizKey} onClaim={locked ? () => {} : onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={locked} />)}
-                  </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {pages.map((pg, i) => {
+          const locked = i > unlockedUpTo;
+          const complete = pageComplete(pg);
+          const isOpen = !locked && openKey === pg.pageKey;
+          const rowUnlockedIdx = rowUnlockedUpTo(pg.rows, mainQuest);
+          const totals = pg.rows.reduce((acc, [k]) => { const p = chapterProgress(mainQuest, k); return { done: acc.done + p.done, total: acc.total + p.total }; }, { done: 0, total: 0 });
+          return (
+            <div key={pg.pageKey} style={{ borderRadius: 10, border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), background: "rgba(0,0,0,.15)", opacity: locked ? .55 : 1, overflow: "hidden" }}>
+              <button onClick={() => !locked && setOpenKey(isOpen ? null : pg.pageKey)} disabled={locked} className={locked ? "" : "press"}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", border: "none", background: "transparent", cursor: locked ? "default" : "pointer", textAlign: "left" }}>
+                <span style={{ fontSize: 11.5, fontWeight: 900, letterSpacing: ".02em", color: complete ? "#BEEAB0" : T.brassHi, minWidth: 0, flex: 1 }}>{"CHAPTER " + (i + 1) + (pg.heading ? " · " + pg.heading : "")}</span>
+                {locked ? <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, flexShrink: 0 }}><Lock size={11} /> 잠김</span>
+                  : complete ? <span style={{ fontSize: 10, fontWeight: 800, color: T.best, flexShrink: 0 }}>완료</span>
+                  : <span style={{ fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brassHi, flexShrink: 0 }}>{totals.done}/{totals.total}</span>}
+                {!locked && <ChevronDown size={14} color={T.inkSoft} style={{ flexShrink: 0, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s ease" }} />}
+              </button>
+              {isOpen && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 10px 10px" }}>
+                  {pg.rows.map(([k, ch], ri) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={ri > rowUnlockedIdx} />)}
                 </div>
-              );
-            })}
-          </div>
-          {page > 0 && <button onClick={() => goPage(page - 1)} aria-label="이전 챕터" className="press" style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={16} /></button>}
-          {page < unlockedUpTo && <button onClick={() => goPage(page + 1)} aria-label="다음 챕터" className="press" style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={16} /></button>}
-        </div>
-      )}
-      {n > 1 && (
-        <div className="flex items-center justify-center gap-2" style={{ marginTop: 10 }}>
-          {pages.map((pg, i) => (
-            <button key={pg.pageKey} onClick={() => goPage(i)} disabled={i > unlockedUpTo} aria-label={"CHAPTER " + (i + 1)} className={i <= unlockedUpTo ? "press" : ""}
-              style={{ width: page === i ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: i <= unlockedUpTo ? "pointer" : "not-allowed", background: page === i ? T.brass : (i <= unlockedUpTo ? "rgba(255,255,255,.35)" : "rgba(255,255,255,.14)"), transition: "width .25s ease, background .25s ease" }} />
-          ))}
-        </div>
-      )}
+              )}
+            </div>
+          );
+        })}
+      </div>
       {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 새 챕터 추가</button>}
       {quizKey && <QuizModal chKey={quizKey} ch={CONTENT.questChapters[quizKey]} mainQuest={mainQuest} onAnswer={onAnswer} onClose={() => setQuizKey(null)} />}
       {editKey && <QuestChapterEditor chKey={editKey} bumpContent={bumpContent} onClose={() => setEditKey(null)} />}
