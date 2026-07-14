@@ -11,6 +11,7 @@
     "refresh": "node scripts/refresh-data.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
     "framer-motion": "^12.42.2",
     "lucide-react": "^0.383.0",
     "react": "^18.3.1",

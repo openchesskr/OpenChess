@@ -254,7 +254,17 @@ drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
 drop policy if exists "chat update own" on public.chat_messages;
 create policy "chat select own" on public.chat_messages for select using (auth.uid() = from_uid or auth.uid() = to_uid);
-create policy "chat insert own" on public.chat_messages for insert with check (auth.uid() = from_uid);
+-- (v0.0.5 보안) 예전에는 from_uid만 검증해, 친구 목록에 없는 임의 uid를 REST로 직접 지정해도
+-- DM을 보낼 수 있었다(UI는 친구에게만 채팅 버튼을 보여줬을 뿐 서버가 강제하지 않았음). 서로
+-- accepted 상태인 friend_edges가 있을 때만 메시지를 만들 수 있도록 서버에서도 강제한다.
+create policy "chat insert own" on public.chat_messages for insert with check (
+  auth.uid() = from_uid
+  and exists (
+    select 1 from public.friend_edges fe
+    where fe.status = 'accepted'
+      and ((fe.from_uid = auth.uid() and fe.to_uid = chat_messages.to_uid) or (fe.to_uid = auth.uid() and fe.from_uid = chat_messages.to_uid))
+  )
+);
 create policy "chat update own" on public.chat_messages for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
 grant select, insert, update on public.chat_messages to authenticated;
 
@@ -275,8 +285,24 @@ drop policy if exists "notif select own" on public.notifications;
 drop policy if exists "notif insert auth" on public.notifications;
 drop policy if exists "notif update own" on public.notifications;
 create policy "notif select own" on public.notifications for select using (auth.uid() = to_uid);
--- insert는 다른 유저에게 알림을 보내야 하는 경우(친구 요청 등)가 있어 to_uid 제한 없이, 로그인만 요구한다.
-create policy "notif insert auth" on public.notifications for insert with check (auth.uid() is not null);
+-- (v0.0.5 보안) 예전에는 로그인만 하면 누구에게든(to_uid 제한 없이) 어떤 kind든 알림을 만들 수 있어,
+-- 임의 유저에게 위조된 title_earned/level_up/friend_accepted 알림을 보낼 수 있었다. src/App.jsx의
+-- notifyCreate 호출 패턴(title_earned·level_up은 항상 본인에게, friend_request/friend_accepted는
+-- 실제 friend_edges 관계가 막 생긴 직후에만 상대에게)만 허용하도록 좁힌다.
+create policy "notif insert auth" on public.notifications for insert with check (
+  auth.uid() is not null
+  and kind in ('friend_request', 'friend_accepted', 'title_earned', 'level_up')
+  and (
+    (kind in ('title_earned', 'level_up') and to_uid = auth.uid())
+    or (kind = 'friend_request' and exists (
+      select 1 from public.friend_edges fe where fe.from_uid = auth.uid() and fe.to_uid = notifications.to_uid
+    ))
+    or (kind = 'friend_accepted' and exists (
+      select 1 from public.friend_edges fe where fe.status = 'accepted'
+        and ((fe.from_uid = auth.uid() and fe.to_uid = notifications.to_uid) or (fe.to_uid = auth.uid() and fe.from_uid = notifications.to_uid))
+    ))
+  )
+);
 create policy "notif update own" on public.notifications for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
 grant select, insert, update on public.notifications to authenticated;
 
@@ -284,9 +310,9 @@ grant select, insert, update on public.notifications to authenticated;
 -- 7) puzzles / puzzle_solvers / puzzle_solve_events — 퍼즐 데이터 공유, 해결자 기록, 인기 랭킹
 -- ============================================================================
 -- 퍼즐 데이터(no = 6자리 해시 번호, data = 퍼즐 전체 JSON). 같은 실수는 항상 같은 no로 귀결되므로
--- 누구나 자신이 만난 퍼즐을 공유하는 크라우드소싱 방식이다(의도된 설계 — no별 데이터가 결정적으로
--- 파생되므로 임의 변조의 실익이 낮음). 더 엄격하게 잠그고 싶다면 app_content처럼 is_content_editor
--- 류의 검증을 추가하되, 그러면 첫 발견자 외에는 공유가 막히므로 신중히 판단하세요.
+-- 누구나 자신이 만난 퍼즐을 공유하는 크라우드소싱 방식이다(의도된 설계). 더 엄격하게 잠그고 싶다면
+-- app_content처럼 is_content_editor 류의 검증을 추가하되, 그러면 첫 발견자 외에는 공유가 막히므로
+-- 신중히 판단하세요.
 create table if not exists public.puzzles (
   no bigint primary key,
   data jsonb not null default '{}'::jsonb,
@@ -298,9 +324,21 @@ drop policy if exists "puzzles read"   on public.puzzles;
 drop policy if exists "puzzles insert" on public.puzzles;
 drop policy if exists "puzzles update" on public.puzzles;
 create policy "puzzles read"   on public.puzzles for select using (true);
-create policy "puzzles insert" on public.puzzles for insert with check (true);
+-- (v0.0.5 보안) insert는 새 퍼즐 공유 목적이므로 여전히 열어두되, solves/likes를 0이 아닌 값으로
+-- 미리 심어 랭킹·좋아요 집계를 조작하는 걸 막는다(정상 카운트는 puzzle_solve/puzzle_like_toggle
+-- RPC가 SECURITY DEFINER로 올린다).
+create policy "puzzles insert" on public.puzzles for insert with check (coalesce(solves, 0) = 0 and coalesce(likes, 0) = 0);
 create policy "puzzles update" on public.puzzles for update using (true) with check (true);
-grant select, insert, update on public.puzzles to anon, authenticated;
+grant select, insert on public.puzzles to anon, authenticated;
+-- (v0.0.5 보안) 기존에는 update가 테이블 전체(위 RLS와 함께 사실상 using(true)/with check(true))에
+-- 열려 있어, 로그인 없이도 REST를 직접 호출해 임의 퍼즐의 solves/likes 카운터를 덮어쓸 수 있었다.
+-- 컬럼 단위 권한으로 좁혀 REST를 통한 직접 update는 data(퍼즐 내용 보정)만 가능하게 하고, solves/
+-- likes는 grant 자체가 없어 RLS가 true여도 권한 계층에서 막힌다 — 두 카운터는 오직 puzzle_solve/
+-- puzzle_like_toggle RPC(SECURITY DEFINER, 테이블 소유자 권한으로 실행되어 이 grant를 우회함)로만
+-- 바뀐다. src/App.jsx의 puzzleShare()는 비로그인 게스트도 새로 만난 퍼즐을 공유하므로(집중 학습은
+-- 로그인 없이 쓸 수 있는 핵심 기능) data update는 anon도 유지하되, solves/likes는 어느 role도 직접
+-- 건드릴 수 없다.
+grant update (data) on public.puzzles to anon, authenticated;
 
 -- 퍼즐별 해결자 uid 기록 — "친구 OO 외 N명이 풀었습니다!" 표기용(1인 1행). 본인 명의로만 기록 가능.
 create table if not exists public.puzzle_solvers (
