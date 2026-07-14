@@ -319,6 +319,10 @@ create table if not exists public.puzzles (
   solves bigint not null default 0,
   created_at timestamptz not null default now()
 );
+-- (v0.0.5 보안) 아래 "puzzles insert" 정책이 likes 컬럼을 참조하므로, 원래 더 아래(퍼즐 좋아요 절)에
+-- 있던 이 컬럼 추가를 여기로 옮겨 정책 생성 시점에 이미 존재하도록 한다(기존 DB는 이미 컬럼이 있어
+-- if not exists로 무해하게 스킵됨).
+alter table public.puzzles add column if not exists likes bigint not null default 0;
 alter table public.puzzles enable row level security;
 drop policy if exists "puzzles read"   on public.puzzles;
 drop policy if exists "puzzles insert" on public.puzzles;
@@ -405,9 +409,7 @@ $$;
 grant execute on function public.puzzle_rank(text, int) to anon, authenticated;
 
 -- 퍼즐 좋아요 — 풀이수(solves)와 달리 취소 가능(토글)해야 하므로 1인 1행을 직접 만들고 지운다.
--- 기존에 만들어 둔 puzzles 테이블에는 likes 컬럼이 없으므로 별도로 추가한다.
-alter table public.puzzles add column if not exists likes bigint not null default 0;
-
+-- (likes 컬럼은 위 puzzles 테이블 생성 직후로 옮겨 추가함 — "puzzles insert" 정책이 참조하므로)
 create table if not exists public.puzzle_likes (
   no bigint not null,
   uid uuid not null references auth.users(id) on delete cascade,
