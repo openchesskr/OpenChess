@@ -1536,7 +1536,29 @@ function useChessCom(username) {
     const topLines = Object.values(lines).sort((a, b) => b.count - a.count).slice(0, 5);
     return { total: gs.length, w, d, l, winRate: Math.round(100 * w / gs.length), top, lines: topLines };
   }, [state.games]);
-  return { ...state, analyze };
+  // (v0.0.6 성능) 도감 오프닝 트리는 잠금 여부를 매기려고 노드마다(최대 4000개) analyze()를 불러
+  // 왔는데, analyze는 매번 전체 대국(state.games)을 처음부터 훑는다 — 대국이 몇 천 판인 계정은
+  // 트리 한 번 그릴 때마다 "노드 수 × 대국 수" 규모의 연산이 걸려 그게 바로 "체스닷컴 대국이 많으면
+  // 렉 걸리는" 원인이었다. 대국이 바뀔 때 한 번만, 모든 대국의 모든 수순 접두어(prefix)를 문자열
+  // Set에 담아 두면, 그 뒤로는 노드마다 O(1) 조회 한 번으로 "이 수순이 실제로 둔 적 있는가"를 알 수 있다.
+  const prefixSet = useMemo(() => {
+    const set = new Set();
+    for (const g of state.games) {
+      let key = "";
+      for (let i = 0; i < g.moves.length; i++) {
+        const s = stripSuffix(g.moves[i]);
+        key = i === 0 ? s : key + " " + s;
+        set.add(key);
+      }
+    }
+    return set;
+  }, [state.games]);
+  // (v0.0.6 성능) 예전엔 매 렌더 { ...state, analyze }로 새 객체를 만들어 반환해, 이 훅을 쓰는 상위
+  // 컴포넌트가 다른 이유로 리렌더될 때마다(도감 트리와 무관해도) chesscom 참조 자체가 바뀌었다 —
+  // 이 참조가 OpeningSchematic의 items useMemo 의존성에 들어 있어, chesscom이 바뀐 게 없어도 매번
+  // 수천 개 노드를 처음부터 다시 계산하게 만드는 또 다른 렉의 원인이었다. state/analyze/prefixSet이
+  // 실제로 바뀔 때만 새 참조가 나오도록 고정한다.
+  return useMemo(() => ({ ...state, analyze, prefixSet }), [state, analyze, prefixSet]);
 }
 
 /* ============================================================ 품질·키워드 ============================================================ */
@@ -3771,8 +3793,10 @@ function dexIsUnlocked(chesscom, ccReady, unlockAll, pathSans) {
   if (unlockAll) return true;
   if (!pathSans.length) return true;
   if (!ccReady) return false;
-  const r = chesscom.analyze(pathSans);
-  return !!(r && r.total > 0);
+  // (v0.0.6 성능) analyze()로 매번 전체 대국을 훑는 대신, useChessCom이 미리 만들어 둔 접두어
+  // Set에서 O(1)로 조회한다 — dexIsUnlocked는 도감 트리의 모든 노드(최대 4000개)마다 호출되므로
+  // 이 차이가 대국 수가 많은 계정에서 체감되는 렉의 핵심 원인이었다.
+  return chesscom.prefixSet.has(pathSans.map(stripSuffix).join(" "));
 }
 // (2차 개편) 클릭으로 한 단계씩 펼치던 방식을 버리고, 모든 갈래를 최소 3수까지는 무조건, 그 이후는
 // 채택률이 20% 이상으로 유지되는 한 계속 자동으로 탐색해 미리 다 펼쳐진 거대한 트리를 만든다.
@@ -3946,15 +3970,84 @@ function centerOrderByAdopt(kids) {
 const ROOT_ORDER = ["e4", "d4", "c4", "Nf3"];
 const DIR_OF_ROOT = { e4: "N", d4: "E", c4: "S", Nf3: "W" };
 const SCHEMATIC_BOX_W = 98, SCHEMATIC_BOX_H = 44;
+// (v0.0.6) 예전엔 실제 CSS 배율 1.0을 "100%"라고 표시했는데, 다들 첫 화면에서 곧장 75%로 축소해야
+// 편하게 보인다는 피드백이 이어졌다 — 그 "75%"를 새 기준(100%)으로 다시 정의한다. zoom 상태 값
+// 자체는 여전히 실제 CSS scale()에 그대로 쓰이는 값이고(좌표 계산 코드는 손댈 필요 없음), 그 값의
+// 25%p 격자(0.1875 = 0.25 × 0.75)와 화면 표시 라벨만 이 기준에 맞춰 다시 잡는다.
+const SCHEMATIC_ZOOM_LABEL_BASE = 0.75;
+function schematicZoomLabel(z) { return Math.round((z / SCHEMATIC_ZOOM_LABEL_BASE) * 100) + "%"; }
 // (기능) 사이트 전체 모식도(도감 오프닝 트리·퍼즐 모식도·개발자 트리 에디터)의 확대/축소를
-// 25%p 단위(25~200%)로만 고정한다 — 버튼 클릭은 물론 핀치·휠 같은 연속 제스처로 나온 값도
-// 이 함수로 가장 가까운 단계에 스냅해, 어디서든 항상 8단계(25/50/75/100/125/150/175/200%) 중
+// 새 기준 25%p 단위(라벨 25~200%)로만 고정한다 — 버튼 클릭은 물론 핀치·휠 같은 연속 제스처로 나온
+// 값도 이 함수로 가장 가까운 단계에 스냅해, 어디서든 항상 8단계(25/50/75/100/125/150/175/200%) 중
 // 하나로만 보이게 한다.
-const SCHEMATIC_ZOOM_STEP = 0.25, SCHEMATIC_ZOOM_MIN = 0.25, SCHEMATIC_ZOOM_MAX = 2;
+const SCHEMATIC_ZOOM_STEP = 0.25 * SCHEMATIC_ZOOM_LABEL_BASE, SCHEMATIC_ZOOM_MIN = SCHEMATIC_ZOOM_STEP, SCHEMATIC_ZOOM_MAX = 2 * SCHEMATIC_ZOOM_LABEL_BASE;
 function snapSchematicZoom(z) {
   const clamped = Math.min(SCHEMATIC_ZOOM_MAX, Math.max(SCHEMATIC_ZOOM_MIN, z));
   return Math.round(clamped / SCHEMATIC_ZOOM_STEP) * SCHEMATIC_ZOOM_STEP;
 }
+// (버그 수정) 확대/축소 버튼·휠·핀치가 pan은 그대로 두고 zoom만 바꾸다 보니, 화면 좌상단(콘텐츠
+// 원점)을 기준으로 확대/축소가 일어났다 — 원점에서 멀리 떨어진 곳(팬으로 옮겨온 화면 중앙, 또는
+// 핀치 중심)을 보고 있을 때는 그 지점이 배율만큼 훌쩍 밀려나 트리 전체가 화면 밖으로 사라진
+// 것처럼 보이는 버그의 원인이었다. 확대/축소 전 그 화면 좌표 아래 있던 콘텐츠 좌표를 구해, 배율이
+// 바뀐 뒤에도 같은 화면 좌표에 그대로 남아 있도록 pan을 함께 보정한다(표준 "지점 기준 확대" 공식).
+function anchoredZoomPan(pan, zoom, nextZoom, anchorX, anchorY) {
+  const cx = (anchorX - pan.x) / zoom, cy = (anchorY - pan.y) / zoom;
+  return { x: anchorX - cx * nextZoom, y: anchorY - cy * nextZoom };
+}
+const SCHEMATIC_ELECTRIC = "#22D3F0";
+const schematicCoord = (it) => ({ x: it.x, y: it.y });
+// (기능) 부모→자식 연결선의 ㄱ자(elbow) 꺾임 좌표 — 트리 선(edges) 렌더링과, 검색으로 오프닝을
+// 골랐을 때 그 선을 그대로 따라가는 이동 애니메이션(OpeningSchematic의 buildFlightWaypoints)이
+// 정확히 같은 경로를 그리도록 계산 로직을 하나로 공유한다.
+function schematicElbow(p, c) {
+  const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
+  const pc = schematicCoord(p), cc2 = schematicCoord(c);
+  if (c.dir === "E") { const x1 = pc.x + boxW, y1 = pc.y + boxH / 2, x2 = cc2.x, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; return [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
+  if (c.dir === "W") { const x1 = pc.x, y1 = pc.y + boxH / 2, x2 = cc2.x + boxW, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; return [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
+  if (c.dir === "N") { const x1 = pc.x + boxW / 2, y1 = pc.y, x2 = cc2.x + boxW / 2, y2 = cc2.y + boxH, my = (y1 + y2) / 2; return [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
+  const x1 = pc.x + boxW / 2, y1 = pc.y + boxH, x2 = cc2.x + boxW / 2, y2 = cc2.y, my = (y1 + y2) / 2; return [[x1, y1], [x1, my], [x2, my], [x2, y2]];
+}
+// (v0.0.6 성능) 팬/드래그는 pan/zoom 상태만 바꾸고 items/edges 자체는 그대로인데도, 이 두 배열을
+// 그리는 코드가 OpeningSchematic 함수 본문 안에 있으면 pan/zoom이 바뀔 때마다(드래그 중 초당
+// 수십 번) React가 노드 수천 개의 스타일 객체를 처음부터 다시 계산했다 — 이게 트리가 클 때 드래그가
+// 버벅이던 핵심 원인. 별도 memo 컴포넌트로 떼어내, items/edges(둘 다 pan/zoom과 무관하게 트리
+// 구조가 실제로 바뀔 때만 새로 생성됨) 참조가 그대로인 동안은 다시 그리지 않게 한다.
+const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet }) {
+  return edges.map(([p, c]) => {
+    if (p.depth === 0) return null;
+    const pts = schematicElbow(p, c);
+    const isSel = selectedKeySet && selectedKeySet.has(c.key);
+    const wStroke = isSel ? 3 : 2;
+    const eStroke = isSel ? SCHEMATIC_ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
+    return <polyline key={p.key + "→" + c.key} className={isSel ? "dex-current-line" : undefined} points={pts.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={isSel ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
+      style={isSel ? { strokeDasharray: "7 5" } : undefined} />;
+  });
+});
+const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, selectedKeySet, onSelect }) {
+  const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
+  return items.map((it) => {
+    const { x, y } = schematicCoord(it);
+    const isOpen = openKey === it.key;
+    const isSel = selectedKeySet && selectedKeySet.has(it.key);
+    const w = boxW, h = boxH;
+    const kind = it.kind || "pending";
+    const isBook = kind === "book";
+    const sub = isOpen ? "#241509" : it.unlocked ? QCOLOR[kind] : "#8A7458";
+    const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
+    return (
+      <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
+        <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
+        <button onClick={() => onSelect(it.key)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
+            {!it.unlocked && <Lock size={10} />}
+            {moveNumber(it.path.length - 1)}{it.san}
+          </span>
+          {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
+        </button>
+      </div>
+    );
+  });
+});
 function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, priorityRef }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
@@ -4242,10 +4335,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (let i = 1; i <= selectedPath.length; i++) s.add(selectedPath.slice(0, i).join(" "));
     return s;
   }, [selectedPath]);
-  const coord = (it) => ({ x: it.x, y: it.y });
-  // (기능) 선택된 오프닝으로 가는 수순을 강조하는 "전류" 색 — 나머지(브라스/이론 갈색) 톤과 뚜렷이
-  // 구분되는 전기적인 청록색을 쓴다.
-  const ELECTRIC = "#22D3F0";
+  const coord = schematicCoord;
   // (버그 수정) 트리가 열리자마자 아주 짧은 순간(0~2초 안팎) 동안은, 정적 스냅샷/캐시에서 한꺼번에
   // 쏟아져 들어오는 여러 노드가 같은 렌더에서 동시에 leaf→internal로 바뀌며 그 조상들의 "자식 평균"
   // 좌표가 연쇄적으로 크게 움직인다(leaf 자신의 좌표는 캐싱돼 안 바뀌지만, internal 노드는 항상
@@ -4255,7 +4345,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const [ready, setReady] = useState(false);
   useEffect(() => { const t = setTimeout(() => setReady(true), 3200); return () => clearTimeout(t); }, []);
   const [pan, setPan] = useState({ x: 16, y: 16 });
-  const [zoom, setZoom] = useState(1);
+  // (v0.0.6) 다들 첫 화면에서 곧장 75%로 축소해야 편하게 봤다는 피드백 — 그 배율을 새 기준(100%,
+  // SCHEMATIC_ZOOM_LABEL_BASE)으로 재정의했으므로, 기본값도 그대로 그 값으로 시작한다.
+  const [zoom, setZoom] = useState(SCHEMATIC_ZOOM_LABEL_BASE);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
   const userPannedRef = useRef(false);
@@ -4293,6 +4385,19 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     return () => clearInterval(id);
   }, []);
   const clampZoom = snapSchematicZoom;
+  // (버그 수정) 확대/축소 버튼이 zoom만 바꾸고 pan은 그대로 둬서, 화면 좌상단(콘텐츠 원점) 기준으로
+  // 배율이 바뀌었다 — 팬으로 멀리 옮겨온 화면에서 버튼을 누르면 지금 보던 자리가 배율만큼 훌쩍
+  // 밀려나 트리 전체가 화면 밖으로 사라진 것처럼 보였다. 지금 화면 중앙 아래 있는 콘텐츠 지점을
+  // 그대로 유지하도록 pan을 함께 보정한다.
+  const zoomBy = (delta) => {
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const z = zoomRef.current, nz = clampZoom(z + delta);
+    if (nz === z) return;
+    const nextPan = anchoredZoomPan(panRef.current, z, nz, rect.width / 2, rect.height / 2);
+    setPan(nextPan);
+    setZoom(nz);
+    checkSelectionDrift(nextPan, nz);
+  };
   // (기능) selectionLockRef가 걸려 있는 동안 팬/줌이 바뀔 때마다, 선택된 노드가 화면 중앙에서 얼마나
   // 벗어났는지 검사한다 — 많이 벗어나면(사용자가 직접 화면을 옮긴 것) 확대 강조만 풀고(100%로),
   // 강조 색은 selectedPath가 그대로라 계속 유지된다. ref만 참조하므로 어느 렌더의 클로저에서
@@ -4305,7 +4410,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const c = coord(target);
     const sx = nextPan.x + (c.x + boxW / 2) * nextZoom, sy = nextPan.y + (c.y + boxH / 2) * nextZoom;
-    if (Math.hypot(sx - rect.width / 2, sy - rect.height / 2) > 80) { selectionLockRef.current = false; setZoom(1); }
+    // (버그 수정) 강조 확대를 풀 때 zoom만 되돌리고 pan은 그대로 두면, 화면 좌상단 원점 기준으로
+    // 배율이 바뀌면서 지금 보고 있던 자리가 훌쩍 밀려나 트리가 사라진 것처럼 보였다 — 지금 보고
+    // 있는 화면 중앙 지점을 그대로 유지하도록 pan도 함께 보정한다.
+    if (Math.hypot(sx - rect.width / 2, sy - rect.height / 2) > 80) {
+      selectionLockRef.current = false;
+      const anchoredPan = anchoredZoomPan(nextPan, nextZoom, SCHEMATIC_ZOOM_LABEL_BASE, rect.width / 2, rect.height / 2);
+      setPan(anchoredPan);
+      setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
+    }
   };
   const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
   const onPointerMove = (e) => {
@@ -4332,38 +4445,80 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   }, []);
   // (버그 수정) 확대 정도(1.35배)가 너무 크다는 피드백 — 살짝만 확대되도록 낮춘다.
   // (기능) 검색·클릭으로 오프닝을 선택하면 그 노드를 화면 중앙으로 옮기고 살짝 확대해(SELECT_ZOOM)
-  // "선택됨"이 시각적으로 드러나게 한다.
-  const SELECT_ZOOM = 1.25;   // (버그 수정) 25%p 단위 고정 정책에 맞춰 그리드에 없던 1.15 대신 1.25 사용
-  // (기능) 검색으로 오프닝을 고르면 예전엔 시점이 그 자리로 즉시 순간이동했다 — 지금은 지금 보고
-  // 있던 화면 중심에서 목표 위치까지 파란 선을 그어 보여주고, 그 선을 따라 아주 빠르게(220ms)
-  // 화면(pan/zoom)이 이동하는 것처럼 애니메이션한다. 선은 콘텐츠 좌표계(SVG 안)에 그리므로 이동
-  // 중에도 pan/zoom 변환을 그대로 따라 자연스럽게 화면에 맞춰 움직인다.
+  // "선택됨"이 시각적으로 드러나게 한다. 라벨 기준 125% — 새 기준(SCHEMATIC_ZOOM_LABEL_BASE)에 맞춰
+  // 실제 CSS 배율로 환산한다.
+  const SELECT_ZOOM = 1.25 * SCHEMATIC_ZOOM_LABEL_BASE;
+  // (기능) 검색으로 오프닝을 고르면 예전엔 지금 보던 화면 중심 → 목표 위치까지 대각선으로 직행했다
+  // — 트리 구조와 무관하게 허공을 가로질러 산만하다는 피드백으로, 이제는 나침반 중심(칩)에서
+  // 시작해 그 오프닝까지 실제로 이어지는 트리 선(ㄱ자 커넥터)을 그대로 따라가며 이동한다.
+  const parentOf = useMemo(() => { const m = new Map(); for (const [p, c] of edges) m.set(c.key, p); return m; }, [edges]);
+  const buildFlightWaypoints = (target) => {
+    const chain = [];
+    let cur = target;
+    while (cur) { chain.unshift(cur); const p = parentOf.get(cur.key); cur = p && p.depth >= 1 ? p : null; }
+    const ccx = centerX + boxW / 2, ccy = centerY + boxH / 2, half = CHIP_SIZE / 2;
+    const pts = [[ccx, ccy]];
+    let prev = null;
+    for (const node of chain) {
+      if (prev) pts.push(...schematicElbow(prev, node));
+      else {
+        const nc = coord(node);
+        if (node.dir === "N") pts.push([ccx, ccy - half], [ccx, nc.y + boxH]);
+        else if (node.dir === "S") pts.push([ccx, ccy + half], [ccx, nc.y]);
+        else if (node.dir === "E") pts.push([ccx + half, ccy], [nc.x, ccy]);
+        else pts.push([ccx - half, ccy], [nc.x + boxW, ccy]);
+      }
+      prev = node;
+    }
+    const tc = coord(target);
+    pts.push([tc.x + boxW / 2, tc.y + boxH / 2]);
+    return pts;
+  };
   const flightRafRef = useRef(null);
-  const [flightLine, setFlightLine] = useState(null);   // { x1, y1, x2, y2 } (콘텐츠 좌표) | null
+  const [flightPath, setFlightPath] = useState(null);   // [[x,y], ...] (콘텐츠 좌표) | null
   const FLIGHT_MS = 220;
-  const flyTo = (targetContentX, targetContentY, targetZoom) => {
+  const flyAlongPath = (waypoints, targetZoom) => {
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-    const fromZoom = zoomRef.current, fromPan = panRef.current;
-    const fromContentX = (rect.width / 2 - fromPan.x) / fromZoom, fromContentY = (rect.height / 2 - fromPan.y) / fromZoom;
-    const toPan = { x: rect.width / 2 - targetContentX * targetZoom, y: rect.height / 2 - targetContentY * targetZoom };
+    const fromZoom = zoomRef.current;
     if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
-    setFlightLine({ x1: fromContentX, y1: fromContentY, x2: targetContentX, y2: targetContentY });
+    const segLens = [];
+    let total = 0;
+    for (let i = 1; i < waypoints.length; i++) {
+      const d = Math.hypot(waypoints[i][0] - waypoints[i - 1][0], waypoints[i][1] - waypoints[i - 1][1]);
+      segLens.push(d); total += d;
+    }
+    // 경로 위 임의의 누적 거리(dist)에 해당하는 콘텐츠 좌표 — 구간별 길이 비례로 선형 보간한다.
+    const pointAt = (dist) => {
+      if (total <= 0) return waypoints[waypoints.length - 1];
+      let d = Math.max(0, Math.min(total, dist));
+      for (let i = 0; i < segLens.length; i++) {
+        if (d <= segLens[i] || i === segLens.length - 1) {
+          const t = segLens[i] > 0 ? d / segLens[i] : 1;
+          const [x1, y1] = waypoints[i], [x2, y2] = waypoints[i + 1];
+          return [x1 + (x2 - x1) * t, y1 + (y2 - y1) * t];
+        }
+        d -= segLens[i];
+      }
+      return waypoints[waypoints.length - 1];
+    };
+    setFlightPath(waypoints);
     const t0 = performance.now();
+    // 선을 따라가는 경로라 대각선 직행보다 길 수 있으니, 거리에 비례해 조금 더 시간을 준다(상한 있음).
+    const duration = Math.min(900, Math.max(FLIGHT_MS, total * 0.5));
     const step = (now) => {
-      const t = Math.min(1, (now - t0) / FLIGHT_MS);
+      const t = Math.min(1, (now - t0) / duration);
       const ease = 1 - Math.pow(1 - t, 3);   // ease-out — 빠르게 출발해 목표에서 부드럽게 멈춤
-      setPan({ x: fromPan.x + (toPan.x - fromPan.x) * ease, y: fromPan.y + (toPan.y - fromPan.y) * ease });
-      setZoom(fromZoom + (targetZoom - fromZoom) * ease);
+      const [cx, cy] = pointAt(total * ease);
+      const z = fromZoom + (targetZoom - fromZoom) * ease;
+      setPan({ x: rect.width / 2 - cx * z, y: rect.height / 2 - cy * z });
+      setZoom(z);
       if (t < 1) { flightRafRef.current = requestAnimationFrame(step); }
-      else { flightRafRef.current = null; setFlightLine(null); }
+      else { flightRafRef.current = null; setFlightPath(null); }
     };
     flightRafRef.current = requestAnimationFrame(step);
   };
   useEffect(() => () => { if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current); }, []);
-  const centerOn = (it, z) => {
-    const c = coord(it);
-    flyTo(c.x + boxW / 2, c.y + boxH / 2, z);
-  };
+  const centerOn = (it, z) => { flyAlongPath(buildFlightWaypoints(it), z); };
   // (버그 수정) 선택 직후 딱 한 번만 중앙으로 옮기면, 트리가 아직 배경에서 계속 자라는 중일 때
   // (최대 4000개 노드가 계속 로드되며 다른 노드들의 좌표(pos)도 함께 밀려남) 선택한 노드가 금방
   // 중앙에서 벗어나 버려 "고정이 안 된다"고 느껴졌다. items 변경에 반응하는 디바운스 effect로
@@ -4387,10 +4542,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (기능) 트리를 더 이상 필터링해서 숨기지 않으니, 이미 한 오프닝을 선택한 상태에서도 다른
   // 오프닝을 계속 검색할 수 있다.
   const [query, setQuery] = useState("");
+  // (버그 수정) 예전엔 일치하는 오프닝이 여럿이어도 상위 8개만 items 순서(트리를 훑은 순서, 사실상
+  // 임의 순서) 그대로 보여줬다 — 단어가 포함된 오프닝은 전부 보여주고(드롭다운은 이미 스크롤
+  // 가능), "상위(더 넓은/더 유명한) 오프닝"이 위로 오도록 정렬한다. 수순이 짧을수록(=더 상위
+  // 오프닝일수록) 우선, 같은 깊이면 채택률이 높은 쪽을 우선한다.
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return items.filter((it) => it.name && it.name.toLowerCase().includes(q)).slice(0, 8);
+    return items.filter((it) => it.name && it.name.toLowerCase().includes(q))
+      .sort((a, b) => (a.path.length - b.path.length) || ((b.adopt || 0) - (a.adopt || 0)) || a.name.localeCompare(b.name));
   }, [items, query]);
   // (기능) 검색 결과를 고르거나(jumpTo) 트리에서 수 블록을 직접 클릭해도(아래 button onClick)
   // 완전히 같은 효과를 낸다 — 그 수까지의 경로를 강조(selectedPath)하고, 화면 중앙으로 이동+확대하고,
@@ -4403,6 +4563,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     centerOn(it, SELECT_ZOOM);
     onToggleOpen(it.key);
   };
+  // (v0.0.6 성능) DexNodesLayer가 팬/드래그 중에는 다시 그려지지 않도록 memo화되어 있는데, 클릭
+  // 콜백을 매 렌더 새로 만드는 인라인 화살표 함수로 넘기면 그 참조가 매번 바뀌어 memo가 무력화된다
+  // — selectNode의 "최신 버전"을 ref로 들고, key 문자열만 받는 안정된 래퍼를 한 번만 만든다.
+  const selectNodeRef = useRef(selectNode);
+  selectNodeRef.current = selectNode;
+  const onSelectNode = useCallback((key) => {
+    const it = itemsRef.current.find((x) => x.key === key);
+    if (it) selectNodeRef.current(it);
+  }, []);
   // (기능) 특정 수 블록을 선택한 상태에서는 WASD·방향키로 화면상 그 방향에 있는 가장 가까운
   // 블록으로 곧장 이동할 수 있게 한다 — 눌린 방향으로 실제 진행한 거리에 벗어난 정도(수직 편차)를
   // 페널티로 더해, "그 방향으로 곧장" 있는 블록을 우선 고른다. itemsRef/selectedPathRef로 항상
@@ -4479,9 +4648,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           <button onClick={() => {
             userPannedRef.current = false;
             selectionLockRef.current = false;
-            setZoom(1);
+            setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
             const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-            setPan({ x: rect.width / 2 - (centerRef.current.x + boxW / 2), y: rect.height / 2 - (centerRef.current.y + boxH / 2) });
+            setPan({ x: rect.width / 2 - (centerRef.current.x + boxW / 2) * SCHEMATIC_ZOOM_LABEL_BASE, y: rect.height / 2 - (centerRef.current.y + boxH / 2) * SCHEMATIC_ZOOM_LABEL_BASE });
           }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <RotateCcw size={13} />
           </button>
@@ -4502,9 +4671,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         )}
       </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
-        <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-        <button onClick={() => setZoom(1)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
-        <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+        <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{schematicZoomLabel(zoom)}</button>
+        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
         {/* (기능) 칭호(이름)가 붙은 오프닝만 점선 테두리로 한 단위로 묶어 표시하고, 박스 왼쪽 위
@@ -4522,9 +4691,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           </div>
         ))}
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-          {/* (기능) 검색으로 오프닝을 선택했을 때, 원래 보고 있던 위치 → 목표 위치를 잇는 파란
-              안내선 — flyTo가 애니메이션 도중에만 채워 두고 도착하면 지운다. */}
-          {flightLine && <line x1={flightLine.x1} y1={flightLine.y1} x2={flightLine.x2} y2={flightLine.y2} stroke="#3E7CC4" strokeWidth={3} opacity={0.85} strokeLinecap="round" strokeDasharray="2 10" />}
+          {/* (기능) 검색으로 오프닝을 선택했을 때, 그 수까지 이어지는 트리 선(모식도 ㄱ자 커넥터)을
+              그대로 따라가는 안내선 — flyAlongPath가 애니메이션 도중에만 채워 두고 도착하면 지운다. */}
+          {flightPath && <polyline points={flightPath.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke="#3E7CC4" strokeWidth={3} opacity={0.85} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 10" />}
           {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
               짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
@@ -4540,32 +4709,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               <line key={"chip-trace-" + dir} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.brass} strokeWidth={2} opacity={0.5} strokeLinecap="round" />
             ));
           })()}
-          {edges.map(([p, c]) => {
-            if (p.depth === 0) return null;
-            const pc = coord(p), cc2 = coord(c);
-            // (기능) 나침반형 레이아웃 — 부모→자식 연결선이 그 갈래가 뻗어나가는 방향(c.dir)에 맞는
-            // 변끼리 이어지도록 한다(동/서는 좌우 변, 남/북은 위아래 변).
-            // (버그 수정) 곁가지가 부모에서 멀리(수만 px) 떨어지는 건 실제 나무처럼 트리가 넓기
-            // 때문에 피할 수 없다 — 대신 한 줄 대각선으로 길게 가로지르면 캔버스를 마구 관통해
-            // 지저분해 보이므로, 성장축을 따라 짧게 나온 뒤 직각으로 꺾어 자식까지 가는 ㄱ자(elbow)
-            // 커넥터로 그린다. 꺾이는 지점을 깊이 사이 중간에 두면 같은 열의 세로선들이 나란히 정렬돼
-            // 훨씬 정돈돼 보인다.
-            let pts;
-            if (c.dir === "E") { const x1 = pc.x + boxW, y1 = pc.y + boxH / 2, x2 = cc2.x, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
-            else if (c.dir === "W") { const x1 = pc.x, y1 = pc.y + boxH / 2, x2 = cc2.x + boxW, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
-            else if (c.dir === "N") { const x1 = pc.x + boxW / 2, y1 = pc.y, x2 = cc2.x + boxW / 2, y2 = cc2.y + boxH, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
-            else { const x1 = pc.x + boxW / 2, y1 = pc.y + boxH, x2 = cc2.x + boxW / 2, y2 = cc2.y, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
-            // (버그 수정) 선 굵기가 채택률에 따라 제각각이라 트리 전체가 정신없어 보였다 — 굵기를
-            // 하나로 통일해, 굵기가 아니라 실제 트리 구조로만 위계가 드러나게 한다.
-            // (기능) 선택된 오프닝으로 가는 수순의 선만, 전선에 전류가 흐르듯 색이 바뀌고 흐르는
-            // 점선으로 강조된다 — 강조 대상은 최대 수십 개(경로 길이)뿐이라, 트리 전체(수백 개) 선에
-            // 걸었다가 렉을 냈던 이전의 펜 드로잉 애니메이션과 달리 성능에 영향이 없다.
-            const isSel = selectedKeySet && selectedKeySet.has(c.key);
-            const wStroke = isSel ? 3 : 2;
-            const eStroke = isSel ? ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
-            return <polyline key={p.key + "→" + c.key} className={isSel ? "dex-current-line" : undefined} points={pts.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={isSel ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
-              style={isSel ? { strokeDasharray: "7 5" } : undefined} />;
-          })}
+          <DexEdgesLayer edges={edges} selectedKeySet={selectedKeySet} />
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
@@ -4583,45 +4727,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             <Cpu size={26} strokeWidth={1.6} />
           </div>
         </div>
-        {items.map((it) => {
-          const { x, y } = coord(it);
-          const isOpen = openKey === it.key;
-          const isSel = selectedKeySet && selectedKeySet.has(it.key);
-          // (버그 수정) 채택률에 따라 블록 크기가 제각각이라 트리가 정신없어 보였다 — 모든 블록을
-          // 같은 크기로 통일한다.
-          const w = boxW, h = boxH;
-          const kind = it.kind || "pending";
-          const isBook = kind === "book";
-          const sub = isOpen ? "#241509" : it.unlocked ? QCOLOR[kind] : "#8A7458";
-          const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
-          // (버그 수정) 예전엔 노드를 눌러 상세 블록을 열어야만 수 체계 아이콘·평가치·채택률을 볼 수
-          // 있었다 — 부모 방문 시 이미 계산해 둔 kind/evalCp(assignTiers)를 각 블록에 기본으로 표시한다.
-          // (디자인) 이론 수(book) 블록은 이론 수 아이콘과 같은 가죽 갈색(T.book) 테두리·그러데이션·
-          // 글자색을 입혀, 큐레이션된 핵심 라인이 나머지 곁가지 수와 뚜렷이 구분되게 한다.
-          // (버그 수정) 채택률 %는 블록에서 빼고, 수 체계 아이콘은 글자와 나란히 두지 않고 블록
-          // 좌상단에 작은 배지로 얹는다. 오프닝 이름은 블록 안이 아니라 바로 아래 빈 공간에 표시.
-          return (
-            // (버그 수정) 예전엔 위치(left/top) 변화에 짧은 트랜지션(.35s)을 줘 스르륵 옮겨가는
-            // 것처럼 보이게 했는데, 배경 로딩 중(useOpeningTreeAuto가 ~80ms마다 트리를 갱신)에는
-            // 이런 재조정이 초당 여러 번, 20초 가까이 계속 일어난다 — 개별 이동은 작아도 그때마다
-            // 매번 새 트랜지션이 이어 걸리며 몇 초에 걸쳐 화면이 계속 미끄러지듯 움직이는 것처럼
-            // 보였다(사용자가 보고한 "흔들림"). 애니메이션을 없애 위치가 바뀔 때 부드럽게 미끄러지는
-            // 대신 조용히 순간 이동하게 해, 눈에 띄는 지속적인 움직임 자체를 없앤다.
-            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
-              <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
-              <button onClick={() => selectNode(it)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
-                  {!it.unlocked && <Lock size={10} />}
-                  {moveNumber(it.path.length - 1)}{it.san}
-                </span>
-                {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
-              </button>
-              {/* (기능) 칭호(이름) 붙은 오프닝은 이제 블록 아래 대신, 그 오프닝 전체를 묶는 점선
-                  영역 바깥 여백에 화살표와 함께 장식체로 표시된다(위 groups 렌더 참고) — 블록마다
-                  중복으로 작은 글자를 또 넣지 않는다. */}
-            </div>
-          );
-        })}
+        <DexNodesLayer items={items} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} />
       </div>
       {/* (버그 수정) 수 설명 카드가 팬/줌 트랜스폼이 걸린(scale(zoom)) 안쪽에 있으면 카드 자신도
           모식도 확대/축소를 그대로 따라가 축소 시엔 잘리고 확대 시엔 지나치게 커졌다 — 트랜스폼
@@ -5459,12 +5565,25 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     return { items, edges, width, height, curItem };
   }, [tree, allLines, solvedNow, curKeys.join(" "), exploredKeys, celebrateTag, shakeTag]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
-  const [zoom, setZoom] = useState(1);
+  // (v0.0.6) 도감 오프닝 트리와 동일하게, 다들 편하게 보던 75% 배율을 새 기준(100%)으로 재정의한다.
+  const [zoom, setZoom] = useState(SCHEMATIC_ZOOM_LABEL_BASE);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
   const pointersRef = useRef(new Map());   // pointerId -> {x,y} — 두 손가락이면 핀치 확대/축소
   const pinchRef = useRef(null);           // { dist, zoom } 핀치 시작 시점 기준값
   const clampZoom = snapSchematicZoom;
+  // (버그 수정, 도감 모식도와 동일) 확대/축소 버튼·핀치가 pan은 그대로 두고 zoom만 바꿔서, 화면
+  // 좌상단(콘텐츠 원점)을 기준으로 확대/축소가 일어나 팬으로 멀리 옮겨온 화면에서는 트리 전체가
+  // 화면 밖으로 사라진 것처럼 보였다 — 배율이 바뀐 뒤에도 화면 위 같은 지점(anchorX/Y)에 그 콘텐츠
+  // 지점이 그대로 남도록 pan을 함께 보정한다.
+  const zoomBy = (delta, anchorX, anchorY) => {
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 380, height: 208 };
+    const ax = anchorX != null ? anchorX : rect.width / 2, ay = anchorY != null ? anchorY : rect.height / 2;
+    const nz = clampZoom(zoom + delta);
+    if (nz === zoom) return;
+    setPan(anchoredZoomPan(pan, zoom, nz, ax, ay));
+    setZoom(nz);
+  };
   // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
   useEffect(() => {
     const vw = boxRef.current ? boxRef.current.clientWidth : 380;
@@ -5493,7 +5612,11 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     if (pointersRef.current.size === 2 && pinchRef.current) {
       const [a, b] = [...pointersRef.current.values()];
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      setZoom(clampZoom(pinchRef.current.zoom * (dist / Math.max(1, pinchRef.current.dist))));
+      const nz = clampZoom(pinchRef.current.zoom * (dist / Math.max(1, pinchRef.current.dist)));
+      const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { left: 0, top: 0, width: 380, height: 208 };
+      const anchorX = (a.x + b.x) / 2 - rect.left, anchorY = (a.y + b.y) / 2 - rect.top;
+      setPan((p) => anchoredZoomPan(p, zoom, nz, anchorX, anchorY));
+      setZoom(nz);
       return;
     }
     if (!dragRef.current) return;
@@ -5544,9 +5667,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
         <div className="no-pan flex" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
-          <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-          <button onClick={() => setZoom(1)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
-          <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+          <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+          <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoom)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{schematicZoomLabel(zoom)}</button>
+          <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
