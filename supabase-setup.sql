@@ -19,12 +19,13 @@
 -- 되돌릴 수 없으니 실행 전 필요한 데이터는 반드시 백업하세요.
 -- drop trigger if exists on_auth_user_created on auth.users;
 -- drop table if exists public.chat_messages, public.notifications, public.friend_edges,
---   public.puzzle_solve_events, public.puzzle_solvers, public.puzzles,
+--   public.puzzle_solve_events, public.puzzle_solvers, public.puzzle_likes, public.puzzles,
 --   public.app_content, public.user_progress, public.profiles, public.accounts cascade;
 -- drop function if exists public.handle_new_user(), public.is_content_editor(uuid),
 --   public.username_available(text), public.email_for_username(text), public.account_providers(text),
 --   public.claim_username(text), public.friend_request(text), public.friend_accept(uuid),
 --   public.friend_remove(uuid), public.puzzle_solve(bigint), public.puzzle_rank(text, int),
+--   public.puzzle_like_toggle(bigint, uuid),
 --   public.app_signup(text, text), public.app_login(text, text), public.app_save(text, text, jsonb) cascade;
 
 -- ============================================================================
@@ -364,3 +365,46 @@ returns table(no bigint, cnt bigint) language sql stable as $$
   limit p_limit;
 $$;
 grant execute on function public.puzzle_rank(text, int) to anon, authenticated;
+
+-- 퍼즐 좋아요 — 풀이수(solves)와 달리 취소 가능(토글)해야 하므로 1인 1행을 직접 만들고 지운다.
+-- 기존에 만들어 둔 puzzles 테이블에는 likes 컬럼이 없으므로 별도로 추가한다.
+alter table public.puzzles add column if not exists likes bigint not null default 0;
+
+create table if not exists public.puzzle_likes (
+  no bigint not null,
+  uid uuid not null references auth.users(id) on delete cascade,
+  liked_at timestamptz not null default now(),
+  primary key (no, uid)
+);
+alter table public.puzzle_likes enable row level security;
+drop policy if exists "likes read"   on public.puzzle_likes;
+drop policy if exists "likes insert" on public.puzzle_likes;
+drop policy if exists "likes delete" on public.puzzle_likes;
+create policy "likes read"   on public.puzzle_likes for select using (true);
+create policy "likes insert" on public.puzzle_likes for insert with check (auth.uid() = uid);
+create policy "likes delete" on public.puzzle_likes for delete using (auth.uid() = uid);
+grant select on public.puzzle_likes to anon, authenticated;
+grant insert, delete on public.puzzle_likes to authenticated;
+
+-- 좋아요 토글 — 이미 눌렀으면 취소(행 삭제 + likes-1), 아니면 등록(행 추가 + likes+1).
+-- 반환값으로 이 호출 후의 상태(liked)와 갱신된 전체 좋아요 수(likes)를 함께 돌려줘, 클라이언트가
+-- 별도 조회 없이 그 자리에서 화면(하트 채움/카운트)을 갱신할 수 있게 한다.
+drop function if exists public.puzzle_like_toggle(bigint, uuid) cascade;
+create or replace function public.puzzle_like_toggle(p_no bigint, p_uid uuid)
+returns table(liked boolean, likes bigint) language plpgsql security definer set search_path = public as $$
+declare v_likes bigint; v_liked boolean;
+begin
+  if exists (select 1 from public.puzzle_likes where no = p_no and uid = p_uid) then
+    delete from public.puzzle_likes where no = p_no and uid = p_uid;
+    update public.puzzles set likes = greatest(0, likes - 1) where no = p_no returning puzzles.likes into v_likes;
+    v_liked := false;
+  else
+    insert into public.puzzle_likes(no, uid) values (p_no, p_uid);
+    insert into public.puzzles(no, data, likes) values (p_no, '{}'::jsonb, 1)
+    on conflict (no) do update set likes = public.puzzles.likes + 1
+    returning puzzles.likes into v_likes;
+    v_liked := true;
+  end if;
+  return query select v_liked, coalesce(v_likes, 0);
+end; $$;
+grant execute on function public.puzzle_like_toggle(bigint, uuid) to authenticated;

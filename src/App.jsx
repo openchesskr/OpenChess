@@ -4,7 +4,7 @@ import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronDown,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3,
+  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -680,12 +680,16 @@ async function puzzleCandidatesAt(engine, cur) {
   }
   return cands;
 }
-async function genPuzzleTree(engine, preSans, opts) {
+// (UX) onProgress(0~1) — 트리 확장 중 지금까지 만든 노드 수를 maxNodes 대비 대략적인 진행률로
+// 알려준다. 최종 노드 수는 미리 알 수 없어(재귀적으로 조건에 따라 가지치기) 정확한 %는 아니지만,
+// "퍼즐을 생성하는 중입니다" 게이지가 완전히 멈춰 있지 않고 자연스럽게 움직이는 정도로는 충분하다.
+async function genPuzzleTree(engine, preSans, opts, onProgress) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
     firstSan = null, maxNodes = 34, tagSeq = 0 } = opts || {};
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
+  const bumpNode = () => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes)); };
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
   async function expand(cur, depth, sawUserCapture) {
     if (depth >= maxPlies || nodeCount >= maxNodes) return [];
@@ -703,12 +707,10 @@ async function genPuzzleTree(engine, preSans, opts) {
       // 통과 가능한 대안 수 분기는 퍼즐의 핵심인 첫 수(depth 0)에서만 — 깊은 수에서까지 사용자 대안으로
       // 분기하면 "상대 응수가 다른" 라인 대신 "내 수만 다른" 라인이 늘어나 대응력 훈련 목적이 흐려진다.
       chosen = passables.slice(0, canBranch && depth === 0 ? 2 : 1);
-      if (canBranch && chosen.length < 3) {
-        // 유혹 수: 실전에서 자주 두어지지만 통과할 수 없는 수 — 모식도에 막힌 가지로만 표시
-        const trap = cands.filter((c) => !PUZZLE_PASS_KINDS.includes(c.kind) && (c.adopt || 0) >= 8)
-          .sort((a, b) => (b.adopt || 0) - (a.adopt || 0))[0];
-        if (trap) chosen = [...chosen, trap];
-      }
+      // (버그 수정) 예전엔 여기서 "유혹 수"(실전에서 자주 두어지지만 통과할 수 없는 수)를 모식도에
+      // 막힌 가지로 보여주려고 일부러 끼워 넣었는데, 실제로는 사용자가 그 가지를 시도해 보면(고스트를
+      // 눌러 두어 보게 되므로) 어디로도 이어지지 않는 리프가 그대로 모식도에 남아 "풀 수 없는 라인이
+      // 표시된다"는 혼란만 남겼다. 통과 가능한 수만 분기에 남긴다.
     } else {
       // 상대 응수: 최선 응수는 반드시 포함 + 채택률·평가치 혼합 점수 상위 — 최대 3갈래.
       // 큰 손실 수는 실전 채택률이 유의미할 때만 라인으로 인정한다(황당한 블런더 응수 방지).
@@ -723,7 +725,7 @@ async function genPuzzleTree(engine, preSans, opts) {
       if (nodeCount >= maxNodes && out.length) break;
       const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(c.kind) : true;
       const node = { san: c.san, kind: c.kind, ev: c.ev, adopt: c.adopt, pass, children: [] };
-      nodeCount++;
+      bumpNode();
       if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       const cur2 = [...cur, c.san];
       if (isUserTurn) {
@@ -759,7 +761,7 @@ async function genPuzzleTree(engine, preSans, opts) {
     const color = preSans.length % 2 === 0 ? "w" : "b";
     if (!sanSrc(brd, stripSuffix(firstSan), color)) return null;
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
-    nodeCount++;
+    bumpNode();
     const cur2 = [...preSans, firstSan];
     try { const ev2 = await engine.evaluate(sansToFen(cur2), 8); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
@@ -787,6 +789,7 @@ async function genPuzzleTree(engine, preSans, opts) {
     for (const k of kids) tagLeaves(k, [...path, k.san]);
   })(tree, []);
   if (!lines.length) return null;
+  onProgress && onProgress(1);
   return { tree, lines, seq: tagSeq + lines.length };
 }
 
@@ -1680,8 +1683,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
   // (버그 수정) 워커 하나로 포지션을 순서대로 평가하면 총 분석 시간이 포지션 수(N+1)에 정비례해
   // 늘어나 긴 대국일수록 끝없이 느려진다. depth·movetime(정확도)은 손대지 않고, 같은 엔진 프로필의
-  // 워커를 몇 개 더 띄워(이미 떠 있는 메인 워커 engine도 유휴 상태이므로 풀의 한 자리로 함께 쓴다)
-  // 포지션들을 나눠 동시에 계산해 총 시간만 줄인다.
+  // 전용 워커를 여러 개 띄워 포지션들을 나눠 동시에 계산해 총 시간만 줄인다.
   const fens = new Array(N + 1);
   {
     // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
@@ -1693,11 +1695,14 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     }
   }
   const poolTarget = Math.min(ANALYZE_POOL_SIZE[engine.profile] || 2, N + 1);
-  const extraCount = Math.max(0, poolTarget - 1);
-  const extraWorkers = extraCount > 0
-    ? (await Promise.all(Array.from({ length: extraCount }, () => bootAnalysisWorker(engine.urls)))).filter(Boolean)
-    : [];
-  const workers = [{ evaluateMulti: engine.evaluateMulti }, ...extraWorkers];
+  // (버그 수정) 예전엔 풀의 첫 자리로 앱 전역에서 공유하는 메인 엔진(engine.evaluateMulti)을 "유휴
+  // 상태이므로" 그대로 재사용했는데, 이 가정이 항상 맞지는 않았다 — 집중 학습의 실수 분석
+  // (useFocusAnalysis)처럼 게임 리뷰 모달과 무관하게 같은 큐에 평가를 계속 넣는 경로가 있어, 이미
+  // 보드에 긴 기보·많은 후보 수가 떠 있던 상태였다면 그 배경 작업 뒤에서 게임 리뷰의 워커 한 자리가
+  // 계속 대기해 전체 분석이 느려졌다. 지금은 메인 엔진 큐를 아예 재사용하지 않고 완전히 독립된
+  // 워커들로만 풀을 구성한다(부팅 실패로 하나도 못 띄우면 그때만 메인 엔진으로 폴백).
+  const dedicated = (await Promise.all(Array.from({ length: poolTarget }, () => bootAnalysisWorker(engine.urls)))).filter(Boolean);
+  const workers = dedicated.length ? dedicated : [{ evaluateMulti: engine.evaluateMulti }];
   let nextIdx = 0, doneCount = 0;
   async function runWorker(w) {
     for (;;) {
@@ -1711,7 +1716,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     }
   }
   await Promise.all(workers.map(runWorker));
-  extraWorkers.forEach((w) => w.terminate());
+  dedicated.forEach((w) => w.terminate());
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
   const graphCp = new Array(N + 1);
   for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
@@ -2294,6 +2299,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // 포지션(key)이 바뀔 때만 0으로 리셋하고, 이후엔 max로만 갱신한다.
   const depthKeyRef = useRef(null);
   const bumpDepth = useCallback((d) => { if (d == null) return; setCurDepth((prev) => (prev == null || d > prev) ? d : prev); }, []);
+  // (성능) 아래 실시간 평가 effect는 dep에 moves.length가 있어, 이 effect 자신이 후보 수를 채워
+  // moves가 늘어날 때마다 처음부터 다시 실행된다. 예전엔 재실행될 때마다 이 포지션 평가(be)와
+  // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
+  // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
+  const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, live: new Map() });
   const [engineNote, setEngineNote] = useState("");
   const [masterEmpty, setMasterEmpty] = useState(false); // 마스터 기보가 실제로 없는 경우(엔진 추천 허용)
   const extraKey = (extraSans || []).join(",");
@@ -2386,7 +2396,20 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         setPosEval(mkPosEval(partial));
         bumpDepth(partial.depth);
       };
-      const be = await engine.evaluate(sansToFen(sans), 16, onEvalProgress);
+      // (성능) 예전엔 movetime 없이 depth만 줘서, 복잡한 포지션에서는 depth에 도달할 때까지 무제한으로
+      // 오래 걸릴 수 있었다(수를 둘 때마다 이 effect가 다시 돌아 체감 지연으로 이어짐). analyzeGame·
+      // puzzleCandidatesAt처럼 movetime 상한을 둬 depth·시간 중 먼저 도달하는 쪽에서 멈추게 한다 —
+      // 대부분의 평범한 포지션은 이 시간 안에 목표 depth에 이미 도달하므로 체감 변화가 없고, 유독
+      // 오래 걸리던 복잡한 포지션만 실제로 빨라진다.
+      // (버그 수정) moves.length가 빠르게 연달아 바뀌면(예: 초반 이론 수가 순차 도착) 이 effect도
+      // 연달아 재실행되는데, 앞선 실행의 엔진 요청이 아직 끝나기 전(=캐시에 값이 채워지기 전)에
+      // 다음 실행이 시작되면 "값이 없으니 또 요청"하게 되어 캐시가 무력화된다. 값이 아니라 진행 중인
+      // Promise 자체를 즉시(await 전에) 캐시해 둬야, 뒤이은 재실행들이 새 요청 대신 같은 Promise를
+      // 기다리게 되어 중복 요청이 완전히 사라진다.
+      if (posCacheRef.current.key !== key) posCacheRef.current = { key, bePromise: null, pvsPromise: null, live: new Map() };
+      const cache = posCacheRef.current;
+      if (!cache.bePromise) cache.bePromise = engine.evaluate(sansToFen(sans), 16, onEvalProgress, 1200);
+      const be = await cache.bePromise;
       if (cancelled || !be) return;
       setPosEval(be.mate != null || be.cp != null ? mkPosEval(be) : null);
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
@@ -2399,7 +2422,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         // 한다 — 그렇지 않으면 스냅샷/Lichess에 없는 dev 전용 이론 수가 엔진 보충으로 뒤늦게 채워질 때
         // book 플래그가 빠진 채(비이론으로) 들어가는 경우가 생긴다.
         const devAddsBy2 = Object.fromEntries(addsFor(key).map((a) => [stripSuffix(a.san), a]));
-        const pvs = await engine.evaluateMulti(sansToFen(sans), 13, 10);
+        if (!cache.pvsPromise) cache.pvsPromise = engine.evaluateMulti(sansToFen(sans), 13, 10, 2500);
+        const pvs = await cache.pvsPromise;
         if (!cancelled && pvs && pvs.length) {
           const have = new Set(cur.map((m) => m.san));
           const add = [];
@@ -2423,7 +2447,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           }
         }
       }
-      const list = cur.map((m) => m.san);
+      // (성능) moves.length가 늘어 이 effect가 재실행되어도, 이전 실행에서 이미 live 평가를 받은
+      // 수는 다시 계산하지 않고 새로 추가된(아직 live가 없는) 수만 평가한다.
+      const list = cur.filter((m) => m.live == null).map((m) => m.san);
       for (const san of list) {
         if (cancelled) break;
         // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게 갱신되며
@@ -2438,7 +2464,13 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
           bumpDepth(partial.depth);
         };
-        const ev = await engine.evaluate(sansToFen([...sans, san]), 15, onMoveProgress);
+        // (성능) 이 루프는 화면에 보이는 모든 후보 수(캡 없이 최대 수십 개)를 순서대로 평가한다 —
+        // 한 수라도 movetime 없이 depth 15까지 오래 걸리면 그 뒤 모든 수의 평가가 줄줄이 밀린다.
+        // 수 하나당 상한을 짧게 둬 전체 루프가 예측 가능한 시간 안에 끝나게 한다. (버그 수정) 위의
+        // be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번 물어보는 걸 막기 위해 진행 중인
+        // Promise를 수(san)별로 캐시한다.
+        if (!cache.live.has(san)) cache.live.set(san, engine.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700));
+        const ev = await cache.live.get(san);
         if (cancelled || !ev) continue;
         const live = mkLive(ev);
         setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
@@ -2588,7 +2620,7 @@ function brilliantArrows(sans, san) {
 // (UI/UX) 집중학습을 별개의 전체 창으로 띄우지 않고, 기존에 쓰던 집중학습 UI를 그대로
 // 체스보드 하단(왼쪽 칼럼)에 배치한다 — 오른쪽 칼럼은 집중학습 중에도 항상 수 블록 목록을 보여준다.
 // 상태/부수효과(퍼즐 자동저장 등)는 하나의 훅(useFocusAnalysis)에 모아 중복 실행을 막는다.
-function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canAdd, bumpContent, puzzles, contentVer }) {
+function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canAdd, bumpContent, puzzles, contentVer, requestPuzzleGen, puzzleGenProgress }) {
   const active = !!focus;
   const sans = active ? focus.sans : [];
   const san = active ? focus.san : "";
@@ -2701,8 +2733,13 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     })();
     return () => { cancelled = true; setAnalyzing(false); };
   }, [active, sansKey, san, engine && engine.status, chesscom && chesscom.status, stats && stats.total]);
+  // (버그 수정) 예전엔 생성 진행 중에 이 컴포넌트(집중 학습 화면)가 언마운트되면(예: 탭 전환) 이
+  // effect의 cleanup이 걸려 결과가 나와도 그냥 버려졌다 — 실제 엔진 계산은 App 최상단에 항상 떠 있는
+  // engine 큐에서 계속 진행되는데도(탭을 바꿔도 엔진 워커는 안 죽는다), "다 만들었으니 저장하라"는
+  // 신호만 컴포넌트 수명에 묶여 사라진 것. requestPuzzleGen(App 레벨, 항상 마운트)에 생성을 맡겨
+  // 이 컴포넌트가 사라져도 생성이 끝까지 진행되고 결과가 저장되도록 한다.
   useEffect(() => {
-    if (!active || !onSavePuzzle) return;
+    if (!active || !onSavePuzzle || !requestPuzzleGen) return;
     const id = sansKey + "|" + san;
     // (20차 기능1) 이미 트리 형식으로 저장된 퍼즐이면 재생성하지 않는다(트리 생성은 엔진 비용이 큼).
     // 구버전(선형 라인) 퍼즐은 재생성해 트리 형식으로 업그레이드한다(onSavePuzzle이 교체 저장).
@@ -2713,41 +2750,35 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     if (isPunishable) {
       if (curated) { onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
       if (engine && engine.status === "ready") {
-        let cancelled = false;
-        genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("punish")).then((gen) => {
-          if (cancelled || !gen) return;
-          const op = title || "오프닝";
-          onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
-        });
-        return () => { cancelled = true; };
+        const op = title || "오프닝";
+        requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("punish"), onProgress).then((gen) => gen && (
+          { id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+        )));
       }
       return;
     }
     // 부정확한 수 → 우위 점하기 (실수 응징과 동일 방식)
     if (kind === "inaccuracy" && engine && engine.status === "ready") {
-      let cancelled = false;
-      genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("advantage")).then((gen) => {
-        if (cancelled || !gen) return;
-        const op = title || "오프닝";
-        onSavePuzzle({ id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
-      });
-      return () => { cancelled = true; };
+      const op = title || "오프닝";
+      requestPuzzleGen("adv|" + id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("advantage"), onProgress).then((gen) => gen && (
+        { id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+      )));
+      return;
     }
     // 탁월한 수 → 기물 희생하기 (직전 수 애니메이션 후 탁월한 수 + 보상 실현까지 이어지는 트리)
     if (kind === "brilliant" && sans.length >= 1 && engine && engine.status === "ready") {
       const op = title || "오프닝";
-      let cancelled = false;
       // (기능1) 희생 테마는 "희생 수 자체"가 첫 수(firstSan)로 고정되며, sans 위치(=studied 수 san이 두어지기 직전)에서 둔다.
-      genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }).then((gen) => {
-        if (cancelled || !gen) return;
-        onSavePuzzle({ id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true });
-      });
-      return () => { cancelled = true; };
+      requestPuzzleGen("sac|" + id, (onProgress) => genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }, onProgress).then((gen) => gen && (
+        { id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+      )));
     }
-  }, [active, sansKey, san, kind, engine && engine.status]);
+  }, [active, sansKey, san, kind, engine && engine.status, requestPuzzleGen]);
   const baseId = active ? sansKey + "|" + san : "";
   const expectedPuzzleId = active ? (kind === "brilliant" ? "sac|" + baseId : kind === "inaccuracy" ? "adv|" + baseId : (["mistake", "blunder"].includes(kind) ? baseId : null)) : null;
   const existingPuzzle = (expectedPuzzleId && puzzles) ? puzzles.find((p) => p.id === expectedPuzzleId) : null;
+  // (UX) 아직 생성이 안 끝난 퍼즐의 진행률 — "퍼즐 풀기" 버튼 대신 진행 상황을 보여주는 데 쓴다.
+  const puzzleGenProgressVal = (expectedPuzzleId && !(existingPuzzle && existingPuzzle.tree) && puzzleGenProgress) ? puzzleGenProgress[expectedPuzzleId] : null;
   // (UI1) 집중 학습 중인 수를 이론 수로 등록 — 스냅샷의 기존 이론 수와 구분 없이 동일하게 취급됨(기능3)
   const posKey = sansKey;
   const addAsTheory = async () => {
@@ -2779,7 +2810,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     editing, setEditing, draft, setDraft, canEditExpl, saveExpl, delExpl, explainLong,
     showExpl, setShowExpl, editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
     openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
-    expectedPuzzleId, existingPuzzle, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
+    expectedPuzzleId, existingPuzzle, puzzleGenProgress: puzzleGenProgressVal, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
     masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
@@ -2814,7 +2845,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain, editing, setEditing, draft, setDraft,
     canEditExpl, saveExpl, delExpl, explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
-    stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, expectedPuzzleId, existingPuzzle,
+    stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, expectedPuzzleId, existingPuzzle, puzzleGenProgress,
     masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
@@ -2864,7 +2895,21 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {(canEdit || canAdd) && !isTheory && <button onClick={addAsTheory} className="press" title="이론 수로 추가" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Book size={14} /> 이론 수로 추가</button>}
           {/* (18차 UX8) 이 수가 이론 수라면 개발자 모드에서 삭제(비이론화) 가능 — 추가 버튼과 동일 레이아웃 */}
           {canEdit && isTheory && <button onClick={toggleUnbook} className="press" title="이론 수에서 삭제" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: "#F4A8A8", fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Trash2 size={14} /> 이론 수에서 삭제</button>}
-          {expectedPuzzleId && onOpenPuzzle && <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22" }}><Play size={14} /> 퍼즐 풀기</button>}
+          {/* (버그 수정) 퍼즐 생성이 끝나기 전에는 눌러도 아무 일도 안 벌어지던 "퍼즐 풀기" 버튼 대신,
+              지금 생성 중이라는 문구와 진행 게이지를 보여준다 — 탭을 옮겨도(App 레벨 큐 덕에) 생성은
+              계속 진행되므로, 다시 돌아오면 게이지가 이어서 채워지다 완료되면 정상 버튼으로 바뀐다. */}
+          {expectedPuzzleId && onOpenPuzzle && (
+            existingPuzzle && existingPuzzle.tree ? (
+              <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22" }}><Play size={14} /> 퍼즐 풀기</button>
+            ) : (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 13px", borderRadius: 10, background: T.ebony2, border: "1px solid #000" }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: T.brassHi, whiteSpace: "nowrap" }}>퍼즐을 생성하는 중입니다…</span>
+                <div style={{ width: 56, height: 6, borderRadius: 999, background: "rgba(255,255,255,.18)", overflow: "hidden", flexShrink: 0 }}>
+                  <div style={{ width: Math.round((puzzleGenProgress || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
+                </div>
+              </div>
+            )
+          )}
         </div>
       </div>
       {/* 헤더: 아이콘 · 수/이름(크게) · 평가치 */}
@@ -3220,7 +3265,7 @@ function AnalysisModal({ sans, engine, onClose }) {
     </div>
   );
 }
-function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, autoAnalyzeGame, onConsumeAutoAnalyze, dailyQuest }) {
+function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, autoAnalyzeGame, onConsumeAutoAnalyze, dailyQuest }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -3497,7 +3542,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     return () => { cc = true; };
   }, [key, liveOn]);
 
-  const fa = useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
+  const fa = useFocusAnalysis(focus, { chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -3875,6 +3920,15 @@ function centerOrderByAdopt(kids) {
 const ROOT_ORDER = ["e4", "d4", "c4", "Nf3"];
 const DIR_OF_ROOT = { e4: "N", d4: "E", c4: "S", Nf3: "W" };
 const SCHEMATIC_BOX_W = 98, SCHEMATIC_BOX_H = 44;
+// (기능) 사이트 전체 모식도(도감 오프닝 트리·퍼즐 모식도·개발자 트리 에디터)의 확대/축소를
+// 25%p 단위(25~200%)로만 고정한다 — 버튼 클릭은 물론 핀치·휠 같은 연속 제스처로 나온 값도
+// 이 함수로 가장 가까운 단계에 스냅해, 어디서든 항상 8단계(25/50/75/100/125/150/175/200%) 중
+// 하나로만 보이게 한다.
+const SCHEMATIC_ZOOM_STEP = 0.25, SCHEMATIC_ZOOM_MIN = 0.25, SCHEMATIC_ZOOM_MAX = 2;
+function snapSchematicZoom(z) {
+  const clamped = Math.min(SCHEMATIC_ZOOM_MAX, Math.max(SCHEMATIC_ZOOM_MIN, z));
+  return Math.round(clamped / SCHEMATIC_ZOOM_STEP) * SCHEMATIC_ZOOM_STEP;
+}
 function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, priorityRef }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
@@ -4212,7 +4266,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     }, 150);
     return () => clearInterval(id);
   }, []);
-  const clampZoom = (z) => Math.min(2, Math.max(0.3, z));
+  const clampZoom = snapSchematicZoom;
   // (기능) selectionLockRef가 걸려 있는 동안 팬/줌이 바뀔 때마다, 선택된 노드가 화면 중앙에서 얼마나
   // 벗어났는지 검사한다 — 많이 벗어나면(사용자가 직접 화면을 옮긴 것) 확대 강조만 풀고(100%로),
   // 강조 색은 selectedPath가 그대로라 계속 유지된다. ref만 참조하므로 어느 렌더의 클로저에서
@@ -4253,12 +4307,36 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (버그 수정) 확대 정도(1.35배)가 너무 크다는 피드백 — 살짝만 확대되도록 낮춘다.
   // (기능) 검색·클릭으로 오프닝을 선택하면 그 노드를 화면 중앙으로 옮기고 살짝 확대해(SELECT_ZOOM)
   // "선택됨"이 시각적으로 드러나게 한다.
-  const SELECT_ZOOM = 1.15;
-  const centerOn = (it, z) => {
+  const SELECT_ZOOM = 1.25;   // (버그 수정) 25%p 단위 고정 정책에 맞춰 그리드에 없던 1.15 대신 1.25 사용
+  // (기능) 검색으로 오프닝을 고르면 예전엔 시점이 그 자리로 즉시 순간이동했다 — 지금은 지금 보고
+  // 있던 화면 중심에서 목표 위치까지 파란 선을 그어 보여주고, 그 선을 따라 아주 빠르게(220ms)
+  // 화면(pan/zoom)이 이동하는 것처럼 애니메이션한다. 선은 콘텐츠 좌표계(SVG 안)에 그리므로 이동
+  // 중에도 pan/zoom 변환을 그대로 따라 자연스럽게 화면에 맞춰 움직인다.
+  const flightRafRef = useRef(null);
+  const [flightLine, setFlightLine] = useState(null);   // { x1, y1, x2, y2 } (콘텐츠 좌표) | null
+  const FLIGHT_MS = 220;
+  const flyTo = (targetContentX, targetContentY, targetZoom) => {
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const fromZoom = zoomRef.current, fromPan = panRef.current;
+    const fromContentX = (rect.width / 2 - fromPan.x) / fromZoom, fromContentY = (rect.height / 2 - fromPan.y) / fromZoom;
+    const toPan = { x: rect.width / 2 - targetContentX * targetZoom, y: rect.height / 2 - targetContentY * targetZoom };
+    if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
+    setFlightLine({ x1: fromContentX, y1: fromContentY, x2: targetContentX, y2: targetContentY });
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / FLIGHT_MS);
+      const ease = 1 - Math.pow(1 - t, 3);   // ease-out — 빠르게 출발해 목표에서 부드럽게 멈춤
+      setPan({ x: fromPan.x + (toPan.x - fromPan.x) * ease, y: fromPan.y + (toPan.y - fromPan.y) * ease });
+      setZoom(fromZoom + (targetZoom - fromZoom) * ease);
+      if (t < 1) { flightRafRef.current = requestAnimationFrame(step); }
+      else { flightRafRef.current = null; setFlightLine(null); }
+    };
+    flightRafRef.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => { if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current); }, []);
+  const centerOn = (it, z) => {
     const c = coord(it);
-    setZoom(z);
-    setPan({ x: rect.width / 2 - (c.x + boxW / 2) * z, y: rect.height / 2 - (c.y + boxH / 2) * z });
+    flyTo(c.x + boxW / 2, c.y + boxH / 2, z);
   };
   // (버그 수정) 선택 직후 딱 한 번만 중앙으로 옮기면, 트리가 아직 배경에서 계속 자라는 중일 때
   // (최대 4000개 노드가 계속 로드되며 다른 노드들의 좌표(pos)도 함께 밀려남) 선택한 노드가 금방
@@ -4418,6 +4496,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           </div>
         ))}
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+          {/* (기능) 검색으로 오프닝을 선택했을 때, 원래 보고 있던 위치 → 목표 위치를 잇는 파란
+              안내선 — flyTo가 애니메이션 도중에만 채워 두고 도착하면 지운다. */}
+          {flightLine && <line x1={flightLine.x1} y1={flightLine.y1} x2={flightLine.x2} y2={flightLine.y2} stroke="#3E7CC4" strokeWidth={3} opacity={0.85} strokeLinecap="round" strokeDasharray="2 10" />}
           {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
               짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
@@ -4541,17 +4622,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     </div>
   );
 }
-function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening }) {
+function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
   // (2차 개편) 도감 오프닝 — 클릭으로 펼치던 방식을 버리고 최소 3수+채택률 20% 이상 라인까지 자동으로
   // 미리 다 펼쳐진 트리(useOpeningTreeAuto)를 사용. openKey: 지금 블록으로 열려 있는 노드의 경로(key).
   // 모바일(≤768px)은 세로, 그 외는 가로 모식도.
-  // (기능) 지금 선택(강조)된 오프닝과 화면에 보이는 영역을 트리 자동 확장 큐에 알려줘, 선택된
-  // 오프닝의 바리에이션을 먼저, 화면 밖 갈래를 그다음, 화면에 이미 보이는 갈래를 가장 나중에 펼치게 한다.
-  const genPriorityRef = useRef({ selectedKey: null, distanceOf: null });
-  const { data: treeData, version: treeVersion } = useOpeningTreeAuto(genPriorityRef);
+  // (버그 수정) treeData/treeVersion/genPriorityRef는 이제 App(항상 마운트)에서 내려오는 props다 —
+  // 예전처럼 이 컴포넌트 안에서 useOpeningTreeAuto를 직접 호출하면, 탭을 전환할 때마다 이 컴포넌트가
+  // 통째로 언마운트되어 지금까지 쌓인 트리 깊이가 매번 사라졌다.
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
@@ -4856,7 +4936,10 @@ function removeLastMoveOfLine(tree, path, seedSeq) {
 }
 // (20차 기능1) 모식도·메타 보강 효과가 공유하는 "공개된(이미 실제로 두어진) 경로 키" 집합 —
 // 해결한 라인의 전체 경로 + 현재 시도 중인 경로(prefix)만 공개하고, 그 밖의 미래 수는 다루지 않는다.
-function revealedPuzzleKeys(allLines, solvedNow, curKeys) {
+// (버그 수정) exploredKeys — 이번 세션에서 한 번이라도 실제로 두어 본 수의 전체 경로 키 집합(누적,
+// curKeys처럼 "처음부터"로 비워지지 않는다). 이게 없으면 라인을 풀다 만 상태에서 재시작할 때 이미
+// 들여다본 수들이 모식도에서 도로 가려져 "진행 상황이 초기화된 것처럼" 보인다.
+function revealedPuzzleKeys(allLines, solvedNow, curKeys, exploredKeys) {
   const s = new Set();
   for (const l of allLines) {
     if (!solvedNow.has(l.tag)) continue;
@@ -4864,6 +4947,7 @@ function revealedPuzzleKeys(allLines, solvedNow, curKeys) {
     for (let i = 1; i <= ks.length; i++) s.add(ks.slice(0, i).join(" "));
   }
   for (let i = 1; i <= curKeys.length; i++) s.add(curKeys.slice(0, i).join(" "));
+  if (exploredKeys) for (const k of exploredKeys) s.add(k);
   return s;
 }
 // (20차 기능1) 별 산정: 한 개 이상의 라인 해결=★1, 전체 라인의 50% 이상=★2, 전체 라인 해결=★3
@@ -4883,6 +4967,15 @@ function puzzleNo(id) { let h = 2166136261; const s = String(id); for (let i = 0
 // (UX6) 전역 풀이수: Supabase RPC 'puzzle_solve'(증가, 새 카운트 반환) / 테이블 'puzzle_stats' 조회. 미설정·미생성 시 무해하게 비활성.
 async function puzzleSolveInc(no) { if (!SB_ON) return null; try { const r = await sbRpc("puzzle_solve", { p_no: no }); return typeof r === "number" ? r : (r && r.solves) || null; } catch { return null; } }
 async function puzzleSolveCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,solves"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.solves; }); return m; } catch { return {}; } }
+// (기능) 퍼즐 좋아요 — 풀이수(solves)와 달리 취소 가능해야 하므로 RPC 'puzzle_like_toggle'이 현재
+// 상태를 보고 등록/취소를 알아서 판단해, 그 결과(liked·likes)를 한 번에 돌려준다. 테이블/RPC
+// 미생성 시 무해하게 비활성(하트를 눌러도 아무 반응 없음).
+async function puzzleLikeToggle(no, uid) {
+  if (!SB_ON || !uid) return null;
+  try { const r = await sbRpc("puzzle_like_toggle", { p_no: no, p_uid: uid }); const row = Array.isArray(r) ? r[0] : r; return row ? { liked: !!row.liked, likes: row.likes || 0 } : null; }
+  catch { return null; }
+}
+async function puzzleLikeCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,likes"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.likes; }); return m; } catch { return {}; } }
 // (UX6 전역 공유) 퍼즐 정의를 번호로 공유 저장/조회. 미설정·미생성 시 무해하게 비활성.
 async function puzzleShare(p) { if (!SB_ON || !p || !p.id) return; try { await sbUpsert("puzzles", { no: puzzleNo(p.id), data: p }); } catch { } }
 async function puzzleFetch(no) { if (!SB_ON) return null; try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; } }
@@ -5257,7 +5350,7 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, celebrateTag, shakeTag }) {
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, celebrateTag, shakeTag }) {
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
@@ -5279,7 +5372,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     // (20차 기능3) 개발자(canEdit)는 편집을 위해 트리 전체를 항상 볼 수 있어야 한다 — 그렇지 않으면
     // 라인을 삭제/추가한 직후 자기가 방금 만든 결과(미완성 상태 포함)조차 안 보여 계속 편집할 수 없다.
     // 일반 유저에게만 "아직 두지 않은 수는 고스트로 가린다" 원칙을 적용한다.
-    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys);
+    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys, exploredKeys);
     const items = []; const edges = [];
     const curKeyStr = curKeys.join(" ");
     // 실제로 둔 수(revealed)는 그대로 펼쳐 보이고, 아직 두지 않은 자식은 "고스트"(내용은 가리되 갈래가
@@ -5287,7 +5380,10 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const visit = (node, path, depth) => {
       const key = path.map((s) => stripSuffix(s)).join(" ");
       const it = { node, path, depth, key };
-      const rawKids = node.children || [];
+      // (버그 수정) pass:false(유혹 수 — 통과 불가) 자식은 어차피 어디로도 이어지지 않는 막다른
+      // 리프라 모식도에 "풀 수 없는 라인"으로만 보였다 — 지금은 아예 생성하지 않지만(genPuzzleTree),
+      // 예전에 만들어져 이미 저장된 퍼즐에도 그대로 적용되도록 렌더링 단계에서도 완전히 건너뛴다.
+      const rawKids = (node.children || []).filter((k) => k.pass !== false);
       const kids = [];
       for (const k of rawKids) {
         const kpath = [...path, k.san];
@@ -5335,14 +5431,14 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 40;
     const height = (Math.max(...items.map((it) => it.y)) + 1) * rowH + 20;
     return { items, edges, width, height, curItem };
-  }, [tree, allLines, solvedNow, curKeys.join(" "), celebrateTag, shakeTag]);
+  }, [tree, allLines, solvedNow, curKeys.join(" "), exploredKeys, celebrateTag, shakeTag]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
   const [zoom, setZoom] = useState(1);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
   const pointersRef = useRef(new Map());   // pointerId -> {x,y} — 두 손가락이면 핀치 확대/축소
   const pinchRef = useRef(null);           // { dist, zoom } 핀치 시작 시점 기준값
-  const clampZoom = (z) => Math.min(2.5, Math.max(0.5, z));
+  const clampZoom = snapSchematicZoom;
   // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
   useEffect(() => {
     const vw = boxRef.current ? boxRef.current.clientWidth : 380;
@@ -5518,7 +5614,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, engine, liveOn, canEdit, bumpContent }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, engine, liveOn, canEdit, bumpContent }) {
   const theme = puzzle.theme || "punish";
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
@@ -5570,11 +5666,29 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 퍼즐/트리가 바뀌면 미해결 라인부터 새로 시작
   useEffect(() => {
     setSessionSolved(new Set());
+    setEverRevealed(new Set());
     setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null);
     setPage(0); setCelebrate(null);
     const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
     setTargetTag(first ? first.tag : null);
   }, [puzzle.id, tree]);
+  // (버그 수정) 모식도는 "실제로 두어진 수"만 보여주는데, 그 기준이 지금 진행 중인 pathNodes였다 —
+  // 그래서 라인을 몇 수 두어 보다가(아직 못 풀고) "처음부터"를 누르면 pathNodes가 비워지면서 그
+  // 라인에서 이미 드러났던 수들이 모식도에서 도로 고스트(가려짐)로 돌아가, 마치 진행 상황이 통째로
+  // 사라진 것처럼 보였다. pathNodes와 별개로 "이 세션에서 한 번이라도 실제로 둔 수" 전체를 계속
+  // 누적해 두고, 모식도의 공개 여부는 이 누적 집합(+해결한 라인) 기준으로만 판단한다 — 재시작해도
+  // 보드 진행(pathNodes)만 초기화될 뿐, 이미 들여다본 모식도 부분은 그대로 남는다.
+  const [everRevealed, setEverRevealed] = useState(() => new Set());
+  useEffect(() => {
+    if (!pathNodes.length) return;
+    setEverRevealed((prev) => {
+      const keyArr = pathNodes.map((n) => stripSuffix(n.san));
+      let changed = false;
+      const next = new Set(prev);
+      for (let i = 1; i <= keyArr.length; i++) { const k = keyArr.slice(0, i).join(" "); if (!next.has(k)) { next.add(k); changed = true; } }
+      return changed ? next : prev;
+    });
+  }, [pathNodes]);
   const targetLine = allLines.find((l) => l.tag === targetTag) || allLines[0] || null;
   const curNode = pathNodes.length ? pathNodes[pathNodes.length - 1] : tree;
   const curSans = useMemo(() => [...setup, ...pathNodes.map((n) => n.san)], [setup, pathNodes]);
@@ -5717,11 +5831,16 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // (18차 보충 UX10→20차) 퍼즐에서 두어지는 모든 수의 수 체계 아이콘 — 트리에 저장된 등급을 즉시 쓰고,
   // 등급이 없는 수(직전 실수 수·구버전 트리)만 엔진으로 정밀 판정한다.
   const [moveIcon, setMoveIcon] = useState(null);   // { key, to, kind }
+  // (버그 수정) intro(직전 수 재생) 동안에만 "컴퓨터가 둔 첫 수"(mistakeSan)의 아이콘을 계산해 두고,
+  // intro가 끝나는 순간(아직 사용자가 한 수도 안 둔 상태)엔 이 조건에 안 걸려 그냥 null로 지워버렸다 —
+  // 그 결과 아이콘이 재생 중에만 잠깐 보였다 정적 보드로 바뀌자마자 사라졌다. intro 여부와 무관하게
+  // "아직 아무 수도 안 둔 상태"라면 계속 mistakeSan을 기준으로 삼아, 사용자가 실제로 수를 두기
+  // 전까지는 시간이 지나도 아이콘이 그대로 유지되게 한다.
   useEffect(() => {
     let prevSans, mvSan, knownKind = null;
-    if (intro) { prevSans = puzzle.setupSans || []; mvSan = puzzle.mistakeSan; }
-    else if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = reply.node && reply.node.kind; }
+    if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = reply.node && reply.node.kind; }
     else if (pathNodes.length >= 1 && !wrong && !reverting) { prevSans = curSans.slice(0, -1); mvSan = pathNodes[pathNodes.length - 1].san; knownKind = pathNodes[pathNodes.length - 1].kind; }
+    else if (pathNodes.length === 0 && puzzle.setupSans && puzzle.mistakeSan) { prevSans = puzzle.setupSans; mvSan = puzzle.mistakeSan; }
     else { setMoveIcon(null); return; }
     const moverColor = prevSans.length % 2 === 0 ? "w" : "b";
     const info = sanSrc(boardFromSans(prevSans), stripSuffix(mvSan), moverColor);
@@ -5747,7 +5866,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   useEffect(() => { setMeta({}); }, [puzzle.id, tree]);
   useEffect(() => {
     // (20차 기능3) 개발자는 트리 전체를 보므로(위 PuzzleSchematic 참고) 메타 보강도 전체 트리를 대상으로 한다.
-    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, pathNodes.map((n) => stripSuffix(n.san)));
+    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, pathNodes.map((n) => stripSuffix(n.san)), everRevealed);
     const missing = [];
     (function walk(node, path) {
       for (const k of node.children || []) {
@@ -5779,7 +5898,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       }
     })();
     return () => { cancelled = true; };
-  }, [puzzle.id, tree, liveOn, engine && engine.status, pathNodes.length, solvedNow.size]);
+  }, [puzzle.id, tree, liveOn, engine && engine.status, pathNodes.length, solvedNow.size, everRevealed]);
   // (20차 기능1) 개발자 전용 — 모식도의 리프(라인의 끝)에서 "+"를 누르면 그 라인에 수를 하나 직접
   // 추가한다. 전체 트리를 다시 만드는 대신 그 리프 하나만 연장하며, kind/ev/adopt는 위 메타 보강
   // 효과가 배경에서 채운다. 결과는 CONTENT.puzzleOverrides로 저장되어 이 퍼즐을 푸는 모든 유저에게 반영된다.
@@ -5882,6 +6001,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           <div className="flex items-center" style={{ gap: 7, marginTop: 5 }}>
             <LineStars total={3} solved={starsOf(solvedNow.size, totalLines)} />
             <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>라인 {solvedNow.size}/{totalLines} 해결</span>
+            <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, marginLeft: "auto", background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
+              <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
+              <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -5928,7 +6051,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
             </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
             {canEdit && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
@@ -5966,7 +6089,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     </div>
   );
 }
-function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames }) {
+function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike }) {
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
   const hasPreview = p.setupSans && p.mistakeSan;
@@ -5995,7 +6118,13 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
           <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{THEME_LABEL[theme]} · 라인 {totalLines}개</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
-        {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, marginTop: 2, lineHeight: 1.3, wordBreak: "break-word" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
+        <div className="flex items-center justify-between" style={{ marginTop: 2, gap: 4 }}>
+          {solveCountText(solveCount, friendSolverNames) ? <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.3, wordBreak: "break-word", minWidth: 0 }}>{solveCountText(solveCount, friendSolverNames)}</div> : <span />}
+          {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0, flexShrink: 0 }}>
+            <Heart size={11} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
+            <span style={{ fontSize: 9, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+          </button>}
+        </div>
       </div>
     </div>
   );
@@ -6121,6 +6250,25 @@ function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit
   );
 }
 function isChapterClaimed(mainQuest, key) { return !!((mainQuest && mainQuest.claimed) || {})[key]; }
+// (기능6) 프로필 카드에 보여줄 메인 퀘스트 전체 진척도 — 모든 하위 챕터를 통틀어 완료(보상 수령)한
+// 챕터 수와, 맞힌 문항 수를 합산한다.
+function mainQuestOverallProgress(mainQuest) {
+  const keys = Object.keys(CONTENT.questChapters);
+  let claimed = 0, doneItems = 0, totalItems = 0;
+  for (const k of keys) {
+    if (isChapterClaimed(mainQuest, k)) claimed++;
+    const p = chapterProgress(mainQuest, k);
+    doneItems += p.done; totalItems += p.total;
+  }
+  return { claimed, totalChapters: keys.length, doneItems, totalItems };
+}
+// (기능5) 같은 챕터(페이지) 안에 하위 챕터가 여러 개(예: CHAPTER 2의 e4/d4/c4/Nf3 응수)일 때도,
+// 페이지끼리와 마찬가지로 앞 번호부터 순서대로 클리어해야 다음 하위 챕터가 열리도록 한다.
+function rowUnlockedUpTo(rows, mainQuest) {
+  let idx = 0;
+  for (let i = 1; i < rows.length; i++) { if (isChapterClaimed(mainQuest, rows[i - 1][0])) idx = i; else break; }
+  return idx;
+}
 function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, contentVer }) {
   const [quizKey, setQuizKey] = useState(null);
   const [editKey, setEditKey] = useState(null);
@@ -6128,8 +6276,6 @@ function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, con
   // 다시 계산한다 — 그래야 개발자가 "+ 새 챕터 추가"로 만든 챕터도 실제로 화면에 노출된다.
   // parent 필드가 있는 챕터는 같은 parent끼리 묶어 한 페이지(CHAPTER N)로, parent가 없는 챕터는
   // ch1은 "CHAPTER 1"로, 그 외(신규 추가분)는 각각 별도 페이지가 된다.
-  // (개편) 챕터 하나하나를 세로로 늘어놓던 목록을, 챕터당 한 "페이지"로 만들어 좌우로 넘기는 방식으로
-  // 바꾸고, 이전 페이지(챕터)를 모두 클리어(보상까지 수령)해야 다음 페이지가 열리도록 순차 잠금을 건다.
   const pages = useMemo(() => {
     const entries = Object.entries(CONTENT.questChapters);
     const ch1Entry = entries.find(([k]) => k === "ch1");
@@ -6150,71 +6296,49 @@ function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, con
   }, [contentVer]);
   const n = pages.length;
   const pageComplete = (pg) => pg.rows.every(([k]) => isChapterClaimed(mainQuest, k));
+  // 이전 페이지(챕터)를 모두 클리어(보상까지 수령)해야 다음 페이지가 열리는 순차 잠금은 그대로 유지.
   const unlockedUpTo = useMemo(() => {
     let idx = 0;
     for (let i = 1; i < n; i++) { if (pageComplete(pages[i - 1])) idx = i; else break; }
     return idx;
   }, [pages, mainQuest]);
-  const [page, setPage] = useState(0);
-  useEffect(() => { setPage((p) => Math.min(p, unlockedUpTo)); }, [unlockedUpTo]);
-  const pagerRef = useRef(null);
-  const dragRef = useRef(null);
-  const [dragPx, setDragPx] = useState(0);
-  const dragging = !!dragRef.current;
-  const clampPage = (p) => Math.max(0, Math.min(unlockedUpTo, p));
-  const onPagerPointerDown = (e) => {
-    if (e.target.closest && e.target.closest("button, input, .no-pan, .no-swipe")) return;
-    dragRef.current = { x: e.clientX, w: pagerRef.current ? pagerRef.current.clientWidth : 380 };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  // 잠긴 다음 페이지 쪽·첫 페이지보다 앞쪽으로는 살짝만(1/3만큼) 저항감 있게 끌리게 해 "여기서 막힌다"는 걸 보여준다.
-  const onPagerPointerMove = (e) => {
-    if (!dragRef.current) return;
-    let d = e.clientX - dragRef.current.x;
-    if ((d < 0 && page >= unlockedUpTo) || (d > 0 && page <= 0)) d *= 0.3;
-    setDragPx(d);
-  };
-  const onPagerPointerUp = () => {
-    const st = dragRef.current; dragRef.current = null;
-    if (!st) { setDragPx(0); return; }
-    const threshold = st.w * 0.16;
-    if (dragPx <= -threshold) setPage((p) => clampPage(p + 1));
-    else if (dragPx >= threshold) setPage((p) => clampPage(p - 1));
-    setDragPx(0);
-  };
-  const goPage = (i) => setPage(clampPage(i));
+  // (기능5) 모바일에서 메인 퀘스트가 세로로 너무 길어지던 문제 — 챕터마다 한 페이지씩 좌우로
+  // 넘기는 방식이었는데, 넘기기 위해 모든 챕터가 한 줄(flex row)에 나란히 있어야 했고 기본 정렬
+  // (stretch) 때문에 지금 보고 있는 챕터가 짧아도 가장 긴 챕터의 높이에 항상 맞춰 늘어나 있었다.
+  // 좌우 넘기기 대신 아코디언(접기/펼치기)으로 세로 나열해, 기본으로는 진행 중인 챕터만 펼쳐지고
+  // 나머지는 제목 줄만 보이도록 접어 전체 높이를 크게 줄인다.
+  const [openKey, setOpenKey] = useState(null);
+  useEffect(() => { setOpenKey(pages[unlockedUpTo] ? pages[unlockedUpTo].pageKey : null); }, [unlockedUpTo]);
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#33220F,#1E1206)", border: "1px solid " + T.brass }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, marginBottom: 2 }}>메인 퀘스트</div>
       <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>오프닝 포지션의 성격을 탐구하는 챕터 퀴즈 — 이전 챕터를 클리어해야 다음 챕터가 열립니다.</div>
-      {n > 0 && (
-        <div ref={pagerRef} onPointerDown={onPagerPointerDown} onPointerMove={onPagerPointerMove} onPointerUp={onPagerPointerUp} onPointerLeave={onPagerPointerUp} onPointerCancel={onPagerPointerUp}
-          style={{ position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
-          <div style={{ display: "flex", width: n * 100 + "%", transform: "translateX(calc(" + (-page * (100 / n)) + "% + " + dragPx + "px))", transition: dragging ? "none" : "transform .34s cubic-bezier(.22,.9,.32,1)" }}>
-            {pages.map((pg, i) => {
-              const locked = i > unlockedUpTo;
-              return (
-                <div key={pg.pageKey} style={{ width: 100 / n + "%", boxSizing: "border-box", padding: "0 2px", flexShrink: 0 }}>
-                  <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi }}>{"CHAPTER " + (i + 1) + (pg.heading ? " · " + pg.heading : "")}</span>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
-                    {pg.rows.map(([k, ch]) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={locked ? () => {} : setQuizKey} onClaim={locked ? () => {} : onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={locked} />)}
-                  </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {pages.map((pg, i) => {
+          const locked = i > unlockedUpTo;
+          const complete = pageComplete(pg);
+          const isOpen = !locked && openKey === pg.pageKey;
+          const rowUnlockedIdx = rowUnlockedUpTo(pg.rows, mainQuest);
+          const totals = pg.rows.reduce((acc, [k]) => { const p = chapterProgress(mainQuest, k); return { done: acc.done + p.done, total: acc.total + p.total }; }, { done: 0, total: 0 });
+          return (
+            <div key={pg.pageKey} style={{ borderRadius: 10, border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), background: "rgba(0,0,0,.15)", opacity: locked ? .55 : 1, overflow: "hidden" }}>
+              <button onClick={() => !locked && setOpenKey(isOpen ? null : pg.pageKey)} disabled={locked} className={locked ? "" : "press"}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", border: "none", background: "transparent", cursor: locked ? "default" : "pointer", textAlign: "left" }}>
+                <span style={{ fontSize: 11.5, fontWeight: 900, letterSpacing: ".02em", color: complete ? "#BEEAB0" : T.brassHi, minWidth: 0, flex: 1 }}>{"CHAPTER " + (i + 1) + (pg.heading ? " · " + pg.heading : "")}</span>
+                {locked ? <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, flexShrink: 0 }}><Lock size={11} /> 잠김</span>
+                  : complete ? <span style={{ fontSize: 10, fontWeight: 800, color: T.best, flexShrink: 0 }}>완료</span>
+                  : <span style={{ fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brassHi, flexShrink: 0 }}>{totals.done}/{totals.total}</span>}
+                {!locked && <ChevronDown size={14} color={T.inkSoft} style={{ flexShrink: 0, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s ease" }} />}
+              </button>
+              {isOpen && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 10px 10px" }}>
+                  {pg.rows.map(([k, ch], ri) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={ri > rowUnlockedIdx} />)}
                 </div>
-              );
-            })}
-          </div>
-          {page > 0 && <button onClick={() => goPage(page - 1)} aria-label="이전 챕터" className="press" style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={16} /></button>}
-          {page < unlockedUpTo && <button onClick={() => goPage(page + 1)} aria-label="다음 챕터" className="press" style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={16} /></button>}
-        </div>
-      )}
-      {n > 1 && (
-        <div className="flex items-center justify-center gap-2" style={{ marginTop: 10 }}>
-          {pages.map((pg, i) => (
-            <button key={pg.pageKey} onClick={() => goPage(i)} disabled={i > unlockedUpTo} aria-label={"CHAPTER " + (i + 1)} className={i <= unlockedUpTo ? "press" : ""}
-              style={{ width: page === i ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: i <= unlockedUpTo ? "pointer" : "not-allowed", background: page === i ? T.brass : (i <= unlockedUpTo ? "rgba(255,255,255,.35)" : "rgba(255,255,255,.14)"), transition: "width .25s ease, background .25s ease" }} />
-          ))}
-        </div>
-      )}
+              )}
+            </div>
+          );
+        })}
+      </div>
       {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 새 챕터 추가</button>}
       {quizKey && <QuizModal chKey={quizKey} ch={CONTENT.questChapters[quizKey]} mainQuest={mainQuest} onAnswer={onAnswer} onClose={() => setQuizKey(null)} />}
       {editKey && <QuestChapterEditor chKey={editKey} bumpContent={bumpContent} onClose={() => setEditKey(null)} />}
@@ -6359,7 +6483,7 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, active, setActive, engine, liveOn, canEdit, bumpContent }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, active, setActive, engine, liveOn, canEdit, bumpContent }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -6425,7 +6549,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
     return arr.slice(0, 6);
   }, [recommendedPool, recSeed]);
-  if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
   const themed = filter === "all" ? puzzles : puzzles.filter((p) => (p.theme || "punish") === filter);
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
   const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
@@ -6475,7 +6599,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           </div>
           {recommended.length > 0 ? (
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
-              {recommended.map((p) => <PuzzleCard key={"rec-" + p.id} p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} />)}
+              {recommended.map((p) => <PuzzleCard key={"rec-" + p.id} p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />)}
             </div>
           ) : (
             <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: "14px 16px", color: T.inkSoft, fontSize: 12.5 }}>
@@ -6486,12 +6610,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       )}
       {themed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 테마의 퍼즐이 아직 없어요.</div>
         : <div>
-            {open.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div><div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{open.map((p) => <PuzzleCard key={p.id} p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} />)}</div></div>}
+            {open.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div><div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{open.map((p) => <PuzzleCard key={p.id} p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />)}</div></div>}
             {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
               {clearedByOpening.map(([op, list]) => (
                 <div key={op} style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 2 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{list.map((p) => <PuzzleCard key={p.id} p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} />)}</div>
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{list.map((p) => <PuzzleCard key={p.id} p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />)}</div>
                 </div>
               ))}
             </div>}
@@ -6654,7 +6778,7 @@ function SchematicEditor({ bumpContent, contentVer, canAdd, focusPath, setFocusP
   // (17차) 모식도를 전체 화면으로 띄우고, 확대/축소해 자유롭게 편집할 수 있게 한다.
   const [fullscreen, setFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const clampZoom = (z) => Math.max(0.4, Math.min(2.5, z));
+  const clampZoom = snapSchematicZoom;
   const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z - e.deltaY * 0.0015)); };
   const colW = 148, rowH = 42, boxW = 108, boxH = 30;
   const { nodes, edges, truncated } = useMemo(() => {
@@ -6707,9 +6831,9 @@ function SchematicEditor({ bumpContent, contentVer, canAdd, focusPath, setFocusP
         </div>
         {/* (17차) 전체 화면 + 확대/축소 컨트롤 */}
         <div className="flex items-center gap-1">
-          <button onClick={() => setZoom((z) => clampZoom(z - 0.2))} className="press" title="축소" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>−</button>
+          <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} className="press" title="축소" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>−</button>
           <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", width: 36, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((z) => clampZoom(z + 0.2))} className="press" title="확대" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>+</button>
+          <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} className="press" title="확대" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>+</button>
           <button onClick={() => setFullscreen((v) => !v)} className="press" title={fullscreen ? "전체 화면 닫기" : "전체 화면"} style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: fullscreen ? T.brass : "transparent", color: fullscreen ? "#241509" : T.brassHi, cursor: "pointer", fontSize: 11, fontWeight: 800 }}>{fullscreen ? "닫기" : "전체 화면"}</button>
         </div>
       </div>
@@ -6805,10 +6929,13 @@ function findOpeningPathByFuzzyName(name) {
 // 파일 탐색기 같은 계통도 느낌을 준다. 각 노드의 수치는 자신 + 모든 하위 갈래의 합산(rollup)이라,
 // 상위 행이 곧 그 아래 중첩된 하위 행들의 총합으로 보인다.
 // (버그 수정) 이름이 길면 한 줄 말줄임에 잘려 전혀 안 보이던 문제 — 이름을 통계 줄과 분리해 자기
-// 줄에서 최대 2줄까지 감싸 보여주고(그래도 넘치면 말줄임), title 속성으로 전체 이름도 항상 볼 수 있게 한다.
+// 줄에서 감싸 보여준다. (버그 수정) 예전엔 여기서도 최대 2줄까지만 보여주고 그 이상은 말줄임(…)
+// 처리했는데, 모바일처럼 화면이 좁고 깊이 중첩된(들여쓰기가 누적된) 오프닝일수록 2줄로도 모자라
+// 이름이 중간에 잘려 보였다(title 속성은 모바일 터치 환경에서 아예 작동하지 않아 전체 이름을
+// 확인할 방법도 없었다). 줄 수 제한을 없애 이름이 몇 줄이 되든 항상 끝까지 그대로 보이게 한다.
 function OpeningWinrateRow({ node, depth, onOpenOpening }) {
   const isRoot = depth === 0;
-  const nameStyle = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "keep-all", lineHeight: 1.3, minWidth: 0, flex: "1 1 auto" };
+  const nameStyle = { wordBreak: "keep-all", lineHeight: 1.3, minWidth: 0, flex: "1 1 auto" };
   return (
     <div style={{ position: "relative" }}>
       {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
@@ -6981,10 +7108,17 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
-function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor }) {
+function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
   const [editOpen, setEditOpen] = useState(false);
   const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft } = chesscomUi;
+  // (기능6) 프로필에서 메인 퀘스트 진척도·푼 퍼즐을 한눈에 볼 수 있게 표시.
+  const mq = useMemo(() => mainQuestOverallProgress(mainQuest), [mainQuest]);
+  const mqPct = mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
+  const solvedPuzzles = useMemo(() => {
+    if (!puzzles || !solved) return [];
+    return puzzles.filter((p) => solved.has(p.id)).sort((a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""));
+  }, [puzzles, solved]);
   return (
     <div style={card}>
       <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
@@ -7002,6 +7136,32 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
         </div>
       </div>
       <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      {mq.totalChapters > 0 && (
+        <div style={{ marginTop: 4, marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>메인 퀘스트 진척도</span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
+          </div>
+          <div style={{ height: 7, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
+            <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
+          </div>
+          {mq.totalItems > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>문제 {mq.doneItems}/{mq.totalItems}개 정답</div>}
+        </div>
+      )}
+      {puzzles && solved && (
+        <div style={{ paddingTop: mq.totalChapters > 0 ? 0 : 12, borderTop: mq.totalChapters > 0 ? "none" : "1px solid #E4D5B6" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>푼 퍼즐 <span style={{ color: T.inkSoft, fontWeight: 700 }}>({solvedPuzzles.length})</span></div>
+          {solvedPuzzles.length === 0 ? (
+            <p style={{ fontSize: 11.5, color: T.inkSoft }}>아직 푼 퍼즐이 없어요.</p>
+          ) : (
+            <div style={{ maxHeight: 340, overflowY: "auto", paddingRight: 2 }}>
+              <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
+                {solvedPuzzles.map((p) => <PuzzleCard key={p.id} p={p} isSolved onClick={() => onOpenPuzzle && onOpenPuzzle(p.id, p)} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {editOpen && (
         <div onClick={() => setEditOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", marginBottom: 40 }}>
@@ -7030,6 +7190,91 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
           </div>
         </div>
       )}
+    </div>
+  );
+}
+// (기능) 접속 시 보여줄 업데이트 공지 — README 버전 기록을 기반으로 하되, 개발 용어 없이 사용자
+// 입장에서 무엇이 좋아졌는지만 쉬운 말로 다시 정리한다. APP_VERSION이 바뀌면(새 항목을 배열 맨 앞에
+// 추가) 이전에 "다시 보지 않기"를 체크했던 사용자에게도 새 공지가 다시 뜬다.
+const APP_VERSION = "0.0.4";
+const CHANGELOG = [
+  {
+    version: "0.0.4", date: "2026.7.13", items: [
+      "게임 리뷰(전체 기보 분석)가 느리게 느껴지던 문제를 해결해 훨씬 빠르게 결과를 볼 수 있어요.",
+      "체스판에서 수를 둘 때마다 실시간 분석이 느려지던 문제를 개선했어요.",
+      "모바일에서 오프닝 이름이 길면 잘려서 안 보이던 문제를 고쳤어요.",
+      "퍼즐을 만드는 도중 다른 화면으로 이동하면 처음부터 다시 만들어야 했던 문제를 해결하고, 만드는 동안에는 진행 표시줄을 보여줘요.",
+      "퍼즐 풀이 화면에서 실제로는 풀 수 없는 수가 함께 보이던 문제를 없앴어요.",
+      "퍼즐에서 컴퓨터가 둔 첫 수의 표시가 금방 사라지던 문제를 고쳤어요.",
+      "퍼즐을 풀다가 \"처음부터\"를 누르면 이미 살펴본 내용까지 사라지던 문제를 해결했어요.",
+    ],
+  },
+  {
+    version: "0.0.3", date: "2026.7.13", items: [
+      "도감 탭의 오프닝 트리를 나침반 모양(동서남북)으로 새롭게 디자인했어요.",
+      "트리가 그려지는 동안 화면이 흔들리거나 버벅이던 문제를 해결했어요.",
+      "수를 클릭하면 뜨는 설명 카드가 화면을 확대·축소할 때 잘리거나 커지던 문제를 고쳤어요.",
+    ],
+  },
+  {
+    version: "0.0.2", date: "2026.7.12", items: [
+      "게임 리뷰(전체 기보 분석)가 기보가 길어질수록 느려지다 멈추는 것처럼 보이던 문제를 해결했어요.",
+      "실시간 분석 성능을 개선해 더 정확하고 빠르게 계산하도록 했어요(지원 브라우저 한정).",
+    ],
+  },
+  {
+    version: "0.0.1", date: "2026.7.11", items: [
+      "모바일 화면에서 상단 메뉴가 잘리던 문제를 고치고 전체적으로 더 깔끔하게 정리했어요.",
+      "대국 기록에 래피드·블리츠·불릿 같은 시간 규정과 레이팅 변화가 함께 표시돼요.",
+      "마스터 대국 기록이 안 보이던 문제를 고쳤어요.",
+      "학습 탭의 체스판을 더 크게 키웠어요.",
+      "도감 탭에 오프닝 이름을 함께 표시했어요.",
+      "퍼즐 탭에서 퍼즐이 하단 메뉴에 가려지던 문제와 모바일에서 추천 퍼즐이 안 뜨던 문제를 해결했어요.",
+      "상점·설정 탭의 화면을 정리했어요.",
+      "집중 학습 모드에서 원하는 수를 클릭하면 바로 그 수의 학습 화면으로 이동해요.",
+      "검색할 때 입력하는 즉시 결과가 나타나도록 했어요.",
+      "chess.com 계정을 연동할 때 대국이 많아도 더 빠르게 정보가 표시돼요.",
+      "로그인·회원가입 창에 부드러운 애니메이션을 추가했어요.",
+    ],
+  },
+  {
+    version: "0.0.0", date: "2026.7.10", items: [
+      "OpenChess 베타 서비스를 시작했어요! 오프닝 학습과 퍼즐 풀이 핵심 기능을 먼저 선보이며, 앞으로 계속 다듬어 나갈게요.",
+    ],
+  },
+];
+function AnnouncementModal({ onClose, onDismissVersion }) {
+  const [hide, setHide] = useState(false);
+  const latest = CHANGELOG[0];
+  const handleClose = () => { if (hide) onDismissVersion(); onClose(); };
+  return (
+    <div onClick={handleClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
+        <button onClick={handleClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <div className="flex items-center gap-2" style={{ marginBottom: 4, paddingRight: 32 }}>
+          <Sparkles size={17} style={{ color: T.brass, flexShrink: 0 }} />
+          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>업데이트 소식</span>
+        </div>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>최신 버전 <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>v{latest.version}</b>({latest.date})에서 이런 점이 달라졌어요.</p>
+        <div style={{ maxHeight: 360, overflowY: "auto", paddingRight: 4 }}>
+          {CHANGELOG.map((v, i) => (
+            <div key={v.version} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: i < CHANGELOG.length - 1 ? "1px dashed #DCCBA8" : "none" }}>
+              <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
+                <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
+                {i === 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: T.brass, borderRadius: 999, padding: "1px 7px" }}>최신</span>}
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {v.items.map((t, j) => <li key={j} style={{ fontSize: 12, color: T.ink, lineHeight: 1.6, marginBottom: 4 }}>{t}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <label className="flex items-center gap-2" style={{ marginTop: 12, cursor: "pointer" }}>
+          <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} style={{ width: 15, height: 15, flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>이 버전 업데이트 소식 다시 보지 않기</span>
+        </label>
+      </div>
     </div>
   );
 }
@@ -7079,7 +7324,7 @@ function InquiryModal({ onClose, user }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -7146,6 +7391,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
+        mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} />} />}
 
       {/* (20차 기능2) 엔진 선택 — 정확도가 높지만 무거운 Stockfish 16과, 가볍고 빠른 Stockfish 18 Lite
@@ -8382,10 +8628,28 @@ export default function App() {
   // (16차) 주소창의 서브패스(/learn, /book, /puzzle, /setting)로 직접 들어온 경우 그 탭을 우선한다.
   const urlTabRef = useRef(typeof window !== "undefined" ? tabFromPath(window.location.pathname) : null);
   const [tab, setTab] = useState(() => urlTabRef.current || "learn");
+  // (버그 수정) 도감 오프닝 트리를 배경에서 계속 더 깊이 채워나가는 useOpeningTreeAuto가 도감 탭
+  // 컴포넌트(CollectionTab) 안에서 호출되고 있었다 — {tab === "dex" && <CollectionTab .../>}처럼
+  // 탭을 조건부로 마운트하는 구조라, 다른 탭으로 갔다가 돌아오기만 해도(퍼즐 확인 등 흔한 사용
+  // 패턴) 이 컴포넌트가 통째로 언마운트·재마운트되어 지금까지 쌓인 깊이가 전부 사라지고 처음부터
+  // 다시 시작됐다 — 그래서 짧게 훑어보면 항상 얕은 수(약 6수)에서 멈춘 것처럼 보였다. 항상
+  // 마운트돼 있는 App으로 끌어올려, 어느 탭에 있든(도감을 벗어나도) 계속 더 깊이 채워지도록 한다.
+  const dexGenPriorityRef = useRef({ selectedKey: null, distanceOf: null });
+  const { data: dexTreeData, version: dexTreeVersion } = useOpeningTreeAuto(dexGenPriorityRef);
   const [unlocked, setUnlocked] = useState(new Set());
   const [newUnlocks, setNewUnlocks] = useState(0);
   const [newTitles, setNewTitles] = useState(0); // (버그) 새로 획득한 칭호 수 — 도감 탭 빨간 배지
   const [puzzles, setPuzzles] = useState([]);
+  // (버그 수정) 퍼즐 생성(genPuzzleTree)이 집중 학습 화면의 effect에 묶여 있으면, 그 화면이 언마운트되는
+  // 탭 전환만으로 아직 안 끝난 생성이 통째로 버려졌다(엔진 자체는 App에 항상 떠 있어 계속 도는데도).
+  // 생성 요청·진행률을 이 항상-마운트된 App으로 끌어올려, 어느 탭에 있든 생성이 끝까지 이어지고
+  // 완료되면 저장되도록 한다. puzzleGenProgress: 퍼즐 id -> 진행률(0~1, 완료되면 항목 제거).
+  const [puzzleGenProgress, setPuzzleGenProgress] = useState({});
+  const puzzleGenInFlightRef = useRef(new Set());
+  // (기능) 접속 시 업데이트 공지 — "다시 보지 않기"를 체크하고 닫으면 그 버전 번호를 저장해 두고,
+  // 다음에 저장된 값이 현재 APP_VERSION과 다르면(=새 버전이 나오면) 다시 보여준다.
+  const [dismissedAnnounceVersion, setDismissedAnnounceVersion] = useState(null);
+  const [announceOpen, setAnnounceOpen] = useState(false);
   const [learnFocus, setLearnFocus] = useState(null);   // (UX4) 탭 이동에도 집중 학습 유지
   const [puzzleActive, setPuzzleActive] = useState(null);   // (UX4) 탭 이동에도 퍼즐 창 유지
   const [treeFocus, setTreeFocus] = useState([]);   // (UX4) 새로고침해도 이론 트리 에디터의 탐색 위치 유지
@@ -8394,6 +8658,7 @@ export default function App() {
   // 알고 있던 퍼즐 데이터는 여기 보존해 두어, 추천 목록에서는 계속 후보로 남는다(id -> 퍼즐 객체).
   const [archivedPuzzles, setArchivedPuzzles] = useState({});
   const [solveCounts, setSolveCounts] = useState({});              // (UX6) 번호별 전역 풀이수
+  const [likeCounts, setLikeCounts] = useState({});                 // (기능) 번호별 전역 좋아요수
   const [friendUids, setFriendUids] = useState([]);                // (16차) 수락된 친구 uid 목록
   const [puzzleSolvers, setPuzzleSolvers] = useState({});          // (16차) { [puzzleNo]: uid[] } — 그 퍼즐을 푼 사람들
   const [solverNames, setSolverNames] = useState({});              // (16차) uid -> username (친구 중 해결자만)
@@ -8410,6 +8675,7 @@ export default function App() {
   const [focusActive, setFocusActive] = useState(false);
   const [toast, setToast] = useState(null);
   const [solved, setSolved] = useState(new Set());
+  const [likedPuzzles, setLikedPuzzles] = useState(new Set());   // (기능) 내가 좋아요 누른 퍼즐 id — solved처럼 로컬+계정에 저장
   const [lineSolves, setLineSolves] = useState({});   // (기능1) { [puzzleId]: string[] } — 라인(tag)별 해결 기록. 전체 라인이 다 모이면 solved로 승격.
   const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 레벨/진행률은 levelFromXp로 매번 도출
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
@@ -8514,19 +8780,23 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (d.puzzleActive) setPuzzleActive(d.puzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
+    try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
     setLoaded(true);
   })(); }, []);
+  // (기능) 저장된 값을 다 복원한 뒤(loaded) 한 번만 판단 — 이 버전을 아직 "다시 보지 않기"로 끄지
+  // 않았다면(또는 그 이후 버전이 올라와 저장된 값이 최신 버전과 달라졌다면) 공지를 띄운다.
+  useEffect(() => { if (loaded && dismissedAnnounceVersion !== APP_VERSION) setAnnounceOpen(true); }, [loaded]);
   // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 레벨/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "" }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus })); }, [unlocked, profile, puzzles, solved, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings }); }, [unlocked, puzzles, solved, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion })); }, [unlocked, profile, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion }); }, [unlocked, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
   // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
   // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
@@ -8588,13 +8858,13 @@ export default function App() {
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
   // 다시 로그인하면 보유 스킨·장착 상태가 기본값으로 되돌아가 마치 구매 내역이 저장 안 된 것처럼 보였다.
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
-    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLineSolves({}); prevLevelRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
+    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setLineSolves({}); prevLevelRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
   }, []);
@@ -8624,6 +8894,21 @@ export default function App() {
       return [...prev, pz];
     });
   }, [deletedPuzzles, solved]);
+  // (버그 수정) 퍼즐 생성 요청의 단일 창구 — id별로 딱 한 번만 시작하고(다른 컴포넌트가 같은 퍼즐을
+  // 다시 요청해도 무시), 요청한 컴포넌트가 이후 언마운트되어도(탭 전환) 이 App은 항상 떠 있으므로
+  // run()이 끝까지 실행되어 결과가 저장된다. run은 (onProgress) => Promise<퍼즐객체|null>.
+  const requestPuzzleGen = useCallback((id, run) => {
+    if (puzzleGenInFlightRef.current.has(id)) return;
+    puzzleGenInFlightRef.current.add(id);
+    setPuzzleGenProgress((prev) => ({ ...prev, [id]: 0 }));
+    run((p) => setPuzzleGenProgress((prev) => (id in prev ? { ...prev, [id]: p } : prev)))
+      .then((pz) => { if (pz) onSavePuzzle(pz); })
+      .catch((e) => console.warn("퍼즐 생성 실패:", id, e))
+      .finally(() => {
+        puzzleGenInFlightRef.current.delete(id);
+        setPuzzleGenProgress((prev) => { if (!(id in prev)) return prev; const n = { ...prev }; delete n[id]; return n; });
+      });
+  }, [onSavePuzzle]);
   const onDeletePuzzle = useCallback((id) => {
     setPuzzles((prev) => {
       const removed = prev.find((x) => x.id === id);
@@ -8648,6 +8933,25 @@ export default function App() {
       if (pz && pz.opening) setRecentOpenings((prev) => [pz.opening, ...prev.filter((x) => x !== pz.opening)].slice(0, 10));
     }
   }, [user, solved, uid, puzzles]);
+  // (기능) 퍼즐 좋아요 — solves(풀이수)와 달리 취소도 가능해야 하므로, 누를 때마다 로컬 상태를
+  // 먼저 뒤집어(하트가 바로 채워지거나 비워지도록) 서버 응답을 기다리지 않고 반응하게 하고,
+  // 서버가 돌려준 실제 상태(liked/likes)로 뒤늦게 맞춘다 — 실패하면(오프라인 등) 원래대로 되돌린다.
+  const onToggleLike = useCallback((id) => {
+    if (!user || !uid) { openAuth("login"); return; }
+    const no = puzzleNo(id);
+    const wasLiked = likedPuzzles.has(id);
+    setLikedPuzzles((p) => { const n = new Set(p); if (wasLiked) n.delete(id); else n.add(id); return n; });
+    setLikeCounts((m) => ({ ...m, [no]: Math.max(0, (m[no] || 0) + (wasLiked ? -1 : 1)) }));
+    puzzleLikeToggle(no, uid).then((r) => {
+      if (!r) {
+        setLikedPuzzles((p) => { const n = new Set(p); if (wasLiked) n.add(id); else n.delete(id); return n; });
+        setLikeCounts((m) => ({ ...m, [no]: Math.max(0, (m[no] || 0) + (wasLiked ? 1 : -1)) }));
+        return;
+      }
+      setLikeCounts((m) => ({ ...m, [no]: r.likes }));
+      setLikedPuzzles((p) => { if (p.has(id) === r.liked) return p; const n = new Set(p); if (r.liked) n.add(id); else n.delete(id); return n; });
+    });
+  }, [user, uid, likedPuzzles]);
   // (16차) 추천 랭킹용 — 어떤 라인이든 완료할 때마다(중복 풀이 포함) 기록. XP/해결 트래킹과는 무관.
   const onPuzzleSolveEvent = useCallback((id) => { puzzleSolveEventAdd(puzzleNo(id), uid); }, [uid]);
   // (기능1) 라인(최선/차선/채택률) 하나를 풀 때마다 기록 — 전체 라인이 다 모이면(별 3개) onSolved로 승격해
@@ -8872,6 +9176,7 @@ export default function App() {
         {authOpen && <AuthModal key={authMode} initialMode={authMode} onClose={() => setAuthOpen(false)} onAuth={onAuth} />}
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
+      {announceOpen && <AnnouncementModal onClose={() => setAnnounceOpen(false)} onDismissVersion={() => setDismissedAnnounceVersion(APP_VERSION)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
@@ -8933,12 +9238,12 @@ export default function App() {
           동적으로 접히는 안드로이드 브라우저)에서 목록 맨 마지막 카드가 하단 탭에 살짝 가려 보이는
           경우가 있었다 — 여유를 더 둔다. */}
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
-        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
+        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
