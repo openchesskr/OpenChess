@@ -744,6 +744,10 @@ async function puzzleCandidatesAt(engine, cur) {
   try { pvs = await engine.evaluateMulti(sansToFen(cur), 11, 6, 3500); } catch { pvs = null; }
   if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
   const bestCp = cpOfLine(pvs[0]);
+  // (버그 수정) 이미 승부가 기운 위치(예: -600cp)에서 어차피 지는 형세를 못 바꾸는 희생 수까지
+  // "탁월한 수(brilliant)"로 잘못 태그되던 문제 — classifyMoveKind/analyzeGame과 동일하게, 두기
+  // 전 위치가 이미 결정 나 있고(decided) 지고 있던(losing) 경우에는 희생 태그를 주지 않는다.
+  const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
   const adoptBy = {};
   try { const lc = await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
   const cands = []; const seen = new Set();
@@ -755,7 +759,7 @@ async function puzzleCandidatesAt(engine, cur) {
     const loss = Math.max(0, bestCp - mvCp);
     let kind = i === 0 ? "best" : tierOf(loss);
     if (i > 0 && kind === "best") kind = "excellent";
-    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40) kind = "brilliant"; } catch { }
+    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
     cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
   });
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
@@ -1996,6 +2000,13 @@ function assignTiers(moves, ply, board, keyStr) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
   const best = evals.length ? Math.max(...evals) : null;
+  // (버그 수정) 학습 탭의 이 등급 판정만 classifyMoveKind/analyzeGame/puzzleCandidatesAt과 달리 "이미
+  // 승부가 기운 위치에서의 자포자기 희생은 탁월한 수로 안 쳐준다"는 완화 규칙이 빠져 있었다 — 같은
+  // 포지션이 게임 리뷰·퍼즐 채점에서는 정상 등급(예: 우수)으로 나오는데 학습 탭에서만 "탁월한 수"로
+  // 잘못 표시되는 불일치가 있었다. best(형제 수 중 최댓값)는 다른 세 곳의 bestCp와 같은 역할이므로
+  // 동일한 기준으로 완화한다.
+  const decided = best != null && Math.abs(best) > 200;
+  const losing = best != null && best <= -200;
   let out = moves.map((m) => {
     const forced = keyStr != null ? forceKindFor(keyStr, m.san) : null;
     if (forced) return { ...m, kind: forced, book: forced === "book", forced: true };
@@ -2006,7 +2017,7 @@ function assignTiers(moves, ply, board, keyStr) {
     if (isBook) return { ...m, kind: "book", book: true };
     if (mv == null || best == null) return { ...m, kind: hasRealEval(m) ? "good" : "pending", book: false };
     let kind = tierOf(loss);
-    if (["best", "excellent", "good"].includes(kind) && board && isSacrifice(board, m.san, color) && mv >= -40) kind = "brilliant";
+    if (["best", "excellent", "good"].includes(kind) && board && isSacrifice(board, m.san, color) && mv >= -40 && !(decided && losing)) kind = "brilliant";
     return { ...m, kind, book: false };
   });
   // (기능4) 최선의 수는 반드시 1개 이하. 평가치가 가장 좋은 '비이론' 수 1개에만 '최선'을 부여하고
@@ -4345,7 +4356,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const newOnes = filtered.filter((m) => !sanOrder.includes(m.san)).map((m) => m.san);
             // (버그 수정) 이미 상한을 채운 뒤에 새로 나타난 수는, 이론 수가 아니면 더 안 늘린다 —
             // 이론 수는 큐레이션된 유한한 집합이라 예외로 항상 끼워 준다.
-            const toAdd = newOnes.filter((s) => isBookMoveAt(key, s) || sanOrder.length < cap);
+            // (버그 수정) sanOrder.length를 한 번만 읽어 이 배치의 모든 후보에 똑같이 적용하고
+            // 있었다 — 같은 배치에 새 비이론 수가 여럿 나타나면(예: 이미 cap-1개인데 한꺼번에 3개
+            // 도착) 전부 그 한 번 읽은 길이만으로 통과해 cap을 넘겨 버렸다. 남은 여유(room)를
+            // 하나씩 소진해가며 채워, 이 배치 안에서도 cap을 넘지 않게 한다.
+            let room = Math.max(0, cap - sanOrder.length);
+            const toAdd = newOnes.filter((s) => { if (isBookMoveAt(key, s)) return true; if (room > 0) { room--; return true; } return false; });
             if (toAdd.length) { sanOrder = [...sanOrder, ...toAdd]; orderCacheRef.current.set(key, sanOrder); }
           }
           ordered = sanOrder.map((s) => filtered.find((m) => m.san === s)).filter(Boolean);
@@ -7379,15 +7395,25 @@ function findOpeningPathByName(name) {   // (UX2) 이름이 같은 첫(최단) �
 // (20차 UI4 보충) 일일 퀘스트는 "London System"처럼 짧은 이름을 쓰지만 트리의 실제 오프닝 이름은
 // 더 세부적일 수 있어(예: "Queen's Pawn Game: Accelerated London System"), findOpeningPathByName의
 // 정확 일치 대신 부분 일치로 첫 경로를 찾는다.
+// (버그 수정) 원래 의도(위 주석)는 "퀘스트 이름이 트리 이름보다 짧을 수 있다"는 것이었는데, 반대
+// 방향(트리 이름이 검색어보다 짧을 때도 일치)까지 한 조건에 같이 넣어 BFS 첫 매치로 곧장 반환하다
+// 보니 문제가 생겼다 — 이 트리는 얕은 상위 오프닝 이름이 항상 더 깊은 하위 바리에이션 이름의
+// 접두어이므로(예: "Sicilian Defense" ⊂ "Sicilian Defense: Najdorf Variation"), 세부 바리에이션을
+// 검색해도 반대 방향 조건 때문에 훨씬 얕고 일반적인 상위 오프닝이 먼저 걸려 반환됐다. 트리 이름이
+// 검색어를 포함하는(=트리 쪽이 더 구체적이거나 같은) 매치를 먼저 전부 찾고, 그런 매치가 하나도
+// 없을 때만(퀘스트 이름이 트리 이름보다 더 구체적인, 원래 의도한 드문 경우) 반대 방향으로 한 번 더 찾는다.
 function findOpeningPathByFuzzyName(name) {
-  let queue = [[]]; const seen = new Set([""]); let steps = 0;
-  while (queue.length && steps < 8000) {
-    const path = queue.shift(); steps++;
-    const nd = snapNode(path);
-    if (path.length && nd && nd.opening && (nd.opening.name.includes(name) || name.includes(nd.opening.name))) return path;
-    if (nd && nd.moves) for (const mv of nd.moves) { const np = [...path, mv.san]; const k = np.join(" "); if (!seen.has(k) && np.length <= 12) { seen.add(k); queue.push(np); } }
-  }
-  return null;
+  const search = (matches) => {
+    let queue = [[]]; const seen = new Set([""]); let steps = 0;
+    while (queue.length && steps < 8000) {
+      const path = queue.shift(); steps++;
+      const nd = snapNode(path);
+      if (path.length && nd && nd.opening && matches(nd.opening.name)) return path;
+      if (nd && nd.moves) for (const mv of nd.moves) { const np = [...path, mv.san]; const k = np.join(" "); if (!seen.has(k) && np.length <= 12) { seen.add(k); queue.push(np); } }
+    }
+    return null;
+  };
+  return search((n) => n.includes(name)) || search((n) => name.includes(n));
 }
 // (버그 수정) 줄바꿈(들여쓰기)만으로는 상위-하위 오프닝의 관계가 잘 안 보인다는 피드백 — 하위
 // 오프닝 묶음을 왼쪽 세로선(트리 가지)으로 잇고, 각 행에서 그 세로선까지 짧은 가로선(elbow)을 그어
@@ -8168,12 +8194,17 @@ async function accountProviders(email) {
   try { const r = await sbRpc("account_providers", { p_email: email.trim().toLowerCase() }); return Array.isArray(r) ? r : []; } catch { return []; }
 }
 /* 구글 콜백 오류(예: 이미 다른 방식으로 가입된 이메일과 충돌) 파싱 */
+// (버그 수정) URLSearchParams는 application/x-www-form-urlencoded 규칙으로 파싱되므로 .get()이
+// 이미 퍼센트 이스케이프 디코딩과 "+"→공백 치환을 다 해준다 — 그런데 그 결과를 decodeURIComponent로
+// 한 번 더 디코딩하고 있었다. 에러 메시지 안에 이스케이프 시퀀스가 아닌 순수 "%"(예: "50% quota")가
+// 하나라도 있으면 이 이중 디코딩이 URIError를 던졌고, 바깥 try/catch가 그걸 삼켜 사용자에게는
+// 아무 에러 안내도 안 뜨고 #error=... 해시도 지워지지 않는 채로 조용히 실패했다.
 function parseOAuthError() {
   try {
     const h = (typeof window !== "undefined" && window.location.hash) || "";
     if (h.indexOf("error") < 0) return null;
     const p = new URLSearchParams(h.replace(/^#/, ""));
-    const e = p.get("error_description") || p.get("error"); return e ? decodeURIComponent(e.replace(/\+/g, " ")) : null;
+    return p.get("error_description") || p.get("error") || null;
   } catch { return null; }
 }
 /* 세션 복원(앱 로드): refresh_token → 새 access_token. 반환 account | null */
@@ -8250,12 +8281,24 @@ async function notifyCreate(toUid, kind, payload) { if (!SB_ON || !toUid) return
 async function notifyList(uid) { if (!SB_ON || !uid) return []; try { return (await sbSelect("notifications?to_uid=eq." + uid + "&order=created_at.desc&limit=30")) || []; } catch { return []; } }
 async function notifyMarkRead(row) { if (!SB_ON || row.id == null) return; try { await sbPatch("notifications", "id=eq." + row.id, { read: true }); } catch { } }
 // (18차 보충 UX4) 여러 미확인 알림을 한 번에 읽음 처리(개별 PATCH가 실패해도 나머지는 진행).
-async function notifyMarkReadMany(rows) { if (!SB_ON || !rows || !rows.length) return; await Promise.all(rows.filter((r) => r.id != null).map((r) => sbPatch("notifications", "id=eq." + r.id, { read: true }).catch(() => {}))); }
+// (버그 수정) 예전엔 실패를 그냥 삼키고 아무것도 돌려주지 않아, 호출부(NotificationBell)의 낙관적
+// UI 업데이트(안 읽음 배지 즉시 숨김)가 실제 PATCH 실패 여부와 무관하게 그대로 유지됐다 — 서버는
+// 여전히 안 읽음인데 화면은 재조회 전까지 계속 읽음으로 보였다. 실제로 성공한 id만 담은 Set을
+// 돌려줘, 실패한 항목만 호출부가 되돌릴 수 있게 한다.
+async function notifyMarkReadMany(rows) {
+  if (!SB_ON || !rows || !rows.length) return new Set((rows || []).map((r) => r.id));
+  const targets = rows.filter((r) => r.id != null);
+  const ok = await Promise.all(targets.map((r) => sbPatch("notifications", "id=eq." + r.id, { read: true }).then(() => true).catch(() => false)));
+  return new Set(targets.filter((_, i) => ok[i]).map((r) => r.id));
+}
 // (18차 UX4) 친구 요청 알림의 수락/거절 결과를 payload에 기록 — 버튼을 없애고 "수락함/거절함"으로 표기하기 위함.
-async function notifySetResult(row, result) { if (!SB_ON || row.id == null) return; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), result } }); } catch { } }
+// (버그 수정) 성공 여부를 돌려줘, 실패 시 호출부가 낙관적으로 붙인 "수락함/거절함" 표시를 되돌릴 수 있게 한다.
+async function notifySetResult(row, result) { if (!SB_ON || row.id == null) return true; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), result } }); return true; } catch { return false; } }
 // (19차 UI1) 알림 부분/전체 삭제 — id 필터로 개별 삭제, to_uid 필터로 내 알림 전체 삭제.
-async function notifyDelete(row) { if (!SB_ON || row.id == null) return; try { await fetch(SB_URL + "/rest/v1/notifications?id=eq." + row.id, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); } catch { } }
-async function notifyDeleteAll(uid) { if (!SB_ON || !uid) return; try { await fetch(SB_URL + "/rest/v1/notifications?to_uid=eq." + uid, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); } catch { } }
+// (버그 수정) 성공 여부(HTTP 상태 포함)를 돌려줘, 실패 시 호출부가 낙관적으로 지운 알림 항목을
+// 되살릴 수 있게 한다 — DELETE는 sbPatch와 달리 non-2xx여도 fetch 자체는 던지지 않으므로 r.ok도 확인한다.
+async function notifyDelete(row) { if (!SB_ON || row.id == null) return true; try { const r = await fetch(SB_URL + "/rest/v1/notifications?id=eq." + row.id, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); return r.ok; } catch { return false; } }
+async function notifyDeleteAll(uid) { if (!SB_ON || !uid) return true; try { const r = await fetch(SB_URL + "/rest/v1/notifications?to_uid=eq." + uid, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); return r.ok; } catch { return false; } }
 /* (17차) 친구 채팅 — 텍스트 + 이모티콘 */
 async function chatSend(myUid, toUid, body, emoji) { if (!SB_ON || !myUid || !toUid) return false; try { await sbInsert("chat_messages", { from_uid: myUid, to_uid: toUid, body: body || null, emoji: emoji || null }); return true; } catch { return false; } }
 async function chatFetch(myUid, otherUid) {
@@ -8320,21 +8363,35 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
   const unread = items.filter((n) => !n.read).length;
+  // (버그 수정) 아래 네 핸들러 모두 서버 요청이 실패해도 낙관적 업데이트가 되돌아가지 않아, 서버는
+  // 여전히 이전 상태인데 화면(과 새로고침 전까지의 localRead/localResult 오버레이)은 계속 성공한
+  // 것처럼 보였다 — 성공 여부를 확인해 실패하면 해당 항목의 로컬 오버레이를 지우고 refresh()로
+  // 서버의 실제 상태와 다시 맞춘다.
   const toggle = () => {
     const next = !open; setOpen(next);
     // (18차 UX4→보충) 최초 확인 시 서버에 PATCH로 read=true를 확실히 반영 — 새로고침 후에도 배지가 되살아나지 않는다.
-    if (next && unread) { const stale = items.filter((n) => !n.read); stale.forEach((n) => localReadRef.current.add(n.id)); notifyMarkReadMany(stale); setItems((prev) => prev.map((n) => ({ ...n, read: true }))); }
+    if (next && unread) {
+      const stale = items.filter((n) => !n.read);
+      stale.forEach((n) => localReadRef.current.add(n.id));
+      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+      notifyMarkReadMany(stale).then((okIds) => {
+        const failed = stale.filter((n) => !okIds.has(n.id));
+        if (!failed.length) return;
+        failed.forEach((n) => localReadRef.current.delete(n.id));
+        refresh();
+      });
+    }
   };
   const respond = (n, result) => {
     // (18차 UX4) 응답 즉시 버튼을 없애고 결과를 고정 — 중복 클릭·수락 후 거절 번복을 차단한다.
     localResultRef.current[n.id] = result;
     setItems((prev) => prev.map((x) => x.id === n.id ? { ...x, payload: { ...(x.payload || {}), result } } : x));
-    notifySetResult(n, result);
+    notifySetResult(n, result).then((ok) => { if (!ok) { delete localResultRef.current[n.id]; refresh(); } });
     if (result === "accepted") { onAccept && onAccept(n); } else { onReject && onReject(n); }
   };
   // (19차 UI1) 알림 개별/전체 삭제 — 낙관적으로 목록에서 즉시 제거하고 서버에도 DELETE 반영.
-  const removeOne = (n) => { setItems((prev) => prev.filter((x) => x.id !== n.id)); notifyDelete(n); };
-  const clearAll = () => { setItems([]); if (myUid) notifyDeleteAll(myUid); };
+  const removeOne = (n) => { setItems((prev) => prev.filter((x) => x.id !== n.id)); notifyDelete(n).then((ok) => { if (!ok) refresh(); }); };
+  const clearAll = () => { if (!myUid) return; setItems([]); notifyDeleteAll(myUid).then((ok) => { if (!ok) refresh(); }); };
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
       <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -9449,9 +9506,16 @@ export default function App() {
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
     setLoaded(true);
   })(); }, []);
-  // (기능) 저장된 값을 다 복원한 뒤(loaded) 한 번만 판단 — 이 버전을 아직 "다시 보지 않기"로 끄지
-  // 않았다면(또는 그 이후 버전이 올라와 저장된 값이 최신 버전과 달라졌다면) 공지를 띄운다.
-  useEffect(() => { if (loaded && dismissedAnnounceVersion !== APP_VERSION) setAnnounceOpen(true); }, [loaded]);
+  // (기능) 저장된 값을 다 복원한 뒤(loaded) 이 버전을 아직 "다시 보지 않기"로 끄지 않았다면(또는
+  // 그 이후 버전이 올라와 저장된 값이 최신 버전과 달라졌다면) 공지를 띄운다.
+  // (버그 수정) 예전엔 [loaded]에만 의존해 최초 한 번만 판단했는데, 로그인(onAuth)이 그 이후에
+  // 서버에 저장된 dismissedAnnounceVersion 값으로 상태를 바꿔도 이 effect가 다시 안 돌아 반영이
+  // 안 됐다 — 게스트로 이미 이 버전을 닫아 둔 상태에서 아직 안 닫은 계정으로 로그인해도 공지가
+  // 안 뜨고, 반대로 공지가 열린 채로 이미 닫아 둔 계정에 로그인해도 열린 채 남아 있었다.
+  // dismissedAnnounceVersion도 의존성에 넣어 로그인·로그아웃으로 그 값이 바뀔 때마다 다시
+  // 판단하고, 열기뿐 아니라 닫기도 이 판단에 맡긴다(사용자가 X로 그냥 닫은 경우는 이 값이 안
+  // 바뀌므로 이 effect가 다시 안 돌아 그 닫힘을 덮어쓰지 않는다).
+  useEffect(() => { if (loaded) setAnnounceOpen(dismissedAnnounceVersion !== APP_VERSION); }, [loaded, dismissedAnnounceVersion]);
   // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 티어/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "" }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId]);
   useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion })); }, [unlocked, profile, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion]);
@@ -9467,7 +9531,11 @@ export default function App() {
   }, [loaded, uid, isDev, isCodev, devBonusGranted]);
   // (16차) 퍼즐 카드에 "친구 N명이 풀었습니다" 표기를 위해, 로그인 시 내 친구 목록과 각 퍼즐의 해결자 uid를 한 번에 조회.
   useEffect(() => {
-    if (!loaded || !uid || !puzzles.length) return;
+    if (!loaded) return;
+    // (버그 수정) 로그아웃(uid===null)하거나 퍼즐이 없어져 그냥 리턴만 하면, 직전 계정에서 채워
+    // 둔 friendUids/puzzleSolvers/solverNames가 그대로 남아 게스트 화면에도 그 계정 친구들의
+    // "N명이 풀었습니다" 배지가 계속 보였다 — 이 조건에서는 명시적으로 비운다.
+    if (!uid || !puzzles.length) { setFriendUids([]); setPuzzleSolvers({}); setSolverNames({}); return; }
     let cancelled = false;
     (async () => {
       const edges = await friendEdges();
@@ -9517,7 +9585,13 @@ export default function App() {
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
   // 다시 로그인하면 보유 스킨·장착 상태가 기본값으로 되돌아가 마치 구매 내역이 저장 안 된 것처럼 보였다.
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevTierIndexRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevTierIndexRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings);
+    // (버그 수정) 다른 필드들과 달리 이 값은 "값이 있으면만 덮어쓰기"로 두면 안 된다 — 계정이
+    // 한 번도 공지를 닫은 적이 없으면 pr.dismissedAnnounceVersion이 undefined인데, 그때 이
+    // if를 건너뛰면 로그인 직전(게스트 상태)의 로컬 값이 그대로 남아 "이 계정도 이미 닫았다"고
+    // 잘못 판단해 공지 모달이 안 뜬다 — 계정의 실제 값(없으면 null)으로 항상 동기화한다.
+    setDismissedAnnounceVersion(pr.dismissedAnnounceVersion || null);
+    const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
@@ -9526,6 +9600,13 @@ export default function App() {
     setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
+    // (버그 수정) 이 두 값은 여기서 안 비워지고 있었다 — dismissedAnnounceVersion을 그대로 두면
+    // 로그아웃 후 게스트 로컬 저장소에 방금 로그아웃한 계정의 "다시 보지 않기" 값이 그대로 저장돼
+    // 게스트가 실제로는 안 닫은 공지를 이미 닫은 것처럼 취급했고, friendUids/puzzleSolvers/
+    // solverNames를 그대로 두면(그걸 채우는 effect가 uid===null일 때 그냥 아무것도 안 하고
+    // 리턴만 해 초기화가 안 됨) 게스트 화면의 퍼즐 카드에 방금 로그아웃한 계정 친구들의 "N명이
+    // 풀었습니다" 배지가 그대로 남아 보였다.
+    setDismissedAnnounceVersion(null); setFriendUids([]); setPuzzleSolvers({}); setSolverNames({});
   }, []);
   // (UX7) 일정 시간 활동이 없으면 자동 로그아웃 — 로그인 상태가 무기한 유지되던 보안 문제 수정
   useEffect(() => {
