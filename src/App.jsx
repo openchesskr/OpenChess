@@ -1700,8 +1700,27 @@ const ANALYZE_POOL_SIZE = { full: 2, lite: 4 };
 function bootAnalysisWorker(urls) {
   return new Promise((resolve) => {
     let idx = 0, booted = false, worker = null;
-    const queue = []; let running = false;
-    function pump() { if (running || !queue.length) return; running = true; queue[0].cmds.forEach((c) => worker.postMessage(c)); }
+    const queue = []; let running = false, swallowBest = 0;
+    // (버그 수정) analyzeGame(게임 리뷰)는 배치 하나가 끝나면 풀을 바로 버려서, 작업 하나가 응답 없이
+    // 멈춰도(엔진 hiccup 등) 그 배치만 늦어질 뿐이었다 — 학습 탭 실시간 평가(useMergedMoves)는 같은
+    // 풀을 세션 내내 재사용하므로, 워치독 없이는 한 번 멈춘 워커가 세션 끝까지 그 자리만큼 풀을 영구히
+    // 줄여버린다. useEngine의 워치독(548-557행)과 동일한 방식 — 제한 시간 안에 bestmove가 없으면
+    // 부분 결과로 마무리하고 'stop'을 보내며, 그래도 응답이 없으면 큐를 강제로 흘려보낸다.
+    const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+    function pump() {
+      if (running || !queue.length) return; running = true;
+      const job = queue[0];
+      job.cmds.forEach((c) => worker.postMessage(c));
+      job.watch = setTimeout(() => {
+        if (queue[0] !== job || job.settled) return;
+        settle(job, job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : job.last);
+        try { worker.postMessage("stop"); } catch (_) { }
+        job.hardWatch = setTimeout(() => {
+          if (queue[0] !== job) return;
+          queue.shift(); running = false; swallowBest++; pump();
+        }, 1500);
+      }, job.mt ? job.mt + 4000 : 15000);
+    }
     function handleLine(line) {
       const job = queue[0]; if (!job) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
@@ -1713,9 +1732,9 @@ function bootAnalysisWorker(urls) {
         if (job.onProgress) { const dm = line.match(/^info depth (\d+)/); job.onProgress({ ...job.last, depth: dm ? parseInt(dm[1], 10) : null }); }
       }
       if (line.startsWith("bestmove")) {
-        queue.shift(); running = false;
-        if (job.multi) job.resolve(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]));
-        else job.resolve(job.last);
+        if (swallowBest > 0) { swallowBest--; return; } // 워치독이 강제로 흘려보낸 작업의 뒤늦은 응답 무시
+        const done = queue.shift(); running = false;
+        if (done) settle(done, done.multi ? Object.keys(done.lines).sort((a, b) => a - b).map((k) => done.lines[k]) : done.last);
         pump();
       }
     }
@@ -1733,13 +1752,13 @@ function bootAnalysisWorker(urls) {
             resolve({
               evaluate(fen, d, onProgress, mt) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, multi: false, last: null, onProgress, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  queue.push({ resolve: res, multi: false, last: null, onProgress, mt, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
               evaluateMulti(fen, d, multipv, mt) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, multi: true, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  queue.push({ resolve: res, multi: true, lines: {}, mt, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
@@ -2401,17 +2420,38 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // 수를 둘 때마다 반복해서 도는 effect라 매번 새로 부팅하면(워커 로딩 자체가 초 단위) 오히려
   // 더 느려진다 — 엔진 프로필(설정에서 바꾸는 lite/full)이 그대로인 한 한 번 띄운 풀을 계속
   // 재사용하고, 프로필이 바뀔 때만 기존 풀을 정리하고 새로 띄운다.
-  const livePoolRef = useRef({ profile: null, workers: [], booting: null });
-  useEffect(() => () => { livePoolRef.current.workers.forEach((w) => w.terminate()); }, []);
+  // epoch: 이 풀이 몇 번째로 새로 띄운 세대인지 — 프로필이 바뀌거나 이전 세대가 완전히 부팅
+  // 실패했을 때만 올라간다. cache.live(아래)에 넣는 진행 중 Promise마다 만들어진 시점의 epoch를
+  // 같이 저장해 두고, 그 사이 세대가 넘어갔다면(=워커가 이미 terminate돼 다시는 응답이 안 옴)
+  // 캐시를 버리고 새 세대 워커로 재요청한다.
+  const livePoolRef = useRef({ profile: null, workers: [], booting: null, epoch: 0, failed: false });
+  useEffect(() => {
+    const st = livePoolRef.current;
+    return () => { st.unmounted = true; st.workers.forEach((w) => w.terminate()); };
+  }, []);
   const getLivePool = useCallback(async () => {
     const st = livePoolRef.current;
-    if (st.profile === engine.profile && (st.workers.length || st.booting)) return st.booting ? await st.booting : st.workers;
+    if (st.profile === engine.profile) {
+      if (st.workers.length || st.booting) return st.booting ? await st.booting : st.workers;
+      // (버그 수정) 풀 부팅이 이 프로필로 완전히 실패했던 적이 있으면(workers=[], booting=null,
+      // failed=true) — 매번 재시도하면(부팅 자체가 URL당 최대 4초) 수를 둘 때마다 반복해서
+      // 몇 초씩 멈춘다. 같은 프로필인 한 재시도하지 않고 곧장 빈 배열(→ 메인 엔진 폴백)을 돌려준다.
+      if (st.failed) return [];
+    }
     st.workers.forEach((w) => w.terminate());
+    const epoch = st.epoch + 1;
     const size = ANALYZE_POOL_SIZE[engine.profile] || 2;
     const booting = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(engine.urls))).then((ws) => ws.filter(Boolean));
-    livePoolRef.current = { profile: engine.profile, workers: [], booting };
+    livePoolRef.current = { ...st, profile: engine.profile, workers: [], booting, epoch, failed: false };
     const workers = await booting;
-    livePoolRef.current = { profile: engine.profile, workers, booting: null };
+    // (버그 수정) 이 await 도중 컴포넌트가 언마운트됐다면, 방금 부팅된 워커를 livePoolRef에
+    // 반영하지 않고 바로 정리한다 — 반영해도 아무도 안 쓰지만 정리 없이 방치하면 워커 스레드가
+    // 누수된다(언마운트 cleanup은 이미 이전 시점의 workers 배열만 정리하고 끝났으므로).
+    if (livePoolRef.current.unmounted) { workers.forEach((w) => w.terminate()); return []; }
+    // 그 사이 프로필이 또 바뀌어 더 최신 epoch가 이미 진행 중이면, 지금 막 부팅된 이 워커들은
+    // 이미 낡은 세대다 — 반영하지 않고 정리한다.
+    if (livePoolRef.current.epoch !== epoch) { workers.forEach((w) => w.terminate()); return livePoolRef.current.workers; }
+    livePoolRef.current = { profile: engine.profile, workers, booting: null, epoch, failed: workers.length === 0 };
     return workers;
   }, [engine.profile, engine.urls]);
   const [engineNote, setEngineNote] = useState("");
@@ -2570,6 +2610,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         // 하나씩 꺼내 동시에 처리하게 해 총 계산량은 그대로 두고 벽시계 시간만 줄인다.
         const pooled = await getLivePool();
         if (cancelled) return;
+        const epoch = livePoolRef.current.epoch;
         const workers = pooled.length ? pooled : [engine];
         let nextIdx = 0;
         const runWorker = async (w) => {
@@ -2587,9 +2628,14 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
               bumpDepth(partial.depth);
             };
             // (버그 수정) 위의 be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번
-            // 물어보는 걸 막기 위해 진행 중인 Promise를 수(san)별로 캐시한다.
-            if (!cache.live.has(san)) cache.live.set(san, w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700));
-            const ev = await cache.live.get(san);
+            // 물어보는 걸 막기 위해 진행 중인 Promise를 수(san)별로 캐시한다. 다만 이 캐시가 "지금
+            // 이 워커 세대(epoch)"에 걸린 것인지도 함께 저장한다 — 그 사이 엔진 프로필이 바뀌어
+            // 캐시된 Promise를 만든 워커가 이미 terminate됐다면(다시는 bestmove가 안 옴) 그 낡은
+            // Promise를 계속 기다리는 대신 버리고 지금 풀로 재요청해야, 이 수의 평가가 영영 안
+            // 뜨는 채로 멈추지 않는다.
+            const cached = cache.live.get(san);
+            if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700) });
+            const ev = await cache.live.get(san).promise;
             if (cancelled || !ev) continue;
             setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(ev) } : x));
           }
