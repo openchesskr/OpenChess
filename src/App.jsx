@@ -8091,6 +8091,14 @@ async function progressSave(uid, progress) { if (!SB_ON || !uid) return; try { a
 async function publishProfile(uid, username, pub) { if (!SB_ON || !uid) return; try { await sbUpsert("profiles", { id: uid, username: (username || "").toLowerCase(), pub }); } catch { } }
 async function userSearch(q) { if (!SB_ON || !q) return []; try { const rows = await sbSelect("profiles?username=ilike." + encodeURIComponent(q.toLowerCase() + "*") + "&select=id,username,pub&limit=20"); return rows || []; } catch { return []; } }
 async function userProfile(username) { if (!SB_ON || !username) return null; try { const rows = await sbSelect("profiles?username=eq." + encodeURIComponent(username.toLowerCase()) + "&select=id,username,pub&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }
+// (기능) 유저 검색 기본 추천 — 아직 아무것도 입력하지 않았을 때 "친구의 친구"(friend_suggestions)와
+// "티어 리더보드"(leaderboard_top)를 보여준다. 둘 다 서버 RPC로 계산한다: 친구의 친구는 다른 사람의
+// friend_edges를 직접 읽어야 하는데 RLS가 본인이 관련된 행만 읽도록 막아 두어(supabase-setup.sql
+// "friend edges select own") 클라이언트에서 직접 조합할 수 없고, 리더보드는 XP가 profiles.pub 안의
+// jsonb 텍스트라 PostgREST의 문자열 정렬(order=pub->>xp)로는 "100"이 "20"보다 앞에 오는 등 숫자
+// 크기와 다르게 정렬될 수 있어 서버에서 숫자로 캐스팅해 정렬해야 한다.
+async function friendSuggestions(limit) { if (!SB_ON) return []; try { const r = await sbRpc("friend_suggestions", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
+async function leaderboardTop(limit) { if (!SB_ON) return []; try { const r = await sbRpc("leaderboard_top", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 /* ---- 친구 시스템 (요청 → 수락). Auth 미사용·anon 접근이라 기존 profiles_public/puzzle_solve와 동일 보안 수준 ---- */
 async function friendRequest(toUsername) { if (!SB_ON || !toUsername) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request", { p_to_username: toUsername.toLowerCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
 async function friendAccept(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_accept", { p_other_uid: otherUid }); return true; } catch { return false; } }
@@ -8431,6 +8439,21 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
     </div>
   );
 }
+// (기능) 유저 검색 결과 한 줄 — 검색 결과와 기본 추천(친구의 친구·리더보드)이 같은 모양을 공유한다.
+// right는 오른쪽 끝에 덧붙일 부가 정보(같이 아는 친구 수, 티어 등) — 없으면 기존과 똑같은 모양이다.
+function userSearchRow(r, onClick, right) {
+  const p = r.pub || {};
+  return (
+    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
+      {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</div>
+        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
+      </div>
+      {right}
+    </button>
+  );
+}
 function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
@@ -8443,6 +8466,25 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
     const id = setTimeout(() => { run(); }, 300);
     return () => clearTimeout(id);
   }, [q]);
+  // (기능) 아직 아무것도 검색하지 않은 기본 화면에 빈 목록만 보여주지 않고, 먼저 둘러볼 만한
+  // 후보를 미리 띄워 둔다 — 내 친구의 친구(친구가 될 법한 사람)와 지금 티어가 높은 플레이어
+  // (리더보드) 두 갈래. 로그인하지 않았거나 둘 다 비었으면 그 섹션은 그냥 렌더링하지 않는다.
+  const [sugFriends, setSugFriends] = useState([]);
+  const [sugTop, setSugTop] = useState([]);
+  const [sugLoading, setSugLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setSugLoading(true);
+    (async () => {
+      const [fr, top] = await Promise.all([me ? friendSuggestions(8) : Promise.resolve([]), leaderboardTop(8)]);
+      if (cancelled) return;
+      setSugFriends(fr);
+      // 나 자신은 이미 리더보드 최상단에 있어봐야 새로 만날 사람을 찾는 목적과 무관하므로 제외한다.
+      setSugTop((top || []).filter((r) => r.id !== myUid));
+      setSugLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [me, myUid]);
   const open = async (username) => { setReqState(null); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
   const doReq = async () => {
     const pub = sel || {}; if (!me || !pub.username) return; setReqBusy(true);
@@ -8498,14 +8540,32 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
               <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="아이디로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
               <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
             </div>
-            {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
-              : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
-                : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r) => { const p = r.pub || {}; return (
-                  <button key={r.id} onClick={() => open(r.username)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
-                    {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover" }} /> : <span style={{ width: 34, height: 34, borderRadius: 9, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
-                    <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || r.username)}</div><div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div></div>
-                  </button>
-                ); })}</div>}
+            {q.trim() ? (
+              busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
+                : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
+                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r) => userSearchRow(r, () => open(r.username)))}</div>
+            ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+              : (sugFriends.length === 0 && sugTop.length === 0) ? null
+                : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                    {sugFriends.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>알 수도 있는 사람</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {sugFriends.map((r) => userSearchRow(r, () => open(r.username),
+                            <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>))}
+                        </div>
+                      </div>
+                    )}
+                    {sugTop.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>티어 리더보드</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {sugTop.map((r) => userSearchRow(r, () => open(r.username),
+                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} /></span>))}
+                        </div>
+                      </div>
+                    )}
+                  </div>}
           </div>
         )}
       </div>
