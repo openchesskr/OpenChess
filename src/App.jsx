@@ -198,6 +198,32 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
     </div>
   );
 }
+// (v0.0.6 개편) 티어 배지·여정 지도용 기물 아이콘 — 보드용 PieceGlyph는 유저가 고른 기물 스킨·
+// 드래그 핸들러·이미지셋 폴백에 매여 있어(SkinContext) 재사용하기 무겁다. 대신 같은 실루엣
+// 데이터(PIECE_MID/PIECE_LINES 등)만 가져와, 항상 브라스 톤(tone="brass") 또는 잠금 톤
+// (tone="muted")으로만 그리는 독립 컴포넌트를 둔다 — 보드 스킨이 뭐든 티어 아이콘은 늘 같아 보인다.
+function TierPieceGlyph({ piece, size = 28, tone = "brass" }) {
+  const rawId = useId();
+  const gradId = "tpg" + rawId.replace(/[^a-zA-Z0-9]/g, "");
+  if (piece === "GM") return <Crown size={size} style={{ color: tone === "brass" ? T.brassHi : "rgba(255,255,255,.4)" }} />;
+  const mid = PIECE_MID[piece];
+  if (!mid) return null;
+  const bodyPoints = PIECE_BASE_R + " " + mid + " " + PIECE_BASE_L;
+  const fill = tone === "brass" ? "url(#" + gradId + ")" : "rgba(255,255,255,.28)";
+  const stroke = tone === "brass" ? T.brass : "rgba(255,255,255,.4)";
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} style={{ display: "block", flexShrink: 0 }}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={T.brassHi} />
+          <stop offset="100%" stopColor={T.brass} />
+        </linearGradient>
+      </defs>
+      <polygon points={bodyPoints} fill={fill} stroke={stroke} strokeWidth={2.6} strokeLinejoin="round" />
+      {piece === "K" && <path d={PIECE_CROSS} fill={fill} stroke={stroke} strokeWidth={2.2} strokeLinejoin="round" />}
+    </svg>
+  );
+}
 
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
 // 육각형 등을 페이지 전반(상단뿐 아니라 하단까지)에 흩뿌려 첨부 레퍼런스 이미지의 "떠있는 도형들" 느낌을 낸다.
@@ -5139,20 +5165,32 @@ function solveCountText(count, friendNames) {
 async function puzzleSolveEventAdd(no, uid) { if (!SB_ON) return; try { await sbInsert("puzzle_solve_events", { no, uid: uid || null }); } catch { } }
 async function puzzleRank(period, limit) { if (!SB_ON) return []; try { const r = await sbRpc("puzzle_rank", { p_period: period, p_limit: limit || 12 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 
-// (15차 기능4) 레벨/XP 시스템 — n레벨→n+1레벨에 필요한 경험치는 피보나치 수열의 n번째 항 × 100
-// (1:100, 2:200, 3:300, 4:500, 5:800, 6:1300 ...). 매번 다시 계산해도 항상 같은 결과가 나오도록 순수 함수로 둔다.
-function fibLevelReq(n) {
-  if (n <= 1) return 100;
-  if (n === 2) return 200;
-  let a = 1, b = 2;
-  for (let i = 3; i <= n; i++) { const c = a + b; a = b; b = c; }
-  return b * 100;
-}
-// 누적 총 경험치(totalXp)로부터 현재 레벨·해당 레벨 내 경험치·다음 레벨까지 필요 경험치를 도출한다.
-function levelFromXp(totalXp) {
-  let level = 1, remaining = Math.max(0, totalXp || 0), req = fibLevelReq(level);
-  while (remaining >= req) { remaining -= req; level++; req = fibLevelReq(level); }
-  return { level, xpInLevel: remaining, xpForNext: req };
+// (v0.0.6 개편) 예전 레벨/XP 시스템은 피보나치 곡선이 너무 가팔라(레벨 10에 누적 23,100 XP, 레벨
+// 20엔 286만 XP) 사실상 아무도 레벨 10~13을 넘기지 못했다 — chess.com 퍼즐 티어처럼, 체스 기물
+// 순서를 딴 7단계 티어(폰→나이트→비숍→룩→퀸→킹→그랜드마스터)로 재편해 퍼즐을 꾸준히 풀면 몇 주
+// 안에 다음 티어로 오르는 게 실제로 체감되게 한다.
+const TIERS = [
+  { key: "pawn", label: "폰", piece: "P" },
+  { key: "knight", label: "나이트", piece: "N" },
+  { key: "bishop", label: "비숍", piece: "B" },
+  { key: "rook", label: "룩", piece: "R" },
+  { key: "queen", label: "퀸", piece: "Q" },
+  { key: "king", label: "킹", piece: "K" },
+  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // 기물 대신 Crown 아이콘으로 표시
+];
+// 티어[0..5](폰..킹)를 깨는 데 필요한 XP — 한 곳에서만 관리하는 튜닝 가능한 상수. 퍼즐 한 줄
+// 평균 16~85 XP(rollLineXp) 기준, 하루 1000~2500 XP 페이스면 그랜드마스터(누적 25,200)까지 1.5~4주.
+const TIER_XP_REQ = [400, 800, 1600, 3200, 6400, 12800];
+// 그랜드마스터(최종 티어) 도달 후에는 XP가 계속 쌓이며 이 단위로 "★" 프레스티지 카운터가 무한히 오른다.
+const GM_STAR_XP = 12800;
+// 누적 총 경험치(totalXp)로부터 현재 티어·해당 티어 내 경험치·다음 티어까지 필요 경험치를 도출한다.
+function tierFromXp(totalXp) {
+  let idx = 0, remaining = Math.max(0, totalXp || 0);
+  while (idx < TIER_XP_REQ.length && remaining >= TIER_XP_REQ[idx]) { remaining -= TIER_XP_REQ[idx]; idx++; }
+  const tier = TIERS[idx];
+  if (idx < TIER_XP_REQ.length) return { tierIndex: idx, tier, xpInTier: remaining, xpForNext: TIER_XP_REQ[idx], maxed: false, gmStars: 0 };
+  const gmStars = Math.floor(remaining / GM_STAR_XP);
+  return { tierIndex: idx, tier, xpInTier: remaining % GM_STAR_XP, xpForNext: GM_STAR_XP, maxed: true, gmStars };
 }
 // 퍼즐 한 라인을 해결할 때 얻는 경험치: {13~17 사이의 난수 × (기존 별 보유 수+1.2)}의 정수 부분.
 function rollLineXp(existingStars) {
@@ -5444,22 +5482,36 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
   );
 }
 // (기능1) 별 3개(라인) 아이콘 — 해결한 라인 수만큼 채워서 표시
-// (15차 기능4) 헤더에 상시 표기되는 레벨 배지 — 현재 레벨과 다음 레벨까지 남은 경험치를 진행바 + 텍스트로 보여준다.
+// (v0.0.6 개편) 헤더에 상시 표기되는 티어 배지 — 현재 티어와 다음 티어까지 남은 경험치를 진행바 +
+// 텍스트로 보여준다. 눌러서 여정 지도(TierJourneyMap)를 연다.
 // 진행바는 폭이 바뀔 때마다 눈에 띄게 차오르도록 긴 이징 트랜지션을 건다("+N XP" 자체는 화면 중앙 토스트로 별도 표시).
-// (18차 UI8) 레벨 텍스트(좌)와 게이지(우)를 가로로 나란히 배치 — 헤더에서 아이디 왼쪽에 표시된다.
-function LevelBadge({ totalXp, compact }) {
-  const { level, xpInLevel, xpForNext } = useMemo(() => levelFromXp(totalXp), [totalXp]);
-  const pct = Math.max(0, Math.min(100, Math.round((xpInLevel / xpForNext) * 100)));
+// (18차 UI8) 티어 텍스트(좌)와 게이지(우)를 가로로 나란히 배치 — 헤더에서 아이디 왼쪽에 표시된다.
+function TierBadge({ totalXp, compact, onClick }) {
+  const { tier, xpInTier, xpForNext, maxed, gmStars } = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const pct = Math.max(0, Math.min(100, Math.round((xpInTier / xpForNext) * 100)));
   return (
-    <div className="flex items-center" style={{ gap: compact ? 5 : 7, flexShrink: 0, position: "relative" }}>
-      <div style={{ fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, whiteSpace: "nowrap" }}>Lv.{level}</div>
+    <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 5 : 7, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
+      <div className="flex items-center" style={{ gap: 4, fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, whiteSpace: "nowrap" }}>
+        <TierPieceGlyph piece={tier.piece} size={compact ? 12 : 14} />
+        {tier.label}{maxed && gmStars > 0 ? " ★" + gmStars : ""}
+      </div>
       <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
         <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
-        <div style={{ fontSize: compact ? 8 : 8.5, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInLevel}/{xpForNext}</div>
+        <div style={{ fontSize: compact ? 8 : 8.5, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInTier}/{xpForNext}</div>
       </div>
     </div>
+  );
+}
+// (v0.0.6 개편) 프로필 화면(내 프로필 편집·다른 유저 프로필)에 중복돼 있던 "Lv.N (X/Y XP)" 인라인
+// 표기를 하나로 모은다 — 티어명 + XP 진행 텍스트만 보여주는 작은 필.
+function TierStatPill({ totalXp }) {
+  const { tier, xpInTier, xpForNext, maxed, gmStars } = tierFromXp(totalXp);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
+      <TierPieceGlyph piece={tier.piece} size={14} /> {tier.label}{maxed && gmStars > 0 ? " ★" + gmStars : ""} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInTier)}/{fmtFull(xpForNext)} XP)</span>
+    </span>
   );
 }
 function LineStars({ total, solved }) {
@@ -6834,13 +6886,13 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{profile.nickname || "이름 미설정"}</div>
         </div>
       </div>
-      {/* (17차) 프로필 정보 확장 — 레벨(현재 XP 숫자 명시)과 해결한 퍼즐 개수를 한눈에 볼 수 있게 표시 */}
-      {totalXp != null && (() => { const lv = levelFromXp(totalXp); return (
+      {/* (17차) 프로필 정보 확장 — 티어(현재 XP 숫자 명시)와 해결한 퍼즐 개수를 한눈에 볼 수 있게 표시 */}
+      {totalXp != null && (
         <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>Lv.{lv.level} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(lv.xpInLevel)}/{fmtFull(lv.xpForNext)} XP)</span></span>
+          <TierStatPill totalXp={totalXp} />
           {solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(solvedCount)}개 해결</span>}
         </div>
-      ); })()}
+      )}
       <div style={lab}>프로필 사진</div>
       <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
         <label className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12, cursor: "pointer", border: "none" }}>
@@ -7885,7 +7937,7 @@ async function userProfile(username) { if (!SB_ON || !username) return null; try
 async function friendRequest(toUsername) { if (!SB_ON || !toUsername) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request", { p_to_username: toUsername.toLowerCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
 async function friendAccept(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_accept", { p_other_uid: otherUid }); return true; } catch { return false; } }
 async function friendRemove(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_remove", { p_other_uid: otherUid }); return true; } catch { return false; } }
-/* (17차) 알림 — 친구 요청 수신/수락, 칭호 획득, 레벨 업 */
+/* (17차) 알림 — 친구 요청 수신/수락, 칭호 획득, 티어 승급 */
 async function notifyCreate(toUid, kind, payload) { if (!SB_ON || !toUid) return; try { await sbInsert("notifications", { to_uid: toUid, kind, payload: payload || {} }); } catch { } }
 async function notifyList(uid) { if (!SB_ON || !uid) return []; try { return (await sbSelect("notifications?to_uid=eq." + uid + "&order=created_at.desc&limit=30")) || []; } catch { return []; } }
 async function notifyMarkRead(row) { if (!SB_ON || row.id == null) return; try { await sbPatch("notifications", "id=eq." + row.id, { read: true }); } catch { } }
@@ -7925,13 +7977,13 @@ function notifText(n) {
   if (n.kind === "friend_request") return (p.fromUsername || "누군가") + "님이 친구 요청을 보냈습니다";
   if (n.kind === "friend_accepted") return (p.byUsername || "상대") + "님이 친구 요청을 수락했습니다";
   if (n.kind === "title_earned") return "새 칭호 획득: " + (titleLabel(p.titleId) || p.titleId);
-  if (n.kind === "level_up") return "레벨 " + p.level + "(으)로 올랐습니다!";
+  if (n.kind === "tier_up") return "티어 " + p.tierLabel + "(으)로 승급했습니다!";
   return "알림";
 }
 function notifIcon(kind) {
   if (kind === "friend_request" || kind === "friend_accepted") return <Users size={15} style={{ color: T.brass }} />;
   if (kind === "title_earned") return <Star size={15} style={{ color: T.brassHi }} />;
-  if (kind === "level_up") return <Sparkles size={15} style={{ color: T.brassHi }} />;
+  if (kind === "tier_up") return <Sparkles size={15} style={{ color: T.brassHi }} />;
   return <Info size={15} style={{ color: T.inkSoft }} />;
 }
 function NotificationBell({ myUid, onAccept, onReject, compact }) {
@@ -8017,7 +8069,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
 // (버그 수정) 헤더의 "아이디 + 로그아웃"을 아바타 알약 하나로 묶는다 — 좁은 화면에서는 아바타만
 // 보여주고(이니셜), 이름은 펼침 메뉴 안에서만 보여줘 한 줄 폭을 아낀다. 넓은 화면에서는 아바타 옆에
 // 이름도 함께 표시한다. NotificationBell과 동일하게 바깥 클릭 시 자동으로 닫힌다.
-// (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·레벨·퍼즐 수·
+// (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·티어·퍼즐 수·
 // 자주 두는 첫 수 — PublicProfileStats 재사용)를 보여주고, 그 아래 로그아웃 버튼을 둔다. 아바타/이름/
 // 아이디를 누르면 메뉴를 닫고 설정 탭의 내 프로필로 이동한다.
 function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile }) {
@@ -8206,15 +8258,14 @@ function FirstMovesDisplay({ firstMoves }) {
     </div>
   );
 }
-// (17차) 프로필 정보 확장 — 레벨/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
+// (17차) 프로필 정보 확장 — 티어/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
 // UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다.
 function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, hideChesscom }) {
   const chesscom = useChessCom(pub.chesscom);
-  const lv = levelFromXp(pub.xp || 0);
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>Lv.{lv.level} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(lv.xpInLevel)}/{fmtFull(lv.xpForNext)} XP)</span></span>
+        <TierStatPill totalXp={pub.xp || 0} />
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
@@ -8370,6 +8421,88 @@ function ChatsModal({ me, myUid, onClose }) {
               })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+// (v0.0.6 개편) 티어 배지를 누르면 열리는 전체 화면 여정 지도 — 7개 티어를 세로 지그재그 경로로
+// 늘어놓고, 지나온 티어는 완료 표시, 지금 티어는 펄스로 강조, 아직 안 온 티어는 잠금으로 가린다.
+// "집중학습"(App.jsx 상단부) 전체화면 오버레이와 같은 몰입형 레이아웃(어두운 방사형 그러데이션
+// 배경)을 재사용하고, 노드 사이 연결선은 OpeningSchematic·PuzzleSchematic이 이미 쓰는 "절대 배치
+// 노드 + 아래 SVG 커넥터" 기법을 그대로 따른다 — 이소메트릭 렌더링을 새로 만들지 않는다.
+function TierJourneyMap({ totalXp, onClose }) {
+  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const STATION_H = 84, STATION_GAP = 96, WAYPOINTS = 4;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: T.brassHi }}>티어 여정</div>
+            <div style={{ fontSize: 11.5, color: T.ivory, opacity: .8, marginTop: 2 }}>퍼즐을 풀어 경험치를 쌓으면 다음 티어로 승급해요.</div>
+          </div>
+          <button onClick={onClose} className="press" style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(0,0,0,.3)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <X size={17} />
+          </button>
+        </div>
+        {/* (기능) 노드·연결선·웨이포인트가 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를
+            공유해, 컨테이너 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다. */}
+        <div style={{ position: "relative", paddingBottom: 20, height: (TIERS.length - 1) * (STATION_H + STATION_GAP) + STATION_H }}>
+          <svg width="100%" height={(TIERS.length - 1) * (STATION_H + STATION_GAP) + STATION_H} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+            {TIERS.slice(0, -1).map((_, i) => {
+              const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
+              const y1 = i * (STATION_H + STATION_GAP) + STATION_H / 2, y2 = (i + 1) * (STATION_H + STATION_GAP) + STATION_H / 2;
+              const lit = i < info.tierIndex;
+              return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={lit ? T.brass : "rgba(255,255,255,.18)"} strokeWidth={3} strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round" />;
+            })}
+          </svg>
+          {TIERS.map((tier, i) => {
+            const state = i < info.tierIndex ? "done" : i === info.tierIndex ? "current" : "locked";
+            const isLast = i === TIERS.length - 1;
+            // (기능) 각 티어 사이의 웨이포인트 점 — 현재 티어 앞뒤 구간만 진행률만큼 채우고, 지난 구간은
+            // 전부 채움, 미래 구간은 전부 빈다.
+            const segPct = state === "done" ? 1 : state === "current" && !isLast ? info.xpInTier / info.xpForNext : 0;
+            const cx = i % 2 ? "78%" : "22%";
+            const top = i * (STATION_H + STATION_GAP);
+            return (
+              <React.Fragment key={tier.key}>
+                <motion.div
+                  animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
+                  transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
+                  style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
+                  <div style={{
+                    position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                    background: state === "locked" ? "linear-gradient(160deg,#2A1B10,#150C06)" : "linear-gradient(160deg,#4A3016,#241509)",
+                    border: "2px solid " + (state === "current" ? T.brassHi : T.brass),
+                    boxShadow: state === "current" ? "0 0 22px 4px rgba(196,154,80,.55)" : "0 4px 10px -4px rgba(0,0,0,.6)",
+                    filter: state === "locked" ? "grayscale(1)" : "none",
+                    opacity: state === "locked" ? 0.55 : 1,
+                  }}>
+                    <TierPieceGlyph piece={tier.piece} size={36} tone={state === "locked" ? "muted" : "brass"} />
+                  </div>
+                  {state === "done" && <span style={{ position: "absolute", right: -4, bottom: -4, width: 22, height: 22, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={13} color="#fff" /></span>}
+                  {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={20} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
+                </motion.div>
+                <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{tier.label}</div>
+                  {state === "current" && (
+                    <>
+                      <div style={{ fontSize: 10, color: T.ivory, opacity: .8, marginTop: 1 }}>{info.xpInTier}/{info.xpForNext} XP</div>
+                      {info.maxed && info.gmStars > 0 && <div style={{ fontSize: 10, color: T.brassHi, opacity: .9 }}>★{info.gmStars}</div>}
+                    </>
+                  )}
+                </div>
+                {!isLast && (
+                  <div style={{ position: "absolute", left: "50%", top: top + STATION_H + STATION_GAP / 2 - 4, transform: "translateX(-50%)", display: "flex", justifyContent: "center", gap: 8 }}>
+                    {Array.from({ length: WAYPOINTS }, (_, w) => (
+                      <span key={w} style={{ width: 6, height: 6, borderRadius: "50%", background: (w + 1) / WAYPOINTS <= segPct ? T.brass : "rgba(255,255,255,.2)" }} />
+                    ))}
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -8839,7 +8972,7 @@ export default function App() {
   const [solved, setSolved] = useState(new Set());
   const [likedPuzzles, setLikedPuzzles] = useState(new Set());   // (기능) 내가 좋아요 누른 퍼즐 id — solved처럼 로컬+계정에 저장
   const [lineSolves, setLineSolves] = useState({});   // (기능1) { [puzzleId]: string[] } — 라인(tag)별 해결 기록. 전체 라인이 다 모이면 solved로 승격.
-  const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 레벨/진행률은 levelFromXp로 매번 도출
+  const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 티어/진행률은 tierFromXp로 매번 도출
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
   // (버그) 개발자 계정 코인 지급을 "코인 기록이 아예 없을 때"로만 한정했더니, 이미 로그인해 progress가
   // 저장돼 있던 기존 개발자·공동 개발자 계정에는 소급 적용되지 않았다. 대신 "1회 지급 여부" 플래그를
@@ -8867,6 +9000,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false); // (18차 UX7) 채팅 모아보기
+  const [tierMapOpen, setTierMapOpen] = useState(false); // (v0.0.6 개편) 티어 배지를 누르면 여는 여정 지도
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
   // (UI8) 메인 화면 친구 버튼에 보류 중인 요청 수를 배지로 표시 — 요청 탭을 열지 않아도 보이도록
   const checkPending = useCallback(async () => {
@@ -8949,7 +9083,7 @@ export default function App() {
   // (기능) 저장된 값을 다 복원한 뒤(loaded) 한 번만 판단 — 이 버전을 아직 "다시 보지 않기"로 끄지
   // 않았다면(또는 그 이후 버전이 올라와 저장된 값이 최신 버전과 달라졌다면) 공지를 띄운다.
   useEffect(() => { if (loaded && dismissedAnnounceVersion !== APP_VERSION) setAnnounceOpen(true); }, [loaded]);
-  // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 레벨/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
+  // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 티어/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "" }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId]);
   useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion })); }, [unlocked, profile, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion]);
   useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion }); }, [unlocked, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion]);
@@ -9014,13 +9148,13 @@ export default function App() {
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
   // 다시 로그인하면 보유 스킨·장착 상태가 기본값으로 되돌아가 마치 구매 내역이 저장 안 된 것처럼 보였다.
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevTierIndexRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
-    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setLineSolves({}); prevLevelRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
+    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
   }, []);
@@ -9113,7 +9247,7 @@ export default function App() {
   // (기능1) 라인(최선/차선/채택률) 하나를 풀 때마다 기록 — 전체 라인이 다 모이면(별 3개) onSolved로 승격해
   // 기존 "해결완료" 트래킹(칭호·전역 풀이수 등)이 그대로 이어지도록 한다.
   // (15차 기능4) 새로 해결한 라인마다 경험치를 지급 — 해당 퍼즐에서 "기존에 이미 보유했던 별 수"를 기준으로 계산한다.
-  // 획득량은 화면 중앙 토스트로 크게 표시한다(레벨업 토스트와 같은 자리를 공유 — 레벨업이 뒤이어 발생하면 그쪽으로 자연스럽게 대체됨).
+  // 획득량은 화면 중앙 토스트로 크게 표시한다(티어 승급 토스트와 같은 자리를 공유 — 승급이 뒤이어 발생하면 그쪽으로 자연스럽게 대체됨).
   const onLineSolved = useCallback((id, tag, totalLines) => {
     setLineSolves((prev) => {
       const curArr = prev[id] || [];
@@ -9127,17 +9261,17 @@ export default function App() {
       return { ...prev, [id]: [...curArr, tag] };
     });
   }, []);
-  const level = useMemo(() => levelFromXp(totalXp), [totalXp]);
-  const prevLevelRef = useRef(null);
+  const tierInfo = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const prevTierIndexRef = useRef(null);
   useEffect(() => {
-    if (!loaded) return; // 최초 데이터 복원 시점의 레벨 변화는 "레벨업"으로 취급하지 않는다
-    if (prevLevelRef.current != null && level.level > prevLevelRef.current) {
-      setToast({ type: "level", level: level.level });
-      setTimeout(() => setToast((t) => (t && t.type === "level" ? null : t)), 4000);
-      if (uid) notifyCreate(uid, "level_up", { level: level.level });
+    if (!loaded) return; // 최초 데이터 복원 시점의 티어 변화는 "승급"으로 취급하지 않는다
+    if (prevTierIndexRef.current != null && tierInfo.tierIndex > prevTierIndexRef.current) {
+      setToast({ type: "tier", tierIndex: tierInfo.tierIndex });
+      setTimeout(() => setToast((t) => (t && t.type === "tier" ? null : t)), 4000);
+      if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
     }
-    prevLevelRef.current = level.level;
-  }, [level.level, loaded]);
+    prevTierIndexRef.current = tierInfo.tierIndex;
+  }, [tierInfo.tierIndex, loaded]);
   // (17차) 일일 퀘스트 — 날짜가 바뀌면(또는 최초 로드 시 퀘스트가 없으면) 오늘의 퀘스트를 새로 생성한다.
   useEffect(() => {
     if (!loaded) return;
@@ -9287,7 +9421,7 @@ export default function App() {
           본문과 동일한 maxWidth 컨테이너로 헤더 내용을 감싸 정렬을 맞춘다. */}
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
       {/* (버그 수정) 계정 정보 줄과 아이콘 줄을 따로 두고 줄바꿈에 맡겼더니 헤더가 항상 2줄로 보였다 —
-          레벨 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
+          티어 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
           space-between으로 중앙 공백을 그룹 사이 여백으로 흡수한다. 모바일에서는 아이디 텍스트를
           숨기고 아바타로, 요소 크기를 한 단계씩 줄여 폭이 좁아도 항상 한 줄을 유지한다. */}
       <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: narrowHeader ? "8px 12px" : "10px 20px", flexWrap: "nowrap", columnGap: narrowHeader ? 6 : 14 }}>
@@ -9297,8 +9431,9 @@ export default function App() {
             불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
         <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
-          {/* (18차 UI8) 레벨 UI — 레벨 텍스트와 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지). */}
-          <LevelBadge totalXp={totalXp} compact={narrowHeader} />
+          {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
+              (v0.0.6 개편) 누르면 여정 지도(TierJourneyMap)가 열린다. */}
+          <TierBadge totalXp={totalXp} compact={narrowHeader} onClick={() => setTierMapOpen(true)} />
           {/* 검색·친구·채팅을 하나의 세그먼트로 묶는다 — 비로그인 상태에선 검색만 남아 평범한 버튼처럼 보인다.
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
@@ -9338,6 +9473,7 @@ export default function App() {
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
       {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
       {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} />}
+      {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
@@ -9376,10 +9512,13 @@ export default function App() {
               <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><Mascot name="kokoa" emotion="celebrate" size={58} /><div style={{ fontWeight: 800, fontSize: 13.5, color: T.brassHi }}>새로운 칭호 획득!</div></div>
               <TitleBadge id={toast.id} earned equipped={currentTitle === toast.id} onEquip={equipTitle} />
             </div>
-          ) : toast.type === "level" ? (
+          ) : toast.type === "tier" ? (
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <Mascot name="milku" emotion="celebrate" size={62} />
-              <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>레벨 업!</div><div style={{ fontSize: 12 }}>Lv.{toast.level}이 되었어요.</div></div>
+              <div className="flex items-center gap-2">
+                <TierPieceGlyph piece={TIERS[toast.tierIndex].piece} size={30} />
+                <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>티어 승급!</div><div style={{ fontSize: 12 }}>{TIERS[toast.tierIndex].label}(으)로 승급했어요.</div></div>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
