@@ -7250,22 +7250,24 @@ function findOpeningPathByFuzzyName(name) {
 // 처리했는데, 모바일처럼 화면이 좁고 깊이 중첩된(들여쓰기가 누적된) 오프닝일수록 2줄로도 모자라
 // 이름이 중간에 잘려 보였다(title 속성은 모바일 터치 환경에서 아예 작동하지 않아 전체 이름을
 // 확인할 방법도 없었다). 줄 수 제한을 없애 이름이 몇 줄이 되든 항상 끝까지 그대로 보이게 한다.
+// (버그 수정) 이름(영문 오프닝 이름은 길고 공백이 많음)과 통계를 한 줄에 양 끝 정렬(space-between)로
+// 욱여넣었더니, 중첩이 깊어질수록(들여쓰기 누적) 이름 칸에 남는 폭이 몇 십 px까지 줄어들어 단어
+// 하나하나가 줄바꿈되며 통계 배지와 겹쳐 보이는 문제가 있었다 — 깊이가 얼마든 항상 안전하도록
+// 이름과 통계를 아예 다른 줄로 분리한다(한 줄에 붙여 보여주는 대신, 통계는 이름 바로 아래).
 function OpeningWinrateRow({ node, depth, onOpenOpening }) {
   const isRoot = depth === 0;
-  const nameStyle = { wordBreak: "keep-all", lineHeight: 1.3, minWidth: 0, flex: "1 1 auto" };
+  const nameStyle = { display: "block", wordBreak: "break-word", lineHeight: 1.3, fontSize: isRoot ? 12.5 : 11.5 };
   return (
     <div style={{ position: "relative" }}>
       {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
       <div style={{ padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, fontSize: isRoot ? 12.5 : 11.5 }}>
-          {onOpenOpening
-            ? <button onClick={() => onOpenOpening(node.name)} title={node.name} className="press" style={{ ...nameStyle, color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0, fontSize: "inherit" }}>{node.name}</button>
-            : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
-          <span style={{ fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0, paddingTop: 1 }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
-        </div>
+        {onOpenOpening
+          ? <button onClick={() => onOpenOpening(node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
+          : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
+        <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
       </div>
       {node.children.length > 0 && (
-        <div style={{ marginLeft: 15, borderLeft: "1.5px solid #D9C7A0", paddingLeft: 9 }}>
+        <div style={{ marginLeft: 12, borderLeft: "1.5px solid #D9C7A0", paddingLeft: 8 }}>
           {node.children.map((c) => <OpeningWinrateRow key={c.name} node={c} depth={depth + 1} onOpenOpening={onOpenOpening} />)}
         </div>
       )}
@@ -7452,7 +7454,12 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
           <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
         </div>
       </div>
-      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      {/* (버그 수정) 메인 퀘스트 진척도·푼 퍼즐이 chess.com 대국 기록(최근 대국·오프닝별 승률 등,
+          분량이 많아 화면을 길게 차지함)보다 아래에 있어 스크롤을 한참 내려야 보였다 — 이 프로필
+          카드 안의 "내 진행 상황"(퀘스트·퍼즐)을 먼저 보여주고, chess.com 데이터는 그 아래로
+          내린다. PublicProfileStats 내부에 함께 있던 chess.com 블록(AccountChessStats)은
+          hideChesscom으로 꺼 두고, 같은 컴포넌트를 아래에서 따로 렌더링한다. */}
+      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom />
       {mq.totalChapters > 0 && (
         <div style={{ marginTop: 4, marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -7477,6 +7484,11 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
               </div>
             </div>
           )}
+        </div>
+      )}
+      {linked && (
+        <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
+          <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
         </div>
       )}
       {editOpen && (
