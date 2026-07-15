@@ -198,36 +198,28 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
     </div>
   );
 }
-// (v0.0.6 개편) 티어 배지·여정 지도용 기물 아이콘 — 보드용 PieceGlyph는 유저가 고른 기물 스킨·
-// 드래그 핸들러·이미지셋 폴백에 매여 있어(SkinContext) 재사용하기 무겁다. 대신 같은 실루엣
-// 데이터(PIECE_MID/PIECE_LINES 등)만 가져와, tierKey에 해당하는 등급 색(TIER_COLORS)을 입히거나
-// 잠긴 티어는 회색(muted)으로 그리는 독립 컴포넌트를 둔다 — 보드 스킨이 뭐든 티어 아이콘은 항상 같아 보인다.
+// (기능) 티어별로 디자이너가 직접 제작한 로우폴리 기물 이미지(public에 업로드된 실제 아트) —
+// 아이언 폰부터 그랜드마스터(왕관에 "GM"이 새겨진 홀로그램 킹)까지, 기물 종류와 등급 색이 이미
+// 하나의 이미지 안에 함께 표현되어 있다.
+const TIER_IMAGE = {
+  iron: "/iron-pawn.png",
+  bronze: "/bronze-knight.png",
+  silver: "/silver-bishop.png",
+  gold: "/gold-rook.png",
+  diamond: "/diamond-queen.png",
+  master: "/master-king.png",
+  grandmaster: "/grandmaster.png",
+};
+// (v0.0.6 개편 → 디자인 개선) 티어 배지·여정 지도용 기물 아이콘 — 처음엔 실루엣 데이터로 직접
+// 그린 로우폴리 SVG였는데, 디자이너가 만든 실제 티어 이미지(TIER_IMAGE)로 교체했다. piece는
+// 더 이상 아이콘 모양을 고르는 데 쓰이지 않지만(이미지가 이미 기물+색을 함께 담고 있음), 기존
+// 호출부를 그대로 두기 위해 인자는 유지한다.
 function TierPieceGlyph({ piece, size = 28, tierKey, muted = false }) {
-  const rawId = useId();
-  const gradId = "tpg" + rawId.replace(/[^a-zA-Z0-9]/g, "");
-  const tc = TIER_COLORS[tierKey] || TIER_COLORS.iron;
-  const stops = tc.stops || [tc.hi, tc.lo];
-  // (디자인 개선) 잠긴(muted) 티어를 전부 똑같은 흰색 반투명으로 그리면, 아직 안 온 등급들이
-  // 원래 갖고 있는 색 차이(브론즈 구릿빛, 골드 금빛, 다이아몬드 파랑…)가 여정 지도에서 전혀 안
-  // 보여 모든 잠긴 구간이 구분 없이 밋밋해 보였다 — 잠긴 상태도 그 티어 고유 색을 아주 옅게 남겨,
-  // 위로 스크롤할수록(더 높은 티어일수록) 앞으로 어떤 색이 기다리는지 은은하게 미리 보이게 한다.
-  if (piece === "GM") return <Crown size={size} style={{ color: muted ? stops[0] + "55" : stops[0] }} />;
-  const mid = PIECE_MID[piece];
-  if (!mid) return null;
-  const bodyPoints = PIECE_BASE_R + " " + mid + " " + PIECE_BASE_L;
-  const fill = muted ? (tc.lo || stops[stops.length - 1]) + "3D" : "url(#" + gradId + ")";
-  const stroke = muted ? (tc.hi || stops[0]) + "70" : (tc.lo || stops[stops.length - 1]);
-  return (
-    <svg viewBox="0 0 100 100" width={size} height={size} style={{ display: "block", flexShrink: 0 }}>
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          {stops.map((c, i) => <stop key={i} offset={(i / (stops.length - 1)) * 100 + "%"} stopColor={c} />)}
-        </linearGradient>
-      </defs>
-      <polygon points={bodyPoints} fill={fill} stroke={stroke} strokeWidth={2.6} strokeLinejoin="round" />
-      {piece === "K" && <path d={PIECE_CROSS} fill={fill} stroke={stroke} strokeWidth={2.2} strokeLinejoin="round" />}
-    </svg>
-  );
+  const src = TIER_IMAGE[tierKey] || TIER_IMAGE.iron;
+  // (디자인 개선) 잠긴(muted) 티어를 흰색 반투명 실루엣으로 뭉개던 예전 방식 대신, 실제 이미지를
+  // 그대로 두고 채도·밝기만 낮춘다 — 아직 안 온 등급들의 색 차이(브론즈 구릿빛, 골드 금빛,
+  // 다이아몬드 청록…)가 옅게나마 남아, 위로 스크롤할수록 앞으로 만날 색이 은은하게 미리 보인다.
+  return <img src={src} alt="" style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
 }
 
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
@@ -5346,19 +5338,20 @@ const TIERS = [
   { key: "gold", label: "골드", piece: "R" },
   { key: "diamond", label: "다이아몬드", piece: "Q" },
   { key: "master", label: "마스터", piece: "K" },
-  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // 기물 대신 Crown 아이콘으로 표시
+  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // grandmaster.png(왕관에 "GM" 각인) 사용
 ];
-// 기물에 입히는 등급별 색 — 무쇠빛 아이언부터 웹사이트 대표 색(브라스)이 진하게 실린 그랜드마스터까지
-// 단계적으로 고급스러워지도록. 그랜드마스터만 단일 그라디언트가 아니라 사이트 전반에 쓰이는 강조색
-// 여러 개(브라스·브릴리언트 청록)를 섞은 다색 그라디언트로 특별하게 처리한다.
+// (기능) 실제 티어 기물 이미지(public/iron-pawn.png 등)에서 뽑아낸 대표 색 — 배지 테두리·글로우·
+// 진행바가 그 이미지의 실제 톤과 어긋나지 않도록, 이미지를 새로 받을 때마다 이 값도 함께 맞춘다.
+// 그랜드마스터만 단일 그라디언트가 아니라 실제 이미지의 홀로그램(보라·청록·핑크) 느낌을 그대로
+// 다색 그라디언트로 옮겨 특별하게 처리한다.
 const TIER_COLORS = {
   iron: { lo: "#5B6169", hi: "#9AA1AA" },
-  bronze: { lo: "#8A4B22", hi: "#D98A46" },
+  bronze: { lo: "#6B3A1E", hi: "#F1A979" },
   silver: { lo: "#A6ADB4", hi: "#F2F4F6" },
-  gold: { lo: "#B8860B", hi: "#FFD84D" },
-  diamond: { lo: "#1E9BC7", hi: "#9FE8FF" },
-  master: { lo: "#D98C00", hi: "#FFE066" }, // 골드보다 한 톤 더 진하고 채도 높은 "고급진" 노랑 + 별도 글로우
-  grandmaster: { stops: [T.brilliant, T.brassHi, T.brass] }, // 웹사이트 전체 테마 색 배합
+  gold: { lo: "#8A6428", hi: "#FDDB82" },
+  diamond: { lo: "#0090C8", hi: "#4FE8FF" },
+  master: { lo: "#3B1568", hi: "#B98CFF" },
+  grandmaster: { stops: ["#B983FF", "#6EE7C8", "#FF8FD1"] },
 };
 // 티어[0..5](아이언..마스터)를 깨는 데 필요한 XP — 한 곳에서만 관리하는 튜닝 가능한 상수. 누적
 // 500/2,000/10,000/50,000/100,000 XP에 브론즈/실버/골드/다이아몬드/마스터에 도달하고, 그
@@ -5393,11 +5386,15 @@ function tierFromXp(totalXp) {
   const gmStars = Math.floor(remaining / GM_STAR_XP);
   return { tierIndex: idx, tier, xpInTier: remaining % GM_STAR_XP, xpForNext: GM_STAR_XP, maxed: true, gmStars, division: null, xpInDivision: remaining % GM_STAR_XP, xpForNextDivision: GM_STAR_XP };
 }
-// 위 tierFromXp 결과를 화면에 보여줄 한 줄 라벨로 — "골드 3", 그랜드마스터는 "그랜드마스터 ★2"
+// (디자인 개선) 세부 티어(1~5) 구간은 아라비아 숫자 대신 로마 숫자로 표기한다 — 인덱스 1~5만
+// 쓰이므로(그랜드마스터의 ★프레스티지는 구간과 무관한 별도 카운터라 그대로 아라비아 숫자) 조회
+// 테이블 하나로 충분하다.
+const DIVISION_ROMAN = ["", "I", "II", "III", "IV", "V"];
+// 위 tierFromXp 결과를 화면에 보여줄 한 줄 라벨로 — "골드 III", 그랜드마스터는 "그랜드마스터 ★2"
 // (프레스티지 0단계면 별 표시 없이 이름만). 티어 배지·프로필 필·토스트·여정 지도에서 공유한다.
 function tierDisplayLabel(info) {
   if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
-  return info.tier.label + " " + info.division;
+  return info.tier.label + " " + DIVISION_ROMAN[info.division];
 }
 // (v0.0.6 추가) 지금 위치에서 앞으로 넘어야 할 구간을 순서대로 count개 뽑는다 — 구간이 1(최상위)
 // 아래로 내려가면 다음 티어의 5(최하위)로 넘어간다. 퍼즐 탭 상단 스트립에서 "다음 몇 단계"를
@@ -5753,14 +5750,14 @@ function TierConnector() {
     </svg>
   );
 }
-// (기능) 다음 몇 구간을 미리 보여주는 작은 배지 — 숫자(구간)가 그 티어의 색으로 표시된다. 그랜드
-// 마스터처럼 구간이 없는 자리는 숫자 대신 기물(Crown) 아이콘을 보여준다.
+// (기능) 다음 몇 구간을 미리 보여주는 작은 배지 — 로마 숫자(구간)가 그 티어의 색으로 표시된다.
+// 그랜드마스터처럼 구간이 없는 자리는 숫자 대신 기물 이미지를 보여준다.
 function NextCheckpointBadge({ tier, division }) {
   const tc = TIER_COLORS[tier.key];
   const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   return (
     <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.3)", border: "2px solid " + ringColor, color: ringColor, fontSize: 14, fontWeight: 900 }}>
-      {division != null ? division : <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={18} />}
+      {division != null ? DIVISION_ROMAN[division] : <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={18} />}
     </div>
   );
 }
@@ -8921,7 +8918,7 @@ function TierJourneyPath({ totalXp }) {
         // 미리 보이도록 한다(도달하면 또렷해짐).
         const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
-        const label = s.division != null ? s.tier.label + " " + s.division : s.tier.label;
+        const label = s.division != null ? s.tier.label + " " + DIVISION_ROMAN[s.division] : s.tier.label;
         return (
           <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
             <motion.div
