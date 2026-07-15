@@ -486,17 +486,44 @@ function applySan(board, sanRaw, color) {
   b[dr][dc] = info.promo ? { c: color, t: info.promo } : moving; b[sr][sc] = null; return b;
 }
 function boardFromSans(sans) { let b = startBoard(); sans.forEach((s, i) => { b = applySan(b, s, i % 2 === 0 ? "w" : "b"); }); return b; }
-/* 직전 더블 푸시로 생기는 앙파상 타깃 칸 (없으면 null) */
+// (버그 수정) sanSrc가 돌려주는 한 수의 from/to 정보(그 수를 두기 "직전" 보드 기준)만으로 그 수가
+// 진짜 폰 더블 푸시였는지 판정한다 — epTarget과 analyzeGame의 FEN 생성 루프가 이 판정을 공유해,
+// 둘의 기준이 서로 어긋나는 일이 없게 한다.
+function epTargetFromMoveInfo(info) {
+  if (!info || info.castle || info.piece !== "P" || info.isCap) return null;
+  const [fr] = info.from, [tr, tc] = info.to;
+  if (Math.abs(tr - fr) !== 2) return null;
+  return [(fr + tr) / 2, tc];
+}
+// (버그 수정) 직전 더블 푸시로 생기는 앙파상 타깃 칸 (없으면 null). SAN은 도착 칸만 담고 있어,
+// 예전엔 "도착 랭크가 4/5랭크인 폰 수"이면 무조건 더블 푸시로 간주했다 — 그런데 폰이 한 칸씩 두
+// 번(예: e2-e3, 그다음 턴에 e3-e4) 나눠 전진해도 마지막 수의 도착 칸은 똑같이 4랭크라 이 조건을
+// 통과했고, 실제로는 스타팅 칸에서 두 칸을 한 번에 건너뛴 게 아닌데도 앙파상을 허용하는 버그가
+// 있었다. 직전 수 바로 이전의 보드에서 실제 출발 칸을 구해, 정말로 두 칸을 건너뛰었는지 검증한다.
 function epTarget(sans) {
   if (!sans || !sans.length) return null;
-  const last = sans[sans.length - 1].replace(/[+#!?]/g, "");
-  if (!/^[a-h][1-8]$/.test(last)) return null;       // 기물 문자/캡처 없는 폰 전진만
-  const file = FILES.indexOf(last[0]), row = 8 - parseInt(last[1], 10);
-  const moverWhite = (sans.length - 1) % 2 === 0;
-  if (moverWhite && row === 4) return [5, file];
-  if (!moverWhite && row === 3) return [2, file];
-  return null;
+  const lastRaw = sans[sans.length - 1];
+  if (!/^[a-h][1-8]$/.test(lastRaw.replace(/[+#!?]/g, ""))) return null; // 기물 문자/캡처 없는 폰 전진만
+  const moverColor = (sans.length - 1) % 2 === 0 ? "w" : "b";
+  const prevBoard = boardFromSans(sans.slice(0, -1));
+  return epTargetFromMoveInfo(sanSrc(prevBoard, lastRaw, moverColor));
 }
+const sqName = (r, c) => FILES[c] + (8 - r);
+// (버그 수정) FEN의 캐슬링 권리 필드 — 예전엔 실제 수순과 무관하게 항상 "KQkq"를 그대로 내보내,
+// 킹이나 룩이 한 번이라도 움직였다가(캐슬링 권리는 영구히 사라짐) 제자리로 돌아와도 엔진은
+// 캐슬링이 여전히 합법이라고 착각했다. 매 수마다(그 수를 두기 직전 보드에서 얻은 sanSrc 정보로)
+// 킹/룩이 움직였는지, 또는 상대가 룩의 시작 칸을 그대로 점령(포획)했는지를 반영해 갱신한다 — 한
+// 번 잃은 권리는 다시 생기지 않으므로 앞에서부터 한 번만 순서대로 훑으면 된다.
+function updateCastleRights(rights, info, color) {
+  if (!info) return rights;
+  if (info.castle) return color === "w" ? { ...rights, K: false, Q: false } : { ...rights, k: false, q: false };
+  let next = info.piece === "K" ? (color === "w" ? { ...rights, K: false, Q: false } : { ...rights, k: false, q: false }) : rights;
+  const homeFlag = (r, c) => (r === 7 && c === 0) ? "Q" : (r === 7 && c === 7) ? "K" : (r === 0 && c === 0) ? "q" : (r === 0 && c === 7) ? "k" : null;
+  const fromFlag = homeFlag(info.from[0], info.from[1]); if (fromFlag && next[fromFlag]) next = { ...next, [fromFlag]: false };
+  const toFlag = homeFlag(info.to[0], info.to[1]); if (toFlag && next[toFlag]) next = { ...next, [toFlag]: false };
+  return next;
+}
+function castleRightsStr(rights) { const s = (rights.K ? "K" : "") + (rights.Q ? "Q" : "") + (rights.k ? "k" : "") + (rights.q ? "q" : ""); return s || "-"; }
 function sansToUci(sans) {
   let b = startBoard(); const out = [];
   sans.forEach((s, i) => {
@@ -512,16 +539,30 @@ function sansToUci(sans) {
 // (20차 기능5) 이미 만들어진 board를 그대로 FEN으로 직렬화 — sansToFen처럼 매번 sans 전체를
 // 처음부터 재생(boardFromSans)하지 않아도 되므로, 이미 진행 중인 보드가 있는 호출부(analyzeGame 등)에서
 // O(n²) 재생을 피할 수 있다. plyCount는 sans.length와 동일한 의미(선수 결정·풀무브 번호 계산용).
-function boardToFen(b, plyCount) {
+// (버그 수정) castleStr/epStr을 캐슬링 권리·앙파상 필드로 그대로 받는다 — 예전엔 이 두 필드가
+// 항상 "KQkq -"로 하드코딩돼 있어, 엔진이 이미 사라진 캐슬링 권리를 합법으로 착각하거나 실제
+// 앙파상 기회를 항상 놓쳤다. 호출부가 안 넘기면 "-"(권리 없음/대상 없음)로 안전하게 기본값을
+// 둔다 — 예전 버그처럼 "일단 다 된다"고 잘못 알리는 대신, 모르면 "안 된다"고 보수적으로 답한다.
+function boardToFen(b, plyCount, castleStr, epStr) {
   const rows = [];
   for (let r = 0; r < 8; r++) {
     let row = "", empty = 0;
     for (let c = 0; c < 8; c++) { const p = b[r][c]; if (!p) empty++; else { if (empty) { row += empty; empty = 0; } const ch = p.t; row += p.c === "w" ? ch : ch.toLowerCase(); } }
     if (empty) row += empty; rows.push(row);
   }
-  return rows.join("/") + " " + (plyCount % 2 === 0 ? "w" : "b") + " KQkq - 0 " + (Math.floor(plyCount / 2) + 1);
+  return rows.join("/") + " " + (plyCount % 2 === 0 ? "w" : "b") + " " + (castleStr || "-") + " " + (epStr || "-") + " 0 " + (Math.floor(plyCount / 2) + 1);
 }
-function sansToFen(sans) { return boardToFen(boardFromSans(sans), sans.length); }
+function sansToFen(sans) {
+  let board = startBoard(), rights = { K: true, Q: true, k: true, q: true }, ep = null;
+  for (let i = 0; i < sans.length; i++) {
+    const color = i % 2 === 0 ? "w" : "b";
+    const info = sanSrc(board, sans[i], color);
+    rights = updateCastleRights(rights, info, color);
+    ep = epTargetFromMoveInfo(info);
+    board = applySan(board, sans[i], color);
+  }
+  return boardToFen(board, sans.length, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-");
+}
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 
@@ -1795,10 +1836,19 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   {
     // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
     // 기보가 길어질수록 분석이 급격히 느려진다 — 보드를 한 번만 만들어 한 수씩 전진시키며 재사용한다.
-    let board = startBoard();
+    // (버그 수정) 캐슬링 권리·앙파상도 같은 이유로 매번 처음부터 다시 계산(sansToFen이 하듯)하지
+    // 않고, 이 한 번의 순회 안에서 함께 누적한다 — 매 수의 sanSrc 결과 하나로 rights 갱신과 그
+    // 수가 진짜 더블 푸시였는지(다음 위치의 ep) 판정을 모두 얻으므로 추가 순회가 필요 없다.
+    let board = startBoard(), rights = { K: true, Q: true, k: true, q: true }, ep = null;
     for (let i = 0; i <= N; i++) {
-      fens[i] = boardToFen(board, i);
-      if (i < N) board = applySan(board, fullSans[i], i % 2 === 0 ? "w" : "b");
+      fens[i] = boardToFen(board, i, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-");
+      if (i < N) {
+        const color = i % 2 === 0 ? "w" : "b";
+        const info = sanSrc(board, fullSans[i], color);
+        rights = updateCastleRights(rights, info, color);
+        ep = epTargetFromMoveInfo(info);
+        board = applySan(board, fullSans[i], color);
+      }
     }
   }
   const poolTarget = Math.min(ANALYZE_POOL_SIZE[engine.profile] || 2, N + 1);
