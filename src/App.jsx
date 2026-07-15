@@ -2027,12 +2027,16 @@ function assignTiers(moves, ply, board, keyStr) {
   }
   // 유일한 수(#6): 이 위치에 이론 수가 없고, '나쁘지 않은' 수가 정확히 1개이며,
   // 나머지 분석된 수가 전부 부정확/실수/블런더일 때만. 유일+탁월이면 탁월로 표기.
+  // (버그 수정) analyzeGame(Math.abs(bestCp) < 600)과 달리 이 학습 탭 판정에는 평가치 크기 상한이
+  // 빠져 있어, 이미 한쪽이 6점 이상 유리해진 위치에서도(다른 수는 전부 나쁘게 분류되니) '유일한 수'가
+  // 계속 붙었다 — 승부가 사실상 끝난 위치에서는 그 수를 찾았는지가 더 이상 의미가 없으므로, 다른 세
+  // 판정과 동일한 기준으로 이 평가치 범위를 벗어나면 '유일한 수'를 매기지 않는다.
   const anyBook = out.some((m) => m.kind === "book");
   const goodSet = ["brilliant", "best", "excellent", "good"];
   const goods = out.filter((m) => goodSet.includes(m.kind));
   const others = out.filter((m) => !goodSet.includes(m.kind));
   const allOthersBad = others.length > 0 && others.every((m) => ["inaccuracy", "mistake", "blunder"].includes(m.kind));
-  if (!anyBook && goods.length === 1 && allOthersBad) {
+  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600) {
     const i = out.indexOf(goods[0]);
     out[i] = { ...out[i], kind: out[i].kind === "brilliant" ? "brilliant" : "only" };
   }
