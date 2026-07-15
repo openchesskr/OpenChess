@@ -7523,13 +7523,14 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
   );
 }
 // (기능) 접속 시 보여줄 업데이트 공지 — README 버전 기록을 기반으로 하되, 개발 용어 없이 사용자
-// 입장에서 무엇이 좋아졌는지만 쉬운 말로 다시 정리한다. APP_VERSION이 바뀌면(새 항목을 배열 맨 앞에
-// 추가) 이전에 "다시 보지 않기"를 체크했던 사용자에게도 새 공지가 다시 뜬다.
+// 입장에서 무엇이 좋아졌는지만 쉬운 말로 다시 정리한다. 새 버전을 배포할 때 할 일은 이 배열
+// 맨 앞에 { version, date, items } 항목 하나를 추가하는 것, 그게 전부다. 그러면 이전에
+// "다시 보지 않기"를 체크했던 사용자에게도 새 공지가 다시 뜬다.
 // (버그 수정) v0.0.5·v0.0.6이 실제로 배포됐는데도 이 배열엔 계속 v0.0.4가 최신으로 남아 있어,
-// 공지 모달이 최근 버전 소식을 전혀 보여주지 못하고(APP_VERSION도 그대로라 이미 "다시 보지
-// 않기"를 누른 사용자에겐 아예 뜨지도 않았다) 있었다 — 두 버전을 배열 맨 앞에 추가하고
-// APP_VERSION도 최신으로 맞춘다.
-const APP_VERSION = "0.0.6";
+// 공지 모달이 최근 버전 소식을 전혀 보여주지 못하던 문제가 있었다. 원인은 이 배열과 별개로
+// APP_VERSION 상수를 손으로 따로 맞춰줘야 했던 것 — 둘 중 하나만 깜빡해도 재발하는 구조였다.
+// 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
+// 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
     version: "0.0.6", date: "2026.7.15", items: [
@@ -7594,6 +7595,7 @@ const CHANGELOG = [
     ],
   },
 ];
+const APP_VERSION = CHANGELOG[0].version;
 function AnnouncementModal({ onClose, onDismissVersion }) {
   const [hide, setHide] = useState(false);
   const latest = CHANGELOG[0];
