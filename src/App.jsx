@@ -4143,7 +4143,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const items = []; const edges = [];
     const leafList = { N: [], S: [], E: [], W: [] };
     // 트리 구조(부모-자식, 방향)만 먼저 만들고, leaf 좌표는 아래에서 보간으로 채운다.
-    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey) => {
+    // (성능) board는 그 노드의 자식 채택 등급(assignTiers)을 매길 때만 필요한데, 예전엔 매
+    // 내부 노드마다 boardFromSans(path)로 루트부터 그 깊이만큼 수순을 처음부터 다시 재생했다 —
+    // 트리 전체가 DFS로 훑이는 와중에 부모가 이미 만들어 둔 보드가 있는데도 매번 버리고 새로
+    // 계산한 것(노드 수 × 평균 깊이만큼 중복). 배경 로딩 중엔 이 useMemo 전체가 220ms마다 다시
+    // 돌므로(useOpeningTreeAuto의 bumpVersion), 이 중복이 로딩 내내 반복됐다 — 부모의 board를
+    // 그대로 물려받아 이번 수 하나만 한 번 더 적용하도록(O(노드 수)) 바꾼다.
+    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey, board) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
       // (버그 수정) 처음엔 이름 붙은 노드마다(하위 바리에이션 포함) 전부 그룹을 새로 만들었는데,
@@ -4202,13 +4208,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           }
           ordered = sanOrder.map((s) => filtered.find((m) => m.san === s)).filter(Boolean);
         }
-        const board = boardFromSans(path);
         const tiered = assignTiers(filtered, path.length, board, key);
+        const color = path.length % 2 === 0 ? "w" : "b";
         for (const m of ordered) {
           const t = tiered.find((x) => x.san === m.san);
           const nm = nameOverride(key, m.san) ?? m.name ?? null;
           const childDir = path.length === 0 ? DIR_OF_ROOT[stripSuffix(m.san)] : dir;
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey));
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey, applySan(board, m.san, color)));
         }
       }
       if (depth >= 1) { if (!kids.length) leafList[dir].push(it); else it.kids = kids; }
@@ -4217,7 +4223,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null, null, null, null);
+    visit(null, [], 0, 100, null, null, null, null, null, startBoard());
     // 방향별로, 지금 실제로 보이는 leaf들을 현재 형제 순서(DFS 순서) 그대로 훑으면서 좌표 캐시를
     // 채운다. 이미 캐시에 있는 값은 절대 다시 바꾸지 않는다(그래야 흔들리지 않는다) — 새로 나타난
     // leaf만, 바로 앞뒤로 이미 확정된 이웃의 캐시 값 "사이"를 보간해 끼워 넣는다. 자리를 넓히려고
