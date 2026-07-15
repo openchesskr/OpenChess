@@ -5198,14 +5198,29 @@ const TIER_COLORS = {
 const TIER_XP_REQ = [500, 1500, 8000, 40000, 50000, 100000];
 // 그랜드마스터(최종 티어) 도달 후에는 XP가 계속 쌓이며 이 단위로 "★" 프레스티지 카운터가 무한히 오른다.
 const GM_STAR_XP = 100000;
-// 누적 총 경험치(totalXp)로부터 현재 티어·해당 티어 내 경험치·다음 티어까지 필요 경험치를 도출한다.
+// (v0.0.6 추가) 랭크 게임처럼 티어마다 5단계 구간(1~5)을 두고, 1이 5보다 높은 구간(승급 직전)이다.
+// 각 구간에 필요한 XP는 그 티어 전체 요구치를 5등분(TIER_XP_REQ가 전부 5의 배수라 나머지 없이 나뉜다).
+// 그랜드마스터(끝없는 최종 티어)는 구간 대신 기존 "★" 프레스티지 카운터를 그대로 쓴다.
+const DIVISIONS_PER_TIER = 5;
+// 누적 총 경험치(totalXp)로부터 현재 티어·구간·해당 구간 내 경험치·다음 구간까지 필요 경험치를 도출한다.
 function tierFromXp(totalXp) {
   let idx = 0, remaining = Math.max(0, totalXp || 0);
   while (idx < TIER_XP_REQ.length && remaining >= TIER_XP_REQ[idx]) { remaining -= TIER_XP_REQ[idx]; idx++; }
   const tier = TIERS[idx];
-  if (idx < TIER_XP_REQ.length) return { tierIndex: idx, tier, xpInTier: remaining, xpForNext: TIER_XP_REQ[idx], maxed: false, gmStars: 0 };
+  if (idx < TIER_XP_REQ.length) {
+    const perDiv = TIER_XP_REQ[idx] / DIVISIONS_PER_TIER;
+    const divIdx = Math.min(DIVISIONS_PER_TIER - 1, Math.floor(remaining / perDiv)); // 0(최하위)~4(최상위)
+    const division = DIVISIONS_PER_TIER - divIdx; // 표시용 — 1이 최상위, 5가 최하위
+    return { tierIndex: idx, tier, xpInTier: remaining, xpForNext: TIER_XP_REQ[idx], maxed: false, gmStars: 0, division, xpInDivision: remaining - divIdx * perDiv, xpForNextDivision: perDiv };
+  }
   const gmStars = Math.floor(remaining / GM_STAR_XP);
-  return { tierIndex: idx, tier, xpInTier: remaining % GM_STAR_XP, xpForNext: GM_STAR_XP, maxed: true, gmStars };
+  return { tierIndex: idx, tier, xpInTier: remaining % GM_STAR_XP, xpForNext: GM_STAR_XP, maxed: true, gmStars, division: null, xpInDivision: remaining % GM_STAR_XP, xpForNextDivision: GM_STAR_XP };
+}
+// 위 tierFromXp 결과를 화면에 보여줄 한 줄 라벨로 — "골드 3", 그랜드마스터는 "그랜드마스터 ★2"
+// (프레스티지 0단계면 별 표시 없이 이름만). 티어 배지·프로필 필·토스트·여정 지도에서 공유한다.
+function tierDisplayLabel(info) {
+  if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
+  return info.tier.label + " " + info.division;
 }
 // 퍼즐 한 라인을 해결할 때 얻는 경험치: {13~17 사이의 난수 × (기존 별 보유 수+1.2)}의 정수 부분.
 function rollLineXp(existingStars) {
@@ -5502,33 +5517,69 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
 // 진행바는 폭이 바뀔 때마다 눈에 띄게 차오르도록 긴 이징 트랜지션을 건다("+N XP" 자체는 화면 중앙 토스트로 별도 표시).
 // (18차 UI8) 티어 텍스트(좌)와 게이지(우)를 가로로 나란히 배치 — 헤더에서 아이디 왼쪽에 표시된다.
 function TierBadge({ totalXp, compact, onClick }) {
-  const { tier, xpInTier, xpForNext, maxed, gmStars } = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const pct = Math.max(0, Math.min(100, Math.round((xpInTier / xpForNext) * 100)));
+  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const { tier, xpInDivision, xpForNextDivision } = info;
+  const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   const tc = TIER_COLORS[tier.key];
   const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   return (
     <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 5 : 7, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
       <div className="flex items-center" style={{ gap: 4, fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + ringColor, whiteSpace: "nowrap" }}>
         <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={compact ? 12 : 14} />
-        {tier.label}{maxed && gmStars > 0 ? " ★" + gmStars : ""}
+        {tierDisplayLabel(info)}
       </div>
       <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
         <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
-        <div style={{ fontSize: compact ? 8 : 8.5, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInTier}/{xpForNext}</div>
+        <div style={{ fontSize: compact ? 8 : 8.5, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInDivision}/{xpForNextDivision}</div>
       </div>
     </div>
   );
 }
 // (v0.0.6 개편) 프로필 화면(내 프로필 편집·다른 유저 프로필)에 중복돼 있던 "Lv.N (X/Y XP)" 인라인
-// 표기를 하나로 모은다 — 티어명 + XP 진행 텍스트만 보여주는 작은 필.
+// 표기를 하나로 모은다 — 티어(구간)명 + 구간 내 XP 진행 텍스트만 보여주는 작은 필.
 function TierStatPill({ totalXp }) {
-  const { tier, xpInTier, xpForNext, maxed, gmStars } = tierFromXp(totalXp);
+  const info = tierFromXp(totalXp);
+  const { tier, xpInDivision, xpForNextDivision } = info;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
-      <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={14} /> {tier.label}{maxed && gmStars > 0 ? " ★" + gmStars : ""} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInTier)}/{fmtFull(xpForNext)} XP)</span>
+      <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={14} /> {tierDisplayLabel(info)} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
     </span>
+  );
+}
+// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 티어(구간)는 크게, 앞으로
+// 올라갈 다음 몇 티어는 작게 나란히 보여줘 "다음 목표"가 항상 눈에 띄게 한다. 누르면 여정 지도가 열린다.
+function TierProgressStrip({ totalXp, onOpen }) {
+  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const { tier, xpInDivision, xpForNextDivision } = info;
+  const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
+  const tc = TIER_COLORS[tier.key];
+  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
+  const nextTiers = TIERS.slice(info.tierIndex + 1, info.tierIndex + 4); // 다음 최대 3개 티어를 작게 미리 보여준다
+  return (
+    <div onClick={onOpen} className="press flex items-center gap-3" style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default" }}>
+      <div style={{ position: "relative", width: 52, height: 52, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#4A3016,#241509)", border: "2px solid " + ringColor, boxShadow: "0 0 14px 2px " + ringColor + "66" }}>
+        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={30} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi }}>{tierDisplayLabel(info)}</div>
+        <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
+          <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
+        </div>
+        <div style={{ fontSize: 10, color: T.brassHi, opacity: .75, marginTop: 2 }}>{xpInDivision}/{xpForNextDivision} XP</div>
+      </div>
+      {nextTiers.length > 0 && (
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          <ChevronRight size={14} style={{ color: T.inkSoft, opacity: .6 }} />
+          {nextTiers.map((t) => (
+            <div key={t.key} style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.28)", border: "1.5px solid rgba(255,255,255,.25)", opacity: .6 }}>
+              <TierPieceGlyph piece={t.piece} tierKey={t.key} size={16} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 function LineStars({ total, solved }) {
@@ -6701,7 +6752,7 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, active, setActive, engine, liveOn, canEdit, bumpContent }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -6786,6 +6837,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   return (
     <div>
       <div className="flex items-center gap-2"><Mascot name="kokoa" emotion="celebrate" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퍼즐</h2></div>
+      {/* (v0.0.6 추가) 퍼즐을 풀 때마다 오르는 티어를 늘 보이게 — 지금 티어는 크게, 다음 몇 단계는
+          작게 미리 보여줘 계속 풀 동기를 준다. 누르면 전체 여정 지도가 열린다. */}
+      <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} />
       {/* (18차 UI5) 안내 문구 삭제, (18차 UI2) 일일 퀘스트는 퀘스트 탭으로 이동 */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByNumber()} inputMode="numeric" placeholder="퍼즐 번호로 풀기 (예: 123456)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
@@ -8450,6 +8504,12 @@ function ChatsModal({ me, myUid, onClose }) {
 function TierJourneyMap({ totalXp, onClose }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const STATION_H = 84, STATION_GAP = 96, WAYPOINTS = 4;
+  // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
+  // 밀려나 열 때마다 스크롤을 내려야 했다 — 열리자마자 지금 티어가 화면 가운데 오도록 자동으로 스크롤한다.
+  const currentRef = useRef(null);
+  useEffect(() => { if (currentRef.current) currentRef.current.scrollIntoView({ block: "center" }); }, []);
+  // 시각적 세로 위치만 뒤집는다(i는 여전히 TIERS의 논리적 순서 — tierIndex 비교 등 다른 로직은 그대로).
+  const topOf = (i) => (TIERS.length - 1 - i) * (STATION_H + STATION_GAP);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
       <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
@@ -8468,7 +8528,7 @@ function TierJourneyMap({ totalXp, onClose }) {
           <svg width="100%" height={(TIERS.length - 1) * (STATION_H + STATION_GAP) + STATION_H} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {TIERS.slice(0, -1).map((_, i) => {
               const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
-              const y1 = i * (STATION_H + STATION_GAP) + STATION_H / 2, y2 = (i + 1) * (STATION_H + STATION_GAP) + STATION_H / 2;
+              const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
               const lit = i < info.tierIndex;
               return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={lit ? T.brass : "rgba(255,255,255,.18)"} strokeWidth={3} strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round" />;
             })}
@@ -8480,7 +8540,7 @@ function TierJourneyMap({ totalXp, onClose }) {
             // 전부 채움, 미래 구간은 전부 빈다.
             const segPct = state === "done" ? 1 : state === "current" && !isLast ? info.xpInTier / info.xpForNext : 0;
             const cx = i % 2 ? "78%" : "22%";
-            const top = i * (STATION_H + STATION_GAP);
+            const top = topOf(i);
             // (기능) 원 테두리·글로우도 등급 색을 그대로 따라가, 지금 어느 티어에 있는지 한눈에
             // 구분된다(잠긴 티어는 색 대신 회색으로 가려 아직 안 보여준다).
             const tc = TIER_COLORS[tier.key];
@@ -8488,6 +8548,7 @@ function TierJourneyMap({ totalXp, onClose }) {
             return (
               <React.Fragment key={tier.key}>
                 <motion.div
+                  ref={state === "current" ? currentRef : undefined}
                   animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
                   transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
                   style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
@@ -8505,16 +8566,14 @@ function TierJourneyMap({ totalXp, onClose }) {
                   {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={20} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
                 </motion.div>
                 <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{tier.label}</div>
-                  {state === "current" && (
-                    <>
-                      <div style={{ fontSize: 10, color: T.ivory, opacity: .8, marginTop: 1 }}>{info.xpInTier}/{info.xpForNext} XP</div>
-                      {info.maxed && info.gmStars > 0 && <div style={{ fontSize: 10, color: T.brassHi, opacity: .9 }}>★{info.gmStars}</div>}
-                    </>
-                  )}
+                  <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{state === "current" ? tierDisplayLabel(info) : tier.label}</div>
+                  {state === "current" && <div style={{ fontSize: 10, color: T.ivory, opacity: .8, marginTop: 1 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>}
                 </div>
                 {!isLast && (
-                  <div style={{ position: "absolute", left: "50%", top: top + STATION_H + STATION_GAP / 2 - 4, transform: "translateX(-50%)", display: "flex", justifyContent: "center", gap: 8 }}>
+                  // (버그 수정) 세로 순서를 뒤집은 뒤로는 i+1 티어가 i보다 항상 "위"에 있으므로, 두 원의
+                  // 중심 사이 정중앙으로 직접 계산해야 한다(예전 "top + 한 칸 반" 공식은 순서가 뒤집히면
+                  // 엉뚱하게 i 밑으로 어긋난다).
+                  <div style={{ position: "absolute", left: "50%", top: (top + topOf(i + 1)) / 2 + STATION_H / 2 - 4, transform: "translateX(-50%)", display: "flex", justifyContent: "center", gap: 8 }}>
                     {Array.from({ length: WAYPOINTS }, (_, w) => (
                       <span key={w} style={{ width: 6, height: 6, borderRadius: "50%", background: (w + 1) / WAYPOINTS <= segPct ? T.brass : "rgba(255,255,255,.2)" }} />
                     ))}
@@ -9556,7 +9615,7 @@ export default function App() {
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
