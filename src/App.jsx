@@ -5202,6 +5202,15 @@ const GM_STAR_XP = 100000;
 // 각 구간에 필요한 XP는 그 티어 전체 요구치를 5등분(TIER_XP_REQ가 전부 5의 배수라 나머지 없이 나뉜다).
 // 그랜드마스터(끝없는 최종 티어)는 구간 대신 기존 "★" 프레스티지 카운터를 그대로 쓴다.
 const DIVISIONS_PER_TIER = 5;
+// (v0.0.6 추가) 여정 지도가 "티어당 5단계 구간을 전부 같은 크기의 원으로" 보여줄 수 있도록,
+// (티어, 구간) 조합을 진행 순서대로 하나씩 펼친 목록 — 아이언5→아이언4→…→아이언1→브론즈5→…
+// →마스터1→그랜드마스터(구간 없음, 항목 하나로 끝) 순. TIERS/DIVISIONS_PER_TIER가 둘 다 고정
+// 상수라 모듈이 로드될 때 한 번만 계산해 두고 재사용한다.
+const TIER_STATIONS = TIERS.flatMap((tier, tierIdx) => (
+  tierIdx === TIERS.length - 1
+    ? [{ tier, tierIdx, division: null }]
+    : Array.from({ length: DIVISIONS_PER_TIER }, (_, k) => ({ tier, tierIdx, division: DIVISIONS_PER_TIER - k }))
+));
 // 누적 총 경험치(totalXp)로부터 현재 티어·구간·해당 구간 내 경험치·다음 구간까지 필요 경험치를 도출한다.
 function tierFromXp(totalXp) {
   let idx = 0, remaining = Math.max(0, totalXp || 0);
@@ -5221,6 +5230,24 @@ function tierFromXp(totalXp) {
 function tierDisplayLabel(info) {
   if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
   return info.tier.label + " " + info.division;
+}
+// (v0.0.6 추가) 지금 위치에서 앞으로 넘어야 할 구간을 순서대로 count개 뽑는다 — 구간이 1(최상위)
+// 아래로 내려가면 다음 티어의 5(최하위)로 넘어간다. 퍼즐 탭 상단 스트립에서 "다음 몇 단계"를
+// 미리 보여줄 때 쓴다. 이미 그랜드마스터(끝없는 티어)면 더 넘을 구간이 없어 빈 배열을 준다.
+function upcomingCheckpoints(info, count) {
+  const out = [];
+  if (info.maxed) return out;
+  let tierIdx = info.tierIndex, division = info.division;
+  for (let k = 0; k < count; k++) {
+    division -= 1;
+    if (division < 1) {
+      tierIdx += 1;
+      if (tierIdx >= TIERS.length) break;
+      division = tierIdx === TIERS.length - 1 ? null : DIVISIONS_PER_TIER; // 그랜드마스터는 구간이 없다
+    }
+    out.push({ tier: TIERS[tierIdx], division });
+  }
+  return out;
 }
 // 퍼즐 한 라인을 해결할 때 얻는 경험치: {13~17 사이의 난수 × (기존 별 보유 수+1.2)}의 정수 부분.
 function rollLineXp(existingStars) {
@@ -5546,6 +5573,58 @@ function TierStatPill({ totalXp }) {
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
       <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={14} /> {tierDisplayLabel(info)} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
     </span>
+  );
+}
+// (기능) 짧은 지그재그 점선 — 퍼즐 탭 티어 스트립에서 큰 원(지금 구간)과 작은 배지(다음 구간들)
+// 사이를 여정 지도와 같은 느낌의 구불구불한 선으로 이어준다. 두 노드 사이 남는 flex 공간에 맞춰
+// 늘어나도록 viewBox를 꽉 채운다(정확한 좌표 정렬이 필요없는 순수 장식이라 flex만으로 충분하다).
+function ZigConnector() {
+  return (
+    <svg viewBox="0 0 60 30" preserveAspectRatio="none" style={{ width: 26, height: 30, flexShrink: 0 }}>
+      <polyline points="0,15 20,4 34,26 60,15" fill="none" stroke="rgba(196,154,80,.6)" strokeWidth="2.5" strokeDasharray="4 5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+// (기능) 다음 몇 구간을 미리 보여주는 작은 배지 — 숫자(구간)가 그 티어의 색으로 표시된다. 그랜드
+// 마스터처럼 구간이 없는 자리는 숫자 대신 기물(Crown) 아이콘을 보여준다.
+function NextCheckpointBadge({ tier, division }) {
+  const tc = TIER_COLORS[tier.key];
+  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
+  return (
+    <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.3)", border: "2px solid " + ringColor, color: ringColor, fontSize: 14, fontWeight: 900 }}>
+      {division != null ? division : <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={18} />}
+    </div>
+  );
+}
+// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 아이콘 +
+// 티어/구간명 + 진행바), 다음으로 넘어야 할 구간 2개는 작은 번호 배지로 지그재그 선을 따라 미리
+// 보여준다. 누르면 여정 지도가 열린다.
+function TierProgressStrip({ totalXp, onOpen }) {
+  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const { tier, xpInDivision, xpForNextDivision } = info;
+  const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
+  const tc = TIER_COLORS[tier.key];
+  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
+  const upcoming = useMemo(() => upcomingCheckpoints(info, 2), [info]);
+  return (
+    <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
+      <div style={{ width: 52, height: 52, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#4A3016,#241509)", border: "2px solid " + ringColor, boxShadow: "0 0 14px 2px " + ringColor + "66" }}>
+        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={30} />
+      </div>
+      <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabel(info)}</div>
+        <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
+          <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
+        </div>
+        <div style={{ fontSize: 10, color: T.brassHi, opacity: .75, marginTop: 2 }}>{xpInDivision}/{xpForNextDivision} XP</div>
+      </div>
+      {upcoming.map((u, i) => (
+        <React.Fragment key={i}>
+          <ZigConnector />
+          <NextCheckpointBadge tier={u.tier} division={u.division} />
+        </React.Fragment>
+      ))}
+    </div>
   );
 }
 function LineStars({ total, solved }) {
@@ -6718,7 +6797,7 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -6803,9 +6882,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   return (
     <div>
       <div className="flex items-center gap-2"><Mascot name="kokoa" emotion="celebrate" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퍼즐</h2></div>
-      {/* (v0.0.6 추가) 퍼즐을 풀 때마다 오르는 티어를 늘 보이게 — 원 하나가 티어 하나, 위아래로
-          스크롤해 여정 지도 전체를 바로 볼 수 있다(모달을 따로 열 필요 없음). */}
-      <TierJourneyEmbed totalXp={totalXp} />
+      {/* (v0.0.6 추가) 퍼즐을 풀 때마다 오르는 티어를 늘 보이게 — 지금 구간은 크게, 다음 몇 단계는
+          작게 미리 보여준다. 누르면 전체 여정 지도가 열린다. */}
+      <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} />
       {/* (18차 UI5) 안내 문구 삭제, (18차 UI2) 일일 퀘스트는 퀘스트 탭으로 이동 */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByNumber()} inputMode="numeric" placeholder="퍼즐 번호로 풀기 (예: 123456)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
@@ -8462,51 +8541,48 @@ function ChatsModal({ me, myUid, onClose }) {
     </div>
   );
 }
-// (v0.0.6 개편) 티어 여정 경로 본체 — 7개 티어 원(각 원이 정확히 티어 하나) 을 세로 지그재그로
-// 늘어놓고, 지나온 티어는 완료 표시, 지금 티어는 펄스로 강조, 아직 안 온 티어는 잠금으로 가린다.
-// 노드 사이 연결선은 OpeningSchematic·PuzzleSchematic이 이미 쓰는 "절대 배치 노드 + 아래 SVG
-// 커넥터" 기법을 그대로 따른다(이소메트릭 렌더링을 새로 만들지 않는다). 전체 화면 모달
-// (TierJourneyMap)과 퍼즐 탭에 상시 박아두는 스크롤 상자(TierJourneyEmbed) 둘 다 이 컴포넌트를
-// 그대로 재사용 — 스크롤 가능한 조상 안에 놓기만 하면 어디서든 "지금 티어로 자동 스크롤"까지 동일하게 동작한다.
+// (v0.0.6 개편) 티어 여정 경로 본체 — TIER_STATIONS(티어×구간을 전부 펼친 목록, 31개)를 하나하나
+// 같은 크기의 원으로 세로 지그재그로 늘어놓는다. 지나온 구간은 완료 표시, 지금 구간은 펄스로
+// 강조, 아직 안 온 구간은 잠금으로 가린다. 노드 사이 연결선은 OpeningSchematic·PuzzleSchematic이
+// 이미 쓰는 "절대 배치 노드 + 아래 SVG 커넥터" 기법을 그대로 따른다(이소메트릭 렌더링을 새로
+// 만들지 않는다).
 function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const STATION_H = 84, STATION_GAP = 96, DIV_MARKER = 26;
+  const STATION_H = 84, STATION_GAP = 60;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
-  // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 티어가 화면 가운데 오도록 자동으로 스크롤한다.
+  // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
   useEffect(() => { if (currentRef.current) currentRef.current.scrollIntoView({ block: "center" }); }, []);
-  // 시각적 세로 위치만 뒤집는다(i는 여전히 TIERS의 논리적 순서 — tierIndex 비교 등 다른 로직은 그대로).
-  const topOf = (i) => (TIERS.length - 1 - i) * (STATION_H + STATION_GAP);
-  // (기능) 두 티어 원 사이를 잇는 선 위의 한 점(0~1) — x는 22%/78% 두 값 사이를, y는 px 좌표를
-  // 그대로 선형보간한다. 구간(1~5) 마커를 그 선 위, 정확히 등분된 자리에 놓기 위한 헬퍼.
-  const xPctOf = (i) => (i % 2 ? 78 : 22);
-  const pointAlong = (i, t) => ({
-    xPct: xPctOf(i) + (xPctOf(i + 1) - xPctOf(i)) * t,
-    y: topOf(i) + STATION_H / 2 + (topOf(i + 1) + STATION_H / 2 - (topOf(i) + STATION_H / 2)) * t,
-  });
+  // 시각적 세로 위치만 뒤집는다(i는 여전히 TIER_STATIONS의 진행 순서 그대로 — 아래 currentIdx 비교는 그대로).
+  const topOf = (i) => (TIER_STATIONS.length - 1 - i) * (STATION_H + STATION_GAP);
+  // 지금 내가 서 있는 자리를 TIER_STATIONS 안에서 찾는다 — 그 인덱스보다 앞(작음)이면 이미 지난
+  // 구간, 뒤(큼)면 아직 안 온 구간이다. 그랜드마스터는 구간이 없어(division:null) info.division도
+  // maxed일 때 null로 맞춰 둔 값과 그대로 비교된다.
+  const currentIdx = useMemo(() => TIER_STATIONS.findIndex((s) => s.tierIdx === info.tierIndex && s.division === (info.maxed ? null : info.division)), [info]);
+  const totalHeight = (TIER_STATIONS.length - 1) * (STATION_H + STATION_GAP) + STATION_H;
   return (
-    // (기능) 노드·연결선·웨이포인트가 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를
-    // 공유해, 컨테이너 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다.
-    <div style={{ position: "relative", paddingBottom: 20, height: (TIERS.length - 1) * (STATION_H + STATION_GAP) + STATION_H }}>
-      <svg width="100%" height={(TIERS.length - 1) * (STATION_H + STATION_GAP) + STATION_H} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-        {TIERS.slice(0, -1).map((_, i) => {
+    // (기능) 노드·연결선이 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를 공유해, 컨테이너
+    // 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다.
+    <div style={{ position: "relative", paddingBottom: 20, height: totalHeight }}>
+      <svg width="100%" height={totalHeight} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+        {TIER_STATIONS.slice(0, -1).map((_, i) => {
           const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
           const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
-          const lit = i < info.tierIndex;
+          const lit = i < currentIdx;
           return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={lit ? T.brass : "rgba(255,255,255,.18)"} strokeWidth={3} strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round" />;
         })}
       </svg>
-      {TIERS.map((tier, i) => {
-        const state = i < info.tierIndex ? "done" : i === info.tierIndex ? "current" : "locked";
-        const isLast = i === TIERS.length - 1;
+      {TIER_STATIONS.map((s, i) => {
+        const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
         const cx = i % 2 ? "78%" : "22%";
         const top = topOf(i);
         // (기능) 원 테두리·글로우도 등급 색을 그대로 따라가, 지금 어느 티어에 있는지 한눈에
-        // 구분된다(잠긴 티어는 색 대신 회색으로 가려 아직 안 보여준다).
-        const tc = TIER_COLORS[tier.key];
+        // 구분된다(잠긴 구간은 색 대신 회색으로 가려 아직 안 보여준다).
+        const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
+        const label = s.division != null ? s.tier.label + " " + s.division : s.tier.label;
         return (
-          <React.Fragment key={tier.key}>
+          <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
             <motion.div
               ref={state === "current" ? currentRef : undefined}
               animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
@@ -8520,36 +8596,15 @@ function TierJourneyPath({ totalXp }) {
                 filter: state === "locked" ? "grayscale(1)" : "none",
                 opacity: state === "locked" ? 0.55 : 1,
               }}>
-                <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={36} muted={state === "locked"} />
+                <TierPieceGlyph piece={s.tier.piece} tierKey={s.tier.key} size={36} muted={state === "locked"} />
               </div>
               {state === "done" && <span style={{ position: "absolute", right: -4, bottom: -4, width: 22, height: 22, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={13} color="#fff" /></span>}
               {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={20} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
             </motion.div>
             <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{state === "current" ? tierDisplayLabel(info) : tier.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{state === "current" ? tierDisplayLabel(info) : label}</div>
               {state === "current" && <div style={{ fontSize: 10, color: T.ivory, opacity: .8, marginTop: 1 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>}
             </div>
-            {/* (기능) 세부 구간(1~5) 표시 — 티어 원 자체가 "5"(막 진입)이고, 다음 티어로 가는 선
-                위에 4/3/2/1을 등분해 놓아 그 티어 안에서 어디까지 왔는지 한눈에 보이게 한다. */}
-            {!isLast && [4, 3, 2, 1].map((d, k) => {
-              const t = (k + 1) / DIVISIONS_PER_TIER;
-              const p = pointAlong(i, t);
-              // done: 이미 지난 티어 전체, 또는 지금 티어에서 이미 지나온 구간(구간 번호가 지금 구간보다 큼)
-              const markerDone = state === "done" || (state === "current" && d >= info.division);
-              const markerLocked = state === "locked";
-              return (
-                <div key={d} style={{
-                  position: "absolute", left: p.xPct + "%", top: p.y, width: DIV_MARKER, height: DIV_MARKER, transform: "translate(-50%,-50%)",
-                  borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                  background: markerDone ? "linear-gradient(160deg,#4A3016,#241509)" : "rgba(20,13,7,.85)",
-                  border: "1.5px solid " + (markerDone ? ringColor : "rgba(255,255,255,.25)"),
-                  color: markerDone ? T.brassHi : "rgba(255,255,255,.4)", fontSize: 11, fontWeight: 800,
-                  filter: markerLocked ? "grayscale(1)" : "none", opacity: markerLocked ? 0.5 : 1,
-                }}>
-                  {d}
-                </div>
-              );
-            })}
           </React.Fragment>
         );
       })}
@@ -8572,17 +8627,6 @@ function TierJourneyMap({ totalXp, onClose }) {
             <X size={17} />
           </button>
         </div>
-        <TierJourneyPath totalXp={totalXp} />
-      </div>
-    </div>
-  );
-}
-// (v0.0.6 개편) 퍼즐 탭 맨 위에 상시 박아두는 여정 지도 — 별도 모달을 열지 않아도 티어 전체를
-// 위아래로 스크롤해 볼 수 있게, 정해진 높이의 박스 안에 TierJourneyPath를 그대로 넣는다.
-function TierJourneyEmbed({ totalXp }) {
-  return (
-    <div style={{ marginBottom: 14, borderRadius: 14, border: "1px solid " + T.brass, overflow: "hidden" }}>
-      <div style={{ height: 320, overflowY: "auto", padding: "16px 16px 0", background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }}>
         <TierJourneyPath totalXp={totalXp} />
       </div>
     </div>
@@ -9616,7 +9660,7 @@ export default function App() {
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
