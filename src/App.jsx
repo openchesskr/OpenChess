@@ -207,12 +207,16 @@ function TierPieceGlyph({ piece, size = 28, tierKey, muted = false }) {
   const gradId = "tpg" + rawId.replace(/[^a-zA-Z0-9]/g, "");
   const tc = TIER_COLORS[tierKey] || TIER_COLORS.iron;
   const stops = tc.stops || [tc.hi, tc.lo];
-  if (piece === "GM") return <Crown size={size} style={{ color: muted ? "rgba(255,255,255,.4)" : stops[0] }} />;
+  // (디자인 개선) 잠긴(muted) 티어를 전부 똑같은 흰색 반투명으로 그리면, 아직 안 온 등급들이
+  // 원래 갖고 있는 색 차이(브론즈 구릿빛, 골드 금빛, 다이아몬드 파랑…)가 여정 지도에서 전혀 안
+  // 보여 모든 잠긴 구간이 구분 없이 밋밋해 보였다 — 잠긴 상태도 그 티어 고유 색을 아주 옅게 남겨,
+  // 위로 스크롤할수록(더 높은 티어일수록) 앞으로 어떤 색이 기다리는지 은은하게 미리 보이게 한다.
+  if (piece === "GM") return <Crown size={size} style={{ color: muted ? stops[0] + "55" : stops[0] }} />;
   const mid = PIECE_MID[piece];
   if (!mid) return null;
   const bodyPoints = PIECE_BASE_R + " " + mid + " " + PIECE_BASE_L;
-  const fill = muted ? "rgba(255,255,255,.28)" : "url(#" + gradId + ")";
-  const stroke = muted ? "rgba(255,255,255,.4)" : (tc.lo || stops[stops.length - 1]);
+  const fill = muted ? (tc.lo || stops[stops.length - 1]) + "3D" : "url(#" + gradId + ")";
+  const stroke = muted ? (tc.hi || stops[0]) + "70" : (tc.lo || stops[stops.length - 1]);
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} style={{ display: "block", flexShrink: 0 }}>
       <defs>
@@ -5739,13 +5743,13 @@ function TierStatPill({ totalXp }) {
     </span>
   );
 }
-// (기능) 짧은 지그재그 점선 — 퍼즐 탭 티어 스트립에서 큰 원(지금 구간)과 작은 배지(다음 구간들)
-// 사이를 여정 지도와 같은 느낌의 구불구불한 선으로 이어준다. 두 노드 사이 남는 flex 공간에 맞춰
-// 늘어나도록 viewBox를 꽉 채운다(정확한 좌표 정렬이 필요없는 순수 장식이라 flex만으로 충분하다).
-function ZigConnector() {
+// (디자인 개선) 퍼즐 탭 티어 스트립에서 큰 원(지금 구간)과 작은 배지(다음 구간들) 사이를 잇는
+// 짧은 점선 — 원래는 여정 지도와 같은 느낌을 내려고 구불구불한 지그재그였는데, 이 좁은 가로
+// 스트립 안에서는 오히려 어수선해 보인다는 피드백으로 곧은 직선으로 바꿨다.
+function TierConnector() {
   return (
     <svg viewBox="0 0 60 30" preserveAspectRatio="none" style={{ width: 26, height: 30, flexShrink: 0 }}>
-      <polyline points="0,15 20,4 34,26 60,15" fill="none" stroke="rgba(196,154,80,.6)" strokeWidth="2.5" strokeDasharray="4 5" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="0" y1="15" x2="60" y2="15" stroke="rgba(196,154,80,.6)" strokeWidth="2.5" strokeDasharray="4 5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -5784,7 +5788,7 @@ function TierProgressStrip({ totalXp, onOpen }) {
       </div>
       {upcoming.map((u, i) => (
         <React.Fragment key={i}>
-          <ZigConnector />
+          <TierConnector />
           <NextCheckpointBadge tier={u.tier} division={u.division} />
         </React.Fragment>
       ))}
@@ -7851,7 +7855,36 @@ function InquiryModal({ onClose, user }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
+// (기능) 개발자 모드 전용 — 티어/경험치 테스트 패널. 실제로 퍼즐을 몇 주씩 풀어 XP를 쌓지 않아도,
+// 임의 증감량을 즉시 적용하거나 특정 티어의 시작 지점(그 티어 5구간)으로 곧장 점프해 승급 연출·
+// 색상·토스트·여정 지도를 바로 확인할 수 있게 한다. 티어 시작 누적치는 TIER_XP_REQ에서 그때그때
+// 계산해, 그 상수가 나중에 바뀌어도(티어 요구치 재조정 등) 항상 맞는 값을 가리킨다.
+function DevXpPanel({ totalXp, setTotalXp, card }) {
+  const [amt, setAmt] = useState("1000");
+  const info = tierFromXp(totalXp);
+  const tierStarts = useMemo(() => {
+    let acc = 0; const starts = [0];
+    for (const req of TIER_XP_REQ) { acc += req; starts.push(acc); }
+    return starts; // starts[i] = TIERS[i]로 들어서는 데 필요한 누적 XP
+  }, []);
+  const apply = (delta) => setTotalXp((x) => Math.max(0, (x || 0) + delta));
+  const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>티어/경험치 테스트</div>
+      <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP</div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
+        <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="XP 증감량(음수 가능)" style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" }} />
+        <button onClick={() => apply(parseInt(amt, 10) || 0)} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>적용</button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {TIERS.map((t, i) => <button key={t.key} onClick={() => setTotalXp(tierStarts[i])} className="press" style={btnStyle}>{t.label}</button>)}
+        <button onClick={() => setTotalXp(0)} className="press" style={{ ...btnStyle, color: T.blunder, borderColor: T.blunder }}>0으로 초기화</button>
+      </div>
+    </div>
+  );
+}
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -7914,6 +7947,10 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           <button onClick={() => setCodevOn((v) => !v)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: codevOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: codevOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
       )}
+
+      {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
+          않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
+      {isDev && devOn && <DevXpPanel totalXp={totalXp} setTotalXp={setTotalXp} card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
@@ -8877,8 +8914,11 @@ function TierJourneyPath({ totalXp }) {
         const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
         const cx = i % 2 ? "78%" : "22%";
         const top = topOf(i);
-        // (기능) 원 테두리·글로우도 등급 색을 그대로 따라가, 지금 어느 티어에 있는지 한눈에
-        // 구분된다(잠긴 구간은 색 대신 회색으로 가려 아직 안 보여준다).
+        // (기능) 원 테두리·글로우도 등급 색을 그대로 따라간다.
+        // (디자인 개선) 예전엔 잠긴 구간을 회색 필터(grayscale)로 완전히 덮어, 아직 안 온 등급들의
+        // 색 차이가 하나도 안 보이고 전부 똑같이 밋밋했다 — 완전히 지우는 대신 그 티어 고유 색을
+        // 옅게(테두리·배경 모두 낮은 투명도로) 남겨, 스크롤해 올라갈수록 앞으로 만날 색이 은은하게
+        // 미리 보이도록 한다(도달하면 또렷해짐).
         const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
         const label = s.division != null ? s.tier.label + " " + s.division : s.tier.label;
@@ -8891,11 +8931,10 @@ function TierJourneyPath({ totalXp }) {
               style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
               <div style={{
                 position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                background: state === "locked" ? "linear-gradient(160deg,#2A1B10,#150C06)" : "linear-gradient(160deg,#4A3016,#241509)",
-                border: "2px solid " + (state === "locked" ? T.brass : ringColor),
+                background: state === "locked" ? "linear-gradient(160deg," + (tc.lo || ringColor) + "26,#150C06)" : "linear-gradient(160deg,#4A3016,#241509)",
+                border: "2px solid " + (state === "locked" ? ringColor + "5A" : ringColor),
                 boxShadow: state === "current" ? "0 0 22px 4px " + ringColor + "88" : "0 4px 10px -4px rgba(0,0,0,.6)",
-                filter: state === "locked" ? "grayscale(1)" : "none",
-                opacity: state === "locked" ? 0.55 : 1,
+                opacity: state === "locked" ? 0.78 : 1,
               }}>
                 <TierPieceGlyph piece={s.tier.piece} tierKey={s.tier.key} size={36} muted={state === "locked"} />
               </div>
@@ -9988,7 +10027,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
