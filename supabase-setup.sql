@@ -25,7 +25,7 @@
 --   public.username_available(text), public.email_for_username(text), public.account_providers(text),
 --   public.claim_username(text), public.friend_request(text), public.friend_accept(uuid),
 --   public.friend_remove(uuid), public.puzzle_solve(bigint), public.puzzle_rank(text, int),
---   public.puzzle_like_toggle(bigint, uuid),
+--   public.puzzle_like_toggle(bigint, uuid), public.friend_suggestions(int), public.leaderboard_top(int),
 --   public.app_signup(text, text), public.app_login(text, text), public.app_save(text, text, jsonb) cascade;
 
 -- ============================================================================
@@ -466,3 +466,57 @@ begin
     alter publication supabase_realtime add table public.friend_edges;
   end if;
 end $$;
+
+-- ============================================================================
+-- 9) friend_suggestions / leaderboard_top — 유저 검색창을 열었을 때(아직 아무것도 입력하기 전)
+--    기본으로 보여줄 두 후보군. "친구의 친구"는 다른 사람의 friend_edges를 들여다봐야 하는데
+--    위 4번 섹션의 RLS("friend edges select own")가 본인이 관련된 행만 읽도록 막아 두어 클라이언트
+--    에서 직접 조합할 수 없다 — SECURITY DEFINER 함수로 서버에서 계산해, 원본 friend_edges 행이
+--    아니라 결과(추천 유저 + 같이 아는 친구 수)만 돌려준다.
+-- ============================================================================
+drop function if exists public.friend_suggestions(int) cascade;
+create or replace function public.friend_suggestions(p_limit int default 8)
+returns table(id uuid, username text, pub jsonb, mutual int)
+language sql stable security definer set search_path = public as $$
+  with my_edges as (
+    select from_uid, to_uid, status from public.friend_edges
+    where from_uid = auth.uid() or to_uid = auth.uid()
+  ),
+  my_friends as (
+    select case when from_uid = auth.uid() then to_uid else from_uid end as uid
+    from my_edges where status = 'accepted'
+  ),
+  excluded as (
+    select auth.uid() as uid
+    union
+    select case when from_uid = auth.uid() then to_uid else from_uid end from my_edges
+  ),
+  candidates as (
+    select (case when fe.from_uid = mf.uid then fe.to_uid else fe.from_uid end) as uid,
+           count(*)::int as mutual
+    from public.friend_edges fe
+    join my_friends mf on fe.status = 'accepted' and (fe.from_uid = mf.uid or fe.to_uid = mf.uid)
+    where (case when fe.from_uid = mf.uid then fe.to_uid else fe.from_uid end) not in (select uid from excluded)
+    group by 1
+  )
+  select p.id, p.username, p.pub, c.mutual
+  from candidates c join public.profiles p on p.id = c.uid
+  order by c.mutual desc, p.username asc
+  limit p_limit;
+$$;
+grant execute on function public.friend_suggestions(int) to authenticated;
+
+-- 티어(pub->xp) 상위 유저 — xp는 profiles.pub jsonb 안의 텍스트라, PostgREST의 문자열 정렬
+-- (order=pub->>xp.desc)로는 "9000"이 "20000"보다 앞에 오는 등 자릿수가 다르면 숫자 크기와
+-- 다르게 정렬된다. 숫자로 캐스팅해 정렬하도록 서버 함수로 만든다. profiles는 이미 누구나
+-- 읽을 수 있어(위 1번 섹션 "profiles select all") SECURITY DEFINER가 필요 없다(puzzle_rank와 동일).
+drop function if exists public.leaderboard_top(int) cascade;
+create or replace function public.leaderboard_top(p_limit int default 8)
+returns table(id uuid, username text, pub jsonb) language sql stable as $$
+  select id, username, pub
+  from public.profiles
+  where coalesce((pub->>'xp')::bigint, 0) > 0
+  order by coalesce((pub->>'xp')::bigint, 0) desc
+  limit p_limit;
+$$;
+grant execute on function public.leaderboard_top(int) to anon, authenticated;

@@ -198,6 +198,29 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
     </div>
   );
 }
+// (기능) 티어별로 디자이너가 직접 제작한 로우폴리 기물 이미지(public에 업로드된 실제 아트) —
+// 아이언 폰부터 그랜드마스터(왕관에 "GM"이 새겨진 홀로그램 킹)까지, 기물 종류와 등급 색이 이미
+// 하나의 이미지 안에 함께 표현되어 있다.
+const TIER_IMAGE = {
+  iron: "/iron-pawn.png",
+  bronze: "/bronze-knight.png",
+  silver: "/silver-bishop.png",
+  gold: "/gold-rook.png",
+  diamond: "/diamond-queen.png",
+  master: "/master-king.png",
+  grandmaster: "/grandmaster.png",
+};
+// (v0.0.6 개편 → 디자인 개선) 티어 배지·여정 지도용 기물 아이콘 — 처음엔 실루엣 데이터로 직접
+// 그린 로우폴리 SVG였는데, 디자이너가 만든 실제 티어 이미지(TIER_IMAGE)로 교체했다. piece는
+// 더 이상 아이콘 모양을 고르는 데 쓰이지 않지만(이미지가 이미 기물+색을 함께 담고 있음), 기존
+// 호출부를 그대로 두기 위해 인자는 유지한다.
+function TierPieceGlyph({ piece, size = 28, tierKey, muted = false }) {
+  const src = TIER_IMAGE[tierKey] || TIER_IMAGE.iron;
+  // (디자인 개선) 잠긴(muted) 티어를 흰색 반투명 실루엣으로 뭉개던 예전 방식 대신, 실제 이미지를
+  // 그대로 두고 채도·밝기만 낮춘다 — 아직 안 온 등급들의 색 차이(브론즈 구릿빛, 골드 금빛,
+  // 다이아몬드 청록…)가 옅게나마 남아, 위로 스크롤할수록 앞으로 만날 색이 은은하게 미리 보인다.
+  return <img src={src} alt="" style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
+}
 
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
 // 육각형 등을 페이지 전반(상단뿐 아니라 하단까지)에 흩뿌려 첨부 레퍼런스 이미지의 "떠있는 도형들" 느낌을 낸다.
@@ -459,17 +482,44 @@ function applySan(board, sanRaw, color) {
   b[dr][dc] = info.promo ? { c: color, t: info.promo } : moving; b[sr][sc] = null; return b;
 }
 function boardFromSans(sans) { let b = startBoard(); sans.forEach((s, i) => { b = applySan(b, s, i % 2 === 0 ? "w" : "b"); }); return b; }
-/* 직전 더블 푸시로 생기는 앙파상 타깃 칸 (없으면 null) */
+// (버그 수정) sanSrc가 돌려주는 한 수의 from/to 정보(그 수를 두기 "직전" 보드 기준)만으로 그 수가
+// 진짜 폰 더블 푸시였는지 판정한다 — epTarget과 analyzeGame의 FEN 생성 루프가 이 판정을 공유해,
+// 둘의 기준이 서로 어긋나는 일이 없게 한다.
+function epTargetFromMoveInfo(info) {
+  if (!info || info.castle || info.piece !== "P" || info.isCap) return null;
+  const [fr] = info.from, [tr, tc] = info.to;
+  if (Math.abs(tr - fr) !== 2) return null;
+  return [(fr + tr) / 2, tc];
+}
+// (버그 수정) 직전 더블 푸시로 생기는 앙파상 타깃 칸 (없으면 null). SAN은 도착 칸만 담고 있어,
+// 예전엔 "도착 랭크가 4/5랭크인 폰 수"이면 무조건 더블 푸시로 간주했다 — 그런데 폰이 한 칸씩 두
+// 번(예: e2-e3, 그다음 턴에 e3-e4) 나눠 전진해도 마지막 수의 도착 칸은 똑같이 4랭크라 이 조건을
+// 통과했고, 실제로는 스타팅 칸에서 두 칸을 한 번에 건너뛴 게 아닌데도 앙파상을 허용하는 버그가
+// 있었다. 직전 수 바로 이전의 보드에서 실제 출발 칸을 구해, 정말로 두 칸을 건너뛰었는지 검증한다.
 function epTarget(sans) {
   if (!sans || !sans.length) return null;
-  const last = sans[sans.length - 1].replace(/[+#!?]/g, "");
-  if (!/^[a-h][1-8]$/.test(last)) return null;       // 기물 문자/캡처 없는 폰 전진만
-  const file = FILES.indexOf(last[0]), row = 8 - parseInt(last[1], 10);
-  const moverWhite = (sans.length - 1) % 2 === 0;
-  if (moverWhite && row === 4) return [5, file];
-  if (!moverWhite && row === 3) return [2, file];
-  return null;
+  const lastRaw = sans[sans.length - 1];
+  if (!/^[a-h][1-8]$/.test(lastRaw.replace(/[+#!?]/g, ""))) return null; // 기물 문자/캡처 없는 폰 전진만
+  const moverColor = (sans.length - 1) % 2 === 0 ? "w" : "b";
+  const prevBoard = boardFromSans(sans.slice(0, -1));
+  return epTargetFromMoveInfo(sanSrc(prevBoard, lastRaw, moverColor));
 }
+const sqName = (r, c) => FILES[c] + (8 - r);
+// (버그 수정) FEN의 캐슬링 권리 필드 — 예전엔 실제 수순과 무관하게 항상 "KQkq"를 그대로 내보내,
+// 킹이나 룩이 한 번이라도 움직였다가(캐슬링 권리는 영구히 사라짐) 제자리로 돌아와도 엔진은
+// 캐슬링이 여전히 합법이라고 착각했다. 매 수마다(그 수를 두기 직전 보드에서 얻은 sanSrc 정보로)
+// 킹/룩이 움직였는지, 또는 상대가 룩의 시작 칸을 그대로 점령(포획)했는지를 반영해 갱신한다 — 한
+// 번 잃은 권리는 다시 생기지 않으므로 앞에서부터 한 번만 순서대로 훑으면 된다.
+function updateCastleRights(rights, info, color) {
+  if (!info) return rights;
+  if (info.castle) return color === "w" ? { ...rights, K: false, Q: false } : { ...rights, k: false, q: false };
+  let next = info.piece === "K" ? (color === "w" ? { ...rights, K: false, Q: false } : { ...rights, k: false, q: false }) : rights;
+  const homeFlag = (r, c) => (r === 7 && c === 0) ? "Q" : (r === 7 && c === 7) ? "K" : (r === 0 && c === 0) ? "q" : (r === 0 && c === 7) ? "k" : null;
+  const fromFlag = homeFlag(info.from[0], info.from[1]); if (fromFlag && next[fromFlag]) next = { ...next, [fromFlag]: false };
+  const toFlag = homeFlag(info.to[0], info.to[1]); if (toFlag && next[toFlag]) next = { ...next, [toFlag]: false };
+  return next;
+}
+function castleRightsStr(rights) { const s = (rights.K ? "K" : "") + (rights.Q ? "Q" : "") + (rights.k ? "k" : "") + (rights.q ? "q" : ""); return s || "-"; }
 function sansToUci(sans) {
   let b = startBoard(); const out = [];
   sans.forEach((s, i) => {
@@ -485,16 +535,30 @@ function sansToUci(sans) {
 // (20차 기능5) 이미 만들어진 board를 그대로 FEN으로 직렬화 — sansToFen처럼 매번 sans 전체를
 // 처음부터 재생(boardFromSans)하지 않아도 되므로, 이미 진행 중인 보드가 있는 호출부(analyzeGame 등)에서
 // O(n²) 재생을 피할 수 있다. plyCount는 sans.length와 동일한 의미(선수 결정·풀무브 번호 계산용).
-function boardToFen(b, plyCount) {
+// (버그 수정) castleStr/epStr을 캐슬링 권리·앙파상 필드로 그대로 받는다 — 예전엔 이 두 필드가
+// 항상 "KQkq -"로 하드코딩돼 있어, 엔진이 이미 사라진 캐슬링 권리를 합법으로 착각하거나 실제
+// 앙파상 기회를 항상 놓쳤다. 호출부가 안 넘기면 "-"(권리 없음/대상 없음)로 안전하게 기본값을
+// 둔다 — 예전 버그처럼 "일단 다 된다"고 잘못 알리는 대신, 모르면 "안 된다"고 보수적으로 답한다.
+function boardToFen(b, plyCount, castleStr, epStr) {
   const rows = [];
   for (let r = 0; r < 8; r++) {
     let row = "", empty = 0;
     for (let c = 0; c < 8; c++) { const p = b[r][c]; if (!p) empty++; else { if (empty) { row += empty; empty = 0; } const ch = p.t; row += p.c === "w" ? ch : ch.toLowerCase(); } }
     if (empty) row += empty; rows.push(row);
   }
-  return rows.join("/") + " " + (plyCount % 2 === 0 ? "w" : "b") + " KQkq - 0 " + (Math.floor(plyCount / 2) + 1);
+  return rows.join("/") + " " + (plyCount % 2 === 0 ? "w" : "b") + " " + (castleStr || "-") + " " + (epStr || "-") + " 0 " + (Math.floor(plyCount / 2) + 1);
 }
-function sansToFen(sans) { return boardToFen(boardFromSans(sans), sans.length); }
+function sansToFen(sans) {
+  let board = startBoard(), rights = { K: true, Q: true, k: true, q: true }, ep = null;
+  for (let i = 0; i < sans.length; i++) {
+    const color = i % 2 === 0 ? "w" : "b";
+    const info = sanSrc(board, sans[i], color);
+    rights = updateCastleRights(rights, info, color);
+    ep = epTargetFromMoveInfo(info);
+    board = applySan(board, sans[i], color);
+  }
+  return boardToFen(board, sans.length, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-");
+}
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 
@@ -676,6 +740,10 @@ async function puzzleCandidatesAt(engine, cur) {
   try { pvs = await engine.evaluateMulti(sansToFen(cur), 11, 6, 3500); } catch { pvs = null; }
   if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
   const bestCp = cpOfLine(pvs[0]);
+  // (버그 수정) 이미 승부가 기운 위치(예: -600cp)에서 어차피 지는 형세를 못 바꾸는 희생 수까지
+  // "탁월한 수(brilliant)"로 잘못 태그되던 문제 — classifyMoveKind/analyzeGame과 동일하게, 두기
+  // 전 위치가 이미 결정 나 있고(decided) 지고 있던(losing) 경우에는 희생 태그를 주지 않는다.
+  const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
   const adoptBy = {};
   try { const lc = await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
   const cands = []; const seen = new Set();
@@ -687,7 +755,7 @@ async function puzzleCandidatesAt(engine, cur) {
     const loss = Math.max(0, bestCp - mvCp);
     let kind = i === 0 ? "best" : tierOf(loss);
     if (i > 0 && kind === "best") kind = "excellent";
-    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40) kind = "brilliant"; } catch { }
+    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
     cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
   });
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
@@ -1536,7 +1604,29 @@ function useChessCom(username) {
     const topLines = Object.values(lines).sort((a, b) => b.count - a.count).slice(0, 5);
     return { total: gs.length, w, d, l, winRate: Math.round(100 * w / gs.length), top, lines: topLines };
   }, [state.games]);
-  return { ...state, analyze };
+  // (v0.0.6 성능) 도감 오프닝 트리는 잠금 여부를 매기려고 노드마다(최대 4000개) analyze()를 불러
+  // 왔는데, analyze는 매번 전체 대국(state.games)을 처음부터 훑는다 — 대국이 몇 천 판인 계정은
+  // 트리 한 번 그릴 때마다 "노드 수 × 대국 수" 규모의 연산이 걸려 그게 바로 "체스닷컴 대국이 많으면
+  // 렉 걸리는" 원인이었다. 대국이 바뀔 때 한 번만, 모든 대국의 모든 수순 접두어(prefix)를 문자열
+  // Set에 담아 두면, 그 뒤로는 노드마다 O(1) 조회 한 번으로 "이 수순이 실제로 둔 적 있는가"를 알 수 있다.
+  const prefixSet = useMemo(() => {
+    const set = new Set();
+    for (const g of state.games) {
+      let key = "";
+      for (let i = 0; i < g.moves.length; i++) {
+        const s = stripSuffix(g.moves[i]);
+        key = i === 0 ? s : key + " " + s;
+        set.add(key);
+      }
+    }
+    return set;
+  }, [state.games]);
+  // (v0.0.6 성능) 예전엔 매 렌더 { ...state, analyze }로 새 객체를 만들어 반환해, 이 훅을 쓰는 상위
+  // 컴포넌트가 다른 이유로 리렌더될 때마다(도감 트리와 무관해도) chesscom 참조 자체가 바뀌었다 —
+  // 이 참조가 OpeningSchematic의 items useMemo 의존성에 들어 있어, chesscom이 바뀐 게 없어도 매번
+  // 수천 개 노드를 처음부터 다시 계산하게 만드는 또 다른 렉의 원인이었다. state/analyze/prefixSet이
+  // 실제로 바뀔 때만 새 참조가 나오도록 고정한다.
+  return useMemo(() => ({ ...state, analyze, prefixSet }), [state, analyze, prefixSet]);
 }
 
 /* ============================================================ 품질·키워드 ============================================================ */
@@ -1639,27 +1729,53 @@ function calibrateAccuracy(a) {
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
 const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : (l.cp != null ? l.cp : 0)) : 0;
-// (성능) 게임 리뷰(analyzeGame)가 포지션들을 나눠 동시에 계산할 워커 풀 크기 — "full"(Stockfish 16
-// NNUE, 40MB 신경망)은 워커 하나당 메모리·로딩 부담이 커서 2개로, "lite"(7MB, 경량 빌드)는 4개까지
-// 동시에 띄운다. depth·movetime은 그대로 두므로 정확도 손실 없이 총 분석 시간만 줄어든다.
+// (성능) 게임 리뷰(analyzeGame)·학습 탭 실시간 후보 수 평가가 작업을 나눠 동시에 계산할 워커 풀
+// 크기 — "full"(Stockfish 16 NNUE, 40MB 신경망)은 워커 하나당 메모리·로딩 부담이 커서 2개로,
+// "lite"(7MB, 경량 빌드)는 4개까지 동시에 띄운다. depth·movetime은 그대로 두므로 정확도 손실
+// 없이 총 시간만 줄어든다.
 const ANALYZE_POOL_SIZE = { full: 2, lite: 4 };
-// analyzeGame 전용 보조 워커 — useEngine과 달리 React 상태 없이 단발성 배치 작업 하나만 순서대로
-// 처리하다가(evaluateMulti) 분석이 끝나면 바로 종료(terminate)된다. useEngine의 워커 부팅(URL
-// 폴백)·MultiPV 라인 파싱 로직과 동일한 프로토콜을 쓰되, 훅 상태 없이 독립적으로 여러 개 띄울 수 있다.
+// 독립 보조 워커 — useEngine(메인 엔진, React 상태 보유)과 달리 상태 없이 여러 개를 동시에 띄울 수
+// 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 학습 탭의 실시간 후보 수
+// 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
+// evaluate + onProgress, MultiPV evaluateMulti)을 둘 다 지원하도록 넓혔다.
 function bootAnalysisWorker(urls) {
   return new Promise((resolve) => {
     let idx = 0, booted = false, worker = null;
-    const queue = []; let running = false;
-    function pump() { if (running || !queue.length) return; running = true; queue[0].cmds.forEach((c) => worker.postMessage(c)); }
+    const queue = []; let running = false, swallowBest = 0;
+    // (버그 수정) analyzeGame(게임 리뷰)는 배치 하나가 끝나면 풀을 바로 버려서, 작업 하나가 응답 없이
+    // 멈춰도(엔진 hiccup 등) 그 배치만 늦어질 뿐이었다 — 학습 탭 실시간 평가(useMergedMoves)는 같은
+    // 풀을 세션 내내 재사용하므로, 워치독 없이는 한 번 멈춘 워커가 세션 끝까지 그 자리만큼 풀을 영구히
+    // 줄여버린다. useEngine의 워치독(548-557행)과 동일한 방식 — 제한 시간 안에 bestmove가 없으면
+    // 부분 결과로 마무리하고 'stop'을 보내며, 그래도 응답이 없으면 큐를 강제로 흘려보낸다.
+    const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+    function pump() {
+      if (running || !queue.length) return; running = true;
+      const job = queue[0];
+      job.cmds.forEach((c) => worker.postMessage(c));
+      job.watch = setTimeout(() => {
+        if (queue[0] !== job || job.settled) return;
+        settle(job, job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : job.last);
+        try { worker.postMessage("stop"); } catch (_) { }
+        job.hardWatch = setTimeout(() => {
+          if (queue[0] !== job) return;
+          queue.shift(); running = false; swallowBest++; pump();
+        }, 1500);
+      }, job.mt ? job.mt + 4000 : 15000);
+    }
     function handleLine(line) {
       const job = queue[0]; if (!job) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
-      if (line.startsWith("info")) {
+      if (line.startsWith("info") && job.multi) {
         const mp = line.match(/multipv (\d+)/); const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
         if (mp && pv && sc) job.lines[parseInt(mp[1], 10)] = { uci: pv[1], cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
-      } else if (line.startsWith("bestmove")) {
-        queue.shift(); running = false;
-        job.resolve(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]));
+      } else if (sc && !job.multi) {
+        job.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
+        if (job.onProgress) { const dm = line.match(/^info depth (\d+)/); job.onProgress({ ...job.last, depth: dm ? parseInt(dm[1], 10) : null }); }
+      }
+      if (line.startsWith("bestmove")) {
+        if (swallowBest > 0) { swallowBest--; return; } // 워치독이 강제로 흘려보낸 작업의 뒤늦은 응답 무시
+        const done = queue.shift(); running = false;
+        if (done) settle(done, done.multi ? Object.keys(done.lines).sort((a, b) => a - b).map((k) => done.lines[k]) : done.last);
         pump();
       }
     }
@@ -1675,9 +1791,15 @@ function bootAnalysisWorker(urls) {
           if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) {
             booted = true; worker = w;
             resolve({
+              evaluate(fen, d, onProgress, mt) {
+                return new Promise((res) => {
+                  queue.push({ resolve: res, multi: false, last: null, onProgress, mt, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  pump();
+                });
+              },
               evaluateMulti(fen, d, multipv, mt) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  queue.push({ resolve: res, multi: true, lines: {}, mt, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
@@ -1714,10 +1836,19 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   {
     // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
     // 기보가 길어질수록 분석이 급격히 느려진다 — 보드를 한 번만 만들어 한 수씩 전진시키며 재사용한다.
-    let board = startBoard();
+    // (버그 수정) 캐슬링 권리·앙파상도 같은 이유로 매번 처음부터 다시 계산(sansToFen이 하듯)하지
+    // 않고, 이 한 번의 순회 안에서 함께 누적한다 — 매 수의 sanSrc 결과 하나로 rights 갱신과 그
+    // 수가 진짜 더블 푸시였는지(다음 위치의 ep) 판정을 모두 얻으므로 추가 순회가 필요 없다.
+    let board = startBoard(), rights = { K: true, Q: true, k: true, q: true }, ep = null;
     for (let i = 0; i <= N; i++) {
-      fens[i] = boardToFen(board, i);
-      if (i < N) board = applySan(board, fullSans[i], i % 2 === 0 ? "w" : "b");
+      fens[i] = boardToFen(board, i, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-");
+      if (i < N) {
+        const color = i % 2 === 0 ? "w" : "b";
+        const info = sanSrc(board, fullSans[i], color);
+        rights = updateCastleRights(rights, info, color);
+        ep = epTargetFromMoveInfo(info);
+        board = applySan(board, fullSans[i], color);
+      }
     }
   }
   const poolTarget = Math.min(ANALYZE_POOL_SIZE[engine.profile] || 2, N + 1);
@@ -1865,6 +1996,13 @@ function assignTiers(moves, ply, board, keyStr) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
   const best = evals.length ? Math.max(...evals) : null;
+  // (버그 수정) 학습 탭의 이 등급 판정만 classifyMoveKind/analyzeGame/puzzleCandidatesAt과 달리 "이미
+  // 승부가 기운 위치에서의 자포자기 희생은 탁월한 수로 안 쳐준다"는 완화 규칙이 빠져 있었다 — 같은
+  // 포지션이 게임 리뷰·퍼즐 채점에서는 정상 등급(예: 우수)으로 나오는데 학습 탭에서만 "탁월한 수"로
+  // 잘못 표시되는 불일치가 있었다. best(형제 수 중 최댓값)는 다른 세 곳의 bestCp와 같은 역할이므로
+  // 동일한 기준으로 완화한다.
+  const decided = best != null && Math.abs(best) > 200;
+  const losing = best != null && best <= -200;
   let out = moves.map((m) => {
     const forced = keyStr != null ? forceKindFor(keyStr, m.san) : null;
     if (forced) return { ...m, kind: forced, book: forced === "book", forced: true };
@@ -1875,7 +2013,7 @@ function assignTiers(moves, ply, board, keyStr) {
     if (isBook) return { ...m, kind: "book", book: true };
     if (mv == null || best == null) return { ...m, kind: hasRealEval(m) ? "good" : "pending", book: false };
     let kind = tierOf(loss);
-    if (["best", "excellent", "good"].includes(kind) && board && isSacrifice(board, m.san, color) && mv >= -40) kind = "brilliant";
+    if (["best", "excellent", "good"].includes(kind) && board && isSacrifice(board, m.san, color) && mv >= -40 && !(decided && losing)) kind = "brilliant";
     return { ...m, kind, book: false };
   });
   // (기능4) 최선의 수는 반드시 1개 이하. 평가치가 가장 좋은 '비이론' 수 1개에만 '최선'을 부여하고
@@ -2330,6 +2468,49 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
   // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
   const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, live: new Map() });
+  // (성능) 화면에 보이는 후보 수(캡 없이 최대 수십 개)의 실시간 평가가 메인 엔진 큐 하나로 한 번에
+  // 하나씩 순서대로 처리되고 있었다 — 후보 수가 많은 포지션일수록 총 대기 시간이 후보 수 개수에
+  // 정비례해 늘어(수당 최대 700ms) 체감 지연의 핵심 원인이었다. depth·movetime(정확도)은 그대로
+  // 두고, 게임 리뷰(analyzeGame)와 같은 방식으로 독립된 워커 풀을 여러 개 띄워 후보 수들을 나눠
+  // 동시에 계산한다 — 총 계산량은 그대로지만 벽시계 시간만 풀 크기만큼 줄어든다.
+  // (버그 수정) analyzeGame은 배치 하나가 끝나면 풀을 바로 버리지만, 이 실시간 평가는 사용자가
+  // 수를 둘 때마다 반복해서 도는 effect라 매번 새로 부팅하면(워커 로딩 자체가 초 단위) 오히려
+  // 더 느려진다 — 엔진 프로필(설정에서 바꾸는 lite/full)이 그대로인 한 한 번 띄운 풀을 계속
+  // 재사용하고, 프로필이 바뀔 때만 기존 풀을 정리하고 새로 띄운다.
+  // epoch: 이 풀이 몇 번째로 새로 띄운 세대인지 — 프로필이 바뀌거나 이전 세대가 완전히 부팅
+  // 실패했을 때만 올라간다. cache.live(아래)에 넣는 진행 중 Promise마다 만들어진 시점의 epoch를
+  // 같이 저장해 두고, 그 사이 세대가 넘어갔다면(=워커가 이미 terminate돼 다시는 응답이 안 옴)
+  // 캐시를 버리고 새 세대 워커로 재요청한다.
+  const livePoolRef = useRef({ profile: null, workers: [], booting: null, epoch: 0, failed: false });
+  useEffect(() => {
+    const st = livePoolRef.current;
+    return () => { st.unmounted = true; st.workers.forEach((w) => w.terminate()); };
+  }, []);
+  const getLivePool = useCallback(async () => {
+    const st = livePoolRef.current;
+    if (st.profile === engine.profile) {
+      if (st.workers.length || st.booting) return st.booting ? await st.booting : st.workers;
+      // (버그 수정) 풀 부팅이 이 프로필로 완전히 실패했던 적이 있으면(workers=[], booting=null,
+      // failed=true) — 매번 재시도하면(부팅 자체가 URL당 최대 4초) 수를 둘 때마다 반복해서
+      // 몇 초씩 멈춘다. 같은 프로필인 한 재시도하지 않고 곧장 빈 배열(→ 메인 엔진 폴백)을 돌려준다.
+      if (st.failed) return [];
+    }
+    st.workers.forEach((w) => w.terminate());
+    const epoch = st.epoch + 1;
+    const size = ANALYZE_POOL_SIZE[engine.profile] || 2;
+    const booting = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(engine.urls))).then((ws) => ws.filter(Boolean));
+    livePoolRef.current = { ...st, profile: engine.profile, workers: [], booting, epoch, failed: false };
+    const workers = await booting;
+    // (버그 수정) 이 await 도중 컴포넌트가 언마운트됐다면, 방금 부팅된 워커를 livePoolRef에
+    // 반영하지 않고 바로 정리한다 — 반영해도 아무도 안 쓰지만 정리 없이 방치하면 워커 스레드가
+    // 누수된다(언마운트 cleanup은 이미 이전 시점의 workers 배열만 정리하고 끝났으므로).
+    if (livePoolRef.current.unmounted) { workers.forEach((w) => w.terminate()); return []; }
+    // 그 사이 프로필이 또 바뀌어 더 최신 epoch가 이미 진행 중이면, 지금 막 부팅된 이 워커들은
+    // 이미 낡은 세대다 — 반영하지 않고 정리한다.
+    if (livePoolRef.current.epoch !== epoch) { workers.forEach((w) => w.terminate()); return livePoolRef.current.workers; }
+    livePoolRef.current = { profile: engine.profile, workers, booting: null, epoch, failed: workers.length === 0 };
+    return workers;
+  }, [engine.profile, engine.urls]);
   const [engineNote, setEngineNote] = useState("");
   const [masterEmpty, setMasterEmpty] = useState(false); // 마스터 기보가 실제로 없는 경우(엔진 추천 허용)
   const extraKey = (extraSans || []).join(",");
@@ -2476,30 +2657,47 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (성능) moves.length가 늘어 이 effect가 재실행되어도, 이전 실행에서 이미 live 평가를 받은
       // 수는 다시 계산하지 않고 새로 추가된(아직 live가 없는) 수만 평가한다.
       const list = cur.filter((m) => m.live == null).map((m) => m.san);
-      for (const san of list) {
-        if (cancelled) break;
-        // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게 갱신되며
-        // "엔진이 계산하며 평가를 수정하는" 과정이 시각적으로 보인다. 최종 depth에서 한 번 더 확정.
-        // (20차) mate===0(그 수로 체크메이트 완성)일 때 부호가 사라지므로 win으로 승자를 함께 보존한다.
+      if (list.length) {
         const mkLive = (ev2) => ev2.mate != null
           ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b", plies: matePliesOf(ev2.mate) }
           : { cp: ev2.cp * childWhite };
-        const onMoveProgress = (partial) => {
-          if (cancelled || !partial) return;
-          const live = mkLive(partial);
-          setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
-          bumpDepth(partial.depth);
+        // (성능) 후보 수마다 depth 15/movetime 700ms 상한은 그대로(정확도 손실 없음) — 예전엔 이
+        // 목록을 한 번에 하나씩 순서대로 물어봐 후보 수 개수에 정비례해 총 시간이 늘었다. 게임
+        // 리뷰(analyzeGame)와 동일한 work-stealing 패턴으로, 독립된 워커 여러 개가 같은 목록에서
+        // 하나씩 꺼내 동시에 처리하게 해 총 계산량은 그대로 두고 벽시계 시간만 줄인다.
+        const pooled = await getLivePool();
+        if (cancelled) return;
+        const epoch = livePoolRef.current.epoch;
+        const workers = pooled.length ? pooled : [engine];
+        let nextIdx = 0;
+        const runWorker = async (w) => {
+          for (;;) {
+            if (cancelled) return;
+            const i = nextIdx++; if (i >= list.length) return;
+            const san = list[i];
+            // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게
+            // 갱신되며 "엔진이 계산하며 평가를 수정하는" 과정이 시각적으로 보인다. 최종 depth에서
+            // 한 번 더 확정. (20차) mate===0(그 수로 체크메이트 완성)일 때 부호가 사라지므로 win으로
+            // 승자를 함께 보존한다.
+            const onMoveProgress = (partial) => {
+              if (cancelled || !partial) return;
+              setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(partial) } : x));
+              bumpDepth(partial.depth);
+            };
+            // (버그 수정) 위의 be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번
+            // 물어보는 걸 막기 위해 진행 중인 Promise를 수(san)별로 캐시한다. 다만 이 캐시가 "지금
+            // 이 워커 세대(epoch)"에 걸린 것인지도 함께 저장한다 — 그 사이 엔진 프로필이 바뀌어
+            // 캐시된 Promise를 만든 워커가 이미 terminate됐다면(다시는 bestmove가 안 옴) 그 낡은
+            // Promise를 계속 기다리는 대신 버리고 지금 풀로 재요청해야, 이 수의 평가가 영영 안
+            // 뜨는 채로 멈추지 않는다.
+            const cached = cache.live.get(san);
+            if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700) });
+            const ev = await cache.live.get(san).promise;
+            if (cancelled || !ev) continue;
+            setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(ev) } : x));
+          }
         };
-        // (성능) 이 루프는 화면에 보이는 모든 후보 수(캡 없이 최대 수십 개)를 순서대로 평가한다 —
-        // 한 수라도 movetime 없이 depth 15까지 오래 걸리면 그 뒤 모든 수의 평가가 줄줄이 밀린다.
-        // 수 하나당 상한을 짧게 둬 전체 루프가 예측 가능한 시간 안에 끝나게 한다. (버그 수정) 위의
-        // be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번 물어보는 걸 막기 위해 진행 중인
-        // Promise를 수(san)별로 캐시한다.
-        if (!cache.live.has(san)) cache.live.set(san, engine.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700));
-        const ev = await cache.live.get(san);
-        if (cancelled || !ev) continue;
-        const live = mkLive(ev);
-        setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
+        await Promise.all(workers.map(runWorker));
       }
     })();
     return () => { cancelled = true; };
@@ -3771,8 +3969,10 @@ function dexIsUnlocked(chesscom, ccReady, unlockAll, pathSans) {
   if (unlockAll) return true;
   if (!pathSans.length) return true;
   if (!ccReady) return false;
-  const r = chesscom.analyze(pathSans);
-  return !!(r && r.total > 0);
+  // (v0.0.6 성능) analyze()로 매번 전체 대국을 훑는 대신, useChessCom이 미리 만들어 둔 접두어
+  // Set에서 O(1)로 조회한다 — dexIsUnlocked는 도감 트리의 모든 노드(최대 4000개)마다 호출되므로
+  // 이 차이가 대국 수가 많은 계정에서 체감되는 렉의 핵심 원인이었다.
+  return chesscom.prefixSet.has(pathSans.map(stripSuffix).join(" "));
 }
 // (2차 개편) 클릭으로 한 단계씩 펼치던 방식을 버리고, 모든 갈래를 최소 3수까지는 무조건, 그 이후는
 // 채택률이 20% 이상으로 유지되는 한 계속 자동으로 탐색해 미리 다 펼쳐진 거대한 트리를 만든다.
@@ -3946,15 +4146,84 @@ function centerOrderByAdopt(kids) {
 const ROOT_ORDER = ["e4", "d4", "c4", "Nf3"];
 const DIR_OF_ROOT = { e4: "N", d4: "E", c4: "S", Nf3: "W" };
 const SCHEMATIC_BOX_W = 98, SCHEMATIC_BOX_H = 44;
+// (v0.0.6) 예전엔 실제 CSS 배율 1.0을 "100%"라고 표시했는데, 다들 첫 화면에서 곧장 75%로 축소해야
+// 편하게 보인다는 피드백이 이어졌다 — 그 "75%"를 새 기준(100%)으로 다시 정의한다. zoom 상태 값
+// 자체는 여전히 실제 CSS scale()에 그대로 쓰이는 값이고(좌표 계산 코드는 손댈 필요 없음), 그 값의
+// 25%p 격자(0.1875 = 0.25 × 0.75)와 화면 표시 라벨만 이 기준에 맞춰 다시 잡는다.
+const SCHEMATIC_ZOOM_LABEL_BASE = 0.75;
+function schematicZoomLabel(z) { return Math.round((z / SCHEMATIC_ZOOM_LABEL_BASE) * 100) + "%"; }
 // (기능) 사이트 전체 모식도(도감 오프닝 트리·퍼즐 모식도·개발자 트리 에디터)의 확대/축소를
-// 25%p 단위(25~200%)로만 고정한다 — 버튼 클릭은 물론 핀치·휠 같은 연속 제스처로 나온 값도
-// 이 함수로 가장 가까운 단계에 스냅해, 어디서든 항상 8단계(25/50/75/100/125/150/175/200%) 중
+// 새 기준 25%p 단위(라벨 25~200%)로만 고정한다 — 버튼 클릭은 물론 핀치·휠 같은 연속 제스처로 나온
+// 값도 이 함수로 가장 가까운 단계에 스냅해, 어디서든 항상 8단계(25/50/75/100/125/150/175/200%) 중
 // 하나로만 보이게 한다.
-const SCHEMATIC_ZOOM_STEP = 0.25, SCHEMATIC_ZOOM_MIN = 0.25, SCHEMATIC_ZOOM_MAX = 2;
+const SCHEMATIC_ZOOM_STEP = 0.25 * SCHEMATIC_ZOOM_LABEL_BASE, SCHEMATIC_ZOOM_MIN = SCHEMATIC_ZOOM_STEP, SCHEMATIC_ZOOM_MAX = 2 * SCHEMATIC_ZOOM_LABEL_BASE;
 function snapSchematicZoom(z) {
   const clamped = Math.min(SCHEMATIC_ZOOM_MAX, Math.max(SCHEMATIC_ZOOM_MIN, z));
   return Math.round(clamped / SCHEMATIC_ZOOM_STEP) * SCHEMATIC_ZOOM_STEP;
 }
+// (버그 수정) 확대/축소 버튼·휠·핀치가 pan은 그대로 두고 zoom만 바꾸다 보니, 화면 좌상단(콘텐츠
+// 원점)을 기준으로 확대/축소가 일어났다 — 원점에서 멀리 떨어진 곳(팬으로 옮겨온 화면 중앙, 또는
+// 핀치 중심)을 보고 있을 때는 그 지점이 배율만큼 훌쩍 밀려나 트리 전체가 화면 밖으로 사라진
+// 것처럼 보이는 버그의 원인이었다. 확대/축소 전 그 화면 좌표 아래 있던 콘텐츠 좌표를 구해, 배율이
+// 바뀐 뒤에도 같은 화면 좌표에 그대로 남아 있도록 pan을 함께 보정한다(표준 "지점 기준 확대" 공식).
+function anchoredZoomPan(pan, zoom, nextZoom, anchorX, anchorY) {
+  const cx = (anchorX - pan.x) / zoom, cy = (anchorY - pan.y) / zoom;
+  return { x: anchorX - cx * nextZoom, y: anchorY - cy * nextZoom };
+}
+const SCHEMATIC_ELECTRIC = "#22D3F0";
+const schematicCoord = (it) => ({ x: it.x, y: it.y });
+// (기능) 부모→자식 연결선의 ㄱ자(elbow) 꺾임 좌표 — 트리 선(edges) 렌더링과, 검색으로 오프닝을
+// 골랐을 때 그 선을 그대로 따라가는 이동 애니메이션(OpeningSchematic의 buildFlightWaypoints)이
+// 정확히 같은 경로를 그리도록 계산 로직을 하나로 공유한다.
+function schematicElbow(p, c) {
+  const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
+  const pc = schematicCoord(p), cc2 = schematicCoord(c);
+  if (c.dir === "E") { const x1 = pc.x + boxW, y1 = pc.y + boxH / 2, x2 = cc2.x, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; return [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
+  if (c.dir === "W") { const x1 = pc.x, y1 = pc.y + boxH / 2, x2 = cc2.x + boxW, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; return [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
+  if (c.dir === "N") { const x1 = pc.x + boxW / 2, y1 = pc.y, x2 = cc2.x + boxW / 2, y2 = cc2.y + boxH, my = (y1 + y2) / 2; return [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
+  const x1 = pc.x + boxW / 2, y1 = pc.y + boxH, x2 = cc2.x + boxW / 2, y2 = cc2.y, my = (y1 + y2) / 2; return [[x1, y1], [x1, my], [x2, my], [x2, y2]];
+}
+// (v0.0.6 성능) 팬/드래그는 pan/zoom 상태만 바꾸고 items/edges 자체는 그대로인데도, 이 두 배열을
+// 그리는 코드가 OpeningSchematic 함수 본문 안에 있으면 pan/zoom이 바뀔 때마다(드래그 중 초당
+// 수십 번) React가 노드 수천 개의 스타일 객체를 처음부터 다시 계산했다 — 이게 트리가 클 때 드래그가
+// 버벅이던 핵심 원인. 별도 memo 컴포넌트로 떼어내, items/edges(둘 다 pan/zoom과 무관하게 트리
+// 구조가 실제로 바뀔 때만 새로 생성됨) 참조가 그대로인 동안은 다시 그리지 않게 한다.
+const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet }) {
+  return edges.map(([p, c]) => {
+    if (p.depth === 0) return null;
+    const pts = schematicElbow(p, c);
+    const isSel = selectedKeySet && selectedKeySet.has(c.key);
+    const wStroke = isSel ? 3 : 2;
+    const eStroke = isSel ? SCHEMATIC_ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
+    return <polyline key={p.key + "→" + c.key} className={isSel ? "dex-current-line" : undefined} points={pts.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={isSel ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
+      style={isSel ? { strokeDasharray: "7 5" } : undefined} />;
+  });
+});
+const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, selectedKeySet, onSelect }) {
+  const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
+  return items.map((it) => {
+    const { x, y } = schematicCoord(it);
+    const isOpen = openKey === it.key;
+    const isSel = selectedKeySet && selectedKeySet.has(it.key);
+    const w = boxW, h = boxH;
+    const kind = it.kind || "pending";
+    const isBook = kind === "book";
+    const sub = isOpen ? "#241509" : it.unlocked ? QCOLOR[kind] : "#8A7458";
+    const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
+    return (
+      <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
+        <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
+        <button onClick={() => onSelect(it.key)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
+            {!it.unlocked && <Lock size={10} />}
+            {moveNumber(it.path.length - 1)}{it.san}
+          </span>
+          {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
+        </button>
+      </div>
+    );
+  });
+});
 function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, priorityRef }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
@@ -4023,7 +4292,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const items = []; const edges = [];
     const leafList = { N: [], S: [], E: [], W: [] };
     // 트리 구조(부모-자식, 방향)만 먼저 만들고, leaf 좌표는 아래에서 보간으로 채운다.
-    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey) => {
+    // (성능) board는 그 노드의 자식 채택 등급(assignTiers)을 매길 때만 필요한데, 예전엔 매
+    // 내부 노드마다 boardFromSans(path)로 루트부터 그 깊이만큼 수순을 처음부터 다시 재생했다 —
+    // 트리 전체가 DFS로 훑이는 와중에 부모가 이미 만들어 둔 보드가 있는데도 매번 버리고 새로
+    // 계산한 것(노드 수 × 평균 깊이만큼 중복). 배경 로딩 중엔 이 useMemo 전체가 220ms마다 다시
+    // 돌므로(useOpeningTreeAuto의 bumpVersion), 이 중복이 로딩 내내 반복됐다 — 부모의 board를
+    // 그대로 물려받아 이번 수 하나만 한 번 더 적용하도록(O(노드 수)) 바꾼다.
+    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey, board) => {
       const key = path.join(" ");
       const rawMoves = treeData.get(key);
       // (버그 수정) 처음엔 이름 붙은 노드마다(하위 바리에이션 포함) 전부 그룹을 새로 만들었는데,
@@ -4077,18 +4352,23 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const newOnes = filtered.filter((m) => !sanOrder.includes(m.san)).map((m) => m.san);
             // (버그 수정) 이미 상한을 채운 뒤에 새로 나타난 수는, 이론 수가 아니면 더 안 늘린다 —
             // 이론 수는 큐레이션된 유한한 집합이라 예외로 항상 끼워 준다.
-            const toAdd = newOnes.filter((s) => isBookMoveAt(key, s) || sanOrder.length < cap);
+            // (버그 수정) sanOrder.length를 한 번만 읽어 이 배치의 모든 후보에 똑같이 적용하고
+            // 있었다 — 같은 배치에 새 비이론 수가 여럿 나타나면(예: 이미 cap-1개인데 한꺼번에 3개
+            // 도착) 전부 그 한 번 읽은 길이만으로 통과해 cap을 넘겨 버렸다. 남은 여유(room)를
+            // 하나씩 소진해가며 채워, 이 배치 안에서도 cap을 넘지 않게 한다.
+            let room = Math.max(0, cap - sanOrder.length);
+            const toAdd = newOnes.filter((s) => { if (isBookMoveAt(key, s)) return true; if (room > 0) { room--; return true; } return false; });
             if (toAdd.length) { sanOrder = [...sanOrder, ...toAdd]; orderCacheRef.current.set(key, sanOrder); }
           }
           ordered = sanOrder.map((s) => filtered.find((m) => m.san === s)).filter(Boolean);
         }
-        const board = boardFromSans(path);
         const tiered = assignTiers(filtered, path.length, board, key);
+        const color = path.length % 2 === 0 ? "w" : "b";
         for (const m of ordered) {
           const t = tiered.find((x) => x.san === m.san);
           const nm = nameOverride(key, m.san) ?? m.name ?? null;
           const childDir = path.length === 0 ? DIR_OF_ROOT[stripSuffix(m.san)] : dir;
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey));
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey, applySan(board, m.san, color)));
         }
       }
       if (depth >= 1) { if (!kids.length) leafList[dir].push(it); else it.kids = kids; }
@@ -4097,7 +4377,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null, null, null, null);
+    visit(null, [], 0, 100, null, null, null, null, null, startBoard());
     // 방향별로, 지금 실제로 보이는 leaf들을 현재 형제 순서(DFS 순서) 그대로 훑으면서 좌표 캐시를
     // 채운다. 이미 캐시에 있는 값은 절대 다시 바꾸지 않는다(그래야 흔들리지 않는다) — 새로 나타난
     // leaf만, 바로 앞뒤로 이미 확정된 이웃의 캐시 값 "사이"를 보간해 끼워 넣는다. 자리를 넓히려고
@@ -4242,10 +4522,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (let i = 1; i <= selectedPath.length; i++) s.add(selectedPath.slice(0, i).join(" "));
     return s;
   }, [selectedPath]);
-  const coord = (it) => ({ x: it.x, y: it.y });
-  // (기능) 선택된 오프닝으로 가는 수순을 강조하는 "전류" 색 — 나머지(브라스/이론 갈색) 톤과 뚜렷이
-  // 구분되는 전기적인 청록색을 쓴다.
-  const ELECTRIC = "#22D3F0";
+  const coord = schematicCoord;
   // (버그 수정) 트리가 열리자마자 아주 짧은 순간(0~2초 안팎) 동안은, 정적 스냅샷/캐시에서 한꺼번에
   // 쏟아져 들어오는 여러 노드가 같은 렌더에서 동시에 leaf→internal로 바뀌며 그 조상들의 "자식 평균"
   // 좌표가 연쇄적으로 크게 움직인다(leaf 자신의 좌표는 캐싱돼 안 바뀌지만, internal 노드는 항상
@@ -4255,7 +4532,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const [ready, setReady] = useState(false);
   useEffect(() => { const t = setTimeout(() => setReady(true), 3200); return () => clearTimeout(t); }, []);
   const [pan, setPan] = useState({ x: 16, y: 16 });
-  const [zoom, setZoom] = useState(1);
+  // (v0.0.6) 다들 첫 화면에서 곧장 75%로 축소해야 편하게 봤다는 피드백 — 그 배율을 새 기준(100%,
+  // SCHEMATIC_ZOOM_LABEL_BASE)으로 재정의했으므로, 기본값도 그대로 그 값으로 시작한다.
+  const [zoom, setZoom] = useState(SCHEMATIC_ZOOM_LABEL_BASE);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
   const userPannedRef = useRef(false);
@@ -4293,6 +4572,22 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     return () => clearInterval(id);
   }, []);
   const clampZoom = snapSchematicZoom;
+  // (버그 수정) 확대/축소 버튼이 zoom만 바꾸고 pan은 그대로 둬서, 화면 좌상단(콘텐츠 원점) 기준으로
+  // 배율이 바뀌었다 — 팬으로 멀리 옮겨온 화면에서 버튼을 누르면 지금 보던 자리가 배율만큼 훌쩍
+  // 밀려나 트리 전체가 화면 밖으로 사라진 것처럼 보였다. 지금 화면 중앙 아래 있는 콘텐츠 지점을
+  // 그대로 유지하도록 pan을 함께 보정한다.
+  const zoomBy = (delta) => {
+    // (버그 수정) 비행 애니메이션이 도는 중에 버튼으로 확대/축소하면, 다음 애니메이션 프레임이
+    // 이 변경을 곧장 덮어썼다 — 수동 조작이 시작되면 애니메이션을 멈춘다.
+    if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; setFlightPath(null); }
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const z = zoomRef.current, nz = clampZoom(z + delta);
+    if (nz === z) return;
+    const nextPan = anchoredZoomPan(panRef.current, z, nz, rect.width / 2, rect.height / 2);
+    setPan(nextPan);
+    setZoom(nz);
+    checkSelectionDrift(nextPan, nz);
+  };
   // (기능) selectionLockRef가 걸려 있는 동안 팬/줌이 바뀔 때마다, 선택된 노드가 화면 중앙에서 얼마나
   // 벗어났는지 검사한다 — 많이 벗어나면(사용자가 직접 화면을 옮긴 것) 확대 강조만 풀고(100%로),
   // 강조 색은 selectedPath가 그대로라 계속 유지된다. ref만 참조하므로 어느 렌더의 클로저에서
@@ -4305,14 +4600,44 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const c = coord(target);
     const sx = nextPan.x + (c.x + boxW / 2) * nextZoom, sy = nextPan.y + (c.y + boxH / 2) * nextZoom;
-    if (Math.hypot(sx - rect.width / 2, sy - rect.height / 2) > 80) { selectionLockRef.current = false; setZoom(1); }
+    // (버그 수정) 강조 확대를 풀 때 zoom만 되돌리고 pan은 그대로 두면, 화면 좌상단 원점 기준으로
+    // 배율이 바뀌면서 지금 보고 있던 자리가 훌쩍 밀려나 트리가 사라진 것처럼 보였다 — 지금 보고
+    // 있는 화면 중앙 지점을 그대로 유지하도록 pan도 함께 보정한다.
+    if (Math.hypot(sx - rect.width / 2, sy - rect.height / 2) > 80) {
+      selectionLockRef.current = false;
+      const anchoredPan = anchoredZoomPan(nextPan, nextZoom, SCHEMATIC_ZOOM_LABEL_BASE, rect.width / 2, rect.height / 2);
+      setPan(anchoredPan);
+      setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
+    }
   };
-  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  // (버그 수정) 특정 수를 클릭한 직후 1~2초 동안 화면이 좌우로 심하게 흔들리고, 그 와중에
+  // 드래그하면 트리 전체가 화면 밖으로 사라지던 문제의 근본 원인 — pan/zoom을 세 곳(비행
+  // 애니메이션의 requestAnimationFrame 루프, 아래 selectedPath 재중앙 정렬용 150ms interval,
+  // 그리고 이 드래그 핸들러)이 서로 모르는 채 동시에 덮어쓰고 있었다. 노드를 클릭하면 centerOn이
+  // 시작하는 비행 애니메이션이 최대 900ms 동안 매 프레임 pan/zoom을 보간해 옮기는데, 그 사이
+  // selectedPath가 바뀌어 새로 붙는 150ms interval이 "이미 다 도착한 것처럼" 곧장 스냅해버려
+  // 두 값이 150ms마다 서로를 덮어쓰며 튕겼다(흔들림의 정체). 게다가 그 상태에서 사용자가
+  // 드래그를 시작해도 이 핸들러가 비행 애니메이션을 멈추지 않아, 다음 애니메이션 프레임이 사용자의
+  // 드래그 결과를 또 덮어써(pan/zoom이 애니메이션 쪽 값으로 계속 끌려가) 화면이 엉뚱한 곳으로
+  // 튀어 트리가 사라진 것처럼 보였다. 드래그를 시작하는 순간 비행 애니메이션을 확실히 멈추고
+  // (cancelAnimationFrame) selectionLockRef도 즉시 풀어, 그 뒤로는 오직 이 드래그만 pan/zoom을
+  // 다루게 한다.
+  const onPointerDown = (e) => {
+    if (e.target.closest && e.target.closest("button, .no-pan")) return;
+    userPannedRef.current = true;
+    selectionLockRef.current = false;
+    if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; setFlightPath(null); }
+    dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
     const next = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
     setPan(next);
-    checkSelectionDrift(next, zoom);
+    // (버그 수정) 여기 있던 zoom은 이 핸들러가 만들어진 렌더 시점에 클로저로 붙잡힌 값이라, 비행
+    // 애니메이션이 매 프레임 zoom을 바꾸는 동안에는 금방 낡은 값이 된다 — 항상 최신 값을 담는
+    // zoomRef.current를 쓴다(휠·확대 버튼 핸들러와 동일한 방식).
+    checkSelectionDrift(next, zoomRef.current);
   };
   const onPointerUp = () => { dragRef.current = null; };
   // (버그 수정) 마우스 휠을 확대/축소에 쓰니 확대/축소는 우상단 버튼으로만 하게 하고, 휠은 그냥
@@ -4325,6 +4650,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     if (!el) return;
     const handleWheel = (e) => {
       e.preventDefault();
+      // (버그 수정) 비행 애니메이션이 도는 중에 휠로 팬하면, 다음 애니메이션 프레임이 이 변경을
+      // 곧장 덮어썼다 — 수동 조작이 시작되면 애니메이션을 멈춘다.
+      if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; setFlightPath(null); }
       setPan((p) => { const next = { x: p.x - e.deltaX, y: p.y - e.deltaY }; checkSelectionDrift(next, zoomRef.current); return next; });
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
@@ -4332,38 +4660,80 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   }, []);
   // (버그 수정) 확대 정도(1.35배)가 너무 크다는 피드백 — 살짝만 확대되도록 낮춘다.
   // (기능) 검색·클릭으로 오프닝을 선택하면 그 노드를 화면 중앙으로 옮기고 살짝 확대해(SELECT_ZOOM)
-  // "선택됨"이 시각적으로 드러나게 한다.
-  const SELECT_ZOOM = 1.25;   // (버그 수정) 25%p 단위 고정 정책에 맞춰 그리드에 없던 1.15 대신 1.25 사용
-  // (기능) 검색으로 오프닝을 고르면 예전엔 시점이 그 자리로 즉시 순간이동했다 — 지금은 지금 보고
-  // 있던 화면 중심에서 목표 위치까지 파란 선을 그어 보여주고, 그 선을 따라 아주 빠르게(220ms)
-  // 화면(pan/zoom)이 이동하는 것처럼 애니메이션한다. 선은 콘텐츠 좌표계(SVG 안)에 그리므로 이동
-  // 중에도 pan/zoom 변환을 그대로 따라 자연스럽게 화면에 맞춰 움직인다.
+  // "선택됨"이 시각적으로 드러나게 한다. 라벨 기준 125% — 새 기준(SCHEMATIC_ZOOM_LABEL_BASE)에 맞춰
+  // 실제 CSS 배율로 환산한다.
+  const SELECT_ZOOM = 1.25 * SCHEMATIC_ZOOM_LABEL_BASE;
+  // (기능) 검색으로 오프닝을 고르면 예전엔 지금 보던 화면 중심 → 목표 위치까지 대각선으로 직행했다
+  // — 트리 구조와 무관하게 허공을 가로질러 산만하다는 피드백으로, 이제는 나침반 중심(칩)에서
+  // 시작해 그 오프닝까지 실제로 이어지는 트리 선(ㄱ자 커넥터)을 그대로 따라가며 이동한다.
+  const parentOf = useMemo(() => { const m = new Map(); for (const [p, c] of edges) m.set(c.key, p); return m; }, [edges]);
+  const buildFlightWaypoints = (target) => {
+    const chain = [];
+    let cur = target;
+    while (cur) { chain.unshift(cur); const p = parentOf.get(cur.key); cur = p && p.depth >= 1 ? p : null; }
+    const ccx = centerX + boxW / 2, ccy = centerY + boxH / 2, half = CHIP_SIZE / 2;
+    const pts = [[ccx, ccy]];
+    let prev = null;
+    for (const node of chain) {
+      if (prev) pts.push(...schematicElbow(prev, node));
+      else {
+        const nc = coord(node);
+        if (node.dir === "N") pts.push([ccx, ccy - half], [ccx, nc.y + boxH]);
+        else if (node.dir === "S") pts.push([ccx, ccy + half], [ccx, nc.y]);
+        else if (node.dir === "E") pts.push([ccx + half, ccy], [nc.x, ccy]);
+        else pts.push([ccx - half, ccy], [nc.x + boxW, ccy]);
+      }
+      prev = node;
+    }
+    const tc = coord(target);
+    pts.push([tc.x + boxW / 2, tc.y + boxH / 2]);
+    return pts;
+  };
   const flightRafRef = useRef(null);
-  const [flightLine, setFlightLine] = useState(null);   // { x1, y1, x2, y2 } (콘텐츠 좌표) | null
+  const [flightPath, setFlightPath] = useState(null);   // [[x,y], ...] (콘텐츠 좌표) | null
   const FLIGHT_MS = 220;
-  const flyTo = (targetContentX, targetContentY, targetZoom) => {
+  const flyAlongPath = (waypoints, targetZoom) => {
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-    const fromZoom = zoomRef.current, fromPan = panRef.current;
-    const fromContentX = (rect.width / 2 - fromPan.x) / fromZoom, fromContentY = (rect.height / 2 - fromPan.y) / fromZoom;
-    const toPan = { x: rect.width / 2 - targetContentX * targetZoom, y: rect.height / 2 - targetContentY * targetZoom };
+    const fromZoom = zoomRef.current;
     if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
-    setFlightLine({ x1: fromContentX, y1: fromContentY, x2: targetContentX, y2: targetContentY });
+    const segLens = [];
+    let total = 0;
+    for (let i = 1; i < waypoints.length; i++) {
+      const d = Math.hypot(waypoints[i][0] - waypoints[i - 1][0], waypoints[i][1] - waypoints[i - 1][1]);
+      segLens.push(d); total += d;
+    }
+    // 경로 위 임의의 누적 거리(dist)에 해당하는 콘텐츠 좌표 — 구간별 길이 비례로 선형 보간한다.
+    const pointAt = (dist) => {
+      if (total <= 0) return waypoints[waypoints.length - 1];
+      let d = Math.max(0, Math.min(total, dist));
+      for (let i = 0; i < segLens.length; i++) {
+        if (d <= segLens[i] || i === segLens.length - 1) {
+          const t = segLens[i] > 0 ? d / segLens[i] : 1;
+          const [x1, y1] = waypoints[i], [x2, y2] = waypoints[i + 1];
+          return [x1 + (x2 - x1) * t, y1 + (y2 - y1) * t];
+        }
+        d -= segLens[i];
+      }
+      return waypoints[waypoints.length - 1];
+    };
+    setFlightPath(waypoints);
     const t0 = performance.now();
+    // 선을 따라가는 경로라 대각선 직행보다 길 수 있으니, 거리에 비례해 조금 더 시간을 준다(상한 있음).
+    const duration = Math.min(900, Math.max(FLIGHT_MS, total * 0.5));
     const step = (now) => {
-      const t = Math.min(1, (now - t0) / FLIGHT_MS);
+      const t = Math.min(1, (now - t0) / duration);
       const ease = 1 - Math.pow(1 - t, 3);   // ease-out — 빠르게 출발해 목표에서 부드럽게 멈춤
-      setPan({ x: fromPan.x + (toPan.x - fromPan.x) * ease, y: fromPan.y + (toPan.y - fromPan.y) * ease });
-      setZoom(fromZoom + (targetZoom - fromZoom) * ease);
+      const [cx, cy] = pointAt(total * ease);
+      const z = fromZoom + (targetZoom - fromZoom) * ease;
+      setPan({ x: rect.width / 2 - cx * z, y: rect.height / 2 - cy * z });
+      setZoom(z);
       if (t < 1) { flightRafRef.current = requestAnimationFrame(step); }
-      else { flightRafRef.current = null; setFlightLine(null); }
+      else { flightRafRef.current = null; setFlightPath(null); }
     };
     flightRafRef.current = requestAnimationFrame(step);
   };
   useEffect(() => () => { if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current); }, []);
-  const centerOn = (it, z) => {
-    const c = coord(it);
-    flyTo(c.x + boxW / 2, c.y + boxH / 2, z);
-  };
+  const centerOn = (it, z) => { flyAlongPath(buildFlightWaypoints(it), z); };
   // (버그 수정) 선택 직후 딱 한 번만 중앙으로 옮기면, 트리가 아직 배경에서 계속 자라는 중일 때
   // (최대 4000개 노드가 계속 로드되며 다른 노드들의 좌표(pos)도 함께 밀려남) 선택한 노드가 금방
   // 중앙에서 벗어나 버려 "고정이 안 된다"고 느껴졌다. items 변경에 반응하는 디바운스 effect로
@@ -4371,10 +4741,18 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 120ms 디바운스가 매번 취소되기만 하고 끝내 한 번도 실행되지 못했다(디바운스 기아) — items
   // 변경 빈도와 무관하게 일정 주기로 도는 setInterval로 바꿔, 트리가 계속 자라는 중에도 확실히
   // 재중앙 정렬되게 한다. 사용자가 직접 손대면(selectionLockRef) 더 이상 재정렬하지 않는다.
+  // (버그 수정) 노드를 클릭한 직후 centerOn이 시작하는 비행 애니메이션(최대 900ms)이 매 프레임
+  // pan/zoom을 부드럽게 보간하는 동안, 이 interval은 그와 무관하게 150ms마다 "이미 다 도착한"
+  // 좌표로 곧장 스냅해버렸다 — 둘 다 selectionLockRef가 걸린 상태에서 서로 모른 채 동시에 pan을
+  // 덮어써, 150ms마다 (보간된 위치) ↔ (이미 도착한 위치) 사이를 오가며 화면이 좌우로 튀는 것처럼
+  // 보였다(신고된 "클릭 직후 1~2초간 심하게 흔들리는" 현상의 정체). 비행 애니메이션이 도는
+  // 동안에는 이 interval이 끼어들지 않도록 건너뛴다 — 애니메이션이 끝나면(flightRafRef.current가
+  // null이 되면) 그 다음 tick부터 다시 정상적으로 재중앙 정렬을 이어간다.
   useEffect(() => {
     if (!selectedPath) return;
     const id = setInterval(() => {
       if (!selectionLockRef.current) return;
+      if (flightRafRef.current) return;
       const target = itemsRef.current.find((it) => it.key === selectedPath.join(" "));
       if (!target) return;
       const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
@@ -4387,10 +4765,31 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (기능) 트리를 더 이상 필터링해서 숨기지 않으니, 이미 한 오프닝을 선택한 상태에서도 다른
   // 오프닝을 계속 검색할 수 있다.
   const [query, setQuery] = useState("");
+  // (버그 수정) 예전엔 일치하는 오프닝이 여럿이어도 상위 8개만 items 순서(트리를 훑은 순서, 사실상
+  // 임의 순서) 그대로 보여줬다 — 단어가 포함된 오프닝은 전부 보여주고(드롭다운은 이미 스크롤
+  // 가능), "상위(더 넓은/더 유명한) 오프닝"이 위로 오도록 정렬한다. 수순이 짧을수록(=더 상위
+  // 오프닝일수록) 우선, 같은 깊이면 채택률이 높은 쪽을 우선한다.
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return items.filter((it) => it.name && it.name.toLowerCase().includes(q)).slice(0, 8);
+    const filtered = items.filter((it) => it.name && it.name.toLowerCase().includes(q));
+    // (버그 수정) 같은 오프닝 이름이 부모 노드의 이름을 그대로 물려받아 여러 깊이(수순 길이)에
+    // 걸쳐 완전히 똑같은 문자열로 중복 등장하는 경우가 있었다(예: "Benoni Defense: Old Benoni"가
+    // 1.d4 c5와 1.d4 c5 2.d5 둘 다에 표시됨) — 검색 결과에는 그 이름으로 가장 먼저(수순이 가장
+    // 짧게) 도달하는 노드 하나만 남긴다.
+    const byName = new Map();
+    for (const it of filtered) {
+      const cur = byName.get(it.name);
+      if (!cur || it.path.length < cur.path.length || (it.path.length === cur.path.length && (it.adopt || 0) > (cur.adopt || 0))) byName.set(it.name, it);
+    }
+    const cmp = (a, b) => (a.path.length - b.path.length) || ((b.adopt || 0) - (a.adopt || 0)) || a.name.localeCompare(b.name);
+    // (버그 수정) 검색어가 오프닝 이름 맨 앞에 오는 결과(예: "Sicilian Defense…")와, 이름 중간
+    // 어딘가에 등장하는 결과(예: "…Reversed Sicilian Variation")가 뒤섞여 나와, 찾으려던 오프닝이
+    // 관련 없어 보이는 결과들 사이에 묻혔다 — 맨 앞에 오는 것들을 먼저, 그 뒤에 중간에 오는 것들을 보여준다.
+    const deduped = [...byName.values()];
+    const starts = deduped.filter((it) => it.name.toLowerCase().startsWith(q)).sort(cmp);
+    const contains = deduped.filter((it) => !it.name.toLowerCase().startsWith(q)).sort(cmp);
+    return [...starts, ...contains];
   }, [items, query]);
   // (기능) 검색 결과를 고르거나(jumpTo) 트리에서 수 블록을 직접 클릭해도(아래 button onClick)
   // 완전히 같은 효과를 낸다 — 그 수까지의 경로를 강조(selectedPath)하고, 화면 중앙으로 이동+확대하고,
@@ -4403,6 +4802,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     centerOn(it, SELECT_ZOOM);
     onToggleOpen(it.key);
   };
+  // (v0.0.6 성능) DexNodesLayer가 팬/드래그 중에는 다시 그려지지 않도록 memo화되어 있는데, 클릭
+  // 콜백을 매 렌더 새로 만드는 인라인 화살표 함수로 넘기면 그 참조가 매번 바뀌어 memo가 무력화된다
+  // — selectNode의 "최신 버전"을 ref로 들고, key 문자열만 받는 안정된 래퍼를 한 번만 만든다.
+  const selectNodeRef = useRef(selectNode);
+  selectNodeRef.current = selectNode;
+  const onSelectNode = useCallback((key) => {
+    const it = itemsRef.current.find((x) => x.key === key);
+    if (it) selectNodeRef.current(it);
+  }, []);
   // (기능) 특정 수 블록을 선택한 상태에서는 WASD·방향키로 화면상 그 방향에 있는 가장 가까운
   // 블록으로 곧장 이동할 수 있게 한다 — 눌린 방향으로 실제 진행한 거리에 벗어난 정도(수직 편차)를
   // 페널티로 더해, "그 방향으로 곧장" 있는 블록을 우선 고른다. itemsRef/selectedPathRef로 항상
@@ -4479,9 +4887,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           <button onClick={() => {
             userPannedRef.current = false;
             selectionLockRef.current = false;
-            setZoom(1);
+            setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
             const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-            setPan({ x: rect.width / 2 - (centerRef.current.x + boxW / 2), y: rect.height / 2 - (centerRef.current.y + boxH / 2) });
+            setPan({ x: rect.width / 2 - (centerRef.current.x + boxW / 2) * SCHEMATIC_ZOOM_LABEL_BASE, y: rect.height / 2 - (centerRef.current.y + boxH / 2) * SCHEMATIC_ZOOM_LABEL_BASE });
           }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <RotateCcw size={13} />
           </button>
@@ -4502,9 +4910,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         )}
       </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
-        <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-        <button onClick={() => setZoom(1)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
-        <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+        <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{schematicZoomLabel(zoom)}</button>
+        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
         {/* (기능) 칭호(이름)가 붙은 오프닝만 점선 테두리로 한 단위로 묶어 표시하고, 박스 왼쪽 위
@@ -4522,9 +4930,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           </div>
         ))}
         <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-          {/* (기능) 검색으로 오프닝을 선택했을 때, 원래 보고 있던 위치 → 목표 위치를 잇는 파란
-              안내선 — flyTo가 애니메이션 도중에만 채워 두고 도착하면 지운다. */}
-          {flightLine && <line x1={flightLine.x1} y1={flightLine.y1} x2={flightLine.x2} y2={flightLine.y2} stroke="#3E7CC4" strokeWidth={3} opacity={0.85} strokeLinecap="round" strokeDasharray="2 10" />}
+          {/* (기능) 검색으로 오프닝을 선택했을 때, 그 수까지 이어지는 트리 선(모식도 ㄱ자 커넥터)을
+              그대로 따라가는 안내선 — flyAlongPath가 애니메이션 도중에만 채워 두고 도착하면 지운다. */}
+          {flightPath && <polyline points={flightPath.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke="#3E7CC4" strokeWidth={3} opacity={0.85} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 10" />}
           {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
               짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
@@ -4540,32 +4948,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               <line key={"chip-trace-" + dir} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.brass} strokeWidth={2} opacity={0.5} strokeLinecap="round" />
             ));
           })()}
-          {edges.map(([p, c]) => {
-            if (p.depth === 0) return null;
-            const pc = coord(p), cc2 = coord(c);
-            // (기능) 나침반형 레이아웃 — 부모→자식 연결선이 그 갈래가 뻗어나가는 방향(c.dir)에 맞는
-            // 변끼리 이어지도록 한다(동/서는 좌우 변, 남/북은 위아래 변).
-            // (버그 수정) 곁가지가 부모에서 멀리(수만 px) 떨어지는 건 실제 나무처럼 트리가 넓기
-            // 때문에 피할 수 없다 — 대신 한 줄 대각선으로 길게 가로지르면 캔버스를 마구 관통해
-            // 지저분해 보이므로, 성장축을 따라 짧게 나온 뒤 직각으로 꺾어 자식까지 가는 ㄱ자(elbow)
-            // 커넥터로 그린다. 꺾이는 지점을 깊이 사이 중간에 두면 같은 열의 세로선들이 나란히 정렬돼
-            // 훨씬 정돈돼 보인다.
-            let pts;
-            if (c.dir === "E") { const x1 = pc.x + boxW, y1 = pc.y + boxH / 2, x2 = cc2.x, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
-            else if (c.dir === "W") { const x1 = pc.x, y1 = pc.y + boxH / 2, x2 = cc2.x + boxW, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; pts = [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
-            else if (c.dir === "N") { const x1 = pc.x + boxW / 2, y1 = pc.y, x2 = cc2.x + boxW / 2, y2 = cc2.y + boxH, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
-            else { const x1 = pc.x + boxW / 2, y1 = pc.y + boxH, x2 = cc2.x + boxW / 2, y2 = cc2.y, my = (y1 + y2) / 2; pts = [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
-            // (버그 수정) 선 굵기가 채택률에 따라 제각각이라 트리 전체가 정신없어 보였다 — 굵기를
-            // 하나로 통일해, 굵기가 아니라 실제 트리 구조로만 위계가 드러나게 한다.
-            // (기능) 선택된 오프닝으로 가는 수순의 선만, 전선에 전류가 흐르듯 색이 바뀌고 흐르는
-            // 점선으로 강조된다 — 강조 대상은 최대 수십 개(경로 길이)뿐이라, 트리 전체(수백 개) 선에
-            // 걸었다가 렉을 냈던 이전의 펜 드로잉 애니메이션과 달리 성능에 영향이 없다.
-            const isSel = selectedKeySet && selectedKeySet.has(c.key);
-            const wStroke = isSel ? 3 : 2;
-            const eStroke = isSel ? ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
-            return <polyline key={p.key + "→" + c.key} className={isSel ? "dex-current-line" : undefined} points={pts.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={isSel ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
-              style={isSel ? { strokeDasharray: "7 5" } : undefined} />;
-          })}
+          <DexEdgesLayer edges={edges} selectedKeySet={selectedKeySet} />
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
@@ -4583,45 +4966,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             <Cpu size={26} strokeWidth={1.6} />
           </div>
         </div>
-        {items.map((it) => {
-          const { x, y } = coord(it);
-          const isOpen = openKey === it.key;
-          const isSel = selectedKeySet && selectedKeySet.has(it.key);
-          // (버그 수정) 채택률에 따라 블록 크기가 제각각이라 트리가 정신없어 보였다 — 모든 블록을
-          // 같은 크기로 통일한다.
-          const w = boxW, h = boxH;
-          const kind = it.kind || "pending";
-          const isBook = kind === "book";
-          const sub = isOpen ? "#241509" : it.unlocked ? QCOLOR[kind] : "#8A7458";
-          const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
-          // (버그 수정) 예전엔 노드를 눌러 상세 블록을 열어야만 수 체계 아이콘·평가치·채택률을 볼 수
-          // 있었다 — 부모 방문 시 이미 계산해 둔 kind/evalCp(assignTiers)를 각 블록에 기본으로 표시한다.
-          // (디자인) 이론 수(book) 블록은 이론 수 아이콘과 같은 가죽 갈색(T.book) 테두리·그러데이션·
-          // 글자색을 입혀, 큐레이션된 핵심 라인이 나머지 곁가지 수와 뚜렷이 구분되게 한다.
-          // (버그 수정) 채택률 %는 블록에서 빼고, 수 체계 아이콘은 글자와 나란히 두지 않고 블록
-          // 좌상단에 작은 배지로 얹는다. 오프닝 이름은 블록 안이 아니라 바로 아래 빈 공간에 표시.
-          return (
-            // (버그 수정) 예전엔 위치(left/top) 변화에 짧은 트랜지션(.35s)을 줘 스르륵 옮겨가는
-            // 것처럼 보이게 했는데, 배경 로딩 중(useOpeningTreeAuto가 ~80ms마다 트리를 갱신)에는
-            // 이런 재조정이 초당 여러 번, 20초 가까이 계속 일어난다 — 개별 이동은 작아도 그때마다
-            // 매번 새 트랜지션이 이어 걸리며 몇 초에 걸쳐 화면이 계속 미끄러지듯 움직이는 것처럼
-            // 보였다(사용자가 보고한 "흔들림"). 애니메이션을 없애 위치가 바뀔 때 부드럽게 미끄러지는
-            // 대신 조용히 순간 이동하게 해, 눈에 띄는 지속적인 움직임 자체를 없앤다.
-            <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
-              <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
-              <button onClick={() => selectNode(it)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
-                  {!it.unlocked && <Lock size={10} />}
-                  {moveNumber(it.path.length - 1)}{it.san}
-                </span>
-                {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
-              </button>
-              {/* (기능) 칭호(이름) 붙은 오프닝은 이제 블록 아래 대신, 그 오프닝 전체를 묶는 점선
-                  영역 바깥 여백에 화살표와 함께 장식체로 표시된다(위 groups 렌더 참고) — 블록마다
-                  중복으로 작은 글자를 또 넣지 않는다. */}
-            </div>
-          );
-        })}
+        <DexNodesLayer items={items} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} />
       </div>
       {/* (버그 수정) 수 설명 카드가 팬/줌 트랜스폼이 걸린(scale(zoom)) 안쪽에 있으면 카드 자신도
           모식도 확대/축소를 그대로 따라가 축소 시엔 잘리고 확대 시엔 지나치게 커졌다 — 트랜스폼
@@ -5033,20 +5378,93 @@ function solveCountText(count, friendNames) {
 async function puzzleSolveEventAdd(no, uid) { if (!SB_ON) return; try { await sbInsert("puzzle_solve_events", { no, uid: uid || null }); } catch { } }
 async function puzzleRank(period, limit) { if (!SB_ON) return []; try { const r = await sbRpc("puzzle_rank", { p_period: period, p_limit: limit || 12 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 
-// (15차 기능4) 레벨/XP 시스템 — n레벨→n+1레벨에 필요한 경험치는 피보나치 수열의 n번째 항 × 100
-// (1:100, 2:200, 3:300, 4:500, 5:800, 6:1300 ...). 매번 다시 계산해도 항상 같은 결과가 나오도록 순수 함수로 둔다.
-function fibLevelReq(n) {
-  if (n <= 1) return 100;
-  if (n === 2) return 200;
-  let a = 1, b = 2;
-  for (let i = 3; i <= n; i++) { const c = a + b; a = b; b = c; }
-  return b * 100;
+// (v0.0.6 개편) 예전 레벨/XP 시스템은 피보나치 곡선이 너무 가팔라(레벨 10에 누적 23,100 XP, 레벨
+// 20엔 286만 XP) 사실상 아무도 레벨 10~13을 넘기지 못했다 — chess.com 퍼즐 티어처럼, 랭크 게임의
+// 7단계 티어(아이언→브론즈→실버→골드→다이아몬드→마스터→그랜드마스터)로 재편해 퍼즐을 꾸준히
+// 풀면 몇 주 안에 다음 티어로 오르는 게 실제로 체감되게 한다. 기물 테마(폰→나이트→…→킹)는 그대로
+// 두고, 티어마다 그 기물에 입히는 색만 등급에 맞게 달리한다(TIER_COLORS).
+const TIERS = [
+  { key: "iron", label: "아이언", piece: "P" },
+  { key: "bronze", label: "브론즈", piece: "N" },
+  { key: "silver", label: "실버", piece: "B" },
+  { key: "gold", label: "골드", piece: "R" },
+  { key: "diamond", label: "다이아몬드", piece: "Q" },
+  { key: "master", label: "마스터", piece: "K" },
+  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // grandmaster.png(왕관에 "GM" 각인) 사용
+];
+// (기능) 실제 티어 기물 이미지(public/iron-pawn.png 등)에서 뽑아낸 대표 색 — 배지 테두리·글로우·
+// 진행바가 그 이미지의 실제 톤과 어긋나지 않도록, 이미지를 새로 받을 때마다 이 값도 함께 맞춘다.
+// 그랜드마스터만 단일 그라디언트가 아니라 실제 이미지의 홀로그램(보라·청록·핑크) 느낌을 그대로
+// 다색 그라디언트로 옮겨 특별하게 처리한다.
+const TIER_COLORS = {
+  iron: { lo: "#5B6169", hi: "#9AA1AA" },
+  bronze: { lo: "#6B3A1E", hi: "#F1A979" },
+  silver: { lo: "#A6ADB4", hi: "#F2F4F6" },
+  gold: { lo: "#8A6428", hi: "#FDDB82" },
+  diamond: { lo: "#0090C8", hi: "#4FE8FF" },
+  master: { lo: "#3B1568", hi: "#B98CFF" },
+  grandmaster: { stops: ["#B983FF", "#6EE7C8", "#FF8FD1"] },
+};
+// 티어[0..5](아이언..마스터)를 깨는 데 필요한 XP — 한 곳에서만 관리하는 튜닝 가능한 상수. 누적
+// 500/2,000/10,000/50,000/100,000 XP에 브론즈/실버/골드/다이아몬드/마스터에 도달하고, 그
+// 두 배(누적 200,000)에 그랜드마스터에 도달한다.
+const TIER_XP_REQ = [500, 1500, 8000, 40000, 50000, 100000];
+// 그랜드마스터(최종 티어) 도달 후에는 XP가 계속 쌓이며 이 단위로 "★" 프레스티지 카운터가 무한히 오른다.
+const GM_STAR_XP = 100000;
+// (v0.0.6 추가) 랭크 게임처럼 티어마다 5단계 구간(1~5)을 두고, 1이 5보다 높은 구간(승급 직전)이다.
+// 각 구간에 필요한 XP는 그 티어 전체 요구치를 5등분(TIER_XP_REQ가 전부 5의 배수라 나머지 없이 나뉜다).
+// 그랜드마스터(끝없는 최종 티어)는 구간 대신 기존 "★" 프레스티지 카운터를 그대로 쓴다.
+const DIVISIONS_PER_TIER = 5;
+// (v0.0.6 추가) 여정 지도가 "티어당 5단계 구간을 전부 같은 크기의 원으로" 보여줄 수 있도록,
+// (티어, 구간) 조합을 진행 순서대로 하나씩 펼친 목록 — 아이언5→아이언4→…→아이언1→브론즈5→…
+// →마스터1→그랜드마스터(구간 없음, 항목 하나로 끝) 순. TIERS/DIVISIONS_PER_TIER가 둘 다 고정
+// 상수라 모듈이 로드될 때 한 번만 계산해 두고 재사용한다.
+const TIER_STATIONS = TIERS.flatMap((tier, tierIdx) => (
+  tierIdx === TIERS.length - 1
+    ? [{ tier, tierIdx, division: null }]
+    : Array.from({ length: DIVISIONS_PER_TIER }, (_, k) => ({ tier, tierIdx, division: DIVISIONS_PER_TIER - k }))
+));
+// 누적 총 경험치(totalXp)로부터 현재 티어·구간·해당 구간 내 경험치·다음 구간까지 필요 경험치를 도출한다.
+function tierFromXp(totalXp) {
+  let idx = 0, remaining = Math.max(0, totalXp || 0);
+  while (idx < TIER_XP_REQ.length && remaining >= TIER_XP_REQ[idx]) { remaining -= TIER_XP_REQ[idx]; idx++; }
+  const tier = TIERS[idx];
+  if (idx < TIER_XP_REQ.length) {
+    const perDiv = TIER_XP_REQ[idx] / DIVISIONS_PER_TIER;
+    const divIdx = Math.min(DIVISIONS_PER_TIER - 1, Math.floor(remaining / perDiv)); // 0(최하위)~4(최상위)
+    const division = DIVISIONS_PER_TIER - divIdx; // 표시용 — 1이 최상위, 5가 최하위
+    return { tierIndex: idx, tier, xpInTier: remaining, xpForNext: TIER_XP_REQ[idx], maxed: false, gmStars: 0, division, xpInDivision: remaining - divIdx * perDiv, xpForNextDivision: perDiv };
+  }
+  const gmStars = Math.floor(remaining / GM_STAR_XP);
+  return { tierIndex: idx, tier, xpInTier: remaining % GM_STAR_XP, xpForNext: GM_STAR_XP, maxed: true, gmStars, division: null, xpInDivision: remaining % GM_STAR_XP, xpForNextDivision: GM_STAR_XP };
 }
-// 누적 총 경험치(totalXp)로부터 현재 레벨·해당 레벨 내 경험치·다음 레벨까지 필요 경험치를 도출한다.
-function levelFromXp(totalXp) {
-  let level = 1, remaining = Math.max(0, totalXp || 0), req = fibLevelReq(level);
-  while (remaining >= req) { remaining -= req; level++; req = fibLevelReq(level); }
-  return { level, xpInLevel: remaining, xpForNext: req };
+// (디자인 개선) 세부 티어(1~5) 구간은 아라비아 숫자 대신 로마 숫자로 표기한다 — 인덱스 1~5만
+// 쓰이므로(그랜드마스터의 ★프레스티지는 구간과 무관한 별도 카운터라 그대로 아라비아 숫자) 조회
+// 테이블 하나로 충분하다.
+const DIVISION_ROMAN = ["", "I", "II", "III", "IV", "V"];
+// 위 tierFromXp 결과를 화면에 보여줄 한 줄 라벨로 — "골드 III", 그랜드마스터는 "그랜드마스터 ★2"
+// (프레스티지 0단계면 별 표시 없이 이름만). 티어 배지·프로필 필·토스트·여정 지도에서 공유한다.
+function tierDisplayLabel(info) {
+  if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
+  return info.tier.label + " " + DIVISION_ROMAN[info.division];
+}
+// (v0.0.6 추가) 지금 위치에서 앞으로 넘어야 할 구간을 순서대로 count개 뽑는다 — 구간이 1(최상위)
+// 아래로 내려가면 다음 티어의 5(최하위)로 넘어간다. 퍼즐 탭 상단 스트립에서 "다음 몇 단계"를
+// 미리 보여줄 때 쓴다. 이미 그랜드마스터(끝없는 티어)면 더 넘을 구간이 없어 빈 배열을 준다.
+function upcomingCheckpoints(info, count) {
+  const out = [];
+  if (info.maxed) return out;
+  let tierIdx = info.tierIndex, division = info.division;
+  for (let k = 0; k < count; k++) {
+    division -= 1;
+    if (division < 1) {
+      tierIdx += 1;
+      if (tierIdx >= TIERS.length) break;
+      division = tierIdx === TIERS.length - 1 ? null : DIVISIONS_PER_TIER; // 그랜드마스터는 구간이 없다
+    }
+    out.push({ tier: TIERS[tierIdx], division });
+  }
+  return out;
 }
 // 퍼즐 한 라인을 해결할 때 얻는 경험치: {13~17 사이의 난수 × (기존 별 보유 수+1.2)}의 정수 부분.
 function rollLineXp(existingStars) {
@@ -5338,21 +5756,91 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
   );
 }
 // (기능1) 별 3개(라인) 아이콘 — 해결한 라인 수만큼 채워서 표시
-// (15차 기능4) 헤더에 상시 표기되는 레벨 배지 — 현재 레벨과 다음 레벨까지 남은 경험치를 진행바 + 텍스트로 보여준다.
+// (v0.0.6 개편) 헤더에 상시 표기되는 티어 배지 — 현재 티어와 다음 티어까지 남은 경험치를 진행바 +
+// 텍스트로 보여준다. 눌러서 여정 지도(TierJourneyMap)를 연다.
 // 진행바는 폭이 바뀔 때마다 눈에 띄게 차오르도록 긴 이징 트랜지션을 건다("+N XP" 자체는 화면 중앙 토스트로 별도 표시).
-// (18차 UI8) 레벨 텍스트(좌)와 게이지(우)를 가로로 나란히 배치 — 헤더에서 아이디 왼쪽에 표시된다.
-function LevelBadge({ totalXp, compact }) {
-  const { level, xpInLevel, xpForNext } = useMemo(() => levelFromXp(totalXp), [totalXp]);
-  const pct = Math.max(0, Math.min(100, Math.round((xpInLevel / xpForNext) * 100)));
+// (18차 UI8) 티어 텍스트(좌)와 게이지(우)를 가로로 나란히 배치 — 헤더에서 아이디 왼쪽에 표시된다.
+function TierBadge({ totalXp, compact, onClick }) {
+  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const { tier, xpInDivision, xpForNextDivision } = info;
+  const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
+  const tc = TIER_COLORS[tier.key];
+  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   return (
-    <div className="flex items-center" style={{ gap: compact ? 5 : 7, flexShrink: 0, position: "relative" }}>
-      <div style={{ fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, whiteSpace: "nowrap" }}>Lv.{level}</div>
+    <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 5 : 7, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
+      <div className="flex items-center" style={{ gap: 4, fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + ringColor, whiteSpace: "nowrap" }}>
+        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={compact ? 12 : 14} />
+        {tierDisplayLabel(info)}
+      </div>
       <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
         <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
-        <div style={{ fontSize: compact ? 8 : 8.5, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInLevel}/{xpForNext}</div>
+        <div style={{ fontSize: compact ? 8 : 8.5, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInDivision}/{xpForNextDivision}</div>
       </div>
+    </div>
+  );
+}
+// (v0.0.6 개편) 프로필 화면(내 프로필 편집·다른 유저 프로필)에 중복돼 있던 "Lv.N (X/Y XP)" 인라인
+// 표기를 하나로 모은다 — 티어(구간)명 + 구간 내 XP 진행 텍스트만 보여주는 작은 필.
+function TierStatPill({ totalXp }) {
+  const info = tierFromXp(totalXp);
+  const { tier, xpInDivision, xpForNextDivision } = info;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
+      <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={14} /> {tierDisplayLabel(info)} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
+    </span>
+  );
+}
+// (디자인 개선) 퍼즐 탭 티어 스트립에서 큰 원(지금 구간)과 작은 배지(다음 구간들) 사이를 잇는
+// 짧은 점선 — 원래는 여정 지도와 같은 느낌을 내려고 구불구불한 지그재그였는데, 이 좁은 가로
+// 스트립 안에서는 오히려 어수선해 보인다는 피드백으로 곧은 직선으로 바꿨다.
+function TierConnector() {
+  return (
+    <svg viewBox="0 0 60 30" preserveAspectRatio="none" style={{ width: 26, height: 30, flexShrink: 0 }}>
+      <line x1="0" y1="15" x2="60" y2="15" stroke="rgba(196,154,80,.6)" strokeWidth="2.5" strokeDasharray="4 5" strokeLinecap="round" />
+    </svg>
+  );
+}
+// (기능) 다음 몇 구간을 미리 보여주는 작은 배지 — 로마 숫자(구간)가 그 티어의 색으로 표시된다.
+// 그랜드마스터처럼 구간이 없는 자리는 숫자 대신 기물 이미지를 보여준다.
+function NextCheckpointBadge({ tier, division }) {
+  const tc = TIER_COLORS[tier.key];
+  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
+  return (
+    <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.3)", border: "2px solid " + ringColor, color: ringColor, fontSize: 14, fontWeight: 900 }}>
+      {division != null ? DIVISION_ROMAN[division] : <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={18} />}
+    </div>
+  );
+}
+// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 아이콘 +
+// 티어/구간명 + 진행바), 다음으로 넘어야 할 구간 2개는 작은 번호 배지로 지그재그 선을 따라 미리
+// 보여준다. 누르면 여정 지도가 열린다.
+function TierProgressStrip({ totalXp, onOpen }) {
+  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const { tier, xpInDivision, xpForNextDivision } = info;
+  const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
+  const tc = TIER_COLORS[tier.key];
+  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
+  const upcoming = useMemo(() => upcomingCheckpoints(info, 2), [info]);
+  return (
+    <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
+      <div style={{ width: 52, height: 52, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#4A3016,#241509)", border: "2px solid " + ringColor, boxShadow: "0 0 14px 2px " + ringColor + "66" }}>
+        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={30} />
+      </div>
+      <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabel(info)}</div>
+        <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
+          <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
+        </div>
+        <div style={{ fontSize: 10, color: T.brassHi, opacity: .75, marginTop: 2 }}>{xpInDivision}/{xpForNextDivision} XP</div>
+      </div>
+      {upcoming.map((u, i) => (
+        <React.Fragment key={i}>
+          <TierConnector />
+          <NextCheckpointBadge tier={u.tier} division={u.division} />
+        </React.Fragment>
+      ))}
     </div>
   );
 }
@@ -5459,12 +5947,25 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     return { items, edges, width, height, curItem };
   }, [tree, allLines, solvedNow, curKeys.join(" "), exploredKeys, celebrateTag, shakeTag]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
-  const [zoom, setZoom] = useState(1);
+  // (v0.0.6) 도감 오프닝 트리와 동일하게, 다들 편하게 보던 75% 배율을 새 기준(100%)으로 재정의한다.
+  const [zoom, setZoom] = useState(SCHEMATIC_ZOOM_LABEL_BASE);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
   const pointersRef = useRef(new Map());   // pointerId -> {x,y} — 두 손가락이면 핀치 확대/축소
   const pinchRef = useRef(null);           // { dist, zoom } 핀치 시작 시점 기준값
   const clampZoom = snapSchematicZoom;
+  // (버그 수정, 도감 모식도와 동일) 확대/축소 버튼·핀치가 pan은 그대로 두고 zoom만 바꿔서, 화면
+  // 좌상단(콘텐츠 원점)을 기준으로 확대/축소가 일어나 팬으로 멀리 옮겨온 화면에서는 트리 전체가
+  // 화면 밖으로 사라진 것처럼 보였다 — 배율이 바뀐 뒤에도 화면 위 같은 지점(anchorX/Y)에 그 콘텐츠
+  // 지점이 그대로 남도록 pan을 함께 보정한다.
+  const zoomBy = (delta, anchorX, anchorY) => {
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 380, height: 208 };
+    const ax = anchorX != null ? anchorX : rect.width / 2, ay = anchorY != null ? anchorY : rect.height / 2;
+    const nz = clampZoom(zoom + delta);
+    if (nz === zoom) return;
+    setPan(anchoredZoomPan(pan, zoom, nz, ax, ay));
+    setZoom(nz);
+  };
   // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
   useEffect(() => {
     const vw = boxRef.current ? boxRef.current.clientWidth : 380;
@@ -5493,7 +5994,11 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     if (pointersRef.current.size === 2 && pinchRef.current) {
       const [a, b] = [...pointersRef.current.values()];
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      setZoom(clampZoom(pinchRef.current.zoom * (dist / Math.max(1, pinchRef.current.dist))));
+      const nz = clampZoom(pinchRef.current.zoom * (dist / Math.max(1, pinchRef.current.dist)));
+      const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { left: 0, top: 0, width: 380, height: 208 };
+      const anchorX = (a.x + b.x) / 2 - rect.left, anchorY = (a.y + b.y) / 2 - rect.top;
+      setPan((p) => anchoredZoomPan(p, zoom, nz, anchorX, anchorY));
+      setZoom(nz);
       return;
     }
     if (!dragRef.current) return;
@@ -5544,9 +6049,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
         <div className="no-pan flex" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
-          <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-          <button onClick={() => setZoom(1)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{Math.round(zoom * 100)}%</button>
-          <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+          <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+          <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoom)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{schematicZoomLabel(zoom)}</button>
+          <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
@@ -6509,7 +7014,7 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, active, setActive, engine, liveOn, canEdit, bumpContent }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -6594,6 +7099,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   return (
     <div>
       <div className="flex items-center gap-2"><Mascot name="kokoa" emotion="celebrate" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퍼즐</h2></div>
+      {/* (v0.0.6 추가) 퍼즐을 풀 때마다 오르는 티어를 늘 보이게 — 지금 구간은 크게, 다음 몇 단계는
+          작게 미리 보여준다. 누르면 전체 여정 지도가 열린다. */}
+      <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} />
       {/* (18차 UI5) 안내 문구 삭제, (18차 UI2) 일일 퀘스트는 퀘스트 탭으로 이동 */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByNumber()} inputMode="numeric" placeholder="퍼즐 번호로 풀기 (예: 123456)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
@@ -6711,13 +7219,13 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{profile.nickname || "이름 미설정"}</div>
         </div>
       </div>
-      {/* (17차) 프로필 정보 확장 — 레벨(현재 XP 숫자 명시)과 해결한 퍼즐 개수를 한눈에 볼 수 있게 표시 */}
-      {totalXp != null && (() => { const lv = levelFromXp(totalXp); return (
+      {/* (17차) 프로필 정보 확장 — 티어(현재 XP 숫자 명시)와 해결한 퍼즐 개수를 한눈에 볼 수 있게 표시 */}
+      {totalXp != null && (
         <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>Lv.{lv.level} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(lv.xpInLevel)}/{fmtFull(lv.xpForNext)} XP)</span></span>
+          <TierStatPill totalXp={totalXp} />
           {solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(solvedCount)}개 해결</span>}
         </div>
-      ); })()}
+      )}
       <div style={lab}>프로필 사진</div>
       <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
         <label className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12, cursor: "pointer", border: "none" }}>
@@ -6940,15 +7448,25 @@ function findOpeningPathByName(name) {   // (UX2) 이름이 같은 첫(최단) �
 // (20차 UI4 보충) 일일 퀘스트는 "London System"처럼 짧은 이름을 쓰지만 트리의 실제 오프닝 이름은
 // 더 세부적일 수 있어(예: "Queen's Pawn Game: Accelerated London System"), findOpeningPathByName의
 // 정확 일치 대신 부분 일치로 첫 경로를 찾는다.
+// (버그 수정) 원래 의도(위 주석)는 "퀘스트 이름이 트리 이름보다 짧을 수 있다"는 것이었는데, 반대
+// 방향(트리 이름이 검색어보다 짧을 때도 일치)까지 한 조건에 같이 넣어 BFS 첫 매치로 곧장 반환하다
+// 보니 문제가 생겼다 — 이 트리는 얕은 상위 오프닝 이름이 항상 더 깊은 하위 바리에이션 이름의
+// 접두어이므로(예: "Sicilian Defense" ⊂ "Sicilian Defense: Najdorf Variation"), 세부 바리에이션을
+// 검색해도 반대 방향 조건 때문에 훨씬 얕고 일반적인 상위 오프닝이 먼저 걸려 반환됐다. 트리 이름이
+// 검색어를 포함하는(=트리 쪽이 더 구체적이거나 같은) 매치를 먼저 전부 찾고, 그런 매치가 하나도
+// 없을 때만(퀘스트 이름이 트리 이름보다 더 구체적인, 원래 의도한 드문 경우) 반대 방향으로 한 번 더 찾는다.
 function findOpeningPathByFuzzyName(name) {
-  let queue = [[]]; const seen = new Set([""]); let steps = 0;
-  while (queue.length && steps < 8000) {
-    const path = queue.shift(); steps++;
-    const nd = snapNode(path);
-    if (path.length && nd && nd.opening && (nd.opening.name.includes(name) || name.includes(nd.opening.name))) return path;
-    if (nd && nd.moves) for (const mv of nd.moves) { const np = [...path, mv.san]; const k = np.join(" "); if (!seen.has(k) && np.length <= 12) { seen.add(k); queue.push(np); } }
-  }
-  return null;
+  const search = (matches) => {
+    let queue = [[]]; const seen = new Set([""]); let steps = 0;
+    while (queue.length && steps < 8000) {
+      const path = queue.shift(); steps++;
+      const nd = snapNode(path);
+      if (path.length && nd && nd.opening && matches(nd.opening.name)) return path;
+      if (nd && nd.moves) for (const mv of nd.moves) { const np = [...path, mv.san]; const k = np.join(" "); if (!seen.has(k) && np.length <= 12) { seen.add(k); queue.push(np); } }
+    }
+    return null;
+  };
+  return search((n) => n.includes(name)) || search((n) => name.includes(n));
 }
 // (버그 수정) 줄바꿈(들여쓰기)만으로는 상위-하위 오프닝의 관계가 잘 안 보인다는 피드백 — 하위
 // 오프닝 묶음을 왼쪽 세로선(트리 가지)으로 잇고, 각 행에서 그 세로선까지 짧은 가로선(elbow)을 그어
@@ -6959,22 +7477,24 @@ function findOpeningPathByFuzzyName(name) {
 // 처리했는데, 모바일처럼 화면이 좁고 깊이 중첩된(들여쓰기가 누적된) 오프닝일수록 2줄로도 모자라
 // 이름이 중간에 잘려 보였다(title 속성은 모바일 터치 환경에서 아예 작동하지 않아 전체 이름을
 // 확인할 방법도 없었다). 줄 수 제한을 없애 이름이 몇 줄이 되든 항상 끝까지 그대로 보이게 한다.
+// (버그 수정) 이름(영문 오프닝 이름은 길고 공백이 많음)과 통계를 한 줄에 양 끝 정렬(space-between)로
+// 욱여넣었더니, 중첩이 깊어질수록(들여쓰기 누적) 이름 칸에 남는 폭이 몇 십 px까지 줄어들어 단어
+// 하나하나가 줄바꿈되며 통계 배지와 겹쳐 보이는 문제가 있었다 — 깊이가 얼마든 항상 안전하도록
+// 이름과 통계를 아예 다른 줄로 분리한다(한 줄에 붙여 보여주는 대신, 통계는 이름 바로 아래).
 function OpeningWinrateRow({ node, depth, onOpenOpening }) {
   const isRoot = depth === 0;
-  const nameStyle = { wordBreak: "keep-all", lineHeight: 1.3, minWidth: 0, flex: "1 1 auto" };
+  const nameStyle = { display: "block", wordBreak: "break-word", lineHeight: 1.3, fontSize: isRoot ? 12.5 : 11.5 };
   return (
     <div style={{ position: "relative" }}>
       {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
       <div style={{ padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, fontSize: isRoot ? 12.5 : 11.5 }}>
-          {onOpenOpening
-            ? <button onClick={() => onOpenOpening(node.name)} title={node.name} className="press" style={{ ...nameStyle, color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0, fontSize: "inherit" }}>{node.name}</button>
-            : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
-          <span style={{ fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0, paddingTop: 1 }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
-        </div>
+        {onOpenOpening
+          ? <button onClick={() => onOpenOpening(node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
+          : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
+        <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
       </div>
       {node.children.length > 0 && (
-        <div style={{ marginLeft: 15, borderLeft: "1.5px solid #D9C7A0", paddingLeft: 9 }}>
+        <div style={{ marginLeft: 12, borderLeft: "1.5px solid #D9C7A0", paddingLeft: 8 }}>
           {node.children.map((c) => <OpeningWinrateRow key={c.name} node={c} depth={depth + 1} onOpenOpening={onOpenOpening} />)}
         </div>
       )}
@@ -7161,7 +7681,12 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
           <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
         </div>
       </div>
-      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      {/* (버그 수정) 메인 퀘스트 진척도·푼 퍼즐이 chess.com 대국 기록(최근 대국·오프닝별 승률 등,
+          분량이 많아 화면을 길게 차지함)보다 아래에 있어 스크롤을 한참 내려야 보였다 — 이 프로필
+          카드 안의 "내 진행 상황"(퀘스트·퍼즐)을 먼저 보여주고, chess.com 데이터는 그 아래로
+          내린다. PublicProfileStats 내부에 함께 있던 chess.com 블록(AccountChessStats)은
+          hideChesscom으로 꺼 두고, 같은 컴포넌트를 아래에서 따로 렌더링한다. */}
+      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom />
       {mq.totalChapters > 0 && (
         <div style={{ marginTop: 4, marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -7186,6 +7711,11 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
               </div>
             </div>
           )}
+        </div>
+      )}
+      {linked && (
+        <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
+          <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
         </div>
       )}
       {editOpen && (
@@ -7220,10 +7750,45 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
   );
 }
 // (기능) 접속 시 보여줄 업데이트 공지 — README 버전 기록을 기반으로 하되, 개발 용어 없이 사용자
-// 입장에서 무엇이 좋아졌는지만 쉬운 말로 다시 정리한다. APP_VERSION이 바뀌면(새 항목을 배열 맨 앞에
-// 추가) 이전에 "다시 보지 않기"를 체크했던 사용자에게도 새 공지가 다시 뜬다.
-const APP_VERSION = "0.0.4";
+// 입장에서 무엇이 좋아졌는지만 쉬운 말로 다시 정리한다. 새 버전을 배포할 때 할 일은 이 배열
+// 맨 앞에 { version, date, items } 항목 하나를 추가하는 것, 그게 전부다. 그러면 이전에
+// "다시 보지 않기"를 체크했던 사용자에게도 새 공지가 다시 뜬다.
+// (버그 수정) v0.0.5·v0.0.6이 실제로 배포됐는데도 이 배열엔 계속 v0.0.4가 최신으로 남아 있어,
+// 공지 모달이 최근 버전 소식을 전혀 보여주지 못하던 문제가 있었다. 원인은 이 배열과 별개로
+// APP_VERSION 상수를 손으로 따로 맞춰줘야 했던 것 — 둘 중 하나만 깜빡해도 재발하는 구조였다.
+// 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
+// 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.0.7", date: "2026.7.15", items: [
+      "도감 탭에서 특정 수를 클릭했을 때 화면이 심하게 흔들리거나 드래그하면 트리가 통째로 사라지던 문제를 근본적으로 해결했어요.",
+      "도감 탭 오프닝 검색에서 같은 오프닝이 중복으로 뜨던 문제를 없앴고, 검색어로 시작하는 오프닝이 항상 먼저 나오도록 정렬을 개선했어요.",
+      "체스 규칙 두 가지를 바로잡았어요 — 폰이 한 칸씩 두 번 나눠 전진해도 앙파상이 가능한 것처럼 보이던 오류, 캐슬링(킹·룩 이동) 후에도 여전히 가능한 것처럼 엔진이 착각하던 오류.",
+      "학습 탭에서 수를 둘 때마다 나오는 실시간 평가 속도를 여러 배 끌어올렸어요.",
+      "유저 검색창을 열면 이제 친구의 친구나 티어가 높은 플레이어를 바로 추천해 줘요.",
+      "티어 여정 화면에 실제로 디자인된 기물 이미지를 반영하고, 세부 단계 표기를 로마 숫자(I~V)로 바꿨어요.",
+      "퍼즐 탭 아이콘을 퍼즐 조각 모양으로 바꿨어요.",
+      "그 밖에도 학습 탭의 수 등급 판정, 로그인·로그아웃 시 데이터 처리, 알림 반영 등 자잘한 버그 여러 개를 함께 고쳤어요.",
+    ],
+  },
+  {
+    version: "0.0.6", date: "2026.7.15", items: [
+      "chess.com에 대국이 아주 많은 계정에서 도감 탭 오프닝 트리가 심하게 버벅이던 문제를 해결했어요.",
+      "도감 탭에서 오프닝을 검색하면 이름에 포함된 오프닝이 전부 나오고, 더 상위(유명한) 오프닝이 위쪽에 먼저 보여요. 검색 결과로 이동하는 화면도 트리 선을 따라 자연스럽게 움직여요.",
+      "오프닝·퍼즐 모식도에서 확대·축소를 조절하면 트리 전체가 갑자기 안 보이던 문제를 해결했어요. 기본 확대 배율도 다들 편하게 보던 크기로 맞췄어요.",
+      "레벨 시스템을 랭크 게임처럼 티어(아이언~그랜드마스터, 각 5단계)로 새로 만들었어요. 헤더의 티어 배지를 누르면 전체 여정 지도를 볼 수 있고, 퍼즐 탭에서도 지금 티어와 다음 단계를 바로 확인할 수 있어요.",
+      "설정 탭 내 프로필의 오프닝별 승률 목록에서 오프닝 이름이 길고 깊이 중첩될 때 글자가 겹쳐 보이던 문제를 해결했어요.",
+      "내 프로필에서 메인 퀘스트 진척도·푼 퍼즐 정보가 chess.com 대국 기록보다 먼저 보이도록 순서를 바꿨어요.",
+    ],
+  },
+  {
+    version: "0.0.5", date: "2026.7.14", items: [
+      "다른 사람이 내 퍼즐 풀이수·좋아요 수를 마음대로 조작할 수 있던 보안 문제를 해결했어요.",
+      "다른 사람 이름으로 가짜 알림(칭호 획득, 레벨 업 등)을 보낼 수 있던 문제를 해결했어요.",
+      "친구가 아닌 사람에게도 채팅을 보낼 수 있던 문제를 해결했어요.",
+      "알림·친구 요청·채팅창이 더 빠르게(실시간으로) 갱신되도록 개선했어요.",
+    ],
+  },
   {
     version: "0.0.4", date: "2026.7.13", items: [
       "게임 리뷰(전체 기보 분석)가 느리게 느껴지던 문제를 해결해 훨씬 빠르게 결과를 볼 수 있어요.",
@@ -7269,6 +7834,7 @@ const CHANGELOG = [
     ],
   },
 ];
+const APP_VERSION = CHANGELOG[0].version;
 function AnnouncementModal({ onClose, onDismissVersion }) {
   const [hide, setHide] = useState(false);
   const latest = CHANGELOG[0];
@@ -7350,7 +7916,36 @@ function InquiryModal({ onClose, user }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
+// (기능) 개발자 모드 전용 — 티어/경험치 테스트 패널. 실제로 퍼즐을 몇 주씩 풀어 XP를 쌓지 않아도,
+// 임의 증감량을 즉시 적용하거나 특정 티어의 시작 지점(그 티어 5구간)으로 곧장 점프해 승급 연출·
+// 색상·토스트·여정 지도를 바로 확인할 수 있게 한다. 티어 시작 누적치는 TIER_XP_REQ에서 그때그때
+// 계산해, 그 상수가 나중에 바뀌어도(티어 요구치 재조정 등) 항상 맞는 값을 가리킨다.
+function DevXpPanel({ totalXp, setTotalXp, card }) {
+  const [amt, setAmt] = useState("1000");
+  const info = tierFromXp(totalXp);
+  const tierStarts = useMemo(() => {
+    let acc = 0; const starts = [0];
+    for (const req of TIER_XP_REQ) { acc += req; starts.push(acc); }
+    return starts; // starts[i] = TIERS[i]로 들어서는 데 필요한 누적 XP
+  }, []);
+  const apply = (delta) => setTotalXp((x) => Math.max(0, (x || 0) + delta));
+  const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>티어/경험치 테스트</div>
+      <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP</div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
+        <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="XP 증감량(음수 가능)" style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" }} />
+        <button onClick={() => apply(parseInt(amt, 10) || 0)} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>적용</button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {TIERS.map((t, i) => <button key={t.key} onClick={() => setTotalXp(tierStarts[i])} className="press" style={btnStyle}>{t.label}</button>)}
+        <button onClick={() => setTotalXp(0)} className="press" style={{ ...btnStyle, color: T.blunder, borderColor: T.blunder }}>0으로 초기화</button>
+      </div>
+    </div>
+  );
+}
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -7413,6 +8008,10 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           <button onClick={() => setCodevOn((v) => !v)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: codevOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: codevOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
       )}
+
+      {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
+          않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
+      {isDev && devOn && <DevXpPanel totalXp={totalXp} setTotalXp={setTotalXp} card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
@@ -7538,6 +8137,7 @@ const ASSIGNMENT_ICON_PATHS = {
   assignment: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
   assignment_late: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm1 15h-2v-2h2v2zm0-4h-2V8h2v6z",
   assignment_turned_in: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-1.06 14L7.4 12.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41-5.64 5.66z",
+  extension: "M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z",
 };
 function MaterialIcon({ name, size = 20, color = "currentColor", style }) {
   const d = ASSIGNMENT_ICON_PATHS[name] || ASSIGNMENT_ICON_PATHS.assignment;
@@ -7625,7 +8225,7 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
     </div>
   );
 }
-const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: Sparkles }, { key: "quest", label: "퀘스트", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
+const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "퀘스트", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 const TAB_PATH = { learn: "/learn", dex: "/book", puzzle: "/puzzle", quest: "/quest", store: "/store", set: "/setting" };
 const PATH_TAB = { "/learn": "learn", "/book": "dex", "/puzzle": "puzzle", "/quest": "quest", "/store": "store", "/setting": "set" };
@@ -7693,12 +8293,17 @@ async function accountProviders(email) {
   try { const r = await sbRpc("account_providers", { p_email: email.trim().toLowerCase() }); return Array.isArray(r) ? r : []; } catch { return []; }
 }
 /* 구글 콜백 오류(예: 이미 다른 방식으로 가입된 이메일과 충돌) 파싱 */
+// (버그 수정) URLSearchParams는 application/x-www-form-urlencoded 규칙으로 파싱되므로 .get()이
+// 이미 퍼센트 이스케이프 디코딩과 "+"→공백 치환을 다 해준다 — 그런데 그 결과를 decodeURIComponent로
+// 한 번 더 디코딩하고 있었다. 에러 메시지 안에 이스케이프 시퀀스가 아닌 순수 "%"(예: "50% quota")가
+// 하나라도 있으면 이 이중 디코딩이 URIError를 던졌고, 바깥 try/catch가 그걸 삼켜 사용자에게는
+// 아무 에러 안내도 안 뜨고 #error=... 해시도 지워지지 않는 채로 조용히 실패했다.
 function parseOAuthError() {
   try {
     const h = (typeof window !== "undefined" && window.location.hash) || "";
     if (h.indexOf("error") < 0) return null;
     const p = new URLSearchParams(h.replace(/^#/, ""));
-    const e = p.get("error_description") || p.get("error"); return e ? decodeURIComponent(e.replace(/\+/g, " ")) : null;
+    return p.get("error_description") || p.get("error") || null;
   } catch { return null; }
 }
 /* 세션 복원(앱 로드): refresh_token → 새 access_token. 반환 account | null */
@@ -7758,21 +8363,41 @@ async function progressSave(uid, progress) { if (!SB_ON || !uid) return; try { a
 async function publishProfile(uid, username, pub) { if (!SB_ON || !uid) return; try { await sbUpsert("profiles", { id: uid, username: (username || "").toLowerCase(), pub }); } catch { } }
 async function userSearch(q) { if (!SB_ON || !q) return []; try { const rows = await sbSelect("profiles?username=ilike." + encodeURIComponent(q.toLowerCase() + "*") + "&select=id,username,pub&limit=20"); return rows || []; } catch { return []; } }
 async function userProfile(username) { if (!SB_ON || !username) return null; try { const rows = await sbSelect("profiles?username=eq." + encodeURIComponent(username.toLowerCase()) + "&select=id,username,pub&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }
+// (기능) 유저 검색 기본 추천 — 아직 아무것도 입력하지 않았을 때 "친구의 친구"(friend_suggestions)와
+// "티어 리더보드"(leaderboard_top)를 보여준다. 둘 다 서버 RPC로 계산한다: 친구의 친구는 다른 사람의
+// friend_edges를 직접 읽어야 하는데 RLS가 본인이 관련된 행만 읽도록 막아 두어(supabase-setup.sql
+// "friend edges select own") 클라이언트에서 직접 조합할 수 없고, 리더보드는 XP가 profiles.pub 안의
+// jsonb 텍스트라 PostgREST의 문자열 정렬(order=pub->>xp)로는 "100"이 "20"보다 앞에 오는 등 숫자
+// 크기와 다르게 정렬될 수 있어 서버에서 숫자로 캐스팅해 정렬해야 한다.
+async function friendSuggestions(limit) { if (!SB_ON) return []; try { const r = await sbRpc("friend_suggestions", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
+async function leaderboardTop(limit) { if (!SB_ON) return []; try { const r = await sbRpc("leaderboard_top", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 /* ---- 친구 시스템 (요청 → 수락). Auth 미사용·anon 접근이라 기존 profiles_public/puzzle_solve와 동일 보안 수준 ---- */
 async function friendRequest(toUsername) { if (!SB_ON || !toUsername) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request", { p_to_username: toUsername.toLowerCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
 async function friendAccept(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_accept", { p_other_uid: otherUid }); return true; } catch { return false; } }
 async function friendRemove(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_remove", { p_other_uid: otherUid }); return true; } catch { return false; } }
-/* (17차) 알림 — 친구 요청 수신/수락, 칭호 획득, 레벨 업 */
+/* (17차) 알림 — 친구 요청 수신/수락, 칭호 획득, 티어 승급 */
 async function notifyCreate(toUid, kind, payload) { if (!SB_ON || !toUid) return; try { await sbInsert("notifications", { to_uid: toUid, kind, payload: payload || {} }); } catch { } }
 async function notifyList(uid) { if (!SB_ON || !uid) return []; try { return (await sbSelect("notifications?to_uid=eq." + uid + "&order=created_at.desc&limit=30")) || []; } catch { return []; } }
 async function notifyMarkRead(row) { if (!SB_ON || row.id == null) return; try { await sbPatch("notifications", "id=eq." + row.id, { read: true }); } catch { } }
 // (18차 보충 UX4) 여러 미확인 알림을 한 번에 읽음 처리(개별 PATCH가 실패해도 나머지는 진행).
-async function notifyMarkReadMany(rows) { if (!SB_ON || !rows || !rows.length) return; await Promise.all(rows.filter((r) => r.id != null).map((r) => sbPatch("notifications", "id=eq." + r.id, { read: true }).catch(() => {}))); }
+// (버그 수정) 예전엔 실패를 그냥 삼키고 아무것도 돌려주지 않아, 호출부(NotificationBell)의 낙관적
+// UI 업데이트(안 읽음 배지 즉시 숨김)가 실제 PATCH 실패 여부와 무관하게 그대로 유지됐다 — 서버는
+// 여전히 안 읽음인데 화면은 재조회 전까지 계속 읽음으로 보였다. 실제로 성공한 id만 담은 Set을
+// 돌려줘, 실패한 항목만 호출부가 되돌릴 수 있게 한다.
+async function notifyMarkReadMany(rows) {
+  if (!SB_ON || !rows || !rows.length) return new Set((rows || []).map((r) => r.id));
+  const targets = rows.filter((r) => r.id != null);
+  const ok = await Promise.all(targets.map((r) => sbPatch("notifications", "id=eq." + r.id, { read: true }).then(() => true).catch(() => false)));
+  return new Set(targets.filter((_, i) => ok[i]).map((r) => r.id));
+}
 // (18차 UX4) 친구 요청 알림의 수락/거절 결과를 payload에 기록 — 버튼을 없애고 "수락함/거절함"으로 표기하기 위함.
-async function notifySetResult(row, result) { if (!SB_ON || row.id == null) return; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), result } }); } catch { } }
+// (버그 수정) 성공 여부를 돌려줘, 실패 시 호출부가 낙관적으로 붙인 "수락함/거절함" 표시를 되돌릴 수 있게 한다.
+async function notifySetResult(row, result) { if (!SB_ON || row.id == null) return true; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), result } }); return true; } catch { return false; } }
 // (19차 UI1) 알림 부분/전체 삭제 — id 필터로 개별 삭제, to_uid 필터로 내 알림 전체 삭제.
-async function notifyDelete(row) { if (!SB_ON || row.id == null) return; try { await fetch(SB_URL + "/rest/v1/notifications?id=eq." + row.id, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); } catch { } }
-async function notifyDeleteAll(uid) { if (!SB_ON || !uid) return; try { await fetch(SB_URL + "/rest/v1/notifications?to_uid=eq." + uid, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); } catch { } }
+// (버그 수정) 성공 여부(HTTP 상태 포함)를 돌려줘, 실패 시 호출부가 낙관적으로 지운 알림 항목을
+// 되살릴 수 있게 한다 — DELETE는 sbPatch와 달리 non-2xx여도 fetch 자체는 던지지 않으므로 r.ok도 확인한다.
+async function notifyDelete(row) { if (!SB_ON || row.id == null) return true; try { const r = await fetch(SB_URL + "/rest/v1/notifications?id=eq." + row.id, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); return r.ok; } catch { return false; } }
+async function notifyDeleteAll(uid) { if (!SB_ON || !uid) return true; try { const r = await fetch(SB_URL + "/rest/v1/notifications?to_uid=eq." + uid, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); return r.ok; } catch { return false; } }
 /* (17차) 친구 채팅 — 텍스트 + 이모티콘 */
 async function chatSend(myUid, toUid, body, emoji) { if (!SB_ON || !myUid || !toUid) return false; try { await sbInsert("chat_messages", { from_uid: myUid, to_uid: toUid, body: body || null, emoji: emoji || null }); return true; } catch { return false; } }
 async function chatFetch(myUid, otherUid) {
@@ -7802,13 +8427,13 @@ function notifText(n) {
   if (n.kind === "friend_request") return (p.fromUsername || "누군가") + "님이 친구 요청을 보냈습니다";
   if (n.kind === "friend_accepted") return (p.byUsername || "상대") + "님이 친구 요청을 수락했습니다";
   if (n.kind === "title_earned") return "새 칭호 획득: " + (titleLabel(p.titleId) || p.titleId);
-  if (n.kind === "level_up") return "레벨 " + p.level + "(으)로 올랐습니다!";
+  if (n.kind === "tier_up") return "티어 " + p.tierLabel + "(으)로 승급했습니다!";
   return "알림";
 }
 function notifIcon(kind) {
   if (kind === "friend_request" || kind === "friend_accepted") return <Users size={15} style={{ color: T.brass }} />;
   if (kind === "title_earned") return <Star size={15} style={{ color: T.brassHi }} />;
-  if (kind === "level_up") return <Sparkles size={15} style={{ color: T.brassHi }} />;
+  if (kind === "tier_up") return <Sparkles size={15} style={{ color: T.brassHi }} />;
   return <Info size={15} style={{ color: T.inkSoft }} />;
 }
 function NotificationBell({ myUid, onAccept, onReject, compact }) {
@@ -7837,21 +8462,35 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
   const unread = items.filter((n) => !n.read).length;
+  // (버그 수정) 아래 네 핸들러 모두 서버 요청이 실패해도 낙관적 업데이트가 되돌아가지 않아, 서버는
+  // 여전히 이전 상태인데 화면(과 새로고침 전까지의 localRead/localResult 오버레이)은 계속 성공한
+  // 것처럼 보였다 — 성공 여부를 확인해 실패하면 해당 항목의 로컬 오버레이를 지우고 refresh()로
+  // 서버의 실제 상태와 다시 맞춘다.
   const toggle = () => {
     const next = !open; setOpen(next);
     // (18차 UX4→보충) 최초 확인 시 서버에 PATCH로 read=true를 확실히 반영 — 새로고침 후에도 배지가 되살아나지 않는다.
-    if (next && unread) { const stale = items.filter((n) => !n.read); stale.forEach((n) => localReadRef.current.add(n.id)); notifyMarkReadMany(stale); setItems((prev) => prev.map((n) => ({ ...n, read: true }))); }
+    if (next && unread) {
+      const stale = items.filter((n) => !n.read);
+      stale.forEach((n) => localReadRef.current.add(n.id));
+      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+      notifyMarkReadMany(stale).then((okIds) => {
+        const failed = stale.filter((n) => !okIds.has(n.id));
+        if (!failed.length) return;
+        failed.forEach((n) => localReadRef.current.delete(n.id));
+        refresh();
+      });
+    }
   };
   const respond = (n, result) => {
     // (18차 UX4) 응답 즉시 버튼을 없애고 결과를 고정 — 중복 클릭·수락 후 거절 번복을 차단한다.
     localResultRef.current[n.id] = result;
     setItems((prev) => prev.map((x) => x.id === n.id ? { ...x, payload: { ...(x.payload || {}), result } } : x));
-    notifySetResult(n, result);
+    notifySetResult(n, result).then((ok) => { if (!ok) { delete localResultRef.current[n.id]; refresh(); } });
     if (result === "accepted") { onAccept && onAccept(n); } else { onReject && onReject(n); }
   };
   // (19차 UI1) 알림 개별/전체 삭제 — 낙관적으로 목록에서 즉시 제거하고 서버에도 DELETE 반영.
-  const removeOne = (n) => { setItems((prev) => prev.filter((x) => x.id !== n.id)); notifyDelete(n); };
-  const clearAll = () => { setItems([]); if (myUid) notifyDeleteAll(myUid); };
+  const removeOne = (n) => { setItems((prev) => prev.filter((x) => x.id !== n.id)); notifyDelete(n).then((ok) => { if (!ok) refresh(); }); };
+  const clearAll = () => { if (!myUid) return; setItems([]); notifyDeleteAll(myUid).then((ok) => { if (!ok) refresh(); }); };
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
       <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -7894,7 +8533,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
 // (버그 수정) 헤더의 "아이디 + 로그아웃"을 아바타 알약 하나로 묶는다 — 좁은 화면에서는 아바타만
 // 보여주고(이니셜), 이름은 펼침 메뉴 안에서만 보여줘 한 줄 폭을 아낀다. 넓은 화면에서는 아바타 옆에
 // 이름도 함께 표시한다. NotificationBell과 동일하게 바깥 클릭 시 자동으로 닫힌다.
-// (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·레벨·퍼즐 수·
+// (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·티어·퍼즐 수·
 // 자주 두는 첫 수 — PublicProfileStats 재사용)를 보여주고, 그 아래 로그아웃 버튼을 둔다. 아바타/이름/
 // 아이디를 누르면 메뉴를 닫고 설정 탭의 내 프로필로 이동한다.
 function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile }) {
@@ -8083,20 +8722,34 @@ function FirstMovesDisplay({ firstMoves }) {
     </div>
   );
 }
-// (17차) 프로필 정보 확장 — 레벨/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
+// (17차) 프로필 정보 확장 — 티어/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
 // UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다.
 function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, hideChesscom }) {
   const chesscom = useChessCom(pub.chesscom);
-  const lv = levelFromXp(pub.xp || 0);
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>Lv.{lv.level} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(lv.xpInLevel)}/{fmtFull(lv.xpForNext)} XP)</span></span>
+        <TierStatPill totalXp={pub.xp || 0} />
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
+  );
+}
+// (기능) 유저 검색 결과 한 줄 — 검색 결과와 기본 추천(친구의 친구·리더보드)이 같은 모양을 공유한다.
+// right는 오른쪽 끝에 덧붙일 부가 정보(같이 아는 친구 수, 티어 등) — 없으면 기존과 똑같은 모양이다.
+function userSearchRow(r, onClick, right) {
+  const p = r.pub || {};
+  return (
+    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
+      {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</div>
+        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
+      </div>
+      {right}
+    </button>
   );
 }
 function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
@@ -8111,6 +8764,25 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
     const id = setTimeout(() => { run(); }, 300);
     return () => clearTimeout(id);
   }, [q]);
+  // (기능) 아직 아무것도 검색하지 않은 기본 화면에 빈 목록만 보여주지 않고, 먼저 둘러볼 만한
+  // 후보를 미리 띄워 둔다 — 내 친구의 친구(친구가 될 법한 사람)와 지금 티어가 높은 플레이어
+  // (리더보드) 두 갈래. 로그인하지 않았거나 둘 다 비었으면 그 섹션은 그냥 렌더링하지 않는다.
+  const [sugFriends, setSugFriends] = useState([]);
+  const [sugTop, setSugTop] = useState([]);
+  const [sugLoading, setSugLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setSugLoading(true);
+    (async () => {
+      const [fr, top] = await Promise.all([me ? friendSuggestions(8) : Promise.resolve([]), leaderboardTop(8)]);
+      if (cancelled) return;
+      setSugFriends(fr);
+      // 나 자신은 이미 리더보드 최상단에 있어봐야 새로 만날 사람을 찾는 목적과 무관하므로 제외한다.
+      setSugTop((top || []).filter((r) => r.id !== myUid));
+      setSugLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [me, myUid]);
   const open = async (username) => { setReqState(null); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
   const doReq = async () => {
     const pub = sel || {}; if (!me || !pub.username) return; setReqBusy(true);
@@ -8166,14 +8838,32 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
               <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="아이디로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
               <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
             </div>
-            {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
-              : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
-                : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r) => { const p = r.pub || {}; return (
-                  <button key={r.id} onClick={() => open(r.username)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
-                    {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover" }} /> : <span style={{ width: 34, height: 34, borderRadius: 9, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
-                    <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || r.username)}</div><div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div></div>
-                  </button>
-                ); })}</div>}
+            {q.trim() ? (
+              busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
+                : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
+                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r) => userSearchRow(r, () => open(r.username)))}</div>
+            ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+              : (sugFriends.length === 0 && sugTop.length === 0) ? null
+                : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                    {sugFriends.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>알 수도 있는 사람</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {sugFriends.map((r) => userSearchRow(r, () => open(r.username),
+                            <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>))}
+                        </div>
+                      </div>
+                    )}
+                    {sugTop.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>티어 리더보드</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {sugTop.map((r) => userSearchRow(r, () => open(r.username),
+                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} /></span>))}
+                        </div>
+                      </div>
+                    )}
+                  </div>}
           </div>
         )}
       </div>
@@ -8247,6 +8937,99 @@ function ChatsModal({ me, myUid, onClose }) {
               })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+// (v0.0.6 개편) 티어 여정 경로 본체 — TIER_STATIONS(티어×구간을 전부 펼친 목록, 31개)를 하나하나
+// 같은 크기의 원으로 세로 지그재그로 늘어놓는다. 지나온 구간은 완료 표시, 지금 구간은 펄스로
+// 강조, 아직 안 온 구간은 잠금으로 가린다. 노드 사이 연결선은 OpeningSchematic·PuzzleSchematic이
+// 이미 쓰는 "절대 배치 노드 + 아래 SVG 커넥터" 기법을 그대로 따른다(이소메트릭 렌더링을 새로
+// 만들지 않는다).
+function TierJourneyPath({ totalXp }) {
+  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const STATION_H = 84, STATION_GAP = 60;
+  // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
+  // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
+  const currentRef = useRef(null);
+  useEffect(() => { if (currentRef.current) currentRef.current.scrollIntoView({ block: "center" }); }, []);
+  // 시각적 세로 위치만 뒤집는다(i는 여전히 TIER_STATIONS의 진행 순서 그대로 — 아래 currentIdx 비교는 그대로).
+  const topOf = (i) => (TIER_STATIONS.length - 1 - i) * (STATION_H + STATION_GAP);
+  // 지금 내가 서 있는 자리를 TIER_STATIONS 안에서 찾는다 — 그 인덱스보다 앞(작음)이면 이미 지난
+  // 구간, 뒤(큼)면 아직 안 온 구간이다. 그랜드마스터는 구간이 없어(division:null) info.division도
+  // maxed일 때 null로 맞춰 둔 값과 그대로 비교된다.
+  const currentIdx = useMemo(() => TIER_STATIONS.findIndex((s) => s.tierIdx === info.tierIndex && s.division === (info.maxed ? null : info.division)), [info]);
+  const totalHeight = (TIER_STATIONS.length - 1) * (STATION_H + STATION_GAP) + STATION_H;
+  return (
+    // (기능) 노드·연결선이 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를 공유해, 컨테이너
+    // 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다.
+    <div style={{ position: "relative", paddingBottom: 20, height: totalHeight }}>
+      <svg width="100%" height={totalHeight} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+        {TIER_STATIONS.slice(0, -1).map((_, i) => {
+          const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
+          const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
+          const lit = i < currentIdx;
+          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={lit ? T.brass : "rgba(255,255,255,.18)"} strokeWidth={3} strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round" />;
+        })}
+      </svg>
+      {TIER_STATIONS.map((s, i) => {
+        const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
+        const cx = i % 2 ? "78%" : "22%";
+        const top = topOf(i);
+        // (기능) 원 테두리·글로우도 등급 색을 그대로 따라간다.
+        // (디자인 개선) 예전엔 잠긴 구간을 회색 필터(grayscale)로 완전히 덮어, 아직 안 온 등급들의
+        // 색 차이가 하나도 안 보이고 전부 똑같이 밋밋했다 — 완전히 지우는 대신 그 티어 고유 색을
+        // 옅게(테두리·배경 모두 낮은 투명도로) 남겨, 스크롤해 올라갈수록 앞으로 만날 색이 은은하게
+        // 미리 보이도록 한다(도달하면 또렷해짐).
+        const tc = TIER_COLORS[s.tier.key];
+        const ringColor = tc.stops ? tc.stops[1] : tc.hi;
+        const label = s.division != null ? s.tier.label + " " + DIVISION_ROMAN[s.division] : s.tier.label;
+        return (
+          <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
+            <motion.div
+              ref={state === "current" ? currentRef : undefined}
+              animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
+              transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
+              style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
+              <div style={{
+                position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                background: state === "locked" ? "linear-gradient(160deg," + (tc.lo || ringColor) + "26,#150C06)" : "linear-gradient(160deg,#4A3016,#241509)",
+                border: "2px solid " + (state === "locked" ? ringColor + "5A" : ringColor),
+                boxShadow: state === "current" ? "0 0 22px 4px " + ringColor + "88" : "0 4px 10px -4px rgba(0,0,0,.6)",
+                opacity: state === "locked" ? 0.78 : 1,
+              }}>
+                <TierPieceGlyph piece={s.tier.piece} tierKey={s.tier.key} size={36} muted={state === "locked"} />
+              </div>
+              {state === "done" && <span style={{ position: "absolute", right: -4, bottom: -4, width: 22, height: 22, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={13} color="#fff" /></span>}
+              {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={20} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
+            </motion.div>
+            <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{state === "current" ? tierDisplayLabel(info) : label}</div>
+              {state === "current" && <div style={{ fontSize: 10, color: T.ivory, opacity: .8, marginTop: 1 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>}
+            </div>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+// (v0.0.6 개편) 티어 배지를 누르면 열리는 전체 화면 여정 지도 모달 — 위 TierJourneyPath를
+// "집중학습"(App.jsx 상단부) 전체화면 오버레이와 같은 몰입형 레이아웃(어두운 방사형 그러데이션
+// 배경)으로 감싼다.
+function TierJourneyMap({ totalXp, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: T.brassHi }}>티어 여정</div>
+            <div style={{ fontSize: 11.5, color: T.ivory, opacity: .8, marginTop: 2 }}>퍼즐을 풀어 경험치를 쌓으면 다음 티어로 승급해요.</div>
+          </div>
+          <button onClick={onClose} className="press" style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(0,0,0,.3)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <X size={17} />
+          </button>
+        </div>
+        <TierJourneyPath totalXp={totalXp} />
       </div>
     </div>
   );
@@ -8716,7 +9499,7 @@ export default function App() {
   const [solved, setSolved] = useState(new Set());
   const [likedPuzzles, setLikedPuzzles] = useState(new Set());   // (기능) 내가 좋아요 누른 퍼즐 id — solved처럼 로컬+계정에 저장
   const [lineSolves, setLineSolves] = useState({});   // (기능1) { [puzzleId]: string[] } — 라인(tag)별 해결 기록. 전체 라인이 다 모이면 solved로 승격.
-  const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 레벨/진행률은 levelFromXp로 매번 도출
+  const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 티어/진행률은 tierFromXp로 매번 도출
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
   // (버그) 개발자 계정 코인 지급을 "코인 기록이 아예 없을 때"로만 한정했더니, 이미 로그인해 progress가
   // 저장돼 있던 기존 개발자·공동 개발자 계정에는 소급 적용되지 않았다. 대신 "1회 지급 여부" 플래그를
@@ -8744,6 +9527,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false); // (18차 UX7) 채팅 모아보기
+  const [tierMapOpen, setTierMapOpen] = useState(false); // (v0.0.6 개편) 티어 배지를 누르면 여는 여정 지도
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
   // (UI8) 메인 화면 친구 버튼에 보류 중인 요청 수를 배지로 표시 — 요청 탭을 열지 않아도 보이도록
   const checkPending = useCallback(async () => {
@@ -8823,10 +9607,17 @@ export default function App() {
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
     setLoaded(true);
   })(); }, []);
-  // (기능) 저장된 값을 다 복원한 뒤(loaded) 한 번만 판단 — 이 버전을 아직 "다시 보지 않기"로 끄지
-  // 않았다면(또는 그 이후 버전이 올라와 저장된 값이 최신 버전과 달라졌다면) 공지를 띄운다.
-  useEffect(() => { if (loaded && dismissedAnnounceVersion !== APP_VERSION) setAnnounceOpen(true); }, [loaded]);
-  // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 레벨/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
+  // (기능) 저장된 값을 다 복원한 뒤(loaded) 이 버전을 아직 "다시 보지 않기"로 끄지 않았다면(또는
+  // 그 이후 버전이 올라와 저장된 값이 최신 버전과 달라졌다면) 공지를 띄운다.
+  // (버그 수정) 예전엔 [loaded]에만 의존해 최초 한 번만 판단했는데, 로그인(onAuth)이 그 이후에
+  // 서버에 저장된 dismissedAnnounceVersion 값으로 상태를 바꿔도 이 effect가 다시 안 돌아 반영이
+  // 안 됐다 — 게스트로 이미 이 버전을 닫아 둔 상태에서 아직 안 닫은 계정으로 로그인해도 공지가
+  // 안 뜨고, 반대로 공지가 열린 채로 이미 닫아 둔 계정에 로그인해도 열린 채 남아 있었다.
+  // dismissedAnnounceVersion도 의존성에 넣어 로그인·로그아웃으로 그 값이 바뀔 때마다 다시
+  // 판단하고, 열기뿐 아니라 닫기도 이 판단에 맡긴다(사용자가 X로 그냥 닫은 경우는 이 값이 안
+  // 바뀌므로 이 effect가 다시 안 돌아 그 닫힘을 덮어쓰지 않는다).
+  useEffect(() => { if (loaded) setAnnounceOpen(dismissedAnnounceVersion !== APP_VERSION); }, [loaded, dismissedAnnounceVersion]);
+  // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 티어/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "" }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId]);
   useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion })); }, [unlocked, profile, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion]);
   useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion }); }, [unlocked, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion]);
@@ -8841,7 +9632,11 @@ export default function App() {
   }, [loaded, uid, isDev, isCodev, devBonusGranted]);
   // (16차) 퍼즐 카드에 "친구 N명이 풀었습니다" 표기를 위해, 로그인 시 내 친구 목록과 각 퍼즐의 해결자 uid를 한 번에 조회.
   useEffect(() => {
-    if (!loaded || !uid || !puzzles.length) return;
+    if (!loaded) return;
+    // (버그 수정) 로그아웃(uid===null)하거나 퍼즐이 없어져 그냥 리턴만 하면, 직전 계정에서 채워
+    // 둔 friendUids/puzzleSolvers/solverNames가 그대로 남아 게스트 화면에도 그 계정 친구들의
+    // "N명이 풀었습니다" 배지가 계속 보였다 — 이 조건에서는 명시적으로 비운다.
+    if (!uid || !puzzles.length) { setFriendUids([]); setPuzzleSolvers({}); setSolverNames({}); return; }
     let cancelled = false;
     (async () => {
       const edges = await friendEdges();
@@ -8891,15 +9686,28 @@ export default function App() {
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
   // 다시 로그인하면 보유 스킨·장착 상태가 기본값으로 되돌아가 마치 구매 내역이 저장 안 된 것처럼 보였다.
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevLevelRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevTierIndexRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings);
+    // (버그 수정) 다른 필드들과 달리 이 값은 "값이 있으면만 덮어쓰기"로 두면 안 된다 — 계정이
+    // 한 번도 공지를 닫은 적이 없으면 pr.dismissedAnnounceVersion이 undefined인데, 그때 이
+    // if를 건너뛰면 로그인 직전(게스트 상태)의 로컬 값이 그대로 남아 "이 계정도 이미 닫았다"고
+    // 잘못 판단해 공지 모달이 안 뜬다 — 계정의 실제 값(없으면 null)으로 항상 동기화한다.
+    setDismissedAnnounceVersion(pr.dismissedAnnounceVersion || null);
+    const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
-    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setLineSolves({}); prevLevelRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
+    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
+    // (버그 수정) 이 두 값은 여기서 안 비워지고 있었다 — dismissedAnnounceVersion을 그대로 두면
+    // 로그아웃 후 게스트 로컬 저장소에 방금 로그아웃한 계정의 "다시 보지 않기" 값이 그대로 저장돼
+    // 게스트가 실제로는 안 닫은 공지를 이미 닫은 것처럼 취급했고, friendUids/puzzleSolvers/
+    // solverNames를 그대로 두면(그걸 채우는 effect가 uid===null일 때 그냥 아무것도 안 하고
+    // 리턴만 해 초기화가 안 됨) 게스트 화면의 퍼즐 카드에 방금 로그아웃한 계정 친구들의 "N명이
+    // 풀었습니다" 배지가 그대로 남아 보였다.
+    setDismissedAnnounceVersion(null); setFriendUids([]); setPuzzleSolvers({}); setSolverNames({});
   }, []);
   // (UX7) 일정 시간 활동이 없으면 자동 로그아웃 — 로그인 상태가 무기한 유지되던 보안 문제 수정
   useEffect(() => {
@@ -8990,7 +9798,7 @@ export default function App() {
   // (기능1) 라인(최선/차선/채택률) 하나를 풀 때마다 기록 — 전체 라인이 다 모이면(별 3개) onSolved로 승격해
   // 기존 "해결완료" 트래킹(칭호·전역 풀이수 등)이 그대로 이어지도록 한다.
   // (15차 기능4) 새로 해결한 라인마다 경험치를 지급 — 해당 퍼즐에서 "기존에 이미 보유했던 별 수"를 기준으로 계산한다.
-  // 획득량은 화면 중앙 토스트로 크게 표시한다(레벨업 토스트와 같은 자리를 공유 — 레벨업이 뒤이어 발생하면 그쪽으로 자연스럽게 대체됨).
+  // 획득량은 화면 중앙 토스트로 크게 표시한다(티어 승급 토스트와 같은 자리를 공유 — 승급이 뒤이어 발생하면 그쪽으로 자연스럽게 대체됨).
   const onLineSolved = useCallback((id, tag, totalLines) => {
     setLineSolves((prev) => {
       const curArr = prev[id] || [];
@@ -9004,17 +9812,17 @@ export default function App() {
       return { ...prev, [id]: [...curArr, tag] };
     });
   }, []);
-  const level = useMemo(() => levelFromXp(totalXp), [totalXp]);
-  const prevLevelRef = useRef(null);
+  const tierInfo = useMemo(() => tierFromXp(totalXp), [totalXp]);
+  const prevTierIndexRef = useRef(null);
   useEffect(() => {
-    if (!loaded) return; // 최초 데이터 복원 시점의 레벨 변화는 "레벨업"으로 취급하지 않는다
-    if (prevLevelRef.current != null && level.level > prevLevelRef.current) {
-      setToast({ type: "level", level: level.level });
-      setTimeout(() => setToast((t) => (t && t.type === "level" ? null : t)), 4000);
-      if (uid) notifyCreate(uid, "level_up", { level: level.level });
+    if (!loaded) return; // 최초 데이터 복원 시점의 티어 변화는 "승급"으로 취급하지 않는다
+    if (prevTierIndexRef.current != null && tierInfo.tierIndex > prevTierIndexRef.current) {
+      setToast({ type: "tier", tierIndex: tierInfo.tierIndex });
+      setTimeout(() => setToast((t) => (t && t.type === "tier" ? null : t)), 4000);
+      if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
     }
-    prevLevelRef.current = level.level;
-  }, [level.level, loaded]);
+    prevTierIndexRef.current = tierInfo.tierIndex;
+  }, [tierInfo.tierIndex, loaded]);
   // (17차) 일일 퀘스트 — 날짜가 바뀌면(또는 최초 로드 시 퀘스트가 없으면) 오늘의 퀘스트를 새로 생성한다.
   useEffect(() => {
     if (!loaded) return;
@@ -9164,7 +9972,7 @@ export default function App() {
           본문과 동일한 maxWidth 컨테이너로 헤더 내용을 감싸 정렬을 맞춘다. */}
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
       {/* (버그 수정) 계정 정보 줄과 아이콘 줄을 따로 두고 줄바꿈에 맡겼더니 헤더가 항상 2줄로 보였다 —
-          레벨 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
+          티어 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
           space-between으로 중앙 공백을 그룹 사이 여백으로 흡수한다. 모바일에서는 아이디 텍스트를
           숨기고 아바타로, 요소 크기를 한 단계씩 줄여 폭이 좁아도 항상 한 줄을 유지한다. */}
       <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: narrowHeader ? "8px 12px" : "10px 20px", flexWrap: "nowrap", columnGap: narrowHeader ? 6 : 14 }}>
@@ -9174,8 +9982,9 @@ export default function App() {
             불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
         <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
-          {/* (18차 UI8) 레벨 UI — 레벨 텍스트와 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지). */}
-          <LevelBadge totalXp={totalXp} compact={narrowHeader} />
+          {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
+              (v0.0.6 개편) 누르면 여정 지도(TierJourneyMap)가 열린다. */}
+          <TierBadge totalXp={totalXp} compact={narrowHeader} onClick={() => setTierMapOpen(true)} />
           {/* 검색·친구·채팅을 하나의 세그먼트로 묶는다 — 비로그인 상태에선 검색만 남아 평범한 버튼처럼 보인다.
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
@@ -9215,6 +10024,7 @@ export default function App() {
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
       {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
       {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} />}
+      {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
@@ -9253,10 +10063,13 @@ export default function App() {
               <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><Mascot name="kokoa" emotion="celebrate" size={58} /><div style={{ fontWeight: 800, fontSize: 13.5, color: T.brassHi }}>새로운 칭호 획득!</div></div>
               <TitleBadge id={toast.id} earned equipped={currentTitle === toast.id} onEquip={equipTitle} />
             </div>
-          ) : toast.type === "level" ? (
+          ) : toast.type === "tier" ? (
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <Mascot name="milku" emotion="celebrate" size={62} />
-              <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>레벨 업!</div><div style={{ fontSize: 12 }}>Lv.{toast.level}이 되었어요.</div></div>
+              <div className="flex items-center gap-2">
+                <TierPieceGlyph piece={TIERS[toast.tierIndex].piece} tierKey={TIERS[toast.tierIndex].key} size={30} />
+                <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>티어 승급!</div><div style={{ fontSize: 12 }}>{TIERS[toast.tierIndex].label}(으)로 승급했어요.</div></div>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
@@ -9273,10 +10086,10 @@ export default function App() {
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
@@ -9290,7 +10103,7 @@ export default function App() {
             {TABS.map(({ key, label, Icon }) => { const on = tab === key; const badge = key === "dex" ? newUnlocks + newTitles : 0; return (
               <button key={key} onClick={() => switchTab(key)} className="flex flex-col items-center justify-center gap-1" style={{ flex: 1, minWidth: 0, maxWidth: 96, color: on ? T.brassHi : "#8A7458", position: "relative", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                 {on && <span style={{ position: "absolute", top: 0, height: 3, width: 30, borderRadius: 3, background: T.brass }} />}
-                <span style={{ position: "relative" }}>{key === "quest" ? <MaterialIcon name={questIconName} size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}</span>
+                <span style={{ position: "relative" }}>{key === "quest" ? <MaterialIcon name={questIconName} size={20} /> : key === "puzzle" ? <MaterialIcon name="extension" size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}</span>
                 <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, whiteSpace: "nowrap" }}>{label}</span>
               </button>); })}
           </div>
