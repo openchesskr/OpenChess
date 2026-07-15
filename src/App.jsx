@@ -4577,6 +4577,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 밀려나 트리 전체가 화면 밖으로 사라진 것처럼 보였다. 지금 화면 중앙 아래 있는 콘텐츠 지점을
   // 그대로 유지하도록 pan을 함께 보정한다.
   const zoomBy = (delta) => {
+    // (버그 수정) 비행 애니메이션이 도는 중에 버튼으로 확대/축소하면, 다음 애니메이션 프레임이
+    // 이 변경을 곧장 덮어썼다 — 수동 조작이 시작되면 애니메이션을 멈춘다.
+    if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; setFlightPath(null); }
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const z = zoomRef.current, nz = clampZoom(z + delta);
     if (nz === z) return;
@@ -4607,12 +4610,34 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
     }
   };
-  const onPointerDown = (e) => { if (e.target.closest && e.target.closest("button, .no-pan")) return; userPannedRef.current = true; dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  // (버그 수정) 특정 수를 클릭한 직후 1~2초 동안 화면이 좌우로 심하게 흔들리고, 그 와중에
+  // 드래그하면 트리 전체가 화면 밖으로 사라지던 문제의 근본 원인 — pan/zoom을 세 곳(비행
+  // 애니메이션의 requestAnimationFrame 루프, 아래 selectedPath 재중앙 정렬용 150ms interval,
+  // 그리고 이 드래그 핸들러)이 서로 모르는 채 동시에 덮어쓰고 있었다. 노드를 클릭하면 centerOn이
+  // 시작하는 비행 애니메이션이 최대 900ms 동안 매 프레임 pan/zoom을 보간해 옮기는데, 그 사이
+  // selectedPath가 바뀌어 새로 붙는 150ms interval이 "이미 다 도착한 것처럼" 곧장 스냅해버려
+  // 두 값이 150ms마다 서로를 덮어쓰며 튕겼다(흔들림의 정체). 게다가 그 상태에서 사용자가
+  // 드래그를 시작해도 이 핸들러가 비행 애니메이션을 멈추지 않아, 다음 애니메이션 프레임이 사용자의
+  // 드래그 결과를 또 덮어써(pan/zoom이 애니메이션 쪽 값으로 계속 끌려가) 화면이 엉뚱한 곳으로
+  // 튀어 트리가 사라진 것처럼 보였다. 드래그를 시작하는 순간 비행 애니메이션을 확실히 멈추고
+  // (cancelAnimationFrame) selectionLockRef도 즉시 풀어, 그 뒤로는 오직 이 드래그만 pan/zoom을
+  // 다루게 한다.
+  const onPointerDown = (e) => {
+    if (e.target.closest && e.target.closest("button, .no-pan")) return;
+    userPannedRef.current = true;
+    selectionLockRef.current = false;
+    if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; setFlightPath(null); }
+    dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
     const next = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
     setPan(next);
-    checkSelectionDrift(next, zoom);
+    // (버그 수정) 여기 있던 zoom은 이 핸들러가 만들어진 렌더 시점에 클로저로 붙잡힌 값이라, 비행
+    // 애니메이션이 매 프레임 zoom을 바꾸는 동안에는 금방 낡은 값이 된다 — 항상 최신 값을 담는
+    // zoomRef.current를 쓴다(휠·확대 버튼 핸들러와 동일한 방식).
+    checkSelectionDrift(next, zoomRef.current);
   };
   const onPointerUp = () => { dragRef.current = null; };
   // (버그 수정) 마우스 휠을 확대/축소에 쓰니 확대/축소는 우상단 버튼으로만 하게 하고, 휠은 그냥
@@ -4625,6 +4650,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     if (!el) return;
     const handleWheel = (e) => {
       e.preventDefault();
+      // (버그 수정) 비행 애니메이션이 도는 중에 휠로 팬하면, 다음 애니메이션 프레임이 이 변경을
+      // 곧장 덮어썼다 — 수동 조작이 시작되면 애니메이션을 멈춘다.
+      if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; setFlightPath(null); }
       setPan((p) => { const next = { x: p.x - e.deltaX, y: p.y - e.deltaY }; checkSelectionDrift(next, zoomRef.current); return next; });
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
@@ -4713,10 +4741,18 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 120ms 디바운스가 매번 취소되기만 하고 끝내 한 번도 실행되지 못했다(디바운스 기아) — items
   // 변경 빈도와 무관하게 일정 주기로 도는 setInterval로 바꿔, 트리가 계속 자라는 중에도 확실히
   // 재중앙 정렬되게 한다. 사용자가 직접 손대면(selectionLockRef) 더 이상 재정렬하지 않는다.
+  // (버그 수정) 노드를 클릭한 직후 centerOn이 시작하는 비행 애니메이션(최대 900ms)이 매 프레임
+  // pan/zoom을 부드럽게 보간하는 동안, 이 interval은 그와 무관하게 150ms마다 "이미 다 도착한"
+  // 좌표로 곧장 스냅해버렸다 — 둘 다 selectionLockRef가 걸린 상태에서 서로 모른 채 동시에 pan을
+  // 덮어써, 150ms마다 (보간된 위치) ↔ (이미 도착한 위치) 사이를 오가며 화면이 좌우로 튀는 것처럼
+  // 보였다(신고된 "클릭 직후 1~2초간 심하게 흔들리는" 현상의 정체). 비행 애니메이션이 도는
+  // 동안에는 이 interval이 끼어들지 않도록 건너뛴다 — 애니메이션이 끝나면(flightRafRef.current가
+  // null이 되면) 그 다음 tick부터 다시 정상적으로 재중앙 정렬을 이어간다.
   useEffect(() => {
     if (!selectedPath) return;
     const id = setInterval(() => {
       if (!selectionLockRef.current) return;
+      if (flightRafRef.current) return;
       const target = itemsRef.current.find((it) => it.key === selectedPath.join(" "));
       if (!target) return;
       const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
