@@ -5222,6 +5222,24 @@ function tierDisplayLabel(info) {
   if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
   return info.tier.label + " " + info.division;
 }
+// (v0.0.6 추가) 지금 위치에서 앞으로 넘어야 할 구간을 순서대로 count개 뽑는다 — 구간이 1(최상위)
+// 아래로 내려가면 다음 티어의 5(최하위)로 넘어간다. 퍼즐 탭 상단 스트립에서 "다음 몇 단계"를
+// 미리 보여줄 때 쓴다. 이미 그랜드마스터(끝없는 티어)면 더 넘을 구간이 없어 빈 배열을 준다.
+function upcomingCheckpoints(info, count) {
+  const out = [];
+  if (info.maxed) return out;
+  let tierIdx = info.tierIndex, division = info.division;
+  for (let k = 0; k < count; k++) {
+    division -= 1;
+    if (division < 1) {
+      tierIdx += 1;
+      if (tierIdx >= TIERS.length) break;
+      division = tierIdx === TIERS.length - 1 ? null : DIVISIONS_PER_TIER; // 그랜드마스터는 구간이 없다
+    }
+    out.push({ tier: TIERS[tierIdx], division });
+  }
+  return out;
+}
 // 퍼즐 한 라인을 해결할 때 얻는 경험치: {13~17 사이의 난수 × (기존 별 보유 수+1.2)}의 정수 부분.
 function rollLineXp(existingStars) {
   const roll = 13 + Math.floor(Math.random() * 5); // 13~17
@@ -5548,37 +5566,55 @@ function TierStatPill({ totalXp }) {
     </span>
   );
 }
-// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 티어(구간)는 크게, 앞으로
-// 올라갈 다음 몇 티어는 작게 나란히 보여줘 "다음 목표"가 항상 눈에 띄게 한다. 누르면 여정 지도가 열린다.
+// (기능) 짧은 지그재그 점선 — 퍼즐 탭 티어 스트립에서 큰 원(지금 구간)과 작은 배지(다음 구간들)
+// 사이를 여정 지도와 같은 느낌의 구불구불한 선으로 이어준다. 두 노드 사이 남는 flex 공간에 맞춰
+// 늘어나도록 viewBox를 꽉 채운다(정확한 좌표 정렬이 필요없는 순수 장식이라 flex만으로 충분하다).
+function ZigConnector() {
+  return (
+    <svg viewBox="0 0 60 30" preserveAspectRatio="none" style={{ width: 26, height: 30, flexShrink: 0 }}>
+      <polyline points="0,15 20,4 34,26 60,15" fill="none" stroke="rgba(196,154,80,.6)" strokeWidth="2.5" strokeDasharray="4 5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+// (기능) 다음 몇 구간을 미리 보여주는 작은 배지 — 숫자(구간)가 그 티어의 색으로 표시된다. 그랜드
+// 마스터처럼 구간이 없는 자리는 숫자 대신 기물(Crown) 아이콘을 보여준다.
+function NextCheckpointBadge({ tier, division }) {
+  const tc = TIER_COLORS[tier.key];
+  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
+  return (
+    <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.3)", border: "2px solid " + ringColor, color: ringColor, fontSize: 14, fontWeight: 900 }}>
+      {division != null ? division : <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={18} />}
+    </div>
+  );
+}
+// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 아이콘 +
+// 티어/구간명 + 진행바), 다음으로 넘어야 할 구간 2개는 작은 번호 배지로 지그재그 선을 따라 미리
+// 보여준다. 누르면 여정 지도가 열린다.
 function TierProgressStrip({ totalXp, onOpen }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const { tier, xpInDivision, xpForNextDivision } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   const tc = TIER_COLORS[tier.key];
   const ringColor = tc.stops ? tc.stops[0] : tc.hi;
-  const nextTiers = TIERS.slice(info.tierIndex + 1, info.tierIndex + 4); // 다음 최대 3개 티어를 작게 미리 보여준다
+  const upcoming = useMemo(() => upcomingCheckpoints(info, 2), [info]);
   return (
-    <div onClick={onOpen} className="press flex items-center gap-3" style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default" }}>
-      <div style={{ position: "relative", width: 52, height: 52, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#4A3016,#241509)", border: "2px solid " + ringColor, boxShadow: "0 0 14px 2px " + ringColor + "66" }}>
+    <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
+      <div style={{ width: 52, height: 52, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#4A3016,#241509)", border: "2px solid " + ringColor, boxShadow: "0 0 14px 2px " + ringColor + "66" }}>
         <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={30} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi }}>{tierDisplayLabel(info)}</div>
+      <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabel(info)}</div>
         <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
         <div style={{ fontSize: 10, color: T.brassHi, opacity: .75, marginTop: 2 }}>{xpInDivision}/{xpForNextDivision} XP</div>
       </div>
-      {nextTiers.length > 0 && (
-        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-          <ChevronRight size={14} style={{ color: T.inkSoft, opacity: .6 }} />
-          {nextTiers.map((t) => (
-            <div key={t.key} style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.28)", border: "1.5px solid rgba(255,255,255,.25)", opacity: .6 }}>
-              <TierPieceGlyph piece={t.piece} tierKey={t.key} size={16} />
-            </div>
-          ))}
-        </div>
-      )}
+      {upcoming.map((u, i) => (
+        <React.Fragment key={i}>
+          <ZigConnector />
+          <NextCheckpointBadge tier={u.tier} division={u.division} />
+        </React.Fragment>
+      ))}
     </div>
   );
 }
@@ -8503,13 +8539,20 @@ function ChatsModal({ me, myUid, onClose }) {
 // 노드 + 아래 SVG 커넥터" 기법을 그대로 따른다 — 이소메트릭 렌더링을 새로 만들지 않는다.
 function TierJourneyMap({ totalXp, onClose }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const STATION_H = 84, STATION_GAP = 96, WAYPOINTS = 4;
+  const STATION_H = 84, STATION_GAP = 96, DIV_MARKER = 26;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
   // 밀려나 열 때마다 스크롤을 내려야 했다 — 열리자마자 지금 티어가 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
   useEffect(() => { if (currentRef.current) currentRef.current.scrollIntoView({ block: "center" }); }, []);
   // 시각적 세로 위치만 뒤집는다(i는 여전히 TIERS의 논리적 순서 — tierIndex 비교 등 다른 로직은 그대로).
   const topOf = (i) => (TIERS.length - 1 - i) * (STATION_H + STATION_GAP);
+  // (기능) 두 티어 원 사이를 잇는 선 위의 한 점(0~1) — x는 22%/78% 두 값 사이를, y는 px 좌표를
+  // 그대로 선형보간한다. 구간(1~5) 마커를 그 선 위, 정확히 등분된 자리에 놓기 위한 헬퍼.
+  const xPctOf = (i) => (i % 2 ? 78 : 22);
+  const pointAlong = (i, t) => ({
+    xPct: xPctOf(i) + (xPctOf(i + 1) - xPctOf(i)) * t,
+    y: topOf(i) + STATION_H / 2 + (topOf(i + 1) + STATION_H / 2 - (topOf(i) + STATION_H / 2)) * t,
+  });
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
       <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
@@ -8536,9 +8579,6 @@ function TierJourneyMap({ totalXp, onClose }) {
           {TIERS.map((tier, i) => {
             const state = i < info.tierIndex ? "done" : i === info.tierIndex ? "current" : "locked";
             const isLast = i === TIERS.length - 1;
-            // (기능) 각 티어 사이의 웨이포인트 점 — 현재 티어 앞뒤 구간만 진행률만큼 채우고, 지난 구간은
-            // 전부 채움, 미래 구간은 전부 빈다.
-            const segPct = state === "done" ? 1 : state === "current" && !isLast ? info.xpInTier / info.xpForNext : 0;
             const cx = i % 2 ? "78%" : "22%";
             const top = topOf(i);
             // (기능) 원 테두리·글로우도 등급 색을 그대로 따라가, 지금 어느 티어에 있는지 한눈에
@@ -8569,16 +8609,27 @@ function TierJourneyMap({ totalXp, onClose }) {
                   <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{state === "current" ? tierDisplayLabel(info) : tier.label}</div>
                   {state === "current" && <div style={{ fontSize: 10, color: T.ivory, opacity: .8, marginTop: 1 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>}
                 </div>
-                {!isLast && (
-                  // (버그 수정) 세로 순서를 뒤집은 뒤로는 i+1 티어가 i보다 항상 "위"에 있으므로, 두 원의
-                  // 중심 사이 정중앙으로 직접 계산해야 한다(예전 "top + 한 칸 반" 공식은 순서가 뒤집히면
-                  // 엉뚱하게 i 밑으로 어긋난다).
-                  <div style={{ position: "absolute", left: "50%", top: (top + topOf(i + 1)) / 2 + STATION_H / 2 - 4, transform: "translateX(-50%)", display: "flex", justifyContent: "center", gap: 8 }}>
-                    {Array.from({ length: WAYPOINTS }, (_, w) => (
-                      <span key={w} style={{ width: 6, height: 6, borderRadius: "50%", background: (w + 1) / WAYPOINTS <= segPct ? T.brass : "rgba(255,255,255,.2)" }} />
-                    ))}
-                  </div>
-                )}
+                {/* (기능) 세부 구간(1~5) 표시 — 티어 원 자체가 "5"(막 진입)이고, 다음 티어로 가는 선
+                    위에 4/3/2/1을 등분해 놓아 그 티어 안에서 어디까지 왔는지 한눈에 보이게 한다. */}
+                {!isLast && [4, 3, 2, 1].map((d, k) => {
+                  const t = (k + 1) / DIVISIONS_PER_TIER;
+                  const p = pointAlong(i, t);
+                  // done: 이미 지난 티어 전체, 또는 지금 티어에서 이미 지나온 구간(구간 번호가 지금 구간보다 큼)
+                  const markerDone = state === "done" || (state === "current" && d >= info.division);
+                  const markerLocked = state === "locked";
+                  return (
+                    <div key={d} style={{
+                      position: "absolute", left: p.xPct + "%", top: p.y, width: DIV_MARKER, height: DIV_MARKER, transform: "translate(-50%,-50%)",
+                      borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                      background: markerDone ? "linear-gradient(160deg,#4A3016,#241509)" : "rgba(20,13,7,.85)",
+                      border: "1.5px solid " + (markerDone ? ringColor : "rgba(255,255,255,.25)"),
+                      color: markerDone ? T.brassHi : "rgba(255,255,255,.4)", fontSize: 11, fontWeight: 800,
+                      filter: markerLocked ? "grayscale(1)" : "none", opacity: markerLocked ? 0.5 : 1,
+                    }}>
+                      {d}
+                    </div>
+                  );
+                })}
               </React.Fragment>
             );
           })}
