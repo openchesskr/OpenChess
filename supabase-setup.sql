@@ -19,13 +19,14 @@
 -- 되돌릴 수 없으니 실행 전 필요한 데이터는 반드시 백업하세요.
 -- drop trigger if exists on_auth_user_created on auth.users;
 -- drop table if exists public.chat_messages, public.notifications, public.friend_edges,
---   public.puzzle_solve_events, public.puzzle_solvers, public.puzzle_likes, public.puzzles,
+--   public.puzzle_solve_events, public.puzzle_solvers, public.puzzle_likes, public.puzzle_reposts, public.puzzles,
 --   public.app_content, public.user_progress, public.profiles, public.accounts cascade;
 -- drop function if exists public.handle_new_user(), public.is_content_editor(uuid),
 --   public.username_available(text), public.email_for_username(text), public.account_providers(text),
 --   public.claim_username(text), public.friend_request(text), public.friend_accept(uuid),
 --   public.friend_remove(uuid), public.puzzle_solve(bigint), public.puzzle_rank(text, int),
 --   public.puzzle_like_toggle(bigint, uuid), public.friend_suggestions(int), public.leaderboard_top(int),
+--   public.puzzle_share_inc(bigint), public.puzzle_repost_toggle(bigint, uuid), public.puzzle_share_reward(bigint, bigint),
 --   public.app_signup(text, text), public.app_login(text, text), public.app_save(text, text, jsonb) cascade;
 
 -- ============================================================================
@@ -245,6 +246,8 @@ create table if not exists public.chat_messages (
   to_uid uuid not null references auth.users(id) on delete cascade,
   body text,
   emoji text,               -- 이모티콘 코드(예: "milku_3") — body 대신 또는 함께 쓸 수 있음
+  puzzle_no bigint,          -- (v0.1.0) 퍼즐 공유 카드 — 설정돼 있으면 이 메시지는 릴스 공유처럼 퍼즐 미리보기+풀러가기 버튼으로 렌더링됨
+  share_reward jsonb,        -- (v0.1.0) 공유 보상 시스템 메시지 — {amount, no}. puzzle_share_reward RPC가 자동으로 생성(발신자 없이 to_uid=공유자에게 기록)
   read boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -446,6 +449,89 @@ begin
   return query select v_liked, coalesce(v_likes, 0);
 end; $$;
 grant execute on function public.puzzle_like_toggle(bigint, uuid) to authenticated;
+
+-- ============================================================================
+-- 7-1) puzzle_reposts / 공유·리포스트 카운터 / 공유 보상 (v0.1.0) — 소셜 기능 확장.
+-- 퍼즐 공유는 친구 간 chat_messages 메시지(puzzle_no 설정)로 이뤄지고, 리포스트는 좋아요와 같은
+-- 토글형 1인 1행 테이블이다. 공유 보상(친구가 내가 공유한 퍼즐을 풀면 그 XP의 10%를 내가 받는 것)은
+-- XP 자체가 client가 소유한 user_progress jsonb 블롭이라 서버가 직접 그 값을 늘릴 수 없다(클라이언트가
+-- 다음 저장 때 자기 로컬 값으로 통째로 덮어써 버림) — 대신 puzzle_share_reward RPC가 보상 내역을
+-- chat_messages 시스템 메시지로 남기면, 수령자(공유자) 본인의 클라이언트가 그 메시지를 realtime으로
+-- 받아 자기 자신의 XP에 더하고 읽음 처리한다(알림·좋아요와 같은 "본인 소유 데이터는 본인만 갱신" 원칙 유지).
+-- ============================================================================
+alter table public.puzzles add column if not exists shares bigint not null default 0;
+alter table public.puzzles add column if not exists reposts bigint not null default 0;
+
+create table if not exists public.puzzle_reposts (
+  no bigint not null,
+  uid uuid not null references auth.users(id) on delete cascade,
+  reposted_at timestamptz not null default now(),
+  primary key (no, uid)
+);
+alter table public.puzzle_reposts enable row level security;
+drop policy if exists "reposts read"   on public.puzzle_reposts;
+drop policy if exists "reposts insert" on public.puzzle_reposts;
+drop policy if exists "reposts delete" on public.puzzle_reposts;
+create policy "reposts read"   on public.puzzle_reposts for select using (true);
+create policy "reposts insert" on public.puzzle_reposts for insert with check (auth.uid() = uid);
+create policy "reposts delete" on public.puzzle_reposts for delete using (auth.uid() = uid);
+grant select on public.puzzle_reposts to anon, authenticated;
+grant insert, delete on public.puzzle_reposts to authenticated;
+
+-- 공유 수 — 퍼즐 카드/풀이 화면의 종이비행기 아이콘을 눌러 친구에게 보낼 때마다 1 증가(받는 친구 수만큼).
+drop function if exists public.puzzle_share_inc(bigint) cascade;
+create or replace function public.puzzle_share_inc(p_no bigint)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare v_shares bigint;
+begin
+  insert into public.puzzles(no, data, shares) values (p_no, '{}'::jsonb, 1)
+  on conflict (no) do update set shares = public.puzzles.shares + 1
+  returning shares into v_shares;
+  return v_shares;
+end; $$;
+grant execute on function public.puzzle_share_inc(bigint) to authenticated;
+
+-- 리포스트 토글 — puzzle_like_toggle과 동일한 패턴(이미 리포스트했으면 취소, 아니면 등록).
+drop function if exists public.puzzle_repost_toggle(bigint, uuid) cascade;
+create or replace function public.puzzle_repost_toggle(p_no bigint, p_uid uuid)
+returns table(reposted boolean, reposts bigint) language plpgsql security definer set search_path = public as $$
+declare v_reposts bigint; v_reposted boolean;
+begin
+  if exists (select 1 from public.puzzle_reposts where no = p_no and uid = p_uid) then
+    delete from public.puzzle_reposts where no = p_no and uid = p_uid;
+    update public.puzzles set reposts = greatest(0, reposts - 1) where no = p_no returning puzzles.reposts into v_reposts;
+    v_reposted := false;
+  else
+    insert into public.puzzle_reposts(no, uid) values (p_no, p_uid);
+    insert into public.puzzles(no, data, reposts) values (p_no, '{}'::jsonb, 1)
+    on conflict (no) do update set reposts = public.puzzles.reposts + 1
+    returning puzzles.reposts into v_reposts;
+    v_reposted := true;
+  end if;
+  return query select v_reposted, coalesce(v_reposts, 0);
+end; $$;
+grant execute on function public.puzzle_repost_toggle(bigint, uuid) to authenticated;
+
+-- 공유 보상 — 퍼즐 공유 메시지(chat_messages.puzzle_no)를 타고 들어온 수신자가 그 퍼즐의 라인을 풀 때마다
+-- 호출된다. p_share_msg_id로 "실제로 나에게(to_uid=나) 온 퍼즐 공유 메시지"인지 검증해, 임의 메시지
+-- id를 넣어 아무에게나 보상을 위조해 보낼 수 없도록 한다. 자기 자신이 공유한 퍼즐을 자기가 푸는
+-- 경우(from_uid=to_uid 방지는 원 메시지 자체가 항상 다른 사람에게만 보내지므로 자연히 배제됨)는
+-- 애초에 발생하지 않는다. 금액은 클라이언트가 계산해 보내지만(이 앱의 XP 자체가 이미 전부 클라이언트
+-- 계산이라 신뢰 모델은 동일), 비정상적으로 큰 값이 들어오는 것만 서버에서 상한으로 방어한다.
+drop function if exists public.puzzle_share_reward(bigint, bigint) cascade;
+create or replace function public.puzzle_share_reward(p_share_msg_id bigint, p_amount bigint)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_from uuid; v_no bigint; v_amount bigint;
+begin
+  if v_me is null then return false; end if;
+  select from_uid, puzzle_no into v_from, v_no
+  from public.chat_messages where id = p_share_msg_id and to_uid = v_me and puzzle_no is not null;
+  if v_from is null or v_from = v_me then return false; end if;
+  v_amount := greatest(1, least(coalesce(p_amount, 0), 1000));
+  insert into public.chat_messages(from_uid, to_uid, share_reward) values (v_me, v_from, jsonb_build_object('amount', v_amount, 'no', v_no));
+  return true;
+end; $$;
+grant execute on function public.puzzle_share_reward(bigint, bigint) to authenticated;
 
 -- ============================================================================
 -- 8) Realtime — 알림/채팅/친구요청 배지가 폴링 대신 실시간으로 갱신되려면(src/App.jsx의
