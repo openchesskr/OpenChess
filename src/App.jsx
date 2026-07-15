@@ -200,23 +200,24 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
 }
 // (v0.0.6 개편) 티어 배지·여정 지도용 기물 아이콘 — 보드용 PieceGlyph는 유저가 고른 기물 스킨·
 // 드래그 핸들러·이미지셋 폴백에 매여 있어(SkinContext) 재사용하기 무겁다. 대신 같은 실루엣
-// 데이터(PIECE_MID/PIECE_LINES 등)만 가져와, 항상 브라스 톤(tone="brass") 또는 잠금 톤
-// (tone="muted")으로만 그리는 독립 컴포넌트를 둔다 — 보드 스킨이 뭐든 티어 아이콘은 늘 같아 보인다.
-function TierPieceGlyph({ piece, size = 28, tone = "brass" }) {
+// 데이터(PIECE_MID/PIECE_LINES 등)만 가져와, tierKey에 해당하는 등급 색(TIER_COLORS)을 입히거나
+// 잠긴 티어는 회색(muted)으로 그리는 독립 컴포넌트를 둔다 — 보드 스킨이 뭐든 티어 아이콘은 항상 같아 보인다.
+function TierPieceGlyph({ piece, size = 28, tierKey, muted = false }) {
   const rawId = useId();
   const gradId = "tpg" + rawId.replace(/[^a-zA-Z0-9]/g, "");
-  if (piece === "GM") return <Crown size={size} style={{ color: tone === "brass" ? T.brassHi : "rgba(255,255,255,.4)" }} />;
+  const tc = TIER_COLORS[tierKey] || TIER_COLORS.iron;
+  const stops = tc.stops || [tc.hi, tc.lo];
+  if (piece === "GM") return <Crown size={size} style={{ color: muted ? "rgba(255,255,255,.4)" : stops[0] }} />;
   const mid = PIECE_MID[piece];
   if (!mid) return null;
   const bodyPoints = PIECE_BASE_R + " " + mid + " " + PIECE_BASE_L;
-  const fill = tone === "brass" ? "url(#" + gradId + ")" : "rgba(255,255,255,.28)";
-  const stroke = tone === "brass" ? T.brass : "rgba(255,255,255,.4)";
+  const fill = muted ? "rgba(255,255,255,.28)" : "url(#" + gradId + ")";
+  const stroke = muted ? "rgba(255,255,255,.4)" : (tc.lo || stops[stops.length - 1]);
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} style={{ display: "block", flexShrink: 0 }}>
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={T.brassHi} />
-          <stop offset="100%" stopColor={T.brass} />
+          {stops.map((c, i) => <stop key={i} offset={(i / (stops.length - 1)) * 100 + "%"} stopColor={c} />)}
         </linearGradient>
       </defs>
       <polygon points={bodyPoints} fill={fill} stroke={stroke} strokeWidth={2.6} strokeLinejoin="round" />
@@ -5166,23 +5167,37 @@ async function puzzleSolveEventAdd(no, uid) { if (!SB_ON) return; try { await sb
 async function puzzleRank(period, limit) { if (!SB_ON) return []; try { const r = await sbRpc("puzzle_rank", { p_period: period, p_limit: limit || 12 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 
 // (v0.0.6 개편) 예전 레벨/XP 시스템은 피보나치 곡선이 너무 가팔라(레벨 10에 누적 23,100 XP, 레벨
-// 20엔 286만 XP) 사실상 아무도 레벨 10~13을 넘기지 못했다 — chess.com 퍼즐 티어처럼, 체스 기물
-// 순서를 딴 7단계 티어(폰→나이트→비숍→룩→퀸→킹→그랜드마스터)로 재편해 퍼즐을 꾸준히 풀면 몇 주
-// 안에 다음 티어로 오르는 게 실제로 체감되게 한다.
+// 20엔 286만 XP) 사실상 아무도 레벨 10~13을 넘기지 못했다 — chess.com 퍼즐 티어처럼, 랭크 게임의
+// 7단계 티어(아이언→브론즈→실버→골드→다이아몬드→마스터→그랜드마스터)로 재편해 퍼즐을 꾸준히
+// 풀면 몇 주 안에 다음 티어로 오르는 게 실제로 체감되게 한다. 기물 테마(폰→나이트→…→킹)는 그대로
+// 두고, 티어마다 그 기물에 입히는 색만 등급에 맞게 달리한다(TIER_COLORS).
 const TIERS = [
-  { key: "pawn", label: "폰", piece: "P" },
-  { key: "knight", label: "나이트", piece: "N" },
-  { key: "bishop", label: "비숍", piece: "B" },
-  { key: "rook", label: "룩", piece: "R" },
-  { key: "queen", label: "퀸", piece: "Q" },
-  { key: "king", label: "킹", piece: "K" },
+  { key: "iron", label: "아이언", piece: "P" },
+  { key: "bronze", label: "브론즈", piece: "N" },
+  { key: "silver", label: "실버", piece: "B" },
+  { key: "gold", label: "골드", piece: "R" },
+  { key: "diamond", label: "다이아몬드", piece: "Q" },
+  { key: "master", label: "마스터", piece: "K" },
   { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // 기물 대신 Crown 아이콘으로 표시
 ];
-// 티어[0..5](폰..킹)를 깨는 데 필요한 XP — 한 곳에서만 관리하는 튜닝 가능한 상수. 퍼즐 한 줄
-// 평균 16~85 XP(rollLineXp) 기준, 하루 1000~2500 XP 페이스면 그랜드마스터(누적 25,200)까지 1.5~4주.
-const TIER_XP_REQ = [400, 800, 1600, 3200, 6400, 12800];
+// 기물에 입히는 등급별 색 — 무쇠빛 아이언부터 웹사이트 대표 색(브라스)이 진하게 실린 그랜드마스터까지
+// 단계적으로 고급스러워지도록. 그랜드마스터만 단일 그라디언트가 아니라 사이트 전반에 쓰이는 강조색
+// 여러 개(브라스·브릴리언트 청록)를 섞은 다색 그라디언트로 특별하게 처리한다.
+const TIER_COLORS = {
+  iron: { lo: "#5B6169", hi: "#9AA1AA" },
+  bronze: { lo: "#8A4B22", hi: "#D98A46" },
+  silver: { lo: "#A6ADB4", hi: "#F2F4F6" },
+  gold: { lo: "#B8860B", hi: "#FFD84D" },
+  diamond: { lo: "#1E9BC7", hi: "#9FE8FF" },
+  master: { lo: "#D98C00", hi: "#FFE066" }, // 골드보다 한 톤 더 진하고 채도 높은 "고급진" 노랑 + 별도 글로우
+  grandmaster: { stops: [T.brilliant, T.brassHi, T.brass] }, // 웹사이트 전체 테마 색 배합
+};
+// 티어[0..5](아이언..마스터)를 깨는 데 필요한 XP — 한 곳에서만 관리하는 튜닝 가능한 상수. 누적
+// 500/2,000/10,000/50,000/100,000 XP에 브론즈/실버/골드/다이아몬드/마스터에 도달하고, 그
+// 두 배(누적 200,000)에 그랜드마스터에 도달한다.
+const TIER_XP_REQ = [500, 1500, 8000, 40000, 50000, 100000];
 // 그랜드마스터(최종 티어) 도달 후에는 XP가 계속 쌓이며 이 단위로 "★" 프레스티지 카운터가 무한히 오른다.
-const GM_STAR_XP = 12800;
+const GM_STAR_XP = 100000;
 // 누적 총 경험치(totalXp)로부터 현재 티어·해당 티어 내 경험치·다음 티어까지 필요 경험치를 도출한다.
 function tierFromXp(totalXp) {
   let idx = 0, remaining = Math.max(0, totalXp || 0);
@@ -5489,10 +5504,12 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
 function TierBadge({ totalXp, compact, onClick }) {
   const { tier, xpInTier, xpForNext, maxed, gmStars } = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const pct = Math.max(0, Math.min(100, Math.round((xpInTier / xpForNext) * 100)));
+  const tc = TIER_COLORS[tier.key];
+  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   return (
     <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 5 : 7, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
-      <div className="flex items-center" style={{ gap: 4, fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, whiteSpace: "nowrap" }}>
-        <TierPieceGlyph piece={tier.piece} size={compact ? 12 : 14} />
+      <div className="flex items-center" style={{ gap: 4, fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + ringColor, whiteSpace: "nowrap" }}>
+        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={compact ? 12 : 14} />
         {tier.label}{maxed && gmStars > 0 ? " ★" + gmStars : ""}
       </div>
       <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
@@ -5510,7 +5527,7 @@ function TierStatPill({ totalXp }) {
   const { tier, xpInTier, xpForNext, maxed, gmStars } = tierFromXp(totalXp);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
-      <TierPieceGlyph piece={tier.piece} size={14} /> {tier.label}{maxed && gmStars > 0 ? " ★" + gmStars : ""} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInTier)}/{fmtFull(xpForNext)} XP)</span>
+      <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={14} /> {tier.label}{maxed && gmStars > 0 ? " ★" + gmStars : ""} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInTier)}/{fmtFull(xpForNext)} XP)</span>
     </span>
   );
 }
@@ -8464,6 +8481,10 @@ function TierJourneyMap({ totalXp, onClose }) {
             const segPct = state === "done" ? 1 : state === "current" && !isLast ? info.xpInTier / info.xpForNext : 0;
             const cx = i % 2 ? "78%" : "22%";
             const top = i * (STATION_H + STATION_GAP);
+            // (기능) 원 테두리·글로우도 등급 색을 그대로 따라가, 지금 어느 티어에 있는지 한눈에
+            // 구분된다(잠긴 티어는 색 대신 회색으로 가려 아직 안 보여준다).
+            const tc = TIER_COLORS[tier.key];
+            const ringColor = tc.stops ? tc.stops[1] : tc.hi;
             return (
               <React.Fragment key={tier.key}>
                 <motion.div
@@ -8473,12 +8494,12 @@ function TierJourneyMap({ totalXp, onClose }) {
                   <div style={{
                     position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
                     background: state === "locked" ? "linear-gradient(160deg,#2A1B10,#150C06)" : "linear-gradient(160deg,#4A3016,#241509)",
-                    border: "2px solid " + (state === "current" ? T.brassHi : T.brass),
-                    boxShadow: state === "current" ? "0 0 22px 4px rgba(196,154,80,.55)" : "0 4px 10px -4px rgba(0,0,0,.6)",
+                    border: "2px solid " + (state === "locked" ? T.brass : ringColor),
+                    boxShadow: state === "current" ? "0 0 22px 4px " + ringColor + "88" : "0 4px 10px -4px rgba(0,0,0,.6)",
                     filter: state === "locked" ? "grayscale(1)" : "none",
                     opacity: state === "locked" ? 0.55 : 1,
                   }}>
-                    <TierPieceGlyph piece={tier.piece} size={36} tone={state === "locked" ? "muted" : "brass"} />
+                    <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={36} muted={state === "locked"} />
                   </div>
                   {state === "done" && <span style={{ position: "absolute", right: -4, bottom: -4, width: 22, height: 22, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={13} color="#fff" /></span>}
                   {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={20} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
@@ -9516,7 +9537,7 @@ export default function App() {
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <Mascot name="milku" emotion="celebrate" size={62} />
               <div className="flex items-center gap-2">
-                <TierPieceGlyph piece={TIERS[toast.tierIndex].piece} size={30} />
+                <TierPieceGlyph piece={TIERS[toast.tierIndex].piece} tierKey={TIERS[toast.tierIndex].key} size={30} />
                 <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>티어 승급!</div><div style={{ fontSize: 12 }}>{TIERS[toast.tierIndex].label}(으)로 승급했어요.</div></div>
               </div>
             </div>
