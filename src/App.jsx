@@ -4736,8 +4736,24 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return items.filter((it) => it.name && it.name.toLowerCase().includes(q))
-      .sort((a, b) => (a.path.length - b.path.length) || ((b.adopt || 0) - (a.adopt || 0)) || a.name.localeCompare(b.name));
+    const filtered = items.filter((it) => it.name && it.name.toLowerCase().includes(q));
+    // (버그 수정) 같은 오프닝 이름이 부모 노드의 이름을 그대로 물려받아 여러 깊이(수순 길이)에
+    // 걸쳐 완전히 똑같은 문자열로 중복 등장하는 경우가 있었다(예: "Benoni Defense: Old Benoni"가
+    // 1.d4 c5와 1.d4 c5 2.d5 둘 다에 표시됨) — 검색 결과에는 그 이름으로 가장 먼저(수순이 가장
+    // 짧게) 도달하는 노드 하나만 남긴다.
+    const byName = new Map();
+    for (const it of filtered) {
+      const cur = byName.get(it.name);
+      if (!cur || it.path.length < cur.path.length || (it.path.length === cur.path.length && (it.adopt || 0) > (cur.adopt || 0))) byName.set(it.name, it);
+    }
+    const cmp = (a, b) => (a.path.length - b.path.length) || ((b.adopt || 0) - (a.adopt || 0)) || a.name.localeCompare(b.name);
+    // (버그 수정) 검색어가 오프닝 이름 맨 앞에 오는 결과(예: "Sicilian Defense…")와, 이름 중간
+    // 어딘가에 등장하는 결과(예: "…Reversed Sicilian Variation")가 뒤섞여 나와, 찾으려던 오프닝이
+    // 관련 없어 보이는 결과들 사이에 묻혔다 — 맨 앞에 오는 것들을 먼저, 그 뒤에 중간에 오는 것들을 보여준다.
+    const deduped = [...byName.values()];
+    const starts = deduped.filter((it) => it.name.toLowerCase().startsWith(q)).sort(cmp);
+    const contains = deduped.filter((it) => !it.name.toLowerCase().startsWith(q)).sort(cmp);
+    return [...starts, ...contains];
   }, [items, query]);
   // (기능) 검색 결과를 고르거나(jumpTo) 트리에서 수 블록을 직접 클릭해도(아래 button onClick)
   // 완전히 같은 효과를 낸다 — 그 수까지의 경로를 강조(selectedPath)하고, 화면 중앙으로 이동+확대하고,
