@@ -7493,7 +7493,7 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
       {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
       <div style={{ padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
         {onOpenOpening
-          ? <button onClick={() => onOpenOpening(node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
+          ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
           : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
         <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
       </div>
@@ -7552,9 +7552,23 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       const own = leaf[name] || { n: 0, w: 0, d: 0, l: 0 };
       let n = own.n, w = own.w, d = own.d, l = own.l;
       for (const c of (childrenOf[name] || [])) { const cr = rollup(c); n += cr.n; w += cr.w; d += cr.d; l += cr.l; }
-      return (memo[name] = { name, n, w, d, l, wr: n ? Math.round(100 * w / n) : 0 });
+      return (memo[name] = { name, n, w, d, l, wr: n ? Math.round(100 * w / n) : 0, own });
     };
-    const buildNode = (name) => ({ ...rollup(name), children: (childrenOf[name] || []).map(buildNode).sort((a, b) => b.n - a.n) });
+    // (버그 수정) 대국이 우리 오프닝 트리가 아는 갈래보다 더 깊이(예: 세부 변형)까지 가서 매칭이
+    // 끊기면, 그 대국은 자식 노드가 아니라 이 노드 자신의 own 집계에만 남는다 — 예전엔 그 own 몫이
+    // 자식들의 합과 구분 없이 부모 행 숫자에만 섞여 들어가, "부모 3판인데 자식 줄들은 2판만 있다"처럼
+    // 마치 대국 하나가 통째로 빠진 것처럼 보였다. own 대국이 있고 자식도 있는 노드는 own 몫을
+    // "OO(그 외 변형)"라는 별도 자식 줄로 보여줘 어디에도 숫자가 안 보이지 않게 한다.
+    const buildNode = (name) => {
+      const r = rollup(name);
+      const kids = (childrenOf[name] || []).map(buildNode);
+      if (r.own.n > 0 && kids.length > 0) {
+        const o = r.own;
+        // navName: 세부 갈래 이름이 없어 클릭해도 이동할 곳이 없으므로, 부모(name) 자신으로 이동시킨다.
+        kids.push({ name: name + " (그 외 변형)", navName: name, n: o.n, w: o.w, d: o.d, l: o.l, wr: o.n ? Math.round(100 * o.w / o.n) : 0, own: o, children: [] });
+      }
+      return { ...r, children: kids.sort((a, b) => b.n - a.n) };
+    };
     const openingTree = [...allNames].filter((nm) => !parentOf[nm]).map(buildNode).filter((r) => r.n > 0).sort((a, b) => b.n - a.n);
     return { openingStats, openingTree };
   }, [ready, chesscom && chesscom.games]);
