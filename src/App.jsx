@@ -2027,12 +2027,16 @@ function assignTiers(moves, ply, board, keyStr) {
   }
   // 유일한 수(#6): 이 위치에 이론 수가 없고, '나쁘지 않은' 수가 정확히 1개이며,
   // 나머지 분석된 수가 전부 부정확/실수/블런더일 때만. 유일+탁월이면 탁월로 표기.
+  // (버그 수정) analyzeGame(Math.abs(bestCp) < 600)과 달리 이 학습 탭 판정에는 평가치 크기 상한이
+  // 빠져 있어, 이미 한쪽이 6점 이상 유리해진 위치에서도(다른 수는 전부 나쁘게 분류되니) '유일한 수'가
+  // 계속 붙었다 — 승부가 사실상 끝난 위치에서는 그 수를 찾았는지가 더 이상 의미가 없으므로, 다른 세
+  // 판정과 동일한 기준으로 이 평가치 범위를 벗어나면 '유일한 수'를 매기지 않는다.
   const anyBook = out.some((m) => m.kind === "book");
   const goodSet = ["brilliant", "best", "excellent", "good"];
   const goods = out.filter((m) => goodSet.includes(m.kind));
   const others = out.filter((m) => !goodSet.includes(m.kind));
   const allOthersBad = others.length > 0 && others.every((m) => ["inaccuracy", "mistake", "blunder"].includes(m.kind));
-  if (!anyBook && goods.length === 1 && allOthersBad) {
+  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600) {
     const i = out.indexOf(goods[0]);
     out[i] = { ...out[i], kind: out[i].kind === "brilliant" ? "brilliant" : "only" };
   }
@@ -7489,7 +7493,7 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
       {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
       <div style={{ padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
         {onOpenOpening
-          ? <button onClick={() => onOpenOpening(node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
+          ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
           : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
         <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
       </div>
@@ -7548,9 +7552,23 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       const own = leaf[name] || { n: 0, w: 0, d: 0, l: 0 };
       let n = own.n, w = own.w, d = own.d, l = own.l;
       for (const c of (childrenOf[name] || [])) { const cr = rollup(c); n += cr.n; w += cr.w; d += cr.d; l += cr.l; }
-      return (memo[name] = { name, n, w, d, l, wr: n ? Math.round(100 * w / n) : 0 });
+      return (memo[name] = { name, n, w, d, l, wr: n ? Math.round(100 * w / n) : 0, own });
     };
-    const buildNode = (name) => ({ ...rollup(name), children: (childrenOf[name] || []).map(buildNode).sort((a, b) => b.n - a.n) });
+    // (버그 수정) 대국이 우리 오프닝 트리가 아는 갈래보다 더 깊이(예: 세부 변형)까지 가서 매칭이
+    // 끊기면, 그 대국은 자식 노드가 아니라 이 노드 자신의 own 집계에만 남는다 — 예전엔 그 own 몫이
+    // 자식들의 합과 구분 없이 부모 행 숫자에만 섞여 들어가, "부모 3판인데 자식 줄들은 2판만 있다"처럼
+    // 마치 대국 하나가 통째로 빠진 것처럼 보였다. own 대국이 있고 자식도 있는 노드는 own 몫을
+    // "OO(그 외 변형)"라는 별도 자식 줄로 보여줘 어디에도 숫자가 안 보이지 않게 한다.
+    const buildNode = (name) => {
+      const r = rollup(name);
+      const kids = (childrenOf[name] || []).map(buildNode);
+      if (r.own.n > 0 && kids.length > 0) {
+        const o = r.own;
+        // navName: 세부 갈래 이름이 없어 클릭해도 이동할 곳이 없으므로, 부모(name) 자신으로 이동시킨다.
+        kids.push({ name: name + " (그 외 변형)", navName: name, n: o.n, w: o.w, d: o.d, l: o.l, wr: o.n ? Math.round(100 * o.w / o.n) : 0, own: o, children: [] });
+      }
+      return { ...r, children: kids.sort((a, b) => b.n - a.n) };
+    };
     const openingTree = [...allNames].filter((nm) => !parentOf[nm]).map(buildNode).filter((r) => r.n > 0).sort((a, b) => b.n - a.n);
     return { openingStats, openingTree };
   }, [ready, chesscom && chesscom.games]);
@@ -9462,6 +9480,7 @@ export default function App() {
   // 완료되면 저장되도록 한다. puzzleGenProgress: 퍼즐 id -> 진행률(0~1, 완료되면 항목 제거).
   const [puzzleGenProgress, setPuzzleGenProgress] = useState({});
   const puzzleGenInFlightRef = useRef(new Set());
+  const likeInFlightRef = useRef(new Set());
   // (기능) 접속 시 업데이트 공지 — "다시 보지 않기"를 체크하고 닫으면 그 버전 번호를 저장해 두고,
   // 다음에 저장된 값이 현재 APP_VERSION과 다르면(=새 버전이 나오면) 다시 보여준다.
   const [dismissedAnnounceVersion, setDismissedAnnounceVersion] = useState(null);
@@ -9771,8 +9790,14 @@ export default function App() {
   // (기능) 퍼즐 좋아요 — solves(풀이수)와 달리 취소도 가능해야 하므로, 누를 때마다 로컬 상태를
   // 먼저 뒤집어(하트가 바로 채워지거나 비워지도록) 서버 응답을 기다리지 않고 반응하게 하고,
   // 서버가 돌려준 실제 상태(liked/likes)로 뒤늦게 맞춘다 — 실패하면(오프라인 등) 원래대로 되돌린다.
+  // (버그 수정) 요청이 오가는 동안 같은 퍼즐을 다시 누르면(연타·더블탭) wasLiked가 아직 리렌더에
+  // 반영되지 않은 stale 값이라 두 번째 클릭도 같은 방향으로 낙관적 업데이트를 하고 서버에도 토글이
+  // 두 번 나가, 계정 하나로 좋아요 수를 여러 번 늘리거나 반대로 즉시 취소된 것처럼 보이는 경쟁 상태가
+  // 있었다 — 같은 퍼즐에 요청이 진행 중인 동안은 추가 클릭을 무시해 애초에 겹친 요청이 나가지 않게 한다.
   const onToggleLike = useCallback((id) => {
     if (!user || !uid) { openAuth("login"); return; }
+    if (likeInFlightRef.current.has(id)) return;
+    likeInFlightRef.current.add(id);
     const no = puzzleNo(id);
     const wasLiked = likedPuzzles.has(id);
     setLikedPuzzles((p) => { const n = new Set(p); if (wasLiked) n.delete(id); else n.add(id); return n; });
@@ -9785,7 +9810,7 @@ export default function App() {
       }
       setLikeCounts((m) => ({ ...m, [no]: r.likes }));
       setLikedPuzzles((p) => { if (p.has(id) === r.liked) return p; const n = new Set(p); if (r.liked) n.add(id); else n.delete(id); return n; });
-    });
+    }).finally(() => { likeInFlightRef.current.delete(id); });
   }, [user, uid, likedPuzzles]);
   // (16차) 추천 랭킹용 — 어떤 라인이든 완료할 때마다(중복 풀이 포함) 기록. XP/해결 트래킹과는 무관.
   const onPuzzleSolveEvent = useCallback((id) => { puzzleSolveEventAdd(puzzleNo(id), uid); }, [uid]);
