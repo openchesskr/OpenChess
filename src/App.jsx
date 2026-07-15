@@ -9462,6 +9462,7 @@ export default function App() {
   // 완료되면 저장되도록 한다. puzzleGenProgress: 퍼즐 id -> 진행률(0~1, 완료되면 항목 제거).
   const [puzzleGenProgress, setPuzzleGenProgress] = useState({});
   const puzzleGenInFlightRef = useRef(new Set());
+  const likeInFlightRef = useRef(new Set());
   // (기능) 접속 시 업데이트 공지 — "다시 보지 않기"를 체크하고 닫으면 그 버전 번호를 저장해 두고,
   // 다음에 저장된 값이 현재 APP_VERSION과 다르면(=새 버전이 나오면) 다시 보여준다.
   const [dismissedAnnounceVersion, setDismissedAnnounceVersion] = useState(null);
@@ -9771,8 +9772,14 @@ export default function App() {
   // (기능) 퍼즐 좋아요 — solves(풀이수)와 달리 취소도 가능해야 하므로, 누를 때마다 로컬 상태를
   // 먼저 뒤집어(하트가 바로 채워지거나 비워지도록) 서버 응답을 기다리지 않고 반응하게 하고,
   // 서버가 돌려준 실제 상태(liked/likes)로 뒤늦게 맞춘다 — 실패하면(오프라인 등) 원래대로 되돌린다.
+  // (버그 수정) 요청이 오가는 동안 같은 퍼즐을 다시 누르면(연타·더블탭) wasLiked가 아직 리렌더에
+  // 반영되지 않은 stale 값이라 두 번째 클릭도 같은 방향으로 낙관적 업데이트를 하고 서버에도 토글이
+  // 두 번 나가, 계정 하나로 좋아요 수를 여러 번 늘리거나 반대로 즉시 취소된 것처럼 보이는 경쟁 상태가
+  // 있었다 — 같은 퍼즐에 요청이 진행 중인 동안은 추가 클릭을 무시해 애초에 겹친 요청이 나가지 않게 한다.
   const onToggleLike = useCallback((id) => {
     if (!user || !uid) { openAuth("login"); return; }
+    if (likeInFlightRef.current.has(id)) return;
+    likeInFlightRef.current.add(id);
     const no = puzzleNo(id);
     const wasLiked = likedPuzzles.has(id);
     setLikedPuzzles((p) => { const n = new Set(p); if (wasLiked) n.delete(id); else n.add(id); return n; });
@@ -9785,7 +9792,7 @@ export default function App() {
       }
       setLikeCounts((m) => ({ ...m, [no]: r.likes }));
       setLikedPuzzles((p) => { if (p.has(id) === r.liked) return p; const n = new Set(p); if (r.liked) n.add(id); else n.delete(id); return n; });
-    });
+    }).finally(() => { likeInFlightRef.current.delete(id); });
   }, [user, uid, likedPuzzles]);
   // (16차) 추천 랭킹용 — 어떤 라인이든 완료할 때마다(중복 풀이 포함) 기록. XP/해결 트래킹과는 무관.
   const onPuzzleSolveEvent = useCallback((id) => { puzzleSolveEventAdd(puzzleNo(id), uid); }, [uid]);
