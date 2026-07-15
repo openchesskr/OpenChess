@@ -1688,13 +1688,15 @@ function calibrateAccuracy(a) {
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
 const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : (l.cp != null ? l.cp : 0)) : 0;
-// (성능) 게임 리뷰(analyzeGame)가 포지션들을 나눠 동시에 계산할 워커 풀 크기 — "full"(Stockfish 16
-// NNUE, 40MB 신경망)은 워커 하나당 메모리·로딩 부담이 커서 2개로, "lite"(7MB, 경량 빌드)는 4개까지
-// 동시에 띄운다. depth·movetime은 그대로 두므로 정확도 손실 없이 총 분석 시간만 줄어든다.
+// (성능) 게임 리뷰(analyzeGame)·학습 탭 실시간 후보 수 평가가 작업을 나눠 동시에 계산할 워커 풀
+// 크기 — "full"(Stockfish 16 NNUE, 40MB 신경망)은 워커 하나당 메모리·로딩 부담이 커서 2개로,
+// "lite"(7MB, 경량 빌드)는 4개까지 동시에 띄운다. depth·movetime은 그대로 두므로 정확도 손실
+// 없이 총 시간만 줄어든다.
 const ANALYZE_POOL_SIZE = { full: 2, lite: 4 };
-// analyzeGame 전용 보조 워커 — useEngine과 달리 React 상태 없이 단발성 배치 작업 하나만 순서대로
-// 처리하다가(evaluateMulti) 분석이 끝나면 바로 종료(terminate)된다. useEngine의 워커 부팅(URL
-// 폴백)·MultiPV 라인 파싱 로직과 동일한 프로토콜을 쓰되, 훅 상태 없이 독립적으로 여러 개 띄울 수 있다.
+// 독립 보조 워커 — useEngine(메인 엔진, React 상태 보유)과 달리 상태 없이 여러 개를 동시에 띄울 수
+// 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 학습 탭의 실시간 후보 수
+// 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
+// evaluate + onProgress, MultiPV evaluateMulti)을 둘 다 지원하도록 넓혔다.
 function bootAnalysisWorker(urls) {
   return new Promise((resolve) => {
     let idx = 0, booted = false, worker = null;
@@ -1703,12 +1705,17 @@ function bootAnalysisWorker(urls) {
     function handleLine(line) {
       const job = queue[0]; if (!job) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
-      if (line.startsWith("info")) {
+      if (line.startsWith("info") && job.multi) {
         const mp = line.match(/multipv (\d+)/); const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
         if (mp && pv && sc) job.lines[parseInt(mp[1], 10)] = { uci: pv[1], cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
-      } else if (line.startsWith("bestmove")) {
+      } else if (sc && !job.multi) {
+        job.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
+        if (job.onProgress) { const dm = line.match(/^info depth (\d+)/); job.onProgress({ ...job.last, depth: dm ? parseInt(dm[1], 10) : null }); }
+      }
+      if (line.startsWith("bestmove")) {
         queue.shift(); running = false;
-        job.resolve(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]));
+        if (job.multi) job.resolve(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]));
+        else job.resolve(job.last);
         pump();
       }
     }
@@ -1724,9 +1731,15 @@ function bootAnalysisWorker(urls) {
           if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) {
             booted = true; worker = w;
             resolve({
+              evaluate(fen, d, onProgress, mt) {
+                return new Promise((res) => {
+                  queue.push({ resolve: res, multi: false, last: null, onProgress, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  pump();
+                });
+              },
               evaluateMulti(fen, d, multipv, mt) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  queue.push({ resolve: res, multi: true, lines: {}, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
@@ -2379,6 +2392,28 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
   // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
   const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, live: new Map() });
+  // (성능) 화면에 보이는 후보 수(캡 없이 최대 수십 개)의 실시간 평가가 메인 엔진 큐 하나로 한 번에
+  // 하나씩 순서대로 처리되고 있었다 — 후보 수가 많은 포지션일수록 총 대기 시간이 후보 수 개수에
+  // 정비례해 늘어(수당 최대 700ms) 체감 지연의 핵심 원인이었다. depth·movetime(정확도)은 그대로
+  // 두고, 게임 리뷰(analyzeGame)와 같은 방식으로 독립된 워커 풀을 여러 개 띄워 후보 수들을 나눠
+  // 동시에 계산한다 — 총 계산량은 그대로지만 벽시계 시간만 풀 크기만큼 줄어든다.
+  // (버그 수정) analyzeGame은 배치 하나가 끝나면 풀을 바로 버리지만, 이 실시간 평가는 사용자가
+  // 수를 둘 때마다 반복해서 도는 effect라 매번 새로 부팅하면(워커 로딩 자체가 초 단위) 오히려
+  // 더 느려진다 — 엔진 프로필(설정에서 바꾸는 lite/full)이 그대로인 한 한 번 띄운 풀을 계속
+  // 재사용하고, 프로필이 바뀔 때만 기존 풀을 정리하고 새로 띄운다.
+  const livePoolRef = useRef({ profile: null, workers: [], booting: null });
+  useEffect(() => () => { livePoolRef.current.workers.forEach((w) => w.terminate()); }, []);
+  const getLivePool = useCallback(async () => {
+    const st = livePoolRef.current;
+    if (st.profile === engine.profile && (st.workers.length || st.booting)) return st.booting ? await st.booting : st.workers;
+    st.workers.forEach((w) => w.terminate());
+    const size = ANALYZE_POOL_SIZE[engine.profile] || 2;
+    const booting = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(engine.urls))).then((ws) => ws.filter(Boolean));
+    livePoolRef.current = { profile: engine.profile, workers: [], booting };
+    const workers = await booting;
+    livePoolRef.current = { profile: engine.profile, workers, booting: null };
+    return workers;
+  }, [engine.profile, engine.urls]);
   const [engineNote, setEngineNote] = useState("");
   const [masterEmpty, setMasterEmpty] = useState(false); // 마스터 기보가 실제로 없는 경우(엔진 추천 허용)
   const extraKey = (extraSans || []).join(",");
@@ -2525,30 +2560,41 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (성능) moves.length가 늘어 이 effect가 재실행되어도, 이전 실행에서 이미 live 평가를 받은
       // 수는 다시 계산하지 않고 새로 추가된(아직 live가 없는) 수만 평가한다.
       const list = cur.filter((m) => m.live == null).map((m) => m.san);
-      for (const san of list) {
-        if (cancelled) break;
-        // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게 갱신되며
-        // "엔진이 계산하며 평가를 수정하는" 과정이 시각적으로 보인다. 최종 depth에서 한 번 더 확정.
-        // (20차) mate===0(그 수로 체크메이트 완성)일 때 부호가 사라지므로 win으로 승자를 함께 보존한다.
+      if (list.length) {
         const mkLive = (ev2) => ev2.mate != null
           ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b", plies: matePliesOf(ev2.mate) }
           : { cp: ev2.cp * childWhite };
-        const onMoveProgress = (partial) => {
-          if (cancelled || !partial) return;
-          const live = mkLive(partial);
-          setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
-          bumpDepth(partial.depth);
+        // (성능) 후보 수마다 depth 15/movetime 700ms 상한은 그대로(정확도 손실 없음) — 예전엔 이
+        // 목록을 한 번에 하나씩 순서대로 물어봐 후보 수 개수에 정비례해 총 시간이 늘었다. 게임
+        // 리뷰(analyzeGame)와 동일한 work-stealing 패턴으로, 독립된 워커 여러 개가 같은 목록에서
+        // 하나씩 꺼내 동시에 처리하게 해 총 계산량은 그대로 두고 벽시계 시간만 줄인다.
+        const pooled = await getLivePool();
+        if (cancelled) return;
+        const workers = pooled.length ? pooled : [engine];
+        let nextIdx = 0;
+        const runWorker = async (w) => {
+          for (;;) {
+            if (cancelled) return;
+            const i = nextIdx++; if (i >= list.length) return;
+            const san = list[i];
+            // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게
+            // 갱신되며 "엔진이 계산하며 평가를 수정하는" 과정이 시각적으로 보인다. 최종 depth에서
+            // 한 번 더 확정. (20차) mate===0(그 수로 체크메이트 완성)일 때 부호가 사라지므로 win으로
+            // 승자를 함께 보존한다.
+            const onMoveProgress = (partial) => {
+              if (cancelled || !partial) return;
+              setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(partial) } : x));
+              bumpDepth(partial.depth);
+            };
+            // (버그 수정) 위의 be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번
+            // 물어보는 걸 막기 위해 진행 중인 Promise를 수(san)별로 캐시한다.
+            if (!cache.live.has(san)) cache.live.set(san, w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700));
+            const ev = await cache.live.get(san);
+            if (cancelled || !ev) continue;
+            setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(ev) } : x));
+          }
         };
-        // (성능) 이 루프는 화면에 보이는 모든 후보 수(캡 없이 최대 수십 개)를 순서대로 평가한다 —
-        // 한 수라도 movetime 없이 depth 15까지 오래 걸리면 그 뒤 모든 수의 평가가 줄줄이 밀린다.
-        // 수 하나당 상한을 짧게 둬 전체 루프가 예측 가능한 시간 안에 끝나게 한다. (버그 수정) 위의
-        // be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번 물어보는 걸 막기 위해 진행 중인
-        // Promise를 수(san)별로 캐시한다.
-        if (!cache.live.has(san)) cache.live.set(san, engine.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700));
-        const ev = await cache.live.get(san);
-        if (cancelled || !ev) continue;
-        const live = mkLive(ev);
-        setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live } : x));
+        await Promise.all(workers.map(runWorker));
       }
     })();
     return () => { cancelled = true; };
