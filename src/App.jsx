@@ -5993,7 +5993,7 @@ function TierProgressStrip({ totalXp, onOpen }) {
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   return (
-    <div onClick={onOpen} className="press flex items-center" style={{ width: "fit-content", marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
+    <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={62} discSize={66} />
       <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
         <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
