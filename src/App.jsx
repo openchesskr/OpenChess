@@ -200,7 +200,7 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
 }
 // (기능) 티어별로 디자이너가 직접 제작한 로우폴리 기물 이미지(public에 업로드된 실제 아트) —
 // 아이언 폰부터 그랜드마스터(왕관에 "GM"이 새겨진 홀로그램 킹)까지, 기물 종류와 등급 색이 이미
-// 하나의 이미지 안에 함께 표현되어 있다.
+// 하나의 이미지 안에 함께 표현되어 있다. 그랜드마스터는 구간이 없어 대표 이미지 하나만 쓴다.
 const TIER_IMAGE = {
   iron: "/iron-pawn.png",
   bronze: "/bronze-knight.png",
@@ -210,12 +210,16 @@ const TIER_IMAGE = {
   master: "/master-king.png",
   grandmaster: "/grandmaster.png",
 };
-// (v0.0.6 개편 → 디자인 개선) 티어 배지·여정 지도용 기물 아이콘 — 처음엔 실루엣 데이터로 직접
-// 그린 로우폴리 SVG였는데, 디자이너가 만든 실제 티어 이미지(TIER_IMAGE)로 교체했다. piece는
-// 더 이상 아이콘 모양을 고르는 데 쓰이지 않지만(이미지가 이미 기물+색을 함께 담고 있음), 기존
-// 호출부를 그대로 두기 위해 인자는 유지한다.
-function TierPieceGlyph({ piece, size = 28, tierKey, muted = false }) {
-  const src = TIER_IMAGE[tierKey] || TIER_IMAGE.iron;
+// (v0.1.1) 디자이너가 구간(1~5)마다 로마 숫자가 함께 그려진 별도 이미지를 새로 올려줬다
+// (iron-1.png ~ iron-5.png 등, 파일명이 티어 key와 그대로 맞아떨어짐) — 이제 "티어명 텍스트 + 로마
+// 숫자"를 따로 적지 않고, 이 정확한 구간 이미지 한 장으로 티어와 구간을 동시에 나타낸다. 그랜드
+// 마스터(구간 없음)나 division이 안 넘어온 경우는 기존 대표 이미지(TIER_IMAGE)로 대체한다.
+function tierPieceSrc(tierKey, division) {
+  if (!tierKey || tierKey === "grandmaster" || division == null) return TIER_IMAGE[tierKey] || TIER_IMAGE.iron;
+  return "/" + tierKey + "-" + division + ".png";
+}
+function TierPieceGlyph({ size = 28, tierKey, division = null, muted = false }) {
+  const src = tierPieceSrc(tierKey, division);
   // (디자인 개선) 잠긴(muted) 티어를 흰색 반투명 실루엣으로 뭉개던 예전 방식 대신, 실제 이미지를
   // 그대로 두고 채도·밝기만 낮춘다 — 아직 안 온 등급들의 색 차이(브론즈 구릿빛, 골드 금빛,
   // 다이아몬드 청록…)가 옅게나마 남아, 위로 스크롤할수록 앞으로 만날 색이 은은하게 미리 보인다.
@@ -5933,17 +5937,18 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
 // 텍스트로 보여준다. 눌러서 여정 지도(TierJourneyMap)를 연다.
 // 진행바는 폭이 바뀔 때마다 눈에 띄게 차오르도록 긴 이징 트랜지션을 건다("+N XP" 자체는 화면 중앙 토스트로 별도 표시).
 // (18차 UI8) 티어 텍스트(좌)와 게이지(우)를 가로로 나란히 배치 — 헤더에서 아이디 왼쪽에 표시된다.
+// (v0.1.1) "아이언 V" 같은 이름+구간 텍스트를 없애고, 그 구간 전용 이미지(로마 숫자가 이미지
+// 안에 이미 그려져 있음) 하나로 티어와 구간을 함께 나타낸다.
 function TierBadge({ totalXp, compact, onClick }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const { tier, xpInDivision, xpForNextDivision } = info;
+  const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   const tc = TIER_COLORS[tier.key];
   const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   return (
     <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 5 : 7, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
-      <div className="flex items-center" style={{ gap: 4, fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + ringColor, whiteSpace: "nowrap" }}>
-        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={compact ? 12 : 14} />
-        {tierDisplayLabel(info)}
+      <div className="flex items-center justify-center" style={{ width: compact ? 22 : 28, height: compact ? 22 : 28, borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + ringColor, flexShrink: 0 }}>
+        <TierPieceGlyph tierKey={tier.key} division={division} size={compact ? 16 : 20} />
       </div>
       <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
         <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
@@ -5955,13 +5960,14 @@ function TierBadge({ totalXp, compact, onClick }) {
   );
 }
 // (v0.0.6 개편) 프로필 화면(내 프로필 편집·다른 유저 프로필)에 중복돼 있던 "Lv.N (X/Y XP)" 인라인
-// 표기를 하나로 모은다 — 티어(구간)명 + 구간 내 XP 진행 텍스트만 보여주는 작은 필.
+// 표기를 하나로 모은다 — 티어(구간) 이미지 + 구간 내 XP 진행 텍스트만 보여주는 작은 필.
+// (v0.1.1) "아이언 V" 같은 이름+구간 텍스트는 없애고 구간 전용 이미지로 대체한다.
 function TierStatPill({ totalXp }) {
   const info = tierFromXp(totalXp);
-  const { tier, xpInDivision, xpForNextDivision } = info;
+  const { tier, xpInDivision, xpForNextDivision, division } = info;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
-      <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={14} /> {tierDisplayLabel(info)} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
+      <TierPieceGlyph tierKey={tier.key} division={division} size={20} /> <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
     </span>
   );
 }
@@ -5975,23 +5981,25 @@ function TierConnector() {
     </svg>
   );
 }
-// (기능) 다음 몇 구간을 미리 보여주는 작은 배지 — 로마 숫자(구간)가 그 티어의 색으로 표시된다.
-// 그랜드마스터처럼 구간이 없는 자리는 숫자 대신 기물 이미지를 보여준다.
+// (기능) 다음 몇 구간을 미리 보여주는 작은 배지.
+// (v0.1.1) 로마 숫자를 텍스트로 그려 넣던 방식을 없애고, 이제는 모든 구간이 자기만의 이미지를
+// 가지고 있으므로(로마 숫자가 이미지 안에 함께 그려짐) 항상 그 구간 전용 이미지를 보여준다.
 function NextCheckpointBadge({ tier, division }) {
   const tc = TIER_COLORS[tier.key];
   const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   return (
-    <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.3)", border: "2px solid " + ringColor, color: ringColor, fontSize: 14, fontWeight: 900 }}>
-      {division != null ? DIVISION_ROMAN[division] : <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={18} />}
+    <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.3)", border: "2px solid " + ringColor }}>
+      <TierPieceGlyph tierKey={tier.key} division={division} size={26} />
     </div>
   );
 }
-// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 아이콘 +
-// 티어/구간명 + 진행바), 다음으로 넘어야 할 구간 2개는 작은 번호 배지로 지그재그 선을 따라 미리
-// 보여준다. 누르면 여정 지도가 열린다.
+// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 이미지 +
+// 진행바), 다음으로 넘어야 할 구간 2개는 작은 배지로 지그재그 선을 따라 미리 보여준다. 누르면
+// 여정 지도가 열린다.
+// (v0.1.1) "아이언 V" 같은 이름+구간 텍스트는 없애고 구간 전용 이미지로 대체한다.
 function TierProgressStrip({ totalXp, onOpen }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const { tier, xpInDivision, xpForNextDivision } = info;
+  const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   const tc = TIER_COLORS[tier.key];
   const ringColor = tc.stops ? tc.stops[0] : tc.hi;
@@ -5999,11 +6007,10 @@ function TierProgressStrip({ totalXp, onOpen }) {
   return (
     <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
       <div style={{ width: 52, height: 52, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#4A3016,#241509)", border: "2px solid " + ringColor, boxShadow: "0 0 14px 2px " + ringColor + "66" }}>
-        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={30} />
+        <TierPieceGlyph tierKey={tier.key} division={division} size={40} />
       </div>
       <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
-        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabel(info)}</div>
-        <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
+        <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
         <div style={{ fontSize: 10, color: T.brassHi, opacity: .75, marginTop: 2 }}>{xpInDivision}/{xpForNextDivision} XP</div>
@@ -9427,7 +9434,6 @@ function TierJourneyPath({ totalXp }) {
         // 미리 보이도록 한다(도달하면 또렷해짐).
         const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
-        const label = s.division != null ? s.tier.label + " " + DIVISION_ROMAN[s.division] : s.tier.label;
         return (
           <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
             <motion.div
@@ -9442,15 +9448,18 @@ function TierJourneyPath({ totalXp }) {
                 boxShadow: state === "current" ? "0 0 22px 4px " + ringColor + "88" : "0 4px 10px -4px rgba(0,0,0,.6)",
                 opacity: state === "locked" ? 0.78 : 1,
               }}>
-                <TierPieceGlyph piece={s.tier.piece} tierKey={s.tier.key} size={36} muted={state === "locked"} />
+                {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
+                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. */}
+                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={44} muted={state === "locked"} />
               </div>
               {state === "done" && <span style={{ position: "absolute", right: -4, bottom: -4, width: 22, height: 22, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={13} color="#fff" /></span>}
               {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={20} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
             </motion.div>
-            <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{state === "current" ? tierDisplayLabel(info) : label}</div>
-              {state === "current" && <div style={{ fontSize: 10, color: T.ivory, opacity: .8, marginTop: 1 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>}
-            </div>
+            {state === "current" && (
+              <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: T.ivory, opacity: .8 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>
+              </div>
+            )}
           </React.Fragment>
         );
       })}
@@ -9475,6 +9484,52 @@ function TierJourneyMap({ totalXp, onClose }) {
         </div>
         <TierJourneyPath totalXp={totalXp} />
       </div>
+    </div>
+  );
+}
+// (v0.1.1) 티어(대분류)가 실제로 바뀔 때 전체 화면을 덮는 승급 연출 — 반투명 검은 배경으로 화면을
+// 어둡게 가리고, 그 위에서 이전 티어 이미지가 좌우로 살짝 흔들리다 왼쪽 바깥으로 밀려나며, 오른쪽
+// 바깥에서 새 티어 이미지가 들어와 가운데 자리를 대신한다(각 단계 시간은 phase별 setTimeout으로
+// 순서대로 넘긴다). 배경을 눌러도 언제든 바로 스킵하고 닫을 수 있다.
+function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, onDone }) {
+  const [phase, setPhase] = useState("shake"); // shake(흔들림) -> exit(퇴장) -> enter(새 티어 등장)
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase("exit"), 650);
+    const t2 = setTimeout(() => setPhase("enter"), 1050);
+    const t3 = setTimeout(() => onDone && onDone(), 2700);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div onClick={onDone} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,3,1,.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+      <div style={{ fontSize: 18, fontWeight: 900, color: T.brassHi, letterSpacing: ".02em", textShadow: "0 2px 10px rgba(0,0,0,.7)", marginBottom: 18 }}>티어 승급!</div>
+      <div style={{ position: "relative", width: 200, height: 200 }}>
+        <AnimatePresence>
+          {phase !== "enter" && (
+            <motion.img
+              key="from"
+              src={tierPieceSrc(fromTierKey, fromDivision)}
+              alt=""
+              initial={{ x: 0, opacity: 1 }}
+              animate={phase === "shake" ? { x: [0, -16, 16, -12, 12, -5, 5, 0] } : { x: -260, opacity: 0 }}
+              transition={phase === "shake" ? { duration: 0.6, ease: "easeInOut" } : { duration: 0.4, ease: "easeIn" }}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+            />
+          )}
+          {phase === "enter" && (
+            <motion.img
+              key="to"
+              src={tierPieceSrc(toTierKey, toDivision)}
+              alt=""
+              initial={{ x: 260, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+      <div style={{ fontSize: 11.5, color: T.ivory, opacity: .7, marginTop: 18 }}>화면을 누르면 바로 닫혀요</div>
     </div>
   );
 }
@@ -10328,11 +10383,16 @@ export default function App() {
   }, [uid]);
   const tierInfo = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const prevTierIndexRef = useRef(null);
+  // (v0.1.1) 작은 토스트 대신 전체 화면 승급 연출(TierUpOverlay)을 띄운다 — 직전 티어의 마지막
+  // 구간(1, 가장 높은 구간)에서 새 티어로 넘어온 것으로 보고 시작 이미지를 정한다.
+  const [tierUpAnim, setTierUpAnim] = useState(null); // { fromKey, fromDiv, toKey, toDiv } | null
   useEffect(() => {
     if (!loaded) return; // 최초 데이터 복원 시점의 티어 변화는 "승급"으로 취급하지 않는다
     if (prevTierIndexRef.current != null && tierInfo.tierIndex > prevTierIndexRef.current) {
-      setToast({ type: "tier", tierIndex: tierInfo.tierIndex });
-      setTimeout(() => setToast((t) => (t && t.type === "tier" ? null : t)), 4000);
+      setTierUpAnim({
+        fromKey: TIERS[prevTierIndexRef.current].key, fromDiv: 1,
+        toKey: tierInfo.tier.key, toDiv: tierInfo.division,
+      });
       if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
     }
     prevTierIndexRef.current = tierInfo.tierIndex;
@@ -10557,6 +10617,7 @@ export default function App() {
       {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
+      {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
@@ -10594,14 +10655,6 @@ export default function App() {
             <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: 14, borderRadius: 14, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><Mascot name="kokoa" emotion="celebrate" size={58} /><div style={{ fontWeight: 800, fontSize: 13.5, color: T.brassHi }}>새로운 칭호 획득!</div></div>
               <TitleBadge id={toast.id} earned equipped={currentTitle === toast.id} onEquip={equipTitle} />
-            </div>
-          ) : toast.type === "tier" ? (
-            <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
-              <Mascot name="milku" emotion="celebrate" size={62} />
-              <div className="flex items-center gap-2">
-                <TierPieceGlyph piece={TIERS[toast.tierIndex].piece} tierKey={TIERS[toast.tierIndex].key} size={30} />
-                <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>티어 승급!</div><div style={{ fontSize: 12 }}>{TIERS[toast.tierIndex].label}(으)로 승급했어요.</div></div>
-              </div>
             </div>
           ) : toast.type === "share_reward" ? (
             /* (v0.1.0) 내가 공유한 퍼즐을 친구가 풀어 XP를 나눠 받았을 때 — 실시간으로 도착하는 순간 뜨는 알림. */
