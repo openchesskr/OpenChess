@@ -5480,7 +5480,22 @@ async function puzzleShareReward(shareMsgId, amount) {
   try { return !!(await sbRpc("puzzle_share_reward", { p_share_msg_id: shareMsgId, p_amount: amount })); } catch { return false; }
 }
 // (UX6 전역 공유) 퍼즐 정의를 번호로 공유 저장/조회. 미설정·미생성 시 무해하게 비활성.
-async function puzzleShare(p) { if (!SB_ON || !p || !p.id) return; try { await sbUpsert("puzzles", { no: puzzleNo(p.id), data: p }); } catch { } }
+// (v0.1.1 버그 수정) 같은 포지션+수(id)라도 "실수 응징/우위 점하기" 분기와 "기물 희생하기" 분기가
+// 서로 다른 세션(다른 유저, 혹은 같은 유저의 다른 방문)에서 각자 독립적으로 처음 발견될 수 있다 —
+// 이 함수는 그 클라이언트가 "로컬로 알고 있는" 테마만 담은 퍼즐을 그대로 업로드하는데, 위 sbUpsert의
+// merge-duplicates는 컬럼(data) 전체를 통째로 교체할 뿐 jsonb 안의 themes 배열을 병합해주지 않는다
+// — 그래서 나중에 업로드되는 쪽이 먼저 있던 테마 태그를 지워버렸다(신고된 #685586 — 실수 응징
+// 퍼즐인데 나중에 같은 포지션의 기물 희생하기 업로드가 덮어써 응징 태그만 사라짐). 업로드 전 서버에
+// 이미 올라온 데이터를 먼저 조회해, 있으면 테마를 합집합으로 병합한 뒤 올린다.
+async function puzzleShare(p) {
+  if (!SB_ON || !p || !p.id) return;
+  try {
+    const no = puzzleNo(p.id);
+    const server = await puzzleFetch(no);
+    const merged = server ? { ...p, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
+    await sbUpsert("puzzles", { no, data: merged });
+  } catch { }
+}
 async function puzzleFetch(no) { if (!SB_ON) return null; try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; } }
 // (16차) "이 퍼즐을 푼 친구" 표기용 — 퍼즐 번호별 해결자 uid 기록. 테이블 puzzle_solvers(no, uid) PK(no,uid) 필요.
 // 테이블이 없거나 Supabase 미설정이면 무해하게 비활성(전체 풀이수만 표시).
