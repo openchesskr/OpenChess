@@ -238,11 +238,10 @@ function TierPieceGlyph({ size = 100, tierKey, division = null, muted = false })
   return <img src={src} alt="" style={{ height: h, width: "auto", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
 }
 // (v0.1.1) 로고 뒤 하얀 원 배경 — 특히 아이언처럼 어두운 톤의 기물이 어두운(브라운) UI 배경
-// 위에서 잘 안 보이던 문제를 흰 원으로 감싸 해결한다. 이미지는 항상 원 하단(로마 숫자가 있는
-// 쪽) 기준으로 정렬해, 티어마다 원본 이미지 크기가 달라도 로마 숫자끼리 높이가 나란히 맞는다.
+// 위에서 잘 안 보이던 문제를 흰 원으로 감싸 해결한다. 이미지는 원 정중앙에 오도록 배치한다.
 function TierLogoDisc({ tierKey, division, size, discSize, muted = false }) {
   return (
-    <div style={{ width: discSize, height: discSize, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: Math.round(discSize * 0.045), background: "#fff", boxShadow: "0 2px 7px rgba(0,0,0,.4)", opacity: muted ? 0.62 : 1 }}>
+    <div style={{ width: discSize, height: discSize, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", boxShadow: "0 2px 7px rgba(0,0,0,.4)", opacity: muted ? 0.62 : 1 }}>
       <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
     </div>
   );
@@ -5975,9 +5974,9 @@ function TierBadge({ totalXp, compact, onClick }) {
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   return (
-    <div onClick={onClick} className="press flex items-end" style={{ gap: compact ? 4 : 6, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 36 : 44} discSize={compact ? 40 : 50} />
-      <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch", paddingBottom: 1 }}>
+    <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 6 : 9, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
+      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 62 : 76} discSize={compact ? 72 : 88} />
+      <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
         <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
@@ -5993,8 +5992,8 @@ function TierStatPill({ totalXp }) {
   const info = tierFromXp(totalXp);
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   return (
-    <span style={{ display: "inline-flex", alignItems: "flex-end", gap: 6, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={44} discSize={52} /> <span style={{ color: T.ivory, fontWeight: 700, paddingBottom: 1 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
+      <TierLogoDisc tierKey={tier.key} division={division} size={76} discSize={88} /> <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
     </span>
   );
 }
@@ -6013,13 +6012,13 @@ function TierConnector() {
 // 가지고 있으므로(로마 숫자가 이미지 안에 함께 그려짐) 항상 그 구간 전용 이미지를 보여준다.
 // 로고 뒤에 흰 원을 둬 어두운 톤의 티어(아이언 등)도 잘 보이게 한다.
 function NextCheckpointBadge({ tier, division }) {
-  return <TierLogoDisc tierKey={tier.key} division={division} size={46} discSize={54} />;
+  return <TierLogoDisc tierKey={tier.key} division={division} size={70} discSize={82} />;
 }
 // (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 이미지 +
 // 진행바), 다음으로 넘어야 할 구간 2개는 작은 배지로 지그재그 선을 따라 미리 보여준다. 누르면
 // 여정 지도가 열린다.
 // (v0.1.1) 다른 화면들과 달리 여기만 "아이언 5"처럼 티어를 텍스트로도 다시 보여준다(아라비아
-// 숫자 사용) — 이미지는 흰 원 배경으로 크게 두고, 하단(로마 숫자) 기준으로 정렬한다.
+// 숫자 사용) — 이미지는 흰 원 배경 정중앙에 크게 둔다.
 function TierProgressStrip({ totalXp, onOpen }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const { tier, xpInDivision, xpForNextDivision, division } = info;
@@ -6027,7 +6026,7 @@ function TierProgressStrip({ totalXp, onOpen }) {
   const upcoming = useMemo(() => upcomingCheckpoints(info, 2), [info]);
   return (
     <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={84} discSize={92} />
+      <TierLogoDisc tierKey={tier.key} division={division} size={130} discSize={144} />
       <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
         <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
         <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
@@ -9420,7 +9419,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
 function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   // (v0.1.1) 로고를 훨씬 크게 키우면서 정거장 원 자체도 그만큼 키웠다.
-  const STATION_H = 144, STATION_GAP = 64;
+  const STATION_H = 190, STATION_GAP = 70;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
   // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
@@ -9461,18 +9460,20 @@ function TierJourneyPath({ totalXp }) {
               transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
               style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
               <div style={{
-                position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 7,
+                position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
                 background: "#fff",
                 boxShadow: state === "current" ? "0 0 28px 6px " + ringColor + "88" : "0 2px 8px rgba(0,0,0,.4)",
                 opacity: state === "locked" ? 0.6 : 1,
               }}>
                 {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
-                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 서로 다른 티어 이미지는
-                    하단(로마 숫자) 기준으로 정렬해, 이미지 원본 크기가 달라도 로마 숫자끼리 높이가 맞는다. */}
-                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={124} />
+                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 원 정중앙에 오도록 배치한다. */}
+                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={170} />
               </div>
-              {state === "done" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 28, height: 28, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={16} color="#fff" /></span>}
-              {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={26} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
+              {state === "done" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 34, height: 34, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={19} color="#fff" /></span>}
+              {/* (v0.1.1 버그 수정) 로고를 원 정중앙으로 옮기면서, 정중앙에 겹쳐 그리던 잠금 아이콘이
+                  로고 위에 그대로 포개져 서로 가려 보였다 — "완료" 배지와 같은 자리(우하단 모서리)의
+                  작은 배지로 옮겨 로고와 겹치지 않게 한다. */}
+              {state === "locked" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 34, height: 34, borderRadius: "50%", background: "rgba(20,12,6,.88)", border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={17} style={{ color: "rgba(255,255,255,.85)" }} /></span>}
             </motion.div>
             {state === "current" && (
               <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
