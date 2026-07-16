@@ -7923,8 +7923,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
       )}
       {puzzles && solved && (
         <div style={{ paddingTop: mq.totalChapters > 0 ? 0 : 12, borderTop: mq.totalChapters > 0 ? "none" : "1px solid #E4D5B6" }}>
-          <SolvedPuzzlesBlock puzzles={solvedPuzzles} total={solvedPuzzles.length} loading={false}
-            renderCard={(p) => <PuzzleCard key={p.id} p={p} isSolved onClick={() => onOpenPuzzle && onOpenPuzzle(p.id, p)} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />} />
+          <SolvedPuzzlesBlock puzzles={solvedPuzzles} total={solvedPuzzles.length} loading={false} onOpenPuzzle={onOpenPuzzle}
+            renderCard={(p, onClick) => <PuzzleCard key={p.id} p={p} isSolved onClick={onClick} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />} />
         </div>
       )}
       {linked && (
@@ -8994,15 +8994,18 @@ function FirstMovesDisplay({ firstMoves }) {
 }
 // (v0.1.0) 프로필의 "푼 퍼즐" — 내 프로필(설정 탭)/공개 프로필(유저 검색·친구) 공통으로 쓰는
 // 미리보기+더보기 UI. 앞쪽 SOLVED_PREVIEW_COUNT개(3개)만 바로 보여주고, 그보다 많으면 "더 보기"로
-// 전체를 스크롤 가능한 별도 창에서 확인한다. renderCard(p)는 호출부가 좋아요·리포스트·공유 등
-// 그 화면에 맞는 PuzzleCard 속성을 채워 넘긴다(내 프로필은 상호작용 가능, 공개 프로필은 보기 전용).
+// 전체를 스크롤 가능한 별도 창에서 확인한다. renderCard(p, onClick)는 호출부가 좋아요·리포스트·공유
+// 등 그 화면에 맞는 PuzzleCard 속성을 채워 넘기되, 클릭 동작 자체(onClick)는 이 컴포넌트가 정해서
+// 넘겨준다 — "더 보기" 모달 안에서 블록을 눌렀을 때도 항상 그 퍼즐로 리디렉션되도록, 모달을 먼저
+// 닫고 나서 onOpenPuzzle을 호출하는 것까지 한곳에서 보장하기 위함(호출부마다 따로 신경 쓰지 않아도 됨).
 // onExpand는 "더 보기"를 처음 눌렀을 때만 한 번 호출되는 훅 — 공개 프로필은 이 시점에야 나머지
 // 퍼즐 데이터를 마저 불러온다(프로필을 열 때마다 전부 조회하지 않도록).
 const SOLVED_PREVIEW_COUNT = 3;
-function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand }) {
+function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onOpenPuzzle }) {
   const [showAll, setShowAll] = useState(false);
   const preview = puzzles.slice(0, SOLVED_PREVIEW_COUNT);
   const openAll = () => { setShowAll(true); onExpand && onExpand(); };
+  const openPuzzle = (p) => { onOpenPuzzle && onOpenPuzzle(p.id, p); };
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>푼 퍼즐 <span style={{ color: T.inkSoft, fontWeight: 700 }}>({fmtFull(total)})</span></div>
@@ -9011,7 +9014,7 @@ function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand }) {
       ) : (
         <>
           <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-            {preview.map(renderCard)}
+            {preview.map((p) => renderCard(p, () => openPuzzle(p)))}
           </div>
           {total > SOLVED_PREVIEW_COUNT && (
             <button onClick={openAll} className="press" style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>더 보기 ({fmtFull(total)}개)</button>
@@ -9027,7 +9030,7 @@ function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand }) {
             </div>
             <div style={{ padding: 14, overflowY: "auto" }}>
               <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
-                {puzzles.map(renderCard)}
+                {puzzles.map((p) => renderCard(p, () => { setShowAll(false); openPuzzle(p); }))}
               </div>
               {loading && <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 10, textAlign: "center" }}>더 불러오는 중…</p>}
             </div>
@@ -9059,8 +9062,8 @@ function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle }) {
   }, [nos]);
   const puzzles = nos.map((no) => byNo[no]).filter(Boolean);
   const loading = nos.some((no) => !(no in byNo));
-  const renderCard = (p) => <PuzzleCard key={p.id} p={p} isSolved onClick={() => onOpenPuzzle && onOpenPuzzle(p.id, p)} />;
-  return <SolvedPuzzlesBlock puzzles={puzzles} total={solvedNos.length} loading={loading} renderCard={renderCard} onExpand={() => setExpanded(true)} />;
+  const renderCard = (p, onClick) => <PuzzleCard key={p.id} p={p} isSolved onClick={onClick} />;
+  return <SolvedPuzzlesBlock puzzles={puzzles} total={solvedNos.length} loading={loading} renderCard={renderCard} onExpand={() => setExpanded(true)} onOpenPuzzle={onOpenPuzzle} />;
 }
 // (17차→v0.1.0) 프로필 정보 확장 — 티어/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는
 // 공용 컴포넌트. UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다. (v0.1.0) 설정 탭
