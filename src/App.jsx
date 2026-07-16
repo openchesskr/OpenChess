@@ -4437,7 +4437,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (const it of items) {
       if (it.depth >= 1 && it.kids) {
         const cache = posCacheRef.current[it.dir];
-        if (!cache.has(it.key)) cache.set(it.key, (it.kids[0].pos + it.kids[it.kids.length - 1].pos) / 2);
+        if (!cache.has(it.key)) {
+          let p = (it.kids[0].pos + it.kids[it.kids.length - 1].pos) / 2;
+          // (v0.1.1) 이름 붙은 오프닝의 뿌리(그룹 라벨이 붙는 노드)는 자손 펼침의 "가운데"가 아니라,
+          // 그 그룹 안에서 가장 먼저 배치된(=화면상 가장 왼쪽/위) 자손 쪽 끝에 맞춰, 점선 영역의
+          // 좌상단(라벨이 있는 자리)에 가깝게 놓이도록 한다. 나침반 팔의 기준점(depth===1, e4/d4/
+          // c4/Nf3 자신)은 절대 건드리지 않는다 — 건드리면 그 팔 전체(수천 개 자손)가 기준점과 함께
+          // 통째로 옆으로 밀려 보인다.
+          if (it.depth >= 2 && it.groupKey === it.key) p = it.kids[0].pos;
+          cache.set(it.key, p);
+        }
         it.pos = cache.get(it.key);
       }
     }
@@ -4698,7 +4707,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const flightRafRef = useRef(null);
   const [flightPath, setFlightPath] = useState(null);   // [[x,y], ...] (콘텐츠 좌표) | null
   const FLIGHT_MS = 220;
-  const flyAlongPath = (waypoints, targetZoom) => {
+  const flyAlongPath = (waypoints, targetZoom, onDone) => {
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const fromZoom = zoomRef.current;
     if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
@@ -4734,12 +4743,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       setPan({ x: rect.width / 2 - cx * z, y: rect.height / 2 - cy * z });
       setZoom(z);
       if (t < 1) { flightRafRef.current = requestAnimationFrame(step); }
-      else { flightRafRef.current = null; setFlightPath(null); }
+      else { flightRafRef.current = null; setFlightPath(null); if (onDone) onDone(); }
     };
     flightRafRef.current = requestAnimationFrame(step);
   };
   useEffect(() => () => { if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current); }, []);
-  const centerOn = (it, z) => { flyAlongPath(buildFlightWaypoints(it), z); };
+  const centerOn = (it, z, onDone) => { flyAlongPath(buildFlightWaypoints(it), z, onDone); };
   // (버그 수정) 선택 직후 딱 한 번만 중앙으로 옮기면, 트리가 아직 배경에서 계속 자라는 중일 때
   // (최대 4000개 노드가 계속 로드되며 다른 노드들의 좌표(pos)도 함께 밀려남) 선택한 노드가 금방
   // 중앙에서 벗어나 버려 "고정이 안 된다"고 느껴졌다. items 변경에 반응하는 디바운스 effect로
@@ -4805,8 +4814,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     setQuery("");
     setSelectedPath(it.path);
     selectionLockRef.current = true;
-    centerOn(it, SELECT_ZOOM);
-    onToggleOpen(it.key);
+    if (openKey === it.key) {
+      // 이미 열려 있는 수를 다시 선택하면 기존처럼 즉시 토글해서 닫는다.
+      onToggleOpen(it.key);
+      centerOn(it, SELECT_ZOOM);
+      return;
+    }
+    // (v0.1.1) 검색·클릭으로 다른 수로 이동할 때는 화면이 그 수까지 다 이동한 뒤에야 수 설명
+    // 카드가 나타나게 한다 — 전에는 이동 애니메이션이 도는 동안에도 카드가 곧장 뜬 채로 화면을
+    // 따라 미끄러지듯 이동해 산만했다. 이동 중엔 기존에 열려 있던 카드도 먼저 닫는다.
+    if (openKey) onToggleOpen(openKey);
+    centerOn(it, SELECT_ZOOM, () => onToggleOpen(it.key));
   };
   // (v0.0.6 성능) DexNodesLayer가 팬/드래그 중에는 다시 그려지지 않도록 memo화되어 있는데, 클릭
   // 콜백을 매 렌더 새로 만드는 인라인 화살표 함수로 넘기면 그 참조가 매번 바뀌어 memo가 무력화된다
@@ -4925,15 +4943,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         {groups.map((g) => (
           <div key={"group-" + g.key} style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h, border: "1.5px dashed rgba(138,90,43,.5)", borderRadius: 14, pointerEvents: "none", zIndex: 0 }} />
         ))}
-        {/* (기능) 이름 라벨은 점선 영역의 기하학적 모서리가 아니라, 그 오프닝의 최상위 수(root) 바로
-            위-왼쪽에 앵커한다 — 박스 전체의 바운딩 박스 모서리(g.x/g.y)는 자손 라인이 뻗어나가는
-            방향(나침반 팔마다 다름 — 예: 북쪽 팔은 뿌리가 오히려 영역 아래쪽 끝에 옴)에 따라 실제
-            루트 위치와 멀리 떨어질 수 있어, 라벨이 정작 그 오프닝을 시작하는 수와 무관한 자리(깊은
-            변화 근처)에 붙어 있는 것처럼 보였다. rootX/rootY(그 그룹의 시작 수 좌표)를 그대로 써서
-            "이름 텍스트 바로 밑에 최상위 수"가 항상 성립하도록 한다 — 깊이 방향 간격(VROW/HROW)이
-            라벨 높이보다 훨씬 커 바로 다음 수 블록과 겹치지 않는다. */}
+        {/* (기능) 이름 라벨은 점선 영역 왼쪽 위 바깥의 빈 여백에 항상 고정해 둔다(박스 안에 넣으면
+            자손 블록들과 겹치므로, 늘 비어 있는 바깥 여백에 둔다) — 라벨을 옮기는 대신, 그 오프닝의
+            최상위 수(root) 쪽을 이 모서리에 가깝게 배치한다(위 pos 계산의 v0.1.1 주석 참고). */}
         {groups.map((g) => (
-          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.rootX - 6, top: g.rootY - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
+          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.x - 6, top: g.y - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
             <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200, background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
               ✦ {g.name} ✦
             </span>
