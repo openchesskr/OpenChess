@@ -10701,7 +10701,12 @@ export default function App() {
             실제 보이는 그림은 절반 정도뿐이었다(헤더가 불필요하게 커 보이는 주된 원인). 이미지 자체를
             그 여백 없이 다시 잘라냈으므로, 이제 height 값이 곧 실제 로고 크기와 거의 같다 — 헤더를
             불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
-        <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", flexShrink: 0, height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+        {/* (v0.1.2 기능) 로고 아래에 현재 버전을 작은 금색 텍스트로 표기 — CHANGELOG[0]에서 파생되는
+            APP_VERSION을 그대로 써서, 새 버전을 낼 때 이 표기도 따로 손댈 필요가 없게 한다. */}
+        <div className="flex flex-col" style={{ flexShrink: 0, gap: 1 }}>
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <span style={{ fontSize: 9, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "center" }}>v{APP_VERSION}</span>
+        </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
               (v0.0.6 개편) 누르면 여정 지도(TierJourneyMap)가 열린다. */}
