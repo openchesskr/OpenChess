@@ -5656,24 +5656,6 @@ function tierDisplayLabelArabic(info) {
   if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
   return info.tier.label + " " + info.division;
 }
-// (v0.0.6 추가) 지금 위치에서 앞으로 넘어야 할 구간을 순서대로 count개 뽑는다 — 구간이 1(최상위)
-// 아래로 내려가면 다음 티어의 5(최하위)로 넘어간다. 퍼즐 탭 상단 스트립에서 "다음 몇 단계"를
-// 미리 보여줄 때 쓴다. 이미 그랜드마스터(끝없는 티어)면 더 넘을 구간이 없어 빈 배열을 준다.
-function upcomingCheckpoints(info, count) {
-  const out = [];
-  if (info.maxed) return out;
-  let tierIdx = info.tierIndex, division = info.division;
-  for (let k = 0; k < count; k++) {
-    division -= 1;
-    if (division < 1) {
-      tierIdx += 1;
-      if (tierIdx >= TIERS.length) break;
-      division = tierIdx === TIERS.length - 1 ? null : DIVISIONS_PER_TIER; // 그랜드마스터는 구간이 없다
-    }
-    out.push({ tier: TIERS[tierIdx], division });
-  }
-  return out;
-}
 // 퍼즐 한 라인을 해결할 때 얻는 경험치: {13~17 사이의 난수 × (기존 별 보유 수+1.2)}의 정수 부분.
 function rollLineXp(existingStars) {
   const roll = 13 + Math.floor(Math.random() * 5); // 13~17
@@ -6001,35 +5983,17 @@ function TierStatPill({ totalXp }) {
     </span>
   );
 }
-// (디자인 개선) 퍼즐 탭 티어 스트립에서 큰 원(지금 구간)과 작은 배지(다음 구간들) 사이를 잇는
-// 짧은 점선 — 원래는 여정 지도와 같은 느낌을 내려고 구불구불한 지그재그였는데, 이 좁은 가로
-// 스트립 안에서는 오히려 어수선해 보인다는 피드백으로 곧은 직선으로 바꿨다.
-function TierConnector() {
-  return (
-    <svg viewBox="0 0 60 30" preserveAspectRatio="none" style={{ width: 26, height: 30, flexShrink: 0 }}>
-      <line x1="0" y1="15" x2="60" y2="15" stroke="rgba(196,154,80,.6)" strokeWidth="2.5" strokeDasharray="4 5" strokeLinecap="round" />
-    </svg>
-  );
-}
-// (기능) 다음 몇 구간을 미리 보여주는 작은 배지.
-// (v0.1.1) 로마 숫자를 텍스트로 그려 넣던 방식을 없애고, 이제는 모든 구간이 자기만의 이미지를
-// 가지고 있으므로(로마 숫자가 이미지 안에 함께 그려짐) 항상 그 구간 전용 이미지를 보여준다.
-// 로고 뒤에 흰 원을 둬 어두운 톤의 티어(아이언 등)도 잘 보이게 한다.
-function NextCheckpointBadge({ tier, division }) {
-  return <TierLogoDisc tierKey={tier.key} division={division} size={38} discSize={40} />;
-}
-// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 이미지 +
-// 진행바), 다음으로 넘어야 할 구간 2개는 작은 배지로 지그재그 선을 따라 미리 보여준다. 누르면
-// 여정 지도가 열린다.
+// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간을 기물 이미지 +
+// 진행바로 보여준다. 누르면 여정 지도가 열린다.
 // (v0.1.1) 다른 화면들과 달리 여기만 "아이언 5"처럼 티어를 텍스트로도 다시 보여준다(아라비아
 // 숫자 사용) — 이미지는 흰 원 배경 정중앙에 크게 둔다.
+// (v0.1.2) 다음 구간을 미리 보여주던 작은 배지들을 없앴다 — 여정 지도에서 이미 볼 수 있어 중복.
 function TierProgressStrip({ totalXp, onOpen }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
-  const upcoming = useMemo(() => upcomingCheckpoints(info, 2), [info]);
   return (
-    <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
+    <div onClick={onOpen} className="press flex items-center" style={{ width: "fit-content", marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={62} discSize={66} />
       <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
         <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
@@ -6038,12 +6002,6 @@ function TierProgressStrip({ totalXp, onOpen }) {
         </div>
         <div style={{ fontSize: 10, color: T.brassHi, opacity: .75, marginTop: 2 }}>{xpInDivision}/{xpForNextDivision} XP</div>
       </div>
-      {upcoming.map((u, i) => (
-        <React.Fragment key={i}>
-          <TierConnector />
-          <NextCheckpointBadge tier={u.tier} division={u.division} />
-        </React.Fragment>
-      ))}
     </div>
   );
 }
