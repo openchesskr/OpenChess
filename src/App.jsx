@@ -4919,14 +4919,19 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
-        {/* (기능) 칭호(이름)가 붙은 오프닝만 점선 테두리로 한 단위로 묶어 표시하고, 박스 왼쪽 위
-            바깥의 빈 여백에 화살표와 함께 그 오프닝 이름을 장식체로 적는다(박스 안에 글자를 넣으면
-            자손 블록들과 겹치므로, 늘 비어 있는 바깥 여백에 둔다). */}
+        {/* (기능) 칭호(이름)가 붙은 오프닝만 점선 테두리로 한 단위로 묶어 표시한다. */}
         {groups.map((g) => (
           <div key={"group-" + g.key} style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h, border: "1.5px dashed rgba(138,90,43,.5)", borderRadius: 14, pointerEvents: "none", zIndex: 0 }} />
         ))}
+        {/* (기능) 이름 라벨은 점선 영역의 기하학적 모서리가 아니라, 그 오프닝의 최상위 수(root) 바로
+            위-왼쪽에 앵커한다 — 박스 전체의 바운딩 박스 모서리(g.x/g.y)는 자손 라인이 뻗어나가는
+            방향(나침반 팔마다 다름 — 예: 북쪽 팔은 뿌리가 오히려 영역 아래쪽 끝에 옴)에 따라 실제
+            루트 위치와 멀리 떨어질 수 있어, 라벨이 정작 그 오프닝을 시작하는 수와 무관한 자리(깊은
+            변화 근처)에 붙어 있는 것처럼 보였다. rootX/rootY(그 그룹의 시작 수 좌표)를 그대로 써서
+            "이름 텍스트 바로 밑에 최상위 수"가 항상 성립하도록 한다 — 깊이 방향 간격(VROW/HROW)이
+            라벨 높이보다 훨씬 커 바로 다음 수 블록과 겹치지 않는다. */}
         {groups.map((g) => (
-          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.x - 6, top: g.y - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
+          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.rootX - 6, top: g.rootY - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
             <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200, background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
               ✦ {g.name} ✦
             </span>
