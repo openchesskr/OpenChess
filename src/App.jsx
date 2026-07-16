@@ -237,6 +237,16 @@ function TierPieceGlyph({ size = 100, tierKey, division = null, muted = false })
   // 다이아몬드 청록…)가 옅게나마 남아, 위로 스크롤할수록 앞으로 만날 색이 은은하게 미리 보인다.
   return <img src={src} alt="" style={{ height: h, width: "auto", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
 }
+// (v0.1.1) 로고 뒤 하얀 원 배경 — 특히 아이언처럼 어두운 톤의 기물이 어두운(브라운) UI 배경
+// 위에서 잘 안 보이던 문제를 흰 원으로 감싸 해결한다. 이미지는 항상 원 하단(로마 숫자가 있는
+// 쪽) 기준으로 정렬해, 티어마다 원본 이미지 크기가 달라도 로마 숫자끼리 높이가 나란히 맞는다.
+function TierLogoDisc({ tierKey, division, size, discSize, muted = false }) {
+  return (
+    <div style={{ width: discSize, height: discSize, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: Math.round(discSize * 0.045), background: "#fff", boxShadow: "0 2px 7px rgba(0,0,0,.4)", opacity: muted ? 0.62 : 1 }}>
+      <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
+    </div>
+  );
+}
 
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
 // 육각형 등을 페이지 전반(상단뿐 아니라 하단까지)에 흩뿌려 첨부 레퍼런스 이미지의 "떠있는 도형들" 느낌을 낸다.
@@ -5637,6 +5647,12 @@ function tierDisplayLabel(info) {
   if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
   return info.tier.label + " " + DIVISION_ROMAN[info.division];
 }
+// (v0.1.1) 퍼즐 탭 상단 스트립에서만, 이미지만으로 대신했던 걸 되돌려 다시 텍스트로도 티어를
+// 보여준다 — 이번엔 로마 숫자 대신 아라비아 숫자로("골드 3").
+function tierDisplayLabelArabic(info) {
+  if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
+  return info.tier.label + " " + info.division;
+}
 // (v0.0.6 추가) 지금 위치에서 앞으로 넘어야 할 구간을 순서대로 count개 뽑는다 — 구간이 1(최상위)
 // 아래로 내려가면 다음 티어의 5(최하위)로 넘어간다. 퍼즐 탭 상단 스트립에서 "다음 몇 단계"를
 // 미리 보여줄 때 쓴다. 이미 그랜드마스터(끝없는 티어)면 더 넘을 구간이 없어 빈 배열을 준다.
@@ -5960,7 +5976,7 @@ function TierBadge({ totalXp, compact, onClick }) {
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   return (
     <div onClick={onClick} className="press flex items-end" style={{ gap: compact ? 4 : 6, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
-      <TierPieceGlyph tierKey={tier.key} division={division} size={compact ? 32 : 40} />
+      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 36 : 44} discSize={compact ? 40 : 50} />
       <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch", paddingBottom: 1 }}>
         <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
@@ -5978,7 +5994,7 @@ function TierStatPill({ totalXp }) {
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   return (
     <span style={{ display: "inline-flex", alignItems: "flex-end", gap: 6, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
-      <TierPieceGlyph tierKey={tier.key} division={division} size={40} /> <span style={{ color: T.ivory, fontWeight: 700, paddingBottom: 1 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
+      <TierLogoDisc tierKey={tier.key} division={division} size={44} discSize={52} /> <span style={{ color: T.ivory, fontWeight: 700, paddingBottom: 1 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
     </span>
   );
 }
@@ -5995,35 +6011,26 @@ function TierConnector() {
 // (기능) 다음 몇 구간을 미리 보여주는 작은 배지.
 // (v0.1.1) 로마 숫자를 텍스트로 그려 넣던 방식을 없애고, 이제는 모든 구간이 자기만의 이미지를
 // 가지고 있으므로(로마 숫자가 이미지 안에 함께 그려짐) 항상 그 구간 전용 이미지를 보여준다.
-// 로고를 키우고 원형 테두리는 없앴다 — 옅은 방사형 색조만 남겨 그 티어 색을 은은히 암시한다.
+// 로고 뒤에 흰 원을 둬 어두운 톤의 티어(아이언 등)도 잘 보이게 한다.
 function NextCheckpointBadge({ tier, division }) {
-  const tc = TIER_COLORS[tier.key];
-  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
-  return (
-    <div style={{ minWidth: 46, height: 46, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "radial-gradient(circle at 50% 40%," + ringColor + "26,transparent 72%)" }}>
-      <TierPieceGlyph tierKey={tier.key} division={division} size={42} />
-    </div>
-  );
+  return <TierLogoDisc tierKey={tier.key} division={division} size={46} discSize={54} />;
 }
 // (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 이미지 +
 // 진행바), 다음으로 넘어야 할 구간 2개는 작은 배지로 지그재그 선을 따라 미리 보여준다. 누르면
 // 여정 지도가 열린다.
-// (v0.1.1) "아이언 V" 같은 이름+구간 텍스트는 없애고 구간 전용 이미지로 대체, 로고를 훨씬 크게
-// 키우고 원형 테두리는 없앴다(은은한 글로우만 남김) — 이미지는 하단(로마 숫자) 기준으로 정렬한다.
+// (v0.1.1) 다른 화면들과 달리 여기만 "아이언 5"처럼 티어를 텍스트로도 다시 보여준다(아라비아
+// 숫자 사용) — 이미지는 흰 원 배경으로 크게 두고, 하단(로마 숫자) 기준으로 정렬한다.
 function TierProgressStrip({ totalXp, onOpen }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
-  const tc = TIER_COLORS[tier.key];
-  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   const upcoming = useMemo(() => upcomingCheckpoints(info, 2), [info]);
   return (
     <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
-      <div style={{ width: 84, height: 84, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 3, background: "linear-gradient(160deg,#4A3016,#241509)", boxShadow: "0 0 18px 3px " + ringColor + "55" }}>
-        <TierPieceGlyph tierKey={tier.key} division={division} size={76} />
-      </div>
+      <TierLogoDisc tierKey={tier.key} division={division} size={84} discSize={92} />
       <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
-        <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
+        <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
         <div style={{ fontSize: 10, color: T.brassHi, opacity: .75, marginTop: 2 }}>{xpInDivision}/{xpForNextDivision} XP</div>
@@ -9413,7 +9420,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
 function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   // (v0.1.1) 로고를 훨씬 크게 키우면서 정거장 원 자체도 그만큼 키웠다.
-  const STATION_H = 130, STATION_GAP = 64;
+  const STATION_H = 144, STATION_GAP = 64;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
   // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
@@ -9441,11 +9448,9 @@ function TierJourneyPath({ totalXp }) {
         const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
         const cx = i % 2 ? "78%" : "22%";
         const top = topOf(i);
-        // (기능) 원 테두리·글로우도 등급 색을 그대로 따라간다.
-        // (디자인 개선) 예전엔 잠긴 구간을 회색 필터(grayscale)로 완전히 덮어, 아직 안 온 등급들의
-        // 색 차이가 하나도 안 보이고 전부 똑같이 밋밋했다 — 완전히 지우는 대신 그 티어 고유 색을
-        // 옅게(테두리·배경 모두 낮은 투명도로) 남겨, 스크롤해 올라갈수록 앞으로 만날 색이 은은하게
-        // 미리 보이도록 한다(도달하면 또렷해짐).
+        // (v0.1.1) 로고 뒤에 흰 원을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
+        // 색으로 은은하게 빛나는 글로우를 준다. 잠긴 구간은 흰 원 전체를 옅게(불투명도만) 낮춰
+        // 표시해, 완전히 지우지 않고도 아직 안 왔다는 게 자연스럽게 드러난다.
         const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
         return (
@@ -9456,16 +9461,15 @@ function TierJourneyPath({ totalXp }) {
               transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
               style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
               <div style={{
-                position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 6,
-                background: state === "locked" ? "linear-gradient(160deg," + (tc.lo || ringColor) + "26,#150C06)" : "linear-gradient(160deg,#4A3016,#241509)",
-                boxShadow: state === "current" ? "0 0 26px 5px " + ringColor + "88" : "0 4px 10px -4px rgba(0,0,0,.6)",
-                opacity: state === "locked" ? 0.78 : 1,
+                position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 7,
+                background: "#fff",
+                boxShadow: state === "current" ? "0 0 28px 6px " + ringColor + "88" : "0 2px 8px rgba(0,0,0,.4)",
+                opacity: state === "locked" ? 0.6 : 1,
               }}>
                 {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
-                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 로고를 훨씬 크게 키우고
-                    원형 테두리는 없앴다(은은한 글로우만 남김) — 서로 다른 티어 이미지는 하단(로마
-                    숫자) 기준으로 정렬해, 이미지 원본 크기가 달라도 로마 숫자끼리 높이가 맞는다. */}
-                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={112} muted={state === "locked"} />
+                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 서로 다른 티어 이미지는
+                    하단(로마 숫자) 기준으로 정렬해, 이미지 원본 크기가 달라도 로마 숫자끼리 높이가 맞는다. */}
+                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={124} />
               </div>
               {state === "done" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 28, height: 28, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={16} color="#fff" /></span>}
               {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={26} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
