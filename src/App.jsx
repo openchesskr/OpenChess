@@ -4217,6 +4217,47 @@ function anchoredZoomPan(pan, zoom, nextZoom, anchorX, anchorY) {
   const cx = (anchorX - pan.x) / zoom, cy = (anchorY - pan.y) / zoom;
   return { x: anchorX - cx * nextZoom, y: anchorY - cy * nextZoom };
 }
+// (v0.1.2 기능) 모식도(퍼즐/도감 오프닝 트리)를 블록이 하나도 없는 빈 공간까지 계속 드래그·휠로
+// 팬할 수 있던 것을 막는다. 도감의 나침반형 레이아웃은 네 팔(N/S/E/W) 사이 귀퉁이가 항상 비어
+// 있고 트리 자체도 가지마다 성기게 뻗어 있어, 콘텐츠 전체(또는 팔 하나)의 사각 바운딩 박스만으로
+// "한계 안"을 정의하면 그 박스 안의 실제로는 비어 있는 자리까지 허용해 버린다 — 그래서 블록
+// 목록(items) 자체를 기준으로, "지금 화면에 실제 블록이 하나라도 온전히 걸쳐 있는지"를 직접 훑어
+// 검사한다. 이미 하나라도 보이면 그대로 두고(자유 팬 유지), 하나도 안 보이면(빈 공간까지 팬한
+// 경우) 화면 중심에 가장 가까운 블록을 찾아 그 블록이 온전히 보이도록 좌표를 스냅한다.
+// (v0.1.2 기능) 도감 오프닝 트리 캔버스 좌상단에는 검색창이 떠 있어(대략 이 높이만큼), 팬 한계가
+// 스냅한 블록이 그 뒤에 가려지지 않도록 유효 뷰포트 상단을 이만큼 안으로 줄인다.
+const SCHEMATIC_TOP_INSET = 44;
+function clampPanAxis(p, viewportSize, min, max, minVisible) {
+  const lo = minVisible - max, hi = (viewportSize - minVisible) - min;
+  if (lo > hi) return (lo + hi) / 2;
+  return Math.max(lo, Math.min(hi, p));
+}
+function schematicItemVisible(pan, zoom, viewportW, viewportH, it, boxW, boxH, insetTop) {
+  const left = pan.x + it.x * zoom, right = left + boxW * zoom;
+  const top = pan.y + it.y * zoom, bottom = top + boxH * zoom;
+  const visW = Math.min(right, viewportW) - Math.max(left, 0);
+  const visH = Math.min(bottom, viewportH) - Math.max(top, insetTop);
+  return visW >= boxW * zoom - 0.5 && visH >= boxH * zoom - 0.5;
+}
+// (v0.1.2 기능) insetTop — 검색창 등 캔버스 위에 떠 있는 UI가 뷰포트 상단을 가리는 만큼, 스냅 대상
+// 블록이 그 뒤에 숨어버리지 않도록 "화면에 보인다"고 칠 유효 영역의 위쪽을 그만큼 안으로 줄인다.
+function clampSchematicPan(pan, zoom, viewportW, viewportH, items, boxW, boxH, insetTop = 0) {
+  if (!items || !items.length) return pan;
+  for (const it of items) { if (schematicItemVisible(pan, zoom, viewportW, viewportH, it, boxW, boxH, insetTop)) return pan; }
+  // 화면 중심(가려진 영역을 뺀 실제 유효 뷰포트 기준)이 콘텐츠 좌표계에서 지금 가리키는 지점에
+  // 가장 가까운 블록을 찾는다.
+  const ccx = (viewportW / 2 - pan.x) / zoom, ccy = (insetTop + (viewportH - insetTop) / 2 - pan.y) / zoom;
+  let nearest = items[0], bestD = Infinity;
+  for (const it of items) {
+    const dx = it.x + boxW / 2 - ccx, dy = it.y + boxH / 2 - ccy;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; nearest = it; }
+  }
+  return {
+    x: clampPanAxis(pan.x, viewportW, nearest.x * zoom, (nearest.x + boxW) * zoom, boxW * zoom),
+    y: clampPanAxis(pan.y - insetTop, viewportH - insetTop, nearest.y * zoom, (nearest.y + boxH) * zoom, boxH * zoom) + insetTop,
+  };
+}
 const SCHEMATIC_ELECTRIC = "#22D3F0";
 const schematicCoord = (it) => ({ x: it.x, y: it.y });
 // (기능) 부모→자식 연결선의 ㄱ자(elbow) 꺾임 좌표 — 트리 선(edges) 렌더링과, 검색으로 오프닝을
@@ -4639,7 +4680,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const z = zoomRef.current, nz = clampZoom(z + delta);
     if (nz === z) return;
-    const nextPan = anchoredZoomPan(panRef.current, z, nz, rect.width / 2, rect.height / 2);
+    const nextPan = clampSchematicPan(anchoredZoomPan(panRef.current, z, nz, rect.width / 2, rect.height / 2), nz, rect.width, rect.height, items, boxW, boxH, SCHEMATIC_TOP_INSET);
     setPan(nextPan);
     setZoom(nz);
     checkSelectionDrift(nextPan, nz);
@@ -4688,7 +4729,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
-    const next = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
+    const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
+    // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 드래그해 갈 수 없도록 화면 크기 기준으로 한계를 둔다.
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const next = clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, items, boxW, boxH, SCHEMATIC_TOP_INSET);
     setPan(next);
     // (버그 수정) 여기 있던 zoom은 이 핸들러가 만들어진 렌더 시점에 클로저로 붙잡힌 값이라, 비행
     // 애니메이션이 매 프레임 zoom을 바꾸는 동안에는 금방 낡은 값이 된다 — 항상 최신 값을 담는
@@ -4709,7 +4753,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // (버그 수정) 비행 애니메이션이 도는 중에 휠로 팬하면, 다음 애니메이션 프레임이 이 변경을
       // 곧장 덮어썼다 — 수동 조작이 시작되면 애니메이션을 멈춘다.
       if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; setFlightPath(null); }
-      setPan((p) => { const next = { x: p.x - e.deltaX, y: p.y - e.deltaY }; checkSelectionDrift(next, zoomRef.current); return next; });
+      setPan((p) => {
+        const raw = { x: p.x - e.deltaX, y: p.y - e.deltaY };
+        // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 휠로 팬해 갈 수 없도록 한계를 둔다.
+        const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+        const next = clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, itemsRef.current, boxW, boxH, SCHEMATIC_TOP_INSET);
+        checkSelectionDrift(next, zoomRef.current);
+        return next;
+      });
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
@@ -6035,7 +6086,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   const posCacheRef = useRef(new Map());
   const nextPosRef = useRef(0);
   const freeListRef = useRef([]);
-  const { items, edges, width, height, curItem } = useMemo(() => {
+  const { items, edges, width, height, curItem, pxItems } = useMemo(() => {
     const getPos = (key) => {
       if (posCacheRef.current.has(key)) return posCacheRef.current.get(key);
       const p = freeListRef.current.length ? freeListRef.current.pop() : nextPosRef.current++;
@@ -6104,7 +6155,11 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const curItem = items.find((it) => it.isCur) || null;
     const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 40;
     const height = (Math.max(...items.map((it) => it.y)) + 1) * rowH + 20;
-    return { items, edges, width, height, curItem };
+    // (v0.1.2 기능) 팬 한계 계산(clampSchematicPan)은 블록의 화면 픽셀 좌표({x,y})를 기대하는데, 여기
+    // items의 depth/y는 칸(그리드) 인덱스라 그대로 못 쓴다 — 실제 렌더 좌표(depth*colW, y*rowH)로
+    // 변환한 가벼운 사본을 별도로 만든다(기존 items의 depth/y 필드·용도는 그대로 둔다).
+    const pxItems = items.map((it) => ({ x: it.depth * colW, y: it.y * rowH }));
+    return { items, edges, width, height, curItem, pxItems };
   }, [tree, allLines, solvedNow, curKeys.join(" "), exploredKeys, celebrateTag, shakeTag]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
   // (v0.0.6) 도감 오프닝 트리와 동일하게, 다들 편하게 보던 75% 배율을 새 기준(100%)으로 재정의한다.
@@ -6113,6 +6168,11 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   const boxRef = useRef(null);
   const pointersRef = useRef(new Map());   // pointerId -> {x,y} — 두 손가락이면 핀치 확대/축소
   const pinchRef = useRef(null);           // { dist, zoom } 핀치 시작 시점 기준값
+  // (v0.1.2 기능) 한 번만 등록되는 네이티브 휠 리스너에서도 항상 최신 팬 한계를 보도록 ref로 들고 있는다.
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  const pxItemsRef = useRef(pxItems);
+  useEffect(() => { pxItemsRef.current = pxItems; }, [pxItems]);
   const clampZoom = snapSchematicZoom;
   // (버그 수정, 도감 모식도와 동일) 확대/축소 버튼·핀치가 pan은 그대로 두고 zoom만 바꿔서, 화면
   // 좌상단(콘텐츠 원점)을 기준으로 확대/축소가 일어나 팬으로 멀리 옮겨온 화면에서는 트리 전체가
@@ -6123,7 +6183,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const ax = anchorX != null ? anchorX : rect.width / 2, ay = anchorY != null ? anchorY : rect.height / 2;
     const nz = clampZoom(zoom + delta);
     if (nz === zoom) return;
-    setPan(anchoredZoomPan(pan, zoom, nz, ax, ay));
+    setPan(clampSchematicPan(anchoredZoomPan(pan, zoom, nz, ax, ay), nz, rect.width, rect.height, pxItems, boxW, boxH));
     setZoom(nz);
   };
   // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
@@ -6157,12 +6217,15 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       const nz = clampZoom(pinchRef.current.zoom * (dist / Math.max(1, pinchRef.current.dist)));
       const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { left: 0, top: 0, width: 380, height: 208 };
       const anchorX = (a.x + b.x) / 2 - rect.left, anchorY = (a.y + b.y) / 2 - rect.top;
-      setPan((p) => anchoredZoomPan(p, zoom, nz, anchorX, anchorY));
+      setPan((p) => clampSchematicPan(anchoredZoomPan(p, zoom, nz, anchorX, anchorY), nz, rect.width, rect.height, pxItems, boxW, boxH));
       setZoom(nz);
       return;
     }
     if (!dragRef.current) return;
-    setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) });
+    // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 드래그해 갈 수 없도록 한계를 둔다.
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 380, height: 208 };
+    const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
+    setPan(clampSchematicPan(raw, zoom, rect.width, rect.height, pxItems, boxW, boxH));
   };
   const onPointerUp = (e) => {
     if (e && e.pointerId != null) pointersRef.current.delete(e.pointerId);
@@ -6176,7 +6239,15 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   useEffect(() => {
     const el = boxRef.current;
     if (!el) return;
-    const handleWheel = (e) => { e.preventDefault(); setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY })); };
+    const handleWheel = (e) => {
+      e.preventDefault();
+      // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 휠로 팬해 갈 수 없도록 한계를 둔다.
+      setPan((p) => {
+        const raw = { x: p.x - e.deltaX, y: p.y - e.deltaY };
+        const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 380, height: 208 };
+        return clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, pxItemsRef.current, boxW, boxH);
+      });
+    };
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
   }, []);
