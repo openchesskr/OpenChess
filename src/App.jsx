@@ -6833,8 +6833,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
                 <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
               </button>
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="공유하기" title="공유하기">
-                <Send size={13} color={T.brass} />
+              {/* (v0.1.3 UI) PuzzleCard와 동일하게 라운딩된 사각형 배지(텍스트 포함)로 변경 */}
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "rgba(196,154,80,.16)", color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }} aria-label="공유하기" title="공유하기">
+                <Send size={12} color={T.brass} />공유
               </button>}
             </div>
           </div>
@@ -7035,8 +7036,10 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               <Heart size={11} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
               <span style={{ fontSize: 9, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
             </button>}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-              <Send size={11} color={T.brass} />
+            {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
+                눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 7, border: "1px solid " + T.brass, background: "rgba(196,154,80,.16)", color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer" }}>
+              <Send size={10} color={T.brass} />공유
             </button>}
           </div>
         </div>
@@ -9230,7 +9233,7 @@ function FirstMovesDisplay({ firstMoves }) {
 // 닫고 나서 onOpenPuzzle을 호출하는 것까지 한곳에서 보장하기 위함(호출부마다 따로 신경 쓰지 않아도 됨).
 // onExpand는 "더 보기"를 처음 눌렀을 때만 한 번 호출되는 훅 — 공개 프로필은 이 시점에야 나머지
 // 퍼즐 데이터를 마저 불러온다(프로필을 열 때마다 전부 조회하지 않도록).
-const SOLVED_PREVIEW_COUNT = 3;
+const SOLVED_PREVIEW_COUNT = 5;
 function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onOpenPuzzle }) {
   const [showAll, setShowAll] = useState(false);
   const preview = puzzles.slice(0, SOLVED_PREVIEW_COUNT);
@@ -9243,8 +9246,12 @@ function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onO
         <p style={{ fontSize: 11, color: T.inkSoft }}>{loading ? "불러오는 중…" : "아직 푼 퍼즐이 없어요."}</p>
       ) : (
         <>
-          <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-            {preview.map((p) => renderCard(p, () => openPuzzle(p)))}
+          {/* (v0.1.3 버그 수정) 미리보기 3칸을 좁은 프로필 카드 폭에서 균등 3열(grid 1fr)로 강제 배치하면
+              PuzzleCard가 퍼즐 탭 기준 최소폭(148px)보다 훨씬 좁게 눌려 오프닝 이름 같은 텍스트가 한
+              글자씩 세로로 쪼개져 보이는 왜곡이 있었다 — 퍼즐 탭과 동일하게 카드 폭을 148px로 고정하고,
+              칸 수를 늘리는 대신(공간이 좁으므로) 가로 스크롤로 훑어보도록 바꿈. */}
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
+            {preview.map((p) => <div key={p.id} style={{ width: 148, minWidth: 148, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</div>)}
           </div>
           {total > SOLVED_PREVIEW_COUNT && (
             <button onClick={openAll} className="press" style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>더 보기 ({fmtFull(total)}개)</button>
