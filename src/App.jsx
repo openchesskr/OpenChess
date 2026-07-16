@@ -5959,15 +5959,14 @@ function TierBadge({ totalXp, compact, onClick }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
+  // (v0.1.2) 진행바+XP 텍스트를 로고 오른쪽이 아니라 아래쪽에 배치 — 세로로 쌓아 로고 밑에 정렬한다.
   return (
-    <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 6 : 9, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
+    <div onClick={onClick} className="press flex flex-col items-center" style={{ gap: 3, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 32 : 40} discSize={compact ? 34 : 42} />
-      <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
-        <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
-          <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
-        </div>
-        <div style={{ fontSize: compact ? 8 : 8.5, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInDivision}/{xpForNextDivision}</div>
+      <div style={{ width: compact ? 34 : 42, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
+        <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
       </div>
+      <div style={{ fontSize: compact ? 7.5 : 8, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInDivision}/{xpForNextDivision}</div>
     </div>
   );
 }
@@ -6327,8 +6326,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const [targetTag, setTargetTag] = useState(null);
   const [intro, setIntro] = useState(true);   // (UX7) 진입/처음부터 시 직전 수를 1회 재생
   const [sel, setSel] = useState(null);
-  const [wrong, setWrong] = useState(null);     // { board, at:[r,c], from:[r,c] }
-  const [reverting, setReverting] = useState(false);   // (UX4) 오답 후 원위치로 되돌아가는 애니메이션 중
+  const [wrong, setWrong] = useState(null);     // { board, at:[r,c], from:[r,c], san }
+  // (v0.1.2 기능) 오답을 두면 곧장 원위치로 되돌리는 대신, 그 수를 뒀을 때 상대(컴퓨터)가 어떻게
+  // 응징하는지 최선 응수를 한 번 보여준 뒤 되돌린다 — wrongReply가 그 응수({san,from,to}), revertStage가
+  // 되돌리는 두 단계(응수부터 먼저, 그다음 원래 오답) 중 지금 재생 중인 단계를 가리킨다.
+  const [wrongReply, setWrongReply] = useState(null);   // { san, from:[r,c], to:[r,c] } | null
+  const [revertStage, setRevertStage] = useState(null);   // null | "reply" | "wrong"
+  const reverting = revertStage != null;   // (UX4) 오답 후 원위치로 되돌아가는 애니메이션 중(둘 중 한 단계라도)
   const [reply, setReply] = useState(null);      // { sans, san, node }  상대 응수 애니메이션
   const [hintText, setHintText] = useState(null);
   const [hintKey, setHintKey] = useState(0);
@@ -6386,6 +6390,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const curSans = useMemo(() => [...setup, ...pathNodes.map((n) => n.san)], [setup, pathNodes]);
   const board = useMemo(() => boardFromSans(curSans), [curSans.join(" ")]);
   const color = curSans.length % 2 === 0 ? "w" : "b";
+  const oppColor = color === "w" ? "b" : "w";   // (v0.1.2 기능) 오답 응징 응수를 두는 상대 진영
   const ep = epTarget(curSans);
   const isUserPly = pathNodes.length % 2 === 0;
   const passKids = (curNode.children || []).filter((k) => k.pass !== false);
@@ -6454,15 +6459,45 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     const hit = (curNode.children || []).find((c) => stripSuffix(c.san) === stripSuffix(san));
     // (기능1) 유저 진영에서는 '통과 가능(최선·우수)' 수만 다음 단계로 — 모식도에 표시만 되는 유혹 수도 오답 처리
     if (hit && hit.pass !== false) { setSel(null); setPathNodes((p) => [...p, hit]); }
-    else { setWrong({ board: applySan(board, san, color), at: to, from }); setSel(null); }   // 틀린 수는 1초 뒤 자동으로 원위치(아래 effect)
+    else { setWrong({ board: applySan(board, san, color), at: to, from, san }); setSel(null); }   // 틀린 수는 잠시 뒤 상대 응징 응수를 보여준 뒤 자동으로 원위치(아래 effect)
   };
   const onSquareClick = (sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (sel) { if (legalDests(board, sel[0], sel[1], color, ep).some(([r, c]) => r === sq[0] && c === sq[1])) { tryUserMove(sel, sq); return; } if (p && p.c === color) { setSel(sq); return; } setSel(null); } else if (p && p.c === color) setSel(sq); };
-  // (UX4) 재시도 버튼 없이, 오답을 두면 1초 후 자동으로 슬라이드 애니메이션과 함께 원위치로 되돌아간다.
+  // (UX4→v0.1.2) 재시도 버튼 없이, 오답을 두면 자동으로 원위치로 되돌아간다 — 다만 곧장 되돌리지
+  // 않고, 그 오답을 뒀을 때 상대가 어떻게 응징하는지 엔진 최선 응수를 한 번 보여준 뒤(가능한 경우만)
+  // 응수→오답 순으로 슬라이드 애니메이션과 함께 두 단계로 되돌린다. 엔진을 못 쓰는 상황(liveOn 꺼짐 등)은
+  // 예전처럼 오답만 바로 되돌린다.
   useEffect(() => {
-    if (!wrong) { setReverting(false); return; }
-    const t1 = setTimeout(() => setReverting(true), 1000);
-    const t2 = setTimeout(() => { setWrong(null); setReverting(false); setSel(null); }, 1000 + 450);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    if (!wrong) { setWrongReply(null); setRevertStage(null); return; }
+    let cancelled = false;
+    const timers = [];
+    const wait = (ms) => new Promise((res) => { timers.push(setTimeout(res, ms)); });
+    (async () => {
+      await wait(1000);   // 오답을 잠시 보여준다
+      if (cancelled) return;
+      let replyMove = null;
+      if (liveOn && engine && engine.status === "ready") {
+        try {
+          const ev = await engine.evaluate(sansToFen([...curSans, wrong.san]), 12);
+          const bestSan = ev && ev.best ? uciToSan(wrong.board, ev.best, oppColor) : null;
+          const info = bestSan ? sanSrc(wrong.board, stripSuffix(bestSan), oppColor) : null;
+          if (info && info.from && info.to) replyMove = { san: bestSan, from: info.from, to: info.to };
+        } catch { }
+      }
+      if (cancelled) return;
+      if (replyMove) {
+        setWrongReply(replyMove);
+        await wait(1000);   // 상대의 응징 응수를 보여준다
+        if (cancelled) return;
+        setRevertStage("reply");   // 1단계: 방금 보여준 응수부터 되돌림
+        await wait(450);
+        if (cancelled) return;
+      }
+      setRevertStage("wrong");   // 2단계(또는 응수를 못 구했으면 바로): 사용자의 오답을 원위치로
+      await wait(450);
+      if (cancelled) return;
+      setWrong(null); setWrongReply(null); setRevertStage(null); setSel(null);
+    })();
+    return () => { cancelled = true; timers.forEach(clearTimeout); };
   }, [wrong]);
   const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null); setPage(0); setCelebrate(null); };
   const restart = () => gotoLine(targetTag);
@@ -6506,14 +6541,15 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintText ? "wink"
     : theme === "sacrifice" ? "great" : theme === "advantage" ? "think" : "surprise";
   const pm = [color === "w" ? "milku" : "kokoa", pmEmotion];
+  // (v0.1.2 기능) 오답 뒤 상대 응징 응수를 보여주는 동안·되돌리는 동안 문구를 단계별로 구분.
   const prompt = intro ? "직전 수 재생 중…"
     : done ? (fullyComplete ? "✓ 완성! 모든 라인을 정복했어요." : "✓ 라인 해결! 모든 수를 찾았어요.")
-    : wrong ? "✕ 다른 수예요. 잠시 후 원래 위치로 되돌아갑니다."
+    : wrong ? (wrongReply ? "✕ 다른 수예요. 상대라면 이렇게 응징해요." : "✕ 다른 수예요. 잠시 후 원래 위치로 되돌아갑니다.")
       : reply ? "상대 응수 중…"
         : theme === "sacrifice" ? "당신 차례 — 기물을 희생하는 탁월한 수를 두세요."
           : theme === "advantage" ? "당신 차례 — 우위를 점하는 수를 두세요."
             : "당신 차례 — 실수를 응징하는 최선의 수를 두세요.";
-  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? "다른 수예요. 다시 시도해 보세요!" : reply ? "상대가 응수하고 있어요…" : "막히면 아래 힌트 버튼을 눌러보세요.";
+  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : "막히면 아래 힌트 버튼을 눌러보세요.";
   const doneBubble = fullyComplete ? "훌륭해요! 모든 라인을 정복했어요."
     : "이 라인을 완료했어요! 모식도에서 다른 가지에 도전해 보세요.";
   const bubbleText = done ? doneBubble : (hintText || idleBubble);
@@ -6529,23 +6565,28 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // "아직 아무 수도 안 둔 상태"라면 계속 mistakeSan을 기준으로 삼아, 사용자가 실제로 수를 두기
   // 전까지는 시간이 지나도 아이콘이 그대로 유지되게 한다.
   useEffect(() => {
-    let prevSans, mvSan, knownKind = null;
+    let prevSans, mvSan, knownKind = null, isSetupMistake = false;
     if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = reply.node && reply.node.kind; }
     else if (pathNodes.length >= 1 && !wrong && !reverting) { prevSans = curSans.slice(0, -1); mvSan = pathNodes[pathNodes.length - 1].san; knownKind = pathNodes[pathNodes.length - 1].kind; }
-    else if (pathNodes.length === 0 && puzzle.setupSans && puzzle.mistakeSan) { prevSans = puzzle.setupSans; mvSan = puzzle.mistakeSan; }
+    // (v0.1.2 버그 수정) 컴퓨터가 둔 첫 수(mistakeSan)는 아래 두 분기와 달리 이미 지나간 수라, 지금
+    // 막 두어지는 수처럼 "계산 중" 점 애니메이션을 보여주거나 isSacrifice 추측값을 먼저 보여줬다 실제
+    // 판정으로 갈아끼우는 연출이 어색했다(계산이 끝나기 전엔 보드에 "계산 중" 배지가 남아 있었고,
+    // 끝나면 아이콘이 눈에 띄게 바뀌어 보였다) — isSetupMistake로 표시해 아래에서 추측·pending 없이
+    // 최종 판정이 나온 뒤 한 번만 아이콘을 보여주도록 한다.
+    else if (pathNodes.length === 0 && puzzle.setupSans && puzzle.mistakeSan) { prevSans = puzzle.setupSans; mvSan = puzzle.mistakeSan; isSetupMistake = true; }
     else { setMoveIcon(null); return; }
     const moverColor = prevSans.length % 2 === 0 ? "w" : "b";
     const info = sanSrc(boardFromSans(prevSans), stripSuffix(mvSan), moverColor);
     if (!info || !info.to) { setMoveIcon(null); return; }
     const key = prevSans.join(",") + "|" + mvSan;
+    if (knownKind) { setMoveIcon({ key, to: info.to, kind: knownKind }); return; }
     // (20차) 엔진을 못 쓰는 상황의 fallback을 'best'가 아닌 '아이콘 없음'으로 — 아무 수에나 최선 별이 붙지 않도록.
-    const fallback = knownKind || (isSacrifice(boardFromSans(prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null));
-    if (!fallback) { setMoveIcon(null); return; }
-    setMoveIcon({ key, to: info.to, kind: fallback });
+    const fallback = isSetupMistake ? null : (isSacrifice(boardFromSans(prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null));
+    setMoveIcon(fallback ? { key, to: info.to, kind: fallback } : null);
     let cancelled = false;
-    if (!knownKind && liveOn && engine && engine.status === "ready") {
+    if (liveOn && engine && engine.status === "ready") {
       classifyMoveKind(engine, prevSans, stripSuffix(mvSan)).then((k) => {
-        if (!cancelled && k) setMoveIcon((m) => (m && m.key === key ? { ...m, kind: k } : m));
+        if (!cancelled && k) setMoveIcon({ key, to: info.to, kind: k });
       }).catch(() => {});
     }
     return () => { cancelled = true; };
@@ -6734,8 +6775,16 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
               ? <AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
               : reply
                 ? <AnimatedMove sans={reply.sans} san={reply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
-              : reverting
+              // (v0.1.2 기능) 되돌리기도 두 단계 — 먼저 방금 보여준 상대 응징 응수를 되돌리고("reply"),
+              // 그다음 사용자의 오답 자체를 원위치로 되돌린다("wrong").
+              : revertStage === "reply"
+                ? <RevertSlide board={applySan(wrong.board, wrongReply.san, oppColor)} from={wrongReply.from} to={wrongReply.to} size={boardSize} flip={userColor === "b"} />
+              : revertStage === "wrong"
                 ? <RevertSlide board={wrong.board} from={wrong.from} to={wrong.at} size={boardSize} flip={userColor === "b"} />
+              // (v0.1.2 기능) 오답을 두면 곧장 되돌리지 않고, 상대라면 그 오답을 어떻게 응징했을지
+              // 엔진 최선 응수를 한 번 보여준다(engine을 못 쓰면 이 단계 없이 바로 되돌아간다).
+              : wrongReply
+                ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} />
               : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove} />}
             </div>
             <p style={{ fontSize: 13, color: done ? T.best : wrong ? T.blunder : T.ink, fontWeight: 700, marginTop: 12, textAlign: "center" }}>{prompt}</p>
