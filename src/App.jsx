@@ -5225,15 +5225,41 @@ const PUZZLE_THEME_STYLE = {
     ),
   },
 };
-function PuzzleThemePattern({ theme, opacity = 0.1 }) {
+// (v0.1.1) 태그 2개짜리 퍼즐(예: 실수 응징하기 + 기물 희생하기)의 색을 "반씩 섞어" 표현하기 위한
+// 헬퍼. 두 색의 RGB 평균(#no 텍스트처럼 단일 색이 필요한 자리)과, 절반씩 하드 스플릿한 그라데이션
+// 문자열(테두리 띠처럼 배경으로 쓰는 자리) 둘 다 필요해 함께 둔다.
+function blendHex(a, b) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const mix = (shift) => Math.round((((pa >> shift) & 255) + ((pb >> shift) & 255)) / 2);
+  return "#" + [16, 8, 0].map((s) => mix(s).toString(16).padStart(2, "0")).join("");
+}
+function themeAccentsOf(themes) { return (themes && themes.length ? themes : ["punish"]).slice(0, 2).map((t) => (PUZZLE_THEME_STYLE[t] || PUZZLE_THEME_STYLE.punish).accent); }
+function themeAccentColor(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? blendHex(c[0], c[1]) : c[0]; }
+function themeAccentBg(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? "linear-gradient(90deg, " + c[0] + " 50%, " + c[1] + " 50%)" : c[0]; }
+function PuzzleThemePattern({ themes, opacity = 0.1 }) {
   // (v0.1.0) 실수 응징하기 그라데이션 fill이 url(#id)로 참조되므로, 카드 여러 개가 한 화면에 있어도
   // 서로 다른 <svg>끼리 id가 겹치지 않도록 useId로 인스턴스별 고유 id를 만든다(콜론은 CSS/URL
   // 참조에서 그대로 못 쓰이는 경우가 있어 제거).
-  const gradId = "pth-" + useId().replace(/:/g, "");
-  const st = PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish;
+  const gradIdA = "pth-" + useId().replace(/:/g, "");
+  const gradIdB = "pth2-" + useId().replace(/:/g, "");
+  const list = (themes && themes.length ? themes : ["punish"]).slice(0, 2);
+  const stA = PUZZLE_THEME_STYLE[list[0]] || PUZZLE_THEME_STYLE.punish;
+  if (list.length < 2) {
+    return (
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity, pointerEvents: "none" }}>
+        {stA.pattern(gradIdA)}
+      </svg>
+    );
+  }
+  // (v0.1.1) 태그가 2개면 색을 평균 내 새 색을 만드는 대신, 두 테마 각자의 진짜 색·기호를 화면
+  // 좌/우 절반에 나눠 그대로 보여준다 — "두 테마의 색을 반씩 섞어서" 요청을 그라데이션 평균보다
+  // 더 뚜렷하게(두 테마 모두 해당한다는 게 한눈에 보이도록) 표현한다. 두 패턴 다 균일 배율로만
+  // 축소해(가로만 눌러 찌그러뜨리지 않고) 각자 절반 칸의 중심으로 옮긴다.
+  const stB = PUZZLE_THEME_STYLE[list[1]] || PUZZLE_THEME_STYLE.punish;
   return (
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity, pointerEvents: "none" }}>
-      {st.pattern(gradId)}
+      <g transform="translate(0,25) scale(0.5)">{stA.pattern(gradIdA)}</g>
+      <g transform="translate(50,25) scale(0.5)">{stB.pattern(gradIdB)}</g>
     </svg>
   );
 }
@@ -6848,14 +6874,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
   // 위쪽 얇은 띠·번호 색·옅은 배경 패턴만 테마색으로 물들인다.
-  const theme = primaryTheme(p);
-  const themeAccent = (PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish).accent;
+  // (v0.1.1) 태그가 2개면(예: 실수 응징하기 + 기물 희생하기) 위쪽 띠를 두 테마 색으로 절반씩 나눠
+  // 칠한다 — border-color는 그라데이션을 못 받아 별도의 얇은 오버레이 막대로 그린다.
+  const themes = sortedThemesOf(p);
+  const themeAccent = themeAccentColor(themes);
   return (
     /* (18차 UI7) 카드 크기 축소 + 도감 탭처럼 정사각형 비율 — 한 화면에 더 많은 퍼즐이 보이도록.
        (18차 UI4) overflow hidden + aspectRatio 고정으로 카드끼리 겹치던 문제도 함께 해결. */
     /* (19차 UI2) 정사각 고정을 풀고(오프닝 이름·"n명이 풀었습니다"가 잘리지 않도록) 내용 높이에 맞춰 늘어나게 한다. */
-    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), borderTop: "3px solid " + themeAccent, cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <PuzzleThemePattern theme={theme} opacity={isSolved ? 0.05 : 0.11} />
+    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ position: "absolute", top: -1, left: -1, right: -1, height: 3, borderRadius: "12px 12px 0 0", background: themeAccentBg(themes), zIndex: 2 }} />
+      <PuzzleThemePattern themes={themes} opacity={isSolved ? 0.05 : 0.11} />
       {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={104} loopMs={2400} flip={flip} /></div>}
