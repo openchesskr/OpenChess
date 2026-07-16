@@ -5,7 +5,7 @@ import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronDown,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart,
+  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -2966,44 +2966,46 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
   // engine 큐에서 계속 진행되는데도(탭을 바꿔도 엔진 워커는 안 죽는다), "다 만들었으니 저장하라"는
   // 신호만 컴포넌트 수명에 묶여 사라진 것. requestPuzzleGen(App 레벨, 항상 마운트)에 생성을 맡겨
   // 이 컴포넌트가 사라져도 생성이 끝까지 진행되고 결과가 저장되도록 한다.
+  // (v0.1.0) 퍼즐 id는 이제 항상 "포지션(sansKey) + 그 위치에서 둔 수"로만 정해지고 테마 접두어를
+  // 붙이지 않는다 — 실수 응징하기/우위 점하기(그 수 자신의 위치)와 기물 희생하기(그 수 바로 다음
+  // 수를 공부할 때, "직전 수"로 재사용하는 그 같은 위치)가 우연히 같은 포지션을 가리키면 자연스럽게
+  // 같은 id로 수렴해 한 퍼즐로 합쳐지도록 하기 위함(아래 두 useEffect가 같은 id 공식을 공유).
   useEffect(() => {
     if (!active || !onSavePuzzle || !requestPuzzleGen) return;
-    const id = sansKey + "|" + san;
-    // (20차 기능1) 이미 트리 형식으로 저장된 퍼즐이면 재생성하지 않는다(트리 생성은 엔진 비용이 큼).
-    // 구버전(선형 라인) 퍼즐은 재생성해 트리 형식으로 업그레이드한다(onSavePuzzle이 교체 저장).
-    const expectedId = kind === "brilliant" ? "sac|" + id : kind === "inaccuracy" ? "adv|" + id : (isPunishable ? id : null);
-    const existing = expectedId && puzzles ? puzzles.find((p) => p.id === expectedId) : null;
-    if (existing && existing.tree) return;
-    // 실수/블런더 → 실수 응징하기
-    if (isPunishable) {
-      if (curated) { onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
+    // 실수/블런더 → 실수 응징하기, 부정확한 수 → 우위 점하기: 이 위치(sans 다음에 san) 자신이 정체성.
+    if (isPunishable || kind === "inaccuracy") {
+      const themeKey = isPunishable ? "punish" : "advantage";
+      const id = sansKey + "|" + san;
+      // (20차 기능1→v0.1.0) 이미 트리가 있으면 재생성하지 않는다(엔진 비용이 큼) — 다만 그 트리가
+      // 다른 테마(예: 기물 희생하기)로 먼저 만들어져 있었고 이 테마 태그가 아직 없다면, 재생성 없이
+      // 태그만 얹는다(같은 포지션이므로 이미 있는 트리도 이 테마 관점에서 그대로 유효한 풀이).
+      const existing = puzzles ? puzzles.find((p) => p.id === id) : null;
+      if (existing && existing.tree) { if (!themesOf(existing).includes(themeKey)) onSavePuzzle({ ...existing, themes: [...themesOf(existing), themeKey] }); return; }
+      if (isPunishable && curated) { onSavePuzzle({ id, themes: [themeKey], name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
       if (engine && engine.status === "ready") {
         const op = title || "오프닝";
-        requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("punish"), onProgress).then((gen) => gen && (
-          { id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+        requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts(themeKey), onProgress).then((gen) => gen && (
+          { id, themes: [themeKey], name: puzzleName(themeKey, [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
         )));
       }
       return;
     }
-    // 부정확한 수 → 우위 점하기 (실수 응징과 동일 방식)
-    if (kind === "inaccuracy" && engine && engine.status === "ready") {
-      const op = title || "오프닝";
-      requestPuzzleGen("adv|" + id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("advantage"), onProgress).then((gen) => gen && (
-        { id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
-      )));
-      return;
-    }
-    // 탁월한 수 → 기물 희생하기 (직전 수 애니메이션 후 탁월한 수 + 보상 실현까지 이어지는 트리)
+    // 탁월한 수 → 기물 희생하기: 이 수(san) 자신이 아니라 "그 직전 수"가 만든 포지션이 정체성 —
+    // 그 직전 수가 따로 실수/부정확한 수로도 분류돼 있었다면 위 분기와 정확히 같은 id로 수렴한다.
     if (kind === "brilliant" && sans.length >= 1 && engine && engine.status === "ready") {
+      const id = sans.slice(0, -1).join(" ") + "|" + sans[sans.length - 1];
+      const existing = puzzles ? puzzles.find((p) => p.id === id) : null;
+      if (existing && existing.tree) { if (!themesOf(existing).includes("sacrifice")) onSavePuzzle({ ...existing, themes: [...themesOf(existing), "sacrifice"] }); return; }
       const op = title || "오프닝";
       // (기능1) 희생 테마는 "희생 수 자체"가 첫 수(firstSan)로 고정되며, sans 위치(=studied 수 san이 두어지기 직전)에서 둔다.
-      requestPuzzleGen("sac|" + id, (onProgress) => genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }, onProgress).then((gen) => gen && (
-        { id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+      requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }, onProgress).then((gen) => gen && (
+        { id, themes: ["sacrifice"], name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
       )));
     }
   }, [active, sansKey, san, kind, engine && engine.status, requestPuzzleGen]);
   const baseId = active ? sansKey + "|" + san : "";
-  const expectedPuzzleId = active ? (kind === "brilliant" ? "sac|" + baseId : kind === "inaccuracy" ? "adv|" + baseId : (["mistake", "blunder"].includes(kind) ? baseId : null)) : null;
+  const priorId = active && sans.length >= 1 ? sans.slice(0, -1).join(" ") + "|" + sans[sans.length - 1] : null;
+  const expectedPuzzleId = active ? (kind === "brilliant" ? priorId : (kind === "inaccuracy" || ["mistake", "blunder"].includes(kind)) ? baseId : null) : null;
   const existingPuzzle = (expectedPuzzleId && puzzles) ? puzzles.find((p) => p.id === expectedPuzzleId) : null;
   // (UX) 아직 생성이 안 끝난 퍼즐의 진행률 — "퍼즐 풀기" 버튼 대신 진행 상황을 보여주는 데 쓴다.
   const puzzleGenProgressVal = (expectedPuzzleId && !(existingPuzzle && existingPuzzle.tree) && puzzleGenProgress) ? puzzleGenProgress[expectedPuzzleId] : null;
@@ -4919,14 +4921,19 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
-        {/* (기능) 칭호(이름)가 붙은 오프닝만 점선 테두리로 한 단위로 묶어 표시하고, 박스 왼쪽 위
-            바깥의 빈 여백에 화살표와 함께 그 오프닝 이름을 장식체로 적는다(박스 안에 글자를 넣으면
-            자손 블록들과 겹치므로, 늘 비어 있는 바깥 여백에 둔다). */}
+        {/* (기능) 칭호(이름)가 붙은 오프닝만 점선 테두리로 한 단위로 묶어 표시한다. */}
         {groups.map((g) => (
           <div key={"group-" + g.key} style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h, border: "1.5px dashed rgba(138,90,43,.5)", borderRadius: 14, pointerEvents: "none", zIndex: 0 }} />
         ))}
+        {/* (기능) 이름 라벨은 점선 영역의 기하학적 모서리가 아니라, 그 오프닝의 최상위 수(root) 바로
+            위-왼쪽에 앵커한다 — 박스 전체의 바운딩 박스 모서리(g.x/g.y)는 자손 라인이 뻗어나가는
+            방향(나침반 팔마다 다름 — 예: 북쪽 팔은 뿌리가 오히려 영역 아래쪽 끝에 옴)에 따라 실제
+            루트 위치와 멀리 떨어질 수 있어, 라벨이 정작 그 오프닝을 시작하는 수와 무관한 자리(깊은
+            변화 근처)에 붙어 있는 것처럼 보였다. rootX/rootY(그 그룹의 시작 수 좌표)를 그대로 써서
+            "이름 텍스트 바로 밑에 최상위 수"가 항상 성립하도록 한다 — 깊이 방향 간격(VROW/HROW)이
+            라벨 높이보다 훨씬 커 바로 다음 수 블록과 겹치지 않는다. */}
         {groups.map((g) => (
-          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.x - 6, top: g.y - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
+          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.rootX - 6, top: g.rootY - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
             <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200, background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
               ✦ {g.name} ✦
             </span>
@@ -5095,43 +5102,112 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
 /* ============================================================ 퍼즐 탭 ============================================================ */
 const PIECE_KOR = { K: "킹", Q: "퀸", R: "룩", B: "비숍", N: "나이트", P: "폰" };
 const THEME_LABEL = { sacrifice: "기물 희생하기", advantage: "우위 점하기", punish: "실수 응징하기" };
-/* (20차 UI1) 퍼즐 테마별 카드 색감·기하학 패턴 차별화 — 희생(위험을 감수하는 대담한 수)은 붉은 대각선
-   칼날(X) 패턴, 우위 점하기(꾸준히 앞서나감)는 초록 상승 쐐기 줄무늬, 실수 응징(정확한 일격)은
-   호박색 스파크(방사형 다이아몬드) 패턴을 카드 배경에 옅게 깔아 한눈에 테마를 구분할 수 있게 한다. */
+// (v0.1.0) 퍼즐 테마 다중 태그 — 실수/부정확한 수를 응징·전환하는 수가 그 자체로 탁월한(희생) 수이면,
+// "실수 응징하기(또는 우위 점하기) 위치에서 생성한 퍼즐"과 "그 탁월한 수 위치에서 생성한 퍼즐"이
+// setupSans+mistakeSan(실제 체스 포지션)이 완전히 같은데도 서로 다른 id(테마 접두어로 구분)로 갈려
+// 저장·집계(풀이수·좋아요·공유·리포스트)가 쪼개지던 문제가 있었음 — 이제 puzzle.id는 테마와 무관하게
+// 포지션+수 하나로만 정해지고(useFocusAnalysis 참고), 같은 포지션에 여러 테마가 동시에 해당하면
+// 퍼즐 하나에 themes 배열로 전부 태그를 얹는다. 구버전 데이터(단일 theme 문자열)도 안전하게 읽도록
+// themesOf가 두 형태를 모두 흡수한다.
+const THEME_PRIORITY = ["sacrifice", "advantage", "punish"]; // 표시 우선순위 — 더 구체적인 테마가 먼저
+function themesOf(p) {
+  if (Array.isArray(p.themes) && p.themes.length) return p.themes;
+  if (p.theme) return [p.theme];
+  return ["punish"];
+}
+function sortedThemesOf(p) { const set = new Set(themesOf(p)); return THEME_PRIORITY.filter((t) => set.has(t)); }
+function primaryTheme(p) { return sortedThemesOf(p)[0] || "punish"; }
+function themeLabelsOf(p) { return sortedThemesOf(p).map((t) => THEME_LABEL[t]).join(" · "); }
+/* (v0.1.0) 퍼즐 테마별 카드 색감·심볼 — 실제 수 체계 배지(BADGE_ICON_SRC, "!!"/"?!"/"?"/"??")와 같은
+   색·기호 언어를 그대로 가져와 테마 배경 패턴에 녹인다.
+   · 기물 희생하기 = 탁월한 수(brilliant)와 같은 민트색 + "!!" — 위험을 감수한 화려한 수라는 점이 같다.
+   · 우위 점하기 = 부정확한 수(inaccuracy)와 같은 노란색 + "?!"을 짓밟듯 훼손된(끊어진 윤곽선+부스러기) 모습으로 —
+     상대의 애매한 수를 짓밟고 우위를 다진다는 느낌.
+   · 실수 응징하기 = 블런더의 빨강→실수의 주황 그라데이션 + "?"·"??"이 심하게 파괴됐지만(균열선) 형체는
+     알아볼 수 있게 — 정확한 일격으로 실수를 응징한다는 느낌. */
+// 기물 희생하기: 탁월한 수 배지와 같은 굵은 스템+사각 점 두 벌을 나란히 놓아 "!!" 형태를 만든다.
+function exclaimPair(cx, cy, size, rot, fill) {
+  const w = size * 0.22, gap = size * 0.16;
+  return (
+    <g key={cx + "-" + cy} transform={"translate(" + cx + " " + cy + ") rotate(" + rot + ")"}>
+      <rect x={-w - gap / 2} y={-size * 0.5} width={w} height={size * 0.62} rx={w * 0.4} fill={fill} />
+      <rect x={-w - gap / 2} y={size * 0.24} width={w} height={w} rx={w * 0.35} fill={fill} />
+      <rect x={gap / 2} y={-size * 0.5} width={w} height={size * 0.62} rx={w * 0.4} fill={fill} />
+      <rect x={gap / 2} y={size * 0.24} width={w} height={w} rx={w * 0.35} fill={fill} />
+    </g>
+  );
+}
+// 우위 점하기: "?!"를 채움 없이 끊어진(점선) 윤곽선만으로 그려 갉아 먹힌 듯한 부식감을 내고,
+// 주변에 떨어져 나온 짧은 부스러기 획을 몇 개 흩어 훼손된 흔적을 더한다.
+function corrodedGlyph(cx, cy, size, rot, stroke) {
+  return (
+    <g key={cx + "-" + cy} transform={"translate(" + cx + " " + cy + ") rotate(" + rot + ")"}>
+      <text textAnchor="middle" dominantBaseline="middle" fontSize={size} fontWeight="900" fontFamily="Georgia,'Noto Serif KR',serif"
+        fill="none" stroke={stroke} strokeWidth={size * 0.05} strokeDasharray={size * 0.05 + " " + size * 0.09} strokeLinecap="round">?!</text>
+      <line x1={size * 0.48} y1={-size * 0.18} x2={size * 0.6} y2={-size * 0.1} stroke={stroke} strokeWidth={size * 0.035} strokeLinecap="round" opacity="0.7" />
+      <line x1={-size * 0.42} y1={size * 0.32} x2={-size * 0.32} y2={size * 0.42} stroke={stroke} strokeWidth={size * 0.03} strokeLinecap="round" opacity="0.6" />
+    </g>
+  );
+}
+// 실수 응징하기: 글자는 온전히 두고 그 위에 어긋난 균열선을 그어 "심하게 파괴됐지만 형체는 알아볼
+// 수 있는" 인상을 준다 — 카드 배경색을 몰라도(균열선이 배경을 지우는 대신 어두운 선으로 얹히므로) 항상 통한다.
+function crackedGlyph(text, cx, cy, size, rot, fill) {
+  const half = size / 2;
+  return (
+    <g key={text + cx + cy} transform={"translate(" + cx + " " + cy + ") rotate(" + rot + ")"}>
+      <text textAnchor="middle" dominantBaseline="middle" fontSize={size} fontWeight="900" fontFamily="Georgia,'Noto Serif KR',serif" fill={fill}>{text}</text>
+      <path d={"M " + (-half * 0.7) + "," + (-half * 0.5) + " L " + (-half * 0.1) + "," + (half * 0.05) + " L " + (half * 0.35) + "," + (-half * 0.25) + " L " + (half * 0.75) + "," + (half * 0.4)}
+        fill="none" stroke="#2A1000" strokeWidth={size * 0.05} strokeLinecap="round" opacity="0.55" />
+      <path d={"M " + (-half * 0.5) + "," + (half * 0.7) + " L " + (half * 0.05) + "," + (half * 0.15) + " L " + (half * 0.6) + "," + (half * 0.65)}
+        fill="none" stroke="#2A1000" strokeWidth={size * 0.045} strokeLinecap="round" opacity="0.5" />
+    </g>
+  );
+}
 const PUZZLE_THEME_STYLE = {
   sacrifice: {
-    accent: "#C8453B",
-    pattern: (id) => (
+    accent: T.brilliant,
+    pattern: () => (
       <>
-        <line x1="10" y1="10" x2="90" y2="50" stroke="#C8453B" strokeWidth="5" strokeLinecap="round" />
-        <line x1="90" y1="10" x2="10" y2="50" stroke="#C8453B" strokeWidth="5" strokeLinecap="round" />
-        <line x1="10" y1="60" x2="90" y2="100" stroke="#C8453B" strokeWidth="5" strokeLinecap="round" />
-        <line x1="90" y1="60" x2="10" y2="100" stroke="#C8453B" strokeWidth="5" strokeLinecap="round" />
+        {exclaimPair(20, 26, 30, -10, T.brilliant)}
+        {exclaimPair(58, 68, 26, 7, T.brilliant)}
+        {exclaimPair(82, 22, 22, -5, T.brilliant)}
       </>
     ),
   },
   advantage: {
-    accent: "#3F7A3A",
+    accent: T.inaccuracy,
     pattern: () => (
       <>
-        {[0, 1, 2, 3].map((i) => <path key={i} d={"M-10," + (110 - i * 30) + " L40," + (60 - i * 30) + " L90," + (110 - i * 30)} fill="none" stroke="#3F7A3A" strokeWidth="6" strokeLinecap="round" />)}
+        {corrodedGlyph(28, 64, 46, -9, T.inaccuracy)}
+        {corrodedGlyph(74, 26, 34, 8, T.inaccuracy)}
       </>
     ),
   },
   punish: {
-    accent: "#D9822B",
-    pattern: () => (
+    accent: T.blunder,
+    pattern: (gradId) => (
       <>
-        {[[22, 22], [70, 18], [50, 55], [16, 78], [82, 72]].map(([cx, cy], i) => <rect key={i} x={cx - 7} y={cy - 7} width="14" height="14" fill="#D9822B" transform={"rotate(45 " + cx + " " + cy + ")"} />)}
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor={T.blunder} />
+            <stop offset="100%" stopColor={T.mistake} />
+          </linearGradient>
+        </defs>
+        {crackedGlyph("??", 68, 30, 30, -8, "url(#" + gradId + ")")}
+        {crackedGlyph("?", 24, 70, 38, 7, "url(#" + gradId + ")")}
       </>
     ),
   },
 };
 function PuzzleThemePattern({ theme, opacity = 0.1 }) {
+  // (v0.1.0) 실수 응징하기 그라데이션 fill이 url(#id)로 참조되므로, 카드 여러 개가 한 화면에 있어도
+  // 서로 다른 <svg>끼리 id가 겹치지 않도록 useId로 인스턴스별 고유 id를 만든다(콜론은 CSS/URL
+  // 참조에서 그대로 못 쓰이는 경우가 있어 제거).
+  const gradId = "pth-" + useId().replace(/:/g, "");
   const st = PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish;
   return (
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity, pointerEvents: "none" }}>
-      {st.pattern()}
+      {st.pattern(gradId)}
     </svg>
   );
 }
@@ -5351,6 +5427,32 @@ async function puzzleLikeToggle(no, uid) {
   catch { return null; }
 }
 async function puzzleLikeCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,likes"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.likes; }); return m; } catch { return {}; } }
+// (v0.1.0) 퍼즐 리포스트 — 좋아요와 동일한 토글 패턴(puzzle_repost_toggle RPC가 등록/취소를 알아서 판단).
+async function puzzleRepostToggle(no, uid) {
+  if (!SB_ON || !uid) return null;
+  try { const r = await sbRpc("puzzle_repost_toggle", { p_no: no, p_uid: uid }); const row = Array.isArray(r) ? r[0] : r; return row ? { reposted: !!row.reposted, reposts: row.reposts || 0 } : null; }
+  catch { return null; }
+}
+async function puzzleRepostCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,reposts"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.reposts; }); return m; } catch { return {}; } }
+async function puzzleShareCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,shares"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.shares; }); return m; } catch { return {}; } }
+// (v0.1.0) 내가 리포스트한 퍼즐 번호 목록 — 추천 퍼즐에 간헐적으로 끼워 넣기 위해 사용.
+async function puzzleRepostsByUser(uid) { if (!SB_ON || !uid) return []; try { const rows = await sbSelect("puzzle_reposts?uid=eq." + uid + "&select=no"); return (rows || []).map((r) => r.no); } catch { return []; } }
+// (v0.1.0) 퍼즐 공유 — 인스타그램 릴스 공유처럼 친구와의 대화창에 퍼즐 미리보기 카드(puzzle_no 설정된
+// chat_messages 행)로 남긴다. 공유 수는 RPC로 원자적으로 늘린다(puzzle_solve와 동일하게 행이 없으면 새로 만듦).
+async function puzzleShareSend(no, fromUid, toUid) {
+  if (!SB_ON || !fromUid || !toUid) return false;
+  try { await sbInsert("chat_messages", { from_uid: fromUid, to_uid: toUid, puzzle_no: no }); } catch { return false; }
+  try { await sbRpc("puzzle_share_inc", { p_no: no }); } catch { }
+  return true;
+}
+// (v0.1.0) 친구가 내가 공유한 퍼즐을 풀어 얻은 XP의 10%를 나에게 돌려준다 — p_share_msg_id로 그 공유
+// 메시지가 실제로 나(호출자)에게 온 것인지 서버가 검증하므로, 임의 메시지 id로 위조 보상을 요청할 수
+// 없다. RPC는 보상 금액 자체를 내 XP에 더하지 않고 공유자에게 갈 chat_messages 시스템 메시지만 남긴다
+// (XP는 각자 자기 클라이언트만 갱신 가능 — checkUnreadChat이 이 메시지를 realtime으로 받아 적용한다).
+async function puzzleShareReward(shareMsgId, amount) {
+  if (!SB_ON || shareMsgId == null) return false;
+  try { return !!(await sbRpc("puzzle_share_reward", { p_share_msg_id: shareMsgId, p_amount: amount })); } catch { return false; }
+}
 // (UX6 전역 공유) 퍼즐 정의를 번호로 공유 저장/조회. 미설정·미생성 시 무해하게 비활성.
 async function puzzleShare(p) { if (!SB_ON || !p || !p.id) return; try { await sbUpsert("puzzles", { no: puzzleNo(p.id), data: p }); } catch { } }
 async function puzzleFetch(no) { if (!SB_ON) return null; try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; } }
@@ -6149,8 +6251,8 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, engine, liveOn, canEdit, bumpContent }) {
-  const theme = puzzle.theme || "punish";
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, engine, liveOn, canEdit, bumpContent }) {
+  const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
   // 분기 트리: 개발자 길이 재조정(CONTENT.puzzleOverrides — 모든 유저 공통) > 저장된 tree > 구버전 lines/solution
@@ -6496,7 +6598,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     if (!engine || engine.status !== "ready" || regenBusy) return;
     setRegenBusy(true); setRegenErr("");
     try {
-      const th = puzzle.theme || "punish";
+      const th = primaryTheme(puzzle);
       const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
       const opts = { ...puzzleThemeOpts(th, targetInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedSeq };
       const gen = await genPuzzleTree(engine, setup, opts);
@@ -6529,17 +6631,28 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
       <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{THEME_LABEL[theme]}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{puzzle.name}</div>
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
           {/* (20차 기능1) 별: 라인 1개 이상 ★1 · 50% 이상 ★2 · 전부 ★3 */}
           <div className="flex items-center" style={{ gap: 7, marginTop: 5 }}>
             <LineStars total={3} solved={starsOf(solvedNow.size, totalLines)} />
             <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>라인 {solvedNow.size}/{totalLines} 해결</span>
-            <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, marginLeft: "auto", background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
-              <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
-              <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
-            </button>
+            <div className="flex items-center" style={{ gap: 10, marginLeft: "auto" }}>
+              {/* (v0.1.0) 리포스트·공유 — 좋아요와 나란히, 종이비행기 아이콘으로 친구 공유 시트를 연다 */}
+              {onToggleRepost && <button onClick={() => onToggleRepost(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="리포스트" title="리포스트">
+                <Repeat2 size={14} color={isReposted ? T.brilliant : T.inkSoft} />
+                <span style={{ fontSize: 10, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
+              </button>}
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="공유" title="공유">
+                <Send size={13} color={T.inkSoft} />
+                <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
+              </button>}
+              <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
+                <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
+                <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -6624,7 +6737,64 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     </div>
   );
 }
-function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike }) {
+// (v0.1.0) 퍼즐 공유 시트 — 인스타그램 릴스 공유처럼 친구 목록에서 골라 대화창으로 퍼즐을 보낸다.
+// 친구별로 독립적으로 "보내기" 가능(여러 명에게 동시에 보낼 수 있음), 보낸 친구는 "보냄"으로 표시만 바뀌고 시트는 유지된다.
+function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
+  const [friends, setFriends] = useState(null); // null=로딩중, [] = 없음
+  const [profiles, setProfiles] = useState({});
+  const [sent, setSent] = useState(() => new Set());
+  const [busy, setBusy] = useState(null); // 전송 중인 uid
+  useEffect(() => {
+    let cc = false;
+    (async () => {
+      const edges = await friendEdges();
+      const ids = edges.filter((e) => e.status === "accepted" && (e.from_uid === myUid || e.to_uid === myUid)).map((e) => (e.from_uid === myUid ? e.to_uid : e.from_uid));
+      if (cc) return;
+      setFriends(ids);
+      if (ids.length) { const pm = await usersProfiles(ids); if (!cc) setProfiles(pm); }
+    })();
+    return () => { cc = true; };
+  }, [myUid]);
+  const send = async (toUid) => {
+    if (busy || sent.has(toUid)) return;
+    setBusy(toUid);
+    const ok = await puzzleShareSend(puzzleNo(puzzle.id), myUid, toUid);
+    setBusy(null);
+    if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
+  };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
+          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />퍼즐 공유</span>
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+        </div>
+        <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
+          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
+            : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {friends.map((u) => {
+                  const pr = profiles[u] || {}; const pub = pr.pub || {};
+                  const isSent = sent.has(u);
+                  return (
+                    <div key={u} style={{ display: "flex", alignItems: "center", gap: 10, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
+                      {pub.photo ? <img src={pub.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
+                        : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
+                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
+                      </div>
+                      <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
+                    </div>
+                  );
+                })}
+              </div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
   const hasPreview = p.setupSans && p.mistakeSan;
@@ -6633,7 +6803,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
   // 위쪽 얇은 띠·번호 색·옅은 배경 패턴만 테마색으로 물들인다.
-  const theme = p.theme || "punish";
+  const theme = primaryTheme(p);
   const themeAccent = (PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish).accent;
   return (
     /* (18차 UI7) 카드 크기 축소 + 도감 탭처럼 정사각형 비율 — 한 화면에 더 많은 퍼즐이 보이도록.
@@ -6650,15 +6820,26 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         </div>
         <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.35 }}>{p.name}</div>
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
-          <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{THEME_LABEL[theme]} · 라인 {totalLines}개</span>
+          <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{themeLabelsOf(p)} · 라인 {totalLines}개</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         <div className="flex items-center justify-between" style={{ marginTop: 2, gap: 4 }}>
           {solveCountText(solveCount, friendSolverNames) ? <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.3, wordBreak: "break-word", minWidth: 0 }}>{solveCountText(solveCount, friendSolverNames)}</div> : <span />}
-          {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0, flexShrink: 0 }}>
-            <Heart size={11} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
-            <span style={{ fontSize: 9, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
-          </button>}
+          <div className="flex items-center" style={{ gap: 7, flexShrink: 0 }}>
+            {/* (v0.1.0) 리포스트·공유 — 좋아요와 같은 자리에, 풀이수/좋아요와 무관한 별개 참여 지표로 노출 */}
+            {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Repeat2 size={12} color={isReposted ? T.brilliant : T.inkSoft} />
+              <span style={{ fontSize: 9, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
+            </button>}
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유" title="공유" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Send size={11} color={T.inkSoft} />
+              <span style={{ fontSize: 9, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
+            </button>}
+            {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Heart size={11} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
+              <span style={{ fontSize: 9, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+            </button>}
+          </div>
         </div>
       </div>
     </div>
@@ -7018,7 +7199,7 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -7063,18 +7244,41 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 이라도) 풀이자가 많으면 계속 후보로 남도록, 현재 puzzles뿐 아니라 삭제했던 퍼즐의 보존본
   // (archivedPuzzles)까지 함께 후보 풀로 합친다. 추천 카드는 삭제 버튼 자체가 없어 여기서 지울 수 없다.
   const [recSeed, setRecSeed] = useState(0);
+  // (v0.1.0) 내가 리포스트한 퍼즐 — 풀이수·좋아요 랭킹과 무관하게 추천 후보 풀에 함께 들어간다.
+  // "간헐적으로 등장"은 별도 로직 없이, 아래 recommended의 결정적 셔플+6개 슬라이스가 자연히
+  // 만들어준다(후보 풀이 6개보다 많으면 새로고침마다 섞여 나왔다 안 나왔다 함).
+  const [myRepostNos, setMyRepostNos] = useState([]);
+  useEffect(() => {
+    if (!myUid) { setMyRepostNos([]); return; }
+    let cancelled = false;
+    puzzleRepostsByUser(myUid).then((nos) => { if (!cancelled) setMyRepostNos(nos); });
+    return () => { cancelled = true; };
+  }, [myUid]);
+  const [myRepostPuzzles, setMyRepostPuzzles] = useState({}); // no -> 퍼즐 데이터(서버에서 보강)
+  useEffect(() => {
+    const nos = myRepostNos.filter((no) => !(no in myRepostPuzzles));
+    if (!nos.length) return;
+    let cancelled = false;
+    (async () => {
+      const fetched = await Promise.all(nos.map((no) => puzzleFetch(no)));
+      if (cancelled) return;
+      setMyRepostPuzzles((prev) => { const n = { ...prev }; nos.forEach((no, i) => { n[no] = fetched[i] || null; }); return n; });
+    })();
+    return () => { cancelled = true; };
+  }, [myRepostNos]);
   const recommendedPool = useMemo(() => {
-    const m = rankMap[rankPeriod];
-    if (!m) return [];
+    const m = rankMap[rankPeriod] || {};
     const byId = new Map();
     for (const p of puzzles) byId.set(p.id, p);
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
     for (const no of Object.keys(m)) { const p = rankPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
-    return [...byId.values()]
-      .filter((p) => filter === "all" || (p.theme || "punish") === filter)
-      .filter((p) => !solved.has(p.id))
-      .map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).slice(0, 12).map((x) => x.p);
-  }, [puzzles, archivedPuzzles, rankMap, rankPeriod, filter, solved, rankPuzzles]);
+    for (const no of myRepostNos) { const p = myRepostPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
+    const passesFilter = (p) => (filter === "all" || themesOf(p).includes(filter)) && !solved.has(p.id);
+    const ranked = [...byId.values()].filter(passesFilter).map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).map((x) => x.p);
+    const rankedIds = new Set(ranked.map((p) => p.id));
+    const reposted = myRepostNos.map((no) => myRepostPuzzles[no]).filter((p) => p && passesFilter(p) && !rankedIds.has(p.id));
+    return [...ranked, ...reposted].slice(0, 16);
+  }, [puzzles, archivedPuzzles, rankMap, rankPeriod, filter, solved, rankPuzzles, myRepostNos, myRepostPuzzles]);
   // (20차 UX6) "새로고침"을 누르면 후보 풀(최대 12개) 안에서 다른 6개를 결정적으로 다시 뽑아 보여준다.
   const recommended = useMemo(() => {
     if (recommendedPool.length <= 6) return recommendedPool;
@@ -7084,15 +7288,15 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
     return arr.slice(0, 6);
   }, [recommendedPool, recSeed]);
-  if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
-  const themed = filter === "all" ? puzzles : puzzles.filter((p) => (p.theme || "punish") === filter);
+  if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
+  const themed = filter === "all" ? puzzles : puzzles.filter((p) => themesOf(p).includes(filter));
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
   const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
   const cleared = themed.filter((p) => solved.has(p.id)).sort(byOpening);
   // (19차 UI3) 해결 완료 퍼즐을 오프닝별로 묶어 표기(cleared는 이미 오프닝순 정렬).
   const clearedByOpening = (() => { const m = new Map(); for (const p of cleared) { const k = p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; })();
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
-  const count = (k) => (k === "all" ? puzzles.length : puzzles.filter((p) => (p.theme || "punish") === k).length);
+  const count = (k) => (k === "all" ? puzzles.length : puzzles.filter((p) => themesOf(p).includes(k)).length);
   const solveByNumber = async () => {
     const n = parseInt(numInput, 10);
     if (!Number.isFinite(n)) { setNumMsg("번호를 입력하세요."); return; }
@@ -7137,7 +7341,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           </div>
           {recommended.length > 0 ? (
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
-              {recommended.map((p) => <PuzzleCard key={"rec-" + p.id} p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />)}
+              {recommended.map((p) => <PuzzleCard key={"rec-" + p.id} p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}
             </div>
           ) : (
             <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: "14px 16px", color: T.inkSoft, fontSize: 12.5 }}>
@@ -7148,12 +7352,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       )}
       {themed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 테마의 퍼즐이 아직 없어요.</div>
         : <div>
-            {open.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div><div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{open.map((p) => <PuzzleCard key={p.id} p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />)}</div></div>}
+            {open.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div><div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{open.map((p) => <PuzzleCard key={p.id} p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}</div></div>}
             {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
               {clearedByOpening.map(([op, list]) => (
                 <div key={op} style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 2 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{list.map((p) => <PuzzleCard key={p.id} p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />)}</div>
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{list.map((p) => <PuzzleCard key={p.id} p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}</div>
                 </div>
               ))}
             </div>}
@@ -7719,16 +7923,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
       )}
       {puzzles && solved && (
         <div style={{ paddingTop: mq.totalChapters > 0 ? 0 : 12, borderTop: mq.totalChapters > 0 ? "none" : "1px solid #E4D5B6" }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>푼 퍼즐 <span style={{ color: T.inkSoft, fontWeight: 700 }}>({solvedPuzzles.length})</span></div>
-          {solvedPuzzles.length === 0 ? (
-            <p style={{ fontSize: 11.5, color: T.inkSoft }}>아직 푼 퍼즐이 없어요.</p>
-          ) : (
-            <div style={{ maxHeight: 340, overflowY: "auto", paddingRight: 2 }}>
-              <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
-                {solvedPuzzles.map((p) => <PuzzleCard key={p.id} p={p} isSolved onClick={() => onOpenPuzzle && onOpenPuzzle(p.id, p)} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />)}
-              </div>
-            </div>
-          )}
+          <SolvedPuzzlesBlock puzzles={solvedPuzzles} total={solvedPuzzles.length} loading={false} onOpenPuzzle={onOpenPuzzle}
+            renderCard={(p, onClick) => <PuzzleCard key={p.id} p={p} isSolved onClick={onClick} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />} />
         </div>
       )}
       {linked && (
@@ -7777,6 +7973,18 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.1.0", date: "2026.7.16", items: [
+      "퍼즐을 친구에게 공유할 수 있어요! 퍼즐 카드·풀이 화면의 종이비행기 아이콘을 누르면 친구 목록이 뜨고, 고른 친구와의 대화창에 그 퍼즐 미리보기 카드가 남아요. 카드의 \"퍼즐 풀러 가기\" 버튼을 누르면 바로 그 퍼즐을 풀 수 있어요.",
+      "친구가 내가 공유한 퍼즐을 풀면 그 친구가 얻는 경험치의 10%를 저에게도 나눠 드려요 — 실시간으로 화면에 알림이 뜨고, 대화창에도 기록이 남아요.",
+      "퍼즐을 리포스트하는 기능을 추가했어요. 리포스트한 퍼즐은 풀이수나 좋아요 수와 상관없이 내 추천 퍼즐에 가끔씩 다시 등장해요.",
+      "퍼즐 카드·풀이 화면에 좋아요 수와 함께 리포스트 수·공유 수도 볼 수 있어요.",
+      "도감 탭에서 대표 오프닝(이탈리안 게임, 루이 로페즈 등) 이름표가 실제로는 그 오프닝과 상관없는 엉뚱한 위치에 붙어 보이던 문제를 해결했어요 — 이제 항상 그 오프닝을 시작하는 수 바로 위에 이름표가 와요.",
+      "실수를 응징하는 수가 동시에 탁월한 수이기도 한 경우, 사실상 같은 퍼즐이 \"실수 응징하기\"와 \"기물 희생하기\"로 따로따로 만들어지던 문제를 해결했어요. 이제 이런 퍼즐은 하나로 합쳐지고, \"실수 응징하기 · 기물 희생하기\"처럼 해당하는 테마가 함께 표시돼요.",
+      "설정 탭 내 프로필에서만 보이던 메인 퀘스트 진척도와 푼 퍼즐 목록을 이제 유저 검색·친구 프로필에서도 볼 수 있어요. 푼 퍼즐은 3개까지 미리 보여주고, 그보다 많으면 \"더 보기\"로 전체를 스크롤하며 볼 수 있어요.",
+      "퍼즐 테마별 카드 디자인을 새로 단장했어요 — 기물 희생하기는 민트색 \"!!\", 우위 점하기는 노란색의 살짝 부식된 \"?!\", 실수 응징하기는 빨강-주황 그라데이션의 \"?\"·\"??\"가 파괴된 모습으로 표시돼요.",
+    ],
+  },
   {
     version: "0.0.6", date: "2026.7.15", items: [
       "chess.com에 대국이 아주 많은 계정에서 도감 탭 오프닝 트리가 심하게 버벅이던 문제를 해결했어요.",
@@ -8629,11 +8837,25 @@ function EmojiPicker({ onPick, onClose }) {
   );
 }
 // (17차) 친구 채팅 — 텍스트 + 이모티콘. 열려있는 동안 짧은 주기로 폴링해 새 메시지를 반영한다.
-function ChatPanel({ myUid, otherUid, otherUsername, onBack }) {
+function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle }) {
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  // (v0.1.0) 퍼즐 공유 카드 미리보기 — puzzle_no가 설정된 메시지가 보이면 그 번호의 퍼즐 데이터를
+  // 지연 조회해 캐싱한다(no -> 퍼즐 데이터 | null(찾을 수 없음), 아직 없으면 로딩 중으로 취급).
+  const [puzzlePreviews, setPuzzlePreviews] = useState({});
+  useEffect(() => {
+    const nos = [...new Set(msgs.filter((m) => m.puzzle_no != null).map((m) => m.puzzle_no))].filter((no) => !(no in puzzlePreviews));
+    if (!nos.length) return;
+    let cancelled = false;
+    (async () => {
+      const fetched = await Promise.all(nos.map((no) => puzzleFetch(no)));
+      if (cancelled) return;
+      setPuzzlePreviews((prev) => { const n = { ...prev }; nos.forEach((no, i) => { n[no] = fetched[i] || null; }); return n; });
+    })();
+    return () => { cancelled = true; };
+  }, [msgs]);
   // (18차 보충 UX7) 인스타그램식 홀드-드래그 — 메시지를 좌우로 밀면 생긴 공간에 보낸 시각을 표시(내용은 유지).
   const [drag, setDrag] = useState(null);       // { id, dx }
   const dragRef = useRef(null);                  // { id, startX, mine }
@@ -8673,6 +8895,42 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack }) {
         {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>아직 대화가 없어요. 첫 메시지를 보내보세요!</div>}
         {msgs.map((m, i) => {
           const mine = m.from_uid === myUid;
+          // (v0.1.0) 공유 보상 시스템 메시지 — 릴스 댓글창의 "선물" 알림처럼 좌우 정렬 없이 가운데 배지로 표시.
+          // from_uid=이 메시지를 발생시킨 쪽(퍼즐을 푼 사람), to_uid=XP를 받은 쪽(공유한 사람) — 어느
+          // 쪽에서 보든 뜻이 분명하도록 누가 풀었고 누가 받았는지를 매번 명시한다.
+          if (m.share_reward) {
+            return (
+              <div key={m.id} style={{ display: "flex", justifyContent: "center" }}>
+                <div className="flex items-center gap-1" style={{ padding: "5px 10px", borderRadius: 999, background: "rgba(196,154,80,.18)", border: "1px solid " + T.brass, color: T.brass, fontSize: 10.5, fontWeight: 800, textAlign: "center" }}>
+                  <Sparkles size={11} />
+                  {mine
+                    ? otherUsername + "님이 공유한 퍼즐을 풀어서 " + otherUsername + "님에게 XP +" + m.share_reward.amount + "를 선물했어요!"
+                    : otherUsername + "님이 내가 공유한 퍼즐을 풀어서 XP +" + m.share_reward.amount + "를 받았어요!"}
+                </div>
+              </div>
+            );
+          }
+          // (v0.1.0) 퍼즐 공유 카드 — 인스타그램 릴스 공유처럼 미리보기 + "풀러 가기" 버튼.
+          if (m.puzzle_no != null) {
+            const pz = puzzlePreviews[m.puzzle_no];
+            const flip = pz && pz.setupSans ? (pz.setupSans.length + 1) % 2 !== 0 : false;
+            return (
+              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
+                <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)" }}>
+                  <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                    {pz === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>불러오는 중…</div>
+                      : pz === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>퍼즐을 찾을 수 없어요.</div>
+                      : <>
+                          {pz.setupSans && pz.mistakeSan && <AnimatedMove sans={pz.setupSans} san={pz.mistakeSan} size={140} loopMs={2400} flip={flip} />}
+                          <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{pz.name}</div>
+                          <div style={{ fontSize: 9.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>#{m.puzzle_no}</div>
+                        </>}
+                    <button onClick={() => onOpenSharedPuzzle && onOpenSharedPuzzle(m)} disabled={!pz} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: pz ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: pz ? "pointer" : "default" }}>퍼즐 풀러 가기</button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
           // (18차 UX7) 3분 이내 연속 전송된 내 메시지 묶음에서는 마지막 메시지에만 읽음 여부를 표시한다.
           const next = msgs[i + 1];
           const groupEnd = !next || next.from_uid !== m.from_uid || (new Date(next.created_at) - new Date(m.created_at)) > 3 * 60e3;
@@ -8734,10 +8992,94 @@ function FirstMovesDisplay({ firstMoves }) {
     </div>
   );
 }
-// (17차) 프로필 정보 확장 — 티어/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는 공용 컴포넌트.
-// UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, hideChesscom }) {
+// (v0.1.0) 프로필의 "푼 퍼즐" — 내 프로필(설정 탭)/공개 프로필(유저 검색·친구) 공통으로 쓰는
+// 미리보기+더보기 UI. 앞쪽 SOLVED_PREVIEW_COUNT개(3개)만 바로 보여주고, 그보다 많으면 "더 보기"로
+// 전체를 스크롤 가능한 별도 창에서 확인한다. renderCard(p, onClick)는 호출부가 좋아요·리포스트·공유
+// 등 그 화면에 맞는 PuzzleCard 속성을 채워 넘기되, 클릭 동작 자체(onClick)는 이 컴포넌트가 정해서
+// 넘겨준다 — "더 보기" 모달 안에서 블록을 눌렀을 때도 항상 그 퍼즐로 리디렉션되도록, 모달을 먼저
+// 닫고 나서 onOpenPuzzle을 호출하는 것까지 한곳에서 보장하기 위함(호출부마다 따로 신경 쓰지 않아도 됨).
+// onExpand는 "더 보기"를 처음 눌렀을 때만 한 번 호출되는 훅 — 공개 프로필은 이 시점에야 나머지
+// 퍼즐 데이터를 마저 불러온다(프로필을 열 때마다 전부 조회하지 않도록).
+const SOLVED_PREVIEW_COUNT = 3;
+function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onOpenPuzzle }) {
+  const [showAll, setShowAll] = useState(false);
+  const preview = puzzles.slice(0, SOLVED_PREVIEW_COUNT);
+  const openAll = () => { setShowAll(true); onExpand && onExpand(); };
+  const openPuzzle = (p) => { onOpenPuzzle && onOpenPuzzle(p.id, p); };
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>푼 퍼즐 <span style={{ color: T.inkSoft, fontWeight: 700 }}>({fmtFull(total)})</span></div>
+      {preview.length === 0 ? (
+        <p style={{ fontSize: 11, color: T.inkSoft }}>{loading ? "불러오는 중…" : "아직 푼 퍼즐이 없어요."}</p>
+      ) : (
+        <>
+          <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+            {preview.map((p) => renderCard(p, () => openPuzzle(p)))}
+          </div>
+          {total > SOLVED_PREVIEW_COUNT && (
+            <button onClick={openAll} className="press" style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>더 보기 ({fmtFull(total)}개)</button>
+          )}
+        </>
+      )}
+      {showAll && (
+        <div onClick={() => setShowAll(false)} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 640, maxHeight: "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+            <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
+              <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>푼 퍼즐 ({fmtFull(total)})</span>
+              <button onClick={() => setShowAll(false)} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+            </div>
+            <div style={{ padding: 14, overflowY: "auto" }}>
+              <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
+                {puzzles.map((p) => renderCard(p, () => { setShowAll(false); openPuzzle(p); }))}
+              </div>
+              {loading && <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 10, textAlign: "center" }}>더 불러오는 중…</p>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// (v0.1.0) 공개 프로필에 실린 "푼 퍼즐" 번호(no) 목록을 실제 카드로 보여주기 위해, 전역 공유
+// puzzles 테이블에서 그 번호들의 데이터를 지연 조회한다 — 퍼즐 데이터 자체는 이미 누구나 볼 수
+// 있게 공개돼 있으므로(전역 크라우드소싱), 번호만 알면 그 자리에서 그대로 카드를 그릴 수 있다.
+// 미리보기 3개만 우선 가져오고, "더 보기"를 눌렀을 때(SolvedPuzzlesBlock의 onExpand)만 나머지
+// 전부를 마저 가져온다 — 프로필을 열 때마다 전체를 조회하지 않도록 하는 최소한의 절제.
+// (버그 수정) 목록에 어떤 퍼즐이 뜨는지는 이 프로필 주인의 solvedNos로 정하는 게 맞지만, 카드 자체의
+// 해결 표시(초록 배경·별 개수)는 PuzzleCard가 앱 어디서나 그렇듯 "지금 보는 사람"의 진행 상태를
+// 뜻해야 한다 — 항상 isSolved=true로 고정해 두면, 프로필 주인은 풀었어도 나는 아직 안 풀었거나
+// 일부 라인만 푼 퍼즐까지 전부 다 푼 것처럼(별 3개) 보였다. mySolved/myLineSolves(보는 사람 자신의
+// 진행 상태)를 받아 각 카드에 반영한다 — "이 사람이 이런 퍼즐들을 풀었다"는 목록 자체는 그대로 두고,
+// 그중 내가 실제로 얼마나 풀었는지만 카드 표시에 반영되는 것.
+function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle, mySolved, myLineSolves }) {
+  const [expanded, setExpanded] = useState(false);
+  const nos = useMemo(() => (expanded ? solvedNos : solvedNos.slice(0, SOLVED_PREVIEW_COUNT)), [solvedNos, expanded]);
+  const [byNo, setByNo] = useState({});
+  useEffect(() => {
+    const missing = nos.filter((no) => !(no in byNo));
+    if (!missing.length) return;
+    let cancelled = false;
+    (async () => {
+      const fetched = await Promise.all(missing.map((no) => puzzleFetch(no)));
+      if (cancelled) return;
+      setByNo((prev) => { const n = { ...prev }; missing.forEach((no, i) => { n[no] = fetched[i] || null; }); return n; });
+    })();
+    return () => { cancelled = true; };
+  }, [nos]);
+  const puzzles = nos.map((no) => byNo[no]).filter(Boolean);
+  const loading = nos.some((no) => !(no in byNo));
+  const renderCard = (p, onClick) => <PuzzleCard key={p.id} p={p} onClick={onClick}
+    isSolved={mySolved ? mySolved.has(p.id) : false} solvedTags={myLineSolves ? myLineSolves[p.id] : null} />;
+  return <SolvedPuzzlesBlock puzzles={puzzles} total={solvedNos.length} loading={loading} renderCard={renderCard} onExpand={() => setExpanded(true)} onOpenPuzzle={onOpenPuzzle} />;
+}
+// (17차→v0.1.0) 프로필 정보 확장 — 티어/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는
+// 공용 컴포넌트. UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다. (v0.1.0) 설정 탭
+// "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐 목록도 pub에 실려 있으면(publishProfile이
+// solvedNos/mainQuestSummary를 채워 넣음) 같은 자리에 표시해, 다른 유저의 프로필에서도 볼 수 있다.
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves }) {
   const chesscom = useChessCom(pub.chesscom);
+  const mq = pub.mainQuestSummary;
+  const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
@@ -8745,6 +9087,18 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
+      {mq && mq.totalChapters > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>메인 퀘스트 진척도</span>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
+          </div>
+          <div style={{ height: 6, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
+            <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
+          </div>
+        </div>
+      )}
+      {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
   );
@@ -8764,7 +9118,7 @@ function userSearchRow(r, onClick, right) {
     </button>
   );
 }
-function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
@@ -8834,7 +9188,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
               </div>
             </div>
-            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
@@ -8899,7 +9253,7 @@ function FriendRow({ id, pub, right, onClick }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-function ChatsModal({ me, myUid, onClose }) {
+function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
   const [rows, setRows] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [chatWith, setChatWith] = useState(null);
@@ -8926,7 +9280,7 @@ function ChatsModal({ me, myUid, onClose }) {
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         {chatWith ? (
-          <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} />
+          <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
         ) : (
           <div style={{ padding: 12, minHeight: 140, maxHeight: 440, overflowY: "auto" }}>
             {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
@@ -8939,7 +9293,7 @@ function ChatsModal({ me, myUid, onClose }) {
                       : <span style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
-                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.emoji ? "(이모티콘)" : (m.body || "")}</span>
+                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
                     </span>
                     <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(m.created_at)}</span>
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}
@@ -9046,7 +9400,7 @@ function TierJourneyMap({ totalXp, onClose }) {
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenPuzzle, mySolved, myLineSolves }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -9130,7 +9484,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
         )}
 
         {chatWith ? (
-          <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} />
+          <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
         ) : sel ? (() => {
           const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
           return (
@@ -9144,7 +9498,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 </div>
               </div>
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />
               <div style={{ display: "flex", gap: 8 }}>
                 {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
                 {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
@@ -9481,12 +9835,19 @@ export default function App() {
   const [puzzleGenProgress, setPuzzleGenProgress] = useState({});
   const puzzleGenInFlightRef = useRef(new Set());
   const likeInFlightRef = useRef(new Set());
+  const repostInFlightRef = useRef(new Set());
   // (기능) 접속 시 업데이트 공지 — "다시 보지 않기"를 체크하고 닫으면 그 버전 번호를 저장해 두고,
   // 다음에 저장된 값이 현재 APP_VERSION과 다르면(=새 버전이 나오면) 다시 보여준다.
   const [dismissedAnnounceVersion, setDismissedAnnounceVersion] = useState(null);
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [learnFocus, setLearnFocus] = useState(null);   // (UX4) 탭 이동에도 집중 학습 유지
   const [puzzleActive, setPuzzleActive] = useState(null);   // (UX4) 탭 이동에도 퍼즐 창 유지
+  // (v0.1.0) 채팅으로 공유받은 퍼즐을 "풀러 가기"로 열었을 때의 공유 출처 — { msgId, no, fromUid(공유자) }.
+  // 지금 열려 있는 puzzleActive가 이 no와 일치하는 동안 라인을 풀면 공유자에게 XP 10%를 돌려준다.
+  const [shareReferral, setShareReferral] = useState(null);
+  const shareReferralRef = useRef(null);
+  useEffect(() => { shareReferralRef.current = shareReferral; }, [shareReferral]);
+  const [shareSheetPuzzle, setShareSheetPuzzle] = useState(null); // (v0.1.0) 공유 시트에 띄울 퍼즐(종이비행기 아이콘)
   const [treeFocus, setTreeFocus] = useState([]);   // (UX4) 새로고침해도 이론 트리 에디터의 탐색 위치 유지
   const [deletedPuzzles, setDeletedPuzzles] = useState(new Set()); // (UX5) 삭제한 퍼즐(자동 재생성 방지)
   // (20차 UX6) 추천 퍼즐은 "미해결" 목록과 별도 알고리즘으로 동작한다 — 퍼즐 탭에서 삭제해도 이미
@@ -9494,6 +9855,8 @@ export default function App() {
   const [archivedPuzzles, setArchivedPuzzles] = useState({});
   const [solveCounts, setSolveCounts] = useState({});              // (UX6) 번호별 전역 풀이수
   const [likeCounts, setLikeCounts] = useState({});                 // (기능) 번호별 전역 좋아요수
+  const [repostCounts, setRepostCounts] = useState({});             // (v0.1.0) 번호별 전역 리포스트수
+  const [shareCounts, setShareCounts] = useState({});               // (v0.1.0) 번호별 전역 공유수
   const [friendUids, setFriendUids] = useState([]);                // (16차) 수락된 친구 uid 목록
   const [puzzleSolvers, setPuzzleSolvers] = useState({});          // (16차) { [puzzleNo]: uid[] } — 그 퍼즐을 푼 사람들
   const [solverNames, setSolverNames] = useState({});              // (16차) uid -> username (친구 중 해결자만)
@@ -9511,6 +9874,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [solved, setSolved] = useState(new Set());
   const [likedPuzzles, setLikedPuzzles] = useState(new Set());   // (기능) 내가 좋아요 누른 퍼즐 id — solved처럼 로컬+계정에 저장
+  const [repostedPuzzles, setRepostedPuzzles] = useState(new Set());   // (v0.1.0) 내가 리포스트한 퍼즐 id — likedPuzzles와 동일한 방식으로 로컬+계정에 저장
   const [lineSolves, setLineSolves] = useState({});   // (기능1) { [puzzleId]: string[] } — 라인(tag)별 해결 기록. 전체 라인이 다 모이면 solved로 승격.
   const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 티어/진행률은 tierFromXp로 매번 도출
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
@@ -9554,12 +9918,28 @@ export default function App() {
   useRealtimeTable("friend_edges", uid ? "to_uid=eq." + uid : null, checkPending, !!uid, 120000);
   // (18차 보충 UX7) 채팅 버튼에 표시할 "안읽은 채팅" 총 수 — 상대별로 안읽은 메시지가 있는 대화 상대 수(빨간 배지).
   const [unreadChatTotal, setUnreadChatTotal] = useState(0);
+  // (v0.1.0) 같은 realtime 이벤트에 여러 컴포넌트가 동시에 반응해 같은 보상 메시지를 두 번 처리하지
+  // 않도록, 처리를 시작한 메시지 id를 세션 동안 기억해 둔다(서버의 read=true 마킹과는 별개의 로컬 가드).
+  const shareRewardSeenRef = useRef(new Set());
   const checkUnreadChat = useCallback(async () => {
     if (!uid) { setUnreadChatTotal(0); return; }
     const rows = await chatFetchAll(uid);
     const senders = new Set();
     for (const m of rows) { if (m.to_uid === uid && !m.read) senders.add(m.from_uid); }
     setUnreadChatTotal(senders.size);
+    // (v0.1.0) 내가 공유한 퍼즐을 친구가 풀어 생긴 XP 보상 메시지 — 아직 처리 안 한 것만 골라 내 XP에
+    // 더하고 실시간 애니메이션으로 보여준 뒤 읽음 처리한다(XP는 본인 클라이언트만 자기 것을 갱신할 수 있음).
+    const rewards = rows.filter((m) => m.to_uid === uid && m.share_reward && !m.read && !shareRewardSeenRef.current.has(m.id));
+    if (rewards.length) {
+      rewards.forEach((m) => shareRewardSeenRef.current.add(m.id));
+      const total = rewards.reduce((s, m) => s + (m.share_reward.amount || 0), 0);
+      if (total > 0) {
+        setTotalXp((x) => x + total);
+        setToast({ type: "share_reward", amount: total });
+        setTimeout(() => setToast((t) => (t && t.type === "share_reward" ? null : t)), 1800);
+      }
+      chatMarkRead(rewards);
+    }
   }, [uid]);
   useEffect(() => { checkUnreadChat(); }, [checkUnreadChat, chatsOpen]);
   // (v0.0.5 성능) 15초 폴링 대신 나에게 온 채팅(chat_messages.to_uid=나) 변경을 Realtime으로 즉시 반영,
@@ -9610,14 +9990,16 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (d.puzzleActive) setPuzzleActive(d.puzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
+    try { const rcounts = await puzzleRepostCounts(); if (rcounts && Object.keys(rcounts).length) setRepostCounts(rcounts); } catch { }
+    try { const scounts = await puzzleShareCounts(); if (scounts && Object.keys(scounts).length) setShareCounts(scounts); } catch { }
     setLoaded(true);
   })(); }, []);
   // (기능) 저장된 값을 다 복원한 뒤(loaded) 이 버전을 아직 "다시 보지 않기"로 끄지 않았다면(또는
@@ -9630,10 +10012,14 @@ export default function App() {
   // 판단하고, 열기뿐 아니라 닫기도 이 판단에 맡긴다(사용자가 X로 그냥 닫은 경우는 이 값이 안
   // 바뀌므로 이 effect가 다시 안 돌아 그 닫힘을 덮어쓰지 않는다).
   useEffect(() => { if (loaded) setAnnounceOpen(dismissedAnnounceVersion !== APP_VERSION); }, [loaded, dismissedAnnounceVersion]);
-  // (17차) 프로필 정보 확장 — 다른 유저 프로필에서 티어/XP·해결한 퍼즐 수도 볼 수 있도록 공개 프로필에 포함.
-  useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "" }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion })); }, [unlocked, profile, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion }); }, [unlocked, puzzles, solved, likedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion]);
+  // (17차→v0.1.0) 프로필 정보 확장 — 다른 유저 프로필에서 티어/XP·해결한 퍼즐 수도 볼 수 있도록 공개
+  // 프로필에 포함. (v0.1.0) 여기에 실제 "푼 퍼즐" 목록(전역 공유 puzzles 테이블의 no만 — 퍼즐 데이터
+  // 자체는 이미 공개돼 있으므로 no만 실어도 보는 쪽에서 PuzzleCard를 그대로 그릴 수 있음)과 메인
+  // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
+  // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
+  useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest) }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId, mainQuest]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
   // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
   // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
@@ -9699,7 +10085,7 @@ export default function App() {
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
   // 다시 로그인하면 보유 스킨·장착 상태가 기본값으로 되돌아가 마치 구매 내역이 저장 안 된 것처럼 보였다.
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevTierIndexRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings);
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevTierIndexRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings);
     // (버그 수정) 다른 필드들과 달리 이 값은 "값이 있으면만 덮어쓰기"로 두면 안 된다 — 계정이
     // 한 번도 공지를 닫은 적이 없으면 pr.dismissedAnnounceVersion이 undefined인데, 그때 이
     // if를 건너뛰면 로그인 직전(게스트 상태)의 로컬 값이 그대로 남아 "이 계정도 이미 닫았다"고
@@ -9711,7 +10097,7 @@ export default function App() {
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
-    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
+    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setRepostedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
     // (버그 수정) 이 두 값은 여기서 안 비워지고 있었다 — dismissedAnnounceVersion을 그대로 두면
@@ -9720,7 +10106,7 @@ export default function App() {
     // solverNames를 그대로 두면(그걸 채우는 effect가 uid===null일 때 그냥 아무것도 안 하고
     // 리턴만 해 초기화가 안 됨) 게스트 화면의 퍼즐 카드에 방금 로그아웃한 계정 친구들의 "N명이
     // 풀었습니다" 배지가 그대로 남아 보였다.
-    setDismissedAnnounceVersion(null); setFriendUids([]); setPuzzleSolvers({}); setSolverNames({});
+    setDismissedAnnounceVersion(null); setFriendUids([]); setPuzzleSolvers({}); setSolverNames({}); setShareReferral(null);
   }, []);
   // (UX7) 일정 시간 활동이 없으면 자동 로그아웃 — 로그인 상태가 무기한 유지되던 보안 문제 수정
   useEffect(() => {
@@ -9741,7 +10127,10 @@ export default function App() {
       const i = prev.findIndex((x) => x.id === pz.id);
       if (i >= 0) {
         // (20차 기능1) 구버전(선형 라인) 퍼즐이 분기 트리 형식으로 재생성되면 교체(업그레이드)
-        if (pz.tree && !prev[i].tree) { puzzleShare(pz); const next = prev.slice(); next[i] = pz; return next; }
+        // (v0.1.0) 이미 있는 퍼즐에 테마 태그만 새로 얹은 경우(예: 실수 응징 퍼즐과 같은 포지션이던
+        // 기물 희생하기 퍼즐이 뒤늦게 병합됨)도 같은 방식으로 교체해 반영한다.
+        const themesChanged = themesOf(pz).join(",") !== themesOf(prev[i]).join(",");
+        if ((pz.tree && !prev[i].tree) || themesChanged) { puzzleShare(pz); const next = prev.slice(); next[i] = pz; return next; }
         return prev;
       }
       puzzleShare(pz);
@@ -9812,6 +10201,27 @@ export default function App() {
       setLikedPuzzles((p) => { if (p.has(id) === r.liked) return p; const n = new Set(p); if (r.liked) n.add(id); else n.delete(id); return n; });
     }).finally(() => { likeInFlightRef.current.delete(id); });
   }, [user, uid, likedPuzzles]);
+  // (v0.1.0) 퍼즐 리포스트 — onToggleLike와 완전히 동일한 낙관적 업데이트/경쟁 상태 방지 패턴을 그대로 따른다.
+  const onToggleRepost = useCallback((id) => {
+    if (!user || !uid) { openAuth("login"); return; }
+    if (repostInFlightRef.current.has(id)) return;
+    repostInFlightRef.current.add(id);
+    const no = puzzleNo(id);
+    const wasReposted = repostedPuzzles.has(id);
+    setRepostedPuzzles((p) => { const n = new Set(p); if (wasReposted) n.delete(id); else n.add(id); return n; });
+    setRepostCounts((m) => ({ ...m, [no]: Math.max(0, (m[no] || 0) + (wasReposted ? -1 : 1)) }));
+    puzzleRepostToggle(no, uid).then((r) => {
+      if (!r) {
+        setRepostedPuzzles((p) => { const n = new Set(p); if (wasReposted) n.add(id); else n.delete(id); return n; });
+        setRepostCounts((m) => ({ ...m, [no]: Math.max(0, (m[no] || 0) + (wasReposted ? 1 : -1)) }));
+        return;
+      }
+      setRepostCounts((m) => ({ ...m, [no]: r.reposts }));
+      setRepostedPuzzles((p) => { if (p.has(id) === r.reposted) return p; const n = new Set(p); if (r.reposted) n.add(id); else n.delete(id); return n; });
+    }).finally(() => { repostInFlightRef.current.delete(id); });
+  }, [user, uid, repostedPuzzles]);
+  // (v0.1.0) 공유 시트(종이비행기 아이콘) — 로그인하지 않았으면 로그인 창을 띄운다.
+  const onShare = useCallback((p) => { if (!user || !uid) { openAuth("login"); return; } setShareSheetPuzzle(p); }, [user, uid]);
   // (16차) 추천 랭킹용 — 어떤 라인이든 완료할 때마다(중복 풀이 포함) 기록. XP/해결 트래킹과는 무관.
   const onPuzzleSolveEvent = useCallback((id) => { puzzleSolveEventAdd(puzzleNo(id), uid); }, [uid]);
   // (기능1) 라인(최선/차선/채택률) 하나를 풀 때마다 기록 — 전체 라인이 다 모이면(별 3개) onSolved로 승격해
@@ -9828,9 +10238,16 @@ export default function App() {
       setTotalXp((x) => x + gain);
       setToast({ type: "xp", amount: gain });
       setTimeout(() => setToast((t) => (t && t.type === "xp" ? null : t)), 1400);
+      // (v0.1.0) 채팅으로 공유받은 퍼즐을 "풀러 가기"로 열어 지금 이 퍼즐(no 일치)을 푸는 중이면,
+      // 방금 얻은 XP의 10%를 공유해 준 친구에게 돌려준다(친구 본인 클라이언트가 나중에 realtime으로
+      // 받아 스스로 적용 — 여기선 서버에 기록만 남긴다).
+      const ref = shareReferralRef.current;
+      if (ref && uid && ref.no === puzzleNo(id) && ref.fromUid !== uid) {
+        puzzleShareReward(ref.msgId, Math.max(1, Math.round(gain * 0.1)));
+      }
       return { ...prev, [id]: [...curArr, tag] };
     });
-  }, []);
+  }, [uid]);
   const tierInfo = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const prevTierIndexRef = useRef(null);
   useEffect(() => {
@@ -9969,12 +10386,29 @@ export default function App() {
   const onOpenGameAnalyze = useCallback((moves) => { onOpenGame(moves); setAutoAnalyzeGame(true); }, [onOpenGame]);
   const consumeAutoAnalyze = useCallback(() => setAutoAnalyzeGame(false), []);
   const onOpenPuzzle = useCallback(async (pzId, fallback) => {
+    // (v0.1.0) 유저 검색·친구 프로필(공개 프로필의 "푼 퍼즐" 카드)에서도 이 함수로 진입하므로,
+    // onOpenGame과 같은 방식으로 열려 있던 모달을 닫고 퍼즐 탭으로 이동시킨다.
+    setSearchOpen(false); setFriendsOpen(false);
     setTab("puzzle");
     let pz = await puzzleFetch(puzzleNo(pzId));   // (기능2) 서버(전역)에서 조회 — 생성자 무관
     if (!pz) pz = fallback || null;               // 서버에 아직 없으면 방금 만든 것
     if (pz) setPuzzleActive(pz);
   }, []);
+  // (v0.1.0) 채팅의 퍼즐 공유 카드 "풀러 가기" — 그 번호의 퍼즐을 서버에서 불러와 곧장 퍼즐 풀이
+  // 화면으로 이동하고, 이 퍼즐을 푸는 동안 얻는 XP의 10%가 공유해 준 친구에게 돌아가도록 출처를 기록한다.
+  const onOpenSharedPuzzle = useCallback(async (m) => {
+    if (!m || m.puzzle_no == null) return;
+    const pz = await puzzleFetch(m.puzzle_no);
+    if (!pz) return;
+    setSearchOpen(false); setFriendsOpen(false); setChatsOpen(false);
+    setTab("puzzle");
+    setPuzzleActive(pz);
+    setShareReferral({ msgId: m.id, no: m.puzzle_no, fromUid: m.from_uid });
+  }, []);
   useEffect(() => { if (!puzzleActive) return; setPuzzles((prev) => prev.some((x) => x.id === puzzleActive.id) ? prev : ((deletedPuzzles.has(puzzleActive.id) && !solved.has(puzzleActive.id)) ? prev : [...prev, puzzleActive])); }, [puzzleActive]);   // (UX3) 열어본 퍼즐은 로컬 탭에 추가
+  // (v0.1.0) 다른 퍼즐을 열거나(일반 탐색) 퍼즐 창을 닫으면 공유 출처를 지운다 — 공유로 들어온 그
+  // 퍼즐을 실제로 풀고 있는 세션에서만 보상이 나가도록 좁힌다.
+  useEffect(() => { setShareReferral((r) => (r && puzzleActive && r.no === puzzleNo(puzzleActive.id)) ? r : null); }, [puzzleActive]);
 
   return (
     <SkinContext.Provider value={skinValue}>
@@ -10040,9 +10474,10 @@ export default function App() {
       {announceOpen && <AnnouncementModal onClose={() => setAnnounceOpen(false)} onDismissVersion={() => setDismissedAnnounceVersion(APP_VERSION)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
-      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
-      {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} />}
+      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
+      {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}
+      {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -10090,6 +10525,12 @@ export default function App() {
                 <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>티어 승급!</div><div style={{ fontSize: 12 }}>{TIERS[toast.tierIndex].label}(으)로 승급했어요.</div></div>
               </div>
             </div>
+          ) : toast.type === "share_reward" ? (
+            /* (v0.1.0) 내가 공유한 퍼즐을 친구가 풀어 XP를 나눠 받았을 때 — 실시간으로 도착하는 순간 뜨는 알림. */
+            <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
+              <span style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(196,154,80,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Send size={20} style={{ color: T.brassHi }} /></span>
+              <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>공유 보상 도착!</div><div style={{ fontSize: 12 }}>친구가 내가 공유한 퍼즐을 풀어 <b>+{toast.amount} XP</b>를 받았어요.</div></div>
+            </div>
           ) : (
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <Mascot name="kokoa" emotion="celebrate" size={62} />
@@ -10105,7 +10546,7 @@ export default function App() {
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} autoAnalyzeGame={autoAnalyzeGame} onConsumeAutoAnalyze={consumeAutoAnalyze} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
