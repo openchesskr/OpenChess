@@ -238,12 +238,14 @@ function TierPieceGlyph({ size = 100, tierKey, division = null, muted = false })
   return <img src={src} alt="" style={{ height: h, width: "auto", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
 }
 // (v0.1.1) 로고 뒤 배경 원 — 특히 아이언처럼 어두운 톤의 기물이 어두운(브라운) UI 배경 위에서
-// 잘 안 보이던 문제를 밝은 원으로 감싸 해결하되, 순백 대신 사이트 전반의 카드·모달에 쓰는
-// 앤틱 아이보리색(T.paper)과 얇은 황동 테두리를 써 기존 디자인 톤과 자연스럽게 어우러지게 한다.
-// 이미지는 원 정중앙에 오도록 배치한다.
+// 잘 안 보이던 문제를 밝은 원으로 감싸 해결한다.
+// (v0.1.2) 앤틱 아이보리(순백에 가까운 톤)는 사이트 전반의 어두운 에보니·브라운 배경 위에서
+// 너무 튀어 보였다 — 보드 테두리·버튼 등 사이트 전역에서 이미 쓰는 브라스 광택 톤(T.brass/
+// T.brassHi, BOARD_GLOSS와 동일 계열)의 골드 그러데이션으로 바꿔 어디에 놓여도 톤이 자연스럽게
+// 이어지도록 한다. 이미지는 원 정중앙에 오도록 배치한다.
 function TierLogoDisc({ tierKey, division, size, discSize, muted = false }) {
   return (
-    <div style={{ width: discSize, height: discSize, borderRadius: "50%", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + T.ivoryHi + "," + T.paper + ")", border: "1px solid #C9AF80", boxShadow: "0 2px 6px rgba(0,0,0,.35)", opacity: muted ? 0.62 : 1 }}>
+    <div style={{ width: discSize, height: discSize, borderRadius: "50%", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.35)", opacity: muted ? 0.62 : 1 }}>
       <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
     </div>
   );
@@ -5977,7 +5979,7 @@ function TierBadge({ totalXp, compact, onClick }) {
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   return (
     <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 6 : 9, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 61 : 76} discSize={compact ? 64 : 80} />
+      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 46 : 57} discSize={compact ? 48 : 60} />
       <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
         <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
@@ -5995,7 +5997,7 @@ function TierStatPill({ totalXp }) {
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={76} discSize={80} /> <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
+      <TierLogoDisc tierKey={tier.key} division={division} size={57} discSize={60} /> <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
     </span>
   );
 }
@@ -6014,7 +6016,7 @@ function TierConnector() {
 // 가지고 있으므로(로마 숫자가 이미지 안에 함께 그려짐) 항상 그 구간 전용 이미지를 보여준다.
 // 로고 뒤에 흰 원을 둬 어두운 톤의 티어(아이언 등)도 잘 보이게 한다.
 function NextCheckpointBadge({ tier, division }) {
-  return <TierLogoDisc tierKey={tier.key} division={division} size={72} discSize={76} />;
+  return <TierLogoDisc tierKey={tier.key} division={division} size={54} discSize={57} />;
 }
 // (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 이미지 +
 // 진행바), 다음으로 넘어야 할 구간 2개는 작은 배지로 지그재그 선을 따라 미리 보여준다. 누르면
@@ -6028,7 +6030,7 @@ function TierProgressStrip({ totalXp, onOpen }) {
   const upcoming = useMemo(() => upcomingCheckpoints(info, 2), [info]);
   return (
     <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={116} discSize={122} />
+      <TierLogoDisc tierKey={tier.key} division={division} size={87} discSize={92} />
       <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
         <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
         <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
@@ -9433,8 +9435,8 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
 // 만들지 않는다).
 function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  // (v0.1.1) 로고를 훨씬 크게 키우면서 정거장 원 자체도 그만큼 키웠다.
-  const STATION_H = 176, STATION_GAP = 68;
+  // (v0.1.2) v0.1.1에서 키웠던 정거장 원이 지나치게 커 보인다는 피드백으로 다시 축소.
+  const STATION_H = 132, STATION_GAP = 60;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
   // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
@@ -9479,12 +9481,12 @@ function TierJourneyPath({ totalXp }) {
               style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
               <div style={{
                 position: "absolute", inset: 0, borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
-                background: "linear-gradient(180deg," + T.ivoryHi + "," + T.paper + ")", border: "1px solid #C9AF80",
-                boxShadow: state === "current" ? "0 0 16px 4px " + ringColor + "88" : "0 2px 6px rgba(0,0,0,.4)",
+                background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424",
+                boxShadow: (state === "current" ? "0 0 16px 4px " + ringColor + "88, " : "") + "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.4)",
               }}>
                 {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
                     이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 원 정중앙에 오도록 배치한다. */}
-                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={168} muted={state === "locked"} />
+                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={126} muted={state === "locked"} />
               </div>
               {state === "done" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 40, height: 40, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={22} color="#fff" /></span>}
               {/* (v0.1.1 버그 수정) 로고를 원 정중앙으로 옮기면서, 정중앙에 겹쳐 그리던 잠금 아이콘이
