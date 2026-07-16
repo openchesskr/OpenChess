@@ -200,7 +200,7 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
 }
 // (기능) 티어별로 디자이너가 직접 제작한 로우폴리 기물 이미지(public에 업로드된 실제 아트) —
 // 아이언 폰부터 그랜드마스터(왕관에 "GM"이 새겨진 홀로그램 킹)까지, 기물 종류와 등급 색이 이미
-// 하나의 이미지 안에 함께 표현되어 있다.
+// 하나의 이미지 안에 함께 표현되어 있다. 그랜드마스터는 구간이 없어 대표 이미지 하나만 쓴다.
 const TIER_IMAGE = {
   iron: "/iron-pawn.png",
   bronze: "/bronze-knight.png",
@@ -210,16 +210,43 @@ const TIER_IMAGE = {
   master: "/master-king.png",
   grandmaster: "/grandmaster.png",
 };
-// (v0.0.6 개편 → 디자인 개선) 티어 배지·여정 지도용 기물 아이콘 — 처음엔 실루엣 데이터로 직접
-// 그린 로우폴리 SVG였는데, 디자이너가 만든 실제 티어 이미지(TIER_IMAGE)로 교체했다. piece는
-// 더 이상 아이콘 모양을 고르는 데 쓰이지 않지만(이미지가 이미 기물+색을 함께 담고 있음), 기존
-// 호출부를 그대로 두기 위해 인자는 유지한다.
-function TierPieceGlyph({ piece, size = 28, tierKey, muted = false }) {
-  const src = TIER_IMAGE[tierKey] || TIER_IMAGE.iron;
+// (v0.1.1) 디자이너가 구간(1~5)마다 로마 숫자가 함께 그려진 별도 이미지를 새로 올려줬다
+// (iron-1.png ~ iron-5.png 등, 파일명이 티어 key와 그대로 맞아떨어짐) — 이제 "티어명 텍스트 + 로마
+// 숫자"를 따로 적지 않고, 이 정확한 구간 이미지 한 장으로 티어와 구간을 동시에 나타낸다. 그랜드
+// 마스터(구간 없음)나 division이 안 넘어온 경우는 기존 대표 이미지(TIER_IMAGE)로 대체한다.
+function tierPieceSrc(tierKey, division) {
+  if (!tierKey || tierKey === "grandmaster" || division == null) return TIER_IMAGE[tierKey] || TIER_IMAGE.iron;
+  return "/" + tierKey + "-" + division + ".png";
+}
+// (v0.1.1) 구간 이미지들은 실제 캔버스 크기가 티어마다 다르다(폰이 가장 작고 킹·퀸으로 갈수록
+// 커짐) — 그런데 하단의 로마 숫자는 모든 이미지에서 정확히 같은 픽셀 높이(원본 기준 48px)로
+// 캔버스 맨 아래에 박혀 있다. 예전처럼 이미지마다 "박스 높이에 꽉 차게" 각자 다른 배율로
+// 늘려버리면(objectFit:contain), 이미지마다 실제로 적용되는 배율이 달라져 로마 숫자 크기·위치가
+// 배지끼리 서로 안 맞았다 — 모든 티어에 정확히 같은 배율(원본 세로 길이 비례)을 적용해야 로마
+// 숫자가 항상 같은 크기로, 같은 상대 위치(캔버스 맨 아래)에 온다. 여기 적어둔 높이는 각 티어
+// 이미지 파일의 실제 픽셀 높이(1~5구간 공통, 그랜드마스터만 별도)다.
+const TIER_IMG_NATIVE_H = { iron: 251, bronze: 301, silver: 313, gold: 312, diamond: 346, master: 346, grandmaster: 360 };
+function TierPieceGlyph({ size = 100, tierKey, division = null, muted = false }) {
+  const src = tierPieceSrc(tierKey, division);
+  // size는 "가장 큰 티어(master) 기준 세로 길이"로 받고, 다른 모든 티어는 같은 배율로 축소해
+  // 자연스럽게 그보다 작게 나온다 — 각자 다른 박스에 맞춰 늘리지 않으므로 로마 숫자 정렬이 깨지지 않는다.
+  const scale = size / TIER_IMG_NATIVE_H.master;
+  const h = Math.round((TIER_IMG_NATIVE_H[tierKey] || TIER_IMG_NATIVE_H.iron) * scale);
   // (디자인 개선) 잠긴(muted) 티어를 흰색 반투명 실루엣으로 뭉개던 예전 방식 대신, 실제 이미지를
   // 그대로 두고 채도·밝기만 낮춘다 — 아직 안 온 등급들의 색 차이(브론즈 구릿빛, 골드 금빛,
   // 다이아몬드 청록…)가 옅게나마 남아, 위로 스크롤할수록 앞으로 만날 색이 은은하게 미리 보인다.
-  return <img src={src} alt="" style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
+  return <img src={src} alt="" style={{ height: h, width: "auto", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
+}
+// (v0.1.1) 로고 뒤 배경 원 — 특히 아이언처럼 어두운 톤의 기물이 어두운(브라운) UI 배경 위에서
+// 잘 안 보이던 문제를 밝은 원으로 감싸 해결하되, 순백 대신 사이트 전반의 카드·모달에 쓰는
+// 앤틱 아이보리색(T.paper)과 얇은 황동 테두리를 써 기존 디자인 톤과 자연스럽게 어우러지게 한다.
+// 이미지는 원 정중앙에 오도록 배치한다.
+function TierLogoDisc({ tierKey, division, size, discSize, muted = false }) {
+  return (
+    <div style={{ width: discSize, height: discSize, borderRadius: "50%", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + T.ivoryHi + "," + T.paper + ")", border: "1px solid #C9AF80", boxShadow: "0 2px 6px rgba(0,0,0,.35)", opacity: muted ? 0.62 : 1 }}>
+      <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
+    </div>
+  );
 }
 
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
@@ -361,13 +388,25 @@ function setSbToken(token) { SB_TOKEN = token || null; if (sbClient) sbClient.re
 // (v0.0.5 성능) 알림·채팅·친구요청처럼 "다른 유저 행동으로 내 화면이 바뀌어야 하는" 데이터는 3~30초
 // 폴링 대신 Postgres 변경을 실시간으로 밀어받는다. filter는 PostgREST 문법 그대로(예: "to_uid=eq.<uid>").
 // 소켓이 끊긴 채 조용히 죽는 경우를 대비해 아주 느슨한 간격(fallbackMs)으로 안전망 재조회도 겸한다.
+// (v0.1.1 버그 수정) 채널 이름을 table+filter로만 지었더니, 서로 다른 컴포넌트가 완전히 같은
+// table+filter를 동시에 구독하는 경우(예: 헤더의 "안읽은 채팅" 배지와, 채팅창을 열었을 때 그
+// 안에서 또 구독하는 ChatPanel — 둘 다 "chat_messages, to_uid=eq.<나>"를 구독) 정확히 같은
+// Realtime 채널 토픽을 같은 소켓에 두 번 join하게 됐다. 서버가 기존 join을 강제로 끊어내고
+// 클라이언트는 그걸 다시 재연결하려 시도하는 과정이 계속 반복되며(서로가 서로를 계속 밀어냄) 짧은
+// 간격으로 무한히 재연결·재구독이 일어나 CPU를 계속 잡아먹었다 — 이게 "채팅 버튼을 누르면
+// 사이트가 먹통이 된다"는 신고의 원인이었다. 훅이 마운트될 때마다 항상 다른 채널 이름을 쓰도록
+// 인스턴스별 고유 id를 더해, 같은 table+filter를 여러 컴포넌트가 동시에 구독해도 서로 다른
+// 채널(같은 postgres_changes 필터를 각자 독립적으로 받는)로 취급되게 한다.
+let rtChanSeq = 0;
 function useRealtimeTable(table, filter, onEvent, enabled, fallbackMs) {
   const cbRef = useRef(onEvent);
   cbRef.current = onEvent;
+  const chanIdRef = useRef(null);
+  if (chanIdRef.current == null) chanIdRef.current = ++rtChanSeq;
   useEffect(() => {
     if (!enabled || !sbClient || !filter) return;
     const channel = sbClient
-      .channel("rt:" + table + ":" + filter)
+      .channel("rt:" + table + ":" + filter + ":" + chanIdRef.current)
       .on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => cbRef.current && cbRef.current(payload))
       .subscribe();
     const id = fallbackMs ? setInterval(() => cbRef.current && cbRef.current(null), fallbackMs) : null;
@@ -4437,7 +4476,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (const it of items) {
       if (it.depth >= 1 && it.kids) {
         const cache = posCacheRef.current[it.dir];
-        if (!cache.has(it.key)) cache.set(it.key, (it.kids[0].pos + it.kids[it.kids.length - 1].pos) / 2);
+        if (!cache.has(it.key)) {
+          let p = (it.kids[0].pos + it.kids[it.kids.length - 1].pos) / 2;
+          // (v0.1.1) 이름 붙은 오프닝의 뿌리(그룹 라벨이 붙는 노드)는 자손 펼침의 "가운데"가 아니라,
+          // 그 그룹 안에서 가장 먼저 배치된(=화면상 가장 왼쪽/위) 자손 쪽 끝에 맞춰, 점선 영역의
+          // 좌상단(라벨이 있는 자리)에 가깝게 놓이도록 한다. 나침반 팔의 기준점(depth===1, e4/d4/
+          // c4/Nf3 자신)은 절대 건드리지 않는다 — 건드리면 그 팔 전체(수천 개 자손)가 기준점과 함께
+          // 통째로 옆으로 밀려 보인다.
+          if (it.depth >= 2 && it.groupKey === it.key) p = it.kids[0].pos;
+          cache.set(it.key, p);
+        }
         it.pos = cache.get(it.key);
       }
     }
@@ -4698,7 +4746,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const flightRafRef = useRef(null);
   const [flightPath, setFlightPath] = useState(null);   // [[x,y], ...] (콘텐츠 좌표) | null
   const FLIGHT_MS = 220;
-  const flyAlongPath = (waypoints, targetZoom) => {
+  const flyAlongPath = (waypoints, targetZoom, onDone) => {
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const fromZoom = zoomRef.current;
     if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
@@ -4734,12 +4782,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       setPan({ x: rect.width / 2 - cx * z, y: rect.height / 2 - cy * z });
       setZoom(z);
       if (t < 1) { flightRafRef.current = requestAnimationFrame(step); }
-      else { flightRafRef.current = null; setFlightPath(null); }
+      else { flightRafRef.current = null; setFlightPath(null); if (onDone) onDone(); }
     };
     flightRafRef.current = requestAnimationFrame(step);
   };
   useEffect(() => () => { if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current); }, []);
-  const centerOn = (it, z) => { flyAlongPath(buildFlightWaypoints(it), z); };
+  const centerOn = (it, z, onDone) => { flyAlongPath(buildFlightWaypoints(it), z, onDone); };
   // (버그 수정) 선택 직후 딱 한 번만 중앙으로 옮기면, 트리가 아직 배경에서 계속 자라는 중일 때
   // (최대 4000개 노드가 계속 로드되며 다른 노드들의 좌표(pos)도 함께 밀려남) 선택한 노드가 금방
   // 중앙에서 벗어나 버려 "고정이 안 된다"고 느껴졌다. items 변경에 반응하는 디바운스 effect로
@@ -4805,8 +4853,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     setQuery("");
     setSelectedPath(it.path);
     selectionLockRef.current = true;
-    centerOn(it, SELECT_ZOOM);
-    onToggleOpen(it.key);
+    if (openKey === it.key) {
+      // 이미 열려 있는 수를 다시 선택하면 기존처럼 즉시 토글해서 닫는다.
+      onToggleOpen(it.key);
+      centerOn(it, SELECT_ZOOM);
+      return;
+    }
+    // (v0.1.1) 검색·클릭으로 다른 수로 이동할 때는 화면이 그 수까지 다 이동한 뒤에야 수 설명
+    // 카드가 나타나게 한다 — 전에는 이동 애니메이션이 도는 동안에도 카드가 곧장 뜬 채로 화면을
+    // 따라 미끄러지듯 이동해 산만했다. 이동 중엔 기존에 열려 있던 카드도 먼저 닫는다.
+    if (openKey) onToggleOpen(openKey);
+    centerOn(it, SELECT_ZOOM, () => onToggleOpen(it.key));
   };
   // (v0.0.6 성능) DexNodesLayer가 팬/드래그 중에는 다시 그려지지 않도록 memo화되어 있는데, 클릭
   // 콜백을 매 렌더 새로 만드는 인라인 화살표 함수로 넘기면 그 참조가 매번 바뀌어 memo가 무력화된다
@@ -4925,15 +4982,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         {groups.map((g) => (
           <div key={"group-" + g.key} style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h, border: "1.5px dashed rgba(138,90,43,.5)", borderRadius: 14, pointerEvents: "none", zIndex: 0 }} />
         ))}
-        {/* (기능) 이름 라벨은 점선 영역의 기하학적 모서리가 아니라, 그 오프닝의 최상위 수(root) 바로
-            위-왼쪽에 앵커한다 — 박스 전체의 바운딩 박스 모서리(g.x/g.y)는 자손 라인이 뻗어나가는
-            방향(나침반 팔마다 다름 — 예: 북쪽 팔은 뿌리가 오히려 영역 아래쪽 끝에 옴)에 따라 실제
-            루트 위치와 멀리 떨어질 수 있어, 라벨이 정작 그 오프닝을 시작하는 수와 무관한 자리(깊은
-            변화 근처)에 붙어 있는 것처럼 보였다. rootX/rootY(그 그룹의 시작 수 좌표)를 그대로 써서
-            "이름 텍스트 바로 밑에 최상위 수"가 항상 성립하도록 한다 — 깊이 방향 간격(VROW/HROW)이
-            라벨 높이보다 훨씬 커 바로 다음 수 블록과 겹치지 않는다. */}
+        {/* (기능) 이름 라벨은 점선 영역 왼쪽 위 바깥의 빈 여백에 항상 고정해 둔다(박스 안에 넣으면
+            자손 블록들과 겹치므로, 늘 비어 있는 바깥 여백에 둔다) — 라벨을 옮기는 대신, 그 오프닝의
+            최상위 수(root) 쪽을 이 모서리에 가깝게 배치한다(위 pos 계산의 v0.1.1 주석 참고). */}
         {groups.map((g) => (
-          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.rootX - 6, top: g.rootY - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
+          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.x - 6, top: g.y - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
             <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200, background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
               ✦ {g.name} ✦
             </span>
@@ -5199,15 +5252,41 @@ const PUZZLE_THEME_STYLE = {
     ),
   },
 };
-function PuzzleThemePattern({ theme, opacity = 0.1 }) {
+// (v0.1.1) 태그 2개짜리 퍼즐(예: 실수 응징하기 + 기물 희생하기)의 색을 "반씩 섞어" 표현하기 위한
+// 헬퍼. 두 색의 RGB 평균(#no 텍스트처럼 단일 색이 필요한 자리)과, 절반씩 하드 스플릿한 그라데이션
+// 문자열(테두리 띠처럼 배경으로 쓰는 자리) 둘 다 필요해 함께 둔다.
+function blendHex(a, b) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const mix = (shift) => Math.round((((pa >> shift) & 255) + ((pb >> shift) & 255)) / 2);
+  return "#" + [16, 8, 0].map((s) => mix(s).toString(16).padStart(2, "0")).join("");
+}
+function themeAccentsOf(themes) { return (themes && themes.length ? themes : ["punish"]).slice(0, 2).map((t) => (PUZZLE_THEME_STYLE[t] || PUZZLE_THEME_STYLE.punish).accent); }
+function themeAccentColor(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? blendHex(c[0], c[1]) : c[0]; }
+function themeAccentBg(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? "linear-gradient(90deg, " + c[0] + " 50%, " + c[1] + " 50%)" : c[0]; }
+function PuzzleThemePattern({ themes, opacity = 0.1 }) {
   // (v0.1.0) 실수 응징하기 그라데이션 fill이 url(#id)로 참조되므로, 카드 여러 개가 한 화면에 있어도
   // 서로 다른 <svg>끼리 id가 겹치지 않도록 useId로 인스턴스별 고유 id를 만든다(콜론은 CSS/URL
   // 참조에서 그대로 못 쓰이는 경우가 있어 제거).
-  const gradId = "pth-" + useId().replace(/:/g, "");
-  const st = PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish;
+  const gradIdA = "pth-" + useId().replace(/:/g, "");
+  const gradIdB = "pth2-" + useId().replace(/:/g, "");
+  const list = (themes && themes.length ? themes : ["punish"]).slice(0, 2);
+  const stA = PUZZLE_THEME_STYLE[list[0]] || PUZZLE_THEME_STYLE.punish;
+  if (list.length < 2) {
+    return (
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity, pointerEvents: "none" }}>
+        {stA.pattern(gradIdA)}
+      </svg>
+    );
+  }
+  // (v0.1.1) 태그가 2개면 색을 평균 내 새 색을 만드는 대신, 두 테마 각자의 진짜 색·기호를 화면
+  // 좌/우 절반에 나눠 그대로 보여준다 — "두 테마의 색을 반씩 섞어서" 요청을 그라데이션 평균보다
+  // 더 뚜렷하게(두 테마 모두 해당한다는 게 한눈에 보이도록) 표현한다. 두 패턴 다 균일 배율로만
+  // 축소해(가로만 눌러 찌그러뜨리지 않고) 각자 절반 칸의 중심으로 옮긴다.
+  const stB = PUZZLE_THEME_STYLE[list[1]] || PUZZLE_THEME_STYLE.punish;
   return (
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity, pointerEvents: "none" }}>
-      {st.pattern(gradId)}
+      <g transform="translate(0,25) scale(0.5)">{stA.pattern(gradIdA)}</g>
+      <g transform="translate(50,25) scale(0.5)">{stB.pattern(gradIdB)}</g>
     </svg>
   );
 }
@@ -5454,7 +5533,22 @@ async function puzzleShareReward(shareMsgId, amount) {
   try { return !!(await sbRpc("puzzle_share_reward", { p_share_msg_id: shareMsgId, p_amount: amount })); } catch { return false; }
 }
 // (UX6 전역 공유) 퍼즐 정의를 번호로 공유 저장/조회. 미설정·미생성 시 무해하게 비활성.
-async function puzzleShare(p) { if (!SB_ON || !p || !p.id) return; try { await sbUpsert("puzzles", { no: puzzleNo(p.id), data: p }); } catch { } }
+// (v0.1.1 버그 수정) 같은 포지션+수(id)라도 "실수 응징/우위 점하기" 분기와 "기물 희생하기" 분기가
+// 서로 다른 세션(다른 유저, 혹은 같은 유저의 다른 방문)에서 각자 독립적으로 처음 발견될 수 있다 —
+// 이 함수는 그 클라이언트가 "로컬로 알고 있는" 테마만 담은 퍼즐을 그대로 업로드하는데, 위 sbUpsert의
+// merge-duplicates는 컬럼(data) 전체를 통째로 교체할 뿐 jsonb 안의 themes 배열을 병합해주지 않는다
+// — 그래서 나중에 업로드되는 쪽이 먼저 있던 테마 태그를 지워버렸다(신고된 #685586 — 실수 응징
+// 퍼즐인데 나중에 같은 포지션의 기물 희생하기 업로드가 덮어써 응징 태그만 사라짐). 업로드 전 서버에
+// 이미 올라온 데이터를 먼저 조회해, 있으면 테마를 합집합으로 병합한 뒤 올린다.
+async function puzzleShare(p) {
+  if (!SB_ON || !p || !p.id) return;
+  try {
+    const no = puzzleNo(p.id);
+    const server = await puzzleFetch(no);
+    const merged = server ? { ...p, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
+    await sbUpsert("puzzles", { no, data: merged });
+  } catch { }
+}
 async function puzzleFetch(no) { if (!SB_ON) return null; try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; } }
 // (16차) "이 퍼즐을 푼 친구" 표기용 — 퍼즐 번호별 해결자 uid 기록. 테이블 puzzle_solvers(no, uid) PK(no,uid) 필요.
 // 테이블이 없거나 Supabase 미설정이면 무해하게 비활성(전체 풀이수만 표시).
@@ -5553,6 +5647,12 @@ const DIVISION_ROMAN = ["", "I", "II", "III", "IV", "V"];
 function tierDisplayLabel(info) {
   if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
   return info.tier.label + " " + DIVISION_ROMAN[info.division];
+}
+// (v0.1.1) 퍼즐 탭 상단 스트립에서만, 이미지만으로 대신했던 걸 되돌려 다시 텍스트로도 티어를
+// 보여준다 — 이번엔 로마 숫자 대신 아라비아 숫자로("골드 3").
+function tierDisplayLabelArabic(info) {
+  if (info.maxed) return info.tier.label + (info.gmStars > 0 ? " ★" + info.gmStars : "");
+  return info.tier.label + " " + info.division;
 }
 // (v0.0.6 추가) 지금 위치에서 앞으로 넘어야 할 구간을 순서대로 count개 뽑는다 — 구간이 1(최상위)
 // 아래로 내려가면 다음 티어의 5(최하위)로 넘어간다. 퍼즐 탭 상단 스트립에서 "다음 몇 단계"를
@@ -5866,18 +5966,18 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
 // 텍스트로 보여준다. 눌러서 여정 지도(TierJourneyMap)를 연다.
 // 진행바는 폭이 바뀔 때마다 눈에 띄게 차오르도록 긴 이징 트랜지션을 건다("+N XP" 자체는 화면 중앙 토스트로 별도 표시).
 // (18차 UI8) 티어 텍스트(좌)와 게이지(우)를 가로로 나란히 배치 — 헤더에서 아이디 왼쪽에 표시된다.
+// (v0.1.1) "아이언 V" 같은 이름+구간 텍스트를 없애고, 그 구간 전용 이미지(로마 숫자가 이미지
+// 안에 이미 그려져 있음) 하나로 티어와 구간을 함께 나타낸다.
+// (v0.1.1) 로고 이미지를 훨씬 크게 키우고, 로고 주위를 감싸던 원형 테두리는 없앴다 — 서로 다른
+// 티어 이미지는 원본 캔버스 크기가 제각각이라(TIER_IMG_NATIVE_H 주석 참고), 하단(로고 밑)을
+// 기준으로 맞춰야(items-end) 이미지 안에 그려진 로마 숫자끼리 높이가 나란히 맞는다.
 function TierBadge({ totalXp, compact, onClick }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const { tier, xpInDivision, xpForNextDivision } = info;
+  const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
-  const tc = TIER_COLORS[tier.key];
-  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   return (
-    <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 5 : 7, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
-      <div className="flex items-center" style={{ gap: 4, fontSize: compact ? 9.5 : 10.5, fontWeight: 900, color: T.brassHi, padding: compact ? "1px 6px" : "1px 8px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + ringColor, whiteSpace: "nowrap" }}>
-        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={compact ? 12 : 14} />
-        {tierDisplayLabel(info)}
-      </div>
+    <div onClick={onClick} className="press flex items-center" style={{ gap: compact ? 6 : 9, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
+      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 61 : 76} discSize={compact ? 64 : 80} />
       <div className="flex flex-col" style={{ gap: 2, alignItems: "stretch" }}>
         <div style={{ width: compact ? 36 : 48, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
@@ -5888,13 +5988,14 @@ function TierBadge({ totalXp, compact, onClick }) {
   );
 }
 // (v0.0.6 개편) 프로필 화면(내 프로필 편집·다른 유저 프로필)에 중복돼 있던 "Lv.N (X/Y XP)" 인라인
-// 표기를 하나로 모은다 — 티어(구간)명 + 구간 내 XP 진행 텍스트만 보여주는 작은 필.
+// 표기를 하나로 모은다 — 티어(구간) 이미지 + 구간 내 XP 진행 텍스트만 보여주는 작은 필.
+// (v0.1.1) "아이언 V" 같은 이름+구간 텍스트는 없애고 구간 전용 이미지로 대체, 로고는 더 크게.
 function TierStatPill({ totalXp }) {
   const info = tierFromXp(totalXp);
-  const { tier, xpInDivision, xpForNextDivision } = info;
+  const { tier, xpInDivision, xpForNextDivision, division } = info;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
-      <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={14} /> {tierDisplayLabel(info)} <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
+      <TierLogoDisc tierKey={tier.key} division={division} size={76} discSize={80} /> <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
     </span>
   );
 }
@@ -5908,34 +6009,28 @@ function TierConnector() {
     </svg>
   );
 }
-// (기능) 다음 몇 구간을 미리 보여주는 작은 배지 — 로마 숫자(구간)가 그 티어의 색으로 표시된다.
-// 그랜드마스터처럼 구간이 없는 자리는 숫자 대신 기물 이미지를 보여준다.
+// (기능) 다음 몇 구간을 미리 보여주는 작은 배지.
+// (v0.1.1) 로마 숫자를 텍스트로 그려 넣던 방식을 없애고, 이제는 모든 구간이 자기만의 이미지를
+// 가지고 있으므로(로마 숫자가 이미지 안에 함께 그려짐) 항상 그 구간 전용 이미지를 보여준다.
+// 로고 뒤에 흰 원을 둬 어두운 톤의 티어(아이언 등)도 잘 보이게 한다.
 function NextCheckpointBadge({ tier, division }) {
-  const tc = TIER_COLORS[tier.key];
-  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
-  return (
-    <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.3)", border: "2px solid " + ringColor, color: ringColor, fontSize: 14, fontWeight: 900 }}>
-      {division != null ? DIVISION_ROMAN[division] : <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={18} />}
-    </div>
-  );
+  return <TierLogoDisc tierKey={tier.key} division={division} size={72} discSize={76} />;
 }
-// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 아이콘 +
-// 티어/구간명 + 진행바), 다음으로 넘어야 할 구간 2개는 작은 번호 배지로 지그재그 선을 따라 미리
-// 보여준다. 누르면 여정 지도가 열린다.
+// (v0.0.6 추가) 퍼즐 탭 맨 위에 상시 표시하는 티어 진행 스트립 — 지금 구간은 크게(기물 이미지 +
+// 진행바), 다음으로 넘어야 할 구간 2개는 작은 배지로 지그재그 선을 따라 미리 보여준다. 누르면
+// 여정 지도가 열린다.
+// (v0.1.1) 다른 화면들과 달리 여기만 "아이언 5"처럼 티어를 텍스트로도 다시 보여준다(아라비아
+// 숫자 사용) — 이미지는 흰 원 배경 정중앙에 크게 둔다.
 function TierProgressStrip({ totalXp, onOpen }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const { tier, xpInDivision, xpForNextDivision } = info;
+  const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
-  const tc = TIER_COLORS[tier.key];
-  const ringColor = tc.stops ? tc.stops[0] : tc.hi;
   const upcoming = useMemo(() => upcomingCheckpoints(info, 2), [info]);
   return (
     <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
-      <div style={{ width: 52, height: 52, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg,#4A3016,#241509)", border: "2px solid " + ringColor, boxShadow: "0 0 14px 2px " + ringColor + "66" }}>
-        <TierPieceGlyph piece={tier.piece} tierKey={tier.key} size={30} />
-      </div>
+      <TierLogoDisc tierKey={tier.key} division={division} size={116} discSize={122} />
       <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
-        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabel(info)}</div>
+        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
         <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
@@ -6644,14 +6739,18 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 <Repeat2 size={14} color={isReposted ? T.brilliant : T.inkSoft} />
                 <span style={{ fontSize: 10, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
               </button>}
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="공유" title="공유">
+              {/* (v0.1.1) 공유 수는 눌러도 아무 동작 없는 순수 표시(집계)이고, 실제 공유 시트는 바로 옆의 별도 버튼이 연다 */}
+              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                 <Send size={13} color={T.inkSoft} />
                 <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
-              </button>}
+              </span>
               <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
                 <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
                 <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
               </button>
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="공유하기" title="공유하기">
+                <Send size={13} color={T.brass} />
+              </button>}
             </div>
           </div>
         </div>
@@ -6803,14 +6902,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
   // 위쪽 얇은 띠·번호 색·옅은 배경 패턴만 테마색으로 물들인다.
-  const theme = primaryTheme(p);
-  const themeAccent = (PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish).accent;
+  // (v0.1.1) 태그가 2개면(예: 실수 응징하기 + 기물 희생하기) 위쪽 띠를 두 테마 색으로 절반씩 나눠
+  // 칠한다 — border-color는 그라데이션을 못 받아 별도의 얇은 오버레이 막대로 그린다.
+  const themes = sortedThemesOf(p);
+  const themeAccent = themeAccentColor(themes);
   return (
     /* (18차 UI7) 카드 크기 축소 + 도감 탭처럼 정사각형 비율 — 한 화면에 더 많은 퍼즐이 보이도록.
        (18차 UI4) overflow hidden + aspectRatio 고정으로 카드끼리 겹치던 문제도 함께 해결. */
     /* (19차 UI2) 정사각 고정을 풀고(오프닝 이름·"n명이 풀었습니다"가 잘리지 않도록) 내용 높이에 맞춰 늘어나게 한다. */
-    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), borderTop: "3px solid " + themeAccent, cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <PuzzleThemePattern theme={theme} opacity={isSolved ? 0.05 : 0.11} />
+    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ position: "absolute", top: -1, left: -1, right: -1, height: 3, borderRadius: "12px 12px 0 0", background: themeAccentBg(themes), zIndex: 2 }} />
+      <PuzzleThemePattern themes={themes} opacity={isSolved ? 0.05 : 0.11} />
       {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={104} loopMs={2400} flip={flip} /></div>}
@@ -6831,13 +6933,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               <Repeat2 size={12} color={isReposted ? T.brilliant : T.inkSoft} />
               <span style={{ fontSize: 9, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
             </button>}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유" title="공유" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            {/* (v0.1.1) 공유 수는 눌러도 아무 동작 없는 순수 표시(집계)이고, 실제 공유 시트는 바로 옆의 별도 버튼이 연다 */}
+            <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
               <Send size={11} color={T.inkSoft} />
               <span style={{ fontSize: 9, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
-            </button>}
+            </span>
             {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
               <Heart size={11} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
               <span style={{ fontSize: 9, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+            </button>}
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Send size={11} color={T.brass} />
             </button>}
           </div>
         </div>
@@ -7973,6 +8079,19 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.1.1", date: "2026.7.16", items: [
+      "퍼즐 카드의 공유 아이콘을 숫자만 보여주는 표시와 실제로 공유하는 버튼으로 나눴어요.",
+      "퍼즐에 테마가 두 개 붙으면(예: 기물 희생하기 + 실수 응징하기) 카드 배경이 두 테마 색을 절반씩 섞어서 보여줘요.",
+      "티어 화면을 실제로 디자인된 기물 이미지로 새롭게 단장했어요. \"아이언 V\"처럼 글자로 보여주던 부분이 전부 그림으로 바뀌었어요.",
+      "티어가 오르면 화면 전체가 어두워지면서 기존 티어가 옆으로 사라지고 새 티어가 등장하는 승급 연출이 나와요.",
+      "퍼즐 좋아요·리포스트를 취소해도 숫자가 그대로였던 문제를 고쳤어요.",
+      "채팅 버튼을 누르면 화면이 멈추던 문제를 해결했어요.",
+      "누군가 먼저 올린 퍼즐 태그가 다른 사람이 같은 퍼즐을 올리면 사라지던 문제를 고쳤어요.",
+      "안드로이드에서 홈 화면에 추가하면 파비콘 대신 글자 아이콘이 뜨던 문제를 해결했어요.",
+      "도감 탭 오프닝 이름표 위치를 다시 자연스럽게 조정했어요.",
+    ],
+  },
   {
     version: "0.1.0", date: "2026.7.16", items: [
       "퍼즐을 친구에게 공유할 수 있어요! 퍼즐 카드·풀이 화면의 종이비행기 아이콘을 누르면 친구 목록이 뜨고, 고른 친구와의 대화창에 그 퍼즐 미리보기 카드가 남아요. 카드의 \"퍼즐 풀러 가기\" 버튼을 누르면 바로 그 퍼즐을 풀 수 있어요.",
@@ -9314,7 +9433,8 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
 // 만들지 않는다).
 function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const STATION_H = 84, STATION_GAP = 60;
+  // (v0.1.1) 로고를 훨씬 크게 키우면서 정거장 원 자체도 그만큼 키웠다.
+  const STATION_H = 176, STATION_GAP = 68;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
   // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
@@ -9342,14 +9462,14 @@ function TierJourneyPath({ totalXp }) {
         const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
         const cx = i % 2 ? "78%" : "22%";
         const top = topOf(i);
-        // (기능) 원 테두리·글로우도 등급 색을 그대로 따라간다.
-        // (디자인 개선) 예전엔 잠긴 구간을 회색 필터(grayscale)로 완전히 덮어, 아직 안 온 등급들의
-        // 색 차이가 하나도 안 보이고 전부 똑같이 밋밋했다 — 완전히 지우는 대신 그 티어 고유 색을
-        // 옅게(테두리·배경 모두 낮은 투명도로) 남겨, 스크롤해 올라갈수록 앞으로 만날 색이 은은하게
-        // 미리 보이도록 한다(도달하면 또렷해짐).
+        // (v0.1.1) 로고 뒤에 배경 원을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
+        // 색으로 은은하게 빛나는 글로우를 준다.
+        // (v0.1.1 버그 수정) 잠긴 구간을 표시할 때 원 전체(배경 포함)의 불투명도를 낮췄더니, 원
+        // 뒤로 지나가는 점선 연결선이 옅게 비쳐 보였다(반투명 원을 통과해 배경의 선이 섞여 보임) —
+        // 원 배경은 항상 완전히 불투명하게 유지해 선을 확실히 가리고, "아직 안 왔다"는 표시는
+        // 기물 이미지 쪽만 옅게 낮춘다(TierPieceGlyph의 muted).
         const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
-        const label = s.division != null ? s.tier.label + " " + DIVISION_ROMAN[s.division] : s.tier.label;
         return (
           <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
             <motion.div
@@ -9358,21 +9478,25 @@ function TierJourneyPath({ totalXp }) {
               transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
               style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
               <div style={{
-                position: "absolute", inset: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                background: state === "locked" ? "linear-gradient(160deg," + (tc.lo || ringColor) + "26,#150C06)" : "linear-gradient(160deg,#4A3016,#241509)",
-                border: "2px solid " + (state === "locked" ? ringColor + "5A" : ringColor),
-                boxShadow: state === "current" ? "0 0 22px 4px " + ringColor + "88" : "0 4px 10px -4px rgba(0,0,0,.6)",
-                opacity: state === "locked" ? 0.78 : 1,
+                position: "absolute", inset: 0, borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+                background: "linear-gradient(180deg," + T.ivoryHi + "," + T.paper + ")", border: "1px solid #C9AF80",
+                boxShadow: state === "current" ? "0 0 16px 4px " + ringColor + "88" : "0 2px 6px rgba(0,0,0,.4)",
               }}>
-                <TierPieceGlyph piece={s.tier.piece} tierKey={s.tier.key} size={36} muted={state === "locked"} />
+                {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
+                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 원 정중앙에 오도록 배치한다. */}
+                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={168} muted={state === "locked"} />
               </div>
-              {state === "done" && <span style={{ position: "absolute", right: -4, bottom: -4, width: 22, height: 22, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={13} color="#fff" /></span>}
-              {state === "locked" && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={20} style={{ color: "rgba(255,255,255,.6)" }} /></span>}
+              {state === "done" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 40, height: 40, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={22} color="#fff" /></span>}
+              {/* (v0.1.1 버그 수정) 로고를 원 정중앙으로 옮기면서, 정중앙에 겹쳐 그리던 잠금 아이콘이
+                  로고 위에 그대로 포개져 서로 가려 보였다 — "완료" 배지와 같은 자리(우하단 모서리)의
+                  작은 배지로 옮겨 로고와 겹치지 않게 한다. */}
+              {state === "locked" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 40, height: 40, borderRadius: "50%", background: "rgba(20,12,6,.88)", border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={21} style={{ color: "rgba(255,255,255,.85)" }} /></span>}
             </motion.div>
-            <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: state === "locked" ? "rgba(255,255,255,.45)" : T.brassHi }}>{state === "current" ? tierDisplayLabel(info) : label}</div>
-              {state === "current" && <div style={{ fontSize: 10, color: T.ivory, opacity: .8, marginTop: 1 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>}
-            </div>
+            {state === "current" && (
+              <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: T.ivory, opacity: .8 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>
+              </div>
+            )}
           </React.Fragment>
         );
       })}
@@ -9397,6 +9521,52 @@ function TierJourneyMap({ totalXp, onClose }) {
         </div>
         <TierJourneyPath totalXp={totalXp} />
       </div>
+    </div>
+  );
+}
+// (v0.1.1) 티어(대분류)가 실제로 바뀔 때 전체 화면을 덮는 승급 연출 — 반투명 검은 배경으로 화면을
+// 어둡게 가리고, 그 위에서 이전 티어 이미지가 좌우로 살짝 흔들리다 왼쪽 바깥으로 밀려나며, 오른쪽
+// 바깥에서 새 티어 이미지가 들어와 가운데 자리를 대신한다(각 단계 시간은 phase별 setTimeout으로
+// 순서대로 넘긴다). 배경을 눌러도 언제든 바로 스킵하고 닫을 수 있다.
+function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, onDone }) {
+  const [phase, setPhase] = useState("shake"); // shake(흔들림) -> exit(퇴장) -> enter(새 티어 등장)
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase("exit"), 650);
+    const t2 = setTimeout(() => setPhase("enter"), 1050);
+    const t3 = setTimeout(() => onDone && onDone(), 2700);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div onClick={onDone} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,3,1,.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+      <div style={{ fontSize: 18, fontWeight: 900, color: T.brassHi, letterSpacing: ".02em", textShadow: "0 2px 10px rgba(0,0,0,.7)", marginBottom: 18 }}>티어 승급!</div>
+      <div style={{ position: "relative", width: 200, height: 200 }}>
+        <AnimatePresence>
+          {phase !== "enter" && (
+            <motion.img
+              key="from"
+              src={tierPieceSrc(fromTierKey, fromDivision)}
+              alt=""
+              initial={{ x: 0, opacity: 1 }}
+              animate={phase === "shake" ? { x: [0, -16, 16, -12, 12, -5, 5, 0] } : { x: -260, opacity: 0 }}
+              transition={phase === "shake" ? { duration: 0.6, ease: "easeInOut" } : { duration: 0.4, ease: "easeIn" }}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+            />
+          )}
+          {phase === "enter" && (
+            <motion.img
+              key="to"
+              src={tierPieceSrc(toTierKey, toDivision)}
+              alt=""
+              initial={{ x: 260, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+      <div style={{ fontSize: 11.5, color: T.ivory, opacity: .7, marginTop: 18 }}>화면을 누르면 바로 닫혀요</div>
     </div>
   );
 }
@@ -10250,11 +10420,16 @@ export default function App() {
   }, [uid]);
   const tierInfo = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const prevTierIndexRef = useRef(null);
+  // (v0.1.1) 작은 토스트 대신 전체 화면 승급 연출(TierUpOverlay)을 띄운다 — 직전 티어의 마지막
+  // 구간(1, 가장 높은 구간)에서 새 티어로 넘어온 것으로 보고 시작 이미지를 정한다.
+  const [tierUpAnim, setTierUpAnim] = useState(null); // { fromKey, fromDiv, toKey, toDiv } | null
   useEffect(() => {
     if (!loaded) return; // 최초 데이터 복원 시점의 티어 변화는 "승급"으로 취급하지 않는다
     if (prevTierIndexRef.current != null && tierInfo.tierIndex > prevTierIndexRef.current) {
-      setToast({ type: "tier", tierIndex: tierInfo.tierIndex });
-      setTimeout(() => setToast((t) => (t && t.type === "tier" ? null : t)), 4000);
+      setTierUpAnim({
+        fromKey: TIERS[prevTierIndexRef.current].key, fromDiv: 1,
+        toKey: tierInfo.tier.key, toDiv: tierInfo.division,
+      });
       if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
     }
     prevTierIndexRef.current = tierInfo.tierIndex;
@@ -10479,6 +10654,7 @@ export default function App() {
       {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
+      {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
@@ -10516,14 +10692,6 @@ export default function App() {
             <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: 14, borderRadius: 14, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><Mascot name="kokoa" emotion="celebrate" size={58} /><div style={{ fontWeight: 800, fontSize: 13.5, color: T.brassHi }}>새로운 칭호 획득!</div></div>
               <TitleBadge id={toast.id} earned equipped={currentTitle === toast.id} onEquip={equipTitle} />
-            </div>
-          ) : toast.type === "tier" ? (
-            <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
-              <Mascot name="milku" emotion="celebrate" size={62} />
-              <div className="flex items-center gap-2">
-                <TierPieceGlyph piece={TIERS[toast.tierIndex].piece} tierKey={TIERS[toast.tierIndex].key} size={30} />
-                <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>티어 승급!</div><div style={{ fontSize: 12 }}>{TIERS[toast.tierIndex].label}(으)로 승급했어요.</div></div>
-              </div>
             </div>
           ) : toast.type === "share_reward" ? (
             /* (v0.1.0) 내가 공유한 퍼즐을 친구가 풀어 XP를 나눠 받았을 때 — 실시간으로 도착하는 순간 뜨는 알림. */
