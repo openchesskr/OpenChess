@@ -237,16 +237,29 @@ function TierPieceGlyph({ size = 100, tierKey, division = null, muted = false })
   // 다이아몬드 청록…)가 옅게나마 남아, 위로 스크롤할수록 앞으로 만날 색이 은은하게 미리 보인다.
   return <img src={src} alt="" style={{ height: h, width: "auto", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
 }
-// (v0.1.1) 로고 뒤 배경 원 — 특히 아이언처럼 어두운 톤의 기물이 어두운(브라운) UI 배경 위에서
-// 잘 안 보이던 문제를 밝은 원으로 감싸 해결한다.
-// (v0.1.2) 앤틱 아이보리(순백에 가까운 톤)는 사이트 전반의 어두운 에보니·브라운 배경 위에서
-// 너무 튀어 보였다 — 보드 테두리·버튼 등 사이트 전역에서 이미 쓰는 브라스 광택 톤(T.brass/
-// T.brassHi, BOARD_GLOSS와 동일 계열)의 골드 그러데이션으로 바꿔 어디에 놓여도 톤이 자연스럽게
-// 이어지도록 한다. 이미지는 원 정중앙에 오도록 배치한다.
+// (v0.1.1) 로고 뒤 배경 — 특히 아이언처럼 어두운 톤의 기물이 어두운(브라운) UI 배경 위에서 잘 안
+// 보이던 문제를 밝은 배경으로 감싸 해결한다.
+// (v0.1.2) 앤틱 아이보리(순백에 가까운 톤)를 사이트 전역 브라스 골드 그러데이션으로 바꿨었는데,
+// (v0.1.3) 다시 흰색으로 되돌리고, 원 대신 참고 도안(크레스트 문장)과 같은 비율의 십각형으로 바꾼다.
+// 정십각형(가로세로 반지름이 같음)이 아니라 세로로 살짝 긴 비율 — 참고 이미지의 세로:가로 비를
+// 근사해 rx(46)를 ry(50)보다 살짝 작게 잡는다(10각형은 위/아래 꼭짓점만 정확히 반지름 끝에 닿고
+// 좌우는 cos18°≈0.951배만큼만 벌어지므로, rx=46 기준 실제 가로 폭은 세로의 약 0.87배가 된다).
+const TIER_DECAGON_PTS = (() => {
+  const rx = 46, ry = 50;
+  return Array.from({ length: 10 }, (_, i) => {
+    const a = -Math.PI / 2 + i * (Math.PI / 5);
+    return (50 + rx * Math.cos(a)).toFixed(2) + "," + (50 + ry * Math.sin(a)).toFixed(2);
+  }).join(" ");
+})();
 function TierLogoDisc({ tierKey, division, size, discSize, muted = false }) {
   return (
-    <div style={{ width: discSize, height: discSize, borderRadius: "50%", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.35)", opacity: muted ? 0.62 : 1 }}>
-      <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
+    <div style={{ position: "relative", width: discSize, height: discSize, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", opacity: muted ? 0.62 : 1, filter: "drop-shadow(0 2px 5px rgba(0,0,0,.35))" }}>
+      <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+        <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+      </svg>
+      <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
+      </div>
     </div>
   );
 }
@@ -4232,12 +4245,18 @@ function clampPanAxis(p, viewportSize, min, max, minVisible) {
   if (lo > hi) return (lo + hi) / 2;
   return Math.max(lo, Math.min(hi, p));
 }
+// (v0.1.3 버그 수정) "화면에 실제 블록이 있는지"를 블록이 100% 온전히 다 들어와야 참으로 치도록
+// 판정하고 있었다 — 뷰포트 크기가 격자 간격(colW/rowH)의 배수와 딱 맞아떨어지지 않는 이상(거의
+// 항상 그렇다) 드래그 도중 어느 블록도 한 픽셀의 오차 없이 완전히 다 보이지 않는 순간이 매 프레임
+// 존재하고, 그때마다 이 함수가 false를 반환해 clampSchematicPan이 "빈 공간으로 나갔다"고 오판해
+// 가장 가까운 블록으로 계속 스냅해버렸다 — 그 결과 화면 끝(진짜 빈 공간)이 아닌데도 팬이 매 순간
+// 튕겨 돌아와 스크롤 자체가 안 되는 것처럼 보였다. "블록이 화면에 있다"는 판정은 완전 포함이 아니라
+// 뷰포트와 블록의 사각형이 조금이라도 겹치는지(교차 여부)만으로 충분하다 — 어떤 블록과도 전혀 겹치지
+// 않을 때(진짜로 빈 공간까지 나갔을 때)만 스냅이 개입한다.
 function schematicItemVisible(pan, zoom, viewportW, viewportH, it, boxW, boxH, insetTop) {
   const left = pan.x + it.x * zoom, right = left + boxW * zoom;
   const top = pan.y + it.y * zoom, bottom = top + boxH * zoom;
-  const visW = Math.min(right, viewportW) - Math.max(left, 0);
-  const visH = Math.min(bottom, viewportH) - Math.max(top, insetTop);
-  return visW >= boxW * zoom - 0.5 && visH >= boxH * zoom - 0.5;
+  return right > 0 && left < viewportW && bottom > insetTop && top < viewportH;
 }
 // (v0.1.2 기능) insetTop — 검색창 등 캔버스 위에 떠 있는 UI가 뷰포트 상단을 가리는 만큼, 스냅 대상
 // 블록이 그 뒤에 숨어버리지 않도록 "화면에 보인다"고 칠 유효 영역의 위쪽을 그만큼 안으로 줄인다.
@@ -6092,6 +6111,12 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
+  // (v0.1.3 버그 수정) 도감 오프닝 트리는 캔버스 위에 뜨는 검색창을 가리려고 SCHEMATIC_TOP_INSET을
+  // 팬 한계·자동 중앙 정렬 계산에 넘기는데, 이 모식도는 우상단에 뜨는 확대/축소 버튼에 대해 같은
+  // 처리가 빠져 있었다 — 그 결과 자동 중앙 정렬이나 팬이 그 버튼 바로 밑까지 블록을 밀어 넣어,
+  // 버튼이 수 라벨·평가치 위에 그대로 겹쳐 가려 보이는 경우가 있었다(특히 화면이 좁아 이 겹침이
+  // 더 눈에 띄는 모바일). 버튼 높이(22)+여백만큼 위쪽을 유효 뷰포트에서 제외한다.
+  const topInset = 34;
   // (버그 수정, 도감 모식도와 동일) 퍼즐을 풀어 새 갈래가 고스트에서 실제 노드로 바뀔 때마다 y좌표를
   // 커서 0부터 다시 매기면, 그 뒤에 있던 이미 그려진 노드들이 한꺼번에 밀려나 흔들려 보인다 — 한 번
   // 배정된 y는 계속 캐싱해 절대 안 바뀌게 하고, 고스트가 실제 내부 노드로 바뀌어 더 이상 그 번호가
@@ -6196,15 +6221,17 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const ax = anchorX != null ? anchorX : rect.width / 2, ay = anchorY != null ? anchorY : rect.height / 2;
     const nz = clampZoom(zoom + delta);
     if (nz === zoom) return;
-    setPan(clampSchematicPan(anchoredZoomPan(pan, zoom, nz, ax, ay), nz, rect.width, rect.height, pxItems, boxW, boxH));
+    setPan(clampSchematicPan(anchoredZoomPan(pan, zoom, nz, ax, ay), nz, rect.width, rect.height, pxItems, boxW, boxH, topInset));
     setZoom(nz);
   };
-  // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
+  // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정).
+  // (v0.1.3 버그 수정) topInset만큼은 확대/축소 버튼이 차지하므로, 그 아래 남는 영역을 기준으로
+  // 중앙 정렬해야 현재 노드가 버튼 뒤에 가려지지 않는다.
   useEffect(() => {
     const vw = boxRef.current ? boxRef.current.clientWidth : 380;
     const vh = boxRef.current ? boxRef.current.clientHeight : 208;
     const cx = curItem ? curItem.depth : 0, cy = curItem ? curItem.y : 0;
-    setPan({ x: Math.min(8, (vw - boxW) / 2 - cx * colW * zoom), y: Math.min(8, (vh - boxH) / 2 - cy * rowH * zoom) });
+    setPan({ x: Math.min(8, (vw - boxW) / 2 - cx * colW * zoom), y: Math.min(8, topInset + (vh - topInset - boxH) / 2 - cy * rowH * zoom) });
   }, [curItem && curItem.key, tree]);
   // (20차 기능1) 페이지 넘김(좌우 스와이프)과 모식도 내부 드래그(팬)가 같은 손가락 동작을 두고
   // 경쟁하던 문제 — 이 박스는 바깥 페이저의 onPagerPointerDown이 ".no-swipe"를 보고 아예
@@ -6230,7 +6257,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       const nz = clampZoom(pinchRef.current.zoom * (dist / Math.max(1, pinchRef.current.dist)));
       const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { left: 0, top: 0, width: 380, height: 208 };
       const anchorX = (a.x + b.x) / 2 - rect.left, anchorY = (a.y + b.y) / 2 - rect.top;
-      setPan((p) => clampSchematicPan(anchoredZoomPan(p, zoom, nz, anchorX, anchorY), nz, rect.width, rect.height, pxItems, boxW, boxH));
+      setPan((p) => clampSchematicPan(anchoredZoomPan(p, zoom, nz, anchorX, anchorY), nz, rect.width, rect.height, pxItems, boxW, boxH, topInset));
       setZoom(nz);
       return;
     }
@@ -6238,7 +6265,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 드래그해 갈 수 없도록 한계를 둔다.
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 380, height: 208 };
     const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
-    setPan(clampSchematicPan(raw, zoom, rect.width, rect.height, pxItems, boxW, boxH));
+    setPan(clampSchematicPan(raw, zoom, rect.width, rect.height, pxItems, boxW, boxH, topInset));
   };
   const onPointerUp = (e) => {
     if (e && e.pointerId != null) pointersRef.current.delete(e.pointerId);
@@ -6258,7 +6285,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       setPan((p) => {
         const raw = { x: p.x - e.deltaX, y: p.y - e.deltaY };
         const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 380, height: 208 };
-        return clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, pxItemsRef.current, boxW, boxH);
+        return clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, pxItemsRef.current, boxW, boxH, topInset);
       });
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
@@ -6510,8 +6537,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 상대(컴퓨터) 응수: 목표 라인을 따라가되, 벗어났으면 미해결 가지 우선(채택률 순)으로 자동 선택
   useEffect(() => {
     if (done || wrong || intro || isUserPly || !passKids.length) return;
-    let t2;
-    const t1 = setTimeout(() => {   // (UI4) 정답 수 뒤 1초 후 컴퓨터 응수 — 사용자가 결과를 보도록
+    let t2, cancelled = false;
+    const t1 = setTimeout(async () => {   // (UI4) 정답 수 뒤 1초 후 컴퓨터 응수 — 사용자가 결과를 보도록
       const keyArr = pathNodes.map((n) => stripSuffix(n.san));
       let next = null;
       if (targetLine && targetLine.sans.length > pathNodes.length && targetLine.sans.slice(0, pathNodes.length).every((s, i) => stripSuffix(s) === keyArr[i])) {
@@ -6523,10 +6550,20 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         scored.sort((a, b) => (b.un - a.un) || (b.ad - a.ad));
         next = scored[0].k;
       }
-      setReply({ sans: curSans, san: next.san, node: next });
+      // (v0.1.3 버그 수정) 트리에 이미 등급(kind)이 있으면 그대로 쓰지만, 구버전 퍼즐처럼 없는
+      // 경우엔 응수 애니메이션을 보여주기 시작하기 전에 엔진 판정을 먼저 끝내둔다 — 예전엔 reply를
+      // 곧장 세팅해 애니메이션을 틀어놓고 그 동안 moveIcon 쪽에서 "계산 중"이나 추측 아이콘을
+      // 먼저 보여줬다가 판정이 끝나면 다른 아이콘으로 갈아끼워, 응수 도중 아이콘이 눈에 띄게
+      // 바뀌어 보이는 문제가 있었다. 최종 등급이 정해진 뒤에야 애니메이션을 시작해 한 번만 보여준다.
+      let kind = next.kind || null;
+      if (!kind && liveOn && engine && engine.status === "ready") {
+        try { kind = await classifyMoveKind(engine, curSans, stripSuffix(next.san)); } catch { }
+      }
+      if (cancelled) return;
+      setReply({ sans: curSans, san: next.san, node: next, kind });
       t2 = setTimeout(() => { setReply(null); setPathNodes((p) => [...p, next]); }, 900);
     }, 1000);
-    return () => { clearTimeout(t1); if (t2) clearTimeout(t2); };
+    return () => { cancelled = true; clearTimeout(t1); if (t2) clearTimeout(t2); };
   }, [pathNodes.length, done, wrong, intro, tree]);
   // 진행 경로가 목표 라인에서 벗어나면(다른 우수 수 선택·상대의 다른 응수) 그 가지의 미해결 라인으로 목표 갱신
   useEffect(() => {
@@ -6570,7 +6607,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       if (cancelled) return;
       if (replyMove) {
         setWrongReply(replyMove);
-        await wait(1000);   // 상대의 응징 응수를 보여준다
+        await wait(1700);   // (v0.1.3 UX) 응징 응수를 원위치로 되돌리기 전 조금 더 오래 보여준다(1000ms→1700ms)
         if (cancelled) return;
         setRevertStage("reply");   // 1단계: 방금 보여준 응수부터 되돌림
         await wait(450);
@@ -6650,7 +6687,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 전까지는 시간이 지나도 아이콘이 그대로 유지되게 한다.
   useEffect(() => {
     let prevSans, mvSan, knownKind = null, isSetupMistake = false;
-    if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = reply.node && reply.node.kind; }
+    // (v0.1.3 버그 수정) reply는 이제 애니메이션을 틀기 전에 등급 판정까지 끝내고 세팅된다(위 상대
+    // 응수 effect 참고) — reply.node.kind(트리에 이미 있던 값) 없이도 reply.kind(그때 미리 계산해
+    // 둔 값)로 바로 확정된 아이콘을 쓴다. 아래 fallback(추측·"계산 중")으로 떨어지는 건 이제 엔진을
+    // 아예 못 쓰는 상황뿐이라, 응수 도중 아이콘이 바뀌어 보이는 일이 없다.
+    if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = (reply.node && reply.node.kind) || reply.kind || null; }
     else if (pathNodes.length >= 1 && !wrong && !reverting) { prevSans = curSans.slice(0, -1); mvSan = pathNodes[pathNodes.length - 1].san; knownKind = pathNodes[pathNodes.length - 1].kind; }
     // (v0.1.2 버그 수정) 컴퓨터가 둔 첫 수(mistakeSan)는 아래 두 분기와 달리 이미 지나간 수라, 지금
     // 막 두어지는 수처럼 "계산 중" 점 애니메이션을 보여주거나 isSacrifice 추측값을 먼저 보여줬다 실제
@@ -6868,8 +6909,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 ? <RevertSlide board={wrong.board} from={wrong.from} to={wrong.at} size={boardSize} flip={userColor === "b"} />
               // (v0.1.2 기능) 오답을 두면 곧장 되돌리지 않고, 상대라면 그 오답을 어떻게 응징했을지
               // 엔진 최선 응수를 한 번 보여준다(engine을 못 쓰면 이 단계 없이 바로 되돌아간다).
+              // (v0.1.3 기능) 이 응수는 정의상 항상 그 자리에서 엔진이 찾아낸 최선 수이므로(아래 wrong
+              // effect의 evaluate 결과), 별도 등급 판정 없이 바로 "최선의 수" 배지를 붙인다.
               : wrongReply
-                ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} />
+                ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
               : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove} />}
             </div>
             <p style={{ fontSize: 13, color: done ? T.best : wrong ? T.blunder : T.ink, fontWeight: 700, marginTop: 12, textAlign: "center" }}>{prompt}</p>
@@ -6882,9 +6925,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             {/* (기능) 모식도 페이지에도 보드 페이지와 같은 크기·y좌표의 미니보드를 둔다. 모식도에서
                 이미 둔(공개된) 노드를 클릭하면, 보드 페이지로 옮기지 않고 여기서 그 수를 바로
                 애니메이션으로 재생해 복기할 수 있다(아직 안 둔 갈래는 예전처럼 그 라인을 풀도록 이동). */}
-            <div style={{ marginBottom: 10, minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700, textAlign: "center" }}>{previewNode ? "모식도에서 고른 수" : "모식도의 수를 눌러 다시 보기"}</span>
-            </div>
+            {/* (v0.1.3 UI) "모식도의 수를 눌러 다시 보기" 안내 문구를 삭제 — 모바일에서 좁은 화면을
+                더 차지하기만 하고, 모식도 자체가 눌러보는 UI임은 이미 충분히 직관적이다. */}
             <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{previewNode ? sansToPgnText([...setup, ...previewNode.path]) : " "}</div>
             <div style={{ width: "100%", maxWidth: 380, margin: "0 auto 12px" }}>
               {previewNode
@@ -9580,12 +9622,15 @@ function TierJourneyPath({ totalXp }) {
         const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
         const cx = i % 2 ? "78%" : "22%";
         const top = topOf(i);
-        // (v0.1.1) 로고 뒤에 배경 원을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
+        // (v0.1.1) 로고 뒤에 배경을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
         // 색으로 은은하게 빛나는 글로우를 준다.
-        // (v0.1.1 버그 수정) 잠긴 구간을 표시할 때 원 전체(배경 포함)의 불투명도를 낮췄더니, 원
-        // 뒤로 지나가는 점선 연결선이 옅게 비쳐 보였다(반투명 원을 통과해 배경의 선이 섞여 보임) —
-        // 원 배경은 항상 완전히 불투명하게 유지해 선을 확실히 가리고, "아직 안 왔다"는 표시는
-        // 기물 이미지 쪽만 옅게 낮춘다(TierPieceGlyph의 muted).
+        // (v0.1.1 버그 수정) 잠긴 구간을 표시할 때 배경 전체의 불투명도를 낮췄더니, 배경 뒤로
+        // 지나가는 점선 연결선이 옅게 비쳐 보였다(반투명 배경을 통과해 뒤의 선이 섞여 보임) — 배경은
+        // 항상 완전히 불투명하게 유지해 선을 확실히 가리고, "아직 안 왔다"는 표시는 기물 이미지
+        // 쪽만 옅게 낮춘다(TierPieceGlyph의 muted).
+        // (v0.1.3 UI) TierLogoDisc와 동일하게 원 대신 십각형으로, 배경은 브라스 골드 대신 흰색으로.
+        // box-shadow의 원형 글로우 대신, 실제 도형(SVG 폴리곤) 알파를 따라가는 drop-shadow 필터로
+        // "현재 구간" 링 글로우를 낸다.
         const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
         return (
@@ -9596,13 +9641,17 @@ function TierJourneyPath({ totalXp }) {
               transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
               style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
               <div style={{
-                position: "absolute", inset: 0, borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
-                background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424",
-                boxShadow: (state === "current" ? "0 0 16px 4px " + ringColor + "88, " : "") + "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.4)",
+                position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" + (state === "current" ? " drop-shadow(0 0 8px " + ringColor + ")" : ""),
               }}>
+                <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+                  <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+                </svg>
                 {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
-                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 원 정중앙에 오도록 배치한다. */}
-                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={92} muted={state === "locked"} />
+                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 도형 정중앙에 오도록 배치한다. */}
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={92} muted={state === "locked"} />
+                </div>
               </div>
               {state === "done" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={14} color="#fff" /></span>}
               {/* (v0.1.1 버그 수정) 로고를 원 정중앙으로 옮기면서, 정중앙에 겹쳐 그리던 잠금 아이콘이
