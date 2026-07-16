@@ -8280,7 +8280,12 @@ function AnnouncementModal({ onClose, onDismissVersion }) {
           <Sparkles size={17} style={{ color: T.brass, flexShrink: 0 }} />
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>업데이트 소식</span>
         </div>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>최신 버전 <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>v{latest.version}</b>({latest.date})에서 이런 점이 달라졌어요.</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 8px" }}>최신 버전 <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>v{latest.version}</b>({latest.date})에서 이런 점이 달라졌어요.</p>
+        {/* (v0.1.2 기능) 소개 페이지(/about)의 버전 기록 파트로 이동 — 2페이지가 최신 버전(카테고리별로
+            나뉜 더 자세한 설명)이라 ?page=2로 곧장 연다. */}
+        <a href="/about?page=2" target="_blank" rel="noopener noreferrer" className="press flex items-center gap-1" style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 800, color: T.brass, textDecoration: "none", width: "fit-content" }}>
+          업데이트 내역 자세히 보기 <ChevronRight size={13} />
+        </a>
         <div style={{ maxHeight: 360, overflowY: "auto", paddingRight: 4 }}>
           {CHANGELOG.map((v, i) => (
             <div key={v.version} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: i < CHANGELOG.length - 1 ? "1px dashed #DCCBA8" : "none" }}>

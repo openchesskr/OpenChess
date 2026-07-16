@@ -1,5 +1,9 @@
-import React from "react";
-import { GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles } from "lucide-react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { motion } from "framer-motion";
+import {
+  GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
+  Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
+} from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
@@ -43,6 +47,17 @@ function Backdrop() {
   );
 }
 
+// (v0.1.2 기능) 페이지 전반에 애니메이션을 많이 쓰고 싶다는 요청 — 스크롤로 보일 때마다(페이지를
+// 넘겨 처음 등장할 때도 포함, 아래 Pager의 translateX 슬라이드가 곧 "뷰포트 안으로 들어옴"이라
+// whileInView가 그대로 반응한다) 살짝 떠오르며 나타나는 하나의 재사용 wrapper로 통일한다.
+function Reveal({ children, delay = 0, y = 16, once = true }) {
+  return (
+    <motion.div initial={{ opacity: 0, y }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once, amount: 0.25 }} transition={{ duration: 0.55, delay, ease: [0.22, 0.9, 0.32, 1] }}>
+      {children}
+    </motion.div>
+  );
+}
+
 // (기존 MascotBubble과 동일한 시각 언어 — 원형 초상 + 이름표 + 말풍선)
 function SpeechBubble({ src, name, children, align = "left" }) {
   const avatar = <div style={{ width: 76, height: 76, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}><img src={src} alt="" style={{ width: 64, height: 64, objectFit: "contain" }} /></div>;
@@ -53,22 +68,26 @@ function SpeechBubble({ src, name, children, align = "left" }) {
     </div>
   );
   return (
-    <div className="flex items-start" style={{ gap: 12, flexDirection: align === "right" ? "row-reverse" : "row" }}>
-      {avatar}{bubble}
-    </div>
+    <Reveal>
+      <div className="flex items-start" style={{ gap: 12, flexDirection: align === "right" ? "row-reverse" : "row" }}>
+        {avatar}{bubble}
+      </div>
+    </Reveal>
   );
 }
 
 // 섹션 사이 구분선 — 사이트 전역 장식(브라스 다이아몬드)과 같은 모티프 + 워드마크 반복.
 function SectionDivider() {
   return (
-    <div className="flex items-center" style={{ gap: 10, margin: "56px 0", opacity: 0.75 }}>
-      <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")" }} />
-      <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" transform="rotate(45 7 7)" fill="none" stroke={T.brass} strokeWidth="1.4" /></svg>
-      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".22em", color: T.brass }}>OPENCHESS</span>
-      <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" transform="rotate(45 7 7)" fill="none" stroke={T.brass} strokeWidth="1.4" /></svg>
-      <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)" }} />
-    </div>
+    <Reveal y={0}>
+      <div className="flex items-center" style={{ gap: 10, margin: "56px 0", opacity: 0.75 }}>
+        <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")" }} />
+        <motion.svg width="14" height="14" viewBox="0 0 14 14" animate={{ rotate: 360 }} transition={{ duration: 8, repeat: Infinity, ease: "linear" }}><rect x="2" y="2" width="10" height="10" transform="rotate(45 7 7)" fill="none" stroke={T.brass} strokeWidth="1.4" /></motion.svg>
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".22em", color: T.brass }}>OPENCHESS</span>
+        <motion.svg width="14" height="14" viewBox="0 0 14 14" animate={{ rotate: -360 }} transition={{ duration: 8, repeat: Infinity, ease: "linear" }}><rect x="2" y="2" width="10" height="10" transform="rotate(45 7 7)" fill="none" stroke={T.brass} strokeWidth="1.4" /></motion.svg>
+        <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)" }} />
+      </div>
+    </Reveal>
   );
 }
 
@@ -77,20 +96,23 @@ function SectionDivider() {
 function FeatureRow({ Icon, eyebrow, title, desc, quote, img, reverse }) {
   return (
     <div className="flex items-center flex-wrap" style={{ gap: 32, flexDirection: reverse ? "row-reverse" : "row" }}>
-      <div style={{ flex: "0 0 auto", width: 200, maxWidth: "100%", margin: "0 auto" }}>
+      <motion.div initial={{ opacity: 0, scale: 0.85, rotate: reverse ? 4 : -4 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: true, amount: 0.4 }} transition={{ duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
+        style={{ flex: "0 0 auto", width: 200, maxWidth: "100%", margin: "0 auto" }}>
         <div style={{ position: "relative", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER, background: "linear-gradient(160deg,#3A2516,#20140B)", padding: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <img src={img} alt="" style={{ width: "100%", maxWidth: 150, filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }} />
         </div>
-      </div>
-      <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-          <span style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={15} color={T.brassHi} /></span>
-          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{eyebrow}</span>
+      </motion.div>
+      <Reveal delay={0.1}>
+        <div style={{ flex: "1 1 300px", minWidth: 260 }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+            <span style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={15} color={T.brassHi} /></span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{eyebrow}</span>
+          </div>
+          <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px" }}>{title}</h3>
+          <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 12px" }}>{desc}</p>
+          {quote && <p style={{ fontSize: 12.5, color: T.brassHi, fontWeight: 700, fontStyle: "italic", margin: 0, opacity: .9 }}>&ldquo;{quote}&rdquo;</p>}
         </div>
-        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px" }}>{title}</h3>
-        <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 12px" }}>{desc}</p>
-        {quote && <p style={{ fontSize: 12.5, color: T.brassHi, fontWeight: 700, fontStyle: "italic", margin: 0, opacity: .9 }}>&ldquo;{quote}&rdquo;</p>}
-      </div>
+      </Reveal>
     </div>
   );
 }
@@ -122,76 +144,68 @@ function TierStrip() {
   ];
   return (
     <div style={{ overflowX: "auto", paddingBottom: 4 }}>
-      <div className="flex items-end" style={{ gap: 14, minWidth: 560, padding: "6px 2px 2px" }}>
+      <motion.div className="flex items-end" style={{ gap: 14, minWidth: 560, padding: "6px 2px 2px" }}
+        initial="hidden" whileInView="show" viewport={{ once: true, amount: 0.3 }}
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.07 } } }}>
         {tiers.map((t, i) => (
-          <div key={t.key} className="flex flex-col items-center" style={{ gap: 6, flex: 1 }}>
+          <motion.div key={t.key} className="flex flex-col items-center" style={{ gap: 6, flex: 1 }}
+            variants={{ hidden: { opacity: 0, y: 20, scale: 0.7 }, show: { opacity: 1, y: 0, scale: 1 } }} transition={{ duration: 0.4, ease: [0.22, 0.9, 0.32, 1] }}>
             <div style={{ width: 56 + i * 3, height: 56 + i * 3, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
               <img src={t.img} alt={t.label} style={{ width: "72%", height: "72%", objectFit: "contain" }} />
             </div>
             <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brassHi, whiteSpace: "nowrap" }}>{t.label}</span>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }
 
-export default function AboutPage() {
+// 페이지1 — 소개(히어로+기능+티어+CTA). 기존에 만들어 둔 내용을 그대로 페이저의 첫 페이지로 옮겼다.
+function IntroPage() {
   return (
-    <div style={{ position: "relative", minHeight: "100vh", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'Noto Sans KR', sans-serif", overflowX: "hidden" }}>
-      <Backdrop />
-      <header style={{ position: "relative", zIndex: 1, borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
-        <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "14px 20px" }}>
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 34, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>
-            시작하기 <ArrowRight size={14} />
-          </a>
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "56px 20px 72px" }}>
+      <section className="flex items-center flex-wrap" style={{ gap: 36, marginBottom: 8 }}>
+        <div style={{ flex: "1 1 320px", minWidth: 280 }}>
+          <Reveal><div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+            <Sparkles size={14} color={T.brass} />
+            <span style={{ fontSize: 12, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>무료 체스 오프닝 학습·연습 애플리케이션</span>
+          </div></Reveal>
+          <Reveal delay={0.05}><h1 style={{ fontSize: 36, fontWeight: 900, color: T.ivoryHi, lineHeight: 1.28, margin: "0 0 16px" }}>오프닝을 배우고,<br />내 실수를 퍼즐로<br />복습하세요.</h1></Reveal>
+          <Reveal delay={0.1}><p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 26px", maxWidth: 440 }}>
+            엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수에서 자동 생성되는 전술 퍼즐, 퀘스트와 티어 시스템까지 — MILKU·KOKOA와 함께 체스를 더 깊이 익혀보세요.
+          </p></Reveal>
+          <Reveal delay={0.15}><a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>
+            무료로 시작하기 <ArrowRight size={16} />
+          </a></Reveal>
         </div>
-      </header>
+        <motion.div initial={{ opacity: 0, scale: 0.7, rotate: -8 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
+          style={{ flex: "0 0 auto", width: 260, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
+          <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+            style={{ width: 260, height: 260, maxWidth: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
+            <img src="/emoji/milku_2.png" alt="MILKU" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 10px 22px rgba(0,0,0,.55))" }} />
+          </motion.div>
+        </motion.div>
+      </section>
 
-      <main style={{ position: "relative", zIndex: 1, maxWidth: 1000, margin: "0 auto", padding: "56px 20px 72px" }}>
-        {/* 히어로 — 마스코트 큰 이미지 + 타이틀/태그라인/CTA */}
-        <section className="flex items-center flex-wrap" style={{ gap: 36, marginBottom: 8 }}>
-          <div style={{ flex: "1 1 320px", minWidth: 280 }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-              <Sparkles size={14} color={T.brass} />
-              <span style={{ fontSize: 12, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>무료 체스 오프닝 학습·연습 애플리케이션</span>
-            </div>
-            <h1 style={{ fontSize: 36, fontWeight: 900, color: T.ivoryHi, lineHeight: 1.28, margin: "0 0 16px" }}>오프닝을 배우고,<br />내 실수를 퍼즐로<br />복습하세요.</h1>
-            <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 26px", maxWidth: 440 }}>
-              엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수에서 자동 생성되는 전술 퍼즐, 퀘스트와 티어 시스템까지 — MILKU·KOKOA와 함께 체스를 더 깊이 익혀보세요.
-            </p>
-            <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>
-              무료로 시작하기 <ArrowRight size={16} />
-            </a>
-          </div>
-          <div style={{ flex: "0 0 auto", width: 260, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
-            <div style={{ width: 260, height: 260, maxWidth: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
-              <img src="/emoji/milku_2.png" alt="MILKU" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 10px 22px rgba(0,0,0,.55))" }} />
-            </div>
-          </div>
-        </section>
+      <SectionDivider />
 
-        <SectionDivider />
+      <section style={{ maxWidth: 640, margin: "0 auto 8px" }}>
+        <SpeechBubble src="/emoji/milku_1.png" name="MILKU 코치">
+          안녕하세요! 저는 MILKU예요. OpenChess에서는 그냥 체스를 두는 게 아니라, 왜 그 수가 좋았는지·나빴는지까지 함께 살펴봐요. 아래에서 하나씩 소개해 드릴게요.
+        </SpeechBubble>
+      </section>
 
-        {/* 소개 말풍선 */}
-        <section style={{ maxWidth: 640, margin: "0 auto 8px" }}>
-          <SpeechBubble src="/emoji/milku_1.png" name="MILKU 코치">
-            안녕하세요! 저는 MILKU예요. OpenChess에서는 그냥 체스를 두는 게 아니라, 왜 그 수가 좋았는지·나빴는지까지 함께 살펴봐요. 아래에서 하나씩 소개해 드릴게요.
-          </SpeechBubble>
-        </section>
+      <SectionDivider />
 
-        <SectionDivider />
+      <section className="flex flex-col" style={{ gap: 52 }}>
+        {FEATURES.map((f, i) => <FeatureRow key={f.title} {...f} reverse={i % 2 === 1} />)}
+      </section>
 
-        {/* 기능 소개 — 좌우 번갈아 배치 */}
-        <section className="flex flex-col" style={{ gap: 52 }}>
-          {FEATURES.map((f, i) => <FeatureRow key={f.title} {...f} reverse={i % 2 === 1} />)}
-        </section>
+      <SectionDivider />
 
-        <SectionDivider />
-
-        {/* 티어 쇼케이스 */}
-        <section>
+      <section>
+        <Reveal>
           <div className="flex items-center gap-2" style={{ marginBottom: 6, justifyContent: "center" }}>
             <Crown size={16} color={T.brassHi} />
             <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>티어</span>
@@ -200,19 +214,19 @@ export default function AboutPage() {
           <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 24px", textAlign: "center", maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
             랭크 게임처럼 7단계 티어로 나뉜 경험치 시스템이에요. 퍼즐을 풀수록 경험치가 쌓이고 티어가 오릅니다.
           </p>
-          <TierStrip />
-        </section>
+        </Reveal>
+        <TierStrip />
+      </section>
 
-        <SectionDivider />
+      <SectionDivider />
 
-        {/* 친구 말풍선 */}
-        <section style={{ maxWidth: 640, margin: "0 auto" }}>
-          <SpeechBubble src="/emoji/kokoa_3.png" name="KOKOA 코치" align="right">
-            친구를 추가하고 채팅하며, 서로 얼마나 풀었는지·어떤 칭호를 얻었는지 프로필에서 확인해 보세요. 퍼즐을 공유하면 친구가 풀었을 때 저도 경험치를 조금 나눠 받아요.
-          </SpeechBubble>
-        </section>
+      <section style={{ maxWidth: 640, margin: "0 auto" }}>
+        <SpeechBubble src="/emoji/kokoa_3.png" name="KOKOA 코치" align="right">
+          친구를 추가하고 채팅하며, 서로 얼마나 풀었는지·어떤 칭호를 얻었는지 프로필에서 확인해 보세요. 퍼즐을 공유하면 친구가 풀었을 때 저도 경험치를 조금 나눠 받아요.
+        </SpeechBubble>
+      </section>
 
-        {/* 마무리 CTA */}
+      <Reveal delay={0.05}>
         <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 64, padding: "36px 28px", borderRadius: 18, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
           <div style={{ flex: "1 1 260px", minWidth: 220 }}>
             <h3 style={{ fontSize: 20, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px" }}>지금 바로 시작해 보세요</h3>
@@ -225,7 +239,293 @@ export default function AboutPage() {
             </a>
           </div>
         </section>
-      </main>
+      </Reveal>
+    </div>
+  );
+}
+
+// ============================================================ 버전 기록 페이지 ============================================================
+// (v0.1.2 기능) 접속 시 뜨는 공지 모달은 화면이 좁아 항목을 짧게 요약해서만 보여준다 — 여기서는
+// 같은 내용을 카테고리(기능/UI/UX/성능/버그 수정/보안)로 나누고 조금 더 풀어서 설명한다. 공지
+// 모달의 CHANGELOG 배열(App.jsx)과 이 배열은 서로 다른 목적(모달=한 줄 요약, 이 페이지=상세 기록)을
+// 가지므로 의도적으로 분리해 두었다 — 새 버전을 낼 때는 두 곳 모두에 항목을 추가해야 한다.
+const CAT = {
+  feature: { label: "기능", Icon: Sparkles, color: "#8FB55E" },
+  ui: { label: "UI", Icon: Palette, color: "#6FA8DC" },
+  ux: { label: "UX", Icon: MousePointer, color: "#B98CFF" },
+  perf: { label: "성능", Icon: Zap, color: T.brassHi },
+  fix: { label: "버그 수정", Icon: Wrench, color: "#E0995F" },
+  security: { label: "보안", Icon: Shield, color: "#D9736A" },
+};
+const VERSION_HISTORY = [
+  {
+    version: "0.1.1", date: "2026.7.16",
+    summary: "티어 UI를 실제 이미지로 전면 개편하고, 자잘한 버그를 여럿 정리했어요.",
+    sections: [
+      { cat: "feature", items: [
+        "퍼즐 카드·풀이 화면의 공유 아이콘을 \"공유 수 표시\"와 \"공유하기 액션\" 두 개로 나눴어요. 숫자만 보려던 분들이 실수로 공유 시트를 여는 일이 줄었어요.",
+        "퍼즐이 테마 태그 두 개(예: 기물 희생하기 + 실수 응징하기)를 동시에 가지면 카드 배경이 두 테마 색을 절반씩 나눠 함께 보여줘요.",
+        "티어 화면을 디자이너가 제작한 실제 기물 이미지로 전면 재설계했어요. \"아이언 V\"처럼 글자로 표기하던 부분이 전부 그림으로 바뀌었고, 헤더 배지·퍼즐 탭·여정 지도 전반에 적용돼요.",
+        "티어가 오르면 화면 전체가 어두워지며 기존 티어가 옆으로 사라지고 새 티어가 등장하는 승급 연출이 나와요. 예전의 작은 토스트 알림을 대신해요.",
+      ] },
+      { cat: "fix", items: [
+        "퍼즐 좋아요·리포스트를 취소해도 숫자가 줄지 않던 문제를 고쳤어요.",
+        "채팅 버튼을 누르면 화면이 멈추던 문제를 해결했어요.",
+        "누군가 먼저 올린 퍼즐 태그가 다른 사람이 같은 퍼즐을 올리면 사라지던 문제를 고쳤어요.",
+        "안드로이드 크롬에서 홈 화면에 추가하면 파비콘 대신 글자 아이콘이 뜨던 문제를 해결했어요.",
+      ] },
+      { cat: "ui", items: ["도감 탭 오프닝 트리의 대표 이름표 위치를 다시 자연스럽게 조정했어요."] },
+    ],
+  },
+  {
+    version: "0.1.0", date: "2026.7.16",
+    summary: "퍼즐을 친구에게 공유하고, 리포스트하고, 공개 프로필에서 서로의 기록을 볼 수 있게 됐어요.",
+    sections: [
+      { cat: "feature", items: [
+        "퍼즐을 친구에게 공유할 수 있어요. 카드·풀이 화면의 종이비행기 아이콘을 누르면 친구 목록이 뜨고, 고른 친구와의 대화창에 퍼즐 미리보기 카드가 남아요. 카드의 \"퍼즐 풀러 가기\" 버튼으로 바로 그 퍼즐을 풀 수 있어요.",
+        "친구가 내가 공유한 퍼즐을 풀면, 그 친구가 얻는 경험치의 10%를 저에게도 실시간으로 나눠 줘요 — 화면 중앙 알림과 대화 기록으로 확인할 수 있어요.",
+        "퍼즐 리포스트 기능을 추가했어요. 리포스트한 퍼즐은 풀이수·좋아요 수와 무관하게 내 추천 퍼즐 후보에 가끔씩 다시 등장해요.",
+        "설정 탭 내 프로필에서만 보이던 메인 퀘스트 진척도·푼 퍼즐 목록을 유저 검색·친구 프로필에서도 볼 수 있어요. 3개까지 미리 보여주고 \"더 보기\"로 전체를 볼 수 있어요.",
+      ] },
+      { cat: "ui", items: [
+        "퍼즐 카드·풀이 화면에 리포스트 수·공유 수를 좋아요 수와 나란히 표시해요.",
+        "퍼즐 테마 3종의 카드 배경 패턴을 실제 수 체계 배지와 같은 색·기호로 새로 디자인했어요 — 기물 희생하기는 민트색 \"!!\", 우위 점하기는 부식된 느낌의 \"?!\", 실수 응징하기는 빨강→주황 그라데이션의 파손된 \"?\"·\"??\".",
+      ] },
+      { cat: "fix", items: [
+        "도감 탭에서 대표 오프닝(이탈리안 게임, 루이 로페즈 등) 이름표가 엉뚱한 위치에 붙어 보이던 문제를 해결해, 항상 그 오프닝이 시작되는 수 바로 위에 오도록 했어요.",
+        "실수를 응징하는 수가 동시에 탁월한 수이기도 한 경우, 사실상 같은 퍼즐이 \"실수 응징하기\"와 \"기물 희생하기\"로 따로 만들어지던 문제를 해결했어요 — 이제 하나로 합쳐지고 두 테마가 함께 표시돼요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.0.6", date: "2026.7.15",
+    summary: "레벨 시스템을 랭크 게임 같은 티어로 새로 만들고, 도감 탭의 고질적인 성능·안정성 문제를 근본적으로 해결했어요.",
+    sections: [
+      { cat: "feature", items: [
+        "레벨 시스템을 아이언~그랜드마스터, 각 5단계 티어로 새로 만들었어요. 헤더의 티어 배지를 누르면 전체 여정 지도를 볼 수 있고, 퍼즐 탭에서도 지금 티어와 다음 단계를 바로 확인할 수 있어요.",
+        "유저 검색창을 열면 친구의 친구, 티어가 높은 플레이어를 바로 추천해 줘요.",
+      ] },
+      { cat: "perf", items: [
+        "chess.com 대국이 아주 많은 계정에서 도감 탭 오프닝 트리가 심하게 버벅이던 문제를 해결했어요.",
+        "학습 탭에서 수를 둘 때마다 나오는 실시간 평가 속도를 여러 배 끌어올렸어요.",
+      ] },
+      { cat: "ui", items: [
+        "도감 탭 오프닝 검색을 개선했어요 — 이름에 포함된 오프닝이 전부 나오고, 더 유명한 오프닝이 위쪽에 먼저 보여요. 이동 애니메이션도 트리 선을 따라 자연스럽게 움직여요.",
+        "퍼즐 탭 아이콘을 퍼즐 조각 모양으로 바꿨어요.",
+        "내 프로필에서 메인 퀘스트 진척도·푼 퍼즐 정보가 chess.com 대국 기록보다 먼저 보이도록 순서를 바꿨어요.",
+      ] },
+      { cat: "fix", items: [
+        "오프닝·퍼즐 모식도에서 확대·축소를 조절하면 트리 전체가 갑자기 안 보이던 문제를 해결했어요.",
+        "도감 탭에서 특정 수를 클릭했을 때 화면이 심하게 흔들리거나, 드래그하면 트리가 통째로 사라지던 오래된 문제를 근본적으로 해결했어요.",
+        "체스 규칙 두 가지를 바로잡았어요 — 폰이 한 칸씩 두 번 나눠 전진해도 앙파상이 가능한 것처럼 보이던 오류, 캐슬링 이후에도 여전히 가능한 것처럼 엔진이 착각하던 오류.",
+        "설정 탭 내 프로필의 오프닝별 승률 목록에서 이름이 길고 깊이 중첩될 때 글자가 겹쳐 보이던 문제를 해결했어요.",
+        "그 밖에도 학습 탭의 수 등급 판정, 로그인·로그아웃 시 데이터 처리, 알림 반영 등 자잘한 버그 여러 개를 함께 고쳤어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.0.5", date: "2026.7.14",
+    summary: "서버 보안을 강화하고, 알림·채팅이 실시간으로 갱신되도록 개선했어요.",
+    sections: [
+      { cat: "security", items: [
+        "다른 사람이 내 퍼즐 풀이수·좋아요 수를 마음대로 조작할 수 있던 문제를 해결했어요.",
+        "다른 사람 이름으로 가짜 알림(칭호 획득, 레벨 업 등)을 보낼 수 있던 문제를 해결했어요.",
+        "친구가 아닌 사람에게도 채팅을 보낼 수 있던 문제를 해결했어요.",
+      ] },
+      { cat: "perf", items: ["알림·친구 요청·채팅창이 폴링 대신 실시간(Realtime) 구독으로 훨씬 빠르게 갱신되도록 개선했어요."] },
+    ],
+  },
+  {
+    version: "0.0.4", date: "2026.7.13",
+    summary: "게임 리뷰 속도를 크게 끌어올리고, 퍼즐 생성·풀이 과정의 버그를 여럿 고쳤어요.",
+    sections: [
+      { cat: "perf", items: [
+        "게임 리뷰(전체 기보 분석)가 느리게 느껴지던 문제를 해결해 훨씬 빠르게 결과를 볼 수 있어요.",
+        "체스판에서 수를 둘 때마다 실시간 분석이 느려지던 문제를 개선했어요.",
+      ] },
+      { cat: "fix", items: [
+        "모바일에서 오프닝 이름이 길면 잘려서 안 보이던 문제를 고쳤어요.",
+        "퍼즐을 만드는 도중 다른 화면으로 이동하면 처음부터 다시 만들어야 했던 문제를 해결하고, 만드는 동안 진행 표시줄을 보여줘요.",
+        "퍼즐 풀이 화면에서 실제로는 풀 수 없는 수가 함께 보이던 문제를 없앴어요.",
+        "퍼즐에서 컴퓨터가 둔 첫 수의 표시가 금방 사라지던 문제를 고쳤어요.",
+        "퍼즐을 풀다가 \"처음부터\"를 누르면 이미 살펴본 내용까지 사라지던 문제를 해결했어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.0.3", date: "2026.7.13",
+    summary: "도감 탭 오프닝 트리를 나침반 모양으로 새롭게 디자인했어요.",
+    sections: [
+      { cat: "ui", items: ["도감 탭의 오프닝 트리를 1.e4·1.d4·1.c4·1.Nf3이 동서남북 네 방향으로 뻗어나가는 나침반 모양으로 새롭게 디자인했어요."] },
+      { cat: "fix", items: [
+        "트리가 그려지는 동안 화면이 흔들리거나 버벅이던 문제를 해결했어요.",
+        "수를 클릭하면 뜨는 설명 카드가 화면을 확대·축소할 때 잘리거나 커지던 문제를 고쳤어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.0.2", date: "2026.7.12",
+    summary: "게임 리뷰가 느려지다 멈추던 문제를 해결했어요.",
+    sections: [
+      { cat: "fix", items: ["게임 리뷰(전체 기보 분석)가 기보가 길어질수록 느려지다 멈추는 것처럼 보이던 문제를 해결했어요."] },
+      { cat: "perf", items: ["실시간 분석 성능을 개선해 더 정확하고 빠르게 계산하도록 했어요(지원 브라우저 한정)."] },
+    ],
+  },
+  {
+    version: "0.0.1", date: "2026.7.11",
+    summary: "모바일 UI를 정리하고, 여러 화면의 자잘한 사용성을 다듬었어요.",
+    sections: [
+      { cat: "ui", items: [
+        "모바일 화면에서 상단 메뉴가 잘리던 문제를 고치고 전체적으로 더 깔끔하게 정리했어요.",
+        "학습 탭의 체스판을 더 크게 키웠어요.",
+        "상점·설정 탭의 화면을 정리했어요.",
+        "로그인·회원가입 창에 부드러운 애니메이션을 추가했어요.",
+      ] },
+      { cat: "feature", items: [
+        "대국 기록에 래피드·블리츠·불릿 같은 시간 규정과 레이팅 변화가 함께 표시돼요.",
+        "도감 탭에 오프닝 이름을 함께 표시했어요.",
+      ] },
+      { cat: "ux", items: [
+        "집중 학습 모드에서 원하는 수를 클릭하면 바로 그 수의 학습 화면으로 이동해요.",
+        "검색할 때 입력하는 즉시 결과가 나타나도록 했어요.",
+      ] },
+      { cat: "fix", items: [
+        "마스터 대국 기록이 안 보이던 문제를 고쳤어요.",
+        "퍼즐 탭에서 퍼즐이 하단 메뉴에 가려지던 문제와, 모바일에서 추천 퍼즐이 안 뜨던 문제를 해결했어요.",
+      ] },
+      { cat: "perf", items: ["chess.com 계정을 연동할 때 대국이 많아도 더 빠르게 정보가 표시돼요."] },
+    ],
+  },
+  {
+    version: "0.0.0", date: "2026.7.10",
+    summary: "OpenChess 베타 서비스를 시작했어요.",
+    sections: [
+      { cat: "feature", items: ["OpenChess 베타 서비스를 시작했어요! 오프닝 학습과 퍼즐 풀이 핵심 기능을 먼저 선보이며, 앞으로 계속 다듬어 나갈게요."] },
+    ],
+  },
+];
+// 버전 페이지 헤더에 살짝 곁들일 마스코트 — 특별한 의미는 없고, 페이지마다 다른 표정으로 지루하지
+// 않게 하려고 순환시킨다.
+const VERSION_MASCOTS = ["/emoji/kokoa_11.png", "/emoji/milku_5.png", "/emoji/kokoa_8.png", "/emoji/milku_10.png", "/emoji/kokoa_6.png"];
+
+function ItemRow({ text, color, delay }) {
+  return (
+    <Reveal delay={delay} y={10}>
+      <div className="flex items-start gap-2" style={{ padding: "9px 12px", borderRadius: 10, background: "rgba(0,0,0,.18)", border: "1px solid #4A3521", marginBottom: 6 }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 6 }} />
+        <p style={{ margin: 0, fontSize: 12.5, color: T.ivory, lineHeight: 1.65 }}>{text}</p>
+      </div>
+    </Reveal>
+  );
+}
+
+function CategoryGroup({ cat, items }) {
+  const c = CAT[cat];
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <Reveal y={8}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+          <span style={{ width: 22, height: 22, borderRadius: 7, background: c.color + "26", border: "1px solid " + c.color, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><c.Icon size={12} color={c.color} /></span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: c.color, letterSpacing: ".04em" }}>{c.label}</span>
+        </div>
+      </Reveal>
+      {items.map((t, i) => <ItemRow key={i} text={t} color={c.color} delay={i * 0.04} />)}
+    </div>
+  );
+}
+
+// 버전 기록 한 페이지 — 공지 모달과 같은 데이터를 쓰지만(App.jsx CHANGELOG와는 별도로 이 파일 안에
+// VERSION_HISTORY로 옮겨 적음), 카테고리별로 나누고 조금 더 풀어 쓴 문장으로 자세히 보여준다.
+function VersionPage({ v, isLatest }) {
+  const mascot = VERSION_MASCOTS[Math.abs(v.version.split(".").reduce((a, c) => a + parseInt(c, 10) || 0, 0)) % VERSION_MASCOTS.length];
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: "56px 20px 96px" }}>
+      <Reveal>
+        <div className="flex items-center flex-wrap" style={{ gap: 20, marginBottom: 28 }}>
+          <div style={{ width: 84, height: 84, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
+            <img src={mascot} alt="" style={{ width: 70, height: 70, objectFit: "contain" }} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
+              {isLatest && <span style={{ fontSize: 10, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", borderRadius: 999, padding: "2px 9px" }}>최신</span>}
+              <span style={{ fontSize: 11.5, color: T.inkSoft }}>{v.date}</span>
+            </div>
+            <p style={{ margin: 0, fontSize: 14, color: T.ivoryHi, fontWeight: 700, lineHeight: 1.5 }}>{v.summary}</p>
+          </div>
+        </div>
+      </Reveal>
+      {v.sections.map((s, i) => <CategoryGroup key={s.cat} cat={s.cat} items={s.items} />)}
+    </div>
+  );
+}
+
+// ============================================================ 페이저 ============================================================
+// (v0.1.2 기능) 퍼즐 풀이 화면(보드↔모식도)과 동일한 드래그 페이지 넘김 패턴 — 손가락/마우스로
+// 옆 페이지를 살짝 당기면 미리 보이다가, 임계값을 넘기면 넘어가고 아니면 되돌아온다. 1페이지는
+// 소개, 2페이지부터는 최신 버전순 업데이트 기록.
+const PAGES_META = [{ key: "intro", label: "소개" }, ...VERSION_HISTORY.map((v) => ({ key: v.version, label: "v" + v.version }))];
+
+export default function AboutPage() {
+  // 공지 모달의 "자세히 보기"에서 ?page=2로 들어오면(2페이지 = 최신 버전) 그 페이지부터 보여준다.
+  const initialPage = useMemo(() => {
+    try {
+      const p = parseInt(new URLSearchParams(window.location.search).get("page"), 10);
+      if (p >= 1 && p <= PAGES_META.length) return p - 1;
+    } catch { }
+    return 0;
+  }, []);
+  const [page, setPage] = useState(initialPage);
+  const pagerRef = useRef(null);
+  const dragRef = useRef(null);
+  const [dragPx, setDragPx] = useState(0);
+  const dragging = !!dragRef.current;
+  const total = PAGES_META.length;
+  const goTo = (n) => setPage(Math.max(0, Math.min(total - 1, n)));
+  const onPointerDown = (e) => {
+    if (e.target.closest && e.target.closest("a, button, .no-swipe")) return;
+    dragRef.current = { x: e.clientX, w: pagerRef.current ? pagerRef.current.clientWidth : 380 };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e) => { if (!dragRef.current) return; setDragPx(e.clientX - dragRef.current.x); };
+  const onPointerUp = () => {
+    const st = dragRef.current; dragRef.current = null;
+    if (!st) { setDragPx(0); return; }
+    const threshold = st.w * 0.16;
+    if (dragPx <= -threshold && page < total - 1) setPage((p) => p + 1);
+    else if (dragPx >= threshold && page > 0) setPage((p) => p - 1);
+    setDragPx(0);
+  };
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [page]);
+
+  return (
+    <div style={{ position: "relative", minHeight: "100vh", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'Noto Sans KR', sans-serif", overflowX: "hidden" }}>
+      <Backdrop />
+      <header style={{ position: "relative", zIndex: 2, borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
+        <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "14px 20px" }}>
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 34, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>
+            시작하기 <ArrowRight size={14} />
+          </a>
+        </div>
+      </header>
+
+      {/* 페이지 넘김 안내 바 — 이전/다음 버튼 + 지금 몇 페이지인지, 스와이프해도 동일하게 반응 */}
+      <div className="flex items-center justify-center" style={{ position: "sticky", top: 0, zIndex: 3, gap: 10, padding: "8px 16px", background: "rgba(27,16,9,.92)", backdropFilter: "blur(6px)", borderBottom: "1px solid #000" }}>
+        <button onClick={() => goTo(page - 1)} disabled={page === 0} className="press" aria-label="이전 페이지" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: page === 0 ? T.inkSoft : T.brassHi, opacity: page === 0 ? 0.4 : 1, cursor: page === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
+        <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, minWidth: 96, textAlign: "center" }}>{page === 0 ? "소개" : "v" + VERSION_HISTORY[page - 1].version} · {page + 1}/{total}</span>
+        <button onClick={() => goTo(page + 1)} disabled={page === total - 1} className="press" aria-label="다음 페이지" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: page === total - 1 ? T.inkSoft : T.brassHi, opacity: page === total - 1 ? 0.4 : 1, cursor: page === total - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
+      </div>
+
+      <div ref={pagerRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
+        style={{ position: "relative", zIndex: 1, overflow: "hidden", touchAction: "pan-y" }}>
+        <div style={{ display: "flex", width: total * 100 + "%", transform: "translateX(calc(" + (-page * 100) / total + "% + " + dragPx + "px))", transition: dragging ? "none" : "transform .38s cubic-bezier(.22,.9,.32,1)" }}>
+          <div style={{ width: 100 / total + "%", flexShrink: 0 }}><IntroPage /></div>
+          {VERSION_HISTORY.map((v, i) => (
+            <div key={v.version} style={{ width: 100 / total + "%", flexShrink: 0 }}><VersionPage v={v} isLatest={i === 0} /></div>
+          ))}
+        </div>
+      </div>
 
       <footer style={{ position: "relative", zIndex: 1, borderTop: "1px solid #000", padding: "20px", textAlign: "center" }}>
         <span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span>
