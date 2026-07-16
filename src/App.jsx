@@ -6055,14 +6055,15 @@ function TierProgressStrip({ totalXp, onOpen }) {
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   return (
-    <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={62} discSize={66} />
-      <div style={{ minWidth: 96, marginLeft: 10, marginRight: 4 }}>
-        <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
-        <div style={{ width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 4 }}>
+    // (v0.1.2) 퍼즐 탭 티어 스트립 크기 축소(특히 높이) — 패딩·로고·글자·진행바를 모두 한 단계씩 줄임.
+    <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "6px 14px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
+      <TierLogoDisc tierKey={tier.key} division={division} size={46} discSize={49} />
+      <div style={{ minWidth: 96, marginLeft: 9, marginRight: 4 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
+        <div style={{ width: "100%", height: 5, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 3 }}>
           <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
-        <div style={{ fontSize: 10, color: T.brassHi, opacity: .75, marginTop: 2 }}>{xpInDivision}/{xpForNextDivision} XP</div>
+        <div style={{ fontSize: 9.5, color: T.brassHi, opacity: .75, marginTop: 1 }}>{xpInDivision}/{xpForNextDivision} XP</div>
       </div>
     </div>
   );
