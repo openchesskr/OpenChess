@@ -9045,7 +9045,13 @@ function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onO
 // 있게 공개돼 있으므로(전역 크라우드소싱), 번호만 알면 그 자리에서 그대로 카드를 그릴 수 있다.
 // 미리보기 3개만 우선 가져오고, "더 보기"를 눌렀을 때(SolvedPuzzlesBlock의 onExpand)만 나머지
 // 전부를 마저 가져온다 — 프로필을 열 때마다 전체를 조회하지 않도록 하는 최소한의 절제.
-function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle }) {
+// (버그 수정) 목록에 어떤 퍼즐이 뜨는지는 이 프로필 주인의 solvedNos로 정하는 게 맞지만, 카드 자체의
+// 해결 표시(초록 배경·별 개수)는 PuzzleCard가 앱 어디서나 그렇듯 "지금 보는 사람"의 진행 상태를
+// 뜻해야 한다 — 항상 isSolved=true로 고정해 두면, 프로필 주인은 풀었어도 나는 아직 안 풀었거나
+// 일부 라인만 푼 퍼즐까지 전부 다 푼 것처럼(별 3개) 보였다. mySolved/myLineSolves(보는 사람 자신의
+// 진행 상태)를 받아 각 카드에 반영한다 — "이 사람이 이런 퍼즐들을 풀었다"는 목록 자체는 그대로 두고,
+// 그중 내가 실제로 얼마나 풀었는지만 카드 표시에 반영되는 것.
+function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle, mySolved, myLineSolves }) {
   const [expanded, setExpanded] = useState(false);
   const nos = useMemo(() => (expanded ? solvedNos : solvedNos.slice(0, SOLVED_PREVIEW_COUNT)), [solvedNos, expanded]);
   const [byNo, setByNo] = useState({});
@@ -9062,14 +9068,15 @@ function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle }) {
   }, [nos]);
   const puzzles = nos.map((no) => byNo[no]).filter(Boolean);
   const loading = nos.some((no) => !(no in byNo));
-  const renderCard = (p, onClick) => <PuzzleCard key={p.id} p={p} isSolved onClick={onClick} />;
+  const renderCard = (p, onClick) => <PuzzleCard key={p.id} p={p} onClick={onClick}
+    isSolved={mySolved ? mySolved.has(p.id) : false} solvedTags={myLineSolves ? myLineSolves[p.id] : null} />;
   return <SolvedPuzzlesBlock puzzles={puzzles} total={solvedNos.length} loading={loading} renderCard={renderCard} onExpand={() => setExpanded(true)} onOpenPuzzle={onOpenPuzzle} />;
 }
 // (17차→v0.1.0) 프로필 정보 확장 — 티어/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는
 // 공용 컴포넌트. UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다. (v0.1.0) 설정 탭
 // "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐 목록도 pub에 실려 있으면(publishProfile이
 // solvedNos/mainQuestSummary를 채워 넣음) 같은 자리에 표시해, 다른 유저의 프로필에서도 볼 수 있다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom }) {
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
@@ -9091,7 +9098,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
           </div>
         </div>
       )}
-      {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} />}
+      {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
   );
@@ -9111,7 +9118,7 @@ function userSearchRow(r, onClick, right) {
     </button>
   );
 }
-function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle }) {
+function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
@@ -9181,7 +9188,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
               </div>
             </div>
-            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} />
+            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
@@ -9393,7 +9400,7 @@ function TierJourneyMap({ totalXp, onClose }) {
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenPuzzle }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenPuzzle, mySolved, myLineSolves }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -9491,7 +9498,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 </div>
               </div>
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} />
+              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />
               <div style={{ display: "flex", gap: 8 }}>
                 {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
                 {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
@@ -10467,8 +10474,8 @@ export default function App() {
       {announceOpen && <AnnouncementModal onClose={() => setAnnounceOpen(false)} onDismissVersion={() => setDismissedAnnounceVersion(APP_VERSION)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
-      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenPuzzle={onOpenPuzzle} />}
+      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
       {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
