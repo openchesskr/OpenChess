@@ -6020,13 +6020,16 @@ function TierBadge({ totalXp, compact, onClick }) {
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   // (v0.1.2) 진행바+XP 텍스트를 로고 오른쪽이 아니라 아래쪽에 배치 — 세로로 쌓아 로고 밑에 정렬한다.
+  // (v0.1.2) XP 텍스트는 그 아래 줄이 아니라 진행바 오른쪽에 나란히 배치.
   return (
     <div onClick={onClick} className="press flex flex-col items-center" style={{ gap: 3, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 32 : 40} discSize={compact ? 34 : 42} />
-      <div style={{ width: compact ? 34 : 42, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
-        <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
+      <div className="flex items-center" style={{ gap: 4 }}>
+        <div style={{ width: compact ? 34 : 42, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
+          <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
+        </div>
+        <span style={{ fontSize: compact ? 7.5 : 8, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap" }}>{xpInDivision}/{xpForNextDivision}</span>
       </div>
-      <div style={{ fontSize: compact ? 7.5 : 8, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap", textAlign: "center" }}>{xpInDivision}/{xpForNextDivision}</div>
     </div>
   );
 }
@@ -10702,10 +10705,11 @@ export default function App() {
             그 여백 없이 다시 잘라냈으므로, 이제 height 값이 곧 실제 로고 크기와 거의 같다 — 헤더를
             불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
         {/* (v0.1.2 기능) 로고 아래에 현재 버전을 작은 금색 텍스트로 표기 — CHANGELOG[0]에서 파생되는
-            APP_VERSION을 그대로 써서, 새 버전을 낼 때 이 표기도 따로 손댈 필요가 없게 한다. */}
-        <div className="flex flex-col" style={{ flexShrink: 0, gap: 1 }}>
+            APP_VERSION을 그대로 써서, 새 버전을 낼 때 이 표기도 따로 손댈 필요가 없게 한다.
+            (v0.1.2) "OpenChess" 글자 쪽(로고 오른쪽 끝)에 맞춰 오른쪽 정렬, 크기도 한 단계 더 줄임. */}
+        <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 1 }}>
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-          <span style={{ fontSize: 9, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "center" }}>v{APP_VERSION}</span>
+          <span style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right" }}>v{APP_VERSION}</span>
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
