@@ -361,13 +361,25 @@ function setSbToken(token) { SB_TOKEN = token || null; if (sbClient) sbClient.re
 // (v0.0.5 성능) 알림·채팅·친구요청처럼 "다른 유저 행동으로 내 화면이 바뀌어야 하는" 데이터는 3~30초
 // 폴링 대신 Postgres 변경을 실시간으로 밀어받는다. filter는 PostgREST 문법 그대로(예: "to_uid=eq.<uid>").
 // 소켓이 끊긴 채 조용히 죽는 경우를 대비해 아주 느슨한 간격(fallbackMs)으로 안전망 재조회도 겸한다.
+// (v0.1.1 버그 수정) 채널 이름을 table+filter로만 지었더니, 서로 다른 컴포넌트가 완전히 같은
+// table+filter를 동시에 구독하는 경우(예: 헤더의 "안읽은 채팅" 배지와, 채팅창을 열었을 때 그
+// 안에서 또 구독하는 ChatPanel — 둘 다 "chat_messages, to_uid=eq.<나>"를 구독) 정확히 같은
+// Realtime 채널 토픽을 같은 소켓에 두 번 join하게 됐다. 서버가 기존 join을 강제로 끊어내고
+// 클라이언트는 그걸 다시 재연결하려 시도하는 과정이 계속 반복되며(서로가 서로를 계속 밀어냄) 짧은
+// 간격으로 무한히 재연결·재구독이 일어나 CPU를 계속 잡아먹었다 — 이게 "채팅 버튼을 누르면
+// 사이트가 먹통이 된다"는 신고의 원인이었다. 훅이 마운트될 때마다 항상 다른 채널 이름을 쓰도록
+// 인스턴스별 고유 id를 더해, 같은 table+filter를 여러 컴포넌트가 동시에 구독해도 서로 다른
+// 채널(같은 postgres_changes 필터를 각자 독립적으로 받는)로 취급되게 한다.
+let rtChanSeq = 0;
 function useRealtimeTable(table, filter, onEvent, enabled, fallbackMs) {
   const cbRef = useRef(onEvent);
   cbRef.current = onEvent;
+  const chanIdRef = useRef(null);
+  if (chanIdRef.current == null) chanIdRef.current = ++rtChanSeq;
   useEffect(() => {
     if (!enabled || !sbClient || !filter) return;
     const channel = sbClient
-      .channel("rt:" + table + ":" + filter)
+      .channel("rt:" + table + ":" + filter + ":" + chanIdRef.current)
       .on("postgres_changes", { event: "*", schema: "public", table, filter }, (payload) => cbRef.current && cbRef.current(payload))
       .subscribe();
     const id = fallbackMs ? setInterval(() => cbRef.current && cbRef.current(null), fallbackMs) : null;
