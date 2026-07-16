@@ -5800,6 +5800,15 @@ function genDailyQuest(recentOpenings, dateStr) {
   // seen: 완료 애니메이션용 확인 플래그. done: 슬롯별 완료 여부(인덱스 기반). resetUsed/banned: 오프닝 퀘스트 1회 리롤.
   return { date: dateStr, quests, puzzleTarget: 2, puzzleCount: 0, done: {}, claimed: {}, bonusClaimed: false, seen: {}, rerolled: {}, banned: [], v: 2 };
 }
+// (v0.1.2 버그 수정) "오프닝로 chess.com에서 1국 플레이"처럼 오프닝 이름이 비어 questLabel의
+// 기본값("오프닝")으로 대체 표시되던 문제 — 18차 이전의 구버전 스키마(quests 대신 featured: 문자열
+// 배열)로 저장된 사용자 데이터는 이미 !dailyQuest.quests로 걸러 재생성됐지만, quests 배열 자체는
+// 있으면서 그 안의 opening 타입 항목에 opening 값이 비어 있는(또는 문자열이 아닌) 손상된 저장값은
+// 걸러내지 못해 그대로 화면에 남아 있었다. 매 로드 시 이 유효성도 함께 검사해, 하나라도 깨져 있으면
+// 그날 퀘스트 전체를 다시 생성한다(사용자별로 한 번만 자동 복구되고, claimed 등은 오늘 다시 시작).
+function dailyQuestQuestsValid(quests) {
+  return Array.isArray(quests) && quests.length > 0 && quests.every((q) => q && (q.type === "play5" || q.type === "win3" || (q.type === "opening" && typeof q.opening === "string" && q.opening.trim().length > 0)));
+}
 // (버그) 각 활동 퀘스트를 개별적으로 하루 1회씩 리롤 — 다른 오프닝 플레이 퀘스트로 교체.
 // 이미 완료(claimed)한 퀘스트나 이미 리롤한 퀘스트는 교체할 수 없다. 바꿀 오프닝이 없으면 그대로 둔다.
 function rerollQuestOpening(dq, idx, recentOpenings) {
@@ -7065,7 +7074,8 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
         {sub && <div style={{ fontSize: 10.5, color: T.inkSoft }}>{sub}</div>}
       </div>
       {extras}
-      <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, flexShrink: 0 }}>+10 XP</span>
+      {/* (v0.1.2) 개별 퀘스트 클리어 보상을 XP에서 OC 나이트 코인으로 바꿈. */}
+      <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, flexShrink: 0 }}>+10 <CoinIcon size={12} /></span>
     </div>
   ); };
   return (
@@ -10519,15 +10529,18 @@ export default function App() {
     if (!loaded) return;
     const t = todayStr();
     // (18차 보충 UX2) 날짜가 바뀌었거나, 구버전(quests 필드 없는 featured 구조)이면 새 구조로 재생성한다.
-    if (!dailyQuest || dailyQuest.date !== t || !dailyQuest.quests) setDailyQuest(genDailyQuest(recentOpenings, t));
+    // (v0.1.2 버그 수정) quests 배열은 있지만 그 안의 opening 항목 값이 비어 있는 등 손상된 경우도
+    // 함께 걸러 재생성한다(dailyQuestQuestsValid 참고).
+    if (!dailyQuest || dailyQuest.date !== t || !dailyQuest.quests || !dailyQuestQuestsValid(dailyQuest.quests)) setDailyQuest(genDailyQuest(recentOpenings, t));
   }, [loaded, dailyQuest, recentOpenings]);
-  // XP 지급 + 완료 표시를 한 곳에서 처리(퍼즐/체스닷컴 퀘스트 공용) — 이미 지급됐으면 다시 주지 않는다.
-  const claimQuestXp = useCallback((questKey, amount) => {
+  // (v0.1.2) 일일 퀘스트 개별 클리어 보상을 XP에서 OC 나이트 코인으로 바꿈 — 완료 표시는 한 곳에서
+  // 처리(퍼즐/체스닷컴 퀘스트 공용), 이미 지급됐으면 다시 주지 않는다.
+  const claimQuestCoins = useCallback((questKey, amount) => {
     setDailyQuest((dq) => {
       if (!dq || dq.claimed[questKey]) return dq;
-      setTotalXp((x) => x + amount);
-      setToast({ type: "xp", amount });
-      setTimeout(() => setToast((t) => (t && t.type === "xp" ? null : t)), 1400);
+      setOcCoins((c) => c + amount);
+      setToast({ type: "coins", amount });
+      setTimeout(() => setToast((t) => (t && t.type === "coins" ? null : t)), 1800);
       return { ...dq, claimed: { ...dq.claimed, [questKey]: true } };
     });
   }, []);
@@ -10555,8 +10568,8 @@ export default function App() {
   // 퍼즐 퀘스트 목표 달성 시 지급
   useEffect(() => {
     if (!dailyQuest || dailyQuest.puzzleCount < dailyQuest.puzzleTarget) return;
-    claimQuestXp("puzzle", 10);
-  }, [dailyQuest && dailyQuest.puzzleCount, dailyQuest && dailyQuest.puzzleTarget, claimQuestXp]);
+    claimQuestCoins("puzzle", 10);
+  }, [dailyQuest && dailyQuest.puzzleCount, dailyQuest && dailyQuest.puzzleTarget, claimQuestCoins]);
   // (기능2→18차 보충 UX2) chess.com 활동 퀘스트 판정 — 오늘(KST) 대국에서 오프닝 플레이/총 플레이 수/승리 수를 계산해 슬롯별 완료 처리.
   useEffect(() => {
     if (!dailyQuest || !dailyQuest.quests || !chesscom || chesscom.status !== "ready") return;
@@ -10583,8 +10596,8 @@ export default function App() {
   // 활동 퀘스트 XP 지급(각 +10)
   useEffect(() => {
     if (!dailyQuest || !dailyQuest.done) return;
-    (dailyQuest.quests || []).forEach((q, i) => { if (dailyQuest.done[i]) claimQuestXp("cc_" + i, 10); });
-  }, [dailyQuest && JSON.stringify(dailyQuest.done), claimQuestXp]);
+    (dailyQuest.quests || []).forEach((q, i) => { if (dailyQuest.done[i]) claimQuestCoins("cc_" + i, 10); });
+  }, [dailyQuest && JSON.stringify(dailyQuest.done), claimQuestCoins]);
   // 4개 퀘스트 모두 완료 시 보너스 +20(한 번만)
   useEffect(() => {
     if (!dailyQuest || dailyQuest.bonusClaimed) return;
