@@ -6644,14 +6644,18 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 <Repeat2 size={14} color={isReposted ? T.brilliant : T.inkSoft} />
                 <span style={{ fontSize: 10, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
               </button>}
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="공유" title="공유">
+              {/* (v0.1.1) 공유 수는 눌러도 아무 동작 없는 순수 표시(집계)이고, 실제 공유 시트는 바로 옆의 별도 버튼이 연다 */}
+              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                 <Send size={13} color={T.inkSoft} />
                 <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
-              </button>}
+              </span>
               <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
                 <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
                 <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
               </button>
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="공유하기" title="공유하기">
+                <Send size={13} color={T.brass} />
+              </button>}
             </div>
           </div>
         </div>
@@ -6831,13 +6835,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               <Repeat2 size={12} color={isReposted ? T.brilliant : T.inkSoft} />
               <span style={{ fontSize: 9, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
             </button>}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유" title="공유" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            {/* (v0.1.1) 공유 수는 눌러도 아무 동작 없는 순수 표시(집계)이고, 실제 공유 시트는 바로 옆의 별도 버튼이 연다 */}
+            <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
               <Send size={11} color={T.inkSoft} />
               <span style={{ fontSize: 9, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
-            </button>}
+            </span>
             {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
               <Heart size={11} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
               <span style={{ fontSize: 9, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+            </button>}
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Send size={11} color={T.brass} />
             </button>}
           </div>
         </div>

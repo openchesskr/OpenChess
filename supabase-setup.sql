@@ -252,6 +252,11 @@ create table if not exists public.chat_messages (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_chat_messages_pair on public.chat_messages(from_uid, to_uid, created_at);
+-- (v0.1.1 버그 수정) 위 puzzle_no/share_reward 컬럼은 create table if not exists 블록 안에 있어서,
+-- 이미 chat_messages 테이블이 있는 기존 프로젝트에서는 실제로 추가되지 않았다(신규 프로젝트에서만 동작).
+-- 기존 프로젝트에도 확실히 반영되도록 별도 alter로 추가한다.
+alter table public.chat_messages add column if not exists puzzle_no bigint;
+alter table public.chat_messages add column if not exists share_reward jsonb;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -437,7 +442,11 @@ declare v_likes bigint; v_liked boolean;
 begin
   if exists (select 1 from public.puzzle_likes where no = p_no and uid = p_uid) then
     delete from public.puzzle_likes where no = p_no and uid = p_uid;
-    update public.puzzles set likes = greatest(0, likes - 1) where no = p_no returning puzzles.likes into v_likes;
+    -- (v0.1.1 버그 수정) 아래 우변의 likes를 테이블 한정 없이 그냥 쓰면, 이 함수의 반환값
+    -- RETURNS TABLE(liked boolean, likes bigint)의 likes 출력 변수와 이름이 겹쳐 실행 시점에
+    -- "column reference likes is ambiguous" 에러가 난다(취소를 눌러도 좋아요가 그대로 돌아오는
+    -- 원인). public.puzzles.likes로 완전히 한정해 컬럼임을 명시한다.
+    update public.puzzles set likes = greatest(0, public.puzzles.likes - 1) where no = p_no returning public.puzzles.likes into v_likes;
     v_liked := false;
   else
     insert into public.puzzle_likes(no, uid) values (p_no, p_uid);
@@ -499,7 +508,10 @@ declare v_reposts bigint; v_reposted boolean;
 begin
   if exists (select 1 from public.puzzle_reposts where no = p_no and uid = p_uid) then
     delete from public.puzzle_reposts where no = p_no and uid = p_uid;
-    update public.puzzles set reposts = greatest(0, reposts - 1) where no = p_no returning puzzles.reposts into v_reposts;
+    -- (v0.1.1 버그 수정) puzzle_like_toggle과 동일한 원인의 버그 — 아래 우변의 reposts가 이 함수의
+    -- 반환 변수 reposts(RETURNS TABLE(reposted boolean, reposts bigint))와 이름이 겹쳐 "column
+    -- reference reposts is ambiguous" 런타임 에러가 나서 리포스트 취소가 항상 실패하고 있었다.
+    update public.puzzles set reposts = greatest(0, public.puzzles.reposts - 1) where no = p_no returning public.puzzles.reposts into v_reposts;
     v_reposted := false;
   else
     insert into public.puzzle_reposts(no, uid) values (p_no, p_uid);
