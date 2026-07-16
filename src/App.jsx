@@ -2966,44 +2966,46 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
   // engine 큐에서 계속 진행되는데도(탭을 바꿔도 엔진 워커는 안 죽는다), "다 만들었으니 저장하라"는
   // 신호만 컴포넌트 수명에 묶여 사라진 것. requestPuzzleGen(App 레벨, 항상 마운트)에 생성을 맡겨
   // 이 컴포넌트가 사라져도 생성이 끝까지 진행되고 결과가 저장되도록 한다.
+  // (v0.1.0) 퍼즐 id는 이제 항상 "포지션(sansKey) + 그 위치에서 둔 수"로만 정해지고 테마 접두어를
+  // 붙이지 않는다 — 실수 응징하기/우위 점하기(그 수 자신의 위치)와 기물 희생하기(그 수 바로 다음
+  // 수를 공부할 때, "직전 수"로 재사용하는 그 같은 위치)가 우연히 같은 포지션을 가리키면 자연스럽게
+  // 같은 id로 수렴해 한 퍼즐로 합쳐지도록 하기 위함(아래 두 useEffect가 같은 id 공식을 공유).
   useEffect(() => {
     if (!active || !onSavePuzzle || !requestPuzzleGen) return;
-    const id = sansKey + "|" + san;
-    // (20차 기능1) 이미 트리 형식으로 저장된 퍼즐이면 재생성하지 않는다(트리 생성은 엔진 비용이 큼).
-    // 구버전(선형 라인) 퍼즐은 재생성해 트리 형식으로 업그레이드한다(onSavePuzzle이 교체 저장).
-    const expectedId = kind === "brilliant" ? "sac|" + id : kind === "inaccuracy" ? "adv|" + id : (isPunishable ? id : null);
-    const existing = expectedId && puzzles ? puzzles.find((p) => p.id === expectedId) : null;
-    if (existing && existing.tree) return;
-    // 실수/블런더 → 실수 응징하기
-    if (isPunishable) {
-      if (curated) { onSavePuzzle({ id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
+    // 실수/블런더 → 실수 응징하기, 부정확한 수 → 우위 점하기: 이 위치(sans 다음에 san) 자신이 정체성.
+    if (isPunishable || kind === "inaccuracy") {
+      const themeKey = isPunishable ? "punish" : "advantage";
+      const id = sansKey + "|" + san;
+      // (20차 기능1→v0.1.0) 이미 트리가 있으면 재생성하지 않는다(엔진 비용이 큼) — 다만 그 트리가
+      // 다른 테마(예: 기물 희생하기)로 먼저 만들어져 있었고 이 테마 태그가 아직 없다면, 재생성 없이
+      // 태그만 얹는다(같은 포지션이므로 이미 있는 트리도 이 테마 관점에서 그대로 유효한 풀이).
+      const existing = puzzles ? puzzles.find((p) => p.id === id) : null;
+      if (existing && existing.tree) { if (!themesOf(existing).includes(themeKey)) onSavePuzzle({ ...existing, themes: [...themesOf(existing), themeKey] }); return; }
+      if (isPunishable && curated) { onSavePuzzle({ id, themes: [themeKey], name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
       if (engine && engine.status === "ready") {
         const op = title || "오프닝";
-        requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("punish"), onProgress).then((gen) => gen && (
-          { id, theme: "punish", name: puzzleName("punish", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+        requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts(themeKey), onProgress).then((gen) => gen && (
+          { id, themes: [themeKey], name: puzzleName(themeKey, [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
         )));
       }
       return;
     }
-    // 부정확한 수 → 우위 점하기 (실수 응징과 동일 방식)
-    if (kind === "inaccuracy" && engine && engine.status === "ready") {
-      const op = title || "오프닝";
-      requestPuzzleGen("adv|" + id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts("advantage"), onProgress).then((gen) => gen && (
-        { id: "adv|" + id, theme: "advantage", name: puzzleName("advantage", [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
-      )));
-      return;
-    }
-    // 탁월한 수 → 기물 희생하기 (직전 수 애니메이션 후 탁월한 수 + 보상 실현까지 이어지는 트리)
+    // 탁월한 수 → 기물 희생하기: 이 수(san) 자신이 아니라 "그 직전 수"가 만든 포지션이 정체성 —
+    // 그 직전 수가 따로 실수/부정확한 수로도 분류돼 있었다면 위 분기와 정확히 같은 id로 수렴한다.
     if (kind === "brilliant" && sans.length >= 1 && engine && engine.status === "ready") {
+      const id = sans.slice(0, -1).join(" ") + "|" + sans[sans.length - 1];
+      const existing = puzzles ? puzzles.find((p) => p.id === id) : null;
+      if (existing && existing.tree) { if (!themesOf(existing).includes("sacrifice")) onSavePuzzle({ ...existing, themes: [...themesOf(existing), "sacrifice"] }); return; }
       const op = title || "오프닝";
       // (기능1) 희생 테마는 "희생 수 자체"가 첫 수(firstSan)로 고정되며, sans 위치(=studied 수 san이 두어지기 직전)에서 둔다.
-      requestPuzzleGen("sac|" + id, (onProgress) => genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }, onProgress).then((gen) => gen && (
-        { id: "sac|" + id, theme: "sacrifice", name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
+      requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }, onProgress).then((gen) => gen && (
+        { id, themes: ["sacrifice"], name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
       )));
     }
   }, [active, sansKey, san, kind, engine && engine.status, requestPuzzleGen]);
   const baseId = active ? sansKey + "|" + san : "";
-  const expectedPuzzleId = active ? (kind === "brilliant" ? "sac|" + baseId : kind === "inaccuracy" ? "adv|" + baseId : (["mistake", "blunder"].includes(kind) ? baseId : null)) : null;
+  const priorId = active && sans.length >= 1 ? sans.slice(0, -1).join(" ") + "|" + sans[sans.length - 1] : null;
+  const expectedPuzzleId = active ? (kind === "brilliant" ? priorId : (kind === "inaccuracy" || ["mistake", "blunder"].includes(kind)) ? baseId : null) : null;
   const existingPuzzle = (expectedPuzzleId && puzzles) ? puzzles.find((p) => p.id === expectedPuzzleId) : null;
   // (UX) 아직 생성이 안 끝난 퍼즐의 진행률 — "퍼즐 풀기" 버튼 대신 진행 상황을 보여주는 데 쓴다.
   const puzzleGenProgressVal = (expectedPuzzleId && !(existingPuzzle && existingPuzzle.tree) && puzzleGenProgress) ? puzzleGenProgress[expectedPuzzleId] : null;
@@ -5100,6 +5102,22 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
 /* ============================================================ 퍼즐 탭 ============================================================ */
 const PIECE_KOR = { K: "킹", Q: "퀸", R: "룩", B: "비숍", N: "나이트", P: "폰" };
 const THEME_LABEL = { sacrifice: "기물 희생하기", advantage: "우위 점하기", punish: "실수 응징하기" };
+// (v0.1.0) 퍼즐 테마 다중 태그 — 실수/부정확한 수를 응징·전환하는 수가 그 자체로 탁월한(희생) 수이면,
+// "실수 응징하기(또는 우위 점하기) 위치에서 생성한 퍼즐"과 "그 탁월한 수 위치에서 생성한 퍼즐"이
+// setupSans+mistakeSan(실제 체스 포지션)이 완전히 같은데도 서로 다른 id(테마 접두어로 구분)로 갈려
+// 저장·집계(풀이수·좋아요·공유·리포스트)가 쪼개지던 문제가 있었음 — 이제 puzzle.id는 테마와 무관하게
+// 포지션+수 하나로만 정해지고(useFocusAnalysis 참고), 같은 포지션에 여러 테마가 동시에 해당하면
+// 퍼즐 하나에 themes 배열로 전부 태그를 얹는다. 구버전 데이터(단일 theme 문자열)도 안전하게 읽도록
+// themesOf가 두 형태를 모두 흡수한다.
+const THEME_PRIORITY = ["sacrifice", "advantage", "punish"]; // 표시 우선순위 — 더 구체적인 테마가 먼저
+function themesOf(p) {
+  if (Array.isArray(p.themes) && p.themes.length) return p.themes;
+  if (p.theme) return [p.theme];
+  return ["punish"];
+}
+function sortedThemesOf(p) { const set = new Set(themesOf(p)); return THEME_PRIORITY.filter((t) => set.has(t)); }
+function primaryTheme(p) { return sortedThemesOf(p)[0] || "punish"; }
+function themeLabelsOf(p) { return sortedThemesOf(p).map((t) => THEME_LABEL[t]).join(" · "); }
 /* (20차 UI1) 퍼즐 테마별 카드 색감·기하학 패턴 차별화 — 희생(위험을 감수하는 대담한 수)은 붉은 대각선
    칼날(X) 패턴, 우위 점하기(꾸준히 앞서나감)는 초록 상승 쐐기 줄무늬, 실수 응징(정확한 일격)은
    호박색 스파크(방사형 다이아몬드) 패턴을 카드 배경에 옅게 깔아 한눈에 테마를 구분할 수 있게 한다. */
@@ -6181,7 +6199,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
 function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, engine, liveOn, canEdit, bumpContent }) {
-  const theme = puzzle.theme || "punish";
+  const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
   // 분기 트리: 개발자 길이 재조정(CONTENT.puzzleOverrides — 모든 유저 공통) > 저장된 tree > 구버전 lines/solution
@@ -6527,7 +6545,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     if (!engine || engine.status !== "ready" || regenBusy) return;
     setRegenBusy(true); setRegenErr("");
     try {
-      const th = puzzle.theme || "punish";
+      const th = primaryTheme(puzzle);
       const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
       const opts = { ...puzzleThemeOpts(th, targetInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedSeq };
       const gen = await genPuzzleTree(engine, setup, opts);
@@ -6560,7 +6578,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
       <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{THEME_LABEL[theme]}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{puzzle.name}</div>
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
           {/* (20차 기능1) 별: 라인 1개 이상 ★1 · 50% 이상 ★2 · 전부 ★3 */}
@@ -6732,7 +6750,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
   // 위쪽 얇은 띠·번호 색·옅은 배경 패턴만 테마색으로 물들인다.
-  const theme = p.theme || "punish";
+  const theme = primaryTheme(p);
   const themeAccent = (PUZZLE_THEME_STYLE[theme] || PUZZLE_THEME_STYLE.punish).accent;
   return (
     /* (18차 UI7) 카드 크기 축소 + 도감 탭처럼 정사각형 비율 — 한 화면에 더 많은 퍼즐이 보이도록.
@@ -6749,7 +6767,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         </div>
         <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.35 }}>{p.name}</div>
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
-          <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{THEME_LABEL[theme]} · 라인 {totalLines}개</span>
+          <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{themeLabelsOf(p)} · 라인 {totalLines}개</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         <div className="flex items-center justify-between" style={{ marginTop: 2, gap: 4 }}>
@@ -7202,7 +7220,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
     for (const no of Object.keys(m)) { const p = rankPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
     for (const no of myRepostNos) { const p = myRepostPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
-    const passesFilter = (p) => (filter === "all" || (p.theme || "punish") === filter) && !solved.has(p.id);
+    const passesFilter = (p) => (filter === "all" || themesOf(p).includes(filter)) && !solved.has(p.id);
     const ranked = [...byId.values()].filter(passesFilter).map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).map((x) => x.p);
     const rankedIds = new Set(ranked.map((p) => p.id));
     const reposted = myRepostNos.map((no) => myRepostPuzzles[no]).filter((p) => p && passesFilter(p) && !rankedIds.has(p.id));
@@ -7218,14 +7236,14 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     return arr.slice(0, 6);
   }, [recommendedPool, recSeed]);
   if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
-  const themed = filter === "all" ? puzzles : puzzles.filter((p) => (p.theme || "punish") === filter);
+  const themed = filter === "all" ? puzzles : puzzles.filter((p) => themesOf(p).includes(filter));
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
   const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
   const cleared = themed.filter((p) => solved.has(p.id)).sort(byOpening);
   // (19차 UI3) 해결 완료 퍼즐을 오프닝별로 묶어 표기(cleared는 이미 오프닝순 정렬).
   const clearedByOpening = (() => { const m = new Map(); for (const p of cleared) { const k = p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; })();
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
-  const count = (k) => (k === "all" ? puzzles.length : puzzles.filter((p) => (p.theme || "punish") === k).length);
+  const count = (k) => (k === "all" ? puzzles.length : puzzles.filter((p) => themesOf(p).includes(k)).length);
   const solveByNumber = async () => {
     const n = parseInt(numInput, 10);
     if (!Number.isFinite(n)) { setNumMsg("번호를 입력하세요."); return; }
@@ -7917,6 +7935,7 @@ const CHANGELOG = [
       "퍼즐을 리포스트하는 기능을 추가했어요. 리포스트한 퍼즐은 풀이수나 좋아요 수와 상관없이 내 추천 퍼즐에 가끔씩 다시 등장해요.",
       "퍼즐 카드·풀이 화면에 좋아요 수와 함께 리포스트 수·공유 수도 볼 수 있어요.",
       "도감 탭에서 대표 오프닝(이탈리안 게임, 루이 로페즈 등) 이름표가 실제로는 그 오프닝과 상관없는 엉뚱한 위치에 붙어 보이던 문제를 해결했어요 — 이제 항상 그 오프닝을 시작하는 수 바로 위에 이름표가 와요.",
+      "실수를 응징하는 수가 동시에 탁월한 수이기도 한 경우, 사실상 같은 퍼즐이 \"실수 응징하기\"와 \"기물 희생하기\"로 따로따로 만들어지던 문제를 해결했어요. 이제 이런 퍼즐은 하나로 합쳐지고, \"실수 응징하기 · 기물 희생하기\"처럼 해당하는 테마가 함께 표시돼요.",
     ],
   },
   {
@@ -9961,7 +9980,10 @@ export default function App() {
       const i = prev.findIndex((x) => x.id === pz.id);
       if (i >= 0) {
         // (20차 기능1) 구버전(선형 라인) 퍼즐이 분기 트리 형식으로 재생성되면 교체(업그레이드)
-        if (pz.tree && !prev[i].tree) { puzzleShare(pz); const next = prev.slice(); next[i] = pz; return next; }
+        // (v0.1.0) 이미 있는 퍼즐에 테마 태그만 새로 얹은 경우(예: 실수 응징 퍼즐과 같은 포지션이던
+        // 기물 희생하기 퍼즐이 뒤늦게 병합됨)도 같은 방식으로 교체해 반영한다.
+        const themesChanged = themesOf(pz).join(",") !== themesOf(prev[i]).join(",");
+        if ((pz.tree && !prev[i].tree) || themesChanged) { puzzleShare(pz); const next = prev.slice(); next[i] = pz; return next; }
         return prev;
       }
       puzzleShare(pz);
