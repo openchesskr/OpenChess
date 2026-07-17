@@ -8695,7 +8695,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
   };
   const removeCodev = async (id) => { CONTENT.codev = CONTENT.codev.filter((x) => x !== id); await bumpContent(); };
   return (
-    <div className="max-w-xl">
+    <div className="max-w-xl mx-auto">
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 설정 아이콘과 중복돼 제거. */}
       <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
 
