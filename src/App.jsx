@@ -210,6 +210,17 @@ const TIER_IMAGE = {
   master: "/master-king.png",
   grandmaster: "/grandmaster.png",
 };
+// (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
+// 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
+const TIER_BG_IMAGE = {
+  iron: "/tier-bg-iron.webp",
+  bronze: "/tier-bg-bronze.webp",
+  silver: "/tier-bg-silver.webp",
+  gold: "/tier-bg-gold.webp",
+  diamond: "/tier-bg-diamond.webp",
+  master: "/tier-bg-master.webp",
+  grandmaster: "/tier-bg-grandmaster.webp",
+};
 // (v0.1.1) 디자이너가 구간(1~5)마다 로마 숫자가 함께 그려진 별도 이미지를 새로 올려줬다
 // (iron-1.png ~ iron-5.png 등, 파일명이 티어 key와 그대로 맞아떨어짐) — 이제 "티어명 텍스트 + 로마
 // 숫자"를 따로 적지 않고, 이 정확한 구간 이미지 한 장으로 티어와 구간을 동시에 나타낸다. 그랜드
@@ -237,16 +248,29 @@ function TierPieceGlyph({ size = 100, tierKey, division = null, muted = false })
   // 다이아몬드 청록…)가 옅게나마 남아, 위로 스크롤할수록 앞으로 만날 색이 은은하게 미리 보인다.
   return <img src={src} alt="" style={{ height: h, width: "auto", display: "block", flexShrink: 0, filter: muted ? "grayscale(.5) brightness(.72) saturate(.85)" : "none", opacity: muted ? 0.85 : 1 }} />;
 }
-// (v0.1.1) 로고 뒤 배경 원 — 특히 아이언처럼 어두운 톤의 기물이 어두운(브라운) UI 배경 위에서
-// 잘 안 보이던 문제를 밝은 원으로 감싸 해결한다.
-// (v0.1.2) 앤틱 아이보리(순백에 가까운 톤)는 사이트 전반의 어두운 에보니·브라운 배경 위에서
-// 너무 튀어 보였다 — 보드 테두리·버튼 등 사이트 전역에서 이미 쓰는 브라스 광택 톤(T.brass/
-// T.brassHi, BOARD_GLOSS와 동일 계열)의 골드 그러데이션으로 바꿔 어디에 놓여도 톤이 자연스럽게
-// 이어지도록 한다. 이미지는 원 정중앙에 오도록 배치한다.
+// (v0.1.1) 로고 뒤 배경 — 특히 아이언처럼 어두운 톤의 기물이 어두운(브라운) UI 배경 위에서 잘 안
+// 보이던 문제를 밝은 배경으로 감싸 해결한다.
+// (v0.1.2) 앤틱 아이보리(순백에 가까운 톤)를 사이트 전역 브라스 골드 그러데이션으로 바꿨었는데,
+// (v0.1.3) 다시 흰색으로 되돌리고, 원 대신 참고 도안(크레스트 문장)과 같은 비율의 십각형으로 바꾼다.
+// 정십각형(가로세로 반지름이 같음)이 아니라 세로로 살짝 긴 비율 — 참고 이미지의 세로:가로 비를
+// 근사해 rx(46)를 ry(50)보다 살짝 작게 잡는다(10각형은 위/아래 꼭짓점만 정확히 반지름 끝에 닿고
+// 좌우는 cos18°≈0.951배만큼만 벌어지므로, rx=46 기준 실제 가로 폭은 세로의 약 0.87배가 된다).
+const TIER_DECAGON_PTS = (() => {
+  const rx = 46, ry = 50;
+  return Array.from({ length: 10 }, (_, i) => {
+    const a = -Math.PI / 2 + i * (Math.PI / 5);
+    return (50 + rx * Math.cos(a)).toFixed(2) + "," + (50 + ry * Math.sin(a)).toFixed(2);
+  }).join(" ");
+})();
 function TierLogoDisc({ tierKey, division, size, discSize, muted = false }) {
   return (
-    <div style={{ width: discSize, height: discSize, borderRadius: "50%", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.35)", opacity: muted ? 0.62 : 1 }}>
-      <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
+    <div style={{ position: "relative", width: discSize, height: discSize, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", opacity: muted ? 0.62 : 1, filter: "drop-shadow(0 2px 5px rgba(0,0,0,.35))" }}>
+      <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+        <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+      </svg>
+      <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
+      </div>
     </div>
   );
 }
@@ -645,8 +669,14 @@ function useEngine(enginePref) {
       const cb = queue.current[0]; if (!cb) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
       if (line.startsWith("info") && cb.multi) {
-        const mp = line.match(/multipv (\d+)/); const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-        if (mp && pv && sc) cb.lines[parseInt(mp[1], 10)] = { uci: pv[1], cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+        const mp = line.match(/multipv (\d+)/);
+        // (v0.1.3 기능) 예전엔 " pv " 뒤 첫 수만 뽑았다(후보 수 목록에 어느 수를 보충할지만 필요했음) —
+        // 학습 탭에 엔진 라인을 전체 수순으로 보여주려면 그 뒤에 이어지는 전체 PV(공백으로 이어진
+        // UCI 수 목록)가 다 필요하다. "pv " 이후 줄 끝까지를 통째로 잘라 공백 기준으로 나눈다.
+        const pvIdx = line.indexOf(" pv ");
+        const pvList = pvIdx >= 0 ? line.slice(pvIdx + 4).trim().split(/\s+/) : null;
+        const dm = line.match(/^info depth (\d+)/);
+        if (mp && pvList && pvList.length && sc) cb.lines[parseInt(mp[1], 10)] = { uci: pvList[0], pv: pvList, depth: dm ? parseInt(dm[1], 10) : null, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
       } else if (sc && !cb.multi) {
         cb.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
         // (기능1) go depth N 한 번의 탐색 안에서도 스톡피시는 얕은 depth부터 점점 깊여 결과를 낸다.
@@ -709,6 +739,22 @@ function uciToSan(board, uci, color) {
   const fc = FILES.indexOf(uci[0]), fr = 8 - parseInt(uci[1], 10), tc = FILES.indexOf(uci[2]), tr = 8 - parseInt(uci[3], 10);
   if (fc < 0 || tc < 0 || !board[fr] || !board[fr][fc]) return null;
   return buildSan(board, fr, fc, tr, tc, color);
+}
+// (v0.1.3 기능) MultiPV 한 줄의 UCI 수 목록(그 줄이 시작하는 위치 prevSans 기준)을 순서대로 SAN으로
+// 바꾼다 — 학습 탭 엔진 라인(여러 수 앞까지 미리보기)에서 쓴다. 변환할 수 없는 수를 만나면(드묾)
+// 거기서 멈추고 그때까지 변환된 수만 돌려준다.
+function pvUciToSans(prevSans, uciList, maxPlies) {
+  const sans = [];
+  const cur = prevSans.slice();
+  const n = Math.min(uciList.length, maxPlies || uciList.length);
+  for (let i = 0; i < n; i++) {
+    const color = cur.length % 2 === 0 ? "w" : "b";
+    const san = uciToSan(boardFromSans(cur), uciList[i], color);
+    if (!san) break;
+    sans.push(san);
+    cur.push(san);
+  }
+  return sans;
 }
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
 async function genPunishLine(engine, sans, plies = 3) {
@@ -2012,6 +2058,19 @@ function deriveKeywords(m) {
   return ks.slice(0, 3);
 }
 function moveNumber(ply) { return Math.floor(ply / 2) + 1 + (ply % 2 === 0 ? "." : "..."); }
+// (v0.1.3 기능) 엔진 라인은 이미 둔 수(sans)는 빼고 "지금 위치에서의 다음 수"부터만 보여준다 —
+// pvUciToSans로 얻은 이어지는 수(contSans)만 받아, 그 첫 수의 실제 수 번호(startPly)부터 표기한다.
+// contSans 각 요소는 pvUciToSans가 buildSan으로 만들어 이미 +/# 기호가 붙어 있으므로 decorateLine이
+// 필요 없다(decorateLine은 시작 위치부터 다시 재생해야 해 이 이어붙인 조각만으로는 쓸 수 없음).
+function pvContinuationText(startPly, contSans) {
+  const parts = [];
+  contSans.forEach((san, i) => {
+    const ply = startPly + i;
+    if (ply % 2 === 0 || i === 0) parts.push(moveNumber(ply) + san);
+    else parts[parts.length - 1] += " " + san;
+  });
+  return parts.join(" ");
+}
 function fmtFull(n) { return n == null ? "—" : Number(n).toLocaleString("en-US"); }
 function moverEval(m, ply) {
   const sgn = ply % 2 === 0 ? 1 : -1;
@@ -2116,27 +2175,58 @@ function PendingDots({ size = 14 }) {
 }
 
 /* ============================================================ 평가 막대 (백=왼쪽, 숫자 항상 보이게) ============================================================ */
+// (v0.1.3 기능) 평가치를 소수점 둘째 자리까지, 유리한 쪽 색으로 채운 배지로 보여준다 — 백 유리는
+// 흰 바탕에 검정 글자, 흑 유리는 검정 바탕에 흰 글자, 0.00(팽팽)은 좌우 반반으로 갈라 보여준다
+// (같은 텍스트를 두 번 겹쳐 그리고 각각 clip-path로 절반씩만 드러낸다 — 정중앙에서 흰 바탕 위
+// 검정 글자가 검정 바탕 위 흰 글자로 자연스럽게 이어진다). 평가치 바 좌측 배지·엔진 라인 각 줄의
+// 배지가 이 컴포넌트를 함께 쓴다.
+// (v0.1.3 기능) 평가치 텍스트(소수점 둘째 자리 · 메이트는 M수 · 종국은 결과)를 EvalBadge(박스형)와
+// EvalBar의 좌측 회색 텍스트가 함께 쓴다 — 항상 같은 값을 같은 규칙으로 표기하도록 로직을 한곳에 둔다.
+function evalDisplayText(ev) {
+  return !ev ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
+}
+function EvalBadge({ ev, small }) {
+  const num = !ev ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : (ev.cp || 0));
+  const txt = evalDisplayText(ev);
+  // (v0.1.3 UI) 엔진 라인(small)은 자리를 훨씬 더 압축한다 — 좌우 여백·최소폭·글자 크기를 크게 줄임.
+  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: small ? 32 : 50, padding: small ? "1px 3px" : "3px 8px", borderRadius: small ? 4 : 6, fontSize: small ? 9 : 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)", flexShrink: 0 };
+  if (num > 0) return <span style={{ ...base, background: "#FFFFFF", color: "#0E0907" }}>{txt}</span>;
+  if (num < 0) return <span style={{ ...base, background: "#0E0907", color: "#FFFFFF" }}>{txt}</span>;
+  return (
+    <span style={{ ...base, position: "relative", background: "linear-gradient(90deg,#FFFFFF 50%,#0E0907 50%)", overflow: "hidden" }}>
+      <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#0E0907", clipPath: "inset(0 50% 0 0)" }}>{txt}</span>
+      <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", clipPath: "inset(0 0 0 50%)" }}>{txt}</span>
+      <span style={{ opacity: 0 }}>{txt}</span>
+    </span>
+  );
+}
 function EvalBar({ cp, width, depth }) {
   // (20차) cp는 숫자(cp) 또는 {cp}|{mate,win} 객체 — 메이트 수순에서 +10.00이 아니라 M수로 표기한다.
   const ev = cp == null ? null : (typeof cp === "number" ? { cp } : cp);
   const num = ev == null ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : ev.cp);
   const e = Math.max(-4, Math.min(4, num / 100));
   const whitePct = ((4 + e) / 8) * 100;
-  // 이미 체크메이트인 포지션(mate===0)은 남은 수가 없으므로 결과 스코어로 표기.
-  const txt = ev == null ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
   // (18차 UX5) depth 숫자 대신, 타이핑 인디케이터풍 3-dot 바운스로 "엔진이 탐색 중"임을 표현하고
   // 옆의 흰색 도움말 아이콘을 누르면 말풍선으로 "n수 후까지 탐색 중.." 수치를 자세히 보여준다.
   const [tipOpen, setTipOpen] = useState(false);
   useEffect(() => { if (depth == null) setTipOpen(false); }, [depth == null]);
   return (
     <div style={{ width, margin: "0 auto 8px", position: "relative", zIndex: tipOpen ? 50 : 1 }}>
+      {/* (버그 수정) 흰 구간 색이 엔진 라인 평가치 박스(EvalBadge, 순백 #FFFFFF)와 달리 살짝 크림빛
+          도는 T.ivoryHi(#FAF2E2)였다 — 같은 "백 유리"를 나타내는 색인데 바와 박스가 서로 다른 흰색을
+          쓰면 불일치해 보이므로 EvalBadge와 동일한 순백으로 맞춘다. */}
       <div style={{ display: "flex", height: 18, borderRadius: 5, overflow: "hidden", border: "1px solid #000" }}>
-        <div style={{ width: whitePct + "%", background: T.ivoryHi }} />
+        <div style={{ width: whitePct + "%", background: "#FFFFFF" }} />
         <div style={{ width: (100 - whitePct) + "%", background: "#140C07" }} />
       </div>
-      <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", padding: "1px 8px", borderRadius: 6, background: "rgba(247,240,225,.92)", color: T.ink, fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)" }}>{txt}</span>
+      {/* (v0.1.3 UI) 색이 채워진 박스 배지 대신, 소수점 둘째 자리까지 표기한 텍스트를 바에 직접
+          얹는다(박스 배경 없음) — 백이 유리하면 흰 구간(좌측)에 검은 텍스트를 좌측 끝에, 흑이
+          유리하면 검은 구간(우측)에 흰 텍스트를 우측 끝에 두어 항상 자신이 놓인 구간과 대비되게 한다. */}
+      <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", ...(num >= 0 ? { left: 6, color: "#140C07" } : { right: 6, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
+      {/* (버그 수정) 평가치 텍스트가 백 유리 시 좌측, 흑 유리 시 우측으로 옮겨 다니게 되면서, 항상
+          우측 고정이던 탐색 인디케이터와 겹칠 수 있어 평가치 텍스트의 반대편에 두도록 바꾼다. */}
       {depth != null && (
-        <span style={{ position: "absolute", top: "50%", right: 4, transform: "translateY(-50%)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span style={{ position: "absolute", top: "50%", ...(num >= 0 ? { right: 4 } : { left: 4 }), transform: "translateY(-50%)", display: "inline-flex", alignItems: "center", gap: 4 }}>
           {/* (18차 보충 UX5) dot 크기를 살짝 줄임(4→3px) */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
             {[0, 1, 2].map((i) => <span key={i} style={{ width: 3, height: 3, borderRadius: "50%", background: T.brassHi, display: "inline-block", animation: "dotbounce 1.1s ease-in-out " + (i * 0.18) + "s infinite" }} />)}
@@ -2151,6 +2241,38 @@ function EvalBar({ cp, width, depth }) {
           )}
         </span>
       )}
+    </div>
+  );
+}
+
+// (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV)을 보여준다. 각 줄은 왼쪽에 EvalBadge
+// (그 줄의 평가치), 오른쪽에 이미 둔 수는 빼고 "지금 위치에서의 다음 수"부터 이어지는 수순(최대
+// depth 15수, Playfair Display 기보 폰트)을 한 줄로 이어 붙이고, 줄이 보드 폭보다 길면 그 줄만
+// 좌우로 스크롤해서 끝까지 볼 수 있다. 줄 자체를 누르면(스크롤 영역 자체 클릭 포함) 그 줄의 첫
+// 수가 보드에서 그대로 두어진다 — 스크롤과 클릭이 같은 영역을 쓰므로, 드래그로 스크롤하다 손을
+// 뗀 것까지 클릭으로 오인해 수를 두지 않도록 pointerdown/up 좌표 차이를 함께 확인한다.
+function EngineLines({ lines, sans, width, onPlayFirst }) {
+  const dragStartRef = useRef(null);
+  if (!lines || !lines.length) return null;
+  // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
+  // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
+  // 못 이긴다) — 그 결과 줄(row)과 이 wrapper, 나아가 학습 탭 grid 컬럼까지 전부 그 폭에 맞춰
+  // 밀려 커지며 페이지 전체가 옆으로 밀려나 보드 오른쪽이 잘리는 모바일 왜곡의 원인이었다. 텍스트
+  // div·줄(row) 모두에 minWidth:0을 줘 실제로 줄 폭만큼만 차지하고 나머지는 그 안에서만
+  // 스크롤되도록(overflow-x:auto가 비로소 제대로 작동) 막는다. wrapper에도 overflow:hidden을
+  // 더해, 혹시라도 새는 경우 이 컴포넌트 선에서 끝나고 위로 전파되지 않게 한다.
+  return (
+    <div style={{ width, minWidth: 0, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
+      {lines.map((l, i) => (
+        <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
+          onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
+          style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default" }}>
+          <EvalBadge ev={l.ev} small />
+          <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
+            {pvContinuationText(sans.length, l.sans)}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2187,7 +2309,7 @@ function useBoardSize(max = 360) {
 }
 
 /* ============================================================ 보드 ============================================================ */
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin }) {
+function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
   const effPieceSkin = pieceSkin || ctx.pieceSkin;
@@ -2200,6 +2322,9 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
   return (
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
       {showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}
+      {/* (v0.1.3 기능) 학습 탭 메인 보드에서 평가치 바와 보드 사이에 엔진 상위 3줄을 끼워 넣기
+          위한 자리 — Board는 여러 화면에서 재사용되므로 이 슬롯을 안 쓰는 곳은 그대로다. */}
+      {belowEval}
       {/* (버그) 예전에는 각 칸을 flex row 안의 고정 px(width:cell,height:cell)로 두었는데, 이 그리드를
           담는 바깥 레이아웃이 계산된 폭보다 조금이라도 좁아지면(반응형 계산 오차 등) flex-shrink가
           가로 폭만 줄이고 세로 높이는 그대로 둬 칸이 정사각형이 아니게 눌렸다 — 좌표 라벨이 칸 경계를
@@ -2288,22 +2413,39 @@ function sansToPgnText(sans) {
 const SEQ_FONT = "'Playfair Display', 'Noto Sans KR', serif";
 // (18차 UX3) 수를 되돌리거나 기보를 클릭해 이전 수로 돌아가도 이후 수들(future)이 기보에서 사라지지 않고
 // 흐리게 계속 표시되며, 현재 수만 볼드로 강조된다. future 수를 클릭하면 그 수까지 다시 진행한다.
+// (v0.1.3 버그 수정) 기보가 길어지면 flex-wrap으로 줄바꿈돼 이 바의 높이가 계속 늘어나며 아래
+// 보드를 밀어냈다 — 한 줄로 고정하고(flexWrap:nowrap) 넘치는 만큼은 좌우 스크롤로 보게 한다.
 function SequenceBar({ sans, future = [], onJump }) {
   // (20차) 보드 상단 기보에 체크(+)/체크메이트(#) 기호가 항상 표시되도록 표기 직전에 보정한다.
   const all = useMemo(() => decorateLine([...sans, ...(future || [])]), [sans.join(" "), (future || []).join(" ")]);
+  // (v0.1.3 기능) 기보가 길어져 화면에 다 안 담기면, 수를 둘 때마다 자동으로 오른쪽(최신 수)으로
+  // 스크롤해 지금 두고 있는 수가 항상 보이게 한다.
+  // (버그 수정) scrollIntoView는 이 바만이 아니라 조상 스크롤 컨테이너를 전부 훑어 다 같이 스크롤
+  // 시킨다 — 모바일 실기기에서 페이지 전체가 오른쪽으로 밀려나며 보드가 화면 밖으로 잘려 보이는
+  // 왜곡의 원인이었다. 이 바 자신(scrollRef)의 scrollLeft만 직접 계산해 옮기고, 다른 조상은 절대
+  // 건드리지 않는다.
+  const scrollRef = useRef(null);
+  const curSpanRef = useRef(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const span = curSpanRef.current;
+    if (span) el.scrollLeft = Math.max(0, span.offsetLeft + span.offsetWidth - el.clientWidth);
+    else el.scrollLeft = el.scrollWidth;
+  }, [sans.join(" ")]);
   if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
-    return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}>{parts.join("  ")}</div>;
+    return <div ref={scrollRef} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
   return (
-    <div className="flex flex-wrap items-center" style={{ color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px" }}>
+    <div ref={scrollRef} className="flex items-center" style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}>
       {all.map((san, i) => {
         const isCur = i === cur;
         const isFuture = i > cur;
         return (
-          <span key={i} style={{ whiteSpace: "nowrap", opacity: isFuture ? 0.45 : 1 }}>
+          <span key={i} ref={isCur ? curSpanRef : undefined} style={{ whiteSpace: "nowrap", opacity: isFuture ? 0.45 : 1 }}>
             {i % 2 === 0 && <span style={{ fontWeight: isCur ? 800 : 500 }}>{(i / 2 + 1) + "."}</span>}
             <span onClick={() => onJump(i + 1)} className="press" style={{ cursor: "pointer", padding: "1px 3px", borderRadius: 4, fontWeight: isCur ? 800 : 500, color: isCur ? T.brassHi : T.ivoryHi, background: isCur ? "rgba(196,154,80,.18)" : "transparent" }}>{san}</span>
             {i < all.length - 1 ? (i % 2 === 0 ? " " : "  ") : ""}
@@ -2502,6 +2644,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const [moves, setMoves] = useState([]);
   const [posGames, setPosGames] = useState(node ? node.posGames : null);
   const [posEval, setPosEval] = useState(null);
+  const [engineLines, setEngineLines] = useState([]); // (v0.1.3 기능) 엔진 상위 3줄(MultiPV) 전체 수순
   const [curDepth, setCurDepth] = useState(null); // (17차) 평가치 바 위에 표기할 실시간 엔진 depth
   // (19차 UX1) 표기용 depth는 한 포지션 안에서 단조 증가(+1)만 하도록 한다. 원래는 위치 평가(→16)에
   // 이어 후보 수마다 별도 go depth(→15)를 돌려 setCurDepth가 1~15를 여러 번 반복해 표기가 튀었다.
@@ -2512,7 +2655,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // moves가 늘어날 때마다 처음부터 다시 실행된다. 예전엔 재실행될 때마다 이 포지션 평가(be)와
   // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
   // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
-  const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, live: new Map() });
+  const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, linesPromise: null, live: new Map() });
   // (성능) 화면에 보이는 후보 수(캡 없이 최대 수십 개)의 실시간 평가가 메인 엔진 큐 하나로 한 번에
   // 하나씩 순서대로 처리되고 있었다 — 후보 수가 많은 포지션일수록 총 대기 시간이 후보 수 개수에
   // 정비례해 늘어(수당 최대 700ms) 체감 지연의 핵심 원인이었다. depth·movetime(정확도)은 그대로
@@ -2570,7 +2713,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       (extraSans || []).forEach((s) => { if (!seen.has(stripSuffix(s))) { list.push({ san: s, book: false, adopt: null, games: null, user: true }); seen.add(stripSuffix(s)); } });
       return list;
     };
-    setMoves(withExtra(base.map((m) => ({ ...m })))); setPosGames(node ? node.posGames : null); setPosEval(null); setEngineNote(""); setMasterEmpty(false);
+    setMoves(withExtra(base.map((m) => ({ ...m })))); setPosGames(node ? node.posGames : null); setPosEval(null); setEngineLines([]); setEngineNote(""); setMasterEmpty(false);
     if (!liveOn) return;
     (async () => {
       try {
@@ -2658,14 +2801,42 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 다음 실행이 시작되면 "값이 없으니 또 요청"하게 되어 캐시가 무력화된다. 값이 아니라 진행 중인
       // Promise 자체를 즉시(await 전에) 캐시해 둬야, 뒤이은 재실행들이 새 요청 대신 같은 Promise를
       // 기다리게 되어 중복 요청이 완전히 사라진다.
-      if (posCacheRef.current.key !== key) posCacheRef.current = { key, bePromise: null, pvsPromise: null, live: new Map() };
+      if (posCacheRef.current.key !== key) posCacheRef.current = { key, bePromise: null, pvsPromise: null, linesPromise: null, live: new Map() };
       const cache = posCacheRef.current;
       if (!cache.bePromise) cache.bePromise = engine.evaluate(sansToFen(sans), 16, onEvalProgress, 1200);
       const be = await cache.bePromise;
       if (cancelled || !be) return;
       setPosEval(be.mate != null || be.cp != null ? mkPosEval(be) : null);
+      // (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV-3)을 전체 수순으로 보여준다 — 후보
+      // 수 목록 보충용 MultiPV-10(depth 13, 아래)과는 별개 요청·별개 캐시다(그쪽은 첫 수만 필요하고
+      // depth·개수 요구사항이 달라 공유하면 서로의 용도에 안 맞는 절충이 된다).
+      if (!cache.linesPromise) cache.linesPromise = engine.evaluateMulti(sansToFen(sans), 15, 3, 3000);
+      const pvs3 = await cache.linesPromise;
+      let lines = [];
+      if (!cancelled && pvs3 && pvs3.length) {
+        lines = pvs3.filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+          ev: pv.mate != null
+            ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
+            : { cp: pv.cp * baseWhite },
+          sans: pvUciToSans(sans, pv.pv, 15),
+        }));
+        setEngineLines(lines);
+      }
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
+      // (버그 수정) 수 블록(MoveTile) 목록의 개별 평가치는 이 아래에서 별도의 빠른 풀(depth 15,
+      // movetime 700ms 상한)로 채워지는데, 그 수가 방금 구한 엔진 상위 3줄(MultiPV-3, movetime
+      // 3000ms — 훨씬 더 정확) 중 하나의 첫 수와 같다면 서로 다른 검색에서 나온 값이 미세하게
+      // 갈려 같은 수인데 블록과 엔진 라인의 평가치가 서로 다르게 보였다. 겹치는 수는 항상 이
+      // 줄의 값을 그대로 가져다 쓰도록 live를 맞춰 두면(아래 개별 검색 루프는 live가 이미 채워진
+      // 수를 건너뛰므로) 두 표시가 항상 정확히 일치한다 — 집중 학습 화면도 같은 live 필드를
+      // 그대로 물려받으므로 결과적으로 학습 탭 전체가 하나의 엔진 결과로 통일된다.
+      if (lines.length) {
+        const lineEvBySan = {};
+        lines.forEach((l) => { if (l.sans && l.sans.length) lineEvBySan[stripSuffix(l.sans[0])] = l.ev; });
+        cur = cur.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; });
+        setMoves((prev) => prev.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+      }
       const curNonbook = () => cur.filter((m) => !m.book).length;
       if ((!isMaster || masterEmpty) && curNonbook() < 9) {
         const brd = boardFromSans(sans);
@@ -2814,7 +2985,13 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // (UX1) 보드 위 평가치 바는 항상 "현재 후보 수 중 최선의 수" 평가에서 유도한다(같은 계산에서
   // 파생되므로 평가치순 1위 수의 평가치와 구조적으로 항상 일치). 엔진의 포지션 직접 평가(posEval)는
   // 후보 수 평가가 하나도 없을 때(막 포지션에 진입한 순간)의 임시 표시값으로만 사용한다.
-  return { moves: tiled, posGames, engineNote, posEval: fallbackEval != null ? fallbackEval : posEval, curDepth, node };
+  // (v0.1.3 버그 수정) 평가치 바와 엔진 라인 1번째(최선의 수) 표기가 서로 다른 엔진 요청(후보 수
+  // 목록의 개별 라이브 평가 vs MultiPV-3 전용 요청)에서 나와 미세하게 어긋나 보일 수 있었다 —
+  // engineLines가 준비돼 있으면(대개 posEval과 거의 같은 시점에 함께 채워짐) 그 1번째 줄의 평가치를
+  // 그대로 평가치 바에 써서 항상 같은 값이 되도록 한다. 아직 준비 전(포지션 진입 직후)에만 기존
+  // fallback(후보 수 중 최선)·posEval(포지션 직접 평가) 순으로 대체한다.
+  const barEval = engineLines.length ? engineLines[0].ev : (fallbackEval != null ? fallbackEval : posEval);
+  return { moves: tiled, posGames, engineNote, posEval: barEval, engineLines, curDepth, node };
 }
 
 /* ============================================================ 집중 학습 모드 ============================================================ */
@@ -3576,7 +3753,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [mode, setMode] = useState("normal");
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
-  const { moves, posGames, engineNote, posEval, curDepth } = useMergedMoves(sans, engine, liveOn && !analyzeOpen, extra[key], contentVer, mode, sortBy);
+  const { moves, posGames, engineNote, posEval, engineLines, curDepth } = useMergedMoves(sans, engine, liveOn && !analyzeOpen, extra[key], contentVer, mode, sortBy);
   // (20차 UX4) 스크롤이 많이 내려간 상태(예: 깊은 수 블록 클릭)에서 집중 학습에 들어가면, 페이지
   // 스크롤 위치가 그대로 유지되어 미니 보드가 화면 아래로 밀려 하단 탭에 가려 보이는 문제가 있었다 —
   // 진입 시 맨 위로 스크롤해 보드가 항상 하단 탭 위쪽 여유 공간 안에서 시작하도록 한다.
@@ -3691,6 +3868,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     if (mm) go(mm.san, false); else go(san, true);   // 블록에 있으면 표준 SAN으로, 없으면 사용자 수 블록 생성
     return true;
   }, [board, color, go, moves, ep]);
+  // (v0.1.3 기능) 엔진 라인을 클릭하면 그 라인의 첫 수(지금 위치에서 바로 다음 수)를 둔다 —
+  // tryMove와 같은 규칙으로, 후보 수 블록에 이미 있으면 그 표준 SAN으로, 없으면 사용자 수로 둔다.
+  const playEngineMove = useCallback((san) => {
+    if (focus) return;
+    const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(san));
+    if (mm) go(mm.san, false); else go(san, true);
+  }, [focus, moves, go]);
   const completePromo = useCallback((piece) => {
     if (!promoPrompt) return;
     const { from, to } = promoPrompt; setPromoPrompt(null); setSel(null); setDrag(null);
@@ -3741,6 +3925,20 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     setSans([...sans, h]); setFuture(future.slice(1)); setSel(null);
   };
   const reset = () => { setSans([]); setFuture([]); setSel(null); setLastQ(null); };
+  // (v0.1.3 기능) 컴퓨터 환경에서 A/D키나 </>키로 보드 하단의 이전/다음 버튼과 동일하게 수를 되돌리고
+  // 넘길 수 있게 한다. 입력창에 타이핑 중이거나(PGN 붙여넣기·퍼즐 번호 입력 등) 단축키 조합(Ctrl/Alt/
+  // Meta) 중에는 가로채지 않고, 집중학습 중에는 버튼 자체가 비활성화되므로 키보드도 함께 끈다.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (focus || e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = e.target && e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+      if (e.key === "a" || e.key === "A" || e.key === "<") { e.preventDefault(); back(); }
+      else if (e.key === "d" || e.key === "D" || e.key === ">") { e.preventDefault(); fwd(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focus, back, fwd]);
 
   const enterFocus = (m) => {
     const childKey = [...sans, m.san].join(" ");
@@ -3817,8 +4015,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <div>
-        <div style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
+      {/* (버그 수정) 이 div는 grid 아이템인데 min-width 기본값이 auto라, 내부 기보 바 등이
+          overflow-x:auto+min-width:0으로 자체 스크롤 처리를 해도 grid 트랙 자체가 콘텐츠의
+          최소 폭(min-content)만큼 억지로 넓어져 모바일에서 보드가 화면 밖으로 밀려나는 원인이었다. */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
           <div className="mb-3 flex items-center justify-between gap-2">
             <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} />
             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -3830,7 +4031,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           </div>
           {analyzeOpen && <AnalysisModal sans={[...sans, ...future]} engine={engine} onClose={() => setAnalyzeOpen(false)} />}
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
-            <Board board={board} flip={flip} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} />
+            <Board board={board} flip={flip} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ}
+              belowEval={<EngineLines lines={engineLines} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
@@ -4232,12 +4434,18 @@ function clampPanAxis(p, viewportSize, min, max, minVisible) {
   if (lo > hi) return (lo + hi) / 2;
   return Math.max(lo, Math.min(hi, p));
 }
+// (v0.1.3 버그 수정) "화면에 실제 블록이 있는지"를 블록이 100% 온전히 다 들어와야 참으로 치도록
+// 판정하고 있었다 — 뷰포트 크기가 격자 간격(colW/rowH)의 배수와 딱 맞아떨어지지 않는 이상(거의
+// 항상 그렇다) 드래그 도중 어느 블록도 한 픽셀의 오차 없이 완전히 다 보이지 않는 순간이 매 프레임
+// 존재하고, 그때마다 이 함수가 false를 반환해 clampSchematicPan이 "빈 공간으로 나갔다"고 오판해
+// 가장 가까운 블록으로 계속 스냅해버렸다 — 그 결과 화면 끝(진짜 빈 공간)이 아닌데도 팬이 매 순간
+// 튕겨 돌아와 스크롤 자체가 안 되는 것처럼 보였다. "블록이 화면에 있다"는 판정은 완전 포함이 아니라
+// 뷰포트와 블록의 사각형이 조금이라도 겹치는지(교차 여부)만으로 충분하다 — 어떤 블록과도 전혀 겹치지
+// 않을 때(진짜로 빈 공간까지 나갔을 때)만 스냅이 개입한다.
 function schematicItemVisible(pan, zoom, viewportW, viewportH, it, boxW, boxH, insetTop) {
   const left = pan.x + it.x * zoom, right = left + boxW * zoom;
   const top = pan.y + it.y * zoom, bottom = top + boxH * zoom;
-  const visW = Math.min(right, viewportW) - Math.max(left, 0);
-  const visH = Math.min(bottom, viewportH) - Math.max(top, insetTop);
-  return visW >= boxW * zoom - 0.5 && visH >= boxH * zoom - 0.5;
+  return right > 0 && left < viewportW && bottom > insetTop && top < viewportH;
 }
 // (v0.1.2 기능) insetTop — 검색창 등 캔버스 위에 떠 있는 UI가 뷰포트 상단을 가리는 만큼, 스냅 대상
 // 블록이 그 뒤에 숨어버리지 않도록 "화면에 보인다"고 칠 유효 영역의 위쪽을 그만큼 안으로 줄인다.
@@ -5776,12 +5984,23 @@ const QUEST_OPENING_POOL = [
 ];
 const QUEST_OPENING_MOVES = Object.fromEntries(QUEST_OPENING_POOL.map((o) => [o.name, o.moves]));
 const DEFAULT_QUEST_OPENINGS = QUEST_OPENING_POOL.map((o) => o.name);
+// (버그 수정) 일일 퀘스트 오프닝 후보 풀(recentOpenings)에는 이 큐레이션된 39개 풀에 없는 더 구체적인
+// 하위 오프닝 이름도 들어올 수 있다(집중학습·퍼즐 경로에서 5수 이상 진행한 오프닝은 그대로 후보가 됨)
+// — 그런 이름은 QUEST_OPENING_MOVES에 없어 클리어 조건 기보(수순)가 통째로 안 보였다. 표에 없으면
+// 오프닝 트리에서 그 이름의 경로를 직접 찾아(findOpeningPathByFuzzyName은 이 함수 정의보다 뒤에서
+// 선언되지만 함수 선언은 호이스팅되고 실제 호출은 렌더 시점이라 문제없다) 그 수순으로 대신 표기한다.
+function questOpeningMovesText(name) {
+  if (!name) return null;
+  if (QUEST_OPENING_MOVES[name]) return QUEST_OPENING_MOVES[name];
+  const path = findOpeningPathByFuzzyName(name);
+  return path && path.length ? sansToPgnText(path) : null;
+}
 // (18차 보충 UX2) 오프닝 플레이 외의 chess.com 활동 퀘스트 — 오프닝 무관.
 function questLabel(q) {
   if (!q) return "";
   if (q.type === "play5") return "chess.com에서 게임 5회 플레이";
   if (q.type === "win3") return "chess.com에서 게임 3회 승리";
-  return (q.opening || "오프닝") + "로 chess.com에서 1국 플레이";
+  return (q.opening || "오프닝") + "로 chess.com에서 게임 1회 플레이하기";
 }
 // (기능2→18차 보충 UX2) 오늘의 퀘스트 생성 — 퍼즐 2회 풀기(고정) + 활동 퀘스트 3개(오프닝 플레이 / 5회 플레이 / 3회 승리).
 // recentOpenings에는 5수 이상 진행한 하위 오프닝 이름도 들어오므로(집중학습/퍼즐 경로) 그대로 후보가 된다.
@@ -6017,19 +6236,14 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
 // 기준으로 맞춰야(items-end) 이미지 안에 그려진 로마 숫자끼리 높이가 나란히 맞는다.
 function TierBadge({ totalXp, compact, onClick }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const { tier, xpInDivision, xpForNextDivision, division } = info;
-  const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
-  // (v0.1.2) 진행바+XP 텍스트를 로고 오른쪽이 아니라 아래쪽에 배치 — 세로로 쌓아 로고 밑에 정렬한다.
-  // (v0.1.2) XP 텍스트는 그 아래 줄이 아니라 진행바 오른쪽에 나란히 배치.
+  const { tier, division } = info;
+  // (v0.1.3 UI) 헤더 티어 배지에서 진행바·XP 텍스트를 없애고 로고만 남긴다 — 자세한 진행도는
+  // 눌러서 여는 여정 지도에서 이미 볼 수 있어 헤더는 배지만으로 충분히 간결하게 유지한다.
+  // (버그 수정) 바로 옆 검색 버튼과 너무 붙어 있어 눌러야 할 두 버튼이 시각적으로 뭉쳐 보였다 —
+  // 오른쪽에 여백을 더 주고, 로고 자체도 살짝 키워 헤더에서 더 잘 보이게 한다.
   return (
-    <div onClick={onClick} className="press flex flex-col items-center" style={{ gap: 3, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 32 : 40} discSize={compact ? 34 : 42} />
-      <div className="flex items-center" style={{ gap: 4 }}>
-        <div style={{ width: compact ? 34 : 42, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
-          <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
-        </div>
-        <span style={{ fontSize: compact ? 7.5 : 8, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap" }}>{xpInDivision}/{xpForNextDivision}</span>
-      </div>
+    <div onClick={onClick} className="press flex flex-col items-center" style={{ flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default", marginRight: compact ? 10 : 18 }}>
+      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 38 : 47} discSize={compact ? 40 : 49} />
     </div>
   );
 }
@@ -6092,6 +6306,12 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
+  // (v0.1.3 버그 수정) 도감 오프닝 트리는 캔버스 위에 뜨는 검색창을 가리려고 SCHEMATIC_TOP_INSET을
+  // 팬 한계·자동 중앙 정렬 계산에 넘기는데, 이 모식도는 우상단에 뜨는 확대/축소 버튼에 대해 같은
+  // 처리가 빠져 있었다 — 그 결과 자동 중앙 정렬이나 팬이 그 버튼 바로 밑까지 블록을 밀어 넣어,
+  // 버튼이 수 라벨·평가치 위에 그대로 겹쳐 가려 보이는 경우가 있었다(특히 화면이 좁아 이 겹침이
+  // 더 눈에 띄는 모바일). 버튼 높이(22)+여백만큼 위쪽을 유효 뷰포트에서 제외한다.
+  const topInset = 34;
   // (버그 수정, 도감 모식도와 동일) 퍼즐을 풀어 새 갈래가 고스트에서 실제 노드로 바뀔 때마다 y좌표를
   // 커서 0부터 다시 매기면, 그 뒤에 있던 이미 그려진 노드들이 한꺼번에 밀려나 흔들려 보인다 — 한 번
   // 배정된 y는 계속 캐싱해 절대 안 바뀌게 하고, 고스트가 실제 내부 노드로 바뀌어 더 이상 그 번호가
@@ -6196,15 +6416,17 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const ax = anchorX != null ? anchorX : rect.width / 2, ay = anchorY != null ? anchorY : rect.height / 2;
     const nz = clampZoom(zoom + delta);
     if (nz === zoom) return;
-    setPan(clampSchematicPan(anchoredZoomPan(pan, zoom, nz, ax, ay), nz, rect.width, rect.height, pxItems, boxW, boxH));
+    setPan(clampSchematicPan(anchoredZoomPan(pan, zoom, nz, ax, ay), nz, rect.width, rect.height, pxItems, boxW, boxH, topInset));
     setZoom(nz);
   };
-  // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정)
+  // 진행 위치가 항상 보이도록 자동 팬 — 현재 노드를 캔버스 중앙 부근으로(시작 상태는 좌상단 고정).
+  // (v0.1.3 버그 수정) topInset만큼은 확대/축소 버튼이 차지하므로, 그 아래 남는 영역을 기준으로
+  // 중앙 정렬해야 현재 노드가 버튼 뒤에 가려지지 않는다.
   useEffect(() => {
     const vw = boxRef.current ? boxRef.current.clientWidth : 380;
     const vh = boxRef.current ? boxRef.current.clientHeight : 208;
     const cx = curItem ? curItem.depth : 0, cy = curItem ? curItem.y : 0;
-    setPan({ x: Math.min(8, (vw - boxW) / 2 - cx * colW * zoom), y: Math.min(8, (vh - boxH) / 2 - cy * rowH * zoom) });
+    setPan({ x: Math.min(8, (vw - boxW) / 2 - cx * colW * zoom), y: Math.min(8, topInset + (vh - topInset - boxH) / 2 - cy * rowH * zoom) });
   }, [curItem && curItem.key, tree]);
   // (20차 기능1) 페이지 넘김(좌우 스와이프)과 모식도 내부 드래그(팬)가 같은 손가락 동작을 두고
   // 경쟁하던 문제 — 이 박스는 바깥 페이저의 onPagerPointerDown이 ".no-swipe"를 보고 아예
@@ -6230,7 +6452,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       const nz = clampZoom(pinchRef.current.zoom * (dist / Math.max(1, pinchRef.current.dist)));
       const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { left: 0, top: 0, width: 380, height: 208 };
       const anchorX = (a.x + b.x) / 2 - rect.left, anchorY = (a.y + b.y) / 2 - rect.top;
-      setPan((p) => clampSchematicPan(anchoredZoomPan(p, zoom, nz, anchorX, anchorY), nz, rect.width, rect.height, pxItems, boxW, boxH));
+      setPan((p) => clampSchematicPan(anchoredZoomPan(p, zoom, nz, anchorX, anchorY), nz, rect.width, rect.height, pxItems, boxW, boxH, topInset));
       setZoom(nz);
       return;
     }
@@ -6238,7 +6460,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 드래그해 갈 수 없도록 한계를 둔다.
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 380, height: 208 };
     const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
-    setPan(clampSchematicPan(raw, zoom, rect.width, rect.height, pxItems, boxW, boxH));
+    setPan(clampSchematicPan(raw, zoom, rect.width, rect.height, pxItems, boxW, boxH, topInset));
   };
   const onPointerUp = (e) => {
     if (e && e.pointerId != null) pointersRef.current.delete(e.pointerId);
@@ -6258,7 +6480,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       setPan((p) => {
         const raw = { x: p.x - e.deltaX, y: p.y - e.deltaY };
         const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 380, height: 208 };
-        return clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, pxItemsRef.current, boxW, boxH);
+        return clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, pxItemsRef.current, boxW, boxH, topInset);
       });
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
@@ -6510,8 +6732,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 상대(컴퓨터) 응수: 목표 라인을 따라가되, 벗어났으면 미해결 가지 우선(채택률 순)으로 자동 선택
   useEffect(() => {
     if (done || wrong || intro || isUserPly || !passKids.length) return;
-    let t2;
-    const t1 = setTimeout(() => {   // (UI4) 정답 수 뒤 1초 후 컴퓨터 응수 — 사용자가 결과를 보도록
+    let t2, cancelled = false;
+    const t1 = setTimeout(async () => {   // (UI4) 정답 수 뒤 1초 후 컴퓨터 응수 — 사용자가 결과를 보도록
       const keyArr = pathNodes.map((n) => stripSuffix(n.san));
       let next = null;
       if (targetLine && targetLine.sans.length > pathNodes.length && targetLine.sans.slice(0, pathNodes.length).every((s, i) => stripSuffix(s) === keyArr[i])) {
@@ -6523,10 +6745,20 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         scored.sort((a, b) => (b.un - a.un) || (b.ad - a.ad));
         next = scored[0].k;
       }
-      setReply({ sans: curSans, san: next.san, node: next });
+      // (v0.1.3 버그 수정) 트리에 이미 등급(kind)이 있으면 그대로 쓰지만, 구버전 퍼즐처럼 없는
+      // 경우엔 응수 애니메이션을 보여주기 시작하기 전에 엔진 판정을 먼저 끝내둔다 — 예전엔 reply를
+      // 곧장 세팅해 애니메이션을 틀어놓고 그 동안 moveIcon 쪽에서 "계산 중"이나 추측 아이콘을
+      // 먼저 보여줬다가 판정이 끝나면 다른 아이콘으로 갈아끼워, 응수 도중 아이콘이 눈에 띄게
+      // 바뀌어 보이는 문제가 있었다. 최종 등급이 정해진 뒤에야 애니메이션을 시작해 한 번만 보여준다.
+      let kind = next.kind || null;
+      if (!kind && liveOn && engine && engine.status === "ready") {
+        try { kind = await classifyMoveKind(engine, curSans, stripSuffix(next.san)); } catch { }
+      }
+      if (cancelled) return;
+      setReply({ sans: curSans, san: next.san, node: next, kind });
       t2 = setTimeout(() => { setReply(null); setPathNodes((p) => [...p, next]); }, 900);
     }, 1000);
-    return () => { clearTimeout(t1); if (t2) clearTimeout(t2); };
+    return () => { cancelled = true; clearTimeout(t1); if (t2) clearTimeout(t2); };
   }, [pathNodes.length, done, wrong, intro, tree]);
   // 진행 경로가 목표 라인에서 벗어나면(다른 우수 수 선택·상대의 다른 응수) 그 가지의 미해결 라인으로 목표 갱신
   useEffect(() => {
@@ -6570,7 +6802,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       if (cancelled) return;
       if (replyMove) {
         setWrongReply(replyMove);
-        await wait(1000);   // 상대의 응징 응수를 보여준다
+        await wait(1700);   // (v0.1.3 UX) 응징 응수를 원위치로 되돌리기 전 조금 더 오래 보여준다(1000ms→1700ms)
         if (cancelled) return;
         setRevertStage("reply");   // 1단계: 방금 보여준 응수부터 되돌림
         await wait(450);
@@ -6650,7 +6882,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 전까지는 시간이 지나도 아이콘이 그대로 유지되게 한다.
   useEffect(() => {
     let prevSans, mvSan, knownKind = null, isSetupMistake = false;
-    if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = reply.node && reply.node.kind; }
+    // (v0.1.3 버그 수정) reply는 이제 애니메이션을 틀기 전에 등급 판정까지 끝내고 세팅된다(위 상대
+    // 응수 effect 참고) — reply.node.kind(트리에 이미 있던 값) 없이도 reply.kind(그때 미리 계산해
+    // 둔 값)로 바로 확정된 아이콘을 쓴다. 아래 fallback(추측·"계산 중")으로 떨어지는 건 이제 엔진을
+    // 아예 못 쓰는 상황뿐이라, 응수 도중 아이콘이 바뀌어 보이는 일이 없다.
+    if (reply) { prevSans = reply.sans; mvSan = reply.san; knownKind = (reply.node && reply.node.kind) || reply.kind || null; }
     else if (pathNodes.length >= 1 && !wrong && !reverting) { prevSans = curSans.slice(0, -1); mvSan = pathNodes[pathNodes.length - 1].san; knownKind = pathNodes[pathNodes.length - 1].kind; }
     // (v0.1.2 버그 수정) 컴퓨터가 둔 첫 수(mistakeSan)는 아래 두 분기와 달리 이미 지나간 수라, 지금
     // 막 두어지는 수처럼 "계산 중" 점 애니메이션을 보여주거나 isSacrifice 추측값을 먼저 보여줬다 실제
@@ -6833,8 +7069,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
                 <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
               </button>
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="공유하기" title="공유하기">
-                <Send size={13} color={T.brass} />
+              {/* (v0.1.3 UI) PuzzleCard와 동일하게 라운딩된 사각형 배지(텍스트 포함)로 변경 */}
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 13px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }} aria-label="공유하기" title="공유하기">
+                <Send size={12} color={T.brass} />공유
               </button>}
             </div>
           </div>
@@ -6867,8 +7104,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 ? <RevertSlide board={wrong.board} from={wrong.from} to={wrong.at} size={boardSize} flip={userColor === "b"} />
               // (v0.1.2 기능) 오답을 두면 곧장 되돌리지 않고, 상대라면 그 오답을 어떻게 응징했을지
               // 엔진 최선 응수를 한 번 보여준다(engine을 못 쓰면 이 단계 없이 바로 되돌아간다).
+              // (v0.1.3 기능) 이 응수는 정의상 항상 그 자리에서 엔진이 찾아낸 최선 수이므로(아래 wrong
+              // effect의 evaluate 결과), 별도 등급 판정 없이 바로 "최선의 수" 배지를 붙인다.
               : wrongReply
-                ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} />
+                ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
               : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove} />}
             </div>
             <p style={{ fontSize: 13, color: done ? T.best : wrong ? T.blunder : T.ink, fontWeight: 700, marginTop: 12, textAlign: "center" }}>{prompt}</p>
@@ -6881,9 +7120,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             {/* (기능) 모식도 페이지에도 보드 페이지와 같은 크기·y좌표의 미니보드를 둔다. 모식도에서
                 이미 둔(공개된) 노드를 클릭하면, 보드 페이지로 옮기지 않고 여기서 그 수를 바로
                 애니메이션으로 재생해 복기할 수 있다(아직 안 둔 갈래는 예전처럼 그 라인을 풀도록 이동). */}
-            <div style={{ marginBottom: 10, minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700, textAlign: "center" }}>{previewNode ? "모식도에서 고른 수" : "모식도의 수를 눌러 다시 보기"}</span>
-            </div>
+            {/* (v0.1.3 UI) "모식도의 수를 눌러 다시 보기" 안내 문구를 삭제 — 모바일에서 좁은 화면을
+                더 차지하기만 하고, 모식도 자체가 눌러보는 UI임은 이미 충분히 직관적이다. */}
             <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{previewNode ? sansToPgnText([...setup, ...previewNode.path]) : " "}</div>
             <div style={{ width: "100%", maxWidth: 380, margin: "0 auto 12px" }}>
               {previewNode
@@ -7035,8 +7273,10 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               <Heart size={11} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
               <span style={{ fontSize: 9, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
             </button>}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-              <Send size={11} color={T.brass} />
+            {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
+                눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 11px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer" }}>
+              <Send size={10} color={T.brass} />공유
             </button>}
           </div>
         </div>
@@ -7054,6 +7294,10 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
   const dq = dailyQuest;
   const [remain, setRemain] = useState(msUntilKstMidnight());
   useEffect(() => { const iv = setInterval(() => setRemain(msUntilKstMidnight()), 1000); return () => clearInterval(iv); }, []);
+  // (버그 수정) questOpeningMovesText는 표에 없는 이름이면 오프닝 트리를 처음부터 훑는(BFS) 탐색을
+  // 한다 — 이 카드는 갱신 카운트다운 때문에 1초마다 리렌더되므로, 매 렌더마다 다시 돌리지 않도록
+  // 퀘스트 목록이 실제로 바뀔 때만(리롤·자정 갱신) 계산해 둔다.
+  const openingMovesTexts = useMemo(() => (dq && dq.quests ? dq.quests.map((q) => q.type === "opening" ? questOpeningMovesText(q.opening) : null) : []), [dq && dq.quests]);
   // (UX1) 완료됐지만 아직 확인(seen)하지 않은 퀘스트 — 진입 직후엔 미완료처럼 보여주다가 잠시 후
   // 클리어 애니메이션과 함께 완료 상태로 전환하고, 애니메이션이 끝나면 seen으로 기록한다.
   const [revealed, setRevealed] = useState({});
@@ -7100,7 +7344,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
           const canReroll = !((dq.rerolled || {})[i]) && !dq.claimed["cc_" + i];
           return (
             <div key={i} onClick={() => isOpening && onOpenOpening && onOpenOpening(q.opening)} className={isOpening ? "press" : undefined} style={{ cursor: isOpening ? "pointer" : "default" }}>
-              {row("cc_" + i, questLabel(q), !hasChesscom ? "설정에서 chess.com 계정을 연동해야 확인할 수 있어요" : (isOpening ? QUEST_OPENING_MOVES[q.opening] : null),
+              {row("cc_" + i, questLabel(q), !hasChesscom ? "설정에서 chess.com 계정을 연동해야 확인할 수 있어요" : (isOpening ? openingMovesTexts[i] : null),
                 /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
                 canReroll ? (
                   <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title="이 퀘스트만 교체(퀘스트당 1회)"
@@ -8174,6 +8418,24 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.1.3", date: "2026.7.17", items: [
+      "학습 탭 메인 보드에 엔진이 추천하는 상위 3줄을 평가치와 함께 보여줘요. 줄을 누르면 그 수가 바로 보드에 놓여요.",
+      "평가치 바를 소수점 둘째 자리까지, 유리한 쪽에 맞는 위치·색으로 표시해요.",
+      "상단 기보를 옆으로 넘겨볼 수 있게 했고, 수가 늘어나면 자동으로 최신 수가 보이도록 스크롤돼요. 컴퓨터에서는 A/D 또는 </> 키로도 수를 넘길 수 있어요.",
+      "프로필 버튼을 눌러 나오는 카드에도 메인 퀘스트 진척도와 푼 퍼즐 목록이 보여요.",
+      "소개 페이지(/about)의 애니메이션을 훨씬 풍성하게 만들었어요 — 스크롤할 때마다 반복 재생되고, 실제 화면 스크린샷도 많이 넣었어요.",
+      "티어 여정 지도를 새로 단장했어요 — 이미 지나온 구간은 노란 선과 초록 체크로 표시되고, 티어마다 어울리는 배경 이미지가 스크롤에 따라 나타나요. 잠금 아이콘은 없앴고 이미지는 항상 원래 색 그대로 보여요.",
+      "퍼즐 공유 버튼을 더 잘 보이도록 진하게 바꿨어요.",
+      "헤더의 티어 진행바를 없애 더 깔끔해졌어요(자세한 진행도는 로고를 눌러 여정 지도에서 볼 수 있어요). 모든 화면에서 회색 스크롤바도 안 보이게 했어요.",
+      "프로필의 \"푼 퍼즐\" 블록이 찌그러져 보이던 문제를 고쳤고, 5개까지 옆으로 넘겨볼 수 있어요.",
+      "퍼즐·도감 모식도에서 화면을 움직일 때 가끔 멈춰버리던 문제를 고쳤어요.",
+      "퍼즐에서 컴퓨터의 응징 수 아이콘이 깜빡이던 문제를 고쳤고, 최선의 수 배지도 표시돼요.",
+      "학습 탭에서 같은 수인데 위치마다 평가치가 조금씩 다르게 보이던 문제를 고쳐 항상 똑같이 보이도록 했어요.",
+      "일부 안드로이드 기기에서 학습 탭 화면이 옆으로 밀려나 보드와 기보가 잘려 보이던 문제를 해결했어요.",
+      "일부 일일 퀘스트에서 클리어 조건 기보가 안 보이던 문제를 고쳤어요.",
+    ],
+  },
+  {
     version: "0.1.2", date: "2026.7.16", items: [
       "퍼즐에서 틀린 수를 두면 곧장 원위치로 되돌리지 않고, 상대라면 그 수를 어떻게 응징했을지 최선의 응수를 먼저 보여준 뒤 되돌려요.",
       "퍼즐 모식도·도감 오프닝 트리에서 블록이 하나도 없는 빈 공간까지 드래그해서 넘어갈 수 없도록 했어요.",
@@ -8986,7 +9248,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
 // (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·티어·퍼즐 수·
 // 자주 두는 첫 수 — PublicProfileStats 재사용)를 보여주고, 그 아래 로그아웃 버튼을 둔다. 아바타/이름/
 // 아이디를 누르면 메뉴를 닫고 설정 탭의 내 프로필로 이동한다.
-function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile }) {
+function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile, mainQuestSummary, solvedNos, onOpenPuzzle, mySolved, myLineSolves }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   useEffect(() => {
@@ -8997,7 +9259,10 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
   }, [open]);
   const name = (profile.displayId || user) + roleIcon(user);
   const initial = (profile.nickname || profile.displayId || user || "?")[0].toUpperCase();
-  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId };
+  // (v0.1.3 기능) 설정 탭 "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐을 이 헤더 드롭다운에도
+  // 보여준다 — PublicProfileStats는 이미 pub.mainQuestSummary/solvedNos가 있으면 그 두 블록을
+  // 자동으로 그려주므로(다른 유저 공개 프로필과 동일한 컴포넌트), myPub에 그대로 채워 넣기만 하면 된다.
+  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, mainQuestSummary, solvedNos };
   const goToProfile = () => { setOpen(false); onGoToProfile(); };
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
@@ -9025,6 +9290,8 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
             onOpenOpening={onOpenOpening && ((n) => { setOpen(false); onOpenOpening(n); })}
             onOpenGame={onOpenGame && ((m) => { setOpen(false); onOpenGame(m); })}
             onOpenGameAnalyze={onOpenGameAnalyze && ((m) => { setOpen(false); onOpenGameAnalyze(m); })}
+            onOpenPuzzle={onOpenPuzzle && ((id, fallback) => { setOpen(false); onOpenPuzzle(id, fallback); })}
+            mySolved={mySolved} myLineSolves={myLineSolves}
           />
           <button onClick={() => { setOpen(false); onLogoutClick(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
         </div>
@@ -9230,7 +9497,7 @@ function FirstMovesDisplay({ firstMoves }) {
 // 닫고 나서 onOpenPuzzle을 호출하는 것까지 한곳에서 보장하기 위함(호출부마다 따로 신경 쓰지 않아도 됨).
 // onExpand는 "더 보기"를 처음 눌렀을 때만 한 번 호출되는 훅 — 공개 프로필은 이 시점에야 나머지
 // 퍼즐 데이터를 마저 불러온다(프로필을 열 때마다 전부 조회하지 않도록).
-const SOLVED_PREVIEW_COUNT = 3;
+const SOLVED_PREVIEW_COUNT = 5;
 function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onOpenPuzzle }) {
   const [showAll, setShowAll] = useState(false);
   const preview = puzzles.slice(0, SOLVED_PREVIEW_COUNT);
@@ -9243,8 +9510,12 @@ function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onO
         <p style={{ fontSize: 11, color: T.inkSoft }}>{loading ? "불러오는 중…" : "아직 푼 퍼즐이 없어요."}</p>
       ) : (
         <>
-          <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-            {preview.map((p) => renderCard(p, () => openPuzzle(p)))}
+          {/* (v0.1.3 버그 수정) 미리보기 3칸을 좁은 프로필 카드 폭에서 균등 3열(grid 1fr)로 강제 배치하면
+              PuzzleCard가 퍼즐 탭 기준 최소폭(148px)보다 훨씬 좁게 눌려 오프닝 이름 같은 텍스트가 한
+              글자씩 세로로 쪼개져 보이는 왜곡이 있었다 — 퍼즐 탭과 동일하게 카드 폭을 148px로 고정하고,
+              칸 수를 늘리는 대신(공간이 좁으므로) 가로 스크롤로 훑어보도록 바꿈. */}
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
+            {preview.map((p) => <div key={p.id} style={{ width: 148, minWidth: 148, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</div>)}
           </div>
           {total > SOLVED_PREVIEW_COUNT && (
             <button onClick={openAll} className="press" style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>더 보기 ({fmtFull(total)}개)</button>
@@ -9557,51 +9828,118 @@ function TierJourneyPath({ totalXp }) {
   // maxed일 때 null로 맞춰 둔 값과 그대로 비교된다.
   const currentIdx = useMemo(() => TIER_STATIONS.findIndex((s) => s.tierIdx === info.tierIndex && s.division === (info.maxed ? null : info.division)), [info]);
   const totalHeight = (TIER_STATIONS.length - 1) * (STATION_H + STATION_GAP) + STATION_H;
+  // (v0.1.3 기능) TIER_STATIONS는 티어별로 이미 뭉쳐서(아이언 5~1, 브론즈 5~1…) 순서대로 나열돼
+  // 있으므로, 같은 tier.key가 연속되는 구간을 하나의 "밴드"로 묶어 그 구간의 세로 픽셀 범위를 구한다
+  // — 이 범위에 그 티어 전용 배경 이미지를 깔면, 스크롤해서 그 티어 구간을 지날 때만 자연스럽게
+  // 그 배경이 보인다.
+  const tierBands = useMemo(() => {
+    const bands = [];
+    let i = 0;
+    while (i < TIER_STATIONS.length) {
+      const key = TIER_STATIONS[i].tier.key;
+      let j = i;
+      while (j < TIER_STATIONS.length && TIER_STATIONS[j].tier.key === key) j++;
+      const startIdx = i, endIdx = j - 1;
+      const top = Math.min(topOf(startIdx), topOf(endIdx));
+      const bottom = Math.max(topOf(startIdx), topOf(endIdx)) + STATION_H;
+      bands.push({ key, top, height: bottom - top });
+      i = j;
+    }
+    return bands;
+  }, []);
   return (
     // (기능) 노드·연결선이 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를 공유해, 컨테이너
     // 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다.
     <div style={{ position: "relative", paddingBottom: 20, height: totalHeight }}>
+      {/* (v0.1.3 기능) 티어별 배경 — 각 밴드 높이에 꽉 채우고(object-fit:cover), 원본 색감 그대로
+          쓰되(보정 없음) 천천히 확대·이동하는 카메라 무브(켄 번즈)를 반복 재생해 정지 이미지도
+          계속 살아있는 느낌을 준다. 위아래 가장자리는 mask로 옅게 흐려 다음 티어 배경과 부드럽게
+          이어지고, 어두운 그러데이션을 한 겹 덮어 그 위 흰 정거장 도형이 항상 잘 읽히게 한다. */}
+      {tierBands.map((b) => (
+        <div key={b.key} style={{ position: "absolute", left: 0, top: b.top, width: "100%", height: b.height, overflow: "hidden", zIndex: 0, WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black 70px, black calc(100% - 70px), transparent 100%)", maskImage: "linear-gradient(to bottom, transparent 0, black 70px, black calc(100% - 70px), transparent 100%)" }}>
+          <motion.img
+            src={TIER_BG_IMAGE[b.key]} alt=""
+            animate={{ scale: [1, 1.14, 1], x: ["0%", "-3%", "0%"], y: ["0%", "-2%", "0%"] }}
+            transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(15,9,5,.6), rgba(15,9,5,.72))" }} />
+        </div>
+      ))}
       <svg width="100%" height={totalHeight} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
         {TIER_STATIONS.slice(0, -1).map((_, i) => {
           const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
           const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
           const lit = i < currentIdx;
-          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={lit ? T.brass : "rgba(255,255,255,.18)"} strokeWidth={3} strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round" />;
+          // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
+          // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
+          return (
+            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={lit ? "#F5C542" : "rgba(255,255,255,.18)"} strokeWidth={lit ? 3.5 : 3}
+              strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              whileInView={{ pathLength: 1, opacity: 1 }}
+              viewport={{ once: false, amount: 0.6 }}
+              transition={{ duration: 0.7, ease: "easeOut" }}
+              style={lit ? { filter: "drop-shadow(0 0 3px rgba(245,197,66,.7))" } : undefined} />
+          );
         })}
       </svg>
       {TIER_STATIONS.map((s, i) => {
         const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
         const cx = i % 2 ? "78%" : "22%";
         const top = topOf(i);
-        // (v0.1.1) 로고 뒤에 배경 원을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
+        // (v0.1.1) 로고 뒤에 배경을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
         // 색으로 은은하게 빛나는 글로우를 준다.
-        // (v0.1.1 버그 수정) 잠긴 구간을 표시할 때 원 전체(배경 포함)의 불투명도를 낮췄더니, 원
-        // 뒤로 지나가는 점선 연결선이 옅게 비쳐 보였다(반투명 원을 통과해 배경의 선이 섞여 보임) —
-        // 원 배경은 항상 완전히 불투명하게 유지해 선을 확실히 가리고, "아직 안 왔다"는 표시는
-        // 기물 이미지 쪽만 옅게 낮춘다(TierPieceGlyph의 muted).
+        // (v0.1.1 버그 수정) 잠긴 구간을 표시할 때 배경 전체의 불투명도를 낮췄더니, 배경 뒤로
+        // 지나가는 점선 연결선이 옅게 비쳐 보였다(반투명 배경을 통과해 뒤의 선이 섞여 보임) — 배경은
+        // 항상 완전히 불투명하게 유지해 선을 확실히 가리고, "아직 안 왔다"는 표시는 기물 이미지
+        // 쪽만 옅게 낮춘다(TierPieceGlyph의 muted).
+        // (v0.1.3 UI) TierLogoDisc와 동일하게 원 대신 십각형으로, 배경은 브라스 골드 대신 흰색으로.
+        // box-shadow의 원형 글로우 대신, 실제 도형(SVG 폴리곤) 알파를 따라가는 drop-shadow 필터로
+        // "현재 구간" 링 글로우를 낸다.
         const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
+        // (버그 수정) 잠금 아이콘은 없애고, 이미지는 항상 원래 색 그대로 보여준다(muted 제거) —
+        // "아직 안 온 구간"이라는 표시는 이제 점선 연결선·현재 위치 표시만으로 충분하다.
         return (
           <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
+            {/* (버그 수정) 스크롤로 이 정거장이 화면에 들어올 때마다(once:false) 지도가 펼쳐지듯
+                작게·기울어진 채로 시작해 제자리로 펼쳐지는 애니메이션이 반복 재생된다. */}
             <motion.div
-              ref={state === "current" ? currentRef : undefined}
-              animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
-              transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
+              initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
+              whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
+              viewport={{ once: false, amount: 0.6 }}
+              transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
               style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
-              <div style={{
-                position: "absolute", inset: 0, borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
-                background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424",
-                boxShadow: (state === "current" ? "0 0 16px 4px " + ringColor + "88, " : "") + "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.4)",
-              }}>
-                {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
-                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 원 정중앙에 오도록 배치한다. */}
-                <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={92} muted={state === "locked"} />
-              </div>
-              {state === "done" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={14} color="#fff" /></span>}
-              {/* (v0.1.1 버그 수정) 로고를 원 정중앙으로 옮기면서, 정중앙에 겹쳐 그리던 잠금 아이콘이
-                  로고 위에 그대로 포개져 서로 가려 보였다 — "완료" 배지와 같은 자리(우하단 모서리)의
-                  작은 배지로 옮겨 로고와 겹치지 않게 한다. */}
-              {state === "locked" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.88)", border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={13} style={{ color: "rgba(255,255,255,.85)" }} /></span>}
+              <motion.div
+                ref={state === "current" ? currentRef : undefined}
+                animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
+                transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
+                style={{ position: "absolute", inset: 0 }}>
+                <div style={{
+                  position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                  filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" + (state === "current" ? " drop-shadow(0 0 8px " + ringColor + ")" : ""),
+                }}>
+                  <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+                    <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+                  </svg>
+                  {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
+                      이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 도형 정중앙에 오도록 배치한다. */}
+                  <div style={{ position: "relative", zIndex: 1 }}>
+                    <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={92} />
+                  </div>
+                </div>
+                {/* (버그 수정) "이미 지나온 티어" 초록 체크 배지가 정적이라 눈에 잘 안 띄었다 —
+                    은은하게 커졌다 작아지는 펄스를 반복해 완료됐다는 느낌을 계속 상기시킨다. */}
+                {state === "done" && (
+                  <motion.span
+                    animate={{ scale: [1, 1.18, 1], boxShadow: ["0 0 0 0 rgba(63,122,58,.55)", "0 0 0 5px rgba(63,122,58,0)", "0 0 0 0 rgba(63,122,58,0)"] }}
+                    transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
+                    style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Check size={14} color="#fff" />
+                  </motion.span>
+                )}
+              </motion.div>
             </motion.div>
             {state === "current" && (
               <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
@@ -10752,7 +11090,8 @@ export default function App() {
           {/* (버그 수정) 알림은 시급성이 다른 정보라 세그먼트에 묶지 않고 오른쪽에 따로 분리해 둔다. */}
           {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
           {user ? (
-            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setTab("set")} />
+            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setTab("set")}
+              mainQuestSummary={mainQuestOverallProgress(mainQuest)} solvedNos={[...solved].map((id) => puzzleNo(id))} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />
           ) : (
             <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
               <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>로그인</button>
