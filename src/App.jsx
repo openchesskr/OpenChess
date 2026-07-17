@@ -658,8 +658,14 @@ function useEngine(enginePref) {
       const cb = queue.current[0]; if (!cb) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
       if (line.startsWith("info") && cb.multi) {
-        const mp = line.match(/multipv (\d+)/); const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-        if (mp && pv && sc) cb.lines[parseInt(mp[1], 10)] = { uci: pv[1], cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+        const mp = line.match(/multipv (\d+)/);
+        // (v0.1.3 기능) 예전엔 " pv " 뒤 첫 수만 뽑았다(후보 수 목록에 어느 수를 보충할지만 필요했음) —
+        // 학습 탭에 엔진 라인을 전체 수순으로 보여주려면 그 뒤에 이어지는 전체 PV(공백으로 이어진
+        // UCI 수 목록)가 다 필요하다. "pv " 이후 줄 끝까지를 통째로 잘라 공백 기준으로 나눈다.
+        const pvIdx = line.indexOf(" pv ");
+        const pvList = pvIdx >= 0 ? line.slice(pvIdx + 4).trim().split(/\s+/) : null;
+        const dm = line.match(/^info depth (\d+)/);
+        if (mp && pvList && pvList.length && sc) cb.lines[parseInt(mp[1], 10)] = { uci: pvList[0], pv: pvList, depth: dm ? parseInt(dm[1], 10) : null, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
       } else if (sc && !cb.multi) {
         cb.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
         // (기능1) go depth N 한 번의 탐색 안에서도 스톡피시는 얕은 depth부터 점점 깊여 결과를 낸다.
@@ -722,6 +728,22 @@ function uciToSan(board, uci, color) {
   const fc = FILES.indexOf(uci[0]), fr = 8 - parseInt(uci[1], 10), tc = FILES.indexOf(uci[2]), tr = 8 - parseInt(uci[3], 10);
   if (fc < 0 || tc < 0 || !board[fr] || !board[fr][fc]) return null;
   return buildSan(board, fr, fc, tr, tc, color);
+}
+// (v0.1.3 기능) MultiPV 한 줄의 UCI 수 목록(그 줄이 시작하는 위치 prevSans 기준)을 순서대로 SAN으로
+// 바꾼다 — 학습 탭 엔진 라인(여러 수 앞까지 미리보기)에서 쓴다. 변환할 수 없는 수를 만나면(드묾)
+// 거기서 멈추고 그때까지 변환된 수만 돌려준다.
+function pvUciToSans(prevSans, uciList, maxPlies) {
+  const sans = [];
+  const cur = prevSans.slice();
+  const n = Math.min(uciList.length, maxPlies || uciList.length);
+  for (let i = 0; i < n; i++) {
+    const color = cur.length % 2 === 0 ? "w" : "b";
+    const san = uciToSan(boardFromSans(cur), uciList[i], color);
+    if (!san) break;
+    sans.push(san);
+    cur.push(san);
+  }
+  return sans;
 }
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
 async function genPunishLine(engine, sans, plies = 3) {
@@ -2129,14 +2151,31 @@ function PendingDots({ size = 14 }) {
 }
 
 /* ============================================================ 평가 막대 (백=왼쪽, 숫자 항상 보이게) ============================================================ */
+// (v0.1.3 기능) 평가치를 소수점 둘째 자리까지, 유리한 쪽 색으로 채운 배지로 보여준다 — 백 유리는
+// 흰 바탕에 검정 글자, 흑 유리는 검정 바탕에 흰 글자, 0.00(팽팽)은 좌우 반반으로 갈라 보여준다
+// (같은 텍스트를 두 번 겹쳐 그리고 각각 clip-path로 절반씩만 드러낸다 — 정중앙에서 흰 바탕 위
+// 검정 글자가 검정 바탕 위 흰 글자로 자연스럽게 이어진다). 평가치 바 좌측 배지·엔진 라인 각 줄의
+// 배지가 이 컴포넌트를 함께 쓴다.
+function EvalBadge({ ev, small }) {
+  const num = !ev ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : (ev.cp || 0));
+  const txt = !ev ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
+  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: small ? 44 : 50, padding: small ? "2px 6px" : "3px 8px", borderRadius: 6, fontSize: small ? 10.5 : 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)", flexShrink: 0 };
+  if (num > 0) return <span style={{ ...base, background: "#FFFFFF", color: "#0E0907" }}>{txt}</span>;
+  if (num < 0) return <span style={{ ...base, background: "#0E0907", color: "#FFFFFF" }}>{txt}</span>;
+  return (
+    <span style={{ ...base, position: "relative", background: "linear-gradient(90deg,#FFFFFF 50%,#0E0907 50%)", overflow: "hidden" }}>
+      <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#0E0907", clipPath: "inset(0 50% 0 0)" }}>{txt}</span>
+      <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", clipPath: "inset(0 0 0 50%)" }}>{txt}</span>
+      <span style={{ opacity: 0 }}>{txt}</span>
+    </span>
+  );
+}
 function EvalBar({ cp, width, depth }) {
   // (20차) cp는 숫자(cp) 또는 {cp}|{mate,win} 객체 — 메이트 수순에서 +10.00이 아니라 M수로 표기한다.
   const ev = cp == null ? null : (typeof cp === "number" ? { cp } : cp);
   const num = ev == null ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : ev.cp);
   const e = Math.max(-4, Math.min(4, num / 100));
   const whitePct = ((4 + e) / 8) * 100;
-  // 이미 체크메이트인 포지션(mate===0)은 남은 수가 없으므로 결과 스코어로 표기.
-  const txt = ev == null ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
   // (18차 UX5) depth 숫자 대신, 타이핑 인디케이터풍 3-dot 바운스로 "엔진이 탐색 중"임을 표현하고
   // 옆의 흰색 도움말 아이콘을 누르면 말풍선으로 "n수 후까지 탐색 중.." 수치를 자세히 보여준다.
   const [tipOpen, setTipOpen] = useState(false);
@@ -2147,7 +2186,9 @@ function EvalBar({ cp, width, depth }) {
         <div style={{ width: whitePct + "%", background: T.ivoryHi }} />
         <div style={{ width: (100 - whitePct) + "%", background: "#140C07" }} />
       </div>
-      <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", padding: "1px 8px", borderRadius: 6, background: "rgba(247,240,225,.92)", color: T.ink, fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)" }}>{txt}</span>
+      {/* (v0.1.3 UI) 배지를 가운데가 아니라 바 왼쪽 끝에 고정하고, 소수점 둘째 자리까지·유리한 쪽
+          색으로 채운 EvalBadge로 바꾼다. */}
+      <span style={{ position: "absolute", top: "50%", left: 4, transform: "translateY(-50%)" }}><EvalBadge ev={ev} /></span>
       {depth != null && (
         <span style={{ position: "absolute", top: "50%", right: 4, transform: "translateY(-50%)", display: "inline-flex", alignItems: "center", gap: 4 }}>
           {/* (18차 보충 UX5) dot 크기를 살짝 줄임(4→3px) */}
@@ -2164,6 +2205,25 @@ function EvalBar({ cp, width, depth }) {
           )}
         </span>
       )}
+    </div>
+  );
+}
+
+// (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV)을 전체 수순으로 보여준다. 각 줄은
+// 왼쪽에 EvalBadge(그 줄의 평가치), 오른쪽에 지금 위치부터 이어지는 수순(최대 depth 15수)을
+// 한 줄로 이어 붙이고, 줄이 보드 폭보다 길면 그 줄만 좌우로 스크롤해서 끝까지 볼 수 있다.
+function EngineLines({ lines, sans, width }) {
+  if (!lines || !lines.length) return null;
+  return (
+    <div style={{ width, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 4 }}>
+      {lines.map((l, i) => (
+        <div key={i} className="no-pan" style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 6px", borderRadius: 7, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516" }}>
+          <EvalBadge ev={l.ev} small />
+          <div style={{ overflowX: "auto", whiteSpace: "nowrap", fontSize: 12, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
+            {sansToPgnText([...sans, ...l.sans])}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2200,7 +2260,7 @@ function useBoardSize(max = 360) {
 }
 
 /* ============================================================ 보드 ============================================================ */
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin }) {
+function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
   const effPieceSkin = pieceSkin || ctx.pieceSkin;
@@ -2213,6 +2273,9 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
   return (
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
       {showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}
+      {/* (v0.1.3 기능) 학습 탭 메인 보드에서 평가치 바와 보드 사이에 엔진 상위 3줄을 끼워 넣기
+          위한 자리 — Board는 여러 화면에서 재사용되므로 이 슬롯을 안 쓰는 곳은 그대로다. */}
+      {belowEval}
       {/* (버그) 예전에는 각 칸을 flex row 안의 고정 px(width:cell,height:cell)로 두었는데, 이 그리드를
           담는 바깥 레이아웃이 계산된 폭보다 조금이라도 좁아지면(반응형 계산 오차 등) flex-shrink가
           가로 폭만 줄이고 세로 높이는 그대로 둬 칸이 정사각형이 아니게 눌렸다 — 좌표 라벨이 칸 경계를
@@ -2515,6 +2578,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const [moves, setMoves] = useState([]);
   const [posGames, setPosGames] = useState(node ? node.posGames : null);
   const [posEval, setPosEval] = useState(null);
+  const [engineLines, setEngineLines] = useState([]); // (v0.1.3 기능) 엔진 상위 3줄(MultiPV) 전체 수순
   const [curDepth, setCurDepth] = useState(null); // (17차) 평가치 바 위에 표기할 실시간 엔진 depth
   // (19차 UX1) 표기용 depth는 한 포지션 안에서 단조 증가(+1)만 하도록 한다. 원래는 위치 평가(→16)에
   // 이어 후보 수마다 별도 go depth(→15)를 돌려 setCurDepth가 1~15를 여러 번 반복해 표기가 튀었다.
@@ -2525,7 +2589,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // moves가 늘어날 때마다 처음부터 다시 실행된다. 예전엔 재실행될 때마다 이 포지션 평가(be)와
   // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
   // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
-  const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, live: new Map() });
+  const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, linesPromise: null, live: new Map() });
   // (성능) 화면에 보이는 후보 수(캡 없이 최대 수십 개)의 실시간 평가가 메인 엔진 큐 하나로 한 번에
   // 하나씩 순서대로 처리되고 있었다 — 후보 수가 많은 포지션일수록 총 대기 시간이 후보 수 개수에
   // 정비례해 늘어(수당 최대 700ms) 체감 지연의 핵심 원인이었다. depth·movetime(정확도)은 그대로
@@ -2583,7 +2647,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       (extraSans || []).forEach((s) => { if (!seen.has(stripSuffix(s))) { list.push({ san: s, book: false, adopt: null, games: null, user: true }); seen.add(stripSuffix(s)); } });
       return list;
     };
-    setMoves(withExtra(base.map((m) => ({ ...m })))); setPosGames(node ? node.posGames : null); setPosEval(null); setEngineNote(""); setMasterEmpty(false);
+    setMoves(withExtra(base.map((m) => ({ ...m })))); setPosGames(node ? node.posGames : null); setPosEval(null); setEngineLines([]); setEngineNote(""); setMasterEmpty(false);
     if (!liveOn) return;
     (async () => {
       try {
@@ -2671,12 +2735,26 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 다음 실행이 시작되면 "값이 없으니 또 요청"하게 되어 캐시가 무력화된다. 값이 아니라 진행 중인
       // Promise 자체를 즉시(await 전에) 캐시해 둬야, 뒤이은 재실행들이 새 요청 대신 같은 Promise를
       // 기다리게 되어 중복 요청이 완전히 사라진다.
-      if (posCacheRef.current.key !== key) posCacheRef.current = { key, bePromise: null, pvsPromise: null, live: new Map() };
+      if (posCacheRef.current.key !== key) posCacheRef.current = { key, bePromise: null, pvsPromise: null, linesPromise: null, live: new Map() };
       const cache = posCacheRef.current;
       if (!cache.bePromise) cache.bePromise = engine.evaluate(sansToFen(sans), 16, onEvalProgress, 1200);
       const be = await cache.bePromise;
       if (cancelled || !be) return;
       setPosEval(be.mate != null || be.cp != null ? mkPosEval(be) : null);
+      // (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV-3)을 전체 수순으로 보여준다 — 후보
+      // 수 목록 보충용 MultiPV-10(depth 13, 아래)과는 별개 요청·별개 캐시다(그쪽은 첫 수만 필요하고
+      // depth·개수 요구사항이 달라 공유하면 서로의 용도에 안 맞는 절충이 된다).
+      if (!cache.linesPromise) cache.linesPromise = engine.evaluateMulti(sansToFen(sans), 15, 3, 3000);
+      const pvs3 = await cache.linesPromise;
+      if (!cancelled && pvs3 && pvs3.length) {
+        const lines = pvs3.filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+          ev: pv.mate != null
+            ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
+            : { cp: pv.cp * baseWhite },
+          sans: pvUciToSans(sans, pv.pv, 15),
+        }));
+        setEngineLines(lines);
+      }
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
       const curNonbook = () => cur.filter((m) => !m.book).length;
@@ -2827,7 +2905,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // (UX1) 보드 위 평가치 바는 항상 "현재 후보 수 중 최선의 수" 평가에서 유도한다(같은 계산에서
   // 파생되므로 평가치순 1위 수의 평가치와 구조적으로 항상 일치). 엔진의 포지션 직접 평가(posEval)는
   // 후보 수 평가가 하나도 없을 때(막 포지션에 진입한 순간)의 임시 표시값으로만 사용한다.
-  return { moves: tiled, posGames, engineNote, posEval: fallbackEval != null ? fallbackEval : posEval, curDepth, node };
+  return { moves: tiled, posGames, engineNote, posEval: fallbackEval != null ? fallbackEval : posEval, engineLines, curDepth, node };
 }
 
 /* ============================================================ 집중 학습 모드 ============================================================ */
@@ -3589,7 +3667,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [mode, setMode] = useState("normal");
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
-  const { moves, posGames, engineNote, posEval, curDepth } = useMergedMoves(sans, engine, liveOn && !analyzeOpen, extra[key], contentVer, mode, sortBy);
+  const { moves, posGames, engineNote, posEval, engineLines, curDepth } = useMergedMoves(sans, engine, liveOn && !analyzeOpen, extra[key], contentVer, mode, sortBy);
   // (20차 UX4) 스크롤이 많이 내려간 상태(예: 깊은 수 블록 클릭)에서 집중 학습에 들어가면, 페이지
   // 스크롤 위치가 그대로 유지되어 미니 보드가 화면 아래로 밀려 하단 탭에 가려 보이는 문제가 있었다 —
   // 진입 시 맨 위로 스크롤해 보드가 항상 하단 탭 위쪽 여유 공간 안에서 시작하도록 한다.
@@ -3843,7 +3921,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           </div>
           {analyzeOpen && <AnalysisModal sans={[...sans, ...future]} engine={engine} onClose={() => setAnalyzeOpen(false)} />}
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
-            <Board board={board} flip={flip} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} />
+            <Board board={board} flip={flip} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ}
+              belowEval={<EngineLines lines={engineLines} sans={sans} width={Math.floor(boardSize / 8) * 8} />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
