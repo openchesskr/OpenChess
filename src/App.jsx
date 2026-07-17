@@ -2205,11 +2205,14 @@ function EvalBar({ cp, width, depth }) {
         <div style={{ width: whitePct + "%", background: T.ivoryHi }} />
         <div style={{ width: (100 - whitePct) + "%", background: "#140C07" }} />
       </div>
-      {/* (v0.1.3 UI) 색이 채워진 박스 배지 대신, 소수점 둘째 자리까지 표기한 회색 텍스트를 바
-          왼쪽 끝에 고정한다(박스 배경 없음) — 밝은/어두운 구간 어디에 걸치든 읽히도록 옅은 그림자를 준다. */}
-      <span style={{ position: "absolute", top: "50%", left: 6, transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: "#9B9B9B", textShadow: "0 1px 2px rgba(0,0,0,.6), 0 0 3px rgba(255,255,255,.25)" }}>{evalDisplayText(ev)}</span>
+      {/* (v0.1.3 UI) 색이 채워진 박스 배지 대신, 소수점 둘째 자리까지 표기한 텍스트를 바에 직접
+          얹는다(박스 배경 없음) — 백이 유리하면 흰 구간(좌측)에 검은 텍스트를 좌측 끝에, 흑이
+          유리하면 검은 구간(우측)에 흰 텍스트를 우측 끝에 두어 항상 자신이 놓인 구간과 대비되게 한다. */}
+      <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", ...(num >= 0 ? { left: 6, color: "#140C07" } : { right: 6, color: T.ivoryHi }) }}>{evalDisplayText(ev)}</span>
+      {/* (버그 수정) 평가치 텍스트가 백 유리 시 좌측, 흑 유리 시 우측으로 옮겨 다니게 되면서, 항상
+          우측 고정이던 탐색 인디케이터와 겹칠 수 있어 평가치 텍스트의 반대편에 두도록 바꾼다. */}
       {depth != null && (
-        <span style={{ position: "absolute", top: "50%", right: 4, transform: "translateY(-50%)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span style={{ position: "absolute", top: "50%", ...(num >= 0 ? { right: 4 } : { left: 4 }), transform: "translateY(-50%)", display: "inline-flex", alignItems: "center", gap: 4 }}>
           {/* (18차 보충 UX5) dot 크기를 살짝 줄임(4→3px) */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
             {[0, 1, 2].map((i) => <span key={i} style={{ width: 3, height: 3, borderRadius: "50%", background: T.brassHi, display: "inline-block", animation: "dotbounce 1.1s ease-in-out " + (i * 0.18) + "s infinite" }} />)}
@@ -7026,7 +7029,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
               </button>
               {/* (v0.1.3 UI) PuzzleCard와 동일하게 라운딩된 사각형 배지(텍스트 포함)로 변경 */}
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "rgba(196,154,80,.16)", color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }} aria-label="공유하기" title="공유하기">
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 13px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }} aria-label="공유하기" title="공유하기">
                 <Send size={12} color={T.brass} />공유
               </button>}
             </div>
@@ -7231,7 +7234,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             </button>}
             {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
                 눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 7, border: "1px solid " + T.brass, background: "rgba(196,154,80,.16)", color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer" }}>
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 11px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer" }}>
               <Send size={10} color={T.brass} />공유
             </button>}
           </div>
