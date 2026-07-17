@@ -2237,14 +2237,21 @@ function EvalBar({ cp, width, depth }) {
 function EngineLines({ lines, sans, width, onPlayFirst }) {
   const dragStartRef = useRef(null);
   if (!lines || !lines.length) return null;
+  // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
+  // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
+  // 못 이긴다) — 그 결과 줄(row)과 이 wrapper, 나아가 학습 탭 grid 컬럼까지 전부 그 폭에 맞춰
+  // 밀려 커지며 페이지 전체가 옆으로 밀려나 보드 오른쪽이 잘리는 모바일 왜곡의 원인이었다. 텍스트
+  // div·줄(row) 모두에 minWidth:0을 줘 실제로 줄 폭만큼만 차지하고 나머지는 그 안에서만
+  // 스크롤되도록(overflow-x:auto가 비로소 제대로 작동) 막는다. wrapper에도 overflow:hidden을
+  // 더해, 혹시라도 새는 경우 이 컴포넌트 선에서 끝나고 위로 전파되지 않게 한다.
   return (
-    <div style={{ width, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2 }}>
+    <div style={{ width, minWidth: 0, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
       {lines.map((l, i) => (
         <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
           onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
-          style={{ display: "flex", alignItems: "center", gap: 5, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default" }}>
+          style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default" }}>
           <EvalBadge ev={l.ev} small />
-          <div style={{ overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
+          <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
             {pvContinuationText(sans.length, l.sans)}
           </div>
         </div>
@@ -2396,20 +2403,27 @@ function SequenceBar({ sans, future = [], onJump }) {
   const all = useMemo(() => decorateLine([...sans, ...(future || [])]), [sans.join(" "), (future || []).join(" ")]);
   // (v0.1.3 기능) 기보가 길어져 화면에 다 안 담기면, 수를 둘 때마다 자동으로 오른쪽(최신 수)으로
   // 스크롤해 지금 두고 있는 수가 항상 보이게 한다.
+  // (버그 수정) scrollIntoView는 이 바만이 아니라 조상 스크롤 컨테이너를 전부 훑어 다 같이 스크롤
+  // 시킨다 — 모바일 실기기에서 페이지 전체가 오른쪽으로 밀려나며 보드가 화면 밖으로 잘려 보이는
+  // 왜곡의 원인이었다. 이 바 자신(scrollRef)의 scrollLeft만 직접 계산해 옮기고, 다른 조상은 절대
+  // 건드리지 않는다.
   const scrollRef = useRef(null);
   const curSpanRef = useRef(null);
   useEffect(() => {
-    if (curSpanRef.current) curSpanRef.current.scrollIntoView({ inline: "end", block: "nearest", behavior: "smooth" });
-    else if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    const el = scrollRef.current;
+    if (!el) return;
+    const span = curSpanRef.current;
+    if (span) el.scrollLeft = Math.max(0, span.offsetLeft + span.offsetWidth - el.clientWidth);
+    else el.scrollLeft = el.scrollWidth;
   }, [sans.join(" ")]);
   if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
-    return <div ref={scrollRef} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch" }}>{parts.join("  ")}</div>;
+    return <div ref={scrollRef} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
   return (
-    <div ref={scrollRef} className="flex items-center" style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
+    <div ref={scrollRef} className="flex items-center" style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}>
       {all.map((san, i) => {
         const isCur = i === cur;
         const isFuture = i > cur;
@@ -3970,8 +3984,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <div>
-        <div style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
+      {/* (버그 수정) 이 div는 grid 아이템인데 min-width 기본값이 auto라, 내부 기보 바 등이
+          overflow-x:auto+min-width:0으로 자체 스크롤 처리를 해도 grid 트랙 자체가 콘텐츠의
+          최소 폭(min-content)만큼 억지로 넓어져 모바일에서 보드가 화면 밖으로 밀려나는 원인이었다. */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
           <div className="mb-3 flex items-center justify-between gap-2">
             <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} />
             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
