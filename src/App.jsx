@@ -210,6 +210,17 @@ const TIER_IMAGE = {
   master: "/master-king.png",
   grandmaster: "/grandmaster.png",
 };
+// (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
+// 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
+const TIER_BG_IMAGE = {
+  iron: "/tier-bg-iron.webp",
+  bronze: "/tier-bg-bronze.webp",
+  silver: "/tier-bg-silver.webp",
+  gold: "/tier-bg-gold.webp",
+  diamond: "/tier-bg-diamond.webp",
+  master: "/tier-bg-master.webp",
+  grandmaster: "/tier-bg-grandmaster.webp",
+};
 // (v0.1.1) 디자이너가 구간(1~5)마다 로마 숫자가 함께 그려진 별도 이미지를 새로 올려줬다
 // (iron-1.png ~ iron-5.png 등, 파일명이 티어 key와 그대로 맞아떨어짐) — 이제 "티어명 텍스트 + 로마
 // 숫자"를 따로 적지 않고, 이 정확한 구간 이미지 한 장으로 티어와 구간을 동시에 나타낸다. 그랜드
@@ -9799,10 +9810,43 @@ function TierJourneyPath({ totalXp }) {
   // maxed일 때 null로 맞춰 둔 값과 그대로 비교된다.
   const currentIdx = useMemo(() => TIER_STATIONS.findIndex((s) => s.tierIdx === info.tierIndex && s.division === (info.maxed ? null : info.division)), [info]);
   const totalHeight = (TIER_STATIONS.length - 1) * (STATION_H + STATION_GAP) + STATION_H;
+  // (v0.1.3 기능) TIER_STATIONS는 티어별로 이미 뭉쳐서(아이언 5~1, 브론즈 5~1…) 순서대로 나열돼
+  // 있으므로, 같은 tier.key가 연속되는 구간을 하나의 "밴드"로 묶어 그 구간의 세로 픽셀 범위를 구한다
+  // — 이 범위에 그 티어 전용 배경 이미지를 깔면, 스크롤해서 그 티어 구간을 지날 때만 자연스럽게
+  // 그 배경이 보인다.
+  const tierBands = useMemo(() => {
+    const bands = [];
+    let i = 0;
+    while (i < TIER_STATIONS.length) {
+      const key = TIER_STATIONS[i].tier.key;
+      let j = i;
+      while (j < TIER_STATIONS.length && TIER_STATIONS[j].tier.key === key) j++;
+      const startIdx = i, endIdx = j - 1;
+      const top = Math.min(topOf(startIdx), topOf(endIdx));
+      const bottom = Math.max(topOf(startIdx), topOf(endIdx)) + STATION_H;
+      bands.push({ key, top, height: bottom - top });
+      i = j;
+    }
+    return bands;
+  }, []);
   return (
     // (기능) 노드·연결선이 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를 공유해, 컨테이너
     // 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다.
     <div style={{ position: "relative", paddingBottom: 20, height: totalHeight }}>
+      {/* (v0.1.3 기능) 티어별 배경 — 각 밴드 높이에 꽉 채우고(object-fit:cover), 원본 색감 그대로
+          쓰되(보정 없음) 천천히 확대·이동하는 카메라 무브(켄 번즈)를 반복 재생해 정지 이미지도
+          계속 살아있는 느낌을 준다. 위아래 가장자리는 mask로 옅게 흐려 다음 티어 배경과 부드럽게
+          이어지고, 어두운 그러데이션을 한 겹 덮어 그 위 흰 정거장 도형이 항상 잘 읽히게 한다. */}
+      {tierBands.map((b) => (
+        <div key={b.key} style={{ position: "absolute", left: 0, top: b.top, width: "100%", height: b.height, overflow: "hidden", zIndex: 0, WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black 70px, black calc(100% - 70px), transparent 100%)", maskImage: "linear-gradient(to bottom, transparent 0, black 70px, black calc(100% - 70px), transparent 100%)" }}>
+          <motion.img
+            src={TIER_BG_IMAGE[b.key]} alt=""
+            animate={{ scale: [1, 1.14, 1], x: ["0%", "-3%", "0%"], y: ["0%", "-2%", "0%"] }}
+            transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(15,9,5,.6), rgba(15,9,5,.72))" }} />
+        </div>
+      ))}
       <svg width="100%" height={totalHeight} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
         {TIER_STATIONS.slice(0, -1).map((_, i) => {
           const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
