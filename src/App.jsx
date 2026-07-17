@@ -21,6 +21,21 @@ const T = {
   book: "#8A5A2B", arrow: "#C49A50",
 };
 const FILES = "abcdefgh";
+// (v0.1.4 기능) "사이트 전체 카드·블록에 애니메이션을 적용해 더 부드러운 UX를 달라"는 요청 — 지금까지
+// motion은 티어 여정 지도·승급 연출에만 쓰이고 있었고, 퍼즐 카드·퀘스트 카드·상점 카드·친구 목록 같은
+// 나머지 화면은 전부 즉시 나타나는 정적 div였다. /about 페이지의 Reveal과 같은 easing으로, 카드
+// 컴포넌트 자체는 건드리지 않고 리스트를 그리는 .map() 호출부에서만 감싸는 방식으로 적용한다 —
+// 카드 내부 로직(좋아요·풀이 상태 등)을 그대로 둔 채 등장(살짝 뜨며 페이드 인, 인덱스만큼 스태거)·
+// 퇴장(AnimatePresence로 부드럽게 축소되며 사라짐) 애니메이션만 얇게 씌운다.
+const MOTION_EASE = [0.22, 0.9, 0.32, 1];
+function FadeIn({ children, index = 0, y = 12, layout = true, className, style }) {
+  return (
+    <motion.div layout={layout} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
+      transition={{ duration: 0.32, delay: Math.min(index, 12) * 0.035, ease: MOTION_EASE }} className={className} style={style}>
+      {children}
+    </motion.div>
+  );
+}
 // (디자인) 보드 테두리에 금색 광택(gloss) 효과 — 단색 브라스 테두리 대신 대각선 그러데이션
 // borderImage + 안쪽 하이라이트/바깥 그림자 boxShadow로 금속 광택감을 낸다. 메인 보드와
 // 사이트 전체의 모든 미니 체스보드(애니메이션·되돌리기·퍼즐 등)에서 공용으로 쓴다.
@@ -5345,14 +5360,14 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
           <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>보드 스킨과 기물 스킨을 모아볼 수 있어요. 기본 스킨은 누구나 바로 장착할 수 있고, 상점에서 구매한 스킨은 여기서도 장착·구매할 수 있습니다. 아직 얻지 못한 스킨도 미리 볼 수 있어요.</p>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-            {Object.entries(BOARD_SKINS).map(([id, sk]) => (
-              <SkinShopCard key={id} kind="board" id={id} sk={sk} owned={(ownedSkins || new Set()).has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+            {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
+              <FadeIn key={id} index={i}><SkinShopCard kind="board" id={id} sk={sk} owned={(ownedSkins || new Set()).has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
             ))}
           </div>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>기물 스킨</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {Object.entries(PIECE_SKINS).map(([id, sk]) => (
-              <SkinShopCard key={id} kind="piece" id={id} sk={sk} owned={(ownedSkins || new Set()).has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+            {Object.entries(PIECE_SKINS).map(([id, sk], i) => (
+              <FadeIn key={id} index={i}><SkinShopCard kind="piece" id={id} sk={sk} owned={(ownedSkins || new Set()).has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
             ))}
           </div>
         </div>
@@ -7495,7 +7510,7 @@ function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, con
               </button>
               {isOpen && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 10px 10px" }}>
-                  {pg.rows.map(([k, ch], ri) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={ri > rowUnlockedIdx} />)}
+                  {pg.rows.map(([k, ch], ri) => <FadeIn key={k} index={ri}><ChapterRow ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={ri > rowUnlockedIdx} /></FadeIn>)}
                 </div>
               )}
             </div>
@@ -7641,8 +7656,8 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     <div>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 퀘스트 아이콘과 중복돼 제거. */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
-      <MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />
-      <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} />
+      <FadeIn index={0}><MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
+      <FadeIn index={1}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} /></FadeIn>
     </div>
   );
 }
@@ -7788,7 +7803,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           </div>
           {recommended.length > 0 ? (
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
-              {recommended.map((p) => <PuzzleCard key={"rec-" + p.id} p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}
+              <AnimatePresence mode="popLayout">
+                {recommended.map((p, i) => <FadeIn key={"rec-" + p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}
+              </AnimatePresence>
             </div>
           ) : (
             <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: "14px 16px", color: T.inkSoft, fontSize: 12.5 }}>
@@ -7799,12 +7816,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       )}
       {themed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 테마의 퍼즐이 아직 없어요.</div>
         : <div>
-            {open.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div><div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{open.map((p) => <PuzzleCard key={p.id} p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}</div></div>}
+            {open.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div><div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}><AnimatePresence mode="popLayout">{open.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence></div></div>}
             {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
               {clearedByOpening.map(([op, list]) => (
                 <div key={op} style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 2 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{list.map((p) => <PuzzleCard key={p.id} p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}</div>
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}><AnimatePresence mode="popLayout">{list.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence></div>
                 </div>
               ))}
             </div>}
@@ -8427,6 +8444,7 @@ const CHANGELOG = [
       "소개 페이지의 버전 업데이트 기록에서 v0.1.2·v0.1.3 두 버전이 빠져 있던 것을 찾아 다시 채워 넣었어요.",
       "소개 페이지 마스코트 그림을 학습 탭 등에서 이미 쓰던 깔끔한 그림체로 통일했어요.",
       "그랜드마스터 티어 배지에 기물 대신 오로라 사진이 잘못 표시되던 문제를 고쳤어요 — 헤더 배지·여정 지도·퍼즐 탭·승급 연출 전부 원래의 왕관 기물 이미지로 보여요.",
+      "퍼즐·퀘스트·상점 카드, 친구·검색 목록, 알림, 채팅 목록이 이제 툭 튀어나오는 대신 하나씩 부드럽게 떠오르며 나타나요. 친구 요청을 수락·거절하거나 알림을 지우면 목록에서도 부드럽게 사라져요.",
     ],
   },
   {
@@ -8936,14 +8954,14 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-        {Object.entries(BOARD_SKINS).map(([id, sk]) => (
-          <SkinShopCard key={id} kind="board" id={id} sk={sk} owned={ownedSkins.has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+        {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
+          <FadeIn key={id} index={i}><SkinShopCard kind="board" id={id} sk={sk} owned={ownedSkins.has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
         ))}
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>기물 스킨</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {Object.entries(PIECE_SKINS).map(([id, sk]) => (
-          <SkinShopCard key={id} kind="piece" id={id} sk={sk} owned={ownedSkins.has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+        {Object.entries(PIECE_SKINS).map(([id, sk], i) => (
+          <FadeIn key={id} index={i}><SkinShopCard kind="piece" id={id} sk={sk} owned={ownedSkins.has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
         ))}
       </div>
     </div>
@@ -9221,16 +9239,19 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
         <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
+      <AnimatePresence>
       {open && (
-        <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
+        <motion.div initial={{ opacity: 0, y: -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.97 }} transition={{ duration: 0.18, ease: MOTION_EASE }}
+          onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
           <div className="flex items-center justify-between" style={{ padding: "10px 14px", borderBottom: "1px solid #E4D5B6" }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>알림</span>
             {items.length > 0 && <button onClick={clearAll} className="press" style={{ padding: "3px 8px", borderRadius: 6, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, border: "1px solid #C9B58C", cursor: "pointer" }}>전체 삭제</button>}
           </div>
           {items.length === 0 ? <div style={{ padding: 16, fontSize: 12, color: T.inkSoft }}>알림이 없습니다.</div> : (
             <div>
-              {items.map((n) => { const result = n.payload && n.payload.result; return (
-                <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderBottom: "1px solid #EFE3C8" }}>
+              <AnimatePresence>
+              {items.map((n, i) => { const result = n.payload && n.payload.result; return (
+                <FadeIn key={n.id} index={i} y={6} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderBottom: "1px solid #EFE3C8" }}>
                   <span style={{ marginTop: 1 }}>{notifIcon(n.kind)}</span>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 12, color: T.ink, lineHeight: 1.4 }}>{notifText(n)}</div>
@@ -9245,12 +9266,14 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
                     ))}
                   </div>
                   <button onClick={() => removeOne(n)} aria-label="알림 삭제" className="press" style={{ flexShrink: 0, width: 20, height: 20, marginTop: 1, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, lineHeight: 1 }}>×</button>
-                </div>
+                </FadeIn>
               ); })}
+              </AnimatePresence>
             </div>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -9527,29 +9550,31 @@ function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onO
               글자씩 세로로 쪼개져 보이는 왜곡이 있었다 — 퍼즐 탭과 동일하게 카드 폭을 148px로 고정하고,
               칸 수를 늘리는 대신(공간이 좁으므로) 가로 스크롤로 훑어보도록 바꿈. */}
           <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
-            {preview.map((p) => <div key={p.id} style={{ width: 148, minWidth: 148, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</div>)}
+            {preview.map((p, i) => <FadeIn key={p.id} index={i} style={{ width: 148, minWidth: 148, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</FadeIn>)}
           </div>
           {total > SOLVED_PREVIEW_COUNT && (
             <button onClick={openAll} className="press" style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>더 보기 ({fmtFull(total)}개)</button>
           )}
         </>
       )}
+      <AnimatePresence>
       {showAll && (
-        <div onClick={() => setShowAll(false)} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 640, maxHeight: "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={() => setShowAll(false)} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+          <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 640, maxHeight: "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
             <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>푼 퍼즐 ({fmtFull(total)})</span>
               <button onClick={() => setShowAll(false)} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
             </div>
             <div style={{ padding: 14, overflowY: "auto" }}>
               <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
-                {puzzles.map((p) => renderCard(p, () => { setShowAll(false); openPuzzle(p); }))}
+                {puzzles.map((p, i) => <FadeIn key={p.id} index={i % 12}>{renderCard(p, () => { setShowAll(false); openPuzzle(p); })}</FadeIn>)}
               </div>
               {loading && <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 10, textAlign: "center" }}>더 불러오는 중…</p>}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -9720,7 +9745,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
             {q.trim() ? (
               busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
                 : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
-                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r) => userSearchRow(r, () => open(r.username)))}</div>
+                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username))}</FadeIn>)}</AnimatePresence></div>
             ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
               : (sugFriends.length === 0 && sugTop.length === 0) ? null
                 : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -9728,8 +9753,8 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                       <div>
                         <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>알 수도 있는 사람</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {sugFriends.map((r) => userSearchRow(r, () => open(r.username),
-                            <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>))}
+                          {sugFriends.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
+                            <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>)}</FadeIn>)}
                         </div>
                       </div>
                     )}
@@ -9737,8 +9762,8 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                       <div>
                         <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>티어 리더보드</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {sugTop.map((r) => userSearchRow(r, () => open(r.username),
-                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} /></span>))}
+                          {sugTop.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
+                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} /></span>)}</FadeIn>)}
                         </div>
                       </div>
                     )}
@@ -9785,8 +9810,8 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
     return () => { cc = true; };
   }, [myUid]);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+      <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>채팅</span>
           {/* (19차 UX3) 뒤로가기는 ChatPanel 좌상단 ←로 통일. 래퍼 헤더는 닫기(X)만 우상단에 둔다. */}
@@ -9798,10 +9823,11 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
           <div style={{ padding: 12, minHeight: 140, maxHeight: 440, overflowY: "auto" }}>
             {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
               : rows.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 채팅이 없어요. 친구 목록에서 채팅을 시작해 보세요.</div>
-              : rows.map(({ uid, m, unread }) => {
+              : rows.map(({ uid, m, unread }, i) => {
                 const pr = profiles[uid] || {}; const pub = pr.pub || {};
                 return (
-                  <button key={uid} onClick={() => setChatWith({ uid, username: pr.username || "" })} className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}>
+                  <FadeIn key={uid} index={i}>
+                  <button onClick={() => setChatWith({ uid, username: pr.username || "" })} className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}>
                     {pub.photo ? <img src={pub.photo} alt="" style={{ width: 40, height: 40, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
                       : <span style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
                     <span style={{ minWidth: 0, flex: 1 }}>
@@ -9812,12 +9838,13 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}
                     {unread > 0 && <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{unread > 99 ? "99+" : unread}</span>}
                   </button>
+                  </FadeIn>
                 );
               })}
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 // (v0.0.6 개편) 티어 여정 경로 본체 — TIER_STATIONS(티어×구간을 전부 펼친 목록, 31개)를 하나하나
@@ -10150,25 +10177,25 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 : loading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
                 : tab === "friends" ? (
                   friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 친구가 없습니다. ‘추가’에서 아이디로 검색해 요청을 보내세요.</div>
-                    : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{friends.map((u) => (
+                    : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{friends.map((u, i) => (
                         // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
                         // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
-                        <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u) })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} />
-                      ))}</div>
+                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u) })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
+                      ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
                   incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>
                     : <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                         {incoming.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>받은 요청</div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{incoming.map((u) => (
-                            <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doRemove(u), "ghost", !!pending[u])}</>} />
-                          ))}</div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{incoming.map((u, i) => (
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doRemove(u), "ghost", !!pending[u])}</>} /></FadeIn>
+                          ))}</AnimatePresence></div>
                         </div>}
                         {outgoing.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>보낸 요청</div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{outgoing.map((u) => (
-                            <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={btn("취소", () => doRemove(u), "ghost", !!pending[u])} />
-                          ))}</div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{outgoing.map((u, i) => (
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={btn("취소", () => doRemove(u), "ghost", !!pending[u])} /></FadeIn>
+                          ))}</AnimatePresence></div>
                         </div>}
                       </div>
                 ) : (
@@ -10179,13 +10206,13 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                     </div>
                     {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
                       : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
-                        : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r) => {
+                        : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r, i) => {
                             const uid = r.id; const rel = relOf(uid); const busyId = !!pending[uid];
                             const right = rel === "friend" ? statusChip("친구", <UserCheck size={12} />)
                               : rel === "sent" ? statusChip("요청됨", <Clock size={12} />)
                                 : rel === "incoming" ? btn("수락", () => doAccept(uid), "gold", busyId)
                                   : btn("요청", () => doRequestByName(r.username, uid), "gold", busyId);
-                            return <FriendRow key={uid} id={r.username} pub={r.pub} onClick={() => { setProfiles((prev) => ({ ...prev, [uid]: { username: r.username, pub: r.pub || {} } })); setSel({ uid, username: r.username, pub: r.pub || {} }); }} right={right} />;
+                            return <FadeIn key={uid} index={i}><FriendRow id={r.username} pub={r.pub} onClick={() => { setProfiles((prev) => ({ ...prev, [uid]: { username: r.username, pub: r.pub || {} } })); setSel({ uid, username: r.username, pub: r.pub || {} }); }} right={right} /></FadeIn>;
                           })}</div>}
                   </div>
                 )}
@@ -11122,7 +11149,7 @@ export default function App() {
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
       {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} onDone={() => setTierUpAnim(null)} />}
