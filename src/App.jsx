@@ -2047,6 +2047,19 @@ function deriveKeywords(m) {
   return ks.slice(0, 3);
 }
 function moveNumber(ply) { return Math.floor(ply / 2) + 1 + (ply % 2 === 0 ? "." : "..."); }
+// (v0.1.3 기능) 엔진 라인은 이미 둔 수(sans)는 빼고 "지금 위치에서의 다음 수"부터만 보여준다 —
+// pvUciToSans로 얻은 이어지는 수(contSans)만 받아, 그 첫 수의 실제 수 번호(startPly)부터 표기한다.
+// contSans 각 요소는 pvUciToSans가 buildSan으로 만들어 이미 +/# 기호가 붙어 있으므로 decorateLine이
+// 필요 없다(decorateLine은 시작 위치부터 다시 재생해야 해 이 이어붙인 조각만으로는 쓸 수 없음).
+function pvContinuationText(startPly, contSans) {
+  const parts = [];
+  contSans.forEach((san, i) => {
+    const ply = startPly + i;
+    if (ply % 2 === 0 || i === 0) parts.push(moveNumber(ply) + san);
+    else parts[parts.length - 1] += " " + san;
+  });
+  return parts.join(" ");
+}
 function fmtFull(n) { return n == null ? "—" : Number(n).toLocaleString("en-US"); }
 function moverEval(m, ply) {
   const sgn = ply % 2 === 0 ? 1 : -1;
@@ -2156,10 +2169,16 @@ function PendingDots({ size = 14 }) {
 // (같은 텍스트를 두 번 겹쳐 그리고 각각 clip-path로 절반씩만 드러낸다 — 정중앙에서 흰 바탕 위
 // 검정 글자가 검정 바탕 위 흰 글자로 자연스럽게 이어진다). 평가치 바 좌측 배지·엔진 라인 각 줄의
 // 배지가 이 컴포넌트를 함께 쓴다.
+// (v0.1.3 기능) 평가치 텍스트(소수점 둘째 자리 · 메이트는 M수 · 종국은 결과)를 EvalBadge(박스형)와
+// EvalBar의 좌측 회색 텍스트가 함께 쓴다 — 항상 같은 값을 같은 규칙으로 표기하도록 로직을 한곳에 둔다.
+function evalDisplayText(ev) {
+  return !ev ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
+}
 function EvalBadge({ ev, small }) {
   const num = !ev ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : (ev.cp || 0));
-  const txt = !ev ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
-  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: small ? 44 : 50, padding: small ? "2px 6px" : "3px 8px", borderRadius: 6, fontSize: small ? 10.5 : 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)", flexShrink: 0 };
+  const txt = evalDisplayText(ev);
+  // (v0.1.3 UI) 엔진 라인(small)은 자리를 훨씬 더 압축한다 — 좌우 여백·최소폭·글자 크기를 크게 줄임.
+  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: small ? 32 : 50, padding: small ? "1px 3px" : "3px 8px", borderRadius: small ? 4 : 6, fontSize: small ? 9 : 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)", flexShrink: 0 };
   if (num > 0) return <span style={{ ...base, background: "#FFFFFF", color: "#0E0907" }}>{txt}</span>;
   if (num < 0) return <span style={{ ...base, background: "#0E0907", color: "#FFFFFF" }}>{txt}</span>;
   return (
@@ -2186,9 +2205,9 @@ function EvalBar({ cp, width, depth }) {
         <div style={{ width: whitePct + "%", background: T.ivoryHi }} />
         <div style={{ width: (100 - whitePct) + "%", background: "#140C07" }} />
       </div>
-      {/* (v0.1.3 UI) 배지를 가운데가 아니라 바 왼쪽 끝에 고정하고, 소수점 둘째 자리까지·유리한 쪽
-          색으로 채운 EvalBadge로 바꾼다. */}
-      <span style={{ position: "absolute", top: "50%", left: 4, transform: "translateY(-50%)" }}><EvalBadge ev={ev} /></span>
+      {/* (v0.1.3 UI) 색이 채워진 박스 배지 대신, 소수점 둘째 자리까지 표기한 회색 텍스트를 바
+          왼쪽 끝에 고정한다(박스 배경 없음) — 밝은/어두운 구간 어디에 걸치든 읽히도록 옅은 그림자를 준다. */}
+      <span style={{ position: "absolute", top: "50%", left: 6, transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: "#9B9B9B", textShadow: "0 1px 2px rgba(0,0,0,.6), 0 0 3px rgba(255,255,255,.25)" }}>{evalDisplayText(ev)}</span>
       {depth != null && (
         <span style={{ position: "absolute", top: "50%", right: 4, transform: "translateY(-50%)", display: "inline-flex", alignItems: "center", gap: 4 }}>
           {/* (18차 보충 UX5) dot 크기를 살짝 줄임(4→3px) */}
@@ -2209,24 +2228,24 @@ function EvalBar({ cp, width, depth }) {
   );
 }
 
-// (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV)을 전체 수순으로 보여준다. 각 줄은
-// 왼쪽에 EvalBadge(그 줄의 평가치), 오른쪽에 지금 위치부터 이어지는 수순(최대 depth 15수, Playfair
-// Display 기보 폰트)을 한 줄로 이어 붙이고, 줄이 보드 폭보다 길면 그 줄만 좌우로 스크롤해서 끝까지
-// 볼 수 있다. 줄 자체를 누르면(스크롤 영역 자체 클릭 포함) 그 줄의 첫 수(지금 위치에서 바로 다음
-// 수)가 보드에서 그대로 두어진다 — 스크롤과 클릭이 같은 영역을 쓰므로, 드래그로 스크롤하다 손을
+// (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV)을 보여준다. 각 줄은 왼쪽에 EvalBadge
+// (그 줄의 평가치), 오른쪽에 이미 둔 수는 빼고 "지금 위치에서의 다음 수"부터 이어지는 수순(최대
+// depth 15수, Playfair Display 기보 폰트)을 한 줄로 이어 붙이고, 줄이 보드 폭보다 길면 그 줄만
+// 좌우로 스크롤해서 끝까지 볼 수 있다. 줄 자체를 누르면(스크롤 영역 자체 클릭 포함) 그 줄의 첫
+// 수가 보드에서 그대로 두어진다 — 스크롤과 클릭이 같은 영역을 쓰므로, 드래그로 스크롤하다 손을
 // 뗀 것까지 클릭으로 오인해 수를 두지 않도록 pointerdown/up 좌표 차이를 함께 확인한다.
 function EngineLines({ lines, sans, width, onPlayFirst }) {
   const dragStartRef = useRef(null);
   if (!lines || !lines.length) return null;
   return (
-    <div style={{ width, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 3 }}>
+    <div style={{ width, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2 }}>
       {lines.map((l, i) => (
         <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
           onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 6px", borderRadius: 7, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default" }}>
+          style={{ display: "flex", alignItems: "center", gap: 5, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default" }}>
           <EvalBadge ev={l.ev} small />
-          <div style={{ overflowX: "auto", whiteSpace: "nowrap", fontSize: 12, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-            {sansToPgnText([...sans, ...l.sans])}
+          <div style={{ overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
+            {pvContinuationText(sans.length, l.sans)}
           </div>
         </div>
       ))}
@@ -2375,19 +2394,27 @@ const SEQ_FONT = "'Playfair Display', 'Noto Sans KR', serif";
 function SequenceBar({ sans, future = [], onJump }) {
   // (20차) 보드 상단 기보에 체크(+)/체크메이트(#) 기호가 항상 표시되도록 표기 직전에 보정한다.
   const all = useMemo(() => decorateLine([...sans, ...(future || [])]), [sans.join(" "), (future || []).join(" ")]);
+  // (v0.1.3 기능) 기보가 길어져 화면에 다 안 담기면, 수를 둘 때마다 자동으로 오른쪽(최신 수)으로
+  // 스크롤해 지금 두고 있는 수가 항상 보이게 한다.
+  const scrollRef = useRef(null);
+  const curSpanRef = useRef(null);
+  useEffect(() => {
+    if (curSpanRef.current) curSpanRef.current.scrollIntoView({ inline: "end", block: "nearest", behavior: "smooth" });
+    else if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+  }, [sans.join(" ")]);
   if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
-    return <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch" }}>{parts.join("  ")}</div>;
+    return <div ref={scrollRef} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
   return (
-    <div className="flex items-center" style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
+    <div ref={scrollRef} className="flex items-center" style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
       {all.map((san, i) => {
         const isCur = i === cur;
         const isFuture = i > cur;
         return (
-          <span key={i} style={{ whiteSpace: "nowrap", opacity: isFuture ? 0.45 : 1 }}>
+          <span key={i} ref={isCur ? curSpanRef : undefined} style={{ whiteSpace: "nowrap", opacity: isFuture ? 0.45 : 1 }}>
             {i % 2 === 0 && <span style={{ fontWeight: isCur ? 800 : 500 }}>{(i / 2 + 1) + "."}</span>}
             <span onClick={() => onJump(i + 1)} className="press" style={{ cursor: "pointer", padding: "1px 3px", borderRadius: 4, fontWeight: isCur ? 800 : 500, color: isCur ? T.brassHi : T.ivoryHi, background: isCur ? "rgba(196,154,80,.18)" : "transparent" }}>{san}</span>
             {i < all.length - 1 ? (i % 2 === 0 ? " " : "  ") : ""}
@@ -2913,7 +2940,13 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // (UX1) 보드 위 평가치 바는 항상 "현재 후보 수 중 최선의 수" 평가에서 유도한다(같은 계산에서
   // 파생되므로 평가치순 1위 수의 평가치와 구조적으로 항상 일치). 엔진의 포지션 직접 평가(posEval)는
   // 후보 수 평가가 하나도 없을 때(막 포지션에 진입한 순간)의 임시 표시값으로만 사용한다.
-  return { moves: tiled, posGames, engineNote, posEval: fallbackEval != null ? fallbackEval : posEval, engineLines, curDepth, node };
+  // (v0.1.3 버그 수정) 평가치 바와 엔진 라인 1번째(최선의 수) 표기가 서로 다른 엔진 요청(후보 수
+  // 목록의 개별 라이브 평가 vs MultiPV-3 전용 요청)에서 나와 미세하게 어긋나 보일 수 있었다 —
+  // engineLines가 준비돼 있으면(대개 posEval과 거의 같은 시점에 함께 채워짐) 그 1번째 줄의 평가치를
+  // 그대로 평가치 바에 써서 항상 같은 값이 되도록 한다. 아직 준비 전(포지션 진입 직후)에만 기존
+  // fallback(후보 수 중 최선)·posEval(포지션 직접 평가) 순으로 대체한다.
+  const barEval = engineLines.length ? engineLines[0].ev : (fallbackEval != null ? fallbackEval : posEval);
+  return { moves: tiled, posGames, engineNote, posEval: barEval, engineLines, curDepth, node };
 }
 
 /* ============================================================ 집중 학습 모드 ============================================================ */
@@ -6144,19 +6177,12 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
 // 기준으로 맞춰야(items-end) 이미지 안에 그려진 로마 숫자끼리 높이가 나란히 맞는다.
 function TierBadge({ totalXp, compact, onClick }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const { tier, xpInDivision, xpForNextDivision, division } = info;
-  const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
-  // (v0.1.2) 진행바+XP 텍스트를 로고 오른쪽이 아니라 아래쪽에 배치 — 세로로 쌓아 로고 밑에 정렬한다.
-  // (v0.1.2) XP 텍스트는 그 아래 줄이 아니라 진행바 오른쪽에 나란히 배치.
+  const { tier, division } = info;
+  // (v0.1.3 UI) 헤더 티어 배지에서 진행바·XP 텍스트를 없애고 로고만 남긴다 — 자세한 진행도는
+  // 눌러서 여는 여정 지도에서 이미 볼 수 있어 헤더는 배지만으로 충분히 간결하게 유지한다.
   return (
-    <div onClick={onClick} className="press flex flex-col items-center" style={{ gap: 3, flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
+    <div onClick={onClick} className="press flex flex-col items-center" style={{ flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 32 : 40} discSize={compact ? 34 : 42} />
-      <div className="flex items-center" style={{ gap: 4 }}>
-        <div style={{ width: compact ? 34 : 42, height: 4, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
-          <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
-        </div>
-        <span style={{ fontSize: compact ? 7.5 : 8, fontWeight: 700, color: T.brassHi, opacity: .75, whiteSpace: "nowrap" }}>{xpInDivision}/{xpForNextDivision}</span>
-      </div>
     </div>
   );
 }
