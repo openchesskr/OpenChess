@@ -5,7 +5,7 @@ import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronDown,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2,
+  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -28,14 +28,17 @@ const FILES = "abcdefgh";
 // 카드 내부 로직(좋아요·풀이 상태 등)을 그대로 둔 채 등장(살짝 뜨며 페이드 인, 인덱스만큼 스태거)·
 // 퇴장(AnimatePresence로 부드럽게 축소되며 사라짐) 애니메이션만 얇게 씌운다.
 const MOTION_EASE = [0.22, 0.9, 0.32, 1];
-function FadeIn({ children, index = 0, y = 12, layout = true, className, style }) {
+// (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
+// 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
+// 냈다(학습 탭 수 블록 목록에서 발견). forwardRef로 감싸 motion.div에 그대로 전달한다.
+const FadeIn = React.forwardRef(function FadeIn({ children, index = 0, y = 12, layout = true, className, style }, ref) {
   return (
-    <motion.div layout={layout} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
+    <motion.div ref={ref} layout={layout} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
       transition={{ duration: 0.32, delay: Math.min(index, 12) * 0.035, ease: MOTION_EASE }} className={className} style={style}>
       {children}
     </motion.div>
   );
-}
+});
 // (디자인) 보드 테두리에 금색 광택(gloss) 효과 — 단색 브라스 테두리 대신 대각선 그러데이션
 // borderImage + 안쪽 하이라이트/바깥 그림자 boxShadow로 금속 광택감을 낸다. 메인 보드와
 // 사이트 전체의 모든 미니 체스보드(애니메이션·되돌리기·퍼즐 등)에서 공용으로 쓴다.
@@ -885,7 +888,10 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
-  const bumpNode = () => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes)); };
+  // (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — 진행률 숫자만 보내던
+  // 것을, 지금 막 탐색해 늘어난 수순(path)도 함께 실어 보낸다. 집중 학습 화면이 이 path로 미니 보드를
+  // 그 자리에서 계속 갱신하며, 실제로 트리가 만들어지는 과정을 그대로 시각화할 수 있게 한다.
+  const bumpNode = (path) => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes), path); };
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
   async function expand(cur, depth, sawUserCapture) {
     if (depth >= maxPlies || nodeCount >= maxNodes) return [];
@@ -921,9 +927,9 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
       if (nodeCount >= maxNodes && out.length) break;
       const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(c.kind) : true;
       const node = { san: c.san, kind: c.kind, ev: c.ev, adopt: c.adopt, pass, children: [] };
-      bumpNode();
-      if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       const cur2 = [...cur, c.san];
+      bumpNode(cur2);
+      if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       if (isUserTurn) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
@@ -957,8 +963,8 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
     const color = preSans.length % 2 === 0 ? "w" : "b";
     if (!sanSrc(brd, stripSuffix(firstSan), color)) return null;
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
-    bumpNode();
     const cur2 = [...preSans, firstSan];
+    bumpNode(cur2);
     try { const ev2 = await engine.evaluate(sansToFen(cur2), 8); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
       const lc = await fetchLichess(preSans, false);
@@ -3368,13 +3374,25 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 13px", borderRadius: 10, background: T.ebony2, border: "1px solid #000" }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: T.brassHi, whiteSpace: "nowrap" }}>퍼즐을 생성하는 중입니다…</span>
                 <div style={{ width: 56, height: 6, borderRadius: 999, background: "rgba(255,255,255,.18)", overflow: "hidden", flexShrink: 0 }}>
-                  <div style={{ width: Math.round((puzzleGenProgress || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
+                  <div style={{ width: Math.round(((puzzleGenProgress && puzzleGenProgress.p) || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
                 </div>
               </div>
             )
           )}
         </div>
       </div>
+      {/* (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — genPuzzleTree가
+          진행 중 실제로 탐색해 낸 수순(puzzleGenProgress.path)을 AnimatedMove로 그때그때 재생해,
+          정지된 진행 바 대신 퍼즐이 실제로 만들어지는 과정을 눈으로 볼 수 있게 한다. 새 수를 찾을
+          때마다 path가 늘어나며 그 마지막 수가 슬라이드되어 들어오는 걸 반복(loopMs 없이 1회씩)한다. */}
+      <AnimatePresence>
+        {expectedPuzzleId && !(existingPuzzle && existingPuzzle.tree) && puzzleGenProgress && puzzleGenProgress.path && puzzleGenProgress.path.length > 0 && (
+          <motion.div key="gen-preview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: MOTION_EASE }} style={{ marginBottom: 12 }}>
+            <AnimatedMove sans={puzzleGenProgress.path.slice(0, -1)} san={puzzleGenProgress.path[puzzleGenProgress.path.length - 1]} size={120} loopMs={0} />
+            <div style={{ textAlign: "center", fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>퍼즐을 만드는 중이에요 — 지금 찾아낸 수를 미리 보여드릴게요</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* 헤더: 아이콘 · 수/이름(크게) · 평가치 */}
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         <CircleBadge kind={kind} big />
@@ -3775,8 +3793,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   useEffect(() => {
     onFocusActive && onFocusActive(!!focus);
     if (!focus) return;
-    window.scrollTo({ top: 0, behavior: "auto" });
-    if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "auto" });
+    // (v0.1.4 기능) "집중 학습 진입·스크롤에도 애니메이션을" — 순간이동처럼 보이던 점프 스크롤을
+    // 부드러운 스크롤로 바꾼다(집중 학습 오버레이 자체의 페이드인은 아래 AnimatePresence가 맡는다).
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [focus]);
   useEffect(() => { setShowAllNb(false); }, [key]);   // (UX1) 위치가 바뀌면 더보기 접기
   // (기능2) 퍼즐 자동 생성은 사용자가 "학습" 버튼을 눌러 FocusMode에 실제로 진입했을 때만 일어난다.
@@ -4074,14 +4094,20 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             </div>
           </div>
         </div>
-        {/* (18차 UX8) 집중학습은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다. */}
+        {/* (18차 UX8) 집중학습은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다.
+            (v0.1.4 기능) 툭 튀어나오던 것을 아래에서 살짝 떠오르며 페이드인하는 전환으로 바꾸고,
+            나갈 때도 AnimatePresence로 부드럽게 사라지도록 한다. */}
+        <AnimatePresence>
         {focus && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
-            <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }}
+            style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+            <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ duration: 0.32, ease: MOTION_EASE }}
+              style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
               <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         )}
+        </AnimatePresence>
         <div style={{ marginTop: 16 }}>
           {focus ? null : (
             <>
@@ -4095,7 +4121,9 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 const autoReason = rec ? ((rec.name ? "‘" + rec.name + "’(으)로 이어지는 " : "이 위치에서 ") + (rec.book ? "대표 이론 수예요" : "유력한 수예요") + (rec.adopt != null ? ". 전체 대국의 " + rec.adopt.toFixed(1) + "%가 이 수를 선택했어요." : ".")) : null;
                 const reason = recommendReasonFor(key) || autoReason;
                 return (
-                  <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>
+                  // (v0.1.4 기능) 위치를 옮길 때마다 이 블록(주요 분기점/수 추천)이 통째로 갱신되므로,
+                  // key를 현재 포지션(key)으로 줘서 매번 살짝 떠오르며 다시 나타나도록 한다.
+                  <FadeIn key={key + "-rec"} index={0} y={6} style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>
                     <div style={{ position: "absolute", top: 4, right: 12 }}><Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={52} /></div>
                     {branch ? (
                       <>
@@ -4117,7 +4145,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                       </>
                     )}
                     <span style={{ position: "absolute", bottom: -7, right: 30, width: 13, height: 13, background: T.paper, borderRight: "1px solid #DCCBA8", borderBottom: "1px solid #DCCBA8", transform: "rotate(45deg)" }} />
-                  </div>
+                  </FadeIn>
                 );
               })()}
               {(canEdit || canAdd) && <BranchBanner sentKey={key} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} />}
@@ -4126,7 +4154,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                   둔 쪽은 그 반대다 — ply 짝수(다음이 백 차례)면 직전 수는 흑이 두었으므로 KOKOA, 그 반대는 MILKU. */}
               {/* (19차 선행) 아무 수도 두어지지 않은 시작 위치(ply 0)에서는 현재 수 블록을 아예 표시하지 않는다. */}
               {sans.length > 0 && (
-              <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "16px 18px", border: "1px solid #DCCBA8", boxShadow: "0 3px 0 #D7C19A" }}>
+              <FadeIn key={key + "-cur"} index={1} y={6} style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "16px 18px", border: "1px solid #DCCBA8", boxShadow: "0 3px 0 #D7C19A" }}>
                 {/* (18차 UI9) 마스코트는 위의 주요 분기점/수 추천 블록으로 이동. (19차 선행) 총 대국수 표기 제거.
                     (버그) 제목 헤더(✨ 오프닝 이름)는 UI에서 삭제 — 상세 블록이 첫 요소가 되어 상단 구분선/여백 제거. */}
                 {lastSan && (
@@ -4161,7 +4189,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                   </div>
                 )}
                 {explainFor(sans) && <p style={{ color: T.inkSoft, fontSize: 12, marginTop: 12, lineHeight: 1.6 }}>{explainFor(sans)}</p>}
-              </div>
+              </FadeIn>
               )}
             </>
           )}
@@ -4193,7 +4221,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 const shown = [...bk, ...shownNb];
                 return (
                   <>
-                    {shown.map((m) => <MoveTile key={m.san} m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} />)}
+                    {/* (v0.1.4 기능) 위치를 옮길 때마다 수 블록 전체가 통째로 바뀌므로(엔진 재평가 결과),
+                        새로 생성된 목록이 순간 팝인하는 대신 하나씩 순서대로 살짝 떠오르며 나타나도록 한다. */}
+                    <AnimatePresence mode="popLayout">
+                      {/* (v0.1.4 버그 수정) key를 san만으로 주면, popLayout이 이전 위치의 목록(퇴장 중)과
+                          새 위치의 목록(등장 중)을 잠깐 함께 그리는 동안 같은 san("e4" 등)이 서로 다른
+                          위치에서 우연히 겹쳐 React가 "중복 key" 경고를 냈다 — 지금 위치(key)까지 합쳐
+                          모든 위치·모든 목록을 통틀어 유일하도록 한다. */}
+                      {shown.map((m, i) => <FadeIn key={key + "|" + m.san} index={i} y={8}><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} /></FadeIn>)}
+                    </AnimatePresence>
                     {nb.length > 3 && (
                       <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                         <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -8445,6 +8481,10 @@ const CHANGELOG = [
       "소개 페이지 마스코트 그림을 학습 탭 등에서 이미 쓰던 깔끔한 그림체로 통일했어요.",
       "그랜드마스터 티어 배지에 기물 대신 오로라 사진이 잘못 표시되던 문제를 고쳤어요 — 헤더 배지·여정 지도·퍼즐 탭·승급 연출 전부 원래의 왕관 기물 이미지로 보여요.",
       "퍼즐·퀘스트·상점 카드, 친구·검색 목록, 알림, 채팅 목록이 이제 툭 튀어나오는 대신 하나씩 부드럽게 떠오르며 나타나요. 친구 요청을 수락·거절하거나 알림을 지우면 목록에서도 부드럽게 사라져요.",
+      "집중 학습에서 퍼즐이 만들어지는 동안, 그냥 기다리는 대신 지금 찾아낸 수를 미니 보드에 미리 보여줘요.",
+      "학습 탭 수 블록과 집중 학습 진입에도 부드러운 애니메이션과 스크롤을 더했어요.",
+      "티어 여정 지도에서 그랜드마스터(마지막 티어)를 가운데로 크게 강조하고, 티어별 배경이 자연스럽게 이어지도록 다듬었어요. 안내 문구 대신 이정표 아이콘을 넣었어요.",
+      "여정 지도가 좁은 화면(모바일)에서 오른쪽으로 밀려 잘려 보이던 문제를 고쳤어요.",
     ],
   },
   {
@@ -9856,21 +9896,44 @@ function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   // (v0.1.2) v0.1.1에서 키웠던 정거장 원이 지나치게 커 보인다는 피드백으로 다시 축소.
   const STATION_H = 96, STATION_GAP = 52;
+  // (v0.1.4 기능) "그랜드마스터는 마지막 단계라는 걸 보여주기 위해 선을 더 길게, 중앙 직선으로
+  // 이어지게" — 그랜드마스터 직전 간격만 크게 벌리고(GM_EXTRA_GAP), 맨 위(그랜드마스터 자신) 위로도
+  // 여백(GM_TOP_PAD)을 더 둬 오로라 배경 밴드가 위로 넉넉히 확장될 공간을 만든다.
+  const GM_EXTRA_GAP = 200, GM_TOP_PAD = 160;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
   // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
   useEffect(() => { if (currentRef.current) currentRef.current.scrollIntoView({ block: "center" }); }, []);
-  // 시각적 세로 위치만 뒤집는다(i는 여전히 TIER_STATIONS의 진행 순서 그대로 — 아래 currentIdx 비교는 그대로).
-  const topOf = (i) => (TIER_STATIONS.length - 1 - i) * (STATION_H + STATION_GAP);
+  // 시각적 세로 위치를 뒤집으면서(진행 순서 i는 그대로), 그랜드마스터 직전 구간의 간격만 예외적으로
+  // 크게 준다 — 나머지 정거장 사이 간격은 기존과 동일.
+  const lastIdx = TIER_STATIONS.length - 1;
+  const stationTops = useMemo(() => {
+    const tops = new Array(TIER_STATIONS.length);
+    tops[lastIdx] = GM_TOP_PAD;
+    for (let i = lastIdx - 1; i >= 0; i--) {
+      const gap = i === lastIdx - 1 ? STATION_GAP + GM_EXTRA_GAP : STATION_GAP;
+      tops[i] = tops[i + 1] + STATION_H + gap;
+    }
+    return tops;
+  }, [lastIdx]);
+  const topOf = (i) => stationTops[i];
   // 지금 내가 서 있는 자리를 TIER_STATIONS 안에서 찾는다 — 그 인덱스보다 앞(작음)이면 이미 지난
   // 구간, 뒤(큼)면 아직 안 온 구간이다. 그랜드마스터는 구간이 없어(division:null) info.division도
   // maxed일 때 null로 맞춰 둔 값과 그대로 비교된다.
   const currentIdx = useMemo(() => TIER_STATIONS.findIndex((s) => s.tierIdx === info.tierIndex && s.division === (info.maxed ? null : info.division)), [info]);
-  const totalHeight = (TIER_STATIONS.length - 1) * (STATION_H + STATION_GAP) + STATION_H;
+  const totalHeight = stationTops[0] + STATION_H;
   // (v0.1.3 기능) TIER_STATIONS는 티어별로 이미 뭉쳐서(아이언 5~1, 브론즈 5~1…) 순서대로 나열돼
   // 있으므로, 같은 tier.key가 연속되는 구간을 하나의 "밴드"로 묶어 그 구간의 세로 픽셀 범위를 구한다
   // — 이 범위에 그 티어 전용 배경 이미지를 깔면, 스크롤해서 그 티어 구간을 지날 때만 자연스럽게
   // 그 배경이 보인다.
+  // (v0.1.4 버그 수정) "티어 배경이 끊어져 보인다" — 예전엔 밴드마다 자기 영역 안에서만 위아래
+  // 70px을 검은색으로 페이드시켰다. 밴드끼리 서로 안 겹치니 경계에서는 두 배경이 섞이는 대신
+  // 양쪽 다 같은 어두운 배경으로 각자 사라졌다가 다시 나타나는 것처럼 보여, 이어지는 배경이 아니라
+  // 뚝뚝 끊어진 조각들처럼 읽혔다. 이제 각 밴드를 이웃 티어 영역까지 BG_FADE만큼 겹쳐 그리고, 그
+  // 겹친 구간에서 양쪽이 함께 반투명해지도록(한쪽은 옅어지고 다른 쪽은 짙어지며) 해 실제로 두
+  // 배경이 서로 섞여 이어지도록 한다(맨 처음 아이언의 아래쪽·맨 끝 그랜드마스터의 위쪽은 겹칠
+  // 이웃이 없으므로 확장하지 않는다).
+  const BG_FADE = 130;
   const tierBands = useMemo(() => {
     const bands = [];
     let i = 0;
@@ -9879,8 +9942,11 @@ function TierJourneyPath({ totalXp }) {
       let j = i;
       while (j < TIER_STATIONS.length && TIER_STATIONS[j].tier.key === key) j++;
       const startIdx = i, endIdx = j - 1;
-      const top = Math.min(topOf(startIdx), topOf(endIdx));
-      const bottom = Math.max(topOf(startIdx), topOf(endIdx)) + STATION_H;
+      const isFirst = i === 0, isLast = j === TIER_STATIONS.length;
+      let top = Math.min(topOf(startIdx), topOf(endIdx));
+      let bottom = Math.max(topOf(startIdx), topOf(endIdx)) + STATION_H;
+      top = isLast ? 0 : top - BG_FADE;       // 그랜드마스터는 컨테이너 맨 위까지 그대로 채운다
+      if (!isFirst) bottom += BG_FADE;         // 아이언 아래쪽은 겹칠 이웃이 없어 확장하지 않는다
       bands.push({ key, top, height: bottom - top });
       i = j;
     }
@@ -9895,7 +9961,7 @@ function TierJourneyPath({ totalXp }) {
           계속 살아있는 느낌을 준다. 위아래 가장자리는 mask로 옅게 흐려 다음 티어 배경과 부드럽게
           이어지고, 어두운 그러데이션을 한 겹 덮어 그 위 흰 정거장 도형이 항상 잘 읽히게 한다. */}
       {tierBands.map((b) => (
-        <div key={b.key} style={{ position: "absolute", left: 0, top: b.top, width: "100%", height: b.height, overflow: "hidden", zIndex: 0, WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black 70px, black calc(100% - 70px), transparent 100%)", maskImage: "linear-gradient(to bottom, transparent 0, black 70px, black calc(100% - 70px), transparent 100%)" }}>
+        <div key={b.key} style={{ position: "absolute", left: 0, top: b.top, width: "100%", height: b.height, overflow: "hidden", zIndex: 0, WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black " + BG_FADE + "px, black calc(100% - " + BG_FADE + "px), transparent 100%)", maskImage: "linear-gradient(to bottom, transparent 0, black " + BG_FADE + "px, black calc(100% - " + BG_FADE + "px), transparent 100%)" }}>
           <motion.img
             src={TIER_BG_IMAGE[b.key]} alt=""
             animate={{ scale: [1, 1.14, 1], x: ["0%", "-3%", "0%"], y: ["0%", "-2%", "0%"] }}
@@ -9906,26 +9972,44 @@ function TierJourneyPath({ totalXp }) {
       ))}
       <svg width="100%" height={totalHeight} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
         {TIER_STATIONS.slice(0, -1).map((_, i) => {
-          const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
+          const x1 = i % 2 ? "78%" : "22%";
           const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
           const lit = i < currentIdx;
+          const lineStyle = { stroke: lit ? "#F5C542" : "rgba(255,255,255,.18)", strokeWidth: lit ? 3.5 : 3, strokeDasharray: lit ? undefined : "3 7", strokeLinecap: "round" };
+          const glow = lit ? { filter: "drop-shadow(0 0 3px rgba(245,197,66,.7))" } : undefined;
+          // (v0.1.4 기능) 그랜드마스터로 이어지는 마지막 구간은 "여기가 끝"이라는 인상을 주기 위해
+          // 지그재그 대각선 대신, 중앙으로 꺾여 들어가 그대로 수직으로 길게 뻗는 꺾은선(엘보)으로
+          // 그린다 — 직전 정거장 위치(22%/78%)에서 수평으로 중앙까지 이동한 뒤, 그 중앙 직선을 타고
+          // 위로 길게 올라가 그랜드마스터 정거장 정중앙에 닿는다.
+          if (i === lastIdx - 1) {
+            const elbowY = y1 - (y1 - y2) * 0.28;
+            return (
+              <React.Fragment key={i}>
+                <motion.line x1={x1} y1={y1} x2="50%" y2={elbowY} {...lineStyle}
+                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.5, ease: "easeOut" }} style={glow} />
+                <motion.line x1="50%" y1={elbowY} x2="50%" y2={y2} {...lineStyle}
+                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} style={glow} />
+              </React.Fragment>
+            );
+          }
+          const x2 = (i + 1) % 2 ? "78%" : "22%";
           // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
           // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
           return (
-            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke={lit ? "#F5C542" : "rgba(255,255,255,.18)"} strokeWidth={lit ? 3.5 : 3}
-              strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round"
+            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
               initial={{ pathLength: 0, opacity: 0 }}
               whileInView={{ pathLength: 1, opacity: 1 }}
               viewport={{ once: false, amount: 0.6 }}
               transition={{ duration: 0.7, ease: "easeOut" }}
-              style={lit ? { filter: "drop-shadow(0 0 3px rgba(245,197,66,.7))" } : undefined} />
+              style={glow} />
           );
         })}
       </svg>
       {TIER_STATIONS.map((s, i) => {
         const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
-        const cx = i % 2 ? "78%" : "22%";
+        // (v0.1.4 기능) 그랜드마스터는 마지막 단계라는 것을 강조하기 위해 지그재그 대신 중앙(50%)에
+        // 배치 — 위 연결선 엘보도 이 중앙 지점을 향해 그려진다.
+        const cx = i === lastIdx ? "50%" : (i % 2 ? "78%" : "22%");
         const top = topOf(i);
         // (v0.1.1) 로고 뒤에 배경을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
         // 색으로 은은하게 빛나는 글로우를 준다.
@@ -9942,14 +10026,20 @@ function TierJourneyPath({ totalXp }) {
         // "아직 안 온 구간"이라는 표시는 이제 점선 연결선·현재 위치 표시만으로 충분하다.
         return (
           <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
-            {/* (버그 수정) 스크롤로 이 정거장이 화면에 들어올 때마다(once:false) 지도가 펼쳐지듯
-                작게·기울어진 채로 시작해 제자리로 펼쳐지는 애니메이션이 반복 재생된다. */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
-              whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
-              viewport={{ once: false, amount: 0.6 }}
-              transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
-              style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
+            {/* (v0.1.4 버그 수정) "모바일에서 여정 지도가 왜곡된다"는 신고 원인 — framer-motion은
+                scale/rotate처럼 transform 계열 모션 값을 다루는 순간 그 엘리먼트의 transform CSS를
+                통째로 자기가 계산한 값으로 덮어써, style로 준 정적인 translateX(-50%) 중앙 정렬이
+                애니메이션이 끝나자마자 조용히 사라졌다 — 78% 자리 정거장이 중앙 정렬 없이 그대로
+                오른쪽으로 반 칸(48px)어치 더 밀려나, 화면이 좁은 모바일에서 오른쪽 끝이 뷰포트
+                밖으로 잘려나갔다. 정적 중앙 정렬(translateX(-50%))은 애니메이션이 없는 바깥 div가
+                전담하고, scale/rotate 애니메이션은 그 안쪽(inset:0)의 별도 motion.div로 분리한다. */}
+            <div style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
+                whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
+                viewport={{ once: false, amount: 0.6 }}
+                transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
+                style={{ position: "absolute", inset: 0 }}>
               <motion.div
                 ref={state === "current" ? currentRef : undefined}
                 animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
@@ -9979,7 +10069,8 @@ function TierJourneyPath({ totalXp }) {
                   </motion.span>
                 )}
               </motion.div>
-            </motion.div>
+              </motion.div>
+            </div>
             {state === "current" && (
               <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
                 <div style={{ fontSize: 10, color: T.ivory, opacity: .8 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>
@@ -9998,10 +10089,11 @@ function TierJourneyMap({ totalXp, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
       <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
+        {/* (v0.1.4 UI) "티어 여정"·"퍼즐을 풀어..." 안내 문구를 없애고, 그 자리에 이정표 아이콘만
+            남긴다 — 아래 지도 자체가 이미 지금까지의 여정을 보여주므로 문구 없이도 뜻이 통한다. */}
         <div className="flex items-center justify-between" style={{ marginBottom: 18 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: T.brassHi }}>티어 여정</div>
-            <div style={{ fontSize: 11.5, color: T.ivory, opacity: .8, marginTop: 2 }}>퍼즐을 풀어 경험치를 쌓으면 다음 티어로 승급해요.</div>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Milestone size={20} color={T.brassHi} />
           </div>
           <button onClick={onClose} className="press" style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(0,0,0,.3)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <X size={17} />
@@ -10489,7 +10581,8 @@ export default function App() {
   // (버그 수정) 퍼즐 생성(genPuzzleTree)이 집중 학습 화면의 effect에 묶여 있으면, 그 화면이 언마운트되는
   // 탭 전환만으로 아직 안 끝난 생성이 통째로 버려졌다(엔진 자체는 App에 항상 떠 있어 계속 도는데도).
   // 생성 요청·진행률을 이 항상-마운트된 App으로 끌어올려, 어느 탭에 있든 생성이 끝까지 이어지고
-  // 완료되면 저장되도록 한다. puzzleGenProgress: 퍼즐 id -> 진행률(0~1, 완료되면 항목 제거).
+  // 완료되면 저장되도록 한다. puzzleGenProgress: 퍼즐 id -> {p(진행률 0~1), path(지금까지 탐색된
+  // 수순 — 생성 과정 미리보기용)}, 완료되면 항목 제거.
   const [puzzleGenProgress, setPuzzleGenProgress] = useState({});
   const puzzleGenInFlightRef = useRef(new Set());
   const likeInFlightRef = useRef(new Set());
@@ -10798,11 +10891,13 @@ export default function App() {
   // (버그 수정) 퍼즐 생성 요청의 단일 창구 — id별로 딱 한 번만 시작하고(다른 컴포넌트가 같은 퍼즐을
   // 다시 요청해도 무시), 요청한 컴포넌트가 이후 언마운트되어도(탭 전환) 이 App은 항상 떠 있으므로
   // run()이 끝까지 실행되어 결과가 저장된다. run은 (onProgress) => Promise<퍼즐객체|null>.
+  // (v0.1.4 기능) 진행률(p)뿐 아니라 지금까지 탐색된 수순(path)도 함께 저장해, 집중 학습 화면이
+  // 퍼즐이 만들어지는 과정을 미니 보드로 실시간 시각화할 수 있게 한다.
   const requestPuzzleGen = useCallback((id, run) => {
     if (puzzleGenInFlightRef.current.has(id)) return;
     puzzleGenInFlightRef.current.add(id);
-    setPuzzleGenProgress((prev) => ({ ...prev, [id]: 0 }));
-    run((p) => setPuzzleGenProgress((prev) => (id in prev ? { ...prev, [id]: p } : prev)))
+    setPuzzleGenProgress((prev) => ({ ...prev, [id]: { p: 0, path: null } }));
+    run((p, path) => setPuzzleGenProgress((prev) => (id in prev ? { ...prev, [id]: { p, path: path || prev[id].path } } : prev)))
       .then((pz) => { if (pz) onSavePuzzle(pz); })
       .catch((e) => console.warn("퍼즐 생성 실패:", id, e))
       .finally(() => {
