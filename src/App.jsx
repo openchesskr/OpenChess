@@ -9031,7 +9031,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
 // (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·티어·퍼즐 수·
 // 자주 두는 첫 수 — PublicProfileStats 재사용)를 보여주고, 그 아래 로그아웃 버튼을 둔다. 아바타/이름/
 // 아이디를 누르면 메뉴를 닫고 설정 탭의 내 프로필로 이동한다.
-function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile }) {
+function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile, mainQuestSummary, solvedNos, onOpenPuzzle, mySolved, myLineSolves }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   useEffect(() => {
@@ -9042,7 +9042,10 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
   }, [open]);
   const name = (profile.displayId || user) + roleIcon(user);
   const initial = (profile.nickname || profile.displayId || user || "?")[0].toUpperCase();
-  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId };
+  // (v0.1.3 기능) 설정 탭 "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐을 이 헤더 드롭다운에도
+  // 보여준다 — PublicProfileStats는 이미 pub.mainQuestSummary/solvedNos가 있으면 그 두 블록을
+  // 자동으로 그려주므로(다른 유저 공개 프로필과 동일한 컴포넌트), myPub에 그대로 채워 넣기만 하면 된다.
+  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, mainQuestSummary, solvedNos };
   const goToProfile = () => { setOpen(false); onGoToProfile(); };
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
@@ -9070,6 +9073,8 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
             onOpenOpening={onOpenOpening && ((n) => { setOpen(false); onOpenOpening(n); })}
             onOpenGame={onOpenGame && ((m) => { setOpen(false); onOpenGame(m); })}
             onOpenGameAnalyze={onOpenGameAnalyze && ((m) => { setOpen(false); onOpenGameAnalyze(m); })}
+            onOpenPuzzle={onOpenPuzzle && ((id, fallback) => { setOpen(false); onOpenPuzzle(id, fallback); })}
+            mySolved={mySolved} myLineSolves={myLineSolves}
           />
           <button onClick={() => { setOpen(false); onLogoutClick(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
         </div>
@@ -10808,7 +10813,8 @@ export default function App() {
           {/* (버그 수정) 알림은 시급성이 다른 정보라 세그먼트에 묶지 않고 오른쪽에 따로 분리해 둔다. */}
           {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
           {user ? (
-            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setTab("set")} />
+            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setTab("set")}
+              mainQuestSummary={mainQuestOverallProgress(mainQuest)} solvedNos={[...solved].map((id) => puzzleNo(id))} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />
           ) : (
             <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
               <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>로그인</button>
