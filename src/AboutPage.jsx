@@ -230,6 +230,11 @@ const DECO_B = { pieces: [{ piece: "bK", r: 0, c: 6 }, { piece: "wK", r: 7, c: 6
 const DECO_C = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bP", r: 1, c: 4 }], move: { piece: "wR", from: [7, 0], to: [3, 0] }, caption: "우위 점하기 — 조금씩 조여가기" };
 const DECO_D = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bR", r: 2, c: 4 }], move: { piece: "wN", from: [4, 3], to: [2, 2] }, caption: "실수 응징하기 — 포크 한 방으로" };
 const DECO_E = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bP", r: 1, c: 3 }], move: { piece: "wQ", from: [7, 3], to: [3, 3] }, caption: "매일 조금씩, 꾸준하게" };
+// (v0.1.3 기능) 버전 기록 페이지에도 데코 보드를 재사용 — 버전마다 순서대로 하나씩 돌려 써서 같은
+// 장면이 매 페이지 반복되지 않게 한다.
+const DECO_LIST = [DECO_A, DECO_B, DECO_C, DECO_D, DECO_E];
+// 카테고리별로 배경에 옅게 깔아 둘 기물 — 각 카테고리 성격에 어울리는 기물을 하나씩 골랐다.
+const CAT_PIECE = { feature: "wQ", ui: "wB", ux: "wN", perf: "wR", fix: "bK", security: "bR" };
 
 function TierStrip() {
   const tiers = [
@@ -457,7 +462,7 @@ const VERSION_HISTORY = [
       intro: { src: "/emoji/kokoa_2.png", name: "KOKOA 코치", align: "left", text: "이번 버전의 주인공은 \"공유\"예요. 마음에 드는 퍼즐을 친구에게 바로 보내보세요!" },
       outro: { src: "/emoji/milku_10.png", name: "MILKU 코치", align: "right", text: "친구가 제가 보낸 퍼즐을 풀면요? 저한테도 경험치가 조금 돌아와요. 두근두근!" },
     },
-    highlight: { kind: "icon", Icon: Send, color: "#8FB55E", label: "퍼즐 공유하기" },
+    highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: "퍼즐 공유하기", tilt: -3 },
     sections: [
       { cat: "feature", items: [
         "퍼즐을 친구에게 공유할 수 있어요. 카드·풀이 화면의 종이비행기 아이콘을 누르면 친구 목록이 뜨고, 고른 친구와의 대화창에 퍼즐 미리보기 카드가 남아요. 카드의 \"퍼즐 풀러 가기\" 버튼으로 바로 그 퍼즐을 풀 수 있어요.",
@@ -530,7 +535,7 @@ const VERSION_HISTORY = [
       intro: { src: "/emoji/milku_11.png", name: "MILKU 코치", align: "left", text: "게임 리뷰가 느리다는 얘기, 저도 들었어요. 그래서 이번엔 속도를 확 끌어올렸어요." },
       outro: { src: "/emoji/kokoa_7.png", name: "KOKOA 코치", align: "right", text: "퍼즐 만들다가 화면을 나가도 이제 처음부터 다시 안 만들어도 돼요." },
     },
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: "게임 리뷰 속도 개선" },
+    highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: "학습 탭 실시간 분석", tilt: 3 },
     sections: [
       { cat: "perf", items: [
         "게임 리뷰(전체 기보 분석)가 느리게 느껴지던 문제를 해결해 훨씬 빠르게 결과를 볼 수 있어요.",
@@ -552,7 +557,7 @@ const VERSION_HISTORY = [
       intro: { src: "/emoji/milku_7.png", name: "MILKU 코치", align: "left", text: "도감 탭 오프닝 트리를 나침반처럼 동서남북으로 뻗어나가게 다시 그렸어요." },
       outro: { src: "/emoji/kokoa_4.png", name: "KOKOA 코치", align: "right", text: "트리가 그려지는 동안 화면이 흔들리던 것도 이번에 다 잡았어요." },
     },
-    highlight: { kind: "icon", Icon: Compass, color: "#6FA8DC", label: "나침반형 오프닝 트리" },
+    highlight: { kind: "shot", src: "/about/screenshot-dex.webp", label: "나침반형 오프닝 트리", tilt: -3 },
     sections: [
       { cat: "ui", items: ["도감 탭의 오프닝 트리를 1.e4·1.d4·1.c4·1.Nf3이 동서남북 네 방향으로 뻗어나가는 나침반 모양으로 새롭게 디자인했어요."] },
       { cat: "fix", items: [
@@ -581,7 +586,7 @@ const VERSION_HISTORY = [
       intro: { src: "/emoji/milku_1.png", name: "MILKU 코치", align: "left", text: "베타를 열고 나서 처음 받은 피드백들을 하나씩 다듬은 버전이에요." },
       outro: { src: "/emoji/kokoa_1.png", name: "KOKOA 코치", align: "right", text: "모바일 화면도, 로그인 창도 한결 매끄러워졌을 거예요." },
     },
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: "구석구석 다듬기" },
+    highlight: { kind: "shot", src: "/about/screenshot-quest.webp", label: "구석구석 다듬기", tilt: 3 },
     sections: [
       { cat: "ui", items: [
         "모바일 화면에서 상단 메뉴가 잘리던 문제를 고치고 전체적으로 더 깔끔하게 정리했어요.",
@@ -665,9 +670,23 @@ function IconHighlight({ Icon, color, label }) {
     </Reveal>
   );
 }
+// (v0.1.3 기능) "게임 내 스크린샷도 사용해 달라"는 요청 — 실제 화면과 관련된 버전(공유 기능→퍼즐 탭,
+// 실시간 분석→학습 탭, 오프닝 트리 개편→도감 탭 등)에는 아이콘 펄스 대신 그 탭의 실제 스크린샷을
+// PhoneFrame에 담아 보여준다.
+function ShotHighlight({ src, label, tilt = 0 }) {
+  return (
+    <Reveal>
+      <div className="flex flex-col items-center" style={{ gap: 10, margin: "8px 0 28px" }}>
+        <div style={{ width: 168 }}><PhoneFrame src={src} alt={label} tilt={tilt} /></div>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi }}>{label}</span>
+      </div>
+    </Reveal>
+  );
+}
 function VersionHighlight({ h }) {
   if (!h) return null;
   if (h.kind === "icon") return <IconHighlight Icon={h.Icon} color={h.color} label={h.label} />;
+  if (h.kind === "shot") return <ShotHighlight src={h.src} label={h.label} tilt={h.tilt} />;
   if (h.kind === "tierStrip") return (
     <Reveal><div style={{ margin: "8px 0 28px", padding: "18px 14px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER }}><TierStrip /></div></Reveal>
   );
@@ -675,29 +694,39 @@ function VersionHighlight({ h }) {
   return null;
 }
 
-function ItemRow({ text, color, delay }) {
+// (v0.1.3 기능) "텍스트만 있는 것 같다 — 좌우로 역동적으로 배치해 달라"는 요청 — 항목마다 좌/우
+// 번갈아 여백을 주고 반대 방향에서 슬라이드해 들어오게 해, 한 줄로 죽 늘어선 목록이 아니라
+// 지그재그로 읽히도록 바꾼다(once:false라 스크롤에서 벗어났다 다시 들어올 때마다 다시 슬라이드).
+function ItemRow({ text, color, delay, index }) {
+  const fromRight = index % 2 === 1;
   return (
-    <Reveal delay={delay} y={10}>
-      <div className="flex items-start gap-2" style={{ padding: "9px 12px", borderRadius: 10, background: "rgba(0,0,0,.18)", border: "1px solid #4A3521", marginBottom: 6 }}>
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 6 }} />
-        <p style={{ margin: 0, fontSize: 12.5, color: T.ivory, lineHeight: 1.65 }}>{text}</p>
-      </div>
-    </Reveal>
+    <motion.div initial={{ opacity: 0, x: fromRight ? 28 : -28 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.45, delay, ease: [0.22, 0.9, 0.32, 1] }}
+      className="flex items-start gap-2" style={{ padding: "9px 12px", borderRadius: 10, background: "rgba(0,0,0,.18)", border: "1px solid #4A3521", marginBottom: 6, flexDirection: fromRight ? "row-reverse" : "row", marginLeft: fromRight ? 22 : 0, marginRight: fromRight ? 0 : 22 }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 6 }} />
+      <p style={{ margin: 0, fontSize: 12.5, color: T.ivory, lineHeight: 1.65, textAlign: fromRight ? "right" : "left" }}>{text}</p>
+    </motion.div>
   );
 }
 
-function CategoryGroup({ cat, items }) {
+// (v0.1.3 기능) "체스보드와 기물 이미지도 막 사용해 달라"는 요청 — 카테고리 헤더 뒤에 그 카테고리와
+// 어울리는 기물(CAT_PIECE)을 옅게 워터마크처럼 깔아 둔다. 카테고리마다 좌/우를 번갈아 카드 자체도
+// 살짝 지그재그로 등장하게 한다.
+function CategoryGroup({ cat, items, index }) {
   const c = CAT[cat];
+  const onRight = index % 2 === 1;
+  const pieceSrc = DECO_PIECE_SRC[CAT_PIECE[cat] || "wQ"];
   return (
-    <div style={{ marginBottom: 20 }}>
-      <Reveal y={8}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-          <span style={{ width: 22, height: 22, borderRadius: 7, background: c.color + "26", border: "1px solid " + c.color, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><c.Icon size={12} color={c.color} /></span>
-          <span style={{ fontSize: 11, fontWeight: 800, color: c.color, letterSpacing: ".04em" }}>{c.label}</span>
-        </div>
-      </Reveal>
-      {items.map((t, i) => <ItemRow key={i} text={t} color={c.color} delay={i * 0.04} />)}
-    </div>
+    <motion.div initial={{ opacity: 0, x: onRight ? 20 : -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.2 }} transition={{ duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{ marginBottom: 24, position: "relative", overflow: "hidden", borderRadius: 14, padding: 2 }}>
+      <img src={pieceSrc} alt="" aria-hidden="true" style={{ position: "absolute", [onRight ? "right" : "left"]: -22, top: -14, width: 100, opacity: 0.07, pointerEvents: "none", filter: "grayscale(1) brightness(3)" }} />
+      <div className="flex items-center gap-2" style={{ marginBottom: 8, position: "relative" }}>
+        <span style={{ width: 22, height: 22, borderRadius: 7, background: c.color + "26", border: "1px solid " + c.color, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><c.Icon size={12} color={c.color} /></span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: c.color, letterSpacing: ".04em" }}>{c.label}</span>
+      </div>
+      <div style={{ position: "relative" }}>
+        {items.map((t, i) => <ItemRow key={i} text={t} color={c.color} delay={i * 0.04} index={i} />)}
+      </div>
+    </motion.div>
   );
 }
 
@@ -706,19 +735,26 @@ function CategoryGroup({ cat, items }) {
 // (v0.1.2 기능) 마스코트가 이번 버전을 직접 소개하는 말풍선(도입부)과 소감을 남기는 말풍선(마무리)
 // 사이에, 대표 기능을 이미지·애니메이션으로 보여주는 하이라이트를 넣어 참고 이미지의 "삽화+대사"
 // 구성을 재현한다.
-function VersionPage({ v, isLatest }) {
+function VersionPage({ v, isLatest, idx = 0 }) {
+  // (v0.1.3 기능) 버전마다 데코 보드를 하나씩 순서대로 돌려 써서(체스보드를 "막" 쓰되 매번 같은
+  // 장면이 반복되지 않도록) 버전 헤더 옆에 작은 장식으로 붙인다.
+  const deco = DECO_LIST[idx % DECO_LIST.length];
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "56px 20px 96px" }}>
-      <Reveal>
-        <div style={{ marginBottom: 24 }}>
-          <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 24, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
-            {isLatest && <span style={{ fontSize: 10, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", borderRadius: 999, padding: "2px 9px" }}>최신</span>}
-            <span style={{ fontSize: 11.5, color: T.inkSoft }}>{v.date}</span>
+      <div className="flex items-start justify-between flex-wrap" style={{ gap: 14, marginBottom: 24 }}>
+        <Reveal>
+          <div>
+            <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+              <motion.span initial={{ scale: 0.6, rotate: -6 }} whileInView={{ scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
+                style={{ display: "inline-block", fontSize: 24, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</motion.span>
+              {isLatest && <span style={{ fontSize: 10, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", borderRadius: 999, padding: "2px 9px" }}>최신</span>}
+              <span style={{ fontSize: 11.5, color: T.inkSoft }}>{v.date}</span>
+            </div>
+            <p style={{ margin: 0, fontSize: 14, color: T.ivoryHi, fontWeight: 700, lineHeight: 1.5, maxWidth: 420 }}>{v.summary}</p>
           </div>
-          <p style={{ margin: 0, fontSize: 14, color: T.ivoryHi, fontWeight: 700, lineHeight: 1.5 }}>{v.summary}</p>
-        </div>
-      </Reveal>
+        </Reveal>
+        <div style={{ flexShrink: 0 }}><DecoBoard {...deco} size={90} tilt={idx % 2 === 0 ? -9 : 9} caption={null} /></div>
+      </div>
 
       {v.mascot && (
         <div style={{ marginBottom: 8 }}>
@@ -728,7 +764,7 @@ function VersionPage({ v, isLatest }) {
 
       <VersionHighlight h={v.highlight} />
 
-      {v.sections.map((s, i) => <CategoryGroup key={s.cat} cat={s.cat} items={s.items} />)}
+      {v.sections.map((s, i) => <CategoryGroup key={s.cat} cat={s.cat} items={s.items} index={i} />)}
 
       {v.mascot && (
         <div style={{ marginTop: 28 }}>
@@ -810,7 +846,7 @@ export default function AboutPage() {
           <div ref={(el) => (pageElRefs.current[0] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}><IntroPage /></div>
           {VERSION_HISTORY.map((v, i) => (
             <div key={v.version} ref={(el) => (pageElRefs.current[i + 1] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-              <VersionPage v={v} isLatest={i === 0} />
+              <VersionPage v={v} isLatest={i === 0} idx={i} />
               {i === VERSION_HISTORY.length - 1 && <div style={{ textAlign: "center", padding: "8px 0 24px" }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>}
             </div>
           ))}
