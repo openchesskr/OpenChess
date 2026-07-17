@@ -23,13 +23,34 @@ const GLOSS_BORDER = {
   borderImage: "linear-gradient(135deg, #F3DFAE, #C49A50 45%, #8A6C2F) 1",
   boxShadow: "0 0 0 1px rgba(196,154,80,.3), inset 0 1px 3px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.3)",
 };
-// (기존 TierLogoDisc와 동일한 브라스 그러데이션 원 — 마스코트 초상을 감싸는 원형 배경에 재사용)
+// 브라스 그러데이션 원 — 마스코트 초상(SpeechBubble 아바타·히어로 MILKU)을 감싸는 원형 배경 전용.
+// (v0.1.3) 실제 티어 배지(App.jsx TierLogoDisc)는 흰색 십각형으로 바뀌었지만, 이 원은 티어가 아니라
+// 마스코트 초상 프레임이라 그대로 둔다 — 아래 TierBadgeShape이 실제 티어 배지 쪽만 맞춰 바꾼다.
 const GOLD_DISC = {
   borderRadius: "50%",
   background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)",
   border: "1px solid #6E5424",
   boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.35)",
 };
+// (v0.1.3 UI) App.jsx TierLogoDisc와 동일한 흰색 십각형 배지 — 이 페이지의 티어 스트립·승급 데모도
+// 실제 사이트와 같은 모양으로 보여준다(같은 rx/ry 비율의 십각형 좌표 계산도 그대로 옮겨 적음).
+const TIER_DECAGON_PTS = (() => {
+  const rx = 46, ry = 50;
+  return Array.from({ length: 10 }, (_, i) => {
+    const a = -Math.PI / 2 + i * (Math.PI / 5);
+    return (50 + rx * Math.cos(a)).toFixed(2) + "," + (50 + ry * Math.sin(a)).toFixed(2);
+  }).join(" ");
+})();
+function TierBadgeShape({ size, children }) {
+  return (
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+        <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+      </svg>
+      <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>{children}</div>
+    </div>
+  );
+}
 
 function Diamond({ x, y, size = 16, opacity = 0.18 }) {
   return <rect x={x} y={y} width={size} height={size} transform={"rotate(45 " + (x + size / 2) + " " + (y + size / 2) + ")"} fill="none" stroke={T.brass} strokeWidth="1.2" opacity={opacity} />;
@@ -51,7 +72,10 @@ function Backdrop() {
 // (v0.1.2 기능) 페이지 전반에 애니메이션을 많이 쓰고 싶다는 요청 — 스크롤로 보일 때마다(페이지를
 // 넘겨 처음 등장할 때도 포함, 아래 Pager의 translateX 슬라이드가 곧 "뷰포트 안으로 들어옴"이라
 // whileInView가 그대로 반응한다) 살짝 떠오르며 나타나는 하나의 재사용 wrapper로 통일한다.
-function Reveal({ children, delay = 0, y = 16, once = true }) {
+// (v0.1.3 기능) "스크롤해서 Y좌표가 바뀌면 계속 재생되도록(1회성 아님)" 요청 — viewport once 기본값을
+// false로 바꿔, 화면 밖으로 나갔다가 다시 들어올 때마다 매번 다시 재생되게 한다(whileInView는
+// once:false일 때 뷰포트를 벗어나면 자동으로 initial 상태로 되돌아갔다가 재진입 시 다시 재생됨).
+function Reveal({ children, delay = 0, y = 16, once = false }) {
   return (
     <motion.div initial={{ opacity: 0, y }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once, amount: 0.25 }} transition={{ duration: 0.55, delay, ease: [0.22, 0.9, 0.32, 1] }}>
       {children}
@@ -92,17 +116,34 @@ function SectionDivider() {
   );
 }
 
-// 기능 소개 한 줄(이미지 액자 ↔ 텍스트, 좌우 번갈아 배치) — 참고 이미지의 "대사+삽화" 레이아웃을
-// 그대로 빌리되, 액자·색은 사이트의 금색 광택(GLOSS_BORDER) 스타일을 그대로 쓴다.
-function FeatureRow({ Icon, eyebrow, title, desc, quote, img, reverse }) {
+// (v0.1.3 기능) "실제 웹사이트 화면 스크린샷도 많이 사용해 달라"는 요청 — 게스트 모드로 각 탭을
+// 직접 캡처해 public/about/에 넣어둔 실제 스크린샷을, 폰 베젤 느낌의 액자(GLOSS_BORDER 재사용)에
+// 담아 보여준다. 세로로 긴 원본을 그대로 넣으면 액자가 너무 길어지므로 고정 높이 + object-fit:cover
+// (상단 정렬)로 헤더~핵심 UI가 보이는 부분만 잘라 보여준다.
+function PhoneFrame({ src, alt, tilt = 0, delay = 0 }) {
   return (
-    <div className="flex items-center flex-wrap" style={{ gap: 32, flexDirection: reverse ? "row-reverse" : "row" }}>
-      <motion.div initial={{ opacity: 0, scale: 0.85, rotate: reverse ? 4 : -4 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: true, amount: 0.4 }} transition={{ duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
-        style={{ flex: "0 0 auto", width: 200, maxWidth: "100%", margin: "0 auto" }}>
-        <div style={{ position: "relative", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER, background: "linear-gradient(160deg,#3A2516,#20140B)", padding: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <img src={img} alt="" style={{ width: "100%", maxWidth: 150, filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }} />
+    <motion.div initial={{ opacity: 0, scale: 0.85, rotate: tilt + (tilt >= 0 ? 7 : -7), y: 18 }} whileInView={{ opacity: 1, scale: 1, rotate: tilt, y: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, delay, ease: [0.22, 0.9, 0.32, 1] }}>
+      <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay }}
+        style={{ borderRadius: 20, padding: 5, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, boxShadow: GLOSS_BORDER.boxShadow + ", 0 20px 40px -16px rgba(0,0,0,.65)" }}>
+        <div style={{ borderRadius: 15, overflow: "hidden", border: "1px solid #000", height: 340 }}>
+          <img src={src} alt={alt} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }} />
         </div>
       </motion.div>
+    </motion.div>
+  );
+}
+
+// 기능 소개 한 줄(실제 화면 스크린샷 ↔ 텍스트, 좌우 번갈아 배치) — 참고 이미지의 "대사+삽화" 레이아웃을
+// 그대로 빌리되, 삽화 자리를 실제 서비스 스크린샷(PhoneFrame)으로 채우고, 마스코트는 그 모서리에
+// 작은 스티커처럼 겹쳐 붙여 캐릭터성도 함께 남긴다.
+function FeatureRow({ Icon, eyebrow, title, desc, quote, shot, mascotImg, reverse }) {
+  return (
+    <div className="flex items-center flex-wrap" style={{ gap: 32, flexDirection: reverse ? "row-reverse" : "row" }}>
+      <div style={{ flex: "0 0 auto", width: 180, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
+        <PhoneFrame src={shot} alt={title} tilt={reverse ? 4 : -4} />
+        <motion.img src={mascotImg} alt="" initial={{ opacity: 0, scale: 0.4, rotate: reverse ? -16 : 16 }} whileInView={{ opacity: 1, scale: 1, rotate: reverse ? -9 : 9 }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.5, delay: 0.18, ease: [0.22, 0.9, 0.32, 1] }}
+          style={{ position: "absolute", width: 58, height: 58, objectFit: "contain", bottom: -12, [reverse ? "left" : "right"]: -16, filter: "drop-shadow(0 4px 8px rgba(0,0,0,.55))", zIndex: 3 }} />
+      </div>
       <Reveal delay={0.1}>
         <div style={{ flex: "1 1 300px", minWidth: 260 }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
@@ -119,19 +160,76 @@ function FeatureRow({ Icon, eyebrow, title, desc, quote, img, reverse }) {
 }
 
 const FEATURES = [
-  { Icon: GraduationCap, eyebrow: "학습", title: "엔진과 함께 배우기", img: "/emoji/milku_9.png",
+  { Icon: GraduationCap, eyebrow: "학습", title: "엔진과 함께 배우기", shot: "/about/screenshot-study.webp", mascotImg: "/emoji/milku_9.png",
     desc: "Stockfish 엔진의 실시간 분석과 함께 수를 두며 배워요. chess.com 계정을 연동하면 내가 실제로 둔 대국을 그대로 불러와, 어디서 무엇을 놓쳤는지 짚어줍니다.",
     quote: "네가 둔 수, 하나하나 같이 복기해 줄게." },
-  { Icon: Library, eyebrow: "도감", title: "오프닝 나침반", img: "/emoji/milku_3.png",
+  { Icon: Library, eyebrow: "도감", title: "오프닝 나침반", shot: "/about/screenshot-dex.webp", mascotImg: "/emoji/milku_3.png",
     desc: "1.e4·1.d4·1.c4·1.Nf3 네 방향으로 뻗어나가는 오프닝 트리에서 각 수의 채택률·평가치·이름을 한눈에 살펴보세요. 이탈리안 게임, 루이 로페즈 같은 대표 오프닝은 별도 칭호로 모아둡니다.",
     quote: "이 갈래 끝에 뭐가 있는지, 같이 따라가 보자." },
-  { Icon: Puzzle, eyebrow: "퍼즐", title: "내 실수로 만든 퍼즐", img: "/emoji/kokoa_1.png",
+  { Icon: Puzzle, eyebrow: "퍼즐", title: "내 실수로 만든 퍼즐", shot: "/about/screenshot-puzzle.webp", mascotImg: "/emoji/kokoa_1.png",
     desc: "\"기물 희생하기\" · \"우위 점하기\" · \"실수 응징하기\" 세 테마로, 실전에서 나온 실수를 바탕으로 자동 생성되는 맞춤형 전술 퍼즐을 풀어보세요. 친구에게 퍼즐을 공유할 수도 있어요.",
     quote: "이 수, 정말 최선이었을까? 한번 찾아봐." },
-  { Icon: Target, eyebrow: "퀘스트", title: "매일 조금씩", img: "/emoji/kokoa_7.png",
+  { Icon: Target, eyebrow: "퀘스트", title: "매일 조금씩", shot: "/about/screenshot-quest.webp", mascotImg: "/emoji/kokoa_7.png",
     desc: "매일 새로 갱신되는 일일 퀘스트와, 챕터별 퀴즈로 진행하는 메인 퀘스트를 완료하고 OC 나이트 코인을 모아보세요.",
     quote: "오늘의 퀘스트, 벌써 확인했어?" },
+  { Icon: Wrench, eyebrow: "설정", title: "내게 맞게 조정하기", shot: "/about/screenshot-settings.webp", mascotImg: "/emoji/milku_1.png",
+    desc: "정확도가 가장 높은 Stockfish 16과, 가볍고 빠른 Stockfish 18 Lite 중 기기에 맞는 분석 엔진을 골라보세요. 로그인하면 진도가 계정에 저장돼 어느 기기에서든 이어서 즐길 수 있어요.",
+    quote: "빠르게 갈지, 정확하게 갈지 — 네가 골라." },
 ];
+
+// (v0.1.3 기능) "체스 웹사이트니까 사이사이에 체스보드를 많이 넣어달라"는 요청 — 실제 기물 이미지
+// (App.jsx PieceGlyph와 같은 자산)로 8x8 보드를 그리고, 지정된 한 수를 무한 반복 슬라이드로
+// 시연하는 장식용 미니 보드. 스크롤로 들어올 때마다 살짝 튀어오르며 등장하고(Reveal과 같은 방식,
+// once:false), 등장 후에는 은은하게 위아래로 떠 있으며, 그 안의 기물은 스크롤과 무관하게 항상
+// 같은 수를 반복 재생한다 — 페이지 전체가 "계속 움직이고 있다"는 인상을 준다.
+const SQ_LIGHT = "#E8D2A6", SQ_DARK = "#7C4F2E";
+const DECO_PIECE_SRC = {
+  wP: "/White Pawn.png", wN: "/White Knight.png", wB: "/White Bishop.png", wR: "/White Rook.png", wQ: "/White Queen.png", wK: "/White King.png",
+  bP: "/Black Pawn.png", bN: "/Black Knight.png", bB: "/Black Bishop.png", bR: "/Black Rook.png", bQ: "/Black Queen.png", bK: "/Black King.png",
+};
+const dpct = (n) => (n / 8 * 100) + "%";
+function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0 }) {
+  return (
+    <motion.div initial={{ opacity: 0, scale: 0.8, rotate: tilt + (tilt >= 0 ? 8 : -8) }} whileInView={{ opacity: 1, scale: 1, rotate: tilt }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{ width: size, flexShrink: 0 }}>
+      <motion.div animate={{ y: [0, -7, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut", delay }}>
+        <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", ...GLOSS_BORDER }}>
+          <div style={{ position: "relative", width: "100%", aspectRatio: "1/1" }}>
+            {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => (
+              <div key={r + "_" + c} style={{ position: "absolute", top: dpct(r), left: dpct(c), width: "12.5%", height: "12.5%", background: (r + c) % 2 === 0 ? SQ_LIGHT : SQ_DARK }} />
+            )))}
+            {/* (버그 수정) img에 퍼센트 padding을 직접 주면 그 퍼센트가 자기 자신이 아니라 컨테이닝
+                블록(보드 전체) 너비 기준으로 계산돼, 칸 하나(12.5%)보다 padding이 커져 콘텐츠 영역이
+                찌그러지며 기물이 안 보였다 — 칸 크기의 셀 wrapper(flex 중앙 정렬) 안에 기물 이미지를
+                그 비율(78%)로 넣는 방식으로 바꿔, 실제 보드(Board/PieceGlyph)와 동일하게 안전히 맞춘다. */}
+            {pieces.map((p, i) => (
+              <div key={i} style={{ position: "absolute", top: dpct(p.r), left: dpct(p.c), width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
+                <img src={DECO_PIECE_SRC[p.piece]} alt="" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.5))" }} />
+              </div>
+            ))}
+            {move && (
+              <motion.div
+                initial={{ top: dpct(move.from[0]), left: dpct(move.from[1]) }}
+                animate={{ top: dpct(move.to[0]), left: dpct(move.to[1]) }}
+                transition={{ duration: 1.1, repeat: Infinity, repeatType: "reverse", repeatDelay: 0.9, ease: [0.4, 1.1, 0.5, 1] }}
+                style={{ position: "absolute", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", zIndex: 2 }}>
+                <img src={DECO_PIECE_SRC[move.piece]} alt="" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.55))" }} />
+              </motion.div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+      {caption && <div style={{ marginTop: 10, textAlign: "center" }}><span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, background: "rgba(0,0,0,.35)", borderRadius: 999, padding: "4px 11px", border: "1px solid " + T.brass, display: "inline-block" }}>{caption}</span></div>}
+    </motion.div>
+  );
+}
+// 데코 보드 프리셋 — 학습(킹스 폰 게임)·기물 희생하기·우위 점하기·실수 응징하기(포크)·꾸준함(퀸 전진)
+// 다섯 장면을 페이지 곳곳에 재사용한다.
+const DECO_A = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bP", r: 1, c: 4 }], move: { piece: "wP", from: [6, 4], to: [4, 4] }, caption: "1.e4 — King's Pawn Game" };
+const DECO_B = { pieces: [{ piece: "bK", r: 0, c: 6 }, { piece: "wK", r: 7, c: 6 }, { piece: "bR", r: 0, c: 0 }], move: { piece: "wB", from: [4, 5], to: [1, 2] }, caption: "기물 희생하기 — 대담한 결정타" };
+const DECO_C = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bP", r: 1, c: 4 }], move: { piece: "wR", from: [7, 0], to: [3, 0] }, caption: "우위 점하기 — 조금씩 조여가기" };
+const DECO_D = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bR", r: 2, c: 4 }], move: { piece: "wN", from: [4, 3], to: [2, 2] }, caption: "실수 응징하기 — 포크 한 방으로" };
+const DECO_E = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bP", r: 1, c: 3 }], move: { piece: "wQ", from: [7, 3], to: [3, 3] }, caption: "매일 조금씩, 꾸준하게" };
 
 function TierStrip() {
   const tiers = [
@@ -146,19 +244,59 @@ function TierStrip() {
   return (
     <div style={{ overflowX: "auto", paddingBottom: 4 }}>
       <motion.div className="flex items-end" style={{ gap: 14, minWidth: 560, padding: "6px 2px 2px" }}
-        initial="hidden" whileInView="show" viewport={{ once: true, amount: 0.3 }}
+        initial="hidden" whileInView="show" viewport={{ once: false, amount: 0.3 }}
         variants={{ hidden: {}, show: { transition: { staggerChildren: 0.07 } } }}>
         {tiers.map((t, i) => (
           <motion.div key={t.key} className="flex flex-col items-center" style={{ gap: 6, flex: 1 }}
             variants={{ hidden: { opacity: 0, y: 20, scale: 0.7 }, show: { opacity: 1, y: 0, scale: 1 } }} transition={{ duration: 0.4, ease: [0.22, 0.9, 0.32, 1] }}>
-            <div style={{ width: 56 + i * 3, height: 56 + i * 3, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
+            <TierBadgeShape size={56 + i * 3}>
               <img src={t.img} alt={t.label} style={{ width: "72%", height: "72%", objectFit: "contain" }} />
-            </div>
+            </TierBadgeShape>
             <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brassHi, whiteSpace: "nowrap" }}>{t.label}</span>
           </motion.div>
         ))}
       </motion.div>
     </div>
+  );
+}
+
+// (v0.1.3 기능) 참고 영상의 "24/7 · 30%+ · <60 sec" 같은 스크롤 카운트업 통계 블록을 OpenChess
+// 수치로 재현한다 — 화면에 들어올 때마다(once:false와 같은 취지) 0부터 다시 세어 올라가도록,
+// framer-motion의 onViewportEnter/Leave로 직접 카운팅 애니메이션을 구동한다(whileInView는 style
+// 값 보간만 하므로 "숫자 세기"에는 안 맞아 별도 rAF 루프를 쓴다).
+function CountStat({ value, suffix = "", label }) {
+  const [n, setN] = useState(0);
+  const rafRef = useRef(null);
+  const runCount = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const start = performance.now(), dur = 1100;
+    const step = (t) => {
+      const p = Math.min(1, (t - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setN(Math.round(value * eased));
+      if (p < 1) rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+  return (
+    <motion.div onViewportEnter={runCount} onViewportLeave={() => setN(0)} viewport={{ once: false, amount: 0.7 }}
+      className="flex flex-col items-center" style={{ gap: 4, flex: "1 1 110px", minWidth: 110 }}>
+      <span style={{ fontSize: 30, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{n}{suffix}</span>
+      <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, textAlign: "center" }}>{label}</span>
+    </motion.div>
+  );
+}
+function StatsRow() {
+  return (
+    <Reveal>
+      <div className="flex flex-wrap items-center justify-center" style={{ gap: 8, padding: "26px 20px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER }}>
+        <CountStat value={7} label="티어 단계" />
+        <CountStat value={4} label="오프닝 갈래" />
+        <CountStat value={3} label="퍼즐 테마" />
+        <CountStat value={100} suffix="%" label="무료로 시작" />
+      </div>
+    </Reveal>
   );
 }
 
@@ -186,6 +324,10 @@ function IntroPage() {
             style={{ width: 260, height: 260, maxWidth: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
             <img src="/emoji/milku_2.png" alt="MILKU" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 10px 22px rgba(0,0,0,.55))" }} />
           </motion.div>
+          {/* (v0.1.3 기능) 체스 웹사이트답게 히어로 한쪽에도 작은 데코 보드를 겹쳐 둔다 */}
+          <div style={{ position: "absolute", bottom: -16, left: -30, zIndex: 2 }}>
+            <DecoBoard {...DECO_A} size={100} tilt={-11} />
+          </div>
         </motion.div>
       </section>
 
@@ -200,8 +342,28 @@ function IntroPage() {
       <SectionDivider />
 
       <section className="flex flex-col" style={{ gap: 52 }}>
-        {FEATURES.map((f, i) => <FeatureRow key={f.title} {...f} reverse={i % 2 === 1} />)}
+        {FEATURES.map((f, i) => (
+          <React.Fragment key={f.title}>
+            <FeatureRow {...f} reverse={i % 2 === 1} />
+            {/* (v0.1.3 기능) 기능 소개 사이사이에 실제 기물로 시연하는 데코 보드를 끼워 넣는다 */}
+            {i === 1 && (
+              <div className="flex items-center justify-center flex-wrap" style={{ gap: 24, margin: "6px 0" }}>
+                <DecoBoard {...DECO_B} tilt={-6} />
+                <DecoBoard {...DECO_C} tilt={6} delay={0.12} />
+              </div>
+            )}
+            {i === 3 && (
+              <div className="flex items-center justify-center flex-wrap" style={{ gap: 24, margin: "6px 0" }}>
+                <DecoBoard {...DECO_D} tilt={5} />
+              </div>
+            )}
+          </React.Fragment>
+        ))}
       </section>
+
+      <SectionDivider />
+
+      <StatsRow />
 
       <SectionDivider />
 
@@ -241,6 +403,10 @@ function IntroPage() {
           </div>
         </section>
       </Reveal>
+
+      <div className="flex items-center justify-center" style={{ marginTop: 40 }}>
+        <DecoBoard {...DECO_E} size={124} tilt={0} />
+      </div>
       <div style={{ textAlign: "center", padding: "28px 0 8px" }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>
     </div>
   );
@@ -472,9 +638,9 @@ function TierPromoDemo() {
         <AnimatePresence mode="popLayout">
           <motion.div key={i} initial={{ x: 90, opacity: 0, scale: 0.7 }} animate={{ x: 0, opacity: 1, scale: 1 }} exit={{ x: -90, opacity: 0, scale: 0.7 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
             style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <div style={{ width: 76, height: 76, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
+            <TierBadgeShape size={76}>
               <img src={cur.img} alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} />
-            </div>
+            </TierBadgeShape>
             <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi }}>{cur.label}</span>
           </motion.div>
         </AnimatePresence>
