@@ -2210,14 +2210,20 @@ function EvalBar({ cp, width, depth }) {
 }
 
 // (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV)을 전체 수순으로 보여준다. 각 줄은
-// 왼쪽에 EvalBadge(그 줄의 평가치), 오른쪽에 지금 위치부터 이어지는 수순(최대 depth 15수)을
-// 한 줄로 이어 붙이고, 줄이 보드 폭보다 길면 그 줄만 좌우로 스크롤해서 끝까지 볼 수 있다.
-function EngineLines({ lines, sans, width }) {
+// 왼쪽에 EvalBadge(그 줄의 평가치), 오른쪽에 지금 위치부터 이어지는 수순(최대 depth 15수, Playfair
+// Display 기보 폰트)을 한 줄로 이어 붙이고, 줄이 보드 폭보다 길면 그 줄만 좌우로 스크롤해서 끝까지
+// 볼 수 있다. 줄 자체를 누르면(스크롤 영역 자체 클릭 포함) 그 줄의 첫 수(지금 위치에서 바로 다음
+// 수)가 보드에서 그대로 두어진다 — 스크롤과 클릭이 같은 영역을 쓰므로, 드래그로 스크롤하다 손을
+// 뗀 것까지 클릭으로 오인해 수를 두지 않도록 pointerdown/up 좌표 차이를 함께 확인한다.
+function EngineLines({ lines, sans, width, onPlayFirst }) {
+  const dragStartRef = useRef(null);
   if (!lines || !lines.length) return null;
   return (
-    <div style={{ width, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ width, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 3 }}>
       {lines.map((l, i) => (
-        <div key={i} className="no-pan" style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 6px", borderRadius: 7, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516" }}>
+        <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
+          onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
+          style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 6px", borderRadius: 7, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default" }}>
           <EvalBadge ev={l.ev} small />
           <div style={{ overflowX: "auto", whiteSpace: "nowrap", fontSize: 12, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
             {sansToPgnText([...sans, ...l.sans])}
@@ -2364,17 +2370,19 @@ function sansToPgnText(sans) {
 const SEQ_FONT = "'Playfair Display', 'Noto Sans KR', serif";
 // (18차 UX3) 수를 되돌리거나 기보를 클릭해 이전 수로 돌아가도 이후 수들(future)이 기보에서 사라지지 않고
 // 흐리게 계속 표시되며, 현재 수만 볼드로 강조된다. future 수를 클릭하면 그 수까지 다시 진행한다.
+// (v0.1.3 버그 수정) 기보가 길어지면 flex-wrap으로 줄바꿈돼 이 바의 높이가 계속 늘어나며 아래
+// 보드를 밀어냈다 — 한 줄로 고정하고(flexWrap:nowrap) 넘치는 만큼은 좌우 스크롤로 보게 한다.
 function SequenceBar({ sans, future = [], onJump }) {
   // (20차) 보드 상단 기보에 체크(+)/체크메이트(#) 기호가 항상 표시되도록 표기 직전에 보정한다.
   const all = useMemo(() => decorateLine([...sans, ...(future || [])]), [sans.join(" "), (future || []).join(" ")]);
   if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
-    return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}>{parts.join("  ")}</div>;
+    return <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
   return (
-    <div className="flex flex-wrap items-center" style={{ color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px" }}>
+    <div className="flex items-center" style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch" }}>
       {all.map((san, i) => {
         const isCur = i === cur;
         const isFuture = i > cur;
@@ -3782,6 +3790,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     if (mm) go(mm.san, false); else go(san, true);   // 블록에 있으면 표준 SAN으로, 없으면 사용자 수 블록 생성
     return true;
   }, [board, color, go, moves, ep]);
+  // (v0.1.3 기능) 엔진 라인을 클릭하면 그 라인의 첫 수(지금 위치에서 바로 다음 수)를 둔다 —
+  // tryMove와 같은 규칙으로, 후보 수 블록에 이미 있으면 그 표준 SAN으로, 없으면 사용자 수로 둔다.
+  const playEngineMove = useCallback((san) => {
+    if (focus) return;
+    const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(san));
+    if (mm) go(mm.san, false); else go(san, true);
+  }, [focus, moves, go]);
   const completePromo = useCallback((piece) => {
     if (!promoPrompt) return;
     const { from, to } = promoPrompt; setPromoPrompt(null); setSel(null); setDrag(null);
@@ -3832,6 +3847,20 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     setSans([...sans, h]); setFuture(future.slice(1)); setSel(null);
   };
   const reset = () => { setSans([]); setFuture([]); setSel(null); setLastQ(null); };
+  // (v0.1.3 기능) 컴퓨터 환경에서 A/D키나 </>키로 보드 하단의 이전/다음 버튼과 동일하게 수를 되돌리고
+  // 넘길 수 있게 한다. 입력창에 타이핑 중이거나(PGN 붙여넣기·퍼즐 번호 입력 등) 단축키 조합(Ctrl/Alt/
+  // Meta) 중에는 가로채지 않고, 집중학습 중에는 버튼 자체가 비활성화되므로 키보드도 함께 끈다.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (focus || e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = e.target && e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+      if (e.key === "a" || e.key === "A" || e.key === "<") { e.preventDefault(); back(); }
+      else if (e.key === "d" || e.key === "D" || e.key === ">") { e.preventDefault(); fwd(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focus, back, fwd]);
 
   const enterFocus = (m) => {
     const childKey = [...sans, m.san].join(" ");
@@ -3922,7 +3951,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           {analyzeOpen && <AnalysisModal sans={[...sans, ...future]} engine={engine} onClose={() => setAnalyzeOpen(false)} />}
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
             <Board board={board} flip={flip} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ}
-              belowEval={<EngineLines lines={engineLines} sans={sans} width={Math.floor(boardSize / 8) * 8} />} />
+              belowEval={<EngineLines lines={engineLines} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
