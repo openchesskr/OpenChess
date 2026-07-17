@@ -2201,14 +2201,17 @@ function EvalBar({ cp, width, depth }) {
   useEffect(() => { if (depth == null) setTipOpen(false); }, [depth == null]);
   return (
     <div style={{ width, margin: "0 auto 8px", position: "relative", zIndex: tipOpen ? 50 : 1 }}>
+      {/* (버그 수정) 흰 구간 색이 엔진 라인 평가치 박스(EvalBadge, 순백 #FFFFFF)와 달리 살짝 크림빛
+          도는 T.ivoryHi(#FAF2E2)였다 — 같은 "백 유리"를 나타내는 색인데 바와 박스가 서로 다른 흰색을
+          쓰면 불일치해 보이므로 EvalBadge와 동일한 순백으로 맞춘다. */}
       <div style={{ display: "flex", height: 18, borderRadius: 5, overflow: "hidden", border: "1px solid #000" }}>
-        <div style={{ width: whitePct + "%", background: T.ivoryHi }} />
+        <div style={{ width: whitePct + "%", background: "#FFFFFF" }} />
         <div style={{ width: (100 - whitePct) + "%", background: "#140C07" }} />
       </div>
       {/* (v0.1.3 UI) 색이 채워진 박스 배지 대신, 소수점 둘째 자리까지 표기한 텍스트를 바에 직접
           얹는다(박스 배경 없음) — 백이 유리하면 흰 구간(좌측)에 검은 텍스트를 좌측 끝에, 흑이
           유리하면 검은 구간(우측)에 흰 텍스트를 우측 끝에 두어 항상 자신이 놓인 구간과 대비되게 한다. */}
-      <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", ...(num >= 0 ? { left: 6, color: "#140C07" } : { right: 6, color: T.ivoryHi }) }}>{evalDisplayText(ev)}</span>
+      <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", ...(num >= 0 ? { left: 6, color: "#140C07" } : { right: 6, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
       {/* (버그 수정) 평가치 텍스트가 백 유리 시 좌측, 흑 유리 시 우측으로 옮겨 다니게 되면서, 항상
           우측 고정이던 탐색 인디케이터와 겹칠 수 있어 평가치 텍스트의 반대편에 두도록 바꾼다. */}
       {depth != null && (
@@ -2798,8 +2801,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // depth·개수 요구사항이 달라 공유하면 서로의 용도에 안 맞는 절충이 된다).
       if (!cache.linesPromise) cache.linesPromise = engine.evaluateMulti(sansToFen(sans), 15, 3, 3000);
       const pvs3 = await cache.linesPromise;
+      let lines = [];
       if (!cancelled && pvs3 && pvs3.length) {
-        const lines = pvs3.filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+        lines = pvs3.filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
           ev: pv.mate != null
             ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
             : { cp: pv.cp * baseWhite },
@@ -2809,6 +2813,19 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       }
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
+      // (버그 수정) 수 블록(MoveTile) 목록의 개별 평가치는 이 아래에서 별도의 빠른 풀(depth 15,
+      // movetime 700ms 상한)로 채워지는데, 그 수가 방금 구한 엔진 상위 3줄(MultiPV-3, movetime
+      // 3000ms — 훨씬 더 정확) 중 하나의 첫 수와 같다면 서로 다른 검색에서 나온 값이 미세하게
+      // 갈려 같은 수인데 블록과 엔진 라인의 평가치가 서로 다르게 보였다. 겹치는 수는 항상 이
+      // 줄의 값을 그대로 가져다 쓰도록 live를 맞춰 두면(아래 개별 검색 루프는 live가 이미 채워진
+      // 수를 건너뛰므로) 두 표시가 항상 정확히 일치한다 — 집중 학습 화면도 같은 live 필드를
+      // 그대로 물려받으므로 결과적으로 학습 탭 전체가 하나의 엔진 결과로 통일된다.
+      if (lines.length) {
+        const lineEvBySan = {};
+        lines.forEach((l) => { if (l.sans && l.sans.length) lineEvBySan[stripSuffix(l.sans[0])] = l.ev; });
+        cur = cur.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; });
+        setMoves((prev) => prev.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+      }
       const curNonbook = () => cur.filter((m) => !m.book).length;
       if ((!isMaster || masterEmpty) && curNonbook() < 9) {
         const brd = boardFromSans(sans);
@@ -5956,12 +5973,23 @@ const QUEST_OPENING_POOL = [
 ];
 const QUEST_OPENING_MOVES = Object.fromEntries(QUEST_OPENING_POOL.map((o) => [o.name, o.moves]));
 const DEFAULT_QUEST_OPENINGS = QUEST_OPENING_POOL.map((o) => o.name);
+// (버그 수정) 일일 퀘스트 오프닝 후보 풀(recentOpenings)에는 이 큐레이션된 39개 풀에 없는 더 구체적인
+// 하위 오프닝 이름도 들어올 수 있다(집중학습·퍼즐 경로에서 5수 이상 진행한 오프닝은 그대로 후보가 됨)
+// — 그런 이름은 QUEST_OPENING_MOVES에 없어 클리어 조건 기보(수순)가 통째로 안 보였다. 표에 없으면
+// 오프닝 트리에서 그 이름의 경로를 직접 찾아(findOpeningPathByFuzzyName은 이 함수 정의보다 뒤에서
+// 선언되지만 함수 선언은 호이스팅되고 실제 호출은 렌더 시점이라 문제없다) 그 수순으로 대신 표기한다.
+function questOpeningMovesText(name) {
+  if (!name) return null;
+  if (QUEST_OPENING_MOVES[name]) return QUEST_OPENING_MOVES[name];
+  const path = findOpeningPathByFuzzyName(name);
+  return path && path.length ? sansToPgnText(path) : null;
+}
 // (18차 보충 UX2) 오프닝 플레이 외의 chess.com 활동 퀘스트 — 오프닝 무관.
 function questLabel(q) {
   if (!q) return "";
   if (q.type === "play5") return "chess.com에서 게임 5회 플레이";
   if (q.type === "win3") return "chess.com에서 게임 3회 승리";
-  return (q.opening || "오프닝") + "로 chess.com에서 1국 플레이";
+  return (q.opening || "오프닝") + "로 chess.com에서 게임 1회 플레이하기";
 }
 // (기능2→18차 보충 UX2) 오늘의 퀘스트 생성 — 퍼즐 2회 풀기(고정) + 활동 퀘스트 3개(오프닝 플레이 / 5회 플레이 / 3회 승리).
 // recentOpenings에는 5수 이상 진행한 하위 오프닝 이름도 들어오므로(집중학습/퍼즐 경로) 그대로 후보가 된다.
@@ -7253,6 +7281,10 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
   const dq = dailyQuest;
   const [remain, setRemain] = useState(msUntilKstMidnight());
   useEffect(() => { const iv = setInterval(() => setRemain(msUntilKstMidnight()), 1000); return () => clearInterval(iv); }, []);
+  // (버그 수정) questOpeningMovesText는 표에 없는 이름이면 오프닝 트리를 처음부터 훑는(BFS) 탐색을
+  // 한다 — 이 카드는 갱신 카운트다운 때문에 1초마다 리렌더되므로, 매 렌더마다 다시 돌리지 않도록
+  // 퀘스트 목록이 실제로 바뀔 때만(리롤·자정 갱신) 계산해 둔다.
+  const openingMovesTexts = useMemo(() => (dq && dq.quests ? dq.quests.map((q) => q.type === "opening" ? questOpeningMovesText(q.opening) : null) : []), [dq && dq.quests]);
   // (UX1) 완료됐지만 아직 확인(seen)하지 않은 퀘스트 — 진입 직후엔 미완료처럼 보여주다가 잠시 후
   // 클리어 애니메이션과 함께 완료 상태로 전환하고, 애니메이션이 끝나면 seen으로 기록한다.
   const [revealed, setRevealed] = useState({});
@@ -7299,7 +7331,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
           const canReroll = !((dq.rerolled || {})[i]) && !dq.claimed["cc_" + i];
           return (
             <div key={i} onClick={() => isOpening && onOpenOpening && onOpenOpening(q.opening)} className={isOpening ? "press" : undefined} style={{ cursor: isOpening ? "pointer" : "default" }}>
-              {row("cc_" + i, questLabel(q), !hasChesscom ? "설정에서 chess.com 계정을 연동해야 확인할 수 있어요" : (isOpening ? QUEST_OPENING_MOVES[q.opening] : null),
+              {row("cc_" + i, questLabel(q), !hasChesscom ? "설정에서 chess.com 계정을 연동해야 확인할 수 있어요" : (isOpening ? openingMovesTexts[i] : null),
                 /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
                 canReroll ? (
                   <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title="이 퀘스트만 교체(퀘스트당 1회)"
