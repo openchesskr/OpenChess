@@ -3793,10 +3793,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   useEffect(() => {
     onFocusActive && onFocusActive(!!focus);
     if (!focus) return;
-    // (v0.1.4 기능) "집중 학습 진입·스크롤에도 애니메이션을" — 순간이동처럼 보이던 점프 스크롤을
-    // 부드러운 스크롤로 바꾼다(집중 학습 오버레이 자체의 페이드인은 아래 AnimatePresence가 맡는다).
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "auto" });
+    if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [focus]);
   useEffect(() => { setShowAllNb(false); }, [key]);   // (UX1) 위치가 바뀌면 더보기 접기
   // (기능2) 퍼즐 자동 생성은 사용자가 "학습" 버튼을 눌러 FocusMode에 실제로 진입했을 때만 일어난다.
@@ -4094,20 +4092,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             </div>
           </div>
         </div>
-        {/* (18차 UX8) 집중학습은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다.
-            (v0.1.4 기능) 툭 튀어나오던 것을 아래에서 살짝 떠오르며 페이드인하는 전환으로 바꾸고,
-            나갈 때도 AnimatePresence로 부드럽게 사라지도록 한다. */}
-        <AnimatePresence>
+        {/* (18차 UX8) 집중학습은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다. */}
         {focus && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }}
-            style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
-            <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ duration: 0.32, ease: MOTION_EASE }}
-              style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
+          <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+            <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
               <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         )}
-        </AnimatePresence>
         <div style={{ marginTop: 16 }}>
           {focus ? null : (
             <>
@@ -4121,9 +4113,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 const autoReason = rec ? ((rec.name ? "‘" + rec.name + "’(으)로 이어지는 " : "이 위치에서 ") + (rec.book ? "대표 이론 수예요" : "유력한 수예요") + (rec.adopt != null ? ". 전체 대국의 " + rec.adopt.toFixed(1) + "%가 이 수를 선택했어요." : ".")) : null;
                 const reason = recommendReasonFor(key) || autoReason;
                 return (
-                  // (v0.1.4 기능) 위치를 옮길 때마다 이 블록(주요 분기점/수 추천)이 통째로 갱신되므로,
-                  // key를 현재 포지션(key)으로 줘서 매번 살짝 떠오르며 다시 나타나도록 한다.
-                  <FadeIn key={key + "-rec"} index={0} y={6} style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>
+                  <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>
                     <div style={{ position: "absolute", top: 4, right: 12 }}><Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={52} /></div>
                     {branch ? (
                       <>
@@ -4145,7 +4135,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                       </>
                     )}
                     <span style={{ position: "absolute", bottom: -7, right: 30, width: 13, height: 13, background: T.paper, borderRight: "1px solid #DCCBA8", borderBottom: "1px solid #DCCBA8", transform: "rotate(45deg)" }} />
-                  </FadeIn>
+                  </div>
                 );
               })()}
               {(canEdit || canAdd) && <BranchBanner sentKey={key} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} />}
@@ -4154,7 +4144,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                   둔 쪽은 그 반대다 — ply 짝수(다음이 백 차례)면 직전 수는 흑이 두었으므로 KOKOA, 그 반대는 MILKU. */}
               {/* (19차 선행) 아무 수도 두어지지 않은 시작 위치(ply 0)에서는 현재 수 블록을 아예 표시하지 않는다. */}
               {sans.length > 0 && (
-              <FadeIn key={key + "-cur"} index={1} y={6} style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "16px 18px", border: "1px solid #DCCBA8", boxShadow: "0 3px 0 #D7C19A" }}>
+              <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "16px 18px", border: "1px solid #DCCBA8", boxShadow: "0 3px 0 #D7C19A" }}>
                 {/* (18차 UI9) 마스코트는 위의 주요 분기점/수 추천 블록으로 이동. (19차 선행) 총 대국수 표기 제거.
                     (버그) 제목 헤더(✨ 오프닝 이름)는 UI에서 삭제 — 상세 블록이 첫 요소가 되어 상단 구분선/여백 제거. */}
                 {lastSan && (
@@ -4189,7 +4179,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                   </div>
                 )}
                 {explainFor(sans) && <p style={{ color: T.inkSoft, fontSize: 12, marginTop: 12, lineHeight: 1.6 }}>{explainFor(sans)}</p>}
-              </FadeIn>
+              </div>
               )}
             </>
           )}
@@ -4221,15 +4211,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 const shown = [...bk, ...shownNb];
                 return (
                   <>
-                    {/* (v0.1.4 기능) 위치를 옮길 때마다 수 블록 전체가 통째로 바뀌므로(엔진 재평가 결과),
-                        새로 생성된 목록이 순간 팝인하는 대신 하나씩 순서대로 살짝 떠오르며 나타나도록 한다. */}
-                    <AnimatePresence mode="popLayout">
-                      {/* (v0.1.4 버그 수정) key를 san만으로 주면, popLayout이 이전 위치의 목록(퇴장 중)과
-                          새 위치의 목록(등장 중)을 잠깐 함께 그리는 동안 같은 san("e4" 등)이 서로 다른
-                          위치에서 우연히 겹쳐 React가 "중복 key" 경고를 냈다 — 지금 위치(key)까지 합쳐
-                          모든 위치·모든 목록을 통틀어 유일하도록 한다. */}
-                      {shown.map((m, i) => <FadeIn key={key + "|" + m.san} index={i} y={8}><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} /></FadeIn>)}
-                    </AnimatePresence>
+                    {shown.map((m) => <MoveTile key={m.san} m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} />)}
                     {nb.length > 3 && (
                       <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                         <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -7124,7 +7106,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
               </button>
               {/* (v0.1.3 UI) PuzzleCard와 동일하게 라운딩된 사각형 배지(텍스트 포함)로 변경 */}
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 13px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }} aria-label="공유하기" title="공유하기">
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 13px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }} aria-label="공유하기" title="공유하기">
                 <Send size={12} color={T.brass} />공유
               </button>}
             </div>
@@ -7329,7 +7311,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             </button>}
             {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
                 눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 11px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer" }}>
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 11px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
               <Send size={10} color={T.brass} />공유
             </button>}
           </div>
@@ -10836,20 +10818,30 @@ export default function App() {
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
   // 다시 로그인하면 보유 스킨·장착 상태가 기본값으로 되돌아가 마치 구매 내역이 저장 안 된 것처럼 보였다.
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevTierIndexRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings);
+  // (버그 수정) "값이 있을 때만 덮어쓰기"(if (pr.X) setX(...))로 해뒀던 것 — 이 계정에 아직 그 필드가
+  // 없으면(신규 계정, 혹은 게스트로 퍼즐을 풀어보다 막 로그인한 경우 등) 조건을 그냥 건너뛰어, 직전
+  // 계정(또는 로그인 전 게스트 상태)의 메모리 값이 그대로 남아 마치 새로 로그인한 계정의 데이터인
+  // 것처럼 보였다("계정을 바꿔도 퍼즐 데이터가 남아있다" 버그의 원인). dismissedAnnounceVersion·
+  // 스킨 필드에는 이미 적용돼 있던 "없으면 기본값" 패턴을 나머지 모든 계정 데이터 필드에도 동일하게
+  // 적용해, 로그인할 때마다 항상 이 계정의 실제 값(없으면 로그아웃과 동일한 기본값)으로 확정한다.
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {};
+    setUnlocked(new Set(pr.unlocked || [])); setPuzzles(pr.puzzles || []); setSolved(new Set(pr.solved || [])); setLikedPuzzles(new Set(pr.likedPuzzles || [])); setRepostedPuzzles(new Set(pr.repostedPuzzles || [])); setLineSolves(pr.lineSolves || {}); prevTierIndexRef.current = null; setTotalXp(pr.xp != null ? pr.xp : 0); setOcCoins(pr.coins != null ? pr.coins : 0); setDevBonusGranted(!!pr.devBonusGranted); setDeletedPuzzles(new Set(pr.deleted || [])); setArchivedPuzzles(pr.archivedPuzzles || {}); setEarnedTitles(new Set(pr.titles || [])); setCurrentTitle(pr.currentTitle || null); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); setDailyQuest(pr.dailyQuest || null); setMainQuest(pr.mainQuest || { claimed: {} }); setRecentOpenings(Array.isArray(pr.recentOpenings) ? pr.recentOpenings : []);
     // (버그 수정) 다른 필드들과 달리 이 값은 "값이 있으면만 덮어쓰기"로 두면 안 된다 — 계정이
     // 한 번도 공지를 닫은 적이 없으면 pr.dismissedAnnounceVersion이 undefined인데, 그때 이
     // if를 건너뛰면 로그인 직전(게스트 상태)의 로컬 값이 그대로 남아 "이 계정도 이미 닫았다"고
     // 잘못 판단해 공지 모달이 안 뜬다 — 계정의 실제 값(없으면 null)으로 항상 동기화한다.
     setDismissedAnnounceVersion(pr.dismissedAnnounceVersion || null);
-    const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+    // (버그 수정) 이전엔 각 필드를 "없으면 직전 상태(p) 값 유지"로 병합했다 — 새 계정에 닉네임/사진이
+    // 아직 없으면 직전 계정(또는 게스트) 것이 화면에 그대로 남아 보이는, 훨씬 눈에 띄는 형태의 같은
+    // 버그였다. 병합 대신 이 계정의 실제 값(없으면 빈 값)으로 완전히 교체한다.
+    const pub = acc.pub || {}; setProfile({ chesscom: pub.chesscom || "", nickname: pub.nickname || "", displayId: pub.displayId || "", photo: pub.photo || "", firstMoves: pub.firstMoves || null }); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
     setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setRepostedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
-    setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
+    setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "", displayId: "", photo: "", firstMoves: null }); setDevBonusGranted(false);
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
     // (버그 수정) 이 두 값은 여기서 안 비워지고 있었다 — dismissedAnnounceVersion을 그대로 두면
     // 로그아웃 후 게스트 로컬 저장소에 방금 로그아웃한 계정의 "다시 보지 않기" 값이 그대로 저장돼
