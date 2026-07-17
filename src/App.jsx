@@ -6228,9 +6228,11 @@ function TierBadge({ totalXp, compact, onClick }) {
   const { tier, division } = info;
   // (v0.1.3 UI) 헤더 티어 배지에서 진행바·XP 텍스트를 없애고 로고만 남긴다 — 자세한 진행도는
   // 눌러서 여는 여정 지도에서 이미 볼 수 있어 헤더는 배지만으로 충분히 간결하게 유지한다.
+  // (버그 수정) 바로 옆 검색 버튼과 너무 붙어 있어 눌러야 할 두 버튼이 시각적으로 뭉쳐 보였다 —
+  // 오른쪽에 여백을 더 주고, 로고 자체도 살짝 키워 헤더에서 더 잘 보이게 한다.
   return (
-    <div onClick={onClick} className="press flex flex-col items-center" style={{ flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default" }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 32 : 40} discSize={compact ? 34 : 42} />
+    <div onClick={onClick} className="press flex flex-col items-center" style={{ flexShrink: 0, position: "relative", cursor: onClick ? "pointer" : "default", marginRight: compact ? 10 : 18 }}>
+      <TierLogoDisc tierKey={tier.key} division={division} size={compact ? 38 : 47} discSize={compact ? 40 : 49} />
     </div>
   );
 }
@@ -9806,7 +9808,18 @@ function TierJourneyPath({ totalXp }) {
           const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
           const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
           const lit = i < currentIdx;
-          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={lit ? T.brass : "rgba(255,255,255,.18)"} strokeWidth={3} strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round" />;
+          // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
+          // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
+          return (
+            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={lit ? "#F5C542" : "rgba(255,255,255,.18)"} strokeWidth={lit ? 3.5 : 3}
+              strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              whileInView={{ pathLength: 1, opacity: 1 }}
+              viewport={{ once: false, amount: 0.6 }}
+              transition={{ duration: 0.7, ease: "easeOut" }}
+              style={lit ? { filter: "drop-shadow(0 0 3px rgba(245,197,66,.7))" } : undefined} />
+          );
         })}
       </svg>
       {TIER_STATIONS.map((s, i) => {
@@ -9824,31 +9837,47 @@ function TierJourneyPath({ totalXp }) {
         // "현재 구간" 링 글로우를 낸다.
         const tc = TIER_COLORS[s.tier.key];
         const ringColor = tc.stops ? tc.stops[1] : tc.hi;
+        // (버그 수정) 잠금 아이콘은 없애고, 이미지는 항상 원래 색 그대로 보여준다(muted 제거) —
+        // "아직 안 온 구간"이라는 표시는 이제 점선 연결선·현재 위치 표시만으로 충분하다.
         return (
           <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
+            {/* (버그 수정) 스크롤로 이 정거장이 화면에 들어올 때마다(once:false) 지도가 펼쳐지듯
+                작게·기울어진 채로 시작해 제자리로 펼쳐지는 애니메이션이 반복 재생된다. */}
             <motion.div
-              ref={state === "current" ? currentRef : undefined}
-              animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
-              transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
+              initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
+              whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
+              viewport={{ once: false, amount: 0.6 }}
+              transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
               style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
-              <div style={{
-                position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" + (state === "current" ? " drop-shadow(0 0 8px " + ringColor + ")" : ""),
-              }}>
-                <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-                  <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
-                </svg>
-                {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
-                    이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 도형 정중앙에 오도록 배치한다. */}
-                <div style={{ position: "relative", zIndex: 1 }}>
-                  <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={92} muted={state === "locked"} />
+              <motion.div
+                ref={state === "current" ? currentRef : undefined}
+                animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
+                transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
+                style={{ position: "absolute", inset: 0 }}>
+                <div style={{
+                  position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                  filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" + (state === "current" ? " drop-shadow(0 0 8px " + ringColor + ")" : ""),
+                }}>
+                  <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+                    <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+                  </svg>
+                  {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
+                      이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 도형 정중앙에 오도록 배치한다. */}
+                  <div style={{ position: "relative", zIndex: 1 }}>
+                    <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={92} />
+                  </div>
                 </div>
-              </div>
-              {state === "done" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={14} color="#fff" /></span>}
-              {/* (v0.1.1 버그 수정) 로고를 원 정중앙으로 옮기면서, 정중앙에 겹쳐 그리던 잠금 아이콘이
-                  로고 위에 그대로 포개져 서로 가려 보였다 — "완료" 배지와 같은 자리(우하단 모서리)의
-                  작은 배지로 옮겨 로고와 겹치지 않게 한다. */}
-              {state === "locked" && <span style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.88)", border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={13} style={{ color: "rgba(255,255,255,.85)" }} /></span>}
+                {/* (버그 수정) "이미 지나온 티어" 초록 체크 배지가 정적이라 눈에 잘 안 띄었다 —
+                    은은하게 커졌다 작아지는 펄스를 반복해 완료됐다는 느낌을 계속 상기시킨다. */}
+                {state === "done" && (
+                  <motion.span
+                    animate={{ scale: [1, 1.18, 1], boxShadow: ["0 0 0 0 rgba(63,122,58,.55)", "0 0 0 5px rgba(63,122,58,0)", "0 0 0 0 rgba(63,122,58,0)"] }}
+                    transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
+                    style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Check size={14} color="#fff" />
+                  </motion.span>
+                )}
+              </motion.div>
             </motion.div>
             {state === "current" && (
               <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
