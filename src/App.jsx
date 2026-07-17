@@ -208,7 +208,7 @@ const TIER_IMAGE = {
   gold: "/gold-rook.png",
   diamond: "/diamond-queen.png",
   master: "/master-king.png",
-  grandmaster: "/grandmaster.png",
+  grandmaster: "/gm-piece.png",
 };
 // (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
 // 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
@@ -5851,7 +5851,10 @@ const TIERS = [
   { key: "gold", label: "골드", piece: "R" },
   { key: "diamond", label: "다이아몬드", piece: "Q" },
   { key: "master", label: "마스터", piece: "K" },
-  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // grandmaster.png(왕관에 "GM" 각인) 사용
+  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // gm-piece.png(왕관에 "GM" 각인) 사용
+  // (v0.1.4 버그 수정) 한때 이 자리가 "grandmaster.png"를 가리켰는데, 그 파일이 GitHub 웹 업로드로
+  // 아우로라 사진에 덮어써진 채 방치돼 배지에 배경 사진이 뜨는 버그가 있었다 — 파일명 충돌을 아예
+  // 없애기 위해 원본 기물 아이콘을 gm-piece.png로 새로 받아 교체.
 ];
 // (기능) 실제 티어 기물 이미지(public/iron-pawn.png 등)에서 뽑아낸 대표 색 — 배지 테두리·글로우·
 // 진행바가 그 이미지의 실제 톤과 어긋나지 않도록, 이미지를 새로 받을 때마다 이 값도 함께 맞춘다.
@@ -8423,6 +8426,7 @@ const CHANGELOG = [
       "소개 페이지에 chess.com 연동 기능(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률)을 소개하는 섹션을 새로 추가했어요.",
       "소개 페이지의 버전 업데이트 기록에서 v0.1.2·v0.1.3 두 버전이 빠져 있던 것을 찾아 다시 채워 넣었어요.",
       "소개 페이지 마스코트 그림을 학습 탭 등에서 이미 쓰던 깔끔한 그림체로 통일했어요.",
+      "그랜드마스터 티어 배지에 기물 대신 오로라 사진이 잘못 표시되던 문제를 고쳤어요 — 헤더 배지·여정 지도·퍼즐 탭·승급 연출 전부 원래의 왕관 기물 이미지로 보여요.",
     ],
   },
   {

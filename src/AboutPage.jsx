@@ -303,7 +303,7 @@ function TierStrip() {
     { key: "gold", label: "골드", img: "/gold-rook.png" },
     { key: "diamond", label: "다이아몬드", img: "/diamond-queen.png" },
     { key: "master", label: "마스터", img: "/master-king.png" },
-    { key: "grandmaster", label: "그랜드마스터", img: "/grandmaster.png" },
+    { key: "grandmaster", label: "그랜드마스터", img: "/gm-piece.png" },
   ];
   return (
     <div style={{ overflowX: "auto", paddingBottom: 4 }}>
@@ -541,13 +541,16 @@ const VERSION_HISTORY = [
       intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "이 페이지의 체스판을 더 자세히 꾸며봤어요 — 나무 결도 넣고, 실제로 유명한 대국이랑 오프닝 함정도 그대로 옮겨왔어요." },
       outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "그리고 사실... v0.1.2랑 v0.1.3 기록이 여기서만 빠져 있었더라고요. 이번에 다시 채워 넣었어요!" },
     },
-    highlight: { kind: "icon", Icon: Palette, color: T.brassHi, label: "체스보드 디테일 강화" },
+    highlight: { kind: "img", src: "/gm.png", label: "그랜드마스터 배지 복구" },
     sections: [
       { cat: "feature", items: [
         "체스판에 나무 결 질감과 파일(a~h)·랭크(1~8) 좌표를 더했어요.",
         "체스판 장식에 폴스 메이트·스칼라스 메이트·레갈의 함정·프라이드 리버 어택·불멸의 게임(안더센 vs 키제리츠키, 1851)·오페라 게임(모피 vs 브런즈윅 공작·이수아르 백작, 1858) 같은 실제로 유명한 대국·오프닝 함정을 정확히 재현해서 보여줘요.",
         "chess.com 계정을 연동하면 무엇을 볼 수 있는지(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률) 소개하는 섹션을 새로 추가했어요.",
         "이 버전 기록에서 v0.1.2·v0.1.3 두 버전이 빠져 있던 것을 발견해 다시 채워 넣었어요.",
+      ] },
+      { cat: "fix", items: [
+        "그랜드마스터 티어 배지에 기물 대신 오로라 사진이 잘못 표시되던 오래된 문제를 완전히 해결했어요 — 헤더 배지·여정 지도·퍼즐 탭·승급 연출 전부 원래의 왕관 기물 이미지로 보여요.",
       ] },
       { cat: "ui", items: [
         "이 페이지의 마스코트 그림을 학습 탭 등 다른 화면에서 이미 쓰던 깔끔한 그림체로 통일했어요.",
@@ -862,9 +865,26 @@ function ShotHighlight({ src, label, tilt = 0 }) {
     </Reveal>
   );
 }
+// (v0.1.4 기능) 그랜드마스터 배지 복구를 소개하는 v0.1.4 하이라이트 전용 — 로고 원본(gm.png,
+// 기물+"GM" 워드마크 합성본)을 IconHighlight와 같은 펄스 글로우로 감싸되, 작은 반복 배지(TierBadgeShape)
+// 안에 욱여넣지 않고 워드마크가 실제로 읽히는 크기로 그대로 보여준다.
+function ImageHighlight({ src, label }) {
+  return (
+    <Reveal>
+      <div className="flex flex-col items-center" style={{ gap: 10, margin: "8px 0 28px" }}>
+        <motion.div animate={{ boxShadow: ["0 0 0 0 " + T.brass + "55", "0 0 0 16px " + T.brass + "00"] }} transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+          style={{ width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(70% 70% at 32% 28%,#FFFFFF22," + T.brass + "22)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <img src={src} alt="" style={{ width: "78%", height: "78%", objectFit: "contain" }} />
+        </motion.div>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi }}>{label}</span>
+      </div>
+    </Reveal>
+  );
+}
 function VersionHighlight({ h }) {
   if (!h) return null;
   if (h.kind === "icon") return <IconHighlight Icon={h.Icon} color={h.color} label={h.label} />;
+  if (h.kind === "img") return <ImageHighlight src={h.src} label={h.label} />;
   if (h.kind === "shot") return <ShotHighlight src={h.src} label={h.label} tilt={h.tilt} />;
   if (h.kind === "tierStrip") return (
     <Reveal><div style={{ margin: "8px 0 28px", padding: "18px 14px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER }}><TierStrip /></div></Reveal>

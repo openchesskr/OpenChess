@@ -37,6 +37,9 @@ chess.com 아이콘(`/chess.com_Icon.png`)을 "학습" 기능 카드의 이름�
 **UI**
 `/about` 페이지의 마스코트 이미지를 전부 App.jsx가 학습 탭 등 실제 앱 UI에서 이미 쓰고 있는 `MASCOT_ART`(플랫 벡터 일러스트, 표정별 12종)로 교체함 — 기존에 쓰던 `public/emoji/*.png`는 이모티콘 선택 창 전용 스케치풍 스티커라 소개 페이지 톤과 맞지 않는다는 피드백을 받아, App.jsx에 인라인 base64로 박혀 있던 이미지를 `public/mascot/*.webp` 12개 파일로 그대로 추출해(무거운 초기화가 없는 `/about` 정적 컴포넌트에서도 가볍게 쓸 수 있도록) `<Mascot char expr size>` 컴포넌트로 단순화함. (중간에 시도했던 손으로 좌표를 짜 넣는 SVG 마스코트 자체 제작안은 스타일이 기존 캐릭터와 맞지 않아 전량 폐기함.)
 
+**버그 수정**
+그랜드마스터 티어 배지가 오로라 사진으로 잘못 표시되던 문제를 완전히 해결함. `git log --follow`로 `public/grandmaster.png`의 이력을 추적해 원인을 특정함 — 사용자가 GitHub 웹 업로드로 올바른 기물 아이콘을 두 차례(피스만 있는 1.3MB 초안 → 기물+"GM" 워드마크 44KB 최종본) 올렸는데, 이후 같은 파일명으로 오로라 사진이 세 번째로 업로드되며 덮어써졌음. v0.1.3의 커밋(`cfa53d7`)이 "복구했다"고 기록돼 있었지만 실제로는 해당 파일이 손대지지 않아 회귀가 남아 있었던 것도 함께 확인함. 이번엔 파일명 충돌 자체를 없애기 위해 사용자가 두 이미지를 `gm-piece.png`(기물만)·`gm.png`(기물+워드마크)라는 새 이름으로 재업로드했고, `App.jsx`의 `TIER_IMAGE.grandmaster`와 `AboutPage.jsx`의 `TierStrip`이 참조하던 `/grandmaster.png`를 전부 `/gm-piece.png`로 교체함(헤더 배지·여정 지도·퍼즐 탭 스트립·`TierUpOverlay` 승급 연출이 모두 이 값 하나를 공유하므로 한 곳만 고치면 전체가 해결됨 — `tierPieceSrc`로 확인). 워드마크가 포함된 `gm.png`는 작은 배지(`TierBadgeShape`, 76px 십각형)에 넣기엔 텍스트가 안 읽힐 만큼 작아져, 대신 `/about` 버전 기록의 이번 v0.1.4 하이라이트(`ImageHighlight`, 새로 추가한 `VersionHighlight`의 `img` 종류)에서 이 수정 자체를 소개하는 큰 이미지로 사용함.
+
 ### OpenChess v0.1.3 — 2026/7/17
 
 **기능**
