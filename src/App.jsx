@@ -5752,6 +5752,12 @@ function treeLinesOf(tree) {
   walk(tree, []);
   return out;
 }
+// (버그 수정) genPuzzleTree가 결국 실패해 트리를 못 만들었는데도(과거 로직 결함·중간에 취소된
+// 생성 등) 그 실패한 결과가 그대로 저장돼, 실제로는 통과 가능한 라인이 0개인 "빈 퍼즐"이 목록에
+// 남아 있었다. PuzzleCard가 실제 라인 수 대신 Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시해
+// 이런 빈 퍼즐도 정상 퍼즐처럼 보였고, 눌러 들어가면 PuzzleSolver의 treeIsEmpty 분기에서만
+// "퍼즐 데이터를 불러올 수 없어요"로 뒤늦게 드러났다 — 목록 단계에서 미리 걸러낸다.
+function isPuzzlePlayable(p) { return treeLinesOf(puzzleTreeOf(p)).length > 0; }
 // (20차 기능1) 트리를 JSON으로 깊은 복제(모든 필드가 순수 데이터라 안전) — 개발자의 "한 수 추가" 편집은
 // 항상 복제본을 수정한 뒤 통째로 교체 저장한다(원본 CONTENT.puzzleOverrides를 직접 변형하지 않음).
 function cloneTree(tree) { return JSON.parse(JSON.stringify(tree)); }
@@ -7369,7 +7375,11 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
   const hasPreview = p.setupSans && p.mistakeSan;
   // (20차 기능1) 트리 기준 라인 수와 별(라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3)
-  const totalLines = useMemo(() => Math.max(1, treeLinesOf(puzzleTreeOf(p)).length), [p.id]);
+  // (버그 수정) Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시했었다 — 트리가 실제로는 텅 비어
+  // 하나도 풀 수 없는 손상된 퍼즐도 정상 퍼즐처럼 보이게 만든 원인이었다(starsOf는 totalLines가
+  // 0이어도 안전하게 0점을 반환하므로 바닥값을 둘 이유가 없었다). 실제 라인 수를 그대로 쓴다.
+  const totalLines = useMemo(() => treeLinesOf(puzzleTreeOf(p)).length, [p.id]);
+  const broken = totalLines === 0;
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
   // 위쪽 얇은 띠·번호 색·옅은 배경 패턴만 테마색으로 물들인다.
@@ -7403,7 +7413,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             균일하게 유지된다. */}
         <FitPuzzleName text={p.name} />
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
-          <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{themeLabelsOf(p)} · 라인 {totalLines}개</span>
+          <span style={{ fontSize: 9, color: broken ? T.blunder : T.inkSoft, fontWeight: broken ? 800 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{broken ? "⚠ 손상된 퍼즐(라인 0개)" : themeLabelsOf(p) + " · 라인 " + totalLines + "개"}</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         <div className="flex items-center justify-between" style={{ marginTop: 2, gap: 4 }}>
@@ -7869,7 +7879,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
     for (const no of Object.keys(m)) { const p = rankPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
     for (const no of myRepostNos) { const p = myRepostPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
-    const passesFilter = (p) => (filter === "all" || themesOf(p).includes(filter)) && !solved.has(p.id);
+    const passesFilter = (p) => (filter === "all" || themesOf(p).includes(filter)) && !solved.has(p.id) && isPuzzlePlayable(p);
     const ranked = [...byId.values()].filter(passesFilter).map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).map((x) => x.p);
     const rankedIds = new Set(ranked.map((p) => p.id));
     const reposted = myRepostNos.map((no) => myRepostPuzzles[no]).filter((p) => p && passesFilter(p) && !rankedIds.has(p.id));
@@ -7885,14 +7895,20 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     return arr.slice(0, 6);
   }, [recommendedPool, recSeed]);
   if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
-  const themed = filter === "all" ? puzzles : puzzles.filter((p) => themesOf(p).includes(filter));
+  // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
+  // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
+  // 없어요"를 띄웠다. 개발자(canEdit)는 이런 손상된 퍼즐을 찾아 삭제할 수 있어야 하므로 그대로
+  // 다 보여주고, 일반 유저에게는 목록·개수 단계에서부터 아예 걸러낸다(이미 푼 퍼즐은 실제로 라인을
+  // 완주했어야만 solved 상태가 되므로 걸러낼 필요가 없다).
+  const playablePuzzles = canEdit ? puzzles : puzzles.filter((p) => solved.has(p.id) || isPuzzlePlayable(p));
+  const themed = filter === "all" ? playablePuzzles : playablePuzzles.filter((p) => themesOf(p).includes(filter));
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
   const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
   const cleared = themed.filter((p) => solved.has(p.id)).sort(byOpening);
   // (19차 UI3) 해결 완료 퍼즐을 오프닝별로 묶어 표기(cleared는 이미 오프닝순 정렬).
   const clearedByOpening = (() => { const m = new Map(); for (const p of cleared) { const k = p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; })();
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
-  const count = (k) => (k === "all" ? puzzles.length : puzzles.filter((p) => themesOf(p).includes(k)).length);
+  const count = (k) => (k === "all" ? playablePuzzles.length : playablePuzzles.filter((p) => themesOf(p).includes(k)).length);
   const solveByNumber = async () => {
     const n = parseInt(numInput, 10);
     if (!Number.isFinite(n)) { setNumMsg("번호를 입력하세요."); return; }
