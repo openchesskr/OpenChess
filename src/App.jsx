@@ -416,6 +416,25 @@ function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, 
 // 재생되고, 그 이후 방문부터는 브라우저가 자동재생을 허용해 줄 수도 있다).
 function loadBgmPref() { try { return window.localStorage.getItem("occ_bgm_on") !== "0"; } catch { return true; } }
 function saveBgmPref(v) { try { window.localStorage.setItem("occ_bgm_on", v ? "1" : "0"); } catch { } }
+function loadBgmVolume() { try { const v = parseFloat(window.localStorage.getItem("occ_bgm_vol")); return isNaN(v) ? 0.35 : Math.min(1, Math.max(0, v)); } catch { return 0.35; } }
+function saveBgmVolume(v) { try { window.localStorage.setItem("occ_bgm_vol", String(v)); } catch { } }
+// (v0.1.4 기능) 효과음(SFX) — 블록 클릭 + 체스판 위 수(이동/기물 포획)에 짧은 효과음을 재생한다.
+// BGM과 달리 항상 실제 사용자 클릭 제스처 안에서 재생을 시작하므로 자동재생 정책에 걸릴 일이 없어,
+// 매번 즉석에서 새 Audio 인스턴스를 만들어 재생한다(연타해도 이전 소리와 겹쳐 들리도록). go()/tryUserMove()처럼
+// 최상위 App 컴포넌트와 멀리 떨어진 곳에서도 prop 없이 바로 쓸 수 있도록 설정값은 그때그때 localStorage에서 읽는다.
+function loadSfxPref() { try { return window.localStorage.getItem("occ_sfx_on") !== "0"; } catch { return true; } }
+function saveSfxPref(v) { try { window.localStorage.setItem("occ_sfx_on", v ? "1" : "0"); } catch { } }
+function loadSfxVolume() { try { const v = parseFloat(window.localStorage.getItem("occ_sfx_vol")); return isNaN(v) ? 0.6 : Math.min(1, Math.max(0, v)); } catch { return 0.6; } }
+function saveSfxVolume(v) { try { window.localStorage.setItem("occ_sfx_vol", String(v)); } catch { } }
+const SFX_SRC = { click: "/sfx/click.mp3", move: "/sfx/move.mp3", capture: "/sfx/capture.mp3" };
+function playSfx(name) {
+  if (!loadSfxPref()) return;
+  const src = SFX_SRC[name]; if (!src) return;
+  try { const el = new Audio(src); el.volume = loadSfxVolume(); el.play().catch(() => { }); } catch { }
+}
+// (v0.1.4 기능) SAN 표기상 포획 수는 항상 "x"를 포함(앙파상 포함) — 이 규칙만으로 클릭/무브 소리 중
+// 어느 쪽을 재생할지 나무 "탁" 소리(clack)와 "퍽" 소리(thud, 기물이 실제로 잡히는 느낌)로 나눈다.
+function playMoveSfx(san) { playSfx(san && san.includes("x") ? "capture" : "move"); }
 // Lichess Explorer가 로그인(OAuth 토큰)을 요구하므로, 토큰을 서버에만 보관하는
 // /api/lichess 프록시(Vercel 서버리스 함수, api/lichess.js)를 거쳐 호출한다.
 const LICHESS_API = "/api/lichess";
@@ -3885,6 +3904,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   }, [key, liveOn, engine.status]);
 
   const go = useCallback((san, isExtra) => {
+    playMoveSfx(san);   // (v0.1.4 기능) 수 블록 클릭·드래그·엔진 라인 클릭·프로모션 전부 이 함수 하나로 모이므로 여기 한 곳에서만 재생하면 된다.
     if (isExtra) setExtra((prev) => { const cur = prev[key] || []; if (cur.includes(san)) return prev; return { ...prev, [key]: [...cur, san] }; });
     const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(san));
     stampQ(sans, board, color, san, mm);
@@ -6814,6 +6834,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const tryUserMove = (from, to) => {
     if (!userToMove) return;
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep); if (!san) return;
+    playMoveSfx(san);   // (v0.1.4 기능) 정답/오답과 무관하게, 실제로 보드 위에 기물을 놓는 물리적 동작 자체에 대한 소리
     const hit = (curNode.children || []).find((c) => stripSuffix(c.san) === stripSuffix(san));
     // (기능1) 유저 진영에서는 '통과 가능(최선·우수)' 수만 다음 단계로 — 모식도에 표시만 되는 유혹 수도 오답 처리
     if (hit && hit.pass !== false) { setSel(null); setPathNodes((p) => [...p, hit]); }
@@ -8477,7 +8498,7 @@ const CHANGELOG = [
       "채팅에서 상대방이 메시지를 입력하고 있으면 말풍선 점 3개가 통통 튀며 \"입력 중\"이라고 알려줘요.",
       "채팅에서 내가 보낸 메시지를 꾹 누르면 수정하거나 삭제할 수 있어요. 수정한 메시지에는 \"수정됨\" 표시가 붙어요.",
       "채팅에 공유된 퍼즐 카드도 옆으로 당기면 보낸 시각이 보이고, 꾹 누르면 삭제하거나 다른 친구에게 다시 전달할 수 있어요.",
-      "헤더에 배경음악 버튼을 추가했어요 — 앤티크한 체스 분위기에 어울리는 드뷔시의 \"달빛\"이 잔잔하게 흘러나와요. 언제든 눌러서 끄고 켤 수 있고, 설정은 이 기기에 기억돼요.",
+      "앤티크한 체스 분위기에 어울리는 드뷔시의 \"달빛\"이 잔잔하게 흘러나오는 배경음악을 추가했어요. 블록을 클릭하거나 체스판에서 수를 둘 때(기물을 잡을 땐 다른 소리로) 나는 효과음도 더했어요. 설정 탭의 \"사운드\" 카드에서 각각 켜고 끄고, 음량도 세밀하게 조절할 수 있어요.",
     ],
   },
   {
@@ -8720,7 +8741,7 @@ function DevXpPanel({ totalXp, setTotalXp, card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -8821,6 +8842,33 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           })}
         </div>
         <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(이 기기에서만 기억돼요).</p>
+      </div>
+
+      {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
+          (헤더에는 따로 두지 않는다 — 조절은 항상 설정 탭에서만.) */}
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>사운드</div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {bgmOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>배경음악</span>
+          </div>
+          <button onClick={onToggleBgm} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: bgmOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: bgmOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        </div>
+        <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => onBgmVolumeChange(parseFloat(e.target.value))} disabled={!bgmOn} aria-label="배경음악 음량" style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: bgmOn ? 1 : 0.4, cursor: bgmOn ? "pointer" : "default" }} />
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>앤티크한 체스 분위기의 잔잔한 배경음악이에요.</p>
+
+        <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {sfxOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>효과음</span>
+          </div>
+          <button onClick={onToggleSfx} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sfxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: sfxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        </div>
+        <input type="range" min={0} max={1} step={0.05} value={sfxVolume} onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))} disabled={!sfxOn} aria-label="효과음 음량" style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: sfxOn ? 1 : 0.4, cursor: sfxOn ? "pointer" : "default" }} />
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>블록을 클릭하거나 체스판에서 수를 둘 때(포획 시엔 다른 소리) 나는 짧은 효과음이에요.</p>
       </div>
 
       {/* (18차 보충 기능3) 전역 퍼즐 수 길이 상한 설정은 삭제 — 개별 퍼즐의 수 길이는 퍼즐 풀이 창에서 개발자가 직접 조정한다. */}
@@ -10840,12 +10888,14 @@ export default function App() {
   // (v0.1.4 기능) 앤티크한 체스 분위기의 잔잔한 배경음악(드뷔시 "달빛", 퍼블릭 도메인) — <audio> 엘리먼트
   // 하나를 앱 최상단에 상시 마운트해 탭을 옮겨 다녀도 재생이 끊기지 않게 하고, bgmOn은 그 엘리먼트의
   // 실제 play/pause 이벤트를 그대로 반영한다(자동재생 정책상 첫 클릭 전까지는 무음일 수 있음).
+  // (v0.1.4 UI) 켜기/끄기·음량 조절 UI는 헤더에 두지 않고 설정 탭의 "사운드" 카드에서만 노출한다.
   const [bgmOn, setBgmOn] = useState(false);
+  const [bgmVolume, setBgmVolume] = useState(loadBgmVolume);
   const bgmRef = useRef(null);
   useEffect(() => {
     const el = bgmRef.current;
     if (!el) return;
-    el.volume = 0.35;
+    el.volume = bgmVolume;
     const onPlay = () => setBgmOn(true);
     const onPause = () => setBgmOn(false);
     el.addEventListener("play", onPlay);
@@ -10859,6 +10909,29 @@ export default function App() {
     if (el.paused) { el.play().then(() => saveBgmPref(true)).catch(() => { }); }
     else { el.pause(); saveBgmPref(false); }
   };
+  const onBgmVolumeChange = (v) => {
+    setBgmVolume(v);
+    saveBgmVolume(v);
+    if (bgmRef.current) bgmRef.current.volume = v;
+  };
+  // (v0.1.4 기능) 효과음 on/off·음량 — 설정 탭 UI 표시용 상태일 뿐, 실제 재생(playSfx)은 위치와
+  // 무관하게 그때그때 localStorage 값을 직접 읽으므로 이 상태를 어디에도 prop으로 내려줄 필요는 없다.
+  const [sfxOn, setSfxOn] = useState(loadSfxPref);
+  const [sfxVolume, setSfxVolume] = useState(loadSfxVolume);
+  const toggleSfx = () => setSfxOn((v) => { const nv = !v; saveSfxPref(nv); return nv; });
+  const onSfxVolumeChange = (v) => { setSfxVolume(v); saveSfxVolume(v); };
+  // (v0.1.4 기능) "블록 클릭" 효과음 — 개별 버튼·카드마다 onClick을 일일이 손대는 대신, 사이트 전체가
+  // 이미 일관되게 쓰고 있는 .press 클래스(index.css)를 캡처 단계에서 감지해 한 곳에서만 재생한다.
+  // 캡처 단계를 쓰는 이유는 일부 하위 요소가 버블링 중 stopPropagation을 호출해도(예: MoveTile의
+  // CircleBadge) 그보다 먼저 실행돼 놓치지 않기 위함.
+  useEffect(() => {
+    const onDocClick = (e) => {
+      const t = e.target.closest && e.target.closest(".press");
+      if (t && !t.disabled) playSfx("click");
+    };
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
+  }, []);
   const [contentVer, setContentVer] = useState(0);
   const [navNonce, setNavNonce] = useState(0);
   const [devOn, setDevOn] = useState(false);
@@ -11366,10 +11439,6 @@ export default function App() {
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
               (v0.0.6 개편) 누르면 여정 지도(TierJourneyMap)가 열린다. */}
           <TierBadge totalXp={totalXp} compact={narrowHeader} onClick={() => setTierMapOpen(true)} />
-          {/* (v0.1.4 기능) 배경음악 켜기/끄기 — 로그인 여부와 무관하게 항상 보인다. */}
-          <button onClick={toggleBgm} aria-label={bgmOn ? "배경음악 끄기" : "배경음악 켜기"} title={bgmOn ? "배경음악 끄기" : "배경음악 켜기"} className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, borderRadius: 9, background: T.ebony3, color: bgmOn ? T.brassHi : T.inkSoft, border: "1px solid " + (bgmOn ? T.brass : "#5A4530"), cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {bgmOn ? <Volume2 size={narrowHeader ? 13 : 16} /> : <VolumeX size={narrowHeader ? 13 : 16} />}
-          </button>
           {/* 검색·친구·채팅을 하나의 세그먼트로 묶는다 — 비로그인 상태에선 검색만 남아 평범한 버튼처럼 보인다.
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
@@ -11475,7 +11544,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
