@@ -5619,6 +5619,13 @@ function lastNamedOpening(sans) {
   for (let i = 1; i <= sans.length; i++) { const nd = snapNode(sans.slice(0, i)); if (nd && nd.opening && nd.opening.name) nm = nd.opening.name; }
   return nm;
 }
+// (버그 수정) 퍼즐 카드 위쪽 금색 라벨은 lastNamedOpening(가장 구체적인, 세부 갈래까지 포함한
+// 이름)이 아니라 '가장 처음 나온' 오프닝 이름(최상위 갈래)만 보여준다 — 그래서 찾는 순서를
+// 그대로 두되 처음 이름을 만나는 즉시 반환한다(덮어쓰지 않음).
+function firstNamedOpening(sans) {
+  for (let i = 1; i <= sans.length; i++) { const nd = snapNode(sans.slice(0, i)); if (nd && nd.opening && nd.opening.name) return nd.opening.name; }
+  return null;
+}
 // (버그 수정) 테마마다 다른 한국어 문구("~에서 탁월한 수 찾기" 등)를 붙였더니 이름이 길어져
 // 퍼즐 카드(최소폭 148px)에서 잘려 보였다 — 테마와 무관하게 항상 "<오프닝 이름>, <수 이름>"
 // 형식(예: "Italian Game, 4.Ng5")으로 통일해 훨씬 짧고 일관되게 만든다. 테마 구분은 이름이
@@ -7349,10 +7356,12 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={104} loopMs={2400} flip={flip} /></div>}
         <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
-          {/* (버그 수정) 이 라벨도 줄바꿈이 허용돼 있어 오프닝 이름이 길면 여러 줄로 늘어나
-              행 높이를 들쭉날쭉하게 만들었다 — 아래 이름에 어차피 같은 오프닝 이름이 온전히
-              다시 나오므로, 여기는 한 줄로 고정하고 넘치면 말줄임(...)만 쓴다. */}
-          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.opening}</div>
+          {/* (버그 수정) 이 라벨은 세부 갈래까지 다 붙은 p.opening(예: "Ruy Lopez, Berlin Defense,
+              Rio de Janeiro Variation") 대신, 최상위 갈래 이름(firstNamedOpening)만 짧게 보여준다
+              — 세부 갈래까지 포함한 전체 이름은 바로 아래 이름 줄에서 이미 다 보인다. 옛 퍼즐 등
+              setupSans가 없어 계산이 안 되는 경우에만 저장된 p.opening으로 대체한다.
+              한 줄로 고정하고 넘치면 말줄임(...)만 쓴다(행 높이가 들쭉날쭉해지는 걸 막기 위함). */}
+          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(p.setupSans && firstNamedOpening(p.setupSans)) || p.opening}</div>
           <LineStars total={3} solved={stars} />
         </div>
         {/* (버그 수정) 오프닝 이름이 길면 한 줄 말줄임(...)으로 잘려 끝까지 안 보였다 — 그렇다고
