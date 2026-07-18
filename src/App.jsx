@@ -5,7 +5,7 @@ import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronDown,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone,
+  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -410,6 +410,12 @@ function loadEnginePref() {
   return defaultEnginePref();
 }
 function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, v); } catch { } }
+// (v0.1.4 기능) 배경음악(BGM) on/off 기기별 저장 — 브라우저 자동재생 정책상 첫 방문에는 소리 있는
+// 재생이 항상 막히므로, 이 값은 "사용자의 의도"만 기억하고 실제 재생 성공 여부는 <audio> 이벤트로
+// 별도 추적한다(loadBgmPref()가 true여도 처음엔 무음 상태로 시작할 수 있음 — 버튼을 한 번 누르면
+// 재생되고, 그 이후 방문부터는 브라우저가 자동재생을 허용해 줄 수도 있다).
+function loadBgmPref() { try { return window.localStorage.getItem("occ_bgm_on") !== "0"; } catch { return true; } }
+function saveBgmPref(v) { try { window.localStorage.setItem("occ_bgm_on", v ? "1" : "0"); } catch { } }
 // Lichess Explorer가 로그인(OAuth 토큰)을 요구하므로, 토큰을 서버에만 보관하는
 // /api/lichess 프록시(Vercel 서버리스 함수, api/lichess.js)를 거쳐 호출한다.
 const LICHESS_API = "/api/lichess";
@@ -8471,6 +8477,7 @@ const CHANGELOG = [
       "채팅에서 상대방이 메시지를 입력하고 있으면 말풍선 점 3개가 통통 튀며 \"입력 중\"이라고 알려줘요.",
       "채팅에서 내가 보낸 메시지를 꾹 누르면 수정하거나 삭제할 수 있어요. 수정한 메시지에는 \"수정됨\" 표시가 붙어요.",
       "채팅에 공유된 퍼즐 카드도 옆으로 당기면 보낸 시각이 보이고, 꾹 누르면 삭제하거나 다른 친구에게 다시 전달할 수 있어요.",
+      "헤더에 배경음악 버튼을 추가했어요 — 앤티크한 체스 분위기에 어울리는 드뷔시의 \"달빛\"이 잔잔하게 흘러나와요. 언제든 눌러서 끄고 켤 수 있고, 설정은 이 기기에 기억돼요.",
     ],
   },
   {
@@ -10830,6 +10837,28 @@ export default function App() {
   }, []);
   const [authMode, setAuthMode] = useState("login");
   const [confirmLogout, setConfirmLogout] = useState(false);
+  // (v0.1.4 기능) 앤티크한 체스 분위기의 잔잔한 배경음악(드뷔시 "달빛", 퍼블릭 도메인) — <audio> 엘리먼트
+  // 하나를 앱 최상단에 상시 마운트해 탭을 옮겨 다녀도 재생이 끊기지 않게 하고, bgmOn은 그 엘리먼트의
+  // 실제 play/pause 이벤트를 그대로 반영한다(자동재생 정책상 첫 클릭 전까지는 무음일 수 있음).
+  const [bgmOn, setBgmOn] = useState(false);
+  const bgmRef = useRef(null);
+  useEffect(() => {
+    const el = bgmRef.current;
+    if (!el) return;
+    el.volume = 0.35;
+    const onPlay = () => setBgmOn(true);
+    const onPause = () => setBgmOn(false);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    if (loadBgmPref()) el.play().catch(() => { }); // 이전 방문에서 허용됐다면 자동재생, 아니면 조용히 실패
+    return () => { el.removeEventListener("play", onPlay); el.removeEventListener("pause", onPause); };
+  }, []);
+  const toggleBgm = () => {
+    const el = bgmRef.current;
+    if (!el) return;
+    if (el.paused) { el.play().then(() => saveBgmPref(true)).catch(() => { }); }
+    else { el.pause(); saveBgmPref(false); }
+  };
   const [contentVer, setContentVer] = useState(0);
   const [navNonce, setNavNonce] = useState(0);
   const [devOn, setDevOn] = useState(false);
@@ -11308,6 +11337,8 @@ export default function App() {
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
       <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
+      {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
+      <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
       <GeoBackdrop />
       {/* (UI1) 모바일(좁은 화면)에서 로고/닉네임/로그아웃 등이 너무 붙어 보이던 문제 —
           좁은 화면에서는 마스코트/글자 크기와 여백을 줄이고, 그래도 안 맞으면 다음 줄로 감싸(rowGap) 겹치지 않게 한다 */}
@@ -11335,6 +11366,10 @@ export default function App() {
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
               (v0.0.6 개편) 누르면 여정 지도(TierJourneyMap)가 열린다. */}
           <TierBadge totalXp={totalXp} compact={narrowHeader} onClick={() => setTierMapOpen(true)} />
+          {/* (v0.1.4 기능) 배경음악 켜기/끄기 — 로그인 여부와 무관하게 항상 보인다. */}
+          <button onClick={toggleBgm} aria-label={bgmOn ? "배경음악 끄기" : "배경음악 켜기"} title={bgmOn ? "배경음악 끄기" : "배경음악 켜기"} className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, borderRadius: 9, background: T.ebony3, color: bgmOn ? T.brassHi : T.inkSoft, border: "1px solid " + (bgmOn ? T.brass : "#5A4530"), cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {bgmOn ? <Volume2 size={narrowHeader ? 13 : 16} /> : <VolumeX size={narrowHeader ? 13 : 16} />}
+          </button>
           {/* 검색·친구·채팅을 하나의 세그먼트로 묶는다 — 비로그인 상태에선 검색만 남아 평범한 버튼처럼 보인다.
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽

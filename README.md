@@ -67,6 +67,9 @@ chess.com 아이콘(`/chess.com_Icon.png`)을 "학습" 기능 카드의 이름�
 
 계정을 바꾸거나 로그아웃해도 직전 계정(혹은 게스트)의 퍼즐·프로필 데이터가 화면에 그대로 남아있던 문제를 고침 — `onAuth` 콜백이 각 필드를 "새 계정에 값이 있을 때만 덮어쓰기"(`if (pr.X) setX(...)`)로 처리해, 새 계정에 해당 필드가 비어 있으면 직전 상태가 그대로 남는 구조적 버그였다. 로그아웃(`logout()`)의 "없으면 기본값" 리셋 로직과 동일하게, `unlocked`/`puzzles`/`solved`/`likedPuzzles`/`repostedPuzzles`/`lineSolves`/`xp`/`coins`/`devBonusGranted`/`deletedPuzzles`/`archivedPuzzles`/`titles`/`currentTitle`/`ownedSkins`/`boardSkin`/`pieceSkin`/`dailyQuest`/`mainQuest`/`recentOpenings`를 전부 무조건 확정하도록 고침. 프로필(닉네임·chess.com 아이디·사진 등)도 직전 상태와 병합(`(p) => ({...p, ...})`)하던 것을 이 계정의 실제 값으로 완전히 교체하도록 바꿈. `logout()`에도 빠져 있던 `devBonusGranted`·프로필 세부 필드 초기화를 추가함.
 
+**기능 — 배경음악**
+사이트에 앤티크한 체스 분위기와 어울리는 잔잔한 배경음악을 추가함. 사용자가 직접 확보해 전달한 드뷔시 "달빛"(Clair de Lune, Suite bergamasque 3악장 — 작곡 자체는 퍼블릭 도메인) mp3를 `public/bgm/clair-de-lune.mp3`로 받아, 앱 최상단(모든 탭이 공유하는 루트 컴포넌트)에 `<audio loop preload="none">` 하나만 상시 마운트해 탭을 이동해도 재생이 끊기지 않게 함. 브라우저의 자동재생 정책상 사용자 제스처(클릭) 없이는 소리 있는 재생이 항상 막히므로, 무리하게 자동재생을 시도하지 않고 헤더에 켜기/끄기 토글 버튼(`Volume2`/`VolumeX`)을 둬 로그인 여부와 무관하게 항상 노출함 — 클릭 핸들러 안에서 직접 `audio.play()`를 호출해 사용자 제스처 컨텍스트를 유지하고, 이후 재생 상태(`bgmOn`)는 `<audio>`의 `play`/`pause` 이벤트를 그대로 구독해 실제 재생 여부와 항상 일치하도록 함. 켜기/끄기 선택은 `localStorage`(`occ_bgm_on`)에 기기별로 저장해, 다음 방문 때 자동재생을 한 번 더 시도함(이전에 재생을 허용받은 origin은 브라우저가 자동재생을 다시 허용해 줄 수 있음 — 실패해도 조용히 무시하고 버튼으로 다시 켤 수 있음). 볼륨은 배경음 용도에 맞게 0.35로 낮춰 둠.
+
 ### OpenChess v0.1.3 — 2026/7/17
 
 **기능**
