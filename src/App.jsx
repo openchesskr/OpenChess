@@ -9397,6 +9397,16 @@ async function notifyMarkReadMany(rows) {
 // (18차 UX4) 친구 요청 알림의 수락/거절 결과를 payload에 기록 — 버튼을 없애고 "수락함/거절함"으로 표기하기 위함.
 // (버그 수정) 성공 여부를 돌려줘, 실패 시 호출부가 낙관적으로 붙인 "수락함/거절함" 표시를 되돌릴 수 있게 한다.
 async function notifySetResult(row, result) { if (!SB_ON || row.id == null) return true; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), result } }); return true; } catch { return false; } }
+// (버그 수정) 친구 요청을 알림 창의 수락/거절 버튼이 아니라 "친구" 모달(요청 탭·프로필 서브뷰)에서
+// 처리해도, 그 요청을 알렸던 notifications 행 자체는 손대지 않아 알림 창엔 계속 수락/거절 버튼이
+// (이미 처리된 뒤에도) 남아 있었다. 어느 경로로 처리하든 그 알림도 함께 "수락함/거절함"으로 정리한다.
+async function notifyResolveFriendRequest(myUid, fromUid, result) {
+  if (!SB_ON || !myUid || !fromUid) return;
+  try {
+    const rows = await sbSelect("notifications?to_uid=eq." + myUid + "&kind=eq.friend_request&payload->>fromUid=eq." + encodeURIComponent(fromUid) + "&select=id,payload");
+    await Promise.all((rows || []).map((r) => notifySetResult(r, result)));
+  } catch { }
+}
 // (19차 UI1) 알림 부분/전체 삭제 — id 필터로 개별 삭제, to_uid 필터로 내 알림 전체 삭제.
 // (버그 수정) 성공 여부(HTTP 상태 포함)를 돌려줘, 실패 시 호출부가 낙관적으로 지운 알림 항목을
 // 되살릴 수 있게 한다 — DELETE는 sbPatch와 달리 non-2xx여도 fetch 자체는 던지지 않으므로 r.ok도 확인한다.
@@ -10010,7 +10020,10 @@ function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle, mySolved, myLineSolves }
 // 공용 컴포넌트. UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다. (v0.1.0) 설정 탭
 // "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐 목록도 pub에 실려 있으면(publishProfile이
 // solvedNos/mainQuestSummary를 채워 넣음) 같은 자리에 표시해, 다른 유저의 프로필에서도 볼 수 있다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves }) {
+// (버그 수정) 친구 프로필 창의 채팅·친구 요청/수락/거절 버튼을 카드 맨 아래 대신 티어와 메인
+// 퀘스트 진척도 사이에 두기 위해, 그 자리에 끼워 넣을 내용을 actions prop으로 받는다 — 이 컴포넌트를
+// 쓰는 다른 곳(내 프로필·유저 검색)은 actions를 안 넘기면 예전과 완전히 동일하다.
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves, actions }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
@@ -10020,6 +10033,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         <TierStatPill totalXp={pub.xp || 0} />
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
+      {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
       {mq && mq.totalChapters > 0 && (
         <div style={{ marginBottom: 12 }}>
@@ -10563,6 +10577,8 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   const [sel, setSel] = useState(null); // 프로필 보기: { uid, username, pub }
   const [pending, setPending] = useState({}); // uid -> true
   const [chatWith, setChatWith] = useState(null); // (17차) 채팅 상대: { uid, username }
+  // (버그 수정) 친구 삭제 버튼을 누르면 곧장 삭제되던 것 — 확인 다이얼로그를 띄운 뒤 확정해야 지워지게 한다.
+  const [confirmRemove, setConfirmRemove] = useState(null); // 삭제 확인 대상: sel과 같은 { uid, username, pub }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -10591,8 +10607,12 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   const guard = (uid, fn) => async () => { if (pending[uid]) return; setPending((p) => ({ ...p, [uid]: true })); try { await fn(); await load(); } finally { setPending((p) => { const n = { ...p }; delete n[uid]; return n; }); } };
   // (17차) 친구 요청 발송/수락 시 상대에게 알림을 남긴다.
   const doRequestByName = (username, keyUid) => guard(keyUid || username, async () => { const r = await friendRequest(username); if (r && r.ok && r.status === "pending" && keyUid) notifyCreate(keyUid, "friend_request", { fromUsername: me, fromUid: meId }); })();
-  const doAccept = (uid) => guard(uid, async () => { await friendAccept(uid); notifyCreate(uid, "friend_accepted", { byUsername: me }); })();
+  const doAccept = (uid) => guard(uid, async () => { await friendAccept(uid); notifyCreate(uid, "friend_accepted", { byUsername: me }); await notifyResolveFriendRequest(meId, uid, "accepted"); })();
   const doRemove = (uid) => guard(uid, () => friendRemove(uid))();
+  // (버그 수정) 친구 삭제·요청 취소와 같은 friendRemove를 쓰지만, "받은 요청 거절"만은 그 요청을
+  // 알렸던 내 알림도 함께 "거절함"으로 정리해야 한다 — 아래 두 곳(요청 탭 목록·프로필 서브뷰)의
+  // "거절" 버튼에서만 이 함수를 쓴다.
+  const doReject = (uid) => guard(uid, async () => { await friendRemove(uid); await notifyResolveFriendRequest(meId, uid, "rejected"); })();
 
   const viewProfileUid = (uid) => { const pr = profiles[uid] || {}; setSel({ uid, username: pr.username || uid, pub: pr.pub || {} }); };
 
@@ -10619,6 +10639,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   );
 
   return (
+    <>
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 82, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         {!chatWith && (
@@ -10631,7 +10652,8 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
             {/* (버그 수정) 친구 삭제는 목록 줄마다 노출하지 않고, 그 사람 프로필을 클릭해 들어갔을 때만
                 우상단(닫기 버튼 옆)에 아이콘으로 노출한다. */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              {sel && relOf(sel.uid) === "friend" && <button onClick={() => doRemove(sel.uid)} disabled={!!pending[sel.uid]} aria-label="친구 삭제" title="친구 삭제" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
+              {/* (버그 수정) 눌러 곧장 지워지지 않도록, 이 버튼은 삭제를 확정하지 않고 확인 다이얼로그만 연다. */}
+              {sel && relOf(sel.uid) === "friend" && <button onClick={() => setConfirmRemove(sel)} disabled={!!pending[sel.uid]} aria-label="친구 삭제" title="친구 삭제" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
               <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
             </span>
           </div>
@@ -10641,8 +10663,19 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
           <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
         ) : sel ? (() => {
           const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
+          const actions = (
+            <>
+              {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
+              {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
+              {rel === "incoming" && <>{btn("수락", () => doAccept(sel.uid), "gold", busyId)}{btn("거절", () => doReject(sel.uid), "ghost", busyId)}</>}
+              {rel === "none" && btn("친구 요청", () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
+            </>
+          );
           return (
-            <div style={{ padding: 18 }}>
+            // (버그 수정) 이 서브뷰만 높이 제한 없이 카드가 뷰포트 밖으로 그냥 넘쳐, 스크롤해도 카드 뒤
+            // 배경(탭 콘텐츠)이 대신 스크롤됐다 — UserSearchModal의 프로필 서브뷰와 동일하게 자체
+            // 최대 높이 + 세로 스크롤을 준다.
+            <div style={{ padding: 18, maxHeight: "60vh", overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
                 {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
@@ -10652,13 +10685,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 </div>
               </div>
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />
-              <div style={{ display: "flex", gap: 8 }}>
-                {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
-                {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
-                {rel === "incoming" && <>{btn("수락", () => doAccept(sel.uid), "gold", busyId)}{btn("거절", () => doRemove(sel.uid), "ghost", busyId)}</>}
-                {rel === "none" && btn("친구 요청", () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
-              </div>
+              {/* (버그 수정) 채팅/친구 요청·수락·거절 버튼을 카드 맨 아래 대신 티어와 메인 퀘스트
+                  진척도 사이(actions prop)에 둔다. */}
+              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} />
             </div>
           );
         })() : (
@@ -10684,7 +10713,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                         {incoming.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>받은 요청</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{incoming.map((u, i) => (
-                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doRemove(u), "ghost", !!pending[u])}</>} /></FadeIn>
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doReject(u), "ghost", !!pending[u])}</>} /></FadeIn>
                           ))}</AnimatePresence></div>
                         </div>}
                         {outgoing.length > 0 && <div>
@@ -10717,6 +10746,21 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
         )}
       </div>
     </div>
+    {/* (버그 수정) 친구 삭제는 되돌릴 수 없는 동작이라, 곧장 지우지 않고 한 번 더 확인받는다
+        (로그아웃 확인 다이얼로그와 동일한 패턴) — 친구 모달(zIndex 82) 위에 뜨도록 더 높은 zIndex. */}
+    {confirmRemove && (
+      <div onClick={() => setConfirmRemove(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>친구 삭제</div>
+          <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{(confirmRemove.pub && confirmRemove.pub.nickname) || confirmRemove.username}님을 친구 목록에서 삭제할까요?</p>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setConfirmRemove(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>취소</button>
+            <button onClick={() => { doRemove(confirmRemove.uid); setConfirmRemove(null); }} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>삭제</button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 function GoogleG() {
