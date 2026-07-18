@@ -8273,19 +8273,33 @@ function findOpeningPathByFuzzyName(name) {
 // 욱여넣었더니, 중첩이 깊어질수록(들여쓰기 누적) 이름 칸에 남는 폭이 몇 십 px까지 줄어들어 단어
 // 하나하나가 줄바꿈되며 통계 배지와 겹쳐 보이는 문제가 있었다 — 깊이가 얼마든 항상 안전하도록
 // 이름과 통계를 아예 다른 줄로 분리한다(한 줄에 붙여 보여주는 대신, 통계는 이름 바로 아래).
+// (버그 수정) 오프닝별 승률 트리가 항상 전부 펼쳐진 채로만 보여서, 깊이 중첩된 하위 갈래가 많은
+// 계정은 목록이 한없이 길어졌다 — 나무위키의 문서 내 하위 항목처럼 각 갈래를 독립적으로 접었다 폈다
+// 할 수 있게 한다. 최상위 갈래는 기본으로 펼쳐 두고(전체 감을 바로 보여줌), 그 아래 하위 갈래부터는
+// 기본으로 접어 둬(가장 흔히 길어지는 지점) 목록이 처음부터 너무 길어지지 않게 한다.
 function OpeningWinrateRow({ node, depth, onOpenOpening }) {
   const isRoot = depth === 0;
+  const hasChildren = node.children.length > 0;
+  const [open, setOpen] = useState(isRoot);
   const nameStyle = { display: "block", wordBreak: "break-word", lineHeight: 1.3, fontSize: isRoot ? 12.5 : 11.5 };
   return (
     <div style={{ position: "relative" }}>
       {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
-      <div style={{ padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
-        {onOpenOpening
-          ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
-          : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
-        <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+      <div className="flex items-start" style={{ gap: 4, padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {onOpenOpening
+            ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
+            : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
+          <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+        </div>
+        {/* 이름 버튼(누르면 도감으로 이동)과 별개의 클릭 영역 — 접기/펼치기가 이동 동작을 가리지 않는다. */}
+        {hasChildren && (
+          <button onClick={() => setOpen((v) => !v)} aria-label={open ? "하위 갈래 접기" : "하위 갈래 펼치기"} className="press" style={{ flexShrink: 0, width: 22, height: 22, marginTop: 1, borderRadius: 6, background: "rgba(0,0,0,.05)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ChevronDown size={13} style={{ color: T.inkSoft, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+          </button>
+        )}
       </div>
-      {node.children.length > 0 && (
+      {hasChildren && open && (
         <div style={{ marginLeft: 12, borderLeft: "1.5px solid #D9C7A0", paddingLeft: 8 }}>
           {node.children.map((c) => <OpeningWinrateRow key={c.name} node={c} depth={depth + 1} onOpenOpening={onOpenOpening} />)}
         </div>
