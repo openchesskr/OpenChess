@@ -7321,8 +7321,13 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         </div>
         {/* (버그 수정) 오프닝 이름이 길면 한 줄 말줄임(...)으로 잘려 끝까지 안 보였다 — 카드는
             어차피 내용 높이에 맞춰 늘어나므로(19차 UI2) 줄바꿈을 허용해 항상 전체가 보이게 한다.
-            keep-all로 단어 중간이 아니라 띄어쓰기·쉼표 단위로만 줄바꿈되게 한다. */}
-        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word", lineHeight: 1.35 }}>{p.name}</div>
+            keep-all로 단어 중간이 아니라 띄어쓰기·쉼표 단위로만 줄바꿈되게 한다.
+            (버그 수정) 퍼즐 탭은 grid-template-columns(auto-fill)라 같은 행의 카드끼리 기본적으로
+            가장 키 큰 카드에 맞춰 함께 늘어난다 — 이름 길이가 카드마다 달라 행 높이가 들쭉날쭉해
+            보이는 걸 줄이려고, 2줄 분량(1.35 line-height 기준 2.7em)을 항상 최소 높이로 예약해
+            둔다. 대부분 이름(예: "Italian Game, 4.Ng5")은 1~2줄 안에 들어가 행이 균일하게 보이고,
+            드물게 아주 긴 이름만 이 최소치를 넘어 그 행만 예외적으로 더 커진다. */}
+        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word", lineHeight: 1.35, minHeight: "2.7em" }}>{p.name}</div>
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
           <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{themeLabelsOf(p)} · 라인 {totalLines}개</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
