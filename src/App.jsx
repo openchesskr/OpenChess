@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -113,6 +113,21 @@ const PIECE_IMG_SETS = {
       K: { w: { src: "/pieces/ocean/white-king.png", w: 248, h: 281 }, b: { src: "/pieces/ocean/black-king.png", w: 254, h: 282 } },
     },
   },
+  // (about 페이지 그랜드마스터 카드 연동) 그랜드마스터 전용 기물 — 오로라 크리스탈+대리석 세트.
+  // 원본(1920px 정사각 캔버스, 여백 포함)을 알파 바운딩 박스로 잘라내고 WebP로 압축해 옮겨 적었다.
+  // (참고) 킹·퀸 원본 이미지는 받침·몸통 없이 왕관만 있는 상태로 받았다 — 다른 기물과 스타일이
+  // 다르지만 그대로 쓰기로 결정된 것이라 별도 보정 없이 그대로 옮겼다.
+  grandmaster: {
+    basePx: 280,
+    images: {
+      P: { w: { src: "/pieces/grandmaster/white-pawn.webp", w: 280, h: 420 }, b: { src: "/pieces/grandmaster/black-pawn.webp", w: 279, h: 420 } },
+      N: { w: { src: "/pieces/grandmaster/white-knight.webp", w: 281, h: 420 }, b: { src: "/pieces/grandmaster/black-knight.webp", w: 284, h: 420 } },
+      B: { w: { src: "/pieces/grandmaster/white-bishop.webp", w: 231, h: 420 }, b: { src: "/pieces/grandmaster/black-bishop.webp", w: 230, h: 420 } },
+      R: { w: { src: "/pieces/grandmaster/white-rook.webp", w: 295, h: 420 }, b: { src: "/pieces/grandmaster/black-rook.webp", w: 296, h: 420 } },
+      Q: { w: { src: "/pieces/grandmaster/white-queen.webp", w: 420, h: 375 }, b: { src: "/pieces/grandmaster/black-queen.webp", w: 420, h: 376 } },
+      K: { w: { src: "/pieces/grandmaster/white-king.webp", w: 420, h: 409 }, b: { src: "/pieces/grandmaster/black-king.webp", w: 420, h: 408 } },
+    },
+  },
 };
 /* (20\uCC28 \uAE30\uB2A54 \uB300\uBE44) \uBCF4\uB4DC/\uAE30\uBB3C \uC2A4\uD0A8 \uB808\uC9C0\uC2A4\uD2B8\uB9AC \u2014 \uAE30\uBCF8(classic) \uD558\uB098\uB9CC \uC6B0\uC120 \uB450\uACE0, \uC0C1\uC810\uC5D0\uC11C \uD30C\uB294
    \uBC14\uB2E4(ocean) \uC2A4\uD0A8 \uB4F1 \uCD94\uAC00 \uC2A4\uD0A8\uC740 \uC774 \uAC1D\uCCB4\uC5D0 \uD56D\uBAA9\uB9CC \uB298\uB9AC\uBA74 PieceGlyph\u00B7Board\uAC00 \uADF8\uB300\uB85C \uC9C0\uC6D0\uD55C\uB2E4. */
@@ -124,6 +139,9 @@ const BOARD_SKINS = {
   // (2\uCC28 \uAC1C\uD3B8) \uC0AC\uC6A9\uC790\uAC00 \uC9C1\uC811 \uB9CC\uB4E0 \uBC14\uB2E4 \uD14C\uB9C8 \uCE74\uD3B8(\uBAA8\uB798\uBE5B/\uBB3C\uACB0\u00B7\uBAA8\uB798) \uC774\uBBF8\uC9C0\uB85C \uAD50\uCCB4 \u2014
   // \uCE78\uB9C8\uB2E4 \uC804\uCCB4 8x8 \uC774\uBBF8\uC9C0\uC5D0\uC11C \uC790\uAE30 \uC704\uCE58\uC758 \uC870\uAC01\uB9CC background-position\uC73C\uB85C \uC798\uB77C \uBCF4\uC5EC\uC900\uB2E4(boardSquareBg).
   ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: "/boards/ocean-board.jpg" },
+  // (about \uD398\uC774\uC9C0 \uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130 \uCE74\uB4DC \uC5F0\uB3D9) \uCF54\uC778\uC73C\uB85C \uC0B4 \uC218 \uC5C6\uACE0 tierLocked \uD2F0\uC5B4\uC5D0 \uB3C4\uB2EC\uD574\uC57C\uB9CC
+  // \uC790\uB3D9 \uD574\uAE08\uB418\uB294 \uC804\uC6A9 \uC2A4\uD0A8 \u2014 App\uC758 useEffect(totalXp \uAE30\uC900)\uAC00 ownedSkins\uC5D0 \uC9C1\uC811 \uCD94\uAC00\uD558\uBBC0\uB85C price\uB294 \uC4F0\uC774\uC9C0 \uC54A\uB294\uB2E4.
+  grandmaster: { label: "그랜드마스터", tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
 };
 // (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
 // \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
@@ -143,6 +161,9 @@ const PIECE_SKINS = {
   // (2\uCC28 \uAC1C\uD3B8) \uBC14\uB2E4 \uAE30\uBB3C\uB3C4 \uC0AC\uC6A9\uC790\uAC00 \uB9CC\uB4E0 \uC774\uBBF8\uC9C0 \uC138\uD2B8(public/pieces/ocean)\uB85C \uAD50\uCCB4 \u2014 classic\uACFC \uB3D9\uC77C\uD558\uAC8C
   // image:true\uB85C PieceGlyph\uC758 \uC774\uBBF8\uC9C0 \uB80C\uB354\uB9C1 \uACBD\uB85C\uB97C \uD0C0\uB418, PIECE_IMG_SETS.ocean\uC758 \uC790\uAE30 \uC774\uBBF8\uC9C0\uB97C \uC4F4\uB2E4.
   ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: true },
+  // (about 페이지 그랜드마스터 카드 연동) 코인으로 살 수 없고 그랜드마스터 티어에 도달해야만
+  // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
+  grandmaster: { label: "그랜드마스터", tierLocked: "grandmaster", image: true },
 };
 /* \uC7A5\uCC29\uB41C \uC2A4\uD0A8\uC740 Context\uB85C \uD758\uB824\uBCF4\uB0B4 Board\u00B7PieceGlyph \uC5B4\uB514\uC11C\uB4E0(\uD504\uB86D \uC548 \uB118\uACA8\uB3C4) \uC790\uB3D9 \uC801\uC6A9\uB418\uAC8C \uD55C\uB2E4 \u2014
    \uBCF4\uB4DC\uAC00 \uD559\uC2B5 \uD0ED\u00B7\uD37C\uC990 \uD480\uC774\u00B7\uBBF8\uB2C8 \uD504\uB9AC\uBDF0 \uB4F1 \uC218\uC2ED \uACF3\uC5D0\uC11C \uC4F0\uC774\uBBC0\uB85C \uB9E4 \uD638\uCD9C\uBD80\uB9C8\uB2E4 prop\uC744 \uAF42\uB294 \uB300\uC2E0
@@ -5616,11 +5637,20 @@ function lastNamedOpening(sans) {
   for (let i = 1; i <= sans.length; i++) { const nd = snapNode(sans.slice(0, i)); if (nd && nd.opening && nd.opening.name) nm = nd.opening.name; }
   return nm;
 }
+// (버그 수정) 퍼즐 카드 위쪽 금색 라벨은 lastNamedOpening(가장 구체적인, 세부 갈래까지 포함한
+// 이름)이 아니라 '가장 처음 나온' 오프닝 이름(최상위 갈래)만 보여준다 — 그래서 찾는 순서를
+// 그대로 두되 처음 이름을 만나는 즉시 반환한다(덮어쓰지 않음).
+function firstNamedOpening(sans) {
+  for (let i = 1; i <= sans.length; i++) { const nd = snapNode(sans.slice(0, i)); if (nd && nd.opening && nd.opening.name) return nd.opening.name; }
+  return null;
+}
+// (버그 수정) 테마마다 다른 한국어 문구("~에서 탁월한 수 찾기" 등)를 붙였더니 이름이 길어져
+// 퍼즐 카드(최소폭 148px)에서 잘려 보였다 — 테마와 무관하게 항상 "<오프닝 이름>, <수 이름>"
+// 형식(예: "Italian Game, 4.Ng5")으로 통일해 훨씬 짧고 일관되게 만든다. 테마 구분은 이름이
+// 아니라 카드 위쪽 띠 색·테마 라벨(themeLabelsOf)로 이미 충분히 되고 있다.
 function puzzleName(theme, setupSans, mistakeSan) {
   const base = lastNamedOpening(setupSans) || "오프닝";
-  if (theme === "sacrifice") return base + "에서 탁월한 수 찾기";
-  if (theme === "advantage") return base + "에서 우위 점하기";
-  return base + "에서 " + moveNumber(setupSans.length) + stripSuffix(mistakeSan || "") + " 응징하기";
+  return base + ", " + moveNumber(setupSans.length) + stripSuffix(mistakeSan || "");
 }
 // (기능2) 저장 직전 최종 안전장치: setup+solution 전체를 시작 위치부터 다시 재생하며 각 수가
 // "그 시점에 둘 차례인 쪽"의 합법수인지 검증한다. 하나라도 어긋나면(불법수·차례 뒤바뀜 등) 저장을 막는다.
@@ -7287,6 +7317,39 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
     </div>
   );
 }
+// (버그 수정) 퍼즐 탭은 auto-fill 그리드라 같은 행의 카드끼리 기본적으로 가장 키 큰 카드에
+// 맞춰 함께 늘어난다 — min-height로 2줄을 예약해도 그보다 훨씬 긴 이름 하나가 그 행 전체를
+// 예외적으로 키워 행 높이가 들쭉날쭉해 보였다. 높이를 아예 2줄 고정값(overflow:hidden)으로
+// 못박고, 그 안에 실제로 다 안 들어가면(scrollHeight > clientHeight) 글자 크기를 0.5px씩
+// 줄여가며 다시 재는 식으로 맞춘다 — 이름이 아무리 길어도 카드 높이는 항상 똑같이 유지되고,
+// 유난히 긴 이름만 글자가 조금 작아진다(최소 7px 밑으로는 더 줄이지 않고 그대로 둔다).
+const PUZZLE_NAME_BASE_FS = 11, PUZZLE_NAME_LINE_H = 1.35, PUZZLE_NAME_MIN_FS = 7;
+const PUZZLE_NAME_BOX_H = Math.round(PUZZLE_NAME_BASE_FS * PUZZLE_NAME_LINE_H * 2);
+function FitPuzzleName({ text }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      let size = PUZZLE_NAME_BASE_FS;
+      el.style.fontSize = size + "px";
+      while (el.scrollHeight > el.clientHeight + 0.5 && size > PUZZLE_NAME_MIN_FS) {
+        size -= 0.5;
+        el.style.fontSize = size + "px";
+      }
+    };
+    fit();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(fit); ro.observe(el); }
+    window.addEventListener("resize", fit);
+    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", fit); };
+  }, [text]);
+  return (
+    <div ref={ref} style={{ fontSize: PUZZLE_NAME_BASE_FS, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word", lineHeight: PUZZLE_NAME_LINE_H, height: PUZZLE_NAME_BOX_H, overflow: "hidden" }}>
+      {text}
+    </div>
+  );
+}
 function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
@@ -7311,16 +7374,28 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={104} loopMs={2400} flip={flip} /></div>}
         <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
-          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, wordBreak: "break-word" }}>{p.opening}</div>
+          {/* (버그 수정) 이 라벨은 세부 갈래까지 다 붙은 p.opening(예: "Ruy Lopez, Berlin Defense,
+              Rio de Janeiro Variation") 대신, 최상위 갈래 이름(firstNamedOpening)만 짧게 보여준다
+              — 세부 갈래까지 포함한 전체 이름은 바로 아래 이름 줄에서 이미 다 보인다. 옛 퍼즐 등
+              setupSans가 없어 계산이 안 되는 경우에만 저장된 p.opening으로 대체한다.
+              한 줄로 고정하고 넘치면 말줄임(...)만 쓴다(행 높이가 들쭉날쭉해지는 걸 막기 위함). */}
+          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(p.setupSans && firstNamedOpening(p.setupSans)) || p.opening}</div>
           <LineStars total={3} solved={stars} />
         </div>
-        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.35 }}>{p.name}</div>
+        {/* (버그 수정) 오프닝 이름이 길면 한 줄 말줄임(...)으로 잘려 끝까지 안 보였다 — 그렇다고
+            줄바꿈만 허용하면 퍼즐 탭 그리드(auto-fill)는 같은 행의 카드끼리 가장 키 큰 카드에
+            맞춰 함께 늘어나 행 높이가 들쭉날쭉해진다. FitPuzzleName이 높이를 2줄로 고정해두고,
+            다 안 들어가는 이름만 글자 크기를 줄여서 맞춘다(위 정의부 참고) — 카드 높이는 항상
+            균일하게 유지된다. */}
+        <FitPuzzleName text={p.name} />
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
           <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{themeLabelsOf(p)} · 라인 {totalLines}개</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         <div className="flex items-center justify-between" style={{ marginTop: 2, gap: 4 }}>
-          {solveCountText(solveCount, friendSolverNames) ? <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.3, wordBreak: "break-word", minWidth: 0 }}>{solveCountText(solveCount, friendSolverNames)}</div> : <span />}
+          {/* (버그 수정) 친구 이름이 많이 나열되면 이 줄도 줄바꿈돼 행 높이를 들쭉날쭉하게 만들 수
+              있었다 — 위 두 줄과 같은 원칙으로 한 줄 + 말줄임으로 고정한다. */}
+          {solveCountText(solveCount, friendSolverNames) ? <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{solveCountText(solveCount, friendSolverNames)}</div> : <span />}
           <div className="flex items-center" style={{ gap: 7, flexShrink: 0 }}>
             {/* (v0.1.0) 리포스트·공유 — 좋아요와 같은 자리에, 풀이수/좋아요와 무관한 별개 참여 지표로 노출 */}
             {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
@@ -8198,19 +8273,33 @@ function findOpeningPathByFuzzyName(name) {
 // 욱여넣었더니, 중첩이 깊어질수록(들여쓰기 누적) 이름 칸에 남는 폭이 몇 십 px까지 줄어들어 단어
 // 하나하나가 줄바꿈되며 통계 배지와 겹쳐 보이는 문제가 있었다 — 깊이가 얼마든 항상 안전하도록
 // 이름과 통계를 아예 다른 줄로 분리한다(한 줄에 붙여 보여주는 대신, 통계는 이름 바로 아래).
+// (버그 수정) 오프닝별 승률 트리가 항상 전부 펼쳐진 채로만 보여서, 깊이 중첩된 하위 갈래가 많은
+// 계정은 목록이 한없이 길어졌다 — 나무위키의 문서 내 하위 항목처럼 각 갈래를 독립적으로 접었다 폈다
+// 할 수 있게 한다. 최상위 갈래는 기본으로 펼쳐 두고(전체 감을 바로 보여줌), 그 아래 하위 갈래부터는
+// 기본으로 접어 둬(가장 흔히 길어지는 지점) 목록이 처음부터 너무 길어지지 않게 한다.
 function OpeningWinrateRow({ node, depth, onOpenOpening }) {
   const isRoot = depth === 0;
+  const hasChildren = node.children.length > 0;
+  const [open, setOpen] = useState(isRoot);
   const nameStyle = { display: "block", wordBreak: "break-word", lineHeight: 1.3, fontSize: isRoot ? 12.5 : 11.5 };
   return (
     <div style={{ position: "relative" }}>
       {!isRoot && <span aria-hidden style={{ position: "absolute", left: -9, top: 12, width: 9, height: 1.5, background: "#D9C7A0" }} />}
-      <div style={{ padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
-        {onOpenOpening
-          ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
-          : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
-        <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+      <div className="flex items-start" style={{ gap: 4, padding: isRoot ? "7px 0 6px" : "5px 0", borderTop: isRoot ? "1px solid #E4D5B6" : "none" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {onOpenOpening
+            ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
+            : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
+          <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+        </div>
+        {/* 이름 버튼(누르면 도감으로 이동)과 별개의 클릭 영역 — 접기/펼치기가 이동 동작을 가리지 않는다. */}
+        {hasChildren && (
+          <button onClick={() => setOpen((v) => !v)} aria-label={open ? "하위 갈래 접기" : "하위 갈래 펼치기"} className="press" style={{ flexShrink: 0, width: 22, height: 22, marginTop: 1, borderRadius: 6, background: "rgba(0,0,0,.05)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ChevronDown size={13} style={{ color: T.inkSoft, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+          </button>
+        )}
       </div>
-      {node.children.length > 0 && (
+      {hasChildren && open && (
         <div style={{ marginLeft: 12, borderLeft: "1.5px solid #D9C7A0", paddingLeft: 8 }}>
           {node.children.map((c) => <OpeningWinrateRow key={c.name} node={c} depth={depth + 1} onOpenOpening={onOpenOpening} />)}
         </div>
@@ -8499,6 +8588,16 @@ const CHANGELOG = [
       "채팅에서 내가 보낸 메시지를 꾹 누르면 수정하거나 삭제할 수 있어요. 수정한 메시지에는 \"수정됨\" 표시가 붙어요.",
       "채팅에 공유된 퍼즐 카드도 옆으로 당기면 보낸 시각이 보이고, 꾹 누르면 삭제하거나 다른 친구에게 다시 전달할 수 있어요.",
       "앤티크한 체스 분위기에 어울리는 드뷔시의 \"달빛\"이 잔잔하게 흘러나오는 배경음악을 추가했어요. 블록을 클릭하거나 체스판에서 수를 둘 때(기물을 잡을 땐 다른 소리로) 나는 효과음도 더했어요. 설정 탭의 \"사운드\" 카드에서 각각 켜고 끄고, 음량도 세밀하게 조절할 수 있어요.",
+      "소개 페이지(/about)에 이탈리안 게임·루이 로페즈·시실리안 디펜스·그룬펠드 디펜스 등 유명한 오프닝 8개를 실제 기보 그대로 체스보드에 재현해 보여주는 갤러리를 추가했어요.",
+      "소개 페이지에 그랜드마스터 티어를 소개하는 카드를 새로 추가했어요 — 달성 조건과 그랜드마스터만의 혜택(전용 배지·전용 스킨·강조 표시)을 한눈에 볼 수 있어요.",
+      "그랜드마스터 티어에 도달하면 코인으로 살 수 없는 전용 체스보드·기물 스킨이 자동으로 해금돼요 — 상점에서 바로 장착할 수 있어요.",
+      "친구 목록·유저 검색·티어 리더보드 어디서든 그랜드마스터는 골드빛 테두리와 왕관 아이콘으로 항상 강조되어 보여요.",
+      "소개 페이지에 MILKU·KOKOA 일러스트 4장을 새로 배치했어요 — 맨 위 전체 폭 배너를 포함해 전부 계속 은은하게 움직이는 애니메이션이 들어갔어요. 상단의 페이지 안내 바 대신, 화면 좌우 중단에 떠 있는 화살표 버튼으로 페이지를 넘겨요.",
+      "퍼즐 이름을 \"오프닝 이름, 수\"(예: Italian Game, 4.Ng5) 형식으로 통일해 더 짧고 일관되게 했어요. 오프닝 이름이 아무리 길어도 카드 높이가 항상 똑같이 유지되도록, 이름 글자 크기가 자동으로 줄어들어요.",
+      "퍼즐 카드 위쪽 라벨에는 세부 갈래 대신 최상위 오프닝 이름만 짧게 보여요.",
+      "프로필의 \"오프닝별 승률\" 목록을 나무위키 문서처럼 갈래마다 접었다 펼 수 있게 했어요 — 세부 변형이 많은 계정도 목록이 처음부터 너무 길어지지 않아요.",
+      "티어 여정 지도에서 스크롤이 특정 지점에 멈추면 등장 애니메이션이 깜빡이며 반복되던 문제를 고쳤어요.",
+      "헤더 로고 아래 버전 표기를 로고에 더 붙였고, 누르면 소개 페이지로 바로 이동해요.",
     ],
   },
   {
@@ -8986,6 +9085,7 @@ function ChesscomIcon({ size = 16 }) {
    장착 상태에 따라 버튼이 "구매"→"장착"→"장착됨"으로 바뀐다. */
 function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
   const isFree = sk.price === 0;
+  const tierLabel = sk.tierLocked && TIERS.find((t) => t.key === sk.tierLocked);
   // (디자인) 보드 스킨 미리보기 — 기본(단색) 스킨은 4x4 견본 대신, 이미지 스킨과 동일하게 실제
   // 보드처럼 보이는 8x8 격자로 표시한다(boardSquareBg로 이미지 스킨은 이어붙인 텍스처가 그대로 나옴).
   // (버그 수정) 실제 대국판은 크기와 무관하게 borderRadius:4를 쓰는데, 여기만 8을 써 64px 미리보기에서
@@ -9007,13 +9107,16 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{sk.label}</div>
         <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
-          {isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>무료 · 기본 제공</span>
-            : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={13} /> {sk.price}</span>}
+          {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tierLabel.label} 티어 전용 · 코인으로 구매 불가</span>
+            : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>무료 · 기본 제공</span>
+              : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={13} /> {sk.price}</span>}
         </div>
         {equipped ? (
           <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>✓ 장착됨</button>
         ) : owned || isFree ? (
           <button onClick={() => onEquip(kind, id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>장착하기</button>
+        ) : sk.tierLocked ? (
+          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{tierLabel.label} 티어 필요</button>
         ) : (
           <button onClick={() => onBuy(kind, id)} disabled={coins < sk.price} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: coins < sk.price ? "#8A7458" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: coins < sk.price ? "not-allowed" : "pointer" }}>{coins < sk.price ? "코인 부족" : "구매하기"}</button>
         )}
@@ -9858,13 +9961,16 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
 }
 // (기능) 유저 검색 결과 한 줄 — 검색 결과와 기본 추천(친구의 친구·리더보드)이 같은 모양을 공유한다.
 // right는 오른쪽 끝에 덧붙일 부가 정보(같이 아는 친구 수, 티어 등) — 없으면 기존과 똑같은 모양이다.
+// (about 페이지 그랜드마스터 카드 연동) 검색 결과·티어 리더보드에서 그랜드마스터는 오로라 톤
+// 골드 테두리로 항상 강조 표시 — 실제로 티어를 올려야 얻는 결과라 배지처럼 남용될 일이 없다.
 function userSearchRow(r, onClick, right) {
   const p = r.pub || {};
+  const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
   return (
-    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
+    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: "#FBF5E8", boxShadow: isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none", cursor: "pointer", textAlign: "left" }}>
       {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</div>
+        <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
       </div>
       {right}
@@ -9991,13 +10097,14 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
 }
 function FriendRow({ id, pub, right, onClick }) {
   const p = pub || {};
+  const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, borderRadius: 10, border: isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: "#FBF5E8", boxShadow: isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none" }}>
       <button onClick={onClick} className="press" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: onClick ? "pointer" : "default", textAlign: "left", padding: 0 }}>
         {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
           : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || id || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || id}</div>
+          <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || id}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
           <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{id}</div>
         </div>
       </button>
@@ -10067,6 +10174,58 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
 // 강조, 아직 안 온 구간은 잠금으로 가린다. 노드 사이 연결선은 OpeningSchematic·PuzzleSchematic이
 // 이미 쓰는 "절대 배치 노드 + 아래 SVG 커넥터" 기법을 그대로 따른다(이소메트릭 렌더링을 새로
 // 만들지 않는다).
+// (버그 수정) 여정 지도의 연결선·정거장 등장 애니메이션은 once:false라 스크롤로 지나갈 때마다
+// 다시 재생돼야 하는데, whileInView는 IntersectionObserver 콜백을 그대로 애니메이션 상태에
+// 반영한다 — 가느다란 대각선처럼 바운딩 박스가 얇은 도형은 노출 비율이 스크롤 몇 픽셀 차이에도
+// 크게 출렁이므로, 스크롤이 딱 60% 노출 경계에 걸친 좌표에서 멈추면 관성 스크롤의 미세한 떨림만
+// 으로도 보임/안 보임이 반복 전환되며 애니메이션이 무한히 깜빡였다("특정 좌표에 멈추면 애니메이션이
+// 이상하게 재생되는" 신고 원인). onViewportEnter/Leave 콜백 자체는 whileInView와 똑같이 받되, 그
+// 값을 짧게(130ms) 흔들리지 않고 유지될 때만 실제 상태에 반영해 — 순간적인 떨림은 걸러내고, 실제로
+// 스크롤해서 들어오고 나가는 정상적인 경우에는 지금처럼 매번 그대로 반복 재생된다.
+function useSettledInView(delay = 130) {
+  const [settled, setSettled] = useState(false);
+  const timerRef = useRef(null);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  const commit = (val) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setSettled(val), delay);
+  };
+  return { settled, onViewportEnter: () => commit(true), onViewportLeave: () => commit(false) };
+}
+// 여정 지도 연결선 하나 — pathLength/opacity를 whileInView 대신 위 훅으로 디바운스된 animate로 몬다.
+function TierPathLine({ x1, y1, x2, y2, lineStyle, glow, transition, amount = 0.6 }) {
+  const { settled, onViewportEnter, onViewportLeave } = useSettledInView();
+  const hidden = { pathLength: 0, opacity: 0 };
+  const shown = { pathLength: 1, opacity: 1 };
+  return (
+    <motion.line x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
+      initial={hidden}
+      animate={settled ? shown : hidden}
+      viewport={{ once: false, amount }}
+      onViewportEnter={onViewportEnter}
+      onViewportLeave={onViewportLeave}
+      transition={transition}
+      style={glow} />
+  );
+}
+// 여정 지도 정거장 등장(등장 시 살짝 튀어오르며 회전이 풀리는 연출) — 위와 동일한 디바운스 적용.
+function TierStationReveal({ tilt, children }) {
+  const { settled, onViewportEnter, onViewportLeave } = useSettledInView();
+  const hidden = { opacity: 0, scale: 0.45, rotate: tilt };
+  const shown = { opacity: 1, scale: 1, rotate: 0 };
+  return (
+    <motion.div
+      initial={hidden}
+      animate={settled ? shown : hidden}
+      viewport={{ once: false, amount: 0.6 }}
+      onViewportEnter={onViewportEnter}
+      onViewportLeave={onViewportLeave}
+      transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{ position: "absolute", inset: 0 }}>
+      {children}
+    </motion.div>
+  );
+}
 function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   // (v0.1.2) v0.1.1에서 키웠던 정거장 원이 지나치게 커 보인다는 피드백으로 다시 축소.
@@ -10160,24 +10319,18 @@ function TierJourneyPath({ totalXp }) {
             const elbowY = y1 - (y1 - y2) * 0.28;
             return (
               <React.Fragment key={i}>
-                <motion.line x1={x1} y1={y1} x2="50%" y2={elbowY} {...lineStyle}
-                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.5, ease: "easeOut" }} style={glow} />
-                <motion.line x1="50%" y1={elbowY} x2="50%" y2={y2} {...lineStyle}
-                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} style={glow} />
+                <TierPathLine x1={x1} y1={y1} x2="50%" y2={elbowY} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.5, ease: "easeOut" }} />
+                <TierPathLine x1="50%" y1={elbowY} x2="50%" y2={y2} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} />
               </React.Fragment>
             );
           }
           const x2 = (i + 1) % 2 ? "78%" : "22%";
           // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
           // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
-          return (
-            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
-              initial={{ pathLength: 0, opacity: 0 }}
-              whileInView={{ pathLength: 1, opacity: 1 }}
-              viewport={{ once: false, amount: 0.6 }}
-              transition={{ duration: 0.7, ease: "easeOut" }}
-              style={glow} />
-          );
+          // 가느다란 대각선은 바운딩 박스가 얇아 노출 비율이 스크롤 몇 픽셀 차이에도 크게 출렁여,
+          // 스크롤이 딱 60% 노출 경계에 걸친 좌표에서 멈추면 그 떨림만으로 무한히 깜빡이던 문제가
+          // 있었다 — TierPathLine이 그 신호를 130ms 디바운스해서 걸러낸다(위 useSettledInView 참고).
+          return <TierPathLine key={i} x1={x1} y1={y1} x2={x2} y2={y2} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.7, ease: "easeOut" }} />;
         })}
       </svg>
       {TIER_STATIONS.map((s, i) => {
@@ -10209,12 +10362,10 @@ function TierJourneyPath({ totalXp }) {
                 밖으로 잘려나갔다. 정적 중앙 정렬(translateX(-50%))은 애니메이션이 없는 바깥 div가
                 전담하고, scale/rotate 애니메이션은 그 안쪽(inset:0)의 별도 motion.div로 분리한다. */}
             <div style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
-              <motion.div
-                initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
-                whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
-                viewport={{ once: false, amount: 0.6 }}
-                transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
-                style={{ position: "absolute", inset: 0 }}>
+              {/* (버그 수정) 정거장 등장 애니메이션도 연결선과 같은 이유로 깜빡였다 — TierStationReveal이
+                  onViewportEnter/Leave 신호를 130ms 디바운스해서 걸러내므로, once:false로 스크롤마다
+                  반복 재생되는 연출은 그대로 유지하면서 스크롤이 노출 경계에 멈췄을 때의 떨림만 없앤다. */}
+              <TierStationReveal tilt={i % 2 ? 10 : -10}>
               <motion.div
                 ref={state === "current" ? currentRef : undefined}
                 animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
@@ -10244,7 +10395,7 @@ function TierJourneyPath({ totalXp }) {
                   </motion.span>
                 )}
               </motion.div>
-              </motion.div>
+              </TierStationReveal>
             </div>
             {state === "current" && (
               <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
@@ -10803,6 +10954,18 @@ export default function App() {
   const [repostedPuzzles, setRepostedPuzzles] = useState(new Set());   // (v0.1.0) 내가 리포스트한 퍼즐 id — likedPuzzles와 동일한 방식으로 로컬+계정에 저장
   const [lineSolves, setLineSolves] = useState({});   // (기능1) { [puzzleId]: string[] } — 라인(tag)별 해결 기록. 전체 라인이 다 모이면 solved로 승격.
   const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 티어/진행률은 tierFromXp로 매번 도출
+  // (about 페이지 그랜드마스터 카드 연동) 그랜드마스터 티어에 도달하면 전용 보드·기물 스킨을
+  // 코인 없이 자동 해금 — 티어에서 다시 내려갈 일이 없으므로 한 번 추가되면 계속 소유한 상태로 남는다.
+  useEffect(() => {
+    if (tierFromXp(totalXp).tier.key !== "grandmaster") return;
+    setOwnedSkins((prev) => {
+      const keys = ["board:grandmaster", "piece:grandmaster"];
+      if (keys.every((k) => prev.has(k))) return prev;
+      const next = new Set(prev);
+      keys.forEach((k) => next.add(k));
+      return next;
+    });
+  }, [totalXp]);
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
   // (버그) 개발자 계정 코인 지급을 "코인 기록이 아예 없을 때"로만 한정했더니, 이미 로그인해 progress가
   // 저장돼 있던 기존 개발자·공동 개발자 계정에는 소급 적용되지 않았다. 대신 "1회 지급 여부" 플래그를
@@ -11430,10 +11593,12 @@ export default function App() {
             불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
         {/* (v0.1.2 기능) 로고 아래에 현재 버전을 작은 금색 텍스트로 표기 — CHANGELOG[0]에서 파생되는
             APP_VERSION을 그대로 써서, 새 버전을 낼 때 이 표기도 따로 손댈 필요가 없게 한다.
-            (v0.1.2) "OpenChess" 글자 쪽(로고 오른쪽 끝)에 맞춰 오른쪽 정렬, 크기도 한 단계 더 줄임. */}
-        <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 1 }}>
+            (v0.1.2) "OpenChess" 글자 쪽(로고 오른쪽 끝)에 맞춰 오른쪽 정렬, 크기도 한 단계 더 줄임.
+            (버그 수정) 로고와 버전 텍스트 사이가 붕 떠 보여 음수 marginTop으로 로고 바로 아래에
+            바짝 붙였다. 눌러서 소개 페이지(/about)로 바로 이동할 수 있는 링크로 바꿨다. */}
+        <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 0 }}>
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-          <span style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right" }}>v{APP_VERSION}</span>
+          <a href="/about" style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
