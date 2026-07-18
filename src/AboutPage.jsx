@@ -83,9 +83,19 @@ function Reveal({ children, delay = 0, y = 16, once = false }) {
   );
 }
 
+// ============================================================ 마스코트 ============================================================
+// (v0.1.4 기능) "마스코트 이미지는 선이 깔끔한 이미지만 쓰고, 이모티콘(스티커)용 이미지는 쓰지 말 것"
+// 이라는 요청 — App.jsx가 학습 탭 등 실제 UI 전반에서 이미 쓰고 있는 MASCOT_ART(플랫 벡터 일러스트,
+// 표정별 12종)를 그대로 재사용한다. public/emoji/*.png(스케치풍 스티커, 이모티콘 선택 창 전용)와는
+// 완전히 다른 자산 — App.jsx에 인라인 base64로 박혀 있던 걸 이 페이지(무거운 초기화가 없는 정적
+// 컴포넌트)에서도 가볍게 쓸 수 있도록 public/mascot/*.webp 파일로 그대로 추출해 둔 것을 가리킨다.
+function Mascot({ char = "milku", expr = "great", size = 72 }) {
+  return <img src={"/mascot/" + char + "_" + expr + ".webp"} alt="" style={{ width: size, height: size, objectFit: "contain" }} />;
+}
+
 // (기존 MascotBubble과 동일한 시각 언어 — 원형 초상 + 이름표 + 말풍선)
-function SpeechBubble({ src, name, children, align = "left" }) {
-  const avatar = <div style={{ width: 76, height: 76, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}><img src={src} alt="" style={{ width: 64, height: 64, objectFit: "contain" }} /></div>;
+function SpeechBubble({ mascot, name, children, align = "left" }) {
+  const avatar = <div style={{ width: 76, height: 76, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}><Mascot char={mascot.char} expr={mascot.expr} size={60} /></div>;
   const bubble = (
     <div style={{ minWidth: 0, flex: 1, background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "13px 16px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
       <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800, marginBottom: 4 }}>{name}</div>
@@ -136,19 +146,22 @@ function PhoneFrame({ src, alt, tilt = 0, delay = 0 }) {
 // 기능 소개 한 줄(실제 화면 스크린샷 ↔ 텍스트, 좌우 번갈아 배치) — 참고 이미지의 "대사+삽화" 레이아웃을
 // 그대로 빌리되, 삽화 자리를 실제 서비스 스크린샷(PhoneFrame)으로 채우고, 마스코트는 그 모서리에
 // 작은 스티커처럼 겹쳐 붙여 캐릭터성도 함께 남긴다.
-function FeatureRow({ Icon, eyebrow, title, desc, quote, shot, mascotImg, reverse }) {
+function FeatureRow({ Icon, eyebrow, title, desc, quote, shot, mascotChar, mascotExpr, reverse, ccBadge }) {
   return (
     <div className="flex items-center flex-wrap" style={{ gap: 32, flexDirection: reverse ? "row-reverse" : "row" }}>
       <div style={{ flex: "0 0 auto", width: 180, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
         <PhoneFrame src={shot} alt={title} tilt={reverse ? 4 : -4} />
-        <motion.img src={mascotImg} alt="" initial={{ opacity: 0, scale: 0.4, rotate: reverse ? -16 : 16 }} whileInView={{ opacity: 1, scale: 1, rotate: reverse ? -9 : 9 }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.5, delay: 0.18, ease: [0.22, 0.9, 0.32, 1] }}
-          style={{ position: "absolute", width: 58, height: 58, objectFit: "contain", bottom: -12, [reverse ? "left" : "right"]: -16, filter: "drop-shadow(0 4px 8px rgba(0,0,0,.55))", zIndex: 3 }} />
+        <motion.div initial={{ opacity: 0, scale: 0.4, rotate: reverse ? -16 : 16 }} whileInView={{ opacity: 1, scale: 1, rotate: reverse ? -9 : 9 }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.5, delay: 0.18, ease: [0.22, 0.9, 0.32, 1] }}
+          style={{ position: "absolute", width: 58, height: 58, bottom: -12, [reverse ? "left" : "right"]: -16, filter: "drop-shadow(0 4px 8px rgba(0,0,0,.55))", zIndex: 3 }}>
+          <Mascot char={mascotChar} expr={mascotExpr} size={58} />
+        </motion.div>
       </div>
       <Reveal delay={0.1}>
         <div style={{ flex: "1 1 300px", minWidth: 260 }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
             <span style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={15} color={T.brassHi} /></span>
             <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{eyebrow}</span>
+            {ccBadge && <img src="/chess.com_Icon.png" alt="chess.com" title="chess.com 연동" style={{ width: 18, height: 18, borderRadius: 5, objectFit: "contain", marginLeft: 2 }} />}
           </div>
           <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px" }}>{title}</h3>
           <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 12px" }}>{desc}</p>
@@ -160,19 +173,19 @@ function FeatureRow({ Icon, eyebrow, title, desc, quote, shot, mascotImg, revers
 }
 
 const FEATURES = [
-  { Icon: GraduationCap, eyebrow: "학습", title: "엔진과 함께 배우기", shot: "/about/screenshot-study.webp", mascotImg: "/emoji/milku_9.png",
+  { Icon: GraduationCap, eyebrow: "학습", title: "엔진과 함께 배우기", shot: "/about/screenshot-study.webp", mascotChar: "milku", mascotExpr: "think", ccBadge: true,
     desc: "Stockfish 엔진의 실시간 분석과 함께 수를 두며 배워요. chess.com 계정을 연동하면 내가 실제로 둔 대국을 그대로 불러와, 어디서 무엇을 놓쳤는지 짚어줍니다.",
     quote: "네가 둔 수, 하나하나 같이 복기해 줄게." },
-  { Icon: Library, eyebrow: "도감", title: "오프닝 나침반", shot: "/about/screenshot-dex.webp", mascotImg: "/emoji/milku_3.png",
+  { Icon: Library, eyebrow: "도감", title: "오프닝 나침반", shot: "/about/screenshot-dex.webp", mascotChar: "milku", mascotExpr: "wink",
     desc: "1.e4·1.d4·1.c4·1.Nf3 네 방향으로 뻗어나가는 오프닝 트리에서 각 수의 채택률·평가치·이름을 한눈에 살펴보세요. 이탈리안 게임, 루이 로페즈 같은 대표 오프닝은 별도 칭호로 모아둡니다.",
     quote: "이 갈래 끝에 뭐가 있는지, 같이 따라가 보자." },
-  { Icon: Puzzle, eyebrow: "퍼즐", title: "내 실수로 만든 퍼즐", shot: "/about/screenshot-puzzle.webp", mascotImg: "/emoji/kokoa_1.png",
+  { Icon: Puzzle, eyebrow: "퍼즐", title: "내 실수로 만든 퍼즐", shot: "/about/screenshot-puzzle.webp", mascotChar: "kokoa", mascotExpr: "think",
     desc: "\"기물 희생하기\" · \"우위 점하기\" · \"실수 응징하기\" 세 테마로, 실전에서 나온 실수를 바탕으로 자동 생성되는 맞춤형 전술 퍼즐을 풀어보세요. 친구에게 퍼즐을 공유할 수도 있어요.",
     quote: "이 수, 정말 최선이었을까? 한번 찾아봐." },
-  { Icon: Target, eyebrow: "퀘스트", title: "매일 조금씩", shot: "/about/screenshot-quest.webp", mascotImg: "/emoji/kokoa_7.png",
+  { Icon: Target, eyebrow: "퀘스트", title: "매일 조금씩", shot: "/about/screenshot-quest.webp", mascotChar: "kokoa", mascotExpr: "celebrate",
     desc: "매일 새로 갱신되는 일일 퀘스트와, 챕터별 퀴즈로 진행하는 메인 퀘스트를 완료하고 OC 나이트 코인을 모아보세요.",
     quote: "오늘의 퀘스트, 벌써 확인했어?" },
-  { Icon: Wrench, eyebrow: "설정", title: "내게 맞게 조정하기", shot: "/about/screenshot-settings.webp", mascotImg: "/emoji/milku_1.png",
+  { Icon: Wrench, eyebrow: "설정", title: "내게 맞게 조정하기", shot: "/about/screenshot-settings.webp", mascotChar: "milku", mascotExpr: "wink",
     desc: "정확도가 가장 높은 Stockfish 16과, 가볍고 빠른 Stockfish 18 Lite 중 기기에 맞는 분석 엔진을 골라보세요. 로그인하면 진도가 계정에 저장돼 어느 기기에서든 이어서 즐길 수 있어요.",
     quote: "빠르게 갈지, 정확하게 갈지 — 네가 골라." },
 ];
@@ -182,12 +195,18 @@ const FEATURES = [
 // 시연하는 장식용 미니 보드. 스크롤로 들어올 때마다 살짝 튀어오르며 등장하고(Reveal과 같은 방식,
 // once:false), 등장 후에는 은은하게 위아래로 떠 있으며, 그 안의 기물은 스크롤과 무관하게 항상
 // 같은 수를 반복 재생한다 — 페이지 전체가 "계속 움직이고 있다"는 인상을 준다.
-const SQ_LIGHT = "#E8D2A6", SQ_DARK = "#7C4F2E";
+// (v0.1.4 UI) "체스보드가 너무 간소하다 — 디테일을 더 넣어달라"는 요청 — 단색 사각형 대신 결이
+// 보이는 원목 질감(가는 줄무늬 그러데이션 두 겹 + 미세한 밝기 편차)을 칸마다 깔고, 실제 체스 사이트처럼
+// 가장자리에 파일(a~h)·랭크(1~8) 좌표를 옅게 새겨 넣는다. 보드 전체에는 네 모서리가 살짝 어두워지는
+// 비네트를 얹어 입체감을 준다.
+const SQ_LIGHT_BG = "repeating-linear-gradient(100deg, rgba(255,255,255,.16) 0px, rgba(255,255,255,.16) 1px, transparent 1px, transparent 3px), linear-gradient(155deg,#F2E1BE,#E8D2A6 55%,#DDC38F)";
+const SQ_DARK_BG = "repeating-linear-gradient(100deg, rgba(0,0,0,.14) 0px, rgba(0,0,0,.14) 1px, transparent 1px, transparent 3px), linear-gradient(155deg,#8C5D38,#7C4F2E 55%,#68401F)";
 const DECO_PIECE_SRC = {
   wP: "/White Pawn.png", wN: "/White Knight.png", wB: "/White Bishop.png", wR: "/White Rook.png", wQ: "/White Queen.png", wK: "/White King.png",
   bP: "/Black Pawn.png", bN: "/Black Knight.png", bB: "/Black Bishop.png", bR: "/Black Rook.png", bQ: "/Black Queen.png", bK: "/Black King.png",
 };
 const dpct = (n) => (n / 8 * 100) + "%";
+const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0 }) {
   return (
     <motion.div initial={{ opacity: 0, scale: 0.8, rotate: tilt + (tilt >= 0 ? 8 : -8) }} whileInView={{ opacity: 1, scale: 1, rotate: tilt }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1] }}
@@ -195,9 +214,17 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
       <motion.div animate={{ y: [0, -7, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut", delay }}>
         <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", ...GLOSS_BORDER }}>
           <div style={{ position: "relative", width: "100%", aspectRatio: "1/1" }}>
-            {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => (
-              <div key={r + "_" + c} style={{ position: "absolute", top: dpct(r), left: dpct(c), width: "12.5%", height: "12.5%", background: (r + c) % 2 === 0 ? SQ_LIGHT : SQ_DARK }} />
-            )))}
+            {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => {
+              const light = (r + c) % 2 === 0;
+              return (
+                <div key={r + "_" + c} style={{ position: "absolute", top: dpct(r), left: dpct(c), width: "12.5%", height: "12.5%", background: light ? SQ_LIGHT_BG : SQ_DARK_BG, backgroundBlendMode: "overlay, normal" }}>
+                  {c === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: Math.max(6, size * 0.052), fontWeight: 800, lineHeight: 1, color: light ? "rgba(124,79,46,.65)" : "rgba(232,210,166,.55)" }}>{8 - r}</span>}
+                  {r === 7 && <span style={{ position: "absolute", bottom: 1, right: 2, fontSize: Math.max(6, size * 0.052), fontWeight: 800, lineHeight: 1, color: light ? "rgba(124,79,46,.65)" : "rgba(232,210,166,.55)" }}>{FILES[c]}</span>}
+                </div>
+              );
+            }))}
+            {/* 네 모서리를 살짝 어둡게 눌러주는 비네트 — 원목 보드 특유의 입체감 */}
+            <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", boxShadow: "inset 0 0 14px rgba(0,0,0,.35)" }} />
             {/* (버그 수정) img에 퍼센트 padding을 직접 주면 그 퍼센트가 자기 자신이 아니라 컨테이닝
                 블록(보드 전체) 너비 기준으로 계산돼, 칸 하나(12.5%)보다 padding이 커져 콘텐츠 영역이
                 찌그러지며 기물이 안 보였다 — 칸 크기의 셀 wrapper(flex 중앙 정렬) 안에 기물 이미지를
@@ -223,16 +250,48 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
     </motion.div>
   );
 }
-// 데코 보드 프리셋 — 학습(킹스 폰 게임)·기물 희생하기·우위 점하기·실수 응징하기(포크)·꾸준함(퀸 전진)
-// 다섯 장면을 페이지 곳곳에 재사용한다.
-const DECO_A = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bP", r: 1, c: 4 }], move: { piece: "wP", from: [6, 4], to: [4, 4] }, caption: "1.e4 — King's Pawn Game" };
-const DECO_B = { pieces: [{ piece: "bK", r: 0, c: 6 }, { piece: "wK", r: 7, c: 6 }, { piece: "bR", r: 0, c: 0 }], move: { piece: "wB", from: [4, 5], to: [1, 2] }, caption: "기물 희생하기 — 대담한 결정타" };
-const DECO_C = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bP", r: 1, c: 4 }], move: { piece: "wR", from: [7, 0], to: [3, 0] }, caption: "우위 점하기 — 조금씩 조여가기" };
-const DECO_D = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bR", r: 2, c: 4 }], move: { piece: "wN", from: [4, 3], to: [2, 2] }, caption: "실수 응징하기 — 포크 한 방으로" };
-const DECO_E = { pieces: [{ piece: "bK", r: 0, c: 4 }, { piece: "wK", r: 7, c: 4 }, { piece: "bP", r: 1, c: 3 }], move: { piece: "wQ", from: [7, 3], to: [3, 3] }, caption: "매일 조금씩, 꾸준하게" };
+// (v0.1.4 기능) "체스보드에 더 다양한 포지션 — 그랜드마스터 명경기, 유명한 오프닝 함정을 정확히
+// 재현해 달라"는 요청 — 추상적인 3기물 예시 대신, 실제로 존재하는 유명 대국·트랩의 SAN 기보를
+// python-chess로 그대로 재현해 뽑아낸 최종 FEN + 마지막 수를 그대로 옮겨 적는다(스크래치패드에서
+// 기보 전체를 한 수씩 합법성 검증까지 마친 결과 — 6개 전부 마지막 수까지 완전히 합법이었고, 5개는
+// 실제 체크메이트로 끝난다). FEN → 보드 배치 변환은 아래 piecesFromFEN이 코드에서 직접 계산해,
+// 좌표를 손으로 옮겨적다 생기는 오류 여지를 없앤다.
+function algToRC(alg) {
+  const file = alg.charCodeAt(0) - 97, rank = parseInt(alg[1], 10);
+  return [7 - (rank - 1), file];
+}
+function piecesFromFEN(fen, excludeAlg) {
+  const excludeRC = excludeAlg ? algToRC(excludeAlg) : null;
+  const out = [];
+  fen.split(" ")[0].split("/").forEach((row, r) => {
+    let c = 0;
+    for (const ch of row) {
+      if (/\d/.test(ch)) { c += parseInt(ch, 10); continue; }
+      if (excludeRC && excludeRC[0] === r && excludeRC[1] === c) { c += 1; continue; }
+      out.push({ piece: (ch === ch.toUpperCase() ? "w" : "b") + ch.toUpperCase(), r, c });
+      c += 1;
+    }
+  });
+  return out;
+}
+function famousDeco(pos) {
+  return { pieces: piecesFromFEN(pos.fen, pos.move.to), move: { piece: pos.move.piece, from: algToRC(pos.move.from), to: algToRC(pos.move.to) }, caption: pos.caption };
+}
+const POS_FOOLSMATE = { fen: "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", move: { piece: "bQ", from: "d8", to: "h4" }, caption: "폴스 메이트 — 세계 최단 체크메이트 (단 2수)" };
+const POS_SCHOLARSMATE = { fen: "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4", move: { piece: "wQ", from: "h5", to: "f7" }, caption: "스칼라스 메이트 — 초보자 함정의 대명사" };
+const POS_LEGALSTRAP = { fen: "rn1q1bnr/ppp1kB1p/3p2p1/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7", move: { piece: "wN", from: "c3", to: "d5" }, caption: "레갈의 함정 — 비숍을 미끼로 던지는 고전 트랩" };
+const POS_FRIEDLIVER = { fen: "r1bq1b1r/ppp3pp/2n1k3/3np3/2B5/5Q2/PPPP1PPP/RNB1K2R w KQ - 2 8", move: { piece: "bK", from: "f7", to: "e6" }, caption: "프라이드 리버 어택 — 나이트 희생으로 왕을 끌어내다" };
+const POS_IMMORTAL = { fen: "r1bk3r/p2pBpNp/n4n2/1p1NP2P/6P1/3P4/P1P1K3/q5b1 b - - 1 23", move: { piece: "wB", from: "d6", to: "e7" }, caption: "불멸의 게임 — 안더센 vs 키제리츠키, 1851" };
+const POS_OPERA = { fen: "1n1Rkb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2K5 b k - 1 17", move: { piece: "wR", from: "d1", to: "d8" }, caption: "오페라 게임 — 모피 vs 브런즈윅 공작·이수아르 백작, 1858" };
+const DECO_A = famousDeco(POS_FOOLSMATE);
+const DECO_B = famousDeco(POS_SCHOLARSMATE);
+const DECO_C = famousDeco(POS_LEGALSTRAP);
+const DECO_D = famousDeco(POS_FRIEDLIVER);
+const DECO_E = famousDeco(POS_IMMORTAL);
+const DECO_F = famousDeco(POS_OPERA);
 // (v0.1.3 기능) 버전 기록 페이지에도 데코 보드를 재사용 — 버전마다 순서대로 하나씩 돌려 써서 같은
 // 장면이 매 페이지 반복되지 않게 한다.
-const DECO_LIST = [DECO_A, DECO_B, DECO_C, DECO_D, DECO_E];
+const DECO_LIST = [DECO_A, DECO_B, DECO_C, DECO_D, DECO_E, DECO_F];
 // 카테고리별로 배경에 옅게 깔아 둘 기물 — 각 카테고리 성격에 어울리는 기물을 하나씩 골랐다.
 const CAT_PIECE = { feature: "wQ", ui: "wB", ux: "wN", perf: "wR", fix: "bK", security: "bR" };
 
@@ -244,7 +303,7 @@ function TierStrip() {
     { key: "gold", label: "골드", img: "/gold-rook.png" },
     { key: "diamond", label: "다이아몬드", img: "/diamond-queen.png" },
     { key: "master", label: "마스터", img: "/master-king.png" },
-    { key: "grandmaster", label: "그랜드마스터", img: "/grandmaster.png" },
+    { key: "grandmaster", label: "그랜드마스터", img: "/gm-piece.png" },
   ];
   return (
     <div style={{ overflowX: "auto", paddingBottom: 4 }}>
@@ -305,6 +364,46 @@ function StatsRow() {
   );
 }
 
+// (v0.1.4 기능) "chess.com 연계 통계·분석 기능도 소개해 달라"는 요청 — 실제로 학습 탭·도감 탭·설정
+// 탭에 이미 있는 chess.com 연동 기능(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률)을
+// 별도 섹션으로 모아 chess.com 아이콘과 함께 소개한다.
+function CCStatTile({ label, sub, delay }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 16, scale: 0.9 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.45, delay, ease: [0.22, 0.9, 0.32, 1] }}
+      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+      className="flex flex-col items-center" style={{ gap: 8, flex: "1 1 140px", minWidth: 140, padding: "18px 14px", borderRadius: 14, background: "rgba(0,0,0,.22)", border: "1px solid #4A3521" }}>
+      <img src="/chess.com_Icon.png" alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
+      <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, textAlign: "center" }}>{label}</span>
+      <span style={{ fontSize: 11, color: T.inkSoft, textAlign: "center", lineHeight: 1.55 }}>{sub}</span>
+    </motion.div>
+  );
+}
+const CC_TILES = [
+  { label: "대국 자동 동기화", sub: "chess.com 계정만 연결하면 실제로 둔 대국이 그대로 들어와요." },
+  { label: "게임 리뷰 정확도", sub: "chess.com과 같은 방식의 정확도(%)로 내 대국을 채점해요." },
+  { label: "레이팅 변화 그래프", sub: "래피드·블리츠·불릿별로 대국마다 오르내린 레이팅을 보여줘요." },
+  { label: "오프닝별 승률 통계", sub: "도감의 각 수마다 이 오프닝을 실전에서 얼마나, 어떻게 뒀는지 보여줘요." },
+];
+function ChessComSection() {
+  return (
+    <section>
+      <Reveal>
+        <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
+          <img src="/chess.com_Icon.png" alt="" style={{ width: 18, height: 18, borderRadius: 4 }} />
+          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>CHESS.COM 연동</span>
+        </div>
+        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>내가 실제로 둔 대국까지 함께 분석해요</h3>
+        <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 22px", textAlign: "center", maxWidth: 520, marginLeft: "auto", marginRight: "auto" }}>
+          설정 탭에서 chess.com 아이디만 연결하면, 실전에서 둔 수만큼 도감이 해금되고 내 정확도·레이팅 변화까지 한눈에 볼 수 있어요.
+        </p>
+      </Reveal>
+      <div className="flex flex-wrap items-stretch justify-center" style={{ gap: 12 }}>
+        {CC_TILES.map((t, i) => <CCStatTile key={t.label} {...t} delay={i * 0.08} />)}
+      </div>
+    </section>
+  );
+}
+
 // 페이지1 — 소개(히어로+기능+티어+CTA). 기존에 만들어 둔 내용을 그대로 페이저의 첫 페이지로 옮겼다.
 function IntroPage() {
   return (
@@ -327,7 +426,7 @@ function IntroPage() {
           style={{ flex: "0 0 auto", width: 260, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
           <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
             style={{ width: 260, height: 260, maxWidth: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
-            <img src="/emoji/milku_2.png" alt="MILKU" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 10px 22px rgba(0,0,0,.55))" }} />
+            <div style={{ filter: "drop-shadow(0 10px 22px rgba(0,0,0,.55))" }}><Mascot char="milku" expr="great" size={190} /></div>
           </motion.div>
           {/* (v0.1.3 기능) 체스 웹사이트답게 히어로 한쪽에도 작은 데코 보드를 겹쳐 둔다 */}
           <div style={{ position: "absolute", bottom: -16, left: -30, zIndex: 2 }}>
@@ -339,7 +438,7 @@ function IntroPage() {
       <SectionDivider />
 
       <section style={{ maxWidth: 640, margin: "0 auto 8px" }}>
-        <SpeechBubble src="/emoji/milku_1.png" name="MILKU 코치">
+        <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">
           안녕하세요! 저는 MILKU예요. OpenChess에서는 그냥 체스를 두는 게 아니라, 왜 그 수가 좋았는지·나빴는지까지 함께 살펴봐요. 아래에서 하나씩 소개해 드릴게요.
         </SpeechBubble>
       </section>
@@ -372,6 +471,10 @@ function IntroPage() {
 
       <SectionDivider />
 
+      <ChessComSection />
+
+      <SectionDivider />
+
       <section>
         <Reveal>
           <div className="flex items-center gap-2" style={{ marginBottom: 6, justifyContent: "center" }}>
@@ -389,7 +492,7 @@ function IntroPage() {
       <SectionDivider />
 
       <section style={{ maxWidth: 640, margin: "0 auto" }}>
-        <SpeechBubble src="/emoji/kokoa_3.png" name="KOKOA 코치" align="right">
+        <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">
           친구를 추가하고 채팅하며, 서로 얼마나 풀었는지·어떤 칭호를 얻었는지 프로필에서 확인해 보세요. 퍼즐을 공유하면 친구가 풀었을 때 저도 경험치를 조금 나눠 받아요.
         </SpeechBubble>
       </section>
@@ -401,7 +504,7 @@ function IntroPage() {
             <p style={{ fontSize: 13, color: T.inkSoft, margin: 0 }}>가입 없이 게스트로도 바로 둘러볼 수 있어요.</p>
           </div>
           <div className="flex items-center" style={{ gap: 18 }}>
-            <img src="/emoji/kokoa_2.png" alt="" style={{ width: 64, height: 64, objectFit: "contain", flexShrink: 0 }} />
+            <Mascot char="kokoa" expr="celebrate" size={64} />
             <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22", whiteSpace: "nowrap" }}>
               무료로 시작하기 <ArrowRight size={16} />
             </a>
@@ -432,11 +535,103 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.1.4", date: "2026.7.18",
+    summary: "사이트 곳곳의 카드·목록에 부드러운 애니메이션을 더하고, 채팅에 실시간 타이핑 표시·메시지 수정/삭제·퍼즐 전달 기능을, 설정 탭에는 잔잔한 배경음악과 효과음을 추가했어요.",
+    mascot: {
+      intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "이번엔 퍼즐·퀘스트·상점 카드들이 툭 튀어나오는 대신 하나씩 부드럽게 떠오르며 나타나요. 훨씬 매끄러워졌을 거예요!" },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "설정 탭의 \"사운드\" 카드를 열어보세요 — 드뷔시의 \"달빛\"이 은은하게 흘러나오고, 수를 둘 때마다 나무 소리도 나요. 체스 두는 분위기에 잘 어울리죠?" },
+    },
+    highlight: { kind: "img", src: "/gm.png", label: "그랜드마스터 배지 복구" },
+    sections: [
+      { cat: "ux", items: [
+        "퍼즐 탭 카드 목록, 퀘스트 탭 챕터·퀘스트 카드, 상점 탭 스킨 목록, 친구·검색 목록, 알림, 채팅 목록이 이제 하나씩 순서대로 부드럽게 떠오르며 나타나요.",
+        "친구 요청을 수락·거절하거나 알림을 지우면, 사라지는 항목도 갑자기 없어지지 않고 부드럽게 줄어들며 퇴장해요.",
+        "집중 학습에서 퍼즐이 자동으로 만들어지는 동안, 진행률 표시만 보여주던 것을 지금 찾아낸 수를 미니 보드로 미리 보여주는 것으로 바꿨어요 — 퍼즐이 실제로 만들어지는 과정을 눈으로 볼 수 있어요.",
+        "채팅에서 상대방이 메시지를 입력하고 있으면 말풍선 점 3개가 통통 튀며 \"입력 중\"이라고 실시간으로 알려줘요.",
+      ] },
+      { cat: "feature", items: [
+        "체스판에 나무 결 질감과 파일(a~h)·랭크(1~8) 좌표를 더했어요.",
+        "체스판 장식에 폴스 메이트·스칼라스 메이트·레갈의 함정·프라이드 리버 어택·불멸의 게임(안더센 vs 키제리츠키, 1851)·오페라 게임(모피 vs 브런즈윅 공작·이수아르 백작, 1858) 같은 실제로 유명한 대국·오프닝 함정을 정확히 재현해서 보여줘요.",
+        "chess.com 계정을 연동하면 무엇을 볼 수 있는지(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률) 소개하는 섹션을 새로 추가했어요.",
+        "이 버전 기록에서 v0.1.2·v0.1.3 두 버전이 빠져 있던 것을 발견해 다시 채워 넣었어요.",
+        "채팅에서 내가 보낸 메시지를 꾹 누르면 수정하거나 삭제할 수 있어요. 수정한 메시지에는 읽음 표시처럼 \"수정됨\"이 붙어요.",
+        "채팅에 공유된 퍼즐 카드도 옆으로 당기면 보낸 시각이 보이고, 꾹 누르면 삭제하거나 \"전달\" 버튼으로 다른 친구에게 바로 다시 공유할 수 있어요.",
+        "드뷔시의 \"달빛\"이 잔잔하게 흘러나오는 배경음악과, 블록을 클릭하거나 체스판에서 수를 둘 때(기물을 잡을 땐 다른 소리로) 나는 효과음을 추가했어요. 설정 탭의 \"사운드\" 카드에서 각각 켜고 끄고 음량도 세밀하게 조절할 수 있어요.",
+      ] },
+      { cat: "fix", items: [
+        "그랜드마스터 티어 배지에 기물 대신 오로라 사진이 잘못 표시되던 오래된 문제를 완전히 해결했어요 — 헤더 배지·여정 지도·퍼즐 탭·승급 연출 전부 원래의 왕관 기물 이미지로 보여요.",
+        "티어 여정 지도가 좁은 화면(모바일)에서 오른쪽으로 밀려 잘려 보이던 문제를 고쳤어요.",
+        "퍼즐 풀이·카드의 \"공유\" 버튼 텍스트가 두 줄로 잘려 보이던 문제를 고쳤어요.",
+        "계정을 바꾸거나 로그아웃해도 이전 계정의 퍼즐·프로필 기록이 화면에 그대로 남아있던 문제를 고쳤어요.",
+      ] },
+      { cat: "ui", items: [
+        "이 페이지의 마스코트 그림을 학습 탭 등 다른 화면에서 이미 쓰던 깔끔한 그림체로 통일했어요.",
+        "티어 여정 지도에서 그랜드마스터(마지막 티어)를 가운데로 길게 강조해 \"여기가 끝\"이라는 느낌을 살렸고, 티어별 배경이 경계에서 끊기지 않고 자연스럽게 이어지도록 다듬었어요. 안내 문구 대신 이정표 아이콘을 넣었어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.1.3", date: "2026.7.17",
+    summary: "학습 탭에 엔진 상위 3줄 분석을 추가하고, 티어 여정 지도와 소개 페이지를 훨씬 풍성하게 꾸몄어요.",
+    mascot: {
+      intro: { char: "milku", expr: "great", name: "MILKU 코치", align: "left", text: "이번 버전에서는 학습 탭 메인 보드에 엔진이 추천하는 상위 3줄을 바로 보여줘요. 어떤 수가 더 좋았는지 한눈에 비교해 보세요!" },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "티어 여정 지도랑 이 소개 페이지도 훨씬 화려해졌어요. 스크롤하면서 천천히 구경해 보세요!" },
+    },
+    highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: "엔진 상위 3줄 분석", tilt: -3 },
+    sections: [
+      { cat: "feature", items: [
+        "학습 탭 메인 보드에 엔진이 추천하는 상위 3줄을 평가치와 함께 보여줘요. 줄을 누르면 그 수가 바로 보드에 놓여요.",
+        "평가치 바를 소수점 둘째 자리까지, 유리한 쪽에 맞는 위치·색으로 표시해요.",
+        "상단 기보를 옆으로 넘겨볼 수 있게 했고, 수가 늘어나면 자동으로 최신 수가 보이도록 스크롤돼요. 컴퓨터에서는 A/D 또는 </> 키로도 수를 넘길 수 있어요.",
+        "프로필 버튼을 눌러 나오는 카드에도 메인 퀘스트 진척도와 푼 퍼즐 목록이 보여요.",
+        "소개 페이지(/about)의 애니메이션을 훨씬 풍성하게 만들었어요 — 스크롤할 때마다 반복 재생되고, 실제 화면 스크린샷도 많이 넣었어요.",
+        "티어 여정 지도를 새로 단장했어요 — 이미 지나온 구간은 노란 선과 초록 체크로 표시되고, 티어마다 어울리는 배경 이미지가 스크롤에 따라 나타나요. 잠금 아이콘은 없앴고 이미지는 항상 원래 색 그대로 보여요.",
+      ] },
+      { cat: "ui", items: [
+        "퍼즐 공유 버튼을 더 잘 보이도록 진하게 바꿨어요.",
+        "헤더의 티어 진행바를 없애 더 깔끔해졌어요(자세한 진행도는 로고를 눌러 여정 지도에서 볼 수 있어요). 모든 화면에서 회색 스크롤바도 안 보이게 했어요.",
+      ] },
+      { cat: "fix", items: [
+        "프로필의 \"푼 퍼즐\" 블록이 찌그러져 보이던 문제를 고쳤고, 5개까지 옆으로 넘겨볼 수 있어요.",
+        "퍼즐·도감 모식도에서 화면을 움직일 때 가끔 멈춰버리던 문제를 고쳤어요.",
+        "퍼즐에서 컴퓨터의 응징 수 아이콘이 깜빡이던 문제를 고쳤고, 최선의 수 배지도 표시돼요.",
+        "학습 탭에서 같은 수인데 위치마다 평가치가 조금씩 다르게 보이던 문제를 고쳐 항상 똑같이 보이도록 했어요.",
+        "일부 안드로이드 기기에서 학습 탭 화면이 옆으로 밀려나 보드와 기보가 잘려 보이던 문제를 해결했어요.",
+        "일부 일일 퀘스트에서 클리어 조건 기보가 안 보이던 문제를 고쳤어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.1.2", date: "2026.7.16",
+    summary: "퍼즐 오답 시 응징 수를 보여주고, 사이트를 소개하는 /about 페이지를 새로 만들었어요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "think", name: "KOKOA 코치", align: "left", text: "이번엔 퍼즐에서 틀린 수를 두면, 상대가 그 수를 어떻게 응징하는지부터 보여드려요. 왜 틀렸는지 바로 알 수 있겠죠?" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "그리고 지금 보고 계신 이 소개 페이지도 이번에 처음 만들어졌어요. 다음 버전들도 계속 여기서 소개할게요!" },
+    },
+    highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: "오답 응징 수 시연", tilt: 3 },
+    sections: [
+      { cat: "feature", items: [
+        "퍼즐에서 틀린 수를 두면 곧장 원위치로 되돌리지 않고, 상대라면 그 수를 어떻게 응징했을지 최선의 응수를 먼저 보여준 뒤 되돌려요.",
+        "퍼즐 모식도·도감 오프닝 트리에서 블록이 하나도 없는 빈 공간까지 드래그해서 넘어갈 수 없도록 했어요.",
+        "일일 퀘스트 4개의 클리어 보상을 경험치 대신 OC 나이트 코인으로 받아요(전체 완료 보너스 50개는 그대로예요).",
+        "사이트를 소개하는 페이지를 새로 만들었어요. 좌우로 넘기면서 핵심 기능 소개와, 지금까지의 모든 버전 업데이트 내역을 마스코트 설명과 함께 자세히 볼 수 있어요. 업데이트 소식 창의 \"업데이트 내역 자세히 보기\"를 누르면 바로 이동해요.",
+      ] },
+      { cat: "fix", items: [
+        "일부 퀘스트에서 오프닝 이름 자리에 \"오프닝\"이라는 글자만 뜨던 문제를 고쳤어요.",
+        "퍼즐에서 컴퓨터가 둔 첫 수의 아이콘이 잠깐 계산 중으로 보였다가 다른 표시로 바뀌던 문제를 고쳤어요.",
+      ] },
+      { cat: "ui", items: [
+        "티어 로고 원의 크기를 줄이고 색을 사이트 톤에 맞는 금색으로 바꿨어요. 퍼즐 탭의 티어 표시도 더 작고 슬림하게 정리했어요.",
+        "헤더의 경험치 게이지 위치를 로고 아래로 옮기고, 로고 밑에는 현재 버전을 작게 표시했어요.",
+      ] },
+    ],
+  },
+  {
     version: "0.1.1", date: "2026.7.16",
     summary: "티어 UI를 실제 이미지로 전면 개편하고, 자잘한 버그를 여럿 정리했어요.",
     mascot: {
-      intro: { src: "/emoji/milku_6.png", name: "MILKU 코치", align: "left", text: "짜잔! 이번엔 티어 화면을 통째로 다시 그렸어요. 아이언부터 그랜드마스터까지, 이제 전부 진짜 그림으로 만나보세요!" },
-      outro: { src: "/emoji/kokoa_9.png", name: "KOKOA 코치", align: "right", text: "승급할 때 화면이 확 바뀌는 연출도 새로 넣었어요 — 직접 티어를 올려서 확인해 보세요!" },
+      intro: { char: "milku", expr: "great", name: "MILKU 코치", align: "left", text: "짜잔! 이번엔 티어 화면을 통째로 다시 그렸어요. 아이언부터 그랜드마스터까지, 이제 전부 진짜 그림으로 만나보세요!" },
+      outro: { char: "kokoa", expr: "celebrate", name: "KOKOA 코치", align: "right", text: "승급할 때 화면이 확 바뀌는 연출도 새로 넣었어요 — 직접 티어를 올려서 확인해 보세요!" },
     },
     highlight: { kind: "tierPromo" },
     sections: [
@@ -459,8 +654,8 @@ const VERSION_HISTORY = [
     version: "0.1.0", date: "2026.7.16",
     summary: "퍼즐을 친구에게 공유하고, 리포스트하고, 공개 프로필에서 서로의 기록을 볼 수 있게 됐어요.",
     mascot: {
-      intro: { src: "/emoji/kokoa_2.png", name: "KOKOA 코치", align: "left", text: "이번 버전의 주인공은 \"공유\"예요. 마음에 드는 퍼즐을 친구에게 바로 보내보세요!" },
-      outro: { src: "/emoji/milku_10.png", name: "MILKU 코치", align: "right", text: "친구가 제가 보낸 퍼즐을 풀면요? 저한테도 경험치가 조금 돌아와요. 두근두근!" },
+      intro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "left", text: "이번 버전의 주인공은 \"공유\"예요. 마음에 드는 퍼즐을 친구에게 바로 보내보세요!" },
+      outro: { char: "milku", expr: "great", name: "MILKU 코치", align: "right", text: "친구가 제가 보낸 퍼즐을 풀면요? 저한테도 경험치가 조금 돌아와요. 두근두근!" },
     },
     highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: "퍼즐 공유하기", tilt: -3 },
     sections: [
@@ -484,8 +679,8 @@ const VERSION_HISTORY = [
     version: "0.0.6", date: "2026.7.15",
     summary: "레벨 시스템을 랭크 게임 같은 티어로 새로 만들고, 도감 탭의 고질적인 성능·안정성 문제를 근본적으로 해결했어요.",
     mascot: {
-      intro: { src: "/emoji/kokoa_3.png", name: "KOKOA 코치", align: "left", text: "레벨을 아이언부터 그랜드마스터까지, 랭크 게임처럼 7단계 티어로 완전히 새로 만들었어요." },
-      outro: { src: "/emoji/milku_4.png", name: "MILKU 코치", align: "right", text: "그리고 도감 탭이 버벅이던 오래된 문제도 이번에 뿌리를 뽑았어요. 이제 훨씬 부드러워요." },
+      intro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "left", text: "레벨을 아이언부터 그랜드마스터까지, 랭크 게임처럼 7단계 티어로 완전히 새로 만들었어요." },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "그리고 도감 탭이 버벅이던 오래된 문제도 이번에 뿌리를 뽑았어요. 이제 훨씬 부드러워요." },
     },
     highlight: { kind: "tierStrip" },
     sections: [
@@ -515,8 +710,8 @@ const VERSION_HISTORY = [
     version: "0.0.5", date: "2026.7.14",
     summary: "서버 보안을 강화하고, 알림·채팅이 실시간으로 갱신되도록 개선했어요.",
     mascot: {
-      intro: { src: "/emoji/kokoa_10.png", name: "KOKOA 코치", align: "left", text: "이번엔 눈에 보이지 않는 곳을 손봤어요 — 서버 쪽 보안 구멍 세 군데를 막았답니다." },
-      outro: { src: "/emoji/milku_5.png", name: "MILKU 코치", align: "right", text: "알림이랑 채팅도 이제 실시간으로 훨씬 빠르게 와요." },
+      intro: { char: "kokoa", expr: "think", name: "KOKOA 코치", align: "left", text: "이번엔 눈에 보이지 않는 곳을 손봤어요 — 서버 쪽 보안 구멍 세 군데를 막았답니다." },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "알림이랑 채팅도 이제 실시간으로 훨씬 빠르게 와요." },
     },
     highlight: { kind: "icon", Icon: Shield, color: "#D9736A", label: "서버 보안 강화" },
     sections: [
@@ -532,8 +727,8 @@ const VERSION_HISTORY = [
     version: "0.0.4", date: "2026.7.13",
     summary: "게임 리뷰 속도를 크게 끌어올리고, 퍼즐 생성·풀이 과정의 버그를 여럿 고쳤어요.",
     mascot: {
-      intro: { src: "/emoji/milku_11.png", name: "MILKU 코치", align: "left", text: "게임 리뷰가 느리다는 얘기, 저도 들었어요. 그래서 이번엔 속도를 확 끌어올렸어요." },
-      outro: { src: "/emoji/kokoa_7.png", name: "KOKOA 코치", align: "right", text: "퍼즐 만들다가 화면을 나가도 이제 처음부터 다시 안 만들어도 돼요." },
+      intro: { char: "milku", expr: "think", name: "MILKU 코치", align: "left", text: "게임 리뷰가 느리다는 얘기, 저도 들었어요. 그래서 이번엔 속도를 확 끌어올렸어요." },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "퍼즐 만들다가 화면을 나가도 이제 처음부터 다시 안 만들어도 돼요." },
     },
     highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: "학습 탭 실시간 분석", tilt: 3 },
     sections: [
@@ -554,8 +749,8 @@ const VERSION_HISTORY = [
     version: "0.0.3", date: "2026.7.13",
     summary: "도감 탭 오프닝 트리를 나침반 모양으로 새롭게 디자인했어요.",
     mascot: {
-      intro: { src: "/emoji/milku_7.png", name: "MILKU 코치", align: "left", text: "도감 탭 오프닝 트리를 나침반처럼 동서남북으로 뻗어나가게 다시 그렸어요." },
-      outro: { src: "/emoji/kokoa_4.png", name: "KOKOA 코치", align: "right", text: "트리가 그려지는 동안 화면이 흔들리던 것도 이번에 다 잡았어요." },
+      intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "도감 탭 오프닝 트리를 나침반처럼 동서남북으로 뻗어나가게 다시 그렸어요." },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "트리가 그려지는 동안 화면이 흔들리던 것도 이번에 다 잡았어요." },
     },
     highlight: { kind: "shot", src: "/about/screenshot-dex.webp", label: "나침반형 오프닝 트리", tilt: -3 },
     sections: [
@@ -570,8 +765,8 @@ const VERSION_HISTORY = [
     version: "0.0.2", date: "2026.7.12",
     summary: "게임 리뷰가 느려지다 멈추던 문제를 해결했어요.",
     mascot: {
-      intro: { src: "/emoji/milku_12.png", name: "MILKU 코치", align: "left", text: "긴 대국을 리뷰하면 느려지다 멈추는 것 같았죠? 저도 답답했어요." },
-      outro: { src: "/emoji/kokoa_9.png", name: "KOKOA 코치", align: "right", text: "이제 훨씬 정확하고 빠르게 계산해요. 확인해 보세요!" },
+      intro: { char: "milku", expr: "think", name: "MILKU 코치", align: "left", text: "긴 대국을 리뷰하면 느려지다 멈추는 것 같았죠? 저도 답답했어요." },
+      outro: { char: "kokoa", expr: "celebrate", name: "KOKOA 코치", align: "right", text: "이제 훨씬 정확하고 빠르게 계산해요. 확인해 보세요!" },
     },
     highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: "실시간 분석 성능 개선" },
     sections: [
@@ -583,8 +778,8 @@ const VERSION_HISTORY = [
     version: "0.0.1", date: "2026.7.11",
     summary: "모바일 UI를 정리하고, 여러 화면의 자잘한 사용성을 다듬었어요.",
     mascot: {
-      intro: { src: "/emoji/milku_1.png", name: "MILKU 코치", align: "left", text: "베타를 열고 나서 처음 받은 피드백들을 하나씩 다듬은 버전이에요." },
-      outro: { src: "/emoji/kokoa_1.png", name: "KOKOA 코치", align: "right", text: "모바일 화면도, 로그인 창도 한결 매끄러워졌을 거예요." },
+      intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "베타를 열고 나서 처음 받은 피드백들을 하나씩 다듬은 버전이에요." },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "모바일 화면도, 로그인 창도 한결 매끄러워졌을 거예요." },
     },
     highlight: { kind: "shot", src: "/about/screenshot-quest.webp", label: "구석구석 다듬기", tilt: 3 },
     sections: [
@@ -613,8 +808,8 @@ const VERSION_HISTORY = [
     version: "0.0.0", date: "2026.7.10",
     summary: "OpenChess 베타 서비스를 시작했어요.",
     mascot: {
-      intro: { src: "/emoji/kokoa_2.png", name: "KOKOA 코치", align: "left", text: "안녕하세요! OpenChess 베타를 시작합니다. 오프닝 학습이랑 퍼즐 풀이, 핵심만 먼저 들고 왔어요." },
-      outro: { src: "/emoji/milku_2.png", name: "MILKU 코치", align: "right", text: "앞으로 계속 다듬어 나갈게요. 잘 부탁드려요!" },
+      intro: { char: "kokoa", expr: "celebrate", name: "KOKOA 코치", align: "left", text: "안녕하세요! OpenChess 베타를 시작합니다. 오프닝 학습이랑 퍼즐 풀이, 핵심만 먼저 들고 왔어요." },
+      outro: { char: "milku", expr: "great", name: "MILKU 코치", align: "right", text: "앞으로 계속 다듬어 나갈게요. 잘 부탁드려요!" },
     },
     highlight: { kind: "icon", Icon: Rocket, color: "#8FB55E", label: "OpenChess 베타 출시" },
     sections: [
@@ -683,9 +878,26 @@ function ShotHighlight({ src, label, tilt = 0 }) {
     </Reveal>
   );
 }
+// (v0.1.4 기능) 그랜드마스터 배지 복구를 소개하는 v0.1.4 하이라이트 전용 — 로고 원본(gm.png,
+// 기물+"GM" 워드마크 합성본)을 IconHighlight와 같은 펄스 글로우로 감싸되, 작은 반복 배지(TierBadgeShape)
+// 안에 욱여넣지 않고 워드마크가 실제로 읽히는 크기로 그대로 보여준다.
+function ImageHighlight({ src, label }) {
+  return (
+    <Reveal>
+      <div className="flex flex-col items-center" style={{ gap: 10, margin: "8px 0 28px" }}>
+        <motion.div animate={{ boxShadow: ["0 0 0 0 " + T.brass + "55", "0 0 0 16px " + T.brass + "00"] }} transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+          style={{ width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(70% 70% at 32% 28%,#FFFFFF22," + T.brass + "22)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <img src={src} alt="" style={{ width: "78%", height: "78%", objectFit: "contain" }} />
+        </motion.div>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi }}>{label}</span>
+      </div>
+    </Reveal>
+  );
+}
 function VersionHighlight({ h }) {
   if (!h) return null;
   if (h.kind === "icon") return <IconHighlight Icon={h.Icon} color={h.color} label={h.label} />;
+  if (h.kind === "img") return <ImageHighlight src={h.src} label={h.label} />;
   if (h.kind === "shot") return <ShotHighlight src={h.src} label={h.label} tilt={h.tilt} />;
   if (h.kind === "tierStrip") return (
     <Reveal><div style={{ margin: "8px 0 28px", padding: "18px 14px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER }}><TierStrip /></div></Reveal>
@@ -758,7 +970,7 @@ function VersionPage({ v, isLatest, idx = 0 }) {
 
       {v.mascot && (
         <div style={{ marginBottom: 8 }}>
-          <SpeechBubble src={v.mascot.intro.src} name={v.mascot.intro.name} align={v.mascot.intro.align}>{v.mascot.intro.text}</SpeechBubble>
+          <SpeechBubble mascot={v.mascot.intro} name={v.mascot.intro.name} align={v.mascot.intro.align}>{v.mascot.intro.text}</SpeechBubble>
         </div>
       )}
 
@@ -768,7 +980,7 @@ function VersionPage({ v, isLatest, idx = 0 }) {
 
       {v.mascot && (
         <div style={{ marginTop: 28 }}>
-          <SpeechBubble src={v.mascot.outro.src} name={v.mascot.outro.name} align={v.mascot.outro.align}>{v.mascot.outro.text}</SpeechBubble>
+          <SpeechBubble mascot={v.mascot.outro} name={v.mascot.outro.name} align={v.mascot.outro.align}>{v.mascot.outro.text}</SpeechBubble>
         </div>
       )}
     </div>

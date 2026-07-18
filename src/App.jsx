@@ -5,7 +5,7 @@ import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronDown,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2,
+  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -21,6 +21,24 @@ const T = {
   book: "#8A5A2B", arrow: "#C49A50",
 };
 const FILES = "abcdefgh";
+// (v0.1.4 기능) "사이트 전체 카드·블록에 애니메이션을 적용해 더 부드러운 UX를 달라"는 요청 — 지금까지
+// motion은 티어 여정 지도·승급 연출에만 쓰이고 있었고, 퍼즐 카드·퀘스트 카드·상점 카드·친구 목록 같은
+// 나머지 화면은 전부 즉시 나타나는 정적 div였다. /about 페이지의 Reveal과 같은 easing으로, 카드
+// 컴포넌트 자체는 건드리지 않고 리스트를 그리는 .map() 호출부에서만 감싸는 방식으로 적용한다 —
+// 카드 내부 로직(좋아요·풀이 상태 등)을 그대로 둔 채 등장(살짝 뜨며 페이드 인, 인덱스만큼 스태거)·
+// 퇴장(AnimatePresence로 부드럽게 축소되며 사라짐) 애니메이션만 얇게 씌운다.
+const MOTION_EASE = [0.22, 0.9, 0.32, 1];
+// (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
+// 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
+// 냈다(학습 탭 수 블록 목록에서 발견). forwardRef로 감싸 motion.div에 그대로 전달한다.
+const FadeIn = React.forwardRef(function FadeIn({ children, index = 0, y = 12, layout = true, className, style }, ref) {
+  return (
+    <motion.div ref={ref} layout={layout} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
+      transition={{ duration: 0.32, delay: Math.min(index, 12) * 0.035, ease: MOTION_EASE }} className={className} style={style}>
+      {children}
+    </motion.div>
+  );
+});
 // (디자인) 보드 테두리에 금색 광택(gloss) 효과 — 단색 브라스 테두리 대신 대각선 그러데이션
 // borderImage + 안쪽 하이라이트/바깥 그림자 boxShadow로 금속 광택감을 낸다. 메인 보드와
 // 사이트 전체의 모든 미니 체스보드(애니메이션·되돌리기·퍼즐 등)에서 공용으로 쓴다.
@@ -208,7 +226,7 @@ const TIER_IMAGE = {
   gold: "/gold-rook.png",
   diamond: "/diamond-queen.png",
   master: "/master-king.png",
-  grandmaster: "/grandmaster.png",
+  grandmaster: "/gm-piece.png",
 };
 // (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
 // 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
@@ -392,6 +410,31 @@ function loadEnginePref() {
   return defaultEnginePref();
 }
 function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, v); } catch { } }
+// (v0.1.4 기능) 배경음악(BGM) on/off 기기별 저장 — 브라우저 자동재생 정책상 첫 방문에는 소리 있는
+// 재생이 항상 막히므로, 이 값은 "사용자의 의도"만 기억하고 실제 재생 성공 여부는 <audio> 이벤트로
+// 별도 추적한다(loadBgmPref()가 true여도 처음엔 무음 상태로 시작할 수 있음 — 버튼을 한 번 누르면
+// 재생되고, 그 이후 방문부터는 브라우저가 자동재생을 허용해 줄 수도 있다).
+function loadBgmPref() { try { return window.localStorage.getItem("occ_bgm_on") !== "0"; } catch { return true; } }
+function saveBgmPref(v) { try { window.localStorage.setItem("occ_bgm_on", v ? "1" : "0"); } catch { } }
+function loadBgmVolume() { try { const v = parseFloat(window.localStorage.getItem("occ_bgm_vol")); return isNaN(v) ? 0.35 : Math.min(1, Math.max(0, v)); } catch { return 0.35; } }
+function saveBgmVolume(v) { try { window.localStorage.setItem("occ_bgm_vol", String(v)); } catch { } }
+// (v0.1.4 기능) 효과음(SFX) — 블록 클릭 + 체스판 위 수(이동/기물 포획)에 짧은 효과음을 재생한다.
+// BGM과 달리 항상 실제 사용자 클릭 제스처 안에서 재생을 시작하므로 자동재생 정책에 걸릴 일이 없어,
+// 매번 즉석에서 새 Audio 인스턴스를 만들어 재생한다(연타해도 이전 소리와 겹쳐 들리도록). go()/tryUserMove()처럼
+// 최상위 App 컴포넌트와 멀리 떨어진 곳에서도 prop 없이 바로 쓸 수 있도록 설정값은 그때그때 localStorage에서 읽는다.
+function loadSfxPref() { try { return window.localStorage.getItem("occ_sfx_on") !== "0"; } catch { return true; } }
+function saveSfxPref(v) { try { window.localStorage.setItem("occ_sfx_on", v ? "1" : "0"); } catch { } }
+function loadSfxVolume() { try { const v = parseFloat(window.localStorage.getItem("occ_sfx_vol")); return isNaN(v) ? 0.6 : Math.min(1, Math.max(0, v)); } catch { return 0.6; } }
+function saveSfxVolume(v) { try { window.localStorage.setItem("occ_sfx_vol", String(v)); } catch { } }
+const SFX_SRC = { click: "/sfx/click.mp3", move: "/sfx/move.mp3", capture: "/sfx/capture.mp3" };
+function playSfx(name) {
+  if (!loadSfxPref()) return;
+  const src = SFX_SRC[name]; if (!src) return;
+  try { const el = new Audio(src); el.volume = loadSfxVolume(); el.play().catch(() => { }); } catch { }
+}
+// (v0.1.4 기능) SAN 표기상 포획 수는 항상 "x"를 포함(앙파상 포함) — 이 규칙만으로 클릭/무브 소리 중
+// 어느 쪽을 재생할지 나무 "탁" 소리(clack)와 "퍽" 소리(thud, 기물이 실제로 잡히는 느낌)로 나눈다.
+function playMoveSfx(san) { playSfx(san && san.includes("x") ? "capture" : "move"); }
 // Lichess Explorer가 로그인(OAuth 토큰)을 요구하므로, 토큰을 서버에만 보관하는
 // /api/lichess 프록시(Vercel 서버리스 함수, api/lichess.js)를 거쳐 호출한다.
 const LICHESS_API = "/api/lichess";
@@ -870,7 +913,10 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
-  const bumpNode = () => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes)); };
+  // (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — 진행률 숫자만 보내던
+  // 것을, 지금 막 탐색해 늘어난 수순(path)도 함께 실어 보낸다. 집중 학습 화면이 이 path로 미니 보드를
+  // 그 자리에서 계속 갱신하며, 실제로 트리가 만들어지는 과정을 그대로 시각화할 수 있게 한다.
+  const bumpNode = (path) => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes), path); };
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
   async function expand(cur, depth, sawUserCapture) {
     if (depth >= maxPlies || nodeCount >= maxNodes) return [];
@@ -906,9 +952,9 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
       if (nodeCount >= maxNodes && out.length) break;
       const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(c.kind) : true;
       const node = { san: c.san, kind: c.kind, ev: c.ev, adopt: c.adopt, pass, children: [] };
-      bumpNode();
-      if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       const cur2 = [...cur, c.san];
+      bumpNode(cur2);
+      if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       if (isUserTurn) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
@@ -942,8 +988,8 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
     const color = preSans.length % 2 === 0 ? "w" : "b";
     if (!sanSrc(brd, stripSuffix(firstSan), color)) return null;
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
-    bumpNode();
     const cur2 = [...preSans, firstSan];
+    bumpNode(cur2);
     try { const ev2 = await engine.evaluate(sansToFen(cur2), 8); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
       const lc = await fetchLichess(preSans, false);
@@ -3353,13 +3399,25 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 13px", borderRadius: 10, background: T.ebony2, border: "1px solid #000" }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: T.brassHi, whiteSpace: "nowrap" }}>퍼즐을 생성하는 중입니다…</span>
                 <div style={{ width: 56, height: 6, borderRadius: 999, background: "rgba(255,255,255,.18)", overflow: "hidden", flexShrink: 0 }}>
-                  <div style={{ width: Math.round((puzzleGenProgress || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
+                  <div style={{ width: Math.round(((puzzleGenProgress && puzzleGenProgress.p) || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
                 </div>
               </div>
             )
           )}
         </div>
       </div>
+      {/* (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — genPuzzleTree가
+          진행 중 실제로 탐색해 낸 수순(puzzleGenProgress.path)을 AnimatedMove로 그때그때 재생해,
+          정지된 진행 바 대신 퍼즐이 실제로 만들어지는 과정을 눈으로 볼 수 있게 한다. 새 수를 찾을
+          때마다 path가 늘어나며 그 마지막 수가 슬라이드되어 들어오는 걸 반복(loopMs 없이 1회씩)한다. */}
+      <AnimatePresence>
+        {expectedPuzzleId && !(existingPuzzle && existingPuzzle.tree) && puzzleGenProgress && puzzleGenProgress.path && puzzleGenProgress.path.length > 0 && (
+          <motion.div key="gen-preview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: MOTION_EASE }} style={{ marginBottom: 12 }}>
+            <AnimatedMove sans={puzzleGenProgress.path.slice(0, -1)} san={puzzleGenProgress.path[puzzleGenProgress.path.length - 1]} size={120} loopMs={0} />
+            <div style={{ textAlign: "center", fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>퍼즐을 만드는 중이에요 — 지금 찾아낸 수를 미리 보여드릴게요</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* 헤더: 아이콘 · 수/이름(크게) · 평가치 */}
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         <CircleBadge kind={kind} big />
@@ -3846,6 +3904,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   }, [key, liveOn, engine.status]);
 
   const go = useCallback((san, isExtra) => {
+    playMoveSfx(san);   // (v0.1.4 기능) 수 블록 클릭·드래그·엔진 라인 클릭·프로모션 전부 이 함수 하나로 모이므로 여기 한 곳에서만 재생하면 된다.
     if (isExtra) setExtra((prev) => { const cur = prev[key] || []; if (cur.includes(san)) return prev; return { ...prev, [key]: [...cur, san] }; });
     const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(san));
     stampQ(sans, board, color, san, mm);
@@ -5345,14 +5404,14 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
           <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>보드 스킨과 기물 스킨을 모아볼 수 있어요. 기본 스킨은 누구나 바로 장착할 수 있고, 상점에서 구매한 스킨은 여기서도 장착·구매할 수 있습니다. 아직 얻지 못한 스킨도 미리 볼 수 있어요.</p>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-            {Object.entries(BOARD_SKINS).map(([id, sk]) => (
-              <SkinShopCard key={id} kind="board" id={id} sk={sk} owned={(ownedSkins || new Set()).has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+            {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
+              <FadeIn key={id} index={i}><SkinShopCard kind="board" id={id} sk={sk} owned={(ownedSkins || new Set()).has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
             ))}
           </div>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>기물 스킨</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {Object.entries(PIECE_SKINS).map(([id, sk]) => (
-              <SkinShopCard key={id} kind="piece" id={id} sk={sk} owned={(ownedSkins || new Set()).has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+            {Object.entries(PIECE_SKINS).map(([id, sk], i) => (
+              <FadeIn key={id} index={i}><SkinShopCard kind="piece" id={id} sk={sk} owned={(ownedSkins || new Set()).has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
             ))}
           </div>
         </div>
@@ -5851,7 +5910,10 @@ const TIERS = [
   { key: "gold", label: "골드", piece: "R" },
   { key: "diamond", label: "다이아몬드", piece: "Q" },
   { key: "master", label: "마스터", piece: "K" },
-  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // grandmaster.png(왕관에 "GM" 각인) 사용
+  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // gm-piece.png(왕관에 "GM" 각인) 사용
+  // (v0.1.4 버그 수정) 한때 이 자리가 "grandmaster.png"를 가리켰는데, 그 파일이 GitHub 웹 업로드로
+  // 아우로라 사진에 덮어써진 채 방치돼 배지에 배경 사진이 뜨는 버그가 있었다 — 파일명 충돌을 아예
+  // 없애기 위해 원본 기물 아이콘을 gm-piece.png로 새로 받아 교체.
 ];
 // (기능) 실제 티어 기물 이미지(public/iron-pawn.png 등)에서 뽑아낸 대표 색 — 배지 테두리·글로우·
 // 진행바가 그 이미지의 실제 톤과 어긋나지 않도록, 이미지를 새로 받을 때마다 이 값도 함께 맞춘다.
@@ -6772,6 +6834,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const tryUserMove = (from, to) => {
     if (!userToMove) return;
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep); if (!san) return;
+    playMoveSfx(san);   // (v0.1.4 기능) 정답/오답과 무관하게, 실제로 보드 위에 기물을 놓는 물리적 동작 자체에 대한 소리
     const hit = (curNode.children || []).find((c) => stripSuffix(c.san) === stripSuffix(san));
     // (기능1) 유저 진영에서는 '통과 가능(최선·우수)' 수만 다음 단계로 — 모식도에 표시만 되는 유혹 수도 오답 처리
     if (hit && hit.pass !== false) { setSel(null); setPathNodes((p) => [...p, hit]); }
@@ -7070,7 +7133,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
               </button>
               {/* (v0.1.3 UI) PuzzleCard와 동일하게 라운딩된 사각형 배지(텍스트 포함)로 변경 */}
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 13px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }} aria-label="공유하기" title="공유하기">
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 13px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }} aria-label="공유하기" title="공유하기">
                 <Send size={12} color={T.brass} />공유
               </button>}
             </div>
@@ -7275,7 +7338,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             </button>}
             {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
                 눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 11px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer" }}>
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 11px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
               <Send size={10} color={T.brass} />공유
             </button>}
           </div>
@@ -7492,7 +7555,7 @@ function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, con
               </button>
               {isOpen && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 10px 10px" }}>
-                  {pg.rows.map(([k, ch], ri) => <ChapterRow key={k} ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={ri > rowUnlockedIdx} />)}
+                  {pg.rows.map(([k, ch], ri) => <FadeIn key={k} index={ri}><ChapterRow ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={ri > rowUnlockedIdx} /></FadeIn>)}
                 </div>
               )}
             </div>
@@ -7638,8 +7701,8 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     <div>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 퀘스트 아이콘과 중복돼 제거. */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
-      <MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />
-      <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} />
+      <FadeIn index={0}><MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
+      <FadeIn index={1}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} /></FadeIn>
     </div>
   );
 }
@@ -7785,7 +7848,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           </div>
           {recommended.length > 0 ? (
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
-              {recommended.map((p) => <PuzzleCard key={"rec-" + p.id} p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}
+              <AnimatePresence mode="popLayout">
+                {recommended.map((p, i) => <FadeIn key={"rec-" + p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}
+              </AnimatePresence>
             </div>
           ) : (
             <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: "14px 16px", color: T.inkSoft, fontSize: 12.5 }}>
@@ -7796,12 +7861,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       )}
       {themed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 테마의 퍼즐이 아직 없어요.</div>
         : <div>
-            {open.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div><div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{open.map((p) => <PuzzleCard key={p.id} p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}</div></div>}
+            {open.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div><div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}><AnimatePresence mode="popLayout">{open.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence></div></div>}
             {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
               {clearedByOpening.map(([op, list]) => (
                 <div key={op} style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 2 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>{list.map((p) => <PuzzleCard key={p.id} p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} />)}</div>
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}><AnimatePresence mode="popLayout">{list.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence></div>
                 </div>
               ))}
             </div>}
@@ -8418,6 +8483,25 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.1.4", date: "2026.7.18", items: [
+      "소개 페이지(/about)의 체스판에 나무 결 질감과 좌표 표기를 더하고, 폴스 메이트·스칼라스 메이트·레갈의 함정·프라이드 리버 어택·불멸의 게임·오페라 게임처럼 실제로 유명한 대국·오프닝 함정을 정확히 재현해서 보여줘요.",
+      "소개 페이지에 chess.com 연동 기능(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률)을 소개하는 섹션을 새로 추가했어요.",
+      "소개 페이지의 버전 업데이트 기록에서 v0.1.2·v0.1.3 두 버전이 빠져 있던 것을 찾아 다시 채워 넣었어요.",
+      "소개 페이지 마스코트 그림을 학습 탭 등에서 이미 쓰던 깔끔한 그림체로 통일했어요.",
+      "그랜드마스터 티어 배지에 기물 대신 오로라 사진이 잘못 표시되던 문제를 고쳤어요 — 헤더 배지·여정 지도·퍼즐 탭·승급 연출 전부 원래의 왕관 기물 이미지로 보여요.",
+      "퍼즐·퀘스트·상점 카드, 친구·검색 목록, 알림, 채팅 목록이 이제 툭 튀어나오는 대신 하나씩 부드럽게 떠오르며 나타나요. 친구 요청을 수락·거절하거나 알림을 지우면 목록에서도 부드럽게 사라져요.",
+      "집중 학습에서 퍼즐이 만들어지는 동안, 그냥 기다리는 대신 지금 찾아낸 수를 미니 보드에 미리 보여줘요.",
+      "티어 여정 지도에서 그랜드마스터(마지막 티어)를 가운데로 크게 강조하고, 티어별 배경이 자연스럽게 이어지도록 다듬었어요. 안내 문구 대신 이정표 아이콘을 넣었어요.",
+      "여정 지도가 좁은 화면(모바일)에서 오른쪽으로 밀려 잘려 보이던 문제를 고쳤어요.",
+      "퍼즐 풀이·카드의 \"공유\" 버튼 텍스트가 두 줄로 잘려 보이던 문제를 고쳤어요.",
+      "계정을 바꾸거나 로그아웃해도 이전 계정의 퍼즐·프로필 기록이 화면에 그대로 남아있던 문제를 고쳤어요.",
+      "채팅에서 상대방이 메시지를 입력하고 있으면 말풍선 점 3개가 통통 튀며 \"입력 중\"이라고 알려줘요.",
+      "채팅에서 내가 보낸 메시지를 꾹 누르면 수정하거나 삭제할 수 있어요. 수정한 메시지에는 \"수정됨\" 표시가 붙어요.",
+      "채팅에 공유된 퍼즐 카드도 옆으로 당기면 보낸 시각이 보이고, 꾹 누르면 삭제하거나 다른 친구에게 다시 전달할 수 있어요.",
+      "앤티크한 체스 분위기에 어울리는 드뷔시의 \"달빛\"이 잔잔하게 흘러나오는 배경음악을 추가했어요. 블록을 클릭하거나 체스판에서 수를 둘 때(기물을 잡을 땐 다른 소리로) 나는 효과음도 더했어요. 설정 탭의 \"사운드\" 카드에서 각각 켜고 끄고, 음량도 세밀하게 조절할 수 있어요.",
+    ],
+  },
+  {
     version: "0.1.3", date: "2026.7.17", items: [
       "학습 탭 메인 보드에 엔진이 추천하는 상위 3줄을 평가치와 함께 보여줘요. 줄을 누르면 그 수가 바로 보드에 놓여요.",
       "평가치 바를 소수점 둘째 자리까지, 유리한 쪽에 맞는 위치·색으로 표시해요.",
@@ -8657,7 +8741,7 @@ function DevXpPanel({ totalXp, setTotalXp, card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -8758,6 +8842,33 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           })}
         </div>
         <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(이 기기에서만 기억돼요).</p>
+      </div>
+
+      {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
+          (헤더에는 따로 두지 않는다 — 조절은 항상 설정 탭에서만.) */}
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>사운드</div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {bgmOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>배경음악</span>
+          </div>
+          <button onClick={onToggleBgm} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: bgmOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: bgmOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        </div>
+        <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => onBgmVolumeChange(parseFloat(e.target.value))} disabled={!bgmOn} aria-label="배경음악 음량" style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: bgmOn ? 1 : 0.4, cursor: bgmOn ? "pointer" : "default" }} />
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>앤티크한 체스 분위기의 잔잔한 배경음악이에요.</p>
+
+        <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {sfxOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>효과음</span>
+          </div>
+          <button onClick={onToggleSfx} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sfxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: sfxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        </div>
+        <input type="range" min={0} max={1} step={0.05} value={sfxVolume} onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))} disabled={!sfxOn} aria-label="효과음 음량" style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: sfxOn ? 1 : 0.4, cursor: sfxOn ? "pointer" : "default" }} />
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>블록을 클릭하거나 체스판에서 수를 둘 때(포획 시엔 다른 소리) 나는 짧은 효과음이에요.</p>
       </div>
 
       {/* (18차 보충 기능3) 전역 퍼즐 수 길이 상한 설정은 삭제 — 개별 퍼즐의 수 길이는 퍼즐 풀이 창에서 개발자가 직접 조정한다. */}
@@ -8924,14 +9035,14 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-        {Object.entries(BOARD_SKINS).map(([id, sk]) => (
-          <SkinShopCard key={id} kind="board" id={id} sk={sk} owned={ownedSkins.has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+        {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
+          <FadeIn key={id} index={i}><SkinShopCard kind="board" id={id} sk={sk} owned={ownedSkins.has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
         ))}
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>기물 스킨</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {Object.entries(PIECE_SKINS).map(([id, sk]) => (
-          <SkinShopCard key={id} kind="piece" id={id} sk={sk} owned={ownedSkins.has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} />
+        {Object.entries(PIECE_SKINS).map(([id, sk], i) => (
+          <FadeIn key={id} index={i}><SkinShopCard kind="piece" id={id} sk={sk} owned={ownedSkins.has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
         ))}
       </div>
     </div>
@@ -9120,6 +9231,10 @@ async function chatFetch(myUid, otherUid) {
   } catch { return []; }
 }
 async function chatMarkRead(rows) { if (!SB_ON || !rows || !rows.length) return; try { await Promise.all(rows.filter((r) => r.id != null).map((r) => sbPatch("chat_messages", "id=eq." + r.id, { read: true }).catch(() => {}))); } catch { } }
+// (v0.1.4 기능) 채팅 메시지 수정/삭제 — 수정은 소유권 검증이 필요해 RPC로, 삭제는 puzzle_likes와
+// 같은 RLS 소유자 delete 정책 패턴으로 REST DELETE를 직접 쓴다(notifyDelete와 달리 정책이 있다).
+async function chatEditMessage(id, body) { if (!SB_ON || id == null) return false; try { await sbRpc("chat_edit_message", { p_id: id, p_body: body }); return true; } catch { return false; } }
+async function chatDeleteMessage(id) { if (!SB_ON || id == null) return false; try { const r = await fetch(SB_URL + "/rest/v1/chat_messages?id=eq." + id, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); return r.ok; } catch { return false; } }
 // (18차 UX7) 채팅 모아보기 — 내가 포함된 최근 메시지를 상대별로 묶기 위한 전체 조회.
 async function chatFetchAll(myUid) { if (!SB_ON || !myUid) return []; try { return (await sbSelect("chat_messages?or=(from_uid.eq." + myUid + ",to_uid.eq." + myUid + ")&order=created_at.desc&limit=200")) || []; } catch { return []; } }
 async function friendEdges() { if (!SB_ON) return []; try { const rows = await sbSelect("friend_edges?select=from_uid,to_uid,status"); return rows || []; } catch { return []; } }
@@ -9209,16 +9324,19 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
         <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
+      <AnimatePresence>
       {open && (
-        <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
+        <motion.div initial={{ opacity: 0, y: -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.97 }} transition={{ duration: 0.18, ease: MOTION_EASE }}
+          onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
           <div className="flex items-center justify-between" style={{ padding: "10px 14px", borderBottom: "1px solid #E4D5B6" }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>알림</span>
             {items.length > 0 && <button onClick={clearAll} className="press" style={{ padding: "3px 8px", borderRadius: 6, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, border: "1px solid #C9B58C", cursor: "pointer" }}>전체 삭제</button>}
           </div>
           {items.length === 0 ? <div style={{ padding: 16, fontSize: 12, color: T.inkSoft }}>알림이 없습니다.</div> : (
             <div>
-              {items.map((n) => { const result = n.payload && n.payload.result; return (
-                <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderBottom: "1px solid #EFE3C8" }}>
+              <AnimatePresence>
+              {items.map((n, i) => { const result = n.payload && n.payload.result; return (
+                <FadeIn key={n.id} index={i} y={6} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderBottom: "1px solid #EFE3C8" }}>
                   <span style={{ marginTop: 1 }}>{notifIcon(n.kind)}</span>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 12, color: T.ink, lineHeight: 1.4 }}>{notifText(n)}</div>
@@ -9233,12 +9351,14 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
                     ))}
                   </div>
                   <button onClick={() => removeOne(n)} aria-label="알림 삭제" className="press" style={{ flexShrink: 0, width: 20, height: 20, marginTop: 1, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, lineHeight: 1 }}>×</button>
-                </div>
+                </FadeIn>
               ); })}
+              </AnimatePresence>
             </div>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -9339,6 +9459,12 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  // (v0.1.4 기능) 수정 중인 메시지 id — 설정돼 있으면 입력창은 그 메시지 본문을 수정하는 모드로 동작.
+  const [editingId, setEditingId] = useState(null);
+  // (v0.1.4 기능) 꾹 눌러 연 수정/삭제(또는 전달/삭제) 메뉴가 떠 있는 메시지 id.
+  const [menuFor, setMenuFor] = useState(null);
+  // (v0.1.4 기능) 퍼즐 카드의 "전달" 버튼으로 다른 친구에게 다시 공유할 때 띄우는 시트의 대상 퍼즐.
+  const [forwardTarget, setForwardTarget] = useState(null);
   // (v0.1.0) 퍼즐 공유 카드 미리보기 — puzzle_no가 설정된 메시지가 보이면 그 번호의 퍼즐 데이터를
   // 지연 조회해 캐싱한다(no -> 퍼즐 데이터 | null(찾을 수 없음), 아직 없으면 로딩 중으로 취급).
   const [puzzlePreviews, setPuzzlePreviews] = useState({});
@@ -9356,6 +9482,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   // (18차 보충 UX7) 인스타그램식 홀드-드래그 — 메시지를 좌우로 밀면 생긴 공간에 보낸 시각을 표시(내용은 유지).
   const [drag, setDrag] = useState(null);       // { id, dx }
   const dragRef = useRef(null);                  // { id, startX, mine }
+  // (v0.1.4 기능) 꾹 누르기(long-press) 판정 — 드래그와 같은 down/move/up 핸들러를 공유하되, 큰 이동이
+  // 없이 일정 시간 눌려 있으면 수정/삭제(또는 전달/삭제) 메뉴를 연다.
+  const longPressTimerRef = useRef(null);
   const listRef = useRef(null);
   const load = useCallback(async () => {
     const rows = await chatFetch(myUid, otherUid);
@@ -9374,13 +9503,67 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   }, [load, otherUid]);
   useRealtimeTable("chat_messages", myUid ? "to_uid=eq." + myUid : null, onRt, !!(myUid && otherUid), 60000);
   useRealtimeTable("chat_messages", myUid ? "from_uid=eq." + myUid : null, onRt, !!(myUid && otherUid), 60000);
-  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [msgs.length]);
+  // (v0.1.4 기능) 실시간 타이핑 표시 — DB에 쓰지 않는 Supabase Realtime broadcast 채널을 대화 상대와
+  // 공유(두 uid를 정렬해 채널명을 고정)해, 입력창에 글자를 칠 때마다 가벼운 "타이핑 중" 신호만 주고받는다.
+  // self: false라 내가 보낸 신호는 내게 되돌아오지 않으므로, 이 채널에서 받는 이벤트는 항상 상대방 것이다.
+  const [otherTyping, setOtherTyping] = useState(false);
+  const typingChanRef = useRef(null);
+  const typingHideRef = useRef(null);
+  const lastTypingSentRef = useRef(0);
+  useEffect(() => {
+    if (!sbClient || !myUid || !otherUid) return;
+    const chanName = "typing:" + [myUid, otherUid].sort().join(":");
+    const channel = sbClient.channel(chanName, { config: { broadcast: { self: false } } });
+    channel.on("broadcast", { event: "typing" }, () => {
+      setOtherTyping(true);
+      clearTimeout(typingHideRef.current);
+      typingHideRef.current = setTimeout(() => setOtherTyping(false), 2500);
+    }).subscribe();
+    typingChanRef.current = channel;
+    return () => { sbClient.removeChannel(channel); typingChanRef.current = null; clearTimeout(typingHideRef.current); setOtherTyping(false); };
+  }, [myUid, otherUid]);
+  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [msgs.length, otherTyping]);
+  // (v0.1.4 기능) 메시지 바깥을 클릭/터치하면 열려 있던 수정/삭제 메뉴를 닫는다(NotificationBell과 동일 패턴).
+  useEffect(() => {
+    if (menuFor == null) return;
+    const close = () => setMenuFor(null);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("touchstart", close);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("touchstart", close); };
+  }, [menuFor]);
+  const onTextChange = (e) => {
+    const v = e.target.value;
+    setText(v);
+    if (!typingChanRef.current || editingId != null) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current > 1500) {
+      lastTypingSentRef.current = now;
+      typingChanRef.current.send({ type: "broadcast", event: "typing", payload: { uid: myUid } });
+    }
+  };
   const send = async (body, emoji) => {
-    if (sending) return; if (!body && !emoji) return;
+    if (sending) return;
+    if (editingId != null) {
+      if (!body) return;
+      setSending(true);
+      const ok = await chatEditMessage(editingId, body);
+      setSending(false);
+      if (ok) { setEditingId(null); setText(""); load(); }
+      return;
+    }
+    if (!body && !emoji) return;
     setSending(true);
     const ok = await chatSend(myUid, otherUid, body, emoji);
     setSending(false);
     if (ok) { setText(""); load(); }
+  };
+  const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
+  const cancelEdit = () => { setEditingId(null); setText(""); };
+  const doDelete = async (m) => {
+    setMenuFor(null);
+    setMsgs((prev) => prev.filter((x) => x.id !== m.id));
+    const ok = await chatDeleteMessage(m.id);
+    if (!ok) load();
   };
   return (
     <div style={{ padding: 18 }}>
@@ -9408,21 +9591,51 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
             );
           }
           // (v0.1.0) 퍼즐 공유 카드 — 인스타그램 릴스 공유처럼 미리보기 + "풀러 가기" 버튼.
+          // (v0.1.4 기능) 텍스트 메시지와 동일하게 당겨서 시각 확인 + 꾹 눌러 전달/삭제 메뉴를 지원한다.
           if (m.puzzle_no != null) {
             const pz = puzzlePreviews[m.puzzle_no];
             const flip = pz && pz.setupSans ? (pz.setupSans.length + 1) % 2 !== 0 : false;
+            const dx = drag && drag.id === m.id ? drag.dx : 0;
+            const d = new Date(m.created_at);
+            const hh = d.getHours(); const ampm = hh < 12 ? "AM" : "PM"; const h12 = String(hh % 12 === 0 ? 12 : hh % 12).padStart(2, "0");
+            const timeTxt = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + " " + ampm + " " + h12 + ":" + String(d.getMinutes()).padStart(2, "0");
+            const onDown = (e) => {
+              dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
+              clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = setTimeout(() => { setMenuFor(m.id); dragRef.current = null; setDrag(null); }, 480);
+            };
+            const onMove = (e) => {
+              if (!dragRef.current || dragRef.current.id !== m.id) return;
+              const x = e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0;
+              let d2 = x - dragRef.current.startX;
+              if (Math.abs(d2) > 6) clearTimeout(longPressTimerRef.current);
+              d2 = mine ? Math.max(-96, Math.min(0, d2)) : Math.min(96, Math.max(0, d2));
+              setDrag({ id: m.id, dx: d2 });
+            };
+            const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
             return (
-              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
-                <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)" }}>
-                  <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                    {pz === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>불러오는 중…</div>
-                      : pz === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>퍼즐을 찾을 수 없어요.</div>
-                      : <>
-                          {pz.setupSans && pz.mistakeSan && <AnimatedMove sans={pz.setupSans} san={pz.mistakeSan} size={140} loopMs={2400} flip={flip} />}
-                          <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{pz.name}</div>
-                          <div style={{ fontSize: 9.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>#{m.puzzle_no}</div>
-                        </>}
-                    <button onClick={() => onOpenSharedPuzzle && onOpenSharedPuzzle(m)} disabled={!pz} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: pz ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: pz ? "pointer" : "default" }}>퍼즐 풀러 가기</button>
+              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", position: "relative" }}
+                onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+                onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
+                  {menuFor === m.id && (
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                      <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Send size={10} />전달</button>
+                      {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>}
+                    </div>
+                  )}
+                  <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
+                    <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                      {pz === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>불러오는 중…</div>
+                        : pz === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>퍼즐을 찾을 수 없어요.</div>
+                        : <>
+                            {pz.setupSans && pz.mistakeSan && <AnimatedMove sans={pz.setupSans} san={pz.mistakeSan} size={140} loopMs={2400} flip={flip} />}
+                            <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{pz.name}</div>
+                            <div style={{ fontSize: 9.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>#{m.puzzle_no}</div>
+                          </>}
+                      <button onClick={() => onOpenSharedPuzzle && onOpenSharedPuzzle(m)} disabled={!pz} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: pz ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: pz ? "pointer" : "default" }}>퍼즐 풀러 가기</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -9436,41 +9649,78 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
           const hh = d.getHours(); const ampm = hh < 12 ? "AM" : "PM"; const h12 = String(hh % 12 === 0 ? 12 : hh % 12).padStart(2, "0");
           const timeTxt = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + " " + ampm + " " + h12 + ":" + String(d.getMinutes()).padStart(2, "0");
           const dx = drag && drag.id === m.id ? drag.dx : 0;
-          const onDown = (e) => { dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine }; };
+          const onDown = (e) => {
+            dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
+            // (v0.1.4 기능) 내가 보낸 메시지만 꾹 눌러 수정/삭제 메뉴를 열 수 있다.
+            if (mine) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = setTimeout(() => { setMenuFor(m.id); dragRef.current = null; setDrag(null); }, 480); }
+          };
           const onMove = (e) => {
             if (!dragRef.current || dragRef.current.id !== m.id) return;
             const x = e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0;
             let d2 = x - dragRef.current.startX;
+            // 이동이 있으면(=드래그 의도) 꾹 누르기 타이머는 취소한다.
+            if (Math.abs(d2) > 6) clearTimeout(longPressTimerRef.current);
             // 내 메시지(우측 정렬)는 왼쪽으로만, 상대 메시지(좌측 정렬)는 오른쪽으로만 밀린다.
             // (19차 선행) 시각 텍스트(~90px)가 벌어진 공간에 온전히 보이도록 최대 드래그 폭을 96px로.
             d2 = mine ? Math.max(-96, Math.min(0, d2)) : Math.min(96, Math.max(0, d2));
             setDrag({ id: m.id, dx: d2 });
           };
-          const onUp = () => { dragRef.current = null; setDrag(null); };
+          const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
           return (
-            <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", alignItems: "center", gap: 4, position: "relative" }}
-              onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
-              onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
-              {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
-              {/* (18차 보충 UX7 → 19차 선행) 드래그로 생긴 공간에 보낸 시각 표시 — 내 메시지는 오른쪽, 상대 메시지는 왼쪽.
-                  래퍼를 inline-block으로 두어 transform이 정상 적용(말풍선 왜곡 해소)되고, overflow 미적용으로 시각이 가려지지 않는다. */}
-              {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
-              <span style={{ display: "inline-block", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
-                {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
-                  : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{m.body}</span>}
-              </span>
-            </div>
+            <React.Fragment key={m.id}>
+              {/* (v0.1.4 기능) 읽음 표시와 달리 말풍선 상단에 별도 줄로 "수정됨"을 표시한다. */}
+              {m.edited && <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}><span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, opacity: .75 }}>수정됨</span></div>}
+              <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", alignItems: "center", gap: 4, position: "relative" }}
+                onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+                onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
+                {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
+                {/* (18차 보충 UX7 → 19차 선행) 드래그로 생긴 공간에 보낸 시각 표시 — 내 메시지는 오른쪽, 상대 메시지는 왼쪽.
+                    래퍼를 inline-block으로 두어 transform이 정상 적용(말풍선 왜곡 해소)되고, overflow 미적용으로 시각이 가려지지 않는다. */}
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                <span style={{ display: "inline-block", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+                  {/* (v0.1.4 기능) 꾹 눌러 연 수정/삭제 메뉴 — 이모티콘 메시지는 수정 대상이 아니므로 본문(body)이 있을 때만 수정 버튼을 보여준다. */}
+                  {menuFor === m.id && (
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                      {m.body != null && <button onClick={() => startEdit(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>수정</button>}
+                      <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
+                    </div>
+                  )}
+                  {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
+                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{m.body}</span>}
+                </span>
+              </div>
+            </React.Fragment>
           );
         })}
+        {/* (v0.1.4 기능) 실시간 타이핑 표시 — 3-dot 바운스 모션 + "입력 중" 텍스트. */}
+        <AnimatePresence>
+        {otherTyping && (
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }} style={{ display: "flex", justifyContent: "flex-start" }}>
+            <div className="flex items-center" style={{ gap: 6, padding: "7px 11px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
+              <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>입력 중</span>
+              <span className="flex items-center" style={{ gap: 3 }}>
+                {[0, 1, 2].map((di) => <motion.span key={di} animate={{ y: [0, -4, 0] }} transition={{ duration: 0.9, repeat: Infinity, delay: di * 0.15, ease: "easeInOut" }} style={{ width: 5, height: 5, borderRadius: 999, background: T.inkSoft, display: "inline-block" }} />)}
+              </span>
+            </div>
+          </motion.div>
+        )}
+        </AnimatePresence>
       </div>
       <div style={{ position: "relative" }}>
         {pickerOpen && <EmojiPicker onPick={(code) => send(null, code)} onClose={() => setPickerOpen(false)} />}
+        {editingId != null && (
+          <div className="flex items-center justify-between" style={{ marginBottom: 6, padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}>
+            <span style={{ fontSize: 10.5, color: T.brass, fontWeight: 800 }}>메시지 수정 중</span>
+            <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
-          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder="메시지 입력…" style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
-          <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>전송</button>
+          <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
+          <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? "수정" : "전송"}</button>
         </div>
       </div>
+      {forwardTarget && <PuzzleShareSheet puzzle={forwardTarget} myUid={myUid} onClose={() => setForwardTarget(null)} onShared={() => setForwardTarget(null)} />}
     </div>
   );
 }
@@ -9515,29 +9765,31 @@ function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onExpand, onO
               글자씩 세로로 쪼개져 보이는 왜곡이 있었다 — 퍼즐 탭과 동일하게 카드 폭을 148px로 고정하고,
               칸 수를 늘리는 대신(공간이 좁으므로) 가로 스크롤로 훑어보도록 바꿈. */}
           <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
-            {preview.map((p) => <div key={p.id} style={{ width: 148, minWidth: 148, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</div>)}
+            {preview.map((p, i) => <FadeIn key={p.id} index={i} style={{ width: 148, minWidth: 148, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</FadeIn>)}
           </div>
           {total > SOLVED_PREVIEW_COUNT && (
             <button onClick={openAll} className="press" style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>더 보기 ({fmtFull(total)}개)</button>
           )}
         </>
       )}
+      <AnimatePresence>
       {showAll && (
-        <div onClick={() => setShowAll(false)} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 640, maxHeight: "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={() => setShowAll(false)} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+          <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 640, maxHeight: "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
             <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>푼 퍼즐 ({fmtFull(total)})</span>
               <button onClick={() => setShowAll(false)} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
             </div>
             <div style={{ padding: 14, overflowY: "auto" }}>
               <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
-                {puzzles.map((p) => renderCard(p, () => { setShowAll(false); openPuzzle(p); }))}
+                {puzzles.map((p, i) => <FadeIn key={p.id} index={i % 12}>{renderCard(p, () => { setShowAll(false); openPuzzle(p); })}</FadeIn>)}
               </div>
               {loading && <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 10, textAlign: "center" }}>더 불러오는 중…</p>}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -9708,7 +9960,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
             {q.trim() ? (
               busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
                 : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
-                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r) => userSearchRow(r, () => open(r.username)))}</div>
+                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username))}</FadeIn>)}</AnimatePresence></div>
             ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
               : (sugFriends.length === 0 && sugTop.length === 0) ? null
                 : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -9716,8 +9968,8 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                       <div>
                         <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>알 수도 있는 사람</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {sugFriends.map((r) => userSearchRow(r, () => open(r.username),
-                            <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>))}
+                          {sugFriends.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
+                            <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>)}</FadeIn>)}
                         </div>
                       </div>
                     )}
@@ -9725,8 +9977,8 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                       <div>
                         <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>티어 리더보드</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {sugTop.map((r) => userSearchRow(r, () => open(r.username),
-                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} /></span>))}
+                          {sugTop.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
+                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} /></span>)}</FadeIn>)}
                         </div>
                       </div>
                     )}
@@ -9773,8 +10025,8 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
     return () => { cc = true; };
   }, [myUid]);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+      <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>채팅</span>
           {/* (19차 UX3) 뒤로가기는 ChatPanel 좌상단 ←로 통일. 래퍼 헤더는 닫기(X)만 우상단에 둔다. */}
@@ -9786,10 +10038,11 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
           <div style={{ padding: 12, minHeight: 140, maxHeight: 440, overflowY: "auto" }}>
             {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
               : rows.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 채팅이 없어요. 친구 목록에서 채팅을 시작해 보세요.</div>
-              : rows.map(({ uid, m, unread }) => {
+              : rows.map(({ uid, m, unread }, i) => {
                 const pr = profiles[uid] || {}; const pub = pr.pub || {};
                 return (
-                  <button key={uid} onClick={() => setChatWith({ uid, username: pr.username || "" })} className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}>
+                  <FadeIn key={uid} index={i}>
+                  <button onClick={() => setChatWith({ uid, username: pr.username || "" })} className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}>
                     {pub.photo ? <img src={pub.photo} alt="" style={{ width: 40, height: 40, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
                       : <span style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
                     <span style={{ minWidth: 0, flex: 1 }}>
@@ -9800,12 +10053,13 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}
                     {unread > 0 && <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{unread > 99 ? "99+" : unread}</span>}
                   </button>
+                  </FadeIn>
                 );
               })}
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 // (v0.0.6 개편) 티어 여정 경로 본체 — TIER_STATIONS(티어×구간을 전부 펼친 목록, 31개)를 하나하나
@@ -9817,21 +10071,44 @@ function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   // (v0.1.2) v0.1.1에서 키웠던 정거장 원이 지나치게 커 보인다는 피드백으로 다시 축소.
   const STATION_H = 96, STATION_GAP = 52;
+  // (v0.1.4 기능) "그랜드마스터는 마지막 단계라는 걸 보여주기 위해 선을 더 길게, 중앙 직선으로
+  // 이어지게" — 그랜드마스터 직전 간격만 크게 벌리고(GM_EXTRA_GAP), 맨 위(그랜드마스터 자신) 위로도
+  // 여백(GM_TOP_PAD)을 더 둬 오로라 배경 밴드가 위로 넉넉히 확장될 공간을 만든다.
+  const GM_EXTRA_GAP = 200, GM_TOP_PAD = 160;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
   // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
   useEffect(() => { if (currentRef.current) currentRef.current.scrollIntoView({ block: "center" }); }, []);
-  // 시각적 세로 위치만 뒤집는다(i는 여전히 TIER_STATIONS의 진행 순서 그대로 — 아래 currentIdx 비교는 그대로).
-  const topOf = (i) => (TIER_STATIONS.length - 1 - i) * (STATION_H + STATION_GAP);
+  // 시각적 세로 위치를 뒤집으면서(진행 순서 i는 그대로), 그랜드마스터 직전 구간의 간격만 예외적으로
+  // 크게 준다 — 나머지 정거장 사이 간격은 기존과 동일.
+  const lastIdx = TIER_STATIONS.length - 1;
+  const stationTops = useMemo(() => {
+    const tops = new Array(TIER_STATIONS.length);
+    tops[lastIdx] = GM_TOP_PAD;
+    for (let i = lastIdx - 1; i >= 0; i--) {
+      const gap = i === lastIdx - 1 ? STATION_GAP + GM_EXTRA_GAP : STATION_GAP;
+      tops[i] = tops[i + 1] + STATION_H + gap;
+    }
+    return tops;
+  }, [lastIdx]);
+  const topOf = (i) => stationTops[i];
   // 지금 내가 서 있는 자리를 TIER_STATIONS 안에서 찾는다 — 그 인덱스보다 앞(작음)이면 이미 지난
   // 구간, 뒤(큼)면 아직 안 온 구간이다. 그랜드마스터는 구간이 없어(division:null) info.division도
   // maxed일 때 null로 맞춰 둔 값과 그대로 비교된다.
   const currentIdx = useMemo(() => TIER_STATIONS.findIndex((s) => s.tierIdx === info.tierIndex && s.division === (info.maxed ? null : info.division)), [info]);
-  const totalHeight = (TIER_STATIONS.length - 1) * (STATION_H + STATION_GAP) + STATION_H;
+  const totalHeight = stationTops[0] + STATION_H;
   // (v0.1.3 기능) TIER_STATIONS는 티어별로 이미 뭉쳐서(아이언 5~1, 브론즈 5~1…) 순서대로 나열돼
   // 있으므로, 같은 tier.key가 연속되는 구간을 하나의 "밴드"로 묶어 그 구간의 세로 픽셀 범위를 구한다
   // — 이 범위에 그 티어 전용 배경 이미지를 깔면, 스크롤해서 그 티어 구간을 지날 때만 자연스럽게
   // 그 배경이 보인다.
+  // (v0.1.4 버그 수정) "티어 배경이 끊어져 보인다" — 예전엔 밴드마다 자기 영역 안에서만 위아래
+  // 70px을 검은색으로 페이드시켰다. 밴드끼리 서로 안 겹치니 경계에서는 두 배경이 섞이는 대신
+  // 양쪽 다 같은 어두운 배경으로 각자 사라졌다가 다시 나타나는 것처럼 보여, 이어지는 배경이 아니라
+  // 뚝뚝 끊어진 조각들처럼 읽혔다. 이제 각 밴드를 이웃 티어 영역까지 BG_FADE만큼 겹쳐 그리고, 그
+  // 겹친 구간에서 양쪽이 함께 반투명해지도록(한쪽은 옅어지고 다른 쪽은 짙어지며) 해 실제로 두
+  // 배경이 서로 섞여 이어지도록 한다(맨 처음 아이언의 아래쪽·맨 끝 그랜드마스터의 위쪽은 겹칠
+  // 이웃이 없으므로 확장하지 않는다).
+  const BG_FADE = 130;
   const tierBands = useMemo(() => {
     const bands = [];
     let i = 0;
@@ -9840,8 +10117,11 @@ function TierJourneyPath({ totalXp }) {
       let j = i;
       while (j < TIER_STATIONS.length && TIER_STATIONS[j].tier.key === key) j++;
       const startIdx = i, endIdx = j - 1;
-      const top = Math.min(topOf(startIdx), topOf(endIdx));
-      const bottom = Math.max(topOf(startIdx), topOf(endIdx)) + STATION_H;
+      const isFirst = i === 0, isLast = j === TIER_STATIONS.length;
+      let top = Math.min(topOf(startIdx), topOf(endIdx));
+      let bottom = Math.max(topOf(startIdx), topOf(endIdx)) + STATION_H;
+      top = isLast ? 0 : top - BG_FADE;       // 그랜드마스터는 컨테이너 맨 위까지 그대로 채운다
+      if (!isFirst) bottom += BG_FADE;         // 아이언 아래쪽은 겹칠 이웃이 없어 확장하지 않는다
       bands.push({ key, top, height: bottom - top });
       i = j;
     }
@@ -9856,7 +10136,7 @@ function TierJourneyPath({ totalXp }) {
           계속 살아있는 느낌을 준다. 위아래 가장자리는 mask로 옅게 흐려 다음 티어 배경과 부드럽게
           이어지고, 어두운 그러데이션을 한 겹 덮어 그 위 흰 정거장 도형이 항상 잘 읽히게 한다. */}
       {tierBands.map((b) => (
-        <div key={b.key} style={{ position: "absolute", left: 0, top: b.top, width: "100%", height: b.height, overflow: "hidden", zIndex: 0, WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black 70px, black calc(100% - 70px), transparent 100%)", maskImage: "linear-gradient(to bottom, transparent 0, black 70px, black calc(100% - 70px), transparent 100%)" }}>
+        <div key={b.key} style={{ position: "absolute", left: 0, top: b.top, width: "100%", height: b.height, overflow: "hidden", zIndex: 0, WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black " + BG_FADE + "px, black calc(100% - " + BG_FADE + "px), transparent 100%)", maskImage: "linear-gradient(to bottom, transparent 0, black " + BG_FADE + "px, black calc(100% - " + BG_FADE + "px), transparent 100%)" }}>
           <motion.img
             src={TIER_BG_IMAGE[b.key]} alt=""
             animate={{ scale: [1, 1.14, 1], x: ["0%", "-3%", "0%"], y: ["0%", "-2%", "0%"] }}
@@ -9867,26 +10147,44 @@ function TierJourneyPath({ totalXp }) {
       ))}
       <svg width="100%" height={totalHeight} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
         {TIER_STATIONS.slice(0, -1).map((_, i) => {
-          const x1 = i % 2 ? "78%" : "22%", x2 = (i + 1) % 2 ? "78%" : "22%";
+          const x1 = i % 2 ? "78%" : "22%";
           const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
           const lit = i < currentIdx;
+          const lineStyle = { stroke: lit ? "#F5C542" : "rgba(255,255,255,.18)", strokeWidth: lit ? 3.5 : 3, strokeDasharray: lit ? undefined : "3 7", strokeLinecap: "round" };
+          const glow = lit ? { filter: "drop-shadow(0 0 3px rgba(245,197,66,.7))" } : undefined;
+          // (v0.1.4 기능) 그랜드마스터로 이어지는 마지막 구간은 "여기가 끝"이라는 인상을 주기 위해
+          // 지그재그 대각선 대신, 중앙으로 꺾여 들어가 그대로 수직으로 길게 뻗는 꺾은선(엘보)으로
+          // 그린다 — 직전 정거장 위치(22%/78%)에서 수평으로 중앙까지 이동한 뒤, 그 중앙 직선을 타고
+          // 위로 길게 올라가 그랜드마스터 정거장 정중앙에 닿는다.
+          if (i === lastIdx - 1) {
+            const elbowY = y1 - (y1 - y2) * 0.28;
+            return (
+              <React.Fragment key={i}>
+                <motion.line x1={x1} y1={y1} x2="50%" y2={elbowY} {...lineStyle}
+                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.5, ease: "easeOut" }} style={glow} />
+                <motion.line x1="50%" y1={elbowY} x2="50%" y2={y2} {...lineStyle}
+                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} style={glow} />
+              </React.Fragment>
+            );
+          }
+          const x2 = (i + 1) % 2 ? "78%" : "22%";
           // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
           // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
           return (
-            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke={lit ? "#F5C542" : "rgba(255,255,255,.18)"} strokeWidth={lit ? 3.5 : 3}
-              strokeDasharray={lit ? undefined : "3 7"} strokeLinecap="round"
+            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
               initial={{ pathLength: 0, opacity: 0 }}
               whileInView={{ pathLength: 1, opacity: 1 }}
               viewport={{ once: false, amount: 0.6 }}
               transition={{ duration: 0.7, ease: "easeOut" }}
-              style={lit ? { filter: "drop-shadow(0 0 3px rgba(245,197,66,.7))" } : undefined} />
+              style={glow} />
           );
         })}
       </svg>
       {TIER_STATIONS.map((s, i) => {
         const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
-        const cx = i % 2 ? "78%" : "22%";
+        // (v0.1.4 기능) 그랜드마스터는 마지막 단계라는 것을 강조하기 위해 지그재그 대신 중앙(50%)에
+        // 배치 — 위 연결선 엘보도 이 중앙 지점을 향해 그려진다.
+        const cx = i === lastIdx ? "50%" : (i % 2 ? "78%" : "22%");
         const top = topOf(i);
         // (v0.1.1) 로고 뒤에 배경을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
         // 색으로 은은하게 빛나는 글로우를 준다.
@@ -9903,14 +10201,20 @@ function TierJourneyPath({ totalXp }) {
         // "아직 안 온 구간"이라는 표시는 이제 점선 연결선·현재 위치 표시만으로 충분하다.
         return (
           <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
-            {/* (버그 수정) 스크롤로 이 정거장이 화면에 들어올 때마다(once:false) 지도가 펼쳐지듯
-                작게·기울어진 채로 시작해 제자리로 펼쳐지는 애니메이션이 반복 재생된다. */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
-              whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
-              viewport={{ once: false, amount: 0.6 }}
-              transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
-              style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
+            {/* (v0.1.4 버그 수정) "모바일에서 여정 지도가 왜곡된다"는 신고 원인 — framer-motion은
+                scale/rotate처럼 transform 계열 모션 값을 다루는 순간 그 엘리먼트의 transform CSS를
+                통째로 자기가 계산한 값으로 덮어써, style로 준 정적인 translateX(-50%) 중앙 정렬이
+                애니메이션이 끝나자마자 조용히 사라졌다 — 78% 자리 정거장이 중앙 정렬 없이 그대로
+                오른쪽으로 반 칸(48px)어치 더 밀려나, 화면이 좁은 모바일에서 오른쪽 끝이 뷰포트
+                밖으로 잘려나갔다. 정적 중앙 정렬(translateX(-50%))은 애니메이션이 없는 바깥 div가
+                전담하고, scale/rotate 애니메이션은 그 안쪽(inset:0)의 별도 motion.div로 분리한다. */}
+            <div style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
+                whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
+                viewport={{ once: false, amount: 0.6 }}
+                transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
+                style={{ position: "absolute", inset: 0 }}>
               <motion.div
                 ref={state === "current" ? currentRef : undefined}
                 animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
@@ -9940,7 +10244,8 @@ function TierJourneyPath({ totalXp }) {
                   </motion.span>
                 )}
               </motion.div>
-            </motion.div>
+              </motion.div>
+            </div>
             {state === "current" && (
               <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
                 <div style={{ fontSize: 10, color: T.ivory, opacity: .8 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>
@@ -9959,10 +10264,11 @@ function TierJourneyMap({ totalXp, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
       <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
+        {/* (v0.1.4 UI) "티어 여정"·"퍼즐을 풀어..." 안내 문구를 없애고, 그 자리에 이정표 아이콘만
+            남긴다 — 아래 지도 자체가 이미 지금까지의 여정을 보여주므로 문구 없이도 뜻이 통한다. */}
         <div className="flex items-center justify-between" style={{ marginBottom: 18 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: T.brassHi }}>티어 여정</div>
-            <div style={{ fontSize: 11.5, color: T.ivory, opacity: .8, marginTop: 2 }}>퍼즐을 풀어 경험치를 쌓으면 다음 티어로 승급해요.</div>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Milestone size={20} color={T.brassHi} />
           </div>
           <button onClick={onClose} className="press" style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(0,0,0,.3)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <X size={17} />
@@ -10138,25 +10444,25 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 : loading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
                 : tab === "friends" ? (
                   friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 친구가 없습니다. ‘추가’에서 아이디로 검색해 요청을 보내세요.</div>
-                    : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{friends.map((u) => (
+                    : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{friends.map((u, i) => (
                         // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
                         // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
-                        <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u) })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} />
-                      ))}</div>
+                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u) })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
+                      ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
                   incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>
                     : <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                         {incoming.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>받은 요청</div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{incoming.map((u) => (
-                            <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doRemove(u), "ghost", !!pending[u])}</>} />
-                          ))}</div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{incoming.map((u, i) => (
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doRemove(u), "ghost", !!pending[u])}</>} /></FadeIn>
+                          ))}</AnimatePresence></div>
                         </div>}
                         {outgoing.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>보낸 요청</div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{outgoing.map((u) => (
-                            <FriendRow key={u} id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={btn("취소", () => doRemove(u), "ghost", !!pending[u])} />
-                          ))}</div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{outgoing.map((u, i) => (
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={btn("취소", () => doRemove(u), "ghost", !!pending[u])} /></FadeIn>
+                          ))}</AnimatePresence></div>
                         </div>}
                       </div>
                 ) : (
@@ -10167,13 +10473,13 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                     </div>
                     {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
                       : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
-                        : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r) => {
+                        : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r, i) => {
                             const uid = r.id; const rel = relOf(uid); const busyId = !!pending[uid];
                             const right = rel === "friend" ? statusChip("친구", <UserCheck size={12} />)
                               : rel === "sent" ? statusChip("요청됨", <Clock size={12} />)
                                 : rel === "incoming" ? btn("수락", () => doAccept(uid), "gold", busyId)
                                   : btn("요청", () => doRequestByName(r.username, uid), "gold", busyId);
-                            return <FriendRow key={uid} id={r.username} pub={r.pub} onClick={() => { setProfiles((prev) => ({ ...prev, [uid]: { username: r.username, pub: r.pub || {} } })); setSel({ uid, username: r.username, pub: r.pub || {} }); }} right={right} />;
+                            return <FadeIn key={uid} index={i}><FriendRow id={r.username} pub={r.pub} onClick={() => { setProfiles((prev) => ({ ...prev, [uid]: { username: r.username, pub: r.pub || {} } })); setSel({ uid, username: r.username, pub: r.pub || {} }); }} right={right} /></FadeIn>;
                           })}</div>}
                   </div>
                 )}
@@ -10450,7 +10756,8 @@ export default function App() {
   // (버그 수정) 퍼즐 생성(genPuzzleTree)이 집중 학습 화면의 effect에 묶여 있으면, 그 화면이 언마운트되는
   // 탭 전환만으로 아직 안 끝난 생성이 통째로 버려졌다(엔진 자체는 App에 항상 떠 있어 계속 도는데도).
   // 생성 요청·진행률을 이 항상-마운트된 App으로 끌어올려, 어느 탭에 있든 생성이 끝까지 이어지고
-  // 완료되면 저장되도록 한다. puzzleGenProgress: 퍼즐 id -> 진행률(0~1, 완료되면 항목 제거).
+  // 완료되면 저장되도록 한다. puzzleGenProgress: 퍼즐 id -> {p(진행률 0~1), path(지금까지 탐색된
+  // 수순 — 생성 과정 미리보기용)}, 완료되면 항목 제거.
   const [puzzleGenProgress, setPuzzleGenProgress] = useState({});
   const puzzleGenInFlightRef = useRef(new Set());
   const likeInFlightRef = useRef(new Set());
@@ -10578,6 +10885,53 @@ export default function App() {
   }, []);
   const [authMode, setAuthMode] = useState("login");
   const [confirmLogout, setConfirmLogout] = useState(false);
+  // (v0.1.4 기능) 앤티크한 체스 분위기의 잔잔한 배경음악(드뷔시 "달빛", 퍼블릭 도메인) — <audio> 엘리먼트
+  // 하나를 앱 최상단에 상시 마운트해 탭을 옮겨 다녀도 재생이 끊기지 않게 하고, bgmOn은 그 엘리먼트의
+  // 실제 play/pause 이벤트를 그대로 반영한다(자동재생 정책상 첫 클릭 전까지는 무음일 수 있음).
+  // (v0.1.4 UI) 켜기/끄기·음량 조절 UI는 헤더에 두지 않고 설정 탭의 "사운드" 카드에서만 노출한다.
+  const [bgmOn, setBgmOn] = useState(false);
+  const [bgmVolume, setBgmVolume] = useState(loadBgmVolume);
+  const bgmRef = useRef(null);
+  useEffect(() => {
+    const el = bgmRef.current;
+    if (!el) return;
+    el.volume = bgmVolume;
+    const onPlay = () => setBgmOn(true);
+    const onPause = () => setBgmOn(false);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    if (loadBgmPref()) el.play().catch(() => { }); // 이전 방문에서 허용됐다면 자동재생, 아니면 조용히 실패
+    return () => { el.removeEventListener("play", onPlay); el.removeEventListener("pause", onPause); };
+  }, []);
+  const toggleBgm = () => {
+    const el = bgmRef.current;
+    if (!el) return;
+    if (el.paused) { el.play().then(() => saveBgmPref(true)).catch(() => { }); }
+    else { el.pause(); saveBgmPref(false); }
+  };
+  const onBgmVolumeChange = (v) => {
+    setBgmVolume(v);
+    saveBgmVolume(v);
+    if (bgmRef.current) bgmRef.current.volume = v;
+  };
+  // (v0.1.4 기능) 효과음 on/off·음량 — 설정 탭 UI 표시용 상태일 뿐, 실제 재생(playSfx)은 위치와
+  // 무관하게 그때그때 localStorage 값을 직접 읽으므로 이 상태를 어디에도 prop으로 내려줄 필요는 없다.
+  const [sfxOn, setSfxOn] = useState(loadSfxPref);
+  const [sfxVolume, setSfxVolume] = useState(loadSfxVolume);
+  const toggleSfx = () => setSfxOn((v) => { const nv = !v; saveSfxPref(nv); return nv; });
+  const onSfxVolumeChange = (v) => { setSfxVolume(v); saveSfxVolume(v); };
+  // (v0.1.4 기능) "블록 클릭" 효과음 — 개별 버튼·카드마다 onClick을 일일이 손대는 대신, 사이트 전체가
+  // 이미 일관되게 쓰고 있는 .press 클래스(index.css)를 캡처 단계에서 감지해 한 곳에서만 재생한다.
+  // 캡처 단계를 쓰는 이유는 일부 하위 요소가 버블링 중 stopPropagation을 호출해도(예: MoveTile의
+  // CircleBadge) 그보다 먼저 실행돼 놓치지 않기 위함.
+  useEffect(() => {
+    const onDocClick = (e) => {
+      const t = e.target.closest && e.target.closest(".press");
+      if (t && !t.disabled) playSfx("click");
+    };
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
+  }, []);
   const [contentVer, setContentVer] = useState(0);
   const [navNonce, setNavNonce] = useState(0);
   const [devOn, setDevOn] = useState(false);
@@ -10704,20 +11058,30 @@ export default function App() {
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
   // 다시 로그인하면 보유 스킨·장착 상태가 기본값으로 되돌아가 마치 구매 내역이 저장 안 된 것처럼 보였다.
-  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); prevTierIndexRef.current = null; if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings);
+  // (버그 수정) "값이 있을 때만 덮어쓰기"(if (pr.X) setX(...))로 해뒀던 것 — 이 계정에 아직 그 필드가
+  // 없으면(신규 계정, 혹은 게스트로 퍼즐을 풀어보다 막 로그인한 경우 등) 조건을 그냥 건너뛰어, 직전
+  // 계정(또는 로그인 전 게스트 상태)의 메모리 값이 그대로 남아 마치 새로 로그인한 계정의 데이터인
+  // 것처럼 보였다("계정을 바꿔도 퍼즐 데이터가 남아있다" 버그의 원인). dismissedAnnounceVersion·
+  // 스킨 필드에는 이미 적용돼 있던 "없으면 기본값" 패턴을 나머지 모든 계정 데이터 필드에도 동일하게
+  // 적용해, 로그인할 때마다 항상 이 계정의 실제 값(없으면 로그아웃과 동일한 기본값)으로 확정한다.
+  const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {};
+    setUnlocked(new Set(pr.unlocked || [])); setPuzzles(pr.puzzles || []); setSolved(new Set(pr.solved || [])); setLikedPuzzles(new Set(pr.likedPuzzles || [])); setRepostedPuzzles(new Set(pr.repostedPuzzles || [])); setLineSolves(pr.lineSolves || {}); prevTierIndexRef.current = null; setTotalXp(pr.xp != null ? pr.xp : 0); setOcCoins(pr.coins != null ? pr.coins : 0); setDevBonusGranted(!!pr.devBonusGranted); setDeletedPuzzles(new Set(pr.deleted || [])); setArchivedPuzzles(pr.archivedPuzzles || {}); setEarnedTitles(new Set(pr.titles || [])); setCurrentTitle(pr.currentTitle || null); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); setDailyQuest(pr.dailyQuest || null); setMainQuest(pr.mainQuest || { claimed: {} }); setRecentOpenings(Array.isArray(pr.recentOpenings) ? pr.recentOpenings : []);
     // (버그 수정) 다른 필드들과 달리 이 값은 "값이 있으면만 덮어쓰기"로 두면 안 된다 — 계정이
     // 한 번도 공지를 닫은 적이 없으면 pr.dismissedAnnounceVersion이 undefined인데, 그때 이
     // if를 건너뛰면 로그인 직전(게스트 상태)의 로컬 값이 그대로 남아 "이 계정도 이미 닫았다"고
     // 잘못 판단해 공지 모달이 안 뜬다 — 계정의 실제 값(없으면 null)으로 항상 동기화한다.
     setDismissedAnnounceVersion(pr.dismissedAnnounceVersion || null);
-    const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves })); setAuthOpen(false); }, []);
+    // (버그 수정) 이전엔 각 필드를 "없으면 직전 상태(p) 값 유지"로 병합했다 — 새 계정에 닉네임/사진이
+    // 아직 없으면 직전 계정(또는 게스트) 것이 화면에 그대로 남아 보이는, 훨씬 눈에 띄는 형태의 같은
+    // 버그였다. 병합 대신 이 계정의 실제 값(없으면 빈 값)으로 완전히 교체한다.
+    const pub = acc.pub || {}; setProfile({ chesscom: pub.chesscom || "", nickname: pub.nickname || "", displayId: pub.displayId || "", photo: pub.photo || "", firstMoves: pub.firstMoves || null }); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
     setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setRepostedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
-    setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "" });
+    setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "", displayId: "", photo: "", firstMoves: null }); setDevBonusGranted(false);
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
     // (버그 수정) 이 두 값은 여기서 안 비워지고 있었다 — dismissedAnnounceVersion을 그대로 두면
     // 로그아웃 후 게스트 로컬 저장소에 방금 로그아웃한 계정의 "다시 보지 않기" 값이 그대로 저장돼
@@ -10759,11 +11123,13 @@ export default function App() {
   // (버그 수정) 퍼즐 생성 요청의 단일 창구 — id별로 딱 한 번만 시작하고(다른 컴포넌트가 같은 퍼즐을
   // 다시 요청해도 무시), 요청한 컴포넌트가 이후 언마운트되어도(탭 전환) 이 App은 항상 떠 있으므로
   // run()이 끝까지 실행되어 결과가 저장된다. run은 (onProgress) => Promise<퍼즐객체|null>.
+  // (v0.1.4 기능) 진행률(p)뿐 아니라 지금까지 탐색된 수순(path)도 함께 저장해, 집중 학습 화면이
+  // 퍼즐이 만들어지는 과정을 미니 보드로 실시간 시각화할 수 있게 한다.
   const requestPuzzleGen = useCallback((id, run) => {
     if (puzzleGenInFlightRef.current.has(id)) return;
     puzzleGenInFlightRef.current.add(id);
-    setPuzzleGenProgress((prev) => ({ ...prev, [id]: 0 }));
-    run((p) => setPuzzleGenProgress((prev) => (id in prev ? { ...prev, [id]: p } : prev)))
+    setPuzzleGenProgress((prev) => ({ ...prev, [id]: { p: 0, path: null } }));
+    run((p, path) => setPuzzleGenProgress((prev) => (id in prev ? { ...prev, [id]: { p, path: path || prev[id].path } } : prev)))
       .then((pz) => { if (pz) onSavePuzzle(pz); })
       .catch((e) => console.warn("퍼즐 생성 실패:", id, e))
       .finally(() => {
@@ -11044,6 +11410,8 @@ export default function App() {
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
       <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
+      {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
+      <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
       <GeoBackdrop />
       {/* (UI1) 모바일(좁은 화면)에서 로고/닉네임/로그아웃 등이 너무 붙어 보이던 문제 —
           좁은 화면에서는 마스코트/글자 크기와 여백을 줄이고, 그래도 안 맞으면 다음 줄로 감싸(rowGap) 겹치지 않게 한다 */}
@@ -11110,7 +11478,7 @@ export default function App() {
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
       {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      {chatsOpen && <ChatsModal me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} onDone={() => setTierUpAnim(null)} />}
@@ -11176,7 +11544,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
