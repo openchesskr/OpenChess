@@ -535,7 +535,7 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
-    version: "0.1.5", date: "2026.7.18",
+    version: "0.1.4", date: "2026.7.18",
     summary: "사이트 곳곳의 카드·목록에 부드러운 애니메이션을 더하고, 채팅에 실시간 타이핑 표시·메시지 수정/삭제·퍼즐 전달 기능을, 설정 탭에는 잔잔한 배경음악과 효과음을 추가했어요.",
     mascot: {
       intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "이번엔 퍼즐·퀘스트·상점 카드들이 툭 튀어나오는 대신 하나씩 부드럽게 떠오르며 나타나요. 훨씬 매끄러워졌을 거예요!" },
