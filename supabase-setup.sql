@@ -257,10 +257,13 @@ create index if not exists idx_chat_messages_pair on public.chat_messages(from_u
 -- 기존 프로젝트에도 확실히 반영되도록 별도 alter로 추가한다.
 alter table public.chat_messages add column if not exists puzzle_no bigint;
 alter table public.chat_messages add column if not exists share_reward jsonb;
+-- (v0.1.4 기능) 채팅 메시지 수정 기능 — 발신자가 본인 텍스트 메시지를 고쳤는지 표시.
+alter table public.chat_messages add column if not exists edited boolean not null default false;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
 drop policy if exists "chat update own" on public.chat_messages;
+drop policy if exists "chat delete own" on public.chat_messages;
 create policy "chat select own" on public.chat_messages for select using (auth.uid() = from_uid or auth.uid() = to_uid);
 -- (v0.0.5 보안) 예전에는 from_uid만 검증해, 친구 목록에 없는 임의 uid를 REST로 직접 지정해도
 -- DM을 보낼 수 있었다(UI는 친구에게만 채팅 버튼을 보여줬을 뿐 서버가 강제하지 않았음). 서로
@@ -274,7 +277,22 @@ create policy "chat insert own" on public.chat_messages for insert with check (
   )
 );
 create policy "chat update own" on public.chat_messages for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
-grant select, insert, update on public.chat_messages to authenticated;
+-- (v0.1.4 기능) 채팅 메시지 삭제 — puzzle_likes/puzzle_reposts와 동일한 패턴으로, 보낸 사람만
+-- 본인 메시지를 지울 수 있다(수정은 auth.uid()=to_uid만 허용하는 위 정책과 충돌하므로 별도
+-- SECURITY DEFINER RPC인 chat_edit_message로 처리한다 — 아래 참고).
+create policy "chat delete own" on public.chat_messages for delete using (auth.uid() = from_uid);
+grant select, insert, update, delete on public.chat_messages to authenticated;
+-- (v0.1.4 기능) 채팅 메시지 수정 — 발신자 본인의 텍스트 메시지(퍼즐 공유·보상 시스템 메시지 제외)만
+-- 고칠 수 있고, 수정됨 표시(edited)를 함께 남긴다. "chat update own" 정책은 수신자의 읽음 처리
+-- 전용이라 발신자의 본문 수정에는 쓸 수 없어, SECURITY DEFINER로 소유권을 직접 검증한다.
+create or replace function public.chat_edit_message(p_id bigint, p_body text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update public.chat_messages
+    set body = p_body, edited = true
+    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null;
+end; $$;
+grant execute on function public.chat_edit_message(bigint, text) to authenticated;
 
 -- ============================================================================
 -- 6) notifications — 친구 요청/수락, 칭호 획득, 레벨 업 등 알림

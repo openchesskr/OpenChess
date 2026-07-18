@@ -8456,7 +8456,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.1.4", date: "2026.7.17", items: [
+    version: "0.1.4", date: "2026.7.18", items: [
       "소개 페이지(/about)의 체스판에 나무 결 질감과 좌표 표기를 더하고, 폴스 메이트·스칼라스 메이트·레갈의 함정·프라이드 리버 어택·불멸의 게임·오페라 게임처럼 실제로 유명한 대국·오프닝 함정을 정확히 재현해서 보여줘요.",
       "소개 페이지에 chess.com 연동 기능(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률)을 소개하는 섹션을 새로 추가했어요.",
       "소개 페이지의 버전 업데이트 기록에서 v0.1.2·v0.1.3 두 버전이 빠져 있던 것을 찾아 다시 채워 넣었어요.",
@@ -8464,9 +8464,13 @@ const CHANGELOG = [
       "그랜드마스터 티어 배지에 기물 대신 오로라 사진이 잘못 표시되던 문제를 고쳤어요 — 헤더 배지·여정 지도·퍼즐 탭·승급 연출 전부 원래의 왕관 기물 이미지로 보여요.",
       "퍼즐·퀘스트·상점 카드, 친구·검색 목록, 알림, 채팅 목록이 이제 툭 튀어나오는 대신 하나씩 부드럽게 떠오르며 나타나요. 친구 요청을 수락·거절하거나 알림을 지우면 목록에서도 부드럽게 사라져요.",
       "집중 학습에서 퍼즐이 만들어지는 동안, 그냥 기다리는 대신 지금 찾아낸 수를 미니 보드에 미리 보여줘요.",
-      "학습 탭 수 블록과 집중 학습 진입에도 부드러운 애니메이션과 스크롤을 더했어요.",
       "티어 여정 지도에서 그랜드마스터(마지막 티어)를 가운데로 크게 강조하고, 티어별 배경이 자연스럽게 이어지도록 다듬었어요. 안내 문구 대신 이정표 아이콘을 넣었어요.",
       "여정 지도가 좁은 화면(모바일)에서 오른쪽으로 밀려 잘려 보이던 문제를 고쳤어요.",
+      "퍼즐 풀이·카드의 \"공유\" 버튼 텍스트가 두 줄로 잘려 보이던 문제를 고쳤어요.",
+      "계정을 바꾸거나 로그아웃해도 이전 계정의 퍼즐·프로필 기록이 화면에 그대로 남아있던 문제를 고쳤어요.",
+      "채팅에서 상대방이 메시지를 입력하고 있으면 말풍선 점 3개가 통통 튀며 \"입력 중\"이라고 알려줘요.",
+      "채팅에서 내가 보낸 메시지를 꾹 누르면 수정하거나 삭제할 수 있어요. 수정한 메시지에는 \"수정됨\" 표시가 붙어요.",
+      "채팅에 공유된 퍼즐 카드도 옆으로 당기면 보낸 시각이 보이고, 꾹 누르면 삭제하거나 다른 친구에게 다시 전달할 수 있어요.",
     ],
   },
   {
@@ -9172,6 +9176,10 @@ async function chatFetch(myUid, otherUid) {
   } catch { return []; }
 }
 async function chatMarkRead(rows) { if (!SB_ON || !rows || !rows.length) return; try { await Promise.all(rows.filter((r) => r.id != null).map((r) => sbPatch("chat_messages", "id=eq." + r.id, { read: true }).catch(() => {}))); } catch { } }
+// (v0.1.4 기능) 채팅 메시지 수정/삭제 — 수정은 소유권 검증이 필요해 RPC로, 삭제는 puzzle_likes와
+// 같은 RLS 소유자 delete 정책 패턴으로 REST DELETE를 직접 쓴다(notifyDelete와 달리 정책이 있다).
+async function chatEditMessage(id, body) { if (!SB_ON || id == null) return false; try { await sbRpc("chat_edit_message", { p_id: id, p_body: body }); return true; } catch { return false; } }
+async function chatDeleteMessage(id) { if (!SB_ON || id == null) return false; try { const r = await fetch(SB_URL + "/rest/v1/chat_messages?id=eq." + id, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); return r.ok; } catch { return false; } }
 // (18차 UX7) 채팅 모아보기 — 내가 포함된 최근 메시지를 상대별로 묶기 위한 전체 조회.
 async function chatFetchAll(myUid) { if (!SB_ON || !myUid) return []; try { return (await sbSelect("chat_messages?or=(from_uid.eq." + myUid + ",to_uid.eq." + myUid + ")&order=created_at.desc&limit=200")) || []; } catch { return []; } }
 async function friendEdges() { if (!SB_ON) return []; try { const rows = await sbSelect("friend_edges?select=from_uid,to_uid,status"); return rows || []; } catch { return []; } }
@@ -9396,6 +9404,12 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  // (v0.1.4 기능) 수정 중인 메시지 id — 설정돼 있으면 입력창은 그 메시지 본문을 수정하는 모드로 동작.
+  const [editingId, setEditingId] = useState(null);
+  // (v0.1.4 기능) 꾹 눌러 연 수정/삭제(또는 전달/삭제) 메뉴가 떠 있는 메시지 id.
+  const [menuFor, setMenuFor] = useState(null);
+  // (v0.1.4 기능) 퍼즐 카드의 "전달" 버튼으로 다른 친구에게 다시 공유할 때 띄우는 시트의 대상 퍼즐.
+  const [forwardTarget, setForwardTarget] = useState(null);
   // (v0.1.0) 퍼즐 공유 카드 미리보기 — puzzle_no가 설정된 메시지가 보이면 그 번호의 퍼즐 데이터를
   // 지연 조회해 캐싱한다(no -> 퍼즐 데이터 | null(찾을 수 없음), 아직 없으면 로딩 중으로 취급).
   const [puzzlePreviews, setPuzzlePreviews] = useState({});
@@ -9413,6 +9427,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   // (18차 보충 UX7) 인스타그램식 홀드-드래그 — 메시지를 좌우로 밀면 생긴 공간에 보낸 시각을 표시(내용은 유지).
   const [drag, setDrag] = useState(null);       // { id, dx }
   const dragRef = useRef(null);                  // { id, startX, mine }
+  // (v0.1.4 기능) 꾹 누르기(long-press) 판정 — 드래그와 같은 down/move/up 핸들러를 공유하되, 큰 이동이
+  // 없이 일정 시간 눌려 있으면 수정/삭제(또는 전달/삭제) 메뉴를 연다.
+  const longPressTimerRef = useRef(null);
   const listRef = useRef(null);
   const load = useCallback(async () => {
     const rows = await chatFetch(myUid, otherUid);
@@ -9431,13 +9448,67 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   }, [load, otherUid]);
   useRealtimeTable("chat_messages", myUid ? "to_uid=eq." + myUid : null, onRt, !!(myUid && otherUid), 60000);
   useRealtimeTable("chat_messages", myUid ? "from_uid=eq." + myUid : null, onRt, !!(myUid && otherUid), 60000);
-  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [msgs.length]);
+  // (v0.1.4 기능) 실시간 타이핑 표시 — DB에 쓰지 않는 Supabase Realtime broadcast 채널을 대화 상대와
+  // 공유(두 uid를 정렬해 채널명을 고정)해, 입력창에 글자를 칠 때마다 가벼운 "타이핑 중" 신호만 주고받는다.
+  // self: false라 내가 보낸 신호는 내게 되돌아오지 않으므로, 이 채널에서 받는 이벤트는 항상 상대방 것이다.
+  const [otherTyping, setOtherTyping] = useState(false);
+  const typingChanRef = useRef(null);
+  const typingHideRef = useRef(null);
+  const lastTypingSentRef = useRef(0);
+  useEffect(() => {
+    if (!sbClient || !myUid || !otherUid) return;
+    const chanName = "typing:" + [myUid, otherUid].sort().join(":");
+    const channel = sbClient.channel(chanName, { config: { broadcast: { self: false } } });
+    channel.on("broadcast", { event: "typing" }, () => {
+      setOtherTyping(true);
+      clearTimeout(typingHideRef.current);
+      typingHideRef.current = setTimeout(() => setOtherTyping(false), 2500);
+    }).subscribe();
+    typingChanRef.current = channel;
+    return () => { sbClient.removeChannel(channel); typingChanRef.current = null; clearTimeout(typingHideRef.current); setOtherTyping(false); };
+  }, [myUid, otherUid]);
+  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [msgs.length, otherTyping]);
+  // (v0.1.4 기능) 메시지 바깥을 클릭/터치하면 열려 있던 수정/삭제 메뉴를 닫는다(NotificationBell과 동일 패턴).
+  useEffect(() => {
+    if (menuFor == null) return;
+    const close = () => setMenuFor(null);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("touchstart", close);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("touchstart", close); };
+  }, [menuFor]);
+  const onTextChange = (e) => {
+    const v = e.target.value;
+    setText(v);
+    if (!typingChanRef.current || editingId != null) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current > 1500) {
+      lastTypingSentRef.current = now;
+      typingChanRef.current.send({ type: "broadcast", event: "typing", payload: { uid: myUid } });
+    }
+  };
   const send = async (body, emoji) => {
-    if (sending) return; if (!body && !emoji) return;
+    if (sending) return;
+    if (editingId != null) {
+      if (!body) return;
+      setSending(true);
+      const ok = await chatEditMessage(editingId, body);
+      setSending(false);
+      if (ok) { setEditingId(null); setText(""); load(); }
+      return;
+    }
+    if (!body && !emoji) return;
     setSending(true);
     const ok = await chatSend(myUid, otherUid, body, emoji);
     setSending(false);
     if (ok) { setText(""); load(); }
+  };
+  const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
+  const cancelEdit = () => { setEditingId(null); setText(""); };
+  const doDelete = async (m) => {
+    setMenuFor(null);
+    setMsgs((prev) => prev.filter((x) => x.id !== m.id));
+    const ok = await chatDeleteMessage(m.id);
+    if (!ok) load();
   };
   return (
     <div style={{ padding: 18 }}>
@@ -9465,21 +9536,51 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
             );
           }
           // (v0.1.0) 퍼즐 공유 카드 — 인스타그램 릴스 공유처럼 미리보기 + "풀러 가기" 버튼.
+          // (v0.1.4 기능) 텍스트 메시지와 동일하게 당겨서 시각 확인 + 꾹 눌러 전달/삭제 메뉴를 지원한다.
           if (m.puzzle_no != null) {
             const pz = puzzlePreviews[m.puzzle_no];
             const flip = pz && pz.setupSans ? (pz.setupSans.length + 1) % 2 !== 0 : false;
+            const dx = drag && drag.id === m.id ? drag.dx : 0;
+            const d = new Date(m.created_at);
+            const hh = d.getHours(); const ampm = hh < 12 ? "AM" : "PM"; const h12 = String(hh % 12 === 0 ? 12 : hh % 12).padStart(2, "0");
+            const timeTxt = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + " " + ampm + " " + h12 + ":" + String(d.getMinutes()).padStart(2, "0");
+            const onDown = (e) => {
+              dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
+              clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = setTimeout(() => { setMenuFor(m.id); dragRef.current = null; setDrag(null); }, 480);
+            };
+            const onMove = (e) => {
+              if (!dragRef.current || dragRef.current.id !== m.id) return;
+              const x = e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0;
+              let d2 = x - dragRef.current.startX;
+              if (Math.abs(d2) > 6) clearTimeout(longPressTimerRef.current);
+              d2 = mine ? Math.max(-96, Math.min(0, d2)) : Math.min(96, Math.max(0, d2));
+              setDrag({ id: m.id, dx: d2 });
+            };
+            const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
             return (
-              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
-                <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)" }}>
-                  <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                    {pz === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>불러오는 중…</div>
-                      : pz === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>퍼즐을 찾을 수 없어요.</div>
-                      : <>
-                          {pz.setupSans && pz.mistakeSan && <AnimatedMove sans={pz.setupSans} san={pz.mistakeSan} size={140} loopMs={2400} flip={flip} />}
-                          <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{pz.name}</div>
-                          <div style={{ fontSize: 9.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>#{m.puzzle_no}</div>
-                        </>}
-                    <button onClick={() => onOpenSharedPuzzle && onOpenSharedPuzzle(m)} disabled={!pz} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: pz ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: pz ? "pointer" : "default" }}>퍼즐 풀러 가기</button>
+              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", position: "relative" }}
+                onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+                onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
+                  {menuFor === m.id && (
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                      <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Send size={10} />전달</button>
+                      {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>}
+                    </div>
+                  )}
+                  <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
+                    <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                      {pz === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>불러오는 중…</div>
+                        : pz === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>퍼즐을 찾을 수 없어요.</div>
+                        : <>
+                            {pz.setupSans && pz.mistakeSan && <AnimatedMove sans={pz.setupSans} san={pz.mistakeSan} size={140} loopMs={2400} flip={flip} />}
+                            <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{pz.name}</div>
+                            <div style={{ fontSize: 9.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>#{m.puzzle_no}</div>
+                          </>}
+                      <button onClick={() => onOpenSharedPuzzle && onOpenSharedPuzzle(m)} disabled={!pz} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: pz ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: pz ? "pointer" : "default" }}>퍼즐 풀러 가기</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -9493,41 +9594,78 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
           const hh = d.getHours(); const ampm = hh < 12 ? "AM" : "PM"; const h12 = String(hh % 12 === 0 ? 12 : hh % 12).padStart(2, "0");
           const timeTxt = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + " " + ampm + " " + h12 + ":" + String(d.getMinutes()).padStart(2, "0");
           const dx = drag && drag.id === m.id ? drag.dx : 0;
-          const onDown = (e) => { dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine }; };
+          const onDown = (e) => {
+            dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
+            // (v0.1.4 기능) 내가 보낸 메시지만 꾹 눌러 수정/삭제 메뉴를 열 수 있다.
+            if (mine) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = setTimeout(() => { setMenuFor(m.id); dragRef.current = null; setDrag(null); }, 480); }
+          };
           const onMove = (e) => {
             if (!dragRef.current || dragRef.current.id !== m.id) return;
             const x = e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0;
             let d2 = x - dragRef.current.startX;
+            // 이동이 있으면(=드래그 의도) 꾹 누르기 타이머는 취소한다.
+            if (Math.abs(d2) > 6) clearTimeout(longPressTimerRef.current);
             // 내 메시지(우측 정렬)는 왼쪽으로만, 상대 메시지(좌측 정렬)는 오른쪽으로만 밀린다.
             // (19차 선행) 시각 텍스트(~90px)가 벌어진 공간에 온전히 보이도록 최대 드래그 폭을 96px로.
             d2 = mine ? Math.max(-96, Math.min(0, d2)) : Math.min(96, Math.max(0, d2));
             setDrag({ id: m.id, dx: d2 });
           };
-          const onUp = () => { dragRef.current = null; setDrag(null); };
+          const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
           return (
-            <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", alignItems: "center", gap: 4, position: "relative" }}
-              onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
-              onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
-              {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
-              {/* (18차 보충 UX7 → 19차 선행) 드래그로 생긴 공간에 보낸 시각 표시 — 내 메시지는 오른쪽, 상대 메시지는 왼쪽.
-                  래퍼를 inline-block으로 두어 transform이 정상 적용(말풍선 왜곡 해소)되고, overflow 미적용으로 시각이 가려지지 않는다. */}
-              {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
-              <span style={{ display: "inline-block", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
-                {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
-                  : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{m.body}</span>}
-              </span>
-            </div>
+            <React.Fragment key={m.id}>
+              {/* (v0.1.4 기능) 읽음 표시와 달리 말풍선 상단에 별도 줄로 "수정됨"을 표시한다. */}
+              {m.edited && <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}><span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, opacity: .75 }}>수정됨</span></div>}
+              <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", alignItems: "center", gap: 4, position: "relative" }}
+                onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+                onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
+                {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
+                {/* (18차 보충 UX7 → 19차 선행) 드래그로 생긴 공간에 보낸 시각 표시 — 내 메시지는 오른쪽, 상대 메시지는 왼쪽.
+                    래퍼를 inline-block으로 두어 transform이 정상 적용(말풍선 왜곡 해소)되고, overflow 미적용으로 시각이 가려지지 않는다. */}
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                <span style={{ display: "inline-block", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+                  {/* (v0.1.4 기능) 꾹 눌러 연 수정/삭제 메뉴 — 이모티콘 메시지는 수정 대상이 아니므로 본문(body)이 있을 때만 수정 버튼을 보여준다. */}
+                  {menuFor === m.id && (
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                      {m.body != null && <button onClick={() => startEdit(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>수정</button>}
+                      <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
+                    </div>
+                  )}
+                  {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
+                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{m.body}</span>}
+                </span>
+              </div>
+            </React.Fragment>
           );
         })}
+        {/* (v0.1.4 기능) 실시간 타이핑 표시 — 3-dot 바운스 모션 + "입력 중" 텍스트. */}
+        <AnimatePresence>
+        {otherTyping && (
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }} style={{ display: "flex", justifyContent: "flex-start" }}>
+            <div className="flex items-center" style={{ gap: 6, padding: "7px 11px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
+              <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>입력 중</span>
+              <span className="flex items-center" style={{ gap: 3 }}>
+                {[0, 1, 2].map((di) => <motion.span key={di} animate={{ y: [0, -4, 0] }} transition={{ duration: 0.9, repeat: Infinity, delay: di * 0.15, ease: "easeInOut" }} style={{ width: 5, height: 5, borderRadius: 999, background: T.inkSoft, display: "inline-block" }} />)}
+              </span>
+            </div>
+          </motion.div>
+        )}
+        </AnimatePresence>
       </div>
       <div style={{ position: "relative" }}>
         {pickerOpen && <EmojiPicker onPick={(code) => send(null, code)} onClose={() => setPickerOpen(false)} />}
+        {editingId != null && (
+          <div className="flex items-center justify-between" style={{ marginBottom: 6, padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}>
+            <span style={{ fontSize: 10.5, color: T.brass, fontWeight: 800 }}>메시지 수정 중</span>
+            <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
-          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder="메시지 입력…" style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
-          <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>전송</button>
+          <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
+          <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? "수정" : "전송"}</button>
         </div>
       </div>
+      {forwardTarget && <PuzzleShareSheet puzzle={forwardTarget} myUid={myUid} onClose={() => setForwardTarget(null)} onShared={() => setForwardTarget(null)} />}
     </div>
   );
 }
