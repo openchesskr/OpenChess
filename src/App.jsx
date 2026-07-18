@@ -8703,7 +8703,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       {!user && (
         <div style={card}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>계정</div>
-          <div className="flex items-center justify-between"><span style={{ fontSize: 12.5, color: T.inkSoft }}>로그인하면 진도가 계정에 저장됩니다.</span><button onClick={() => openAuth("login")} className="press" style={{ padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>로그인 / 회원가입</button></div>
+          <div className="flex items-center justify-between gap-3"><span style={{ fontSize: 12.5, color: T.inkSoft, minWidth: 0 }}>로그인하면 진도가 계정에 저장됩니다.</span><button onClick={() => openAuth("login")} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>로그인 / 회원가입</button></div>
         </div>
       )}
 
