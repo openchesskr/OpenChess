@@ -124,6 +124,9 @@ const BOARD_SKINS = {
   // (2\uCC28 \uAC1C\uD3B8) \uC0AC\uC6A9\uC790\uAC00 \uC9C1\uC811 \uB9CC\uB4E0 \uBC14\uB2E4 \uD14C\uB9C8 \uCE74\uD3B8(\uBAA8\uB798\uBE5B/\uBB3C\uACB0\u00B7\uBAA8\uB798) \uC774\uBBF8\uC9C0\uB85C \uAD50\uCCB4 \u2014
   // \uCE78\uB9C8\uB2E4 \uC804\uCCB4 8x8 \uC774\uBBF8\uC9C0\uC5D0\uC11C \uC790\uAE30 \uC704\uCE58\uC758 \uC870\uAC01\uB9CC background-position\uC73C\uB85C \uC798\uB77C \uBCF4\uC5EC\uC900\uB2E4(boardSquareBg).
   ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: "/boards/ocean-board.jpg" },
+  // (about \uD398\uC774\uC9C0 \uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130 \uCE74\uB4DC \uC5F0\uB3D9) \uCF54\uC778\uC73C\uB85C \uC0B4 \uC218 \uC5C6\uACE0 tierLocked \uD2F0\uC5B4\uC5D0 \uB3C4\uB2EC\uD574\uC57C\uB9CC
+  // \uC790\uB3D9 \uD574\uAE08\uB418\uB294 \uC804\uC6A9 \uC2A4\uD0A8 \u2014 App\uC758 useEffect(totalXp \uAE30\uC900)\uAC00 ownedSkins\uC5D0 \uC9C1\uC811 \uCD94\uAC00\uD558\uBBC0\uB85C price\uB294 \uC4F0\uC774\uC9C0 \uC54A\uB294\uB2E4.
+  grandmaster: { label: "\uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130", tierLocked: "grandmaster", light: "linear-gradient(135deg,#F5ECDD 0%,#EAD9FF 60%,#D8F5EA 100%)", dark: "linear-gradient(135deg,#4B2E1D 0%,#4B2E63 60%,#1F5A4A 100%)" },
 };
 // (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
 // \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
@@ -8986,6 +8989,7 @@ function ChesscomIcon({ size = 16 }) {
    장착 상태에 따라 버튼이 "구매"→"장착"→"장착됨"으로 바뀐다. */
 function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
   const isFree = sk.price === 0;
+  const tierLabel = sk.tierLocked && TIERS.find((t) => t.key === sk.tierLocked);
   // (디자인) 보드 스킨 미리보기 — 기본(단색) 스킨은 4x4 견본 대신, 이미지 스킨과 동일하게 실제
   // 보드처럼 보이는 8x8 격자로 표시한다(boardSquareBg로 이미지 스킨은 이어붙인 텍스처가 그대로 나옴).
   // (버그 수정) 실제 대국판은 크기와 무관하게 borderRadius:4를 쓰는데, 여기만 8을 써 64px 미리보기에서
@@ -9007,13 +9011,16 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{sk.label}</div>
         <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
-          {isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>무료 · 기본 제공</span>
-            : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={13} /> {sk.price}</span>}
+          {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tierLabel.label} 티어 전용 · 코인으로 구매 불가</span>
+            : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>무료 · 기본 제공</span>
+              : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={13} /> {sk.price}</span>}
         </div>
         {equipped ? (
           <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>✓ 장착됨</button>
         ) : owned || isFree ? (
           <button onClick={() => onEquip(kind, id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>장착하기</button>
+        ) : sk.tierLocked ? (
+          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{tierLabel.label} 티어 필요</button>
         ) : (
           <button onClick={() => onBuy(kind, id)} disabled={coins < sk.price} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: coins < sk.price ? "#8A7458" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: coins < sk.price ? "not-allowed" : "pointer" }}>{coins < sk.price ? "코인 부족" : "구매하기"}</button>
         )}
@@ -9858,13 +9865,16 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
 }
 // (기능) 유저 검색 결과 한 줄 — 검색 결과와 기본 추천(친구의 친구·리더보드)이 같은 모양을 공유한다.
 // right는 오른쪽 끝에 덧붙일 부가 정보(같이 아는 친구 수, 티어 등) — 없으면 기존과 똑같은 모양이다.
+// (about 페이지 그랜드마스터 카드 연동) 검색 결과·티어 리더보드에서 그랜드마스터는 오로라 톤
+// 골드 테두리로 항상 강조 표시 — 실제로 티어를 올려야 얻는 결과라 배지처럼 남용될 일이 없다.
 function userSearchRow(r, onClick, right) {
   const p = r.pub || {};
+  const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
   return (
-    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
+    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: "#FBF5E8", boxShadow: isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none", cursor: "pointer", textAlign: "left" }}>
       {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</div>
+        <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
       </div>
       {right}
@@ -9991,13 +10001,14 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
 }
 function FriendRow({ id, pub, right, onClick }) {
   const p = pub || {};
+  const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, borderRadius: 10, border: isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: "#FBF5E8", boxShadow: isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none" }}>
       <button onClick={onClick} className="press" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: onClick ? "pointer" : "default", textAlign: "left", padding: 0 }}>
         {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
           : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || id || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || id}</div>
+          <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || id}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
           <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{id}</div>
         </div>
       </button>
@@ -10803,6 +10814,13 @@ export default function App() {
   const [repostedPuzzles, setRepostedPuzzles] = useState(new Set());   // (v0.1.0) 내가 리포스트한 퍼즐 id — likedPuzzles와 동일한 방식으로 로컬+계정에 저장
   const [lineSolves, setLineSolves] = useState({});   // (기능1) { [puzzleId]: string[] } — 라인(tag)별 해결 기록. 전체 라인이 다 모이면 solved로 승격.
   const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 티어/진행률은 tierFromXp로 매번 도출
+  // (about 페이지 그랜드마스터 카드 연동) 그랜드마스터 티어에 도달하면 전용 보드 스킨을 코인 없이
+  // 자동 해금 — 티어에서 다시 내려갈 일이 없으므로 한 번 추가되면 계속 소유한 상태로 남는다.
+  useEffect(() => {
+    if (tierFromXp(totalXp).tier.key !== "grandmaster") return;
+    const key = "board:grandmaster";
+    setOwnedSkins((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, [totalXp]);
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
   // (버그) 개발자 계정 코인 지급을 "코인 기록이 아예 없을 때"로만 한정했더니, 이미 로그인해 progress가
   // 저장돼 있던 기존 개발자·공동 개발자 계정에는 소급 적용되지 않았다. 대신 "1회 지급 여부" 플래그를
