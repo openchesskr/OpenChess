@@ -113,6 +113,21 @@ const PIECE_IMG_SETS = {
       K: { w: { src: "/pieces/ocean/white-king.png", w: 248, h: 281 }, b: { src: "/pieces/ocean/black-king.png", w: 254, h: 282 } },
     },
   },
+  // (about 페이지 그랜드마스터 카드 연동) 그랜드마스터 전용 기물 — 오로라 크리스탈+대리석 세트.
+  // 원본(1920px 정사각 캔버스, 여백 포함)을 알파 바운딩 박스로 잘라내고 WebP로 압축해 옮겨 적었다.
+  // (참고) 킹·퀸 원본 이미지는 받침·몸통 없이 왕관만 있는 상태로 받았다 — 다른 기물과 스타일이
+  // 다르지만 그대로 쓰기로 결정된 것이라 별도 보정 없이 그대로 옮겼다.
+  grandmaster: {
+    basePx: 280,
+    images: {
+      P: { w: { src: "/pieces/grandmaster/white-pawn.webp", w: 280, h: 420 }, b: { src: "/pieces/grandmaster/black-pawn.webp", w: 279, h: 420 } },
+      N: { w: { src: "/pieces/grandmaster/white-knight.webp", w: 281, h: 420 }, b: { src: "/pieces/grandmaster/black-knight.webp", w: 284, h: 420 } },
+      B: { w: { src: "/pieces/grandmaster/white-bishop.webp", w: 231, h: 420 }, b: { src: "/pieces/grandmaster/black-bishop.webp", w: 230, h: 420 } },
+      R: { w: { src: "/pieces/grandmaster/white-rook.webp", w: 295, h: 420 }, b: { src: "/pieces/grandmaster/black-rook.webp", w: 296, h: 420 } },
+      Q: { w: { src: "/pieces/grandmaster/white-queen.webp", w: 420, h: 375 }, b: { src: "/pieces/grandmaster/black-queen.webp", w: 420, h: 376 } },
+      K: { w: { src: "/pieces/grandmaster/white-king.webp", w: 420, h: 409 }, b: { src: "/pieces/grandmaster/black-king.webp", w: 420, h: 408 } },
+    },
+  },
 };
 /* (20\uCC28 \uAE30\uB2A54 \uB300\uBE44) \uBCF4\uB4DC/\uAE30\uBB3C \uC2A4\uD0A8 \uB808\uC9C0\uC2A4\uD2B8\uB9AC \u2014 \uAE30\uBCF8(classic) \uD558\uB098\uB9CC \uC6B0\uC120 \uB450\uACE0, \uC0C1\uC810\uC5D0\uC11C \uD30C\uB294
    \uBC14\uB2E4(ocean) \uC2A4\uD0A8 \uB4F1 \uCD94\uAC00 \uC2A4\uD0A8\uC740 \uC774 \uAC1D\uCCB4\uC5D0 \uD56D\uBAA9\uB9CC \uB298\uB9AC\uBA74 PieceGlyph\u00B7Board\uAC00 \uADF8\uB300\uB85C \uC9C0\uC6D0\uD55C\uB2E4. */
@@ -126,7 +141,7 @@ const BOARD_SKINS = {
   ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: "/boards/ocean-board.jpg" },
   // (about \uD398\uC774\uC9C0 \uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130 \uCE74\uB4DC \uC5F0\uB3D9) \uCF54\uC778\uC73C\uB85C \uC0B4 \uC218 \uC5C6\uACE0 tierLocked \uD2F0\uC5B4\uC5D0 \uB3C4\uB2EC\uD574\uC57C\uB9CC
   // \uC790\uB3D9 \uD574\uAE08\uB418\uB294 \uC804\uC6A9 \uC2A4\uD0A8 \u2014 App\uC758 useEffect(totalXp \uAE30\uC900)\uAC00 ownedSkins\uC5D0 \uC9C1\uC811 \uCD94\uAC00\uD558\uBBC0\uB85C price\uB294 \uC4F0\uC774\uC9C0 \uC54A\uB294\uB2E4.
-  grandmaster: { label: "\uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130", tierLocked: "grandmaster", light: "linear-gradient(135deg,#F5ECDD 0%,#EAD9FF 60%,#D8F5EA 100%)", dark: "linear-gradient(135deg,#4B2E1D 0%,#4B2E63 60%,#1F5A4A 100%)" },
+  grandmaster: { label: "그랜드마스터", tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
 };
 // (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
 // \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
@@ -146,6 +161,9 @@ const PIECE_SKINS = {
   // (2\uCC28 \uAC1C\uD3B8) \uBC14\uB2E4 \uAE30\uBB3C\uB3C4 \uC0AC\uC6A9\uC790\uAC00 \uB9CC\uB4E0 \uC774\uBBF8\uC9C0 \uC138\uD2B8(public/pieces/ocean)\uB85C \uAD50\uCCB4 \u2014 classic\uACFC \uB3D9\uC77C\uD558\uAC8C
   // image:true\uB85C PieceGlyph\uC758 \uC774\uBBF8\uC9C0 \uB80C\uB354\uB9C1 \uACBD\uB85C\uB97C \uD0C0\uB418, PIECE_IMG_SETS.ocean\uC758 \uC790\uAE30 \uC774\uBBF8\uC9C0\uB97C \uC4F4\uB2E4.
   ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: true },
+  // (about 페이지 그랜드마스터 카드 연동) 코인으로 살 수 없고 그랜드마스터 티어에 도달해야만
+  // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
+  grandmaster: { label: "그랜드마스터", tierLocked: "grandmaster", image: true },
 };
 /* \uC7A5\uCC29\uB41C \uC2A4\uD0A8\uC740 Context\uB85C \uD758\uB824\uBCF4\uB0B4 Board\u00B7PieceGlyph \uC5B4\uB514\uC11C\uB4E0(\uD504\uB86D \uC548 \uB118\uACA8\uB3C4) \uC790\uB3D9 \uC801\uC6A9\uB418\uAC8C \uD55C\uB2E4 \u2014
    \uBCF4\uB4DC\uAC00 \uD559\uC2B5 \uD0ED\u00B7\uD37C\uC990 \uD480\uC774\u00B7\uBBF8\uB2C8 \uD504\uB9AC\uBDF0 \uB4F1 \uC218\uC2ED \uACF3\uC5D0\uC11C \uC4F0\uC774\uBBC0\uB85C \uB9E4 \uD638\uCD9C\uBD80\uB9C8\uB2E4 prop\uC744 \uAF42\uB294 \uB300\uC2E0
@@ -10912,12 +10930,17 @@ export default function App() {
   const [repostedPuzzles, setRepostedPuzzles] = useState(new Set());   // (v0.1.0) 내가 리포스트한 퍼즐 id — likedPuzzles와 동일한 방식으로 로컬+계정에 저장
   const [lineSolves, setLineSolves] = useState({});   // (기능1) { [puzzleId]: string[] } — 라인(tag)별 해결 기록. 전체 라인이 다 모이면 solved로 승격.
   const [totalXp, setTotalXp] = useState(0);   // (15차 기능4) 누적 경험치 — 티어/진행률은 tierFromXp로 매번 도출
-  // (about 페이지 그랜드마스터 카드 연동) 그랜드마스터 티어에 도달하면 전용 보드 스킨을 코인 없이
-  // 자동 해금 — 티어에서 다시 내려갈 일이 없으므로 한 번 추가되면 계속 소유한 상태로 남는다.
+  // (about 페이지 그랜드마스터 카드 연동) 그랜드마스터 티어에 도달하면 전용 보드·기물 스킨을
+  // 코인 없이 자동 해금 — 티어에서 다시 내려갈 일이 없으므로 한 번 추가되면 계속 소유한 상태로 남는다.
   useEffect(() => {
     if (tierFromXp(totalXp).tier.key !== "grandmaster") return;
-    const key = "board:grandmaster";
-    setOwnedSkins((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    setOwnedSkins((prev) => {
+      const keys = ["board:grandmaster", "piece:grandmaster"];
+      if (keys.every((k) => prev.has(k))) return prev;
+      const next = new Set(prev);
+      keys.forEach((k) => next.add(k));
+      return next;
+    });
   }, [totalXp]);
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
   // (버그) 개발자 계정 코인 지급을 "코인 기록이 아예 없을 때"로만 한정했더니, 이미 로그인해 progress가

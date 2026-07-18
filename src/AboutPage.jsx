@@ -364,6 +364,26 @@ function TierStrip() {
 // (오로라 배지·프레스티지 별 / 코인으로 못 사는 전용 보드 스킨 자동 해금 / 친구·검색·리더보드
 // 강조 표시)을 그대로 설명한다 — 아직 만들지 않은 기능을 마치 있는 것처럼 적지 않는다.
 const GM_AURORA = "linear-gradient(120deg,#B983FF,#6EE7C8 50%,#FF8FD1)";
+// (about 페이지 기능) "코인으로 살 수 없는 전용 체스보드·기물 스킨" 혜택 문구를 말로만 설명하지
+// 않고, 실제 상점에서 쓰는 것과 똑같은 이미지(App.jsx BOARD_SKINS.grandmaster·PIECE_SKINS.
+// grandmaster가 가리키는 파일)로 미리 보여준다. 보드는 8x8 통짜 이미지라 4x4 조각만 잘라 보여줘도
+// 질감이 충분히 드러난다.
+function GrandmasterSkinPreview() {
+  return (
+    <div className="flex items-center" style={{ gap: 14 }}>
+      <div style={{ width: 76, height: 76, borderRadius: 12, overflow: "hidden", flexShrink: 0, ...GLOSS_BORDER }}>
+        <div style={{ width: "100%", height: "100%", backgroundImage: "url(/boards/grandmaster-board.jpg)", backgroundSize: "200% 200%", backgroundPosition: "0% 0%" }} />
+      </div>
+      <div className="flex items-center" style={{ gap: 4 }}>
+        {["/pieces/grandmaster/white-queen.webp", "/pieces/grandmaster/black-knight.webp", "/pieces/grandmaster/white-rook.webp"].map((src) => (
+          <div key={src} style={{ width: 52, height: 52, borderRadius: 10, background: "rgba(0,0,0,.28)", border: "1px solid #4A3521", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <img src={src} alt="" style={{ width: "78%", height: "78%", objectFit: "contain" }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 function GrandmasterCard() {
   return (
     <Reveal>
@@ -390,14 +410,15 @@ function GrandmasterCard() {
                   퍼즐을 풀어 누적 <b style={{ color: T.brassHi }}>200,000 XP</b>를 모으면(아이언→브론즈→실버→골드→다이아몬드→마스터 순서로 전부 돌파) 도달해요. 그 뒤로도 XP는 계속 쌓이고, <b style={{ color: T.brassHi }}>100,000 XP</b>마다 프레스티지 별(★)이 하나씩 더해져요.
                 </p>
               </div>
-              <div>
+              <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, letterSpacing: ".04em", marginBottom: 6 }}>그랜드마스터만의 혜택</div>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: T.ivory, lineHeight: 1.85 }}>
                   <li>오로라처럼 일렁이는 전용 그러데이션 배지와, 끝없이 쌓이는 프레스티지 별(★) 카운터로 한눈에 구분돼요.</li>
-                  <li>코인으로는 살 수 없는 전용 체스보드 스킨이 티어 달성과 동시에 자동으로 해금돼요 — 상점의 체스보드 스킨에서 바로 장착할 수 있어요.</li>
+                  <li>코인으로는 살 수 없는 전용 체스보드·기물 스킨이 티어 달성과 동시에 자동으로 해금돼요 — 상점에서 바로 장착할 수 있어요.</li>
                   <li>친구 목록·유저 검색·티어 리더보드 어디서든 그랜드마스터는 골드빛 테두리와 왕관 아이콘으로 항상 강조되어 보여요.</li>
                 </ul>
               </div>
+              <GrandmasterSkinPreview />
             </div>
           </div>
         </div>
