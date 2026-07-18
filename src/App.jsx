@@ -5619,11 +5619,13 @@ function lastNamedOpening(sans) {
   for (let i = 1; i <= sans.length; i++) { const nd = snapNode(sans.slice(0, i)); if (nd && nd.opening && nd.opening.name) nm = nd.opening.name; }
   return nm;
 }
+// (버그 수정) 테마마다 다른 한국어 문구("~에서 탁월한 수 찾기" 등)를 붙였더니 이름이 길어져
+// 퍼즐 카드(최소폭 148px)에서 잘려 보였다 — 테마와 무관하게 항상 "<오프닝 이름>, <수 이름>"
+// 형식(예: "Italian Game, 4.Ng5")으로 통일해 훨씬 짧고 일관되게 만든다. 테마 구분은 이름이
+// 아니라 카드 위쪽 띠 색·테마 라벨(themeLabelsOf)로 이미 충분히 되고 있다.
 function puzzleName(theme, setupSans, mistakeSan) {
   const base = lastNamedOpening(setupSans) || "오프닝";
-  if (theme === "sacrifice") return base + "에서 탁월한 수 찾기";
-  if (theme === "advantage") return base + "에서 우위 점하기";
-  return base + "에서 " + moveNumber(setupSans.length) + stripSuffix(mistakeSan || "") + " 응징하기";
+  return base + ", " + moveNumber(setupSans.length) + stripSuffix(mistakeSan || "");
 }
 // (기능2) 저장 직전 최종 안전장치: setup+solution 전체를 시작 위치부터 다시 재생하며 각 수가
 // "그 시점에 둘 차례인 쪽"의 합법수인지 검증한다. 하나라도 어긋나면(불법수·차례 뒤바뀜 등) 저장을 막는다.
@@ -7317,7 +7319,10 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
           <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, wordBreak: "break-word" }}>{p.opening}</div>
           <LineStars total={3} solved={stars} />
         </div>
-        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.35 }}>{p.name}</div>
+        {/* (버그 수정) 오프닝 이름이 길면 한 줄 말줄임(...)으로 잘려 끝까지 안 보였다 — 카드는
+            어차피 내용 높이에 맞춰 늘어나므로(19차 UI2) 줄바꿈을 허용해 항상 전체가 보이게 한다.
+            keep-all로 단어 중간이 아니라 띄어쓰기·쉼표 단위로만 줄바꿈되게 한다. */}
+        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word", lineHeight: 1.35 }}>{p.name}</div>
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
           <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{themeLabelsOf(p)} · 라인 {totalLines}개</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
@@ -10078,6 +10083,58 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
 // 강조, 아직 안 온 구간은 잠금으로 가린다. 노드 사이 연결선은 OpeningSchematic·PuzzleSchematic이
 // 이미 쓰는 "절대 배치 노드 + 아래 SVG 커넥터" 기법을 그대로 따른다(이소메트릭 렌더링을 새로
 // 만들지 않는다).
+// (버그 수정) 여정 지도의 연결선·정거장 등장 애니메이션은 once:false라 스크롤로 지나갈 때마다
+// 다시 재생돼야 하는데, whileInView는 IntersectionObserver 콜백을 그대로 애니메이션 상태에
+// 반영한다 — 가느다란 대각선처럼 바운딩 박스가 얇은 도형은 노출 비율이 스크롤 몇 픽셀 차이에도
+// 크게 출렁이므로, 스크롤이 딱 60% 노출 경계에 걸친 좌표에서 멈추면 관성 스크롤의 미세한 떨림만
+// 으로도 보임/안 보임이 반복 전환되며 애니메이션이 무한히 깜빡였다("특정 좌표에 멈추면 애니메이션이
+// 이상하게 재생되는" 신고 원인). onViewportEnter/Leave 콜백 자체는 whileInView와 똑같이 받되, 그
+// 값을 짧게(130ms) 흔들리지 않고 유지될 때만 실제 상태에 반영해 — 순간적인 떨림은 걸러내고, 실제로
+// 스크롤해서 들어오고 나가는 정상적인 경우에는 지금처럼 매번 그대로 반복 재생된다.
+function useSettledInView(delay = 130) {
+  const [settled, setSettled] = useState(false);
+  const timerRef = useRef(null);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  const commit = (val) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setSettled(val), delay);
+  };
+  return { settled, onViewportEnter: () => commit(true), onViewportLeave: () => commit(false) };
+}
+// 여정 지도 연결선 하나 — pathLength/opacity를 whileInView 대신 위 훅으로 디바운스된 animate로 몬다.
+function TierPathLine({ x1, y1, x2, y2, lineStyle, glow, transition, amount = 0.6 }) {
+  const { settled, onViewportEnter, onViewportLeave } = useSettledInView();
+  const hidden = { pathLength: 0, opacity: 0 };
+  const shown = { pathLength: 1, opacity: 1 };
+  return (
+    <motion.line x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
+      initial={hidden}
+      animate={settled ? shown : hidden}
+      viewport={{ once: false, amount }}
+      onViewportEnter={onViewportEnter}
+      onViewportLeave={onViewportLeave}
+      transition={transition}
+      style={glow} />
+  );
+}
+// 여정 지도 정거장 등장(등장 시 살짝 튀어오르며 회전이 풀리는 연출) — 위와 동일한 디바운스 적용.
+function TierStationReveal({ tilt, children }) {
+  const { settled, onViewportEnter, onViewportLeave } = useSettledInView();
+  const hidden = { opacity: 0, scale: 0.45, rotate: tilt };
+  const shown = { opacity: 1, scale: 1, rotate: 0 };
+  return (
+    <motion.div
+      initial={hidden}
+      animate={settled ? shown : hidden}
+      viewport={{ once: false, amount: 0.6 }}
+      onViewportEnter={onViewportEnter}
+      onViewportLeave={onViewportLeave}
+      transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{ position: "absolute", inset: 0 }}>
+      {children}
+    </motion.div>
+  );
+}
 function TierJourneyPath({ totalXp }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   // (v0.1.2) v0.1.1에서 키웠던 정거장 원이 지나치게 커 보인다는 피드백으로 다시 축소.
@@ -10171,28 +10228,18 @@ function TierJourneyPath({ totalXp }) {
             const elbowY = y1 - (y1 - y2) * 0.28;
             return (
               <React.Fragment key={i}>
-                <motion.line x1={x1} y1={y1} x2="50%" y2={elbowY} {...lineStyle}
-                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: true, amount: 0.6 }} transition={{ duration: 0.5, ease: "easeOut" }} style={glow} />
-                <motion.line x1="50%" y1={elbowY} x2="50%" y2={y2} {...lineStyle}
-                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: true, amount: 0.6 }} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} style={glow} />
+                <TierPathLine x1={x1} y1={y1} x2="50%" y2={elbowY} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.5, ease: "easeOut" }} />
+                <TierPathLine x1="50%" y1={elbowY} x2="50%" y2={y2} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} />
               </React.Fragment>
             );
           }
           const x2 = (i + 1) % 2 ? "78%" : "22%";
-          // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 표시한다. 예전엔
-          // once:false라 스크롤할 때마다 다시 그려졌는데, 가느다란 대각선은 바운딩 박스가 얇아서
-          // 스크롤이 딱 멈춘 지점이 60% 노출 경계에 걸리면 관성 스크롤의 미세한 떨림만으로도
-          // 보임/안 보임이 반복 전환되며 선이 그려졌다 지워졌다 하는 애니메이션이 무한히 깜빡였다
-          // (신고된 "특정 좌표에 멈추면 애니메이션이 이상하게 재생되는" 버그). 이미 지나온 구간은
-          // 한 번만 그어지면 충분하므로 once:true로 바꿔 재관측 자체를 없앤다.
-          return (
-            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
-              initial={{ pathLength: 0, opacity: 0 }}
-              whileInView={{ pathLength: 1, opacity: 1 }}
-              viewport={{ once: true, amount: 0.6 }}
-              transition={{ duration: 0.7, ease: "easeOut" }}
-              style={glow} />
-          );
+          // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
+          // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
+          // 가느다란 대각선은 바운딩 박스가 얇아 노출 비율이 스크롤 몇 픽셀 차이에도 크게 출렁여,
+          // 스크롤이 딱 60% 노출 경계에 걸친 좌표에서 멈추면 그 떨림만으로 무한히 깜빡이던 문제가
+          // 있었다 — TierPathLine이 그 신호를 130ms 디바운스해서 걸러낸다(위 useSettledInView 참고).
+          return <TierPathLine key={i} x1={x1} y1={y1} x2={x2} y2={y2} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.7, ease: "easeOut" }} />;
         })}
       </svg>
       {TIER_STATIONS.map((s, i) => {
@@ -10224,16 +10271,10 @@ function TierJourneyPath({ totalXp }) {
                 밖으로 잘려나갔다. 정적 중앙 정렬(translateX(-50%))은 애니메이션이 없는 바깥 div가
                 전담하고, scale/rotate 애니메이션은 그 안쪽(inset:0)의 별도 motion.div로 분리한다. */}
             <div style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
-              {/* (버그 수정) 정거장 등장 애니메이션도 위 연결선과 같은 이유로 once:true로 바꿨다 —
-                  once:false였을 때는 스크롤이 60% 노출 경계 바로 위에서 멈추면 미세한 떨림만으로도
-                  등장 애니메이션이 계속 재시작돼, 배지가 작아졌다 커지며 회전하는 게 멈추지 않고
-                  반복 재생되는 것처럼 보였다. */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
-                whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
-                viewport={{ once: true, amount: 0.6 }}
-                transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
-                style={{ position: "absolute", inset: 0 }}>
+              {/* (버그 수정) 정거장 등장 애니메이션도 연결선과 같은 이유로 깜빡였다 — TierStationReveal이
+                  onViewportEnter/Leave 신호를 130ms 디바운스해서 걸러내므로, once:false로 스크롤마다
+                  반복 재생되는 연출은 그대로 유지하면서 스크롤이 노출 경계에 멈췄을 때의 떨림만 없앤다. */}
+              <TierStationReveal tilt={i % 2 ? 10 : -10}>
               <motion.div
                 ref={state === "current" ? currentRef : undefined}
                 animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
@@ -10263,7 +10304,7 @@ function TierJourneyPath({ totalXp }) {
                   </motion.span>
                 )}
               </motion.div>
-              </motion.div>
+              </TierStationReveal>
             </div>
             {state === "current" && (
               <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
@@ -11456,10 +11497,12 @@ export default function App() {
             불필요하게 키우지 않도록 훨씬 작은 값으로 지정한다. */}
         {/* (v0.1.2 기능) 로고 아래에 현재 버전을 작은 금색 텍스트로 표기 — CHANGELOG[0]에서 파생되는
             APP_VERSION을 그대로 써서, 새 버전을 낼 때 이 표기도 따로 손댈 필요가 없게 한다.
-            (v0.1.2) "OpenChess" 글자 쪽(로고 오른쪽 끝)에 맞춰 오른쪽 정렬, 크기도 한 단계 더 줄임. */}
-        <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 1 }}>
+            (v0.1.2) "OpenChess" 글자 쪽(로고 오른쪽 끝)에 맞춰 오른쪽 정렬, 크기도 한 단계 더 줄임.
+            (버그 수정) 로고와 버전 텍스트 사이가 붕 떠 보여 음수 marginTop으로 로고 바로 아래에
+            바짝 붙였다. 눌러서 소개 페이지(/about)로 바로 이동할 수 있는 링크로 바꿨다. */}
+        <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 0 }}>
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-          <span style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right" }}>v{APP_VERSION}</span>
+          <a href="/about" style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
