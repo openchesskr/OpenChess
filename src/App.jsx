@@ -170,7 +170,16 @@ const PIECE_SKINS = {
    \uCD5C\uC0C1\uC704 App\uC5D0\uC11C \uD55C \uBC88\uB9CC Provider\uB85C \uAC10\uC2FC\uB2E4. */
 const SkinContext = createContext({ boardSkin: "classic", pieceSkin: "classic" });
 function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
-function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSkin }) {
+function PieceGlyph({ type, color, size, style, draggable = false, onDragStart, pieceSkin }) {
+  // (버그 수정) 진짜 인터랙티브 보드가 아닌 곳(애니메이션 시연, 캡처 기물 목록, 프로모션 후보,
+  // 티어 배지 등)에서 draggable을 아예 안 넘기면 undefined가 되어 <img>·<a>처럼 브라우저가
+  // 기본적으로 드래그 가능하게 두는 요소는 여전히 네이티브 드래그가 걸려 있었다 — 실제 보드에서
+  // 기물 하나를 드래그할 때 그 제스처가 마우스 아래를 지나가는 다른(엉뚱한) draggable 이미지까지
+  // 함께 선택·드래그해 여러 기물·이미지가 한꺼번에 끌려오는 것처럼 보이는 원인이었다. draggable을
+  // 명시적으로 넘긴 진짜 보드 기물만 드래그를 허용하고, 나머지는 항상 false로 고정한다.
+  const dragStyle = draggable
+    ? { userSelect: "none", WebkitUserSelect: "none" }
+    : { WebkitUserDrag: "none", userSelect: "none", WebkitUserSelect: "none" };
   const ctx = useContext(SkinContext);
   const skinId = pieceSkin || ctx.pieceSkin;
   const sk = PIECE_SKINS[skinId] || PIECE_SKINS.classic;
@@ -188,7 +197,7 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
     const scale = (size * PIECE_BASE_RATIO) / imgSet.basePx;
     return (
       <img src={meta.src} alt={type} draggable={draggable} onDragStart={onDragStart}
-        style={{ width: meta.w * scale, height: meta.h * scale, display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }} />
+        style={{ width: meta.w * scale, height: meta.h * scale, display: "block", flexShrink: 0, filter: pieceShadow(light), ...dragStyle, ...style }} />
     );
   }
   const mid = PIECE_MID[type];
@@ -217,7 +226,7 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
   // <div>로 감싸고, 애니메이션에 쓰이는 opacity·transform 등 style도 이 바깥 div로 옮긴다.
   return (
     <div draggable={draggable} onDragStart={onDragStart}
-      style={{ display: "block", flexShrink: 0, width: svgW, height: svgH, filter: pieceShadow(light), ...style }}>
+      style={{ display: "block", flexShrink: 0, width: svgW, height: svgH, filter: pieceShadow(light), ...dragStyle, ...style }}>
       <svg viewBox={"0 " + vbY + " 100 " + (hf * 56)} width={svgW} height={svgH} style={{ display: "block", pointerEvents: "none" }}>
         <g transform={"matrix(1,0,0," + m + ",0," + (100 * (1 - m)) + ")"}>
           {sk.glossy && <defs><clipPath id={clipId}><polygon points={bodyPoints} />{type === "K" && <path d={PIECE_CROSS} />}</clipPath></defs>}
