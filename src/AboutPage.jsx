@@ -295,6 +295,41 @@ const DECO_LIST = [DECO_A, DECO_B, DECO_C, DECO_D, DECO_E, DECO_F];
 // 카테고리별로 배경에 옅게 깔아 둘 기물 — 각 카테고리 성격에 어울리는 기물을 하나씩 골랐다.
 const CAT_PIECE = { feature: "wQ", ui: "wB", ux: "wN", perf: "wR", fix: "bK", security: "bR" };
 
+// (about 페이지 기능) "유명한 오프닝들" 갤러리 전용 — 도감 탭이 인식하는 대표 오프닝(App.jsx의
+// OPENING_LIST) 중 특히 잘 알려진 8개를 골라, 그 오프닝의 정석 수순을 실제로 두어 도달하는 최종
+// 국면을 FEN으로 그대로 옮겨 적었다(모두 손으로 한 수씩 검증). DECO_LIST(유명한 명경기·트랩)와는
+// 별개로, 여기서는 "명경기"가 아니라 "오프닝 그 자체"를 소개하는 게 목적이라 완전히 새로 분리해 둔다.
+const POS_ITALIAN = { fen: "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3", move: { piece: "wB", from: "f1", to: "c4" }, caption: "이탈리안 게임" };
+const POS_RUYLOPEZ = { fen: "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3", move: { piece: "wB", from: "f1", to: "b5" }, caption: "루이 로페즈" };
+const POS_SICILIAN = { fen: "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2", move: { piece: "bP", from: "c7", to: "c5" }, caption: "시실리안 디펜스" };
+const POS_GRUNFELD = { fen: "rnbqkb1r/ppp1pp1p/5np1/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq d6 0 4", move: { piece: "bP", from: "d7", to: "d5" }, caption: "그룬펠드 디펜스" };
+const POS_FRENCH = { fen: "rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", move: { piece: "bP", from: "e7", to: "e6" }, caption: "프렌치 디펜스" };
+const POS_CAROKANN = { fen: "rnbqkbnr/pp1ppppp/2p5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", move: { piece: "bP", from: "c7", to: "c6" }, caption: "카로칸 디펜스" };
+const POS_QUEENSGAMBIT = { fen: "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq c3 0 2", move: { piece: "wP", from: "c2", to: "c4" }, caption: "퀸즈 갬빗" };
+const POS_KINGSGAMBIT = { fen: "rnbqkbnr/pppp1ppp/8/4p3/4PP2/8/PPPP2PP/RNBQKBNR b KQkq f3 0 2", move: { piece: "wP", from: "f2", to: "f4" }, caption: "킹스 갬빗" };
+const OPENING_DECO_LIST = [POS_ITALIAN, POS_RUYLOPEZ, POS_SICILIAN, POS_GRUNFELD, POS_FRENCH, POS_CAROKANN, POS_QUEENSGAMBIT, POS_KINGSGAMBIT].map(famousDeco);
+function FamousOpeningsSection() {
+  return (
+    <section>
+      <Reveal>
+        <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
+          <Library size={14} color={T.brass} />
+          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>OPENING</span>
+        </div>
+        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>체스 역사에 남은 유명한 오프닝들</h3>
+        <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 26px", textAlign: "center", maxWidth: 520, marginLeft: "auto", marginRight: "auto" }}>
+          이탈리안 게임부터 킹스 갬빗까지 — 도감 탭에서 만나볼 수 있는 대표 오프닝의 정석 수순을 실제 기보 그대로 체스보드에 재현했어요.
+        </p>
+      </Reveal>
+      <div className="flex items-start justify-center flex-wrap" style={{ gap: 28 }}>
+        {OPENING_DECO_LIST.map((deco, i) => (
+          <DecoBoard key={deco.caption} {...deco} size={118} tilt={i % 2 === 0 ? -6 : 6} delay={(i % 4) * 0.06} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function TierStrip() {
   const tiers = [
     { key: "iron", label: "아이언", img: "/iron-pawn.png" },
@@ -321,6 +356,74 @@ function TierStrip() {
         ))}
       </motion.div>
     </div>
+  );
+}
+
+// (about 페이지 기능) 최종 티어인 그랜드마스터만 따로 떼어 소개하는 카드 — 실제 티어 로직
+// (App.jsx TIER_XP_REQ)에서 그대로 가져온 정확한 달성 조건과, 실제로 구현된 세 가지 혜택
+// (오로라 배지·프레스티지 별 / 코인으로 못 사는 전용 보드 스킨 자동 해금 / 친구·검색·리더보드
+// 강조 표시)을 그대로 설명한다 — 아직 만들지 않은 기능을 마치 있는 것처럼 적지 않는다.
+const GM_AURORA = "linear-gradient(120deg,#B983FF,#6EE7C8 50%,#FF8FD1)";
+// (about 페이지 기능) "코인으로 살 수 없는 전용 체스보드·기물 스킨" 혜택 문구를 말로만 설명하지
+// 않고, 실제 상점에서 쓰는 것과 똑같은 이미지(App.jsx BOARD_SKINS.grandmaster·PIECE_SKINS.
+// grandmaster가 가리키는 파일)로 미리 보여준다. 보드는 8x8 통짜 이미지라 4x4 조각만 잘라 보여줘도
+// 질감이 충분히 드러난다.
+function GrandmasterSkinPreview() {
+  return (
+    <div className="flex items-center" style={{ gap: 14 }}>
+      <div style={{ width: 76, height: 76, borderRadius: 12, overflow: "hidden", flexShrink: 0, ...GLOSS_BORDER }}>
+        <div style={{ width: "100%", height: "100%", backgroundImage: "url(/boards/grandmaster-board.jpg)", backgroundSize: "200% 200%", backgroundPosition: "0% 0%" }} />
+      </div>
+      <div className="flex items-center" style={{ gap: 4 }}>
+        {["/pieces/grandmaster/white-queen.webp", "/pieces/grandmaster/black-knight.webp", "/pieces/grandmaster/white-rook.webp"].map((src) => (
+          <div key={src} style={{ width: 52, height: 52, borderRadius: 10, background: "rgba(0,0,0,.28)", border: "1px solid #4A3521", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <img src={src} alt="" style={{ width: "78%", height: "78%", objectFit: "contain" }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function GrandmasterCard() {
+  return (
+    <Reveal>
+      <div style={{ position: "relative", borderRadius: 20, padding: "2px", background: GM_AURORA, boxShadow: "0 20px 50px -20px rgba(185,131,255,.35)" }}>
+        <div style={{ borderRadius: 18, padding: "32px 28px", background: "linear-gradient(160deg,#241a33,#150C05 55%,#0f1f1a)" }}>
+          <div className="flex items-center flex-wrap" style={{ gap: 28 }}>
+            <motion.div initial={{ opacity: 0, scale: 0.8, rotate: -6 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
+              style={{ flex: "0 0 auto", width: 168, margin: "0 auto" }}>
+              <motion.img src="/gm-trophy-web.webp" alt="그랜드마스터 트로피" loading="lazy" animate={{ y: [0, -9, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
+                style={{ width: "100%", display: "block", filter: "drop-shadow(0 14px 24px rgba(0,0,0,.6))" }} />
+            </motion.div>
+            <div style={{ flex: "1 1 300px", minWidth: 260 }}>
+              <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+                <Crown size={15} color="#E8C6FF" />
+                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", background: GM_AURORA, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>최종 티어</span>
+              </div>
+              <h3 style={{ fontSize: 23, fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px" }}>그랜드마스터</h3>
+              <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 16px" }}>
+                아이언에서 시작해 여섯 단계를 모두 넘어야 도달하는 일곱 번째, 마지막 티어예요.
+              </p>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, letterSpacing: ".04em", marginBottom: 6 }}>달성 조건</div>
+                <p style={{ fontSize: 12.5, color: T.ivory, lineHeight: 1.75, margin: 0 }}>
+                  퍼즐을 풀어 누적 <b style={{ color: T.brassHi }}>200,000 XP</b>를 모으면(아이언→브론즈→실버→골드→다이아몬드→마스터 순서로 전부 돌파) 도달해요. 그 뒤로도 XP는 계속 쌓이고, <b style={{ color: T.brassHi }}>100,000 XP</b>마다 프레스티지 별(★)이 하나씩 더해져요.
+                </p>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, letterSpacing: ".04em", marginBottom: 6 }}>그랜드마스터만의 혜택</div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: T.ivory, lineHeight: 1.85 }}>
+                  <li>오로라처럼 일렁이는 전용 그러데이션 배지와, 끝없이 쌓이는 프레스티지 별(★) 카운터로 한눈에 구분돼요.</li>
+                  <li>코인으로는 살 수 없는 전용 체스보드·기물 스킨이 티어 달성과 동시에 자동으로 해금돼요 — 상점에서 바로 장착할 수 있어요.</li>
+                  <li>친구 목록·유저 검색·티어 리더보드 어디서든 그랜드마스터는 골드빛 테두리와 왕관 아이콘으로 항상 강조되어 보여요.</li>
+                </ul>
+              </div>
+              <GrandmasterSkinPreview />
+            </div>
+          </div>
+        </div>
+      </div>
+    </Reveal>
   );
 }
 
@@ -405,9 +508,35 @@ function ChessComSection() {
 }
 
 // 페이지1 — 소개(히어로+기능+티어+CTA). 기존에 만들어 둔 내용을 그대로 페이저의 첫 페이지로 옮겼다.
+// (about 페이지 기능) ilust-2·3·4처럼 액자에 담긴 일러스트는 등장(Reveal/motion) 애니메이션에
+// 더해, 계속 은은하게 위아래로 떠 있는 연출(DecoBoard·PhoneFrame과 같은 방식)을 얹어 정지된
+// 그림이 아니라 페이지가 늘 살아있는 느낌을 준다. delay를 다르게 줘 셋이 같은 박자로 움직이지
+// 않게 한다.
+function FloatImg({ src, alt, delay = 0 }) {
+  return (
+    <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut", delay }}>
+      <img src={src} alt={alt} loading="lazy" style={{ width: "100%", display: "block" }} />
+    </motion.div>
+  );
+}
 function IntroPage() {
   return (
-    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "56px 20px 72px" }}>
+    <div>
+      {/* (about 페이지 기능) ilust-1을 화면 맨 위 전체 폭 배너로 옮겼다 — 히어로보다 먼저 보이는
+          첫 인상이 되도록. 배경 이미지답게 등장은 한 번만 페이드인하고, 그 안에서는 천천히
+          확대·이동하는 카메라 무브(켄 번즈)를 무한 반복해 계속 움직이는 느낌을 준다(티어 여정
+          지도 배경과 같은 연출). 하단 그러데이션으로 페이지 배경과 자연스럽게 이어붙인다. */}
+      <div style={{ position: "relative", width: "100%", overflow: "hidden", maxHeight: 340 }}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7 }}>
+          <motion.img src="/ilust-1-web.webp" alt="MILKU와 KOKOA의 대국" loading="lazy"
+            animate={{ scale: [1, 1.08, 1], x: ["0%", "-2%", "0%"] }}
+            transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
+            style={{ width: "100%", display: "block", objectFit: "cover", maxHeight: 340 }} />
+        </motion.div>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, #1B1009 100%)", pointerEvents: "none" }} />
+      </div>
+
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "40px 20px 72px" }}>
       <section className="flex items-center flex-wrap" style={{ gap: 36, marginBottom: 8 }}>
         <div style={{ flex: "1 1 320px", minWidth: 280 }}>
           <Reveal><div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
@@ -467,6 +596,10 @@ function IntroPage() {
 
       <SectionDivider />
 
+      <FamousOpeningsSection />
+
+      <SectionDivider />
+
       <StatsRow />
 
       <SectionDivider />
@@ -489,13 +622,40 @@ function IntroPage() {
         <TierStrip />
       </section>
 
+      <div style={{ marginTop: 44 }}>
+        <GrandmasterCard />
+      </div>
+
       <SectionDivider />
 
-      <section style={{ maxWidth: 640, margin: "0 auto" }}>
-        <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">
-          친구를 추가하고 채팅하며, 서로 얼마나 풀었는지·어떤 칭호를 얻었는지 프로필에서 확인해 보세요. 퍼즐을 공유하면 친구가 풀었을 때 저도 경험치를 조금 나눠 받아요.
-        </SpeechBubble>
+      {/* (about 페이지 기능) 두 코치의 "vs" 배너 — 티어(경쟁) 이야기에서 다음의 우정·커뮤니티
+          이야기로 넘어가는 길목에 배치해, "라이벌이자 함께 크는 사이"라는 관계를 자연스럽게 이어준다. */}
+      <Reveal>
+        <div style={{ maxWidth: 360, margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
+          <FloatImg src="/ilust-4-web.webp" alt="MILKU vs KOKOA" />
+        </div>
+      </Reveal>
+
+      <SectionDivider />
+
+      <section className="flex items-center flex-wrap" style={{ gap: 28, maxWidth: 760, margin: "0 auto" }}>
+        <div style={{ flex: "1 1 300px", minWidth: 260 }}>
+          <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">
+            친구를 추가하고 채팅하며, 서로 얼마나 풀었는지·어떤 칭호를 얻었는지 프로필에서 확인해 보세요. 퍼즐을 공유하면 친구가 풀었을 때 저도 경험치를 조금 나눠 받아요.
+          </SpeechBubble>
+        </div>
+        <motion.div initial={{ opacity: 0, scale: 0.85, rotate: 5 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
+          style={{ flex: "0 0 auto", width: 190, maxWidth: "100%", margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
+          <FloatImg src="/ilust-2-web.webp" alt="MILKU와 KOKOA의 악수" delay={0.4} />
+        </motion.div>
       </section>
+
+      <Reveal>
+        <div style={{ maxWidth: 280, margin: "40px auto 0", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
+          <FloatImg src="/ilust-3-web.webp" alt="마주 앉아 대국을 두는 MILKU와 KOKOA" delay={0.8} />
+        </div>
+        <p style={{ textAlign: "center", fontSize: 12, color: T.inkSoft, marginTop: 10 }}>오늘도 누군가는 다음 수를 고민합니다.</p>
+      </Reveal>
 
       <Reveal delay={0.05}>
         <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 64, padding: "36px 28px", borderRadius: 18, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
@@ -516,6 +676,7 @@ function IntroPage() {
         <DecoBoard {...DECO_E} size={124} tilt={0} />
       </div>
       <div style={{ textAlign: "center", padding: "28px 0 8px" }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>
+      </div>
     </div>
   );
 }
@@ -567,6 +728,35 @@ const VERSION_HISTORY = [
       { cat: "ui", items: [
         "이 페이지의 마스코트 그림을 학습 탭 등 다른 화면에서 이미 쓰던 깔끔한 그림체로 통일했어요.",
         "티어 여정 지도에서 그랜드마스터(마지막 티어)를 가운데로 길게 강조해 \"여기가 끝\"이라는 느낌을 살렸고, 티어별 배경이 경계에서 끊기지 않고 자연스럽게 이어지도록 다듬었어요. 안내 문구 대신 이정표 아이콘을 넣었어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.1.4", date: "2026.7.18",
+    summary: "소개 페이지에 유명 오프닝 갤러리와 그랜드마스터 카드를 추가하고, 그랜드마스터 전용 체스보드·기물 스킨을 실제로 선보여요.",
+    mascot: {
+      intro: { char: "milku", expr: "great", name: "MILKU 코치", align: "left", text: "이번엔 이탈리안 게임부터 그룬펠드 디펜스까지, 유명한 오프닝 8개를 실제 기보 그대로 체스보드 위에 재현해서 보여드려요!" },
+      outro: { char: "kokoa", expr: "celebrate", name: "KOKOA 코치", align: "right", text: "그랜드마스터 티어까지 오르면 코인으로도 못 사는 전용 체스보드·기물 스킨이 자동으로 열려요 — 오로라 크리스탈 세트, 정말 근사하지 않나요?" },
+    },
+    highlight: { kind: "img", src: "/gm-trophy-web.webp", label: "그랜드마스터 카드 추가" },
+    sections: [
+      { cat: "feature", items: [
+        "이탈리안 게임·루이 로페즈·시실리안 디펜스·그룬펠드 디펜스 등 유명한 오프닝 8개를 실제 정석 수순 그대로 체스보드에 재현한 갤러리를 새로 추가했어요.",
+        "그랜드마스터 티어를 소개하는 카드를 추가했어요 — 달성 조건(누적 200,000 XP, 이후 100,000 XP마다 프레스티지 별)과 그랜드마스터만의 혜택을 한눈에 볼 수 있어요.",
+        "그랜드마스터 티어에 도달하면 코인으로 살 수 없는 전용 체스보드·기물 스킨(오로라 크리스탈+대리석 세트)이 자동으로 해금돼요 — 상점에서 바로 장착할 수 있어요.",
+        "친구 목록·유저 검색·티어 리더보드 어디서든 그랜드마스터는 골드빛 테두리와 왕관 아이콘으로 항상 강조되어 보여요.",
+        "프로필의 \"오프닝별 승률\" 목록을 갈래마다 접었다 펼 수 있게 했어요 — 세부 변형이 많은 계정도 목록이 처음부터 너무 길어지지 않아요.",
+        "퍼즐 이름을 \"오프닝 이름, 수\"(예: Italian Game, 4.Ng5) 형식으로 통일했어요.",
+      ] },
+      { cat: "ui", items: [
+        "MILKU·KOKOA 일러스트 4장을 이 페이지 곳곳에 새로 배치했어요 — 맨 위 전체 폭 배너를 포함해 전부 계속 은은하게 움직여요.",
+        "상단의 페이지 안내 바를 없애고, 화면 좌우 중단에 떠 있는 화살표 버튼으로 페이지를 넘기도록 바꿨어요.",
+        "퍼즐 카드 위쪽 라벨에는 세부 갈래 대신 최상위 오프닝 이름만 짧게 보여요.",
+        "헤더 로고 아래 버전 표기를 로고에 더 붙였고, 누르면 이 소개 페이지로 바로 이동해요.",
+      ] },
+      { cat: "fix", items: [
+        "오프닝 이름이 길어도 퍼즐 카드 높이가 항상 균일하게 유지되도록, 넘치는 이름만 글자 크기가 자동으로 줄어들게 했어요.",
+        "티어 여정 지도에서 스크롤이 특정 지점에 멈추면 등장 애니메이션이 깜빡이며 반복되던 문제를 고쳤어요.",
       ] },
     ],
   },
@@ -1045,12 +1235,17 @@ export default function AboutPage() {
         </div>
       </header>
 
-      {/* 페이지 넘김 안내 바 — 이전/다음 버튼 + 지금 몇 페이지인지, 스와이프해도 동일하게 반응 */}
-      <div className="flex items-center justify-center" style={{ position: "relative", zIndex: 3, flexShrink: 0, gap: 10, padding: "8px 16px", background: "rgba(27,16,9,.92)", backdropFilter: "blur(6px)", borderBottom: "1px solid #000" }}>
-        <button onClick={() => goTo(page - 1)} disabled={page === 0} className="press" aria-label="이전 페이지" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: page === 0 ? T.inkSoft : T.brassHi, opacity: page === 0 ? 0.4 : 1, cursor: page === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
-        <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, minWidth: 96, textAlign: "center" }}>{page === 0 ? "소개" : "v" + VERSION_HISTORY[page - 1].version} · {page + 1}/{total}</span>
-        <button onClick={() => goTo(page + 1)} disabled={page === total - 1} className="press" aria-label="다음 페이지" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: page === total - 1 ? T.inkSoft : T.brassHi, opacity: page === total - 1 ? 0.4 : 1, cursor: page === total - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
-      </div>
+      {/* (about 페이지 기능) 상단의 "< 소개 · 1/13 >" 안내 바 대신, 화면 좌우 중단에 떠 있는
+          화살표 버튼으로 페이지를 넘긴다 — 콘텐츠를 가리지 않게 뷰포트 기준으로 고정하고, 페이지
+          안쪽 스크롤과 무관하게 항상 세로 중앙에 머문다. 스와이프는 그대로 동일하게 동작한다. */}
+      <button onClick={() => goTo(page - 1)} disabled={page === 0} className="press" aria-label="이전 페이지"
+        style={{ position: "fixed", left: 14, top: "50%", transform: "translateY(-50%)", zIndex: 20, width: 42, height: 42, borderRadius: "50%", border: "1px solid " + T.brass, background: "rgba(27,16,9,.85)", backdropFilter: "blur(6px)", color: page === 0 ? T.inkSoft : T.brassHi, opacity: page === 0 ? 0.35 : 1, cursor: page === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 14px rgba(0,0,0,.4)" }}>
+        <ChevronLeft size={20} />
+      </button>
+      <button onClick={() => goTo(page + 1)} disabled={page === total - 1} className="press" aria-label="다음 페이지"
+        style={{ position: "fixed", right: 14, top: "50%", transform: "translateY(-50%)", zIndex: 20, width: 42, height: 42, borderRadius: "50%", border: "1px solid " + T.brass, background: "rgba(27,16,9,.85)", backdropFilter: "blur(6px)", color: page === total - 1 ? T.inkSoft : T.brassHi, opacity: page === total - 1 ? 0.35 : 1, cursor: page === total - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 14px rgba(0,0,0,.4)" }}>
+        <ChevronRight size={20} />
+      </button>
 
       <div ref={pagerRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
         style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflow: "hidden", touchAction: "pan-y" }}>
