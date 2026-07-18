@@ -10172,20 +10172,24 @@ function TierJourneyPath({ totalXp }) {
             return (
               <React.Fragment key={i}>
                 <motion.line x1={x1} y1={y1} x2="50%" y2={elbowY} {...lineStyle}
-                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.5, ease: "easeOut" }} style={glow} />
+                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: true, amount: 0.6 }} transition={{ duration: 0.5, ease: "easeOut" }} style={glow} />
                 <motion.line x1="50%" y1={elbowY} x2="50%" y2={y2} {...lineStyle}
-                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} style={glow} />
+                  initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: true, amount: 0.6 }} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} style={glow} />
               </React.Fragment>
             );
           }
           const x2 = (i + 1) % 2 ? "78%" : "22%";
-          // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
-          // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
+          // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 표시한다. 예전엔
+          // once:false라 스크롤할 때마다 다시 그려졌는데, 가느다란 대각선은 바운딩 박스가 얇아서
+          // 스크롤이 딱 멈춘 지점이 60% 노출 경계에 걸리면 관성 스크롤의 미세한 떨림만으로도
+          // 보임/안 보임이 반복 전환되며 선이 그려졌다 지워졌다 하는 애니메이션이 무한히 깜빡였다
+          // (신고된 "특정 좌표에 멈추면 애니메이션이 이상하게 재생되는" 버그). 이미 지나온 구간은
+          // 한 번만 그어지면 충분하므로 once:true로 바꿔 재관측 자체를 없앤다.
           return (
             <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
               initial={{ pathLength: 0, opacity: 0 }}
               whileInView={{ pathLength: 1, opacity: 1 }}
-              viewport={{ once: false, amount: 0.6 }}
+              viewport={{ once: true, amount: 0.6 }}
               transition={{ duration: 0.7, ease: "easeOut" }}
               style={glow} />
           );
@@ -10220,10 +10224,14 @@ function TierJourneyPath({ totalXp }) {
                 밖으로 잘려나갔다. 정적 중앙 정렬(translateX(-50%))은 애니메이션이 없는 바깥 div가
                 전담하고, scale/rotate 애니메이션은 그 안쪽(inset:0)의 별도 motion.div로 분리한다. */}
             <div style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
+              {/* (버그 수정) 정거장 등장 애니메이션도 위 연결선과 같은 이유로 once:true로 바꿨다 —
+                  once:false였을 때는 스크롤이 60% 노출 경계 바로 위에서 멈추면 미세한 떨림만으로도
+                  등장 애니메이션이 계속 재시작돼, 배지가 작아졌다 커지며 회전하는 게 멈추지 않고
+                  반복 재생되는 것처럼 보였다. */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.45, rotate: i % 2 ? 10 : -10 }}
                 whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
-                viewport={{ once: false, amount: 0.6 }}
+                viewport={{ once: true, amount: 0.6 }}
                 transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
                 style={{ position: "absolute", inset: 0 }}>
               <motion.div
