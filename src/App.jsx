@@ -170,7 +170,16 @@ const PIECE_SKINS = {
    \uCD5C\uC0C1\uC704 App\uC5D0\uC11C \uD55C \uBC88\uB9CC Provider\uB85C \uAC10\uC2FC\uB2E4. */
 const SkinContext = createContext({ boardSkin: "classic", pieceSkin: "classic" });
 function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
-function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSkin }) {
+function PieceGlyph({ type, color, size, style, draggable = false, onDragStart, pieceSkin }) {
+  // (버그 수정) 진짜 인터랙티브 보드가 아닌 곳(애니메이션 시연, 캡처 기물 목록, 프로모션 후보,
+  // 티어 배지 등)에서 draggable을 아예 안 넘기면 undefined가 되어 <img>·<a>처럼 브라우저가
+  // 기본적으로 드래그 가능하게 두는 요소는 여전히 네이티브 드래그가 걸려 있었다 — 실제 보드에서
+  // 기물 하나를 드래그할 때 그 제스처가 마우스 아래를 지나가는 다른(엉뚱한) draggable 이미지까지
+  // 함께 선택·드래그해 여러 기물·이미지가 한꺼번에 끌려오는 것처럼 보이는 원인이었다. draggable을
+  // 명시적으로 넘긴 진짜 보드 기물만 드래그를 허용하고, 나머지는 항상 false로 고정한다.
+  const dragStyle = draggable
+    ? { userSelect: "none", WebkitUserSelect: "none" }
+    : { WebkitUserDrag: "none", userSelect: "none", WebkitUserSelect: "none" };
   const ctx = useContext(SkinContext);
   const skinId = pieceSkin || ctx.pieceSkin;
   const sk = PIECE_SKINS[skinId] || PIECE_SKINS.classic;
@@ -188,7 +197,7 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
     const scale = (size * PIECE_BASE_RATIO) / imgSet.basePx;
     return (
       <img src={meta.src} alt={type} draggable={draggable} onDragStart={onDragStart}
-        style={{ width: meta.w * scale, height: meta.h * scale, display: "block", flexShrink: 0, filter: pieceShadow(light), ...style }} />
+        style={{ width: meta.w * scale, height: meta.h * scale, display: "block", flexShrink: 0, filter: pieceShadow(light), ...dragStyle, ...style }} />
     );
   }
   const mid = PIECE_MID[type];
@@ -217,7 +226,7 @@ function PieceGlyph({ type, color, size, style, draggable, onDragStart, pieceSki
   // <div>로 감싸고, 애니메이션에 쓰이는 opacity·transform 등 style도 이 바깥 div로 옮긴다.
   return (
     <div draggable={draggable} onDragStart={onDragStart}
-      style={{ display: "block", flexShrink: 0, width: svgW, height: svgH, filter: pieceShadow(light), ...style }}>
+      style={{ display: "block", flexShrink: 0, width: svgW, height: svgH, filter: pieceShadow(light), ...dragStyle, ...style }}>
       <svg viewBox={"0 " + vbY + " 100 " + (hf * 56)} width={svgW} height={svgH} style={{ display: "block", pointerEvents: "none" }}>
         <g transform={"matrix(1,0,0," + m + ",0," + (100 * (1 - m)) + ")"}>
           {sk.glossy && <defs><clipPath id={clipId}><polygon points={bodyPoints} />{type === "K" && <path d={PIECE_CROSS} />}</clipPath></defs>}
@@ -1243,8 +1252,13 @@ function isSacrifice(board, sanRaw, color) {
   // 기물을 내주는 수(예: 6.Bd3)나, 상대의 탁월한 수로 이미 예정된 손실을 되돌려주는 수(예: 6.Bxd5)일 뿐이므로
   // "찾아내기 어려운 비직관적 희생"이 아니다.
   const movedThreatLoss = seeSquare(board, fr, fc, enemy);
-  // (18차) 폰 희생 제외 원칙에 맞춰 임계값을 -1에서 -2로 강화 — 2점 이상의 실질 기물 손실만 희생으로 본다.
-  if (net <= -2) {
+  // (버그 수정) 18차에서 "폰 희생 제외 원칙"에 맞춘다며 임계값을 -1에서 -2로 되돌렸는데, 폰 희생
+  // 제외는 이미 위(info.piece === "P")에서 움직인 기물 자체로 걸러지고 있어 이 강화는 불필요했다.
+  // 오히려 net===-1로 정확히 떨어지는 "비숍/나이트를 폰 두 개와 맞바꾸는" 대표적 교환 희생 패턴
+  // (예: 1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 a6 6.Bc4 e6 7.O-O Nbd7 8.Bxe6 — 비숍(3)을
+  // 내주고 폰 두 개(1+1)를 되찾아 net=1-2=-1)가 다시 걸러지지 않게 되는 회귀를 만들었다. 바로 위
+  // 블록(기능4) 주석이 설명하는 원래 의도대로 -1로 되돌린다.
+  if (net <= -1) {
     if (movedThreatLoss >= 1 && net >= -movedThreatLoss) return false;  // 예정된 손실의 실현(반환)일 뿐
     return true;
   }
@@ -2318,9 +2332,22 @@ function EvalBar({ cp, width, depth }) {
 // 좌우로 스크롤해서 끝까지 볼 수 있다. 줄 자체를 누르면(스크롤 영역 자체 클릭 포함) 그 줄의 첫
 // 수가 보드에서 그대로 두어진다 — 스크롤과 클릭이 같은 영역을 쓰므로, 드래그로 스크롤하다 손을
 // 뗀 것까지 클릭으로 오인해 수를 두지 않도록 pointerdown/up 좌표 차이를 함께 확인한다.
-function EngineLines({ lines, sans, width, onPlayFirst }) {
+// (버그 수정) 계산 중인 줄 자리에 실제 줄과 똑같은 높이의 뼈대(스켈레톤)를 깔아, 수를 두면 이
+// 컴포넌트가 통째로 사라졌다 나타나며 아래 보드·기보를 들썩이게 하던 문제를 없앤다 — 3-dot
+// 바운스(EvalBar의 "탐색 중" 표시와 같은 애니메이션)로 지금 계산 중임을 보여준다.
+function EngineLineSkeleton() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, height: 13 }}>
+        {[0, 1, 2].map((i) => <span key={i} style={{ width: 3, height: 3, marginLeft: i ? 3 : 0, borderRadius: "50%", background: T.brassHi, display: "inline-block", animation: "dotbounceSm 1.1s ease-in-out " + (i * 0.18) + "s infinite" }} />)}
+      </span>
+    </div>
+  );
+}
+function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
   const dragStartRef = useRef(null);
-  if (!lines || !lines.length) return null;
+  const hasLines = lines && lines.length;
+  if (!hasLines && !pending) return null;
   // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
   // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
   // 못 이긴다) — 그 결과 줄(row)과 이 wrapper, 나아가 학습 탭 grid 컬럼까지 전부 그 폭에 맞춰
@@ -2330,16 +2357,20 @@ function EngineLines({ lines, sans, width, onPlayFirst }) {
   // 더해, 혹시라도 새는 경우 이 컴포넌트 선에서 끝나고 위로 전파되지 않게 한다.
   return (
     <div style={{ width, minWidth: 0, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
-      {lines.map((l, i) => (
-        <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
-          onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
-          style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default" }}>
-          <EvalBadge ev={l.ev} small />
-          <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-            {pvContinuationText(sans.length, l.sans)}
+      {hasLines
+        ? lines.map((l, i) => (
+          <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
+            onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
+            // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
+            // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
+            style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
+            <EvalBadge ev={l.ev} small />
+            <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
+              {pvContinuationText(sans.length, l.sans)}
+            </div>
           </div>
-        </div>
-      ))}
+        ))
+        : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} />)}
     </div>
   );
 }
@@ -2712,6 +2743,12 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const [posGames, setPosGames] = useState(node ? node.posGames : null);
   const [posEval, setPosEval] = useState(null);
   const [engineLines, setEngineLines] = useState([]); // (v0.1.3 기능) 엔진 상위 3줄(MultiPV) 전체 수순
+  // (버그 수정) 수를 둘 때마다 engineLines를 곧장 []로 비웠다가 재계산이 끝나면 다시 채웠는데, 그
+  // 사이(재요청 왕복 시간만큼) belowEval 자리가 통째로 사라져 그 아래 보드·기보가 위로 들썩였다
+  // (레이아웃 높이가 0↔실제 높이로 튐). 이제 engineLines는 새 결과가 도착할 때만 교체하고, 계산
+  // 중인지는 이 별도 플래그(linesPending)로만 표시한다 — 이전 포지션의 라인을 옅게 유지한 채
+  // "계산 중" 표시를 얹어, 사라졌다 나타나는 대신 제자리에서 갱신되는 것처럼 보이게 한다.
+  const [linesPending, setLinesPending] = useState(false);
   const [curDepth, setCurDepth] = useState(null); // (17차) 평가치 바 위에 표기할 실시간 엔진 depth
   // (19차 UX1) 표기용 depth는 한 포지션 안에서 단조 증가(+1)만 하도록 한다. 원래는 위치 평가(→16)에
   // 이어 후보 수마다 별도 go depth(→15)를 돌려 setCurDepth가 1~15를 여러 번 반복해 표기가 튀었다.
@@ -2780,7 +2817,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       (extraSans || []).forEach((s) => { if (!seen.has(stripSuffix(s))) { list.push({ san: s, book: false, adopt: null, games: null, user: true }); seen.add(stripSuffix(s)); } });
       return list;
     };
-    setMoves(withExtra(base.map((m) => ({ ...m })))); setPosGames(node ? node.posGames : null); setPosEval(null); setEngineLines([]); setEngineNote(""); setMasterEmpty(false);
+    setMoves(withExtra(base.map((m) => ({ ...m })))); setPosGames(node ? node.posGames : null); setPosEval(null); setEngineNote(""); setMasterEmpty(false);
     if (!liveOn) return;
     (async () => {
       try {
@@ -2840,10 +2877,15 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     return () => { cancelled = true; };
   }, [key, liveOn, extraKey, contentVer, isMaster]);
 
+  // liveOn을 끄면(설정 토글) 더 이상 갱신되지 않을 이전 포지션의 엔진 라인이 계속 옅게 남아 있을
+  // 이유가 없다 — 이때만 확실히 비운다(수를 둘 때마다는 비우지 않음, 위 참고).
+  useEffect(() => { if (!liveOn) { setEngineLines([]); setLinesPending(false); } }, [liveOn]);
+
   useEffect(() => {
     let cancelled = false;
     if (!liveOn || engine.status !== "ready") return;
     if (depthKeyRef.current !== key) { depthKeyRef.current = key; setCurDepth(null); } // (19차 UX1) 포지션 바뀔 때만 리셋
+    setLinesPending(true); // 이 포지션의 새 엔진 라인을 계산하는 동안, 이전 라인은 옅게 유지한 채 "계산 중"만 표시한다
     const baseWhite = ply % 2 === 0 ? 1 : -1;
     const childWhite = (ply + 1) % 2 === 0 ? 1 : -1;
     (async () => {
@@ -2872,23 +2914,28 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       const cache = posCacheRef.current;
       if (!cache.bePromise) cache.bePromise = engine.evaluate(sansToFen(sans), 16, onEvalProgress, 1200);
       const be = await cache.bePromise;
-      if (cancelled || !be) return;
+      if (cancelled) return;
+      if (!be) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
       setPosEval(be.mate != null || be.cp != null ? mkPosEval(be) : null);
       // (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV-3)을 전체 수순으로 보여준다 — 후보
       // 수 목록 보충용 MultiPV-10(depth 13, 아래)과는 별개 요청·별개 캐시다(그쪽은 첫 수만 필요하고
       // depth·개수 요구사항이 달라 공유하면 서로의 용도에 안 맞는 절충이 된다).
       if (!cache.linesPromise) cache.linesPromise = engine.evaluateMulti(sansToFen(sans), 15, 3, 3000);
       const pvs3 = await cache.linesPromise;
+      if (cancelled) return;
       let lines = [];
-      if (!cancelled && pvs3 && pvs3.length) {
+      if (pvs3 && pvs3.length) {
         lines = pvs3.filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
           ev: pv.mate != null
             ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
             : { cp: pv.cp * baseWhite },
           sans: pvUciToSans(sans, pv.pv, 15),
         }));
-        setEngineLines(lines);
       }
+      // (버그 수정) 위 linesPending 주석 참고 — 이 포지션의 결과가 나온 시점(빈 배열이어도, 예: 외통
+      // 직전 포지션)에만 실제로 engineLines를 교체하고 "계산 중" 표시를 끈다.
+      setEngineLines(lines);
+      setLinesPending(false);
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
       // (버그 수정) 수 블록(MoveTile) 목록의 개별 평가치는 이 아래에서 별도의 빠른 풀(depth 15,
@@ -3057,8 +3104,12 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // engineLines가 준비돼 있으면(대개 posEval과 거의 같은 시점에 함께 채워짐) 그 1번째 줄의 평가치를
   // 그대로 평가치 바에 써서 항상 같은 값이 되도록 한다. 아직 준비 전(포지션 진입 직후)에만 기존
   // fallback(후보 수 중 최선)·posEval(포지션 직접 평가) 순으로 대체한다.
-  const barEval = engineLines.length ? engineLines[0].ev : (fallbackEval != null ? fallbackEval : posEval);
-  return { moves: tiled, posGames, engineNote, posEval: barEval, engineLines, curDepth, node };
+  // (버그 수정) engineLines를 더 이상 포지션이 바뀔 때 곧장 비우지 않으므로(위 linesPending 참고),
+  // linesPending 중에는 engineLines가 "이전" 포지션의 값일 수 있다 — 그 값을 이 포지션의 평가치 바에
+  // 잘못 쓰지 않도록, 아직 이 포지션 결과가 아니면 지금 포지션 기준으로 실시간 갱신되는
+  // posEval/fallbackEval을 대신 쓴다.
+  const barEval = (!linesPending && engineLines.length) ? engineLines[0].ev : (fallbackEval != null ? fallbackEval : posEval);
+  return { moves: tiled, posGames, engineNote, posEval: barEval, engineLines, linesPending, curDepth, node };
 }
 
 /* ============================================================ 집중 학습 모드 ============================================================ */
@@ -3832,7 +3883,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [mode, setMode] = useState("normal");
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
-  const { moves, posGames, engineNote, posEval, engineLines, curDepth } = useMergedMoves(sans, engine, liveOn && !analyzeOpen, extra[key], contentVer, mode, sortBy);
+  const { moves, posGames, engineNote, posEval, engineLines, linesPending, curDepth } = useMergedMoves(sans, engine, liveOn && !analyzeOpen, extra[key], contentVer, mode, sortBy);
   // (20차 UX4) 스크롤이 많이 내려간 상태(예: 깊은 수 블록 클릭)에서 집중 학습에 들어가면, 페이지
   // 스크롤 위치가 그대로 유지되어 미니 보드가 화면 아래로 밀려 하단 탭에 가려 보이는 문제가 있었다 —
   // 진입 시 맨 위로 스크롤해 보드가 항상 하단 탭 위쪽 여유 공간 안에서 시작하도록 한다.
@@ -4112,7 +4163,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           {analyzeOpen && <AnalysisModal sans={[...sans, ...future]} engine={engine} onClose={() => setAnalyzeOpen(false)} />}
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
             <Board board={board} flip={flip} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ}
-              belowEval={<EngineLines lines={engineLines} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} />} />
+              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
@@ -5738,6 +5789,12 @@ function treeLinesOf(tree) {
   walk(tree, []);
   return out;
 }
+// (버그 수정) genPuzzleTree가 결국 실패해 트리를 못 만들었는데도(과거 로직 결함·중간에 취소된
+// 생성 등) 그 실패한 결과가 그대로 저장돼, 실제로는 통과 가능한 라인이 0개인 "빈 퍼즐"이 목록에
+// 남아 있었다. PuzzleCard가 실제 라인 수 대신 Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시해
+// 이런 빈 퍼즐도 정상 퍼즐처럼 보였고, 눌러 들어가면 PuzzleSolver의 treeIsEmpty 분기에서만
+// "퍼즐 데이터를 불러올 수 없어요"로 뒤늦게 드러났다 — 목록 단계에서 미리 걸러낸다.
+function isPuzzlePlayable(p) { return treeLinesOf(puzzleTreeOf(p)).length > 0; }
 // (20차 기능1) 트리를 JSON으로 깊은 복제(모든 필드가 순수 데이터라 안전) — 개발자의 "한 수 추가" 편집은
 // 항상 복제본을 수정한 뒤 통째로 교체 저장한다(원본 CONTENT.puzzleOverrides를 직접 변형하지 않음).
 function cloneTree(tree) { return JSON.parse(JSON.stringify(tree)); }
@@ -6863,6 +6920,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   }, [pathNodes]);
   const tryUserMove = (from, to) => {
     if (!userToMove) return;
+    // (버그 수정) buildSan은 그 수가 실제로 합법인지 확인하지 않고 좌표만으로 SAN을 만든다(예:
+    // 기물을 원래 있던 칸에 그대로 놓으면 "제자리 수" 문자열이 그럴싸하게 만들어진다) — 클릭 경로
+    // (onSquareClick)는 legalDests로 미리 걸렀지만, 드래그(onDrop)·onMove 경로는 이 검증 없이 곧장
+    // tryUserMove를 불러 포지션에 아무 변화도 없는 "제자리 수"까지 오답으로 판정되고 있었다. 여기서
+    // 한 번만 확실히 걸러 모든 호출 경로(클릭·드래그)를 동시에 보호한다.
+    if (from[0] === to[0] && from[1] === to[1]) { setSel(null); return; }
+    if (!legalDests(board, from[0], from[1], color, ep).some(([r, c]) => r === to[0] && c === to[1])) return;
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep); if (!san) return;
     playMoveSfx(san);   // (v0.1.4 기능) 정답/오답과 무관하게, 실제로 보드 위에 기물을 놓는 물리적 동작 자체에 대한 소리
     const hit = (curNode.children || []).find((c) => stripSuffix(c.san) === stripSuffix(san));
@@ -7355,7 +7419,11 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
   const hasPreview = p.setupSans && p.mistakeSan;
   // (20차 기능1) 트리 기준 라인 수와 별(라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3)
-  const totalLines = useMemo(() => Math.max(1, treeLinesOf(puzzleTreeOf(p)).length), [p.id]);
+  // (버그 수정) Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시했었다 — 트리가 실제로는 텅 비어
+  // 하나도 풀 수 없는 손상된 퍼즐도 정상 퍼즐처럼 보이게 만든 원인이었다(starsOf는 totalLines가
+  // 0이어도 안전하게 0점을 반환하므로 바닥값을 둘 이유가 없었다). 실제 라인 수를 그대로 쓴다.
+  const totalLines = useMemo(() => treeLinesOf(puzzleTreeOf(p)).length, [p.id]);
+  const broken = totalLines === 0;
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
   // 위쪽 얇은 띠·번호 색·옅은 배경 패턴만 테마색으로 물들인다.
@@ -7389,7 +7457,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             균일하게 유지된다. */}
         <FitPuzzleName text={p.name} />
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
-          <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{themeLabelsOf(p)} · 라인 {totalLines}개</span>
+          <span style={{ fontSize: 9, color: broken ? T.blunder : T.inkSoft, fontWeight: broken ? 800 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{broken ? "⚠ 손상된 퍼즐(라인 0개)" : themeLabelsOf(p) + " · 라인 " + totalLines + "개"}</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         <div className="flex items-center justify-between" style={{ marginTop: 2, gap: 4 }}>
@@ -7855,7 +7923,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
     for (const no of Object.keys(m)) { const p = rankPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
     for (const no of myRepostNos) { const p = myRepostPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
-    const passesFilter = (p) => (filter === "all" || themesOf(p).includes(filter)) && !solved.has(p.id);
+    const passesFilter = (p) => (filter === "all" || themesOf(p).includes(filter)) && !solved.has(p.id) && isPuzzlePlayable(p);
     const ranked = [...byId.values()].filter(passesFilter).map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).map((x) => x.p);
     const rankedIds = new Set(ranked.map((p) => p.id));
     const reposted = myRepostNos.map((no) => myRepostPuzzles[no]).filter((p) => p && passesFilter(p) && !rankedIds.has(p.id));
@@ -7871,14 +7939,20 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     return arr.slice(0, 6);
   }, [recommendedPool, recSeed]);
   if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
-  const themed = filter === "all" ? puzzles : puzzles.filter((p) => themesOf(p).includes(filter));
+  // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
+  // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
+  // 없어요"를 띄웠다. 개발자(canEdit)는 이런 손상된 퍼즐을 찾아 삭제할 수 있어야 하므로 그대로
+  // 다 보여주고, 일반 유저에게는 목록·개수 단계에서부터 아예 걸러낸다(이미 푼 퍼즐은 실제로 라인을
+  // 완주했어야만 solved 상태가 되므로 걸러낼 필요가 없다).
+  const playablePuzzles = canEdit ? puzzles : puzzles.filter((p) => solved.has(p.id) || isPuzzlePlayable(p));
+  const themed = filter === "all" ? playablePuzzles : playablePuzzles.filter((p) => themesOf(p).includes(filter));
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
   const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
   const cleared = themed.filter((p) => solved.has(p.id)).sort(byOpening);
   // (19차 UI3) 해결 완료 퍼즐을 오프닝별로 묶어 표기(cleared는 이미 오프닝순 정렬).
   const clearedByOpening = (() => { const m = new Map(); for (const p of cleared) { const k = p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; })();
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
-  const count = (k) => (k === "all" ? puzzles.length : puzzles.filter((p) => themesOf(p).includes(k)).length);
+  const count = (k) => (k === "all" ? playablePuzzles.length : playablePuzzles.filter((p) => themesOf(p).includes(k)).length);
   const solveByNumber = async () => {
     const n = parseInt(numInput, 10);
     if (!Number.isFinite(n)) { setNumMsg("번호를 입력하세요."); return; }
@@ -9323,6 +9397,16 @@ async function notifyMarkReadMany(rows) {
 // (18차 UX4) 친구 요청 알림의 수락/거절 결과를 payload에 기록 — 버튼을 없애고 "수락함/거절함"으로 표기하기 위함.
 // (버그 수정) 성공 여부를 돌려줘, 실패 시 호출부가 낙관적으로 붙인 "수락함/거절함" 표시를 되돌릴 수 있게 한다.
 async function notifySetResult(row, result) { if (!SB_ON || row.id == null) return true; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), result } }); return true; } catch { return false; } }
+// (버그 수정) 친구 요청을 알림 창의 수락/거절 버튼이 아니라 "친구" 모달(요청 탭·프로필 서브뷰)에서
+// 처리해도, 그 요청을 알렸던 notifications 행 자체는 손대지 않아 알림 창엔 계속 수락/거절 버튼이
+// (이미 처리된 뒤에도) 남아 있었다. 어느 경로로 처리하든 그 알림도 함께 "수락함/거절함"으로 정리한다.
+async function notifyResolveFriendRequest(myUid, fromUid, result) {
+  if (!SB_ON || !myUid || !fromUid) return;
+  try {
+    const rows = await sbSelect("notifications?to_uid=eq." + myUid + "&kind=eq.friend_request&payload->>fromUid=eq." + encodeURIComponent(fromUid) + "&select=id,payload");
+    await Promise.all((rows || []).map((r) => notifySetResult(r, result)));
+  } catch { }
+}
 // (19차 UI1) 알림 부분/전체 삭제 — id 필터로 개별 삭제, to_uid 필터로 내 알림 전체 삭제.
 // (버그 수정) 성공 여부(HTTP 상태 포함)를 돌려줘, 실패 시 호출부가 낙관적으로 지운 알림 항목을
 // 되살릴 수 있게 한다 — DELETE는 sbPatch와 달리 non-2xx여도 fetch 자체는 던지지 않으므로 r.ok도 확인한다.
@@ -9936,7 +10020,10 @@ function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle, mySolved, myLineSolves }
 // 공용 컴포넌트. UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다. (v0.1.0) 설정 탭
 // "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐 목록도 pub에 실려 있으면(publishProfile이
 // solvedNos/mainQuestSummary를 채워 넣음) 같은 자리에 표시해, 다른 유저의 프로필에서도 볼 수 있다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves }) {
+// (버그 수정) 친구 프로필 창의 채팅·친구 요청/수락/거절 버튼을 카드 맨 아래 대신 티어와 메인
+// 퀘스트 진척도 사이에 두기 위해, 그 자리에 끼워 넣을 내용을 actions prop으로 받는다 — 이 컴포넌트를
+// 쓰는 다른 곳(내 프로필·유저 검색)은 actions를 안 넘기면 예전과 완전히 동일하다.
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves, actions }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
@@ -9946,6 +10033,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         <TierStatPill totalXp={pub.xp || 0} />
         {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
+      {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
       {mq && mq.totalChapters > 0 && (
         <div style={{ marginBottom: 12 }}>
@@ -10489,6 +10577,8 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   const [sel, setSel] = useState(null); // 프로필 보기: { uid, username, pub }
   const [pending, setPending] = useState({}); // uid -> true
   const [chatWith, setChatWith] = useState(null); // (17차) 채팅 상대: { uid, username }
+  // (버그 수정) 친구 삭제 버튼을 누르면 곧장 삭제되던 것 — 확인 다이얼로그를 띄운 뒤 확정해야 지워지게 한다.
+  const [confirmRemove, setConfirmRemove] = useState(null); // 삭제 확인 대상: sel과 같은 { uid, username, pub }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -10517,8 +10607,12 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   const guard = (uid, fn) => async () => { if (pending[uid]) return; setPending((p) => ({ ...p, [uid]: true })); try { await fn(); await load(); } finally { setPending((p) => { const n = { ...p }; delete n[uid]; return n; }); } };
   // (17차) 친구 요청 발송/수락 시 상대에게 알림을 남긴다.
   const doRequestByName = (username, keyUid) => guard(keyUid || username, async () => { const r = await friendRequest(username); if (r && r.ok && r.status === "pending" && keyUid) notifyCreate(keyUid, "friend_request", { fromUsername: me, fromUid: meId }); })();
-  const doAccept = (uid) => guard(uid, async () => { await friendAccept(uid); notifyCreate(uid, "friend_accepted", { byUsername: me }); })();
+  const doAccept = (uid) => guard(uid, async () => { await friendAccept(uid); notifyCreate(uid, "friend_accepted", { byUsername: me }); await notifyResolveFriendRequest(meId, uid, "accepted"); })();
   const doRemove = (uid) => guard(uid, () => friendRemove(uid))();
+  // (버그 수정) 친구 삭제·요청 취소와 같은 friendRemove를 쓰지만, "받은 요청 거절"만은 그 요청을
+  // 알렸던 내 알림도 함께 "거절함"으로 정리해야 한다 — 아래 두 곳(요청 탭 목록·프로필 서브뷰)의
+  // "거절" 버튼에서만 이 함수를 쓴다.
+  const doReject = (uid) => guard(uid, async () => { await friendRemove(uid); await notifyResolveFriendRequest(meId, uid, "rejected"); })();
 
   const viewProfileUid = (uid) => { const pr = profiles[uid] || {}; setSel({ uid, username: pr.username || uid, pub: pr.pub || {} }); };
 
@@ -10545,6 +10639,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   );
 
   return (
+    <>
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 82, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         {!chatWith && (
@@ -10557,7 +10652,8 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
             {/* (버그 수정) 친구 삭제는 목록 줄마다 노출하지 않고, 그 사람 프로필을 클릭해 들어갔을 때만
                 우상단(닫기 버튼 옆)에 아이콘으로 노출한다. */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              {sel && relOf(sel.uid) === "friend" && <button onClick={() => doRemove(sel.uid)} disabled={!!pending[sel.uid]} aria-label="친구 삭제" title="친구 삭제" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
+              {/* (버그 수정) 눌러 곧장 지워지지 않도록, 이 버튼은 삭제를 확정하지 않고 확인 다이얼로그만 연다. */}
+              {sel && relOf(sel.uid) === "friend" && <button onClick={() => setConfirmRemove(sel)} disabled={!!pending[sel.uid]} aria-label="친구 삭제" title="친구 삭제" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
               <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
             </span>
           </div>
@@ -10567,8 +10663,19 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
           <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
         ) : sel ? (() => {
           const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
+          const actions = (
+            <>
+              {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
+              {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
+              {rel === "incoming" && <>{btn("수락", () => doAccept(sel.uid), "gold", busyId)}{btn("거절", () => doReject(sel.uid), "ghost", busyId)}</>}
+              {rel === "none" && btn("친구 요청", () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
+            </>
+          );
           return (
-            <div style={{ padding: 18 }}>
+            // (버그 수정) 이 서브뷰만 높이 제한 없이 카드가 뷰포트 밖으로 그냥 넘쳐, 스크롤해도 카드 뒤
+            // 배경(탭 콘텐츠)이 대신 스크롤됐다 — UserSearchModal의 프로필 서브뷰와 동일하게 자체
+            // 최대 높이 + 세로 스크롤을 준다.
+            <div style={{ padding: 18, maxHeight: "60vh", overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
                 {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
@@ -10578,13 +10685,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 </div>
               </div>
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />
-              <div style={{ display: "flex", gap: 8 }}>
-                {rel === "friend" && btn("채팅", () => setChatWith({ uid: sel.uid, username: sel.username }), "dark", busyId)}
-                {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
-                {rel === "incoming" && <>{btn("수락", () => doAccept(sel.uid), "gold", busyId)}{btn("거절", () => doRemove(sel.uid), "ghost", busyId)}</>}
-                {rel === "none" && btn("친구 요청", () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
-              </div>
+              {/* (버그 수정) 채팅/친구 요청·수락·거절 버튼을 카드 맨 아래 대신 티어와 메인 퀘스트
+                  진척도 사이(actions prop)에 둔다. */}
+              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} />
             </div>
           );
         })() : (
@@ -10610,7 +10713,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                         {incoming.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>받은 요청</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{incoming.map((u, i) => (
-                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doRemove(u), "ghost", !!pending[u])}</>} /></FadeIn>
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doReject(u), "ghost", !!pending[u])}</>} /></FadeIn>
                           ))}</AnimatePresence></div>
                         </div>}
                         {outgoing.length > 0 && <div>
@@ -10643,6 +10746,21 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
         )}
       </div>
     </div>
+    {/* (버그 수정) 친구 삭제는 되돌릴 수 없는 동작이라, 곧장 지우지 않고 한 번 더 확인받는다
+        (로그아웃 확인 다이얼로그와 동일한 패턴) — 친구 모달(zIndex 82) 위에 뜨도록 더 높은 zIndex. */}
+    {confirmRemove && (
+      <div onClick={() => setConfirmRemove(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>친구 삭제</div>
+          <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{(confirmRemove.pub && confirmRemove.pub.nickname) || confirmRemove.username}님을 친구 목록에서 삭제할까요?</p>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setConfirmRemove(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>취소</button>
+            <button onClick={() => { doRemove(confirmRemove.uid); setConfirmRemove(null); }} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>삭제</button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 function GoogleG() {
