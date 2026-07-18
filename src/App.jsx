@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -7292,6 +7292,39 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
     </div>
   );
 }
+// (버그 수정) 퍼즐 탭은 auto-fill 그리드라 같은 행의 카드끼리 기본적으로 가장 키 큰 카드에
+// 맞춰 함께 늘어난다 — min-height로 2줄을 예약해도 그보다 훨씬 긴 이름 하나가 그 행 전체를
+// 예외적으로 키워 행 높이가 들쭉날쭉해 보였다. 높이를 아예 2줄 고정값(overflow:hidden)으로
+// 못박고, 그 안에 실제로 다 안 들어가면(scrollHeight > clientHeight) 글자 크기를 0.5px씩
+// 줄여가며 다시 재는 식으로 맞춘다 — 이름이 아무리 길어도 카드 높이는 항상 똑같이 유지되고,
+// 유난히 긴 이름만 글자가 조금 작아진다(최소 7px 밑으로는 더 줄이지 않고 그대로 둔다).
+const PUZZLE_NAME_BASE_FS = 11, PUZZLE_NAME_LINE_H = 1.35, PUZZLE_NAME_MIN_FS = 7;
+const PUZZLE_NAME_BOX_H = Math.round(PUZZLE_NAME_BASE_FS * PUZZLE_NAME_LINE_H * 2);
+function FitPuzzleName({ text }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      let size = PUZZLE_NAME_BASE_FS;
+      el.style.fontSize = size + "px";
+      while (el.scrollHeight > el.clientHeight + 0.5 && size > PUZZLE_NAME_MIN_FS) {
+        size -= 0.5;
+        el.style.fontSize = size + "px";
+      }
+    };
+    fit();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(fit); ro.observe(el); }
+    window.addEventListener("resize", fit);
+    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", fit); };
+  }, [text]);
+  return (
+    <div ref={ref} style={{ fontSize: PUZZLE_NAME_BASE_FS, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word", lineHeight: PUZZLE_NAME_LINE_H, height: PUZZLE_NAME_BOX_H, overflow: "hidden" }}>
+      {text}
+    </div>
+  );
+}
 function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
@@ -7316,24 +7349,26 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={104} loopMs={2400} flip={flip} /></div>}
         <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
-          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, wordBreak: "break-word" }}>{p.opening}</div>
+          {/* (버그 수정) 이 라벨도 줄바꿈이 허용돼 있어 오프닝 이름이 길면 여러 줄로 늘어나
+              행 높이를 들쭉날쭉하게 만들었다 — 아래 이름에 어차피 같은 오프닝 이름이 온전히
+              다시 나오므로, 여기는 한 줄로 고정하고 넘치면 말줄임(...)만 쓴다. */}
+          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.opening}</div>
           <LineStars total={3} solved={stars} />
         </div>
-        {/* (버그 수정) 오프닝 이름이 길면 한 줄 말줄임(...)으로 잘려 끝까지 안 보였다 — 카드는
-            어차피 내용 높이에 맞춰 늘어나므로(19차 UI2) 줄바꿈을 허용해 항상 전체가 보이게 한다.
-            keep-all로 단어 중간이 아니라 띄어쓰기·쉼표 단위로만 줄바꿈되게 한다.
-            (버그 수정) 퍼즐 탭은 grid-template-columns(auto-fill)라 같은 행의 카드끼리 기본적으로
-            가장 키 큰 카드에 맞춰 함께 늘어난다 — 이름 길이가 카드마다 달라 행 높이가 들쭉날쭉해
-            보이는 걸 줄이려고, 2줄 분량(1.35 line-height 기준 2.7em)을 항상 최소 높이로 예약해
-            둔다. 대부분 이름(예: "Italian Game, 4.Ng5")은 1~2줄 안에 들어가 행이 균일하게 보이고,
-            드물게 아주 긴 이름만 이 최소치를 넘어 그 행만 예외적으로 더 커진다. */}
-        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, marginTop: 3, whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word", lineHeight: 1.35, minHeight: "2.7em" }}>{p.name}</div>
+        {/* (버그 수정) 오프닝 이름이 길면 한 줄 말줄임(...)으로 잘려 끝까지 안 보였다 — 그렇다고
+            줄바꿈만 허용하면 퍼즐 탭 그리드(auto-fill)는 같은 행의 카드끼리 가장 키 큰 카드에
+            맞춰 함께 늘어나 행 높이가 들쭉날쭉해진다. FitPuzzleName이 높이를 2줄로 고정해두고,
+            다 안 들어가는 이름만 글자 크기를 줄여서 맞춘다(위 정의부 참고) — 카드 높이는 항상
+            균일하게 유지된다. */}
+        <FitPuzzleName text={p.name} />
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
           <span style={{ fontSize: 9, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{themeLabelsOf(p)} · 라인 {totalLines}개</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         <div className="flex items-center justify-between" style={{ marginTop: 2, gap: 4 }}>
-          {solveCountText(solveCount, friendSolverNames) ? <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.3, wordBreak: "break-word", minWidth: 0 }}>{solveCountText(solveCount, friendSolverNames)}</div> : <span />}
+          {/* (버그 수정) 친구 이름이 많이 나열되면 이 줄도 줄바꿈돼 행 높이를 들쭉날쭉하게 만들 수
+              있었다 — 위 두 줄과 같은 원칙으로 한 줄 + 말줄임으로 고정한다. */}
+          {solveCountText(solveCount, friendSolverNames) ? <div style={{ fontSize: 9, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{solveCountText(solveCount, friendSolverNames)}</div> : <span />}
           <div className="flex items-center" style={{ gap: 7, flexShrink: 0 }}>
             {/* (v0.1.0) 리포스트·공유 — 좋아요와 같은 자리에, 풀이수/좋아요와 무관한 별개 참여 지표로 노출 */}
             {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
