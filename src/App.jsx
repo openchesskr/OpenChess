@@ -6522,9 +6522,14 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const celebrateLine = celebrateTag && allLines.find((l) => l.tag === celebrateTag);
     if (celebrateLine) { const ks = celebrateLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) celebrateKeys.add(ks.slice(0, i).join(" ")); }
     // 새로 도전 가능해진 라인의 "첫 고스트"(아직 안 보이는 첫 갈림길)에 흔들림 강조
+    // (버그 수정) 개발자 모드(canEdit)에서는 위 revealed가 항상 null이다(고스트 없이 트리 전체를
+    // 공개하므로) — 그 상태에서 한 라인을 풀어 다음 라인의 shakeTag가 잡히면 여기서 null.has(k)를
+    // 호출해 즉시 TypeError가 터졌다. 렌더 도중 잡히지 않는 예외라 화면 전체가 하얗게 멎어버렸다
+    // ("재생성 후 풀면 먹통이 된다"는 신고의 원인). 개발자 모드는 애초에 가릴 고스트가 없으니
+    // revealed가 있을 때만(=일반 유저) 이 계산을 한다.
     let shakeKey = null;
     const shakeLine = shakeTag && allLines.find((l) => l.tag === shakeTag);
-    if (shakeLine) { const ks = shakeLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) { const k = ks.slice(0, i).join(" "); if (!revealed.has(k)) { shakeKey = k; break; } } }
+    if (shakeLine && revealed) { const ks = shakeLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) { const k = ks.slice(0, i).join(" "); if (!revealed.has(k)) { shakeKey = k; break; } } }
     const curKeySet = new Set(); for (let i = 1; i <= curKeys.length; i++) curKeySet.add(curKeys.slice(0, i).join(" "));
     items.forEach((it) => {
       it.solved = it.depth > 0 && solvedKeys.has(it.key);
