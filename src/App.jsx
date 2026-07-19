@@ -125,7 +125,10 @@ const PIECE_IMG_SETS = {
       B: { w: { src: "/pieces/grandmaster/white-bishop.webp", w: 231, h: 420 }, b: { src: "/pieces/grandmaster/black-bishop.webp", w: 230, h: 420 } },
       R: { w: { src: "/pieces/grandmaster/white-rook.webp", w: 295, h: 420 }, b: { src: "/pieces/grandmaster/black-rook.webp", w: 296, h: 420 } },
       Q: { w: { src: "/pieces/grandmaster/white-queen.webp", w: 420, h: 375 }, b: { src: "/pieces/grandmaster/black-queen.webp", w: 420, h: 376 } },
-      K: { w: { src: "/pieces/grandmaster/white-king.webp", w: 420, h: 409 }, b: { src: "/pieces/grandmaster/black-king.webp", w: 420, h: 408 } },
+      // (버그 수정) 킹 원본은 420×409(거의 정사각) 캔버스라 다른 기물과 같은 배율을 적용하면 유일하게
+      // 가로·세로 둘 다 칸보다 커져(칸 폭의 약 1.1배) 옆 칸(퀸·비숍)까지 침범해 보였다 — 가로세로
+      // 비율(약 1.027:1)은 그대로 두고 렌더 크기만 0.9배로 줄여 다른 기물들과 어울리는 크기로 맞춘다.
+      K: { w: { src: "/pieces/grandmaster/white-king.webp", w: 378, h: 368 }, b: { src: "/pieces/grandmaster/black-king.webp", w: 378, h: 367 } },
     },
   },
 };
@@ -256,7 +259,7 @@ const TIER_IMAGE = {
   gold: "/gold-rook.png",
   diamond: "/diamond-queen.png",
   master: "/master-king.png",
-  grandmaster: "/gm-piece.png",
+  grandmaster: "/gm.png",
 };
 // (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
 // 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
@@ -5997,10 +6000,12 @@ const TIERS = [
   { key: "gold", label: "골드", piece: "R" },
   { key: "diamond", label: "다이아몬드", piece: "Q" },
   { key: "master", label: "마스터", piece: "K" },
-  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // gm-piece.png(왕관에 "GM" 각인) 사용
+  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // gm.png(기물 + 하단 "GM" 워드마크 합성본) 사용
   // (v0.1.4 버그 수정) 한때 이 자리가 "grandmaster.png"를 가리켰는데, 그 파일이 GitHub 웹 업로드로
   // 아우로라 사진에 덮어써진 채 방치돼 배지에 배경 사진이 뜨는 버그가 있었다 — 파일명 충돌을 아예
-  // 없애기 위해 원본 기물 아이콘을 gm-piece.png로 새로 받아 교체.
+  // 없애기 위해 원본 기물 아이콘으로 새로 받아 교체하면서 실수로 워드마크 없는 gm-piece.png(기물만
+  // 있고 하단 "GM" 글자가 없음)를 넣었다 — AboutPage.jsx가 이미 gm.png를 "기물+GM 워드마크 합성본"
+  // 원본으로 쓰고 있던 것과 어긋났던 것. gm.png로 교체해 하단 워드마크를 되살린다.
 ];
 // (기능) 실제 티어 기물 이미지(public/iron-pawn.png 등)에서 뽑아낸 대표 색 — 배지 테두리·글로우·
 // 진행바가 그 이미지의 실제 톤과 어긋나지 않도록, 이미지를 새로 받을 때마다 이 값도 함께 맞춘다.
@@ -6522,9 +6527,14 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const celebrateLine = celebrateTag && allLines.find((l) => l.tag === celebrateTag);
     if (celebrateLine) { const ks = celebrateLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) celebrateKeys.add(ks.slice(0, i).join(" ")); }
     // 새로 도전 가능해진 라인의 "첫 고스트"(아직 안 보이는 첫 갈림길)에 흔들림 강조
+    // (버그 수정) 개발자 모드(canEdit)에서는 위 revealed가 항상 null이다(고스트 없이 트리 전체를
+    // 공개하므로) — 그 상태에서 한 라인을 풀어 다음 라인의 shakeTag가 잡히면 여기서 null.has(k)를
+    // 호출해 즉시 TypeError가 터졌다. 렌더 도중 잡히지 않는 예외라 화면 전체가 하얗게 멎어버렸다
+    // ("재생성 후 풀면 먹통이 된다"는 신고의 원인). 개발자 모드는 애초에 가릴 고스트가 없으니
+    // revealed가 있을 때만(=일반 유저) 이 계산을 한다.
     let shakeKey = null;
     const shakeLine = shakeTag && allLines.find((l) => l.tag === shakeTag);
-    if (shakeLine) { const ks = shakeLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) { const k = ks.slice(0, i).join(" "); if (!revealed.has(k)) { shakeKey = k; break; } } }
+    if (shakeLine && revealed) { const ks = shakeLine.sans.map(stripSuffix); for (let i = 1; i <= ks.length; i++) { const k = ks.slice(0, i).join(" "); if (!revealed.has(k)) { shakeKey = k; break; } } }
     const curKeySet = new Set(); for (let i = 1; i <= curKeys.length; i++) curKeySet.add(curKeys.slice(0, i).join(" "));
     items.forEach((it) => {
       it.solved = it.depth > 0 && solvedKeys.has(it.key);
@@ -8645,6 +8655,13 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.1.6", date: "2026.7.19", items: [
+      "개발자 모드에서 퍼즐의 모식도를 다시 만든 뒤 한 라인을 풀면 사이트가 먹통이 되던 문제를 고쳤어요.",
+      "그랜드마스터 티어 로고에서 기물 아래 \"GM\" 글자가 빠져 있던 문제를 고쳤어요 — 헤더 배지·여정 지도·퍼즐 탭 등 모든 곳에서 정상적으로 보여요.",
+      "그랜드마스터 기물 스킨에서 킹이 옆 기물보다 유독 커서 겹쳐 보이던 문제를 고쳐 알맞은 크기로 조정했어요.",
+    ],
+  },
   {
     version: "0.1.5", date: "2026.7.18", items: [
       "소개 페이지(/about)의 체스판에 나무 결 질감과 좌표 표기를 더하고, 폴스 메이트·스칼라스 메이트·레갈의 함정·프라이드 리버 어택·불멸의 게임·오페라 게임처럼 실제로 유명한 대국·오프닝 함정을 정확히 재현해서 보여줘요.",
