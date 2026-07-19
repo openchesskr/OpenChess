@@ -127,8 +127,8 @@ const PIECE_IMG_SETS = {
       Q: { w: { src: "/pieces/grandmaster/white-queen.webp", w: 420, h: 375 }, b: { src: "/pieces/grandmaster/black-queen.webp", w: 420, h: 376 } },
       // (버그 수정) 킹 원본은 420×409(거의 정사각) 캔버스라 다른 기물과 같은 배율을 적용하면 유일하게
       // 가로·세로 둘 다 칸보다 커져(칸 폭의 약 1.1배) 옆 칸(퀸·비숍)까지 침범해 보였다 — 가로세로
-      // 비율(약 1.027:1)은 그대로 두고 렌더 크기만 0.7배로 줄여 다른 기물들과 어울리는 크기로 맞춘다.
-      K: { w: { src: "/pieces/grandmaster/white-king.webp", w: 294, h: 286 }, b: { src: "/pieces/grandmaster/black-king.webp", w: 294, h: 286 } },
+      // 비율(약 1.027:1)은 그대로 두고 렌더 크기만 0.9배로 줄여 다른 기물들과 어울리는 크기로 맞춘다.
+      K: { w: { src: "/pieces/grandmaster/white-king.webp", w: 378, h: 368 }, b: { src: "/pieces/grandmaster/black-king.webp", w: 378, h: 367 } },
     },
   },
 };
