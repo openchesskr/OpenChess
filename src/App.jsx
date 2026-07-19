@@ -256,7 +256,7 @@ const TIER_IMAGE = {
   gold: "/gold-rook.png",
   diamond: "/diamond-queen.png",
   master: "/master-king.png",
-  grandmaster: "/gm-piece.png",
+  grandmaster: "/gm.png",
 };
 // (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
 // 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
@@ -5997,10 +5997,12 @@ const TIERS = [
   { key: "gold", label: "골드", piece: "R" },
   { key: "diamond", label: "다이아몬드", piece: "Q" },
   { key: "master", label: "마스터", piece: "K" },
-  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // gm-piece.png(왕관에 "GM" 각인) 사용
+  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // gm.png(기물 + 하단 "GM" 워드마크 합성본) 사용
   // (v0.1.4 버그 수정) 한때 이 자리가 "grandmaster.png"를 가리켰는데, 그 파일이 GitHub 웹 업로드로
   // 아우로라 사진에 덮어써진 채 방치돼 배지에 배경 사진이 뜨는 버그가 있었다 — 파일명 충돌을 아예
-  // 없애기 위해 원본 기물 아이콘을 gm-piece.png로 새로 받아 교체.
+  // 없애기 위해 원본 기물 아이콘으로 새로 받아 교체하면서 실수로 워드마크 없는 gm-piece.png(기물만
+  // 있고 하단 "GM" 글자가 없음)를 넣었다 — AboutPage.jsx가 이미 gm.png를 "기물+GM 워드마크 합성본"
+  // 원본으로 쓰고 있던 것과 어긋났던 것. gm.png로 교체해 하단 워드마크를 되살린다.
 ];
 // (기능) 실제 티어 기물 이미지(public/iron-pawn.png 등)에서 뽑아낸 대표 색 — 배지 테두리·글로우·
 // 진행바가 그 이미지의 실제 톤과 어긋나지 않도록, 이미지를 새로 받을 때마다 이 값도 함께 맞춘다.
