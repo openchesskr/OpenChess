@@ -8884,7 +8884,7 @@ function AnnouncementModal({ onClose, onDismissVersion }) {
   );
 }
 // (기능) 문의/FAQ — 아직 등록된 FAQ는 없고(개발진이 추후 이 배열에 직접 채워 넣음), "문의하기"를
-// 누르면 Gmail 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
+// 누르면 메일 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
 const FAQ_ITEMS = [];
 function openInquiryEmail(user) {
   const subject = "[OpenChess 문의]";
@@ -8896,8 +8896,16 @@ function openInquiryEmail(user) {
     "문의 유형: (버그 제보 / 기능 제안 / 기타)",
     "─────────────",
   ].join("\n");
-  const url = "https://mail.google.com/mail/?view=cm&fs=1&to=openchesskr@gmail.com&su=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
-  window.open(url, "_blank", "noopener,noreferrer");
+  // (버그 수정) 예전엔 Gmail 웹 작성 화면 URL(mail.google.com/...)을 새 탭으로 열었다 — 데스크톱에서
+  // 브라우저에 Gmail 계정으로 로그인해 둔 경우만 전제로 한 방식이라, 모바일에서는 (1) 브라우저에
+  // 구글 로그인이 안 돼 있으면 제목·본문 없이 로그인 화면만 뜨거나, (2) 앱 안에서 새 탭을 여는
+  // window.open 자체가 일부 모바일 브라우저(특히 인앱 브라우저)에서 막혀 아예 아무 창도 안 뜨는
+  // 문제가 있었다 — "자동으로 채워지는 양식이 비어 있다"·"메일 보내는 창 자체가 안 뜬다"는 신고 모두
+  // 이 두 증상과 일치한다. 표준 mailto: 링크로 바꿔 현재 위치에서 그대로 이동시키면, 데스크톱·모바일
+  // 가리지 않고 운영체제가 지정한 기본 메일 앱(Gmail 앱·Outlook·기본 Mail 앱 등)이 제목·본문까지
+  // 채워진 채로 열린다 — 특정 메일 서비스 로그인 여부에 의존하지 않는다.
+  const url = "mailto:openchesskr@gmail.com?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+  window.location.href = url;
 }
 function FaqAccordionItem({ q, a }) {
   const [open, setOpen] = useState(false);
@@ -8924,7 +8932,7 @@ function InquiryModal({ onClose, user }) {
             : FAQ_ITEMS.map((f, i) => <FaqAccordionItem key={i} q={f.q} a={f.a} />)}
         </div>
         <button onClick={() => openInquiryEmail(user)} className="press" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><MessageCircle size={16} /> 문의하기</button>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>Gmail 작성 화면으로 이동합니다 (openchesskr@gmail.com)</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>기본 메일 앱의 작성 화면으로 이동합니다 (openchesskr@gmail.com)</p>
       </div>
     </div>
   );
