@@ -9414,10 +9414,7 @@ async function authSetPassword(recovery, password) {
   } catch { clearSession(); return { ok: false, error: "reset_failed" }; }
 }
 /* 진도 저장(본인만; RLS 가 auth.uid()=id 강제) */
-// (버그 수정) 호출부가 실제로 서버에 반영됐는지 알 방법이 없었다 — 로드 시 로컬 캐시의 최신 변경을
-// 예외적으로 살릴지 판단하는 xpPending 플래그가 이 저장의 성공 여부로만 지워져야 하므로, 성공했으면
-// true, 실패(오프라인 등)했으면 false를 반환하도록 바꾼다.
-async function progressSave(uid, progress) { if (!SB_ON || !uid) return false; try { await sbUpsert("user_progress", { id: uid, progress }); return true; } catch { return false; } }
+async function progressSave(uid, progress) { if (!SB_ON || !uid) return; try { await sbUpsert("user_progress", { id: uid, progress }); } catch { } }
 // (기능2) 공개 프로필: 별도 테이블 profiles_public 에 클라이언트가 업서트/조회(계정 스키마와 독립). 미설정 시 무해하게 비활성.
 async function publishProfile(uid, username, pub) { if (!SB_ON || !uid) return; try { await sbUpsert("profiles", { id: uid, username: (username || "").toLowerCase(), pub }); } catch { } }
 async function userSearch(q) { if (!SB_ON || !q) return []; try { const rows = await sbSelect("profiles?username=ilike." + encodeURIComponent(q.toLowerCase() + "*") + "&select=id,username,pub&limit=20"); return rows || []; } catch { return []; } }
@@ -11314,26 +11311,24 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    // (버그 수정) 아래 pr.xp 병합에서, 서버로 아직 확정되지 못한 로컬 변경만 예외적으로 살리기 위한
-    // 표시 — progressSave가 실제로 성공했을 때만 지워지는 이 기기 전용 플래그(아래 progressSave
-    // useEffect에서 세우고 지운다).
-    const xpPending = (await store.get(localKeyFor(activeUid) + ":xpPending")) === "1";
     if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (d.puzzleActive) setPuzzleActive(d.puzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
-    // (버그 수정) 서버 progress(pr.xp)가 있으면 방금 위에서 로컬 캐시로 세팅한 값을 무조건 덮어썼다
-    // — 로컬 캐시는 이 기기에서 즉시(동기적) 갱신되는 반면 progressSave(서버 저장)는 비동기라서,
-    // 개발자 모드에서 XP를 바꾼 직후 곧바로 새로고침하면 아직 서버에 반영되지 못한(더 오래된) pr.xp가
-    // 방금 바꾼 값을 되돌려버려 "개발자 모드에서 조작한 XP가 반영되지 않는다"는 증상으로 보였다.
-    // (보안 검토 반영) 처음엔 "로컬·서버 중 더 큰 값을 신뢰"하는 방식으로 고쳤는데, 이는 로컬
-    // 저장소를 직접 조작해 항상 더 큰 값을 채워두면 서버가 영영 그 값을 못 이기는 구조적 허점이었다
-    // (클라이언트가 자기 자신의 XP를 영구히 위조할 수 있음). 대신 xpPending 플래그로 "정말 이 기기가
-    // 아직 서버에 못 올린 변경이 있었는지"만 확인해, 그 경우에만 예외적으로 로컬 값을 살리고, 그 외엔
-    // 항상 서버를 신뢰한다 — progressSave가 실제로 성공해야만 이 플래그가 지워지므로(progressSave를
-    // 호출하는 useEffect에서 세우고 지운다), 단순히 로컬 스토리지의 xp 숫자만 바꿔서는 이 예외
-    // 경로를 얻을 수 없다.
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp((x) => xpPending ? Math.max(pr.xp, x) : pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
+    // (버그 수정 시도 → 되돌림) 개발자 모드에서 XP를 바꾼 직후 곧바로 새로고침하면, 아직 서버에
+    // 반영되지 못한(더 오래된) pr.xp가 방금 바꾼 로컬 값을 되돌려버려 "개발자 모드에서 조작한 XP가
+    // 반영되지 않는다"는 증상으로 보인 적이 있다. 이를 고치려 "로컬·서버 중 더 큰 값을 신뢰"하거나
+    // "서버에 아직 못 올린 변경이 있었는지"를 로컬에 남긴 플래그로 판단하는 방식을 각각 시도했지만,
+    // 둘 다 결국 클라이언트가 통제하는 localStorage 값(숫자든 플래그든)에 근거해 서버의 권위를
+    // 예외적으로 무시하는 구조라, 브라우저 개발자 도구로 그 값을 직접 써넣으면 서버가 자기 XP를 영영
+    // 못 이기게 만들 수 있다는 지적을 보안 검토에서 두 차례 받았다. 이 필드는 원래도 클라이언트가
+    // user_progress를 통째로 upsert하는 구조(RLS가 auth.uid()=id만 확인, 서버가 XP 값 자체를 검증하지
+    // 않음)라 근본적인 위조 방지는 서버 쪽에 없지만, 그렇다고 로컬 스토리지 편집만으로 더 쉽게 위조할
+    // 수 있는 경로를 새로 여는 것은 옳지 않다 — 서버 값을 예외 없이 항상 신뢰하는 원래 동작으로
+    // 되돌린다. 새로고침 타이밍이 나쁘면 방금 dev 패널로 바꾼 값이 한 번 되돌아 보일 수 있지만(진짜
+    // 서버 저장 자체는 그대로 진행 중이므로 곧 다시 저장되어 정상화된다), 클라이언트가 서버 값을
+    // 임의로 이기게 하는 것보다 이 쪽이 안전하다.
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
@@ -11358,20 +11353,7 @@ export default function App() {
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest) }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId, mainQuest]);
   useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion]);
-  // (버그 수정) 로드 시점에 서버 progress가 로컬 캐시의 최신 변경(개발자 모드 XP 조작 등)을 덮어쓰던
-  // 문제의 짝 — 이 저장이 시작될 때 "아직 서버에 못 올린 변경이 있다"는 xpPending 플래그를 세워두고,
-  // 실제로 성공(ok===true)했을 때만 지운다. 로드 시점에 이 플래그가 남아 있으면 그때만 예외적으로
-  // 로컬 값을 신뢰하고, 아니면 항상 서버를 신뢰한다(로컬 스토리지 숫자만 조작해서는 이 플래그를 얻을
-  // 수 없어, 클라이언트가 자기 XP를 영구히 위조하는 경로가 되지 않는다).
-  useEffect(() => {
-    if (!(loaded && uid)) return;
-    let cancelled = false;
-    store.set(localKeyFor(uid) + ":xpPending", "1");
-    progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion }).then((ok) => {
-      if (!cancelled && ok) store.set(localKeyFor(uid) + ":xpPending", "0");
-    });
-    return () => { cancelled = true; };
-  }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
   // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
   // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
