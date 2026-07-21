@@ -2315,7 +2315,10 @@ function EvalBar({ cp, width, depth }) {
           <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
             {[0, 1, 2].map((i) => <span key={i} style={{ width: 3, height: 3, borderRadius: "50%", background: T.brassHi, display: "inline-block", animation: "dotbounce 1.1s ease-in-out " + (i * 0.18) + "s infinite" }} />)}
           </span>
-          <button onClick={() => setTipOpen((v) => !v)} aria-label="탐색 상태 도움말" style={{ width: 14, height: 14, padding: 0, border: "none", background: "transparent", color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: .9 }}><HelpCircle size={12} /></button>
+          {/* (버그 수정) 이 아이콘은 백이 크게 유리해지면(흰 구간이 바 전체를 거의 채움) 우측 끝까지
+              흰 배경 위에 놓이는데, 색이 고정 흰색(#fff)이라 그 위에서 완전히 안 보였다 — 배경이
+              흰색이든 검은색이든 늘 뚜렷이 보이도록 순백 대신 사이트 테마의 브라스 골드로 바꾼다. */}
+          <button onClick={() => setTipOpen((v) => !v)} aria-label="탐색 상태 도움말" style={{ width: 14, height: 14, padding: 0, border: "none", background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: .9 }}><HelpCircle size={12} /></button>
           {/* (18차 보충 UX5) 말풍선이 체스보드에 가려지던 문제 — 바 아래가 아니라 위쪽으로 띄우고 z-index를 높인다 */}
           {tipOpen && (
             <span style={{ position: "absolute", bottom: 24, right: 0, whiteSpace: "nowrap", background: "rgba(20,12,6,.97)", color: T.ivoryHi, fontSize: 10.5, fontWeight: 700, borderRadius: 8, border: "1px solid " + T.brass, padding: "5px 9px", zIndex: 999, boxShadow: "0 6px 16px -6px rgba(0,0,0,.6)" }}>
