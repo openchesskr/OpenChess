@@ -1642,6 +1642,20 @@ function chesscomChangeDaysLeft(changedAt) {
   const remainMs = CHESSCOM_CHANGE_COOLDOWN_MS - (Date.now() - changedAt);
   return remainMs > 0 ? Math.ceil(remainMs / 86400000) : 0;
 }
+// (버그 수정) chess.com API의 player 응답 중 "username" 필드는 항상 소문자로 정규화되어 온다(실제
+// API로 여러 계정을 확인해도 대문자가 섞인 아이디조차 username 필드에서는 전부 소문자였음) — 그동안
+// 이 필드를 그대로 화면에 표시해, 사용자가 chess.com에 실제로 등록한 대소문자와 무관하게 항상 전부
+// 소문자로만 보였다(반복 신고된 "대소문자 구분이 안 된다" 버그의 근본 원인). 반면 "url" 필드
+// (예: https://www.chess.com/member/Hikaru)의 마지막 경로 조각은 실제 표시 대소문자를 그대로
+// 보존한다 — 여기서 그 조각을 잘라내 진짜 표시용 아이디로 쓰고, url 파싱이 실패하는 경우에만
+// (형식이 바뀌었거나 없는 극단적인 경우) username 필드로 대체한다.
+function chesscomDisplayUsername(p, fallback) {
+  if (p && typeof p.url === "string") {
+    const m = p.url.match(/\/member\/([^/?#]+)/);
+    if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
+  }
+  return p.username || fallback;
+}
 async function fetchChesscomProfile(username) {
   const u = username.toLowerCase().trim();
   const pr = await fetch("https://api.chess.com/pub/player/" + u);
@@ -1659,7 +1673,7 @@ async function fetchChesscomProfile(username) {
       games = rec(s.chess_rapid) + rec(s.chess_blitz) + rec(s.chess_bullet);
     }
   } catch (_) { }
-  return { username: p.username || u, avatar: p.avatar || null, name: p.name || null, country: p.country ? p.country.split("/").pop() : null, rapid, blitz, bullet, games };
+  return { username: chesscomDisplayUsername(p, u), avatar: p.avatar || null, name: p.name || null, country: p.country ? p.country.split("/").pop() : null, rapid, blitz, bullet, games };
 }
 function countryFlag(code) { if (!code || code.length !== 2) return ""; return code.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0))); }
 // (19차 기능6) chess.com 게임의 ECO URL(예: https://www.chess.com/openings/Italian-Game-...) → 사람이 읽는 오프닝 이름.
@@ -8947,10 +8961,14 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
     try { const p = await fetchChesscomProfile(name); setPending(p); setCcState("idle"); }
     catch { setCcState("failed"); setTimeout(() => setCcState("idle"), 1700); }
   };
-  // (18차 UI1) 저장은 사용자가 입력한 원형(대소문자 보존)으로 하되, 비교·API 호출은 항상 소문자로
-  // 정규화(useChessCom 내부)하므로 같은 계정을 다른 대소문자로 재연동해도 동일 계정으로 취급된다.
+  // (18차 UI1 → 버그 수정) 예전엔 사용자가 입력창에 입력한 원형(cc.trim())을 우선 저장했는데, 바로
+  // 위 미리보기 카드가 보여주는 pending.username(검증된 chess.com 실제 계정, 이제 chesscomDisplayUsername로
+  // 정확한 대소문자까지 보존됨)과 다른 값이 저장될 수 있었다 — 사용자가 소문자로만 입력해도(대부분의
+  // 사용자가 그렇게 입력함) 그 입력이 그대로 저장돼, "연동은 됐는데 표시는 항상 소문자"인 신고가
+  // 반복됐다. 이 버튼은 pending이 채워져 있을 때만 렌더링되므로(9107번째 줄 부근 `{pending && (...)}`)
+  // 항상 검증된 pending.username을 신뢰하고, cc.trim()은 pending이 비어 있는 이론상의 경우에만 대체값으로 쓴다.
   // (20차 UX3) 연동/재연동 시점을 기록해 30일 쿨다운의 기준으로 삼는다.
-  const confirmLink = () => { setProfile({ ...profile, chesscom: cc.trim() || (pending.username || ""), chesscomChangedAt: Date.now() }); setPending(null); };
+  const confirmLink = () => { setProfile({ ...profile, chesscom: (pending && pending.username) || cc.trim(), chesscomChangedAt: Date.now() }); setPending(null); };
   const chesscomChangeBypass = isDev && devOn;
   const chesscomDaysLeft = chesscomChangeBypass ? 0 : chesscomChangeDaysLeft(profile.chesscomChangedAt);
   const changeChesscom = () => { if (chesscomDaysLeft > 0) return; setProfile({ ...profile, chesscom: "" }); setCc(""); setCcState("idle"); };
@@ -10838,7 +10856,13 @@ function UsernameSetupModal({ account, onDone, onCancel }) {
     try {
       const r = await claimUsername(account.uid, id);
       if (!r.ok) { setErr(r.error === "username_taken" ? "이미 사용 중인 아이디입니다." : r.error === "invalid" ? "아이디 형식이 올바르지 않습니다." : "처리 중 오류가 발생했습니다."); setBusy(false); return; }
-      onDone({ uid: account.uid, username: id.toLowerCase(), pub: { ...(account.pub || {}), displayId: id.trim(), ...(ccId.trim() ? { chesscom: ccId.trim() } : {}) }, progress: account.progress || {} });
+      // (버그 수정) AuthModal의 이메일 가입 경로와 같은 문제 — 여기서도 chess.com 아이디를 검증 없이
+      // 사용자가 입력한 원형 그대로 저장하고 있었다. fetchChesscomProfile로 실제 계정의 정확한
+      // 대소문자를 조회해 저장하고, 조회 실패 시에만 입력한 원형을 그대로 대체값으로 쓴다.
+      const ccRaw = ccId.trim();
+      let ccFinal = ccRaw;
+      if (ccRaw) { try { const p = await fetchChesscomProfile(ccRaw); ccFinal = p.username; } catch { } }
+      onDone({ uid: account.uid, username: id.toLowerCase(), pub: { ...(account.pub || {}), displayId: id.trim(), ...(ccFinal ? { chesscom: ccFinal } : {}) }, progress: account.progress || {} });
     } catch { setErr("처리 중 오류가 발생했습니다."); setBusy(false); }
   };
   // (17차) box-sizing 기본값(content-box)에서 width:100%에 padding/border가 더해져 입력 박스가
@@ -10905,9 +10929,14 @@ function AuthModal({ onClose, onAuth, initialMode }) {
           setBusy(false); return;
         }
         // (17차) 회원가입 시 chess.com 아이디도 함께 입력받는다(생략 가능, 나중에 설정에서 변경 가능).
-        // 여기서는 존재 여부를 검증하지 않고 그대로 저장 — onAuth가 acc.pub.chesscom을 읽어 프로필에
-        // 반영하면 이후 기존 publishProfile 동기화 로직이 서버에도 반영한다.
-        const ccId = chesscomId.trim().toLowerCase();
+        // (버그 수정) 존재 여부를 확인조차 하지 않고 무조건 소문자로 저장했었다 — chess.com의 실제
+        // 표시 대소문자(예: "Hikaru")를 전혀 반영하지 못하고 항상 전부 소문자로만 보이는 원인이었다.
+        // fetchChesscomProfile로 실제 계정의 정확한 대소문자를 조회해 저장하고, 조회 실패(오프라인·
+        // 아직 안 만든 계정 등)했을 때만 사용자가 입력한 원형을 그대로 대체값으로 쓴다 — 이 경우에도
+        // 강제로 소문자화하지는 않는다(가입 자체를 이 조회 실패로 막지 않기 위해 결과를 기다리되 실패는 무시).
+        const ccRaw = chesscomId.trim();
+        let ccId = ccRaw;
+        if (ccRaw) { try { const p = await fetchChesscomProfile(ccRaw); ccId = p.username; } catch { } }
         if (ccId && r.account) r.account.pub = { ...(r.account.pub || {}), chesscom: ccId, chesscomChangedAt: Date.now() };
         onAuth(r.account);
       } else {
