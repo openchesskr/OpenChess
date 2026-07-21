@@ -1238,8 +1238,7 @@ function attacksPricier(board, color, minVal) {
 }
 function isSacrifice(board, sanRaw, color) {
   const info = sanSrc(board, sanRaw, color);
-  if (!info || info.castle) return false;
-  if (info.piece === "P") return false;                 // 폰 희생은 탁월한 수로 보지 않음
+  if (!info) return false;
   const [fr, fc] = info.from;
   const [tr, tc] = info.to;
   const capturedVal = info.isCap ? (board[tr][tc] ? VAL[board[tr][tc].t] : 1) : 0;
@@ -1255,13 +1254,25 @@ function isSacrifice(board, sanRaw, color) {
   // 기물을 내주는 수(예: 6.Bd3)나, 상대의 탁월한 수로 이미 예정된 손실을 되돌려주는 수(예: 6.Bxd5)일 뿐이므로
   // "찾아내기 어려운 비직관적 희생"이 아니다.
   const movedThreatLoss = seeSquare(board, fr, fc, enemy);
+  // (버그 수정) 예전엔 캐슬링·폰 이동이면 이 함수 맨 위에서 곧장 false를 반환해, 아래 "방치 희생"
+  // (이동한 기물과는 무관하게, 상대가 이미 공격 중인 다른 내 기물을 그대로 두고 다른 수를 두는 것)
+  // 판정까지 통째로 막고 있었다. 예: "1.e4 e5 2.Nf3 Nc6 3.Bc4 h6 4.d4 d6 5.dxe5 dxe5 6.Qxd8+ Nxd8
+  // 7.Nxe5 Be6 8.Bb5+ c6 9.Be2 f6 10.Ng6 Rh7 11.Nxf8 Kxf8 12.b3 Nf7 13.Bb2 f5 14.Nd2 fxe4 15.Nxe4
+  // Bf5"에서 흑 비숍이 백 나이트 e4를 공짜로 위협하는데도 16.O-O-O(캐슬링)로 그 나이트를 그대로
+  // 방치하는 수, 그리고 "1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Bxc6 dxc6 5.O-O Bg4 6.h3"에서 비숍 g4가
+  // 걸렸는데도(대신 잡아주는 나이트가 없는 라인) 6...h5(폰 이동, h파일을 여는 것이 목적)로 응수하는
+  // 수는 둘 다 전형적인 방치 희생인데, 이동한 기물이 각각 킹(캐슬링)·폰이라는 이유만으로 판정이
+  // 시작도 못 하고 있었다. "직접 희생"(이동한 기물 자신이 잡히는 교환)만 캐슬링·폰 이동을
+  // 제외하고(캐슬링은 그 자체로 기물이 잡히는 자리로 옮기는 수가 아니고, 폰을 흔히 내주는 수는
+  // 탁월로 치지 않는다는 기존 취지는 그대로 유지), 아래 "방치 희생" 판정은 이동한 기물 종류와
+  // 무관하게 항상 수행한다.
   // (버그 수정) 18차에서 "폰 희생 제외 원칙"에 맞춘다며 임계값을 -1에서 -2로 되돌렸는데, 폰 희생
   // 제외는 이미 위(info.piece === "P")에서 움직인 기물 자체로 걸러지고 있어 이 강화는 불필요했다.
   // 오히려 net===-1로 정확히 떨어지는 "비숍/나이트를 폰 두 개와 맞바꾸는" 대표적 교환 희생 패턴
   // (예: 1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 a6 6.Bc4 e6 7.O-O Nbd7 8.Bxe6 — 비숍(3)을
   // 내주고 폰 두 개(1+1)를 되찾아 net=1-2=-1)가 다시 걸러지지 않게 되는 회귀를 만들었다. 바로 위
   // 블록(기능4) 주석이 설명하는 원래 의도대로 -1로 되돌린다.
-  if (net <= -1) {
+  if (!info.castle && info.piece !== "P" && net <= -1) {
     if (movedThreatLoss >= 1 && net >= -movedThreatLoss) return false;  // 예정된 손실의 실현(반환)일 뿐
     return true;
   }
@@ -1277,17 +1288,19 @@ function isSacrifice(board, sanRaw, color) {
     // 상쇄하고 남는다면(예: 1.e4 e5 2.d4 exd4 3.Qxd4 Nc6 4.Qd5 Nf6 5.Qf5 d5 6.exd5 Bxf5 — 퀸(9점)을 잡으며
     // Nc6(≈2점 손실)를 방치) 총합이 이득이므로 희생이 아니다. 총손익이 -2점 이하일 때만 희생으로 본다.
     if (net - afterHang > -2) return false;
-    // (21차) 방치한 내 기물(afterHang 상당)보다 더 비싼 상대 기물을 이 수로 실제 위협했는지 — 도망 대신
-    // 반격을 택한 경우, 아래 두 분기 모두에서 탁월로 인정하는 근거가 된다.
-    const counterAttack = attacksPricier(after, color, afterHang);
     // (18차) 두 기물이 동시에 공격받는(포크) 상황에서 위협받던 기물 자신을 움직여 다른 기물을 내주는 것은,
     // 살린 기물이 내준 기물보다 가치가 "낮을" 때만 비직관적 선택으로 보고 탁월로 인정한다(동가·상위 구출은 당연한 수).
     // (21차) 살린 기물 쪽이 더 비싸더라도, 그 대신 상대의 더 비싼 기물을 반격으로 위협했다면 역시 탁월.
-    if (movedThreatLoss >= 1) return VAL[info.piece] < afterHang || counterAttack;
-    // (21차) beforeHang(이 수를 두기 전부터 이미 걸려 있던 손실) 이상으로 afterHang이 커지지 않았다면,
-    // 이 수는 새로 무언가를 희생한 게 아니라 이미 정해진 손실을 그대로 둔 것뿐이다(예: 사잇수로 체크메이트를
-    // 막느라 이미 걸려 있던 기물을 뒤늦게 내주는 수) — 반격으로 상쇄하지 못했다면 희생으로 보지 않는다.
-    if (beforeHang >= afterHang) return counterAttack;
+    if (movedThreatLoss >= 1) return VAL[info.piece] < afterHang || attacksPricier(after, color, afterHang);
+    // (버그 수정) 예전엔 beforeHang(이 수를 두기 전부터 이미 걸려 있던 손실) 이상으로 afterHang이
+    // 커지지 않은 경우(=새로 더 망치지는 않은 순수 방치) 반격(attacksPricier)으로 상쇄하지 못하면
+    // 희생으로 치지 않았는데, 바로 이 "이미 걸린 걸 그대로 방치" 케이스가 사용자가 요청한 전형적인
+    // 방치 희생(위 16.O-O-O·6...h5 예시 모두 beforeHang>=afterHang이면서 반격도 없는 경우)이라
+    // 이 요구조건이 오히려 정상적인 방치 희생을 걸러내고 있었다. 이 지점에 이르렀다는 것 자체가
+    // 이미 beforeHang·afterHang 둘 다 2점 이상이고 net-afterHang<=-2(실질 손실 확정)까지 확인됐다는
+    // 뜻이고, 호출부마다 이 판정 뒤에도 실제 엔진 평가(mvCp>=-40)로 한 번 더 걸러지며 유일한
+    // 합법수("only")는 애초에 isSacrifice를 호출하지 않는 kind 분기에서 걸러지므로, 포크 상황
+    // (movedThreatLoss>=1, 위에서 이미 별도 처리)을 제외하면 추가로 반격 여부까지 요구할 필요가 없다.
     return true;
   }
   return false;
