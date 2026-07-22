@@ -4239,7 +4239,7 @@ function ReviewKindTable({ moves, showAll = false, onPick }) {
     const m = kind === "book" ? ms[ms.length - 1] : ms[0];
     onPick(m.ply + 1); // curPly = ply+1 (그 수까지 둔 위치)
   };
-  const numStyle = (kind, n) => ({ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind], background: "none", border: "none", cursor: onPick && n ? "pointer" : "default", padding: 0, textDecoration: onPick && n ? "underline" : "none", textDecorationColor: "rgba(255,255,255,.25)", textUnderlineOffset: 3 });
+  const numStyle = (kind, n) => ({ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind], background: "none", border: "none", cursor: onPick && n ? "pointer" : "default", padding: 0 });
   return (
     <div style={{ borderTop: "1px solid " + RV.border }}>
       {ANALYSIS_KIND_ROWS.map(([kind, label]) => {
