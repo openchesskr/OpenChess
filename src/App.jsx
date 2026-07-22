@@ -2126,7 +2126,11 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
       const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
       const p0 = lines && lines[0], p1 = lines && lines[1];
       // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
-      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
+      // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
+      // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
+      // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
+      // 승률로만 변환되므로 문제없다).
+      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
       doneCount++;
       onProgress && onProgress(doneCount / (N + 1));
     }
@@ -2188,7 +2192,18 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   }
   // (v0.2.0 기능) /review 페이지의 코치 카드가 수마다 실제 평가치(+4.67 등)를 표시해야 해서, 이미
   // 계산해 둔 백 관점 centipawn 시퀀스(graphCp)를 승률(evalWin)과 함께 그대로 내보낸다.
-  return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp };
+  // (v0.2.1 기능) evalDisp — evalCp(그래프 전용, 메이트를 ±100000으로 뭉갬)와 별개로, 텍스트 표시에는
+  // {cp}|{mate,win,plies} 형태가 필요하다(fmtEvalCp/evalDisplayText가 이 모양을 기대함) — posEvalToWhite로
+  // 포지션마다 다시 만든다.
+  const evalDisp = posEval.map((p, i) => posEvalToWhite({ cp: p.cp, mate: p.mate }, fullSans.slice(0, i)));
+  // (v0.2.1) 마지막 수가 체크메이트(#)면 종료 포지션은 엔진이 평가를 못 준다(둘 수가 없음) — cp 0으로 남아
+  // 코치 카드가 "+0.00", 평가치 바·그래프가 무승부처럼 보였다. 실제 승패로 채워 "1-0"/"0-1"과 완승 막대로 표시한다.
+  if (N > 0 && /#/.test(fullSans[N - 1])) {
+    const winnerWhite = (N - 1) % 2 === 0;
+    evalDisp[N] = { mate: 0, win: winnerWhite ? "w" : "b", plies: 0 };
+    graphCp[N] = winnerWhite ? 100000 : -100000;
+  }
+  return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp, evalDisp };
 }
 const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중학습의 대국 목록에서 공용.
@@ -2378,10 +2393,16 @@ function EvalBadge({ ev, small }) {
     </span>
   );
 }
+// Board 컴포넌트의 프레임(격자 바깥 여백) 두께 — 바깥 div의 padding 10 + border 1 = 격자가 프레임
+// 안쪽으로 들어와 있는 px. 세로 평가치 막대를 이만큼 위아래로 들여, 막대 양끝이 프레임이 아니라
+// 실제 격자(8행 위 끝·1행 아래 끝)에 맞도록 한다.
+const BOARD_FRAME_INSET = 11;
 // (v0.2.1 기능) vertical=true면 세로 막대(백 아래·흑 위)로 그린다 — /review 메인 보드 좌측용.
-// 높이는 고정 px가 아니라 alignSelf:stretch로 옆 보드(flex items-stretch 컨테이너 안)의 실제 렌더
-// 높이에 정확히 맞춘다 — 그래야 보드가 maxWidth로 줄어들어도 막대 세로 중앙(=0.0 기준)이 항상
-// 보드 프레임 중앙, 즉 4·5행 사이에 온다. 가로 막대(기존 학습 탭 등)는 vertical 없이 그대로 동작한다.
+// 막대 바깥 틀은 alignSelf:stretch로 옆 보드(flex items-stretch)의 실제 렌더 높이(=보드 바깥 프레임
+// 포함)에 맞추되, 실제 색 채움(fill)은 위아래로 프레임 두께(BOARD_FRAME_INSET)만큼 들여 격자 높이에
+// 딱 맞춘다 — 그러면 막대 위끝=8행 위, 아래끝=1행 아래, 세로 중앙(0.0)=4·5행 사이가 된다. 한 칸당
+// 1점, 최대 ±4점(그 밖은 e를 ±4로 클램프하므로 막대가 유리한 쪽 한 색으로 통일됨). 가로 막대(기존
+// 학습 탭 등)는 vertical 없이 그대로 동작한다.
 function EvalBar({ cp, width, depth, vertical }) {
   // (20차) cp는 숫자(cp) 또는 {cp}|{mate,win} 객체 — 메이트 수순에서 +10.00이 아니라 M수로 표기한다.
   const ev = cp == null ? null : (typeof cp === "number" ? { cp } : cp);
@@ -2395,13 +2416,13 @@ function EvalBar({ cp, width, depth, vertical }) {
   if (vertical) {
     return (
       <div style={{ width: 22, alignSelf: "stretch", flexShrink: 0, position: "relative", zIndex: tipOpen ? 50 : 1 }}>
-        {/* inset:0로 stretch된 막대 전체를 채우고, 백/흑 구간은 그 높이의 %로 그린다. */}
-        <div style={{ position: "absolute", inset: 0, borderRadius: 5, overflow: "hidden", border: "1px solid #000" }}>
+        {/* fill은 stretch된 막대에서 위아래로 프레임 두께만큼 들여, 격자(8~1행) 높이에 정확히 맞춘다. */}
+        <div style={{ position: "absolute", top: BOARD_FRAME_INSET, bottom: BOARD_FRAME_INSET, left: 0, right: 0, borderRadius: 5, overflow: "hidden", border: "1px solid #000" }}>
           {/* 백이 항상 아래쪽 — whitePct는 백이 유리할수록 커지는 값이라 bottom 기준 높이로 그대로 쓴다. */}
           <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: whitePct + "%", background: "#FFFFFF" }} />
           <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: (100 - whitePct) + "%", background: "#140C07" }} />
         </div>
-        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1, ...(num >= 0 ? { bottom: 3, color: "#140C07" } : { top: 3, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
+        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1, ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
       </div>
     );
   }
@@ -2540,24 +2561,27 @@ function capturedInfo(board) {
   return { byWhite, byBlack, diff: wVal - bVal };
 }
 // 점수 동등하면 diff===0이라 숫자가 아예 안 뜨고(요청사항), 유리한 쪽에서만 이 컴포넌트가 diff>0으로 호출된다.
-// (v0.2.1 기능) player가 주어지면(리뷰 페이지처럼 실제 대국 정보가 있는 경우) 잡힌 기물 줄 오른쪽에
-// "닉네임(레이팅)"을 함께 표시한다 — 데이터가 없는 호출부(학습 탭 등)는 player를 안 넘기므로 그대로다.
+// (v0.2.1 기능) player가 주어지면(리뷰 페이지처럼 실제 대국 정보가 있는 경우) 왼쪽에 아바타·닉네임·
+// 레이팅을, 오른쪽에 잡힌 기물·기물 점수차를 표시한다 — 데이터가 없는 호출부(학습 탭 등)는 player를
+// 안 넘기므로 잡힌 기물만 왼쪽 정렬로 그대로 보인다.
 function CapturedRow({ pieces, color, diff, textColor, player }) {
   if (!pieces.length && !diff && !player) return null;
   const ORDER = { Q: 0, R: 1, B: 2, N: 3, P: 4 };
   const sorted = [...pieces].sort((a, b) => ORDER[a] - ORDER[b]);
+  const material = (
+    <div className="flex items-center" style={{ gap: 1 }}>
+      {sorted.map((t, i) => <PieceGlyph key={i} type={t} color={color} size={16} />)}
+      {diff > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: textColor, marginLeft: 4, fontFamily: "ui-monospace,monospace" }}>+{diff}</span>}
+    </div>
+  );
+  if (!player) return <div className="flex items-center" style={{ gap: 8, minHeight: 20 }}>{material}</div>;
   return (
     <div className="flex items-center justify-between" style={{ gap: 8, minHeight: 20 }}>
-      <div className="flex items-center" style={{ gap: 1 }}>
-        {sorted.map((t, i) => <PieceGlyph key={i} type={t} color={color} size={16} />)}
-        {diff > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: textColor, marginLeft: 4, fontFamily: "ui-monospace,monospace" }}>+{diff}</span>}
-      </div>
-      {player && (
-        <span className="flex items-center" style={{ gap: 6, minWidth: 0 }}>
-          <ReviewAvatar src={player.avatar} side={player.side} size={20} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: textColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{player.name}{player.rating != null ? " (" + player.rating + ")" : ""}</span>
-        </span>
-      )}
+      <span className="flex items-center" style={{ gap: 6, minWidth: 0 }}>
+        <ReviewAvatar src={player.avatar} side={player.side} size={20} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: textColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{player.name}{player.rating != null ? " (" + player.rating + ")" : ""}</span>
+      </span>
+      {material}
     </div>
   );
 }
@@ -3986,44 +4010,55 @@ function pickEvalGraphDots(moves) {
   }
   return dots;
 }
-// (v0.2.1 기능) curPly/onJump가 있으면 그래프를 클릭해 그 x좌표에 해당하는 지점으로 리뷰 위치를 바로
-// 옮길 수 있다 — 마커(점+세로 점선)는 별도 hover 상태가 아니라 curPly를 그대로 그리므로, 기보 클릭
-// 등 다른 방법으로 위치를 옮겨도 항상 지금 보고 있는 지점에 그대로 따라온다.
+// (v0.2.1 기능) curPly/onJump가 있으면 그래프를 클릭·드래그해 그 x좌표에 해당하는 지점으로 리뷰
+// 위치를 옮길 수 있다 — 포인터를 누른 채 좌우로 끌면(pointer capture) 그 시점의 평가치가 부드럽게
+// 이어서 갱신된다. 마커(점+세로 점선)와 그래프 위 역삼각형은 curPly를 그대로 그리므로, 기보 클릭 등
+// 다른 방법으로 위치를 옮겨도 항상 지금 보고 있는 지점에 그대로 따라온다.
 function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const W = 320, H = 92; const n = evalWin.length;
   const svgRef = useRef(null);
+  const draggingRef = useRef(false);
   if (n < 2) return null;
   const x = (i) => (i / (n - 1)) * W;
   const y = (w) => H - (w / 100) * H;
   const linePts = evalWin.map((w, i) => x(i) + "," + y(w).toFixed(1)).join(" ");
   const areaPts = "0," + H + " " + linePts + " " + W + "," + H;
   const dots = pickEvalGraphDots(moves);
-  const handleClick = (e) => {
+  const jumpToClientX = (clientX) => {
     if (!onJump || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
     if (!rect.width) return;
-    const relX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     onJump(Math.round(relX * (n - 1)));
   };
+  const onPointerDown = (e) => { if (!onJump) return; draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } jumpToClientX(e.clientX); };
+  const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
+  const onPointerUp = (e) => { draggingRef.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { } };
   const hasMark = curPly != null && curPly >= 0 && curPly < n;
   const markX = hasMark ? x(curPly) : null;
   const markY = hasMark ? y(evalWin[curPly]) : null;
+  const markFrac = hasMark ? curPly / (n - 1) : 0;
   return (
     <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, overflow: "hidden" }}>
-      <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" onClick={handleClick}
-        style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "pointer" : "default" }}>
-        <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
-        <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
-        <polygon points={areaPts} fill="#EDE7DC" />
-        <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
-        {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
-        {hasMark && (
-          <>
-            <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
-            <circle cx={markX} cy={markY} r="3.6" fill="#EBCB86" stroke="#241509" strokeWidth="0.8" />
-          </>
-        )}
-      </svg>
+      <div style={{ position: "relative", touchAction: "none" }}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+        {/* 그래프 위 역삼각형 — 점선 x좌표와 함께 움직여 지금 보고 있는 지점을 더 또렷이 보여준다. */}
+        {hasMark && <div style={{ position: "absolute", top: -1, left: markFrac * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #EBCB86", pointerEvents: "none", zIndex: 2 }} />}
+        <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none"
+          style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default" }}>
+          <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
+          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
+          <polygon points={areaPts} fill="#EDE7DC" />
+          <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
+          {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
+          {hasMark && (
+            <>
+              <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
+              <circle cx={markX} cy={markY} r="3.6" fill="#EBCB86" stroke="#241509" strokeWidth="0.8" />
+            </>
+          )}
+        </svg>
+      </div>
     </div>
   );
 }
@@ -4222,7 +4257,9 @@ function ReviewSummary({ game, result, onStart, onClose, narrow }) {
 // (v0.2.1) 양끝 </> 버튼은 이제 onJump(정확한 ply로 점프, 자유 탐색 초기화)가 아니라 onPrev/onNext
 // (보드에서 자유롭게 둔 수가 있으면 그것부터 한 수씩 되돌리는 stepBack/stepForward)로 동작한다 —
 // 가운데 기보 항목 클릭은 여전히 onJump로 그 실제 게임 수순 위치로 하드 점프한다.
-function ReviewMoveStrip({ sans, curPly, onJump, onPrev, onNext, canPrev, canNext }) {
+// (v0.2.1) moves·dotPlies가 주어지면, 그래프에 원이 찍히는 수(dotPlies)만 그 등급 색을 입히고 왼쪽에
+// 수 체계 아이콘을 붙인다 — 나머지 수는 평범한 흰 글씨로 둔다(모바일 스트립이 아이콘으로 뒤덮이지 않게).
+function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext, canPrev, canNext }) {
   const WINDOW = 5;
   const start = Math.max(0, Math.min(curPly - Math.floor(WINDOW / 2), sans.length - WINDOW));
   const items = sans.slice(Math.max(0, start), Math.max(0, start) + WINDOW);
@@ -4234,10 +4271,13 @@ function ReviewMoveStrip({ sans, curPly, onJump, onPrev, onNext, canPrev, canNex
           const ply = Math.max(0, start) + i;
           const isCur = ply === curPly - 1;
           const showNum = ply % 2 === 0;
+          const m = moves && moves[ply];
+          const isDot = !!(dotPlies && dotPlies.has(ply) && m && QCOLOR[m.kind]);
+          const txtColor = isCur ? "#181818" : isDot ? QCOLOR[m.kind] : "#fff";
           return (
             <span key={ply} className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
               {showNum && <span style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{ply / 2 + 1}.</span>}
-              <button onClick={() => onJump(ply + 1)} className="press" style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? "#fff" : "transparent", color: isCur ? "#181818" : "#fff", fontWeight: isCur ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{stripSuffix(s)}</button>
+              <button onClick={() => onJump(ply + 1)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? "#fff" : "transparent", color: txtColor, fontWeight: (isCur || isDot) ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{isDot && badgeIcon(m.kind, 13)}{stripSuffix(s)}</button>
             </span>
           );
         })}
@@ -4246,7 +4286,18 @@ function ReviewMoveStrip({ sans, curPly, onJump, onPrev, onNext, canPrev, canNex
     </div>
   );
 }
-// (기능) 데스크톱용 이동 목록 — 첫 스크린샷처럼 번호+백/흑 두 칸짜리 표, 스크롤 가능, 현재 수 강조.
+// (기능) 데스크톱용 이동 목록 — 번호+백/흑 두 칸짜리 표, 스크롤 가능, 현재 수 강조.
+// (v0.2.1) 모든 수 왼쪽에 그 수의 수 체계 아이콘(badgeIcon)을 붙이고, 글씨는 등급 색으로 표시한다.
+function ReviewMoveCell({ san, move, active, onClick }) {
+  if (san == null) return <span style={{ flex: 1 }} />;
+  const kind = move && move.kind;
+  return (
+    <button onClick={onClick} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 5, textAlign: "left", padding: "6px 8px", border: "none", background: active ? "rgba(255,255,255,.16)" : "transparent", color: kind && QCOLOR[kind] ? QCOLOR[kind] : "#fff", fontWeight: active ? 800 : 600, cursor: "pointer" }}>
+      {kind && QCOLOR[kind] && <span style={{ width: 15, height: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 15)}</span>}
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stripSuffix(san)}</span>
+    </button>
+  );
+}
 function ReviewMoveTable({ sans, moves, curPly, onJump }) {
   const rows = [];
   for (let i = 0; i < sans.length; i += 2) rows.push([i, sans[i], sans[i + 1]]);
@@ -4254,11 +4305,21 @@ function ReviewMoveTable({ sans, moves, curPly, onJump }) {
     <div style={{ maxHeight: 220, overflowY: "auto", borderRadius: 8, background: "rgba(0,0,0,.2)" }}>
       {rows.map(([i, w, b]) => (
         <div key={i} className="flex items-center" style={{ fontSize: 12.5 }}>
-          <span style={{ width: 32, padding: "6px 4px", color: "rgba(255,255,255,.45)", fontFamily: "ui-monospace,monospace" }}>{i / 2 + 1}.</span>
-          <button onClick={() => onJump(i + 1)} className="press" style={{ flex: 1, textAlign: "left", padding: "6px 8px", border: "none", background: curPly === i + 1 ? "rgba(255,255,255,.16)" : "transparent", color: moves[i] ? QCOLOR[moves[i].kind] : "#fff", fontWeight: curPly === i + 1 ? 800 : 600, cursor: "pointer" }}>{stripSuffix(w)}</button>
-          {b != null && <button onClick={() => onJump(i + 2)} className="press" style={{ flex: 1, textAlign: "left", padding: "6px 8px", border: "none", background: curPly === i + 2 ? "rgba(255,255,255,.16)" : "transparent", color: moves[i + 1] ? QCOLOR[moves[i + 1].kind] : "#fff", fontWeight: curPly === i + 2 ? 800 : 600, cursor: "pointer" }}>{stripSuffix(b)}</button>}
+          <span style={{ width: 32, padding: "6px 4px", color: "rgba(255,255,255,.45)", fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{i / 2 + 1}.</span>
+          <ReviewMoveCell san={w} move={moves[i]} active={curPly === i + 1} onClick={() => onJump(i + 1)} />
+          <ReviewMoveCell san={b} move={moves[i + 1]} active={curPly === i + 2} onClick={() => onJump(i + 2)} />
         </div>
       ))}
+    </div>
+  );
+}
+// (v0.2.1) 예전 Openings 탭 내용(오프닝 이름·해설)을 평가치 그래프 위에 얹는 얇은 배너.
+function ReviewOpeningBanner({ text }) {
+  if (!text) return null;
+  return (
+    <div className="flex items-center" style={{ gap: 6, marginBottom: 10, padding: "7px 11px", borderRadius: 9, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.1)" }}>
+      <BookOpen size={13} style={{ color: T.brassHi, flexShrink: 0 }} />
+      <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
     </div>
   );
 }
@@ -4367,7 +4428,13 @@ function ReviewPage({ game, engine, onClose }) {
     return info && !info.castle ? [{ from: info.from, to: info.to, adopt: 80 }] : [];
   }, [curMove, showingLine, sans, curPly, exploring]);
   const lastQ = exploring || !curMove ? null : { to: (() => { const info = sanSrc(boardFromSans(sans.slice(0, curPly - 1)), curMove.san, curMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: curMove.kind };
-  const evalCpText = result && result.evalCp ? fmtEvalCp(result.evalCp[curPly]) : null;
+  // (v0.2.1 버그 수정) evalCp(그래프용, 메이트를 ±100000으로 뭉갬)를 fmtEvalCp에 그대로 넣어 "+1000.00"이
+  // 뜨던 문제 — 표시용 {cp}|{mate,win,plies} 배열(evalDisp)을 evalDisplayText로 변환해 M수·1-0 기호가 뜨게 한다.
+  const evalCpText = exploring ? null : (result && result.evalDisp ? evalDisplayText(result.evalDisp[curPly]) : null);
+  // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
+  const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
+  // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
+  const openingText = game.opening ? (game.opening + (CONTENT.explains && CONTENT.explains[sans.slice(0, 6).join(" ")] ? " — " + CONTENT.explains[sans.slice(0, 6).join(" ")] : "")) : null;
   // jump는 실제 게임 수순의 특정 지점으로 하드 이동 — 진행 중이던 자유 탐색은 버린다.
   const jump = (p) => { setExploreSans([]); setExploreFuture([]); setSel(null); setDrag(null); setPromoPrompt(null); setCurPly(Math.max(0, Math.min(sans.length, p))); };
   const goNext = () => { if (curPly >= sans.length) { onClose(); return; } jump(curPly + 1); };
@@ -4480,33 +4547,42 @@ function ReviewPage({ game, engine, onClose }) {
           : (
             <div style={{ padding: "0 12px 24px" }}>
               <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
                 <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
-                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={!exploring && result.evalCp ? result.evalCp[curPly] : null} />} />
+                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={!exploring && result.evalDisp ? result.evalDisp[curPly] : null} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
               {/* (v0.2.1 기능) 엔진 라인 — 모바일은 체스보드 하단 여백에 표시한다. */}
               <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
-              <ReviewMoveStrip sans={sans} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} />
+              <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} />
             </div>
           )}
       </div>
     );
   }
-  // 데스크톱: 좌측 보드(+평가 바) · 우측 탭(Review/Analysis/Details/Openings) 2단 레이아웃.
+  // 데스크톱: 좌측 코치 카드+보드(+평가 바) · 우측 탭(Review/Analysis) 2단 레이아웃.
   return (
     <div style={wrap}>
       {header}
       <div className="flex items-start" style={{ gap: 20, maxWidth: 980, margin: "0 auto", padding: "8px 20px 32px" }}>
-        <div style={{ flexShrink: 0, position: "relative" }}>
+        {/* 열 폭 = 보드 바깥 폭(격자 + 프레임 20) + 세로 평가치 막대(22) + 간격(8). 이 폭을 명시하지 않으면
+            코치 카드의 긴 텍스트가 max-content로 열을 늘려 보드가 오른쪽 사이드바를 밀어낸다. */}
+        <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
+          {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
+          <div style={{ marginBottom: 12 }}>
+            <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} />
+          </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
-          <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
-            leftOfBoard={<EvalBar vertical cp={!exploring && result.evalCp ? result.evalCp[curPly] : null} />} />
-          {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
+          <div style={{ position: "relative" }}>
+            <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+              leftOfBoard={<EvalBar vertical cp={!exploring && result.evalDisp ? result.evalDisp[curPly] : null} />} />
+            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
+          </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
             <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? "rgba(255,255,255,.3)" : "#fff", cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
             <button onClick={stepBack} disabled={!canBack} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: canBack ? "#fff" : "rgba(255,255,255,.3)", cursor: canBack ? "pointer" : "default" }}><ChevronLeft size={16} /></button>
@@ -4516,19 +4592,18 @@ function ReviewPage({ game, engine, onClose }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,.12)" }}>
-            {[["review", "Review"], ["analysis", "Analysis"], ["details", "Details"], ["openings", "Openings"]].map(([k, label]) => (
+            {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)} className="press" style={{ padding: "9px 14px", border: "none", background: "transparent", color: tab === k ? "#fff" : "rgba(255,255,255,.5)", fontWeight: 800, fontSize: 13, cursor: "pointer", borderBottom: tab === k ? "2px solid " + T.brass : "2px solid transparent" }}>{label}</button>
             ))}
           </div>
           {tab === "review" && (
             <>
+              {/* (v0.2.1) 예전 Openings 탭에 뜨던 오프닝 정보 — 평가치 그래프 위에 상시 표시한다. */}
+              {openingText && <ReviewOpeningBanner text={openingText} />}
               <EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} />
               {/* (v0.2.1 기능) 엔진 라인 — 컴퓨터 환경은 평가치 그래프 바로 아래에 표시한다. */}
               <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} /></div>
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} /></div>
-              <div style={{ marginTop: 12 }}>
-                <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} />
-              </div>
             </>
           )}
           {tab === "analysis" && (
@@ -4539,24 +4614,6 @@ function ReviewPage({ game, engine, onClose }) {
               </div>
               <ReviewKindTable moves={result.moves} showAll />
             </>
-          )}
-          {tab === "details" && (() => {
-            const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
-            return (
-              <div style={{ color: "#fff", fontSize: 13, lineHeight: 2 }}>
-                <div>⬜ 백: {whiteInfo.name}{whiteInfo.rating != null && " (" + whiteInfo.rating + ")"}</div>
-                <div>⬛ 흑: {blackInfo.name}{blackInfo.rating != null && " (" + blackInfo.rating + ")"}</div>
-                {game.color && <div>내 진영: {game.color === "w" ? "⬜ 백" : "⬛ 흑"}</div>}
-                {game.result && <div>결과: {game.result === "win" ? "승리" : game.result === "loss" ? "패배" : "무승부"}</div>}
-                {game.timeClass && <div>타임 클래스: {TIME_CLASS_LABEL[game.timeClass] || game.timeClass}</div>}
-                {game.opening && <div>오프닝: {game.opening}</div>}
-              </div>
-            );
-          })()}
-          {tab === "openings" && (
-            <div style={{ color: "#fff", fontSize: 13, lineHeight: 1.8 }}>
-              {game.opening ? <p><b>{game.opening}</b>{CONTENT.explains && CONTENT.explains[sans.slice(0, 6).join(" ")] ? " — " + CONTENT.explains[sans.slice(0, 6).join(" ")] : ""}</p> : <p style={{ color: "rgba(255,255,255,.6)" }}>이 대국에서 매칭된 오프닝 이름이 없습니다.</p>}
-            </div>
           )}
         </div>
       </div>
@@ -12626,7 +12683,10 @@ export default function App() {
   const [reviewGame, setReviewGame] = useState(null);
   const openReview = useCallback((game) => {
     if (!game || !game.sans || !game.sans.length) return;
-    setSearchOpen(false); setFriendsOpen(false);
+    // (v0.2.1) 리뷰를 연 경로(검색 모달·설정 탭 내 프로필·집중학습의 마스터 대국 등)를 그대로 유지한다 —
+    // 예전엔 검색·친구 모달을 닫아 리뷰를 닫으면 그 원래 화면이 아니라 밑의 탭으로 튕겨 나갔다. 이제 그
+    // 모달·오버레이(z-index 90/70)를 그대로 마운트해 두고 리뷰(z-index 300)로 덮기만 하므로, 리뷰를
+    // 닫으면(뒤로가기) 곧장 그 경로로 되돌아간다.
     setReviewGame(game);
     try { if (window.location.pathname !== "/review") window.history.pushState({ review: true }, "", "/review"); } catch { }
   }, []);
