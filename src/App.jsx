@@ -391,13 +391,15 @@ const GeoBackdrop = React.memo(function GeoBackdrop() {
 });
 
 const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-/* (20차 기능2) 엔진 선택 — 설정 탭에서 두 엔진 중 고를 수 있다. "full"은 기존 Stockfish 16(NNUE, 강력
-   하지만 40MB 신경망 로딩·연산량이 커서 느림), "lite"는 Stockfish 18 Lite(단일 스레드, 7MB대 경량
-   빌드로 로딩·연산 모두 빠름). 기본값은 기기 종류로 자동 결정하되(모바일→full, PC→lite), 설정에서
+/* (20차 기능2, v0.2.0 기능 추가) 엔진 선택 — 설정 탭에서 세 엔진 중 고를 수 있다. "full"은 기존
+   Stockfish 16(NNUE, 작은 신경망이지만 연산이 무거움), "lite"는 Stockfish 18 Lite(단일 스레드,
+   7MB대 경량 빌드로 로딩·연산 모두 빠름), "full17"은 Stockfish 17.1 정식 대형 신경망 빌드로 셋 중
+   가장 강력하지만(엔진 자체 세대·신경망 크기 모두 위) 초기 로딩 용량이 가장 크다(약 80MB, 여러
+   조각으로 나눠 받는다). 기본값은 기기 종류로 자동 결정하되(모바일→full, PC→lite), 설정에서
    언제든 바꿀 수 있고 이후에는 그 선택을 기억한다. */
 const ENGINE_PROFILES = {
   full: {
-    id: "full", label: "Stockfish 16 (NNUE)", desc: "정확도가 가장 높지만 로딩이 느려요",
+    id: "full", label: "Stockfish 16 (NNUE)", desc: "가볍고 안정적인 구버전 엔진이에요",
     urls: [ENGINE_BASE + "engine/stockfish-nnue-16-single.js", "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js"],
     // (성능) 교차 출처 격리(COOP/COEP)가 된 환경에서만 시도하는 멀티스레드 빌드 — CDN 폴백 없이
     // 같은 출처(public/engine) 파일만 쓴다(교차 출처 워커 스크립트는 격리 요건과 맞물려 불확실하다).
@@ -407,6 +409,23 @@ const ENGINE_PROFILES = {
     id: "lite", label: "Stockfish 18 Lite", desc: "가볍고 빨라요(경량 빌드)",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
     mtUrl: ENGINE_BASE + "engine/lite/stockfish-18-lite.js",
+  },
+  // (v0.2.0 기능) 세 엔진 중 최고 성능 — Stockfish 17.1의 정식(비-Lite) 대형 신경망 빌드. 신경망
+  // 파일이 npm 배포 용량 제한 때문에 여러 조각으로 쪼개져 있어(scripts/copy-engine.mjs 참고),
+  // 조각을 이어 붙이는 부트스트랩 스크립트(boot-single.js/boot-mt.js)를 거쳐 불러온다 — 용량이 큰
+  // 만큼 같은 출처(public/engine) 파일만 쓰고 CDN 폴백은 두지 않는다(실패하면 다른 프로필처럼
+  // 엔진이 "연결 실패" 상태가 될 뿐, 앱 자체는 계속 정상 동작한다).
+  // (버그 수정) 로더 스크립트는 조각 파일 이름(base-part-N.wasm)을 "자기 자신을 실행 중인 워커의
+  // location"에서 유추하는데, importScripts로 불러와도 워커의 location은 그 워커를 처음 만들 때
+  // 준 URL(boot-single.js) 그대로다 — 그래서 "boot-single-part-0.wasm"(존재하지 않음)을 찾다가
+  // 실패했다. 그 스크립트는 self.location.hash가 있으면 그 값을 실제 신경망 파일명으로 우선
+  // 사용하므로, URL 뒤에 "#진짜파일명.wasm"을 붙여 워커를 만들면(importScripts 이후에도 hash는
+  // 그대로 유지된다) 같은 폴더의 조각 파일을 정확히 찾아낸다.
+  full17: {
+    id: "full17", label: "Stockfish 17.1 (최고 성능)", desc: "가장 강력하지만 처음엔 큰 용량(약 80MB)을 내려받아요",
+    urls: [ENGINE_BASE + "engine/17/boot-single.js#stockfish-17.1-single-a496a04.wasm"],
+    mtUrl: ENGINE_BASE + "engine/17/boot-mt.js#stockfish-17.1-8e4d048.wasm",
+    parts: 6,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
   },
 };
 // (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
@@ -427,8 +446,13 @@ function mainEngineThreads() {
 // 그대로 살아있게 한다.
 function engineBootList(profileId, threads) {
   const profile = ENGINE_PROFILES[profileId] || ENGINE_PROFILES.full;
-  const list = profile.urls.map((url) => ({ url, threads: 1 }));
-  if (profile.mtUrl && crossOriginIsolatedOK()) list.unshift({ url: profile.mtUrl, threads });
+  // (v0.2.0 버그 수정) Stockfish 17.1(최고 성능) 프로필은 신경망이 조각(-part-N.wasm)째로 수십MB에
+  // 달해, 다 받아 이어 붙이고 컴파일하는 데 기존 4초 부팅 타임아웃보다 오래 걸릴 수 있다 — 이
+  // 타임아웃이 먼저 끝나 워커를 강제 종료하면 파일을 받던 중이라 "연결 실패"로 이어졌다. 신경망이
+  // 조각나 있는 프로필(profile.parts)만 훨씬 넉넉한 타임아웃을 준다(가벼운 기존 두 엔진은 그대로 4초).
+  const bootTimeoutMs = profile.parts ? 45000 : 4000;
+  const list = profile.urls.map((url) => ({ url, threads: 1, bootTimeoutMs }));
+  if (profile.mtUrl && crossOriginIsolatedOK()) list.unshift({ url: profile.mtUrl, threads, bootTimeoutMs });
   return list;
 }
 const ENGINE_PREF_KEY = "occ_engine_pref";
@@ -769,7 +793,7 @@ function useEngine(enginePref) {
     }
     function tryNext() {
       if (idx >= bootList.length) { offRef.current = true; setStatus("off"); pump(); return; }
-      const { url, threads } = bootList[idx++];
+      const { url, threads, bootTimeoutMs } = bootList[idx++];
       try {
         let w;
         if (url.startsWith("/")) w = new Worker(url);
@@ -780,7 +804,7 @@ function useEngine(enginePref) {
         w.postMessage("uci");
         if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
         w.postMessage("isready"); worker = w;
-        setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, 4000);
+        setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
       } catch (_) { tryNext(); }
     }
     tryNext();
@@ -9481,8 +9505,9 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
         mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} />} />}
 
-      {/* (20차 기능2) 엔진 선택 — 정확도가 높지만 무거운 Stockfish 16과, 가볍고 빠른 Stockfish 18 Lite
-          중에서 고를 수 있다. 기기 종류(모바일/PC)에 따라 자동으로 다른 기본값이 선택되어 있다. */}
+      {/* (20차 기능2, v0.2.0 기능 추가) 엔진 선택 — 안정적인 Stockfish 16, 가볍고 빠른 Stockfish 18
+          Lite, 셋 중 가장 강력한 Stockfish 17.1(최고 성능) 중에서 고를 수 있다. 기기 종류(모바일/PC)에
+          따라 자동으로 다른 기본값이 선택되어 있다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>분석 엔진</div>
