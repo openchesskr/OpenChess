@@ -783,6 +783,9 @@ function useEngine(enginePref) {
           // 깊어지며 갱신된다 — 평가치 바처럼 "이 포지션 자체의 평가"가 필요한 곳은 굳이 별도의
           // 단일PV 탐색을 또 돌리지 않고 이 진행 상황을 그대로 재사용할 수 있다.
           if (cb.onProgress && parseInt(mp[1], 10) === 1) cb.onProgress(entry);
+          // (v0.2.1) 엔진 라인을 최종 결과 한 번이 아니라 depth가 깊어질 때마다 실시간으로 흘려보낸다
+          // (throttle ~90ms) — 평가치가 살아 움직이고 수순도 점점 길어져 "한꺼번에 팝업"되는 끊김이 사라진다.
+          if (cb.onLines) { const now = Date.now(); if (!cb.lastLinesEmit || now - cb.lastLinesEmit >= 90) { cb.lastLinesEmit = now; cb.onLines(Object.keys(cb.lines).sort((a, b) => a - b).map((k) => cb.lines[k])); } }
         }
       } else if (sc && !cb.multi) {
         cb.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
@@ -831,9 +834,9 @@ function useEngine(enginePref) {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
     queue.current.push({ resolve, last: null, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
   }), [pump]);
-  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress) => new Promise((resolve) => {
+  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress, onLines) => new Promise((resolve) => {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
@@ -2002,7 +2005,12 @@ function bootAnalysisWorker(urls) {
         // 구분 UCI 목록)를 함께 담는다. analyzeGame은 uci/cp/mate만 읽으므로 영향받지 않는다.
         const pvIdx = line.indexOf(" pv ");
         const pvList = pvIdx >= 0 ? line.slice(pvIdx + 4).trim().split(/\s+/) : null;
-        if (mp && pvList && pvList.length && sc) job.lines[parseInt(mp[1], 10)] = { uci: pvList[0], pv: pvList, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+        const dm = line.match(/^info depth (\d+)/);
+        if (mp && pvList && pvList.length && sc) {
+          job.lines[parseInt(mp[1], 10)] = { uci: pvList[0], pv: pvList, depth: dm ? parseInt(dm[1], 10) : null, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+          // (v0.2.1) 실시간 스트리밍 — depth가 깊어질 때마다(throttle ~90ms) 현재 라인들을 흘려보낸다.
+          if (job.onLines) { const now = Date.now(); if (!job.lastLinesEmit || now - job.lastLinesEmit >= 90) { job.lastLinesEmit = now; job.onLines(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k])); } }
+        }
       } else if (sc && !job.multi) {
         job.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
         if (job.onProgress) { const dm = line.match(/^info depth (\d+)/); job.onProgress({ ...job.last, depth: dm ? parseInt(dm[1], 10) : null }); }
@@ -2032,9 +2040,9 @@ function bootAnalysisWorker(urls) {
                   pump();
                 });
               },
-              evaluateMulti(fen, d, multipv, mt) {
+              evaluateMulti(fen, d, multipv, mt, onLines) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, multi: true, lines: {}, mt, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
@@ -2378,6 +2386,14 @@ function PendingDots({ size = 14 }) {
 function evalDisplayText(ev) {
   return !ev ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
 }
+// (v0.2.1) /review 세로 평가치 막대 전용 — 부호는 위치(위=흑 우세, 아래=백 우세)로 이미 드러나므로
+// 크기(절댓값)만 표기한다. 메이트는 M수, 종국은 체크메이트 기호(#). 소수 한 자리로 줄여 좁은 막대 안에 맞춘다.
+function evalBarText(ev) {
+  if (!ev) return "0.0";
+  if (ev.mate === 0) return "#";
+  if (ev.mate != null) return "M" + (ev.plies != null ? ev.plies : matePliesOf(ev.mate));
+  return (Math.abs(ev.cp || 0) / 100).toFixed(1);
+}
 function EvalBadge({ ev, small }) {
   const num = !ev ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : (ev.cp || 0));
   const txt = evalDisplayText(ev);
@@ -2422,7 +2438,8 @@ function EvalBar({ cp, width, depth, vertical }) {
           <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: whitePct + "%", background: "#FFFFFF" }} />
           <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: (100 - whitePct) + "%", background: "#140C07" }} />
         </div>
-        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1, ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
+        {/* 부호 없이 크기만 — 위치(아래=백/위=흑)로 유불리를 구분한다. 폭(22px)에 다 들어오도록 글자를 줄인다. */}
+        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 7.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1, letterSpacing: "-.02em", ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalBarText(ev)}</span>
       </div>
     );
   }
@@ -2482,9 +2499,22 @@ function EngineLineSkeleton() {
     </div>
   );
 }
+// (v0.2.1) 엔진 라인 수순을 한 번에 다 찍지 않고 한 수씩 "타이핑"되듯 드러낸다 — posKey(포지션)가
+// 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
+function TypedMoveLine({ startPly, sans, posKey }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => { setShown(0); }, [posKey]);
+  useEffect(() => {
+    if (shown >= sans.length) return;
+    const id = setTimeout(() => setShown((s) => Math.min(s + 1, sans.length)), 55);
+    return () => clearTimeout(id);
+  }, [shown, sans.length]);
+  return <>{pvContinuationText(startPly, sans.slice(0, Math.min(shown, sans.length)))}</>;
+}
 function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
   const dragStartRef = useRef(null);
   const hasLines = lines && lines.length;
+  const posKey = sans.join(" ");
   if (!hasLines && !pending) return null;
   // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
   // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
@@ -2504,7 +2534,7 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
             style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
             <EvalBadge ev={l.ev} small />
             <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-              {pvContinuationText(sans.length, l.sans)}
+              <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + i} />
             </div>
           </div>
         ))
@@ -2832,13 +2862,13 @@ function NotationTools({ sans, onLoadPgn }) {
   );
 }
 
-function CircleBadge({ kind, big }) {
+function CircleBadge({ kind, big, noTip }) {
   const [hover, setHover] = useState(false);
   const sz = big ? 36 : 26;
   return (
-    <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+    <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }} onMouseEnter={noTip ? undefined : () => setHover(true)} onMouseLeave={noTip ? undefined : () => setHover(false)}>
       <span style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)" }}>{badgeIcon(kind, sz - 4)}</span>
-      {hover && <span style={{ position: "absolute", bottom: sz + 6, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 7, background: T.ivoryHi, color: QCOLOR[kind], fontSize: 12, fontWeight: 800, border: "1px solid " + QCOLOR[kind], boxShadow: "0 4px 10px -4px rgba(0,0,0,.5)", zIndex: 30 }}>{QLABEL[kind]}</span>}
+      {hover && !noTip && <span style={{ position: "absolute", bottom: sz + 6, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 7, background: T.ivoryHi, color: QCOLOR[kind], fontSize: 12, fontWeight: 800, border: "1px solid " + QCOLOR[kind], boxShadow: "0 4px 10px -4px rgba(0,0,0,.5)", zIndex: 30 }}>{QLABEL[kind]}</span>}
     </span>
   );
 }
@@ -3135,7 +3165,15 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (하나의 결과만 쓰므로).
       if (posCacheRef.current.key !== key) posCacheRef.current = { key, multiPromise: null, live: new Map() };
       const cache = posCacheRef.current;
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 3000, onEvalProgress);
+      // (v0.2.1) 엔진 상위 3줄을 최종 결과 한 번이 아니라 depth마다 실시간으로 갱신한다 — 평가치가 살아
+      // 움직이고 수순이 점점 길어진다. 이 effect는 후보 수가 채워질 때마다 재실행되므로(cancelled가 금방
+      // true가 됨) cancelled 대신 "지금 포지션 key가 그대로인가"로 가드해 탐색 내내 스트리밍을 유지한다.
+      const toLines3 = (raw) => (raw || []).slice(0, 3).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+        ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
+        sans: pvUciToSans(sans, pv.pv, 15),
+      }));
+      const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 3000, onEvalProgress, streamLines);
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -4096,7 +4134,11 @@ const REVIEW_COACH_COPY = {
 function reviewCoachCopy(m) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
   const body = c.body[m.ply % c.body.length];
-  return { headline: stripSuffix(m.san) + c.head, body, mascot: c.mascot };
+  // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
+  // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
+  const emo = (c.mascot && c.mascot[1]) || "great";
+  const name = m.white ? "milku" : "kokoa";
+  return { headline: stripSuffix(m.san) + c.head, body, mascot: [name, emo] };
 }
 // (v0.2.0 기능) side("w"|"b")의 표시용 이름·레이팅 — game.white/game.black(chess.com 원본 양쪽
 // 정보)가 있으면 그대로 쓰고, 없으면(예전 형태로 저장된 대국) game.color 기준 "나"/"상대"로,
@@ -4155,7 +4197,8 @@ function reviewGamePhases(moves) {
   return { openEnd, endStart: Math.max(endStart, openEnd + 1) };
 }
 // 한 단계(구간) 안에서 한쪽 진영이 보여준 가장 인상적인 수 등급 — "이 구간의 하이라이트"를 고른다.
-const REVIEW_PHASE_PRIORITY = ["brilliant", "only", "best", "excellent", "good", "book", "miss", "inaccuracy", "mistake", "blunder"];
+// (v0.2.1) 이론 수(book)는 하이라이트 후보에서 제외 — 단계 아이콘에 이론 수를 표시하지 않기 위함.
+const REVIEW_PHASE_PRIORITY = ["brilliant", "only", "best", "excellent", "good", "miss", "inaccuracy", "mistake", "blunder"];
 function reviewPhaseHighlight(moves, fromPly, toPly, white) {
   let bestIdx = 999, bestKind = null;
   for (let i = fromPly; i <= toPly && i < moves.length; i++) {
@@ -4164,6 +4207,15 @@ function reviewPhaseHighlight(moves, fromPly, toPly, white) {
     if (idx < bestIdx) { bestIdx = idx; bestKind = m.kind; }
   }
   return bestKind;
+}
+// (v0.2.1) 한 단계(구간) 안에서 한쪽 진영의 부분 정확도 — 그 구간 그 진영 수들의 acc 평균(단계 아이콘 클릭 시 표시).
+function reviewPhaseAccuracy(moves, fromPly, toPly, white) {
+  let sum = 0, n = 0;
+  for (let i = fromPly; i <= toPly && i < moves.length; i++) {
+    const m = moves[i]; if (m.white !== white || m.acc == null) continue;
+    sum += m.acc; n++;
+  }
+  return n ? Math.round((sum / n) * 10) / 10 : null;
 }
 // 정확성 산출과 동일한 값(analyzeGame의 whiteAcc/blackAcc)을 재사용하고, 여기서는 표시 서식만 맡는다.
 function ReviewAccuracyPill({ label, value, hi }) {
@@ -4176,8 +4228,18 @@ function ReviewAccuracyPill({ label, value, hi }) {
 }
 // (기능) 요약 화면의 수 체계별 개수 표 — ANALYSIS_KIND_ROWS·QCOLOR·CircleBadge를 그대로 재사용해
 // AnalysisModal과 동일한 채점 기준을 그대로 보여준다(같은 analyzeGame 결과를 쓰므로 숫자도 항상 일치).
-function ReviewKindTable({ moves, showAll = false }) {
+// (v0.2.1) onPick(curPlyTarget)이 있으면 각 개수 숫자를 눌러 그 등급이 처음 두어진 수로 리뷰 화면을
+// 이동한다(이론 수는 예외로 가장 마지막에 둔 이론 수로). 그 등급의 수가 0개면 누를 수 없다.
+function ReviewKindTable({ moves, showAll = false, onPick }) {
   const countBy = (white, kind) => moves.filter((m) => m.white === white && m.kind === kind).length;
+  const pick = (kind, white) => {
+    if (!onPick) return;
+    const ms = moves.filter((m) => m.white === white && m.kind === kind);
+    if (!ms.length) return;
+    const m = kind === "book" ? ms[ms.length - 1] : ms[0];
+    onPick(m.ply + 1); // curPly = ply+1 (그 수까지 둔 위치)
+  };
+  const numStyle = (kind, n) => ({ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind], background: "none", border: "none", cursor: onPick && n ? "pointer" : "default", padding: 0, textDecoration: onPick && n ? "underline" : "none", textDecorationColor: "rgba(255,255,255,.25)", textUnderlineOffset: 3 });
   return (
     <div style={{ borderTop: "1px solid " + RV.border }}>
       {ANALYSIS_KIND_ROWS.map(([kind, label]) => {
@@ -4185,9 +4247,9 @@ function ReviewKindTable({ moves, showAll = false }) {
         if (!showAll && !w && !b) return null;
         return (
           <div key={kind} className="flex items-center" style={{ padding: "8px 2px", borderBottom: "1px solid " + RV.border }}>
-            <span style={{ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind] }}>{w}</span>
+            <button onClick={() => pick(kind, true)} className={onPick && w ? "press" : ""} style={numStyle(kind, w)}>{w}</button>
             <span style={{ flex: 1, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: RV.text }}><CircleBadge kind={kind} />{label}</span>
-            <span style={{ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind] }}>{b}</span>
+            <button onClick={() => pick(kind, false)} className={onPick && b ? "press" : ""} style={numStyle(kind, b)}>{b}</button>
           </div>
         );
       })}
@@ -4198,14 +4260,24 @@ function ReviewKindTable({ moves, showAll = false }) {
 // 평가 그래프 → 플레이어·정확성 → 등급별 개수 → 단계별 하이라이트 → 리뷰 시작)로 구성한다.
 // (설계) chess.com의 "Game Rating"(대국 퍼포먼스 레이팅 추정치)은 별도의 통계적 산출 방식이 필요해
 // 이 배치에서 근거 없는 숫자를 지어내기보다 생략한다 — 나머지 항목은 전부 analyzeGame의 실제 결과다.
-function ReviewSummary({ game, result, onStart, onClose, narrow }) {
+function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
   const { openEnd, endStart } = useMemo(() => reviewGamePhases(result.moves), [result.moves]);
   const hasEndgame = endStart < result.moves.length;
-  const phases = [
-    { label: "오프닝", w: reviewPhaseHighlight(result.moves, 0, openEnd, true), b: reviewPhaseHighlight(result.moves, 0, openEnd, false) },
-    { label: "미들게임", w: reviewPhaseHighlight(result.moves, openEnd + 1, hasEndgame ? endStart - 1 : result.moves.length - 1, true), b: reviewPhaseHighlight(result.moves, openEnd + 1, hasEndgame ? endStart - 1 : result.moves.length - 1, false) },
-    { label: "엔드게임", w: hasEndgame ? reviewPhaseHighlight(result.moves, endStart, result.moves.length - 1, true) : null, b: hasEndgame ? reviewPhaseHighlight(result.moves, endStart, result.moves.length - 1, false) : null },
+  const midTo = hasEndgame ? endStart - 1 : result.moves.length - 1;
+  const phaseRanges = [
+    { label: "오프닝", from: 0, to: openEnd },
+    { label: "미들게임", from: openEnd + 1, to: midTo },
+    { label: "엔드게임", from: endStart, to: hasEndgame ? result.moves.length - 1 : -1 },
   ];
+  const phases = phaseRanges.map((r) => ({
+    label: r.label, from: r.from, to: r.to,
+    w: r.to >= r.from ? reviewPhaseHighlight(result.moves, r.from, r.to, true) : null,
+    b: r.to >= r.from ? reviewPhaseHighlight(result.moves, r.from, r.to, false) : null,
+    wAcc: r.to >= r.from ? reviewPhaseAccuracy(result.moves, r.from, r.to, true) : null,
+    bAcc: r.to >= r.from ? reviewPhaseAccuracy(result.moves, r.from, r.to, false) : null,
+  }));
+  // (v0.2.1) 단계 아이콘을 누르면 그 단계·진영의 부분 정확도를 잠깐 보여준다(등급 설명 대신).
+  const [accShow, setAccShow] = useState(null); // "라벨:side"
   const won = game.result === "win", lost = game.result === "loss";
   const headline = !game.result ? "이 수순의 주요 장면들을 함께 분석해봐요!" : won ? "이 대국에서 좋은 전술을 찾아냈어요. 함께 살펴봐요!" : lost ? "아쉬운 순간들이 있었어요 — 무엇을 놓쳤는지 함께 확인해요." : "이 대국의 주요 장면들을 함께 리뷰해요!";
   const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
@@ -4237,17 +4309,33 @@ function ReviewSummary({ game, result, onStart, onClose, narrow }) {
         <ReviewAccuracyPill label="정확성" value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} />
         <ReviewAccuracyPill label="정확성" value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
       </div>
-      <ReviewKindTable moves={result.moves} />
+      <ReviewKindTable moves={result.moves} onPick={onPickMove} />
       <div style={{ padding: "12px 2px", borderBottom: "1px solid " + RV.border }}>
-        {phases.filter((p) => p.w || p.b).map((p) => (
-          <div key={p.label} className="flex items-center justify-between" style={{ padding: "6px 0" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: RV.text }}>{p.label}</span>
-            <span className="flex items-center gap-3">
-              <span>{p.w ? <CircleBadge kind={p.w} /> : <span style={{ color: RV.dim }}>-</span>}</span>
-              <span>{p.b ? <CircleBadge kind={p.b} /> : <span style={{ color: RV.dim }}>-</span>}</span>
-            </span>
-          </div>
-        ))}
+        {phases.filter((p) => p.w || p.b).map((p) => {
+          const showW = accShow === p.label + ":w", showB = accShow === p.label + ":b";
+          const phaseBadge = (kind, side, acc) => {
+            if (!kind) return <span style={{ color: RV.dim }}>-</span>;
+            // 아이콘을 누르면 등급 설명(툴팁) 대신 그 단계·진영의 부분 정확도를 잠깐 보여준다.
+            return (
+              <button onClick={() => setAccShow((v) => (v === p.label + ":" + side ? null : p.label + ":" + side))} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}>
+                <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind} noTip /></span>
+              </button>
+            );
+          };
+          return (
+            <div key={p.label} className="flex items-center justify-between" style={{ padding: "6px 0" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: (showW || showB) ? T.brassHi : RV.text, fontFamily: (showW || showB) ? "ui-monospace,monospace" : undefined }}>
+                {(showW || showB)
+                  ? p.label + " 정확도 " + ((showW ? p.wAcc : p.bAcc) != null ? (showW ? p.wAcc : p.bAcc).toFixed(1) + "%" : "—")
+                  : p.label}
+              </span>
+              <span className="flex items-center gap-3">
+                <span>{phaseBadge(p.w, "w", p.wAcc)}</span>
+                <span>{phaseBadge(p.b, "b", p.bAcc)}</span>
+              </span>
+            </div>
+          );
+        })}
       </div>
       {/* (v0.2.1) 닫기 버튼 삭제 — 이 요약(Analysis) 창을 닫는 건 헤더의 뒤로가기가 담당한다. */}
       <div className="flex flex-col" style={{ gap: 10, marginTop: 16 }}>
@@ -4499,19 +4587,23 @@ function ReviewPage({ game, engine, onClose }) {
     if (!engine || engine.status !== "ready") { setEngineLines([]); setLinesPending(false); return; }
     setLinesPending(true);
     const baseWhite = effSans.length % 2 === 0 ? 1 : -1;
+    // 원시 PV 목록 → 표시용 라인(백 관점 평가 + 수순). 실시간 스트리밍·최종 결과가 같은 변환을 공유한다.
+    // (Array 가드: 풀 부팅 실패로 useEngine 폴백을 쓰면 5번째 인자가 onLines가 아니라 onProgress라 단일
+    //  엔트리가 올 수 있다 — 그럴 땐 무시한다.)
+    const toLines = (raw) => (Array.isArray(raw) ? raw : []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+      ev: pv.mate != null
+        ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
+        : { cp: pv.cp * baseWhite },
+      sans: pvUciToSans(effSans, pv.pv, 15),
+    }));
     (async () => {
       try {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
         const w = pool[0] || engine;
-        const pvsAll = await w.evaluateMulti(sansToFen(effSans), 16, 3, 3000);
+        // (v0.2.1) onLines로 depth마다 실시간 갱신 — 평가치가 살아 움직이고 수순이 점점 길어진다.
+        const pvsAll = await w.evaluateMulti(sansToFen(effSans), 16, 3, 3000, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } });
         if (cancelled) return;
-        const lines = (pvsAll || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
-          ev: pv.mate != null
-            ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
-            : { cp: pv.cp * baseWhite },
-          sans: pvUciToSans(effSans, pv.pv, 15),
-        }));
-        setEngineLines(lines);
+        setEngineLines(toLines(pvsAll));
       } catch { if (!cancelled) setEngineLines([]); }
       finally { if (!cancelled) setLinesPending(false); }
     })();
@@ -4609,7 +4701,7 @@ function ReviewPage({ game, engine, onClose }) {
       <div style={wrap}>
         {header}
         {phase === "summary"
-          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onClose={onClose} narrow />
+          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
               <ReviewCoachCard move={activeMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
@@ -4678,7 +4770,7 @@ function ReviewPage({ game, engine, onClose }) {
                 <ReviewAccuracyPill label={"⬜ " + reviewPlayerInfo(game, "w").name} value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} />
                 <ReviewAccuracyPill label={"⬛ " + reviewPlayerInfo(game, "b").name} value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
               </div>
-              <ReviewKindTable moves={result.moves} showAll />
+              <ReviewKindTable moves={result.moves} showAll onPick={(p) => { setTab("review"); jump(p); }} />
             </>
           )}
         </div>
