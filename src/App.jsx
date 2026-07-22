@@ -2602,16 +2602,19 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
     ? { pieces: info.byBlack, color: "w", diff: Math.max(0, -info.diff) }
     : { pieces: info.byWhite, color: "b", diff: Math.max(0, info.diff) };
   const boardEl = <Board board={board} flip={flip} {...boardProps} />;
+  // (v0.2.1) 세로 평가치 막대가 있으면 프로필·잡힌 기물 줄을 막대(22)+간격(8)=30px만큼 들여, 막대가 아닌
+  // 실제 체스보드에 좌우로 정렬한다.
+  const capInset = leftOfBoard ? 30 : 0;
   return (
     <div>
-      <CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} player={topInfo} />
+      <div style={{ marginLeft: capInset }}><CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} player={topInfo} /></div>
       {leftOfBoard ? (
         <div className="flex items-stretch" style={{ gap: 8 }}>
           {leftOfBoard}
           <div ref={boardRef} style={{ flex: 1, minWidth: 0 }}>{boardEl}</div>
         </div>
       ) : (boardRef ? <div ref={boardRef}>{boardEl}</div> : boardEl)}
-      <CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} player={bottomInfo} />
+      <div style={{ marginLeft: capInset }}><CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} player={bottomInfo} /></div>
     </div>
   );
 }
@@ -4166,8 +4169,8 @@ function reviewPhaseHighlight(moves, fromPly, toPly, white) {
 function ReviewAccuracyPill({ label, value, hi }) {
   return (
     <div style={{ flex: 1, textAlign: "center" }}>
-      <div style={{ fontSize: 11, color: "rgba(255,255,255,.65)", fontWeight: 700, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", borderRadius: 9, padding: "8px 6px", background: hi ? "#fff" : "rgba(255,255,255,.12)", color: hi ? "#181818" : "#fff" }}>{value != null ? value.toFixed(1) : "—"}</div>
+      <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
     </div>
   );
 }
@@ -4176,14 +4179,14 @@ function ReviewAccuracyPill({ label, value, hi }) {
 function ReviewKindTable({ moves, showAll = false }) {
   const countBy = (white, kind) => moves.filter((m) => m.white === white && m.kind === kind).length;
   return (
-    <div style={{ borderTop: "1px solid rgba(255,255,255,.12)" }}>
+    <div style={{ borderTop: "1px solid " + RV.border }}>
       {ANALYSIS_KIND_ROWS.map(([kind, label]) => {
         const w = countBy(true, kind), b = countBy(false, kind);
         if (!showAll && !w && !b) return null;
         return (
-          <div key={kind} className="flex items-center" style={{ padding: "8px 2px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+          <div key={kind} className="flex items-center" style={{ padding: "8px 2px", borderBottom: "1px solid " + RV.border }}>
             <span style={{ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind] }}>{w}</span>
-            <span style={{ flex: 1, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "#fff" }}><CircleBadge kind={kind} />{label}</span>
+            <span style={{ flex: 1, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: RV.text }}><CircleBadge kind={kind} />{label}</span>
             <span style={{ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind] }}>{b}</span>
           </div>
         );
@@ -4212,22 +4215,22 @@ function ReviewSummary({ game, result, onStart, onClose, narrow }) {
     <div style={{ maxWidth: narrow ? "100%" : 380, margin: narrow ? 0 : "0 auto", padding: narrow ? "0 16px 24px" : 0 }}>
       <div className="flex items-start gap-2" style={{ marginBottom: 14 }}>
         <Mascot name="milku" emotion="great" size={54} />
-        <div style={{ background: "rgba(255,255,255,.08)", borderRadius: 12, padding: "10px 13px", fontSize: 12.5, color: "#fff", lineHeight: 1.5 }}>{headline}</div>
+        <div style={{ background: RV.panel, borderRadius: 12, padding: "10px 13px", fontSize: 12.5, color: RV.text, lineHeight: 1.5 }}>{headline}</div>
       </div>
       <EvalGraph evalWin={result.evalWin} moves={result.moves} />
       <div className="flex items-center justify-between" style={{ margin: "16px 0 8px" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.65)" }}>플레이어</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: RV.soft }}>플레이어</span>
       </div>
       <div className="flex items-center" style={{ gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "w" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={whiteAvatar} side="w" size={52} /></div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{whiteInfo.name}</div>
-          {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontFamily: "ui-monospace,monospace" }}>{whiteInfo.rating}</div>}
+          <div style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{whiteInfo.name}</div>
+          {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: "ui-monospace,monospace" }}>{whiteInfo.rating}</div>}
         </div>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "b" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={blackAvatar} side="b" size={52} /></div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{blackInfo.name}</div>
-          {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontFamily: "ui-monospace,monospace" }}>{blackInfo.rating}</div>}
+          <div style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{blackInfo.name}</div>
+          {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: "ui-monospace,monospace" }}>{blackInfo.rating}</div>}
         </div>
       </div>
       <div className="flex items-stretch" style={{ gap: 10, marginBottom: 16 }}>
@@ -4235,19 +4238,19 @@ function ReviewSummary({ game, result, onStart, onClose, narrow }) {
         <ReviewAccuracyPill label="정확성" value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
       </div>
       <ReviewKindTable moves={result.moves} />
-      <div style={{ padding: "12px 2px", borderBottom: "1px solid rgba(255,255,255,.12)" }}>
+      <div style={{ padding: "12px 2px", borderBottom: "1px solid " + RV.border }}>
         {phases.filter((p) => p.w || p.b).map((p) => (
           <div key={p.label} className="flex items-center justify-between" style={{ padding: "6px 0" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "#fff" }}>{p.label}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: RV.text }}>{p.label}</span>
             <span className="flex items-center gap-3">
-              <span>{p.w ? <CircleBadge kind={p.w} /> : <span style={{ color: "rgba(255,255,255,.4)" }}>-</span>}</span>
-              <span>{p.b ? <CircleBadge kind={p.b} /> : <span style={{ color: "rgba(255,255,255,.4)" }}>-</span>}</span>
+              <span>{p.w ? <CircleBadge kind={p.w} /> : <span style={{ color: RV.dim }}>-</span>}</span>
+              <span>{p.b ? <CircleBadge kind={p.b} /> : <span style={{ color: RV.dim }}>-</span>}</span>
             </span>
           </div>
         ))}
       </div>
+      {/* (v0.2.1) 닫기 버튼 삭제 — 이 요약(Analysis) 창을 닫는 건 헤더의 뒤로가기가 담당한다. */}
       <div className="flex flex-col" style={{ gap: 10, marginTop: 16 }}>
-        <button onClick={onClose} className="press" style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>닫기</button>
         <button onClick={onStart} className="press" style={{ padding: "13px 14px", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: 14.5, cursor: "pointer" }}>리뷰 시작</button>
       </div>
     </div>
@@ -4265,7 +4268,7 @@ function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext
   const items = sans.slice(Math.max(0, start), Math.max(0, start) + WINDOW);
   return (
     <div className="flex items-center" style={{ gap: 4, padding: "8px 4px" }}>
-      <button onClick={onPrev} disabled={!canPrev} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? "#fff" : "rgba(255,255,255,.25)", cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
+      <button onClick={onPrev} disabled={!canPrev} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? RV.text : RV.dim, cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
       <div className="flex items-center" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", justifyContent: "center" }}>
         {items.map((s, i) => {
           const ply = Math.max(0, start) + i;
@@ -4273,16 +4276,16 @@ function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext
           const showNum = ply % 2 === 0;
           const m = moves && moves[ply];
           const isDot = !!(dotPlies && dotPlies.has(ply) && m && QCOLOR[m.kind]);
-          const txtColor = isCur ? "#181818" : isDot ? QCOLOR[m.kind] : "#fff";
+          const txtColor = isCur ? "#241509" : isDot ? QCOLOR[m.kind] : RV.text;
           return (
             <span key={ply} className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
-              {showNum && <span style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{ply / 2 + 1}.</span>}
-              <button onClick={() => onJump(ply + 1)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? "#fff" : "transparent", color: txtColor, fontWeight: (isCur || isDot) ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{isDot && badgeIcon(m.kind, 13)}{stripSuffix(s)}</button>
+              {showNum && <span style={{ fontSize: 12, color: RV.soft, fontWeight: 700 }}>{ply / 2 + 1}.</span>}
+              <button onClick={() => onJump(ply + 1)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? T.brassHi : "transparent", color: txtColor, fontWeight: (isCur || isDot) ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{isDot && badgeIcon(m.kind, 13)}{stripSuffix(s)}</button>
             </span>
           );
         })}
       </div>
-      <button onClick={onNext} disabled={!canNext} aria-label="다음 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canNext ? "#fff" : "rgba(255,255,255,.25)", cursor: canNext ? "pointer" : "default", flexShrink: 0 }}><ChevronRight size={18} /></button>
+      <button onClick={onNext} disabled={!canNext} aria-label="다음 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canNext ? RV.text : RV.dim, cursor: canNext ? "pointer" : "default", flexShrink: 0 }}><ChevronRight size={18} /></button>
     </div>
   );
 }
@@ -4292,7 +4295,7 @@ function ReviewMoveCell({ san, move, active, onClick }) {
   if (san == null) return <span style={{ flex: 1 }} />;
   const kind = move && move.kind;
   return (
-    <button onClick={onClick} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 5, textAlign: "left", padding: "6px 8px", border: "none", background: active ? "rgba(255,255,255,.16)" : "transparent", color: kind && QCOLOR[kind] ? QCOLOR[kind] : "#fff", fontWeight: active ? 800 : 600, cursor: "pointer" }}>
+    <button onClick={onClick} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 5, textAlign: "left", padding: "6px 8px", border: "none", background: active ? RV.active : "transparent", color: kind && QCOLOR[kind] ? QCOLOR[kind] : RV.text, fontWeight: active ? 800 : 600, cursor: "pointer" }}>
       {kind && QCOLOR[kind] && <span style={{ width: 15, height: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 15)}</span>}
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stripSuffix(san)}</span>
     </button>
@@ -4302,10 +4305,10 @@ function ReviewMoveTable({ sans, moves, curPly, onJump }) {
   const rows = [];
   for (let i = 0; i < sans.length; i += 2) rows.push([i, sans[i], sans[i + 1]]);
   return (
-    <div style={{ maxHeight: 220, overflowY: "auto", borderRadius: 8, background: "rgba(0,0,0,.2)" }}>
+    <div style={{ maxHeight: 220, overflowY: "auto", borderRadius: 8, background: RV.table }}>
       {rows.map(([i, w, b]) => (
         <div key={i} className="flex items-center" style={{ fontSize: 12.5 }}>
-          <span style={{ width: 32, padding: "6px 4px", color: "rgba(255,255,255,.45)", fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{i / 2 + 1}.</span>
+          <span style={{ width: 32, padding: "6px 4px", color: RV.dim, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{i / 2 + 1}.</span>
           <ReviewMoveCell san={w} move={moves[i]} active={curPly === i + 1} onClick={() => onJump(i + 1)} />
           <ReviewMoveCell san={b} move={moves[i + 1]} active={curPly === i + 2} onClick={() => onJump(i + 2)} />
         </div>
@@ -4317,9 +4320,9 @@ function ReviewMoveTable({ sans, moves, curPly, onJump }) {
 function ReviewOpeningBanner({ text }) {
   if (!text) return null;
   return (
-    <div className="flex items-center" style={{ gap: 6, marginBottom: 10, padding: "7px 11px", borderRadius: 9, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.1)" }}>
+    <div className="flex items-center" style={{ gap: 6, marginBottom: 10, padding: "7px 11px", borderRadius: 9, background: RV.panel, border: "1px solid " + RV.border }}>
       <BookOpen size={13} style={{ color: T.brassHi, flexShrink: 0 }} />
-      <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
     </div>
   );
 }
@@ -4334,20 +4337,20 @@ function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onRetry, o
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
   return (
-    <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, border: "1px solid #000", overflow: "hidden" }}>
+    <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, border: "1px solid " + RV.border, overflow: "hidden" }}>
       <div className="flex items-start gap-2" style={{ padding: "12px 13px 6px" }}>
         <Mascot name={mascotName} emotion={mascotEmo} size={narrow ? 44 : 40} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="flex items-center justify-between" style={{ gap: 8 }}>
-            <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: 13.5, fontWeight: 800, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
-            {evalCpText && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", padding: "3px 8px", borderRadius: 7, background: "rgba(255,255,255,.12)", color: "#fff" }}>{evalCpText}</span>}
+            <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: 13.5, fontWeight: 800, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
+            {evalCpText && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", padding: "3px 8px", borderRadius: 7, background: "rgba(255,255,255,.12)", color: RV.text }}>{evalCpText}</span>}
           </div>
-          <p style={{ fontSize: 12, color: "rgba(255,255,255,.75)", marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
+          <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
         </div>
       </div>
-      <div className="flex items-center" style={{ borderTop: "1px solid rgba(255,255,255,.1)", padding: "8px 10px", gap: 6 }}>
-        <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? "#fff" : "rgba(255,255,255,.3)", cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Eye size={16} /> Show</button>
-        <button onClick={onRetry} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: "#fff", cursor: "pointer", fontSize: 10 }}><RotateCcw size={16} /> Retry</button>
+      <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: "8px 10px", gap: 6 }}>
+        <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Eye size={16} /> Show</button>
+        <button onClick={onRetry} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: RV.text, cursor: "pointer", fontSize: 10 }}><RotateCcw size={16} /> Retry</button>
         <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>{isLast ? "완료" : "Next"}</button>
       </div>
     </div>
@@ -4371,6 +4374,20 @@ function ReviewPromoPrompt({ onPick, onCancel }) {
     </div>
   );
 }
+// (v0.2.1) /review 전용 색 토큰 — 예전엔 순수 검정(#181818)+흰색이라 사이트의 따뜻한 브라운/크림
+// 테마와 이질감이 컸다. 집중학습 오버레이와 같은 어두운 브라운 그러데이션 배경 위에, 아이보리/브라스
+// 계열 텍스트·패널로 통일한다.
+const RV = {
+  bg: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)",
+  head: "rgba(21,12,6,.92)",
+  text: T.ivoryHi,
+  soft: "rgba(235,221,196,.72)",
+  dim: "rgba(235,221,196,.42)",
+  panel: "rgba(255,255,255,.06)",
+  border: "rgba(196,154,80,.22)",
+  table: "rgba(20,12,6,.4)",
+  active: "rgba(236,203,134,.18)",
+};
 // (v0.2.0 기능) /review 최상위 페이지 — game(끝난 한 판)을 받아 요약 화면과 수순별 코치 리뷰 화면을
 // 오간다. 좁은 화면(모바일)은 세로 한 열, 넓은 화면(데스크톱)은 보드+사이드바 2단으로 배치해 각각
 // chess.com 모바일 앱·데스크톱 웹의 레이아웃 구조를 따른다.
@@ -4420,17 +4437,6 @@ function ReviewPage({ game, engine, onClose }) {
   const ep = useMemo(() => epTarget(effSans), [effSans]);
   const legalTargets = useMemo(() => (sel ? legalDests(board, sel[0], sel[1], explColor, ep) : []), [sel, board, explColor, ep]);
   const curMove = curPly > 0 && result ? result.moves[curPly - 1] : null;
-  const arrows = useMemo(() => {
-    if (exploring || !curMove || !showingLine) return [];
-    const target = curMove.best || curMove.san;
-    const prevBoard = boardFromSans(sans.slice(0, curPly - 1));
-    const info = sanSrc(prevBoard, target, curMove.white ? "w" : "b");
-    return info && !info.castle ? [{ from: info.from, to: info.to, adopt: 80 }] : [];
-  }, [curMove, showingLine, sans, curPly, exploring]);
-  const lastQ = exploring || !curMove ? null : { to: (() => { const info = sanSrc(boardFromSans(sans.slice(0, curPly - 1)), curMove.san, curMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: curMove.kind };
-  // (v0.2.1 버그 수정) evalCp(그래프용, 메이트를 ±100000으로 뭉갬)를 fmtEvalCp에 그대로 넣어 "+1000.00"이
-  // 뜨던 문제 — 표시용 {cp}|{mate,win,plies} 배열(evalDisp)을 evalDisplayText로 변환해 M수·1-0 기호가 뜨게 한다.
-  const evalCpText = exploring ? null : (result && result.evalDisp ? evalDisplayText(result.evalDisp[curPly]) : null);
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
@@ -4511,6 +4517,63 @@ function ReviewPage({ game, engine, onClose }) {
     })();
     return () => { cancelled = true; };
   }, [effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  // (v0.2.1 기능) 기보에 없는 자유 탐색 수도 기보 수와 똑같이 — 코치 카드에 등급·평가·설명을, 보드에
+  // 수 체계 아이콘("계산 중" 포함)을, Show 화살표에 최선수를 표시하기 위해, 마지막으로 둔 자유 탐색
+  // 수를 게임 리뷰와 동일한 방식(analyzeGame의 채점 규칙)으로 라이브 분석한다. 공용 엔진 큐 대신 게임
+  // 리뷰와 같은 독립 풀을 써서 학습 탭과 충돌하지 않게 한다.
+  const [exploreMove, setExploreMove] = useState(null); // {san, white, kind, best} — result.moves 항목과 같은 형태
+  useEffect(() => {
+    if (!exploring) { setExploreMove(null); return; }
+    let cancelled = false;
+    const prevSans = effSans.slice(0, -1);
+    const san = effSans[effSans.length - 1];
+    const white = prevSans.length % 2 === 0;
+    setExploreMove({ san, white, kind: "pending", best: null }); // 즉시 "분석 중" 아이콘부터 보여준다
+    (async () => {
+      if (!engine || engine.status !== "ready") return;
+      try {
+        const pool = await getAnalysisPool(engine.profile, engine.urls);
+        const wBest = pool[0] || engine, wAfter = pool[1] || pool[0] || engine;
+        const col = white ? "w" : "b";
+        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), 14, 2, 700);
+        if (cancelled) return;
+        const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
+        if (!p0) return;
+        const bestCp = p0.mate != null ? (p0.mate > 0 ? 1e5 : -1e5) : p0.cp;
+        const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
+        const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
+        const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
+        const after = await wAfter.evaluate(sansToFen(effSans), 14, undefined, 700);
+        if (cancelled || !after) return;
+        const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
+        const ourCp = -afterOpp;
+        const loss = matched ? 0 : bestCp - ourCp;
+        let kind = tierOf(loss);
+        if (kind === "best" && !matched) kind = "excellent";
+        const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
+        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
+        if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+        const gap = secondCp == null ? 9999 : (bestCp - secondCp);
+        if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
+        if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan });
+      } catch { }
+    })();
+    return () => { cancelled = true; };
+  }, [exploring, effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  // (v0.2.1) 지금 화면에 반영할 수/평가 — 자유 탐색 중이면 그 라이브 분석(exploreMove·엔진 라인 1순위
+  // 평가)을, 아니면 게임 리뷰 결과(curMove·evalDisp)를 쓴다. 이후 코치 카드·수 아이콘·평가 바·화살표가
+  // 모두 이 값 하나만 참조하므로 기보 수와 자유 탐색 수의 UX가 완전히 동일해진다.
+  const activeMove = exploring ? exploreMove : curMove;
+  const activeEvalDisp = exploring ? (engineLines[0] && engineLines[0].ev) : (result && result.evalDisp ? result.evalDisp[curPly] : null);
+  const evalCpText = activeEvalDisp ? evalDisplayText(activeEvalDisp) : null;
+  const arrows = useMemo(() => {
+    if (!activeMove || !showingLine) return [];
+    const target = activeMove.best || activeMove.san;
+    const prevBoard = boardFromSans(effSans.slice(0, -1));
+    const info = sanSrc(prevBoard, target, activeMove.white ? "w" : "b");
+    return info && !info.castle ? [{ from: info.from, to: info.to, adopt: 80 }] : [];
+  }, [activeMove, showingLine, effSans]);
+  const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardFromSans(effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
   // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
   // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
   const hasPlayerData = !!(game.white || game.black || game.color);
@@ -4518,22 +4581,25 @@ function ReviewPage({ game, engine, onClose }) {
   const blackAvatar = useChesscomAvatar(avatarUsernameFor(game, "b"));
   const whitePInfo = hasPlayerData ? { ...reviewPlayerInfo(game, "w"), side: "w", avatar: whiteAvatar } : null;
   const blackPInfo = hasPlayerData ? { ...reviewPlayerInfo(game, "b"), side: "b", avatar: blackAvatar } : null;
-  const wrap = { position: "fixed", inset: 0, zIndex: 300, background: "#181818", overflowY: "auto", WebkitOverflowScrolling: "touch" };
+  const wrap = { position: "fixed", inset: 0, zIndex: 300, background: RV.bg, overflowY: "auto", WebkitOverflowScrolling: "touch" };
+  // (v0.2.1) 모바일 뒤로가기 — 리뷰 진행 화면에서는 /review를 닫지 않고 Analysis(요약) 창으로 먼저
+  // 돌아가고, 요약 창에서 한 번 더 눌러야 /review가 닫힌다. 데스크톱은 요약 단계가 없어 곧장 닫는다.
+  const handleBack = () => { if (narrow && phase === "review") { setPhase("summary"); setExploreSans([]); setExploreFuture([]); setShowingLine(false); } else onClose(); };
   const header = (
-    <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: "#181818", zIndex: 5 }}>
-      <button onClick={onClose} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
-      <span style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>게임 리뷰</span>
+    <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
+      <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
+      <span style={{ fontSize: 15, fontWeight: 800, color: RV.text }}>게임 리뷰</span>
       <span style={{ width: 34 }} />
     </div>
   );
   if (err) return (
-    <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: "#fff", fontSize: 13 }}>분석할 수 없습니다. 엔진이 준비되었는지 확인해 주세요.</p></div></div>
+    <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: RV.text, fontSize: 13 }}>분석할 수 없습니다. 엔진이 준비되었는지 확인해 주세요.</p></div></div>
   );
   if (!result) return (
     <div style={wrap}>{header}
       <div style={{ padding: "40px 20px", textAlign: "center" }}>
         <Mascot name="kokoa" emotion="think" size={64} />
-        <p style={{ color: "rgba(255,255,255,.75)", fontSize: 13, fontWeight: 700, marginTop: 10 }}>기보를 분석하는 중… {Math.round(prog * 100)}%</p>
+        <p style={{ color: RV.soft, fontSize: 13, fontWeight: 700, marginTop: 10 }}>기보를 분석하는 중… {Math.round(prog * 100)}%</p>
         <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
       </div>
     </div>
@@ -4546,19 +4612,19 @@ function ReviewPage({ game, engine, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onClose={onClose} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
-                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={!exploring && result.evalDisp ? result.evalDisp[curPly] : null} />} />
+                <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
-              {/* (v0.2.1 기능) 엔진 라인 — 모바일은 체스보드 하단 여백에 표시한다. */}
-              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
               <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} />
+              {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. */}
+              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
             </div>
           )}
       </div>
@@ -4574,26 +4640,26 @@ function ReviewPage({ game, engine, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
-              leftOfBoard={<EvalBar vertical cp={!exploring && result.evalDisp ? result.evalDisp[curPly] : null} />} />
+            <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+              leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
-            <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? "rgba(255,255,255,.3)" : "#fff", cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
-            <button onClick={stepBack} disabled={!canBack} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: canBack ? "#fff" : "rgba(255,255,255,.3)", cursor: canBack ? "pointer" : "default" }}><ChevronLeft size={16} /></button>
-            <button onClick={stepForward} disabled={!canFwd} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: canFwd ? "#fff" : "rgba(255,255,255,.3)", cursor: canFwd ? "pointer" : "default" }}><ChevronRight size={16} /></button>
-            <button onClick={() => jump(sans.length)} disabled={curPly >= sans.length && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: (curPly >= sans.length && !exploring && !exploreFuture.length) ? "rgba(255,255,255,.3)" : "#fff", cursor: (curPly >= sans.length && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsRight size={16} /></button>
+            <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? RV.dim : RV.text, cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
+            <button onClick={stepBack} disabled={!canBack} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: canBack ? RV.text : RV.dim, cursor: canBack ? "pointer" : "default" }}><ChevronLeft size={16} /></button>
+            <button onClick={stepForward} disabled={!canFwd} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: canFwd ? RV.text : RV.dim, cursor: canFwd ? "pointer" : "default" }}><ChevronRight size={16} /></button>
+            <button onClick={() => jump(sans.length)} disabled={curPly >= sans.length && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: (curPly >= sans.length && !exploring && !exploreFuture.length) ? RV.dim : RV.text, cursor: (curPly >= sans.length && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsRight size={16} /></button>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,.12)" }}>
+          <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
             {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (
-              <button key={k} onClick={() => setTab(k)} className="press" style={{ padding: "9px 14px", border: "none", background: "transparent", color: tab === k ? "#fff" : "rgba(255,255,255,.5)", fontWeight: 800, fontSize: 13, cursor: "pointer", borderBottom: tab === k ? "2px solid " + T.brass : "2px solid transparent" }}>{label}</button>
+              <button key={k} onClick={() => setTab(k)} className="press" style={{ padding: "9px 14px", border: "none", background: "transparent", color: tab === k ? RV.text : RV.dim, fontWeight: 800, fontSize: 13, cursor: "pointer", borderBottom: tab === k ? "2px solid " + T.brass : "2px solid transparent" }}>{label}</button>
             ))}
           </div>
           {tab === "review" && (
