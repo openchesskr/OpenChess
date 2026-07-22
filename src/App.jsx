@@ -11803,10 +11803,14 @@ export default function App() {
   const dailyQuestCleared = !!(dailyQuest && dailyQuest.date === todayStr() && dailyQuest.claimed && dailyQuest.claimed.puzzle && Array.isArray(dailyQuest.quests) && dailyQuest.quests.every((_, i) => dailyQuest.claimed["cc_" + i]));
   // (버그 수정) 업데이트 공지 모달과 이 알림이 동시에 뜨면 나중에 마운트된 이 모달의 전체화면
   // 배경(backdrop)이 z-index가 같아 위에 깔려, 공지 모달의 닫기 버튼을 완전히 가려 못 누르게
-  // 만들었다 — announceOpen이 열려 있는 동안은 이 알림을 띄우지 않고, 공지를 닫아 announceOpen이
-  // false가 된 뒤에 다시 판단해 두 모달이 겹치지 않고 순서대로만 뜨도록 한다.
+  // 만들었다. announceOpen state로 막으려 했으나, 그 값은 별도 useEffect가 setAnnounceOpen을
+  // 호출해야 갱신되는 탓에 같은 커밋 안에서 이 effect가 먼저(또는 갱신 전 값으로) 실행되면 여전히
+  // 동시에 열릴 수 있었다 — announceOpen 자체 대신, 그 값을 결정하는 원본 조건
+  // (dismissedAnnounceVersion !== APP_VERSION)을 이 effect에서도 똑같이 직접 계산해 지연 없이
+  // 막는다.
+  const announceWillShow = dismissedAnnounceVersion !== APP_VERSION;
   useEffect(() => {
-    if (!loaded || announceOpen) return;
+    if (!loaded || announceWillShow) return;
     const check = () => {
       const t = todayStr();
       if (dailyPuzzleHideDate === t) return;
@@ -11817,7 +11821,7 @@ export default function App() {
     check();
     const iv = setInterval(check, 5 * 60e3);
     return () => clearInterval(iv);
-  }, [loaded, announceOpen, dailyPuzzleHideDate, dailyPuzzleLastShownAt, dailyQuestCleared]);
+  }, [loaded, announceWillShow, dailyPuzzleHideDate, dailyPuzzleLastShownAt, dailyQuestCleared]);
   const closePuzzleNotice = useCallback((hideToday) => {
     setPuzzleNoticeOpen(false);
     setDailyPuzzleLastShownAt(Date.now());
