@@ -11801,8 +11801,12 @@ export default function App() {
   // 지 3시간이 지났으면 다시 띄운다. setInterval로 주기적으로 재검사해야 앱을 계속 켜 둔 채로도
   // 3시간 경과 시점을 놓치지 않는다(탭 전환·리렌더만으로는 시간 경과를 감지할 수 없으므로).
   const dailyQuestCleared = !!(dailyQuest && dailyQuest.date === todayStr() && dailyQuest.claimed && dailyQuest.claimed.puzzle && Array.isArray(dailyQuest.quests) && dailyQuest.quests.every((_, i) => dailyQuest.claimed["cc_" + i]));
+  // (버그 수정) 업데이트 공지 모달과 이 알림이 동시에 뜨면 나중에 마운트된 이 모달의 전체화면
+  // 배경(backdrop)이 z-index가 같아 위에 깔려, 공지 모달의 닫기 버튼을 완전히 가려 못 누르게
+  // 만들었다 — announceOpen이 열려 있는 동안은 이 알림을 띄우지 않고, 공지를 닫아 announceOpen이
+  // false가 된 뒤에 다시 판단해 두 모달이 겹치지 않고 순서대로만 뜨도록 한다.
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || announceOpen) return;
     const check = () => {
       const t = todayStr();
       if (dailyPuzzleHideDate === t) return;
@@ -11813,7 +11817,7 @@ export default function App() {
     check();
     const iv = setInterval(check, 5 * 60e3);
     return () => clearInterval(iv);
-  }, [loaded, dailyPuzzleHideDate, dailyPuzzleLastShownAt, dailyQuestCleared]);
+  }, [loaded, announceOpen, dailyPuzzleHideDate, dailyPuzzleLastShownAt, dailyQuestCleared]);
   const closePuzzleNotice = useCallback((hideToday) => {
     setPuzzleNoticeOpen(false);
     setDailyPuzzleLastShownAt(Date.now());
