@@ -9032,7 +9032,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.1.5", date: "2026.7.18", items: [
+    version: "0.1.5", date: "2026.7.18", dev: ["openchesskr"], items: [
       "소개 페이지(/about)의 체스판에 나무 결 질감과 좌표 표기를 더하고, 폴스 메이트·스칼라스 메이트·레갈의 함정·프라이드 리버 어택·불멸의 게임·오페라 게임처럼 실제로 유명한 대국·오프닝 함정을 정확히 재현해서 보여줘요.",
       "소개 페이지에 chess.com 연동 기능(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률)을 소개하는 섹션을 새로 추가했어요.",
       "소개 페이지의 버전 업데이트 기록에서 v0.1.2·v0.1.3 두 버전이 빠져 있던 것을 찾아 다시 채워 넣었어요.",
@@ -9051,7 +9051,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.1.4", date: "2026.7.18", items: [
+    version: "0.1.4", date: "2026.7.18", dev: ["openchesskr"], items: [
       "소개 페이지(/about)에 이탈리안 게임·루이 로페즈·시실리안 디펜스·그룬펠드 디펜스 등 유명한 오프닝 8개를 실제 기보 그대로 체스보드에 재현해 보여주는 갤러리를 추가했어요.",
       "소개 페이지에 그랜드마스터 티어를 소개하는 카드를 새로 추가했어요 — 달성 조건과 그랜드마스터만의 혜택(전용 배지·전용 스킨·강조 표시)을 한눈에 볼 수 있어요.",
       "그랜드마스터 티어에 도달하면 코인으로 살 수 없는 전용 체스보드·기물 스킨이 자동으로 해금돼요 — 상점에서 바로 장착할 수 있어요.",
@@ -9065,7 +9065,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.1.3", date: "2026.7.17", items: [
+    version: "0.1.3", date: "2026.7.17", dev: ["openchesskr"], items: [
       "학습 탭 메인 보드에 엔진이 추천하는 상위 3줄을 평가치와 함께 보여줘요. 줄을 누르면 그 수가 바로 보드에 놓여요.",
       "평가치 바를 소수점 둘째 자리까지, 유리한 쪽에 맞는 위치·색으로 표시해요.",
       "상단 기보를 옆으로 넘겨볼 수 있게 했고, 수가 늘어나면 자동으로 최신 수가 보이도록 스크롤돼요. 컴퓨터에서는 A/D 또는 </> 키로도 수를 넘길 수 있어요.",
@@ -9083,7 +9083,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.1.2", date: "2026.7.16", items: [
+    version: "0.1.2", date: "2026.7.16", dev: ["openchesskr"], items: [
       "퍼즐에서 틀린 수를 두면 곧장 원위치로 되돌리지 않고, 상대라면 그 수를 어떻게 응징했을지 최선의 응수를 먼저 보여준 뒤 되돌려요.",
       "퍼즐 모식도·도감 오프닝 트리에서 블록이 하나도 없는 빈 공간까지 드래그해서 넘어갈 수 없도록 했어요.",
       "일일 퀘스트 4개의 클리어 보상을 경험치 대신 OC 나이트 코인으로 받아요(전체 완료 보너스 50개는 그대로예요).",
@@ -9095,7 +9095,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.1.1", date: "2026.7.16", items: [
+    version: "0.1.1", date: "2026.7.16", dev: ["openchesskr"], items: [
       "퍼즐 카드의 공유 아이콘을 숫자만 보여주는 표시와 실제로 공유하는 버튼으로 나눴어요.",
       "퍼즐에 테마가 두 개 붙으면(예: 기물 희생하기 + 실수 응징하기) 카드 배경이 두 테마 색을 절반씩 섞어서 보여줘요.",
       "티어 화면을 실제로 디자인된 기물 이미지로 새롭게 단장했어요. \"아이언 V\"처럼 글자로 보여주던 부분이 전부 그림으로 바뀌었어요.",
@@ -9108,7 +9108,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.1.0", date: "2026.7.16", items: [
+    version: "0.1.0", date: "2026.7.16", dev: ["openchesskr"], items: [
       "퍼즐을 친구에게 공유할 수 있어요! 퍼즐 카드·풀이 화면의 종이비행기 아이콘을 누르면 친구 목록이 뜨고, 고른 친구와의 대화창에 그 퍼즐 미리보기 카드가 남아요. 카드의 \"퍼즐 풀러 가기\" 버튼을 누르면 바로 그 퍼즐을 풀 수 있어요.",
       "친구가 내가 공유한 퍼즐을 풀면 그 친구가 얻는 경험치의 10%를 저에게도 나눠 드려요 — 실시간으로 화면에 알림이 뜨고, 대화창에도 기록이 남아요.",
       "퍼즐을 리포스트하는 기능을 추가했어요. 리포스트한 퍼즐은 풀이수나 좋아요 수와 상관없이 내 추천 퍼즐에 가끔씩 다시 등장해요.",
@@ -9120,7 +9120,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.0.6", date: "2026.7.15", items: [
+    version: "0.0.6", date: "2026.7.15", dev: ["openchesskr"], items: [
       "chess.com에 대국이 아주 많은 계정에서 도감 탭 오프닝 트리가 심하게 버벅이던 문제를 해결했어요.",
       "도감 탭에서 오프닝을 검색하면 이름에 포함된 오프닝이 전부 나오고, 더 상위(유명한) 오프닝이 위쪽에 먼저 보여요. 같은 오프닝이 중복으로 뜨던 문제를 없앴고, 검색어로 시작하는 오프닝이 항상 먼저 나오도록 정렬도 개선했어요. 검색 결과로 이동하는 화면도 트리 선을 따라 자연스럽게 움직여요.",
       "오프닝·퍼즐 모식도에서 확대·축소를 조절하면 트리 전체가 갑자기 안 보이던 문제를 해결했어요. 기본 확대 배율도 다들 편하게 보던 크기로 맞췄어요.",
@@ -9136,7 +9136,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.0.5", date: "2026.7.14", items: [
+    version: "0.0.5", date: "2026.7.14", dev: ["openchesskr"], items: [
       "다른 사람이 내 퍼즐 풀이수·좋아요 수를 마음대로 조작할 수 있던 보안 문제를 해결했어요.",
       "다른 사람 이름으로 가짜 알림(칭호 획득, 레벨 업 등)을 보낼 수 있던 문제를 해결했어요.",
       "친구가 아닌 사람에게도 채팅을 보낼 수 있던 문제를 해결했어요.",
@@ -9144,7 +9144,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.0.4", date: "2026.7.13", items: [
+    version: "0.0.4", date: "2026.7.13", dev: ["openchesskr"], items: [
       "게임 리뷰(전체 기보 분석)가 느리게 느껴지던 문제를 해결해 훨씬 빠르게 결과를 볼 수 있어요.",
       "체스판에서 수를 둘 때마다 실시간 분석이 느려지던 문제를 개선했어요.",
       "모바일에서 오프닝 이름이 길면 잘려서 안 보이던 문제를 고쳤어요.",
@@ -9155,20 +9155,20 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.0.3", date: "2026.7.13", items: [
+    version: "0.0.3", date: "2026.7.13", dev: ["openchesskr"], items: [
       "도감 탭의 오프닝 트리를 나침반 모양(동서남북)으로 새롭게 디자인했어요.",
       "트리가 그려지는 동안 화면이 흔들리거나 버벅이던 문제를 해결했어요.",
       "수를 클릭하면 뜨는 설명 카드가 화면을 확대·축소할 때 잘리거나 커지던 문제를 고쳤어요.",
     ],
   },
   {
-    version: "0.0.2", date: "2026.7.12", items: [
+    version: "0.0.2", date: "2026.7.12", dev: ["openchesskr"], items: [
       "게임 리뷰(전체 기보 분석)가 기보가 길어질수록 느려지다 멈추는 것처럼 보이던 문제를 해결했어요.",
       "실시간 분석 성능을 개선해 더 정확하고 빠르게 계산하도록 했어요(지원 브라우저 한정).",
     ],
   },
   {
-    version: "0.0.1", date: "2026.7.11", items: [
+    version: "0.0.1", date: "2026.7.11", dev: ["openchesskr"], items: [
       "모바일 화면에서 상단 메뉴가 잘리던 문제를 고치고 전체적으로 더 깔끔하게 정리했어요.",
       "대국 기록에 래피드·블리츠·불릿 같은 시간 규정과 레이팅 변화가 함께 표시돼요.",
       "마스터 대국 기록이 안 보이던 문제를 고쳤어요.",
@@ -9183,20 +9183,24 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.0.0", date: "2026.7.10", items: [
+    version: "0.0.0", date: "2026.7.10", dev: ["openchesskr"], items: [
       "OpenChess 베타 서비스를 시작했어요! 오프닝 학습과 퍼즐 풀이 핵심 기능을 먼저 선보이며, 앞으로 계속 다듬어 나갈게요.",
     ],
   },
 ];
 const APP_VERSION = CHANGELOG[0].version;
-function AnnouncementModal({ onClose, onDismissVersion }) {
-  const [hide, setHide] = useState(false);
+// (v0.2.0 버그 수정) 예전엔 "다시 보지 않기" 체크박스를 직접 체크해야만 이 버전을 확정 처리했다 —
+// 체크 없이 닫으면(바깥 클릭·X 버튼) dismissedAnnounceVersion이 그대로라 다음 접속 때 완전히 같은
+// 공지가 또 떴다. "버전 단위 업데이트 이후 최초 접속 시에만 팝업으로 뜨게" 하려면 닫는 방법과
+// 무관하게 항상 이 버전을 "봤음"으로 확정해야 한다 — 같은 내용은 설정 탭의 "개발자 기록"에 항상
+// 그대로 남아 있으니(DeveloperLogCard) 다시 보고 싶으면 언제든 거기서 볼 수 있어, 체크박스 자체를
+// 없애도 정보가 사라지지 않는다.
+function AnnouncementModal({ onClose }) {
   const latest = CHANGELOG[0];
-  const handleClose = () => { if (hide) onDismissVersion(); onClose(); };
   return (
-    <div onClick={handleClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={handleClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
         <div className="flex items-center gap-2" style={{ marginBottom: 4, paddingRight: 32 }}>
           <Sparkles size={17} style={{ color: T.brass, flexShrink: 0 }} />
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>업데이트 소식</span>
@@ -9218,13 +9222,10 @@ function AnnouncementModal({ onClose, onDismissVersion }) {
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {v.items.map((t, j) => <li key={j} style={{ fontSize: 12, color: T.ink, lineHeight: 1.6, marginBottom: 4 }}>{t}</li>)}
               </ul>
+              {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>개발: {v.dev.join(", ")}</div>}
             </div>
           ))}
         </div>
-        <label className="flex items-center gap-2" style={{ marginTop: 12, cursor: "pointer" }}>
-          <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} style={{ width: 15, height: 15, flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>이 버전 업데이트 소식 다시 보지 않기</span>
-        </label>
       </div>
     </div>
   );
@@ -9320,6 +9321,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
   const [ccState, setCcState] = useState("idle");   // idle | checking | failed
   const [pending, setPending] = useState(null);
   const [inquiryOpen, setInquiryOpen] = useState(false);
+  const [devLogOpen, setDevLogOpen] = useState(false);
   useEffect(() => { setCc(profile.chesscom || ""); }, [profile.chesscom]);
   const linked = !!profile.chesscom;
   const verifyChesscom = async () => {
@@ -9474,6 +9476,27 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
               {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>해제</button>}
             </div>
           ))}
+        {/* (v0.2.0) 업데이트 공지 팝업은 버전마다 최초 접속 시 한 번만 뜨고 다시 안 뜨므로, 그
+            내용(버전·날짜·항목·참여 개발자)을 여기 "개발자 기록"으로 항상 남겨 언제든 다시 볼 수 있게 한다. */}
+        <button onClick={() => setDevLogOpen((v) => !v)} className="press flex items-center justify-between" style={{ width: "100%", marginTop: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid #DCCBA8", background: devLogOpen ? "#0000000d" : "transparent", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+          개발자 기록 {devLogOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+        {devLogOpen && (
+          <div style={{ marginTop: 10, maxHeight: 320, overflowY: "auto", paddingRight: 4 }}>
+            {CHANGELOG.map((v, i) => (
+              <div key={v.version} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: i < CHANGELOG.length - 1 ? "1px dashed #DCCBA8" : "none" }}>
+                <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
+                  <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
+                </ul>
+                {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>개발: {v.dev.join(", ")}</div>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* (18차 UI10) chess.com 연동 UI는 프로필 편집 모달 안으로 이동 */}
@@ -12204,7 +12227,7 @@ export default function App() {
         {authOpen && <AuthModal key={authMode} initialMode={authMode} onClose={() => setAuthOpen(false)} onAuth={onAuth} />}
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
-      {announceOpen && <AnnouncementModal onClose={() => setAnnounceOpen(false)} onDismissVersion={() => setDismissedAnnounceVersion(APP_VERSION)} />}
+      {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
