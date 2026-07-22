@@ -1957,11 +1957,6 @@ function calibrateAccuracy(a) {
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
 const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : (l.cp != null ? l.cp : 0)) : 0;
-// (성능) 게임 리뷰(analyzeGame)·학습 탭 실시간 후보 수 평가가 작업을 나눠 동시에 계산할 워커 풀
-// 크기 — "full"(Stockfish 16 NNUE, 40MB 신경망)은 워커 하나당 메모리·로딩 부담이 커서 2개로,
-// "lite"(7MB, 경량 빌드)는 4개까지 동시에 띄운다. depth·movetime은 그대로 두므로 정확도 손실
-// 없이 총 시간만 줄어든다.
-const ANALYZE_POOL_SIZE = { full: 2, lite: 4 };
 // 독립 보조 워커 — useEngine(메인 엔진, React 상태 보유)과 달리 상태 없이 여러 개를 동시에 띄울 수
 // 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 학습 탭의 실시간 후보 수
 // 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
@@ -2044,6 +2039,33 @@ function bootAnalysisWorker(urls) {
     tryNext();
   });
 }
+// (v0.2.0 성능) 실시간 수 아이콘·게임 리뷰 둘 다 예전엔 필요할 때마다 워커 풀을 새로 띄우고
+// 끝나면 바로 버렸다 — 매번 신경망을 새로 내려받아(브라우저 캐시로 네트워크는 빠르지만) 다시
+// 컴파일해야 해서, 신경망이 큰 프로필(특히 17.1)일수록 "요청 → 실제로 계산 시작"까지의 부팅
+// 비용이 목표 응답 시간(수 0.3초, 리뷰 5초)보다 커지기 쉬웠다. 프로필별로 풀을 딱 한 번만 만들어
+// 세션 내내 재사용한다 — depth·movetime(정확도)은 절대 건드리지 않고, 부팅을 한 번만 치르고 나면
+// 그 뒤로는 병렬도만큼 순수하게 시간을 줄인다. 엔진을 바꾸면(다른 profile 요청) 이전 풀만 정리한다.
+let analysisPoolCache = null; // { profile, promise: Promise<worker[]> } — 한 번에 프로필 하나만 유지
+// (성능) 풀 크기 — 코어 수에 비례해 늘리되(cores-1, 실시간 렌더링용 코어 하나는 남김), 워커 하나당
+// 신경망을 통째로 메모리에 올려야 하므로 무거운 프로필일수록 상한을 낮게 둔다.
+// (버그 수정) 예전 고정값(lite=4)보다 코어 수 적은 기기(예: 4코어 → cores-1=3)에서는 이 계산이
+// 오히려 예전보다 풀을 더 작게 만들 뻔했다 — Math.max로 예전 고정값을 바닥값 삼아 절대 그보다
+// 작아지지 않게 하고, 코어가 넉넉한 기기에서만 그 이상으로 늘어나게 한다.
+function analyzePoolSize(profile) {
+  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
+  const base = Math.max(2, cores - 1);
+  if (profile === "full17") return Math.min(Math.max(base, 2), 4);   // ~80MB 신경망 — 메모리 부담이 커서 더 보수적으로
+  if (profile === "full") return Math.min(Math.max(base, 2), 6);
+  return Math.min(Math.max(base, 4), 8);                              // lite(~7MB) — 가벼워서 더 많이 띄울 수 있다
+}
+function getAnalysisPool(profile, urls) {
+  if (analysisPoolCache && analysisPoolCache.profile === profile) return analysisPoolCache.promise;
+  if (analysisPoolCache) { const stale = analysisPoolCache.promise; stale.then((ws) => ws.forEach((w) => w.terminate())); }
+  const size = analyzePoolSize(profile);
+  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
+  analysisPoolCache = { profile, promise };
+  return promise;
+}
 // 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
 // 실제 최선수를 뒀을 때 손실이 정확히 0이 되어, 얕은 depth 탐색 노이즈로 인한 가짜 실수가 사라진다.
 // (분석 최적화) 각 포지션을 '딱 한 번'만 단일 PV로 평가해 캐싱한다. 예전엔 둔 수가 1순위가 아니면
@@ -2079,14 +2101,16 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
       }
     }
   }
-  const poolTarget = Math.min(ANALYZE_POOL_SIZE[engine.profile] || 2, N + 1);
   // (버그 수정) 예전엔 풀의 첫 자리로 앱 전역에서 공유하는 메인 엔진(engine.evaluateMulti)을 "유휴
   // 상태이므로" 그대로 재사용했는데, 이 가정이 항상 맞지는 않았다 — 집중 학습의 실수 분석
   // (useFocusAnalysis)처럼 게임 리뷰 모달과 무관하게 같은 큐에 평가를 계속 넣는 경로가 있어, 이미
   // 보드에 긴 기보·많은 후보 수가 떠 있던 상태였다면 그 배경 작업 뒤에서 게임 리뷰의 워커 한 자리가
-  // 계속 대기해 전체 분석이 느려졌다. 지금은 메인 엔진 큐를 아예 재사용하지 않고 완전히 독립된
-  // 워커들로만 풀을 구성한다(부팅 실패로 하나도 못 띄우면 그때만 메인 엔진으로 폴백).
-  const dedicated = (await Promise.all(Array.from({ length: poolTarget }, () => bootAnalysisWorker(engine.urls)))).filter(Boolean);
+  // 계속 대기해 전체 분석이 느려졌다. 메인 엔진 큐를 아예 재사용하지 않고 완전히 독립된 워커들로만
+  // 풀을 구성한다(부팅 실패로 하나도 못 띄우면 그때만 메인 엔진으로 폴백).
+  // (성능) 이 풀은 세션 내내 재사용되는 공용 풀(getAnalysisPool)이다 — 리뷰할 때마다 새로 띄우고
+  // 버리면 신경망을 매번 다시 컴파일해야 해 오히려 느려진다. 첫 리뷰만 부팅 비용을 치르고, 그
+  // 이후로는 이미 떠 있는 워커를 그대로 재사용한다.
+  const dedicated = await getAnalysisPool(engine.profile, engine.urls);
   const workers = dedicated.length ? dedicated : [{ evaluateMulti: engine.evaluateMulti }];
   let nextIdx = 0, doneCount = 0;
   async function runWorker(w) {
@@ -2101,7 +2125,8 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     }
   }
   await Promise.all(workers.map(runWorker));
-  dedicated.forEach((w) => w.terminate());
+  // (성능) 여기서 워커를 끄지 않는다 — getAnalysisPool이 세션 내내 재사용하도록 관리한다(프로필을
+  // 바꾸면 그때 이전 풀이 정리된다).
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
   const graphCp = new Array(N + 1);
   for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
@@ -2903,7 +2928,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     }
     st.workers.forEach((w) => w.terminate());
     const epoch = st.epoch + 1;
-    const size = ANALYZE_POOL_SIZE[engine.profile] || 2;
+    const size = analyzePoolSize(engine.profile);
     const booting = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(engine.urls))).then((ws) => ws.filter(Boolean));
     livePoolRef.current = { ...st, profile: engine.profile, workers: [], booting, epoch, failed: false };
     const workers = await booting;
@@ -4317,15 +4342,19 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 수를 두면 항상 도착 칸에 수 체계 아이콘을 띄운다(블록에 없거나 아직 미평가면 우선 '분석 중', 엔진으로 갱신)
   // (UX2) onKind가 주어지면 "이 수 이후" 평가가 depth를 높여가며 갱신될 때마다 그 시점 기준의 등급을
   // 다시 계산해 즉시 보고한다 — 보드 위 수 아이콘도 다른 곳과 동일하게 점진적으로 정확해진다.
+  // (v0.2.0 성능) 예전엔 "두기 전"(best) 포지션을 먼저 평가한 뒤에야 "둔 뒤"(after) 포지션을
+  // 평가했다 — 둘은 서로 다른 독립된 포지션이라(after는 best의 결과를 알 필요가 없다) 순서를 지킬
+  // 이유가 없었는데도 메인 엔진의 단일 큐로 순차 처리돼 총 대기 시간이 두 배로 들었다. 세션 내내
+  // 재사용되는 공용 풀(getAnalysisPool)에서 워커 두 개를 받아 완전히 병렬로 평가한다 — depth(13)는
+  // 그대로 두고, 이 depth에서 사실상 항상 여유 있게 끝나는 상한(MOVETIME_MS, analyzeGame의
+  // movetime과 같은 종류의 안전망일 뿐 정확도 손실이 아니다)만 더해 벽시계 시간을 절반 가까이 줄인다.
+  const MOVETIME_MS = 260;
   const evalMoveKind = useCallback(async (prevSans, san, onKind) => {
     if (!liveOn || engine.status !== "ready") return null;
-    const best = await engine.evaluate(sansToFen(prevSans), 13);
-    if (!best) return null;
-    const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;     // 둘 차례(=우리) 관점 최선
+    const pool = await getAnalysisPool(engine.profile, engine.urls);
+    const wBest = pool[0] || engine, wAfter = pool[1] || engine;
     const mw = prevSans.length % 2 === 0; const col = mw ? "w" : "b";
-    // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 — depth 노이즈로 차선 수에 별이 붙던 문제 수정.
-    const bestSan = best.best ? uciToSan(boardFromSans(prevSans), best.best, col) : null;
-    const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
+    let bestCp = null, matched = null;
     const computeKind = (after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp; // 상대 관점
       const ourCp = -afterOpp;
@@ -4340,10 +4369,21 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }   // 실수류 완화(양측)
       return kind;
     };
-    const after = await engine.evaluate(sansToFen([...prevSans, san]), 13, onKind ? (partial) => onKind(computeKind(partial)) : undefined);
-    if (!after) return null;
+    // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 — depth 노이즈로 차선 수에 별이 붙던 문제 수정.
+    const bestPromise = wBest.evaluate(sansToFen(prevSans), 13, undefined, MOVETIME_MS).then((best) => {
+      if (!best) return null;
+      bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;     // 둘 차례(=우리) 관점 최선
+      const bestSan = best.best ? uciToSan(boardFromSans(prevSans), best.best, col) : null;
+      matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
+      return best;
+    });
+    // (성능) 진행 중 갱신(onKind)은 best가 아직 안 끝났으면 bestCp를 몰라 등급을 못 매기므로,
+    // best가 끝날 때까지만 기다렸다가 적용한다 — 병렬로 시작해도 최종 확정 시점은 그대로다.
+    const afterPromise = wAfter.evaluate(sansToFen([...prevSans, san]), 13, onKind ? async (partial) => { await bestPromise; if (bestCp != null) onKind(computeKind(partial)); } : undefined, MOVETIME_MS);
+    const [best, after] = await Promise.all([bestPromise, afterPromise]);
+    if (!best || !after) return null;
     return computeKind(after);
-  }, [liveOn, engine.status]);
+  }, [liveOn, engine.status, engine.profile, engine.urls]);
 
   const stampQ = useCallback((prevSans, brd, col, san, mm) => {
     const src = sanSrc(brd, san, col); const to = src && src.to ? src.to : null;
