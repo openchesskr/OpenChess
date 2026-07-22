@@ -2518,20 +2518,27 @@ function capturedInfo(board) {
   return { byWhite, byBlack, diff: wVal - bVal };
 }
 // 점수 동등하면 diff===0이라 숫자가 아예 안 뜨고(요청사항), 유리한 쪽에서만 이 컴포넌트가 diff>0으로 호출된다.
-function CapturedRow({ pieces, color, diff, textColor }) {
-  if (!pieces.length && !diff) return null;
+// (v0.2.1 기능) player가 주어지면(리뷰 페이지처럼 실제 대국 정보가 있는 경우) 잡힌 기물 줄 오른쪽에
+// "닉네임(레이팅)"을 함께 표시한다 — 데이터가 없는 호출부(학습 탭 등)는 player를 안 넘기므로 그대로다.
+function CapturedRow({ pieces, color, diff, textColor, player }) {
+  if (!pieces.length && !diff && !player) return null;
   const ORDER = { Q: 0, R: 1, B: 2, N: 3, P: 4 };
   const sorted = [...pieces].sort((a, b) => ORDER[a] - ORDER[b]);
   return (
-    <div className="flex items-center" style={{ gap: 1, minHeight: 20 }}>
-      {sorted.map((t, i) => <PieceGlyph key={i} type={t} color={color} size={16} />)}
-      {diff > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: textColor, marginLeft: 4, fontFamily: "ui-monospace,monospace" }}>+{diff}</span>}
+    <div className="flex items-center justify-between" style={{ gap: 8, minHeight: 20 }}>
+      <div className="flex items-center" style={{ gap: 1 }}>
+        {sorted.map((t, i) => <PieceGlyph key={i} type={t} color={color} size={16} />)}
+        {diff > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: textColor, marginLeft: 4, fontFamily: "ui-monospace,monospace" }}>+{diff}</span>}
+      </div>
+      {player && <span style={{ fontSize: 11, fontWeight: 700, color: textColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{player.name}{player.rating != null ? " (" + player.rating + ")" : ""}</span>}
     </div>
   );
 }
 // (v0.2.0 기능) 잡힌 기물·점수차 스트립을 위·아래에 얹은 Board 래퍼 — 학습 탭 메인 보드·리뷰
 // 화면(모바일·데스크톱)에서 공용으로 쓴다. Board 자체의 prop 계약은 그대로 두고 감싸기만 한다.
-function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", ...boardProps }) {
+// (v0.2.1 기능) topInfo/bottomInfo({name,rating})가 있으면 flip에 맞춰 위/아래 줄에 그대로 넘긴다 —
+// 리뷰 페이지의 메인 보드에서만 실제 대국 데이터가 있을 때 사용하고, 없는 호출부는 undefined로 둔다.
+function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", topInfo, bottomInfo, ...boardProps }) {
   const info = useMemo(() => capturedInfo(board), [board]);
   const top = flip
     ? { pieces: info.byWhite, color: "b", diff: Math.max(0, info.diff) }
@@ -2541,9 +2548,9 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", ..
     : { pieces: info.byWhite, color: "b", diff: Math.max(0, info.diff) };
   return (
     <div>
-      <CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} />
+      <CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} player={topInfo} />
       <Board board={board} flip={flip} {...boardProps} />
-      <CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} />
+      <CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} player={bottomInfo} />
     </div>
   );
 }
@@ -3927,7 +3934,7 @@ function EvalGraph({ evalWin, moves }) {
 // (v0.2.0) 예전엔 여기서 즉석 분석 모드(AnalysisModal, chess.com 게임 리뷰 레이아웃)를 직접
 // 그렸지만, 학습 탭 "분석" 버튼이 이제 같은 정보를 보여주는 전용 /review 페이지로 곧장 넘어가므로
 // 이 모달은 완전히 폐기했다. ANALYSIS_KIND_ROWS는 같은 표를 그리는 ReviewKindTable이 계속 재사용한다.
-const ANALYSIS_KIND_ROWS = [["brilliant", "탁월합니다"], ["only", "매우 좋아요"], ["best", "최고"], ["excellent", "우수합니다"], ["good", "좋습니다"], ["book", "이론"], ["inaccuracy", "부정확"], ["miss", "놓친 수"], ["mistake", "실수"], ["blunder", "블런더"]];
+const ANALYSIS_KIND_ROWS = [["brilliant", "탁월합니다"], ["only", "매우 좋아요"], ["best", "최고"], ["excellent", "우수합니다"], ["good", "좋습니다"], ["book", "이론"], ["inaccuracy", "부정확"], ["mistake", "실수"], ["miss", "놓친 수"], ["blunder", "블런더"]];
 /* ============================================================ /review 전체화면 게임 리뷰 (v0.2.0) ============================================================
    chess.com의 "Game Review" 페이지(모바일 앱·데스크톱 웹 모두)를 참고한 전용 화면 —
    "요약 → 수순별 코치 리뷰" 순서로 훑어본다. 예전엔 학습 탭 안에 즉석 분석 모달(AnalysisModal)이
@@ -4004,13 +4011,13 @@ function ReviewAccuracyPill({ label, value, hi }) {
 }
 // (기능) 요약 화면의 수 체계별 개수 표 — ANALYSIS_KIND_ROWS·QCOLOR·CircleBadge를 그대로 재사용해
 // AnalysisModal과 동일한 채점 기준을 그대로 보여준다(같은 analyzeGame 결과를 쓰므로 숫자도 항상 일치).
-function ReviewKindTable({ moves }) {
+function ReviewKindTable({ moves, showAll = false }) {
   const countBy = (white, kind) => moves.filter((m) => m.white === white && m.kind === kind).length;
   return (
     <div style={{ borderTop: "1px solid rgba(255,255,255,.12)" }}>
       {ANALYSIS_KIND_ROWS.map(([kind, label]) => {
         const w = countBy(true, kind), b = countBy(false, kind);
-        if (!w && !b) return null;
+        if (!showAll && !w && !b) return null;
         return (
           <div key={kind} className="flex items-center" style={{ padding: "8px 2px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
             <span style={{ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind] }}>{w}</span>
@@ -4083,13 +4090,16 @@ function ReviewSummary({ game, result, onStart, onClose, narrow }) {
   );
 }
 // (기능) 모바일용 이동 스트립 — 현재 수 주변만 가로로 보여주고 좌우 화살표로 한 수씩 이동.
-function ReviewMoveStrip({ sans, curPly, onJump }) {
+// (v0.2.1) 양끝 </> 버튼은 이제 onJump(정확한 ply로 점프, 자유 탐색 초기화)가 아니라 onPrev/onNext
+// (보드에서 자유롭게 둔 수가 있으면 그것부터 한 수씩 되돌리는 stepBack/stepForward)로 동작한다 —
+// 가운데 기보 항목 클릭은 여전히 onJump로 그 실제 게임 수순 위치로 하드 점프한다.
+function ReviewMoveStrip({ sans, curPly, onJump, onPrev, onNext, canPrev, canNext }) {
   const WINDOW = 5;
   const start = Math.max(0, Math.min(curPly - Math.floor(WINDOW / 2), sans.length - WINDOW));
   const items = sans.slice(Math.max(0, start), Math.max(0, start) + WINDOW);
   return (
     <div className="flex items-center" style={{ gap: 4, padding: "8px 4px" }}>
-      <button onClick={() => onJump(Math.max(0, curPly - 1))} disabled={curPly <= 0} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: curPly <= 0 ? "rgba(255,255,255,.25)" : "#fff", cursor: curPly <= 0 ? "default" : "pointer", flexShrink: 0 }}><ChevronLeft size={18} /></button>
+      <button onClick={onPrev} disabled={!canPrev} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? "#fff" : "rgba(255,255,255,.25)", cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
       <div className="flex items-center" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", justifyContent: "center" }}>
         {items.map((s, i) => {
           const ply = Math.max(0, start) + i;
@@ -4103,7 +4113,7 @@ function ReviewMoveStrip({ sans, curPly, onJump }) {
           );
         })}
       </div>
-      <button onClick={() => onJump(Math.min(sans.length, curPly + 1))} disabled={curPly >= sans.length} aria-label="다음 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: curPly >= sans.length ? "rgba(255,255,255,.25)" : "#fff", cursor: curPly >= sans.length ? "default" : "pointer", flexShrink: 0 }}><ChevronRight size={18} /></button>
+      <button onClick={onNext} disabled={!canNext} aria-label="다음 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canNext ? "#fff" : "rgba(255,255,255,.25)", cursor: canNext ? "pointer" : "default", flexShrink: 0 }}><ChevronRight size={18} /></button>
     </div>
   );
 }
@@ -4152,6 +4162,24 @@ function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onShowBest
     </div>
   );
 }
+// (v0.2.1 기능) 리뷰 보드에서 자유롭게 두다가 폰이 끝 랭크에 닿았을 때의 승격 기물 선택 오버레이 —
+// 학습 탭 메인 보드의 프로모션 UI와 동일한 모양을 그대로 쓴다.
+function ReviewPromoPrompt({ onPick, onCancel }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
+      <div className="flex gap-2">
+        {["Q", "R", "B", "N"].map((t) => (
+          <button key={t} onClick={() => onPick(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <PieceGlyph type={t} color="b" size={26} />
+            <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
+          </button>
+        ))}
+      </div>
+      <button onClick={onCancel} className="press" style={{ fontSize: 10.5, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 7, padding: "4px 12px", cursor: "pointer" }}>취소</button>
+    </div>
+  );
+}
 // (v0.2.0 기능) /review 최상위 페이지 — game(끝난 한 판)을 받아 요약 화면과 수순별 코치 리뷰 화면을
 // 오간다. 좁은 화면(모바일)은 세로 한 열, 넓은 화면(데스크톱)은 보드+사이드바 2단으로 배치해 각각
 // chess.com 모바일 앱·데스크톱 웹의 레이아웃 구조를 따른다.
@@ -4168,6 +4196,16 @@ function ReviewPage({ game, engine, onClose }) {
   const [curPly, setCurPly] = useState(1); // 0=시작 위치, i=i번째 수까지 둔 위치
   const [showingLine, setShowingLine] = useState(false);
   const [showingBest, setShowingBest] = useState(false);
+  // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
+  // curPly/sans는 건드리지 않는다 — 학습 탭의 sans/future와 같은 패턴으로 curPly 이후에 갈라져 나온
+  // "자유 탐색" 수순만 별도로 쌓아 두고(exploreSans), 되돌린 만큼은 exploreFuture에 보존해 </> 로
+  // 다시 밟을 수 있게 한다. 우측 기보(ReviewMoveTable/ReviewMoveStrip)는 항상 sans/curPly만 그리므로
+  // 이 자유 탐색 수는 거기 표시되지 않는다.
+  const [exploreSans, setExploreSans] = useState([]);
+  const [exploreFuture, setExploreFuture] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [drag, setDrag] = useState(null);
+  const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
   // (버그 방지) 데스크톱 레이아웃은 보드 칸(flexShrink:0)이 옆 사이드바(flex:1)와 나란한 flex row라,
   // 이 hook을 그 칸에 그대로 붙이면 "컨테이너 폭을 재서 보드 크기를 정하는" 측정 대상 자체가 보드
   // 크기에 따라 결정되는 순환 참조가 생겨(내용물이 곧 그 칸의 폭) 보드가 항상 최소 크기로 멎는다.
@@ -4185,19 +4223,73 @@ function ReviewPage({ game, engine, onClose }) {
   useEffect(() => { setShowingLine(false); setShowingBest(false); }, [curPly]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
-  const board = useMemo(() => boardFromSans(sans.slice(0, curPly)), [sans, curPly]);
+  const exploring = exploreSans.length > 0;
+  const effSans = useMemo(() => sans.slice(0, curPly).concat(exploreSans), [sans, curPly, exploreSans]);
+  const board = useMemo(() => boardFromSans(effSans), [effSans]);
+  const explColor = effSans.length % 2 === 0 ? "w" : "b";
+  const ep = useMemo(() => epTarget(effSans), [effSans]);
+  const legalTargets = useMemo(() => (sel ? legalDests(board, sel[0], sel[1], explColor, ep) : []), [sel, board, explColor, ep]);
   const curMove = curPly > 0 && result ? result.moves[curPly - 1] : null;
   const arrows = useMemo(() => {
-    if (!curMove || !showingLine) return [];
+    if (exploring || !curMove || !showingLine) return [];
     const target = curMove.best || curMove.san;
     const prevBoard = boardFromSans(sans.slice(0, curPly - 1));
     const info = sanSrc(prevBoard, target, curMove.white ? "w" : "b");
     return info && !info.castle ? [{ from: info.from, to: info.to, adopt: 80 }] : [];
-  }, [curMove, showingLine, sans, curPly]);
-  const lastQ = curMove ? { to: (() => { const info = sanSrc(boardFromSans(sans.slice(0, curPly - 1)), curMove.san, curMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: curMove.kind } : null;
+  }, [curMove, showingLine, sans, curPly, exploring]);
+  const lastQ = exploring || !curMove ? null : { to: (() => { const info = sanSrc(boardFromSans(sans.slice(0, curPly - 1)), curMove.san, curMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: curMove.kind };
   const evalCpText = result && result.evalCp ? fmtEvalCp(result.evalCp[curPly]) : null;
-  const goNext = () => { if (curPly >= sans.length) { onClose(); return; } setCurPly((p) => Math.min(sans.length, p + 1)); };
-  const jump = (p) => setCurPly(Math.max(0, Math.min(sans.length, p)));
+  // jump는 실제 게임 수순의 특정 지점으로 하드 이동 — 진행 중이던 자유 탐색은 버린다.
+  const jump = (p) => { setExploreSans([]); setExploreFuture([]); setSel(null); setDrag(null); setPromoPrompt(null); setCurPly(Math.max(0, Math.min(sans.length, p))); };
+  const goNext = () => { if (curPly >= sans.length) { onClose(); return; } jump(curPly + 1); };
+  // </> 한 수 이동 — 자유 탐색 중이면 그 탐색부터 한 수씩 되돌리고(되돌린 수는 exploreFuture에 보존해
+  // 다시 밟을 수 있게 함), 자유 탐색이 없을 때만 실제 게임 수순을 한 수 이동한다(=학습 탭과 동일 패턴).
+  const stepBack = () => {
+    setSel(null); setDrag(null); setPromoPrompt(null);
+    if (exploreSans.length) { setExploreFuture((f) => [exploreSans[exploreSans.length - 1], ...f]); setExploreSans((s) => s.slice(0, -1)); }
+    else jump(curPly - 1);
+  };
+  const stepForward = () => {
+    setSel(null); setDrag(null); setPromoPrompt(null);
+    if (exploreFuture.length) { setExploreSans((s) => [...s, exploreFuture[0]]); setExploreFuture((f) => f.slice(1)); }
+    else if (!exploreSans.length && curPly < sans.length) jump(curPly + 1);
+  };
+  const canBack = curPly > 0 || exploreSans.length > 0;
+  const canFwd = (curPly < sans.length && exploreSans.length === 0) || exploreFuture.length > 0;
+  const playFree = useCallback((san) => {
+    playMoveSfx(san);
+    setExploreSans((s) => [...s, san]); setExploreFuture([]);
+    setSel(null); setDrag(null);
+  }, []);
+  const tryMove = useCallback((from, to) => {
+    if (from[0] === to[0] && from[1] === to[1]) return false;
+    if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
+    const pc = board[from[0]][from[1]];
+    if (pc && pc.t === "P" && ((explColor === "w" && to[0] === 0) || (explColor === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }
+    const san = buildSan(board, from[0], from[1], to[0], to[1], explColor, ep);
+    if (!san) return false;
+    playFree(san);
+    return true;
+  }, [board, explColor, ep, playFree]);
+  const completePromo = useCallback((piece) => {
+    if (!promoPrompt) return;
+    const { from, to } = promoPrompt; setPromoPrompt(null); setSel(null); setDrag(null);
+    const san = buildSan(board, from[0], from[1], to[0], to[1], explColor, ep, piece);
+    if (!san) return;
+    playFree(san);
+  }, [promoPrompt, board, explColor, ep, playFree]);
+  const onSquareClick = useCallback((sq) => {
+    const p = board[sq[0]][sq[1]];
+    if (sel) { if (tryMove(sel, sq)) return; if (p && p.c === explColor) { setSel(sq); return; } setSel(null); return; }
+    if (p && p.c === explColor) setSel(sq);
+  }, [sel, board, explColor, tryMove]);
+  const onPieceDrag = useCallback((sq) => { const p = board[sq[0]][sq[1]]; if (p && p.c === explColor) { setDrag(sq); setSel(sq); } }, [board, explColor]);
+  const onDrop = useCallback((sq) => { if (drag) { tryMove(drag, sq); setDrag(null); setSel(null); } }, [drag, tryMove]);
+  // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
+  // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
+  const hasPlayerData = !!(game.white || game.black || game.color);
+  const whitePInfo = hasPlayerData ? reviewPlayerInfo(game, "w") : null;
+  const blackPInfo = hasPlayerData ? reviewPlayerInfo(game, "b") : null;
   const wrap = { position: "fixed", inset: 0, zIndex: 300, background: "#181818", overflowY: "auto", WebkitOverflowScrolling: "touch" };
   const header = (
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: "#181818", zIndex: 5 }}>
@@ -4226,11 +4318,12 @@ function ReviewPage({ game, engine, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onClose={onClose} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onShowBest={() => setShowingBest((v) => !v)} showingBest={showingBest} onRetry={() => { setShowingLine(false); setShowingBest(false); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
-              <div ref={mobileBoardSizeRef} style={{ marginTop: 12 }}>
-                <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} lastQ={lastQ} showEval={false} interactive={false} />
+              <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onShowBest={() => setShowingBest((v) => !v)} showingBest={showingBest} onRetry={() => { setShowingLine(false); setShowingBest(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <div ref={mobileBoardSizeRef} style={{ marginTop: 12, position: "relative" }}>
+                <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo} />
+                {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
-              <ReviewMoveStrip sans={sans} curPly={curPly} onJump={jump} />
+              <ReviewMoveStrip sans={sans} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} />
             </div>
           )}
       </div>
@@ -4241,13 +4334,14 @@ function ReviewPage({ game, engine, onClose }) {
     <div style={wrap}>
       {header}
       <div className="flex items-start" style={{ gap: 20, maxWidth: 980, margin: "0 auto", padding: "8px 20px 32px" }}>
-        <div style={{ flexShrink: 0 }}>
-          <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} lastQ={lastQ} evalCp={result.evalCp ? result.evalCp[curPly] : null} showEval interactive={false} />
+        <div style={{ flexShrink: 0, position: "relative" }}>
+          <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} evalCp={!exploring && result.evalCp ? result.evalCp[curPly] : null} showEval interactive topInfo={blackPInfo} bottomInfo={whitePInfo} />
+          {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
-            <button onClick={() => jump(0)} disabled={curPly <= 0} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: curPly <= 0 ? "rgba(255,255,255,.3)" : "#fff", cursor: curPly <= 0 ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
-            <button onClick={() => jump(curPly - 1)} disabled={curPly <= 0} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: curPly <= 0 ? "rgba(255,255,255,.3)" : "#fff", cursor: curPly <= 0 ? "default" : "pointer" }}><ChevronLeft size={16} /></button>
-            <button onClick={() => jump(curPly + 1)} disabled={curPly >= sans.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: curPly >= sans.length ? "rgba(255,255,255,.3)" : "#fff", cursor: curPly >= sans.length ? "default" : "pointer" }}><ChevronRight size={16} /></button>
-            <button onClick={() => jump(sans.length)} disabled={curPly >= sans.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: curPly >= sans.length ? "rgba(255,255,255,.3)" : "#fff", cursor: curPly >= sans.length ? "default" : "pointer" }}><ChevronsRight size={16} /></button>
+            <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? "rgba(255,255,255,.3)" : "#fff", cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
+            <button onClick={stepBack} disabled={!canBack} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: canBack ? "#fff" : "rgba(255,255,255,.3)", cursor: canBack ? "pointer" : "default" }}><ChevronLeft size={16} /></button>
+            <button onClick={stepForward} disabled={!canFwd} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: canFwd ? "#fff" : "rgba(255,255,255,.3)", cursor: canFwd ? "pointer" : "default" }}><ChevronRight size={16} /></button>
+            <button onClick={() => jump(sans.length)} disabled={curPly >= sans.length && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: (curPly >= sans.length && !exploring && !exploreFuture.length) ? "rgba(255,255,255,.3)" : "#fff", cursor: (curPly >= sans.length && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsRight size={16} /></button>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -4261,7 +4355,7 @@ function ReviewPage({ game, engine, onClose }) {
               <EvalGraph evalWin={result.evalWin} moves={result.moves} />
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} /></div>
               <div style={{ marginTop: 12 }}>
-                <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onShowBest={() => setShowingBest((v) => !v)} showingBest={showingBest} onRetry={() => { setShowingLine(false); setShowingBest(false); }} onNext={goNext} isLast={curPly >= sans.length} />
+                <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onShowBest={() => setShowingBest((v) => !v)} showingBest={showingBest} onRetry={() => { setShowingLine(false); setShowingBest(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} />
               </div>
             </>
           )}
@@ -4271,7 +4365,7 @@ function ReviewPage({ game, engine, onClose }) {
                 <ReviewAccuracyPill label={"⬜ " + reviewPlayerInfo(game, "w").name} value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} />
                 <ReviewAccuracyPill label={"⬛ " + reviewPlayerInfo(game, "b").name} value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
               </div>
-              <ReviewKindTable moves={result.moves} />
+              <ReviewKindTable moves={result.moves} showAll />
             </>
           )}
           {tab === "details" && (() => {
