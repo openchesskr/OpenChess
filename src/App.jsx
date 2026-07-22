@@ -1996,8 +1996,13 @@ function bootAnalysisWorker(urls) {
       const job = queue[0]; if (!job) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
       if (line.startsWith("info") && job.multi) {
-        const mp = line.match(/multipv (\d+)/); const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-        if (mp && pv && sc) job.lines[parseInt(mp[1], 10)] = { uci: pv[1], cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+        const mp = line.match(/multipv (\d+)/);
+        // (v0.2.1) 예전엔 " pv " 뒤 첫 수만 뽑았다(analyzeGame은 최선수 UCI 하나만 필요) — /review
+        // 엔진 라인처럼 전체 수순이 필요한 곳을 위해, useEngine과 동일하게 " pv " 이후 전체 PV(공백
+        // 구분 UCI 목록)를 함께 담는다. analyzeGame은 uci/cp/mate만 읽으므로 영향받지 않는다.
+        const pvIdx = line.indexOf(" pv ");
+        const pvList = pvIdx >= 0 ? line.slice(pvIdx + 4).trim().split(/\s+/) : null;
+        if (mp && pvList && pvList.length && sc) job.lines[parseInt(mp[1], 10)] = { uci: pvList[0], pv: pvList, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
       } else if (sc && !job.multi) {
         job.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
         if (job.onProgress) { const dm = line.match(/^info depth (\d+)/); job.onProgress({ ...job.last, depth: dm ? parseInt(dm[1], 10) : null }); }
@@ -2373,7 +2378,11 @@ function EvalBadge({ ev, small }) {
     </span>
   );
 }
-function EvalBar({ cp, width, depth }) {
+// (v0.2.1 기능) vertical=true면 세로 막대(백 아래·흑 위)로 그린다 — /review 메인 보드 좌측용.
+// 높이는 고정 px가 아니라 alignSelf:stretch로 옆 보드(flex items-stretch 컨테이너 안)의 실제 렌더
+// 높이에 정확히 맞춘다 — 그래야 보드가 maxWidth로 줄어들어도 막대 세로 중앙(=0.0 기준)이 항상
+// 보드 프레임 중앙, 즉 4·5행 사이에 온다. 가로 막대(기존 학습 탭 등)는 vertical 없이 그대로 동작한다.
+function EvalBar({ cp, width, depth, vertical }) {
   // (20차) cp는 숫자(cp) 또는 {cp}|{mate,win} 객체 — 메이트 수순에서 +10.00이 아니라 M수로 표기한다.
   const ev = cp == null ? null : (typeof cp === "number" ? { cp } : cp);
   const num = ev == null ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : ev.cp);
@@ -2383,6 +2392,19 @@ function EvalBar({ cp, width, depth }) {
   // 옆의 흰색 도움말 아이콘을 누르면 말풍선으로 "n수 후까지 탐색 중.." 수치를 자세히 보여준다.
   const [tipOpen, setTipOpen] = useState(false);
   useEffect(() => { if (depth == null) setTipOpen(false); }, [depth == null]);
+  if (vertical) {
+    return (
+      <div style={{ width: 22, alignSelf: "stretch", flexShrink: 0, position: "relative", zIndex: tipOpen ? 50 : 1 }}>
+        {/* inset:0로 stretch된 막대 전체를 채우고, 백/흑 구간은 그 높이의 %로 그린다. */}
+        <div style={{ position: "absolute", inset: 0, borderRadius: 5, overflow: "hidden", border: "1px solid #000" }}>
+          {/* 백이 항상 아래쪽 — whitePct는 백이 유리할수록 커지는 값이라 bottom 기준 높이로 그대로 쓴다. */}
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: whitePct + "%", background: "#FFFFFF" }} />
+          <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: (100 - whitePct) + "%", background: "#140C07" }} />
+        </div>
+        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1, ...(num >= 0 ? { bottom: 3, color: "#140C07" } : { top: 3, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
+      </div>
+    );
+  }
   return (
     <div style={{ width, margin: "0 auto 8px", position: "relative", zIndex: tipOpen ? 50 : 1 }}>
       {/* (버그 수정) 흰 구간 색이 엔진 라인 평가치 박스(EvalBadge, 순백 #FFFFFF)와 달리 살짝 크림빛
@@ -2543,7 +2565,11 @@ function CapturedRow({ pieces, color, diff, textColor, player }) {
 // 화면(모바일·데스크톱)에서 공용으로 쓴다. Board 자체의 prop 계약은 그대로 두고 감싸기만 한다.
 // (v0.2.1 기능) topInfo/bottomInfo({name,rating})가 있으면 flip에 맞춰 위/아래 줄에 그대로 넘긴다 —
 // 리뷰 페이지의 메인 보드에서만 실제 대국 데이터가 있을 때 사용하고, 없는 호출부는 undefined로 둔다.
-function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", topInfo, bottomInfo, ...boardProps }) {
+// (v0.2.1 기능) leftOfBoard가 있으면(리뷰 페이지의 세로 평가치 막대) Board 자체의 왼쪽에만 나란히
+// 놓는다 — 위아래 CapturedRow는 그대로 전체 폭을 쓰고, 막대는 오직 Board 높이에만 맞춰지므로
+// 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 온다. boardRef는 Board를 바로 감싸는 칸에 붙어,
+// 모바일에서 useBoardSize가 (막대·잡힌 기물 줄이 아니라) 보드 몫의 실제 폭만 재도록 한다.
+function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", topInfo, bottomInfo, leftOfBoard, boardRef, ...boardProps }) {
   const info = useMemo(() => capturedInfo(board), [board]);
   const top = flip
     ? { pieces: info.byWhite, color: "b", diff: Math.max(0, info.diff) }
@@ -2551,10 +2577,16 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
   const bottom = flip
     ? { pieces: info.byBlack, color: "w", diff: Math.max(0, -info.diff) }
     : { pieces: info.byWhite, color: "b", diff: Math.max(0, info.diff) };
+  const boardEl = <Board board={board} flip={flip} {...boardProps} />;
   return (
     <div>
       <CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} player={topInfo} />
-      <Board board={board} flip={flip} {...boardProps} />
+      {leftOfBoard ? (
+        <div className="flex items-stretch" style={{ gap: 8 }}>
+          {leftOfBoard}
+          <div ref={boardRef} style={{ flex: 1, minWidth: 0 }}>{boardEl}</div>
+        </div>
+      ) : (boardRef ? <div ref={boardRef}>{boardEl}</div> : boardEl)}
       <CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} player={bottomInfo} />
     </div>
   );
@@ -3930,22 +3962,67 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
   );
 }
 // (19차 기능3) 평가치 변동 그래프 — 백 승률 시퀀스를 영역으로 채우고 주요 수 위치에 색점 마커.
-function EvalGraph({ evalWin, moves }) {
+// (v0.2.1 버그 수정) width="100%"·height="92"(고정 px)를 함께 쓰면, 컴퓨터 환경처럼 실제 렌더 폭이
+// viewBox 폭(320)보다 훨씬 넓어질 때 세로만 92px에 고정된 채 가로만 늘어나(preserveAspectRatio="none"
+// 이라 강제로 채워짐) 그래프가 넓적하게 찌그러져 보였다 — height를 고정 px 대신 CSS aspectRatio로
+// 폭에 비례해 계산되도록 바꿔, 화면 폭과 무관하게 항상 같은 비율(320:92)로 그려지게 한다.
+// (v0.2.1 기능) 표시할 원을 고르는 규칙 — 탁월/유일/실수/블런더는 항상, 이론은 마지막 이론 수만,
+// 최선/부정확은 같은 등급끼리 최소 3수 간격을 두고(너무 자주 나와 그래프가 원으로 뒤덮이는 것을 방지).
+const EVAL_GRAPH_ALWAYS_KINDS = new Set(["brilliant", "only", "mistake", "blunder"]);
+const EVAL_GRAPH_SPACED_KINDS = new Set(["best", "inaccuracy"]);
+const EVAL_GRAPH_MIN_GAP = 3;
+function pickEvalGraphDots(moves) {
+  let lastBookPly = -1;
+  for (const m of moves) if (m.kind === "book") lastBookPly = m.ply;
+  const dots = [];
+  const lastShownPly = {};
+  for (const m of moves) {
+    if (m.kind === "book") { if (m.ply === lastBookPly) dots.push(m); continue; }
+    if (EVAL_GRAPH_ALWAYS_KINDS.has(m.kind)) { dots.push(m); continue; }
+    if (EVAL_GRAPH_SPACED_KINDS.has(m.kind)) {
+      const last = lastShownPly[m.kind];
+      if (last == null || m.ply - last >= EVAL_GRAPH_MIN_GAP) { dots.push(m); lastShownPly[m.kind] = m.ply; }
+    }
+  }
+  return dots;
+}
+// (v0.2.1 기능) curPly/onJump가 있으면 그래프를 클릭해 그 x좌표에 해당하는 지점으로 리뷰 위치를 바로
+// 옮길 수 있다 — 마커(점+세로 점선)는 별도 hover 상태가 아니라 curPly를 그대로 그리므로, 기보 클릭
+// 등 다른 방법으로 위치를 옮겨도 항상 지금 보고 있는 지점에 그대로 따라온다.
+function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const W = 320, H = 92; const n = evalWin.length;
+  const svgRef = useRef(null);
   if (n < 2) return null;
   const x = (i) => (i / (n - 1)) * W;
   const y = (w) => H - (w / 100) * H;
   const linePts = evalWin.map((w, i) => x(i) + "," + y(w).toFixed(1)).join(" ");
   const areaPts = "0," + H + " " + linePts + " " + W + "," + H;
-  const dotKinds = { blunder: T.blunder, mistake: T.mistake, inaccuracy: T.inaccuracy, brilliant: T.brilliant, best: T.best };
+  const dots = pickEvalGraphDots(moves);
+  const handleClick = (e) => {
+    if (!onJump || !svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    if (!rect.width) return;
+    const relX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    onJump(Math.round(relX * (n - 1)));
+  };
+  const hasMark = curPly != null && curPly >= 0 && curPly < n;
+  const markX = hasMark ? x(curPly) : null;
+  const markY = hasMark ? y(evalWin[curPly]) : null;
   return (
     <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, overflow: "hidden" }}>
-      <svg viewBox={"0 0 " + W + " " + H} width="100%" height="92" preserveAspectRatio="none" style={{ display: "block" }}>
+      <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" onClick={handleClick}
+        style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "pointer" : "default" }}>
         <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
         <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
         <polygon points={areaPts} fill="#EDE7DC" />
         <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
-        {moves.map((m) => { const c = dotKinds[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
+        {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
+        {hasMark && (
+          <>
+            <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
+            <circle cx={markX} cy={markY} r="3.6" fill="#EBCB86" stroke="#241509" strokeWidth="0.8" />
+          </>
+        )}
       </svg>
     </div>
   );
@@ -4337,6 +4414,36 @@ function ReviewPage({ game, engine, onClose }) {
   }, [sel, board, explColor, tryMove]);
   const onPieceDrag = useCallback((sq) => { const p = board[sq[0]][sq[1]]; if (p && p.c === explColor) { setDrag(sq); setSel(sq); } }, [board, explColor]);
   const onDrop = useCallback((sq) => { if (drag) { tryMove(drag, sq); setDrag(null); setSel(null); } }, [drag, tryMove]);
+  // (v0.2.1 기능) 학습 탭과 동일하게 지금 보고 있는 포지션(effSans — 자유 탐색 중이면 그 위치)의
+  // 엔진 상위 3줄을 보여준다. 앱 전역에서 공유하는 단일 엔진 큐(engine)는 그 아래에 여전히 마운트된
+  // 학습 탭(useMergedMoves)이 계속 점유하고 있어, 그걸 쓰면 라인이 영영 대기에 걸린다 — 게임 리뷰
+  // (analyzeGame)와 같은 독립 풀(getAnalysisPool)에서 워커 하나를 받아 계산한다(분석이 끝난 뒤엔
+  // 풀이 유휴 상태이므로 곧바로 응답한다).
+  const [engineLines, setEngineLines] = useState([]);
+  const [linesPending, setLinesPending] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!engine || engine.status !== "ready") { setEngineLines([]); setLinesPending(false); return; }
+    setLinesPending(true);
+    const baseWhite = effSans.length % 2 === 0 ? 1 : -1;
+    (async () => {
+      try {
+        const pool = await getAnalysisPool(engine.profile, engine.urls);
+        const w = pool[0] || engine;
+        const pvsAll = await w.evaluateMulti(sansToFen(effSans), 16, 3, 3000);
+        if (cancelled) return;
+        const lines = (pvsAll || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+          ev: pv.mate != null
+            ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
+            : { cp: pv.cp * baseWhite },
+          sans: pvUciToSans(effSans, pv.pv, 15),
+        }));
+        setEngineLines(lines);
+      } catch { if (!cancelled) setEngineLines([]); }
+      finally { if (!cancelled) setLinesPending(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [effSans.join(" "), engine && engine.status, engine && engine.profile]);
   // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
   // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
   const hasPlayerData = !!(game.white || game.black || game.color);
@@ -4373,10 +4480,16 @@ function ReviewPage({ game, engine, onClose }) {
           : (
             <div style={{ padding: "0 12px 24px" }}>
               <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
-              <div ref={mobileBoardSizeRef} style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo} />
+              {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
+                  놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
+                  보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
+              <div style={{ marginTop: 12, position: "relative" }}>
+                <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={!exploring && result.evalCp ? result.evalCp[curPly] : null} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
+              {/* (v0.2.1 기능) 엔진 라인 — 모바일은 체스보드 하단 여백에 표시한다. */}
+              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
               <ReviewMoveStrip sans={sans} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} />
             </div>
           )}
@@ -4389,7 +4502,10 @@ function ReviewPage({ game, engine, onClose }) {
       {header}
       <div className="flex items-start" style={{ gap: 20, maxWidth: 980, margin: "0 auto", padding: "8px 20px 32px" }}>
         <div style={{ flexShrink: 0, position: "relative" }}>
-          <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} evalCp={!exploring && result.evalCp ? result.evalCp[curPly] : null} showEval interactive topInfo={blackPInfo} bottomInfo={whitePInfo} />
+          {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
+              놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
+          <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+            leftOfBoard={<EvalBar vertical cp={!exploring && result.evalCp ? result.evalCp[curPly] : null} />} />
           {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
             <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? "rgba(255,255,255,.3)" : "#fff", cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
@@ -4406,7 +4522,9 @@ function ReviewPage({ game, engine, onClose }) {
           </div>
           {tab === "review" && (
             <>
-              <EvalGraph evalWin={result.evalWin} moves={result.moves} />
+              <EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} />
+              {/* (v0.2.1 기능) 엔진 라인 — 컴퓨터 환경은 평가치 그래프 바로 아래에 표시한다. */}
+              <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} /></div>
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} /></div>
               <div style={{ marginTop: 12 }}>
                 <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} />
