@@ -776,7 +776,14 @@ function useEngine(enginePref) {
         const pvIdx = line.indexOf(" pv ");
         const pvList = pvIdx >= 0 ? line.slice(pvIdx + 4).trim().split(/\s+/) : null;
         const dm = line.match(/^info depth (\d+)/);
-        if (mp && pvList && pvList.length && sc) cb.lines[parseInt(mp[1], 10)] = { uci: pvList[0], pv: pvList, depth: dm ? parseInt(dm[1], 10) : null, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+        if (mp && pvList && pvList.length && sc) {
+          const entry = { uci: pvList[0], pv: pvList, depth: dm ? parseInt(dm[1], 10) : null, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+          cb.lines[parseInt(mp[1], 10)] = entry;
+          // (성능) MultiPV 탐색도 1순위 줄(가장 좋은 수)만큼은 단일PV 탐색과 똑같이 depth가 점점
+          // 깊어지며 갱신된다 — 평가치 바처럼 "이 포지션 자체의 평가"가 필요한 곳은 굳이 별도의
+          // 단일PV 탐색을 또 돌리지 않고 이 진행 상황을 그대로 재사용할 수 있다.
+          if (cb.onProgress && parseInt(mp[1], 10) === 1) cb.onProgress(entry);
+        }
       } else if (sc && !cb.multi) {
         cb.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
         // (기능1) go depth N 한 번의 탐색 안에서도 스톡피시는 얕은 depth부터 점점 깊여 결과를 낸다.
@@ -824,9 +831,9 @@ function useEngine(enginePref) {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
     queue.current.push({ resolve, last: null, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
   }), [pump]);
-  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime) => new Promise((resolve) => {
+  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress) => new Promise((resolve) => {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+    queue.current.push({ resolve, multi: true, lines: {}, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
@@ -2046,17 +2053,12 @@ function bootAnalysisWorker(urls) {
 // 세션 내내 재사용한다 — depth·movetime(정확도)은 절대 건드리지 않고, 부팅을 한 번만 치르고 나면
 // 그 뒤로는 병렬도만큼 순수하게 시간을 줄인다. 엔진을 바꾸면(다른 profile 요청) 이전 풀만 정리한다.
 let analysisPoolCache = null; // { profile, promise: Promise<worker[]> } — 한 번에 프로필 하나만 유지
-// (성능) 풀 크기 — 코어 수에 비례해 늘리되(cores-1, 실시간 렌더링용 코어 하나는 남김), 워커 하나당
-// 신경망을 통째로 메모리에 올려야 하므로 무거운 프로필일수록 상한을 낮게 둔다.
-// (버그 수정) 예전 고정값(lite=4)보다 코어 수 적은 기기(예: 4코어 → cores-1=3)에서는 이 계산이
-// 오히려 예전보다 풀을 더 작게 만들 뻔했다 — Math.max로 예전 고정값을 바닥값 삼아 절대 그보다
-// 작아지지 않게 하고, 코어가 넉넉한 기기에서만 그 이상으로 늘어나게 한다.
+// (성능) 풀 크기 — 기기가 가진 코어 수만큼 그대로 다 쓴다. 발열·CPU 점유율은 감수하더라도(사용자
+// 요청) 렉 없이 최대 성능을 내는 쪽을 택한다 — 예전처럼 프로필별로 낮게 캡을 걸어 코어를 남겨두지
+// 않는다. 비정상적으로 큰 값이 보고되는 극단적인 경우에 대비한 넉넉한 안전 상한(32)만 둔다.
 function analyzePoolSize(profile) {
   const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
-  const base = Math.max(2, cores - 1);
-  if (profile === "full17") return Math.min(Math.max(base, 2), 4);   // ~80MB 신경망 — 메모리 부담이 커서 더 보수적으로
-  if (profile === "full") return Math.min(Math.max(base, 2), 6);
-  return Math.min(Math.max(base, 4), 8);                              // lite(~7MB) — 가벼워서 더 많이 띄울 수 있다
+  return Math.max(2, Math.min(cores, 32));
 }
 function getAnalysisPool(profile, urls) {
   if (analysisPoolCache && analysisPoolCache.profile === profile) return analysisPoolCache.promise;
@@ -2898,7 +2900,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // moves가 늘어날 때마다 처음부터 다시 실행된다. 예전엔 재실행될 때마다 이 포지션 평가(be)와
   // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
   // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
-  const posCacheRef = useRef({ key: null, bePromise: null, pvsPromise: null, linesPromise: null, live: new Map() });
+  const posCacheRef = useRef({ key: null, multiPromise: null, live: new Map() });
   // (성능) 화면에 보이는 후보 수(캡 없이 최대 수십 개)의 실시간 평가가 메인 엔진 큐 하나로 한 번에
   // 하나씩 순서대로 처리되고 있었다 — 후보 수가 많은 포지션일수록 총 대기 시간이 후보 수 개수에
   // 정비례해 늘어(수당 최대 700ms) 체감 지연의 핵심 원인이었다. depth·movetime(정확도)은 그대로
@@ -3049,22 +3051,28 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 다음 실행이 시작되면 "값이 없으니 또 요청"하게 되어 캐시가 무력화된다. 값이 아니라 진행 중인
       // Promise 자체를 즉시(await 전에) 캐시해 둬야, 뒤이은 재실행들이 새 요청 대신 같은 Promise를
       // 기다리게 되어 중복 요청이 완전히 사라진다.
-      if (posCacheRef.current.key !== key) posCacheRef.current = { key, bePromise: null, pvsPromise: null, linesPromise: null, live: new Map() };
+      // (성능) 예전엔 이 포지션 하나를 depth16 단일PV(평가치 바) → depth15 멀티PV-3(엔진 상위 3줄) →
+      // depth13 멀티PV-10(후보 수 보충, 아래) 순서로 메인 엔진에 세 번 연달아 물어봤다 — 셋 다 "같은
+      // 포지션의 상위 수순"이라는 같은 정보를 서로 다른 depth·개수로 중복 탐색하고 있었을 뿐이다.
+      // Stockfish의 MultiPV는 한 번의 탐색으로 원하는 개수만큼의 최상위 수를 동시에 얻으므로, 한 번의
+      // MultiPV-10 탐색(depth 16 — 셋 중 가장 높은 요구치, movetime도 셋 중 가장 넉넉한 상한을 줘서
+      // multipv 10개를 추적하는 부담이 있어도 depth 16에 도달할 여유를 준다)으로 통합한다: 1순위
+      // 줄=평가치 바(단일PV처럼 depth가 깊어지며 진행 갱신, 위 handleLine 참고), 1~3순위=엔진 상위
+      // 3줄, 1~10순위=후보 수 보충. depth·정확도는 그대로 두고 중복 탐색만 없애 벽시계 시간을
+      // (기존 세 요청 순차 합산 대비) 최대 3분의 1 가까이로 줄인다. 부가효과로, 겹치는 수의 평가치가
+      // 서로 다른 탐색에서 미세하게 갈려 블록과 엔진 라인 표시가 어긋나던 문제도 근본적으로 사라진다
+      // (하나의 결과만 쓰므로).
+      if (posCacheRef.current.key !== key) posCacheRef.current = { key, multiPromise: null, live: new Map() };
       const cache = posCacheRef.current;
-      if (!cache.bePromise) cache.bePromise = engine.evaluate(sansToFen(sans), 16, onEvalProgress, 1200);
-      const be = await cache.bePromise;
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 3000, onEvalProgress);
+      const pvsAll = await cache.multiPromise;
       if (cancelled) return;
-      if (!be) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
-      setPosEval(be.mate != null || be.cp != null ? mkPosEval(be) : null);
-      // (v0.1.3 기능) 학습 탭 메인 보드에 엔진 상위 3줄(MultiPV-3)을 전체 수순으로 보여준다 — 후보
-      // 수 목록 보충용 MultiPV-10(depth 13, 아래)과는 별개 요청·별개 캐시다(그쪽은 첫 수만 필요하고
-      // depth·개수 요구사항이 달라 공유하면 서로의 용도에 안 맞는 절충이 된다).
-      if (!cache.linesPromise) cache.linesPromise = engine.evaluateMulti(sansToFen(sans), 15, 3, 3000);
-      const pvs3 = await cache.linesPromise;
-      if (cancelled) return;
+      if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
+      const p0 = pvsAll[0];
+      setPosEval(p0 && (p0.mate != null || p0.cp != null) ? mkPosEval(p0) : null);
       let lines = [];
-      if (pvs3 && pvs3.length) {
-        lines = pvs3.filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+      if (pvsAll.length) {
+        lines = pvsAll.slice(0, 3).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
           ev: pv.mate != null
             ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
             : { cp: pv.cp * baseWhite },
@@ -3098,8 +3106,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         // 한다 — 그렇지 않으면 스냅샷/Lichess에 없는 dev 전용 이론 수가 엔진 보충으로 뒤늦게 채워질 때
         // book 플래그가 빠진 채(비이론으로) 들어가는 경우가 생긴다.
         const devAddsBy2 = Object.fromEntries(addsFor(key).map((a) => [stripSuffix(a.san), a]));
-        if (!cache.pvsPromise) cache.pvsPromise = engine.evaluateMulti(sansToFen(sans), 13, 10, 2500);
-        const pvs = await cache.pvsPromise;
+        const pvs = pvsAll; // (성능) 위에서 이미 받은 MultiPV-10 결과를 그대로 재사용 — 별도 요청 없음
         if (!cancelled && pvs && pvs.length) {
           const have = new Set(cur.map((m) => m.san));
           const add = [];
@@ -4750,6 +4757,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                   <button onClick={() => setSortBy("adopt")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "adopt" ? T.ebony2 : "transparent", color: sortBy === "adopt" ? T.brassHi : T.inkSoft }}>채택률순</button>
                 </div>
               </div>
+              {/* (v0.2.0 기능) 엔진이 이 포지션의 후보 수(수 블록)를 계산하는 동안 마스코트 안내를
+                  보여준다 — linesPending은 이미 "새 엔진 결과를 기다리는 중"을 정확히 추적하고
+                  있던 플래그라 그대로 재사용한다. */}
+              {linesPending && (
+                <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+                  <Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion="think" size={30} />
+                  <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{(ply % 2 === 0 ? "MILKU" : "KOKOA")}가 수를 계산하고 있어요.</span>
+                </div>
+              )}
               {moves.length === 0 ? (
                 <div style={{ background: T.paper, borderRadius: 12, padding: 16, border: "1px dashed #C9B58C", textAlign: "center" }}>
                   <div style={{ display: "flex", justifyContent: "center" }}><Mascot name="milku" emotion="sleep" size={92} /></div>
