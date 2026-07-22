@@ -2530,7 +2530,12 @@ function CapturedRow({ pieces, color, diff, textColor, player }) {
         {sorted.map((t, i) => <PieceGlyph key={i} type={t} color={color} size={16} />)}
         {diff > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: textColor, marginLeft: 4, fontFamily: "ui-monospace,monospace" }}>+{diff}</span>}
       </div>
-      {player && <span style={{ fontSize: 11, fontWeight: 700, color: textColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{player.name}{player.rating != null ? " (" + player.rating + ")" : ""}</span>}
+      {player && (
+        <span className="flex items-center" style={{ gap: 6, minWidth: 0 }}>
+          <ReviewAvatar src={player.avatar} side={player.side} size={20} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: textColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{player.name}{player.rating != null ? " (" + player.rating + ")" : ""}</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -3558,7 +3563,7 @@ function ListPager({ page, setPage, pageCount }) {
 }
 // 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 오른쪽 칼럼은
 // 집중학습 여부와 무관하게 항상 수 블록 목록을 보여준다(LearnTab에서 분기하지 않음).
-function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMyGame, onOpenMyGameAnalyze }) {
+function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze }) {
   if (!fa.active) return null;
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain, editing, setEditing, draft, setDraft,
@@ -3605,6 +3610,15 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
     if (!onOpenMasterGame || openingGameId) return;
     setOpeningGameId(id); setGameOpenError(false);
     try { await onOpenMasterGame(id); } catch (e) { console.error("마스터 대국을 여는 데 실패:", e); setGameOpenError(true); } finally { setOpeningGameId(null); }
+  };
+  // (v0.2.1 기능) chess.com 통계의 "보기"+초록 리뷰 버튼 쌍과 동일하게, 마스터 대국도 목록에서
+  // 바로 /review로 진입할 수 있게 한다 — "보기"(handleOpenGame)와 별개 상태로 바쁨/에러를 추적한다.
+  const [reviewingGameId, setReviewingGameId] = useState(null);
+  const [reviewOpenError, setReviewOpenError] = useState(false);
+  const handleReviewGame = async (g) => {
+    if (!onOpenMasterGameReview || reviewingGameId) return;
+    setReviewingGameId(g.id); setReviewOpenError(false);
+    try { await onOpenMasterGameReview(g); } catch (e) { console.error("마스터 대국 리뷰를 여는 데 실패:", e); setReviewOpenError(true); } finally { setReviewingGameId(null); }
   };
   return (
     <div>
@@ -3819,22 +3833,27 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
             : (<>
             {masterPageItems.map((g) => (
-              <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: openingGameId && openingGameId !== g.id ? 0.5 : 1 }}>
+              <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
                     <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title="승리">👑</span>}</span>
                     <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "½–½"}</span>
                   </div>
                   <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title="승리">👑</span>}</div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? " · 기보를 불러오는 중…" : ""}</div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? " · 기보를 불러오는 중…" : reviewingGameId === g.id ? " · 리뷰를 여는 중…" : ""}</div>
                 </div>
-                {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중학습에서 보던 수부터 보드에 표기 */}
-                <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId} aria-label="대국 보기" title="대국 보기" className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: openingGameId ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                  {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중학습에서 보던 수부터 보드에 표기 */}
+                  <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId || !!reviewingGameId} aria-label="대국 보기" title="대국 보기" className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: (openingGameId || reviewingGameId) ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                  {/* (v0.2.1 기능) chess.com 통계와 동일한 초록 리뷰 버튼 — 이 마스터 대국을 곧바로 /review로 연다. */}
+                  {onOpenMasterGameReview && <BestMoveJumpButton onClick={() => handleReviewGame(g)} disabled={!!openingGameId || !!reviewingGameId} />}
+                </div>
               </div>
             ))}
             <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} />
             </>)}
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
+        {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 리뷰를 여는 데 실패했습니다. 잠시 후 다시 시도해 주세요.</p>}
       </div>
       {showExpl && (
         <div onClick={() => setShowExpl(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
@@ -3975,6 +3994,37 @@ function reviewPlayerInfo(game, side) {
   if (game.color) return { name: "상대", rating: null };
   return { name: side === "w" ? "백" : "흑", rating: null };
 }
+// (v0.2.1 기능) reviewPlayerInfo의 name은 데이터가 없을 때 "백"/"흑"/"나"/"상대" 같은 표시용 대체
+// 문구로 채워지므로, chess.com 아바타를 조회할 진짜 아이디는 이 함수로 따로 뽑는다 — game.white/black에
+// 실제 username이 있으면 그걸, 옛 형태(내 진영만 저장된 대국)면 game.username을 쓰고, 그마저 없으면
+// (학습 탭 임의 수순 분석) null — 이 경우 아바타 조회 자체를 하지 않는다.
+function avatarUsernameFor(game, side) {
+  const p = side === "w" ? game.white : game.black;
+  if (p && p.username) return p.username;
+  if (game.color === side && game.username) return game.username;
+  return null;
+}
+// (v0.2.1 기능) 대국 참가자의 chess.com 아바타 — username이 확정된 경우에만 프로필을 조회한다.
+// 계정이 없거나(예: 옛날 마스터 대국) 요청이 실패해도 null로 남아 기본 나이트 이미지로 대체된다.
+function useChesscomAvatar(username) {
+  const [avatar, setAvatar] = useState(null);
+  useEffect(() => {
+    if (!username) { setAvatar(null); return; }
+    let cancelled = false;
+    fetchChesscomProfile(username).then((p) => { if (!cancelled) setAvatar((p && p.avatar) || null); }).catch(() => { if (!cancelled) setAvatar(null); });
+    return () => { cancelled = true; };
+  }, [username]);
+  return avatar;
+}
+// (v0.2.1 기능) 리뷰 페이지 전용 프로필 이미지 — 실제 아바타가 있으면 그대로, 없으면 파비콘(검은
+// 나이트)과 그 색 반전판(흰 나이트, /favicon-white.png)을 진영별 기본값으로 쓴다.
+function ReviewAvatar({ src, side, size = 22 }) {
+  const isFallback = !src;
+  const fallbackSrc = side === "w" ? "/favicon-white.png" : "/favicon.png";
+  return (
+    <img src={src || fallbackSrc} alt="" style={{ width: size, height: size, borderRadius: Math.max(4, size * 0.22), objectFit: isFallback ? "contain" : "cover", padding: isFallback ? size * 0.14 : 0, boxSizing: "border-box", background: isFallback ? (side === "w" ? "#241509" : "#EFE4CC") : "#000", border: "1px solid rgba(255,255,255,.25)", flexShrink: 0 }} />
+  );
+}
 // 대국 단계(오프닝/미들게임/엔드게임) 구간 — 오프닝은 시작부터 이어지는 이론 수 구간(없으면 앞 5수),
 // 엔드게임은 폰 제외 기물 합산 점수가 처음 14 이하로 떨어지는 지점부터.
 function reviewGamePhases(moves) {
@@ -4044,6 +4094,8 @@ function ReviewSummary({ game, result, onStart, onClose, narrow }) {
   const won = game.result === "win", lost = game.result === "loss";
   const headline = !game.result ? "이 수순의 주요 장면들을 함께 분석해봐요!" : won ? "이 대국에서 좋은 전술을 찾아냈어요. 함께 살펴봐요!" : lost ? "아쉬운 순간들이 있었어요 — 무엇을 놓쳤는지 함께 확인해요." : "이 대국의 주요 장면들을 함께 리뷰해요!";
   const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
+  const whiteAvatar = useChesscomAvatar(avatarUsernameFor(game, "w"));
+  const blackAvatar = useChesscomAvatar(avatarUsernameFor(game, "b"));
   return (
     <div style={{ maxWidth: narrow ? "100%" : 380, margin: narrow ? 0 : "0 auto", padding: narrow ? "0 16px 24px" : 0 }}>
       <div className="flex items-start gap-2" style={{ marginBottom: 14 }}>
@@ -4056,12 +4108,12 @@ function ReviewSummary({ game, result, onStart, onClose, narrow }) {
       </div>
       <div className="flex items-center" style={{ gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: game.color === "w" ? "2px solid " + T.best : "2px solid transparent" }}><PieceGlyph type="N" color="b" size={38} /></div>
+          <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "w" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={whiteAvatar} side="w" size={52} /></div>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{whiteInfo.name}</div>
           {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontFamily: "ui-monospace,monospace" }}>{whiteInfo.rating}</div>}
         </div>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, background: "rgba(255,255,255,.1)", display: "flex", alignItems: "center", justifyContent: "center", border: game.color === "b" ? "2px solid " + T.best : "2px solid transparent" }}><PieceGlyph type="P" color="w" size={34} /></div>
+          <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "b" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={blackAvatar} side="b" size={52} /></div>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{blackInfo.name}</div>
           {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontFamily: "ui-monospace,monospace" }}>{blackInfo.rating}</div>}
         </div>
@@ -4135,7 +4187,10 @@ function ReviewMoveTable({ sans, moves, curPly, onJump }) {
 }
 // (기능) 코치 카드 — 등급 아이콘·헤드라인·평가치 배지·설명, Show(최선수 화살표 토글)·Best(최선수
 // 텍스트로 보기)·Retry(이 카드의 열람 상태 초기화)·Next(다음 수로) 네 컨트롤.
-function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onShowBest, showingBest, onRetry, onNext, isLast, narrow }) {
+// (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
+// 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
+// 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다.
+function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onRetry, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -4150,12 +4205,10 @@ function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onShowBest
             {evalCpText && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", padding: "3px 8px", borderRadius: 7, background: "rgba(255,255,255,.12)", color: "#fff" }}>{evalCpText}</span>}
           </div>
           <p style={{ fontSize: 12, color: "rgba(255,255,255,.75)", marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
-          {showingBest && hasBetter && <p style={{ fontSize: 12, color: T.brassHi, marginTop: 4, fontWeight: 700 }}>최선의 수는 {stripSuffix(move.best)}였어요.</p>}
         </div>
       </div>
       <div className="flex items-center" style={{ borderTop: "1px solid rgba(255,255,255,.1)", padding: "8px 10px", gap: 6 }}>
-        <button onClick={onShowLine} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: "#fff", cursor: "pointer", fontSize: 10 }}><Eye size={16} /> Show</button>
-        <button onClick={onShowBest} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingBest ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? "#fff" : "rgba(255,255,255,.3)", cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={16} /> Best</button>
+        <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? "#fff" : "rgba(255,255,255,.3)", cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Eye size={16} /> Show</button>
         <button onClick={onRetry} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: "#fff", cursor: "pointer", fontSize: 10 }}><RotateCcw size={16} /> Retry</button>
         <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>{isLast ? "완료" : "Next"}</button>
       </div>
@@ -4195,7 +4248,6 @@ function ReviewPage({ game, engine, onClose }) {
   // "리뷰 시작" 버튼이 이 값을 다시 1로 명시적으로 맞추므로 이 초기값과 무관하게 항상 올바르다.
   const [curPly, setCurPly] = useState(1); // 0=시작 위치, i=i번째 수까지 둔 위치
   const [showingLine, setShowingLine] = useState(false);
-  const [showingBest, setShowingBest] = useState(false);
   // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
   // curPly/sans는 건드리지 않는다 — 학습 탭의 sans/future와 같은 패턴으로 curPly 이후에 갈라져 나온
   // "자유 탐색" 수순만 별도로 쌓아 두고(exploreSans), 되돌린 만큼은 exploreFuture에 보존해 </> 로
@@ -4220,7 +4272,7 @@ function ReviewPage({ game, engine, onClose }) {
     (async () => { try { const r = await analyzeGame(sans, engine, 18, (p) => { if (!cancelled) setProg(p); }, 250); if (!cancelled) setResult(r); } catch { if (!cancelled) setErr(true); } })();
     return () => { cancelled = true; };
   }, []);
-  useEffect(() => { setShowingLine(false); setShowingBest(false); }, [curPly]);
+  useEffect(() => { setShowingLine(false); }, [curPly]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
   const exploring = exploreSans.length > 0;
@@ -4288,8 +4340,10 @@ function ReviewPage({ game, engine, onClose }) {
   // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
   // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
   const hasPlayerData = !!(game.white || game.black || game.color);
-  const whitePInfo = hasPlayerData ? reviewPlayerInfo(game, "w") : null;
-  const blackPInfo = hasPlayerData ? reviewPlayerInfo(game, "b") : null;
+  const whiteAvatar = useChesscomAvatar(avatarUsernameFor(game, "w"));
+  const blackAvatar = useChesscomAvatar(avatarUsernameFor(game, "b"));
+  const whitePInfo = hasPlayerData ? { ...reviewPlayerInfo(game, "w"), side: "w", avatar: whiteAvatar } : null;
+  const blackPInfo = hasPlayerData ? { ...reviewPlayerInfo(game, "b"), side: "b", avatar: blackAvatar } : null;
   const wrap = { position: "fixed", inset: 0, zIndex: 300, background: "#181818", overflowY: "auto", WebkitOverflowScrolling: "touch" };
   const header = (
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: "#181818", zIndex: 5 }}>
@@ -4318,7 +4372,7 @@ function ReviewPage({ game, engine, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onClose={onClose} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onShowBest={() => setShowingBest((v) => !v)} showingBest={showingBest} onRetry={() => { setShowingLine(false); setShowingBest(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
               <div ref={mobileBoardSizeRef} style={{ marginTop: 12, position: "relative" }}>
                 <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
@@ -4355,7 +4409,7 @@ function ReviewPage({ game, engine, onClose }) {
               <EvalGraph evalWin={result.evalWin} moves={result.moves} />
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} /></div>
               <div style={{ marginTop: 12 }}>
-                <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onShowBest={() => setShowingBest((v) => !v)} showingBest={showingBest} onRetry={() => { setShowingLine(false); setShowingBest(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} />
+                <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onRetry={() => { setShowingLine(false); setExploreSans([]); setExploreFuture([]); }} onNext={goNext} isLast={curPly >= sans.length} />
               </div>
             </>
           )}
@@ -4655,6 +4709,18 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     const upto = focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
   };
+  // (v0.2.1 기능) 마스터 대국의 초록 리뷰 버튼 — "보기"(onOpenMasterGame)와 달리 학습 보드는 그대로
+  // 두고, 그 대국의 전체 기보를 곧장 /review로 넘긴다. Lichess 마스터 DB의 white/black은 {name,rating}
+  // 형태라 reviewPlayerInfo가 기대하는 {username,rating}로 옮겨 담아야 실제 대국자 이름·레이팅이 뜬다.
+  const onOpenMasterGameReview = async (g) => {
+    const gameSans = await fetchMasterGamePgn(g.id);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
+    if (!gameSans || !gameSans.length) throw new Error("빈 기보");
+    onOpenReview && onOpenReview({
+      sans: gameSans,
+      white: { username: (g.white && g.white.name) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
+      black: { username: (g.black && g.black.name) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
+    });
+  };
   // (19차 기능2) 내 chess.com 대국을 클릭 — 기보를 이미 갖고 있으므로(fetch 불필요) 그대로 보드에 로드.
   const onOpenMyGame = (gameSans) => {
     if (!gameSans || !gameSans.length) return;
@@ -4748,7 +4814,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
+              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
             </div>
           </div>
         )}
