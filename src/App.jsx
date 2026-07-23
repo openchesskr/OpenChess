@@ -3492,6 +3492,29 @@ function brilliantArrows(sans, san) {
   if (mover) for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const t = after[r][c]; if (t && t.c === enemy && t.t !== "P" && canMove(after, mover.t, color, tr, tc, r, c, true)) out.push({ from: [tr, tc], to: [r, c], kind: "idea" }); }
   return out.slice(0, 6);
 }
+// (v0.2.2 기능) 탁월한 수의 코치 설명에 "어떤 기물을 희생했는지" 명시하기 위한 헬퍼 — 방금 이동한
+// 기물 자신이 그 도착 칸에서 공격받고 있으면(직접 희생) 그 기물을, 그렇지 않으면(다른 기물을 방치한
+// "방치 희생") 지금 가장 크게 걸려 있는 기물을 찾아 그 기물의 한글 이름을 반환한다. 언더프로모션 등
+// 판정이 애매한 경우에도 항상 방금 둔 기물 이름으로 대체해, 문장이 어색해지지 않게 한다.
+function sacrificedPieceKor(sans, san) {
+  const color = sans.length % 2 === 0 ? "w" : "b"; const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sans); const info = sanSrc(before, san, color);
+  if (!info || info.castle) return null;
+  const after = boardFromSans([...sans, san]); const [tr, tc] = info.to;
+  const mover = after[tr][tc];
+  let moverAttacked = false;
+  for (let r = 0; r < 8 && !moverAttacked; r++) for (let c = 0; c < 8; c++) { const p = after[r][c]; if (p && p.c === enemy && canMove(after, p.t, enemy, r, c, tr, tc, true)) { moverAttacked = true; break; } }
+  if (moverAttacked && mover) return PIECE_KOR[mover.t] || null;
+  let best = null, bestLoss = 0;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const p = after[r][c]; if (!p || p.c !== color || p.t === "K") continue;
+    const gain = seeSquare(after, r, c, enemy);
+    if (gain > bestLoss && canCaptureSquareLegally(after, r, c, enemy)) { bestLoss = gain; best = p.t; }
+  }
+  if (best) return PIECE_KOR[best];
+  return mover ? PIECE_KOR[mover.t] : null;
+}
 
 // (UI/UX) 집중학습을 별개의 전체 창으로 띄우지 않고, 기존에 쓰던 집중학습 UI를 그대로
 // 체스보드 하단(왼쪽 칼럼)에 배치한다 — 오른쪽 칼럼은 집중학습 중에도 항상 수 블록 목록을 보여준다.
@@ -4197,9 +4220,13 @@ const REVIEW_COACH_COPY = {
   blunder: { head: "은(는) 블런더예요!", mascot: ["kokoa", "angry"], body: ["이 수로 크게 불리해졌어요 — 다음엔 더 신중하게 살펴보세요.", "포지션이 크게 무너졌어요."] },
   pending: { head: "", mascot: ["milku", "think"], body: ["이 수는 아직 분석되지 않았어요."] },
 };
-function reviewCoachCopy(m) {
+function reviewCoachCopy(m, sacrificedPiece) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
-  const body = c.body[m.ply % c.body.length];
+  // (v0.2.2 기능) 탁월한 수는 어떤 기물을 희생했는지 알 수 있으면(언더프로모션 등은 제외되어 null로
+  // 넘어옴) 일반 문구 대신 그 기물을 명시한 설명을 보여준다.
+  const body = (m.kind === "brilliant" && sacrificedPiece)
+    ? (sacrificedPiece + "에 대한 위협을 무시하고 희생하는 탁월한 수예요.")
+    : c.body[m.ply % c.body.length];
   // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
   const emo = (c.mascot && c.mascot[1]) || "great";
@@ -4503,9 +4530,9 @@ function ReviewOpeningBanner({ text }) {
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
 // 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
-function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, sacrificedPiece, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
-  const copy = reviewCoachCopy(move);
+  const copy = reviewCoachCopy(move, sacrificedPiece);
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
   return (
@@ -4515,7 +4542,9 @@ function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onNext, is
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="flex items-center justify-between" style={{ gap: 8 }}>
             <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: 13.5, fontWeight: 800, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
-            {evalCpText && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", padding: "3px 8px", borderRadius: 7, background: "rgba(255,255,255,.12)", color: RV.text }}>{evalCpText}</span>}
+            {/* (v0.2.2 기능) 평가치 박스를 흰색/검은색(EvalBadge, 유리한 쪽 색으로 반전)으로 통일 —
+                엔진 라인 등 리뷰 페이지 다른 곳의 평가치 표기와 같은 규칙을 쓴다. */}
+            {evalDisp && <EvalBadge ev={evalDisp} />}
           </div>
           <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
         </div>
@@ -4740,7 +4769,13 @@ function ReviewPage({ game, engine, onClose }) {
   // 모두 이 값 하나만 참조하므로 기보 수와 자유 탐색 수의 UX가 완전히 동일해진다.
   const activeMove = exploring ? exploreMove : curMove;
   const activeEvalDisp = exploring ? (engineLines[0] && engineLines[0].ev) : (result && result.evalDisp ? result.evalDisp[curPly] : null);
-  const evalCpText = activeEvalDisp ? evalDisplayText(activeEvalDisp) : null;
+  // (v0.2.2 기능) 코치 설명에 쓸 "희생한 기물" — 탁월한 수(언더프로모션 제외)일 때만 계산한다.
+  const sacrificedPiece = useMemo(() => {
+    if (!activeMove || activeMove.kind !== "brilliant") return null;
+    const isUnderpromo = /=/.test(activeMove.san) && !/=Q/.test(activeMove.san);
+    if (isUnderpromo) return null;
+    return sacrificedPieceKor(effSans.slice(0, -1), activeMove.san);
+  }, [activeMove, effSans]);
   const arrows = useMemo(() => {
     const out = [];
     if (activeMove && showingLine) {
@@ -4750,14 +4785,14 @@ function ReviewPage({ game, engine, onClose }) {
       if (info && !info.castle) out.push({ from: info.from, to: info.to, adopt: 80 });
     }
     // (v0.2.2 기능) 탁월한 수(언더프로모션 제외)가 두어진 위치에서는 "Show" 여부와 무관하게, 방금 둔
-    // 내 기물을 상대의 어떤 기물이 공격할 수 있는지 항상 붉은색 경고 화살표로 보여준다.
-    const isUnderpromo = activeMove && /=/.test(activeMove.san) && !/=Q/.test(activeMove.san);
-    if (activeMove && activeMove.kind === "brilliant" && !isUnderpromo) {
+    // 내 기물을 상대의 어떤 기물이 공격할 수 있는지 항상 붉은색 경고 화살표로 보여준다. sacrificedPiece가
+    // 있다는 것 자체가 이미 "탁월한 수 + 언더프로모션 아님"을 뜻하므로 그대로 게이트로 재사용한다.
+    if (sacrificedPiece) {
       const danger = brilliantArrows(effSans.slice(0, -1), activeMove.san).filter((a) => a.kind === "danger");
       out.push(...danger);
     }
     return out;
-  }, [activeMove, showingLine, effSans]);
+  }, [activeMove, showingLine, effSans, sacrificedPiece]);
   const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardFromSans(effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
   // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
   // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
@@ -4797,7 +4832,7 @@ function ReviewPage({ game, engine, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -4825,7 +4860,7 @@ function ReviewPage({ game, engine, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
@@ -4931,27 +4966,32 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 평가한 상태라 이론 수가 실수로 오분류되거나, 포지션 전환 중간의 불안정한 상태를 그대로
   // 저장해 버리는 등 오생성 버그의 근원이었다. FocusMode(아래 onSavePuzzle 호출부)만으로 충분하다.
 
-  // (v0.2.2 버그 수정) 제안 화살표(이론 수)의 두께·투명도가 "평가치순"을 선택해도 항상 채택률(adopt)
-  // 기준으로만 계산돼, 정렬 기준을 바꿔도 화살표 시각화가 전혀 달라지지 않았다 — Board는 weight(0~1,
-  // 이미 정규화된 값)를 그대로 두께·투명도에 쓰므로, sortBy에 맞춰 서로 다른 값을 계산해 넘긴다.
+  // (v0.2.2 기능/버그 수정) 제안 화살표를 이론 수로만 한정하지 않고 지금 보이는 모든 후보 수로 넓히되,
+  // 화면이 복잡해지지 않도록 지금 선택된 정렬 기준(평가치순/채택률순)으로 상위 3수만 화살표로 보여준다.
+  // 예전엔 두께·투명도가 "평가치순"을 선택해도 항상 채택률(adopt) 기준으로만 계산돼, 정렬 기준을
+  // 바꿔도 화살표 시각화가 전혀 달라지지 않는 버그도 함께 고친다 — Board는 weight(0~1, 이미 정규화된
+  // 값)를 그대로 두께·투명도에 쓰므로, sortBy에 맞춰 서로 다른 순위·값을 계산해 넘긴다.
   const arrows = useMemo(() => {
-    const bookMoves = moves.filter((m) => m.book);
-    if (!bookMoves.length) return [];
+    const liveActive = liveOn && engine && engine.status === "ready";
+    const rankKey = sortBy === "adopt"
+      ? (m) => (m.adopt != null ? m.adopt : (m.games != null ? m.games : -Infinity))
+      : (m) => { if (liveActive && !m.live) return -Infinity; const v = moverEval(m, ply); return v == null ? -Infinity : v; };
+    const ranked = moves.filter((m) => rankKey(m) > -Infinity).sort((a, b) => rankKey(b) - rankKey(a)).slice(0, 3);
+    if (!ranked.length) return [];
     if (sortBy === "adopt") {
-      return bookMoves.map((m) => { const info = sanSrc(board, m.san, color); return info && info.from ? { from: info.from, to: info.to, weight: Math.min(1, Math.max(0, (m.adopt || 0) / 60)) } : null; }).filter(Boolean);
+      return ranked.map((m) => { const info = sanSrc(board, m.san, color); return info && info.from ? { from: info.from, to: info.to, weight: Math.min(1, Math.max(0, (m.adopt || 0) / 60)) } : null; }).filter(Boolean);
     }
-    // sortBy === "eval" — 후보 중 최선(가장 높은 moverEval) 대비 손실이 클수록 화살표를 얇고 옅게 만든다
-    // (200cp 이상 차이 나면 최소값으로 고정).
-    const evs = bookMoves.map((m) => moverEval(m, ply));
-    const validEvs = evs.filter((v) => v != null);
-    const best = validEvs.length ? Math.max(...validEvs) : null;
-    return bookMoves.map((m, i) => {
+    // sortBy === "eval" — 상위 3수 중 최선(가장 높은 moverEval) 대비 손실이 클수록 화살표를 얇고
+    // 옅게 만든다(200cp 이상 차이 나면 최소값으로 고정).
+    const evs = ranked.map((m) => moverEval(m, ply));
+    const best = Math.max(...evs.filter((v) => v != null));
+    return ranked.map((m, i) => {
       const info = sanSrc(board, m.san, color); if (!info || !info.from) return null;
       const v = evs[i];
-      const weight = (best != null && v != null) ? Math.max(0, 1 - (best - v) / 200) : 0.3;
+      const weight = v != null ? Math.max(0, 1 - (best - v) / 200) : 0.3;
       return { from: info.from, to: info.to, weight };
     }).filter(Boolean);
-  }, [moves, board, color, sortBy, ply]);
+  }, [moves, board, color, sortBy, ply, liveOn, engine && engine.status]);
   const legalTargets = useMemo(() => sel ? legalDests(board, sel[0], sel[1], color, ep) : [], [sel, board, color, ep]);
 
   // 수를 두면 항상 도착 칸에 수 체계 아이콘을 띄운다(블록에 없거나 아직 미평가면 우선 '분석 중', 엔진으로 갱신)
