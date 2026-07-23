@@ -2214,6 +2214,20 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp, evalDisp };
 }
 const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
+// (v0.2.1 기능) 수 체계 아이콘을 누르면 그 등급의 조건·설명을 말풍선으로 보여준다(나무위키 "체스닷컴" 수 등급 참고).
+const QDESC = {
+  brilliant: "대개 기물을 희생하면서도 국면을 유리하게 이끄는, 발견하기 어려운 최상의 수입니다.",
+  only: "그 수를 두지 않으면 국면이 크게 나빠지는, 사실상 유일하게 좋은 수입니다.",
+  best: "엔진이 계산한 그 국면에서 가장 좋은 수입니다.",
+  excellent: "최선은 아니지만 평가치 손실이 거의 없는 훌륭한 수입니다.",
+  good: "무난하게 좋은 수로, 국면을 크게 해치지 않습니다.",
+  inaccuracy: "더 나은 수가 있었던, 약간의 평가치 손실이 있는 부정확한 수입니다.",
+  miss: "상대의 실수로 생긴 좋은 기회를 살리지 못하고 놓친 수입니다.",
+  mistake: "평가치를 눈에 띄게 떨어뜨려 국면을 불리하게 만든 실수입니다.",
+  blunder: "승패를 뒤집을 만큼 평가치를 크게 잃은 치명적인 실수입니다.",
+  book: "정석(오프닝 이론)에 등록된, 잘 알려진 이론적인 수입니다.",
+  pending: "엔진이 이 수를 분석하고 있습니다.",
+};
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중학습의 대국 목록에서 공용.
 const TIME_CLASS_LABEL = { rapid: "래피드", blitz: "블리츠", bullet: "불릿", daily: "일일" };
 const QCOLOR = { brilliant: T.brilliant, best: T.best, only: T.only, excellent: T.excellent, good: T.good, inaccuracy: T.inaccuracy, miss: "#C8562F", mistake: T.mistake, blunder: T.blunder, book: T.book, pending: T.inkSoft };
@@ -2862,13 +2876,29 @@ function NotationTools({ sans, onLoadPgn }) {
   );
 }
 
-function CircleBadge({ kind, big, noTip }) {
+function CircleBadge({ kind, big, noTip, descOnClick }) {
   const [hover, setHover] = useState(false);
+  const [descOpen, setDescOpen] = useState(false);
   const sz = big ? 36 : 26;
+  // (v0.2.1) descOnClick — 아이콘을 클릭하면 등급 이름 + 조건/설명을 담은 조금 더 큰 말풍선을 토글한다.
+  const showLabelTip = hover && !noTip && !descOpen;
   return (
     <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }} onMouseEnter={noTip ? undefined : () => setHover(true)} onMouseLeave={noTip ? undefined : () => setHover(false)}>
-      <span style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)" }}>{badgeIcon(kind, sz - 4)}</span>
-      {hover && !noTip && <span style={{ position: "absolute", bottom: sz + 6, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 7, background: T.ivoryHi, color: QCOLOR[kind], fontSize: 12, fontWeight: 800, border: "1px solid " + QCOLOR[kind], boxShadow: "0 4px 10px -4px rgba(0,0,0,.5)", zIndex: 30 }}>{QLABEL[kind]}</span>}
+      <span onClick={descOnClick ? (e) => { e.stopPropagation(); setDescOpen((v) => !v); } : undefined} style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)", cursor: descOnClick ? "pointer" : "default" }}>{badgeIcon(kind, sz - 4)}</span>
+      {showLabelTip && <span style={{ position: "absolute", bottom: sz + 6, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 7, background: T.ivoryHi, color: QCOLOR[kind], fontSize: 12, fontWeight: 800, border: "1px solid " + QCOLOR[kind], boxShadow: "0 4px 10px -4px rgba(0,0,0,.5)", zIndex: 30 }}>{QLABEL[kind]}</span>}
+      {descOpen && descOnClick && (
+        <>
+          <span onClick={(e) => { e.stopPropagation(); setDescOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <span style={{ position: "absolute", bottom: sz + 9, left: "50%", transform: "translateX(-50%)", width: 220, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ width: 22, height: 22, borderRadius: "50%", background: QCOLOR[kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{badgeIcon(kind, 18)}</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: QCOLOR[kind] }}>{QLABEL[kind]}</span>
+            </span>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink, lineHeight: 1.5, whiteSpace: "normal" }}>{QDESC[kind]}</span>
+            <span style={{ position: "absolute", bottom: -7, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }} />
+          </span>
+        </>
+      )}
     </span>
   );
 }
@@ -4248,7 +4278,7 @@ function ReviewKindTable({ moves, showAll = false, onPick }) {
         return (
           <div key={kind} className="flex items-center" style={{ padding: "8px 2px", borderBottom: "1px solid " + RV.border }}>
             <button onClick={() => pick(kind, true)} className={onPick && w ? "press" : ""} style={numStyle(kind, w)}>{w}</button>
-            <span style={{ flex: 1, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: RV.text }}><CircleBadge kind={kind} />{label}</span>
+            <span style={{ flex: 1, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: RV.text }}><CircleBadge kind={kind} descOnClick />{label}</span>
             <button onClick={() => pick(kind, false)} className={onPick && b ? "press" : ""} style={numStyle(kind, b)}>{b}</button>
           </div>
         );
@@ -4309,26 +4339,38 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
         <ReviewAccuracyPill label="정확성" value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} />
         <ReviewAccuracyPill label="정확성" value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
       </div>
-      <ReviewKindTable moves={result.moves} onPick={onPickMove} />
+      <ReviewKindTable moves={result.moves} showAll onPick={onPickMove} />
+      {/* (v0.2.1) 세 단계(오프닝/미들게임/엔드게임)를 모두 보여준다 — 그 단계에 수가 없으면(예: 엔드게임 미도달)
+          아이콘만 감춘다. 아이콘을 누르면 좌측 단계명은 그대로 두고, 그 단계·진영의 부분 정확도를 말풍선으로 띄운다. */}
       <div style={{ padding: "12px 2px", borderBottom: "1px solid " + RV.border }}>
-        {phases.filter((p) => p.w || p.b).map((p) => {
-          const showW = accShow === p.label + ":w", showB = accShow === p.label + ":b";
+        {phases.map((p) => {
           const phaseBadge = (kind, side, acc) => {
-            if (!kind) return <span style={{ color: RV.dim }}>-</span>;
-            // 아이콘을 누르면 등급 설명(툴팁) 대신 그 단계·진영의 부분 정확도를 잠깐 보여준다.
+            // 그 진영이 이 단계에서 둔 수가 없으면(정확도 데이터 없음) 아이콘 미표시.
+            if (acc == null) return <span style={{ width: 26, height: 26, display: "inline-block" }} />;
+            const key = p.label + ":" + side;
+            const active = accShow === key;
             return (
-              <button onClick={() => setAccShow((v) => (v === p.label + ":" + side ? null : p.label + ":" + side))} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}>
-                <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind} noTip /></span>
-              </button>
+              <span style={{ position: "relative", display: "inline-flex", lineHeight: 0 }}>
+                <button onClick={() => setAccShow((v) => (v === key ? null : key))} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}>
+                  {/* 오프닝처럼 하이라이트 수 등급이 없으면(이론 수뿐) 이론 아이콘 대신 중립 정확도 배지를 보여준다. */}
+                  <span style={{ pointerEvents: "none" }}>
+                    {kind ? <CircleBadge kind={kind} noTip /> : (
+                      <span style={{ width: 26, height: 26, borderRadius: "50%", background: RV.panel, border: "2px solid " + RV.border, display: "inline-flex", alignItems: "center", justifyContent: "center", color: RV.soft, fontSize: 12, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>%</span>
+                    )}
+                  </span>
+                </button>
+                {active && (
+                  <span style={{ position: "absolute", bottom: 34, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "6px 10px", borderRadius: 8, background: T.brassHi, color: "#241509", fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", boxShadow: "0 6px 14px -5px rgba(0,0,0,.55)", zIndex: 30 }}>
+                    {p.label + " 정확도 " + acc.toFixed(1) + "%"}
+                    <span style={{ position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 9, height: 9, background: T.brassHi }} />
+                  </span>
+                )}
+              </span>
             );
           };
           return (
             <div key={p.label} className="flex items-center justify-between" style={{ padding: "6px 0" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: (showW || showB) ? T.brassHi : RV.text, fontFamily: (showW || showB) ? "ui-monospace,monospace" : undefined }}>
-                {(showW || showB)
-                  ? p.label + " 정확도 " + ((showW ? p.wAcc : p.bAcc) != null ? (showW ? p.wAcc : p.bAcc).toFixed(1) + "%" : "—")
-                  : p.label}
-              </span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: RV.text }}>{p.label}</span>
               <span className="flex items-center gap-3">
                 <span>{phaseBadge(p.w, "w", p.wAcc)}</span>
                 <span>{phaseBadge(p.b, "b", p.bAcc)}</span>
