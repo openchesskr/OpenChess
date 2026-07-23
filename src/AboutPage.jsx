@@ -235,11 +235,15 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
               </div>
             ))}
             {move && (
+              // (v0.2.2 UX#1) 예전엔 top/left(레이아웃 속성)를 무한 애니메이션해, "유명한 오프닝들"
+              // 갤러리처럼 보드가 여러 개면 매 프레임 리플로우가 겹쳐 스크롤·애니메이션이 버벅였다 —
+              // 시작 칸에 고정해 두고 transform(x/y translate, GPU 합성)만 애니메이션해 레이아웃을
+              // 건드리지 않게 바꾼다. 이동 칸 수만큼 자기 크기(=한 칸)의 배수로 옮긴다.
               <motion.div
-                initial={{ top: dpct(move.from[0]), left: dpct(move.from[1]) }}
-                animate={{ top: dpct(move.to[0]), left: dpct(move.to[1]) }}
+                initial={{ x: 0, y: 0 }}
+                animate={{ x: (move.to[1] - move.from[1]) * 100 + "%", y: (move.to[0] - move.from[0]) * 100 + "%" }}
                 transition={{ duration: 1.1, repeat: Infinity, repeatType: "reverse", repeatDelay: 0.9, ease: [0.4, 1.1, 0.5, 1] }}
-                style={{ position: "absolute", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", zIndex: 2 }}>
+                style={{ position: "absolute", top: dpct(move.from[0]), left: dpct(move.from[1]), width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", zIndex: 2 }}>
                 <img src={DECO_PIECE_SRC[move.piece]} alt="" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.55))" }} />
               </motion.div>
             )}
