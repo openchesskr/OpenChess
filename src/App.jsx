@@ -5499,7 +5499,7 @@ function useOpeningTreeAuto(priorityRef) {
 }
 // (개편) 도감 오프닝 상세 블록 — 모식도 안, 그 수 노드 옆에 인라인으로 열리고 닫힌다. 기존 카드 내용
 // (미리보기·해금 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 더해 보여준다.
-function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening }) {
+function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, vertical, scale = 1, tailPos = null }) {
   const label = nameOverride(path.join(" "), m.san) ?? m.name ?? (m.isMain ? "Main Line" : null);
   const ply = path.length;
   const board = useMemo(() => boardFromSans(path), [path.join(" ")]);
@@ -5514,7 +5514,15 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening }
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
   const evTxt = m.evalCp != null ? fmtEvalCp(m.evalCp) : null;
   return (
-    <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ width: 280, borderRadius: 16, padding: 12, background: isUnlocked ? "linear-gradient(180deg,#FBF5E8,#E2D2B2)" : "linear-gradient(180deg,#33261A,#221610)", boxShadow: "0 10px 30px -8px rgba(0,0,0,.65)", border: "1px solid " + (isUnlocked ? "#CDB98E" : "#000"), position: "absolute", zIndex: 50, ...style }}>
+    <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ width: 280, borderRadius: 16, padding: 12, background: isUnlocked ? "linear-gradient(180deg,#FBF5E8,#E2D2B2)" : "linear-gradient(180deg,#33261A,#221610)", boxShadow: "0 10px 30px -8px rgba(0,0,0,.65)", border: "1px solid " + (isUnlocked ? "#CDB98E" : "#000"), position: "absolute", zIndex: 50, transform: scale !== 1 ? "scale(" + scale + ")" : undefined, transformOrigin: tailPos == null ? undefined : (vertical ? tailPos + "px 0px" : "0px " + tailPos + "px"), ...style }}>
+      {/* (v0.2.2 UI#2) 말풍선 꼬리 — 이 설명 카드가 어느 수 블록에서 나왔는지 시각적으로 이어 주고,
+          블록 자신은 가리지 않도록 카드를 블록 바깥(세로 모식도=아래, 가로 모식도=오른쪽)에 두고 그
+          블록을 향해 삼각형 꼬리를 뻗는다. tailPos(px)는 카드 가장자리에서 블록 중심이 있는 지점. */}
+      {tailPos != null && (
+        <div aria-hidden="true" style={vertical
+          ? { position: "absolute", top: -9, left: tailPos, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderBottom: "9px solid " + (isUnlocked ? "#FBF5E8" : "#33261A"), filter: "drop-shadow(0 -1px 0 " + (isUnlocked ? "#CDB98E" : "#000") + ")" }
+          : { position: "absolute", left: -9, top: tailPos, transform: "translateY(-50%)", width: 0, height: 0, borderTop: "9px solid transparent", borderBottom: "9px solid transparent", borderRight: "9px solid " + (isUnlocked ? "#F1E4CB" : "#2C1E13"), filter: "drop-shadow(-1px 0 0 " + (isUnlocked ? "#CDB98E" : "#000") + ")" }} />
+      )}
       {/* (버그 수정) 아래 보드 미리보기 래퍼(position:relative)가 z-index 없이도 DOM 순서상 이 버튼
           위에 그려져, 카드 폭 전체에 걸친 그 래퍼의 투명 영역이 X 버튼 클릭을 가로채고 있었다 —
           명시적 z-index로 항상 위에 오도록 고정한다. */}
@@ -6471,16 +6479,29 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         const oc = coord(openItem);
         const nodeScreenX = pan.x + zoom * oc.x, nodeScreenY = pan.y + zoom * oc.y;
         const nodeScreenW = boxW * zoom, nodeScreenH = boxH * zoom;
+        // (v0.2.2 UI#2) 모바일(세로 모식도)에서는 설명 카드를 65% 크기로 줄인다 — transformOrigin을
+        // 꼬리(블록에 맞닿는 지점)에 두어, 축소해도 꼬리는 블록에 그대로 붙어 있게 한다.
+        const cardScale = vertical ? 0.65 : 1;
         const CARD_W = Math.max(240, Math.min(300, rect.width - 32));
         const CARD_H_EST = 460;
-        let left, top;
-        if (vertical) { left = nodeScreenX + nodeScreenW / 2 - CARD_W / 2; top = nodeScreenY + nodeScreenH + 10; }
-        else { left = nodeScreenX + nodeScreenW + 10; top = nodeScreenY + nodeScreenH / 2 - CARD_H_EST / 2; }
-        left = Math.max(4, Math.min(left, rect.width - CARD_W - 4));
-        top = Math.max(4, Math.min(top, rect.height - CARD_H_EST - 4));
+        const nodeCX = nodeScreenX + nodeScreenW / 2, nodeCY = nodeScreenY + nodeScreenH / 2;
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+        let left, top, tailPos;
+        if (vertical) {
+          // 블록 아래에 두고, 꼬리는 위로 — 블록을 가리지 않는다.
+          left = clamp(nodeCX - CARD_W / 2, 4, Math.max(4, rect.width - CARD_W - 4));
+          top = nodeScreenY + nodeScreenH + 11;
+          tailPos = clamp(nodeCX - left, 20, CARD_W - 20);
+        } else {
+          // 블록 오른쪽에 두고, 꼬리는 왼쪽으로.
+          left = nodeScreenX + nodeScreenW + 11;
+          top = clamp(nodeCY - CARD_H_EST / 2, 4, Math.max(4, rect.height - CARD_H_EST - 4));
+          tailPos = clamp(nodeCY - top, 20, CARD_H_EST - 20);
+        }
         return (
           <DexMoveBlock path={openItem.path.slice(0, -1)} m={openParentM} isUnlocked={openItem.unlocked}
             cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)} onOpenOpening={onOpenOpening}
+            vertical={vertical} scale={cardScale} tailPos={tailPos}
             style={{ left, top, width: CARD_W }} />
         );
       })()}
