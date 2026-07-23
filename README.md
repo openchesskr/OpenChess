@@ -33,6 +33,13 @@
 **버그 수정**
 학습 탭에서 "다음 수 블록"(`assignTiers`로 매긴 후보 수 등급)에 표시된 수 체계 아이콘과, 그 수를 실제로 뒀을 때 체스판 도착칸·"현재 수 블록"(`curKind`)에 뜨는 아이콘이 서로 다르게 보이던 문제를 해결함. 원인은 두 곳이 서로 다른 분류 알고리즘을 쓴 것 — 후보 블록은 형제 수들의 평가치를 기준으로 판정하는 `assignTiers`(`only`/최선 argmax 로직 포함)를, 실제 둔 수는 마지막 수 재평가 `useEffect`가 별개 알고리즘인 `evalMoveKind`(새 depth 검색으로 판정하고 `decided` 완화·언더프로모션→탁월·`only` 미생성 등 규칙이 다름)로 매번 다시 계산해 `stampQ`가 세팅한 후보 등급을 덮어썼다. 블록에 실제로 떠 있던 각 수의 확정 등급을 `pinnedKindRef`(`"이 위치 key|수"` → 등급)에 pin해 두고(후보 목록이 갱신될 때마다, 그리고 블록에서 수를 고르는 `stampQ` 시점에도 즉시 기록), 마지막 수 재평가 effect가 그 수의 pin이 있으면 `evalMoveKind` 재계산 대신 pin된 등급을 그대로 쓰도록 함 — 클릭·드래그·엔진 라인 클릭·앞으로/되돌리기 어느 경로로 그 수에 도달하든 다음 수 블록과 정확히 같은 아이콘으로 보인다(보드 badge와 `curKind`는 둘 다 `lastQ`에서 파생되므로 한 곳만 맞추면 함께 일치).
 
+**기능 / UX (UI·UX 최적화 1차)**
+- 퀘스트: 오늘의 퀘스트 목록 두 번째 항목을 항상 `dailypuzzle`("오늘의 퍼즐 풀기")로 고정. 오늘의 퍼즐(`todayPuzzle`)이 `solved`에 들어오면 `claimQuestCoins("dailypuzzle")`로 1회 완료·지급되도록 하고, 완료 카운트(/5)·전체완료 보너스(`allDone`)·3시간 알림(`dailyQuestCleared`)·클리어 애니메이션 키 목록에 모두 반영.
+- 도감(UI): 오프닝 모식도의 수 블록 설명 카드(`DexMoveBlock`)에 삼각형 말풍선 꼬리를 붙여 어느 블록에서 나왔는지 시각적으로 잇고, 블록을 가리지 않도록 세로 모식도=아래·가로 모식도=오른쪽에 배치. 모바일(세로 모식도, `vertical`)에서는 `transformOrigin`을 꼬리에 둔 채 `scale(0.65)`로 축소해 축소해도 꼬리가 블록에 붙어 있게 함.
+- 도감(UX): 나침반 정중앙 회로 칩을 클릭 가능하게 하고, 클릭 시 전기 효과음(`/sfx/...circuit-bent-stylophone...`, `SFX_SRC.electric`)을 재생하며 칩 과충전(`dex-chip-surge`) + 모든 트레이스·연결선(`dex-surge-line`)·블록(`dex-surge-node`)에 `depth` 비례 delay로 전류가 바깥으로 퍼지는 서지 애니메이션을 1회 재생(`DexEdgesLayer`/`DexNodesLayer`에 `electric` prop 추가).
+- 보드(UX): 그랜드마스터 보드 스킨일 때만 `gm-board-shine` 오버레이로 주기적 광택 sweep 추가(다른 스킨·`prefers-reduced-motion` 무영향).
+- 설정(UI): 사운드 카드의 배경음악·효과음 설명 `<p>` 문구 제거.
+
 ### OpenChess v0.2.1 — 2026/7/23
 
 **기능**
