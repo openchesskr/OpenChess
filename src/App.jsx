@@ -3192,13 +3192,17 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // depth13 멀티PV-10(후보 수 보충, 아래) 순서로 메인 엔진에 세 번 연달아 물어봤다 — 셋 다 "같은
       // 포지션의 상위 수순"이라는 같은 정보를 서로 다른 depth·개수로 중복 탐색하고 있었을 뿐이다.
       // Stockfish의 MultiPV는 한 번의 탐색으로 원하는 개수만큼의 최상위 수를 동시에 얻으므로, 한 번의
-      // MultiPV-10 탐색(depth 16 — 셋 중 가장 높은 요구치, movetime도 셋 중 가장 넉넉한 상한을 줘서
-      // multipv 10개를 추적하는 부담이 있어도 depth 16에 도달할 여유를 준다)으로 통합한다: 1순위
-      // 줄=평가치 바(단일PV처럼 depth가 깊어지며 진행 갱신, 위 handleLine 참고), 1~3순위=엔진 상위
-      // 3줄, 1~10순위=후보 수 보충. depth·정확도는 그대로 두고 중복 탐색만 없애 벽시계 시간을
-      // (기존 세 요청 순차 합산 대비) 최대 3분의 1 가까이로 줄인다. 부가효과로, 겹치는 수의 평가치가
-      // 서로 다른 탐색에서 미세하게 갈려 블록과 엔진 라인 표시가 어긋나던 문제도 근본적으로 사라진다
-      // (하나의 결과만 쓰므로).
+      // MultiPV-10 탐색(depth 16)으로 통합한다: 1순위 줄=평가치 바(단일PV처럼 depth가 깊어지며 진행
+      // 갱신, 위 handleLine 참고), 1~3순위=엔진 상위 3줄, 1~10순위=후보 수 보충. 중복 탐색을 없애
+      // 벽시계 시간을 (기존 세 요청 순차 합산 대비) 크게 줄인다. 부가효과로, 겹치는 수의 평가치가 서로
+      // 다른 탐색에서 미세하게 갈려 블록과 엔진 라인 표시가 어긋나던 문제도 근본적으로 사라진다(하나의
+      // 결과만 쓰므로).
+      // (v0.2.2 성능) 엔진 라인이 확정되기까지의 상한(movetime)을 3000ms에서 700ms로 낮춘다 — 엔진
+      // 라인은 depth가 깊어질 때마다 이미 실시간으로 흘러 나오므로(streamLines), 사용자가 체감하는
+      // "라인이 계산되는 시간"은 이 상한이 결정한다. 평범한 학습·오프닝 포지션은 이 시간 안에 목표
+      // depth에 도달해 표시가 그대로이고, 유독 오래 걸리던 복잡한 포지션만 0.5~0.7초 안에서 (그 시점의
+      // 충분히 깊은 라인으로) 확정돼 대기감이 사라진다. 개별 후보 수 평가는 아래에서 여전히 독립된
+      // depth 15 검색으로 채워지므로 수 블록 정확도에는 영향이 없다.
       if (posCacheRef.current.key !== key) posCacheRef.current = { key, multiPromise: null, live: new Map() };
       const cache = posCacheRef.current;
       // (v0.2.1) 엔진 상위 3줄을 최종 결과 한 번이 아니라 depth마다 실시간으로 갱신한다 — 평가치가 살아
@@ -3209,7 +3213,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         sans: pvUciToSans(sans, pv.pv, 15),
       }))).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 3000, onEvalProgress, streamLines);
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 700, onEvalProgress, streamLines);
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -4844,6 +4848,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [promoPrompt, setPromoPrompt] = useState(null);   // (기능5) 프로모션 선택 대기 {from,to}
   const [lastMascot, setLastMascot] = useState(EXPLAIN[""]);
   const [lastQ, setLastQ] = useState(null);
+  // (v0.2.2 버그 수정) 다음 수 블록(assignTiers)에 표시된 수 체계 아이콘과, 그 수를 실제로 뒀을 때
+  // 보드 도착칸·현재 수 블록에 뜨는 아이콘이 서로 달랐다 — 후자는 아래 재평가 effect가 evalMoveKind
+  // (형제 수 대신 새 depth 검색으로 판정하고, decided 완화·언더프로모션→탁월·'유일한 수' 미생성 등
+  // assignTiers와 다른 규칙을 쓰는 별개 알고리즘)로 매번 다시 계산해 덮어써서 어긋났다. 블록에 실제로
+  // 떠 있던 각 수의 확정 등급을 "이 위치 key + 수"로 pin해 두고, 그 수로 도달했을 때(클릭·드래그·엔진
+  // 라인·앞으로/되돌리기) 블록과 정확히 같은 아이콘을 쓰게 한다.
+  const pinnedKindRef = useRef({});
   const [showAllNb, setShowAllNb] = useState(false);   // (UX1) 비이론 수 더보기(전체)
   const key = sans.join(" ");
   const board = useMemo(() => boardFromSans(sans), [key]);
@@ -4854,6 +4865,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
   const { moves, posGames, engineNote, posEval, engineLines, linesPending, curDepth } = useMergedMoves(sans, engine, liveOn, extra[key], contentVer, mode, sortBy);
+  // (v0.2.2) 후보 블록에 지금 떠 있는 각 수의 확정 등급(pending 제외)을 pin — 아래 마지막 수 재평가
+  // effect가 이 값을 그대로 재사용해 블록과 보드·현재 수 블록의 수 체계 아이콘을 일치시킨다. 등급은
+  // 엔진 depth가 깊어지며 갱신되므로, 매 변경마다 최신값으로 덮어써 두면 그 수를 두는 시점의 표시가
+  // 그대로 pin된다.
+  useEffect(() => {
+    moves.forEach((m) => { if (m.kind && m.kind !== "pending") pinnedKindRef.current[key + "|" + stripSuffix(m.san)] = m.kind; });
+  }, [key, moves]);
   // (20차 UX4) 스크롤이 많이 내려간 상태(예: 깊은 수 블록 클릭)에서 집중 학습에 들어가면, 페이지
   // 스크롤 위치가 그대로 유지되어 미니 보드가 화면 아래로 밀려 하단 탭에 가려 보이는 문제가 있었다 —
   // 진입 시 맨 위로 스크롤해 보드가 항상 하단 탭 위쪽 여유 공간 안에서 시작하도록 한다.
@@ -4923,6 +4941,9 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     const src = sanSrc(brd, san, col); const to = src && src.to ? src.to : null;
     if (!to) { setLastQ(null); return; }
     const known = !!mm && mm.kind && mm.kind !== "pending";
+    // (v0.2.2) 블록에서 고른 수의 등급을 즉시 pin — 위 기록 effect가 아직 안 돈 타이밍(방금 확정된
+    // 수를 곧바로 클릭)에도 아래 마지막 수 재평가 effect가 이 값을 그대로 써서 블록과 어긋나지 않는다.
+    if (known) pinnedKindRef.current[prevSans.join(" ") + "|" + stripSuffix(san)] = mm.kind;
     setLastQ({ to, kind: known ? mm.kind : "pending" });
     if (!known) {
       const onKind = (k) => { if (k) setLastQ((q) => (q && q.to && q.to[0] === to[0] && q.to[1] === to[1]) ? { ...q, kind: k } : q); };
@@ -4947,6 +4968,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     // 바뀌어 보였다 — analyzeGame 등 다른 곳과 동일한 isBookMoveAt(스냅샷+개발자 추가+강제지정 전부
     // 확인)으로 통일한다.
     if (isBookMoveAt(prev.join(" "), lastSan)) { setLastQ({ to, kind: "book" }); return; } // 이론 수는 항상 책 아이콘(평가치 아이콘으로 덮어쓰지 않음)
+    // (v0.2.2 버그 수정) 이 마지막 수가 후보 블록에 떠 있던(=사용자가 등급을 이미 본) 수라면, 블록이
+    // 표시한 그 등급을 그대로 써서 보드·현재 수 블록의 아이콘을 다음 수 블록과 정확히 일치시킨다 —
+    // evalMoveKind로 다시 계산하지 않아 두 곳이 어긋나지 않는다. 블록에 없던 수(사용자가 직접 둔
+    // 비이론 수 등)만 아래 재평가 경로로 넘어간다.
+    const pinned = pinnedKindRef.current[prev.join(" ") + "|" + stripSuffix(lastSan)];
+    if (pinned && pinned !== "pending") { setLastQ({ to, kind: pinned }); return; }
     setLastQ({ to, kind: "pending" });
     let cancelled = false;
     if (liveOn && engine.status === "ready") {
@@ -9713,6 +9740,12 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.2.2", date: "2026.7.23", dev: ["openchesskr"], items: [
+      "학습 탭에서 엔진이 추천 수(엔진 라인)를 계산하는 시간을 크게 줄였어요 — 복잡한 포지션에서도 0.5~0.7초 안에 라인이 확정돼 기다리는 느낌이 사라졌어요.",
+      "학습 탭에서 다음 수 블록에 뜬 수 체계 아이콘과, 그 수를 실제로 뒀을 때 체스판·현재 수 블록에 뜨는 아이콘이 서로 다르게 보이던 문제를 고쳤어요 — 이제 블록에서 본 등급 그대로 표시돼요.",
+    ],
+  },
   {
     version: "0.2.1", date: "2026.7.23", dev: ["openchesskr"], items: [
       "게임 리뷰 화면에서 이제 학습 탭처럼 원하는 수를 자유롭게 둬볼 수 있어요 — 실제로 둔 수와 똑같이 평가치·수 체계 아이콘·최선 수 제안·코치 설명까지 다 보여줘요.",
