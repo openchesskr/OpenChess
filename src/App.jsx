@@ -1813,7 +1813,7 @@ function useChessCom(username) {
               // 원본 API 응답(g.white/g.black)엔 원래 양쪽 다 있었는데, 예전엔 내 쪽(side)만 남기고
               // 상대 쪽은 이 루프를 벗어나며 그대로 버려졌다. 프로필의 대국 기록과 /review 양쪽에서
               // 상대 이름·레이팅까지 보여주려면 이 시점에 양쪽을 그대로 저장해 둬야 한다.
-              games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, accuracy: acc != null ? acc : null,
+              games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
                 white: { username: (g.white && g.white.username) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
                 black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null } });
             }
@@ -1825,9 +1825,11 @@ function useChessCom(username) {
     })();
     return () => { cancelled = true; };
   }, [username]);
-  const analyze = useCallback((pathSans) => {
+  const analyze = useCallback((pathSans, opts) => {
     // (20차) 기보에 +/#가 보존되므로, 출처(체스닷컴 PGN vs 학습 탭 buildSan)에 따른 접미사 차이에 흔들리지 않게 기호를 떼고 비교.
-    const gs = state.games.filter((g) => g.moves.length >= pathSans.length && pathSans.every((s, i) => stripSuffix(g.moves[i]) === stripSuffix(s)));
+    // (v0.2.2 UI#6#5) opts.excludeBullet — 집중 학습 모드의 오프닝 실수 분석에서는 불릿 대국을 제외한다
+    // (초단기 대국의 오프닝 실수는 진짜 실수라기보다 시간 압박에서 비롯된 경우가 많아 학습 신호가 약함).
+    const gs = state.games.filter((g) => (!(opts && opts.excludeBullet) || g.timeClass !== "bullet") && g.moves.length >= pathSans.length && pathSans.every((s, i) => stripSuffix(g.moves[i]) === stripSuffix(s)));
     if (!gs.length) return null;
     let w = 0, d = 0, l = 0; const next = {}, nextRes = {};
     for (const g of gs) {
@@ -3546,7 +3548,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
   const delExpl = async () => { delete CONTENT.explains[mkKey]; await bumpContent(); setEditing(false); setDraft(""); };
   const isPunishable = active && ["mistake", "blunder"].includes(kind);
   const curated = isPunishable ? punishFor(sans, san) : null;
-  const stats = active && chesscom && chesscom.status === "ready" ? chesscom.analyze([...sans, san]) : null;
+  const stats = active && chesscom && chesscom.status === "ready" ? chesscom.analyze([...sans, san], { excludeBullet: true }) : null;
   // (UI1) 개발자: 수 이름·키워드 편집 + 이론 수에서 삭제
   const editKey = sansKey;
   const openDevEdit = () => {
@@ -9537,8 +9539,21 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
     return () => { cc = true; };
   }, [username]);
   const ready = chesscom && chesscom.status === "ready";
-  const overall = useMemo(() => (ready ? chesscom.analyze([]) : null), [ready, chesscom && chesscom.games]);
-  const ratingChanges = useMemo(() => (ready ? computeRatingChanges(chesscom.games) : new Map()), [ready, chesscom && chesscom.games]);
+  // (v0.2.2 UI#6#5) chess.com 통계를 전체/래피드/블리츠/불릿으로 나눠 본다. 통계 집계에서 일일 대국과
+  // 체스960(변형)은 제외한다 — 표준 대국의 시간 규정별 실력만 반영한다.
+  const [timeFilter, setTimeFilter] = useState("all");
+  const games = useMemo(() => {
+    const base = (ready ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess");
+    return timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter);
+  }, [ready, chesscom && chesscom.games, timeFilter]);
+  const overall = useMemo(() => {
+    if (!games.length) return null;
+    let w = 0, d = 0, l = 0;
+    for (const g of games) { if (g.result === "win") w++; else if (g.result === "loss") l++; else d++; }
+    const total = w + d + l;
+    return { total, w, d, l, winRate: total ? Math.round(100 * w / total) : 0 };
+  }, [games]);
+  const ratingChanges = useMemo(() => (ready ? computeRatingChanges(games) : new Map()), [ready, games]);
   // (버그 수정) 예전엔 대국 하나를 "가장 깊이 매칭된 오프닝 이름" 딱 하나에만 집계했다 — 정석에서
   // 일찍 이탈하는 대다수 대국이 얕은 상위 갈래(King's Pawn Game 등)로 몰려 표본이 커지고, 정석을
   // 끝까지 따라간 소수 대국만 깊은 하위 갈래(Marshall Attack 등)에 잡혀 표본이 1~2판으로 작아진다.
@@ -9547,10 +9562,10 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   // 관계를 추론해 하위 오프닝을 상위 오프닝 아래 중첩해서 보여준다 — "이 100%는 상위 오프닝 전체
   // 표본 중 1판짜리 하위 갈래"라는 맥락이 함께 보이도록.
   const { openingStats, openingTree } = useMemo(() => {
-    if (!ready) return { openingStats: [], openingTree: [] };
+    if (!games.length) return { openingStats: [], openingTree: [] };
     const leaf = {};       // 이름별 "가장 깊이 매칭된" 대국만 집계(가장 많이 둔 오프닝에서 그대로 사용)
     const parentOf = {};   // 이름 -> 그 이름 바로 앞에 나온(더 얕은) 이름
-    for (const g of chesscom.games) {
+    for (const g of games) {
       const chain = []; let last = null;
       const lim = Math.min(g.moves.length, 16);
       for (let i = 1; i <= lim; i++) {
@@ -9594,13 +9609,13 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
     };
     const openingTree = [...allNames].filter((nm) => !parentOf[nm]).map(buildNode).filter((r) => r.n > 0).sort((a, b) => b.n - a.n);
     return { openingStats, openingTree };
-  }, [ready, chesscom && chesscom.games]);
+  }, [games]);
   const mostUsed = useMemo(() => [...openingStats].sort((a, b) => b.n - a.n), [openingStats]);
   // (버그 보충) "최근 대국"이 최신 5판만 보여주고 더 예전 대국은 볼 방법이 없었다 — 전부 가져와
   // 두고 5판씩 페이지를 넘겨 보게 한다(내 대국 목록·집중학습의 ListPager와 동일한 방식).
   const RECENT_GAMES_PAGE_SIZE = 5;
   const [recentPage, setRecentPage] = useState(0);
-  useEffect(() => { setRecentPage(0); }, [username]);
+  useEffect(() => { setRecentPage(0); }, [username, timeFilter]);
 
   if (chesscom && chesscom.status === "loading") return <p style={{ fontSize: 12, color: T.inkSoft, marginTop: 10 }}>기보를 불러오는 중…</p>;
   if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>;
@@ -9621,7 +9636,14 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{prof ? ["래피드 " + (prof.rapid ?? "—"), "블리츠 " + (prof.blitz ?? "—"), "불릿 " + (prof.bullet ?? "—")].join(" · ") : "레이팅 불러오는 중…"}</div>
         </div>
       </div>
+      {/* (v0.2.2 UI#6#5) 시간 규정 필터 — 전체/래피드/블리츠/불릿. 일일·체스960은 집계에서 제외. */}
+      <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3, marginBottom: 12, flexWrap: "wrap" }}>
+        {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
+          <button key={k} onClick={() => setTimeFilter(k)} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: timeFilter === k ? T.ebony2 : "transparent", color: timeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+        ))}
+      </div>
       {/* 전적 */}
+      {!overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>이 시간 규정의 대국이 없어요.</p>}
       {overall && (
         <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -9641,7 +9663,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
-        const allGames = [...chesscom.games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
+        const allGames = [...games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
         if (!allGames.length) return null;
         const pageCount = Math.max(1, Math.ceil(allGames.length / RECENT_GAMES_PAGE_SIZE));
         const page = Math.min(recentPage, pageCount - 1);
