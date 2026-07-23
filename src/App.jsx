@@ -483,7 +483,7 @@ function loadSfxPref() { try { return window.localStorage.getItem("occ_sfx_on") 
 function saveSfxPref(v) { try { window.localStorage.setItem("occ_sfx_on", v ? "1" : "0"); } catch { } }
 function loadSfxVolume() { try { const v = parseFloat(window.localStorage.getItem("occ_sfx_vol")); return isNaN(v) ? 0.6 : Math.min(1, Math.max(0, v)); } catch { return 0.6; } }
 function saveSfxVolume(v) { try { window.localStorage.setItem("occ_sfx_vol", String(v)); } catch { } }
-const SFX_SRC = { click: "/sfx/click.mp3", move: "/sfx/move.mp3", capture: "/sfx/capture.mp3" };
+const SFX_SRC = { click: "/sfx/click.mp3", move: "/sfx/move.mp3", capture: "/sfx/capture.mp3", electric: "/sfx/freesound_community-circuit-bent-stylophone-75384.mp3" };
 function playSfx(name) {
   if (!loadSfxPref()) return;
   const src = SFX_SRC[name]; if (!src) return;
@@ -5661,18 +5661,22 @@ function schematicElbow(p, c) {
 // 수십 번) React가 노드 수천 개의 스타일 객체를 처음부터 다시 계산했다 — 이게 트리가 클 때 드래그가
 // 버벅이던 핵심 원인. 별도 memo 컴포넌트로 떼어내, items/edges(둘 다 pan/zoom과 무관하게 트리
 // 구조가 실제로 바뀔 때만 새로 생성됨) 참조가 그대로인 동안은 다시 그리지 않게 한다.
-const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet }) {
+const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet, electric }) {
   return edges.map(([p, c]) => {
     if (p.depth === 0) return null;
     const pts = schematicElbow(p, c);
     const isSel = selectedKeySet && selectedKeySet.has(c.key);
-    const wStroke = isSel ? 3 : 2;
-    const eStroke = isSel ? SCHEMATIC_ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
-    return <polyline key={p.key + "→" + c.key} className={isSel ? "dex-current-line" : undefined} points={pts.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={isSel ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
-      style={isSel ? { strokeDasharray: "7 5" } : undefined} />;
+    // (v0.2.2 UX#2) 회로 칩을 누르면 전류가 중앙에서 바깥으로 퍼져나가는 느낌을 주기 위해, 모든 선에
+    // depth에 비례한 delay로 전기 서지 애니메이션을 얹는다(선택된 선은 평소대로 흐름 유지).
+    const surge = electric && !isSel;
+    const wStroke = (isSel || surge) ? 3 : 2;
+    const eStroke = (isSel || surge) ? SCHEMATIC_ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
+    const depth = c.depth != null ? c.depth : (c.path ? c.path.length : 1);
+    return <polyline key={p.key + "→" + c.key} className={surge ? "dex-surge-line" : (isSel ? "dex-current-line" : undefined)} points={pts.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={(isSel || surge) ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
+      style={(isSel || surge) ? { strokeDasharray: "7 5", animationDelay: surge ? (depth * 0.09) + "s" : undefined } : undefined} />;
   });
 });
-const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, selectedKeySet, onSelect }) {
+const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, selectedKeySet, onSelect, electric }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   return items.map((it) => {
     const { x, y } = schematicCoord(it);
@@ -5686,7 +5690,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     return (
       <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
         <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
-        <button onClick={() => onSelect(it.key)} className="press" style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box" }}>
+        <button onClick={() => onSelect(it.key)} className={"press" + (electric ? " dex-surge-node" : "")} style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box", animationDelay: electric ? ((it.depth != null ? it.depth : it.path.length) * 0.09) + "s" : undefined }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
             {!it.unlocked && <Lock size={10} />}
             {moveNumber(it.path.length - 1)}{it.san}
@@ -5998,6 +6002,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 전체 맥락을 잃게 해 불편하다는 피드백 — 이제 트리는 항상 전체를 보여주고, 대신 고른 오프닝으로
   // 가는 수순(selectedPath)만 전선에 전류가 흐르듯 색이 강조되도록 한다.
   const [selectedPath, setSelectedPath] = useState(null);
+  // (v0.2.2 UX#2) 나침반 정중앙 회로 칩을 누르면 전기 서지 — 칩이 잠깐 과충전되며, 이어지는 모든 선과
+  // 블록에 중앙에서 바깥으로(depth 스태거) 전류가 튀며 퍼져나가는 애니메이션을 1회 재생한다.
+  const [electric, setElectric] = useState(false);
+  const electricTimerRef = useRef(null);
+  const triggerElectric = useCallback(() => {
+    playSfx("electric");
+    setElectric(false);
+    // 다음 프레임에 다시 켜 애니메이션이 매 클릭마다 처음부터 재생되게 한다.
+    requestAnimationFrame(() => {
+      setElectric(true);
+      if (electricTimerRef.current) clearTimeout(electricTimerRef.current);
+      electricTimerRef.current = setTimeout(() => setElectric(false), 1500);
+    });
+  }, []);
+  useEffect(() => () => { if (electricTimerRef.current) clearTimeout(electricTimerRef.current); }, []);
   const selectedKeySet = useMemo(() => {
     if (!selectedPath) return null;
     const s = new Set();
@@ -6447,15 +6466,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               W: [ccx - half, ccy, centerX - ROOT_GAP + boxW, ccy],
             };
             return Object.entries(traces).map(([dir, [x1, y1, x2, y2]]) => (
-              <line key={"chip-trace-" + dir} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.brass} strokeWidth={2} opacity={0.5} strokeLinecap="round" />
+              <line key={"chip-trace-" + dir} className={electric ? "dex-surge-line" : undefined} x1={x1} y1={y1} x2={x2} y2={y2} stroke={electric ? SCHEMATIC_ELECTRIC : T.brass} strokeWidth={electric ? 3 : 2} opacity={electric ? 1 : 0.5} strokeLinecap="round" style={electric ? { strokeDasharray: "7 5" } : undefined} />
             ));
           })()}
-          <DexEdgesLayer edges={edges} selectedKeySet={selectedKeySet} />
+          <DexEdgesLayer edges={edges} selectedKeySet={selectedKeySet} electric={electric} />
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
-        <div style={{ position: "absolute", left: centerX + boxW / 2 - CHIP_SIZE / 2, top: centerY + boxH / 2 - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, pointerEvents: "none", zIndex: 2 }}>
-          <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + T.brass, boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
+        <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title="회로에 전류 흘리기" style={{ position: "absolute", left: centerX + boxW / 2 - CHIP_SIZE / 2, top: centerY + boxH / 2 - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, cursor: "pointer", zIndex: 2 }}>
+          <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + (electric ? SCHEMATIC_ELECTRIC : T.brass), boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
           {[0, 1, 2].map((i) => (
             <React.Fragment key={i}>
               <div style={{ position: "absolute", left: 11 + i * 15, top: -4, width: 6, height: 4, background: T.brass, borderRadius: 1, opacity: 0.75 }} />
@@ -6468,7 +6487,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             <Cpu size={26} strokeWidth={1.6} />
           </div>
         </div>
-        <DexNodesLayer items={items} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} />
+        <DexNodesLayer items={items} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} electric={electric} />
       </div>
       {/* (버그 수정) 수 설명 카드가 팬/줌 트랜스폼이 걸린(scale(zoom)) 안쪽에 있으면 카드 자신도
           모식도 확대/축소를 그대로 따라가 축소 시엔 잘리고 확대 시엔 지나치게 커졌다 — 트랜스폼
@@ -13015,7 +13034,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
