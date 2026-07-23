@@ -3675,7 +3675,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
 function BestMoveJumpButton({ onClick, disabled }) {
   return (
     <button onClick={onClick} disabled={disabled} title="이 대국 분석 모드로 바로 보기" className="press"
-      style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 9, background: disabled ? "#9CC98A" : "#6EBF4A", border: "none", cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.6 : 1 }}>
+      style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: disabled ? "#9CC98A" : "#6EBF4A", border: "none", cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.6 : 1 }}>
       <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
         <Star size={11} fill="#6EBF4A" color="#6EBF4A" />
       </span>
@@ -3684,13 +3684,19 @@ function BestMoveJumpButton({ onClick, disabled }) {
 }
 // (버그 보충) 마스터 대국·내 대국 목록에 공용으로 쓰는 작은 페이지 넘김 버튼 — 이모티콘 피커의
 // 좌우 화살표 버튼과 같은 크기감으로 통일.
-function ListPager({ page, setPage, pageCount }) {
+// (v0.2.2 UI#6#9) jump 페이지(기본 5페이지=최근 대국 25판)씩 건너뛰는 «/» 버튼을 </>(한 칸 이동)
+// 양옆에 더한다 — 페이지 수가 jump보다 많을 때만 노출한다.
+function ListPager({ page, setPage, pageCount, jump = 5 }) {
   if (pageCount <= 1) return null;
+  const showJump = pageCount > jump;
+  const pbtn = (dis) => ({ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: dis ? "#D8C9A8" : T.inkSoft, cursor: dis ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" });
   return (
     <div className="flex items-center justify-center gap-2" style={{ marginTop: 8 }}>
-      <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label="이전 페이지" className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: page === 0 ? "#D8C9A8" : T.inkSoft, cursor: page === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={13} /></button>
+      {showJump && <button onClick={() => setPage((p) => Math.max(0, p - jump))} disabled={page === 0} aria-label={jump + "페이지 이전"} title={jump + "페이지 이전"} className="press" style={pbtn(page === 0)}><ChevronsLeft size={13} /></button>}
+      <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label="이전 페이지" className="press" style={pbtn(page === 0)}><ChevronLeft size={13} /></button>
       <span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{page + 1} / {pageCount}</span>
-      <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1} aria-label="다음 페이지" className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: page >= pageCount - 1 ? "#D8C9A8" : T.inkSoft, cursor: page >= pageCount - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={13} /></button>
+      <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1} aria-label="다음 페이지" className="press" style={pbtn(page >= pageCount - 1)}><ChevronRight size={13} /></button>
+      {showJump && <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + jump))} disabled={page >= pageCount - 1} aria-label={jump + "페이지 다음"} title={jump + "페이지 다음"} className="press" style={pbtn(page >= pageCount - 1)}><ChevronsRight size={13} /></button>}
     </div>
   );
 }
@@ -7509,12 +7515,18 @@ function TierBadge({ totalXp, compact, onClick }) {
 // (v0.0.6 개편) 프로필 화면(내 프로필 편집·다른 유저 프로필)에 중복돼 있던 "Lv.N (X/Y XP)" 인라인
 // 표기를 하나로 모은다 — 티어(구간) 이미지 + 구간 내 XP 진행 텍스트만 보여주는 작은 필.
 // (v0.1.1) "아이언 V" 같은 이름+구간 텍스트는 없애고 구간 전용 이미지로 대체, 로고는 더 크게.
-function TierStatPill({ totalXp }) {
+// (v0.2.2 UI#6/#7) 티어 표시를 "박스 없이" 흰 십각형 로고 하나만 두고, 그 오른쪽에 XP 텍스트 대신
+// 금색 게이지 바로 진척도를 보여준다. 프로필 카드·검색 리더보드가 같은 컴포넌트를 재사용한다(size로 조절).
+function TierStatPill({ totalXp, size = 40, gaugeWidth = 92 }) {
   const info = tierFromXp(totalXp);
   const { tier, xpInDivision, xpForNextDivision, division } = info;
+  const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11.5, fontWeight: 800 }}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={40} discSize={42} /> <span style={{ color: T.ivory, fontWeight: 700 }}>({fmtFull(xpInDivision)}/{fmtFull(xpForNextDivision)} XP)</span>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }} title={fmtFull(xpInDivision) + "/" + fmtFull(xpForNextDivision) + " XP"}>
+      <TierLogoDisc tierKey={tier.key} division={division} size={size} discSize={size + 2} />
+      <span style={{ display: "inline-block", width: gaugeWidth, maxWidth: "38vw", height: 8, borderRadius: 999, background: "rgba(0,0,0,.12)", border: "1px solid #DCCBA8", overflow: "hidden", flexShrink: 0 }}>
+        <span style={{ display: "block", width: pct + "%", height: "100%", background: "linear-gradient(90deg,#A87715,#F3D57A 55%," + T.brass + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.4)", transition: "width .6s ease" }} />
+      </span>
     </span>
   );
 }
@@ -9644,12 +9656,14 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
               const oppSide = g.color === "w" ? g.black : g.white;
               return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
+                {/* (v0.2.2 UI#6#7) "⬜ 백"/"⬛ 흑" 텍스트 대신, 학습 탭 수 블록처럼 행 좌측에 진영 색 막대로 표시 */}
+                <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"} · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
                     {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
                     {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
                   </div>
-                  {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}> ({oppSide.rating})</span>}</div>}
+                  {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtD(g.endTime)}</div>
                 </div>
                 {onOpenGame && (
@@ -11273,7 +11287,6 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
     <div style={{ marginBottom: 12 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
         <TierStatPill totalXp={pub.xp || 0} />
-        {pub.solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(pub.solvedCount)}개 해결</span>}
       </div>
       {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
