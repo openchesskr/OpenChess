@@ -9530,6 +9530,50 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
     </div>
   );
 }
+// (v0.2.2 UX#3) "가장 많이 둔 오프닝"을 백의 첫 수로 결정되는 오프닝 이름 하나로 고정 표시하는 대신,
+// 백의 1~6번째 수 각각에 대해(상위 갈래를 따지지 않고 인덱스별 독립으로) 가장 많이 둔 수를 모아,
+// 2.2초 간격으로 번갈아 애니메이션하며 보여준다. games는 이미 시간 규정 필터가 적용된 목록이며,
+// 내가 백으로 둔 대국이 있으면 그 대국들만(내가 실제로 고른 수), 없으면 전체 대국의 백 수를 쓴다.
+function TopWhiteMovesAnimated({ games }) {
+  const top = useMemo(() => {
+    const asWhite = games.filter((g) => g.color === "w");
+    const use = asWhite.length ? asWhite : games;
+    const out = [];
+    for (let k = 0; k < 6; k++) {
+      const ply = k * 2, counts = {};
+      for (const g of use) { const s = g.moves[ply]; if (s) { const kk = stripSuffix(s); counts[kk] = (counts[kk] || 0) + 1; } }
+      const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      if (best) out.push({ n: k + 1, san: best[0], count: best[1] });
+    }
+    return out;
+  }, [games]);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => { setIdx(0); }, [top.length]);
+  useEffect(() => {
+    if (top.length <= 1) return;
+    const iv = setInterval(() => setIdx((i) => (i + 1) % top.length), 2200);
+    return () => clearInterval(iv);
+  }, [top.length]);
+  if (!top.length) return null;
+  const cur = top[Math.min(idx, top.length - 1)];
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>가장 많이 둔 오프닝</div>
+      <div style={{ position: "relative", height: 34, overflow: "hidden" }}>
+        <AnimatePresence mode="wait">
+          <motion.div key={cur.n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg,#F3D57A," + T.brass + ")", borderRadius: 7, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>백 {cur.n}수</span>
+            <span style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{cur.san}</span>
+            <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{fmtFull(cur.count)}회</span>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+      <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
+        {top.map((m, i) => <span key={i} style={{ width: i === idx ? 14 : 6, height: 4, borderRadius: 999, background: i === idx ? T.brass : "#DCCBA8", transition: "all .3s ease" }} />)}
+      </div>
+    </div>
+  );
+}
 function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
@@ -9700,14 +9744,8 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         );
       })()}
-      {/* 가장 많이 둔 오프닝 */}
-      {mostUsed.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 2 }}>가장 많이 둔 오프닝</div>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>{mostUsed[0].name}</div>
-          <div style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{mostUsed[0].n}판 · 승률 {mostUsed[0].wr}%</div>
-        </div>
-      )}
+      {/* (v0.2.2 UX#3) 가장 많이 둔 오프닝 — 백 1~6수 인덱스별 최다 수를 번갈아 애니메이션 */}
+      <TopWhiteMovesAnimated games={games} />
       {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
           그 아래 하위 갈래들의 합산임을 보여준다. */}
       {openingTree.length > 0 && (
