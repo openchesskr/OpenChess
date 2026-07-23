@@ -9227,10 +9227,35 @@ function ValidatedMoveInput({ value, onCommit, board, color, placeholder, style 
   );
 }
 // (기능5) 프로필 편집 — 사진/이름/칭호/자주 두는 첫 수/국적
-function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEquipTitle, card, user, isDev, isCodev, totalXp, solvedCount }) {
+function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEquipTitle, card, user, isDev, isCodev, totalXp, solvedCount, chesscom }) {
   const set = (patch) => setProfile({ ...profile, ...patch });
   const fm = profile.firstMoves || { white: "", black: {} };
   const setFM = (patch) => set({ firstMoves: { ...fm, ...patch } });
+  // (v0.2.2 기능) 연동된 chess.com 계정이 있으면, 아직 비어 있는 "자주 두는 첫 수" 칸만 실제 대국
+  // 통계(가장 많이 둔 수)로 기본값을 채운다 — 사용자가 이미 입력했거나 직접 지운 칸은 덮어쓰지 않는다.
+  useEffect(() => {
+    if (!chesscom || chesscom.status !== "ready" || !chesscom.games || !chesscom.games.length) return;
+    const topMove = (games, ply) => {
+      const counts = {};
+      for (const g of games) { const s = g.moves && g.moves[ply]; if (s) counts[stripSuffix(s)] = (counts[stripSuffix(s)] || 0) + 1; }
+      const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      return best ? best[0] : null;
+    };
+    const patch = {};
+    if (!fm.white) {
+      const w = topMove(chesscom.games.filter((g) => g.color === "w"), 0);
+      if (w) patch.white = w;
+    }
+    const curBlack = fm.black || {};
+    const blackPatch = {};
+    ["e4", "d4", "c4", "Nf3"].forEach((w) => {
+      if (curBlack[w]) return;
+      const b = topMove(chesscom.games.filter((g) => g.color === "b" && g.moves && stripSuffix(g.moves[0]) === w), 1);
+      if (b) blackPatch[w] = b;
+    });
+    if (Object.keys(blackPatch).length) patch.black = { ...curBlack, ...blackPatch };
+    if (Object.keys(patch).length) setFM(patch);
+  }, [chesscom && chesscom.status, chesscom && chesscom.games]);
   const onPhotoFile = (e) => {
     const f = e.target.files && e.target.files[0]; if (!f) return;
     const r = new FileReader();
@@ -9281,7 +9306,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
       <input value={(profile.photo || "").startsWith("data:") ? "" : (profile.photo || "")} onChange={(e) => set({ photo: e.target.value })} placeholder="또는 이미지 주소(URL) 입력" style={field} />
       <div style={lab}>이름</div>
       <input value={profile.nickname || ""} onChange={(e) => set({ nickname: e.target.value })} placeholder="표시 이름" style={field} />
-      <div style={lab}>자주 두는 첫 수 — 백</div>
+      <div style={lab}>자주 두는 첫 수 — 백{chesscom && chesscom.status === "ready" && <span style={{ fontWeight: 600, color: T.inkSoft }}> (연동된 chess.com 기록으로 자동 입력됨 — 직접 수정 가능)</span>}</div>
       <ValidatedMoveInput value={fm.white || ""} onCommit={(v) => setFM({ white: v })} board={startBoard()} color="w" placeholder="예: e4 (생략 가능)" style={{ ...field, fontFamily: "ui-monospace,monospace" }} />
       <div style={lab}>자주 두는 첫 수 — 흑 (백의 첫 수별, 생략 가능)</div>
       <div className="grid sm:grid-cols-2 gap-2">
@@ -10320,7 +10345,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
         mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle}
-        profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} />} />}
+        profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
 
       {/* (20차 기능2, v0.2.0 기능 추가) 엔진 선택 — 안정적인 Stockfish 16, 가볍고 빠른 Stockfish 18
           Lite, 셋 중 가장 강력한 Stockfish 17.1(최고 성능) 중에서 고를 수 있다. 기기 종류(모바일/PC)에
