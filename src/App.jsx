@@ -6322,10 +6322,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (기능) 검색 결과를 고르거나(jumpTo) 트리에서 수 블록을 직접 클릭해도(아래 button onClick)
   // 완전히 같은 효과를 낸다 — 그 수까지의 경로를 강조(selectedPath)하고, 화면 중앙으로 이동+확대하고,
   // 상세 블록을 연다.
-  const selectNode = (it) => {
+  const selectNode = (it, opts) => {
     userPannedRef.current = true;
     setQuery("");
     setSelectedPath(it.path);
+    // (v0.2.2 UX) 오프닝 트리 안에서 수 블록을 직접 클릭한 경우(opts.instant)는 이미 화면에 보이는
+    // 자리를 누른 것이므로, 검색 결과 선택·키보드 이동 때와 달리 시점 이동(pan/zoom) 애니메이션 없이
+    // 상세 카드만 즉시 열고 닫는다 — 방금 직접 본 자리로 카메라를 다시 움직이는 건 불필요한 연출이다.
+    if (opts && opts.instant) { onToggleOpen(it.key); return; }
     selectionLockRef.current = true;
     if (openKey === it.key) {
       // 이미 열려 있는 수를 다시 선택하면 기존처럼 즉시 토글해서 닫는다.
@@ -6346,7 +6350,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   selectNodeRef.current = selectNode;
   const onSelectNode = useCallback((key) => {
     const it = itemsRef.current.find((x) => x.key === key);
-    if (it) selectNodeRef.current(it);
+    if (it) selectNodeRef.current(it, { instant: true });
   }, []);
   // (기능) 특정 수 블록을 선택한 상태에서는 WASD·방향키로 화면상 그 방향에 있는 가장 가까운
   // 블록으로 곧장 이동할 수 있게 한다 — 눌린 방향으로 실제 진행한 거리에 벗어난 정도(수직 편차)를

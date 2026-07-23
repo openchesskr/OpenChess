@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
@@ -208,10 +208,17 @@ const DECO_PIECE_SRC = {
 const dpct = (n) => (n / 8 * 100) + "%";
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0 }) {
+  // (v0.2.2 UX#1 후속) 이 페이지엔 DecoBoard가 10개 넘게 동시에 마운트돼 있고, 예전엔 화면 밖에 있는
+  // 보드도 계속 무한 반복 애니메이션(위아래 둥실임 + 수 이동)을 돌리고 있었다 — 스크롤 중엔 매 프레임
+  // 그만큼의 transform 애니메이션이 동시에 재계산·합성돼야 해, 특히 "유명한 오프닝들"처럼 보드가
+  // 많이 몰린 구간에서 스크롤이 심하게 버벅였다. useInView로 실제로 화면에 보이는 보드만 애니메이션을
+  // 돌리고, 화면 밖으로 나가면 애니메이션을 완전히 멈춰(정지 상태로) CPU/GPU 부담을 줄인다.
+  const wrapRef = useRef(null);
+  const inView = useInView(wrapRef, { amount: 0.3, margin: "200px 0px 200px 0px" });
   return (
-    <motion.div initial={{ opacity: 0, scale: 0.8, rotate: tilt + (tilt >= 0 ? 8 : -8) }} whileInView={{ opacity: 1, scale: 1, rotate: tilt }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1] }}
+    <motion.div ref={wrapRef} initial={{ opacity: 0, scale: 0.8, rotate: tilt + (tilt >= 0 ? 8 : -8) }} whileInView={{ opacity: 1, scale: 1, rotate: tilt }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1] }}
       style={{ width: size, flexShrink: 0 }}>
-      <motion.div animate={{ y: [0, -7, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut", delay }}>
+      <motion.div animate={inView ? { y: [0, -7, 0] } : { y: 0 }} transition={inView ? { duration: 3.6, repeat: Infinity, ease: "easeInOut", delay } : { duration: 0.3 }} style={{ willChange: "transform" }}>
         <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", ...GLOSS_BORDER }}>
           <div style={{ position: "relative", width: "100%", aspectRatio: "1/1" }}>
             {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => {
@@ -241,9 +248,9 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
               // 건드리지 않게 바꾼다. 이동 칸 수만큼 자기 크기(=한 칸)의 배수로 옮긴다.
               <motion.div
                 initial={{ x: 0, y: 0 }}
-                animate={{ x: (move.to[1] - move.from[1]) * 100 + "%", y: (move.to[0] - move.from[0]) * 100 + "%" }}
-                transition={{ duration: 1.1, repeat: Infinity, repeatType: "reverse", repeatDelay: 0.9, ease: [0.4, 1.1, 0.5, 1] }}
-                style={{ position: "absolute", top: dpct(move.from[0]), left: dpct(move.from[1]), width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", zIndex: 2 }}>
+                animate={inView ? { x: (move.to[1] - move.from[1]) * 100 + "%", y: (move.to[0] - move.from[0]) * 100 + "%" } : { x: 0, y: 0 }}
+                transition={inView ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", repeatDelay: 0.9, ease: [0.4, 1.1, 0.5, 1] } : { duration: 0.3 }}
+                style={{ position: "absolute", top: dpct(move.from[0]), left: dpct(move.from[1]), width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", zIndex: 2, willChange: "transform" }}>
                 <img src={DECO_PIECE_SRC[move.piece]} alt="" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.55))" }} />
               </motion.div>
             )}
