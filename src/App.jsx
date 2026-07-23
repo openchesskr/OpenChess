@@ -2216,14 +2216,14 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
 const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
 // (v0.2.1 기능) 수 체계 아이콘을 누르면 그 등급의 조건·설명을 말풍선으로 보여준다(나무위키 "체스닷컴" 수 등급 참고).
 const QDESC = {
-  brilliant: "대개 기물을 희생하면서도 국면을 유리하게 이끄는, 발견하기 어려운 최상의 수입니다.",
-  only: "그 수를 두지 않으면 국면이 크게 나빠지는, 사실상 유일하게 좋은 수입니다.",
-  best: "엔진이 계산한 그 국면에서 가장 좋은 수입니다.",
+  brilliant: "대개 기물을 희생하면서도 포지션을 유리하게 이끄는, 발견하기 어려운 최상의 수입니다.",
+  only: "그 수를 두지 않으면 포지션이 크게 나빠지는, 사실상 유일하게 좋은 수입니다.",
+  best: "엔진이 계산한 그 포지션에서 가장 좋은 수입니다.",
   excellent: "최선은 아니지만 평가치 손실이 거의 없는 훌륭한 수입니다.",
-  good: "무난하게 좋은 수로, 국면을 크게 해치지 않습니다.",
+  good: "무난하게 좋은 수로, 포지션을 크게 해치지 않습니다.",
   inaccuracy: "더 나은 수가 있었던, 약간의 평가치 손실이 있는 부정확한 수입니다.",
   miss: "상대의 실수로 생긴 좋은 기회를 살리지 못하고 놓친 수입니다.",
-  mistake: "평가치를 눈에 띄게 떨어뜨려 국면을 불리하게 만든 실수입니다.",
+  mistake: "평가치를 눈에 띄게 떨어뜨려 포지션을 불리하게 만든 실수입니다.",
   blunder: "승패를 뒤집을 만큼 평가치를 크게 잃은 치명적인 실수입니다.",
   book: "정석(오프닝 이론)에 등록된, 잘 알려진 이론적인 수입니다.",
   pending: "엔진이 이 수를 분석하고 있습니다.",
@@ -2524,6 +2524,12 @@ function TypedMoveLine({ startPly, sans, posKey }) {
     return () => clearTimeout(id);
   }, [shown, sans.length]);
   return <>{pvContinuationText(startPly, sans.slice(0, Math.min(shown, sans.length)))}</>;
+}
+// (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
+// 라인이 나타났다 사라지는 깜빡임이 있었다 — 첫 수가 같은 라인은 먼저 나온 것만 남겨 중복을 제거한다.
+function dedupeEngineLines(list) {
+  const seen = new Set();
+  return list.filter((l) => { const k = l.sans && l.sans[0]; if (!k || seen.has(k)) return false; seen.add(k); return true; });
 }
 function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
   const dragStartRef = useRef(null);
@@ -2913,7 +2919,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge }) {
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지 */}
       {questBadge && <span title="오늘의 퀘스트 오프닝" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5 }}><MaterialIcon name="assignment" size={12} color="#241509" /></span>}
       <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-        <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={kind} /></span>
+        <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={kind} descOnClick /></span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
             <div style={{ minWidth: 0, flex: 1, cursor: "pointer" }} onClick={onClick}>
@@ -3198,10 +3204,10 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (v0.2.1) 엔진 상위 3줄을 최종 결과 한 번이 아니라 depth마다 실시간으로 갱신한다 — 평가치가 살아
       // 움직이고 수순이 점점 길어진다. 이 effect는 후보 수가 채워질 때마다 재실행되므로(cancelled가 금방
       // true가 됨) cancelled 대신 "지금 포지션 key가 그대로인가"로 가드해 탐색 내내 스트리밍을 유지한다.
-      const toLines3 = (raw) => (raw || []).slice(0, 3).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+      const toLines3 = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
         ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
         sans: pvUciToSans(sans, pv.pv, 15),
-      }));
+      }))).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
       if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 3000, onEvalProgress, streamLines);
       const pvsAll = await cache.multiPromise;
@@ -3209,15 +3215,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
       const p0 = pvsAll[0];
       setPosEval(p0 && (p0.mate != null || p0.cp != null) ? mkPosEval(p0) : null);
-      let lines = [];
-      if (pvsAll.length) {
-        lines = pvsAll.slice(0, 3).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
-          ev: pv.mate != null
-            ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
-            : { cp: pv.cp * baseWhite },
-          sans: pvUciToSans(sans, pv.pv, 15),
-        }));
-      }
+      // (v0.2.1 버그) 스트리밍뿐 아니라 최종 확정 결과도 dedupe해, 같은 첫 수가 겹치는 라인이 남지 않게 한다.
+      const lines = toLines3(pvsAll);
       // (버그 수정) 위 linesPending 주석 참고 — 이 포지션의 결과가 나온 시점(빈 배열이어도, 예: 외통
       // 직전 포지션)에만 실제로 engineLines를 교체하고 "계산 중" 표시를 끈다.
       setEngineLines(lines);
@@ -3786,7 +3785,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
       </AnimatePresence>
       {/* 헤더: 아이콘 · 수/이름(크게) · 평가치 */}
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
-        <CircleBadge kind={kind} big />
+        <CircleBadge kind={kind} big descOnClick />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
           {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, marginTop: 4, lineHeight: 1.25 }}>{title}</div>}
@@ -4247,6 +4246,17 @@ function reviewPhaseAccuracy(moves, fromPly, toPly, white) {
   }
   return n ? Math.round((sum / n) * 10) / 10 : null;
 }
+// (v0.2.1) 오프닝처럼 하이라이트할 비이론 수가 없는 단계는, 이론 수를 아이콘으로 쓰지 않고 그 단계·진영의
+// 정확도로 대표 등급을 정해 아이콘을 표시한다(chess.com 정확도 구간을 참고한 근사 매핑).
+function gradeFromAccuracy(acc) {
+  if (acc == null) return null;
+  if (acc >= 96) return "best";
+  if (acc >= 90) return "excellent";
+  if (acc >= 80) return "good";
+  if (acc >= 65) return "inaccuracy";
+  if (acc >= 45) return "mistake";
+  return "blunder";
+}
 // 정확성 산출과 동일한 값(analyzeGame의 whiteAcc/blackAcc)을 재사용하고, 여기서는 표시 서식만 맡는다.
 function ReviewAccuracyPill({ label, value, hi }) {
   return (
@@ -4352,12 +4362,8 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
             return (
               <span style={{ position: "relative", display: "inline-flex", lineHeight: 0 }}>
                 <button onClick={() => setAccShow((v) => (v === key ? null : key))} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}>
-                  {/* 오프닝처럼 하이라이트 수 등급이 없으면(이론 수뿐) 이론 아이콘 대신 중립 정확도 배지를 보여준다. */}
-                  <span style={{ pointerEvents: "none" }}>
-                    {kind ? <CircleBadge kind={kind} noTip /> : (
-                      <span style={{ width: 26, height: 26, borderRadius: "50%", background: RV.panel, border: "2px solid " + RV.border, display: "inline-flex", alignItems: "center", justifyContent: "center", color: RV.soft, fontSize: 12, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>%</span>
-                    )}
-                  </span>
+                  {/* 오프닝처럼 하이라이트할 비이론 수가 없으면 이론 아이콘 대신 정확도로 등급을 정해 표시한다. */}
+                  <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind || gradeFromAccuracy(acc)} noTip /></span>
                 </button>
                 {active && (
                   <span style={{ position: "absolute", bottom: 34, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "6px 10px", borderRadius: 8, background: T.brassHi, color: "#241509", fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", boxShadow: "0 6px 14px -5px rgba(0,0,0,.55)", zIndex: 30 }}>
@@ -4632,12 +4638,12 @@ function ReviewPage({ game, engine, onClose }) {
     // 원시 PV 목록 → 표시용 라인(백 관점 평가 + 수순). 실시간 스트리밍·최종 결과가 같은 변환을 공유한다.
     // (Array 가드: 풀 부팅 실패로 useEngine 폴백을 쓰면 5번째 인자가 onLines가 아니라 onProgress라 단일
     //  엔트리가 올 수 있다 — 그럴 땐 무시한다.)
-    const toLines = (raw) => (Array.isArray(raw) ? raw : []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+    const toLines = (raw) => dedupeEngineLines((Array.isArray(raw) ? raw : []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
       ev: pv.mate != null
         ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
         : { cp: pv.cp * baseWhite },
       sans: pvUciToSans(effSans, pv.pv, 15),
-    }));
+    })));
     (async () => {
       try {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
@@ -5243,7 +5249,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 {lastSan && (
                   <div>
                     <div className="flex items-center flex-wrap" style={{ gap: 13 }}>
-                      {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} />}
+                      {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
                       <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1)}{lastSan}</span>
                       {curName && <span style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, wordBreak: "keep-all" }}>{curName}</span>}
                       <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}><Play size={11} /> 학습</button>
@@ -5490,7 +5496,7 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening }
           : <div style={{ width: 162, height: 162, margin: "0 auto", borderRadius: 9, background: "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 8px,#33261A 8px,#33261A 16px)", display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={28} style={{ color: T.brass }} /></div>}
       </div>
       <div className="flex items-center gap-2" style={{ marginTop: 10, flexWrap: "wrap" }}>
-        <CircleBadge kind={kind} />
+        <CircleBadge kind={kind} descOnClick />
         <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>
         {evTxt && <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
         <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
