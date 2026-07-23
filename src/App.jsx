@@ -484,10 +484,11 @@ function saveSfxPref(v) { try { window.localStorage.setItem("occ_sfx_on", v ? "1
 function loadSfxVolume() { try { const v = parseFloat(window.localStorage.getItem("occ_sfx_vol")); return isNaN(v) ? 0.6 : Math.min(1, Math.max(0, v)); } catch { return 0.6; } }
 function saveSfxVolume(v) { try { window.localStorage.setItem("occ_sfx_vol", String(v)); } catch { } }
 const SFX_SRC = { click: "/sfx/click.mp3", move: "/sfx/move.mp3", capture: "/sfx/capture.mp3", electric: "/sfx/freesound_community-circuit-bent-stylophone-75384.mp3" };
-function playSfx(name) {
+// (v0.2.2) maxMs를 주면 그 시간이 지난 뒤 재생을 멈춘다 — 회로 전기음처럼 긴 음원의 앞부분만 쓸 때.
+function playSfx(name, maxMs) {
   if (!loadSfxPref()) return;
   const src = SFX_SRC[name]; if (!src) return;
-  try { const el = new Audio(src); el.volume = loadSfxVolume(); el.play().catch(() => { }); } catch { }
+  try { const el = new Audio(src); el.volume = loadSfxVolume(); el.play().catch(() => { }); if (maxMs) setTimeout(() => { try { el.pause(); el.currentTime = 0; } catch { } }, maxMs); } catch { }
 }
 // (v0.1.4 기능) SAN 표기상 포획 수는 항상 "x"를 포함(앙파상 포함) — 이 규칙만으로 클릭/무브 소리 중
 // 어느 쪽을 재생할지 나무 "탁" 소리(clack)와 "퍽" 소리(thud, 기물이 실제로 잡히는 느낌)로 나눈다.
@@ -6015,7 +6016,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const [electric, setElectric] = useState(false);
   const electricTimerRef = useRef(null);
   const triggerElectric = useCallback(() => {
-    playSfx("electric");
+    playSfx("electric", 1000);   // (v0.2.2) 전기 흐르는 소리는 처음 1초만 재생
     setElectric(false);
     // 다음 프레임에 다시 켜 애니메이션이 매 클릭마다 처음부터 재생되게 한다.
     requestAnimationFrame(() => {
@@ -11401,14 +11402,17 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
 // (v0.2.2 UI#7 후속) 순위 메달을 "숫자를 둘러싼 육각형"이 세 이미지 모두 같은 크기로 보이도록 순위별
 // 높이를 다르게 준다(측정: 하단 육각형 폭/이미지높이 = 1위 0.195·2위 0.214·3위 0.332 → 이 비를 상쇄).
 // 1위가 자연히 가장 크게 표시돼 "1등 뱃지 크게" 요구도 함께 만족한다.
-const RANK_MEDAL_H = { normal: { 1: 46, 2: 42, 3: 28 }, compact: { 1: 40, 2: 37, 3: 24 } };
+// (v0.2.2 후속) 스크린샷 피드백 — 1위가 왕관 때문에 본체가 작아 보여 2위가 가장 커 보이고 3위가 너무
+// 작던 문제. 표시 높이를 1위>2위>3위로 뚜렷이 차등해(왕관 높이만큼 1위를 더 크게), 3위도 충분히
+// 보이게 키운다.
+const RANK_MEDAL_H = { normal: { 1: 54, 2: 44, 3: 40 }, compact: { 1: 48, 2: 39, 3: 35 } };
 function userSearchRow(r, onClick, right, opts) {
   const p = r.pub || {};
   const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
   const { rank, isMe, compact } = opts || {};
   const avatar = compact ? 28 : 34;
   // (v0.2.2 UI#7 후속) 모든 블록에서 요소 x좌표가 고정되도록 순위 칸을 고정폭 슬롯으로, 블록은 전체 폭으로.
-  const slotW = compact ? 46 : 52, slotH = compact ? 40 : 46;
+  const slotW = compact ? 52 : 58, slotH = compact ? 48 : 54;
   const medalH = (RANK_MEDAL_H[compact ? "compact" : "normal"])[rank];
   return (
     <button key={r.id} onClick={onClick} className="press" style={{ width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: compact ? 8 : 10, padding: compact ? "4px 8px" : 9, borderRadius: 10, border: isMe ? "2px solid " + T.brass : isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: isMe ? "linear-gradient(180deg,#FFFBF0,#F3E7CB)" : "#FBF5E8", boxShadow: isMe ? "0 0 0 2px rgba(196,154,80,.3)" : isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none", cursor: "pointer", textAlign: "left" }}>
