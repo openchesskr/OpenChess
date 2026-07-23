@@ -7519,16 +7519,20 @@ function TierBadge({ totalXp, compact, onClick }) {
 // (v0.1.1) "아이언 V" 같은 이름+구간 텍스트는 없애고 구간 전용 이미지로 대체, 로고는 더 크게.
 // (v0.2.2 UI#6/#7) 티어 표시를 "박스 없이" 흰 십각형 로고 하나만 두고, 그 오른쪽에 XP 텍스트 대신
 // 금색 게이지 바로 진척도를 보여준다. 프로필 카드·검색 리더보드가 같은 컴포넌트를 재사용한다(size로 조절).
-function TierStatPill({ totalXp, size = 40, gaugeWidth = 92 }) {
+// (v0.2.2 UI#7 후속) gauge=false면 게이지 바 없이 십각형 로고만 — 검색 리더보드처럼 요소 x좌표를
+// 고정해야 하는 곳에서 쓴다.
+function TierStatPill({ totalXp, size = 40, gaugeWidth = 92, gauge = true }) {
   const info = tierFromXp(totalXp);
   const { tier, xpInDivision, xpForNextDivision, division } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }} title={fmtFull(xpInDivision) + "/" + fmtFull(xpForNextDivision) + " XP"}>
       <TierLogoDisc tierKey={tier.key} division={division} size={size} discSize={size + 2} />
-      <span style={{ display: "inline-block", width: gaugeWidth, maxWidth: "38vw", height: 8, borderRadius: 999, background: "rgba(0,0,0,.12)", border: "1px solid #DCCBA8", overflow: "hidden", flexShrink: 0 }}>
-        <span style={{ display: "block", width: pct + "%", height: "100%", background: "linear-gradient(90deg,#A87715,#F3D57A 55%," + T.brass + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.4)", transition: "width .6s ease" }} />
-      </span>
+      {gauge && (
+        <span style={{ display: "inline-block", width: gaugeWidth, maxWidth: "38vw", height: 8, borderRadius: 999, background: "rgba(0,0,0,.12)", border: "1px solid #DCCBA8", overflow: "hidden", flexShrink: 0 }}>
+          <span style={{ display: "block", width: pct + "%", height: "100%", background: "linear-gradient(90deg,#A87715,#F3D57A 55%," + T.brass + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.4)", transition: "width .6s ease" }} />
+        </span>
+      )}
     </span>
   );
 }
@@ -11394,16 +11398,27 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
 // (v0.2.2 UI#7) opts.rank(1부터) — 리더보드에서 프로필 사진 왼쪽에 순위를 표시한다(상위 3명은 순위
 // 숫자 대신 전용 메달 이미지 /rank-{1,2,3}.png). opts.isMe면 내 행을 금색 윤곽선으로 강조하고,
 // opts.compact면 블록 두께를 약 65%로 줄인다.
+// (v0.2.2 UI#7 후속) 순위 메달을 "숫자를 둘러싼 육각형"이 세 이미지 모두 같은 크기로 보이도록 순위별
+// 높이를 다르게 준다(측정: 하단 육각형 폭/이미지높이 = 1위 0.195·2위 0.214·3위 0.332 → 이 비를 상쇄).
+// 1위가 자연히 가장 크게 표시돼 "1등 뱃지 크게" 요구도 함께 만족한다.
+const RANK_MEDAL_H = { normal: { 1: 46, 2: 42, 3: 28 }, compact: { 1: 40, 2: 37, 3: 24 } };
 function userSearchRow(r, onClick, right, opts) {
   const p = r.pub || {};
   const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
   const { rank, isMe, compact } = opts || {};
   const avatar = compact ? 28 : 34;
+  // (v0.2.2 UI#7 후속) 모든 블록에서 요소 x좌표가 고정되도록 순위 칸을 고정폭 슬롯으로, 블록은 전체 폭으로.
+  const slotW = compact ? 46 : 52, slotH = compact ? 40 : 46;
+  const medalH = (RANK_MEDAL_H[compact ? "compact" : "normal"])[rank];
   return (
-    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, padding: compact ? "4px 8px" : 9, borderRadius: 10, border: isMe ? "2px solid " + T.brass : isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: isMe ? "linear-gradient(180deg,#FFFBF0,#F3E7CB)" : "#FBF5E8", boxShadow: isMe ? "0 0 0 2px rgba(196,154,80,.3)" : isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none", cursor: "pointer", textAlign: "left" }}>
-      {rank != null && (rank <= 3
-        ? <img src={"/rank-" + rank + ".png"} alt={rank + "위"} style={{ height: compact ? 30 : 34, width: "auto", flexShrink: 0, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.3))" }} />
-        : <span style={{ width: compact ? 20 : 24, textAlign: "center", flexShrink: 0, fontSize: 13, fontWeight: 900, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{rank}</span>)}
+    <button key={r.id} onClick={onClick} className="press" style={{ width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: compact ? 8 : 10, padding: compact ? "4px 8px" : 9, borderRadius: 10, border: isMe ? "2px solid " + T.brass : isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: isMe ? "linear-gradient(180deg,#FFFBF0,#F3E7CB)" : "#FBF5E8", boxShadow: isMe ? "0 0 0 2px rgba(196,154,80,.3)" : isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none", cursor: "pointer", textAlign: "left" }}>
+      {rank != null && (
+        <span style={{ width: slotW, height: slotH, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          {rank <= 3
+            ? <img src={"/rank-" + rank + ".png"} alt={rank + "위"} style={{ height: medalH, width: "auto", maxWidth: slotW, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.3))" }} />
+            : <span style={{ fontSize: 14, fontWeight: 900, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{rank}</span>}
+        </span>
+      )}
       {p.photo ? <img src={p.photo} alt="" style={{ width: avatar, height: avatar, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: avatar, height: avatar, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
         <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>나</span>}{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
@@ -11518,8 +11533,8 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                     {sugTop.length > 0 && (
                       <div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                          {sugTop.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
-                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={30} gaugeWidth={60} /></span>,
+                          {sugTop.map((r, i) => <FadeIn key={r.id} index={i} style={{ width: "100%" }}>{userSearchRow(r, () => open(r.username),
+                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={32} gauge={false} /></span>,
                             { rank: i + 1, isMe: r.id === myUid, compact: true })}</FadeIn>)}
                         </div>
                       </div>
