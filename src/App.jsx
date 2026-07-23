@@ -19,6 +19,9 @@ const T = {
   best: "#3F7A3A", excellent: "#5C8A52", good: "#8FB55E",
   inaccuracy: "#E0B53A", mistake: "#D9822B", blunder: "#C8453B",
   book: "#8A5A2B", arrow: "#C49A50",
+  // (v0.2.2 기능) 탁월한 수(브릴리언트)에서 "내 기물이 상대에게 공격받는다"를 보여주는 경고 화살표
+  // 전용 붉은색 — 기존 blunder 색(C8453B, 벽돌빛 갈색 톤)과 달리 확실히 붉은색으로 구분되게 한다.
+  danger: "#E5342A",
 };
 const FILES = "abcdefgh";
 // (v0.1.4 기능) "사이트 전체 카드·블록에 애니메이션을 적용해 더 부드러운 UX를 달라"는 요청 — 지금까지
@@ -2752,20 +2755,25 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
             const [x1, y1] = pxu(a.from[0], a.from[1]); const [x2, y2] = pxu(a.to[0], a.to[1]);
             const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
             const ux = dx / len, uy = dy / len;
-            // (18차 UI3) 채택률 차이가 화살표에서 분간되지 않던 문제 — 두께 범위를 크게 벌리고(0.05~0.19),
-            // 불투명도도 채택률에 비례(0.45~0.95)시켜 인기 수가 한눈에 도드라지게 한다.
-            const t = Math.min(1, Math.max(0, (a.adopt || 0) / 60)); // 60% 이상 채택이면 최대 두께
-            const w = 0.05 + t * 0.14;
-            const op = 0.45 + t * 0.5;
-            const head = 0.28 + t * 0.14;                     // 화살촉도 두께에 비례
+            // (18차 UI3) 채택률(또는 평가치) 차이가 화살표에서 분간되지 않던 문제 — 두께 범위를 크게
+            // 벌리고(0.05~0.19), 불투명도도 비례(0.45~0.95)시켜 인기·우수한 수가 한눈에 도드라지게 한다.
+            // weight(0~1, 이미 정규화됨)가 있으면 그대로 쓰고, 없으면 예전처럼 adopt(0~60%)에서 계산한다.
+            const isDanger = a.kind === "danger";
+            const t = Math.min(1, Math.max(0, a.weight != null ? a.weight : (a.adopt || 0) / 60));
+            // (v0.2.2 기능) 탁월한 수의 "내 기물이 공격받는다" 경고 화살표는 채택률·평가치와 무관하게
+            // 항상 눈에 띄게 두껍고 진하게, 색은 확실한 붉은색(T.danger)으로 그린다.
+            const w = isDanger ? 0.11 : 0.05 + t * 0.14;
+            const op = isDanger ? 0.92 : 0.45 + t * 0.5;
+            const head = isDanger ? 0.32 : 0.28 + t * 0.14;    // 화살촉도 두께에 비례
             const bx = x2 - ux * head, by = y2 - uy * head;  // 샤프트 끝(=화살촉 밑변 중심)
             const nx = -uy, ny = ux;                          // 수직 단위벡터
             const hw = head * 0.62;                           // 화살촉 반폭
             const pts = (x2) + "," + (y2) + " " + (bx + nx * hw) + "," + (by + ny * hw) + " " + (bx - nx * hw) + "," + (by - ny * hw);
+            const col = isDanger ? T.danger : T.arrow;
             return (
               <g key={i} opacity={op}>
-                <line x1={x1} y1={y1} x2={bx} y2={by} stroke={T.arrow} strokeWidth={w} strokeLinecap="round" />
-                <polygon points={pts} fill={T.arrow} />
+                <line x1={x1} y1={y1} x2={bx} y2={by} stroke={col} strokeWidth={w} strokeLinecap="round" />
+                <polygon points={pts} fill={col} />
               </g>
             );
           })}
@@ -3464,8 +3472,10 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
           {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: ((dto0 - 0.16) / 8 * 100) + "%", left: ((dto1 + 0.7) / 8 * 100) + "%", width: "5.25%", height: "5.25%", borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.34)}</div>}
           <svg viewBox="0 0 8 8" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
-            <defs><marker id="dgr" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.blunder} /></marker><marker id="idea" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.brass} /></marker></defs>
-            {extraArrows.map((a, i) => { const [x1, y1] = pxu(a.from[0], a.from[1]); const [x2, y2] = pxu(a.to[0], a.to[1]); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={a.kind === "danger" ? T.blunder : T.brass} strokeWidth={0.1} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />; })}
+            {/* (v0.2.2 기능) "내 기물이 공격받는다" 경고 화살표(danger) 색을 T.blunder(벽돌빛 갈색)에서
+                확실한 붉은색(T.danger)으로 교체 — 리뷰 페이지의 같은 화살표와 색을 통일한다. */}
+            <defs><marker id="dgr" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.danger} /></marker><marker id="idea" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.brass} /></marker></defs>
+            {extraArrows.map((a, i) => { const [x1, y1] = pxu(a.from[0], a.from[1]); const [x2, y2] = pxu(a.to[0], a.to[1]); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={a.kind === "danger" ? T.danger : T.brass} strokeWidth={0.1} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />; })}
           </svg>
         </div>
       </div>
@@ -3539,7 +3549,10 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
   }, [active, sansKey, san, active && m.kind, active && m.book, engine && engine.status]);
   const kind = active ? (liveKind || m.kind || (m.book ? "book" : "good")) : null;
   const evTxt = active ? (m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null)) : null;
-  const extraArrows = active && kind === "brilliant" ? brilliantArrows(sans, san) : [];
+  // (v0.2.2 기능) 언더프로모션(=/=Q 아닌 승진)으로 "탁월한 수"가 매겨진 경우는 실제 기물 희생이 아니라
+  // 규칙상 완화된 표기일 뿐이라, "내 기물이 공격받는다" 경고 화살표를 보여주지 않는다.
+  const isUnderpromo = /=/.test(san) && !/=Q/.test(san);
+  const extraArrows = active && kind === "brilliant" && !isUnderpromo ? brilliantArrows(sans, san) : [];
   const mkKey = active ? sansKey + "|" + san : "";
   const ownExplain = active ? CONTENT.explains[mkKey] : null;
   const explain = active ? explainMove(sans, san) : null;
@@ -4729,11 +4742,21 @@ function ReviewPage({ game, engine, onClose }) {
   const activeEvalDisp = exploring ? (engineLines[0] && engineLines[0].ev) : (result && result.evalDisp ? result.evalDisp[curPly] : null);
   const evalCpText = activeEvalDisp ? evalDisplayText(activeEvalDisp) : null;
   const arrows = useMemo(() => {
-    if (!activeMove || !showingLine) return [];
-    const target = activeMove.best || activeMove.san;
-    const prevBoard = boardFromSans(effSans.slice(0, -1));
-    const info = sanSrc(prevBoard, target, activeMove.white ? "w" : "b");
-    return info && !info.castle ? [{ from: info.from, to: info.to, adopt: 80 }] : [];
+    const out = [];
+    if (activeMove && showingLine) {
+      const target = activeMove.best || activeMove.san;
+      const prevBoard = boardFromSans(effSans.slice(0, -1));
+      const info = sanSrc(prevBoard, target, activeMove.white ? "w" : "b");
+      if (info && !info.castle) out.push({ from: info.from, to: info.to, adopt: 80 });
+    }
+    // (v0.2.2 기능) 탁월한 수(언더프로모션 제외)가 두어진 위치에서는 "Show" 여부와 무관하게, 방금 둔
+    // 내 기물을 상대의 어떤 기물이 공격할 수 있는지 항상 붉은색 경고 화살표로 보여준다.
+    const isUnderpromo = activeMove && /=/.test(activeMove.san) && !/=Q/.test(activeMove.san);
+    if (activeMove && activeMove.kind === "brilliant" && !isUnderpromo) {
+      const danger = brilliantArrows(effSans.slice(0, -1), activeMove.san).filter((a) => a.kind === "danger");
+      out.push(...danger);
+    }
+    return out;
   }, [activeMove, showingLine, effSans]);
   const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardFromSans(effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
   // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
@@ -4908,7 +4931,27 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 평가한 상태라 이론 수가 실수로 오분류되거나, 포지션 전환 중간의 불안정한 상태를 그대로
   // 저장해 버리는 등 오생성 버그의 근원이었다. FocusMode(아래 onSavePuzzle 호출부)만으로 충분하다.
 
-  const arrows = useMemo(() => moves.filter((m) => m.book).map((m) => { const info = sanSrc(board, m.san, color); return info && info.from ? { from: info.from, to: info.to, adopt: m.adopt } : null; }).filter(Boolean), [moves, board, color]);
+  // (v0.2.2 버그 수정) 제안 화살표(이론 수)의 두께·투명도가 "평가치순"을 선택해도 항상 채택률(adopt)
+  // 기준으로만 계산돼, 정렬 기준을 바꿔도 화살표 시각화가 전혀 달라지지 않았다 — Board는 weight(0~1,
+  // 이미 정규화된 값)를 그대로 두께·투명도에 쓰므로, sortBy에 맞춰 서로 다른 값을 계산해 넘긴다.
+  const arrows = useMemo(() => {
+    const bookMoves = moves.filter((m) => m.book);
+    if (!bookMoves.length) return [];
+    if (sortBy === "adopt") {
+      return bookMoves.map((m) => { const info = sanSrc(board, m.san, color); return info && info.from ? { from: info.from, to: info.to, weight: Math.min(1, Math.max(0, (m.adopt || 0) / 60)) } : null; }).filter(Boolean);
+    }
+    // sortBy === "eval" — 후보 중 최선(가장 높은 moverEval) 대비 손실이 클수록 화살표를 얇고 옅게 만든다
+    // (200cp 이상 차이 나면 최소값으로 고정).
+    const evs = bookMoves.map((m) => moverEval(m, ply));
+    const validEvs = evs.filter((v) => v != null);
+    const best = validEvs.length ? Math.max(...validEvs) : null;
+    return bookMoves.map((m, i) => {
+      const info = sanSrc(board, m.san, color); if (!info || !info.from) return null;
+      const v = evs[i];
+      const weight = (best != null && v != null) ? Math.max(0, 1 - (best - v) / 200) : 0.3;
+      return { from: info.from, to: info.to, weight };
+    }).filter(Boolean);
+  }, [moves, board, color, sortBy, ply]);
   const legalTargets = useMemo(() => sel ? legalDests(board, sel[0], sel[1], color, ep) : [], [sel, board, color, ep]);
 
   // 수를 두면 항상 도착 칸에 수 체계 아이콘을 띄운다(블록에 없거나 아직 미평가면 우선 '분석 중', 엔진으로 갱신)
