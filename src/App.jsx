@@ -783,6 +783,9 @@ function useEngine(enginePref) {
           // 깊어지며 갱신된다 — 평가치 바처럼 "이 포지션 자체의 평가"가 필요한 곳은 굳이 별도의
           // 단일PV 탐색을 또 돌리지 않고 이 진행 상황을 그대로 재사용할 수 있다.
           if (cb.onProgress && parseInt(mp[1], 10) === 1) cb.onProgress(entry);
+          // (v0.2.1) 엔진 라인을 최종 결과 한 번이 아니라 depth가 깊어질 때마다 실시간으로 흘려보낸다
+          // (throttle ~90ms) — 평가치가 살아 움직이고 수순도 점점 길어져 "한꺼번에 팝업"되는 끊김이 사라진다.
+          if (cb.onLines) { const now = Date.now(); if (!cb.lastLinesEmit || now - cb.lastLinesEmit >= 90) { cb.lastLinesEmit = now; cb.onLines(Object.keys(cb.lines).sort((a, b) => a - b).map((k) => cb.lines[k])); } }
         }
       } else if (sc && !cb.multi) {
         cb.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
@@ -831,9 +834,9 @@ function useEngine(enginePref) {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
     queue.current.push({ resolve, last: null, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
   }), [pump]);
-  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress) => new Promise((resolve) => {
+  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress, onLines) => new Promise((resolve) => {
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
@@ -1996,8 +1999,18 @@ function bootAnalysisWorker(urls) {
       const job = queue[0]; if (!job) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
       if (line.startsWith("info") && job.multi) {
-        const mp = line.match(/multipv (\d+)/); const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-        if (mp && pv && sc) job.lines[parseInt(mp[1], 10)] = { uci: pv[1], cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+        const mp = line.match(/multipv (\d+)/);
+        // (v0.2.1) 예전엔 " pv " 뒤 첫 수만 뽑았다(analyzeGame은 최선수 UCI 하나만 필요) — /review
+        // 엔진 라인처럼 전체 수순이 필요한 곳을 위해, useEngine과 동일하게 " pv " 이후 전체 PV(공백
+        // 구분 UCI 목록)를 함께 담는다. analyzeGame은 uci/cp/mate만 읽으므로 영향받지 않는다.
+        const pvIdx = line.indexOf(" pv ");
+        const pvList = pvIdx >= 0 ? line.slice(pvIdx + 4).trim().split(/\s+/) : null;
+        const dm = line.match(/^info depth (\d+)/);
+        if (mp && pvList && pvList.length && sc) {
+          job.lines[parseInt(mp[1], 10)] = { uci: pvList[0], pv: pvList, depth: dm ? parseInt(dm[1], 10) : null, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
+          // (v0.2.1) 실시간 스트리밍 — depth가 깊어질 때마다(throttle ~90ms) 현재 라인들을 흘려보낸다.
+          if (job.onLines) { const now = Date.now(); if (!job.lastLinesEmit || now - job.lastLinesEmit >= 90) { job.lastLinesEmit = now; job.onLines(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k])); } }
+        }
       } else if (sc && !job.multi) {
         job.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
         if (job.onProgress) { const dm = line.match(/^info depth (\d+)/); job.onProgress({ ...job.last, depth: dm ? parseInt(dm[1], 10) : null }); }
@@ -2027,9 +2040,9 @@ function bootAnalysisWorker(urls) {
                   pump();
                 });
               },
-              evaluateMulti(fen, d, multipv, mt) {
+              evaluateMulti(fen, d, multipv, mt, onLines) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, multi: true, lines: {}, mt, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
@@ -2121,7 +2134,11 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
       const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
       const p0 = lines && lines[0], p1 = lines && lines[1];
       // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
-      posEval[i] = { cp: cpOfLine(p0), best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
+      // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
+      // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
+      // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
+      // 승률로만 변환되므로 문제없다).
+      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
       doneCount++;
       onProgress && onProgress(doneCount / (N + 1));
     }
@@ -2183,9 +2200,34 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   }
   // (v0.2.0 기능) /review 페이지의 코치 카드가 수마다 실제 평가치(+4.67 등)를 표시해야 해서, 이미
   // 계산해 둔 백 관점 centipawn 시퀀스(graphCp)를 승률(evalWin)과 함께 그대로 내보낸다.
-  return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp };
+  // (v0.2.1 기능) evalDisp — evalCp(그래프 전용, 메이트를 ±100000으로 뭉갬)와 별개로, 텍스트 표시에는
+  // {cp}|{mate,win,plies} 형태가 필요하다(fmtEvalCp/evalDisplayText가 이 모양을 기대함) — posEvalToWhite로
+  // 포지션마다 다시 만든다.
+  const evalDisp = posEval.map((p, i) => posEvalToWhite({ cp: p.cp, mate: p.mate }, fullSans.slice(0, i)));
+  // (v0.2.1) 마지막 수가 체크메이트(#)면 종료 포지션은 엔진이 평가를 못 준다(둘 수가 없음) — cp 0으로 남아
+  // 코치 카드가 "+0.00", 평가치 바·그래프가 무승부처럼 보였다. 실제 승패로 채워 "1-0"/"0-1"과 완승 막대로 표시한다.
+  if (N > 0 && /#/.test(fullSans[N - 1])) {
+    const winnerWhite = (N - 1) % 2 === 0;
+    evalDisp[N] = { mate: 0, win: winnerWhite ? "w" : "b", plies: 0 };
+    graphCp[N] = winnerWhite ? 100000 : -100000;
+  }
+  return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp, evalDisp };
 }
 const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
+// (v0.2.1 기능) 수 체계 아이콘을 누르면 그 등급의 조건·설명을 말풍선으로 보여준다(나무위키 "체스닷컴" 수 등급 참고).
+const QDESC = {
+  brilliant: "대개 기물을 희생하면서도 포지션을 유리하게 이끄는, 발견하기 어려운 최상의 수입니다.",
+  only: "그 수를 두지 않으면 포지션이 크게 나빠지는, 사실상 유일하게 좋은 수입니다.",
+  best: "엔진이 계산한 그 포지션에서 가장 좋은 수입니다.",
+  excellent: "최선은 아니지만 평가치 손실이 거의 없는 훌륭한 수입니다.",
+  good: "무난하게 좋은 수로, 포지션을 크게 해치지 않습니다.",
+  inaccuracy: "더 나은 수가 있었던, 약간의 평가치 손실이 있는 부정확한 수입니다.",
+  miss: "상대의 실수로 생긴 좋은 기회를 살리지 못하고 놓친 수입니다.",
+  mistake: "평가치를 눈에 띄게 떨어뜨려 포지션을 불리하게 만든 실수입니다.",
+  blunder: "승패를 뒤집을 만큼 평가치를 크게 잃은 치명적인 실수입니다.",
+  book: "정석(오프닝 이론)에 등록된, 잘 알려진 이론적인 수입니다.",
+  pending: "엔진이 이 수를 분석하고 있습니다.",
+};
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중학습의 대국 목록에서 공용.
 const TIME_CLASS_LABEL = { rapid: "래피드", blitz: "블리츠", bullet: "불릿", daily: "일일" };
 const QCOLOR = { brilliant: T.brilliant, best: T.best, only: T.only, excellent: T.excellent, good: T.good, inaccuracy: T.inaccuracy, miss: "#C8562F", mistake: T.mistake, blunder: T.blunder, book: T.book, pending: T.inkSoft };
@@ -2358,6 +2400,14 @@ function PendingDots({ size = 14 }) {
 function evalDisplayText(ev) {
   return !ev ? "0.00" : (ev.mate === 0 ? (mateWhiteWins(ev.mate, ev.win) ? "1-0" : "0-1") : fmtEvalCp(ev.cp, ev.mate, ev.plies));
 }
+// (v0.2.1) /review 세로 평가치 막대 전용 — 부호는 위치(위=흑 우세, 아래=백 우세)로 이미 드러나므로
+// 크기(절댓값)만 표기한다. 메이트는 M수, 종국은 체크메이트 기호(#). 소수 한 자리로 줄여 좁은 막대 안에 맞춘다.
+function evalBarText(ev) {
+  if (!ev) return "0.0";
+  if (ev.mate === 0) return "#";
+  if (ev.mate != null) return "M" + (ev.plies != null ? ev.plies : matePliesOf(ev.mate));
+  return (Math.abs(ev.cp || 0) / 100).toFixed(1);
+}
 function EvalBadge({ ev, small }) {
   const num = !ev ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : (ev.cp || 0));
   const txt = evalDisplayText(ev);
@@ -2373,7 +2423,17 @@ function EvalBadge({ ev, small }) {
     </span>
   );
 }
-function EvalBar({ cp, width, depth }) {
+// Board 컴포넌트의 프레임(격자 바깥 여백) 두께 — 바깥 div의 padding 10 + border 1 = 격자가 프레임
+// 안쪽으로 들어와 있는 px. 세로 평가치 막대를 이만큼 위아래로 들여, 막대 양끝이 프레임이 아니라
+// 실제 격자(8행 위 끝·1행 아래 끝)에 맞도록 한다.
+const BOARD_FRAME_INSET = 11;
+// (v0.2.1 기능) vertical=true면 세로 막대(백 아래·흑 위)로 그린다 — /review 메인 보드 좌측용.
+// 막대 바깥 틀은 alignSelf:stretch로 옆 보드(flex items-stretch)의 실제 렌더 높이(=보드 바깥 프레임
+// 포함)에 맞추되, 실제 색 채움(fill)은 위아래로 프레임 두께(BOARD_FRAME_INSET)만큼 들여 격자 높이에
+// 딱 맞춘다 — 그러면 막대 위끝=8행 위, 아래끝=1행 아래, 세로 중앙(0.0)=4·5행 사이가 된다. 한 칸당
+// 1점, 최대 ±4점(그 밖은 e를 ±4로 클램프하므로 막대가 유리한 쪽 한 색으로 통일됨). 가로 막대(기존
+// 학습 탭 등)는 vertical 없이 그대로 동작한다.
+function EvalBar({ cp, width, depth, vertical }) {
   // (20차) cp는 숫자(cp) 또는 {cp}|{mate,win} 객체 — 메이트 수순에서 +10.00이 아니라 M수로 표기한다.
   const ev = cp == null ? null : (typeof cp === "number" ? { cp } : cp);
   const num = ev == null ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : ev.cp);
@@ -2383,6 +2443,20 @@ function EvalBar({ cp, width, depth }) {
   // 옆의 흰색 도움말 아이콘을 누르면 말풍선으로 "n수 후까지 탐색 중.." 수치를 자세히 보여준다.
   const [tipOpen, setTipOpen] = useState(false);
   useEffect(() => { if (depth == null) setTipOpen(false); }, [depth == null]);
+  if (vertical) {
+    return (
+      <div style={{ width: 22, alignSelf: "stretch", flexShrink: 0, position: "relative", zIndex: tipOpen ? 50 : 1 }}>
+        {/* fill은 stretch된 막대에서 위아래로 프레임 두께만큼 들여, 격자(8~1행) 높이에 정확히 맞춘다. */}
+        <div style={{ position: "absolute", top: BOARD_FRAME_INSET, bottom: BOARD_FRAME_INSET, left: 0, right: 0, borderRadius: 5, overflow: "hidden", border: "1px solid #000" }}>
+          {/* 백이 항상 아래쪽 — whitePct는 백이 유리할수록 커지는 값이라 bottom 기준 높이로 그대로 쓴다. */}
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: whitePct + "%", background: "#FFFFFF" }} />
+          <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: (100 - whitePct) + "%", background: "#140C07" }} />
+        </div>
+        {/* 부호 없이 크기만 — 위치(아래=백/위=흑)로 유불리를 구분한다. 폭(22px)에 다 들어오도록 글자를 줄인다. */}
+        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 7.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1, letterSpacing: "-.02em", ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalBarText(ev)}</span>
+      </div>
+    );
+  }
   return (
     <div style={{ width, margin: "0 auto 8px", position: "relative", zIndex: tipOpen ? 50 : 1 }}>
       {/* (버그 수정) 흰 구간 색이 엔진 라인 평가치 박스(EvalBadge, 순백 #FFFFFF)와 달리 살짝 크림빛
@@ -2439,9 +2513,28 @@ function EngineLineSkeleton() {
     </div>
   );
 }
+// (v0.2.1) 엔진 라인 수순을 한 번에 다 찍지 않고 한 수씩 "타이핑"되듯 드러낸다 — posKey(포지션)가
+// 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
+function TypedMoveLine({ startPly, sans, posKey }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => { setShown(0); }, [posKey]);
+  useEffect(() => {
+    if (shown >= sans.length) return;
+    const id = setTimeout(() => setShown((s) => Math.min(s + 1, sans.length)), 55);
+    return () => clearTimeout(id);
+  }, [shown, sans.length]);
+  return <>{pvContinuationText(startPly, sans.slice(0, Math.min(shown, sans.length)))}</>;
+}
+// (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
+// 라인이 나타났다 사라지는 깜빡임이 있었다 — 첫 수가 같은 라인은 먼저 나온 것만 남겨 중복을 제거한다.
+function dedupeEngineLines(list) {
+  const seen = new Set();
+  return list.filter((l) => { const k = l.sans && l.sans[0]; if (!k || seen.has(k)) return false; seen.add(k); return true; });
+}
 function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
   const dragStartRef = useRef(null);
   const hasLines = lines && lines.length;
+  const posKey = sans.join(" ");
   if (!hasLines && !pending) return null;
   // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
   // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
@@ -2461,7 +2554,7 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
             style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
             <EvalBadge ev={l.ev} small />
             <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-              {pvContinuationText(sans.length, l.sans)}
+              <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + i} />
             </div>
           </div>
         ))
@@ -2518,20 +2611,39 @@ function capturedInfo(board) {
   return { byWhite, byBlack, diff: wVal - bVal };
 }
 // 점수 동등하면 diff===0이라 숫자가 아예 안 뜨고(요청사항), 유리한 쪽에서만 이 컴포넌트가 diff>0으로 호출된다.
-function CapturedRow({ pieces, color, diff, textColor }) {
-  if (!pieces.length && !diff) return null;
+// (v0.2.1 기능) player가 주어지면(리뷰 페이지처럼 실제 대국 정보가 있는 경우) 왼쪽에 아바타·닉네임·
+// 레이팅을, 오른쪽에 잡힌 기물·기물 점수차를 표시한다 — 데이터가 없는 호출부(학습 탭 등)는 player를
+// 안 넘기므로 잡힌 기물만 왼쪽 정렬로 그대로 보인다.
+function CapturedRow({ pieces, color, diff, textColor, player }) {
+  if (!pieces.length && !diff && !player) return null;
   const ORDER = { Q: 0, R: 1, B: 2, N: 3, P: 4 };
   const sorted = [...pieces].sort((a, b) => ORDER[a] - ORDER[b]);
-  return (
-    <div className="flex items-center" style={{ gap: 1, minHeight: 20 }}>
+  const material = (
+    <div className="flex items-center" style={{ gap: 1 }}>
       {sorted.map((t, i) => <PieceGlyph key={i} type={t} color={color} size={16} />)}
       {diff > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: textColor, marginLeft: 4, fontFamily: "ui-monospace,monospace" }}>+{diff}</span>}
+    </div>
+  );
+  if (!player) return <div className="flex items-center" style={{ gap: 8, minHeight: 20 }}>{material}</div>;
+  return (
+    <div className="flex items-center justify-between" style={{ gap: 8, minHeight: 20 }}>
+      <span className="flex items-center" style={{ gap: 6, minWidth: 0 }}>
+        <ReviewAvatar src={player.avatar} side={player.side} size={20} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: textColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{player.name}{player.rating != null ? " (" + player.rating + ")" : ""}</span>
+      </span>
+      {material}
     </div>
   );
 }
 // (v0.2.0 기능) 잡힌 기물·점수차 스트립을 위·아래에 얹은 Board 래퍼 — 학습 탭 메인 보드·리뷰
 // 화면(모바일·데스크톱)에서 공용으로 쓴다. Board 자체의 prop 계약은 그대로 두고 감싸기만 한다.
-function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", ...boardProps }) {
+// (v0.2.1 기능) topInfo/bottomInfo({name,rating})가 있으면 flip에 맞춰 위/아래 줄에 그대로 넘긴다 —
+// 리뷰 페이지의 메인 보드에서만 실제 대국 데이터가 있을 때 사용하고, 없는 호출부는 undefined로 둔다.
+// (v0.2.1 기능) leftOfBoard가 있으면(리뷰 페이지의 세로 평가치 막대) Board 자체의 왼쪽에만 나란히
+// 놓는다 — 위아래 CapturedRow는 그대로 전체 폭을 쓰고, 막대는 오직 Board 높이에만 맞춰지므로
+// 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 온다. boardRef는 Board를 바로 감싸는 칸에 붙어,
+// 모바일에서 useBoardSize가 (막대·잡힌 기물 줄이 아니라) 보드 몫의 실제 폭만 재도록 한다.
+function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", topInfo, bottomInfo, leftOfBoard, boardRef, ...boardProps }) {
   const info = useMemo(() => capturedInfo(board), [board]);
   const top = flip
     ? { pieces: info.byWhite, color: "b", diff: Math.max(0, info.diff) }
@@ -2539,11 +2651,20 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", ..
   const bottom = flip
     ? { pieces: info.byBlack, color: "w", diff: Math.max(0, -info.diff) }
     : { pieces: info.byWhite, color: "b", diff: Math.max(0, info.diff) };
+  const boardEl = <Board board={board} flip={flip} {...boardProps} />;
+  // (v0.2.1) 세로 평가치 막대가 있으면 프로필·잡힌 기물 줄을 막대(22)+간격(8)=30px만큼 들여, 막대가 아닌
+  // 실제 체스보드에 좌우로 정렬한다.
+  const capInset = leftOfBoard ? 30 : 0;
   return (
     <div>
-      <CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} />
-      <Board board={board} flip={flip} {...boardProps} />
-      <CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} />
+      <div style={{ marginLeft: capInset }}><CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} player={topInfo} /></div>
+      {leftOfBoard ? (
+        <div className="flex items-stretch" style={{ gap: 8 }}>
+          {leftOfBoard}
+          <div ref={boardRef} style={{ flex: 1, minWidth: 0 }}>{boardEl}</div>
+        </div>
+      ) : (boardRef ? <div ref={boardRef}>{boardEl}</div> : boardEl)}
+      <div style={{ marginLeft: capInset }}><CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} player={bottomInfo} /></div>
     </div>
   );
 }
@@ -2761,13 +2882,29 @@ function NotationTools({ sans, onLoadPgn }) {
   );
 }
 
-function CircleBadge({ kind, big }) {
+function CircleBadge({ kind, big, noTip, descOnClick }) {
   const [hover, setHover] = useState(false);
+  const [descOpen, setDescOpen] = useState(false);
   const sz = big ? 36 : 26;
+  // (v0.2.1) descOnClick — 아이콘을 클릭하면 등급 이름 + 조건/설명을 담은 조금 더 큰 말풍선을 토글한다.
+  const showLabelTip = hover && !noTip && !descOpen;
   return (
-    <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <span style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)" }}>{badgeIcon(kind, sz - 4)}</span>
-      {hover && <span style={{ position: "absolute", bottom: sz + 6, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 7, background: T.ivoryHi, color: QCOLOR[kind], fontSize: 12, fontWeight: 800, border: "1px solid " + QCOLOR[kind], boxShadow: "0 4px 10px -4px rgba(0,0,0,.5)", zIndex: 30 }}>{QLABEL[kind]}</span>}
+    <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }} onMouseEnter={noTip ? undefined : () => setHover(true)} onMouseLeave={noTip ? undefined : () => setHover(false)}>
+      <span onClick={descOnClick ? (e) => { e.stopPropagation(); setDescOpen((v) => !v); } : undefined} style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)", cursor: descOnClick ? "pointer" : "default" }}>{badgeIcon(kind, sz - 4)}</span>
+      {showLabelTip && <span style={{ position: "absolute", bottom: sz + 6, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 7, background: T.ivoryHi, color: QCOLOR[kind], fontSize: 12, fontWeight: 800, border: "1px solid " + QCOLOR[kind], boxShadow: "0 4px 10px -4px rgba(0,0,0,.5)", zIndex: 30 }}>{QLABEL[kind]}</span>}
+      {descOpen && descOnClick && (
+        <>
+          <span onClick={(e) => { e.stopPropagation(); setDescOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <span style={{ position: "absolute", bottom: sz + 9, left: "50%", transform: "translateX(-50%)", width: 220, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ width: 22, height: 22, borderRadius: "50%", background: QCOLOR[kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{badgeIcon(kind, 18)}</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: QCOLOR[kind] }}>{QLABEL[kind]}</span>
+            </span>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink, lineHeight: 1.5, whiteSpace: "normal" }}>{QDESC[kind]}</span>
+            <span style={{ position: "absolute", bottom: -7, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }} />
+          </span>
+        </>
+      )}
     </span>
   );
 }
@@ -2782,7 +2919,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge }) {
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지 */}
       {questBadge && <span title="오늘의 퀘스트 오프닝" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5 }}><MaterialIcon name="assignment" size={12} color="#241509" /></span>}
       <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-        <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={kind} /></span>
+        <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={kind} descOnClick /></span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
             <div style={{ minWidth: 0, flex: 1, cursor: "pointer" }} onClick={onClick}>
@@ -3064,21 +3201,22 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (하나의 결과만 쓰므로).
       if (posCacheRef.current.key !== key) posCacheRef.current = { key, multiPromise: null, live: new Map() };
       const cache = posCacheRef.current;
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 3000, onEvalProgress);
+      // (v0.2.1) 엔진 상위 3줄을 최종 결과 한 번이 아니라 depth마다 실시간으로 갱신한다 — 평가치가 살아
+      // 움직이고 수순이 점점 길어진다. 이 effect는 후보 수가 채워질 때마다 재실행되므로(cancelled가 금방
+      // true가 됨) cancelled 대신 "지금 포지션 key가 그대로인가"로 가드해 탐색 내내 스트리밍을 유지한다.
+      const toLines3 = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+        ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
+        sans: pvUciToSans(sans, pv.pv, 15),
+      }))).slice(0, 3);
+      const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 3000, onEvalProgress, streamLines);
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
       const p0 = pvsAll[0];
       setPosEval(p0 && (p0.mate != null || p0.cp != null) ? mkPosEval(p0) : null);
-      let lines = [];
-      if (pvsAll.length) {
-        lines = pvsAll.slice(0, 3).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
-          ev: pv.mate != null
-            ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
-            : { cp: pv.cp * baseWhite },
-          sans: pvUciToSans(sans, pv.pv, 15),
-        }));
-      }
+      // (v0.2.1 버그) 스트리밍뿐 아니라 최종 확정 결과도 dedupe해, 같은 첫 수가 겹치는 라인이 남지 않게 한다.
+      const lines = toLines3(pvsAll);
       // (버그 수정) 위 linesPending 주석 참고 — 이 포지션의 결과가 나온 시점(빈 배열이어도, 예: 외통
       // 직전 포지션)에만 실제로 engineLines를 교체하고 "계산 중" 표시를 끈다.
       setEngineLines(lines);
@@ -3551,7 +3689,7 @@ function ListPager({ page, setPage, pageCount }) {
 }
 // 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 오른쪽 칼럼은
 // 집중학습 여부와 무관하게 항상 수 블록 목록을 보여준다(LearnTab에서 분기하지 않음).
-function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMyGame, onOpenMyGameAnalyze }) {
+function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze }) {
   if (!fa.active) return null;
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain, editing, setEditing, draft, setDraft,
@@ -3599,6 +3737,15 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
     setOpeningGameId(id); setGameOpenError(false);
     try { await onOpenMasterGame(id); } catch (e) { console.error("마스터 대국을 여는 데 실패:", e); setGameOpenError(true); } finally { setOpeningGameId(null); }
   };
+  // (v0.2.1 기능) chess.com 통계의 "보기"+초록 리뷰 버튼 쌍과 동일하게, 마스터 대국도 목록에서
+  // 바로 /review로 진입할 수 있게 한다 — "보기"(handleOpenGame)와 별개 상태로 바쁨/에러를 추적한다.
+  const [reviewingGameId, setReviewingGameId] = useState(null);
+  const [reviewOpenError, setReviewOpenError] = useState(false);
+  const handleReviewGame = async (g) => {
+    if (!onOpenMasterGameReview || reviewingGameId) return;
+    setReviewingGameId(g.id); setReviewOpenError(false);
+    try { await onOpenMasterGameReview(g); } catch (e) { console.error("마스터 대국 리뷰를 여는 데 실패:", e); setReviewOpenError(true); } finally { setReviewingGameId(null); }
+  };
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: 10, gap: 8 }}>
@@ -3638,7 +3785,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
       </AnimatePresence>
       {/* 헤더: 아이콘 · 수/이름(크게) · 평가치 */}
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
-        <CircleBadge kind={kind} big />
+        <CircleBadge kind={kind} big descOnClick />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
           {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, marginTop: 4, lineHeight: 1.25 }}>{title}</div>}
@@ -3812,22 +3959,27 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
             : (<>
             {masterPageItems.map((g) => (
-              <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: openingGameId && openingGameId !== g.id ? 0.5 : 1 }}>
+              <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
                     <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title="승리">👑</span>}</span>
                     <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "½–½"}</span>
                   </div>
                   <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title="승리">👑</span>}</div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? " · 기보를 불러오는 중…" : ""}</div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? " · 기보를 불러오는 중…" : reviewingGameId === g.id ? " · 리뷰를 여는 중…" : ""}</div>
                 </div>
-                {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중학습에서 보던 수부터 보드에 표기 */}
-                <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId} aria-label="대국 보기" title="대국 보기" className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: openingGameId ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                  {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중학습에서 보던 수부터 보드에 표기 */}
+                  <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId || !!reviewingGameId} aria-label="대국 보기" title="대국 보기" className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: (openingGameId || reviewingGameId) ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                  {/* (v0.2.1 기능) chess.com 통계와 동일한 초록 리뷰 버튼 — 이 마스터 대국을 곧바로 /review로 연다. */}
+                  {onOpenMasterGameReview && <BestMoveJumpButton onClick={() => handleReviewGame(g)} disabled={!!openingGameId || !!reviewingGameId} />}
+                </div>
               </div>
             ))}
             <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} />
             </>)}
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
+        {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 리뷰를 여는 데 실패했습니다. 잠시 후 다시 시도해 주세요.</p>}
       </div>
       {showExpl && (
         <div onClick={() => setShowExpl(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
@@ -3904,30 +4056,86 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
   );
 }
 // (19차 기능3) 평가치 변동 그래프 — 백 승률 시퀀스를 영역으로 채우고 주요 수 위치에 색점 마커.
-function EvalGraph({ evalWin, moves }) {
+// (v0.2.1 버그 수정) width="100%"·height="92"(고정 px)를 함께 쓰면, 컴퓨터 환경처럼 실제 렌더 폭이
+// viewBox 폭(320)보다 훨씬 넓어질 때 세로만 92px에 고정된 채 가로만 늘어나(preserveAspectRatio="none"
+// 이라 강제로 채워짐) 그래프가 넓적하게 찌그러져 보였다 — height를 고정 px 대신 CSS aspectRatio로
+// 폭에 비례해 계산되도록 바꿔, 화면 폭과 무관하게 항상 같은 비율(320:92)로 그려지게 한다.
+// (v0.2.1 기능) 표시할 원을 고르는 규칙 — 탁월/유일/실수/블런더는 항상, 이론은 마지막 이론 수만,
+// 최선/부정확은 같은 등급끼리 최소 3수 간격을 두고(너무 자주 나와 그래프가 원으로 뒤덮이는 것을 방지).
+const EVAL_GRAPH_ALWAYS_KINDS = new Set(["brilliant", "only", "mistake", "blunder"]);
+const EVAL_GRAPH_SPACED_KINDS = new Set(["best", "inaccuracy"]);
+const EVAL_GRAPH_MIN_GAP = 3;
+function pickEvalGraphDots(moves) {
+  let lastBookPly = -1;
+  for (const m of moves) if (m.kind === "book") lastBookPly = m.ply;
+  const dots = [];
+  const lastShownPly = {};
+  for (const m of moves) {
+    if (m.kind === "book") { if (m.ply === lastBookPly) dots.push(m); continue; }
+    if (EVAL_GRAPH_ALWAYS_KINDS.has(m.kind)) { dots.push(m); continue; }
+    if (EVAL_GRAPH_SPACED_KINDS.has(m.kind)) {
+      const last = lastShownPly[m.kind];
+      if (last == null || m.ply - last >= EVAL_GRAPH_MIN_GAP) { dots.push(m); lastShownPly[m.kind] = m.ply; }
+    }
+  }
+  return dots;
+}
+// (v0.2.1 기능) curPly/onJump가 있으면 그래프를 클릭·드래그해 그 x좌표에 해당하는 지점으로 리뷰
+// 위치를 옮길 수 있다 — 포인터를 누른 채 좌우로 끌면(pointer capture) 그 시점의 평가치가 부드럽게
+// 이어서 갱신된다. 마커(점+세로 점선)와 그래프 위 역삼각형은 curPly를 그대로 그리므로, 기보 클릭 등
+// 다른 방법으로 위치를 옮겨도 항상 지금 보고 있는 지점에 그대로 따라온다.
+function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const W = 320, H = 92; const n = evalWin.length;
+  const svgRef = useRef(null);
+  const draggingRef = useRef(false);
   if (n < 2) return null;
   const x = (i) => (i / (n - 1)) * W;
   const y = (w) => H - (w / 100) * H;
   const linePts = evalWin.map((w, i) => x(i) + "," + y(w).toFixed(1)).join(" ");
   const areaPts = "0," + H + " " + linePts + " " + W + "," + H;
-  const dotKinds = { blunder: T.blunder, mistake: T.mistake, inaccuracy: T.inaccuracy, brilliant: T.brilliant, best: T.best };
+  const dots = pickEvalGraphDots(moves);
+  const jumpToClientX = (clientX) => {
+    if (!onJump || !svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    if (!rect.width) return;
+    const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    onJump(Math.round(relX * (n - 1)));
+  };
+  const onPointerDown = (e) => { if (!onJump) return; draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } jumpToClientX(e.clientX); };
+  const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
+  const onPointerUp = (e) => { draggingRef.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { } };
+  const hasMark = curPly != null && curPly >= 0 && curPly < n;
+  const markX = hasMark ? x(curPly) : null;
+  const markY = hasMark ? y(evalWin[curPly]) : null;
+  const markFrac = hasMark ? curPly / (n - 1) : 0;
   return (
     <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, overflow: "hidden" }}>
-      <svg viewBox={"0 0 " + W + " " + H} width="100%" height="92" preserveAspectRatio="none" style={{ display: "block" }}>
-        <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
-        <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
-        <polygon points={areaPts} fill="#EDE7DC" />
-        <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
-        {moves.map((m) => { const c = dotKinds[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
-      </svg>
+      <div style={{ position: "relative", touchAction: "none" }}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+        {/* 그래프 위 역삼각형 — 점선 x좌표와 함께 움직여 지금 보고 있는 지점을 더 또렷이 보여준다. */}
+        {hasMark && <div style={{ position: "absolute", top: -1, left: markFrac * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #EBCB86", pointerEvents: "none", zIndex: 2 }} />}
+        <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none"
+          style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default" }}>
+          <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
+          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
+          <polygon points={areaPts} fill="#EDE7DC" />
+          <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
+          {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
+          {hasMark && (
+            <>
+              <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
+              <circle cx={markX} cy={markY} r="3.6" fill="#EBCB86" stroke="#241509" strokeWidth="0.8" />
+            </>
+          )}
+        </svg>
+      </div>
     </div>
   );
 }
 // (v0.2.0) 예전엔 여기서 즉석 분석 모드(AnalysisModal, chess.com 게임 리뷰 레이아웃)를 직접
 // 그렸지만, 학습 탭 "분석" 버튼이 이제 같은 정보를 보여주는 전용 /review 페이지로 곧장 넘어가므로
 // 이 모달은 완전히 폐기했다. ANALYSIS_KIND_ROWS는 같은 표를 그리는 ReviewKindTable이 계속 재사용한다.
-const ANALYSIS_KIND_ROWS = [["brilliant", "탁월합니다"], ["only", "매우 좋아요"], ["best", "최고"], ["excellent", "우수합니다"], ["good", "좋습니다"], ["book", "이론"], ["inaccuracy", "부정확"], ["miss", "놓친 수"], ["mistake", "실수"], ["blunder", "블런더"]];
+const ANALYSIS_KIND_ROWS = [["brilliant", "탁월합니다"], ["only", "매우 좋아요"], ["best", "최고"], ["excellent", "우수합니다"], ["good", "좋습니다"], ["book", "이론"], ["inaccuracy", "부정확"], ["mistake", "실수"], ["miss", "놓친 수"], ["blunder", "블런더"]];
 /* ============================================================ /review 전체화면 게임 리뷰 (v0.2.0) ============================================================
    chess.com의 "Game Review" 페이지(모바일 앱·데스크톱 웹 모두)를 참고한 전용 화면 —
    "요약 → 수순별 코치 리뷰" 순서로 훑어본다. 예전엔 학습 탭 안에 즉석 분석 모달(AnalysisModal)이
@@ -3955,7 +4163,11 @@ const REVIEW_COACH_COPY = {
 function reviewCoachCopy(m) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
   const body = c.body[m.ply % c.body.length];
-  return { headline: stripSuffix(m.san) + c.head, body, mascot: c.mascot };
+  // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
+  // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
+  const emo = (c.mascot && c.mascot[1]) || "great";
+  const name = m.white ? "milku" : "kokoa";
+  return { headline: stripSuffix(m.san) + c.head, body, mascot: [name, emo] };
 }
 // (v0.2.0 기능) side("w"|"b")의 표시용 이름·레이팅 — game.white/game.black(chess.com 원본 양쪽
 // 정보)가 있으면 그대로 쓰고, 없으면(예전 형태로 저장된 대국) game.color 기준 "나"/"상대"로,
@@ -3967,6 +4179,37 @@ function reviewPlayerInfo(game, side) {
   if (game.color === side) return { name: game.username || "나", rating: game.rating != null ? game.rating : null };
   if (game.color) return { name: "상대", rating: null };
   return { name: side === "w" ? "백" : "흑", rating: null };
+}
+// (v0.2.1 기능) reviewPlayerInfo의 name은 데이터가 없을 때 "백"/"흑"/"나"/"상대" 같은 표시용 대체
+// 문구로 채워지므로, chess.com 아바타를 조회할 진짜 아이디는 이 함수로 따로 뽑는다 — game.white/black에
+// 실제 username이 있으면 그걸, 옛 형태(내 진영만 저장된 대국)면 game.username을 쓰고, 그마저 없으면
+// (학습 탭 임의 수순 분석) null — 이 경우 아바타 조회 자체를 하지 않는다.
+function avatarUsernameFor(game, side) {
+  const p = side === "w" ? game.white : game.black;
+  if (p && p.username) return p.username;
+  if (game.color === side && game.username) return game.username;
+  return null;
+}
+// (v0.2.1 기능) 대국 참가자의 chess.com 아바타 — username이 확정된 경우에만 프로필을 조회한다.
+// 계정이 없거나(예: 옛날 마스터 대국) 요청이 실패해도 null로 남아 기본 나이트 이미지로 대체된다.
+function useChesscomAvatar(username) {
+  const [avatar, setAvatar] = useState(null);
+  useEffect(() => {
+    if (!username) { setAvatar(null); return; }
+    let cancelled = false;
+    fetchChesscomProfile(username).then((p) => { if (!cancelled) setAvatar((p && p.avatar) || null); }).catch(() => { if (!cancelled) setAvatar(null); });
+    return () => { cancelled = true; };
+  }, [username]);
+  return avatar;
+}
+// (v0.2.1 기능) 리뷰 페이지 전용 프로필 이미지 — 실제 아바타가 있으면 그대로, 없으면 파비콘(검은
+// 나이트)과 그 색 반전판(흰 나이트, /favicon-white.png)을 진영별 기본값으로 쓴다.
+function ReviewAvatar({ src, side, size = 22 }) {
+  const isFallback = !src;
+  const fallbackSrc = side === "w" ? "/favicon-white.png" : "/favicon.png";
+  return (
+    <img src={src || fallbackSrc} alt="" style={{ width: size, height: size, borderRadius: Math.max(4, size * 0.22), objectFit: isFallback ? "contain" : "cover", padding: isFallback ? size * 0.14 : 0, boxSizing: "border-box", background: isFallback ? (side === "w" ? "#241509" : "#EFE4CC") : "#000", border: "1px solid rgba(255,255,255,.25)", flexShrink: 0 }} />
+  );
 }
 // 대국 단계(오프닝/미들게임/엔드게임) 구간 — 오프닝은 시작부터 이어지는 이론 수 구간(없으면 앞 5수),
 // 엔드게임은 폰 제외 기물 합산 점수가 처음 14 이하로 떨어지는 지점부터.
@@ -3983,7 +4226,8 @@ function reviewGamePhases(moves) {
   return { openEnd, endStart: Math.max(endStart, openEnd + 1) };
 }
 // 한 단계(구간) 안에서 한쪽 진영이 보여준 가장 인상적인 수 등급 — "이 구간의 하이라이트"를 고른다.
-const REVIEW_PHASE_PRIORITY = ["brilliant", "only", "best", "excellent", "good", "book", "miss", "inaccuracy", "mistake", "blunder"];
+// (v0.2.1) 이론 수(book)는 하이라이트 후보에서 제외 — 단계 아이콘에 이론 수를 표시하지 않기 위함.
+const REVIEW_PHASE_PRIORITY = ["brilliant", "only", "best", "excellent", "good", "miss", "inaccuracy", "mistake", "blunder"];
 function reviewPhaseHighlight(moves, fromPly, toPly, white) {
   let bestIdx = 999, bestKind = null;
   for (let i = fromPly; i <= toPly && i < moves.length; i++) {
@@ -3993,29 +4237,59 @@ function reviewPhaseHighlight(moves, fromPly, toPly, white) {
   }
   return bestKind;
 }
+// (v0.2.1) 한 단계(구간) 안에서 한쪽 진영의 부분 정확도 — 그 구간 그 진영 수들의 acc 평균(단계 아이콘 클릭 시 표시).
+function reviewPhaseAccuracy(moves, fromPly, toPly, white) {
+  let sum = 0, n = 0;
+  for (let i = fromPly; i <= toPly && i < moves.length; i++) {
+    const m = moves[i]; if (m.white !== white || m.acc == null) continue;
+    sum += m.acc; n++;
+  }
+  return n ? Math.round((sum / n) * 10) / 10 : null;
+}
+// (v0.2.1) 오프닝처럼 하이라이트할 비이론 수가 없는 단계는, 이론 수를 아이콘으로 쓰지 않고 그 단계·진영의
+// 정확도로 대표 등급을 정해 아이콘을 표시한다(chess.com 정확도 구간을 참고한 근사 매핑).
+function gradeFromAccuracy(acc) {
+  if (acc == null) return null;
+  if (acc >= 96) return "best";
+  if (acc >= 90) return "excellent";
+  if (acc >= 80) return "good";
+  if (acc >= 65) return "inaccuracy";
+  if (acc >= 45) return "mistake";
+  return "blunder";
+}
 // 정확성 산출과 동일한 값(analyzeGame의 whiteAcc/blackAcc)을 재사용하고, 여기서는 표시 서식만 맡는다.
 function ReviewAccuracyPill({ label, value, hi }) {
   return (
     <div style={{ flex: 1, textAlign: "center" }}>
-      <div style={{ fontSize: 11, color: "rgba(255,255,255,.65)", fontWeight: 700, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", borderRadius: 9, padding: "8px 6px", background: hi ? "#fff" : "rgba(255,255,255,.12)", color: hi ? "#181818" : "#fff" }}>{value != null ? value.toFixed(1) : "—"}</div>
+      <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
     </div>
   );
 }
 // (기능) 요약 화면의 수 체계별 개수 표 — ANALYSIS_KIND_ROWS·QCOLOR·CircleBadge를 그대로 재사용해
 // AnalysisModal과 동일한 채점 기준을 그대로 보여준다(같은 analyzeGame 결과를 쓰므로 숫자도 항상 일치).
-function ReviewKindTable({ moves }) {
+// (v0.2.1) onPick(curPlyTarget)이 있으면 각 개수 숫자를 눌러 그 등급이 처음 두어진 수로 리뷰 화면을
+// 이동한다(이론 수는 예외로 가장 마지막에 둔 이론 수로). 그 등급의 수가 0개면 누를 수 없다.
+function ReviewKindTable({ moves, showAll = false, onPick }) {
   const countBy = (white, kind) => moves.filter((m) => m.white === white && m.kind === kind).length;
+  const pick = (kind, white) => {
+    if (!onPick) return;
+    const ms = moves.filter((m) => m.white === white && m.kind === kind);
+    if (!ms.length) return;
+    const m = kind === "book" ? ms[ms.length - 1] : ms[0];
+    onPick(m.ply + 1); // curPly = ply+1 (그 수까지 둔 위치)
+  };
+  const numStyle = (kind, n) => ({ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind], background: "none", border: "none", cursor: onPick && n ? "pointer" : "default", padding: 0 });
   return (
-    <div style={{ borderTop: "1px solid rgba(255,255,255,.12)" }}>
+    <div style={{ borderTop: "1px solid " + RV.border }}>
       {ANALYSIS_KIND_ROWS.map(([kind, label]) => {
         const w = countBy(true, kind), b = countBy(false, kind);
-        if (!w && !b) return null;
+        if (!showAll && !w && !b) return null;
         return (
-          <div key={kind} className="flex items-center" style={{ padding: "8px 2px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
-            <span style={{ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind] }}>{w}</span>
-            <span style={{ flex: 1, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "#fff" }}><CircleBadge kind={kind} />{label}</span>
-            <span style={{ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind] }}>{b}</span>
+          <div key={kind} className="flex items-center" style={{ padding: "8px 2px", borderBottom: "1px solid " + RV.border }}>
+            <button onClick={() => pick(kind, true)} className={onPick && w ? "press" : ""} style={numStyle(kind, w)}>{w}</button>
+            <span style={{ flex: 1, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: RV.text }}><CircleBadge kind={kind} descOnClick />{label}</span>
+            <button onClick={() => pick(kind, false)} className={onPick && b ? "press" : ""} style={numStyle(kind, b)}>{b}</button>
           </div>
         );
       })}
@@ -4026,132 +4300,228 @@ function ReviewKindTable({ moves }) {
 // 평가 그래프 → 플레이어·정확성 → 등급별 개수 → 단계별 하이라이트 → 리뷰 시작)로 구성한다.
 // (설계) chess.com의 "Game Rating"(대국 퍼포먼스 레이팅 추정치)은 별도의 통계적 산출 방식이 필요해
 // 이 배치에서 근거 없는 숫자를 지어내기보다 생략한다 — 나머지 항목은 전부 analyzeGame의 실제 결과다.
-function ReviewSummary({ game, result, onStart, onClose, narrow }) {
+function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
   const { openEnd, endStart } = useMemo(() => reviewGamePhases(result.moves), [result.moves]);
   const hasEndgame = endStart < result.moves.length;
-  const phases = [
-    { label: "오프닝", w: reviewPhaseHighlight(result.moves, 0, openEnd, true), b: reviewPhaseHighlight(result.moves, 0, openEnd, false) },
-    { label: "미들게임", w: reviewPhaseHighlight(result.moves, openEnd + 1, hasEndgame ? endStart - 1 : result.moves.length - 1, true), b: reviewPhaseHighlight(result.moves, openEnd + 1, hasEndgame ? endStart - 1 : result.moves.length - 1, false) },
-    { label: "엔드게임", w: hasEndgame ? reviewPhaseHighlight(result.moves, endStart, result.moves.length - 1, true) : null, b: hasEndgame ? reviewPhaseHighlight(result.moves, endStart, result.moves.length - 1, false) : null },
+  const midTo = hasEndgame ? endStart - 1 : result.moves.length - 1;
+  const phaseRanges = [
+    { label: "오프닝", from: 0, to: openEnd },
+    { label: "미들게임", from: openEnd + 1, to: midTo },
+    { label: "엔드게임", from: endStart, to: hasEndgame ? result.moves.length - 1 : -1 },
   ];
+  const phases = phaseRanges.map((r) => ({
+    label: r.label, from: r.from, to: r.to,
+    w: r.to >= r.from ? reviewPhaseHighlight(result.moves, r.from, r.to, true) : null,
+    b: r.to >= r.from ? reviewPhaseHighlight(result.moves, r.from, r.to, false) : null,
+    wAcc: r.to >= r.from ? reviewPhaseAccuracy(result.moves, r.from, r.to, true) : null,
+    bAcc: r.to >= r.from ? reviewPhaseAccuracy(result.moves, r.from, r.to, false) : null,
+  }));
+  // (v0.2.1) 단계 아이콘을 누르면 그 단계·진영의 부분 정확도를 잠깐 보여준다(등급 설명 대신).
+  const [accShow, setAccShow] = useState(null); // "라벨:side"
   const won = game.result === "win", lost = game.result === "loss";
   const headline = !game.result ? "이 수순의 주요 장면들을 함께 분석해봐요!" : won ? "이 대국에서 좋은 전술을 찾아냈어요. 함께 살펴봐요!" : lost ? "아쉬운 순간들이 있었어요 — 무엇을 놓쳤는지 함께 확인해요." : "이 대국의 주요 장면들을 함께 리뷰해요!";
   const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
+  const whiteAvatar = useChesscomAvatar(avatarUsernameFor(game, "w"));
+  const blackAvatar = useChesscomAvatar(avatarUsernameFor(game, "b"));
   return (
     <div style={{ maxWidth: narrow ? "100%" : 380, margin: narrow ? 0 : "0 auto", padding: narrow ? "0 16px 24px" : 0 }}>
       <div className="flex items-start gap-2" style={{ marginBottom: 14 }}>
         <Mascot name="milku" emotion="great" size={54} />
-        <div style={{ background: "rgba(255,255,255,.08)", borderRadius: 12, padding: "10px 13px", fontSize: 12.5, color: "#fff", lineHeight: 1.5 }}>{headline}</div>
+        <div style={{ background: RV.panel, borderRadius: 12, padding: "10px 13px", fontSize: 12.5, color: RV.text, lineHeight: 1.5 }}>{headline}</div>
       </div>
       <EvalGraph evalWin={result.evalWin} moves={result.moves} />
       <div className="flex items-center justify-between" style={{ margin: "16px 0 8px" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.65)" }}>플레이어</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: RV.soft }}>플레이어</span>
       </div>
       <div className="flex items-center" style={{ gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: game.color === "w" ? "2px solid " + T.best : "2px solid transparent" }}><PieceGlyph type="N" color="b" size={38} /></div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{whiteInfo.name}</div>
-          {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontFamily: "ui-monospace,monospace" }}>{whiteInfo.rating}</div>}
+          <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "w" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={whiteAvatar} side="w" size={52} /></div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{whiteInfo.name}</div>
+          {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: "ui-monospace,monospace" }}>{whiteInfo.rating}</div>}
         </div>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, background: "rgba(255,255,255,.1)", display: "flex", alignItems: "center", justifyContent: "center", border: game.color === "b" ? "2px solid " + T.best : "2px solid transparent" }}><PieceGlyph type="P" color="w" size={34} /></div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{blackInfo.name}</div>
-          {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", fontFamily: "ui-monospace,monospace" }}>{blackInfo.rating}</div>}
+          <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "b" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={blackAvatar} side="b" size={52} /></div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{blackInfo.name}</div>
+          {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: "ui-monospace,monospace" }}>{blackInfo.rating}</div>}
         </div>
       </div>
       <div className="flex items-stretch" style={{ gap: 10, marginBottom: 16 }}>
         <ReviewAccuracyPill label="정확성" value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} />
         <ReviewAccuracyPill label="정확성" value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
       </div>
-      <ReviewKindTable moves={result.moves} />
-      <div style={{ padding: "12px 2px", borderBottom: "1px solid rgba(255,255,255,.12)" }}>
-        {phases.filter((p) => p.w || p.b).map((p) => (
-          <div key={p.label} className="flex items-center justify-between" style={{ padding: "6px 0" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "#fff" }}>{p.label}</span>
-            <span className="flex items-center gap-3">
-              <span>{p.w ? <CircleBadge kind={p.w} /> : <span style={{ color: "rgba(255,255,255,.4)" }}>-</span>}</span>
-              <span>{p.b ? <CircleBadge kind={p.b} /> : <span style={{ color: "rgba(255,255,255,.4)" }}>-</span>}</span>
-            </span>
-          </div>
-        ))}
+      <ReviewKindTable moves={result.moves} showAll onPick={onPickMove} />
+      {/* (v0.2.1) 세 단계(오프닝/미들게임/엔드게임)를 모두 보여준다 — 그 단계에 수가 없으면(예: 엔드게임 미도달)
+          아이콘만 감춘다. 아이콘을 누르면 좌측 단계명은 그대로 두고, 그 단계·진영의 부분 정확도를 말풍선으로 띄운다. */}
+      <div style={{ padding: "12px 2px", borderBottom: "1px solid " + RV.border }}>
+        {phases.map((p) => {
+          const phaseBadge = (kind, side, acc) => {
+            // 그 진영이 이 단계에서 둔 수가 없으면(정확도 데이터 없음) 아이콘 미표시.
+            if (acc == null) return <span style={{ width: 26, height: 26, display: "inline-block" }} />;
+            const key = p.label + ":" + side;
+            const active = accShow === key;
+            return (
+              <span style={{ position: "relative", display: "inline-flex", lineHeight: 0 }}>
+                <button onClick={() => setAccShow((v) => (v === key ? null : key))} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}>
+                  {/* 오프닝처럼 하이라이트할 비이론 수가 없으면 이론 아이콘 대신 정확도로 등급을 정해 표시한다. */}
+                  <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind || gradeFromAccuracy(acc)} noTip /></span>
+                </button>
+                {active && (
+                  <span style={{ position: "absolute", bottom: 34, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "6px 10px", borderRadius: 8, background: T.brassHi, color: "#241509", fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", boxShadow: "0 6px 14px -5px rgba(0,0,0,.55)", zIndex: 30 }}>
+                    {p.label + " 정확도 " + acc.toFixed(1) + "%"}
+                    <span style={{ position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 9, height: 9, background: T.brassHi }} />
+                  </span>
+                )}
+              </span>
+            );
+          };
+          return (
+            <div key={p.label} className="flex items-center justify-between" style={{ padding: "6px 0" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: RV.text }}>{p.label}</span>
+              <span className="flex items-center gap-3">
+                <span>{phaseBadge(p.w, "w", p.wAcc)}</span>
+                <span>{phaseBadge(p.b, "b", p.bAcc)}</span>
+              </span>
+            </div>
+          );
+        })}
       </div>
+      {/* (v0.2.1) 닫기 버튼 삭제 — 이 요약(Analysis) 창을 닫는 건 헤더의 뒤로가기가 담당한다. */}
       <div className="flex flex-col" style={{ gap: 10, marginTop: 16 }}>
-        <button onClick={onClose} className="press" style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>닫기</button>
         <button onClick={onStart} className="press" style={{ padding: "13px 14px", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: 14.5, cursor: "pointer" }}>리뷰 시작</button>
       </div>
     </div>
   );
 }
 // (기능) 모바일용 이동 스트립 — 현재 수 주변만 가로로 보여주고 좌우 화살표로 한 수씩 이동.
-function ReviewMoveStrip({ sans, curPly, onJump }) {
+// (v0.2.1) 양끝 </> 버튼은 이제 onJump(정확한 ply로 점프, 자유 탐색 초기화)가 아니라 onPrev/onNext
+// (보드에서 자유롭게 둔 수가 있으면 그것부터 한 수씩 되돌리는 stepBack/stepForward)로 동작한다 —
+// 가운데 기보 항목 클릭은 여전히 onJump로 그 실제 게임 수순 위치로 하드 점프한다.
+// (v0.2.1) moves·dotPlies가 주어지면, 그래프에 원이 찍히는 수(dotPlies)만 그 등급 색을 입히고 왼쪽에
+// 수 체계 아이콘을 붙인다 — 나머지 수는 평범한 흰 글씨로 둔다(모바일 스트립이 아이콘으로 뒤덮이지 않게).
+function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext, canPrev, canNext }) {
   const WINDOW = 5;
   const start = Math.max(0, Math.min(curPly - Math.floor(WINDOW / 2), sans.length - WINDOW));
   const items = sans.slice(Math.max(0, start), Math.max(0, start) + WINDOW);
   return (
     <div className="flex items-center" style={{ gap: 4, padding: "8px 4px" }}>
-      <button onClick={() => onJump(Math.max(0, curPly - 1))} disabled={curPly <= 0} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: curPly <= 0 ? "rgba(255,255,255,.25)" : "#fff", cursor: curPly <= 0 ? "default" : "pointer", flexShrink: 0 }}><ChevronLeft size={18} /></button>
+      <button onClick={onPrev} disabled={!canPrev} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? RV.text : RV.dim, cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
       <div className="flex items-center" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", justifyContent: "center" }}>
         {items.map((s, i) => {
           const ply = Math.max(0, start) + i;
           const isCur = ply === curPly - 1;
           const showNum = ply % 2 === 0;
+          const m = moves && moves[ply];
+          const isDot = !!(dotPlies && dotPlies.has(ply) && m && QCOLOR[m.kind]);
+          const txtColor = isCur ? "#241509" : isDot ? QCOLOR[m.kind] : RV.text;
           return (
             <span key={ply} className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
-              {showNum && <span style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontWeight: 700 }}>{ply / 2 + 1}.</span>}
-              <button onClick={() => onJump(ply + 1)} className="press" style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? "#fff" : "transparent", color: isCur ? "#181818" : "#fff", fontWeight: isCur ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{stripSuffix(s)}</button>
+              {showNum && <span style={{ fontSize: 12, color: RV.soft, fontWeight: 700 }}>{ply / 2 + 1}.</span>}
+              <button onClick={() => onJump(ply + 1)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? T.brassHi : "transparent", color: txtColor, fontWeight: (isCur || isDot) ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{isDot && badgeIcon(m.kind, 13)}{stripSuffix(s)}</button>
             </span>
           );
         })}
       </div>
-      <button onClick={() => onJump(Math.min(sans.length, curPly + 1))} disabled={curPly >= sans.length} aria-label="다음 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: curPly >= sans.length ? "rgba(255,255,255,.25)" : "#fff", cursor: curPly >= sans.length ? "default" : "pointer", flexShrink: 0 }}><ChevronRight size={18} /></button>
+      <button onClick={onNext} disabled={!canNext} aria-label="다음 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canNext ? RV.text : RV.dim, cursor: canNext ? "pointer" : "default", flexShrink: 0 }}><ChevronRight size={18} /></button>
     </div>
   );
 }
-// (기능) 데스크톱용 이동 목록 — 첫 스크린샷처럼 번호+백/흑 두 칸짜리 표, 스크롤 가능, 현재 수 강조.
+// (기능) 데스크톱용 이동 목록 — 번호+백/흑 두 칸짜리 표, 스크롤 가능, 현재 수 강조.
+// (v0.2.1) 모든 수 왼쪽에 그 수의 수 체계 아이콘(badgeIcon)을 붙이고, 글씨는 등급 색으로 표시한다.
+function ReviewMoveCell({ san, move, active, onClick }) {
+  if (san == null) return <span style={{ flex: 1 }} />;
+  const kind = move && move.kind;
+  return (
+    <button onClick={onClick} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 5, textAlign: "left", padding: "6px 8px", border: "none", background: active ? RV.active : "transparent", color: kind && QCOLOR[kind] ? QCOLOR[kind] : RV.text, fontWeight: active ? 800 : 600, cursor: "pointer" }}>
+      {kind && QCOLOR[kind] && <span style={{ width: 15, height: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 15)}</span>}
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stripSuffix(san)}</span>
+    </button>
+  );
+}
 function ReviewMoveTable({ sans, moves, curPly, onJump }) {
   const rows = [];
   for (let i = 0; i < sans.length; i += 2) rows.push([i, sans[i], sans[i + 1]]);
   return (
-    <div style={{ maxHeight: 220, overflowY: "auto", borderRadius: 8, background: "rgba(0,0,0,.2)" }}>
+    <div style={{ maxHeight: 220, overflowY: "auto", borderRadius: 8, background: RV.table }}>
       {rows.map(([i, w, b]) => (
         <div key={i} className="flex items-center" style={{ fontSize: 12.5 }}>
-          <span style={{ width: 32, padding: "6px 4px", color: "rgba(255,255,255,.45)", fontFamily: "ui-monospace,monospace" }}>{i / 2 + 1}.</span>
-          <button onClick={() => onJump(i + 1)} className="press" style={{ flex: 1, textAlign: "left", padding: "6px 8px", border: "none", background: curPly === i + 1 ? "rgba(255,255,255,.16)" : "transparent", color: moves[i] ? QCOLOR[moves[i].kind] : "#fff", fontWeight: curPly === i + 1 ? 800 : 600, cursor: "pointer" }}>{stripSuffix(w)}</button>
-          {b != null && <button onClick={() => onJump(i + 2)} className="press" style={{ flex: 1, textAlign: "left", padding: "6px 8px", border: "none", background: curPly === i + 2 ? "rgba(255,255,255,.16)" : "transparent", color: moves[i + 1] ? QCOLOR[moves[i + 1].kind] : "#fff", fontWeight: curPly === i + 2 ? 800 : 600, cursor: "pointer" }}>{stripSuffix(b)}</button>}
+          <span style={{ width: 32, padding: "6px 4px", color: RV.dim, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{i / 2 + 1}.</span>
+          <ReviewMoveCell san={w} move={moves[i]} active={curPly === i + 1} onClick={() => onJump(i + 1)} />
+          <ReviewMoveCell san={b} move={moves[i + 1]} active={curPly === i + 2} onClick={() => onJump(i + 2)} />
         </div>
       ))}
     </div>
   );
 }
-// (기능) 코치 카드 — 등급 아이콘·헤드라인·평가치 배지·설명, Show(최선수 화살표 토글)·Best(최선수
-// 텍스트로 보기)·Retry(이 카드의 열람 상태 초기화)·Next(다음 수로) 네 컨트롤.
-function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onShowBest, showingBest, onRetry, onNext, isLast, narrow }) {
+// (v0.2.1) 예전 Openings 탭 내용(오프닝 이름·해설)을 평가치 그래프 위에 얹는 얇은 배너.
+function ReviewOpeningBanner({ text }) {
+  if (!text) return null;
+  return (
+    <div className="flex items-center" style={{ gap: 6, marginBottom: 10, padding: "7px 11px", borderRadius: 9, background: RV.panel, border: "1px solid " + RV.border }}>
+      <BookOpen size={13} style={{ color: T.brassHi, flexShrink: 0 }} />
+      <span style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+    </div>
+  );
+}
+// (기능) 코치 카드 — 등급 아이콘·헤드라인·평가치 배지·설명, Show(최선수 화살표 토글)·Next(다음 수로) 컨트롤.
+// (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
+// 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
+// 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
+function ReviewCoachCard({ move, evalCpText, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move);
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
   return (
-    <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, border: "1px solid #000", overflow: "hidden" }}>
+    <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, border: "1px solid " + RV.border, overflow: "hidden" }}>
       <div className="flex items-start gap-2" style={{ padding: "12px 13px 6px" }}>
         <Mascot name={mascotName} emotion={mascotEmo} size={narrow ? 44 : 40} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="flex items-center justify-between" style={{ gap: 8 }}>
-            <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: 13.5, fontWeight: 800, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
-            {evalCpText && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", padding: "3px 8px", borderRadius: 7, background: "rgba(255,255,255,.12)", color: "#fff" }}>{evalCpText}</span>}
+            <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: 13.5, fontWeight: 800, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
+            {evalCpText && <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", padding: "3px 8px", borderRadius: 7, background: "rgba(255,255,255,.12)", color: RV.text }}>{evalCpText}</span>}
           </div>
-          <p style={{ fontSize: 12, color: "rgba(255,255,255,.75)", marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
-          {showingBest && hasBetter && <p style={{ fontSize: 12, color: T.brassHi, marginTop: 4, fontWeight: 700 }}>최선의 수는 {stripSuffix(move.best)}였어요.</p>}
+          <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
         </div>
       </div>
-      <div className="flex items-center" style={{ borderTop: "1px solid rgba(255,255,255,.1)", padding: "8px 10px", gap: 6 }}>
-        <button onClick={onShowLine} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: "#fff", cursor: "pointer", fontSize: 10 }}><Eye size={16} /> Show</button>
-        <button onClick={onShowBest} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingBest ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? "#fff" : "rgba(255,255,255,.3)", cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={16} /> Best</button>
-        <button onClick={onRetry} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: "#fff", cursor: "pointer", fontSize: 10 }}><RotateCcw size={16} /> Retry</button>
+      <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: "8px 10px", gap: 6 }}>
+        <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={16} /> Show</button>
         <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>{isLast ? "완료" : "Next"}</button>
       </div>
     </div>
   );
 }
+// (v0.2.1 기능) 리뷰 보드에서 자유롭게 두다가 폰이 끝 랭크에 닿았을 때의 승격 기물 선택 오버레이 —
+// 학습 탭 메인 보드의 프로모션 UI와 동일한 모양을 그대로 쓴다.
+function ReviewPromoPrompt({ onPick, onCancel }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
+      <div className="flex gap-2">
+        {["Q", "R", "B", "N"].map((t) => (
+          <button key={t} onClick={() => onPick(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <PieceGlyph type={t} color="b" size={26} />
+            <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
+          </button>
+        ))}
+      </div>
+      <button onClick={onCancel} className="press" style={{ fontSize: 10.5, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 7, padding: "4px 12px", cursor: "pointer" }}>취소</button>
+    </div>
+  );
+}
+// (v0.2.1) /review 전용 색 토큰 — 예전엔 순수 검정(#181818)+흰색이라 사이트의 따뜻한 브라운/크림
+// 테마와 이질감이 컸다. 집중학습 오버레이와 같은 어두운 브라운 그러데이션 배경 위에, 아이보리/브라스
+// 계열 텍스트·패널로 통일한다.
+const RV = {
+  bg: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)",
+  head: "rgba(21,12,6,.92)",
+  text: T.ivoryHi,
+  soft: "rgba(235,221,196,.72)",
+  dim: "rgba(235,221,196,.42)",
+  panel: "rgba(255,255,255,.06)",
+  border: "rgba(196,154,80,.22)",
+  table: "rgba(20,12,6,.4)",
+  active: "rgba(236,203,134,.18)",
+};
 // (v0.2.0 기능) /review 최상위 페이지 — game(끝난 한 판)을 받아 요약 화면과 수순별 코치 리뷰 화면을
 // 오간다. 좁은 화면(모바일)은 세로 한 열, 넓은 화면(데스크톱)은 보드+사이드바 2단으로 배치해 각각
 // chess.com 모바일 앱·데스크톱 웹의 레이아웃 구조를 따른다.
@@ -4167,7 +4537,16 @@ function ReviewPage({ game, engine, onClose }) {
   // "리뷰 시작" 버튼이 이 값을 다시 1로 명시적으로 맞추므로 이 초기값과 무관하게 항상 올바르다.
   const [curPly, setCurPly] = useState(1); // 0=시작 위치, i=i번째 수까지 둔 위치
   const [showingLine, setShowingLine] = useState(false);
-  const [showingBest, setShowingBest] = useState(false);
+  // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
+  // curPly/sans는 건드리지 않는다 — 학습 탭의 sans/future와 같은 패턴으로 curPly 이후에 갈라져 나온
+  // "자유 탐색" 수순만 별도로 쌓아 두고(exploreSans), 되돌린 만큼은 exploreFuture에 보존해 </> 로
+  // 다시 밟을 수 있게 한다. 우측 기보(ReviewMoveTable/ReviewMoveStrip)는 항상 sans/curPly만 그리므로
+  // 이 자유 탐색 수는 거기 표시되지 않는다.
+  const [exploreSans, setExploreSans] = useState([]);
+  const [exploreFuture, setExploreFuture] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [drag, setDrag] = useState(null);
+  const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
   // (버그 방지) 데스크톱 레이아웃은 보드 칸(flexShrink:0)이 옆 사이드바(flex:1)와 나란한 flex row라,
   // 이 hook을 그 칸에 그대로 붙이면 "컨테이너 폭을 재서 보드 크기를 정하는" 측정 대상 자체가 보드
   // 크기에 따라 결정되는 순환 참조가 생겨(내용물이 곧 그 칸의 폭) 보드가 항상 최소 크기로 멎는다.
@@ -4182,38 +4561,183 @@ function ReviewPage({ game, engine, onClose }) {
     (async () => { try { const r = await analyzeGame(sans, engine, 18, (p) => { if (!cancelled) setProg(p); }, 250); if (!cancelled) setResult(r); } catch { if (!cancelled) setErr(true); } })();
     return () => { cancelled = true; };
   }, []);
-  useEffect(() => { setShowingLine(false); setShowingBest(false); }, [curPly]);
+  useEffect(() => { setShowingLine(false); }, [curPly]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
-  const board = useMemo(() => boardFromSans(sans.slice(0, curPly)), [sans, curPly]);
+  const exploring = exploreSans.length > 0;
+  const effSans = useMemo(() => sans.slice(0, curPly).concat(exploreSans), [sans, curPly, exploreSans]);
+  const board = useMemo(() => boardFromSans(effSans), [effSans]);
+  const explColor = effSans.length % 2 === 0 ? "w" : "b";
+  const ep = useMemo(() => epTarget(effSans), [effSans]);
+  const legalTargets = useMemo(() => (sel ? legalDests(board, sel[0], sel[1], explColor, ep) : []), [sel, board, explColor, ep]);
   const curMove = curPly > 0 && result ? result.moves[curPly - 1] : null;
+  // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
+  const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
+  // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
+  const openingText = game.opening ? (game.opening + (CONTENT.explains && CONTENT.explains[sans.slice(0, 6).join(" ")] ? " — " + CONTENT.explains[sans.slice(0, 6).join(" ")] : "")) : null;
+  // jump는 실제 게임 수순의 특정 지점으로 하드 이동 — 진행 중이던 자유 탐색은 버린다.
+  const jump = (p) => { setExploreSans([]); setExploreFuture([]); setSel(null); setDrag(null); setPromoPrompt(null); setCurPly(Math.max(0, Math.min(sans.length, p))); };
+  const goNext = () => { if (curPly >= sans.length) { onClose(); return; } jump(curPly + 1); };
+  // </> 한 수 이동 — 자유 탐색 중이면 그 탐색부터 한 수씩 되돌리고(되돌린 수는 exploreFuture에 보존해
+  // 다시 밟을 수 있게 함), 자유 탐색이 없을 때만 실제 게임 수순을 한 수 이동한다(=학습 탭과 동일 패턴).
+  const stepBack = () => {
+    setSel(null); setDrag(null); setPromoPrompt(null);
+    if (exploreSans.length) { setExploreFuture((f) => [exploreSans[exploreSans.length - 1], ...f]); setExploreSans((s) => s.slice(0, -1)); }
+    else jump(curPly - 1);
+  };
+  const stepForward = () => {
+    setSel(null); setDrag(null); setPromoPrompt(null);
+    if (exploreFuture.length) { setExploreSans((s) => [...s, exploreFuture[0]]); setExploreFuture((f) => f.slice(1)); }
+    else if (!exploreSans.length && curPly < sans.length) jump(curPly + 1);
+  };
+  const canBack = curPly > 0 || exploreSans.length > 0;
+  const canFwd = (curPly < sans.length && exploreSans.length === 0) || exploreFuture.length > 0;
+  const playFree = useCallback((san) => {
+    playMoveSfx(san);
+    setExploreSans((s) => [...s, san]); setExploreFuture([]);
+    setSel(null); setDrag(null);
+  }, []);
+  const tryMove = useCallback((from, to) => {
+    if (from[0] === to[0] && from[1] === to[1]) return false;
+    if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
+    const pc = board[from[0]][from[1]];
+    if (pc && pc.t === "P" && ((explColor === "w" && to[0] === 0) || (explColor === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }
+    const san = buildSan(board, from[0], from[1], to[0], to[1], explColor, ep);
+    if (!san) return false;
+    playFree(san);
+    return true;
+  }, [board, explColor, ep, playFree]);
+  const completePromo = useCallback((piece) => {
+    if (!promoPrompt) return;
+    const { from, to } = promoPrompt; setPromoPrompt(null); setSel(null); setDrag(null);
+    const san = buildSan(board, from[0], from[1], to[0], to[1], explColor, ep, piece);
+    if (!san) return;
+    playFree(san);
+  }, [promoPrompt, board, explColor, ep, playFree]);
+  const onSquareClick = useCallback((sq) => {
+    const p = board[sq[0]][sq[1]];
+    if (sel) { if (tryMove(sel, sq)) return; if (p && p.c === explColor) { setSel(sq); return; } setSel(null); return; }
+    if (p && p.c === explColor) setSel(sq);
+  }, [sel, board, explColor, tryMove]);
+  const onPieceDrag = useCallback((sq) => { const p = board[sq[0]][sq[1]]; if (p && p.c === explColor) { setDrag(sq); setSel(sq); } }, [board, explColor]);
+  const onDrop = useCallback((sq) => { if (drag) { tryMove(drag, sq); setDrag(null); setSel(null); } }, [drag, tryMove]);
+  // (v0.2.1 기능) 학습 탭과 동일하게 지금 보고 있는 포지션(effSans — 자유 탐색 중이면 그 위치)의
+  // 엔진 상위 3줄을 보여준다. 앱 전역에서 공유하는 단일 엔진 큐(engine)는 그 아래에 여전히 마운트된
+  // 학습 탭(useMergedMoves)이 계속 점유하고 있어, 그걸 쓰면 라인이 영영 대기에 걸린다 — 게임 리뷰
+  // (analyzeGame)와 같은 독립 풀(getAnalysisPool)에서 워커 하나를 받아 계산한다(분석이 끝난 뒤엔
+  // 풀이 유휴 상태이므로 곧바로 응답한다).
+  const [engineLines, setEngineLines] = useState([]);
+  const [linesPending, setLinesPending] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!engine || engine.status !== "ready") { setEngineLines([]); setLinesPending(false); return; }
+    setLinesPending(true);
+    const baseWhite = effSans.length % 2 === 0 ? 1 : -1;
+    // 원시 PV 목록 → 표시용 라인(백 관점 평가 + 수순). 실시간 스트리밍·최종 결과가 같은 변환을 공유한다.
+    // (Array 가드: 풀 부팅 실패로 useEngine 폴백을 쓰면 5번째 인자가 onLines가 아니라 onProgress라 단일
+    //  엔트리가 올 수 있다 — 그럴 땐 무시한다.)
+    const toLines = (raw) => dedupeEngineLines((Array.isArray(raw) ? raw : []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
+      ev: pv.mate != null
+        ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
+        : { cp: pv.cp * baseWhite },
+      sans: pvUciToSans(effSans, pv.pv, 15),
+    })));
+    (async () => {
+      try {
+        const pool = await getAnalysisPool(engine.profile, engine.urls);
+        const w = pool[0] || engine;
+        // (v0.2.1) onLines로 depth마다 실시간 갱신 — 평가치가 살아 움직이고 수순이 점점 길어진다.
+        const pvsAll = await w.evaluateMulti(sansToFen(effSans), 16, 3, 3000, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } });
+        if (cancelled) return;
+        setEngineLines(toLines(pvsAll));
+      } catch { if (!cancelled) setEngineLines([]); }
+      finally { if (!cancelled) setLinesPending(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  // (v0.2.1 기능) 기보에 없는 자유 탐색 수도 기보 수와 똑같이 — 코치 카드에 등급·평가·설명을, 보드에
+  // 수 체계 아이콘("계산 중" 포함)을, Show 화살표에 최선수를 표시하기 위해, 마지막으로 둔 자유 탐색
+  // 수를 게임 리뷰와 동일한 방식(analyzeGame의 채점 규칙)으로 라이브 분석한다. 공용 엔진 큐 대신 게임
+  // 리뷰와 같은 독립 풀을 써서 학습 탭과 충돌하지 않게 한다.
+  const [exploreMove, setExploreMove] = useState(null); // {san, white, kind, best} — result.moves 항목과 같은 형태
+  useEffect(() => {
+    if (!exploring) { setExploreMove(null); return; }
+    let cancelled = false;
+    const prevSans = effSans.slice(0, -1);
+    const san = effSans[effSans.length - 1];
+    const white = prevSans.length % 2 === 0;
+    setExploreMove({ san, white, kind: "pending", best: null }); // 즉시 "분석 중" 아이콘부터 보여준다
+    (async () => {
+      if (!engine || engine.status !== "ready") return;
+      try {
+        const pool = await getAnalysisPool(engine.profile, engine.urls);
+        const wBest = pool[0] || engine, wAfter = pool[1] || pool[0] || engine;
+        const col = white ? "w" : "b";
+        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), 14, 2, 700);
+        if (cancelled) return;
+        const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
+        if (!p0) return;
+        const bestCp = p0.mate != null ? (p0.mate > 0 ? 1e5 : -1e5) : p0.cp;
+        const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
+        const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
+        const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
+        const after = await wAfter.evaluate(sansToFen(effSans), 14, undefined, 700);
+        if (cancelled || !after) return;
+        const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
+        const ourCp = -afterOpp;
+        const loss = matched ? 0 : bestCp - ourCp;
+        let kind = tierOf(loss);
+        if (kind === "best" && !matched) kind = "excellent";
+        const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
+        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
+        if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+        const gap = secondCp == null ? 9999 : (bestCp - secondCp);
+        if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
+        if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan });
+      } catch { }
+    })();
+    return () => { cancelled = true; };
+  }, [exploring, effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  // (v0.2.1) 지금 화면에 반영할 수/평가 — 자유 탐색 중이면 그 라이브 분석(exploreMove·엔진 라인 1순위
+  // 평가)을, 아니면 게임 리뷰 결과(curMove·evalDisp)를 쓴다. 이후 코치 카드·수 아이콘·평가 바·화살표가
+  // 모두 이 값 하나만 참조하므로 기보 수와 자유 탐색 수의 UX가 완전히 동일해진다.
+  const activeMove = exploring ? exploreMove : curMove;
+  const activeEvalDisp = exploring ? (engineLines[0] && engineLines[0].ev) : (result && result.evalDisp ? result.evalDisp[curPly] : null);
+  const evalCpText = activeEvalDisp ? evalDisplayText(activeEvalDisp) : null;
   const arrows = useMemo(() => {
-    if (!curMove || !showingLine) return [];
-    const target = curMove.best || curMove.san;
-    const prevBoard = boardFromSans(sans.slice(0, curPly - 1));
-    const info = sanSrc(prevBoard, target, curMove.white ? "w" : "b");
+    if (!activeMove || !showingLine) return [];
+    const target = activeMove.best || activeMove.san;
+    const prevBoard = boardFromSans(effSans.slice(0, -1));
+    const info = sanSrc(prevBoard, target, activeMove.white ? "w" : "b");
     return info && !info.castle ? [{ from: info.from, to: info.to, adopt: 80 }] : [];
-  }, [curMove, showingLine, sans, curPly]);
-  const lastQ = curMove ? { to: (() => { const info = sanSrc(boardFromSans(sans.slice(0, curPly - 1)), curMove.san, curMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: curMove.kind } : null;
-  const evalCpText = result && result.evalCp ? fmtEvalCp(result.evalCp[curPly]) : null;
-  const goNext = () => { if (curPly >= sans.length) { onClose(); return; } setCurPly((p) => Math.min(sans.length, p + 1)); };
-  const jump = (p) => setCurPly(Math.max(0, Math.min(sans.length, p)));
-  const wrap = { position: "fixed", inset: 0, zIndex: 300, background: "#181818", overflowY: "auto", WebkitOverflowScrolling: "touch" };
+  }, [activeMove, showingLine, effSans]);
+  const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardFromSans(effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
+  // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
+  // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
+  const hasPlayerData = !!(game.white || game.black || game.color);
+  const whiteAvatar = useChesscomAvatar(avatarUsernameFor(game, "w"));
+  const blackAvatar = useChesscomAvatar(avatarUsernameFor(game, "b"));
+  const whitePInfo = hasPlayerData ? { ...reviewPlayerInfo(game, "w"), side: "w", avatar: whiteAvatar } : null;
+  const blackPInfo = hasPlayerData ? { ...reviewPlayerInfo(game, "b"), side: "b", avatar: blackAvatar } : null;
+  const wrap = { position: "fixed", inset: 0, zIndex: 300, background: RV.bg, overflowY: "auto", WebkitOverflowScrolling: "touch" };
+  // (v0.2.1) 모바일 뒤로가기 — 리뷰 진행 화면에서는 /review를 닫지 않고 Analysis(요약) 창으로 먼저
+  // 돌아가고, 요약 창에서 한 번 더 눌러야 /review가 닫힌다. 데스크톱은 요약 단계가 없어 곧장 닫는다.
+  const handleBack = () => { if (narrow && phase === "review") { setPhase("summary"); setExploreSans([]); setExploreFuture([]); setShowingLine(false); } else onClose(); };
   const header = (
-    <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: "#181818", zIndex: 5 }}>
-      <button onClick={onClose} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
-      <span style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>게임 리뷰</span>
+    <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
+      <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
+      <span style={{ fontSize: 15, fontWeight: 800, color: RV.text }}>게임 리뷰</span>
       <span style={{ width: 34 }} />
     </div>
   );
   if (err) return (
-    <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: "#fff", fontSize: 13 }}>분석할 수 없습니다. 엔진이 준비되었는지 확인해 주세요.</p></div></div>
+    <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: RV.text, fontSize: 13 }}>분석할 수 없습니다. 엔진이 준비되었는지 확인해 주세요.</p></div></div>
   );
   if (!result) return (
     <div style={wrap}>{header}
       <div style={{ padding: "40px 20px", textAlign: "center" }}>
         <Mascot name="kokoa" emotion="think" size={64} />
-        <p style={{ color: "rgba(255,255,255,.75)", fontSize: 13, fontWeight: 700, marginTop: 10 }}>기보를 분석하는 중… {Math.round(prog * 100)}%</p>
+        <p style={{ color: RV.soft, fontSize: 13, fontWeight: 700, marginTop: 10 }}>기보를 분석하는 중… {Math.round(prog * 100)}%</p>
         <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
       </div>
     </div>
@@ -4223,46 +4747,67 @@ function ReviewPage({ game, engine, onClose }) {
       <div style={wrap}>
         {header}
         {phase === "summary"
-          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onClose={onClose} narrow />
+          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onShowBest={() => setShowingBest((v) => !v)} showingBest={showingBest} onRetry={() => { setShowingLine(false); setShowingBest(false); }} onNext={goNext} isLast={curPly >= sans.length} narrow />
-              <div ref={mobileBoardSizeRef} style={{ marginTop: 12 }}>
-                <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} lastQ={lastQ} showEval={false} interactive={false} />
+              <ReviewCoachCard move={activeMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
+              {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
+                  놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
+                  보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
+              <div style={{ marginTop: 12, position: "relative" }}>
+                <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
+                {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
-              <ReviewMoveStrip sans={sans} curPly={curPly} onJump={jump} />
+              <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} />
+              {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. */}
+              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
             </div>
           )}
       </div>
     );
   }
-  // 데스크톱: 좌측 보드(+평가 바) · 우측 탭(Review/Analysis/Details/Openings) 2단 레이아웃.
+  // 데스크톱: 좌측 코치 카드+보드(+평가 바) · 우측 탭(Review/Analysis) 2단 레이아웃.
   return (
     <div style={wrap}>
       {header}
       <div className="flex items-start" style={{ gap: 20, maxWidth: 980, margin: "0 auto", padding: "8px 20px 32px" }}>
-        <div style={{ flexShrink: 0 }}>
-          <BoardWithMaterial board={board} flip={false} textColor="rgba(255,255,255,.7)" size={boardSize} arrows={arrows} lastQ={lastQ} evalCp={result.evalCp ? result.evalCp[curPly] : null} showEval interactive={false} />
+        {/* 열 폭 = 보드 바깥 폭(격자 + 프레임 20) + 세로 평가치 막대(22) + 간격(8). 이 폭을 명시하지 않으면
+            코치 카드의 긴 텍스트가 max-content로 열을 늘려 보드가 오른쪽 사이드바를 밀어낸다. */}
+        <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
+          {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
+          <div style={{ marginBottom: 12 }}>
+            <ReviewCoachCard move={activeMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+          </div>
+          {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
+              놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
+          <div style={{ position: "relative" }}>
+            <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+              leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
+            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
+          </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
-            <button onClick={() => jump(0)} disabled={curPly <= 0} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: curPly <= 0 ? "rgba(255,255,255,.3)" : "#fff", cursor: curPly <= 0 ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
-            <button onClick={() => jump(curPly - 1)} disabled={curPly <= 0} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: curPly <= 0 ? "rgba(255,255,255,.3)" : "#fff", cursor: curPly <= 0 ? "default" : "pointer" }}><ChevronLeft size={16} /></button>
-            <button onClick={() => jump(curPly + 1)} disabled={curPly >= sans.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: curPly >= sans.length ? "rgba(255,255,255,.3)" : "#fff", cursor: curPly >= sans.length ? "default" : "pointer" }}><ChevronRight size={16} /></button>
-            <button onClick={() => jump(sans.length)} disabled={curPly >= sans.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: curPly >= sans.length ? "rgba(255,255,255,.3)" : "#fff", cursor: curPly >= sans.length ? "default" : "pointer" }}><ChevronsRight size={16} /></button>
+            <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? RV.dim : RV.text, cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
+            <button onClick={stepBack} disabled={!canBack} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: canBack ? RV.text : RV.dim, cursor: canBack ? "pointer" : "default" }}><ChevronLeft size={16} /></button>
+            <button onClick={stepForward} disabled={!canFwd} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: canFwd ? RV.text : RV.dim, cursor: canFwd ? "pointer" : "default" }}><ChevronRight size={16} /></button>
+            <button onClick={() => jump(sans.length)} disabled={curPly >= sans.length && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: (curPly >= sans.length && !exploring && !exploreFuture.length) ? RV.dim : RV.text, cursor: (curPly >= sans.length && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsRight size={16} /></button>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,.12)" }}>
-            {[["review", "Review"], ["analysis", "Analysis"], ["details", "Details"], ["openings", "Openings"]].map(([k, label]) => (
-              <button key={k} onClick={() => setTab(k)} className="press" style={{ padding: "9px 14px", border: "none", background: "transparent", color: tab === k ? "#fff" : "rgba(255,255,255,.5)", fontWeight: 800, fontSize: 13, cursor: "pointer", borderBottom: tab === k ? "2px solid " + T.brass : "2px solid transparent" }}>{label}</button>
+          <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
+            {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (
+              <button key={k} onClick={() => setTab(k)} className="press" style={{ padding: "9px 14px", border: "none", background: "transparent", color: tab === k ? RV.text : RV.dim, fontWeight: 800, fontSize: 13, cursor: "pointer", borderBottom: tab === k ? "2px solid " + T.brass : "2px solid transparent" }}>{label}</button>
             ))}
           </div>
           {tab === "review" && (
             <>
-              <EvalGraph evalWin={result.evalWin} moves={result.moves} />
+              {/* (v0.2.1) 예전 Openings 탭에 뜨던 오프닝 정보 — 평가치 그래프 위에 상시 표시한다. */}
+              {openingText && <ReviewOpeningBanner text={openingText} />}
+              <EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} />
+              {/* (v0.2.1 기능) 엔진 라인 — 컴퓨터 환경은 평가치 그래프 바로 아래에 표시한다. */}
+              <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} /></div>
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} /></div>
-              <div style={{ marginTop: 12 }}>
-                <ReviewCoachCard move={curMove} evalCpText={evalCpText} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onShowBest={() => setShowingBest((v) => !v)} showingBest={showingBest} onRetry={() => { setShowingLine(false); setShowingBest(false); }} onNext={goNext} isLast={curPly >= sans.length} />
-              </div>
             </>
           )}
           {tab === "analysis" && (
@@ -4271,26 +4816,8 @@ function ReviewPage({ game, engine, onClose }) {
                 <ReviewAccuracyPill label={"⬜ " + reviewPlayerInfo(game, "w").name} value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} />
                 <ReviewAccuracyPill label={"⬛ " + reviewPlayerInfo(game, "b").name} value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
               </div>
-              <ReviewKindTable moves={result.moves} />
+              <ReviewKindTable moves={result.moves} showAll onPick={(p) => { setTab("review"); jump(p); }} />
             </>
-          )}
-          {tab === "details" && (() => {
-            const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
-            return (
-              <div style={{ color: "#fff", fontSize: 13, lineHeight: 2 }}>
-                <div>⬜ 백: {whiteInfo.name}{whiteInfo.rating != null && " (" + whiteInfo.rating + ")"}</div>
-                <div>⬛ 흑: {blackInfo.name}{blackInfo.rating != null && " (" + blackInfo.rating + ")"}</div>
-                {game.color && <div>내 진영: {game.color === "w" ? "⬜ 백" : "⬛ 흑"}</div>}
-                {game.result && <div>결과: {game.result === "win" ? "승리" : game.result === "loss" ? "패배" : "무승부"}</div>}
-                {game.timeClass && <div>타임 클래스: {TIME_CLASS_LABEL[game.timeClass] || game.timeClass}</div>}
-                {game.opening && <div>오프닝: {game.opening}</div>}
-              </div>
-            );
-          })()}
-          {tab === "openings" && (
-            <div style={{ color: "#fff", fontSize: 13, lineHeight: 1.8 }}>
-              {game.opening ? <p><b>{game.opening}</b>{CONTENT.explains && CONTENT.explains[sans.slice(0, 6).join(" ")] ? " — " + CONTENT.explains[sans.slice(0, 6).join(" ")] : ""}</p> : <p style={{ color: "rgba(255,255,255,.6)" }}>이 대국에서 매칭된 오프닝 이름이 없습니다.</p>}
-            </div>
           )}
         </div>
       </div>
@@ -4561,6 +5088,18 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     const upto = focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
   };
+  // (v0.2.1 기능) 마스터 대국의 초록 리뷰 버튼 — "보기"(onOpenMasterGame)와 달리 학습 보드는 그대로
+  // 두고, 그 대국의 전체 기보를 곧장 /review로 넘긴다. Lichess 마스터 DB의 white/black은 {name,rating}
+  // 형태라 reviewPlayerInfo가 기대하는 {username,rating}로 옮겨 담아야 실제 대국자 이름·레이팅이 뜬다.
+  const onOpenMasterGameReview = async (g) => {
+    const gameSans = await fetchMasterGamePgn(g.id);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
+    if (!gameSans || !gameSans.length) throw new Error("빈 기보");
+    onOpenReview && onOpenReview({
+      sans: gameSans,
+      white: { username: (g.white && g.white.name) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
+      black: { username: (g.black && g.black.name) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
+    });
+  };
   // (19차 기능2) 내 chess.com 대국을 클릭 — 기보를 이미 갖고 있으므로(fetch 불필요) 그대로 보드에 로드.
   const onOpenMyGame = (gameSans) => {
     if (!gameSans || !gameSans.length) return;
@@ -4654,7 +5193,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
+              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
             </div>
           </div>
         )}
@@ -4708,7 +5247,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 {lastSan && (
                   <div>
                     <div className="flex items-center flex-wrap" style={{ gap: 13 }}>
-                      {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} />}
+                      {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
                       <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1)}{lastSan}</span>
                       {curName && <span style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, wordBreak: "keep-all" }}>{curName}</span>}
                       <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}><Play size={11} /> 학습</button>
@@ -4955,7 +5494,7 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening }
           : <div style={{ width: 162, height: 162, margin: "0 auto", borderRadius: 9, background: "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 8px,#33261A 8px,#33261A 16px)", display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={28} style={{ color: T.brass }} /></div>}
       </div>
       <div className="flex items-center gap-2" style={{ marginTop: 10, flexWrap: "wrap" }}>
-        <CircleBadge kind={kind} />
+        <CircleBadge kind={kind} descOnClick />
         <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>
         {evTxt && <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
         <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
@@ -9175,6 +9714,20 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.2.1", date: "2026.7.23", dev: ["openchesskr"], items: [
+      "게임 리뷰 화면에서 이제 학습 탭처럼 원하는 수를 자유롭게 둬볼 수 있어요 — 실제로 둔 수와 똑같이 평가치·수 체계 아이콘·최선 수 제안·코치 설명까지 다 보여줘요.",
+      "게임 리뷰와 학습 탭·퍼즐의 수 체계 아이콘을 누르면 그 등급이 어떤 조건일 때 매겨지는지 말풍선으로 설명해줘요.",
+      "게임 리뷰 요약 화면에서 두어지지 않은 수 등급도, 오프닝·엔드게임 단계도 항상 보여주고, 아이콘을 누르면 그 단계의 정확도를 말풍선으로 알려줘요.",
+      "게임 리뷰 보드에 연동한 chess.com 프로필 사진을 표시하고, 그랜드마스터 대국에도 초록색 즉시 리뷰 버튼을 추가했어요.",
+      "평가치 그래프의 점을 수 체계에 맞춰 정리하고, 그래프를 누르거나 드래그하면 그 시점의 평가치를 바로 확인할 수 있어요. 세로 평가치 막대도 보드 옆에 항상 보이고, 엔진이 추천하는 상위 수들이 실시간으로 변하며 타이핑되듯 나타나요.",
+      "게임 리뷰에서 뒤로가기를 누르면 항상 원래 들어왔던 화면(검색·프로필·마스터 대국 등)으로 돌아가요.",
+      "평가치 표시에서 +/- 부호 대신 유리한 쪽 위치로 보여주고, 코치가 백의 수엔 MILKU, 흑의 수엔 KOKOA로 항상 등장해요.",
+      "코치 설명 카드에서 잘 안 쓰이던 Retry 버튼을 없애고, Show 버튼 아이콘을 최선의 수를 뜻하는 별 모양으로 바꿨어요.",
+      "평가치 그래프가 컴퓨터 화면에서 찌그러져 보이던 문제와, 체크메이트로 끝난 대국의 평가치가 이상한 숫자로 뜨던 문제를 고쳤어요.",
+      "엔진이 추천하는 수들이 잠깐 완전히 겹쳐 보였다 사라지던 깜빡임 문제를 고쳤어요.",
+    ],
+  },
+  {
     version: "0.2.0", date: "2026.7.22", dev: ["openchesskr"], items: [
       "게임 리뷰를 chess.com 스타일의 전체화면 /review 페이지로 새로 만들었어요 — 모바일은 요약 화면부터 수순별 코치 리뷰까지, 데스크톱은 보드와 Review/Analysis/Details/Openings 탭으로 나뉜 화면을 볼 수 있어요.",
       "일일 퍼즐 기능을 추가했어요 — 매일 자정 새로운 퍼즐로 바뀌고, 오늘 처음 접속했을 때와(그리고 오늘의 퀘스트를 아직 못 끝냈다면) 3시간마다 알림이 떠요.",
@@ -12348,7 +12901,10 @@ export default function App() {
   const [reviewGame, setReviewGame] = useState(null);
   const openReview = useCallback((game) => {
     if (!game || !game.sans || !game.sans.length) return;
-    setSearchOpen(false); setFriendsOpen(false);
+    // (v0.2.1) 리뷰를 연 경로(검색 모달·설정 탭 내 프로필·집중학습의 마스터 대국 등)를 그대로 유지한다 —
+    // 예전엔 검색·친구 모달을 닫아 리뷰를 닫으면 그 원래 화면이 아니라 밑의 탭으로 튕겨 나갔다. 이제 그
+    // 모달·오버레이(z-index 90/70)를 그대로 마운트해 두고 리뷰(z-index 300)로 덮기만 하므로, 리뷰를
+    // 닫으면(뒤로가기) 곧장 그 경로로 되돌아간다.
     setReviewGame(game);
     try { if (window.location.pathname !== "/review") window.history.pushState({ review: true }, "", "/review"); } catch { }
   }, []);

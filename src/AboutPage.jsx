@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket,
+  Send, Compass, Rocket, Star,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -695,6 +695,36 @@ const CAT = {
   security: { label: "보안", Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.2.1", date: "2026.7.23",
+    summary: "게임 리뷰 보드에서 이제 원하는 수를 자유롭게 둬볼 수 있고, 수 체계 아이콘을 누르면 등급 설명까지 말풍선으로 볼 수 있어요. 평가치 그래프·엔진 추천 수도 더 정확하고 매끄러워졌어요.",
+    mascot: {
+      intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "게임 리뷰 보드에서 이제 학습 탭처럼 원하는 수를 자유롭게 둬볼 수 있어요 — 실제로 둔 수와 똑같이 평가치와 코치 설명까지 다 보여드릴게요!" },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "수 체계 아이콘이 궁금했다면 한번 눌러보세요 — 그 등급이 어떤 수인지 말풍선으로 바로 설명해드려요." },
+    },
+    highlight: { kind: "icon", Icon: MousePointer, color: "#B98CFF", label: "리뷰 보드 자유 탐색" },
+    sections: [
+      { cat: "feature", items: [
+        "게임 리뷰 보드에서 실제 기보에 없는 수를 자유롭게 둬볼 수 있어요 — 그 수에도 평가치·수 체계 아이콘·최선 수 제안·코치 설명이 실제로 둔 수와 똑같이 따라와요.",
+        "게임 리뷰뿐 아니라 학습 탭·퍼즐의 수 체계 아이콘도 누르면 그 등급이 어떤 조건일 때 매겨지는지 말풍선으로 설명해줘요.",
+        "게임 리뷰 요약 화면에서 두어지지 않은 수 등급도, 오프닝·엔드게임 단계도 항상 보여주고, 단계 아이콘을 누르면 그 구간의 정확도를 말풍선으로 알려줘요.",
+        "게임 리뷰 보드에 연동한 chess.com 프로필 사진을 표시하고, 그랜드마스터 대국에도 초록색 즉시 리뷰 버튼을 추가했어요.",
+        "평가치 그래프의 점을 수 체계에 맞춰 정리하고, 그래프를 누르거나 드래그하면 그 시점의 평가치를 점선과 마커로 바로 확인할 수 있어요.",
+        "세로 평가치 막대가 이제 모든 화면에서 보드 옆에 항상 보이고, 엔진이 추천하는 상위 수들이 실시간으로 변하며 타이핑되듯 나타나요.",
+      ] },
+      { cat: "ux", items: [
+        "평가치 표시에서 +/- 부호 대신 유리한 쪽 위치로 유불리를 보여주고, 코치가 백의 수엔 MILKU, 흑의 수엔 KOKOA로 항상 등장해요.",
+        "게임 리뷰에서 뒤로가기를 누르면 항상 원래 들어왔던 화면(검색·프로필·마스터 대국 등)으로 돌아가요.",
+        "게임 리뷰의 등급별 개수 숫자를 누르면 그 등급이 처음 나온 수로 바로 이동해요.",
+        "코치 설명 카드에서 잘 안 쓰이던 Retry 버튼을 없애고, Show 버튼 아이콘을 최선의 수를 뜻하는 별 모양으로 바꿨어요.",
+      ] },
+      { cat: "fix", items: [
+        "평가치 그래프가 컴퓨터 화면에서 찌그러져 보이던 문제를 고쳤어요.",
+        "체크메이트로 끝난 대국의 평가치가 이상한 숫자로 뜨던 문제를 고쳤어요.",
+        "엔진이 추천하는 수들이 잠깐 완전히 겹쳐 보였다 사라지던 깜빡임 문제를 고쳤어요.",
+      ] },
+    ],
+  },
   {
     version: "0.2.0", date: "2026.7.22",
     summary: "게임 리뷰를 chess.com 스타일의 전체화면 페이지로 새로 만들고, 일일 퍼즐과 개발자 기록을 추가했어요. 분석 엔진이 더 다양해지고, 무엇보다 훨씬 빨라졌어요.",
