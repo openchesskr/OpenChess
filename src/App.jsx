@@ -8581,7 +8581,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
   const [revealed, setRevealed] = useState({});
   useEffect(() => {
     if (!dq) return;
-    const keys = ["puzzle", "cc_0", "cc_1", "cc_2"].filter((k) => dq.claimed[k] && !(dq.seen || {})[k]);
+    const keys = ["puzzle", "dailypuzzle", "cc_0", "cc_1", "cc_2"].filter((k) => dq.claimed[k] && !(dq.seen || {})[k]);
     if (!keys.length) return;
     const t1 = setTimeout(() => setRevealed((r) => ({ ...r, ...Object.fromEntries(keys.map((k) => [k, true])) })), 400);
     const t2 = setTimeout(() => setDailyQuest((d) => d ? { ...d, seen: { ...(d.seen || {}), ...Object.fromEntries(keys.map((k) => [k, true])) } } : d), 2100);
@@ -8591,7 +8591,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
   const seen = dq.seen || {};
   const shownDone = (k) => dq.claimed[k] && (seen[k] || revealed[k]);
   const clearing = (k) => revealed[k] && !seen[k];
-  const allDone = dq.claimed.puzzle && [0, 1, 2].every((i) => dq.claimed["cc_" + i]);
+  const allDone = dq.claimed.puzzle && dq.claimed.dailypuzzle && [0, 1, 2].every((i) => dq.claimed["cc_" + i]);
   const row = (k, label, sub, extras) => { const done = shownDone(k); return (
     <div className="flex items-center gap-2" style={{ padding: "7px 10px", borderRadius: 9, background: done ? "rgba(60,138,60,.18)" : "rgba(0,0,0,.15)", border: "1px solid " + (done ? "rgba(120,200,120,.4)" : "#5A4630"), transition: "background .5s ease, border-color .5s ease", animation: clearing(k) ? "questclear 1.2s ease" : "none" }}>
       <span style={{ width: 18, height: 18, borderRadius: 999, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: done ? T.best : "transparent", border: "1.5px solid " + (done ? T.best : T.inkSoft), transition: "background .4s ease" }}>{done && <Check size={12} color="#fff" />}</span>
@@ -8616,6 +8616,8 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {row("puzzle", "새 퍼즐 " + dq.puzzleTarget + "회 풀기", dq.puzzleCount + "/" + dq.puzzleTarget)}
+        {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
+        {row("dailypuzzle", "오늘의 퍼즐 풀기", "퍼즐 탭 맨 위 ‘오늘의 퍼즐’을 풀어보세요")}
         {(dq.quests || []).map((q, i) => {
           const isOpening = q.type === "opening";
           // (버그) 각 퀘스트를 개별적으로 1회씩 리롤 — 이미 리롤했거나 이미 완료한 퀘스트는 불가.
@@ -8634,13 +8636,13 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       </div>
       {/* (버그) 모든 퀘스트 완료 보상 — 일일 퀘스트 목록 아래 별도 블록으로 시각화(OC 나이트 코인 50) */}
       {(() => {
-        const doneCount = (dq.claimed.puzzle ? 1 : 0) + [0, 1, 2].filter((i) => dq.claimed["cc_" + i]).length;
+        const doneCount = (dq.claimed.puzzle ? 1 : 0) + (dq.claimed.dailypuzzle ? 1 : 0) + [0, 1, 2].filter((i) => dq.claimed["cc_" + i]).length;
         return (
           <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, border: "1px solid " + (allDone ? "rgba(120,200,120,.55)" : T.brass), background: allDone ? "rgba(60,138,60,.18)" : "rgba(196,154,80,.08)", display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ position: "relative", flexShrink: 0 }}><CoinIcon size={40} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? "#BEEAB0" : T.brassHi }}>모든 퀘스트 완료 보상</div>
-              <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>OC 나이트 코인 <b style={{ color: T.brassHi }}>50개</b> · {doneCount}/4 완료</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>OC 나이트 코인 <b style={{ color: T.brassHi }}>50개</b> · {doneCount}/5 완료</div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 800, flexShrink: 0, color: allDone ? T.best : T.inkSoft }}>{allDone ? (dq.bonusClaimed ? "획득 완료!" : "획득!") : "잠김"}</span>
           </div>
@@ -10206,7 +10208,6 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           <button onClick={onToggleBgm} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: bgmOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: bgmOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
         <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => onBgmVolumeChange(parseFloat(e.target.value))} disabled={!bgmOn} aria-label="배경음악 음량" style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: bgmOn ? 1 : 0.4, cursor: bgmOn ? "pointer" : "default" }} />
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>앤티크한 체스 분위기의 잔잔한 배경음악이에요.</p>
 
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
@@ -10218,7 +10219,6 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           <button onClick={onToggleSfx} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sfxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: sfxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
         <input type="range" min={0} max={1} step={0.05} value={sfxVolume} onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))} disabled={!sfxOn} aria-label="효과음 음량" style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: sfxOn ? 1 : 0.4, cursor: sfxOn ? "pointer" : "default" }} />
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>블록을 클릭하거나 체스판에서 수를 둘 때(포획 시엔 다른 소리) 나는 짧은 효과음이에요.</p>
       </div>
 
       {/* (18차 보충 기능3) 전역 퍼즐 수 길이 상한 설정은 삭제 — 개별 퍼즐의 수 길이는 퍼즐 풀이 창에서 개발자가 직접 조정한다. */}
@@ -12499,7 +12499,7 @@ export default function App() {
   // (a) 오늘 아직 한 번도 안 떴거나 (b) 오늘 일일 퀘스트를 다 클리어하지 않은 채로 마지막으로 뜬
   // 지 3시간이 지났으면 다시 띄운다. setInterval로 주기적으로 재검사해야 앱을 계속 켜 둔 채로도
   // 3시간 경과 시점을 놓치지 않는다(탭 전환·리렌더만으로는 시간 경과를 감지할 수 없으므로).
-  const dailyQuestCleared = !!(dailyQuest && dailyQuest.date === todayStr() && dailyQuest.claimed && dailyQuest.claimed.puzzle && Array.isArray(dailyQuest.quests) && dailyQuest.quests.every((_, i) => dailyQuest.claimed["cc_" + i]));
+  const dailyQuestCleared = !!(dailyQuest && dailyQuest.date === todayStr() && dailyQuest.claimed && dailyQuest.claimed.puzzle && dailyQuest.claimed.dailypuzzle && Array.isArray(dailyQuest.quests) && dailyQuest.quests.every((_, i) => dailyQuest.claimed["cc_" + i]));
   // (버그 수정) 업데이트 공지 모달과 이 알림이 동시에 뜨면 나중에 마운트된 이 모달의 전체화면
   // 배경(backdrop)이 z-index가 같아 위에 깔려, 공지 모달의 닫기 버튼을 완전히 가려 못 누르게
   // 만들었다. announceOpen state로 막으려 했으나, 그 값은 별도 useEffect가 setAnnounceOpen을
@@ -12869,7 +12869,7 @@ export default function App() {
   // 4개 퀘스트 모두 완료 시 보너스 +20(한 번만)
   useEffect(() => {
     if (!dailyQuest || dailyQuest.bonusClaimed) return;
-    const allDone = dailyQuest.claimed.puzzle && [0, 1, 2].every((i) => dailyQuest.claimed["cc_" + i]);
+    const allDone = dailyQuest.claimed.puzzle && dailyQuest.claimed.dailypuzzle && [0, 1, 2].every((i) => dailyQuest.claimed["cc_" + i]);
     if (!allDone) return;
     setTotalXp((x) => x + 20);
     setOcCoins((c) => c + 50); // (19차 기능5) 일일 퀘스트 전체 완료 보상: OC 나이트 코인 50개
@@ -12963,6 +12963,13 @@ export default function App() {
     setTab("puzzle");
     setPuzzleActive(todayPuzzle);
   }, [todayPuzzle]);
+  // (v0.2.2 UI#4) '오늘의 퍼즐 풀기' 고정 퀘스트 — 오늘의 퍼즐(todayPuzzle)을 풀면(solved에 그 id가
+  // 들어오면) 완료 처리하고 코인을 1회 지급한다. 퍼즐 카운트 퀘스트와 같은 방식(claimQuestCoins가
+  // 중복 지급을 막음).
+  useEffect(() => {
+    if (!dailyQuest || dailyQuest.date !== todayStr() || !todayPuzzle) return;
+    if (solved.has(todayPuzzle.id)) claimQuestCoins("dailypuzzle", 10);
+  }, [dailyQuest && dailyQuest.date, todayPuzzle && todayPuzzle.id, solved, claimQuestCoins]);
   // (v0.1.0) 채팅의 퍼즐 공유 카드 "풀러 가기" — 그 번호의 퍼즐을 서버에서 불러와 곧장 퍼즐 풀이
   // 화면으로 이동하고, 이 퍼즐을 푸는 동안 얻는 XP의 10%가 공유해 준 친구에게 돌아가도록 출처를 기록한다.
   const onOpenSharedPuzzle = useCallback(async (m) => {
