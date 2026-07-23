@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
@@ -208,10 +208,17 @@ const DECO_PIECE_SRC = {
 const dpct = (n) => (n / 8 * 100) + "%";
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0 }) {
+  // (v0.2.2 UX#1 후속) 이 페이지엔 DecoBoard가 10개 넘게 동시에 마운트돼 있고, 예전엔 화면 밖에 있는
+  // 보드도 계속 무한 반복 애니메이션(위아래 둥실임 + 수 이동)을 돌리고 있었다 — 스크롤 중엔 매 프레임
+  // 그만큼의 transform 애니메이션이 동시에 재계산·합성돼야 해, 특히 "유명한 오프닝들"처럼 보드가
+  // 많이 몰린 구간에서 스크롤이 심하게 버벅였다. useInView로 실제로 화면에 보이는 보드만 애니메이션을
+  // 돌리고, 화면 밖으로 나가면 애니메이션을 완전히 멈춰(정지 상태로) CPU/GPU 부담을 줄인다.
+  const wrapRef = useRef(null);
+  const inView = useInView(wrapRef, { amount: 0.3, margin: "200px 0px 200px 0px" });
   return (
-    <motion.div initial={{ opacity: 0, scale: 0.8, rotate: tilt + (tilt >= 0 ? 8 : -8) }} whileInView={{ opacity: 1, scale: 1, rotate: tilt }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1] }}
+    <motion.div ref={wrapRef} initial={{ opacity: 0, scale: 0.8, rotate: tilt + (tilt >= 0 ? 8 : -8) }} whileInView={{ opacity: 1, scale: 1, rotate: tilt }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1] }}
       style={{ width: size, flexShrink: 0 }}>
-      <motion.div animate={{ y: [0, -7, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut", delay }}>
+      <motion.div animate={inView ? { y: [0, -7, 0] } : { y: 0 }} transition={inView ? { duration: 3.6, repeat: Infinity, ease: "easeInOut", delay } : { duration: 0.3 }} style={{ willChange: "transform" }}>
         <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", ...GLOSS_BORDER }}>
           <div style={{ position: "relative", width: "100%", aspectRatio: "1/1" }}>
             {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => {
@@ -235,11 +242,15 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
               </div>
             ))}
             {move && (
+              // (v0.2.2 UX#1) 예전엔 top/left(레이아웃 속성)를 무한 애니메이션해, "유명한 오프닝들"
+              // 갤러리처럼 보드가 여러 개면 매 프레임 리플로우가 겹쳐 스크롤·애니메이션이 버벅였다 —
+              // 시작 칸에 고정해 두고 transform(x/y translate, GPU 합성)만 애니메이션해 레이아웃을
+              // 건드리지 않게 바꾼다. 이동 칸 수만큼 자기 크기(=한 칸)의 배수로 옮긴다.
               <motion.div
-                initial={{ top: dpct(move.from[0]), left: dpct(move.from[1]) }}
-                animate={{ top: dpct(move.to[0]), left: dpct(move.to[1]) }}
-                transition={{ duration: 1.1, repeat: Infinity, repeatType: "reverse", repeatDelay: 0.9, ease: [0.4, 1.1, 0.5, 1] }}
-                style={{ position: "absolute", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", zIndex: 2 }}>
+                initial={{ x: 0, y: 0 }}
+                animate={inView ? { x: (move.to[1] - move.from[1]) * 100 + "%", y: (move.to[0] - move.from[0]) * 100 + "%" } : { x: 0, y: 0 }}
+                transition={inView ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", repeatDelay: 0.9, ease: [0.4, 1.1, 0.5, 1] } : { duration: 0.3 }}
+                style={{ position: "absolute", top: dpct(move.from[0]), left: dpct(move.from[1]), width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", zIndex: 2, willChange: "transform" }}>
                 <img src={DECO_PIECE_SRC[move.piece]} alt="" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.55))" }} />
               </motion.div>
             )}
@@ -695,6 +706,45 @@ const CAT = {
   security: { label: "보안", Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.2.2", date: "2026.7.23",
+    summary: "학습 탭에서 엔진이 추천 수를 계산하는 시간을 크게 줄이고, 다음 수 블록에 뜬 수 체계 아이콘과 그 수를 실제로 뒀을 때 뜨는 아이콘이 달라 보이던 문제를 고쳤어요.",
+    mascot: {
+      intro: { char: "milku", expr: "great", name: "MILKU 코치", align: "left", text: "이제 학습 탭에서 엔진 추천 수(엔진 라인)가 훨씬 빨리 떠요 — 복잡한 자리에서도 0.5~0.7초면 라인이 확정돼서 기다리는 느낌이 거의 없을 거예요!" },
+      outro: { char: "kokoa", expr: "wink", name: "KOKOA 코치", align: "right", text: "다음 수 블록에서 본 등급 아이콘이, 그 수를 두면 보드랑 현재 수 블록에도 똑같이 나와요 — 이제 헷갈릴 일 없어요." },
+    },
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: "엔진 라인 계산 속도 개선" },
+    sections: [
+      { cat: "perf", items: [
+        "학습 탭에서 엔진이 추천 수(엔진 라인)를 계산하는 시간을 크게 줄였어요 — 유독 오래 걸리던 복잡한 포지션에서도 0.5~0.7초 안에 충분히 깊은 라인으로 확정돼 기다리는 느낌이 사라졌어요. 라인은 예전처럼 계산이 깊어질 때마다 실시간으로 흐르며 나타나요.",
+      ] },
+      { cat: "fix", items: [
+        "학습 탭에서 다음 수 블록에 뜬 수 체계 아이콘과, 그 수를 실제로 뒀을 때 체스판 도착칸·현재 수 블록에 뜨는 아이콘이 서로 다르게 보이던 문제를 고쳤어요 — 이제 블록에서 본 등급이 그대로 따라와, 어느 경로로 그 수에 도달하든 같은 아이콘으로 보여요.",
+      ] },
+      { cat: "feature", items: [
+        "오늘의 퀘스트 두 번째 항목을 항상 ‘오늘의 퍼즐 풀기’로 고정했어요 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 바로 완료돼요.",
+        "유저 검색의 티어 리더보드에 나 자신도(금색 윤곽선으로) 함께 표시되고, 상위 3명은 전용 순위 메달(골드·실버·브론즈)로 강조돼요.",
+        "게임 리뷰 페이지에서 탁월한 수(언더프로모션 제외)가 나오면 체스판 위에 내 기물이 상대에게 어떻게 공격받는지 붉은색 화살표로 바로 보여줘요. 집중 학습 모드의 같은 화살표도 붉은색으로 통일했어요.",
+        "연동된 chess.com 계정이 있으면 ‘자주 두는 첫 수’가 실제 대국 통계를 바탕으로 자동으로 채워져요.",
+      ] },
+      { cat: "ui", items: [
+        "프로필 카드를 정돈했어요 — 티어는 흰 십각형 로고 하나만 두고 그 오른쪽에 금색 XP 게이지로 진척도를 보여줘요. 최근 대국은 진영을 색 막대로 표시하고 레이팅을 아이디에 붙여 적으며, chess.com 통계를 전체·래피드·블리츠·불릿으로 나눠 볼 수 있어요(일일·체스960 제외). 채팅 버튼은 이름 옆으로 옮기고, 최근 대국을 5판·25판 단위로 넘겨 볼 수 있어요.",
+        "퍼즐 탭에서 미해결 퍼즐을 오프닝별 점선 영역으로 묶어 가로로 넘겨 보고, 다른 사람의 풀이 정보가 잘리지 않게 별도 줄로 보여줘요. 수 체계 칩도 한 줄에 깔끔히 들어가요.",
+        "학습 탭의 제안 화살표가 이제 이론 수뿐 아니라 모든 후보 수 중 상위 3수를 보여주고, 평가치순/채택률순 선택에 따라 화살표 두께·투명도가 실제로 달라져요.",
+        "게임 리뷰의 코치 설명에서 탁월한 수를 두면 어떤 기물을 희생했는지 콕 짚어 알려주고, 평가치 박스도 흰색/검은색으로 더 또렷하게 보여요.",
+      ] },
+      { cat: "ux", items: [
+        "프로필의 ‘가장 많이 둔 오프닝’을 백의 첫 수 하나로 고정하지 않고, 백 1~6번째 수 각각에서 가장 많이 둔 수를 번갈아 애니메이션하며 보여줘요.",
+        "도감 오프닝 모식도에서 수 블록을 누르면 뜨는 설명 카드가 이제 블록을 가리지 않고 말풍선처럼 이어져 나오고, 모바일에서는 카드 크기가 65% 수준으로 아담해졌어요.",
+        "도감 오프닝 트리 정중앙의 회로 칩을 누르면 전기 효과음과 함께, 칩이 잠깐 과충전된 뒤 이어진 모든 선과 블록으로 전류가 퍼져나가는 연출이 재생돼요.",
+        "그랜드마스터 보드 스킨에 은은한 광택이 주기적으로 지나가는 애니메이션을 더했어요.",
+        "설정 탭 사운드 카드의 배경음악·효과음 설명 문구를 정리해 더 깔끔해졌어요.",
+      ] },
+      { cat: "perf", items: [
+        "소개 페이지(/about)의 ‘유명한 오프닝들’ 갤러리에서 여러 보드가 함께 움직일 때 애니메이션이 버벅이던 문제를 고쳐, 스크롤도 애니메이션도 부드러워졌어요.",
+      ] },
+    ],
+  },
   {
     version: "0.2.1", date: "2026.7.23",
     summary: "게임 리뷰 보드에서 이제 원하는 수를 자유롭게 둬볼 수 있고, 수 체계 아이콘을 누르면 등급 설명까지 말풍선으로 볼 수 있어요. 평가치 그래프·엔진 추천 수도 더 정확하고 매끄러워졌어요.",
