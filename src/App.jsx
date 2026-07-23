@@ -11332,14 +11332,22 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
 // right는 오른쪽 끝에 덧붙일 부가 정보(같이 아는 친구 수, 티어 등) — 없으면 기존과 똑같은 모양이다.
 // (about 페이지 그랜드마스터 카드 연동) 검색 결과·티어 리더보드에서 그랜드마스터는 오로라 톤
 // 골드 테두리로 항상 강조 표시 — 실제로 티어를 올려야 얻는 결과라 배지처럼 남용될 일이 없다.
-function userSearchRow(r, onClick, right) {
+// (v0.2.2 UI#7) opts.rank(1부터) — 리더보드에서 프로필 사진 왼쪽에 순위를 표시한다(상위 3명은 순위
+// 숫자 대신 전용 메달 이미지 /rank-{1,2,3}.png). opts.isMe면 내 행을 금색 윤곽선으로 강조하고,
+// opts.compact면 블록 두께를 약 65%로 줄인다.
+function userSearchRow(r, onClick, right, opts) {
   const p = r.pub || {};
   const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
+  const { rank, isMe, compact } = opts || {};
+  const avatar = compact ? 28 : 34;
   return (
-    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: 9, borderRadius: 10, border: isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: "#FBF5E8", boxShadow: isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none", cursor: "pointer", textAlign: "left" }}>
-      {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
+    <button key={r.id} onClick={onClick} className="press" style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, padding: compact ? "4px 8px" : 9, borderRadius: 10, border: isMe ? "2px solid " + T.brass : isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: isMe ? "linear-gradient(180deg,#FFFBF0,#F3E7CB)" : "#FBF5E8", boxShadow: isMe ? "0 0 0 2px rgba(196,154,80,.3)" : isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none", cursor: "pointer", textAlign: "left" }}>
+      {rank != null && (rank <= 3
+        ? <img src={"/rank-" + rank + ".png"} alt={rank + "위"} style={{ height: compact ? 30 : 34, width: "auto", flexShrink: 0, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.3))" }} />
+        : <span style={{ width: compact ? 20 : 24, textAlign: "center", flexShrink: 0, fontSize: 13, fontWeight: 900, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{rank}</span>)}
+      {p.photo ? <img src={p.photo} alt="" style={{ width: avatar, height: avatar, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: avatar, height: avatar, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
+        <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>나</span>}{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
       </div>
       {right}
@@ -11371,8 +11379,8 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
       const [fr, top] = await Promise.all([me ? friendSuggestions(8) : Promise.resolve([]), leaderboardTop(8)]);
       if (cancelled) return;
       setSugFriends(fr);
-      // 나 자신은 이미 리더보드 최상단에 있어봐야 새로 만날 사람을 찾는 목적과 무관하므로 제외한다.
-      setSugTop((top || []).filter((r) => r.id !== myUid));
+      // (v0.2.2 UI#7) 리더보드에 나 자신도 그대로 표시한다(내 행은 금색 윤곽선으로 강조).
+      setSugTop(top || []);
       setSugLoading(false);
     })();
     return () => { cancelled = true; };
@@ -11450,10 +11458,10 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                     )}
                     {sugTop.length > 0 && (
                       <div>
-                        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>티어 리더보드</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                           {sugTop.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
-                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} /></span>)}</FadeIn>)}
+                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={30} gaugeWidth={60} /></span>,
+                            { rank: i + 1, isMe: r.id === myUid, compact: true })}</FadeIn>)}
                         </div>
                       </div>
                     )}
