@@ -2539,6 +2539,11 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
   if (!hasLines && !pending) return null;
+  // (v0.2.2 버그 수정) 실시간 스트리밍 도중 멀티PV 슬롯이 1개→2개→3개로 순차적으로 채워지면서
+  // engineLines 배열 길이가 잠깐 1~2로 줄었다가 다시 3으로 늘어, 그때마다 이 블록의 높이가 바뀌어
+  // 학습 탭 체스보드(belowEval 아래)가 위아래로 들썩였다 — 실제 줄 수와 무관하게 항상 3줄 높이를
+  // 차지하도록, 모자란 슬롯은 스켈레톤으로 채워 넣는다.
+  const missing = Math.max(0, 3 - (lines ? lines.length : 0));
   // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
   // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
   // 못 이긴다) — 그 결과 줄(row)과 이 wrapper, 나아가 학습 탭 grid 컬럼까지 전부 그 폭에 맞춰
@@ -2549,18 +2554,21 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
   return (
     <div style={{ width, minWidth: 0, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
       {hasLines
-        ? lines.map((l, i) => (
-          <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
-            onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
-            // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
-            // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
-            style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
-            <EvalBadge ev={l.ev} small />
-            <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-              <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + i} />
+        ? <>
+          {lines.map((l, i) => (
+            <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
+              onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
+              // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
+              // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
+              style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
+              <EvalBadge ev={l.ev} small />
+              <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
+                <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + i} />
+              </div>
             </div>
-          </div>
-        ))
+          ))}
+          {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
+        </>
         : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} />)}
     </div>
   );
@@ -6016,7 +6024,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const [electric, setElectric] = useState(false);
   const electricTimerRef = useRef(null);
   const triggerElectric = useCallback(() => {
-    playSfx("electric", 1000);   // (v0.2.2) 전기 흐르는 소리는 처음 1초만 재생
+    playSfx("electric", 700);   // (v0.2.2) 전기 흐르는 소리는 처음 0.7초만 재생
     setElectric(false);
     // 다음 프레임에 다시 켜 애니메이션이 매 클릭마다 처음부터 재생되게 한다.
     requestAnimationFrame(() => {
