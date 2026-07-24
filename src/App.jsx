@@ -267,13 +267,13 @@ const TIER_IMAGE = {
 // (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
 // 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
 const TIER_BG_IMAGE = {
-  iron: "/tier-bg-iron.webp",
-  bronze: "/tier-bg-bronze.webp",
-  silver: "/tier-bg-silver.webp",
-  gold: "/tier-bg-gold.webp",
-  diamond: "/tier-bg-diamond.webp",
-  master: "/tier-bg-master.webp",
-  grandmaster: "/tier-bg-grandmaster.webp",
+  iron: "/tier-bg-iron.png",
+  bronze: "/tier-bg-bronze.png",
+  silver: "/tier-bg-silver.png",
+  gold: "/tier-bg-gold.png",
+  diamond: "/tier-bg-diamond.png",
+  master: "/tier-bg-master.png",
+  grandmaster: "/tier-bg-grandmaster.png",
 };
 // (v0.1.1) 디자이너가 구간(1~5)마다 로마 숫자가 함께 그려진 별도 이미지를 새로 올려줬다
 // (iron-1.png ~ iron-5.png 등, 파일명이 티어 key와 그대로 맞아떨어짐) — 이제 "티어명 텍스트 + 로마
@@ -2829,8 +2829,88 @@ function dedupeEngineLines(list) {
   const seen = new Set();
   return list.filter((l) => { const k = l.sans && l.sans[0]; if (!k || seen.has(k)) return false; seen.add(k); return true; });
 }
+// (v0.2.5 버그 수정) 이전엔 이 줄의 좌우 스크롤을 브라우저 기본 overflow-x:auto 드래그 스크롤에
+// 맡겼는데, 이는 터치에서만 자연스럽게 동작하고(WebkitOverflowScrolling:touch) 데스크톱 마우스로는
+// 스크롤바를 정확히 붙잡거나 shift+휠을 써야 해 사실상 스크롤이 거의 불가능했다 — 뒷부분 수순이
+// 항상 가려진 채 "끊긴" 것처럼 보이는 원인이었다. 여기서는 포인터 이벤트로 직접 scrollLeft를
+// 옮기는 드래그 스크롤을 구현해 마우스·터치·펜 어디서나 동일하게 동작하게 하고, 실제로 끌었을
+// 때(moved)만 스크롤로 처리하고 그렇지 않으면(제자리 클릭) 그 줄의 첫 수를 둔다 — 스크롤하다 손을
+// 뗀 것이 수를 두는 클릭으로 오인되던 문제를 없앤다.
+// (v0.2.5 버그 수정 2) 드래그 스크롤 자체는 됐지만, 타이핑 효과(TypedMoveLine)로 수순이 시야보다
+// 길게 자라나도 scrollLeft는 그대로 0에 머물러 있어 새로 타이핑된 뒷부분이 화면 밖에서 계속
+// 이어지기만 할 뿐 사용자 눈에는 여전히 "8.fxe3 d6 9.Nd5 Be6"에서 멈춘 것처럼 보였다 — 사용자가
+// 직접 끌어야만 그 뒤를 볼 수 있었던 게 진짜 원인. 채팅창 자동 스크롤과 같은 패턴으로, 지금 보이는
+// 오른쪽 끝이 이미 콘텐츠 끝(atEnd)일 때는 새로 타이핑되는 글자를 계속 따라가며 자동으로 스크롤해
+// 항상 "지금 막 타이핑된 부분"이 보이게 한다. 사용자가 직접 드래그해 앞부분을 살펴보는 중에는
+// (moved=true) 그 위치를 존중해 자동 추적을 멈추고, 줄 정체성이 바뀌면(다음 포지션 등) 다시
+// 처음부터 추적을 재개한다. 아직 안 보이는 수순이 남아있으면 오른쪽 끝에 옅은 그라데이션 페이드도
+// 보여줘 "더 있다"는 것을 시각적으로 알려준다.
+function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const dragRef = useRef(null);
+  const followRef = useRef(true);
+  const [showFade, setShowFade] = useState(false);
+  const identity = posKeyBase + ":" + lineKey;
+  const recompute = () => {
+    const outer = outerRef.current, inner = innerRef.current;
+    if (!outer || !inner) return;
+    const overflowing = inner.scrollWidth > outer.clientWidth + 1;
+    const atEnd = outer.scrollLeft + outer.clientWidth >= inner.scrollWidth - 1;
+    setShowFade(overflowing && !atEnd);
+  };
+  const followTail = () => {
+    const outer = outerRef.current, inner = innerRef.current;
+    if (!outer || !inner || !followRef.current) return;
+    outer.scrollLeft = Math.max(0, inner.scrollWidth - outer.clientWidth);
+  };
+  useEffect(() => {
+    followRef.current = true;
+    followTail();
+    recompute();
+    const inner = innerRef.current;
+    if (!inner || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => { followTail(); recompute(); });
+    ro.observe(inner);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity]);
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX, scrollLeft: outerRef.current ? outerRef.current.scrollLeft : 0, moved: false };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 3) { d.moved = true; followRef.current = false; }
+    if (outerRef.current) outerRef.current.scrollLeft = d.scrollLeft - dx;
+    recompute();
+  };
+  const onPointerUp = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (d && !d.moved && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]);
+    else if (d) recompute(); // 드래그 후 손을 뗀 위치가 끝이면 다시 자동 추적을 재개
+    if (d && d.moved) {
+      const outer = outerRef.current, inner = innerRef.current;
+      if (outer && inner && outer.scrollLeft + outer.clientWidth >= inner.scrollWidth - 1) followRef.current = true;
+    }
+  };
+  return (
+    <div className="no-pan press" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { dragRef.current = null; }}
+      style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "grab" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative", touchAction: "pan-y" }}>
+      <EvalBadge ev={l.ev} small />
+      <div ref={outerRef} onScroll={recompute} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none" }}>
+        <span ref={innerRef} style={{ display: "inline-block" }}>
+          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + lineKey} />
+        </span>
+      </div>
+      {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 18, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,.9))", borderRadius: "0 6px 6px 0" }} />}
+    </div>
+  );
+}
 function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
-  const dragStartRef = useRef(null);
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
   if (!hasLines && !pending) return null;
@@ -2859,16 +2939,7 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
             // 자기 자신의 타이핑 진행 상태를 계속 이어가게 한다.
             const lineKey = (l.sans && l.sans[0]) || i;
             return (
-              <div key={lineKey} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
-                onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
-                // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
-                // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
-                style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
-                <EvalBadge ev={l.ev} small />
-                <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-                  <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + lineKey} />
-                </div>
-              </div>
+              <EngineLineRow key={lineKey} l={l} startPly={sans.length} lineKey={lineKey} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
             );
           })}
           {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
@@ -3118,14 +3189,36 @@ function SequenceBar({ sans, future = [], onJump }) {
     if (span) el.scrollLeft = Math.max(0, span.offsetLeft + span.offsetWidth - el.clientWidth);
     else el.scrollLeft = el.scrollWidth;
   }, [sans.join(" ")]);
+  // (v0.2.5 버그 수정) 엔진 라인과 같은 이유로 이 기보 줄도 overflow-x:auto의 브라우저 기본 스크롤에만
+  // 기대고 있어 데스크톱 마우스로는 스크롤이 거의 안 됐다 — 포인터 이벤트로 직접 scrollLeft를 옮기는
+  // 드래그 스크롤을 추가한다. 각 수는 개별 span에 onJump(i+1) onClick이 걸려 있어(줄 전체가 아니라
+  // 수마다), 드래그로 실제 스크롤을 했을 때(moved) 캡처 단계(onClickCapture)에서 그 클릭을 막아 손을
+  // 뗀 자리의 수로 잘못 점프하지 않게 한다.
+  const dragRef = useRef(null);
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX, scrollLeft: scrollRef.current ? scrollRef.current.scrollLeft : 0, moved: false };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 3) d.moved = true;
+    if (scrollRef.current) scrollRef.current.scrollLeft = d.scrollLeft - dx;
+  };
+  const onClickCapture = (e) => {
+    if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); }
+    dragRef.current = null;
+  };
+  const dragHandlers = { onPointerDown, onPointerMove, onPointerCancel: () => { dragRef.current = null; }, onClickCapture };
   if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
-    return <div ref={scrollRef} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}>{parts.join("  ")}</div>;
+    return <div ref={scrollRef} {...dragHandlers} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
   return (
-    <div ref={scrollRef} className="flex items-center" style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}>
+    <div ref={scrollRef} className="flex items-center no-pan" {...dragHandlers} style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
       {all.map((san, i) => {
         const isCur = i === cur;
         const isFuture = i > cur;
@@ -10691,6 +10784,15 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.2.5", date: "2026.7.24", dev: ["openchesskr"], items: [
+      "엔진 추천 수 줄이 화면 폭보다 길 때, 데스크톱에서 마우스로 끌어도 좌우로 스크롤이 잘 안 돼 뒷부분 수순이 계속 가려져 있던 문제를 고쳤어요 — 이제 마우스·터치 모두 같은 방식으로 끌어서 볼 수 있어요. 학습 탭 상단의 기보 줄도 똑같이 마우스로 편하게 끌어볼 수 있어요.",
+      "엔진이 수를 계속 더 깊게 계산하며 줄이 점점 길어질 때, 화면은 그대로인 채 뒷부분만 안 보이는 곳에서 계속 이어지고 있어 마치 멈춘 것처럼 보이던 문제를 고쳤어요 — 이제 새로 나오는 수를 계속 따라가며 화면이 자동으로 넘어가요.",
+      "스크롤하려고 끌다가 손을 뗐을 때 실수로 그 수가 그대로 둬지거나(엔진 라인), 기보의 엉뚱한 수로 넘어가던(기보) 문제도 함께 고쳤어요.",
+      "줄 뒷부분이 더 있는데 안 보일 때는 오른쪽 끝에 옅은 그림자를 표시해 더 볼 내용이 있다는 걸 알려줘요.",
+      "티어 여정 지도의 배경 그림을 화질이 더 좋은 새 파일로 교체했어요(아이언 배경도 다시 생겼어요).",
+    ],
+  },
   {
     version: "0.2.4", date: "2026.7.24", dev: ["openchesskr", "g13sus"], items: [
       "게임 리뷰는 이제 항상 Stockfish 16(사람 최상급 수준으로 세기 제한)으로 고정되고, 학습·퍼즐 등 나머지 분석은 Stockfish 18 Lite(기본) 또는 17.1 중 설정 탭에서 골라 쓸 수 있어요.",
