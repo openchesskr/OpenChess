@@ -267,13 +267,13 @@ const TIER_IMAGE = {
 // (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
 // 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
 const TIER_BG_IMAGE = {
-  iron: "/tier-bg-iron.webp",
-  bronze: "/tier-bg-bronze.webp",
-  silver: "/tier-bg-silver.webp",
-  gold: "/tier-bg-gold.webp",
-  diamond: "/tier-bg-diamond.webp",
-  master: "/tier-bg-master.webp",
-  grandmaster: "/tier-bg-grandmaster.webp",
+  iron: "/tier-bg-iron.png",
+  bronze: "/tier-bg-bronze.png",
+  silver: "/tier-bg-silver.png",
+  gold: "/tier-bg-gold.png",
+  diamond: "/tier-bg-diamond.png",
+  master: "/tier-bg-master.png",
+  grandmaster: "/tier-bg-grandmaster.png",
 };
 // (v0.1.1) 디자이너가 구간(1~5)마다 로마 숫자가 함께 그려진 별도 이미지를 새로 올려줬다
 // (iron-1.png ~ iron-5.png 등, 파일명이 티어 key와 그대로 맞아떨어짐) — 이제 "티어명 텍스트 + 로마
@@ -10790,6 +10790,7 @@ const CHANGELOG = [
       "엔진이 수를 계속 더 깊게 계산하며 줄이 점점 길어질 때, 화면은 그대로인 채 뒷부분만 안 보이는 곳에서 계속 이어지고 있어 마치 멈춘 것처럼 보이던 문제를 고쳤어요 — 이제 새로 나오는 수를 계속 따라가며 화면이 자동으로 넘어가요.",
       "스크롤하려고 끌다가 손을 뗐을 때 실수로 그 수가 그대로 둬지거나(엔진 라인), 기보의 엉뚱한 수로 넘어가던(기보) 문제도 함께 고쳤어요.",
       "줄 뒷부분이 더 있는데 안 보일 때는 오른쪽 끝에 옅은 그림자를 표시해 더 볼 내용이 있다는 걸 알려줘요.",
+      "티어 여정 지도의 배경 그림을 화질이 더 좋은 새 파일로 교체했어요(아이언 배경도 다시 생겼어요).",
     ],
   },
   {
