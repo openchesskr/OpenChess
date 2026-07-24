@@ -2426,8 +2426,6 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   // (성능) 여기서 워커를 끄지 않는다 — getAnalysisPool이 세션 내내 재사용하도록 관리한다(프로필을
   // 바꾸면 그때 이전 풀이 정리된다).
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
-  const graphCp = new Array(N + 1);
-  for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
   let gradeBoard = startBoard();
   for (let i = 0; i < N; i++) {
     const moverWhite = i % 2 === 0;
@@ -2437,6 +2435,17 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     const bestCp = posEval[i].cp;                         // 이 포지션의 최선(둔 사람 관점)
     const bestSan = posEval[i].best ? uciToSan(brd, posEval[i].best, color) : null;
     const matched = !!(bestSan && stripSuffix(bestSan) === playedSan);
+    // (v0.2.4 버그 수정) 둔 수가 엔진 최선수와 일치하면(matched) 다음 포지션은 바로 그 최선수를 둔
+    // 뒤의 포지션이라, 이론상 평가치는 이번 포지션 최선수 평가치의 부호만 뒤집힌 값과 같아야 한다
+    // (손실 0). 하지만 포지션마다 병렬 풀에서 독립적으로 다시 검색하다 보니(같은 depth·movetime
+    // 목표라도 실제로 도달한 depth가 매번 조금씩 달라질 수 있음) 두 검색이 서로 다른 값을 내놓을 수
+    // 있어, 최선 수를 뒀는데도 그래프·코치 카드 평가치가 흔들려 보였다. 최선 수를 그대로 따라간
+    // 구간은 다음 포지션의 cp를 이번 포지션 값에서 부호만 뒤집어 이어받아 항상 일관되게 만든다
+    // (그 포지션의 최선수·2순위는 다음 수 채점에 그대로 필요하므로 건드리지 않는다 — cp만 이어받음).
+    // 메이트 국면은 부호만으로는 안 맞을 수 있어(수순이 한 칸 줄어듦) 대상에서 제외한다.
+    if (matched && posEval[i].ok && posEval[i].mate == null && posEval[i + 1] && posEval[i + 1].ok && posEval[i + 1].mate == null) {
+      posEval[i + 1].cp = -bestCp;
+    }
     // (버그 수정) 엔진이 이 포지션(또는 둔 수 판정에 필요한 다음 포지션)을 평가하지 못했으면 채점을
     // 건너뛴다. 예전엔 평가 실패 시 cp=0으로 취급돼 loss=0 → '최선의 수' → 정확도 100이 되어, 엔진이
     // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 pending으로 두고 정확도 집계에서 뺀다.
@@ -2482,6 +2491,11 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
+  // (v0.2.4 버그 수정) posEval을 최선 수 구간에서 이어받도록 위 채점 루프 안에서 보정하므로, 그 보정이
+  // 끝난 뒤(루프 종료 후)에 graphCp를 만들어야 한다 — 예전엔 루프 시작 전에 미리 만들어 보정 이전의
+  // 값을 그대로 썼다.
+  const graphCp = new Array(N + 1);
+  for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
   // (v0.2.0 기능) /review 페이지의 코치 카드가 수마다 실제 평가치(+4.67 등)를 표시해야 해서, 이미
   // 계산해 둔 백 관점 centipawn 시퀀스(graphCp)를 승률(evalWin)과 함께 그대로 내보낸다.
   // (v0.2.1 기능) evalDisp — evalCp(그래프 전용, 메이트를 ±100000으로 뭉갬)와 별개로, 텍스트 표시에는
