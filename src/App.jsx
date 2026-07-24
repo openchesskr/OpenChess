@@ -2292,10 +2292,16 @@ function bootAnalysisWorker(urls, eloOpts) {
 // (v0.2.0 성능) 실시간 수 아이콘·게임 리뷰 둘 다 예전엔 필요할 때마다 워커 풀을 새로 띄우고
 // 끝나면 바로 버렸다 — 매번 신경망을 새로 내려받아(브라우저 캐시로 네트워크는 빠르지만) 다시
 // 컴파일해야 해서, 신경망이 큰 프로필(특히 17.1)일수록 "요청 → 실제로 계산 시작"까지의 부팅
-// 비용이 목표 응답 시간(수 0.3초, 리뷰 5초)보다 커지기 쉬웠다. 프로필별로 풀을 딱 한 번만 만들어
+// 비용이 목표 응답 시간(수 0.3초, 리뷰 1초)보다 커지기 쉬웠다. 프로필별로 풀을 딱 한 번만 만들어
 // 세션 내내 재사용한다 — depth·movetime(정확도)은 절대 건드리지 않고, 부팅을 한 번만 치르고 나면
-// 그 뒤로는 병렬도만큼 순수하게 시간을 줄인다. 엔진을 바꾸면(다른 profile 요청) 이전 풀만 정리한다.
-let analysisPoolCache = null; // { profile, promise: Promise<worker[]> } — 한 번에 프로필 하나만 유지
+// 그 뒤로는 병렬도만큼 순수하게 시간을 줄인다.
+// (v0.2.4 버그 수정) 예전엔 프로필 하나만 유지하는 단일 슬롯 캐시라, 분석 엔진(lite/full17)과
+// 게임 리뷰 전용 엔진(full)이 서로 다른 프로필이라는 이유만으로 상대 풀을 매번 통째로 정리하고
+// 새로 띄웠다 — 학습 탭을 쓰다가 리뷰를 열면 학습 탭 풀이 꺼지고, 리뷰를 닫고 학습 탭에 돌아오면
+// 또 학습 탭 풀을 새로 띄우는 식으로 서로를 밀어내며(thrashing) 부팅 비용을 반복해서 치렀다. 프로필이
+// 최대 3개(full/lite/full17)뿐이라 메모리 부담이 크지 않으므로, 프로필별로 풀을 따로 유지하고 절대
+// 서로를 정리하지 않는다(탭을 오가도 이미 띄운 풀은 그대로 살아있다).
+const analysisPoolCache = new Map(); // profile -> Promise<worker[]>
 // (성능) 풀 크기 — 기기가 가진 코어 수만큼 그대로 다 쓴다. 발열·CPU 점유율은 감수하더라도(사용자
 // 요청) 렉 없이 최대 성능을 내는 쪽을 택한다 — 예전처럼 프로필별로 낮게 캡을 걸어 코어를 남겨두지
 // 않는다. 비정상적으로 큰 값이 보고되는 극단적인 경우에 대비한 넉넉한 안전 상한(32)만 둔다.
@@ -2304,12 +2310,12 @@ function analyzePoolSize(profile) {
   return Math.max(2, Math.min(cores, 32));
 }
 function getAnalysisPool(profile, urls) {
-  if (analysisPoolCache && analysisPoolCache.profile === profile) return analysisPoolCache.promise;
-  if (analysisPoolCache) { const stale = analysisPoolCache.promise; stale.then((ws) => ws.forEach((w) => w.terminate())); }
+  const cached = analysisPoolCache.get(profile);
+  if (cached) return cached;
   const size = analyzePoolSize(profile);
   const eloOpts = eloSetoptions(ENGINE_PROFILES[profile]);
   const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls, eloOpts))).then((ws) => ws.filter(Boolean));
-  analysisPoolCache = { profile, promise };
+  analysisPoolCache.set(profile, promise);
   return promise;
 }
 // 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
@@ -4985,11 +4991,32 @@ const RV = {
 // 그 전에 depth에서 먼저 끝나 실제 계산 시간은 기존과 비슷하게 유지된다(상한만 넉넉해진 것).
 const REVIEW_DEPTH = 20;
 const REVIEW_MOVETIME_MS = 1000;
+// (v0.2.4 성능) 게임 리뷰는 항상 고정된 프로필("full")이라 useEngine처럼 별도의 "메인 연결"을
+// 매번 새로 부팅할 필요가 없다 — 실제 계산은 전부 getAnalysisPool의 풀이 담당하고(analyzeGame,
+// 엔진 라인 패널, 수 판정 모두), 아래 evaluate/evaluateMulti는 풀 부팅이 통째로 실패했을 때만
+// 쓰이는 진짜 마지막 폴백이다. 그래서 폴백 워커도 실제로 호출될 때만("지연 부팅") 띄운다 — 흔한
+// 경우(풀이 정상 부팅됨)엔 이 폴백이 아예 뜨지 않아, 리뷰를 열 때마다 불필요한 wasm을 중복
+// 컴파일하던 비용이 사라진다.
+function useReviewEngine() {
+  const profile = ENGINE_PROFILES.full;
+  const fallbackRef = useRef(null);
+  const getFallback = useCallback(() => {
+    if (!fallbackRef.current) fallbackRef.current = bootAnalysisWorker(profile.urls, eloSetoptions(profile));
+    return fallbackRef.current;
+  }, [profile]);
+  useEffect(() => () => { const p = fallbackRef.current; if (p) p.then((w) => w && w.terminate()); }, []);
+  return useMemo(() => ({
+    status: "ready", // 정적 프로필이라 "연결 상태"라는 개념이 없다 — 실제 준비 여부는 getAnalysisPool이 비동기로 처리.
+    profile: profile.id,
+    urls: profile.urls,
+    evaluate: (...args) => getFallback().then((w) => w ? w.evaluate(...args) : null),
+    evaluateMulti: (...args) => getFallback().then((w) => w ? w.evaluateMulti(...args) : []),
+  }), [profile, getFallback]);
+}
 // (v0.2.4) 게임 리뷰는 사용자가 설정 탭에서 고른 분석 엔진과 무관하게 항상 Stockfish 16(사람
-// 최상급 수준으로 세기 제한, ENGINE_PROFILES.full.elo)으로 고정한다 — 리뷰 페이지가 열려 있을 때만
-// 부팅하고 닫히면 정리되도록 이 안에서 직접 useEngine("full")을 호출한다(분석 엔진과는 별개 인스턴스).
+// 최상급 수준으로 세기 제한, ENGINE_PROFILES.full.elo)으로 고정한다.
 function ReviewPage({ game, onClose }) {
-  const engine = useEngine("full");
+  const engine = useReviewEngine();
   const narrow = useNarrow(760);
   const [phase, setPhase] = useState("summary"); // "summary" | "review"
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
@@ -13201,6 +13228,20 @@ export default function App() {
   const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
   const engine = useEngine(enginePref);
   const chesscom = useChessCom(profile.chesscom);
+  // (v0.2.4 성능) 게임 리뷰 전용 엔진 풀(Stockfish 16)을 사용자가 실제로 리뷰를 열기 전에 유휴
+  // 시간에 미리 부팅해 둔다 — depth·movetime·세기는 그대로고(analyzeGame 등은 여전히 이 풀을
+  // getAnalysisPool로 그대로 재사용), 리뷰를 열었을 때 "부팅부터 기다리는" 체감 지연만 없앤다.
+  // requestIdleCallback이 없는 환경(사파리 등)은 넉넉한 setTimeout으로 대체한다. 초기 페이지
+  // 렌더링·분석 엔진 부팅과 경합하지 않도록 우선순위를 가장 낮춰 둔다.
+  useEffect(() => {
+    const boot = () => { const p = ENGINE_PROFILES.full; getAnalysisPool(p.id, p.urls); };
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(boot, { timeout: 8000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = setTimeout(boot, 3000);
+    return () => clearTimeout(id);
+  }, []);
 
   useEffect(() => { loadContent().then(() => setContentVer((v) => v + 1)); }, []);
   const bumpContent = useCallback(async () => { await saveContent(); setContentVer((v) => v + 1); }, []);
