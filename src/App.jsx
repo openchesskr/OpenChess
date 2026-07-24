@@ -7961,10 +7961,88 @@ const DAILY_PUZZLES = [
     steps: ["6...Qg5! — 나이트와 g2를 동시에 노리는 더블 어택.", "7.Nxf7 Qxg2 8.Rf1 Qxe4+ — 계속 몰아치며 폰을 쓸어 담는다.", "9.Be2 Nf3# — 나이트가 킹을 그물에 가두며 체크메이트."],
   },
 ];
-function dailyPuzzleFor(dateStr) {
+// (v0.2.4) 아래 리체스 퍼즐 기반 오늘의 퍼즐(resolveDailyPuzzle)이 아직 못 뜬 동안(엔진 부팅 전,
+// 테마·풀 로딩 중, 또는 그 날짜에 테마가 하나도 배정 안 된 예외 상황)의 폴백으로 이름을 바꿔 남겨 둔다.
+function curatedDailyPuzzleFor(dateStr) {
   const rnd = seedRand("daily:" + dateStr);
   const src = DAILY_PUZZLES[Math.floor(rnd() * DAILY_PUZZLES.length)];
-  return { id: "daily_" + dateStr, themes: ["punish"], name: src.opening + " — 오늘의 퍼즐", opening: src.opening, setupSans: src.setupSans, mistakeSan: src.mistakeSan, solution: src.solution, steps: src.steps, isDaily: true };
+  return { id: "daily_" + dateStr, themes: ["punish"], name: src.opening + " — 오늘의 퍼즐", opening: src.opening, setupSans: src.setupSans, mistakeSan: src.mistakeSan, solution: src.solution, steps: src.steps, isDaily: true, date: dateStr };
+}
+// (v0.2.4 기능) 리체스 퍼즐 DB 기반 오늘의 퍼즐 — 개발자가 2주 단위로 배정한 오프닝 태그
+// (daily_puzzle_themes)에 해당하는 후보 풀(scripts/build-daily-puzzles.mjs가 만들어 두는
+// public/daily-puzzles/<opening_tag>.json)에서 날짜를 시드로 결정적으로 하나 뽑는다. 리체스
+// 퍼즐 자체는 정답이 한 줄뿐이지만, 이 앱은 실제 엔진으로 genPuzzleTree를 돌려 상대의 다른
+// 응수까지 포함한 여러 라인을 만들고, 그중 한 줄을 다시 날짜 시드로 뽑아 "XXXXXX-N"(N=그 줄의
+// 순번) 형태의 id를 부여한다. 개발자가 daily_puzzles_dev에 그 날짜의 PGN을 직접 등록해 뒀으면
+// (미래 날짜 예약용) 테마 풀 대신 그 포지션을 쓴다.
+const DAILY_PUZZLES_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
+const dailyThemePoolCache = new Map(); // opening_tag -> Promise<후보[]>
+function loadDailyThemePool(tag) {
+  if (!dailyThemePoolCache.has(tag)) {
+    dailyThemePoolCache.set(tag, fetch(DAILY_PUZZLES_BASE + "daily-puzzles/" + tag + ".json").then((r) => (r.ok ? r.json() : [])).catch(() => []));
+  }
+  return dailyThemePoolCache.get(tag);
+}
+let dailyThemeRowsCache = null; // Promise<{starts_on,opening_tag,label}[]> — 세션 내내 재사용
+function loadDailyThemeRows() {
+  if (!dailyThemeRowsCache) dailyThemeRowsCache = sbSelect("daily_puzzle_themes?select=starts_on,opening_tag,label&order=starts_on.asc").catch(() => []);
+  return dailyThemeRowsCache;
+}
+// 그 날짜(KST)에 적용되는 테마 = starts_on이 그 날짜 이하인 행 중 가장 최근 것.
+function themeForDate(dateStr, rows) {
+  let cur = null;
+  for (const r of rows || []) { if (r.starts_on <= dateStr) cur = r; else break; }
+  return cur;
+}
+async function fetchDailyPuzzleOverride(dateStr) {
+  try {
+    const rows = await sbSelect("daily_puzzles_dev?date=eq." + dateStr + "&select=date,sans,puzzle_ply,opening&limit=1");
+    return rows && rows[0] ? rows[0] : null;
+  } catch { return null; }
+}
+// XXXXXX-N — XXXXXX는 퍼즐 시작 포지션(설정 수순)의 puzzleNo 해시, N은 genPuzzleTree가 만든 여러
+// 라인 중 몇 번째 줄을 뽑았는지(1부터, 사람이 읽기 쉬운 번호).
+function dailyLineId(baseSans, lineIdx) { return puzzleNo(baseSans.join(" ")) + "-" + (lineIdx + 1); }
+async function resolveDailyPuzzle(dateStr, engine) {
+  let setupSans, mistakeSan, opening;
+  const override = await fetchDailyPuzzleOverride(dateStr);
+  if (override) {
+    setupSans = (override.sans || []).slice(0, override.puzzle_ply);
+    mistakeSan = (override.sans || [])[override.puzzle_ply];
+    opening = override.opening || "개발자 지정 퍼즐";
+  } else {
+    const rows = await loadDailyThemeRows();
+    const theme = themeForDate(dateStr, rows);
+    if (!theme) return curatedDailyPuzzleFor(dateStr); // 아직 테마가 하나도 배정 안 된 경우의 폴백
+    const pool = await loadDailyThemePool(theme.opening_tag);
+    if (!pool || !pool.length) return curatedDailyPuzzleFor(dateStr);
+    const rnd = seedRand("daily:" + dateStr);
+    const src = pool[Math.floor(rnd() * pool.length)];
+    setupSans = src.setupSans; mistakeSan = src.mistakeSan;
+    opening = theme.label || theme.opening_tag;
+  }
+  if (!mistakeSan || !engine || engine.status !== "ready") return curatedDailyPuzzleFor(dateStr);
+  let gen = null;
+  try { gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts("punish")); } catch { gen = null; }
+  if (!gen || !gen.lines || !gen.lines.length) return curatedDailyPuzzleFor(dateStr);
+  const rnd2 = seedRand("daily-line:" + dateStr);
+  const lineIdx = Math.floor(rnd2() * gen.lines.length);
+  const id = dailyLineId(setupSans, lineIdx);
+  return { id, themes: ["punish"], name: opening + " — 오늘의 퍼즐", opening, setupSans, mistakeSan, solution: gen.lines[lineIdx].solution, lines: gen.lines, tree: gen.tree, steps: [], isDaily: true, date: dateStr };
+}
+// (v0.2.4) resolveDailyPuzzle은 비동기(엔진·네트워크 필요)라 매 렌더 동기로 부를 수 없다 — 날짜가
+// 바뀌거나 엔진이 막 준비됐을 때만 다시 계산하고, 계산이 끝나기 전에는 즉시 보여줄 수 있는 큐레이션
+// 폴백(curatedDailyPuzzleFor)을 우선 반환해 화면이 비어 보이지 않게 한다.
+function useDailyPuzzle(engine, dateStr) {
+  const t = dateStr || todayStr();
+  const [resolved, setResolved] = useState(null); // {date, puzzle}
+  useEffect(() => {
+    let cancelled = false;
+    if (!engine || engine.status !== "ready") return;
+    resolveDailyPuzzle(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); });
+    return () => { cancelled = true; };
+  }, [t, engine && engine.status]);
+  return (resolved && resolved.date === t) ? resolved.puzzle : curatedDailyPuzzleFor(t);
 }
 // (버그) 각 활동 퀘스트를 개별적으로 하루 1회씩 리롤 — 다른 오프닝 플레이 퀘스트로 교체.
 // 이미 완료(claimed)한 퀘스트나 이미 리롤한 퀘스트는 교체할 수 없다. 바꿀 오프닝이 없으면 그대로 둔다.
@@ -9670,6 +9748,40 @@ function TodayPuzzleCard({ puzzle, isSolved, onOpen }) {
     </div>
   );
 }
+// (v0.2.4 기능) 지난 오늘의 퍼즐 목록 — curatedDailyPuzzleFor(옛 큐레이션)와 달리 resolveDailyPuzzle은
+// 네트워크·엔진이 필요한 비동기라, 13개 날짜를 한꺼번에 미리 계산해 "이미 풀었는지" 배지까지
+// 보여주면 매번 진입할 때마다 엔진 호출이 13번씩 발생한다 — 목록은 날짜만 가볍게 보여주고, 실제
+// 계산은 사용자가 그 날짜를 누른 시점에 딱 한 번만 한다(해결 여부는 열어보면 퍼즐 화면 안에서 바로 보임).
+function PastDailyPuzzles({ engine, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const [busyDate, setBusyDate] = useState(null);
+  const dates = useMemo(() => {
+    const out = [];
+    for (let i = 1; i <= 13; i++) out.push(todayStr(new Date(Date.now() - i * 86400e3)));
+    return out;
+  }, []);
+  const openDate = async (dateStr) => {
+    if (busyDate || !engine || engine.status !== "ready") return;
+    setBusyDate(dateStr);
+    try { const pz = await resolveDailyPuzzle(dateStr, engine); onOpen(pz); } finally { setBusyDate(null); }
+  };
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <button onClick={() => setOpen((v) => !v)} className="press" style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 2px", border: "none", background: "transparent", color: T.brassHi, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+        <ChevronRight size={13} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} /> 지난 오늘의 퍼즐
+      </button>
+      {open && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+          {dates.map((d) => (
+            <button key={d} onClick={() => openDate(d)} disabled={!!busyDate} className="press" style={{ padding: "5px 9px", borderRadius: 8, border: "1px solid " + T.brass, background: "rgba(0,0,0,.25)", color: T.ivory, fontSize: 10.5, cursor: "pointer", opacity: busyDate && busyDate !== d ? .5 : 1 }}>
+              {busyDate === d ? "불러오는 중…" : d.slice(5)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, dailyPuzzle }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
@@ -9794,6 +9906,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} />
       {/* (18차 UI5) 안내 문구 삭제, (18차 UI2) 일일 퀘스트는 퀘스트 탭으로 이동 */}
       {dailyPuzzle && <TodayPuzzleCard puzzle={dailyPuzzle} isSolved={solved.has(dailyPuzzle.id)} onOpen={() => setActive(dailyPuzzle)} />}
+      {/* (v0.2.4 기능) 지난 오늘의 퍼즐 다시 풀기 — resolveDailyPuzzle이 날짜만 주면 그날의 퍼즐을
+          그대로 재현하므로(순수 함수 + 결정적 시드), 과거 날짜를 눌러 그때그때 새로 계산해 연다. */}
+      <PastDailyPuzzles engine={engine} onOpen={setActive} />
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByNumber()} inputMode="numeric" placeholder="퍼즐 번호로 풀기 (예: 123456)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
         <button onClick={solveByNumber} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
@@ -10950,6 +11065,94 @@ function DevXpPanel({ totalXp, setTotalXp, card }) {
     </div>
   );
 }
+// (v0.2.4 기능) 오늘의 퍼즐(리체스 기반) 개발자 관리 — ①2주 단위 오프닝 테마 로테이션 지정,
+// ②미래 날짜 퍼즐을 PGN으로 직접 지정. 둘 다 master_games_dev와 같은 패턴(is_content_editor
+// 서버 RLS로 이중 검증되는 Supabase 테이블)을 쓴다.
+function DailyPuzzleDevPanel({ card }) {
+  const [themes, setThemes] = useState(null); // null=로딩 중
+  const [themeErr, setThemeErr] = useState("");
+  const [startsOn, setStartsOn] = useState("");
+  const [tag, setTag] = useState("");
+  const [label, setLabel] = useState("");
+  const [themeBusy, setThemeBusy] = useState(false);
+  const loadThemes = useCallback(async () => {
+    try { setThemes(await sbSelect("daily_puzzle_themes?select=id,starts_on,opening_tag,label&order=starts_on.desc&limit=20")); }
+    catch { setThemes([]); }
+  }, []);
+  useEffect(() => { loadThemes(); }, [loadThemes]);
+  const addTheme = async () => {
+    const s = startsOn.trim(), t = tag.trim();
+    if (!s || !t) { setThemeErr("적용 시작일과 오프닝 태그를 모두 입력하세요."); return; }
+    setThemeBusy(true); setThemeErr("");
+    try { await sbInsert("daily_puzzle_themes", { starts_on: s, opening_tag: t, label: label.trim() || null }); setStartsOn(""); setTag(""); setLabel(""); await loadThemes(); }
+    catch (e) { setThemeErr("저장 실패: " + e.message); }
+    setThemeBusy(false);
+  };
+  const [pzDate, setPzDate] = useState("");
+  const [pzOpening, setPzOpening] = useState("");
+  const [pzPgn, setPzPgn] = useState("");
+  const [pzErr, setPzErr] = useState("");
+  const [pzBusy, setPzBusy] = useState(false);
+  const [pzOk, setPzOk] = useState(false);
+  // (AddMasterGameModal과 동일한 검증 방식) 붙여넣은 수순을 시작 위치부터 재생해 합법적인지 확인 —
+  // 하나라도 안 되면 그 지점까지만 인정한다.
+  const pzMoves = useMemo(() => {
+    const raw = parsePgnMoves(pzPgn);
+    let board = startBoard(); const ok = [];
+    for (let i = 0; i < raw.length; i++) {
+      const color = i % 2 === 0 ? "w" : "b";
+      if (!sanSrc(board, raw[i], color)) break;
+      board = applySan(board, raw[i], color); ok.push(raw[i]);
+    }
+    return ok;
+  }, [pzPgn]);
+  const savePuzzle = async () => {
+    const d = pzDate.trim();
+    if (!d || pzMoves.length < 2) return;
+    setPzBusy(true); setPzErr(""); setPzOk(false);
+    try {
+      // (마지막 수 = 퍼즐의 시작인 "상대의 실수") sans 전체와 그 실수의 인덱스(puzzle_ply)를 저장해
+      // 두면, resolveDailyPuzzle이 그 위치부터 genPuzzleTree로 정답 라인을 직접 만들어 낸다.
+      await sbInsert("daily_puzzles_dev", { date: d, pgn: pzPgn, sans: pzMoves, puzzle_ply: pzMoves.length - 1, opening: pzOpening.trim() || null });
+      setPzOk(true); setPzDate(""); setPzOpening(""); setPzPgn("");
+    } catch (e) { setPzErr("저장 실패: " + e.message); }
+    setPzBusy(false);
+  };
+  const inputStyle = { padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, boxSizing: "border-box" };
+  const btnStyle = { padding: "7px 12px", borderRadius: 8, border: "none", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, cursor: "pointer" };
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>오늘의 퍼즐 (개발자)</div>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>리체스 퍼즐 기반 오늘의 퍼즐의 오프닝 테마 로테이션과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>2주 오프닝 테마</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 110, overflowY: "auto" }}>
+        {(themes || []).map((t) => (
+          <div key={t.id} className="flex items-center justify-between" style={{ fontSize: 11, color: T.inkSoft }}>
+            <span>{t.starts_on} 부터</span><span style={{ fontWeight: 700, color: T.ink }}>{t.label || t.opening_tag}</span>
+          </div>
+        ))}
+        {themes && themes.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>등록된 테마가 없어요(당분간 기본 큐레이션 퍼즐로 대체돼요).</span>}
+      </div>
+      <div className="flex gap-2" style={{ marginBottom: 4, flexWrap: "wrap" }}>
+        <input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} style={{ ...inputStyle, flex: "1 1 130px" }} />
+        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="오프닝 태그(예: Italian_Game)" style={{ ...inputStyle, flex: "2 1 160px" }} />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="표시 이름(선택)" style={{ ...inputStyle, flex: "1 1 100px" }} />
+      </div>
+      {themeErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{themeErr}</p>}
+      <button onClick={addTheme} disabled={themeBusy} className="press" style={{ ...btnStyle, marginBottom: 14, opacity: themeBusy ? .6 : 1 }}>테마 추가</button>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>미래 날짜 퍼즐 직접 지정 (PGN)</div>
+      <div className="flex gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
+        <input type="date" value={pzDate} onChange={(e) => setPzDate(e.target.value)} style={{ ...inputStyle, flex: "1 1 130px" }} />
+        <input value={pzOpening} onChange={(e) => setPzOpening(e.target.value)} placeholder="오프닝 이름(선택)" style={{ ...inputStyle, flex: "1 1 130px" }} />
+      </div>
+      <textarea value={pzPgn} onChange={(e) => setPzPgn(e.target.value)} placeholder="PGN 수순 붙여넣기 — 마지막 수가 상대의 실수(퍼즐의 시작)여야 해요." rows={3} style={{ ...inputStyle, width: "100%", marginBottom: 4, resize: "vertical" }} />
+      <p style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>{pzPgn.trim() ? (pzMoves.length ? pzMoves.length + "수 인식됨" : "인식할 수 있는 수순이 없어요") : ""}</p>
+      {pzErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{pzErr}</p>}
+      {pzOk && <p style={{ fontSize: 11, color: T.best, marginBottom: 4 }}>저장했어요.</p>}
+      <button onClick={savePuzzle} disabled={pzBusy || pzMoves.length < 2 || !pzDate.trim()} className="press" style={{ ...btnStyle, opacity: (pzBusy || pzMoves.length < 2 || !pzDate.trim()) ? .5 : 1 }}>퍼즐 저장</button>
+    </div>
+  );
+}
 function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
@@ -11022,6 +11225,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
           않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
       {isDev && devOn && <DevXpPanel totalXp={totalXp} setTotalXp={setTotalXp} card={card} />}
+      {canEdit && <DailyPuzzleDevPanel card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
@@ -13371,7 +13575,12 @@ export default function App() {
       // 퍼즐을 열어본 채로 자정을 넘기면 퍼즐 탭을 눌러도(=puzzleActive가 non-null이라 홈 화면 대신
       // 그 풀이 화면이 곧장 뜸) 전날 퍼즐이 계속 보이는 버그가 있었다(알림 팝업은 todayPuzzle을 매번
       // 새로 계산해 보여주므로 이 버그와 무관하게 항상 정상이었다).
-      const restoredPuzzleActive = d.puzzleActive && !(/^daily_/.test(d.puzzleActive.id) && d.puzzleActive.id !== "daily_" + todayStr()) ? d.puzzleActive : null;
+      // (v0.2.4 버그 수정) 리체스 기반 오늘의 퍼즐은 id가 더 이상 "daily_" 접두사가 아니라
+      // "XXXXXX-N" 형태라 접두사로는 "어제 이전의 오늘의 퍼즐"인지 구분할 수 없다 — 퍼즐 객체
+      // 자체의 isDaily/date 필드로 판정하되(curatedDailyPuzzleFor·resolveDailyPuzzle 둘 다 채움),
+      // 이 필드가 없는 배포 전 저장값(구버전 "daily_" id)은 접두사 검사로 그대로 폴백한다.
+      const isStaleDaily = (pz) => !pz ? false : (pz.isDaily && pz.date) ? pz.date !== todayStr() : (/^daily_/.test(pz.id) ? pz.id !== "daily_" + todayStr() : false);
+      const restoredPuzzleActive = d.puzzleActive && !isStaleDaily(d.puzzleActive) ? d.puzzleActive : null;
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (restoredPuzzleActive) setPuzzleActive(restoredPuzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
     // (버그 수정 시도 → 되돌림) 개발자 모드에서 XP를 바꾼 직후 곧바로 새로고침하면, 아직 서버에
@@ -13874,7 +14083,7 @@ export default function App() {
   }, []);
   // (v0.2.0 기능2) 오늘의 퍼즐 — 순수 함수라 매 렌더 다시 계산해도 무방(자정 지나 날짜가
   // 바뀌면 자연히 다음 퍼즐로 넘어간다). 알림 팝업의 "풀러 가기"에서도 그대로 재사용한다.
-  const todayPuzzle = dailyPuzzleFor(todayStr());
+  const todayPuzzle = useDailyPuzzle(engine);
   const openDailyPuzzle = useCallback(() => {
     setSearchOpen(false); setFriendsOpen(false);
     setTab("puzzle");
