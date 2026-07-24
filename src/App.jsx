@@ -650,7 +650,42 @@ function applySan(board, sanRaw, color) {
   if (info.piece === "P" && info.isCap && !b[dr][dc]) b[color === "w" ? dr + 1 : dr - 1][dc] = null;
   b[dr][dc] = info.promo ? { c: color, t: info.promo } : moving; b[sr][sc] = null; return b;
 }
-function boardFromSans(sans) { let b = startBoard(); sans.forEach((s, i) => { b = applySan(b, s, i % 2 === 0 ? "w" : "b"); }); return b; }
+// (v0.2.3 성능) boardFromSans/sansToFen이 매번 sans 전체를 시작 포지션부터 처음부터 재생해, 학습
+// 탭·리뷰 페이지에서 긴 기보를 두거나 포지션을 빠르게 넘길 때마다 호출 하나하나의 비용이 그 시점의
+// 수순 길이만큼 커지고, 이 비용이 포지션을 옮길 때마다 누적돼 뒤쪽 수순으로 갈수록 체감 속도가
+// 심각하게 느려졌다(엔진 평가·후보 수 계산 등 이 두 함수를 쓰는 모든 곳이 함께 영향을 받음). 모듈
+// 스코프에 "마지막으로 재생한 경로"를 기억하는 캐시를 두고, 새 호출의 sans와 캐시된 경로의 공통
+// 접두사(prefix)까지는 이미 계산해 둔 보드·캐슬링 권리·앙파상 상태를 그대로 재사용하고, 갈라지는
+// 지점부터만 증분으로 적용한다 — 실제 진행(한 수씩 앞으로, 같은 위치에서 여러 후보 수를 평가하기
+// 위해 sansToFen([...sans, san])을 후보 수마다 반복 호출하는 것 등)은 대부분 직전 호출과 긴 공통
+// 접두사를 공유하므로 실질 비용이 거의 O(1)에 가까워진다. board는 항상 새로 만들어지고(applySan이
+// 원본을 건드리지 않음) 캐시가 그 스냅샷을 그대로 들고 있어도 다른 곳에서 값을 바꿀 위험이 없다.
+let _replayCache = { sans: [], boards: [startBoard()], rights: [{ K: true, Q: true, k: true, q: true }], eps: [null] };
+function _commonPrefixLen(a, b) {
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a[i] === b[i]) i++;
+  return i;
+}
+// sans까지 재생한 {board, rights, ep}를 반환한다. boardFromSans·sansToFen이 공유하는 단일 재생
+// 경로라, 어느 한쪽으로 호출해도 다른 쪽 호출의 캐시를 그대로 재사용할 수 있다.
+function replaySans(sans) {
+  const c = _replayCache;
+  const start = _commonPrefixLen(c.sans, sans);
+  let board = c.boards[start], rights = c.rights[start], ep = c.eps[start];
+  const boards = c.boards.slice(0, start + 1), rightsArr = c.rights.slice(0, start + 1), eps = c.eps.slice(0, start + 1);
+  for (let i = start; i < sans.length; i++) {
+    const color = i % 2 === 0 ? "w" : "b";
+    const info = sanSrc(board, sans[i], color);
+    rights = updateCastleRights(rights, info, color);
+    ep = epTargetFromMoveInfo(info);
+    board = applySan(board, sans[i], color);
+    boards.push(board); rightsArr.push(rights); eps.push(ep);
+  }
+  _replayCache = { sans: sans.slice(), boards, rights: rightsArr, eps };
+  return { board, rights, ep };
+}
+function boardFromSans(sans) { return replaySans(sans).board; }
 // (버그 수정) sanSrc가 돌려주는 한 수의 from/to 정보(그 수를 두기 "직전" 보드 기준)만으로 그 수가
 // 진짜 폰 더블 푸시였는지 판정한다 — epTarget과 analyzeGame의 FEN 생성 루프가 이 판정을 공유해,
 // 둘의 기준이 서로 어긋나는 일이 없게 한다.
@@ -718,14 +753,7 @@ function boardToFen(b, plyCount, castleStr, epStr) {
   return rows.join("/") + " " + (plyCount % 2 === 0 ? "w" : "b") + " " + (castleStr || "-") + " " + (epStr || "-") + " 0 " + (Math.floor(plyCount / 2) + 1);
 }
 function sansToFen(sans) {
-  let board = startBoard(), rights = { K: true, Q: true, k: true, q: true }, ep = null;
-  for (let i = 0; i < sans.length; i++) {
-    const color = i % 2 === 0 ? "w" : "b";
-    const info = sanSrc(board, sans[i], color);
-    rights = updateCastleRights(rights, info, color);
-    ep = epTargetFromMoveInfo(info);
-    board = applySan(board, sans[i], color);
-  }
+  const { board, rights, ep } = replaySans(sans);
   return boardToFen(board, sans.length, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-");
 }
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
@@ -1153,6 +1181,57 @@ async function fetchMasterTopGames(sans, count = 15) {
   const j = await lichessFetchJson(url);
   return (j.topGames || []).map((g) => ({ id: g.id, winner: g.winner || null, white: g.white, black: g.black, year: g.year }));
 }
+// (v0.2.3 기능) 개발자가 수동으로 추가한 마스터 대국(master_games_dev) — Lichess 마스터 DB에 없는
+// 유명 대국을 보충한다. sans(그 대국의 전체 SAN 배열)가 지금 보고 있는 수순을 접두사로 포함하는
+// 대국만 골라 Lichess topGames와 같은 모양({id,winner,white,black,year})으로 변환해 돌려준다 —
+// id에 "dev_" 접두사를 붙여 onOpenMasterGame/onOpenMasterGameReview가 Lichess PGN 엔드포인트 대신
+// 이 테이블에서 곧장 기보를 가져오도록 구분한다.
+async function fetchDevMasterGames(sans) {
+  if (!SB_ON) return [];
+  const rows = await sbSelect("master_games_dev?select=id,white_name,white_rating,black_name,black_rating,year,result,sans&order=year.desc&limit=500");
+  const key = sans.map(stripSuffix);
+  return (rows || [])
+    .filter((r) => Array.isArray(r.sans) && r.sans.length >= key.length && key.every((s, i) => stripSuffix(r.sans[i]) === s))
+    .map((r) => ({
+      id: "dev_" + r.id,
+      winner: r.result === "1-0" ? "white" : r.result === "0-1" ? "black" : null,
+      white: { name: r.white_name, rating: r.white_rating },
+      black: { name: r.black_name, rating: r.black_rating },
+      year: r.year,
+    }));
+}
+// Lichess 마스터 DB + 개발자 추가분을 한 목록으로 합친다 — 화면(FocusPanel)에서 출처를 구분하지 않는다.
+async function fetchAllMasterGames(sans, count = 15) {
+  const [lichess, dev] = await Promise.all([
+    fetchMasterTopGames(sans, count).catch(() => []),
+    fetchDevMasterGames(sans).catch(() => []),
+  ]);
+  return [...dev, ...lichess];
+}
+// PGN 안에 명시된 결과 토큰("1-0"/"0-1"/"1/2-1/2"/"*")을 찾는다(없으면 null).
+function pgnResultToken(pgn) {
+  const m = (pgn || "").match(/(1-0|0-1|1\/2-1\/2|\*)\s*(?:\r?\n|$)/);
+  return m ? m[1] : null;
+}
+// (v0.2.3 기능) 개발자 마스터 대국 추가 폼의 "대국 결과" 자동 입력 — PGN에 명시된 결과 토큰을
+// 우선 쓰고, 없거나 "*"(미정)면 마지막 수에 체크메이트 기호(#)가 있는지로 승패를 역산한다. 그마저
+// 판정할 수 없으면 null을 돌려줘 개발자가 직접 선택하게 한다.
+function autoResultFromPgn(pgn, sans) {
+  const token = pgnResultToken(pgn);
+  if (token && token !== "*") return token;
+  if (sans && sans.length && /#$/.test(sans[sans.length - 1])) {
+    const moverWhite = (sans.length - 1) % 2 === 0;
+    return moverWhite ? "1-0" : "0-1";
+  }
+  return null;
+}
+async function addDevMasterGame({ whiteName, whiteRating, blackName, blackRating, year, pgn, sans, result }) {
+  await sbInsert("master_games_dev", {
+    white_name: whiteName, white_rating: whiteRating || null,
+    black_name: blackName, black_rating: blackRating || null,
+    year: year || null, pgn, sans, result,
+  });
+}
 function parsePgnMoves(pgn) {
   const noHeaders = pgn.replace(/^\[.*\]$/gm, "");
   const noComments = noHeaders.replace(/\{[^}]*\}/g, "").replace(/;[^\n]*/g, "");
@@ -1164,6 +1243,18 @@ function parsePgnMoves(pgn) {
 async function fetchMasterGamePgn(id) {
   const text = await lichessFetchText(LICHESS_API + "?pgn=" + id);
   return parsePgnMoves(text);
+}
+// (v0.2.3 기능) id가 "dev_"로 시작하면 개발자가 추가한 마스터 대국(master_games_dev)에서, 아니면
+// 기존처럼 Lichess에서 기보를 가져온다 — onOpenMasterGame/onOpenMasterGameReview가 출처를 몰라도
+// 되도록 이 함수 하나로 분기를 감춘다.
+async function fetchAnyMasterGamePgn(id) {
+  if (typeof id === "string" && id.startsWith("dev_")) {
+    if (!SB_ON) throw new Error("no-db");
+    const rows = await sbSelect("master_games_dev?id=eq." + id.slice(4) + "&select=sans&limit=1");
+    if (!rows || !rows[0]) throw new Error("not-found");
+    return rows[0].sans;
+  }
+  return fetchMasterGamePgn(id);
 }
 async function fetchWiki(name) {
   if (!name) return null;
@@ -1247,20 +1338,22 @@ function canCaptureSquareLegally(board, tr, tc, side) {
   }
   return false;
 }
-// (16차→18차) color 진영 기물 중, 상대가 다음 수에 잡아 실질 손실(≥1)을 낼 수 있는 기물이 있는지 — 있다면 그 최대 손실값.
+// (16차→18차) color 진영 기물 중, 상대가 다음 수에 잡아 실질 손실(≥1)을 낼 수 있는 기물이 있는지 — 있다면 그 최대 손실값과 그 칸(sq).
 // (18차) SEE 기하학 계산만으론 "체크 중이라 위협을 실행할 수 없는" 경우(예: Bxf7+ 이후 Qxg5는 체크 방치라 불법)를
 // 걸러내지 못해 탁월 오탐의 원인이 됐다 — 실제로 그 칸을 합법적으로 잡을 수 있을 때만 위협으로 인정한다.
 // (20차) skip: 집계에서 제외할 칸 — 방금 이동한 기물의 도착 칸을 빼기 위해 사용(그 칸의 손익은 net에서 별도 계산).
-function hangingLoss(board, color, skip) {
+// (v0.2.3) 칸 좌표(sq)까지 돌려주도록 확장 — attacksPricierIndependent가 "그 방치된 칸을 상대의
+// 반격 기물이 한 수로 같이 잡을 수 있는지"를 판정하려면 손실값뿐 아니라 정확한 칸 좌표가 필요하다.
+function hangingLossSq(board, color, skip) {
   const enemy = color === "w" ? "b" : "w";
-  let maxLoss = 0;
+  let maxLoss = 0, sq = null;
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     if (skip && skip[0] === r && skip[1] === c) continue;
     const p = board[r][c]; if (!p || p.c !== color || p.t === "K") continue;
     const gain = seeSquare(board, r, c, enemy);
-    if (gain > maxLoss && canCaptureSquareLegally(board, r, c, enemy)) maxLoss = gain;
+    if (gain > maxLoss && canCaptureSquareLegally(board, r, c, enemy)) { maxLoss = gain; sq = [r, c]; }
   }
-  return maxLoss;
+  return { loss: maxLoss, sq };
 }
 // (21차) 내 기물이 걸려 있는 걸 방치한 수라도, 그 대신 그보다 더 비싼 상대 기물을 진짜로(=이 교환이
 // 나에게 순이득인) 위협했다면 — 도망 대신 반격을 택한 찾기 어려운 수이므로 탁월로 인정하기 위한 판정.
@@ -1271,6 +1364,29 @@ function attacksPricier(board, color, minVal) {
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const p = board[r][c]; if (!p || p.c !== enemy || p.t === "K") continue;
     if (VAL[p.t] > minVal && seeSquare(board, r, c, color) > 0) return true;
+  }
+  return false;
+}
+// (v0.2.3 버그 수정) 방치된 내 기물(hangSquare)과 가치가 같거나 더 높은 상대 기물을 안전하게
+// (다음 수에 잡히지 않게) 반격 위협하더라도, 그 상대 기물이 "도망가면서 동시에" 방치된 내 기물을
+// 잡을 수 있다면(예: 9.d5로 나이트 e5의 보호가 풀리는 동시에 그 나이트 바로 옆 퀸도 위협받는 경우,
+// 퀸은 도망감과 동시에 Qxe5로 나이트를 그대로 챙길 수 있어 진짜 반격이 아니다) 상대 입장에서 아무
+// 대가 없이 두 문제를 한 수로 해결하는 것이므로 진짜 맞대응이 아니다 — 이런 경우는 반격으로 치지
+// 않고(true를 돌려줘) 희생 판정이 그대로 유지되게 한다. 반대로 반격 기물이 방치된 칸에 닿지 못해
+// 상대가 정말로 "방치된 기물을 포기하고 반격에 응할지, 반격을 무시하고 방치된 기물을 챙길지" 양자
+//택일해야 한다면(예: 36...Rfb8 — 방치된 나이트 d5와 반격당하는 비숍 b3가 서로 다른 칸이라 백이
+// 한 수로 둘 다 해결할 수 없고, 결국 동가 맞교환으로 귀결) 이는 자연스러운 맞교환 제안일 뿐 찾기
+// 어려운 진짜 희생이 아니므로 false를 돌려준다.
+function attacksPricierIndependent(board, color, minVal, hangSquare) {
+  const enemy = color === "w" ? "b" : "w";
+  const [hr, hc] = hangSquare;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== enemy || p.t === "K") continue;
+    if (VAL[p.t] < minVal || seeSquare(board, r, c, color) <= 0) continue;
+    let canReachHang;
+    if (p.t === "P") { const dir = enemy === "w" ? -1 : 1; canReachHang = (hr - r === dir && Math.abs(hc - c) === 1); }
+    else canReachHang = canMove(board, p.t, enemy, r, c, hr, hc, true);
+    if (!canReachHang) return true;
   }
   return false;
 }
@@ -1292,6 +1408,11 @@ function isSacrifice(board, sanRaw, color) {
   // 기물을 내주는 수(예: 6.Bd3)나, 상대의 탁월한 수로 이미 예정된 손실을 되돌려주는 수(예: 6.Bxd5)일 뿐이므로
   // "찾아내기 어려운 비직관적 희생"이 아니다.
   const movedThreatLoss = seeSquare(board, fr, fc, enemy);
+  // (v0.2.3 버그 수정) 이동한 기물이 두기 전부터 이미 잡힐 위협에 놓여 있었더라도(movedThreatLoss>=1),
+  // 그 손실을 그대로 실현하는 수가 "체크"까지 동반한다면(예: 36.Nh6+ — 이미 Rf8에 공격받던 나이트를
+  // 그냥 내주는 수지만 체크로 상대 응수를 강제해 뒤이은 콤비네이션의 발판이 됨) 이는 그냥 예정된
+  // 손실을 수동적으로 받아들이는 것이 아니라 능동적으로 그 손실을 이용하는 수이므로 예외로 둔다.
+  const givesCheck = /[+#]/.test(sanRaw);
   // (버그 수정) 예전엔 캐슬링·폰 이동이면 이 함수 맨 위에서 곧장 false를 반환해, 아래 "방치 희생"
   // (이동한 기물과는 무관하게, 상대가 이미 공격 중인 다른 내 기물을 그대로 두고 다른 수를 두는 것)
   // 판정까지 통째로 막고 있었다. 예: "1.e4 e5 2.Nf3 Nc6 3.Bc4 h6 4.d4 d6 5.dxe5 dxe5 6.Qxd8+ Nxd8
@@ -1311,7 +1432,7 @@ function isSacrifice(board, sanRaw, color) {
   // 내주고 폰 두 개(1+1)를 되찾아 net=1-2=-1)가 다시 걸러지지 않게 되는 회귀를 만들었다. 바로 위
   // 블록(기능4) 주석이 설명하는 원래 의도대로 -1로 되돌린다.
   if (!info.castle && info.piece !== "P" && net <= -1) {
-    if (movedThreatLoss >= 1 && net >= -movedThreatLoss) return false;  // 예정된 손실의 실현(반환)일 뿐
+    if (movedThreatLoss >= 1 && net >= -movedThreatLoss && !givesCheck) return false;  // 예정된 손실의 실현(반환)일 뿐
     return true;
   }
   // (16차) 이 수 자체가 기물을 잡히는 칸으로 옮기지 않아도, 상대가 이미 걸고 있던 기물 잡는 위협을
@@ -1319,9 +1440,12 @@ function isSacrifice(board, sanRaw, color) {
   // (20차) afterHang은 방금 이동한 기물의 도착 칸을 제외하고 집계한다 — 그 칸의 손익은 위의 net(capturedVal-oppGain)이
   // 이미 정확히 계산했으므로, 동가 교환(net=0)인 잡는 수가 "기물을 방치했다"로 이중 집계돼 탁월 오탐을 내는 것을 막는다
   // (예: 이탈리안에서 ...Nxf3+ — 나이트 교환+체크일 뿐인데 b4에 잡히는 Bc5와 f3 나이트가 함께 집계돼 희생으로 오판).
-  const beforeHang = hangingLoss(board, color);
-  const afterHang = hangingLoss(after, color, [tr, tc]);
-  if (beforeHang >= 2 && afterHang >= 2) {
+  // (v0.2.3 버그 수정) 예전엔 beforeHang>=2까지 함께 요구해, 이 수를 두기 전에는 전혀 위험하지
+  // 않았다가 "이 수 자체가 자신의 보호자를 옮겨서" 처음으로 다른 내 기물이 방치되는 패턴(예: 9.d5 —
+  // d4 폰이 지키던 나이트 e5가 폰이 전진하며 보호를 잃고 새로 걸림, beforeHang=0)을 전혀 잡아내지
+  // 못했다. beforeHang 조건을 없애고 afterHang>=2만으로 판정한다 — beforeHang은 더 이상 필요 없다.
+  const { loss: afterHang, sq: afterHangSq } = hangingLossSq(after, color, [tr, tc]);
+  if (afterHang >= 2) {
     // (20차) 희생의 기본 정의는 "실질 손실"이다. 이 수 자체가 잡은 순이득(net)이 방치한 기물 손실(afterHang)을
     // 상쇄하고 남는다면(예: 1.e4 e5 2.d4 exd4 3.Qxd4 Nc6 4.Qd5 Nf6 5.Qf5 d5 6.exd5 Bxf5 — 퀸(9점)을 잡으며
     // Nc6(≈2점 손실)를 방치) 총합이 이득이므로 희생이 아니다. 총손익이 -2점 이하일 때만 희생으로 본다.
@@ -1329,13 +1453,25 @@ function isSacrifice(board, sanRaw, color) {
     // (18차) 두 기물이 동시에 공격받는(포크) 상황에서 위협받던 기물 자신을 움직여 다른 기물을 내주는 것은,
     // 살린 기물이 내준 기물보다 가치가 "낮을" 때만 비직관적 선택으로 보고 탁월로 인정한다(동가·상위 구출은 당연한 수).
     // (21차) 살린 기물 쪽이 더 비싸더라도, 그 대신 상대의 더 비싼 기물을 반격으로 위협했다면 역시 탁월.
-    if (movedThreatLoss >= 1) return VAL[info.piece] < afterHang || attacksPricier(after, color, afterHang);
+    if (movedThreatLoss >= 1) {
+      // (v0.2.3 버그 수정) 포크에 걸린 기물을 옮겨 위험을 "줄이기만" 했을 뿐(방치된 기물의 손실이 원래
+      // 포크 손실보다 작음, 예: 22.Qe3 — 나이트 포크(6점 위험)를 피해 물러났더니 우연히 무관한 비숍(2점)이
+      // 방치돼 있었을 뿐)이라면 진짜 궁지에 몰린 트레이드오프가 아니라 그냥 좋은 수이므로 탁월이 아니다.
+      if (afterHang < movedThreatLoss) return false;
+      return VAL[info.piece] < afterHang || attacksPricier(after, color, afterHang);
+    }
+    // (v0.2.3 버그 수정) 방치한 기물과 가치가 같거나 더 높은 상대 기물을 안전하게 반격 위협하더라도,
+    // 그 반격 기물이 도망가는 동시에 방치된 내 기물을 잡을 수 있는 게 아니라면(=서로 다른 칸이라
+    // 상대가 한 수로 둘 다 해결할 수 없다면) 이는 자연스러운 맞교환 제안일 뿐이다(예: 36...Rfb8 —
+    // 방치된 나이트 d5를 무시하고 무관한 비숍 b3를 반격하지만, 결국 나이트 대 비숍의 동가 교환으로
+    // 귀결되는 뻔한 수). attacksPricierIndependent가 false를 돌려주면(=진짜 반격이 아니면) 탁월이 아니다.
+    if (attacksPricierIndependent(after, color, afterHang, afterHangSq)) return false;
     // (버그 수정) 예전엔 beforeHang(이 수를 두기 전부터 이미 걸려 있던 손실) 이상으로 afterHang이
     // 커지지 않은 경우(=새로 더 망치지는 않은 순수 방치) 반격(attacksPricier)으로 상쇄하지 못하면
     // 희생으로 치지 않았는데, 바로 이 "이미 걸린 걸 그대로 방치" 케이스가 사용자가 요청한 전형적인
     // 방치 희생(위 16.O-O-O·6...h5 예시 모두 beforeHang>=afterHang이면서 반격도 없는 경우)이라
     // 이 요구조건이 오히려 정상적인 방치 희생을 걸러내고 있었다. 이 지점에 이르렀다는 것 자체가
-    // 이미 beforeHang·afterHang 둘 다 2점 이상이고 net-afterHang<=-2(실질 손실 확정)까지 확인됐다는
+    // 이미 afterHang이 2점 이상이고 net-afterHang<=-2(실질 손실 확정)까지 확인됐다는
     // 뜻이고, 호출부마다 이 판정 뒤에도 실제 엔진 평가(mvCp>=-40)로 한 번 더 걸러지며 유일한
     // 합법수("only")는 애초에 isSacrifice를 호출하지 않는 kind 분기에서 걸러지므로, 포크 상황
     // (movedThreatLoss>=1, 위에서 이미 별도 처리)을 제외하면 추가로 반격 여부까지 요구할 필요가 없다.
@@ -1379,6 +1515,47 @@ function legalDests(board, fr, fc, color, ep) {
     if (board[fr][3] == null && board[fr][2] == null && board[fr][1] == null && board[fr][0] && board[fr][0].t === "R" && board[fr][0].c === color && !isAttacked(board, fr, 3, opp) && !isAttacked(board, fr, 2, opp)) out.push([fr, 2]);
   }
   return out;
+}
+// (v0.2.3 기능) 스테일메이트·3회 동형 반복 판정을 위한 헬퍼들. positionKey는 국면 반복 비교에 쓰는
+// 단순화된 키로, 기물 배치+다음 차례만 비교한다(캐슬링 권리·앙파상까지 엄밀히 구분하는 FIDE 규정과
+// 완전히 같지는 않지만, 이 앱의 대국 길이·용도에서 그 둘이 달라 반복이 아닌데 반복으로 오판되는
+// 경우는 실질적으로 없다). 합법수 존재 여부는 아래(체크메이트 기호 판정용) hasAnyLegalMove를 그대로
+// 재사용한다 — 그 함수도 앙파상은 반영하지 않는 동일한 단순화라 두 판정 기준이 일관된다.
+function isInCheck(board, color) {
+  const kp = kingPos(board, color); if (!kp) return false;
+  return isAttacked(board, kp[0], kp[1], color === "w" ? "b" : "w");
+}
+function positionKey(board, color) {
+  let s = color;
+  for (const row of board) for (const p of row) s += p ? p.c + p.t : ".";
+  return s;
+}
+// sans가 나타내는 수순이 "지금" 스테일메이트·체크메이트·3회 동형 반복 중 하나로 이미 끝나 있는
+// 국면인지 판정한다(진행 중이면 end: null). 학습 탭 메인 보드·리뷰 페이지 자유 탐색 양쪽에서 더
+// 이상 수를 둘 수 없어야 하는 국면인지 확인하는 데 쓴다.
+function gameEndState(sans) {
+  if (!sans || !sans.length) return { end: null };
+  let board = startBoard();
+  const seen = new Map([[positionKey(board, "w"), 1]]);
+  for (let i = 0; i < sans.length; i++) {
+    const color = i % 2 === 0 ? "w" : "b";
+    board = applySan(board, sans[i], color);
+    const nextColor = color === "w" ? "b" : "w";
+    const key = positionKey(board, nextColor);
+    seen.set(key, (seen.get(key) || 0) + 1);
+  }
+  const lastColor = (sans.length - 1) % 2 === 0 ? "w" : "b";
+  const toMove = lastColor === "w" ? "b" : "w";
+  if (!hasAnyLegalMove(board, toMove)) return isInCheck(board, toMove) ? { end: "checkmate", color: toMove } : { end: "stalemate", color: toMove };
+  if (seen.get(positionKey(board, toMove)) >= 3) return { end: "threefold" };
+  return { end: null };
+}
+// (v0.2.3 기능) 무승부로 기록된 대국(chess.com 동기화·마스터 대국 등)의 기보를 그대로 재생해 실제로
+// 스테일메이트·3회 동형 반복으로 끝났는지 확인하고, 그 이름을 돌려준다. 둘 다 아니면(기권 없이 서로
+// 합의했거나, 불충분한 기물·50수 규칙 등 이 앱이 별도로 판정하지 않는 경우) "합의 무승부"로 간주한다.
+function drawKindLabel(moves) {
+  const end = moves && moves.length ? gameEndState(moves).end : null;
+  return end === "stalemate" ? "스테일메이트" : end === "threefold" ? "3회 동형 반복" : "합의 무승부";
 }
 function buildSanBare(board, fr, fc, tr, tc, color, ep, promo) {
   const p = board[fr][fc]; if (!p) return null;
@@ -2193,6 +2370,11 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
       if (["inaccuracy", "mistake", "good"].includes(kind) && i >= 1
         && ["mistake", "blunder"].includes(moves[i - 1].kind)
         && bestCp >= 120 && loss >= 100 && playedCp >= -30) kind = "miss";
+      // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 학습 탭·리뷰 자유
+      // 탐색에는 있는데 정식 게임 리뷰(analyzeGame)에는 빠져 있었다 — 실제 기보에 언더프로모션이
+      // 있으면 이 판정 경로도 다른 두 곳과 똑같은 등급이 나오도록 같은 규칙을 적용한다.
+      const under = /=/.test(fullSans[i]) && !/=Q/.test(fullSans[i]);
+      if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
     }
     const noPenalty = ["best", "only", "brilliant", "book"].includes(kind);
     const winBefore = winPctFromCp(bestCp), winAfter = winPctFromCp(playedCp);
@@ -2657,7 +2839,9 @@ function CapturedRow({ pieces, color, diff, textColor, player }) {
 // 놓는다 — 위아래 CapturedRow는 그대로 전체 폭을 쓰고, 막대는 오직 Board 높이에만 맞춰지므로
 // 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 온다. boardRef는 Board를 바로 감싸는 칸에 붙어,
 // 모바일에서 useBoardSize가 (막대·잡힌 기물 줄이 아니라) 보드 몫의 실제 폭만 재도록 한다.
-function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", topInfo, bottomInfo, leftOfBoard, boardRef, ...boardProps }) {
+// (v0.2.3 UI) hideMaterial: 학습 탭 메인 보드처럼 잡힌 기물·기물 점수차를 아예 보여주지 않아야 하는
+// 호출부용 — 리뷰 페이지는 기존대로 계속 표시한다(기본값 false).
+function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", topInfo, bottomInfo, leftOfBoard, boardRef, hideMaterial, ...boardProps }) {
   const info = useMemo(() => capturedInfo(board), [board]);
   const top = flip
     ? { pieces: info.byWhite, color: "b", diff: Math.max(0, info.diff) }
@@ -2671,14 +2855,14 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
   const capInset = leftOfBoard ? 30 : 0;
   return (
     <div>
-      <div style={{ marginLeft: capInset }}><CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} player={topInfo} /></div>
+      {!hideMaterial && <div style={{ marginLeft: capInset }}><CapturedRow pieces={top.pieces} color={top.color} diff={top.diff} textColor={textColor} player={topInfo} /></div>}
       {leftOfBoard ? (
         <div className="flex items-stretch" style={{ gap: 8 }}>
           {leftOfBoard}
           <div ref={boardRef} style={{ flex: 1, minWidth: 0 }}>{boardEl}</div>
         </div>
       ) : (boardRef ? <div ref={boardRef}>{boardEl}</div> : boardEl)}
-      <div style={{ marginLeft: capInset }}><CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} player={bottomInfo} /></div>
+      {!hideMaterial && <div style={{ marginLeft: capInset }}><CapturedRow pieces={bottom.pieces} color={bottom.color} diff={bottom.diff} textColor={textColor} player={bottomInfo} /></div>}
     </div>
   );
 }
@@ -3451,6 +3635,35 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
   // 무관하게 항상 정확히 N칸만큼 이동한다.
   const dxPct = (dto1 - dfr1) * 100, dyPct = (dto0 - dfr0) * 100;
   const pxu = (r, c) => { const [vr, vc] = dv(r, c); return [vc + 0.5, vr + 0.5]; };  // 화살표용 보드 칸 단위(0~8) 좌표
+  // (v0.2.3 버그 수정) 탁월한 수의 금색(idea) 화살표와 빨간색(danger) 화살표가 같은 두 칸을 잇는 경우
+  // (예: 내가 방금 둔 기물이 상대 기물 X를 반격하는 동시에 X도 내 기물을 위협하는 상호 공격) 두 화살표가
+  // 정확히 같은 선 위에 정반대 방향으로 겹쳐 그려져 구분이 안 됐다 — 같은 두 칸을 잇는 화살표끼리
+  // 묶어(칸 좌표 쌍을 방향 무관하게 정규화한 키), 그 선의 중심선을 기준으로 수직 방향으로 대칭
+  // 평행이동시켜 나란한 두 선으로 보이게 한다.
+  const arrowGroups = useMemo(() => {
+    const groups = new Map();
+    extraArrows.forEach((a, i) => {
+      const fk = a.from[0] + "," + a.from[1], tk = a.to[0] + "," + a.to[1];
+      const key = fk < tk ? fk + "|" + tk : tk + "|" + fk;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(i);
+    });
+    return groups;
+  }, [extraArrows]);
+  const OFFSET_STEP = 0.16;
+  const offsetArrows = extraArrows.map((a, i) => {
+    const [x1, y1] = pxu(a.from[0], a.from[1]); const [x2, y2] = pxu(a.to[0], a.to[1]);
+    const fk = a.from[0] + "," + a.from[1], tk = a.to[0] + "," + a.to[1];
+    const key = fk < tk ? fk + "|" + tk : tk + "|" + fk;
+    const idxInGroup = arrowGroups.get(key);
+    if (!idxInGroup || idxInGroup.length < 2) return { ...a, x1, y1, x2, y2 };
+    const slot = idxInGroup.indexOf(i);
+    const centered = slot - (idxInGroup.length - 1) / 2;   // 그룹 중심선 기준 대칭 위치(-0.5, +0.5, ...)
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const px = -dy / len, py = dx / len;   // 선분에 수직인 단위벡터
+    const off = centered * OFFSET_STEP;
+    return { ...a, x1: x1 + px * off, y1: y1 + py * off, x2: x2 + px * off, y2: y2 + py * off };
+  });
   return (
     <div>
       {/* (UI4) Board와 정확히 같은 padding/width 공식을 써서 퍼즐에서 애니메이션↔인터랙티브 보드 전환 시
@@ -3475,7 +3688,7 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
             {/* (v0.2.2 기능) "내 기물이 공격받는다" 경고 화살표(danger) 색을 T.blunder(벽돌빛 갈색)에서
                 확실한 붉은색(T.danger)으로 교체 — 리뷰 페이지의 같은 화살표와 색을 통일한다. */}
             <defs><marker id="dgr" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.danger} /></marker><marker id="idea" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.brass} /></marker></defs>
-            {extraArrows.map((a, i) => { const [x1, y1] = pxu(a.from[0], a.from[1]); const [x2, y2] = pxu(a.to[0], a.to[1]); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={a.kind === "danger" ? T.danger : T.brass} strokeWidth={0.1} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />; })}
+            {offsetArrows.map((a, i) => <line key={i} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke={a.kind === "danger" ? T.danger : T.brass} strokeWidth={0.1} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />)}
           </svg>
         </div>
       </div>
@@ -3706,7 +3919,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     if (!active) return;
     let cancelled = false;
     setLoadingMasterGames(true);
-    fetchMasterTopGames([...sans, san]).then((gs) => { if (!cancelled) { setMasterGames(gs); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
+    fetchAllMasterGames([...sans, san]).then((gs) => { if (!cancelled) { setMasterGames(gs); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
     return () => { cancelled = true; };
   }, [active, sansKey, san, masterRetry]);
   return {
@@ -3747,6 +3960,77 @@ function ListPager({ page, setPage, pageCount, jump = 5 }) {
     </div>
   );
 }
+// (v0.2.3 기능) 개발자 전용 — 마스터 대국(Lichess 마스터 DB)에 없는 유명 대국을 직접 등록한다.
+// PGN을 붙여넣으면 parsePgnSans로 즉시 검증(합법성까지는 확인하지 않고 SAN 형식만)하고, 결과는
+// PGN의 결과 토큰 또는 마지막 수의 체크메이트 기호(#)로 자동 채우되 항상 수동으로 덮어쓸 수 있다.
+function AddMasterGameModal({ onClose, onSaved }) {
+  const [whiteName, setWhiteName] = useState("");
+  const [whiteRating, setWhiteRating] = useState("");
+  const [blackName, setBlackName] = useState("");
+  const [blackRating, setBlackRating] = useState("");
+  const [year, setYear] = useState("");
+  const [pgn, setPgn] = useState("");
+  const [result, setResult] = useState("");
+  const [resultTouched, setResultTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const parsed = useMemo(() => { try { return parsePgnSans(pgn); } catch { return []; } }, [pgn]);
+  useEffect(() => {
+    if (resultTouched) return;
+    const auto = autoResultFromPgn(pgn, parsed);
+    if (auto) setResult(auto);
+  }, [pgn, parsed, resultTouched]);
+  const canSave = whiteName.trim() && blackName.trim() && parsed.length >= 1 && result && !saving;
+  const save = async () => {
+    if (!canSave) return;
+    setSaving(true); setErr("");
+    try {
+      await addDevMasterGame({
+        whiteName: whiteName.trim(), whiteRating: whiteRating ? parseInt(whiteRating, 10) : null,
+        blackName: blackName.trim(), blackRating: blackRating ? parseInt(blackRating, 10) : null,
+        year: year ? parseInt(year, 10) : null, pgn: pgn.trim(), sans: parsed, result,
+      });
+      onSaved && onSaved();
+      onClose();
+    } catch (e) { setErr("저장하지 못했습니다. 다시 시도해 주세요."); } finally { setSaving(false); }
+  };
+  const inputStyle = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: T.paper, color: T.ink, fontSize: 12.5, boxSizing: "border-box" };
+  const labelStyle = { fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 3, display: "block" };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "85vh", overflowY: "auto", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 14, border: "1px solid " + T.brass, padding: 16 }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 900, color: T.ink }}>마스터 대국 추가</span>
+          <button onClick={onClose} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer" }}><X size={15} /></button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, marginBottom: 8 }}>
+          <div><label style={labelStyle}>백(GM 이름)</label><input value={whiteName} onChange={(e) => setWhiteName(e.target.value)} style={inputStyle} placeholder="예: Garry Kasparov" /></div>
+          <div><label style={labelStyle}>레이팅</label><input value={whiteRating} onChange={(e) => setWhiteRating(e.target.value.replace(/\D/g, ""))} style={inputStyle} placeholder="2800" /></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, marginBottom: 8 }}>
+          <div><label style={labelStyle}>흑(GM 이름)</label><input value={blackName} onChange={(e) => setBlackName(e.target.value)} style={inputStyle} placeholder="예: Anatoly Karpov" /></div>
+          <div><label style={labelStyle}>레이팅</label><input value={blackRating} onChange={(e) => setBlackRating(e.target.value.replace(/\D/g, ""))} style={inputStyle} placeholder="2700" /></div>
+        </div>
+        <div style={{ marginBottom: 8 }}><label style={labelStyle}>대국 연도</label><input value={year} onChange={(e) => setYear(e.target.value.replace(/\D/g, ""))} style={inputStyle} placeholder="1985" /></div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={labelStyle}>PGN 기보</label>
+          <textarea value={pgn} onChange={(e) => setPgn(e.target.value)} rows={5} style={{ ...inputStyle, fontFamily: "ui-monospace,monospace", resize: "vertical" }} placeholder="1.e4 e5 2.Nf3 Nc6 3.Bb5 ..." />
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{parsed.length > 0 ? parsed.length + "수 인식됨" : "아직 인식된 수가 없습니다"}</div>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>대국 결과{!resultTouched && result && <span style={{ color: T.inkSoft, fontWeight: 600 }}> (자동 입력됨)</span>}</label>
+          <div className="flex" style={{ gap: 6 }}>
+            {[["1-0", "백 승"], ["0-1", "흑 승"], ["1/2-1/2", "무승부"]].map(([k, label]) => (
+              <button key={k} onClick={() => { setResult(k); setResultTouched(true); }} className="press" style={{ flex: 1, fontSize: 11.5, fontWeight: 800, padding: "7px 4px", borderRadius: 8, border: "1px solid " + T.brass, cursor: "pointer", background: result === k ? T.brass : "transparent", color: result === k ? "#241509" : T.brass }}>{label}</button>
+            ))}
+          </div>
+        </div>
+        {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{err}</p>}
+        <button onClick={save} disabled={!canSave} className="press" style={{ width: "100%", padding: "9px 0", borderRadius: 9, border: "none", background: canSave ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9BDA0", color: "#241509", fontWeight: 900, fontSize: 12.5, cursor: canSave ? "pointer" : "default" }}>{saving ? "저장 중…" : "저장"}</button>
+      </div>
+    </div>
+  );
+}
 // 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 오른쪽 칼럼은
 // 집중학습 여부와 무관하게 항상 수 블록 목록을 보여준다(LearnTab에서 분기하지 않음).
 function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze }) {
@@ -3761,6 +4045,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   const punish = curated;
   const [openingGameId, setOpeningGameId] = useState(null);
   const [gameOpenError, setGameOpenError] = useState(false);
+  const [addGameOpen, setAddGameOpen] = useState(false);   // (v0.2.3 기능) 개발자 마스터 대국 추가 모달
   // (19차 기능2) 이 수([...sans, san])가 실제로 두어진 내 chess.com 대국 — 최근순으로 나열.
   // (버그 보충) 예전엔 최근 8판까지만 잘라 보여줬다 — 이제 전부 가져오고 화면에서 페이지를 넘겨 본다.
   const myGames = useMemo(() => {
@@ -3939,6 +4224,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                             <div style={{ minWidth: 0, flex: 1 }}>
                               {/* (디자인) 타임컨트롤 표기 + 레이팅 증감폭은 게임 결과 뒤 소괄호로 통일. */}
                               <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"}으로 플레이 · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                                {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
                                 {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
                                 {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
                               </div>
@@ -4002,7 +4288,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
       {/* 이 수가 두어진 마스터 대국 — 클릭하면 집중학습을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
       <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>이 수가 두어진 마스터 대국</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{masterGames.length}판</span>}</div>
+          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>이 수가 두어진 마스터 대국</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{masterGames.length}판</span>}
+            {/* (v0.2.3 기능) 개발자 전용 — Lichess 마스터 DB에 없는 유명 대국을 직접 등록 */}
+            {canAdd && <button onClick={() => setAddGameOpen(true)} className="press" title="마스터 대국 추가" aria-label="마스터 대국 추가" style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>}
+          </div>
           {/* (버그 보충) 정렬 — 기본(채택률 순, API 원래 순서) / 최신순(연도) / 레이팅순(더 높은 쪽 레이팅) */}
           {masterGames.length > 1 && (
             <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
@@ -4041,6 +4330,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
         {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 리뷰를 여는 데 실패했습니다. 잠시 후 다시 시도해 주세요.</p>}
       </div>
+      {addGameOpen && <AddMasterGameModal onClose={() => setAddGameOpen(false)} onSaved={onRetryMasterGames} />}
       {showExpl && (
         <div onClick={() => setShowExpl(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, width: "100%", maxHeight: "80vh", overflowY: "auto", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
@@ -4636,6 +4926,10 @@ function ReviewPage({ game, engine, onClose }) {
   const explColor = effSans.length % 2 === 0 ? "w" : "b";
   const ep = useMemo(() => epTarget(effSans), [effSans]);
   const legalTargets = useMemo(() => (sel ? legalDests(board, sel[0], sel[1], explColor, ep) : []), [sel, board, explColor, ep]);
+  // (v0.2.3 기능) 학습 탭과 동일하게, 자유 탐색 중인 지금 위치가 스테일메이트·3회 동형 반복으로
+  // 이미 끝나 있으면 더 이상 수를 둘 수 없게 막고 무승부로 표시한다.
+  const drawState = useMemo(() => gameEndState(effSans), [effSans]);
+  const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
   const curMove = curPly > 0 && result ? result.moves[curPly - 1] : null;
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
@@ -4659,10 +4953,11 @@ function ReviewPage({ game, engine, onClose }) {
   const canBack = curPly > 0 || exploreSans.length > 0;
   const canFwd = (curPly < sans.length && exploreSans.length === 0) || exploreFuture.length > 0;
   const playFree = useCallback((san) => {
+    if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
     playMoveSfx(san);
     setExploreSans((s) => [...s, san]); setExploreFuture([]);
     setSel(null); setDrag(null);
-  }, []);
+  }, [gameDrawn]);
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
     if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
@@ -4697,6 +4992,14 @@ function ReviewPage({ game, engine, onClose }) {
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready") { setEngineLines([]); setLinesPending(false); return; }
+    // (v0.2.3 버그 수정) 학습 탭(useMergedMoves)의 엔진 라인은 포지션이 바뀌어도 이전 값을 옅게 유지한
+    // 채 "계산 중"만 표시하지만, 그건 평가치 바(posEval)를 별도의 빠른 단일PV 진행 콜백으로 항상 이
+    // 포지션 전용 값으로만 채우기 때문에 가능한 선택이었다(barEval 계산부 참고). 이 페이지는 그런
+    // 별도 채널이 없어 engineLines[0].ev를 그대로 평가치로 쓰는데, 포지션이 바뀐 직후에도 이전
+    // engineLines가 새 계산이 끝날 때까지 그대로 남아 있어 "최선의 수를 뒀는데 평가치가 잠깐 이전
+    // 포지션 값으로 보였다가 갑자기 바뀌는" 것처럼 보였다 — 새 계산을 시작하는 즉시 비워, 화면에는
+    // 항상 지금 포지션의 값(또는 아직 없음)만 보이게 한다.
+    setEngineLines([]);
     setLinesPending(true);
     const baseWhite = effSans.length % 2 === 0 ? 1 : -1;
     // 원시 PV 목록 → 표시용 라인(백 관점 평가 + 수순). 실시간 스트리밍·최종 결과가 같은 변환을 공유한다.
@@ -4739,7 +5042,10 @@ function ReviewPage({ game, engine, onClose }) {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
         const wBest = pool[0] || engine, wAfter = pool[1] || pool[0] || engine;
         const col = white ? "w" : "b";
-        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), 14, 2, 700);
+        // (v0.2.3 버그 수정) depth·movetime을 학습 탭(evalMoveKind)의 depth 13·MOVETIME_MS(260ms)와
+        // 통일한다 — 예전엔 이 자유 탐색 판정만 depth 14·700ms를 써서, 같은 위치·같은 수인데도 학습
+        // 탭과 리뷰 페이지가 서로 다른 등급(아이콘)을 매기는 경우가 있었다.
+        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), 13, 2, MOVETIME_MS);
         if (cancelled) return;
         const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
         if (!p0) return;
@@ -4747,7 +5053,7 @@ function ReviewPage({ game, engine, onClose }) {
         const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
         const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
         const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
-        const after = await wAfter.evaluate(sansToFen(effSans), 14, undefined, 700);
+        const after = await wAfter.evaluate(sansToFen(effSans), 13, undefined, MOVETIME_MS);
         if (cancelled || !after) return;
         const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
         const ourCp = -afterOpp;
@@ -4757,6 +5063,10 @@ function ReviewPage({ game, engine, onClose }) {
         const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
         try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
         if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+        // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 학습 탭(evalMoveKind
+        // 호출부의 applyKind)에는 있는데 이 자유 탐색 판정에는 빠져 있었다 — 같은 규칙을 그대로 적용한다.
+        const under = /=/.test(san) && !/=Q/.test(san);
+        if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
         const gap = secondCp == null ? 9999 : (bestCp - secondCp);
         if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
         if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan });
@@ -4842,6 +5152,12 @@ function ReviewPage({ game, engine, onClose }) {
                   boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
+              {/* (v0.2.3 기능) 자유 탐색이 스테일메이트·3회 동형 반복으로 끝난 국면에 이르면 알림 */}
+              {gameDrawn && (
+                <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 9, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>
+                  무승부 — {drawState.end === "stalemate" ? "스테일메이트" : "3회 동형 반복"}
+                </div>
+              )}
               <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} />
               {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. */}
               <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
@@ -4869,6 +5185,12 @@ function ReviewPage({ game, engine, onClose }) {
               leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
+          {/* (v0.2.3 기능) 자유 탐색이 스테일메이트·3회 동형 반복으로 끝난 국면에 이르면 알림 */}
+          {gameDrawn && (
+            <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 9, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>
+              무승부 — {drawState.end === "stalemate" ? "스테일메이트" : "3회 동형 반복"}
+            </div>
+          )}
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
             <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? RV.dim : RV.text, cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
             <button onClick={stepBack} disabled={!canBack} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: canBack ? RV.text : RV.dim, cursor: canBack ? "pointer" : "default" }}><ChevronLeft size={16} /></button>
@@ -4906,6 +5228,10 @@ function ReviewPage({ game, engine, onClose }) {
     </div>
   );
 }
+// (v0.2.3 성능) 이 depth(13)에서 사실상 항상 여유 있게 끝나는 movetime 안전망(analyzeGame의 movetime과
+// 같은 종류일 뿐 정확도 손실이 아니다). 학습 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
+// 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
+const MOVETIME_MS = 260;
 function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenReview, dailyQuest }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
@@ -4939,6 +5265,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const color = sans.length % 2 === 0 ? "w" : "b";
   const ply = sans.length;
   const ep = useMemo(() => epTarget(sans), [key]);
+  // (v0.2.3 기능) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히 더 이상의
+  // 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수 있는" 수가
+  // 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더 이상 수를
+  // 둘 수 없게 하고 보드 하단에 무승부를 표시한다.
+  const drawState = useMemo(() => gameEndState(sans), [key]);
+  const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
   const [mode, setMode] = useState("normal");
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
@@ -5001,9 +5333,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 평가했다 — 둘은 서로 다른 독립된 포지션이라(after는 best의 결과를 알 필요가 없다) 순서를 지킬
   // 이유가 없었는데도 메인 엔진의 단일 큐로 순차 처리돼 총 대기 시간이 두 배로 들었다. 세션 내내
   // 재사용되는 공용 풀(getAnalysisPool)에서 워커 두 개를 받아 완전히 병렬로 평가한다 — depth(13)는
-  // 그대로 두고, 이 depth에서 사실상 항상 여유 있게 끝나는 상한(MOVETIME_MS, analyzeGame의
-  // movetime과 같은 종류의 안전망일 뿐 정확도 손실이 아니다)만 더해 벽시계 시간을 절반 가까이 줄인다.
-  const MOVETIME_MS = 260;
+  // 그대로 두고, MOVETIME_MS(모듈 상수)만 더해 벽시계 시간을 절반 가까이 줄인다.
   const evalMoveKind = useCallback(async (prevSans, san, onKind) => {
     if (!liveOn || engine.status !== "ready") return null;
     const pool = await getAnalysisPool(engine.profile, engine.urls);
@@ -5091,6 +5421,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   }, [key, liveOn, engine.status]);
 
   const go = useCallback((san, isExtra) => {
+    if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
     playMoveSfx(san);   // (v0.1.4 기능) 수 블록 클릭·드래그·엔진 라인 클릭·프로모션 전부 이 함수 하나로 모이므로 여기 한 곳에서만 재생하면 된다.
     if (isExtra) setExtra((prev) => { const cur = prev[key] || []; if (cur.includes(san)) return prev; return { ...prev, [key]: [...cur, san] }; });
     const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(san));
@@ -5101,7 +5432,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     setFuture((f) => (f.length && stripSuffix(f[0]) === stripSuffix(san)) ? f.slice(1) : []);
     setSel(null); setDrag(null);
     setLastMascot(mascotFor(sans, san));
-  }, [sans, key, moves, board, color, stampQ, future]);
+  }, [sans, key, moves, board, color, stampQ, future, gameDrawn]);
 
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
@@ -5210,7 +5541,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // (기능) 집중학습의 마스터 대국을 클릭 — 집중학습을 종료하고 그 대국의 마지막 포지션으로 보드를 옮긴 뒤,
   // 보드 상단 SequenceBar에 그 대국의 전체 기보가 표시되도록 sans를 그 대국의 전체 수순으로 교체한다.
   const onOpenMasterGame = async (gameId) => {
-    const gameSans = await fetchMasterGamePgn(gameId);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
+    const gameSans = await fetchAnyMasterGamePgn(gameId);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
     if (!gameSans || !gameSans.length) throw new Error("빈 기보");
     if (focus && focus.isNew) onLearned(focus.name);   // 뒤로가기와 동일하게 새 오프닝 학습 처리를 유지한 뒤 이동
     // (18차 UX8) 전체 기보를 불러오되, 보드는 집중학습에서 보던 수까지만 진행된 상태로 열고
@@ -5222,7 +5553,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 두고, 그 대국의 전체 기보를 곧장 /review로 넘긴다. Lichess 마스터 DB의 white/black은 {name,rating}
   // 형태라 reviewPlayerInfo가 기대하는 {username,rating}로 옮겨 담아야 실제 대국자 이름·레이팅이 뜬다.
   const onOpenMasterGameReview = async (g) => {
-    const gameSans = await fetchMasterGamePgn(g.id);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
+    const gameSans = await fetchAnyMasterGamePgn(g.id);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
     if (!gameSans || !gameSans.length) throw new Error("빈 기보");
     onOpenReview && onOpenReview({
       sans: gameSans,
@@ -5291,7 +5622,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             </div>
           </div>
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
-            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ}
+            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial
               belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
@@ -5308,6 +5639,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               </div>
             )}
           </div>
+          {/* (v0.2.3 기능) 스테일메이트·3회 동형 반복으로 국면이 끝났음을 알림 — 이 상태에선 go()가
+              더 이상 수를 받지 않으므로, 왜 보드가 반응하지 않는지 사용자에게 명확히 알려준다. */}
+          {gameDrawn && !focus && (
+            <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 9, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>
+              무승부 — {drawState.end === "stalemate" ? "스테일메이트" : "3회 동형 반복"}
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <NavBtn onClick={() => setFlip((v) => !v)} active={flip}><ArrowUpDown size={17} /></NavBtn>
@@ -9867,6 +10205,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                 <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                    {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
                     {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
                     {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
                   </div>
@@ -11993,6 +12332,12 @@ function TierJourneyPath({ totalXp }) {
 function TierJourneyMap({ totalXp, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+      {/* (v0.2.3 버그 수정) 닫기 버튼이 스크롤되는 콘텐츠 안에 있어, 아래로 스크롤해 특정 티어를 보고
+          있을 때는 맨 위로 다시 올라와야만 닫을 수 있었다 — 뷰포트 우상단에 고정해 어느 스크롤
+          위치에서도 항상 누를 수 있게 한다. */}
+      <button onClick={onClose} className="press" style={{ position: "fixed", top: 18, right: 16, zIndex: 84, width: 34, height: 34, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(20,12,5,.75)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <X size={17} />
+      </button>
       <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
         {/* (v0.1.4 UI) "티어 여정"·"퍼즐을 풀어..." 안내 문구를 없애고, 그 자리에 이정표 아이콘만
             남긴다 — 아래 지도 자체가 이미 지금까지의 여정을 보여주므로 문구 없이도 뜻이 통한다. */}
@@ -12000,9 +12345,7 @@ function TierJourneyMap({ totalXp, onClose }) {
           <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Milestone size={20} color={T.brassHi} />
           </div>
-          <button onClick={onClose} className="press" style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(0,0,0,.3)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <X size={17} />
-          </button>
+          <div style={{ width: 34, height: 34, flexShrink: 0 }} />
         </div>
         <TierJourneyPath totalXp={totalXp} />
       </div>
@@ -12757,7 +13100,13 @@ export default function App() {
     const raw = await store.get(localKeyFor(activeUid));
     if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
-      if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (d.puzzleActive) setPuzzleActive(d.puzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
+      // (v0.2.3 버그 수정) 복원 대상이 "어제 이전"의 오늘의 퍼즐(id: "daily_YYYY-MM-DD", 그 문자열
+      // 자체가 날짜를 담고 있음)이면 복원하지 않는다 — 예전엔 이 값이 그대로 복원돼, 어제 오늘의
+      // 퍼즐을 열어본 채로 자정을 넘기면 퍼즐 탭을 눌러도(=puzzleActive가 non-null이라 홈 화면 대신
+      // 그 풀이 화면이 곧장 뜸) 전날 퍼즐이 계속 보이는 버그가 있었다(알림 팝업은 todayPuzzle을 매번
+      // 새로 계산해 보여주므로 이 버그와 무관하게 항상 정상이었다).
+      const restoredPuzzleActive = d.puzzleActive && !(/^daily_/.test(d.puzzleActive.id) && d.puzzleActive.id !== "daily_" + todayStr()) ? d.puzzleActive : null;
+      if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (restoredPuzzleActive) setPuzzleActive(restoredPuzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
     // (버그 수정 시도 → 되돌림) 개발자 모드에서 XP를 바꾼 직후 곧바로 새로고침하면, 아직 서버에
     // 반영되지 못한(더 오래된) pr.xp가 방금 바꾼 로컬 값을 되돌려버려 "개발자 모드에서 조작한 XP가
@@ -13084,6 +13433,13 @@ export default function App() {
         toKey: tierInfo.tier.key, toDiv: tierInfo.division,
       });
       if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
+      // (v0.2.3 기능) 티어 승급 보상 — 새로 도달한 티어가 높을수록(tierIndex가 클수록) 더 많은 나이트
+      // OC 코인을 지급한다(브론즈 50 ~ 그랜드마스터 300, 50 단위). 승급 연출(TierUpOverlay)이 뜨는
+      // 시점에 함께 지급하고, 기존 퀘스트 코인 지급과 같은 토스트 UI를 재사용해 바로 눈에 띄게 한다.
+      const tierUpReward = tierInfo.tierIndex * 50;
+      setOcCoins((c) => c + tierUpReward);
+      setToast({ type: "coins", amount: tierUpReward });
+      setTimeout(() => setToast((t) => (t && t.type === "coins" && t.amount === tierUpReward ? null : t)), 1800);
     }
     prevTierIndexRef.current = tierInfo.tierIndex;
   }, [tierInfo.tierIndex, loaded]);

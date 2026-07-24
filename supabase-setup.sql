@@ -636,3 +636,37 @@ returns table(id uuid, username text, pub jsonb) language sql stable as $$
   limit p_limit;
 $$;
 grant execute on function public.leaderboard_top(int) to anon, authenticated;
+
+-- ============================================================================
+-- 12) master_games_dev — 개발자가 수동으로 추가하는 마스터 대국 (v0.2.3)
+-- ============================================================================
+-- Lichess 마스터 DB에 없는(또는 chessgames.com에서만 볼 수 있는) 유명 대국을 개발자 권한으로 직접
+-- 등록한다. 화면에서는 Lichess 마스터 대국과 구분 없이 같은 목록에 섞여 표시된다(src/App.jsx의
+-- fetchAllMasterGames 참고) — sans(jsonb 배열)는 클라이언트가 PGN을 파싱해 미리 채워 넣어, 특정
+-- 수순이 "이 대국에서 두어졌는지"를 매 조회마다 PGN을 다시 파싱하지 않고 배열 접두사 비교만으로
+-- 빠르게 걸러낼 수 있게 한다.
+create table if not exists public.master_games_dev (
+  id bigint generated always as identity primary key,
+  white_name text not null,
+  white_rating int,
+  black_name text not null,
+  black_rating int,
+  year int,
+  pgn text not null,
+  sans jsonb not null,
+  result text not null check (result in ('1-0', '0-1', '1/2-1/2')),
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.master_games_dev enable row level security;
+
+drop policy if exists "master games dev read"   on public.master_games_dev;
+drop policy if exists "master games dev insert" on public.master_games_dev;
+drop policy if exists "master games dev delete" on public.master_games_dev;
+-- 읽기는 누구나(로그인 없이도 마스터 대국 목록을 보므로), 쓰기·삭제는 개발자/공동개발자만
+-- (app_content와 동일한 is_content_editor 헬퍼 재사용).
+create policy "master games dev read"   on public.master_games_dev for select using (true);
+create policy "master games dev insert" on public.master_games_dev for insert with check (public.is_content_editor(auth.uid()));
+create policy "master games dev delete" on public.master_games_dev for delete using (public.is_content_editor(auth.uid()));
+grant select on public.master_games_dev to anon, authenticated;
+grant insert, delete on public.master_games_dev to authenticated;
