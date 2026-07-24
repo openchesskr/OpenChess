@@ -670,3 +670,57 @@ create policy "master games dev insert" on public.master_games_dev for insert wi
 create policy "master games dev delete" on public.master_games_dev for delete using (public.is_content_editor(auth.uid()));
 grant select on public.master_games_dev to anon, authenticated;
 grant insert, delete on public.master_games_dev to authenticated;
+
+-- ============================================================================
+-- 13) daily_puzzle_themes — 오늘의 퍼즐 오프닝 테마 2주 로테이션 (v0.2.4)
+-- ============================================================================
+-- 리체스 퍼즐 DB에서 오프닝 테마별로 미리 걸러 둔 후보 풀(scripts/build-daily-puzzles.mjs가 만든
+-- public/daily-puzzles/<opening_tag>.json)을 어느 날짜 구간에 쓸지 개발자가 그때그때 지정한다.
+-- 한 날짜(KST)에 적용되는 테마 = starts_on이 그 날짜 이하인 행 중 가장 최근 것.
+create table if not exists public.daily_puzzle_themes (
+  id bigint generated always as identity primary key,
+  starts_on date not null unique,
+  opening_tag text not null,   -- public/daily-puzzles/<opening_tag>.json 파일명과 일치해야 함
+  label text,                  -- 화면 표시용 이름(선택, 없으면 opening_tag 그대로 표시)
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.daily_puzzle_themes enable row level security;
+
+drop policy if exists "daily puzzle themes read"   on public.daily_puzzle_themes;
+drop policy if exists "daily puzzle themes insert" on public.daily_puzzle_themes;
+drop policy if exists "daily puzzle themes delete" on public.daily_puzzle_themes;
+create policy "daily puzzle themes read"   on public.daily_puzzle_themes for select using (true);
+create policy "daily puzzle themes insert" on public.daily_puzzle_themes for insert with check (public.is_content_editor(auth.uid()));
+create policy "daily puzzle themes delete" on public.daily_puzzle_themes for delete using (public.is_content_editor(auth.uid()));
+grant select on public.daily_puzzle_themes to anon, authenticated;
+grant insert, delete on public.daily_puzzle_themes to authenticated;
+
+-- ============================================================================
+-- 14) daily_puzzles_dev — 특정 날짜의 오늘의 퍼즐을 개발자가 PGN으로 직접 지정 (v0.2.4)
+-- ============================================================================
+-- 이 테이블에 그 날짜(KST) 행이 있으면, 테마 풀에서 뽑는 대신 이 PGN을 오늘의 퍼즐로 쓴다(주로
+-- 미래 날짜를 미리 예약해 두는 용도). sans/puzzle_ply는 클라이언트가 PGN을 미리 파싱해 채운다 —
+-- sans는 시작 위치부터의 전체 SAN 배열, puzzle_ply는 그중 몇 번째 수부터가 "퍼즐(상대의 실수)"
+-- 인지를 가리키는 0-based 인덱스(setupSans = sans[0:puzzle_ply], mistakeSan = sans[puzzle_ply]).
+create table if not exists public.daily_puzzles_dev (
+  date date primary key,
+  pgn text not null,
+  sans jsonb not null,
+  puzzle_ply int not null,
+  opening text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.daily_puzzles_dev enable row level security;
+
+drop policy if exists "daily puzzles dev read"   on public.daily_puzzles_dev;
+drop policy if exists "daily puzzles dev insert" on public.daily_puzzles_dev;
+drop policy if exists "daily puzzles dev update" on public.daily_puzzles_dev;
+drop policy if exists "daily puzzles dev delete" on public.daily_puzzles_dev;
+create policy "daily puzzles dev read"   on public.daily_puzzles_dev for select using (true);
+create policy "daily puzzles dev insert" on public.daily_puzzles_dev for insert with check (public.is_content_editor(auth.uid()));
+create policy "daily puzzles dev update" on public.daily_puzzles_dev for update using (public.is_content_editor(auth.uid())) with check (public.is_content_editor(auth.uid()));
+create policy "daily puzzles dev delete" on public.daily_puzzles_dev for delete using (public.is_content_editor(auth.uid()));
+grant select on public.daily_puzzles_dev to anon, authenticated;
+grant insert, update, delete on public.daily_puzzles_dev to authenticated;

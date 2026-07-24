@@ -25,6 +25,34 @@
 
 ## 버전 기록
 
+### OpenChess v0.2.4 — 2026/7/24
+
+**기능 — 게임 리뷰/분석 엔진 분리**
+설정 탭의 단일 "분석 엔진" 선택지를 학습 탭·퍼즐 탭·사이트 전반에 쓰이는 "분석"과 게임 리뷰 전용으로 나눴다. 게임 리뷰는 사용자 선택과 무관하게 항상 `ENGINE_PROFILES.full`(Stockfish 16)로 고정하고, `UCI_LimitStrength`/`UCI_Elo=3270`을 새로 보내 사람 최상급 수준으로 세기를 제한한다(`eloSetoptions`, `useEngine`의 boot 시퀀스와 `bootAnalysisWorker` 둘 다에 적용). 분석 엔진 선택지는 Stockfish 18 Lite(기본, 기기 종류와 무관하게 고정)와 17.1 두 가지로 좁히고, 각 엔진의 텍스트 설명(`desc` 필드)을 전부 제거했다. 분석 엔진의 스레드 수는 코어 수 비례(`cores-1`) 대신 2로 고정. 게임 리뷰 핵심 분석(`analyzeGame`, 엔진 라인 패널, 수 판정)은 depth 20·moveTime 상한 1초로, 학습 탭 "엔진 상위 수" 패널은 depth 20·MultiPV 7(movetime 700ms는 체감 속도 유지를 위해 그대로)로 조정했다.
+
+**성능 — 게임 리뷰 로딩 지연 제거**
+`ReviewPage`가 안 쓰이던 `useEngine("full")` 상시 연결 대신, 풀 부팅이 통째로 실패할 때만 지연 부팅되는 폴백(`useReviewEngine`)을 쓰도록 바꿔 리뷰당 중복 wasm 컴파일을 제거했다. `getAnalysisPool`의 캐시를 프로필 하나만 유지하던 단일 슬롯(`analysisPoolCache = {profile, promise}`)에서 프로필별 `Map`으로 바꿔, 학습 탭(lite/full17)과 게임 리뷰(full) 풀이 서로 다른 프로필이라는 이유만으로 상대 풀을 매번 통째로 정리하고 재부팅하며 서로를 밀어내던(thrashing) 버그를 발견해 함께 고쳤다. 앱 유휴 시간(`requestIdleCallback`)에 게임 리뷰용 Stockfish 16 풀을 미리 부팅해 두는 프리페치를 추가하고, `vercel.json`에 `/engine/*` 정적 파일 장기 캐시 헤더(`public, max-age=604800, stale-while-revalidate=604800`)를 달아 재방문 시 재검증 왕복을 없앴다.
+
+**기능/성능 — 집중 학습 depth 20 및 엔진 큐 취소**
+집중 학습(`useFocusAnalysis`)의 두 평가 경로(수 체계 아이콘, 실수 분석)를 depth 20·moveTime 5초 상한으로 올렸다. 아이콘 판정은 이제 depth가 깊어질 때마다(`onProgress`) 다시 매겨져 최대 5초 동안 여러 번 바뀔 수 있다(단발성 결과 대신 점진적 스트리밍). 실수 분석은 라인마다 공통 시작 포지션을 반복 평가하던 중복 호출도 제거했다. 별도로, `useEngine`·`bootAnalysisWorker`의 작업 큐에 slot 기반 취소(`supersede`)를 도입했다 — 같은 slot의 새 요청이 오면 이전 요청을 즉시 큐에서 빼거나(대기 중) "stop"으로 중단시킨다(실행 중). 이전에는 `cancelled` 플래그가 결과 반영만 막을 뿐 엔진의 실제 작업 큐는 그대로 둬, 긴 기보에서 수를 빠르게 연타해 넘기면 이미 지나간 포지션의 계산이 큐를 막아 다음 요청을 지연시켰다 — 학습 탭 엔진 라인 패널·집중 학습·게임 리뷰의 엔진 라인/수 판정에 slot을 적용해 해결했다. slot을 넘기지 않는 기존 호출(`analyzeGame` 등 배치 분석)은 그대로 FIFO로 전부 처리된다.
+
+**버그 수정 — 게임 리뷰 평가치 일관성**
+`analyzeGame`이 포지션마다 병렬 워커로 독립적으로 다시 검색하다 보니, 최선 수를 그대로 뒀을 때(손실 0으로 채점)도 다음 포지션의 재검색 값이 이번 포지션 최선수 평가치의 정확한 부호 반전과 조금씩 어긋나(같은 depth·movetime 목표라도 실제 도달 depth가 매번 조금씩 달라질 수 있음) 그래프·코치 카드 평가치가 흔들려 보였다. 최선 수를 따라간 구간은 다음 포지션의 cp를 이번 포지션 값에서 부호만 뒤집어 이어받도록 해 일관된 값이 나오게 했다(다음 수 채점에 쓰는 최선수·2순위는 독립 검색 결과를 그대로 유지, `graphCp` 계산을 채점 루프 뒤로 옮겨 보정된 값을 반영). 리뷰 자유 탐색에서도 같은 클래스의 버그가 있었다 — 화면에 보여준 추천 수(Show 화살표·엔진 라인 1순위)를 그대로 뒀는데도 재검색이 다른 1순위를 내놓아 "우수한 수"로 오판정되던 것을, `playFree`에서 "지금 보여준 추천과 일치하는 수를 뒀는지"를 `forcedBestRef`로 기록해 뒀다가 채점 시 신뢰하는 방식으로 고쳤다.
+
+**버그 수정 — 엔진 라인 타이핑 멈춤**
+`EngineLines`의 각 줄이 배열 인덱스(`i`)로 key/`posKey`를 잡고 있어, MultiPV 순위가 바뀌면(탐색 depth가 깊어지며 흔함) 다른 수순이 같은 자리에 들어와도 `TypedMoveLine`이 재사용돼 이전 수순만큼 이미 진행된 `shown` 값을 그대로 물려받았다 — 새 수순이 그보다 짧으면 그 자리에서 타이핑이 멈춘 것처럼 보였다. key를 수순의 정체성(첫 수)으로 바꿔 순위가 바뀌어도 각 수순이 독립적으로 진행 상태를 유지하게 했다.
+
+**UI — 학습 탭 수 블록 재정렬 애니메이션**
+`useMergedMoves`의 `tiled` 정렬이 실시간 평가 스트리밍으로 순위가 바뀌어도, 렌더링이 plain `.map()`(key만 안정적)이라 React가 DOM을 순간이동시킬 뿐이었다. 이미 있던 `FadeIn`(`motion.div layout`) 컴포넌트로 `MoveTile`을 감싸 FLIP 애니메이션이 붙게 했다.
+
+**버그 수정 — "?" 탐색 depth 표시**
+평가치 바 옆 "?" 도움말의 depth 숫자(`curDepth`)가 메인 검색(depth 20 목표)과 개별 후보 수 평가(depth 15 고정, 즉각 반응 유지 목적으로 그대로 둠) 두 진행률을 같은 값으로 합쳐 표시하고 있었다. 후보 수가 많은 포지션일수록 depth 15 검색들이 자주 완료되며 그 값을 계속 15로 밀어붙여, 메인 검색의 실제 진행 상황이 15에서 멈춘 것처럼 가려 보였다 — 후보 수 개별 평가는 표시용 depth에 더 이상 반영하지 않도록 분리했다.
+
+**기능 — 리체스 퍼즐 DB 기반 오늘의 퍼즐**
+기존 "오늘의 퍼즐"은 하드코딩된 4개짜리 배열에서 날짜를 시드로 결정적으로 뽑는 완전 클라이언트 사이드 기능이었다. 리체스 퍼즐 데이터베이스(`database.lichess.org`, 라이브 API가 아니라 CSV 통짜 덤프)를 오프닝 테마별로 활용하도록 새로 만들었다 — `scripts/build-daily-puzzles.mjs`(신규 devDependency `chess.js`)가 CSV를 오프닝 태그로 필터링하고, 각 후보의 원본 대국 PGN을 리체스 게임 export API에서 받아 시작 위치부터의 SAN 수순(`setupSans`)으로 복원해 `public/daily-puzzles/<태그>.json`을 만든다(스트리밍 라인 리더로 읽어 1~2GB급 CSV도 메모리 문제 없이 처리; `scripts/peek-puzzle-tags.mjs`로 실제 태그 표기를 사전 확인 가능). 리체스 퍼즐 자체는 정답이 한 줄뿐이지만, 런타임에 실제 엔진으로 `genPuzzleTree`를 돌려 상대의 다른 응수까지 포함한 여러 라인을 만들고 그중 한 줄을 다시 날짜 시드로 뽑아 `XXXXXX-N`(N=그 줄의 순번) 형태의 id를 부여한다(`resolveDailyPuzzle`). 신규 Supabase 테이블 `daily_puzzle_themes`(2주 오프닝 테마 로테이션, 개발자가 그때그때 지정)와 `daily_puzzles_dev`(미래 날짜 퍼즐을 PGN으로 직접 지정) — 둘 다 `master_games_dev`와 동일한 `is_content_editor` RLS 이중 검증 패턴. `useDailyPuzzle` 훅이 비동기 계산이 끝나기 전엔 기존 큐레이션 폴백(`curatedDailyPuzzleFor`)을 보여줘 화면이 비지 않게 한다. id 형식이 `daily_YYYY-MM-DD`에서 `XXXXXX-N`으로 바뀌어, "어제 이전의 오늘의 퍼즐" 복원 방지 로직을 id 접두사 대신 퍼즐 객체의 `isDaily`/`date` 필드로 판정하도록 함께 수정했다(구버전 저장값은 접두사 검사로 폴백). 설정 탭에 개발자 전용 관리 패널(`DailyPuzzleDevPanel`)과 퍼즐 탭에 "지난 오늘의 퍼즐" 목록(`PastDailyPuzzles`, 순수 함수+결정적 시드라 과거 날짜도 그대로 재현 가능)을 추가했다. XP는 기존 라인 솔브 로직을 그대로 재사용한다.
+
+> 남은 작업(v0.2.4): 1수 메이트처럼 극단적으로 짧은 라인의 검증이 아직 허술해 퍼즐 id가 `XXXXXX-N`이 아니라 `#XXXXXX`처럼 어긋나게 나오는 경우가 발견됨 — 다음 버전에서 라인 길이 검증을 보강하기로 함. 리체스 퍼즐 CSV 다운로드·`build-daily-puzzles.mjs` 실행·Supabase 테이블 생성·최초 테마 등록은 개발자가 로컬에서 직접 진행.
+
 ### OpenChess v0.2.3 — 2026/7/24
 
 **버그 수정 — 탁월한 수(brilliant) 판정**

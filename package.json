@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "refresh": "node scripts/refresh-data.mjs"
+    "refresh": "node scripts/refresh-data.mjs",
+    "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
+    "chess.js": "^1.0.0-beta.8",
     "stockfish16": "npm:stockfish@^16.0.0",
     "stockfish171": "npm:stockfish@17.1.0",
     "stockfish18": "npm:stockfish@^18.0.8",

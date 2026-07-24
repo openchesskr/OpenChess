@@ -394,26 +394,28 @@ const GeoBackdrop = React.memo(function GeoBackdrop() {
 });
 
 const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-/* (20차 기능2, v0.2.0 기능 추가) 엔진 선택 — 설정 탭에서 세 엔진 중 고를 수 있다. "full"은 기존
-   Stockfish 16(NNUE, 작은 신경망이지만 연산이 무거움), "lite"는 Stockfish 18 Lite(단일 스레드,
-   7MB대 경량 빌드로 로딩·연산 모두 빠름), "full17"은 Stockfish 17.1 정식 대형 신경망 빌드로 셋 중
-   가장 강력하지만(엔진 자체 세대·신경망 크기 모두 위) 초기 로딩 용량이 가장 크다(약 80MB, 여러
-   조각으로 나눠 받는다). 기본값은 기기 종류로 자동 결정하되(모바일→full, PC→lite), 설정에서
-   언제든 바꿀 수 있고 이후에는 그 선택을 기억한다. */
+/* (v0.2.4 개편) 엔진 선택 — "분석"(학습/퍼즐 탭 및 사이트 전반)과 "게임 리뷰"는 서로 다른 엔진을
+   쓴다. "full"(Stockfish 16)은 이제 게임 리뷰 전용 고정 엔진으로만 쓰이고(사람 최상급 수준으로
+   세기를 제한, elo 참고), 설정 탭에는 노출되지 않는다. 분석 쪽은 "lite"(Stockfish 18 Lite, 기기
+   종류와 무관하게 기본값)와 "full17"(Stockfish 17.1, 셋 중 가장 강력하지만 초기 로딩 용량이 가장
+   크다 — 약 80MB, 여러 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는 그 선택을
+   기억한다. */
 const ENGINE_PROFILES = {
+  // (v0.2.4) 게임 리뷰 전용 고정 엔진 — 분석 엔진 선택지에서는 빠진다(ANALYSIS_ENGINE_IDS 참고).
   full: {
-    id: "full", label: "Stockfish 16 (NNUE)", desc: "가볍고 안정적인 구버전 엔진이에요",
+    id: "full", label: "Stockfish 16",
     urls: [ENGINE_BASE + "engine/stockfish-nnue-16-single.js", "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js"],
     // (성능) 교차 출처 격리(COOP/COEP)가 된 환경에서만 시도하는 멀티스레드 빌드 — CDN 폴백 없이
     // 같은 출처(public/engine) 파일만 쓴다(교차 출처 워커 스크립트는 격리 요건과 맞물려 불확실하다).
     mtUrl: ENGINE_BASE + "engine/stockfish-nnue-16.js",
+    elo: 3270, // (v0.2.4) 게임 리뷰는 사람 최상급 수준(약 3270 elo)으로 세기를 제한해 둔다(UCI_LimitStrength).
   },
   lite: {
-    id: "lite", label: "Stockfish 18 Lite", desc: "가볍고 빨라요(경량 빌드)",
+    id: "lite", label: "Stockfish 18 Lite",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
     mtUrl: ENGINE_BASE + "engine/lite/stockfish-18-lite.js",
   },
-  // (v0.2.0 기능) 세 엔진 중 최고 성능 — Stockfish 17.1의 정식(비-Lite) 대형 신경망 빌드. 신경망
+  // (v0.2.0 기능) 분석 엔진 중 최고 성능 — Stockfish 17.1의 정식(비-Lite) 대형 신경망 빌드. 신경망
   // 파일이 npm 배포 용량 제한 때문에 여러 조각으로 쪼개져 있어(scripts/copy-engine.mjs 참고),
   // 조각을 이어 붙이는 부트스트랩 스크립트(boot-single.js/boot-mt.js)를 거쳐 불러온다 — 용량이 큰
   // 만큼 같은 출처(public/engine) 파일만 쓰고 CDN 폴백은 두지 않는다(실패하면 다른 프로필처럼
@@ -425,12 +427,19 @@ const ENGINE_PROFILES = {
   // 사용하므로, URL 뒤에 "#진짜파일명.wasm"을 붙여 워커를 만들면(importScripts 이후에도 hash는
   // 그대로 유지된다) 같은 폴더의 조각 파일을 정확히 찾아낸다.
   full17: {
-    id: "full17", label: "Stockfish 17.1 (최고 성능)", desc: "가장 강력하지만 처음엔 큰 용량(약 80MB)을 내려받아요",
+    id: "full17", label: "Stockfish 17.1",
     urls: [ENGINE_BASE + "engine/17/boot-single.js#stockfish-17.1-single-a496a04.wasm"],
     mtUrl: ENGINE_BASE + "engine/17/boot-mt.js#stockfish-17.1-8e4d048.wasm",
     parts: 6,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
   },
 };
+// (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — 게임 리뷰 전용 "full"은 제외한다.
+const ANALYSIS_ENGINE_IDS = ["lite", "full17"];
+// (v0.2.4) 프로필에 elo가 지정돼 있으면(게임 리뷰 전용 "full") 세기를 그 수준으로 제한하는
+// setoption 명령을 함께 보낸다 — 분석 엔진 프로필들은 elo가 없어 항상 빈 배열([])을 반환한다.
+function eloSetoptions(profile) {
+  return profile && profile.elo ? ["setoption name UCI_LimitStrength value true", "setoption name UCI_Elo value " + profile.elo] : [];
+}
 // (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
 // Policy)가 걸린 페이지에서만 쓸 수 있다 — vite.config.js(개발)·vercel.json(배포)에서 헤더를 설정해
 // 뒀을 때만 true가 된다. 격리가 안 된 환경(구형 브라우저, 헤더 미지원 배포지 등)에서는 이 값이
@@ -438,12 +447,8 @@ const ENGINE_PROFILES = {
 function crossOriginIsolatedOK() {
   return typeof SharedArrayBuffer !== "undefined" && typeof window !== "undefined" && window.crossOriginIsolated === true;
 }
-// 실시간(집중 학습 등) 평가는 항상 활성 포지션이 하나뿐이라, 포지션 하나를 여러 코어로 동시에 탐색하는
-// 멀티스레드가 그대로 이득이다. UI 렌더링용 코어 하나는 남겨 둔다.
-function mainEngineThreads() {
-  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
-  return Math.max(1, cores - 1);
-}
+// (v0.2.4) 분석 엔진의 스레드 수를 2로 고정한다 — 기기 코어 수에 비례해 늘리지 않는다.
+function mainEngineThreads() { return 2; }
 // 부팅 시도 목록 — 격리가 가능하면 멀티스레드 빌드(같은 출처만)를 맨 앞에 두고, 그 뒤로 기존
 // 단일 스레드 빌드(로컬 → CDN)를 그대로 이어 붙여, 멀티스레드 부팅이 실패해도 기존 폴백 경로가
 // 그대로 살아있게 한다.
@@ -459,14 +464,10 @@ function engineBootList(profileId, threads) {
   return list;
 }
 const ENGINE_PREF_KEY = "occ_engine_pref";
-function isMobileDevice() {
-  if (typeof navigator === "undefined") return false;
-  if (navigator.userAgentData && typeof navigator.userAgentData.mobile === "boolean") return navigator.userAgentData.mobile;
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-}
-function defaultEnginePref() { return isMobileDevice() ? "full" : "lite"; }
+// (v0.2.4) 기기 종류와 무관하게 항상 Stockfish 18 Lite를 기본값으로 쓴다.
+function defaultEnginePref() { return "lite"; }
 function loadEnginePref() {
-  try { const v = window.localStorage.getItem(ENGINE_PREF_KEY); if (v && ENGINE_PROFILES[v]) return v; } catch { }
+  try { const v = window.localStorage.getItem(ENGINE_PREF_KEY); if (v && ANALYSIS_ENGINE_IDS.includes(v)) return v; } catch { }
   return defaultEnginePref();
 }
 function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, v); } catch { } }
@@ -769,6 +770,26 @@ function useEngine(enginePref) {
   const swallowBest = useRef(0); // 강제 해제된 작업의 뒤늦은 bestmove를 무시할 개수
   const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
   const resultOf = (job, bm) => job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : (job.last ? { ...job.last, best: bm || "" } : (bm ? { best: bm } : null));
+  // (v0.2.4 성능) 같은 slot의 새 요청이 들어오면 이전 요청을 큐에서 즉시 치운다 — 아직 실행 전이면
+  // 그냥 빼내고, 이미 엔진에 보낸(실행 중인) 요청이면 "stop"으로 즉시 중단시키고 그 뒤늦은 bestmove는
+  // 무시한다(swallowBest, 워치독과 동일한 메커니즘). slot을 넘기지 않는 호출(예: 게임 리뷰 전체 분석처럼
+  // 모든 포지션이 다 끝나야 하는 배치 작업)은 지금처럼 그대로 FIFO로 순서대로 처리된다 — 사용자가 이미
+  // 관심을 끊은 포지션(빠르게 넘긴 이전 수)의 계산이 큐를 막아 다음 요청을 지연시키던 문제만 없앤다.
+  const supersede = useCallback((slot) => {
+    if (slot == null) return;
+    const i = queue.current.findIndex((j) => j.slot === slot);
+    if (i < 0) return;
+    const job = queue.current[i];
+    if (i === 0 && running.current) {
+      settle(job, job.multi ? [] : null);
+      try { ref.current && ref.current.postMessage("stop"); } catch (_) { }
+      swallowBest.current++;
+      queue.current.shift(); running.current = false;
+    } else {
+      settle(job, job.multi ? [] : null);
+      queue.current.splice(i, 1);
+    }
+  }, []);
   const pump = useCallback(() => {
     if (running.current) return;
     const job = queue.current[0]; if (!job) return;
@@ -845,6 +866,7 @@ function useEngine(enginePref) {
         w.onerror = () => { try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
         w.postMessage("uci");
         if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
+        eloSetoptions(ENGINE_PROFILES[enginePref]).forEach((c) => w.postMessage(c));
         w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
       } catch (_) { tryNext(); }
@@ -862,14 +884,16 @@ function useEngine(enginePref) {
   // 쉬운 포지션은 목표 depth까지 깊게, 복잡한 포지션은 movetime 상한에서 끊어 전체 분석 시간을 예측 가능하게 만든다.
   // watchMs: 이 요청의 워치독 제한. movetime을 준 배치 분석은 짧게(+버퍼), movetime 없는 실시간
   // 평가는 depth까지 오래 걸릴 수 있으므로 넉넉히 둔다.
-  const evaluate = useCallback((fen, depth = 14, onProgress, movetime) => new Promise((resolve) => {
+  const evaluate = useCallback((fen, depth = 14, onProgress, movetime, slot) => new Promise((resolve) => {
+    supersede(slot);
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, last: null, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
-  }), [pump]);
-  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress, onLines) => new Promise((resolve) => {
+    queue.current.push({ resolve, last: null, onProgress, slot, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
+  }), [pump, supersede]);
+  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress, onLines, slot) => new Promise((resolve) => {
+    supersede(slot);
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
-  }), [pump]);
+    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, slot, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+  }), [pump, supersede]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
   const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
@@ -2197,7 +2221,7 @@ const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : 
 // 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 학습 탭의 실시간 후보 수
 // 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
 // evaluate + onProgress, MultiPV evaluateMulti)을 둘 다 지원하도록 넓혔다.
-function bootAnalysisWorker(urls) {
+function bootAnalysisWorker(urls, eloOpts) {
   return new Promise((resolve) => {
     let idx = 0, booted = false, worker = null;
     const queue = []; let running = false, swallowBest = 0;
@@ -2207,6 +2231,24 @@ function bootAnalysisWorker(urls) {
     // 줄여버린다. useEngine의 워치독(548-557행)과 동일한 방식 — 제한 시간 안에 bestmove가 없으면
     // 부분 결과로 마무리하고 'stop'을 보내며, 그래도 응답이 없으면 큐를 강제로 흘려보낸다.
     const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+    // (v0.2.4 성능) useEngine의 supersede와 동일한 패턴 — 같은 slot의 새 요청이 오면 이전 요청을
+    // 큐에서 즉시 치운다(실행 중이면 "stop"으로 중단). 풀에서 특정 자리(pool[0] 등)를 매번 같은
+    // 용도로 재사용하는 호출부(리뷰 엔진 라인 패널 등)가 빠른 수 넘김에도 밀리지 않게 해 준다.
+    function supersede(slot) {
+      if (slot == null) return;
+      const i = queue.findIndex((j) => j.slot === slot);
+      if (i < 0) return;
+      const job = queue[i];
+      if (i === 0 && running) {
+        settle(job, job.multi ? [] : null);
+        try { worker && worker.postMessage("stop"); } catch (_) { }
+        swallowBest++;
+        queue.shift(); running = false;
+      } else {
+        settle(job, job.multi ? [] : null);
+        queue.splice(i, 1);
+      }
+    }
     function pump() {
       if (running || !queue.length) return; running = true;
       const job = queue[0];
@@ -2260,15 +2302,17 @@ function bootAnalysisWorker(urls) {
           if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) {
             booted = true; worker = w;
             resolve({
-              evaluate(fen, d, onProgress, mt) {
+              evaluate(fen, d, onProgress, mt, slot) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, multi: false, last: null, onProgress, mt, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  supersede(slot);
+                  queue.push({ resolve: res, multi: false, last: null, onProgress, mt, slot, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
-              evaluateMulti(fen, d, multipv, mt, onLines) {
+              evaluateMulti(fen, d, multipv, mt, onLines, slot) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  supersede(slot);
+                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, slot, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
@@ -2278,7 +2322,9 @@ function bootAnalysisWorker(urls) {
           handleLine(line);
         };
         w.onerror = () => { try { w.terminate(); } catch (_) { } if (!booted) tryNext(); };
-        w.postMessage("uci"); w.postMessage("isready");
+        w.postMessage("uci");
+        (eloOpts || []).forEach((c) => w.postMessage(c));
+        w.postMessage("isready");
         setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
       } catch (_) { tryNext(); }
     }
@@ -2288,10 +2334,16 @@ function bootAnalysisWorker(urls) {
 // (v0.2.0 성능) 실시간 수 아이콘·게임 리뷰 둘 다 예전엔 필요할 때마다 워커 풀을 새로 띄우고
 // 끝나면 바로 버렸다 — 매번 신경망을 새로 내려받아(브라우저 캐시로 네트워크는 빠르지만) 다시
 // 컴파일해야 해서, 신경망이 큰 프로필(특히 17.1)일수록 "요청 → 실제로 계산 시작"까지의 부팅
-// 비용이 목표 응답 시간(수 0.3초, 리뷰 5초)보다 커지기 쉬웠다. 프로필별로 풀을 딱 한 번만 만들어
+// 비용이 목표 응답 시간(수 0.3초, 리뷰 1초)보다 커지기 쉬웠다. 프로필별로 풀을 딱 한 번만 만들어
 // 세션 내내 재사용한다 — depth·movetime(정확도)은 절대 건드리지 않고, 부팅을 한 번만 치르고 나면
-// 그 뒤로는 병렬도만큼 순수하게 시간을 줄인다. 엔진을 바꾸면(다른 profile 요청) 이전 풀만 정리한다.
-let analysisPoolCache = null; // { profile, promise: Promise<worker[]> } — 한 번에 프로필 하나만 유지
+// 그 뒤로는 병렬도만큼 순수하게 시간을 줄인다.
+// (v0.2.4 버그 수정) 예전엔 프로필 하나만 유지하는 단일 슬롯 캐시라, 분석 엔진(lite/full17)과
+// 게임 리뷰 전용 엔진(full)이 서로 다른 프로필이라는 이유만으로 상대 풀을 매번 통째로 정리하고
+// 새로 띄웠다 — 학습 탭을 쓰다가 리뷰를 열면 학습 탭 풀이 꺼지고, 리뷰를 닫고 학습 탭에 돌아오면
+// 또 학습 탭 풀을 새로 띄우는 식으로 서로를 밀어내며(thrashing) 부팅 비용을 반복해서 치렀다. 프로필이
+// 최대 3개(full/lite/full17)뿐이라 메모리 부담이 크지 않으므로, 프로필별로 풀을 따로 유지하고 절대
+// 서로를 정리하지 않는다(탭을 오가도 이미 띄운 풀은 그대로 살아있다).
+const analysisPoolCache = new Map(); // profile -> Promise<worker[]>
 // (성능) 풀 크기 — 기기가 가진 코어 수만큼 그대로 다 쓴다. 발열·CPU 점유율은 감수하더라도(사용자
 // 요청) 렉 없이 최대 성능을 내는 쪽을 택한다 — 예전처럼 프로필별로 낮게 캡을 걸어 코어를 남겨두지
 // 않는다. 비정상적으로 큰 값이 보고되는 극단적인 경우에 대비한 넉넉한 안전 상한(32)만 둔다.
@@ -2300,11 +2352,12 @@ function analyzePoolSize(profile) {
   return Math.max(2, Math.min(cores, 32));
 }
 function getAnalysisPool(profile, urls) {
-  if (analysisPoolCache && analysisPoolCache.profile === profile) return analysisPoolCache.promise;
-  if (analysisPoolCache) { const stale = analysisPoolCache.promise; stale.then((ws) => ws.forEach((w) => w.terminate())); }
+  const cached = analysisPoolCache.get(profile);
+  if (cached) return cached;
   const size = analyzePoolSize(profile);
-  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
-  analysisPoolCache = { profile, promise };
+  const eloOpts = eloSetoptions(ENGINE_PROFILES[profile]);
+  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls, eloOpts))).then((ws) => ws.filter(Boolean));
+  analysisPoolCache.set(profile, promise);
   return promise;
 }
 // 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
@@ -2373,8 +2426,6 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   // (성능) 여기서 워커를 끄지 않는다 — getAnalysisPool이 세션 내내 재사용하도록 관리한다(프로필을
   // 바꾸면 그때 이전 풀이 정리된다).
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
-  const graphCp = new Array(N + 1);
-  for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
   let gradeBoard = startBoard();
   for (let i = 0; i < N; i++) {
     const moverWhite = i % 2 === 0;
@@ -2384,6 +2435,17 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     const bestCp = posEval[i].cp;                         // 이 포지션의 최선(둔 사람 관점)
     const bestSan = posEval[i].best ? uciToSan(brd, posEval[i].best, color) : null;
     const matched = !!(bestSan && stripSuffix(bestSan) === playedSan);
+    // (v0.2.4 버그 수정) 둔 수가 엔진 최선수와 일치하면(matched) 다음 포지션은 바로 그 최선수를 둔
+    // 뒤의 포지션이라, 이론상 평가치는 이번 포지션 최선수 평가치의 부호만 뒤집힌 값과 같아야 한다
+    // (손실 0). 하지만 포지션마다 병렬 풀에서 독립적으로 다시 검색하다 보니(같은 depth·movetime
+    // 목표라도 실제로 도달한 depth가 매번 조금씩 달라질 수 있음) 두 검색이 서로 다른 값을 내놓을 수
+    // 있어, 최선 수를 뒀는데도 그래프·코치 카드 평가치가 흔들려 보였다. 최선 수를 그대로 따라간
+    // 구간은 다음 포지션의 cp를 이번 포지션 값에서 부호만 뒤집어 이어받아 항상 일관되게 만든다
+    // (그 포지션의 최선수·2순위는 다음 수 채점에 그대로 필요하므로 건드리지 않는다 — cp만 이어받음).
+    // 메이트 국면은 부호만으로는 안 맞을 수 있어(수순이 한 칸 줄어듦) 대상에서 제외한다.
+    if (matched && posEval[i].ok && posEval[i].mate == null && posEval[i + 1] && posEval[i + 1].ok && posEval[i + 1].mate == null) {
+      posEval[i + 1].cp = -bestCp;
+    }
     // (버그 수정) 엔진이 이 포지션(또는 둔 수 판정에 필요한 다음 포지션)을 평가하지 못했으면 채점을
     // 건너뛴다. 예전엔 평가 실패 시 cp=0으로 취급돼 loss=0 → '최선의 수' → 정확도 100이 되어, 엔진이
     // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 pending으로 두고 정확도 집계에서 뺀다.
@@ -2429,6 +2491,11 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
+  // (v0.2.4 버그 수정) posEval을 최선 수 구간에서 이어받도록 위 채점 루프 안에서 보정하므로, 그 보정이
+  // 끝난 뒤(루프 종료 후)에 graphCp를 만들어야 한다 — 예전엔 루프 시작 전에 미리 만들어 보정 이전의
+  // 값을 그대로 썼다.
+  const graphCp = new Array(N + 1);
+  for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
   // (v0.2.0 기능) /review 페이지의 코치 카드가 수마다 실제 평가치(+4.67 등)를 표시해야 해서, 이미
   // 계산해 둔 백 관점 centipawn 시퀀스(graphCp)를 승률(evalWin)과 함께 그대로 내보낸다.
   // (v0.2.1 기능) evalDisp — evalCp(그래프 전용, 메이트를 ±100000으로 뭉갬)와 별개로, 텍스트 표시에는
@@ -2783,18 +2850,27 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
     <div style={{ width, minWidth: 0, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
       {hasLines
         ? <>
-          {lines.map((l, i) => (
-            <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
-              onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
-              // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
-              // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
-              style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
-              <EvalBadge ev={l.ev} small />
-              <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-                <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + i} />
+          {lines.map((l, i) => {
+            // (v0.2.4 버그 수정) 예전엔 배열 인덱스(i)로 key/posKey를 잡아, MultiPV 순위가 뒤바뀌면
+            // (탐색 depth가 깊어지며 흔히 일어남) 같은 자리(i)에 완전히 다른 수순이 들어와도 그
+            // 자리의 TypedMoveLine이 재사용돼(React reconciliation) 이전 수순만큼 이미 진행된 shown
+            // 값을 그대로 물려받았다 — 새 수순이 그보다 짧으면 shown>=length라 타이핑이 그 자리에서
+            // 바로 멈춘 것처럼 보였다. 수순의 정체성(첫 수)으로 key를 잡아, 순위가 바뀌어도 각 수순이
+            // 자기 자신의 타이핑 진행 상태를 계속 이어가게 한다.
+            const lineKey = (l.sans && l.sans[0]) || i;
+            return (
+              <div key={lineKey} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
+                onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
+                // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
+                // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
+                style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
+                <EvalBadge ev={l.ev} small />
+                <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
+                  <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + lineKey} />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
         </>
         : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} />)}
@@ -3462,7 +3538,10 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         sans: pvUciToSans(sans, pv.pv, 15),
       }))).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 700, onEvalProgress, streamLines);
+      // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
+      // (v0.2.4 성능) slot="learn-lines" — 빠르게 다음/이전 수로 넘기면 이전 포지션의 계산이 아직 큐에
+      // 남아 있어도 즉시 중단되고 지금 포지션의 요청이 바로 시작된다(더 이상 순서대로 밀리지 않음).
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 7, 700, onEvalProgress, streamLines, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -3549,7 +3628,12 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
             const onMoveProgress = (partial) => {
               if (cancelled || !partial) return;
               setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(partial) } : x));
-              bumpDepth(partial.depth);
+              // (v0.2.4 버그 수정) 이 후보 수 개별 평가는 여전히 depth 15 고정이다(즉각 반응 유지 목적,
+              // 건드리지 않기로 함) — 그 depth를 "?" 도움말의 curDepth에 함께 반영하면, 후보 수가
+              // 많아 이 depth-15 검색들이 자주 완료돼 값을 15로 계속 밀어붙이는 바람에, 정작 depth
+              // 20을 목표로 하는 메인 검색(onEvalProgress)의 실제 진행 상황이 15에서 멈춘 것처럼
+              // 가려 보였다. 도움말은 메인 검색 하나만의 진행률을 보여줘야 하므로 여기서는 bumpDepth
+              // 를 부르지 않는다.
             };
             // (버그 수정) 위의 be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번
             // 물어보는 걸 막기 위해 진행 중인 Promise를 수(san)별로 캐시한다. 다만 이 캐시가 "지금
@@ -3804,15 +3888,13 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     if (!active) return;
     if (m.book || (m.kind && m.kind !== "good" && m.kind !== "pending")) return;   // 이론 수 또는 이미 품질 있음
     if (!engine || engine.status !== "ready") return;
-    (async () => {
-      const best = await engine.evaluate(sansToFen(sans), 13);
-      const after = await engine.evaluate(sansToFen([...sans, san]), 13);
-      if (cancel || !best || !after) return;
-      const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
+    const col = sans.length % 2 === 0 ? "w" : "b";
+    // (v0.2.4) '최선의 수'는 엔진 1순위 수와 일치할 때만 부여(가짜 최선 수 방지) — best는 안정된
+    // 기준값이라 한 번만 구하고, after만 depth가 깊어질 때마다(onProgress) 다시 등급을 매겨 아이콘을
+    // 계속 갱신한다(최대 5초 동안 여러 번 바뀔 수 있음 — depth 20·moveTime 5초 상한, 대부분의
+    // 포지션은 그 전에 depth 20에서 먼저 끝나 체감 속도는 기존과 비슷하게 유지된다).
+    const gradeFrom = (bestCp, bestSan, after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
-      const col = sans.length % 2 === 0 ? "w" : "b";
-      // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 부여(가짜 최선 수 방지).
-      const bestSan = best.best ? uciToSan(boardFromSans(sans), best.best, col) : null;
       const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
       const ourCp = -afterOpp; const loss = matched ? 0 : bestCp - ourCp;
       let k = tierOf(loss);
@@ -3822,7 +3904,18 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(decided && losing)) k = "brilliant";
       if (decided) { if (k === "blunder") k = "mistake"; else if (k === "mistake") k = "inaccuracy"; else if (k === "inaccuracy") k = "good"; }
       const under = /=/.test(san) && !/=Q/.test(san); if (under && !["inaccuracy", "mistake", "blunder"].includes(k)) k = "brilliant";
-      if (!cancel) setLiveKind(k);
+      return k;
+    };
+    (async () => {
+      const best = await engine.evaluate(sansToFen(sans), 20, undefined, 5000, "focus-best");
+      if (cancel || !best) return;
+      const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
+      const bestSan = best.best ? uciToSan(boardFromSans(sans), best.best, col) : null;
+      const after = await engine.evaluate(sansToFen([...sans, san]), 20, (partial) => {
+        if (cancel || !partial) return;
+        setLiveKind(gradeFrom(bestCp, bestSan, partial));
+      }, 5000, "focus-after");
+      if (!cancel && after) setLiveKind(gradeFrom(bestCp, bestSan, after));
     })();
     return () => { cancel = true; };
   }, [active, sansKey, san, active && m.kind, active && m.book, engine && engine.status]);
@@ -3870,13 +3963,16 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     setAnalyzing(true);
     (async () => {
       const base = [...sans, san]; const found = [];
+      // (v0.2.4) depth 20·moveTime 5초 상한으로 올리되, base 포지션은 모든 후보 라인에서 공통이라
+      // 라인마다 다시 구하지 않고 한 번만 구해 재사용한다(불필요한 중복 호출 제거, 결과는 동일).
+      const base0 = await engine.evaluate(sansToFen(base), 20, undefined, 5000, "focus-mistakes");
       for (const ln of stats.lines) {
         if (cancelled) return;
         const full = [...base, ...ln.seq];
-        let prev = await engine.evaluate(sansToFen(base), 11);
+        let prev = base0;
         for (let i = base.length; i < full.length; i++) {
           if (cancelled) return;
-          const after = await engine.evaluate(sansToFen(full.slice(0, i + 1)), 11);
+          const after = await engine.evaluate(sansToFen(full.slice(0, i + 1)), 20, undefined, 5000, "focus-mistakes");
           if (!prev || !after) { prev = after; continue; }
           const moverWhite = i % 2 === 0;
           const isUser = (moverWhite && ln.color === "w") || (!moverWhite && ln.color === "b");
@@ -4975,7 +5071,36 @@ const RV = {
 // (v0.2.0 기능) /review 최상위 페이지 — game(끝난 한 판)을 받아 요약 화면과 수순별 코치 리뷰 화면을
 // 오간다. 좁은 화면(모바일)은 세로 한 열, 넓은 화면(데스크톱)은 보드+사이드바 2단으로 배치해 각각
 // chess.com 모바일 앱·데스크톱 웹의 레이아웃 구조를 따른다.
-function ReviewPage({ game, engine, onClose }) {
+// (v0.2.4) 게임 리뷰 전용 depth·moveTime 상한 — moveTime은 어디까지나 "상한"이라 대부분의 포지션은
+// 그 전에 depth에서 먼저 끝나 실제 계산 시간은 기존과 비슷하게 유지된다(상한만 넉넉해진 것).
+const REVIEW_DEPTH = 20;
+const REVIEW_MOVETIME_MS = 1000;
+// (v0.2.4 성능) 게임 리뷰는 항상 고정된 프로필("full")이라 useEngine처럼 별도의 "메인 연결"을
+// 매번 새로 부팅할 필요가 없다 — 실제 계산은 전부 getAnalysisPool의 풀이 담당하고(analyzeGame,
+// 엔진 라인 패널, 수 판정 모두), 아래 evaluate/evaluateMulti는 풀 부팅이 통째로 실패했을 때만
+// 쓰이는 진짜 마지막 폴백이다. 그래서 폴백 워커도 실제로 호출될 때만("지연 부팅") 띄운다 — 흔한
+// 경우(풀이 정상 부팅됨)엔 이 폴백이 아예 뜨지 않아, 리뷰를 열 때마다 불필요한 wasm을 중복
+// 컴파일하던 비용이 사라진다.
+function useReviewEngine() {
+  const profile = ENGINE_PROFILES.full;
+  const fallbackRef = useRef(null);
+  const getFallback = useCallback(() => {
+    if (!fallbackRef.current) fallbackRef.current = bootAnalysisWorker(profile.urls, eloSetoptions(profile));
+    return fallbackRef.current;
+  }, [profile]);
+  useEffect(() => () => { const p = fallbackRef.current; if (p) p.then((w) => w && w.terminate()); }, []);
+  return useMemo(() => ({
+    status: "ready", // 정적 프로필이라 "연결 상태"라는 개념이 없다 — 실제 준비 여부는 getAnalysisPool이 비동기로 처리.
+    profile: profile.id,
+    urls: profile.urls,
+    evaluate: (...args) => getFallback().then((w) => w ? w.evaluate(...args) : null),
+    evaluateMulti: (...args) => getFallback().then((w) => w ? w.evaluateMulti(...args) : []),
+  }), [profile, getFallback]);
+}
+// (v0.2.4) 게임 리뷰는 사용자가 설정 탭에서 고른 분석 엔진과 무관하게 항상 Stockfish 16(사람
+// 최상급 수준으로 세기 제한, ENGINE_PROFILES.full.elo)으로 고정한다.
+function ReviewPage({ game, onClose }) {
+  const engine = useReviewEngine();
   const narrow = useNarrow(760);
   const [phase, setPhase] = useState("summary"); // "summary" | "review"
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
@@ -4997,6 +5122,9 @@ function ReviewPage({ game, engine, onClose }) {
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
+  // (v0.2.4 버그 수정) "이 포지션|이 수"를 화면에 보여준 추천을 그대로 따라 뒀는지 기록해 두는
+  // 참조 — playFree에서 채우고, 아래 exploreMove 채점 effect가 재검색 결과와 무관하게 신뢰한다.
+  const forcedBestRef = useRef(null);
   // (버그 방지) 데스크톱 레이아웃은 보드 칸(flexShrink:0)이 옆 사이드바(flex:1)와 나란한 flex row라,
   // 이 hook을 그 칸에 그대로 붙이면 "컨테이너 폭을 재서 보드 크기를 정하는" 측정 대상 자체가 보드
   // 크기에 따라 결정되는 순환 참조가 생겨(내용물이 곧 그 칸의 폭) 보드가 항상 최소 크기로 멎는다.
@@ -5008,7 +5136,7 @@ function ReviewPage({ game, engine, onClose }) {
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready" || !sans || sans.length < 1) { setErr(true); return; }
-    (async () => { try { const r = await analyzeGame(sans, engine, 18, (p) => { if (!cancelled) setProg(p); }, 250); if (!cancelled) setResult(r); } catch { if (!cancelled) setErr(true); } })();
+    (async () => { try { const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS); if (!cancelled) setResult(r); } catch { if (!cancelled) setErr(true); } })();
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { setShowingLine(false); }, [curPly]);
@@ -5049,9 +5177,16 @@ function ReviewPage({ game, engine, onClose }) {
   const playFree = useCallback((san) => {
     if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
     playMoveSfx(san);
+    // (v0.2.4 버그 수정) 지금 화면에 "최선"으로 안내 중이던 수(Show 화살표 또는 엔진 라인 1순위)를
+    // 그대로 뒀다면, 그 사실 자체를 기록해 둔다 — 아래 exploreMove 채점 effect가 재검색을 새로
+    // 돌리는데, movetime 상한 안에서는 같은 포지션·같은 설정이어도 타이밍에 따라 살짝 다른 1순위가
+    // 나올 수 있어(엔진 판정 특성), 방금 사용자가 실제로 따라간 추천과 다른 수로 오판정되곤 했다.
+    // 이미 화면에 보여준 추천을 그대로 따라간 경우엔 재검색 결과와 무관하게 "최선의 수"로 확정한다.
+    const shownBest = (activeMove && activeMove.best) || (engineLines[0] && engineLines[0].sans && engineLines[0].sans[0]);
+    if (shownBest && stripSuffix(shownBest) === stripSuffix(san)) forcedBestRef.current = effSans.join(" ") + "|" + san;
     setExploreSans((s) => [...s, san]); setExploreFuture([]);
     setSel(null); setDrag(null);
-  }, [gameDrawn]);
+  }, [gameDrawn, activeMove, engineLines, effSans]);
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
     if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
@@ -5110,7 +5245,8 @@ function ReviewPage({ game, engine, onClose }) {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
         const w = pool[0] || engine;
         // (v0.2.1) onLines로 depth마다 실시간 갱신 — 평가치가 살아 움직이고 수순이 점점 길어진다.
-        const pvsAll = await w.evaluateMulti(sansToFen(effSans), 16, 3, 3000, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } });
+        // (v0.2.4 성능) slot="review-lines" — 빠르게 수를 넘기면 이전 포지션 계산이 큐를 막지 않고 즉시 중단된다.
+        const pvsAll = await w.evaluateMulti(sansToFen(effSans), REVIEW_DEPTH, 3, REVIEW_MOVETIME_MS, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } }, "review-lines");
         if (cancelled) return;
         setEngineLines(toLines(pvsAll));
       } catch { if (!cancelled) setEngineLines([]); }
@@ -5129,6 +5265,10 @@ function ReviewPage({ game, engine, onClose }) {
     const prevSans = effSans.slice(0, -1);
     const san = effSans[effSans.length - 1];
     const white = prevSans.length % 2 === 0;
+    // (v0.2.4 버그 수정) playFree가 남겨 둔 "이 포지션|이 수" 기록 — 방금 화면에 보여준 추천을
+    // 그대로 뒀다면 아래 재검색 결과와 무관하게 최선의 수로 확정한다(재검색은 movetime 상한 안에서
+    // 타이밍에 따라 살짝 다른 1순위를 낼 수 있어, 방금 안내한 추천과 다른 수로 오판정되곤 했다).
+    const forced = forcedBestRef.current === prevSans.join(" ") + "|" + san;
     setExploreMove({ san, white, kind: "pending", best: null }); // 즉시 "분석 중" 아이콘부터 보여준다
     (async () => {
       if (!engine || engine.status !== "ready") return;
@@ -5136,18 +5276,18 @@ function ReviewPage({ game, engine, onClose }) {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
         const wBest = pool[0] || engine, wAfter = pool[1] || pool[0] || engine;
         const col = white ? "w" : "b";
-        // (v0.2.3 버그 수정) depth·movetime을 학습 탭(evalMoveKind)의 depth 13·MOVETIME_MS(260ms)와
-        // 통일한다 — 예전엔 이 자유 탐색 판정만 depth 14·700ms를 써서, 같은 위치·같은 수인데도 학습
-        // 탭과 리뷰 페이지가 서로 다른 등급(아이콘)을 매기는 경우가 있었다.
-        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), 13, 2, MOVETIME_MS);
+        // (v0.2.4) 게임 리뷰는 이제 학습 탭과 다른 엔진(고정 Stockfish 16, 세기 제한)을 쓰므로 depth·
+        // movetime도 리뷰 전용 값(REVIEW_DEPTH·REVIEW_MOVETIME_MS)을 그대로 쓴다 — 학습 탭(evalMoveKind,
+        // depth 13·MOVETIME_MS)과 등급이 갈리는 건 서로 다른 엔진을 쓰는 이상 자연스러운 결과다.
+        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), REVIEW_DEPTH, 2, REVIEW_MOVETIME_MS, undefined, "review-best");
         if (cancelled) return;
         const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
         if (!p0) return;
         const bestCp = p0.mate != null ? (p0.mate > 0 ? 1e5 : -1e5) : p0.cp;
         const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
         const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
-        const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
-        const after = await wAfter.evaluate(sansToFen(effSans), 13, undefined, MOVETIME_MS);
+        const matched = forced || (!!bestSan && stripSuffix(bestSan) === stripSuffix(san));
+        const after = await wAfter.evaluate(sansToFen(effSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS, "review-after");
         if (cancelled || !after) return;
         const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
         const ourCp = -afterOpp;
@@ -5879,7 +6019,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 const shown = [...bk, ...shownNb];
                 return (
                   <>
-                    {shown.map((m) => <MoveTile key={m.san} m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} />)}
+                    {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
+                        React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
+                        감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
+                    {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} /></FadeIn>)}
                     {nb.length > 3 && (
                       <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                         <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -7818,10 +7961,88 @@ const DAILY_PUZZLES = [
     steps: ["6...Qg5! — 나이트와 g2를 동시에 노리는 더블 어택.", "7.Nxf7 Qxg2 8.Rf1 Qxe4+ — 계속 몰아치며 폰을 쓸어 담는다.", "9.Be2 Nf3# — 나이트가 킹을 그물에 가두며 체크메이트."],
   },
 ];
-function dailyPuzzleFor(dateStr) {
+// (v0.2.4) 아래 리체스 퍼즐 기반 오늘의 퍼즐(resolveDailyPuzzle)이 아직 못 뜬 동안(엔진 부팅 전,
+// 테마·풀 로딩 중, 또는 그 날짜에 테마가 하나도 배정 안 된 예외 상황)의 폴백으로 이름을 바꿔 남겨 둔다.
+function curatedDailyPuzzleFor(dateStr) {
   const rnd = seedRand("daily:" + dateStr);
   const src = DAILY_PUZZLES[Math.floor(rnd() * DAILY_PUZZLES.length)];
-  return { id: "daily_" + dateStr, themes: ["punish"], name: src.opening + " — 오늘의 퍼즐", opening: src.opening, setupSans: src.setupSans, mistakeSan: src.mistakeSan, solution: src.solution, steps: src.steps, isDaily: true };
+  return { id: "daily_" + dateStr, themes: ["punish"], name: src.opening + " — 오늘의 퍼즐", opening: src.opening, setupSans: src.setupSans, mistakeSan: src.mistakeSan, solution: src.solution, steps: src.steps, isDaily: true, date: dateStr };
+}
+// (v0.2.4 기능) 리체스 퍼즐 DB 기반 오늘의 퍼즐 — 개발자가 2주 단위로 배정한 오프닝 태그
+// (daily_puzzle_themes)에 해당하는 후보 풀(scripts/build-daily-puzzles.mjs가 만들어 두는
+// public/daily-puzzles/<opening_tag>.json)에서 날짜를 시드로 결정적으로 하나 뽑는다. 리체스
+// 퍼즐 자체는 정답이 한 줄뿐이지만, 이 앱은 실제 엔진으로 genPuzzleTree를 돌려 상대의 다른
+// 응수까지 포함한 여러 라인을 만들고, 그중 한 줄을 다시 날짜 시드로 뽑아 "XXXXXX-N"(N=그 줄의
+// 순번) 형태의 id를 부여한다. 개발자가 daily_puzzles_dev에 그 날짜의 PGN을 직접 등록해 뒀으면
+// (미래 날짜 예약용) 테마 풀 대신 그 포지션을 쓴다.
+const DAILY_PUZZLES_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
+const dailyThemePoolCache = new Map(); // opening_tag -> Promise<후보[]>
+function loadDailyThemePool(tag) {
+  if (!dailyThemePoolCache.has(tag)) {
+    dailyThemePoolCache.set(tag, fetch(DAILY_PUZZLES_BASE + "daily-puzzles/" + tag + ".json").then((r) => (r.ok ? r.json() : [])).catch(() => []));
+  }
+  return dailyThemePoolCache.get(tag);
+}
+let dailyThemeRowsCache = null; // Promise<{starts_on,opening_tag,label}[]> — 세션 내내 재사용
+function loadDailyThemeRows() {
+  if (!dailyThemeRowsCache) dailyThemeRowsCache = sbSelect("daily_puzzle_themes?select=starts_on,opening_tag,label&order=starts_on.asc").catch(() => []);
+  return dailyThemeRowsCache;
+}
+// 그 날짜(KST)에 적용되는 테마 = starts_on이 그 날짜 이하인 행 중 가장 최근 것.
+function themeForDate(dateStr, rows) {
+  let cur = null;
+  for (const r of rows || []) { if (r.starts_on <= dateStr) cur = r; else break; }
+  return cur;
+}
+async function fetchDailyPuzzleOverride(dateStr) {
+  try {
+    const rows = await sbSelect("daily_puzzles_dev?date=eq." + dateStr + "&select=date,sans,puzzle_ply,opening&limit=1");
+    return rows && rows[0] ? rows[0] : null;
+  } catch { return null; }
+}
+// XXXXXX-N — XXXXXX는 퍼즐 시작 포지션(설정 수순)의 puzzleNo 해시, N은 genPuzzleTree가 만든 여러
+// 라인 중 몇 번째 줄을 뽑았는지(1부터, 사람이 읽기 쉬운 번호).
+function dailyLineId(baseSans, lineIdx) { return puzzleNo(baseSans.join(" ")) + "-" + (lineIdx + 1); }
+async function resolveDailyPuzzle(dateStr, engine) {
+  let setupSans, mistakeSan, opening;
+  const override = await fetchDailyPuzzleOverride(dateStr);
+  if (override) {
+    setupSans = (override.sans || []).slice(0, override.puzzle_ply);
+    mistakeSan = (override.sans || [])[override.puzzle_ply];
+    opening = override.opening || "개발자 지정 퍼즐";
+  } else {
+    const rows = await loadDailyThemeRows();
+    const theme = themeForDate(dateStr, rows);
+    if (!theme) return curatedDailyPuzzleFor(dateStr); // 아직 테마가 하나도 배정 안 된 경우의 폴백
+    const pool = await loadDailyThemePool(theme.opening_tag);
+    if (!pool || !pool.length) return curatedDailyPuzzleFor(dateStr);
+    const rnd = seedRand("daily:" + dateStr);
+    const src = pool[Math.floor(rnd() * pool.length)];
+    setupSans = src.setupSans; mistakeSan = src.mistakeSan;
+    opening = theme.label || theme.opening_tag;
+  }
+  if (!mistakeSan || !engine || engine.status !== "ready") return curatedDailyPuzzleFor(dateStr);
+  let gen = null;
+  try { gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts("punish")); } catch { gen = null; }
+  if (!gen || !gen.lines || !gen.lines.length) return curatedDailyPuzzleFor(dateStr);
+  const rnd2 = seedRand("daily-line:" + dateStr);
+  const lineIdx = Math.floor(rnd2() * gen.lines.length);
+  const id = dailyLineId(setupSans, lineIdx);
+  return { id, themes: ["punish"], name: opening + " — 오늘의 퍼즐", opening, setupSans, mistakeSan, solution: gen.lines[lineIdx].solution, lines: gen.lines, tree: gen.tree, steps: [], isDaily: true, date: dateStr };
+}
+// (v0.2.4) resolveDailyPuzzle은 비동기(엔진·네트워크 필요)라 매 렌더 동기로 부를 수 없다 — 날짜가
+// 바뀌거나 엔진이 막 준비됐을 때만 다시 계산하고, 계산이 끝나기 전에는 즉시 보여줄 수 있는 큐레이션
+// 폴백(curatedDailyPuzzleFor)을 우선 반환해 화면이 비어 보이지 않게 한다.
+function useDailyPuzzle(engine, dateStr) {
+  const t = dateStr || todayStr();
+  const [resolved, setResolved] = useState(null); // {date, puzzle}
+  useEffect(() => {
+    let cancelled = false;
+    if (!engine || engine.status !== "ready") return;
+    resolveDailyPuzzle(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); });
+    return () => { cancelled = true; };
+  }, [t, engine && engine.status]);
+  return (resolved && resolved.date === t) ? resolved.puzzle : curatedDailyPuzzleFor(t);
 }
 // (버그) 각 활동 퀘스트를 개별적으로 하루 1회씩 리롤 — 다른 오프닝 플레이 퀘스트로 교체.
 // 이미 완료(claimed)한 퀘스트나 이미 리롤한 퀘스트는 교체할 수 없다. 바꿀 오프닝이 없으면 그대로 둔다.
@@ -9527,6 +9748,40 @@ function TodayPuzzleCard({ puzzle, isSolved, onOpen }) {
     </div>
   );
 }
+// (v0.2.4 기능) 지난 오늘의 퍼즐 목록 — curatedDailyPuzzleFor(옛 큐레이션)와 달리 resolveDailyPuzzle은
+// 네트워크·엔진이 필요한 비동기라, 13개 날짜를 한꺼번에 미리 계산해 "이미 풀었는지" 배지까지
+// 보여주면 매번 진입할 때마다 엔진 호출이 13번씩 발생한다 — 목록은 날짜만 가볍게 보여주고, 실제
+// 계산은 사용자가 그 날짜를 누른 시점에 딱 한 번만 한다(해결 여부는 열어보면 퍼즐 화면 안에서 바로 보임).
+function PastDailyPuzzles({ engine, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const [busyDate, setBusyDate] = useState(null);
+  const dates = useMemo(() => {
+    const out = [];
+    for (let i = 1; i <= 13; i++) out.push(todayStr(new Date(Date.now() - i * 86400e3)));
+    return out;
+  }, []);
+  const openDate = async (dateStr) => {
+    if (busyDate || !engine || engine.status !== "ready") return;
+    setBusyDate(dateStr);
+    try { const pz = await resolveDailyPuzzle(dateStr, engine); onOpen(pz); } finally { setBusyDate(null); }
+  };
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <button onClick={() => setOpen((v) => !v)} className="press" style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 2px", border: "none", background: "transparent", color: T.brassHi, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+        <ChevronRight size={13} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} /> 지난 오늘의 퍼즐
+      </button>
+      {open && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+          {dates.map((d) => (
+            <button key={d} onClick={() => openDate(d)} disabled={!!busyDate} className="press" style={{ padding: "5px 9px", borderRadius: 8, border: "1px solid " + T.brass, background: "rgba(0,0,0,.25)", color: T.ivory, fontSize: 10.5, cursor: "pointer", opacity: busyDate && busyDate !== d ? .5 : 1 }}>
+              {busyDate === d ? "불러오는 중…" : d.slice(5)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, dailyPuzzle }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
@@ -9651,6 +9906,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} />
       {/* (18차 UI5) 안내 문구 삭제, (18차 UI2) 일일 퀘스트는 퀘스트 탭으로 이동 */}
       {dailyPuzzle && <TodayPuzzleCard puzzle={dailyPuzzle} isSolved={solved.has(dailyPuzzle.id)} onOpen={() => setActive(dailyPuzzle)} />}
+      {/* (v0.2.4 기능) 지난 오늘의 퍼즐 다시 풀기 — resolveDailyPuzzle이 날짜만 주면 그날의 퍼즐을
+          그대로 재현하므로(순수 함수 + 결정적 시드), 과거 날짜를 눌러 그때그때 새로 계산해 연다. */}
+      <PastDailyPuzzles engine={engine} onOpen={setActive} />
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByNumber()} inputMode="numeric" placeholder="퍼즐 번호로 풀기 (예: 123456)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
         <button onClick={solveByNumber} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
@@ -10434,6 +10692,18 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.2.4", date: "2026.7.24", dev: ["openchesskr", "g13sus"], items: [
+      "게임 리뷰는 이제 항상 Stockfish 16(사람 최상급 수준으로 세기 제한)으로 고정되고, 학습·퍼즐 등 나머지 분석은 Stockfish 18 Lite(기본) 또는 17.1 중 설정 탭에서 골라 쓸 수 있어요.",
+      "게임 리뷰를 여는 속도가 빨라졌어요 — 앱을 켜 두면 미리 준비해 두고, 다시 열 때 필요 없는 중복 준비 과정을 없앴어요.",
+      "집중 학습 화면의 수 체계 아이콘이 더 깊은 수까지 내다보고 판정돼요(최대 5초 동안 판정이 점점 더 정확해지며 바뀔 수 있어요).",
+      "학습 탭·게임 리뷰에서 긴 기보를 빠르게 넘겨도 이전 위치 계산이 밀려 있지 않고 바로바로 지금 위치가 계산돼요.",
+      "게임 리뷰에서 최선의 수를 뒀는데도 평가치가 흔들려 보이던 문제, 리뷰 화면에서 직접 둬본 추천 수가 다른 등급으로 잘못 매겨지던 문제를 고쳤어요.",
+      "엔진이 추천하는 수가 타이핑되다가 중간에 멈춰 보이던 문제를 고쳤어요.",
+      "학습 탭 다음 수 블록들이 평가치 순위가 바뀌면 순간이동하지 않고 부드럽게 자리를 바꿔요.",
+      "일일 퍼즐을 리체스 퍼즐 데이터베이스 기반으로 새로 만들었어요 — 2주마다 새로운 오프닝 테마로 바뀌고, 지난 날짜의 퍼즐도 다시 풀어볼 수 있어요. 풀면 기존 퍼즐과 똑같이 경험치를 얻어요.",
+    ],
+  },
+  {
     version: "0.2.3", date: "2026.7.24", dev: ["openchesskr"], items: [
       "'탁월한 수' 판정을 더 정교하게 다듬었어요 — 방치된 내 기물과 맞먹는 상대 기물을 안전하게 반격하면(진짜 트레이드 제안일 뿐이면) 더 이상 탁월로 뜨지 않고, 반대로 기물의 보호자가 옮겨져서 처음 위험해지는 경우나 체크를 동반한 희생은 이제 탁월로 제대로 인정돼요.",
       "학습 탭·리뷰 페이지에서 긴 기보를 두거나 포지션을 빠르게 넘길 때 뒤로 갈수록 느려지던 문제를 근본적으로 고쳤어요 — 이제 아무리 긴 대국이라도 계산 속도가 일정해요.",
@@ -10807,6 +11077,94 @@ function DevXpPanel({ totalXp, setTotalXp, card }) {
     </div>
   );
 }
+// (v0.2.4 기능) 오늘의 퍼즐(리체스 기반) 개발자 관리 — ①2주 단위 오프닝 테마 로테이션 지정,
+// ②미래 날짜 퍼즐을 PGN으로 직접 지정. 둘 다 master_games_dev와 같은 패턴(is_content_editor
+// 서버 RLS로 이중 검증되는 Supabase 테이블)을 쓴다.
+function DailyPuzzleDevPanel({ card }) {
+  const [themes, setThemes] = useState(null); // null=로딩 중
+  const [themeErr, setThemeErr] = useState("");
+  const [startsOn, setStartsOn] = useState("");
+  const [tag, setTag] = useState("");
+  const [label, setLabel] = useState("");
+  const [themeBusy, setThemeBusy] = useState(false);
+  const loadThemes = useCallback(async () => {
+    try { setThemes(await sbSelect("daily_puzzle_themes?select=id,starts_on,opening_tag,label&order=starts_on.desc&limit=20")); }
+    catch { setThemes([]); }
+  }, []);
+  useEffect(() => { loadThemes(); }, [loadThemes]);
+  const addTheme = async () => {
+    const s = startsOn.trim(), t = tag.trim();
+    if (!s || !t) { setThemeErr("적용 시작일과 오프닝 태그를 모두 입력하세요."); return; }
+    setThemeBusy(true); setThemeErr("");
+    try { await sbInsert("daily_puzzle_themes", { starts_on: s, opening_tag: t, label: label.trim() || null }); setStartsOn(""); setTag(""); setLabel(""); await loadThemes(); }
+    catch (e) { setThemeErr("저장 실패: " + e.message); }
+    setThemeBusy(false);
+  };
+  const [pzDate, setPzDate] = useState("");
+  const [pzOpening, setPzOpening] = useState("");
+  const [pzPgn, setPzPgn] = useState("");
+  const [pzErr, setPzErr] = useState("");
+  const [pzBusy, setPzBusy] = useState(false);
+  const [pzOk, setPzOk] = useState(false);
+  // (AddMasterGameModal과 동일한 검증 방식) 붙여넣은 수순을 시작 위치부터 재생해 합법적인지 확인 —
+  // 하나라도 안 되면 그 지점까지만 인정한다.
+  const pzMoves = useMemo(() => {
+    const raw = parsePgnMoves(pzPgn);
+    let board = startBoard(); const ok = [];
+    for (let i = 0; i < raw.length; i++) {
+      const color = i % 2 === 0 ? "w" : "b";
+      if (!sanSrc(board, raw[i], color)) break;
+      board = applySan(board, raw[i], color); ok.push(raw[i]);
+    }
+    return ok;
+  }, [pzPgn]);
+  const savePuzzle = async () => {
+    const d = pzDate.trim();
+    if (!d || pzMoves.length < 2) return;
+    setPzBusy(true); setPzErr(""); setPzOk(false);
+    try {
+      // (마지막 수 = 퍼즐의 시작인 "상대의 실수") sans 전체와 그 실수의 인덱스(puzzle_ply)를 저장해
+      // 두면, resolveDailyPuzzle이 그 위치부터 genPuzzleTree로 정답 라인을 직접 만들어 낸다.
+      await sbInsert("daily_puzzles_dev", { date: d, pgn: pzPgn, sans: pzMoves, puzzle_ply: pzMoves.length - 1, opening: pzOpening.trim() || null });
+      setPzOk(true); setPzDate(""); setPzOpening(""); setPzPgn("");
+    } catch (e) { setPzErr("저장 실패: " + e.message); }
+    setPzBusy(false);
+  };
+  const inputStyle = { padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, boxSizing: "border-box" };
+  const btnStyle = { padding: "7px 12px", borderRadius: 8, border: "none", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, cursor: "pointer" };
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>오늘의 퍼즐 (개발자)</div>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>리체스 퍼즐 기반 오늘의 퍼즐의 오프닝 테마 로테이션과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>2주 오프닝 테마</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 110, overflowY: "auto" }}>
+        {(themes || []).map((t) => (
+          <div key={t.id} className="flex items-center justify-between" style={{ fontSize: 11, color: T.inkSoft }}>
+            <span>{t.starts_on} 부터</span><span style={{ fontWeight: 700, color: T.ink }}>{t.label || t.opening_tag}</span>
+          </div>
+        ))}
+        {themes && themes.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>등록된 테마가 없어요(당분간 기본 큐레이션 퍼즐로 대체돼요).</span>}
+      </div>
+      <div className="flex gap-2" style={{ marginBottom: 4, flexWrap: "wrap" }}>
+        <input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} style={{ ...inputStyle, flex: "1 1 130px" }} />
+        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="오프닝 태그(예: Italian_Game)" style={{ ...inputStyle, flex: "2 1 160px" }} />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="표시 이름(선택)" style={{ ...inputStyle, flex: "1 1 100px" }} />
+      </div>
+      {themeErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{themeErr}</p>}
+      <button onClick={addTheme} disabled={themeBusy} className="press" style={{ ...btnStyle, marginBottom: 14, opacity: themeBusy ? .6 : 1 }}>테마 추가</button>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>미래 날짜 퍼즐 직접 지정 (PGN)</div>
+      <div className="flex gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
+        <input type="date" value={pzDate} onChange={(e) => setPzDate(e.target.value)} style={{ ...inputStyle, flex: "1 1 130px" }} />
+        <input value={pzOpening} onChange={(e) => setPzOpening(e.target.value)} placeholder="오프닝 이름(선택)" style={{ ...inputStyle, flex: "1 1 130px" }} />
+      </div>
+      <textarea value={pzPgn} onChange={(e) => setPzPgn(e.target.value)} placeholder="PGN 수순 붙여넣기 — 마지막 수가 상대의 실수(퍼즐의 시작)여야 해요." rows={3} style={{ ...inputStyle, width: "100%", marginBottom: 4, resize: "vertical" }} />
+      <p style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>{pzPgn.trim() ? (pzMoves.length ? pzMoves.length + "수 인식됨" : "인식할 수 있는 수순이 없어요") : ""}</p>
+      {pzErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{pzErr}</p>}
+      {pzOk && <p style={{ fontSize: 11, color: T.best, marginBottom: 4 }}>저장했어요.</p>}
+      <button onClick={savePuzzle} disabled={pzBusy || pzMoves.length < 2 || !pzDate.trim()} className="press" style={{ ...btnStyle, opacity: (pzBusy || pzMoves.length < 2 || !pzDate.trim()) ? .5 : 1 }}>퍼즐 저장</button>
+    </div>
+  );
+}
 function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
@@ -10879,6 +11237,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
           않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
       {isDev && devOn && <DevXpPanel totalXp={totalXp} setTotalXp={setTotalXp} card={card} />}
+      {canEdit && <DailyPuzzleDevPanel card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
@@ -10886,9 +11245,9 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
         mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
 
-      {/* (20차 기능2, v0.2.0 기능 추가) 엔진 선택 — 안정적인 Stockfish 16, 가볍고 빠른 Stockfish 18
-          Lite, 셋 중 가장 강력한 Stockfish 17.1(최고 성능) 중에서 고를 수 있다. 기기 종류(모바일/PC)에
-          따라 자동으로 다른 기본값이 선택되어 있다. */}
+      {/* (v0.2.4 개편) 분석 엔진 선택 — 학습/퍼즐 탭 및 사이트 전반의 분석에 쓰인다(게임 리뷰는 별도로
+          Stockfish 16 고정, 여기서 고를 수 없다). 가볍고 빠른 Stockfish 18 Lite가 기본값이고,
+          Stockfish 17.1(초기 로딩 용량이 크지만 가장 강력함)로 바꿀 수 있다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>분석 엔진</div>
@@ -10898,7 +11257,8 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {Object.values(ENGINE_PROFILES).map((p) => {
+          {ANALYSIS_ENGINE_IDS.map((id) => {
+            const p = ENGINE_PROFILES[id];
             const on = enginePref === p.id;
             return (
               <button key={p.id} onClick={() => setEnginePref(p.id)} className="press"
@@ -10908,7 +11268,6 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
                   <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (on ? T.brass : "#C9B58C"), background: on ? T.brass : "transparent", flexShrink: 0 }} />
                   <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{p.label}</span>
                 </div>
-                <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, marginLeft: 24 }}>{p.desc}</div>
               </button>
             );
           })}
@@ -13187,6 +13546,20 @@ export default function App() {
   const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
   const engine = useEngine(enginePref);
   const chesscom = useChessCom(profile.chesscom);
+  // (v0.2.4 성능) 게임 리뷰 전용 엔진 풀(Stockfish 16)을 사용자가 실제로 리뷰를 열기 전에 유휴
+  // 시간에 미리 부팅해 둔다 — depth·movetime·세기는 그대로고(analyzeGame 등은 여전히 이 풀을
+  // getAnalysisPool로 그대로 재사용), 리뷰를 열었을 때 "부팅부터 기다리는" 체감 지연만 없앤다.
+  // requestIdleCallback이 없는 환경(사파리 등)은 넉넉한 setTimeout으로 대체한다. 초기 페이지
+  // 렌더링·분석 엔진 부팅과 경합하지 않도록 우선순위를 가장 낮춰 둔다.
+  useEffect(() => {
+    const boot = () => { const p = ENGINE_PROFILES.full; getAnalysisPool(p.id, p.urls); };
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(boot, { timeout: 8000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = setTimeout(boot, 3000);
+    return () => clearTimeout(id);
+  }, []);
 
   useEffect(() => { loadContent().then(() => setContentVer((v) => v + 1)); }, []);
   const bumpContent = useCallback(async () => { await saveContent(); setContentVer((v) => v + 1); }, []);
@@ -13214,7 +13587,12 @@ export default function App() {
       // 퍼즐을 열어본 채로 자정을 넘기면 퍼즐 탭을 눌러도(=puzzleActive가 non-null이라 홈 화면 대신
       // 그 풀이 화면이 곧장 뜸) 전날 퍼즐이 계속 보이는 버그가 있었다(알림 팝업은 todayPuzzle을 매번
       // 새로 계산해 보여주므로 이 버그와 무관하게 항상 정상이었다).
-      const restoredPuzzleActive = d.puzzleActive && !(/^daily_/.test(d.puzzleActive.id) && d.puzzleActive.id !== "daily_" + todayStr()) ? d.puzzleActive : null;
+      // (v0.2.4 버그 수정) 리체스 기반 오늘의 퍼즐은 id가 더 이상 "daily_" 접두사가 아니라
+      // "XXXXXX-N" 형태라 접두사로는 "어제 이전의 오늘의 퍼즐"인지 구분할 수 없다 — 퍼즐 객체
+      // 자체의 isDaily/date 필드로 판정하되(curatedDailyPuzzleFor·resolveDailyPuzzle 둘 다 채움),
+      // 이 필드가 없는 배포 전 저장값(구버전 "daily_" id)은 접두사 검사로 그대로 폴백한다.
+      const isStaleDaily = (pz) => !pz ? false : (pz.isDaily && pz.date) ? pz.date !== todayStr() : (/^daily_/.test(pz.id) ? pz.id !== "daily_" + todayStr() : false);
+      const restoredPuzzleActive = d.puzzleActive && !isStaleDaily(d.puzzleActive) ? d.puzzleActive : null;
       if (d.tab && !urlTabRef.current) setTab(d.tab); if (Array.isArray(d.learnFuture)) setLearnFuture(d.learnFuture); if (d.learnFocus) setLearnFocus(d.learnFocus); if (restoredPuzzleActive) setPuzzleActive(restoredPuzzleActive); if (Array.isArray(d.treeFocus)) setTreeFocus(d.treeFocus);
     } catch { } }
     // (버그 수정 시도 → 되돌림) 개발자 모드에서 XP를 바꾼 직후 곧바로 새로고침하면, 아직 서버에
@@ -13717,7 +14095,7 @@ export default function App() {
   }, []);
   // (v0.2.0 기능2) 오늘의 퍼즐 — 순수 함수라 매 렌더 다시 계산해도 무방(자정 지나 날짜가
   // 바뀌면 자연히 다음 퍼즐로 넘어간다). 알림 팝업의 "풀러 가기"에서도 그대로 재사용한다.
-  const todayPuzzle = dailyPuzzleFor(todayStr());
+  const todayPuzzle = useDailyPuzzle(engine);
   const openDailyPuzzle = useCallback(() => {
     setSearchOpen(false); setFriendsOpen(false);
     setTab("puzzle");
@@ -13827,7 +14205,7 @@ export default function App() {
       <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
-      {reviewGame && <ReviewPage game={reviewGame} engine={engine} onClose={closeReview} />}
+      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} />}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
