@@ -3628,7 +3628,12 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
             const onMoveProgress = (partial) => {
               if (cancelled || !partial) return;
               setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(partial) } : x));
-              bumpDepth(partial.depth);
+              // (v0.2.4 버그 수정) 이 후보 수 개별 평가는 여전히 depth 15 고정이다(즉각 반응 유지 목적,
+              // 건드리지 않기로 함) — 그 depth를 "?" 도움말의 curDepth에 함께 반영하면, 후보 수가
+              // 많아 이 depth-15 검색들이 자주 완료돼 값을 15로 계속 밀어붙이는 바람에, 정작 depth
+              // 20을 목표로 하는 메인 검색(onEvalProgress)의 실제 진행 상황이 15에서 멈춘 것처럼
+              // 가려 보였다. 도움말은 메인 검색 하나만의 진행률을 보여줘야 하므로 여기서는 bumpDepth
+              // 를 부르지 않는다.
             };
             // (버그 수정) 위의 be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번
             // 물어보는 걸 막기 위해 진행 중인 Promise를 수(san)별로 캐시한다. 다만 이 캐시가 "지금
