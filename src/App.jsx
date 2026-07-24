@@ -394,26 +394,28 @@ const GeoBackdrop = React.memo(function GeoBackdrop() {
 });
 
 const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-/* (20차 기능2, v0.2.0 기능 추가) 엔진 선택 — 설정 탭에서 세 엔진 중 고를 수 있다. "full"은 기존
-   Stockfish 16(NNUE, 작은 신경망이지만 연산이 무거움), "lite"는 Stockfish 18 Lite(단일 스레드,
-   7MB대 경량 빌드로 로딩·연산 모두 빠름), "full17"은 Stockfish 17.1 정식 대형 신경망 빌드로 셋 중
-   가장 강력하지만(엔진 자체 세대·신경망 크기 모두 위) 초기 로딩 용량이 가장 크다(약 80MB, 여러
-   조각으로 나눠 받는다). 기본값은 기기 종류로 자동 결정하되(모바일→full, PC→lite), 설정에서
-   언제든 바꿀 수 있고 이후에는 그 선택을 기억한다. */
+/* (v0.2.4 개편) 엔진 선택 — "분석"(학습/퍼즐 탭 및 사이트 전반)과 "게임 리뷰"는 서로 다른 엔진을
+   쓴다. "full"(Stockfish 16)은 이제 게임 리뷰 전용 고정 엔진으로만 쓰이고(사람 최상급 수준으로
+   세기를 제한, elo 참고), 설정 탭에는 노출되지 않는다. 분석 쪽은 "lite"(Stockfish 18 Lite, 기기
+   종류와 무관하게 기본값)와 "full17"(Stockfish 17.1, 셋 중 가장 강력하지만 초기 로딩 용량이 가장
+   크다 — 약 80MB, 여러 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는 그 선택을
+   기억한다. */
 const ENGINE_PROFILES = {
+  // (v0.2.4) 게임 리뷰 전용 고정 엔진 — 분석 엔진 선택지에서는 빠진다(ANALYSIS_ENGINE_IDS 참고).
   full: {
-    id: "full", label: "Stockfish 16 (NNUE)", desc: "가볍고 안정적인 구버전 엔진이에요",
+    id: "full", label: "Stockfish 16",
     urls: [ENGINE_BASE + "engine/stockfish-nnue-16-single.js", "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js"],
     // (성능) 교차 출처 격리(COOP/COEP)가 된 환경에서만 시도하는 멀티스레드 빌드 — CDN 폴백 없이
     // 같은 출처(public/engine) 파일만 쓴다(교차 출처 워커 스크립트는 격리 요건과 맞물려 불확실하다).
     mtUrl: ENGINE_BASE + "engine/stockfish-nnue-16.js",
+    elo: 3270, // (v0.2.4) 게임 리뷰는 사람 최상급 수준(약 3270 elo)으로 세기를 제한해 둔다(UCI_LimitStrength).
   },
   lite: {
-    id: "lite", label: "Stockfish 18 Lite", desc: "가볍고 빨라요(경량 빌드)",
+    id: "lite", label: "Stockfish 18 Lite",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
     mtUrl: ENGINE_BASE + "engine/lite/stockfish-18-lite.js",
   },
-  // (v0.2.0 기능) 세 엔진 중 최고 성능 — Stockfish 17.1의 정식(비-Lite) 대형 신경망 빌드. 신경망
+  // (v0.2.0 기능) 분석 엔진 중 최고 성능 — Stockfish 17.1의 정식(비-Lite) 대형 신경망 빌드. 신경망
   // 파일이 npm 배포 용량 제한 때문에 여러 조각으로 쪼개져 있어(scripts/copy-engine.mjs 참고),
   // 조각을 이어 붙이는 부트스트랩 스크립트(boot-single.js/boot-mt.js)를 거쳐 불러온다 — 용량이 큰
   // 만큼 같은 출처(public/engine) 파일만 쓰고 CDN 폴백은 두지 않는다(실패하면 다른 프로필처럼
@@ -425,12 +427,19 @@ const ENGINE_PROFILES = {
   // 사용하므로, URL 뒤에 "#진짜파일명.wasm"을 붙여 워커를 만들면(importScripts 이후에도 hash는
   // 그대로 유지된다) 같은 폴더의 조각 파일을 정확히 찾아낸다.
   full17: {
-    id: "full17", label: "Stockfish 17.1 (최고 성능)", desc: "가장 강력하지만 처음엔 큰 용량(약 80MB)을 내려받아요",
+    id: "full17", label: "Stockfish 17.1",
     urls: [ENGINE_BASE + "engine/17/boot-single.js#stockfish-17.1-single-a496a04.wasm"],
     mtUrl: ENGINE_BASE + "engine/17/boot-mt.js#stockfish-17.1-8e4d048.wasm",
     parts: 6,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
   },
 };
+// (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — 게임 리뷰 전용 "full"은 제외한다.
+const ANALYSIS_ENGINE_IDS = ["lite", "full17"];
+// (v0.2.4) 프로필에 elo가 지정돼 있으면(게임 리뷰 전용 "full") 세기를 그 수준으로 제한하는
+// setoption 명령을 함께 보낸다 — 분석 엔진 프로필들은 elo가 없어 항상 빈 배열([])을 반환한다.
+function eloSetoptions(profile) {
+  return profile && profile.elo ? ["setoption name UCI_LimitStrength value true", "setoption name UCI_Elo value " + profile.elo] : [];
+}
 // (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
 // Policy)가 걸린 페이지에서만 쓸 수 있다 — vite.config.js(개발)·vercel.json(배포)에서 헤더를 설정해
 // 뒀을 때만 true가 된다. 격리가 안 된 환경(구형 브라우저, 헤더 미지원 배포지 등)에서는 이 값이
@@ -438,12 +447,8 @@ const ENGINE_PROFILES = {
 function crossOriginIsolatedOK() {
   return typeof SharedArrayBuffer !== "undefined" && typeof window !== "undefined" && window.crossOriginIsolated === true;
 }
-// 실시간(집중 학습 등) 평가는 항상 활성 포지션이 하나뿐이라, 포지션 하나를 여러 코어로 동시에 탐색하는
-// 멀티스레드가 그대로 이득이다. UI 렌더링용 코어 하나는 남겨 둔다.
-function mainEngineThreads() {
-  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
-  return Math.max(1, cores - 1);
-}
+// (v0.2.4) 분석 엔진의 스레드 수를 2로 고정한다 — 기기 코어 수에 비례해 늘리지 않는다.
+function mainEngineThreads() { return 2; }
 // 부팅 시도 목록 — 격리가 가능하면 멀티스레드 빌드(같은 출처만)를 맨 앞에 두고, 그 뒤로 기존
 // 단일 스레드 빌드(로컬 → CDN)를 그대로 이어 붙여, 멀티스레드 부팅이 실패해도 기존 폴백 경로가
 // 그대로 살아있게 한다.
@@ -459,14 +464,10 @@ function engineBootList(profileId, threads) {
   return list;
 }
 const ENGINE_PREF_KEY = "occ_engine_pref";
-function isMobileDevice() {
-  if (typeof navigator === "undefined") return false;
-  if (navigator.userAgentData && typeof navigator.userAgentData.mobile === "boolean") return navigator.userAgentData.mobile;
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-}
-function defaultEnginePref() { return isMobileDevice() ? "full" : "lite"; }
+// (v0.2.4) 기기 종류와 무관하게 항상 Stockfish 18 Lite를 기본값으로 쓴다.
+function defaultEnginePref() { return "lite"; }
 function loadEnginePref() {
-  try { const v = window.localStorage.getItem(ENGINE_PREF_KEY); if (v && ENGINE_PROFILES[v]) return v; } catch { }
+  try { const v = window.localStorage.getItem(ENGINE_PREF_KEY); if (v && ANALYSIS_ENGINE_IDS.includes(v)) return v; } catch { }
   return defaultEnginePref();
 }
 function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, v); } catch { } }
@@ -845,6 +846,7 @@ function useEngine(enginePref) {
         w.onerror = () => { try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
         w.postMessage("uci");
         if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
+        eloSetoptions(ENGINE_PROFILES[enginePref]).forEach((c) => w.postMessage(c));
         w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
       } catch (_) { tryNext(); }
@@ -2197,7 +2199,7 @@ const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : 
 // 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 학습 탭의 실시간 후보 수
 // 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
 // evaluate + onProgress, MultiPV evaluateMulti)을 둘 다 지원하도록 넓혔다.
-function bootAnalysisWorker(urls) {
+function bootAnalysisWorker(urls, eloOpts) {
   return new Promise((resolve) => {
     let idx = 0, booted = false, worker = null;
     const queue = []; let running = false, swallowBest = 0;
@@ -2278,7 +2280,9 @@ function bootAnalysisWorker(urls) {
           handleLine(line);
         };
         w.onerror = () => { try { w.terminate(); } catch (_) { } if (!booted) tryNext(); };
-        w.postMessage("uci"); w.postMessage("isready");
+        w.postMessage("uci");
+        (eloOpts || []).forEach((c) => w.postMessage(c));
+        w.postMessage("isready");
         setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
       } catch (_) { tryNext(); }
     }
@@ -2303,7 +2307,8 @@ function getAnalysisPool(profile, urls) {
   if (analysisPoolCache && analysisPoolCache.profile === profile) return analysisPoolCache.promise;
   if (analysisPoolCache) { const stale = analysisPoolCache.promise; stale.then((ws) => ws.forEach((w) => w.terminate())); }
   const size = analyzePoolSize(profile);
-  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
+  const eloOpts = eloSetoptions(ENGINE_PROFILES[profile]);
+  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls, eloOpts))).then((ws) => ws.filter(Boolean));
   analysisPoolCache = { profile, promise };
   return promise;
 }
@@ -3462,7 +3467,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         sans: pvUciToSans(sans, pv.pv, 15),
       }))).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 16, 10, 700, onEvalProgress, streamLines);
+      // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 7, 700, onEvalProgress, streamLines);
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -4975,7 +4981,15 @@ const RV = {
 // (v0.2.0 기능) /review 최상위 페이지 — game(끝난 한 판)을 받아 요약 화면과 수순별 코치 리뷰 화면을
 // 오간다. 좁은 화면(모바일)은 세로 한 열, 넓은 화면(데스크톱)은 보드+사이드바 2단으로 배치해 각각
 // chess.com 모바일 앱·데스크톱 웹의 레이아웃 구조를 따른다.
-function ReviewPage({ game, engine, onClose }) {
+// (v0.2.4) 게임 리뷰 전용 depth·moveTime 상한 — moveTime은 어디까지나 "상한"이라 대부분의 포지션은
+// 그 전에 depth에서 먼저 끝나 실제 계산 시간은 기존과 비슷하게 유지된다(상한만 넉넉해진 것).
+const REVIEW_DEPTH = 20;
+const REVIEW_MOVETIME_MS = 1000;
+// (v0.2.4) 게임 리뷰는 사용자가 설정 탭에서 고른 분석 엔진과 무관하게 항상 Stockfish 16(사람
+// 최상급 수준으로 세기 제한, ENGINE_PROFILES.full.elo)으로 고정한다 — 리뷰 페이지가 열려 있을 때만
+// 부팅하고 닫히면 정리되도록 이 안에서 직접 useEngine("full")을 호출한다(분석 엔진과는 별개 인스턴스).
+function ReviewPage({ game, onClose }) {
+  const engine = useEngine("full");
   const narrow = useNarrow(760);
   const [phase, setPhase] = useState("summary"); // "summary" | "review"
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
@@ -5008,7 +5022,7 @@ function ReviewPage({ game, engine, onClose }) {
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready" || !sans || sans.length < 1) { setErr(true); return; }
-    (async () => { try { const r = await analyzeGame(sans, engine, 18, (p) => { if (!cancelled) setProg(p); }, 250); if (!cancelled) setResult(r); } catch { if (!cancelled) setErr(true); } })();
+    (async () => { try { const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS); if (!cancelled) setResult(r); } catch { if (!cancelled) setErr(true); } })();
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { setShowingLine(false); }, [curPly]);
@@ -5110,7 +5124,7 @@ function ReviewPage({ game, engine, onClose }) {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
         const w = pool[0] || engine;
         // (v0.2.1) onLines로 depth마다 실시간 갱신 — 평가치가 살아 움직이고 수순이 점점 길어진다.
-        const pvsAll = await w.evaluateMulti(sansToFen(effSans), 16, 3, 3000, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } });
+        const pvsAll = await w.evaluateMulti(sansToFen(effSans), REVIEW_DEPTH, 3, REVIEW_MOVETIME_MS, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } });
         if (cancelled) return;
         setEngineLines(toLines(pvsAll));
       } catch { if (!cancelled) setEngineLines([]); }
@@ -5136,10 +5150,10 @@ function ReviewPage({ game, engine, onClose }) {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
         const wBest = pool[0] || engine, wAfter = pool[1] || pool[0] || engine;
         const col = white ? "w" : "b";
-        // (v0.2.3 버그 수정) depth·movetime을 학습 탭(evalMoveKind)의 depth 13·MOVETIME_MS(260ms)와
-        // 통일한다 — 예전엔 이 자유 탐색 판정만 depth 14·700ms를 써서, 같은 위치·같은 수인데도 학습
-        // 탭과 리뷰 페이지가 서로 다른 등급(아이콘)을 매기는 경우가 있었다.
-        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), 13, 2, MOVETIME_MS);
+        // (v0.2.4) 게임 리뷰는 이제 학습 탭과 다른 엔진(고정 Stockfish 16, 세기 제한)을 쓰므로 depth·
+        // movetime도 리뷰 전용 값(REVIEW_DEPTH·REVIEW_MOVETIME_MS)을 그대로 쓴다 — 학습 탭(evalMoveKind,
+        // depth 13·MOVETIME_MS)과 등급이 갈리는 건 서로 다른 엔진을 쓰는 이상 자연스러운 결과다.
+        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), REVIEW_DEPTH, 2, REVIEW_MOVETIME_MS);
         if (cancelled) return;
         const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
         if (!p0) return;
@@ -5147,7 +5161,7 @@ function ReviewPage({ game, engine, onClose }) {
         const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
         const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
         const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
-        const after = await wAfter.evaluate(sansToFen(effSans), 13, undefined, MOVETIME_MS);
+        const after = await wAfter.evaluate(sansToFen(effSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
         if (cancelled || !after) return;
         const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
         const ourCp = -afterOpp;
@@ -10886,9 +10900,9 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
         mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
 
-      {/* (20차 기능2, v0.2.0 기능 추가) 엔진 선택 — 안정적인 Stockfish 16, 가볍고 빠른 Stockfish 18
-          Lite, 셋 중 가장 강력한 Stockfish 17.1(최고 성능) 중에서 고를 수 있다. 기기 종류(모바일/PC)에
-          따라 자동으로 다른 기본값이 선택되어 있다. */}
+      {/* (v0.2.4 개편) 분석 엔진 선택 — 학습/퍼즐 탭 및 사이트 전반의 분석에 쓰인다(게임 리뷰는 별도로
+          Stockfish 16 고정, 여기서 고를 수 없다). 가볍고 빠른 Stockfish 18 Lite가 기본값이고,
+          Stockfish 17.1(초기 로딩 용량이 크지만 가장 강력함)로 바꿀 수 있다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>분석 엔진</div>
@@ -10898,7 +10912,8 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {Object.values(ENGINE_PROFILES).map((p) => {
+          {ANALYSIS_ENGINE_IDS.map((id) => {
+            const p = ENGINE_PROFILES[id];
             const on = enginePref === p.id;
             return (
               <button key={p.id} onClick={() => setEnginePref(p.id)} className="press"
@@ -10908,7 +10923,6 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
                   <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (on ? T.brass : "#C9B58C"), background: on ? T.brass : "transparent", flexShrink: 0 }} />
                   <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{p.label}</span>
                 </div>
-                <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, marginLeft: 24 }}>{p.desc}</div>
               </button>
             );
           })}
@@ -13827,7 +13841,7 @@ export default function App() {
       <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
-      {reviewGame && <ReviewPage game={reviewGame} engine={engine} onClose={closeReview} />}
+      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} />}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
