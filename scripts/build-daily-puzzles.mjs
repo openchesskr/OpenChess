@@ -27,7 +27,8 @@
  *   --maxRating  난이도 상한(기본 2200)
  *   --delay      대국 PGN 요청 사이 대기(ms, 기본 400 — 리체스에 대한 예의)
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { createReadStream, writeFileSync, mkdirSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { dirname } from "node:path";
 import { Chess } from "chess.js";
 
@@ -50,19 +51,18 @@ if (!CSV_PATH || !TAG || !OUT_PATH) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 리체스 퍼즐 CSV는 값 안에 콤마/따옴표가 없다(Moves·Themes·OpeningTags는 공백으로 구분된 토큰
-// 목록) — 단순 split(",")으로 충분하다. 공식 헤더:
+// 리체스 퍼즐 CSV는 1~2GB급이라 한 번에 메모리로 읽으면(readFileSync) 위험하다 — 한 줄씩
+// 스트리밍으로 읽는다. 값 안에 콤마/따옴표가 없어(Moves·Themes·OpeningTags는 공백으로 구분된
+// 토큰 목록) 단순 split(",")으로 충분하다. 공식 헤더:
 // PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags
-function* iterPuzzleRows(csvPath) {
-  const text = readFileSync(csvPath, "utf8");
-  const lines = text.split(/\r?\n/);
-  const header = lines[0].split(",");
-  const idx = Object.fromEntries(header.map((h, i) => [h, i]));
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
+async function* iterPuzzleRows(csvPath) {
+  const rl = createInterface({ input: createReadStream(csvPath, "utf8"), crlfDelay: Infinity });
+  let idx = null;
+  for await (const line of rl) {
     if (!line) continue;
+    if (!idx) { const header = line.split(","); idx = Object.fromEntries(header.map((h, i) => [h, i])); continue; }
     const cols = line.split(",");
-    if (cols.length < header.length) continue;
+    if (cols.length < Object.keys(idx).length) continue;
     yield {
       id: cols[idx.PuzzleId],
       fen: cols[idx.FEN],
@@ -138,7 +138,7 @@ async function buildOne(row) {
 
 async function main() {
   const candidates = [];
-  for (const row of iterPuzzleRows(CSV_PATH)) {
+  for await (const row of iterPuzzleRows(CSV_PATH)) {
     if (row.rating < MIN_RATING || row.rating > MAX_RATING) continue;
     if (!row.openingTags.includes(TAG)) continue;
     candidates.push(row);
