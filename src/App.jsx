@@ -770,6 +770,26 @@ function useEngine(enginePref) {
   const swallowBest = useRef(0); // 강제 해제된 작업의 뒤늦은 bestmove를 무시할 개수
   const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
   const resultOf = (job, bm) => job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : (job.last ? { ...job.last, best: bm || "" } : (bm ? { best: bm } : null));
+  // (v0.2.4 성능) 같은 slot의 새 요청이 들어오면 이전 요청을 큐에서 즉시 치운다 — 아직 실행 전이면
+  // 그냥 빼내고, 이미 엔진에 보낸(실행 중인) 요청이면 "stop"으로 즉시 중단시키고 그 뒤늦은 bestmove는
+  // 무시한다(swallowBest, 워치독과 동일한 메커니즘). slot을 넘기지 않는 호출(예: 게임 리뷰 전체 분석처럼
+  // 모든 포지션이 다 끝나야 하는 배치 작업)은 지금처럼 그대로 FIFO로 순서대로 처리된다 — 사용자가 이미
+  // 관심을 끊은 포지션(빠르게 넘긴 이전 수)의 계산이 큐를 막아 다음 요청을 지연시키던 문제만 없앤다.
+  const supersede = useCallback((slot) => {
+    if (slot == null) return;
+    const i = queue.current.findIndex((j) => j.slot === slot);
+    if (i < 0) return;
+    const job = queue.current[i];
+    if (i === 0 && running.current) {
+      settle(job, job.multi ? [] : null);
+      try { ref.current && ref.current.postMessage("stop"); } catch (_) { }
+      swallowBest.current++;
+      queue.current.shift(); running.current = false;
+    } else {
+      settle(job, job.multi ? [] : null);
+      queue.current.splice(i, 1);
+    }
+  }, []);
   const pump = useCallback(() => {
     if (running.current) return;
     const job = queue.current[0]; if (!job) return;
@@ -864,14 +884,16 @@ function useEngine(enginePref) {
   // 쉬운 포지션은 목표 depth까지 깊게, 복잡한 포지션은 movetime 상한에서 끊어 전체 분석 시간을 예측 가능하게 만든다.
   // watchMs: 이 요청의 워치독 제한. movetime을 준 배치 분석은 짧게(+버퍼), movetime 없는 실시간
   // 평가는 depth까지 오래 걸릴 수 있으므로 넉넉히 둔다.
-  const evaluate = useCallback((fen, depth = 14, onProgress, movetime) => new Promise((resolve) => {
+  const evaluate = useCallback((fen, depth = 14, onProgress, movetime, slot) => new Promise((resolve) => {
+    supersede(slot);
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, last: null, onProgress, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
-  }), [pump]);
-  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress, onLines) => new Promise((resolve) => {
+    queue.current.push({ resolve, last: null, onProgress, slot, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value 1", "position fen " + fen, go] }); pump();
+  }), [pump, supersede]);
+  const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress, onLines, slot) => new Promise((resolve) => {
+    supersede(slot);
     const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
-  }), [pump]);
+    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, slot, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+  }), [pump, supersede]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
   const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
@@ -2209,6 +2231,24 @@ function bootAnalysisWorker(urls, eloOpts) {
     // 줄여버린다. useEngine의 워치독(548-557행)과 동일한 방식 — 제한 시간 안에 bestmove가 없으면
     // 부분 결과로 마무리하고 'stop'을 보내며, 그래도 응답이 없으면 큐를 강제로 흘려보낸다.
     const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+    // (v0.2.4 성능) useEngine의 supersede와 동일한 패턴 — 같은 slot의 새 요청이 오면 이전 요청을
+    // 큐에서 즉시 치운다(실행 중이면 "stop"으로 중단). 풀에서 특정 자리(pool[0] 등)를 매번 같은
+    // 용도로 재사용하는 호출부(리뷰 엔진 라인 패널 등)가 빠른 수 넘김에도 밀리지 않게 해 준다.
+    function supersede(slot) {
+      if (slot == null) return;
+      const i = queue.findIndex((j) => j.slot === slot);
+      if (i < 0) return;
+      const job = queue[i];
+      if (i === 0 && running) {
+        settle(job, job.multi ? [] : null);
+        try { worker && worker.postMessage("stop"); } catch (_) { }
+        swallowBest++;
+        queue.shift(); running = false;
+      } else {
+        settle(job, job.multi ? [] : null);
+        queue.splice(i, 1);
+      }
+    }
     function pump() {
       if (running || !queue.length) return; running = true;
       const job = queue[0];
@@ -2262,15 +2302,17 @@ function bootAnalysisWorker(urls, eloOpts) {
           if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) {
             booted = true; worker = w;
             resolve({
-              evaluate(fen, d, onProgress, mt) {
+              evaluate(fen, d, onProgress, mt, slot) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, multi: false, last: null, onProgress, mt, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  supersede(slot);
+                  queue.push({ resolve: res, multi: false, last: null, onProgress, mt, slot, cmds: ["setoption name MultiPV value 1", "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
-              evaluateMulti(fen, d, multipv, mt, onLines) {
+              evaluateMulti(fen, d, multipv, mt, onLines, slot) {
                 return new Promise((res) => {
-                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  supersede(slot);
+                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, slot, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
                   pump();
                 });
               },
@@ -3474,7 +3516,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       }))).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 7, 700, onEvalProgress, streamLines);
+      // (v0.2.4 성능) slot="learn-lines" — 빠르게 다음/이전 수로 넘기면 이전 포지션의 계산이 아직 큐에
+      // 남아 있어도 즉시 중단되고 지금 포지션의 요청이 바로 시작된다(더 이상 순서대로 밀리지 않음).
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 7, 700, onEvalProgress, streamLines, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -3816,15 +3860,13 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     if (!active) return;
     if (m.book || (m.kind && m.kind !== "good" && m.kind !== "pending")) return;   // 이론 수 또는 이미 품질 있음
     if (!engine || engine.status !== "ready") return;
-    (async () => {
-      const best = await engine.evaluate(sansToFen(sans), 13);
-      const after = await engine.evaluate(sansToFen([...sans, san]), 13);
-      if (cancel || !best || !after) return;
-      const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
+    const col = sans.length % 2 === 0 ? "w" : "b";
+    // (v0.2.4) '최선의 수'는 엔진 1순위 수와 일치할 때만 부여(가짜 최선 수 방지) — best는 안정된
+    // 기준값이라 한 번만 구하고, after만 depth가 깊어질 때마다(onProgress) 다시 등급을 매겨 아이콘을
+    // 계속 갱신한다(최대 5초 동안 여러 번 바뀔 수 있음 — depth 20·moveTime 5초 상한, 대부분의
+    // 포지션은 그 전에 depth 20에서 먼저 끝나 체감 속도는 기존과 비슷하게 유지된다).
+    const gradeFrom = (bestCp, bestSan, after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
-      const col = sans.length % 2 === 0 ? "w" : "b";
-      // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 부여(가짜 최선 수 방지).
-      const bestSan = best.best ? uciToSan(boardFromSans(sans), best.best, col) : null;
       const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
       const ourCp = -afterOpp; const loss = matched ? 0 : bestCp - ourCp;
       let k = tierOf(loss);
@@ -3834,7 +3876,18 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(decided && losing)) k = "brilliant";
       if (decided) { if (k === "blunder") k = "mistake"; else if (k === "mistake") k = "inaccuracy"; else if (k === "inaccuracy") k = "good"; }
       const under = /=/.test(san) && !/=Q/.test(san); if (under && !["inaccuracy", "mistake", "blunder"].includes(k)) k = "brilliant";
-      if (!cancel) setLiveKind(k);
+      return k;
+    };
+    (async () => {
+      const best = await engine.evaluate(sansToFen(sans), 20, undefined, 5000, "focus-best");
+      if (cancel || !best) return;
+      const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
+      const bestSan = best.best ? uciToSan(boardFromSans(sans), best.best, col) : null;
+      const after = await engine.evaluate(sansToFen([...sans, san]), 20, (partial) => {
+        if (cancel || !partial) return;
+        setLiveKind(gradeFrom(bestCp, bestSan, partial));
+      }, 5000, "focus-after");
+      if (!cancel && after) setLiveKind(gradeFrom(bestCp, bestSan, after));
     })();
     return () => { cancel = true; };
   }, [active, sansKey, san, active && m.kind, active && m.book, engine && engine.status]);
@@ -3882,13 +3935,16 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     setAnalyzing(true);
     (async () => {
       const base = [...sans, san]; const found = [];
+      // (v0.2.4) depth 20·moveTime 5초 상한으로 올리되, base 포지션은 모든 후보 라인에서 공통이라
+      // 라인마다 다시 구하지 않고 한 번만 구해 재사용한다(불필요한 중복 호출 제거, 결과는 동일).
+      const base0 = await engine.evaluate(sansToFen(base), 20, undefined, 5000, "focus-mistakes");
       for (const ln of stats.lines) {
         if (cancelled) return;
         const full = [...base, ...ln.seq];
-        let prev = await engine.evaluate(sansToFen(base), 11);
+        let prev = base0;
         for (let i = base.length; i < full.length; i++) {
           if (cancelled) return;
-          const after = await engine.evaluate(sansToFen(full.slice(0, i + 1)), 11);
+          const after = await engine.evaluate(sansToFen(full.slice(0, i + 1)), 20, undefined, 5000, "focus-mistakes");
           if (!prev || !after) { prev = after; continue; }
           const moverWhite = i % 2 === 0;
           const isUser = (moverWhite && ln.color === "w") || (!moverWhite && ln.color === "b");
@@ -5151,7 +5207,8 @@ function ReviewPage({ game, onClose }) {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
         const w = pool[0] || engine;
         // (v0.2.1) onLines로 depth마다 실시간 갱신 — 평가치가 살아 움직이고 수순이 점점 길어진다.
-        const pvsAll = await w.evaluateMulti(sansToFen(effSans), REVIEW_DEPTH, 3, REVIEW_MOVETIME_MS, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } });
+        // (v0.2.4 성능) slot="review-lines" — 빠르게 수를 넘기면 이전 포지션 계산이 큐를 막지 않고 즉시 중단된다.
+        const pvsAll = await w.evaluateMulti(sansToFen(effSans), REVIEW_DEPTH, 3, REVIEW_MOVETIME_MS, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } }, "review-lines");
         if (cancelled) return;
         setEngineLines(toLines(pvsAll));
       } catch { if (!cancelled) setEngineLines([]); }
@@ -5180,7 +5237,7 @@ function ReviewPage({ game, onClose }) {
         // (v0.2.4) 게임 리뷰는 이제 학습 탭과 다른 엔진(고정 Stockfish 16, 세기 제한)을 쓰므로 depth·
         // movetime도 리뷰 전용 값(REVIEW_DEPTH·REVIEW_MOVETIME_MS)을 그대로 쓴다 — 학습 탭(evalMoveKind,
         // depth 13·MOVETIME_MS)과 등급이 갈리는 건 서로 다른 엔진을 쓰는 이상 자연스러운 결과다.
-        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), REVIEW_DEPTH, 2, REVIEW_MOVETIME_MS);
+        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), REVIEW_DEPTH, 2, REVIEW_MOVETIME_MS, undefined, "review-best");
         if (cancelled) return;
         const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
         if (!p0) return;
@@ -5188,7 +5245,7 @@ function ReviewPage({ game, onClose }) {
         const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
         const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
         const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
-        const after = await wAfter.evaluate(sansToFen(effSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+        const after = await wAfter.evaluate(sansToFen(effSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS, "review-after");
         if (cancelled || !after) return;
         const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
         const ourCp = -afterOpp;
