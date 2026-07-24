@@ -707,6 +707,24 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.2.5", date: "2026.7.24",
+    summary: "엔진 추천 수 줄이 길 때 컴퓨터에서 마우스로 끌어도 스크롤이 잘 안 되던 문제를 고쳤어요.",
+    mascot: {
+      intro: { char: "milku", expr: "great", name: "MILKU 코치", align: "left", text: "엔진 추천 수 줄이 화면보다 길 때, 이제 컴퓨터에서도 마우스로 편하게 끌어서 뒷부분까지 볼 수 있어요!" },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "스크롤하려다 손을 뗐는데 실수로 그 수가 그대로 둬지던 것도 이제 안 그래요." },
+    },
+    highlight: { kind: "icon", Icon: MousePointer, color: T.brassHi, label: "엔진 라인 마우스 드래그 스크롤" },
+    sections: [
+      { cat: "fix", items: [
+        "엔진 추천 수 줄이 화면 폭보다 길 때, 컴퓨터에서 마우스로 끌어도 좌우로 잘 스크롤되지 않아 뒷부분 수순이 계속 가려져 있던 문제를 고쳤어요 — 이제 마우스·터치 모두 같은 방식으로 끌어서 볼 수 있어요.",
+        "스크롤하려고 줄을 끌다가 손을 뗐을 때 실수로 그 수가 그대로 둬지던 문제도 함께 고쳤어요.",
+      ] },
+      { cat: "ui", items: [
+        "줄 뒷부분에 아직 안 보이는 수순이 남아 있으면 오른쪽 끝에 옅은 그림자를 표시해 더 볼 내용이 있다는 걸 알려줘요.",
+      ] },
+    ],
+  },
+  {
     version: "0.2.4", date: "2026.7.24",
     summary: "게임 리뷰와 학습 탭이 각각 다른 엔진을 쓰도록 나누고 여러 속도·정확도 문제를 고쳤어요. 일일 퍼즐을 리체스 퍼즐 데이터베이스 기반으로 새로 만들었어요.",
     mascot: {

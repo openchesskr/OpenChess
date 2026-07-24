@@ -2829,8 +2829,66 @@ function dedupeEngineLines(list) {
   const seen = new Set();
   return list.filter((l) => { const k = l.sans && l.sans[0]; if (!k || seen.has(k)) return false; seen.add(k); return true; });
 }
+// (v0.2.5 버그 수정) 이전엔 이 줄의 좌우 스크롤을 브라우저 기본 overflow-x:auto 드래그 스크롤에
+// 맡겼는데, 이는 터치에서만 자연스럽게 동작하고(WebkitOverflowScrolling:touch) 데스크톱 마우스로는
+// 스크롤바를 정확히 붙잡거나 shift+휠을 써야 해 사실상 스크롤이 거의 불가능했다 — 뒷부분 수순이
+// 항상 가려진 채 "끊긴" 것처럼 보이는 원인이었다. 여기서는 포인터 이벤트로 직접 scrollLeft를
+// 옮기는 드래그 스크롤을 구현해 마우스·터치·펜 어디서나 동일하게 동작하게 하고, 실제로 끌었을
+// 때(moved)만 스크롤로 처리하고 그렇지 않으면(제자리 클릭) 그 줄의 첫 수를 둔다 — 스크롤하다 손을
+// 뗀 것이 수를 두는 클릭으로 오인되던 문제를 없앤다. 또한 아직 안 보이는 수순이 남아있으면
+// 오른쪽 끝에 옅은 그라데이션 페이드를 보여줘 "더 있다"는 것을 시각적으로 알려준다.
+function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const dragRef = useRef(null);
+  const [showFade, setShowFade] = useState(false);
+  const recompute = () => {
+    const outer = outerRef.current, inner = innerRef.current;
+    if (!outer || !inner) return;
+    const overflowing = inner.scrollWidth > outer.clientWidth + 1;
+    const atEnd = outer.scrollLeft + outer.clientWidth >= inner.scrollWidth - 1;
+    setShowFade(overflowing && !atEnd);
+  };
+  useEffect(() => {
+    recompute();
+    const inner = innerRef.current;
+    if (!inner || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(recompute);
+    ro.observe(inner);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineKey]);
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX, scrollLeft: outerRef.current ? outerRef.current.scrollLeft : 0, moved: false };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 3) d.moved = true;
+    if (outerRef.current) outerRef.current.scrollLeft = d.scrollLeft - dx;
+    recompute();
+  };
+  const onPointerUp = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (d && !d.moved && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]);
+  };
+  return (
+    <div className="no-pan press" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { dragRef.current = null; }}
+      style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "grab" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative", touchAction: "pan-y" }}>
+      <EvalBadge ev={l.ev} small />
+      <div ref={outerRef} onScroll={recompute} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none" }}>
+        <span ref={innerRef} style={{ display: "inline-block" }}>
+          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + lineKey} />
+        </span>
+      </div>
+      {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 18, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,.9))", borderRadius: "0 6px 6px 0" }} />}
+    </div>
+  );
+}
 function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
-  const dragStartRef = useRef(null);
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
   if (!hasLines && !pending) return null;
@@ -2859,16 +2917,7 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
             // 자기 자신의 타이핑 진행 상태를 계속 이어가게 한다.
             const lineKey = (l.sans && l.sans[0]) || i;
             return (
-              <div key={lineKey} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
-                onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
-                // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
-                // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
-                style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
-                <EvalBadge ev={l.ev} small />
-                <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-                  <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + lineKey} />
-                </div>
-              </div>
+              <EngineLineRow key={lineKey} l={l} startPly={sans.length} lineKey={lineKey} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
             );
           })}
           {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
@@ -10691,6 +10740,13 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.2.5", date: "2026.7.24", dev: ["openchesskr"], items: [
+      "엔진 추천 수 줄이 화면 폭보다 길 때, 데스크톱에서 마우스로 끌어도 좌우로 스크롤이 잘 안 돼 뒷부분 수순이 계속 가려져 있던 문제를 고쳤어요 — 이제 마우스·터치 모두 같은 방식으로 끌어서 볼 수 있어요.",
+      "스크롤하려고 끌다가 손을 뗐을 때 실수로 그 수가 그대로 둬지던 문제도 함께 고쳤어요.",
+      "줄 뒷부분이 더 있는데 안 보일 때는 오른쪽 끝에 옅은 그림자를 표시해 더 볼 내용이 있다는 걸 알려줘요.",
+    ],
+  },
   {
     version: "0.2.4", date: "2026.7.24", dev: ["openchesskr", "g13sus"], items: [
       "게임 리뷰는 이제 항상 Stockfish 16(사람 최상급 수준으로 세기 제한)으로 고정되고, 학습·퍼즐 등 나머지 분석은 Stockfish 18 Lite(기본) 또는 17.1 중 설정 탭에서 골라 쓸 수 있어요.",
