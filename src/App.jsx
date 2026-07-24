@@ -2850,18 +2850,27 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
     <div style={{ width, minWidth: 0, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
       {hasLines
         ? <>
-          {lines.map((l, i) => (
-            <div key={i} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
-              onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
-              // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
-              // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
-              style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
-              <EvalBadge ev={l.ev} small />
-              <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
-                <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + i} />
+          {lines.map((l, i) => {
+            // (v0.2.4 버그 수정) 예전엔 배열 인덱스(i)로 key/posKey를 잡아, MultiPV 순위가 뒤바뀌면
+            // (탐색 depth가 깊어지며 흔히 일어남) 같은 자리(i)에 완전히 다른 수순이 들어와도 그
+            // 자리의 TypedMoveLine이 재사용돼(React reconciliation) 이전 수순만큼 이미 진행된 shown
+            // 값을 그대로 물려받았다 — 새 수순이 그보다 짧으면 shown>=length라 타이핑이 그 자리에서
+            // 바로 멈춘 것처럼 보였다. 수순의 정체성(첫 수)으로 key를 잡아, 순위가 바뀌어도 각 수순이
+            // 자기 자신의 타이핑 진행 상태를 계속 이어가게 한다.
+            const lineKey = (l.sans && l.sans[0]) || i;
+            return (
+              <div key={lineKey} className="no-pan press" onPointerDown={(e) => { dragStartRef.current = e.clientX; }}
+                onClick={(e) => { const dx = dragStartRef.current == null ? 0 : Math.abs(e.clientX - dragStartRef.current); if (dx < 6 && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); }}
+                // (버그 수정) pending 중에도 이 줄들은 아직 이전 포지션의 값이다 — 지우는 대신 옅게(투명도
+                // 전환) 남겨 "이 값을 기준으로 다음 걸 계산 중"임을 자연스럽게 보여준다.
+                style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
+                <EvalBadge ev={l.ev} small />
+                <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>
+                  <TypedMoveLine startPly={sans.length} sans={l.sans} posKey={posKey + ":" + lineKey} />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
         </>
         : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} />)}
@@ -5108,6 +5117,9 @@ function ReviewPage({ game, onClose }) {
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
+  // (v0.2.4 버그 수정) "이 포지션|이 수"를 화면에 보여준 추천을 그대로 따라 뒀는지 기록해 두는
+  // 참조 — playFree에서 채우고, 아래 exploreMove 채점 effect가 재검색 결과와 무관하게 신뢰한다.
+  const forcedBestRef = useRef(null);
   // (버그 방지) 데스크톱 레이아웃은 보드 칸(flexShrink:0)이 옆 사이드바(flex:1)와 나란한 flex row라,
   // 이 hook을 그 칸에 그대로 붙이면 "컨테이너 폭을 재서 보드 크기를 정하는" 측정 대상 자체가 보드
   // 크기에 따라 결정되는 순환 참조가 생겨(내용물이 곧 그 칸의 폭) 보드가 항상 최소 크기로 멎는다.
@@ -5160,9 +5172,16 @@ function ReviewPage({ game, onClose }) {
   const playFree = useCallback((san) => {
     if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
     playMoveSfx(san);
+    // (v0.2.4 버그 수정) 지금 화면에 "최선"으로 안내 중이던 수(Show 화살표 또는 엔진 라인 1순위)를
+    // 그대로 뒀다면, 그 사실 자체를 기록해 둔다 — 아래 exploreMove 채점 effect가 재검색을 새로
+    // 돌리는데, movetime 상한 안에서는 같은 포지션·같은 설정이어도 타이밍에 따라 살짝 다른 1순위가
+    // 나올 수 있어(엔진 판정 특성), 방금 사용자가 실제로 따라간 추천과 다른 수로 오판정되곤 했다.
+    // 이미 화면에 보여준 추천을 그대로 따라간 경우엔 재검색 결과와 무관하게 "최선의 수"로 확정한다.
+    const shownBest = (activeMove && activeMove.best) || (engineLines[0] && engineLines[0].sans && engineLines[0].sans[0]);
+    if (shownBest && stripSuffix(shownBest) === stripSuffix(san)) forcedBestRef.current = effSans.join(" ") + "|" + san;
     setExploreSans((s) => [...s, san]); setExploreFuture([]);
     setSel(null); setDrag(null);
-  }, [gameDrawn]);
+  }, [gameDrawn, activeMove, engineLines, effSans]);
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
     if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
@@ -5241,6 +5260,10 @@ function ReviewPage({ game, onClose }) {
     const prevSans = effSans.slice(0, -1);
     const san = effSans[effSans.length - 1];
     const white = prevSans.length % 2 === 0;
+    // (v0.2.4 버그 수정) playFree가 남겨 둔 "이 포지션|이 수" 기록 — 방금 화면에 보여준 추천을
+    // 그대로 뒀다면 아래 재검색 결과와 무관하게 최선의 수로 확정한다(재검색은 movetime 상한 안에서
+    // 타이밍에 따라 살짝 다른 1순위를 낼 수 있어, 방금 안내한 추천과 다른 수로 오판정되곤 했다).
+    const forced = forcedBestRef.current === prevSans.join(" ") + "|" + san;
     setExploreMove({ san, white, kind: "pending", best: null }); // 즉시 "분석 중" 아이콘부터 보여준다
     (async () => {
       if (!engine || engine.status !== "ready") return;
@@ -5258,7 +5281,7 @@ function ReviewPage({ game, onClose }) {
         const bestCp = p0.mate != null ? (p0.mate > 0 ? 1e5 : -1e5) : p0.cp;
         const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
         const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
-        const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
+        const matched = forced || (!!bestSan && stripSuffix(bestSan) === stripSuffix(san));
         const after = await wAfter.evaluate(sansToFen(effSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS, "review-after");
         if (cancelled || !after) return;
         const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
@@ -5991,7 +6014,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 const shown = [...bk, ...shownNb];
                 return (
                   <>
-                    {shown.map((m) => <MoveTile key={m.san} m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} />)}
+                    {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
+                        React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
+                        감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
+                    {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} /></FadeIn>)}
                     {nb.length > 3 && (
                       <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                         <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
