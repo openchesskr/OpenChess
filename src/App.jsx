@@ -1232,6 +1232,49 @@ async function addDevMasterGame({ whiteName, whiteRating, blackName, blackRating
     year: year || null, pgn, sans, result,
   });
 }
+// (v0.2.3 기능) 대량 가져오기 — PGN Mentor 등에서 받은, 여러 대국이 이어 붙은 하나의 PGN 텍스트를
+// 대국 단위로 쪼개고(각 대국은 "[Event"로 시작), 표준 PGN 헤더 태그(White/Black/*Elo/Date/Result)로
+// 대국자·레이팅·연도·결과를 자동으로 채운다. 헤더가 없거나 불완전해도 SAN 파싱과 결과 자동 판정
+// (autoResultFromPgn)이 그대로 동작한다.
+function pgnHeaderTag(pgnBlock, tag) {
+  const m = pgnBlock.match(new RegExp("\\[" + tag + "\\s+\"([^\"]*)\"\\]"));
+  return m ? m[1] : null;
+}
+function splitPgnGames(text) {
+  const parts = (text || "").split(/(?=\[Event\s)/).map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts : ((text || "").trim() ? [text.trim()] : []);
+}
+// 대국 하나(PGN 블록)를 master_games_dev insert에 바로 쓸 수 있는 형태로 파싱한다. result를 끝내
+// 판정하지 못하면(진행 중 표시 "*" 등) ok:false를 돌려줘 가져오기에서 건너뛴다(NOT NULL 제약).
+function parsePgnGameForImport(pgnBlock) {
+  const white = pgnHeaderTag(pgnBlock, "White");
+  const black = pgnHeaderTag(pgnBlock, "Black");
+  const whiteElo = pgnHeaderTag(pgnBlock, "WhiteElo");
+  const blackElo = pgnHeaderTag(pgnBlock, "BlackElo");
+  const date = pgnHeaderTag(pgnBlock, "Date");
+  const sans = parsePgnSans(pgnBlock);
+  const year = date ? parseInt(date.slice(0, 4), 10) : null;
+  const result = autoResultFromPgn(pgnBlock, sans);
+  const ok = !!(white && black && sans.length && result);
+  return {
+    ok, whiteName: white || "?", whiteRating: whiteElo && /^\d+$/.test(whiteElo) ? parseInt(whiteElo, 10) : null,
+    blackName: black || "?", blackRating: blackElo && /^\d+$/.test(blackElo) ? parseInt(blackElo, 10) : null,
+    year: (year && year > 1000 && year < 2100) ? year : null,
+    pgn: pgnBlock, sans, result,
+  };
+}
+// PostgREST는 JSON 배열 하나를 POST 본문으로 보내면 여러 행을 한 번에 insert해 준다(sbInsert 그대로
+// 재사용 가능) — 다만 대국이 아주 많을 때 요청 하나가 지나치게 커지지 않도록 묶음 단위로 나눠 보낸다.
+async function addDevMasterGamesBulk(rows, chunkSize = 200) {
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize).map((r) => ({
+      white_name: r.whiteName, white_rating: r.whiteRating || null,
+      black_name: r.blackName, black_rating: r.blackRating || null,
+      year: r.year || null, pgn: r.pgn, sans: r.sans, result: r.result,
+    }));
+    await sbInsert("master_games_dev", chunk);
+  }
+}
 function parsePgnMoves(pgn) {
   const noHeaders = pgn.replace(/^\[.*\]$/gm, "");
   const noComments = noHeaders.replace(/\{[^}]*\}/g, "").replace(/;[^\n]*/g, "");
@@ -3964,6 +4007,7 @@ function ListPager({ page, setPage, pageCount, jump = 5 }) {
 // PGN을 붙여넣으면 parsePgnSans로 즉시 검증(합법성까지는 확인하지 않고 SAN 형식만)하고, 결과는
 // PGN의 결과 토큰 또는 마지막 수의 체크메이트 기호(#)로 자동 채우되 항상 수동으로 덮어쓸 수 있다.
 function AddMasterGameModal({ onClose, onSaved }) {
+  const [mode, setMode] = useState("single"); // "single" | "bulk" — (v0.2.3 기능) PGN Mentor 등에서 받은 여러 대국 묶음을 한 번에 가져오는 대량 가져오기 탭
   const [whiteName, setWhiteName] = useState("");
   const [whiteRating, setWhiteRating] = useState("");
   const [blackName, setBlackName] = useState("");
@@ -3994,6 +4038,30 @@ function AddMasterGameModal({ onClose, onSaved }) {
       onClose();
     } catch (e) { setErr("저장하지 못했습니다. 다시 시도해 주세요."); } finally { setSaving(false); }
   };
+  // (v0.2.3 기능) 대량 가져오기 — 여러 대국이 이어 붙은 PGN 텍스트(PGN Mentor의 선수/오프닝별 zip을
+  // 풀면 나오는 .pgn 파일 등)를 파일로 올리거나 그대로 붙여넣으면, 대국 단위로 쪼개 각각의 White/
+  // Black/Elo/Date/Result 헤더를 자동으로 채우고 한 번에 저장한다.
+  const [bulkText, setBulkText] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkDone, setBulkDone] = useState(null); // { saved, skipped } | null
+  const [bulkErr, setBulkErr] = useState("");
+  const bulkGames = useMemo(() => splitPgnGames(bulkText).map(parsePgnGameForImport), [bulkText]);
+  const bulkOk = bulkGames.filter((g) => g.ok);
+  const bulkSkipped = bulkGames.length - bulkOk.length;
+  const onPickFile = async (e) => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    try { setBulkText(await f.text()); } catch { setBulkErr("파일을 읽지 못했습니다."); }
+    e.target.value = "";
+  };
+  const saveBulk = async () => {
+    if (!bulkOk.length || bulkSaving) return;
+    setBulkSaving(true); setBulkErr(""); setBulkDone(null);
+    try {
+      await addDevMasterGamesBulk(bulkOk);
+      setBulkDone({ saved: bulkOk.length, skipped: bulkSkipped });
+      onSaved && onSaved();
+    } catch (e) { setBulkErr("저장하지 못했습니다. 다시 시도해 주세요."); } finally { setBulkSaving(false); }
+  };
   const inputStyle = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: T.paper, color: T.ink, fontSize: 12.5, boxSizing: "border-box" };
   const labelStyle = { fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 3, display: "block" };
   return (
@@ -4003,6 +4071,12 @@ function AddMasterGameModal({ onClose, onSaved }) {
           <span style={{ fontSize: 13.5, fontWeight: 900, color: T.ink }}>마스터 대국 추가</span>
           <button onClick={onClose} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer" }}><X size={15} /></button>
         </div>
+        <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2, marginBottom: 12 }}>
+          {[["single", "직접 입력"], ["bulk", "대량 가져오기"]].map(([k, label]) => (
+            <button key={k} onClick={() => setMode(k)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 6, border: "none", cursor: "pointer", background: mode === k ? T.brass : "transparent", color: mode === k ? "#241509" : T.inkSoft }}>{label}</button>
+          ))}
+        </div>
+        {mode === "single" ? (<>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, marginBottom: 8 }}>
           <div><label style={labelStyle}>백(GM 이름)</label><input value={whiteName} onChange={(e) => setWhiteName(e.target.value)} style={inputStyle} placeholder="예: Garry Kasparov" /></div>
           <div><label style={labelStyle}>레이팅</label><input value={whiteRating} onChange={(e) => setWhiteRating(e.target.value.replace(/\D/g, ""))} style={inputStyle} placeholder="2800" /></div>
@@ -4027,6 +4101,26 @@ function AddMasterGameModal({ onClose, onSaved }) {
         </div>
         {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{err}</p>}
         <button onClick={save} disabled={!canSave} className="press" style={{ width: "100%", padding: "9px 0", borderRadius: 9, border: "none", background: canSave ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9BDA0", color: "#241509", fontWeight: 900, fontSize: 12.5, cursor: canSave ? "pointer" : "default" }}>{saving ? "저장 중…" : "저장"}</button>
+        </>) : (<>
+        <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>PGN Mentor 등에서 받은, 여러 대국이 이어 붙은 .pgn 파일을 그대로 올리거나 붙여넣으세요. 각 대국의 White/Black/Elo/Date/Result 헤더를 읽어 자동으로 채웁니다.</div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={labelStyle}>.pgn 파일 선택</label>
+          <input type="file" accept=".pgn,.txt,text/plain" onChange={onPickFile} style={{ fontSize: 11.5, color: T.ink }} />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={labelStyle}>또는 PGN 텍스트 붙여넣기</label>
+          <textarea value={bulkText} onChange={(e) => { setBulkText(e.target.value); setBulkDone(null); }} rows={6} style={{ ...inputStyle, fontFamily: "ui-monospace,monospace", resize: "vertical" }} placeholder={'[Event "..."]\n[White "Kasparov, Garry"]\n[Black "Karpov, Anatoly"]\n...\n\n1.e4 e5 2.Nf3 ...'} />
+        </div>
+        {bulkGames.length > 0 && (
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>
+            {bulkGames.length}개 대국 인식됨 — <b style={{ color: T.best }}>{bulkOk.length}개 가져오기 가능</b>
+            {bulkSkipped > 0 && <span style={{ color: T.blunder }}> · {bulkSkipped}개는 대국자 이름·수순·결과 중 일부를 확인할 수 없어 건너뜁니다</span>}
+          </div>
+        )}
+        {bulkErr && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{bulkErr}</p>}
+        {bulkDone && <p style={{ fontSize: 11.5, color: T.best, marginBottom: 8, fontWeight: 800 }}>{bulkDone.saved}개 대국을 저장했습니다{bulkDone.skipped > 0 ? " (" + bulkDone.skipped + "개 건너뜀)" : ""}.</p>}
+        <button onClick={saveBulk} disabled={!bulkOk.length || bulkSaving} className="press" style={{ width: "100%", padding: "9px 0", borderRadius: 9, border: "none", background: bulkOk.length && !bulkSaving ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9BDA0", color: "#241509", fontWeight: 900, fontSize: 12.5, cursor: bulkOk.length && !bulkSaving ? "pointer" : "default" }}>{bulkSaving ? "가져오는 중…" : bulkOk.length ? bulkOk.length + "개 일괄 저장" : "가져올 대국 없음"}</button>
+        </>)}
       </div>
     </div>
   );
