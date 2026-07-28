@@ -3212,6 +3212,29 @@ function sansToPgnText(sans) {
 }
 // (18차 UI6) 기보는 Playfair Display 폰트로 표기한다.
 const SEQ_FONT = "'Playfair Display', 'Noto Sans KR', serif";
+// (v0.2.6 기능) 퍼즐 풀이 화면의 기보 — 예전엔 텍스트 한 줄을 그냥 중앙 정렬해 두어, 길어지면
+// 가운데 정렬 때문에 앞부분이 화면 밖으로 잘려 아예 안 보였다. 별도의 박스에 담아 한 줄(nowrap)로
+// 고정하고, 다른 곳(엔진 라인·SequenceBar)과 동일한 포인터 드래그 스크롤을 붙여 좌우로 끌어볼 수
+// 있게 한다.
+function PuzzlePgnBox({ text }) {
+  const scrollRef = useRef(null);
+  const dragRef = useRef(null);
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX, scrollLeft: scrollRef.current ? scrollRef.current.scrollLeft : 0 };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d || !scrollRef.current) return;
+    scrollRef.current.scrollLeft = d.scrollLeft - (e.clientX - d.x) * DRAG_SCROLL_MULT;
+  };
+  return (
+    <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerCancel={() => { dragRef.current = null; }} onPointerUp={() => { dragRef.current = null; }}
+      className="no-pan" style={{ marginBottom: 8, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.03)", padding: "6px 10px", cursor: "grab" }}>
+      <div ref={scrollRef} style={{ overflowX: "auto", whiteSpace: "nowrap", fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, minHeight: 16, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>{text || " "}</div>
+    </div>
+  );
+}
 // (18차 UX3) 수를 되돌리거나 기보를 클릭해 이전 수로 돌아가도 이후 수들(future)이 기보에서 사라지지 않고
 // 흐리게 계속 표시되며, 현재 수만 볼드로 강조된다. future 수를 클릭하면 그 수까지 다시 진행한다.
 // (v0.1.3 버그 수정) 기보가 길어지면 flex-wrap으로 줄바꿈돼 이 바의 높이가 계속 늘어나며 아래
@@ -8493,9 +8516,9 @@ function TierProgressStrip({ totalXp, onOpen }) {
 }
 function LineStars({ total, solved }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center" style={{ gap: 2 }}>
       {Array.from({ length: total }, (_, i) => (
-        <Star key={i} size={15} fill={i < solved ? T.brass : "none"} style={{ color: i < solved ? T.brass : "rgba(0,0,0,.25)" }} />
+        <Star key={i} size={12} fill={i < solved ? T.brass : "none"} style={{ color: i < solved ? T.brass : "rgba(0,0,0,.25)" }} />
       ))}
     </div>
   );
@@ -8821,6 +8844,19 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     </div>
   );
 }
+// (v0.2.6 기능) 퍼즐 코치 말풍선이 막연한 안내 대신 지금 보드 포지션을 짧게 요약해 설명한다 —
+// 사용자 진영 기준 기물 점수차와 체크 여부를 바탕으로 한 줄 코멘트를 만든다.
+function summarizePosition(board, userColor) {
+  const oppColor = userColor === "w" ? "b" : "w";
+  const kp = kingPos(board, oppColor);
+  if (kp && isAttacked(board, kp[0], kp[1], userColor)) return "상대 킹이 체크 상태예요 — 지금 공격이 통하고 있어요!";
+  const diff = materialDiff(board, userColor);
+  if (diff >= 3) return "지금 기물 점수에서 크게 앞서 있어요 — 확실히 마무리할 수를 찾아보세요.";
+  if (diff >= 1) return "지금 기물을 조금 앞서 있어요 — 이 이점을 굳히는 수를 찾아보세요.";
+  if (diff <= -3) return "지금 기물 점수가 크게 밀리고 있어요 — 반격할 결정적인 수가 필요해요.";
+  if (diff <= -1) return "지금 기물이 조금 부족해요 — 국면을 뒤집을 수를 찾아보세요.";
+  return "기물 점수는 팽팽해요 — 국면을 유리하게 이끌 수를 찾아보세요.";
+}
 /* (20차 기능1) 퍼즐 풀이 — 고정된 단일 라인이 아니라 분기 트리를 탐색한다.
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
@@ -9079,15 +9115,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintText ? "wink"
     : theme === "sacrifice" ? "great" : theme === "advantage" ? "think" : "surprise";
   const pm = [color === "w" ? "milku" : "kokoa", pmEmotion];
-  // (v0.1.2 기능) 오답 뒤 상대 응징 응수를 보여주는 동안·되돌리는 동안 문구를 단계별로 구분.
-  const prompt = intro ? "직전 수 재생 중…"
-    : done ? (fullyComplete ? "✓ 완성! 모든 라인을 정복했어요." : "✓ 라인 해결! 모든 수를 찾았어요.")
-    : wrong ? (wrongReply ? "✕ 다른 수예요. 상대라면 이렇게 응징해요." : "✕ 다른 수예요. 잠시 후 원래 위치로 되돌아갑니다.")
-      : reply ? "상대 응수 중…"
-        : theme === "sacrifice" ? "당신 차례 — 기물을 희생하는 탁월한 수를 두세요."
-          : theme === "advantage" ? "당신 차례 — 우위를 점하는 수를 두세요."
-            : "당신 차례 — 실수를 응징하는 최선의 수를 두세요.";
-  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : "막히면 아래 힌트 버튼을 눌러보세요.";
+  // (v0.2.6 버그 수정) "당신 차례" 안내 문구 대신, 코치 말풍선이 지금 보드 포지션을 짧게 요약해
+  // 설명하도록 바꾼다(막연한 "힌트 버튼을 눌러보세요" 대신 실제로 도움이 되는 상황 설명).
+  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : summarizePosition(board, color);
   const doneBubble = fullyComplete ? "훌륭해요! 모든 라인을 정복했어요."
     : "이 라인을 완료했어요! 모식도에서 다른 가지에 도전해 보세요.";
   const bubbleText = done ? doneBubble : (hintText || idleBubble);
@@ -9275,25 +9305,26 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           {/* (20차 기능1) 별: 라인 1개 이상 ★1 · 50% 이상 ★2 · 전부 ★3 */}
           <div className="flex items-center" style={{ gap: 7, marginTop: 5 }}>
             <LineStars total={3} solved={starsOf(solvedNow.size, totalLines)} />
-            <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>라인 {solvedNow.size}/{totalLines} 해결</span>
-            <div className="flex items-center" style={{ gap: 10, marginLeft: "auto" }}>
-              {/* (v0.1.0) 리포스트·공유 — 좋아요와 나란히, 종이비행기 아이콘으로 친구 공유 시트를 연다 */}
-              {onToggleRepost && <button onClick={() => onToggleRepost(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="리포스트" title="리포스트">
-                <Repeat2 size={14} color={isReposted ? T.brilliant : T.inkSoft} />
-                <span style={{ fontSize: 10, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
+            <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{solvedNow.size}/{totalLines}</span>
+            {/* (v0.2.6 버그 수정) 소셜 정보 표시 순서를 좋아요 → 리포스트 → 공유로, 아이콘·글자 크기를
+                조금 더 키워 잘 보이도록 했다. */}
+            <div className="flex items-center" style={{ gap: 12, marginLeft: "auto" }}>
+              <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
+                <Heart size={17} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+              </button>
+              {onToggleRepost && <button onClick={() => onToggleRepost(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="리포스트" title="리포스트">
+                <Repeat2 size={17} color={isReposted ? T.brilliant : T.inkSoft} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
               </button>}
               {/* (v0.1.1) 공유 수는 눌러도 아무 동작 없는 순수 표시(집계)이고, 실제 공유 시트는 바로 옆의 별도 버튼이 연다 */}
-              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-                <Send size={13} color={T.inkSoft} />
-                <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
+              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Send size={16} color={T.inkSoft} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
               </span>
-              <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
-                <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
-                <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
-              </button>
               {/* (v0.1.3 UI) PuzzleCard와 동일하게 라운딩된 사각형 배지(텍스트 포함)로 변경 */}
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 13px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }} aria-label="공유하기" title="공유하기">
-                <Send size={12} color={T.brass} />공유
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 15px", borderRadius: 8, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }} aria-label="공유하기" title="공유하기">
+                <Send size={14} color={T.brass} />공유
               </button>}
             </div>
           </div>
@@ -9307,7 +9338,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           <div style={{ width: "50%", boxSizing: "border-box", paddingRight: 3 }}>
             <div key={"bubble-" + hintKey} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
             {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
-            <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{sansToPgnText(curSans) || " "}</div>
+            <PuzzlePgnBox text={sansToPgnText(curSans)} />
             {/* (버그 수정) 바깥 페이저(보드↔모식도 스와이프)의 onPagerPointerDown이 이 보드 위에서 눌러도
                 예외 없이 setPointerCapture를 걸어, 클릭의 대상이 실제 눌린 칸이 아니라 페이저 쪽으로
                 가로채어져 칸의 onClick(기물 선택)이 전혀 발동하지 않았다 — HTML5 네이티브 드래그 앤 드롭은
@@ -9332,7 +9363,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
               : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove} />}
             </div>
-            <p style={{ fontSize: 13, color: done ? T.best : wrong ? T.blunder : T.ink, fontWeight: 700, marginTop: 12, textAlign: "center" }}>{prompt}</p>
+            {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
+                생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
+                평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. */}
+            <div style={{ marginTop: 12 }}><EvalBar cp={curNode.ev} width={boardSize} /></div>
             <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
               <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
               {userToMove && <button onClick={requestHint} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: "transparent", color: "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트</button>}
@@ -9344,7 +9378,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 애니메이션으로 재생해 복기할 수 있다(아직 안 둔 갈래는 예전처럼 그 라인을 풀도록 이동). */}
             {/* (v0.1.3 UI) "모식도의 수를 눌러 다시 보기" 안내 문구를 삭제 — 모바일에서 좁은 화면을
                 더 차지하기만 하고, 모식도 자체가 눌러보는 UI임은 이미 충분히 직관적이다. */}
-            <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{previewNode ? sansToPgnText([...setup, ...previewNode.path]) : " "}</div>
+            <PuzzlePgnBox text={previewNode ? sansToPgnText([...setup, ...previewNode.path]) : ""} />
             <div style={{ width: "100%", maxWidth: 380, margin: "0 auto 12px" }}>
               {previewNode
                 ? <AnimatedMove key={previewNode.key} sans={[...setup, ...previewNode.path.slice(0, -1)]} san={previewNode.path[previewNode.path.length - 1]} size={boardSize} loopMs={2200} flip={userColor === "b"} />
