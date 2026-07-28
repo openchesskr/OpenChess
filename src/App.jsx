@@ -4476,7 +4476,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         <CircleBadge kind={kind} big descOnClick />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
+          <div style={{ fontFamily: SEQ_FONT, fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
           {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, marginTop: 4, lineHeight: 1.25 }}>{title}</div>}
         </div>
         <div style={{ textAlign: "right" }}>
@@ -4563,16 +4563,20 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                     : <div style={{ marginBottom: 10 }}>{myGamesPageItems.map((g, i) => {
                         const won = g.result === "win", lost = g.result === "loss";
                         const rc = ratingChanges.get(g);
+                        // (v0.2.6 버그 수정) 프로필 카드의 "최근 대국" 목록과 UI를 통일 —
+                        // "⬜ 백"/"⬛ 흑" 텍스트 대신 진영 색 막대, 상대 닉네임·레이팅 표시를 그대로 반영.
+                        const oppSide = g.color === "w" ? g.black : g.white;
                         return (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: i === 0 ? "none" : "1px solid #E4D5B6" }}>
+                            <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              {/* (디자인) 타임컨트롤 표기 + 레이팅 증감폭은 게임 결과 뒤 소괄호로 통일. */}
-                              <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"}으로 플레이 · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                              <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
                                 {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                                {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
-                                {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                                {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
+                                {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
                               </div>
-                              <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtGameDate(g.endTime)}</div>
+                              {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
+                              {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                             </div>
                             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                               <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
@@ -4594,7 +4598,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
                             onJump로 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
                         {stats.top.map((t) => (
-                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: "ui-monospace,monospace", fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
+                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
                         ))}
                       </div>
                     )}
@@ -4609,7 +4613,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         : mistakes.map((mt, idx) => {
                           const seqStr = [san, ...mt.seq]; // 표기: 집중 학습 수부터
                           return (
-                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: "ui-monospace,monospace", fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
+                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
                               {seqStr.map((mv, i) => {
                                 const isMistake = i === seqStr.length - 1;
                                 const moverWhite = (ply + i) % 2 === 0;
@@ -10515,23 +10519,17 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
     </div>
   );
 }
-// (v0.2.2 UX#3) "가장 많이 둔 오프닝"을 백의 첫 수로 결정되는 오프닝 이름 하나로 고정 표시하는 대신,
-// 백의 1~6번째 수 각각에 대해(상위 갈래를 따지지 않고 인덱스별 독립으로) 가장 많이 둔 수를 모아,
-// 2.2초 간격으로 번갈아 애니메이션하며 보여준다. games는 이미 시간 규정 필터가 적용된 목록이며,
-// 내가 백으로 둔 대국이 있으면 그 대국들만(내가 실제로 고른 수), 없으면 전체 대국의 백 수를 쓴다.
-function TopWhiteMovesAnimated({ games }) {
+// (v0.2.6 버그 수정) "가장 많이 둔 오프닝"이 오프닝 이름 대신 각 수 인덱스별 최다 수(SAN)를 보여줘,
+// 실제로 어떤 오프닝을 즐겨 두는지 한눈에 알기 어려웠다 — 대국마다 이미 계산돼 있는 오프닝 이름
+// (g.opening)의 빈도를 세어, 실제로 가장 많이 나온 오프닝 이름들을 2.2초 간격으로 번갈아 보여준다.
+// color로 백/흑 어느 쪽 대국을 집계할지 고른다(games는 이미 시간 규정 필터가 적용된 목록).
+function TopOpeningsAnimated({ games, color, label }) {
   const top = useMemo(() => {
-    const asWhite = games.filter((g) => g.color === "w");
-    const use = asWhite.length ? asWhite : games;
-    const out = [];
-    for (let k = 0; k < 6; k++) {
-      const ply = k * 2, counts = {};
-      for (const g of use) { const s = g.moves[ply]; if (s) { const kk = stripSuffix(s); counts[kk] = (counts[kk] || 0) + 1; } }
-      const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-      if (best) out.push({ n: k + 1, san: best[0], count: best[1] });
-    }
-    return out;
-  }, [games]);
+    const use = games.filter((g) => g.color === color && g.opening);
+    const counts = {};
+    for (const g of use) counts[g.opening] = (counts[g.opening] || 0) + 1;
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }));
+  }, [games, color]);
   const [idx, setIdx] = useState(0);
   useEffect(() => { setIdx(0); }, [top.length]);
   useEffect(() => {
@@ -10543,13 +10541,17 @@ function TopWhiteMovesAnimated({ games }) {
   const cur = top[Math.min(idx, top.length - 1)];
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>가장 많이 둔 오프닝</div>
-      <div style={{ position: "relative", height: 34, overflow: "hidden" }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>{label}</div>
+      {/* (v0.2.6 버그 수정) 오프닝 이름은 길이가 제각각이라(예: "Italian Game" vs "Sicilian Defense:
+          Najdorf Variation, English Attack"), 번갈아 나올 때마다 짧은 이름은 1줄로 접히고 긴
+          이름은 2줄로 늘어나며 카드 폭·높이가 들썩였다 — 폭은 항상 부모 너비 그대로(고정), 높이는
+          1줄짜리 이름이 나와도 항상 2줄 분량을 미리 확보해 둬 어느 이름이 나오든 레이아웃이 흔들리지
+          않는다. */}
+      <div style={{ position: "relative", minHeight: 44, overflow: "hidden", width: "100%" }}>
         <AnimatePresence mode="wait">
-          <motion.div key={cur.n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg,#F3D57A," + T.brass + ")", borderRadius: 7, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>백 {cur.n}수</span>
-            <span style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{cur.san}</span>
-            <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{fmtFull(cur.count)}회</span>
+          <motion.div key={cur.name} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, lineHeight: 1.3 }}>{cur.name}</span>
+            <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", flexShrink: 0, whiteSpace: "nowrap" }}>{fmtFull(cur.count)}회</span>
           </motion.div>
         </AnimatePresence>
       </div>
@@ -10632,7 +10634,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       if (r.own.n > 0 && kids.length > 0) {
         const o = r.own;
         // navName: 세부 갈래 이름이 없어 클릭해도 이동할 곳이 없으므로, 부모(name) 자신으로 이동시킨다.
-        kids.push({ name: name + " (그 외 변형)", navName: name, n: o.n, w: o.w, d: o.d, l: o.l, wr: o.n ? Math.round(100 * o.w / o.n) : 0, own: o, children: [] });
+        kids.push({ name: name + " (Side Line)", navName: name, n: o.n, w: o.w, d: o.d, l: o.l, wr: o.n ? Math.round(100 * o.w / o.n) : 0, own: o, children: [] });
       }
       return { ...r, children: kids.sort((a, b) => b.n - a.n) };
     };
@@ -10710,13 +10712,15 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                 {/* (v0.2.2 UI#6#7) "⬜ 백"/"⬛ 흑" 텍스트 대신, 학습 탭 수 블록처럼 행 좌측에 진영 색 막대로 표시 */}
                 <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
                     {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                    {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
-                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                    {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
+                    {/* (v0.2.6 버그 수정) 대국 날짜를 오프닝 이름 옆 별도 줄에 붙이는 대신, 타임컨트롤
+                        라벨 뒤에 괄호로 이어 붙인다. */}
+                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtD(g.endTime) + ")" : ""}</span>}
                   </div>
                   {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtD(g.endTime)}</div>
+                  {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                 </div>
                 {onOpenGame && (
                   <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -10730,8 +10734,10 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         );
       })()}
-      {/* (v0.2.2 UX#3) 가장 많이 둔 오프닝 — 백 1~6수 인덱스별 최다 수를 번갈아 애니메이션 */}
-      <TopWhiteMovesAnimated games={games} />
+      {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
+          애니메이션한다. 바로 아래에 흑 오프닝 레파토리도 같은 방식으로 보여준다. */}
+      <TopOpeningsAnimated games={games} color="w" label="가장 많이 둔 오프닝" />
+      <TopOpeningsAnimated games={games} color="b" label="흑 오프닝 레파토리" />
       {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
           그 아래 하위 갈래들의 합산임을 보여준다. */}
       {openingTree.length > 0 && (
@@ -10799,8 +10805,12 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
             renderCard={(p, onClick) => <PuzzleCard key={p.id} p={p} isSolved onClick={onClick} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />} />
         </div>
       )}
+      {/* (v0.2.6 버그 수정) OpenChess 자체 정보(퀘스트·퍼즐)와 chess.com 통계 사이 구분을 실선 대신
+          점선으로, 집중 학습 모드의 chess.com 통계 카드와 같은 "Chess.com 통계" 아이콘+텍스트
+          헤더를 추가해 두 화면의 구성을 통일한다. */}
       {linked && (
-        <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
+        <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px dashed #C9B58C" }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><ChesscomLogo height={19} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Chess.com 통계</span></div>
           <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
         </div>
       )}
@@ -12357,7 +12367,7 @@ function FirstMovesDisplay({ firstMoves }) {
   if (!fm.white && !blackEntries.length) return null;
   const row = { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", marginBottom: 5 };
   const lab = { fontSize: 11, color: T.inkSoft, fontWeight: 700, flexShrink: 0, minWidth: 62 };
-  const val = { fontSize: 12.5, color: T.ink, fontWeight: 800, fontFamily: "ui-monospace,monospace" };
+  const val = { fontSize: 12.5, color: T.ink, fontWeight: 800, fontFamily: SEQ_FONT };
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>자주 두는 첫 수</div>
