@@ -10676,6 +10676,37 @@ function TopOpeningsAnimated({ games, color, label }) {
     </div>
   );
 }
+// (v0.2.6 기능) 기간별 레이팅 변동 그래프 — 지금 필터(시간 규정·흑/백)가 적용된 대국들을 시간순으로
+// 이어 간단한 선 그래프로 보여준다. 대국이 2판 미만이면(선을 그릴 수 없음) 표시하지 않는다.
+function RatingHistoryChart({ games }) {
+  const points = useMemo(() => [...games].filter((g) => g.rating != null && g.endTime).sort((a, b) => (a.endTime || 0) - (b.endTime || 0)), [games]);
+  if (points.length < 2) return null;
+  const W = 320, H = 64, PAD = 4;
+  const ratings = points.map((g) => g.rating);
+  const min = Math.min(...ratings), max = Math.max(...ratings);
+  const span = Math.max(1, max - min);
+  const xAt = (i) => PAD + (i / (points.length - 1)) * (W - PAD * 2);
+  const yAt = (r) => H - PAD - ((r - min) / span) * (H - PAD * 2);
+  const d = points.map((g, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
+  const first = points[0].rating, last = points[points.length - 1].rating;
+  const rising = last >= first;
+  const lineColor = rising ? T.best : T.blunder;
+  return (
+    <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>기간별 레이팅 변동</span>
+        <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: lineColor, fontWeight: 800 }}>{first} → {last}</span>
+      </div>
+      <svg viewBox={"0 0 " + W + " " + H} width="100%" height={H} preserveAspectRatio="none">
+        <path d={d} fill="none" stroke={lineColor} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      <div className="flex items-center justify-between" style={{ marginTop: 2 }}>
+        <span style={{ fontSize: 9.5, color: T.inkSoft }}>최저 {min}</span>
+        <span style={{ fontSize: 9.5, color: T.inkSoft }}>최고 {max}</span>
+      </div>
+    </div>
+  );
+}
 function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
@@ -10688,10 +10719,14 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   // (v0.2.2 UI#6#5) chess.com 통계를 전체/래피드/블리츠/불릿으로 나눠 본다. 통계 집계에서 일일 대국과
   // 체스960(변형)은 제외한다 — 표준 대국의 시간 규정별 실력만 반영한다.
   const [timeFilter, setTimeFilter] = useState("all");
+  // (v0.2.6 기능) 타임 컨트롤에 더해 흑/백으로도 나눠 볼 수 있도록 색 필터를 추가.
+  const [colorFilter, setColorFilter] = useState("all");
   const games = useMemo(() => {
     const base = (ready ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess");
-    return timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter);
-  }, [ready, chesscom && chesscom.games, timeFilter]);
+    let out = timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter);
+    if (colorFilter !== "all") out = out.filter((g) => g.color === colorFilter);
+    return out;
+  }, [ready, chesscom && chesscom.games, timeFilter, colorFilter]);
   const overall = useMemo(() => {
     if (!games.length) return null;
     let w = 0, d = 0, l = 0;
@@ -10782,11 +10817,19 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{prof ? ["래피드 " + (prof.rapid ?? "—"), "블리츠 " + (prof.blitz ?? "—"), "불릿 " + (prof.bullet ?? "—")].join(" · ") : "레이팅 불러오는 중…"}</div>
         </div>
       </div>
-      {/* (v0.2.2 UI#6#5) 시간 규정 필터 — 전체/래피드/블리츠/불릿. 일일·체스960은 집계에서 제외. */}
-      <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3, marginBottom: 12, flexWrap: "wrap" }}>
-        {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
-          <button key={k} onClick={() => setTimeFilter(k)} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: timeFilter === k ? T.ebony2 : "transparent", color: timeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-        ))}
+      {/* (v0.2.2 UI#6#5) 시간 규정 필터 — 전체/래피드/블리츠/불릿. 일일·체스960은 집계에서 제외.
+          (v0.2.6 기능) 타임 컨트롤 선택 박스를 조금 줄이고, 같은 줄 우측에 흑/백 색 필터를 추가했다. */}
+      <div className="flex items-center" style={{ gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+          {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
+            <button key={k} onClick={() => setTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: timeFilter === k ? T.ebony2 : "transparent", color: timeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+          ))}
+        </div>
+        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+          {[["all", "전체"], ["w", "백"], ["b", "흑"]].map(([k, lab]) => (
+            <button key={k} onClick={() => setColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: colorFilter === k ? T.ebony2 : "transparent", color: colorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+          ))}
+        </div>
       </div>
       {/* 전적 */}
       {!overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>이 시간 규정의 대국이 없어요.</p>}
@@ -10806,6 +10849,8 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         </div>
       )}
+      {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
+      <RatingHistoryChart games={games} />
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
