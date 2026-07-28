@@ -12210,7 +12210,65 @@ function EmojiPicker({ onPick, onClose }) {
   );
 }
 // (17차) 친구 채팅 — 텍스트 + 이모티콘. 열려있는 동안 짧은 주기로 폴링해 새 메시지를 반영한다.
-function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle }) {
+// (v0.2.6 기능) 채팅 메시지에서 "@아이디" 멘션을 찾는다. 아이디 규칙(ALNUM, 3~20자)과 동일한
+// 글자 집합만 인정한다.
+const MENTION_RX = /@([A-Za-z0-9]{3,20})/g;
+function firstMention(body) {
+  if (!body) return null;
+  MENTION_RX.lastIndex = 0;
+  const m = MENTION_RX.exec(body);
+  return m ? m[1] : null;
+}
+// 메시지 본문에서 "@아이디" 부분만 볼드체로 감싸 렌더링한다.
+function renderMentionText(body) {
+  if (!body) return body;
+  MENTION_RX.lastIndex = 0;
+  const parts = []; let last = 0, m;
+  while ((m = MENTION_RX.exec(body))) {
+    if (m.index > last) parts.push(body.slice(last, m.index));
+    parts.push(<b key={m.index}>{m[0]}</b>);
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) parts.push(body.slice(last));
+  return parts;
+}
+// (v0.2.6 기능) 채팅에서 상대 프로필 사진·멘션을 클릭했을 때 뜨는 간단한 프로필 보기 모달 —
+// UserSearchModal의 프로필 상세 화면과 같은 구성(PublicProfileStats 재사용)을 아이디 하나만으로 연다.
+function ChatUserProfileModal({ username, onClose }) {
+  const [pub, setPub] = useState(null);
+  useEffect(() => {
+    let cc = false;
+    userProfile(username).then((r) => { if (!cc) setPub(r ? { ...(r.pub || {}), username: r.username || username } : { username }); });
+    return () => { cc = true; };
+  }, [username]);
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>프로필</span>
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+        </div>
+        <div style={{ padding: 18, overflowY: "auto" }}>
+          {!pub ? <p style={{ fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</p> : (
+            <>
+              <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+                {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                  : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</span>
+                  <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(pub.displayId || pub.username)}</div>
+                  {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
+                </div>
+              </div>
+              <PublicProfileStats pub={pub} hideChesscom={false} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle }) {
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -12223,6 +12281,8 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   const [menuDx, setMenuDx] = useState(0);
   // (v0.1.4 기능) 퍼즐 카드의 "전달" 버튼으로 다른 친구에게 다시 공유할 때 띄우는 시트의 대상 퍼즐.
   const [forwardTarget, setForwardTarget] = useState(null);
+  // (v0.2.6 기능) 프로필 사진·멘션을 눌렀을 때 보여줄 프로필 모달 대상 아이디.
+  const [viewProfile, setViewProfile] = useState(null);
   // (v0.1.0) 퍼즐 공유 카드 미리보기 — puzzle_no가 설정된 메시지가 보이면 그 번호의 퍼즐 데이터를
   // 지연 조회해 캐싱한다(no -> 퍼즐 데이터 | null(찾을 수 없음), 아직 없으면 로딩 중으로 취급).
   const [puzzlePreviews, setPuzzlePreviews] = useState({});
@@ -12310,11 +12370,23 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
       return;
     }
     if (!body && !emoji) return;
+    // (v0.2.6 기능) "/puzzle 000000" 또는 "/puzzle -num 000000" 명령어 — 텍스트 대신 그 번호의
+    // 퍼즐을 공유 카드로 보낸다(기존 공유 버튼과 같은 puzzleShareSend 재사용).
+    const cmdMatch = body && body.match(/^\/puzzle\s+(?:-num\s+)?(\d{1,7})\s*$/i);
+    if (cmdMatch) {
+      setSending(true);
+      const ok = await puzzleShareSend(parseInt(cmdMatch[1], 10), myUid, otherUid);
+      setSending(false);
+      if (ok) { setText(""); load(); }
+      return;
+    }
     setSending(true);
     const ok = await chatSend(myUid, otherUid, body, emoji);
     setSending(false);
     if (ok) { setText(""); load(); }
   };
+  // (v0.2.6 기능) "/"로 시작하면 쓸 수 있는 명령어 — 이번 버전엔 /puzzle 하나만 존재한다.
+  const CHAT_COMMANDS = [{ cmd: "/puzzle -num 000000", desc: "그 번호의 퍼즐을 공유해요(또는 /puzzle 000000)" }];
   const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
   const cancelEdit = () => { setEditingId(null); setText(""); };
   const doDelete = async (m) => {
@@ -12376,10 +12448,19 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
               setDrag({ id: m.id, dx: d2 });
             };
             const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
+            // (v0.2.6 기능) 상대 말풍선 묶음 중 가장 위에만 프로필 사진을 왼쪽에 표시.
+            const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
             return (
-              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", position: "relative" }}
-                onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
-                onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
+              <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
+                {!mine && (showAvatar
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                      {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                        : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+                    </button>
+                  : <div style={{ width: 26, flexShrink: 0 }} />)}
+                <div style={{ display: "flex", flexDirection: "column", flex: mine ? "0 1 auto" : "0 1 auto" }}
+                  onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+                  onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {menuFor === m.id && (
@@ -12400,6 +12481,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
                       <button onClick={() => onOpenSharedPuzzle && onOpenSharedPuzzle(m)} disabled={!pz} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: pz ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: pz ? "pointer" : "default" }}>퍼즐 풀러 가기</button>
                     </div>
                   </div>
+                </div>
                 </div>
               </div>
             );
@@ -12436,12 +12518,28 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
             d2 = mine ? Math.max(-96, Math.min(0, d2)) : Math.min(96, Math.max(0, d2));
             setDrag({ id: m.id, dx: d2 });
           };
-          const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
+          // (v0.2.6 기능) 손을 뗐을 때 드래그도 아니고(제자리 탭) 롱프레스 메뉴도 안 열렸다면, 본문에
+          // 담긴 "@아이디" 멘션의 프로필로 리디렉션한다.
+          const onUp = () => {
+            clearTimeout(longPressTimerRef.current);
+            const wasTap = Math.abs(dx) < 6 && menuFor !== m.id;
+            dragRef.current = null; setDrag(null);
+            if (wasTap) { const mention = firstMention(m.body); if (mention) setViewProfile(mention); }
+          };
+          // (v0.2.6 기능) 상대 말풍선 묶음 중 가장 위에만 프로필 사진을 왼쪽에 표시.
+          const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
           return (
             <React.Fragment key={m.id}>
               {/* (v0.1.4 기능) 읽음 표시와 달리 말풍선 상단에 별도 줄로 "수정됨"을 표시한다. */}
               {m.edited && <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}><span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, opacity: .75 }}>수정됨</span></div>}
-              <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", alignItems: "center", gap: 4, position: "relative" }}
+              <div className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
+                {!mine && (showAvatar
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                      {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                        : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+                    </button>
+                  : <div style={{ width: 26, flexShrink: 0 }} />)}
+              <div className="flex items-center" style={{ gap: 4, position: "relative" }}
                 onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
                 onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
                 {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
@@ -12457,8 +12555,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
                     </div>
                   )}
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
-                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{m.body}</span>}
+                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{renderMentionText(m.body)}</span>}
                 </span>
+              </div>
               </div>
             </React.Fragment>
           );
@@ -12466,7 +12565,8 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
         {/* (v0.1.4 기능) 실시간 타이핑 표시 — 3-dot 바운스 모션 + "입력 중" 텍스트. */}
         <AnimatePresence>
         {otherTyping && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }} style={{ display: "flex", justifyContent: "flex-start" }}>
+          // (v0.2.6 버그 수정) 입력 중 말풍선은 투명도 50%로 표시해 "아직 확정된 메시지가 아님"을 시각적으로 구분한다.
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 0.5, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }} style={{ display: "flex", justifyContent: "flex-start" }}>
             <div className="flex items-center" style={{ gap: 6, padding: "7px 11px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
               <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>입력 중</span>
               <span className="flex items-center" style={{ gap: 3 }}>
@@ -12485,6 +12585,15 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
             <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
           </div>
         )}
+        {/* (v0.2.6 기능) 입력창 첫 글자가 "/"면 사용 가능한 명령어를 입력창 위 별도 블록으로 보여준다. */}
+        {editingId == null && text.startsWith("/") && (
+          <div style={{ marginBottom: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass }}>
+            <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>사용 가능한 명령어</div>
+            {CHAT_COMMANDS.map((c) => (
+              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, marginTop: 1 }}><b style={{ fontFamily: "ui-monospace,monospace" }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
@@ -12492,6 +12601,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
         </div>
       </div>
       {forwardTarget && <PuzzleShareSheet puzzle={forwardTarget} myUid={myUid} onClose={() => setForwardTarget(null)} onShared={() => setForwardTarget(null)} />}
+      {viewProfile && <ChatUserProfileModal username={viewProfile} onClose={() => setViewProfile(null)} />}
     </div>
   );
 }
@@ -12833,7 +12943,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         {chatWith ? (
-          <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
+          <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
         ) : (
           <div style={{ padding: 12, minHeight: 140, maxHeight: 440, overflowY: "auto" }}>
             {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
@@ -12842,7 +12952,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
                 const pr = profiles[uid] || {}; const pub = pr.pub || {};
                 return (
                   <FadeIn key={uid} index={i}>
-                  <button onClick={() => setChatWith({ uid, username: pr.username || "" })} className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}>
+                  <button onClick={() => setChatWith({ uid, username: pr.username || "", photo: pub.photo || null })} className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}>
                     {pub.photo ? <img src={pub.photo} alt="" style={{ width: 40, height: 40, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
                       : <span style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
                     <span style={{ minWidth: 0, flex: 1 }}>
