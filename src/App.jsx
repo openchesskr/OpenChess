@@ -50,6 +50,10 @@ const BOARD_GLOSS = {
   borderImage: "linear-gradient(135deg, #F3DFAE, #C49A50 45%, #8A6C2F) 1",
   boxShadow: "0 0 0 1px rgba(196,154,80,.3), inset 0 1px 3px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.3)",
 };
+// (v0.2.6 버그 수정) 도감 탭 오프닝 모식도·학습 탭 기보·엔진 라인의 포인터 드래그 스크롤이 손가락·
+// 마우스가 움직인 만큼만(1:1) 옮겨져 너무 조금씩만 스크롤된다는 요청 — 드래그 델타에 이 배율을
+// 곱해 같은 드래그 거리로 더 멀리 스크롤·팬되게 한다(세 곳 모두 공용으로 참조).
+const DRAG_SCROLL_MULT = 2.2;
 /* (20\uCC28 \uAE30\uB2A53) \uAE30\uBB3C SVG \uC138\uD2B8 \u2014 \uC720\uB2C8\uCF54\uB4DC \uD14D\uC2A4\uD2B8 \uAE30\uBB3C(\u2654\u2655\u2656\u2657\u2658\u2659)\uC744 \uCCA8\uBD80 \uB808\uD37C\uB7F0\uC2A4(\uB85C\uC6B0\uD3F4\uB9AC\u00B7\uAE08\uC7A5 \uB300\uAC01\uC120
    \uD3F4\uB4DC \uB77C\uC778) \uC2A4\uD0C0\uC77C\uC758 \uBCA1\uD130 \uC544\uC774\uCF58\uC73C\uB85C \uAD50\uCCB4\uD55C\uB2E4. \uBAA8\uB4E0 \uAE30\uBB3C\uC774 \uACF5\uC720\uD558\uB294 \uBC11\uB2E8(base)\u00B7\uBAA9(neck) \uB2E4\uAC01\uD615\uC5D0
    \uAE30\uBB3C\uBCC4 \uBAB8\uD1B5(mid) \uC810 \uBAA9\uB85D\uC744 \uC774\uC5B4\uBD99\uC778 \uB2E8\uC77C \uC2E4\uB8E8\uC5E3 \uD558\uB098 + \uB300\uAC01\uC120 \uD3F4\uB4DC \uB77C\uC778 2\uAC1C + \uBC11\uB2E8 \uAE08\uC7A5 \uC0BC\uAC01 \uD3EC\uC778\uD2B8
@@ -2861,12 +2865,21 @@ function EngineLineSkeleton() {
 // 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
 function TypedMoveLine({ startPly, sans, posKey }) {
   const [shown, setShown] = useState(0);
-  useEffect(() => { setShown(0); }, [posKey]);
+  // (v0.2.6 버그 수정) 예전엔 setTimeout의 의존성 배열에 sans.length를 넣어, 엔진이 같은 라인을
+  // 더 깊이 파고들며 sans가 계속 늘어날 때마다(짧은 간격으로 반복 스트리밍되는 경우가 흔함) 대기
+  // 중이던 타이머가 매번 취소되고 처음부터(55ms) 다시 예약됐다 — 갱신이 55ms보다 촘촘하게 계속
+  // 들어오면 타이머가 단 한 번도 실행되지 못해 타이핑이 특정 지점에서 영원히 멈춘 것처럼 보였다
+  // (라인이 "끝까지 작성되지 않는" 원인). posKey(라인 자체가 바뀔 때)에만 55ms interval을 새로
+  // 만들고, 그 interval은 sans가 몇 번을 늘어나든 절대 취소·재예약되지 않는다 — 매 틱마다 그
+  // 시점의 최신 길이(sansLenRef)까지 도달했는지만 확인하므로, 데이터가 아무리 자주 갱신돼도 항상
+  // 꾸준히 앞으로 나아가 결국 끝까지 타이핑된다.
+  const sansLenRef = useRef(sans.length);
+  sansLenRef.current = sans.length;
   useEffect(() => {
-    if (shown >= sans.length) return;
-    const id = setTimeout(() => setShown((s) => Math.min(s + 1, sans.length)), 55);
-    return () => clearTimeout(id);
-  }, [shown, sans.length]);
+    setShown(0);
+    const id = setInterval(() => { setShown((s) => (s >= sansLenRef.current ? s : s + 1)); }, 55);
+    return () => clearInterval(id);
+  }, [posKey]);
   return <>{pvContinuationText(startPly, sans.slice(0, Math.min(shown, sans.length)))}</>;
 }
 // (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
@@ -2882,20 +2895,16 @@ function dedupeEngineLines(list) {
 // 옮기는 드래그 스크롤을 구현해 마우스·터치·펜 어디서나 동일하게 동작하게 하고, 실제로 끌었을
 // 때(moved)만 스크롤로 처리하고 그렇지 않으면(제자리 클릭) 그 줄의 첫 수를 둔다 — 스크롤하다 손을
 // 뗀 것이 수를 두는 클릭으로 오인되던 문제를 없앤다.
-// (v0.2.5 버그 수정 2) 드래그 스크롤 자체는 됐지만, 타이핑 효과(TypedMoveLine)로 수순이 시야보다
-// 길게 자라나도 scrollLeft는 그대로 0에 머물러 있어 새로 타이핑된 뒷부분이 화면 밖에서 계속
-// 이어지기만 할 뿐 사용자 눈에는 여전히 "8.fxe3 d6 9.Nd5 Be6"에서 멈춘 것처럼 보였다 — 사용자가
-// 직접 끌어야만 그 뒤를 볼 수 있었던 게 진짜 원인. 채팅창 자동 스크롤과 같은 패턴으로, 지금 보이는
-// 오른쪽 끝이 이미 콘텐츠 끝(atEnd)일 때는 새로 타이핑되는 글자를 계속 따라가며 자동으로 스크롤해
-// 항상 "지금 막 타이핑된 부분"이 보이게 한다. 사용자가 직접 드래그해 앞부분을 살펴보는 중에는
-// (moved=true) 그 위치를 존중해 자동 추적을 멈추고, 줄 정체성이 바뀌면(다음 포지션 등) 다시
-// 처음부터 추적을 재개한다. 아직 안 보이는 수순이 남아있으면 오른쪽 끝에 옅은 그라데이션 페이드도
-// 보여줘 "더 있다"는 것을 시각적으로 알려준다.
+// (v0.2.6 버그 수정) 예전엔 타이핑 효과로 수순이 시야보다 길게 자라날 때마다 scrollLeft를 콘텐츠
+// 오른쪽 끝에 맞춰 계속 따라가게 했는데, 그러면 지금 막 타이핑되는 수가 화면 맨 오른쪽 좁은 자리에
+// 끼여 보일 뿐 아니라, 각 줄이 실제로 대변하는 "바로 다음 수"(l.sans[0], 이 줄의 첫 수)가 계속
+// 화면 밖으로 밀려나 버렸다. 더 이상 타이핑에 맞춰 자동으로 스크롤을 옮기지 않고 항상 왼쪽 끝(=
+// 다음 수)에 고정해 둔다 — 뒷부분을 보고 싶으면 사용자가 직접 끌어서 보면 된다(더 있으면 오른쪽에
+// 옅은 그라데이션 페이드로 알려줌).
 function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   const dragRef = useRef(null);
-  const followRef = useRef(true);
   const [showFade, setShowFade] = useState(false);
   const identity = posKeyBase + ":" + lineKey;
   const recompute = () => {
@@ -2905,18 +2914,12 @@ function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst 
     const atEnd = outer.scrollLeft + outer.clientWidth >= inner.scrollWidth - 1;
     setShowFade(overflowing && !atEnd);
   };
-  const followTail = () => {
-    const outer = outerRef.current, inner = innerRef.current;
-    if (!outer || !inner || !followRef.current) return;
-    outer.scrollLeft = Math.max(0, inner.scrollWidth - outer.clientWidth);
-  };
   useEffect(() => {
-    followRef.current = true;
-    followTail();
+    if (outerRef.current) outerRef.current.scrollLeft = 0;
     recompute();
     const inner = innerRef.current;
     if (!inner || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => { followTail(); recompute(); });
+    const ro = new ResizeObserver(recompute);
     ro.observe(inner);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2929,19 +2932,15 @@ function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst 
     const d = dragRef.current;
     if (!d) return;
     const dx = e.clientX - d.x;
-    if (Math.abs(dx) > 3) { d.moved = true; followRef.current = false; }
-    if (outerRef.current) outerRef.current.scrollLeft = d.scrollLeft - dx;
+    if (Math.abs(dx) > 3) d.moved = true;
+    if (outerRef.current) outerRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
     recompute();
   };
   const onPointerUp = () => {
     const d = dragRef.current;
     dragRef.current = null;
     if (d && !d.moved && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]);
-    else if (d) recompute(); // 드래그 후 손을 뗀 위치가 끝이면 다시 자동 추적을 재개
-    if (d && d.moved) {
-      const outer = outerRef.current, inner = innerRef.current;
-      if (outer && inner && outer.scrollLeft + outer.clientWidth >= inner.scrollWidth - 1) followRef.current = true;
-    }
+    else if (d) recompute();
   };
   return (
     <div className="no-pan press" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { dragRef.current = null; }}
@@ -3250,7 +3249,7 @@ function SequenceBar({ sans, future = [], onJump }) {
     if (!d) return;
     const dx = e.clientX - d.x;
     if (Math.abs(dx) > 3) d.moved = true;
-    if (scrollRef.current) scrollRef.current.scrollLeft = d.scrollLeft - dx;
+    if (scrollRef.current) scrollRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
   };
   const onClickCapture = (e) => {
     if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); }
@@ -6963,7 +6962,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
-    const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
+    const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx) * DRAG_SCROLL_MULT, y: dragRef.current.py + (e.clientY - dragRef.current.sy) * DRAG_SCROLL_MULT };
     // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 드래그해 갈 수 없도록 화면 크기 기준으로 한계를 둔다.
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const next = clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, items, boxW, boxH, SCHEMATIC_TOP_INSET);
