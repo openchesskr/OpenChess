@@ -3106,7 +3106,10 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
   );
 }
 /* ============================================================ 보드 ============================================================ */
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval }) {
+// (v0.2.6 기능) 퍼즐 3단계 힌트용 오버레이 — hintTo(1단계, 도착 칸 반짝임)·hintFrom(2단계, 움직일
+// 기물 흔들림)·hintPathSq(3단계, 행마법 경로를 따라 순서대로 반짝이는 현재 칸)는 Board를 쓰는
+// 다른 화면(학습 탭 등)에는 항상 undefined라 아무 영향이 없다.
+function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
   // (v0.2.2 UX#4) 그랜드마스터 보드 스킨에만 주기적으로 지나가는 광택(빛 sweep)을 얹는다.
@@ -3165,7 +3168,16 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               {wrongAt && wrongAt[0] === r && wrongAt[1] === c && (
                 <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
               )}
-              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default" }} />}
+              {/* (v0.2.6 기능) 퍼즐 힌트 1단계 — 두어야 할 칸이 계속 은은하게 반짝인다. */}
+              {hintTo && hintTo[0] === r && hintTo[1] === c && (
+                <div style={{ position: "absolute", inset: cell * 0.04, borderRadius: 6, boxShadow: "inset 0 0 0 3px " + T.brass, animation: "hintSquarePulse 1.1s ease-in-out infinite", pointerEvents: "none", zIndex: 4 }} />
+              )}
+              {/* (v0.2.6 기능) 퍼즐 힌트 3단계 — 행마법 경로의 지금 차례인 칸이 짧게 반짝인다. */}
+              {hintPathSq && hintPathSq[0] === r && hintPathSq[1] === c && (
+                <div key={hintPathSq[0] + "," + hintPathSq[1]} style={{ position: "absolute", inset: cell * 0.1, borderRadius: "50%", background: "rgba(196,154,80,.6)", animation: "hintSquarePop .38s ease-out", pointerEvents: "none", zIndex: 5 }} />
+              )}
+              {/* (v0.2.6 기능) 퍼즐 힌트 2·3단계 — 움직여야 할 기물이 좌우로 흔들린다(기존 lineShake 재사용). */}
+              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "lineShake .5s ease-in-out infinite" : "none" }} />}
             </div>
           );
         }))}
@@ -8855,6 +8867,27 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     </div>
   );
 }
+// (v0.2.6 기능) 퍼즐 힌트 3단계 — 기물의 행마법을 따라 출발 칸부터 도착 칸까지 한 칸씩 순서대로
+// 반짝일 경로를 만든다. 슬라이딩 기물(R/B/Q)은 지나가는 칸을 그대로 순서대로 담고, 킹·폰처럼
+// 한 칸만 움직이는 기물은 도착 칸 하나만 담는다. 나이트는 실제로는 두 칸을 "건너뛰"지만, 시각적
+// 연출을 위해 항상 같은 방식(더 긴 축을 먼저 두 칸 이동한 뒤 짧은 축으로 한 칸)으로 경로를
+// 고정해 매번 같은 모양으로 보이게 한다.
+function hintPathSquares(pieceType, from, to) {
+  const [fr, fc] = from, [tr, tc] = to;
+  const dr = tr - fr, dc = tc - fc;
+  if (pieceType === "N") {
+    const mid = Math.abs(dr) === 2 ? [tr, fc] : [fr, tc];
+    return [mid, [tr, tc]];
+  }
+  if (pieceType === "R" || pieceType === "B" || pieceType === "Q") {
+    const steps = Math.max(Math.abs(dr), Math.abs(dc));
+    const sr = dr === 0 ? 0 : dr / Math.abs(dr), sc = dc === 0 ? 0 : dc / Math.abs(dc);
+    const path = [];
+    for (let i = 1; i <= steps; i++) path.push([fr + sr * i, fc + sc * i]);
+    return path;
+  }
+  return [[tr, tc]];   // 킹·폰 — 한 칸만 이동하므로 도착 칸 자체가 유일한 "경로"
+}
 // (v0.2.6 기능) 퍼즐 코치 말풍선이 막연한 안내 대신 지금 보드 포지션을 짧게 요약해 설명한다 —
 // 사용자 진영 기준 기물 점수차와 체크 여부를 바탕으로 한 줄 코멘트를 만든다.
 function summarizePosition(board, userColor) {
@@ -8901,8 +8934,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const [revertStage, setRevertStage] = useState(null);   // null | "reply" | "wrong"
   const reverting = revertStage != null;   // (UX4) 오답 후 원위치로 되돌아가는 애니메이션 중(둘 중 한 단계라도)
   const [reply, setReply] = useState(null);      // { sans, san, node }  상대 응수 애니메이션
-  const [hintText, setHintText] = useState(null);
-  const [hintKey, setHintKey] = useState(0);
+  // (v0.2.6 개편) 텍스트 힌트("~을 움직여 보세요") 대신 3단계 시각 힌트로 개편 — 누를 때마다
+  // 단계가 올라간다(1: 도착 칸 반짝임, 2: 움직일 기물 흔들림, 3: 기물이 흔들리며 행마법을 따라
+  // 출발 칸부터 도착 칸까지 한 칸씩 순서대로 반짝이는 경로 애니메이션).
+  const [hintLevel, setHintLevel] = useState(0);
+  const [hintStepIdx, setHintStepIdx] = useState(0);
   // (20차 기능2) 보드 페이지(0)/모식도 페이지(1) 좌우 넘기기 — 모식도가 보드 위를 차지해 한눈에
   // 안 들어오던 문제를 해결한다. celebrate는 방금 해결한 라인의 클리어 애니메이션(모식도 페이지),
   // shakeTag는 그 직후 도전 가능해진 다음 라인을 살짝 흔들어 "클릭하면 바로 풀 수 있다"를 강조한다.
@@ -8930,7 +8966,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   useEffect(() => {
     setSessionSolved(new Set());
     setEverRevealed(new Set());
-    setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null);
+    setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0);
     setPage(0); setCelebrate(null);
     const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
     setTargetTag(first ? first.tag : null);
@@ -9084,7 +9120,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     })();
     return () => { cancelled = true; timers.forEach(clearTimeout); };
   }, [wrong]);
-  const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null); setPage(0); setCelebrate(null); };
+  const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); };
   const restart = () => gotoLine(targetTag);
   // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
   // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
@@ -9101,8 +9137,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     }
     setPreviewNode(it);
   };
-  // (기능2) 힌트 — 그 시점에 실제로 두어야 할 수(목표 라인 기준)를 바탕으로 기물 또는 칸을 무작위로 알려준다.
-  useEffect(() => { setHintText(null); }, [pathNodes.length, targetTag, wrong]);
+  // (v0.2.6 개편) 힌트 — 그 시점에 실제로 두어야 할 수(목표 라인 기준)를 바탕으로 3단계 시각 힌트를 만든다.
+  useEffect(() => { setHintLevel(0); }, [pathNodes.length, targetTag, wrong]);
   const expectedSan = (() => {
     if (!isUserPly || done) return null;
     if (targetLine && targetLine.sans.length > pathNodes.length) {
@@ -9111,19 +9147,21 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     }
     return passKids[0] ? passKids[0].san : null;
   })();
-  const requestHint = () => {
-    if (!userToMove || !expectedSan) return;
-    const info = sanSrc(board, stripSuffix(expectedSan), color);
-    if (!info) return;
-    const pk = PIECE_KOR[info.piece] || "기물";
-    const dest = FILES[info.to[1]] + (8 - info.to[0]);
-    const bySquare = Math.random() < 0.5;
-    setHintText(bySquare ? `힌트: ${dest} 칸이 중요해요.` : `힌트: ${pk}을(를) 움직여 보세요.`);
-    setHintKey((k) => k + 1);
-  };
+  // (v0.2.6 개편) expectedSan이 가리키는 기물의 출발·도착 칸과, 3단계에서 순서대로 반짝일 경로.
+  const hintInfo = useMemo(() => (expectedSan ? sanSrc(board, stripSuffix(expectedSan), color) : null), [expectedSan, board, color]);
+  const hintPath = useMemo(() => (hintInfo ? hintPathSquares(hintInfo.piece, hintInfo.from, hintInfo.to) : []), [hintInfo]);
+  const requestHint = () => { if (userToMove && expectedSan) setHintLevel((l) => Math.min(3, l + 1)); };
+  // (v0.2.6 개편) 3단계에서는 경로의 각 칸을 380ms마다 하나씩 순서대로 반짝인다 — hintLevel이 3
+  // 미만이거나 힌트가 리셋되면 즉시 멈춘다.
+  useEffect(() => {
+    if (hintLevel < 3 || !hintPath.length) { setHintStepIdx(0); return; }
+    setHintStepIdx(0);
+    const id = setInterval(() => setHintStepIdx((i) => (i + 1) % hintPath.length), 380);
+    return () => clearInterval(id);
+  }, [hintLevel, hintPath.length]);
   // (UX2) 마스코트 캐릭터는 둘 차례(백=MILKU, 흑=KOKOA), 표정은 풀이 상태에 따름
   const fullyComplete = solvedNow.size >= totalLines;
-  const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintText ? "wink"
+  const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintLevel > 0 ? "wink"
     : theme === "sacrifice" ? "great" : theme === "advantage" ? "think" : "surprise";
   const pm = [color === "w" ? "milku" : "kokoa", pmEmotion];
   // (v0.2.6 버그 수정) "당신 차례" 안내 문구 대신, 코치 말풍선이 지금 보드 포지션을 짧게 요약해
@@ -9131,7 +9169,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : summarizePosition(board, color);
   const doneBubble = fullyComplete ? "훌륭해요! 모든 라인을 정복했어요."
     : "이 라인을 완료했어요! 모식도에서 다른 가지에 도전해 보세요.";
-  const bubbleText = done ? doneBubble : (hintText || idleBubble);
+  const bubbleText = done ? doneBubble : idleBubble;
   const nextTag = (allLines.find((l) => !solvedNow.has(l.tag)) || {}).tag;
   const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
   const lineLabel = targetLine ? (LINE_TAG_LABEL[targetLine.tag] || ("라인 " + (lineIdx + 1))) : "";
@@ -9349,7 +9387,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         style={{ position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
         <div style={{ display: "flex", width: "200%", transform: `translateX(calc(${-page * 50}% + ${dragPx}px))`, transition: dragging ? "none" : "transform .34s cubic-bezier(.22,.9,.32,1)" }}>
           <div style={{ width: "50%", boxSizing: "border-box", paddingRight: 3 }}>
-            <div key={"bubble-" + hintKey} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
+            <div key={"bubble-" + bubbleText} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
             {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
             <PuzzlePgnBox text={sansToPgnText(curSans)} />
             {/* (버그 수정) 바깥 페이저(보드↔모식도 스와이프)의 onPagerPointerDown이 이 보드 위에서 눌러도
@@ -9374,7 +9412,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
               // effect의 evaluate 결과), 별도 등급 판정 없이 바로 "최선의 수" 배지를 붙인다.
               : wrongReply
                 ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
-              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove} />}
+              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove}
+                  hintTo={hintLevel >= 1 && hintInfo ? hintInfo.to : null} hintFrom={hintLevel >= 2 && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel >= 3 && hintPath.length ? hintPath[hintStepIdx] : null} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
@@ -9382,7 +9421,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             <div style={{ marginTop: 12 }}><EvalBar cp={curNode.ev} width={boardSize} /></div>
             <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
               <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
-              {userToMove && <button onClick={requestHint} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: "transparent", color: "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트</button>}
+              {/* (v0.2.6 개편) 힌트 버튼이 현재 단계(1~3)를 그대로 보여준다 — 3단계에 닿으면 꽉 채운
+                  배경으로 바뀌어 더 이상 다음 단계가 없음을 알린다. */}
+              {userToMove && <button onClick={requestHint} disabled={hintLevel >= 3} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: hintLevel >= 3 ? "linear-gradient(180deg,#F3D57A," + T.brass + ")" : "transparent", color: hintLevel >= 3 ? "#241509" : "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: hintLevel >= 3 ? "default" : "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트{hintLevel > 0 ? " " + hintLevel + "/3" : ""}</button>}
             </div>
           </div>
           <div style={{ width: "50%", boxSizing: "border-box", paddingLeft: 3 }}>
@@ -14393,7 +14434,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
