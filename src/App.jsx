@@ -1457,6 +1457,26 @@ function attacksPricierIndependent(board, color, minVal, hangSquare) {
   }
   return false;
 }
+// (v0.2.6 기능) 어떤 기물이 위협받는 상태에서 다른 칸으로 옮겨서도 여전히 위협받는 것처럼 보일 때,
+// 그 기물이 이동 가능한 다른 칸들 중 전혀 위협받지 않는 완전히 안전한 칸이 하나라도 있었는지 확인한다.
+// 그런 칸이 있었는데도 굳이 위협받는 칸을 골랐다면 "몰려서 어쩔 수 없이" 둔 게 아니다(isSacrifice 참고).
+function hasSaferSquare(board, fr, fc, piece, color) {
+  const enemy = color === "w" ? "b" : "w";
+  for (let tr = 0; tr < 8; tr++) for (let tc = 0; tc < 8; tc++) {
+    if (tr === fr && tc === fc) continue;
+    const occ = board[tr][tc];
+    if (occ && occ.c === color) continue;
+    if (!canMove(board, piece, color, fr, fc, tr, tc, !!occ)) continue;
+    if (exposesKing(board, fr, fc, tr, tc, color, null)) continue;
+    const b2 = board.map((row) => row.slice());
+    b2[tr][tc] = b2[fr][fc]; b2[fr][fc] = null;
+    let oppGain = seeSquare(b2, tr, tc, enemy);
+    const ekp = kingPos(b2, enemy);
+    if (oppGain > 0 && ekp && isAttacked(b2, ekp[0], ekp[1], color) && !canCaptureSquareLegally(b2, tr, tc, enemy)) oppGain = 0;
+    if (oppGain === 0) return true;
+  }
+  return false;
+}
 function isSacrifice(board, sanRaw, color) {
   const info = sanSrc(board, sanRaw, color);
   if (!info) return false;
@@ -1499,7 +1519,15 @@ function isSacrifice(board, sanRaw, color) {
   // 내주고 폰 두 개(1+1)를 되찾아 net=1-2=-1)가 다시 걸러지지 않게 되는 회귀를 만들었다. 바로 위
   // 블록(기능4) 주석이 설명하는 원래 의도대로 -1로 되돌린다.
   if (!info.castle && info.piece !== "P" && net <= -1) {
-    if (movedThreatLoss >= 1 && net >= -movedThreatLoss && !givesCheck) return false;  // 예정된 손실의 실현(반환)일 뿐
+    // (v0.2.6 버그 수정) 예전엔 이 기물이 이동 전부터 이미 위협받고 있었고(movedThreatLoss>=1) 새로
+    // 옮긴 칸의 손실도 그보다 크지 않으면(net>=-movedThreatLoss) 무조건 "예정된 손실을 그대로
+    // 실현할 뿐"으로 보고 희생 판정에서 제외했다. 하지만 이 기물이 갈 수 있었던 다른 칸 중 전혀
+    // 위협받지 않는 완전히 안전한 칸이 있었는데도 굳이 위협받는 것처럼 보이는 이 칸을 골랐다면
+    // (예: 24.Re1 — 퀸에게 물리던 룩이 Rd1·Rf1 같은 완전 안전지대 대신 상대 룩과 마주보는 e1로
+    // 피신. 겉보기엔 또 잡히는 자리 같지만 실제로 Rxe1을 받아주면 백랭크 메이트 함정이라 안전함)
+    // 이는 몰려서 어쩔 수 없이 둔 게 아니라 스스로 위험해 보이는 자리로 걸어 들어간 것이므로, 정말
+    // 안전한 대안이 하나도 없었을 때만(포크 등으로 진짜 궁지에 몰린 경우) 희생 판정에서 제외한다.
+    if (movedThreatLoss >= 1 && net >= -movedThreatLoss && !givesCheck && !hasSaferSquare(board, fr, fc, info.piece, color)) return false;
     return true;
   }
   // (16차) 이 수 자체가 기물을 잡히는 칸으로 옮기지 않아도, 상대가 이미 걸고 있던 기물 잡는 위협을
@@ -1533,18 +1561,33 @@ function isSacrifice(board, sanRaw, color) {
     // 방치된 나이트 d5를 무시하고 무관한 비숍 b3를 반격하지만, 결국 나이트 대 비숍의 동가 교환으로
     // 귀결되는 뻔한 수). attacksPricierIndependent가 false를 돌려주면(=진짜 반격이 아니면) 탁월이 아니다.
     if (attacksPricierIndependent(after, color, afterHang, afterHangSq)) return false;
-    // (버그 수정) 예전엔 beforeHang(이 수를 두기 전부터 이미 걸려 있던 손실) 이상으로 afterHang이
-    // 커지지 않은 경우(=새로 더 망치지는 않은 순수 방치) 반격(attacksPricier)으로 상쇄하지 못하면
-    // 희생으로 치지 않았는데, 바로 이 "이미 걸린 걸 그대로 방치" 케이스가 사용자가 요청한 전형적인
-    // 방치 희생(위 16.O-O-O·6...h5 예시 모두 beforeHang>=afterHang이면서 반격도 없는 경우)이라
-    // 이 요구조건이 오히려 정상적인 방치 희생을 걸러내고 있었다. 이 지점에 이르렀다는 것 자체가
-    // 이미 afterHang이 2점 이상이고 net-afterHang<=-2(실질 손실 확정)까지 확인됐다는
-    // 뜻이고, 호출부마다 이 판정 뒤에도 실제 엔진 평가(mvCp>=-40)로 한 번 더 걸러지며 유일한
-    // 합법수("only")는 애초에 isSacrifice를 호출하지 않는 kind 분기에서 걸러지므로, 포크 상황
-    // (movedThreatLoss>=1, 위에서 이미 별도 처리)을 제외하면 추가로 반격 여부까지 요구할 필요가 없다.
+    // (v0.2.6 버그 수정) 지금 당장(상대가 아직 잡기 전) 반격 위협이 안 보여도, 상대가 실제로 이
+    // 방치된 기물을 잡는 수 자체가 다른 아군 기물(주로 룩)의 시야를 가로막던 상대 기물을 치워 그
+    // 즉시 훨씬 더 비싼 기물이 뚫리는 경우가 있다(예: 13...Qxc3 이후 비숍 f5가 나이트에게 걸려
+    // 있지만, 그 나이트가 f5를 잡으러 움직이는 순간 d파일이 열려 룩이 곧장 퀸을 잡는다 — 상대가
+    // 방치된 기물을 잡으면 오히려 9>5+3으로 더 손해라 진짜 위험이 아니다). attacksPricierIndependent는
+    // 잡히기 '전' 보드만 보므로 이런 지연 발동 위협을 못 본다 — 상대의 최소가치 공격자로 실제 그
+    // 칸을 잡아본 뒤, 그 결과 포지션에서 다시 pricier 위협을 검사해 "상대가 잡으면 다음 수에 바로
+    // 그 이상을 회수당하는" 경우를 희생 판정에서 제외한다.
+    const hangAtt = lva(after, afterHangSq[0], afterHangSq[1], enemy);
+    if (hangAtt) {
+      const afterCap = after.map((row) => row.slice());
+      afterCap[afterHangSq[0]][afterHangSq[1]] = { c: enemy, t: hangAtt.t };
+      afterCap[hangAtt.r][hangAtt.c] = null;
+      if (attacksPricier(afterCap, color, afterHang)) return false;
+    }
     return true;
   }
   return false;
+}
+// (v0.2.6 버그 수정) 직전 자신의 수(2수 전 — 상대 응수 하나를 사이에 둔 같은 진영의 수)가 이미
+// 희생이었다면, 지금 이 수는 그 희생을 잇는 콤보의 연결 수(디플렉션·체크로 기물을 회수하는 수 등)일
+// 뿐 새로 찾아낸 탁월한 수가 아니므로 다시 브릴리언트로 태그하지 않는다. 예: 15...Qxd2(퀸 희생)
+// 다음의 16...Nf3+는 그 자체로도 SEE상 희생처럼 보이지만(나이트가 gxf3에 잡힘), 직전 수가 이미
+// 희생이었던 연장선이므로 중복으로 탁월 태그를 붙이지 않는다.
+function ownPriorMoveWasSacrifice(prevSans, color) {
+  if (!prevSans || prevSans.length < 2) return false;
+  try { return isSacrifice(boardFromSans(prevSans.slice(0, -2)), prevSans[prevSans.length - 2], color); } catch { return false; }
 }
 function kingPos(board, color) { for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p && p.c === color && p.t === "K") return [r, c]; } return null; }
 function isAttacked(board, tr, tc, byColor) {
@@ -2175,7 +2218,7 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
   // 아무리 나빠져도, 두기 전이 팽팽했다면 그 수 자체가 승부를 가른 것이므로 완화 대상이 아니다.
   const decided = Math.abs(bestCp) > 200;
   const losing = bestCp <= -200;
-  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant";
+  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
   if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
   // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데 그 이점을 응징 못 해 평가치가 감소하되,
   // 결과가 뒤집힐(패배) 정도는 아닌 경우. 후보일 때만 직전 포지션을 1회 추가 평가해 상대 손실을 확인한다.
@@ -2465,7 +2508,10 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
       // (버그 수정) '완화' 판정을 둔 뒤 평가(playedCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로
       // 한다 — 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
       const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
+      // (v0.2.6 버그 수정) 직전 자신의 수(2수 전)가 이미 브릴리언트(희생)로 분류됐다면, 지금 수는
+      // 그 희생을 잇는 콤보의 연결 수일 뿐이므로 다시 탁월로 중복 태그하지 않는다.
+      const continuesOwnSacrifice = i >= 2 && moves[i - 2].kind === "brilliant";
+      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing) && !continuesOwnSacrifice) kind = "brilliant"; } catch { }
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
       // 유일한 수(Great, 매우 좋아요): 최선수를 뒀는데 2순위가 분명히 열세라(대안이 없다) 반드시 그 수여야 했던 경우.
       const gap = posEval[i].second == null ? 9999 : (bestCp - posEval[i].second);
@@ -3994,7 +4040,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       if (k === "best" && !matched) k = "excellent";
       // (버그 수정) '완화' 판정을 둔 뒤 평가(ourCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로 한다.
       const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-      if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(decided && losing)) k = "brilliant";
+      if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(sans, col)) k = "brilliant";
       if (decided) { if (k === "blunder") k = "mistake"; else if (k === "mistake") k = "inaccuracy"; else if (k === "inaccuracy") k = "good"; }
       const under = /=/.test(san) && !/=Q/.test(san); if (under && !["inaccuracy", "mistake", "blunder"].includes(k)) k = "brilliant";
       return k;
@@ -5388,7 +5434,7 @@ function ReviewPage({ game, onClose }) {
         let kind = tierOf(loss);
         if (kind === "best" && !matched) kind = "excellent";
         const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
+        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant"; } catch { }
         if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
         // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 학습 탭(evalMoveKind
         // 호출부의 applyKind)에는 있는데 이 자유 탐색 판정에는 빠져 있었다 — 같은 규칙을 그대로 적용한다.
@@ -5677,7 +5723,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       // 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
       const decided = Math.abs(bestCp) > 200;  // 이 수를 두기 전, 최선의 수 기준으로도 이미 승부가 기울어 있었는가
       const losing = bestCp <= -200;           // 그 상태에서 이 수를 둔 쪽이 불리했는가
-      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant";
+      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }   // 실수류 완화(양측)
       return kind;
     };
