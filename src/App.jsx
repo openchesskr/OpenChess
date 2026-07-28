@@ -3345,26 +3345,51 @@ function NotationTools({ sans, onLoadPgn }) {
   );
 }
 
-function CircleBadge({ kind, big, noTip, descOnClick }) {
-  const [hover, setHover] = useState(false);
+// (v0.2.6 버그 수정) 수 체계 설명 말풍선·채팅 롱프레스 메뉴·알림 카드가 화면 가장자리 근처의 기준
+// 요소에서 열리면, 원래 자리(중앙 정렬 또는 좌우 끝 맞춤) 그대로 뜨면서 팝업 폭만큼 화면 밖으로
+// 잘려 나갔다. 기준 요소의 화면상 위치(anchorRect)를 이용해, 팝업이 그 자리 그대로(정렬 방식에
+// 따라 중앙/오른쪽 끝/왼쪽 끝 맞춤) 뜬다고 가정했을 때의 좌우 경계가 화면 정중앙 기준 안전 영역
+// (margin)을 벗어나는 만큼만 반대 방향으로 밀어내는 오프셋(px)을 계산한다 — 세 곳(CircleBadge
+// 설명 말풍선, 채팅 롱프레스 메뉴, 알림 카드) 공용.
+function safeAreaDx(anchorRect, popupW, align, margin = 10) {
+  if (!anchorRect || typeof window === "undefined") return 0;
+  const vw = window.innerWidth;
+  const naturalLeft = align === "right" ? anchorRect.right - popupW : align === "left" ? anchorRect.left : anchorRect.left + anchorRect.width / 2 - popupW / 2;
+  if (naturalLeft < margin) return margin - naturalLeft;
+  if (naturalLeft + popupW > vw - margin) return (vw - margin) - (naturalLeft + popupW);
+  return 0;
+}
+const CIRCLE_BADGE_DESC_W = 220;
+function CircleBadge({ kind, big, descOnClick }) {
   const [descOpen, setDescOpen] = useState(false);
+  const [descDx, setDescDx] = useState(0);
+  const anchorRef = useRef(null);
   const sz = big ? 36 : 26;
-  // (v0.2.1) descOnClick — 아이콘을 클릭하면 등급 이름 + 조건/설명을 담은 조금 더 큰 말풍선을 토글한다.
-  const showLabelTip = hover && !noTip && !descOpen;
+  // (v0.2.1) descOnClick — 아이콘을 클릭하면 등급 이름 + 조건/설명을 담은 말풍선을 토글한다.
+  // (v0.2.6 버그 수정) 열 때마다 기준 아이콘의 실제 화면 위치를 재서 화면 밖으로 잘리지 않을
+  // 안전한 가로 오프셋을 함께 계산해 둔다.
+  const toggleDesc = (e) => {
+    e.stopPropagation();
+    setDescOpen((v) => {
+      const next = !v;
+      if (next && anchorRef.current) setDescDx(safeAreaDx(anchorRef.current.getBoundingClientRect(), CIRCLE_BADGE_DESC_W, "center"));
+      return next;
+    });
+  };
   return (
-    <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }} onMouseEnter={noTip ? undefined : () => setHover(true)} onMouseLeave={noTip ? undefined : () => setHover(false)}>
-      <span onClick={descOnClick ? (e) => { e.stopPropagation(); setDescOpen((v) => !v); } : undefined} style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)", cursor: descOnClick ? "pointer" : "default" }}>{badgeIcon(kind, sz - 4)}</span>
-      {showLabelTip && <span style={{ position: "absolute", bottom: sz + 6, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 7, background: T.ivoryHi, color: QCOLOR[kind], fontSize: 12, fontWeight: 800, border: "1px solid " + QCOLOR[kind], boxShadow: "0 4px 10px -4px rgba(0,0,0,.5)", zIndex: 30 }}>{QLABEL[kind]}</span>}
+    <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }}>
+      <span ref={anchorRef} onClick={descOnClick ? toggleDesc : undefined} style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)", cursor: descOnClick ? "pointer" : "default" }}>{badgeIcon(kind, sz - 4)}</span>
       {descOpen && descOnClick && (
         <>
           <span onClick={(e) => { e.stopPropagation(); setDescOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <span style={{ position: "absolute", bottom: sz + 9, left: "50%", transform: "translateX(-50%)", width: 220, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+          <span style={{ position: "absolute", bottom: sz + 9, left: "50%", transform: "translateX(calc(-50% + " + descDx + "px))", width: CIRCLE_BADGE_DESC_W, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ width: 22, height: 22, borderRadius: "50%", background: QCOLOR[kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{badgeIcon(kind, 18)}</span>
               <span style={{ fontSize: 13, fontWeight: 800, color: QCOLOR[kind] }}>{QLABEL[kind]}</span>
             </span>
             <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink, lineHeight: 1.5, whiteSpace: "normal" }}>{QDESC[kind]}</span>
-            <span style={{ position: "absolute", bottom: -7, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }} />
+            {/* 말풍선 꼬리는 팝업이 dx만큼 밀렸어도 항상 기준 아이콘을 가리키도록 반대로 보정한다. */}
+            <span style={{ position: "absolute", bottom: -7, left: "calc(50% - " + descDx + "px)", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }} />
           </span>
         </>
       )}
@@ -5065,7 +5090,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
               <span style={{ position: "relative", display: "inline-flex", lineHeight: 0 }}>
                 <button onClick={() => setAccShow((v) => (v === key ? null : key))} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}>
                   {/* 오프닝처럼 하이라이트할 비이론 수가 없으면 이론 아이콘 대신 정확도로 등급을 정해 표시한다. */}
-                  <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind || gradeFromAccuracy(acc)} noTip /></span>
+                  <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind || gradeFromAccuracy(acc)} /></span>
                 </button>
                 {active && (
                   <span style={{ position: "absolute", bottom: 34, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "6px 10px", borderRadius: 8, background: T.brassHi, color: "#241509", fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", boxShadow: "0 6px 14px -5px rgba(0,0,0,.55)", zIndex: 30 }}>
@@ -11930,8 +11955,12 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
   // 여전히 이전 상태인데 화면(과 새로고침 전까지의 localRead/localResult 오버레이)은 계속 성공한
   // 것처럼 보였다 — 성공 여부를 확인해 실패하면 해당 항목의 로컬 오버레이를 지우고 refresh()로
   // 서버의 실제 상태와 다시 맞춘다.
+  const [notifDx, setNotifDx] = useState(0);
   const toggle = () => {
     const next = !open; setOpen(next);
+    // (v0.2.6 버그 수정) 알림 벨이 화면 왼쪽에 가까이 있으면 오른쪽 끝에 맞춰 뜨는 320px 카드가
+    // 화면 밖으로 잘렸다 — 열 때마다 벨의 실제 위치를 재서 안전한 가로 오프셋을 계산해 둔다.
+    if (next && wrapRef.current) setNotifDx(safeAreaDx(wrapRef.current.getBoundingClientRect(), 320, "right"));
     // (18차 UX4→보충) 최초 확인 시 서버에 PATCH로 read=true를 확실히 반영 — 새로고침 후에도 배지가 되살아나지 않는다.
     if (next && unread) {
       const stale = items.filter((n) => !n.read);
@@ -11964,7 +11993,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
       <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0, y: -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.97 }} transition={{ duration: 0.18, ease: MOTION_EASE }}
-          onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
+          onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, transform: notifDx ? "translateX(" + notifDx + "px)" : undefined, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
           <div className="flex items-center justify-between" style={{ padding: "10px 14px", borderBottom: "1px solid #E4D5B6" }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>알림</span>
             {items.length > 0 && <button onClick={clearAll} className="press" style={{ padding: "3px 8px", borderRadius: 6, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, border: "1px solid #C9B58C", cursor: "pointer" }}>전체 삭제</button>}
@@ -12100,6 +12129,8 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   const [editingId, setEditingId] = useState(null);
   // (v0.1.4 기능) 꾹 눌러 연 수정/삭제(또는 전달/삭제) 메뉴가 떠 있는 메시지 id.
   const [menuFor, setMenuFor] = useState(null);
+  // (v0.2.6 버그 수정) 메뉴가 화면 가장자리 근처의 메시지에서 열리면 잘리던 문제 — 열 때 계산해 둔 안전한 가로 오프셋.
+  const [menuDx, setMenuDx] = useState(0);
   // (v0.1.4 기능) 퍼즐 카드의 "전달" 버튼으로 다른 친구에게 다시 공유할 때 띄우는 시트의 대상 퍼즐.
   const [forwardTarget, setForwardTarget] = useState(null);
   // (v0.1.0) 퍼즐 공유 카드 미리보기 — puzzle_no가 설정된 메시지가 보이면 그 번호의 퍼즐 데이터를
@@ -12239,7 +12270,12 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
             const onDown = (e) => {
               dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
               clearTimeout(longPressTimerRef.current);
-              longPressTimerRef.current = setTimeout(() => { setMenuFor(m.id); dragRef.current = null; setDrag(null); }, 480);
+              const anchorEl = e.currentTarget;
+              longPressTimerRef.current = setTimeout(() => {
+                setMenuFor(m.id);
+                setMenuDx(safeAreaDx(anchorEl.getBoundingClientRect(), 92, mine ? "right" : "left"));
+                dragRef.current = null; setDrag(null);
+              }, 480);
             };
             const onMove = (e) => {
               if (!dragRef.current || dragRef.current.id !== m.id) return;
@@ -12257,7 +12293,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {menuFor === m.id && (
-                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                       <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Send size={10} />전달</button>
                       {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>}
                     </div>
@@ -12289,7 +12325,15 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
           const onDown = (e) => {
             dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
             // (v0.1.4 기능) 내가 보낸 메시지만 꾹 눌러 수정/삭제 메뉴를 열 수 있다.
-            if (mine) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = setTimeout(() => { setMenuFor(m.id); dragRef.current = null; setDrag(null); }, 480); }
+            if (mine) {
+              clearTimeout(longPressTimerRef.current);
+              const anchorEl = e.currentTarget;
+              longPressTimerRef.current = setTimeout(() => {
+                setMenuFor(m.id);
+                setMenuDx(safeAreaDx(anchorEl.getBoundingClientRect(), 92, "right"));
+                dragRef.current = null; setDrag(null);
+              }, 480);
+            }
           };
           const onMove = (e) => {
             if (!dragRef.current || dragRef.current.id !== m.id) return;
@@ -12317,7 +12361,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
                 <span style={{ display: "inline-block", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
                   {/* (v0.1.4 기능) 꾹 눌러 연 수정/삭제 메뉴 — 이모티콘 메시지는 수정 대상이 아니므로 본문(body)이 있을 때만 수정 버튼을 보여준다. */}
                   {menuFor === m.id && (
-                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                       {m.body != null && <button onClick={() => startEdit(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>수정</button>}
                       <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
                     </div>
