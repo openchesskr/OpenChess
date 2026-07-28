@@ -994,7 +994,11 @@ async function puzzleCandidatesAt(engine, cur) {
   const moverWhite = cur.length % 2 === 0;
   const color = moverWhite ? "w" : "b";
   let pvs = null;
-  try { pvs = await engine.evaluateMulti(sansToFen(cur), 11, 6, 3500); } catch { pvs = null; }
+  // (v0.2.6 버그 수정) 예전엔 여기서 얕은 depth(11)로 평가해 저장한 등급·평가치가, 나중에 게임
+  // 리뷰와 같은 더 깊은 depth로 다시 매겨지면 서로 달라져(예: 최선의 수인데 평가치가 미묘하게
+  // 바뀜) 보였다 — 게임 리뷰와 동일한 REVIEW_DEPTH·REVIEW_MOVETIME_MS로 평가해 한 번 저장해 두면
+  // 이후 어디서 다시 봐도 항상 같은 값이 나온다.
+  try { pvs = await engine.evaluateMulti(sansToFen(cur), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS); } catch { pvs = null; }
   if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
   const bestCp = cpOfLine(pvs[0]);
   // (버그 수정) 이미 승부가 기운 위치(예: -600cp)에서 어차피 지는 형세를 못 바꾸는 희생 수까지
@@ -1020,7 +1024,7 @@ async function puzzleCandidatesAt(engine, cur) {
   if (topAdopt && topAdopt[1] >= 10 && sanSrc(brd, topAdopt[0], color)) {
     const san = decorateSan(brd, topAdopt[0], color);
     try {
-      const evc = await engine.evaluate(sansToFen([...cur, san]), 9);
+      const evc = await engine.evaluate(sansToFen([...cur, san]), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
       if (evc) {
         const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
         const loss = Math.max(0, bestCp - mvCp);
@@ -1086,7 +1090,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
         if (!terminal) {
-          const ev2 = await engine.evaluate(sansToFen(cur2), 6);
+          const ev2 = await engine.evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
           if (ev2) {
             const evw = posEvalToWhite(ev2, cur2); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
             if (ev2.mate != null && ev2.mate < 0) terminal = true;           // 상대(둘 차례)가 메이트당하는 수순 = 사용자 승
@@ -1117,7 +1121,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
     const cur2 = [...preSans, firstSan];
     bumpNode(cur2);
-    try { const ev2 = await engine.evaluate(sansToFen(cur2), 8); node.ev = posEvalToWhite(ev2, cur2); } catch { }
+    try { const ev2 = await engine.evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
       const lc = await fetchLichess(preSans, false);
       const hit = lc && lc.moves && lc.moves.find((m) => stripSuffix(m.san) === stripSuffix(firstSan));
@@ -8811,7 +8815,6 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                     <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
                       {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 11)}</span>}
                       <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                      {it.solvedLeaf && <span style={{ marginLeft: "auto", flexShrink: 0, width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Check size={10} strokeWidth={3.5} /></span>}
                     </span>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
                       <span>{isRoot ? "시작 위치" : (evTxt || "–")}</span>
@@ -8819,6 +8822,14 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                     </span>
                     {incomplete && <div style={{ fontSize: 8.5, fontWeight: 800, color: "#9A6A18", marginTop: 1 }}>미완성 — 다음 수 필요</div>}
                   </button>
+                  {/* (v0.2.6 버그 수정) "라인 n" 표기를 마지막 수 블록 우측으로 옮기고, 해결 완료
+                      체크 표시도 SAN 옆(블록 내부) 대신 여기서 라인 n과 함께 보여준다. */}
+                  {it.isLeaf && !isRoot && it.node.tag && (
+                    <span className="flex items-center" style={{ gap: 3, flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: it.solvedLeaf ? T.best : T.inkSoft, whiteSpace: "nowrap" }}>
+                      {it.solvedLeaf && <span style={{ width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Check size={10} strokeWidth={3.5} /></span>}
+                      라인 {allLines.findIndex((l) => l.tag === it.node.tag) + 1}
+                    </span>
+                  )}
                   {/* (20차 기능1) 개발자 전용 — 이 라인 끝에 수를 하나 직접 추가(전체 재생성 없이 라인별 1수 연장) */}
                   {canAddHere && <button onClick={() => openAdd(it.path)} className="press no-pan" title="이 라인에 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
                   {/* (20차 기능3) 개발자 전용 — 이 라인의 마지막 수를 하나 삭제(라인 길이 단축, 한 번에 한 수씩) */}
@@ -9195,8 +9206,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           try { const lc = await fetchLichess(prev, false); const hit = lc && lc.moves && lc.moves.find((x) => stripSuffix(x.san) === stripSuffix(it.node.san)); m.adopt = hit ? hit.adopt : null; } catch { m.adopt = null; }
         }
         if (liveOn && engine && engine.status === "ready") {
-          if (it.node.ev == null) { try { const ev = await engine.evaluate(sansToFen(full), 10); const w = posEvalToWhite(ev, full); if (w) m.ev = w; } catch { } }
-          if (it.node.kind == null) { try { const k = await classifyMoveKind(engine, prev, stripSuffix(it.node.san), 10); if (k) m.kind = k; } catch { } }
+          // (v0.2.6 버그 수정) 구버전 퍼즐(kind/ev 미기록)을 배경에서 보강할 때도 얕은 depth(10)
+          // 대신 게임 리뷰와 동일한 REVIEW_DEPTH로 평가해, 나중에 다시 봤을 때 값이 달라지지 않게 한다.
+          if (it.node.ev == null) { try { const ev = await engine.evaluate(sansToFen(full), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); const w = posEvalToWhite(ev, full); if (w) m.ev = w; } catch { } }
+          if (it.node.kind == null) { try { const k = await classifyMoveKind(engine, prev, stripSuffix(it.node.san), REVIEW_DEPTH); if (k) m.kind = k; } catch { } }
         }
         if (cancelled) return;
         if (Object.keys(m).length) setMeta((pm2) => ({ ...pm2, [key]: { ...pm2[key], ...m } }));
