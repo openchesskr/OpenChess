@@ -10153,12 +10153,14 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
   const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
   const cleared = themed.filter((p) => solved.has(p.id)).sort(byOpening);
-  // (19차 UI3) 해결 완료 퍼즐을 오프닝별로 묶어 표기(cleared는 이미 오프닝순 정렬).
-  const clearedByOpening = (() => { const m = new Map(); for (const p of cleared) { const k = p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; })();
-  // (v0.2.2 UI#3) 미해결 퍼즐도 최상위 오프닝(King's Pawn/Queen's Pawn/English/Reti 등)별로 묶어,
+  // (v0.2.2 UI#3) 퍼즐을 최상위 오프닝(King's Pawn/Queen's Pawn/English/Reti 등)별로 묶어,
   // 각 오프닝을 점선 영역 + 가로 스크롤 행으로 보여준다(첨부 스케치 형태).
   const groupByTopOpening = (list) => { const m = new Map(); for (const p of list) { const k = (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; };
   const openByOpening = groupByTopOpening(open);
+  // (19차 UI3, v0.2.6 버그 수정) 해결 완료 퍼즐도 미해결과 동일한 기준(최상위 오프닝)으로 묶고,
+  // 같은 점선 영역 안에 표시한다 — 예전엔 이 섹션만 점선 테두리 없이 그냥 나열돼 미해결 목록과
+  // 시각적으로 통일감이 없었다.
+  const clearedByOpening = groupByTopOpening(cleared);
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
   const count = (k) => (k === "all" ? playablePuzzles.length : playablePuzzles.filter((p) => themesOf(p).includes(k)).length);
@@ -10239,8 +10241,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             </div>}
             {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
               {clearedByOpening.map(([op, list]) => (
-                <div key={op} style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 2 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
+                <div key={op} style={{ marginBottom: 12, border: "1.5px dashed rgba(120,168,90,.45)", borderRadius: 14, padding: "8px 8px 10px" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 4 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
                   <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}><AnimatePresence mode="popLayout">{list.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence></div>
                 </div>
               ))}
