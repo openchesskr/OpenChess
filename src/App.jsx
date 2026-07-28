@@ -5212,6 +5212,12 @@ function ReviewPage({ game, onClose }) {
   // 이 자유 탐색 수는 거기 표시되지 않는다.
   const [exploreSans, setExploreSans] = useState([]);
   const [exploreFuture, setExploreFuture] = useState([]);
+  // (v0.2.5 버그 수정) 이 state와 아래 activeMove 파생값은 원래 훨씬 아래(exploreMove 채점 effect
+  // 옆)에 선언돼 있었는데, 그보다 먼저 나오는 playFree의 useCallback 의존성 배열이 activeMove를
+  // 참조하고 있어 매 렌더 "Cannot access 'activeMove' before initialization"(TDZ 참조 에러)로
+  // ReviewPage 전체가 렌더링에 실패했다 — 에러 바운더리가 없어 리뷰 페이지 전체가 흰 화면으로
+  // 보이던 원인. playFree보다 먼저 선언되도록 이 자리로 옮긴다.
+  const [exploreMove, setExploreMove] = useState(null); // {san, white, kind, best} — result.moves 항목과 같은 형태
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
@@ -5246,6 +5252,10 @@ function ReviewPage({ game, onClose }) {
   const drawState = useMemo(() => gameEndState(effSans), [effSans]);
   const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
   const curMove = curPly > 0 && result ? result.moves[curPly - 1] : null;
+  // (v0.2.1) 지금 화면에 반영할 수/평가 — 자유 탐색 중이면 그 라이브 분석(exploreMove·엔진 라인 1순위
+  // 채점 결과), 아니면 실제 게임 수순의 채점 결과(curMove)를 쓴다. (v0.2.5) playFree보다 먼저
+  // 선언돼야 해 위 exploreMove state 선언 바로 다음이 아니라 여기(curMove 정의 직후)에 둔다.
+  const activeMove = exploring ? exploreMove : curMove;
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
@@ -5267,6 +5277,11 @@ function ReviewPage({ game, onClose }) {
   };
   const canBack = curPly > 0 || exploreSans.length > 0;
   const canFwd = (curPly < sans.length && exploreSans.length === 0) || exploreFuture.length > 0;
+  // (v0.2.5 버그 수정) engineLines도 activeMove/exploreMove와 같은 이유로 playFree보다 먼저
+  // 선언돼야 한다 — 원래 위치(아래 엔진 라인 effect 옆)에 있으면 이 useCallback의 의존성 배열
+  // 평가 시점에 "Cannot access 'engineLines' before initialization" TDZ 에러가 나 리뷰 페이지
+  // 렌더링이 매번 실패했다.
+  const [engineLines, setEngineLines] = useState([]);
   const playFree = useCallback((san) => {
     if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
     playMoveSfx(san);
@@ -5308,8 +5323,8 @@ function ReviewPage({ game, onClose }) {
   // 엔진 상위 3줄을 보여준다. 앱 전역에서 공유하는 단일 엔진 큐(engine)는 그 아래에 여전히 마운트된
   // 학습 탭(useMergedMoves)이 계속 점유하고 있어, 그걸 쓰면 라인이 영영 대기에 걸린다 — 게임 리뷰
   // (analyzeGame)와 같은 독립 풀(getAnalysisPool)에서 워커 하나를 받아 계산한다(분석이 끝난 뒤엔
-  // 풀이 유휴 상태이므로 곧바로 응답한다).
-  const [engineLines, setEngineLines] = useState([]);
+  // 풀이 유휴 상태이므로 곧바로 응답한다). (engineLines state는 playFree보다 먼저 선언돼야 해
+  // 위쪽으로 옮겨졌다.)
   const [linesPending, setLinesPending] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -5350,8 +5365,8 @@ function ReviewPage({ game, onClose }) {
   // (v0.2.1 기능) 기보에 없는 자유 탐색 수도 기보 수와 똑같이 — 코치 카드에 등급·평가·설명을, 보드에
   // 수 체계 아이콘("계산 중" 포함)을, Show 화살표에 최선수를 표시하기 위해, 마지막으로 둔 자유 탐색
   // 수를 게임 리뷰와 동일한 방식(analyzeGame의 채점 규칙)으로 라이브 분석한다. 공용 엔진 큐 대신 게임
-  // 리뷰와 같은 독립 풀을 써서 학습 탭과 충돌하지 않게 한다.
-  const [exploreMove, setExploreMove] = useState(null); // {san, white, kind, best} — result.moves 항목과 같은 형태
+  // 리뷰와 같은 독립 풀을 써서 학습 탭과 충돌하지 않게 한다. (exploreMove state는 playFree보다 먼저
+  // 선언돼야 해 위쪽으로 옮겨졌다.)
   useEffect(() => {
     if (!exploring) { setExploreMove(null); return; }
     let cancelled = false;
@@ -5401,10 +5416,9 @@ function ReviewPage({ game, onClose }) {
     })();
     return () => { cancelled = true; };
   }, [exploring, effSans.join(" "), engine && engine.status, engine && engine.profile]);
-  // (v0.2.1) 지금 화면에 반영할 수/평가 — 자유 탐색 중이면 그 라이브 분석(exploreMove·엔진 라인 1순위
-  // 평가)을, 아니면 게임 리뷰 결과(curMove·evalDisp)를 쓴다. 이후 코치 카드·수 아이콘·평가 바·화살표가
-  // 모두 이 값 하나만 참조하므로 기보 수와 자유 탐색 수의 UX가 완전히 동일해진다.
-  const activeMove = exploring ? exploreMove : curMove;
+  // (v0.2.1) 지금 화면에 반영할 평가 — 자유 탐색 중이면 그 라이브 분석(엔진 라인 1순위 평가)을, 아니면
+  // 게임 리뷰 결과(evalDisp)를 쓴다. 이후 코치 카드·수 아이콘·평가 바·화살표가 activeMove(위쪽으로
+  // 옮겨짐)와 이 값만 참조하므로 기보 수와 자유 탐색 수의 UX가 완전히 동일해진다.
   const activeEvalDisp = exploring ? (engineLines[0] && engineLines[0].ev) : (result && result.evalDisp ? result.evalDisp[curPly] : null);
   // (v0.2.2 기능) 코치 설명에 쓸 "희생한 기물" — 탁월한 수(언더프로모션 제외)일 때만 계산한다.
   const sacrificedPiece = useMemo(() => {
@@ -10784,6 +10798,11 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.2.6", date: "2026.7.28", dev: ["openchesskr"], items: [
+      "게임 리뷰(/review) 페이지에 들어가면 흰 화면만 나오던 심각한 문제를 고쳤어요 — 리뷰 화면이 다시 정상적으로 열려요.",
+    ],
+  },
   {
     version: "0.2.5", date: "2026.7.24", dev: ["openchesskr"], items: [
       "엔진 추천 수 줄이 화면 폭보다 길 때, 데스크톱에서 마우스로 끌어도 좌우로 스크롤이 잘 안 돼 뒷부분 수순이 계속 가려져 있던 문제를 고쳤어요 — 이제 마우스·터치 모두 같은 방식으로 끌어서 볼 수 있어요. 학습 탭 상단의 기보 줄도 똑같이 마우스로 편하게 끌어볼 수 있어요.",

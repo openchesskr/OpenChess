@@ -707,6 +707,20 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.2.6", date: "2026.7.28",
+    summary: "게임 리뷰 페이지에 들어가면 흰 화면만 나오던 심각한 문제를 고쳤어요.",
+    mascot: {
+      intro: { char: "milku", expr: "great", name: "MILKU 코치", align: "left", text: "게임 리뷰 화면이 안 열리던 문제, 바로 고쳤어요! 이제 다시 편하게 복기할 수 있어요." },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "불편을 드려서 죄송해요 — 앞으로도 발견되는 대로 바로바로 고칠게요!" },
+    },
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: "게임 리뷰 페이지 복구" },
+    sections: [
+      { cat: "fix", items: [
+        "게임 리뷰(/review) 페이지에 들어가면 흰 화면만 나오던 심각한 문제를 고쳤어요 — 리뷰 화면이 다시 정상적으로 열려요.",
+      ] },
+    ],
+  },
+  {
     version: "0.2.5", date: "2026.7.24",
     summary: "엔진 추천 수 줄과 기보가 길 때 컴퓨터에서 마우스로 끌어도 스크롤이 잘 안 되던 문제, 계산이 깊어질수록 줄이 멈춘 것처럼 보이던 문제를 고쳤어요.",
     mascot: {

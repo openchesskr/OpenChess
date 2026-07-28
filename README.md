@@ -25,6 +25,11 @@
 
 ## 버전 기록
 
+### OpenChess v0.2.6 — 2026/7/28
+
+**버그 수정 — 게임 리뷰(/review) 페이지 흰 화면**
+사용자가 리뷰 페이지에 들어가면 흰 화면만 나온다고 제보해 재현·조사함. 원인은 `ReviewPage`의 `playFree`(`useCallback`) 의존성 배열이 `activeMove`·`engineLines`를 참조하는데, 이 두 값이 실제로는 `playFree`보다 한참 아래(각각 `exploreMove` 채점 effect 옆, 엔진 라인 effect 옆)에서 `const`로 선언되고 있었다는 것 — JS의 TDZ(temporal dead zone) 규칙상 `const`/`let` 선언 이전에 그 식별자를 참조하면(같은 스코프 안이면 실행 순서상 "아직 실행 전"이어도) `ReferenceError`가 발생한다. `useCallback`의 두 번째 인자(의존성 배열)는 함수 몸체와 달리 렌더 시점에 즉시 평가되는 일반 표현식이라, `ReviewPage`가 마운트되어 게임 데이터가 있기만 하면 렌더할 때마다 예외 없이 `Cannot access 'activeMove'/'engineLines' before initialization`이 던져졌다 — 에러 바운더리가 없어 리액트 트리 전체가 언마운트되며 흰 화면으로 보였다. 이 버그는 이번 v0.2.5 세션이 아니라 그보다 앞선 `b0cd969`(자유 탐색 최선수 오판정 수정) 커밋에서 들어간 것으로, 게임 리뷰를 여는 모든 경로(검색·친구·설정 탭의 chess.com 프로필, 집중 학습의 마스터 대국 등)에서 항상 재현되는 문제였다. `exploreMove`(state)·`activeMove`·`engineLines`(state) 세 선언을 각각 처음 참조되는 지점(`playFree` 정의 이전)으로 끌어올려 고쳤다. 더미 대국 데이터를 주입해 로컬에서 재현한 뒤, 수정 전엔 확실히 크래시하고 수정 후엔 리뷰 요약 화면·보드·코치 카드·엔진 라인까지 정상 렌더되는 것을 Playwright로 확인했다.
+
 ### OpenChess v0.2.5 — 2026/7/24
 
 **버그 수정 — 엔진 라인·기보 데스크톱 드래그 스크롤**
