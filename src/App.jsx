@@ -3896,6 +3896,18 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
   const tx = (vr, vc) => (flip ? [7 - vr, 7 - vc] : [vr, vc]);
   const rows = flip ? [...before].reverse().map((r) => [...r].reverse()) : before;
   const [dfr0, dfr1] = dv(fr[0], fr[1]); const [dto0, dto1] = dv(to[0], to[1]);
+  // (버그 수정) 예전엔 geo.from/to가 캐슬링일 때도 킹의 출발·도착 칸만 담고 있어(sanSrc가 캐슬링을
+  // 킹 이동으로만 기록) 룩은 이 컴포넌트가 전혀 모르는 존재였다 — 그리드가 항상 "이동 전(before)"
+  // 보드를 그대로 그리면서 킹 자리만 지우고 절대위치 오버레이로 슬라이드시켰을 뿐이라, 룩은 자기
+  // 원래 칸에 그대로 남아 "안 움직이는 것"처럼 보였다. 캐슬링이면 룩의 출발·도착 칸도 함께 계산해
+  // 킹과 똑같은 방식(원래 칸은 그리드에서 숨기고, 절대위치 오버레이가 슬라이드)으로 애니메이션한다.
+  const isCastle = !!geo.castle;
+  const rookFr = isCastle ? [fr[0], geo.castle === "k" ? 7 : 0] : null;
+  const rookTo = isCastle ? [fr[0], geo.castle === "k" ? 5 : 3] : null;
+  const rp = isCastle ? before[rookFr[0]][rookFr[1]] : null;
+  const [drf0, drf1] = isCastle ? dv(rookFr[0], rookFr[1]) : [0, 0];
+  const [drt0, drt1] = isCastle ? dv(rookTo[0], rookTo[1]) : [0, 0];
+  const rookDxPct = isCastle ? (drt1 - drf1) * 100 : 0, rookDyPct = isCastle ? (drt0 - drf0) * 100 : 0;
   // (버그 수정) Board와 동일하게 px(cell) 대신 그리드 전체 대비 퍼센트로 옮겨 슬라이드 이동을 계산 —
   // 이동 기물 요소 자신의 너비(12.5% = 칸 1개)를 기준으로 translate(N*100%)하면 실제 렌더 크기와
   // 무관하게 항상 정확히 N칸만큼 이동한다.
@@ -3940,7 +3952,9 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
       <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
         <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
           {rows.map((row, vr) => row.map((p, vc) => {
-            const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
+            const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0;
+            const hideFrom = (r === fr[0] && c === fr[1]) || (isCastle && r === rookFr[0] && c === rookFr[1]);
+            const isTo = r === to[0] && c === to[1];
             return (
               <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
                 {p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}
@@ -3948,6 +3962,8 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
             );
           }))}
           {mp && <div key={cyc} style={{ position: "absolute", top: (dfr0 / 8 * 100) + "%", left: (dfr1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dxPct + "%," + dyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
+          {/* (버그 수정) 캐슬링일 때 룩도 킹과 똑같은 방식으로 슬라이드시킨다 */}
+          {isCastle && rp && <div key={"rook" + cyc} style={{ position: "absolute", top: (drf0 / 8 * 100) + "%", left: (drf1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + rookDxPct + "%," + rookDyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={rp.t} color={rp.c} size={cell * 0.72} /></div>}
           {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
           {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: ((dto0 - 0.16) / 8 * 100) + "%", left: ((dto1 + 0.7) / 8 * 100) + "%", width: "5.25%", height: "5.25%", borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.34)}</div>}
           <svg viewBox="0 0 8 8" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
