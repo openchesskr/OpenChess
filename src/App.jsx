@@ -10658,6 +10658,9 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
 // 실제로 어떤 오프닝을 즐겨 두는지 한눈에 알기 어려웠다 — 대국마다 이미 계산돼 있는 오프닝 이름
 // (g.opening)의 빈도를 세어, 실제로 가장 많이 나온 오프닝 이름들을 2.2초 간격으로 번갈아 보여준다.
 // color로 백/흑 어느 쪽 대국을 집계할지 고른다(games는 이미 시간 규정 필터가 적용된 목록).
+// (v0.2.6 UI) 예전 버전(TopWhiteMovesAnimated)에 있던 "백 n수" 식 배지를 되살려, 지금 몇 번째로
+// 많이 둔 오프닝을 보여주는 중인지 작은 박스로 표시한다(흑 쪽은 기존 "흑 오프닝 레파토리" 텍스트
+// 라벨을 이 배지로 완전히 대체). 오프닝 이름 글자 크기를 줄여 긴 이름도 잘리지 않게 했다.
 function TopOpeningsAnimated({ games, color, label }) {
   const top = useMemo(() => {
     const use = games.filter((g) => g.color === color && g.opening);
@@ -10673,20 +10676,25 @@ function TopOpeningsAnimated({ games, color, label }) {
     return () => clearInterval(iv);
   }, [top.length]);
   if (!top.length) return null;
-  const cur = top[Math.min(idx, top.length - 1)];
+  const curIdx = Math.min(idx, top.length - 1);
+  const cur = top[curIdx];
+  const nBadge = (color === "w" ? "백" : "흑") + " " + (curIdx + 1) + "수";
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>{label}</div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+        {label && <span style={{ fontSize: 12, fontWeight: 800, color: T.brass }}>{label}</span>}
+        <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 7px", borderRadius: 999, background: "rgba(0,0,0,.06)", border: "1px solid #DCCBA8", fontSize: 10, fontWeight: 800, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{nBadge}</span>
+      </div>
       {/* (v0.2.6 버그 수정) 오프닝 이름은 길이가 제각각이라(예: "Italian Game" vs "Sicilian Defense:
           Najdorf Variation, English Attack"), 번갈아 나올 때마다 짧은 이름은 1줄로 접히고 긴
           이름은 2줄로 늘어나며 카드 폭·높이가 들썩였다 — 폭은 항상 부모 너비 그대로(고정), 높이는
           1줄짜리 이름이 나와도 항상 2줄 분량을 미리 확보해 둬 어느 이름이 나오든 레이아웃이 흔들리지
-          않는다. */}
-      <div style={{ position: "relative", minHeight: 44, overflow: "hidden", width: "100%" }}>
+          않는다. 글자 크기를 16→13으로 줄여 긴 이름이 2줄 안에서 잘리지 않고 온전히 들어가게 했다. */}
+      <div style={{ position: "relative", minHeight: 38, overflow: "hidden", width: "100%" }}>
         <AnimatePresence mode="wait">
-          <motion.div key={cur.name} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, lineHeight: 1.3 }}>{cur.name}</span>
-            <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", flexShrink: 0, whiteSpace: "nowrap" }}>{fmtFull(cur.count)}회</span>
+          <motion.div key={cur.name} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, lineHeight: 1.3 }}>{cur.name}</span>
+            <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", flexShrink: 0, whiteSpace: "nowrap" }}>{fmtFull(cur.count)}회</span>
           </motion.div>
         </AnimatePresence>
       </div>
@@ -10844,6 +10852,12 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
     if (colorFilter !== "all") out = out.filter((g) => g.color === colorFilter);
     return out;
   }, [ready, chesscom && chesscom.games, timeFilter, colorFilter]);
+  // (v0.2.6 버그 수정) 레이팅은 어느 색으로 뒀든 하나로 합산 적용되므로, 흑/백 필터와는 무관하게
+  // 항상 같은 값이어야 한다 — 레이팅 그래프에는 색 필터를 뺀(시간 규정만 적용된) 목록을 따로 넘긴다.
+  const gamesForRating = useMemo(() => {
+    const base = (ready ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess");
+    return timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter);
+  }, [ready, chesscom && chesscom.games, timeFilter]);
   const overall = useMemo(() => {
     if (!games.length) return null;
     let w = 0, d = 0, l = 0;
@@ -10967,7 +10981,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         </div>
       )}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
-      <RatingHistoryChart games={games} timeFilter={timeFilter} />
+      <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} />
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
@@ -11014,7 +11028,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
           애니메이션한다. 바로 아래에 흑 오프닝 레파토리도 같은 방식으로 보여준다. */}
       <TopOpeningsAnimated games={games} color="w" label="가장 많이 둔 오프닝" />
-      <TopOpeningsAnimated games={games} color="b" label="흑 오프닝 레파토리" />
+      <TopOpeningsAnimated games={games} color="b" />
       {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
           그 아래 하위 갈래들의 합산임을 보여준다. */}
       {openingTree.length > 0 && (
@@ -11148,6 +11162,7 @@ const CHANGELOG = [
       "'자주 두는 첫 수'가 백/흑 두 박스가 나란히 놓인 모습으로 바뀌었어요 — 왼쪽엔 자주 두는 첫 수(백), 오른쪽엔 백의 각 첫 수에 대한 흑의 응수를 한눈에 볼 수 있어요. 프로필의 '통계' 헤더 문구도 더 짧아졌어요.",
       "레이팅 변동 그래프에 축·눈금선이 생기고, 그래프 아래가 은은하게 채워져요. 최근 1주/1달/6개월/1년 중 원하는 기간을 골라 볼 수 있어요. '전체'로 두면 래피드·블리츠·불릿 세 그래프를 색으로 구분해 한 화면에서 볼 수 있어요.",
       "학습 탭에서 같은 자리에 머물러 있어도 엔진이 상위 몇 수의 순위를 다시 매길 때마다 그 줄이 빈칸으로 돌아갔다 다시 써지길 반복하던 진짜 원인을 찾아 고쳤어요 — 이제 순위가 바뀌어도 이어서 자연스럽게 이어져요.",
+      "레이팅 변동 그래프가 흑/백 필터에 영향받지 않도록 고쳤어요 — 레이팅은 어느 색으로 두든 합산되니까요. '가장 많이 둔 오프닝'에 몇 번째로 많이 둔 오프닝인지 보여주는 '백 n수'/'흑 n수' 표시를 되살렸고, 오프닝 이름 글자를 조금 줄여 긴 이름도 잘리지 않게 했어요. '자주 두는 첫 수'의 흑 응수 목록도 한 줄에 두 개씩 담아 더 짧고 좁게 보여줘요.",
     ],
   },
   {
@@ -12788,7 +12803,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
 // (v0.2.6 UI) 백/흑을 세로로 이어붙인 목록 대신, 사용자가 그린 스케치대로 "백"·"흑" 두 박스를
 // 나란히 두는 레이아웃으로 바꿨다 — 왼쪽 박스엔 자주 두는 첫 수(백) 하나를 크게, 오른쪽 박스엔
 // 백의 각 첫 수(e4/d4/c4/Nf3, 프로필 편집기에서 입력받는 순서 그대로)에 대한 흑의 응수를
-// "1.e4 e5" 형태의 한 줄씩으로 묶어 보여준다.
+// "1.e4 e5" 형태로 묶어 보여준다.
+// (v0.2.6 UI) 흑 박스가 한 줄에 하나씩 총 4줄로 세로로 길게 늘어져 있던 것을, 한 줄에 두 항목씩
+// 2x2 그리드로 배치해 2줄로 줄이고 박스 폭도 함께 줄였다.
 const FIRST_MOVE_BLACK_ORDER = ["e4", "d4", "c4", "Nf3"];
 function FirstMovesDisplay({ firstMoves }) {
   const fm = firstMoves || {};
@@ -12810,13 +12827,13 @@ function FirstMovesDisplay({ firstMoves }) {
           </div>
         )}
         {blackEntries.length > 0 && (
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: "0 1 200px", minWidth: 0, display: "flex", flexDirection: "column" }}>
             <div style={headStyle}>흑</div>
-            <div style={boxStyle}>
+            <div style={{ ...boxStyle, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
               {blackEntries.map(([w, b], i) => (
-                <div key={w} style={{ display: "flex", alignItems: "baseline", gap: 7, padding: "7px 10px", borderTop: i ? "1px solid #DCCBA8" : "none" }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, fontFamily: SEQ_FONT, flexShrink: 0 }}>1.{w}</span>
-                  <span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT }}>{b}</span>
+                <div key={w} style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, padding: "6px 8px", borderTop: i >= 2 ? "1px solid #DCCBA8" : "none", borderLeft: i % 2 === 1 ? "1px solid #DCCBA8" : "none" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, fontFamily: SEQ_FONT, flexShrink: 0 }}>1.{w}</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b}</span>
                 </div>
               ))}
             </div>
