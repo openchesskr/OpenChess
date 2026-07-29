@@ -10398,7 +10398,16 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   // 됐다(=드래그 뒤 클릭 차단이 원천적으로 동작하지 않는 죽은 코드였다). click 핸들러가 볼 수 있게
   // 별도 ref에 "직전 포인터 시퀀스가 실제 드래그였는지"만 남겨 두고, click에서 한 번 소비하고 지운다.
   const wasDragRef = useRef(false);
+  // (v0.2.7 버그 수정) 위 두 수정 후에도 클릭이 여전히 안 된다는 신고가 있었다 — 남은 원인은
+  // setPointerCapture 자체였다. 이 커스텀 드래그는 애초에 "컴퓨터에서 마우스로 스크롤"이 목적이었는데
+  // 터치 포인터에도 똑같이 setPointerCapture를 걸고 있었다 — 일부 모바일 브라우저는 조상 요소가
+  // 포인터를 캡처한 채로 pointerup을 맞으면(우리가 releasePointerCapture를 명시적으로 부르기 전까지
+  // 짧은 순간이라도) 그 뒤 click 자체를 아예 합성하지 않는 경우가 있어, 이동이 전혀 없는 순수한
+  // 탭에서도 click이 사라졌다. 마우스 포인터(pointerType==="mouse")에서만 이 커스텀 드래그를 걸고,
+  // 터치·펜은 아예 손대지 않아 브라우저 기본 스크롤(overflow-x:auto)+click이 그대로 살아 있게 한다
+  // — 원래 요청도 "컴퓨터 환경에서 마우스로"였으므로 범위상으로도 맞다.
   const onPointerDown = (e) => {
+    if (e.pointerType !== "mouse") return;
     const el = scrollerRef.current;
     dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false, pointerId: e.pointerId };
     if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
@@ -10406,7 +10415,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   const onPointerMove = (e) => {
     const d = dragRef.current;
     const el = scrollerRef.current;
-    if (!d || !el) return;
+    if (!d || !el || e.pointerType !== "mouse") return;
     const dx = e.clientX - d.x;
     if (!d.moved && Math.abs(dx) <= DRAG_CLICK_THRESHOLD) return;   // 임계값 전까지는 손 떨림으로 보고 아예 무시(스크롤도 안 밀림)
     d.moved = true;
@@ -10429,7 +10438,11 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
         <Sparkles size={13} style={{ color: T.brassHi }} />
         <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi }}>일일 퍼즐</span>
       </div>
-      <div ref={scrollerRef} onScroll={onScroll} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", cursor: "grab", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+      {/* (v0.2.7 버그 수정) touchAction을 "pan-y"(수직만 브라우저가 처리)로 막아 두고 커스텀 드래그가
+          가로를 대신 처리하게 했었는데, 그 커스텀 드래그를 마우스 전용으로 좁히면서 터치에서는 아무도
+          가로 스크롤을 처리하지 않게 돼 버렸다 — touchAction을 지정하지 않아(기본값 auto) 터치는
+          브라우저 기본 가로/세로 스크롤을 그대로 쓰도록 되돌린다(스냅은 scroll-snap-type이 계속 담당). */}
+      <div ref={scrollerRef} onScroll={onScroll} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", cursor: "grab", userSelect: "none", WebkitUserSelect: "none" }}>
         <div style={{ flex: "0 0 auto", width: spacer }} />
         {dates.map((d, i) => {
           const pz = resolvedMap[d];
@@ -11671,7 +11684,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.2.7", date: "2026.7.29", dev: ["openchesskr"], items: [
+    version: "0.2.7", date: "2026.7.29", dev: ["openchesskr", "g13sus4"], items: [
       "일일 퍼즐 화면을 좌우로 스크롤하는 캐러셀로 완전히 새로 만들었어요 — 가운데로 스크롤해 고른 날짜의 퍼즐은 크게 보이고, 다른 날짜들은 작고 흐리게 물러나요. 컴퓨터에서는 마우스로 눌러 끌어도 넘길 수 있고, 선택되지 않은 카드도 예전보다 덜 어둡게 잘 보이도록 밝기를 조정했어요. 선택된 퍼즐 밑에는 그날 몇 명이 풀었는지도 바로 보여줘요.",
       "일일 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
       "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 일일 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 일일 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
@@ -11680,9 +11693,10 @@ const CHANGELOG = [
       "'오늘의 퍼즐'과 '오늘의 퀘스트'라는 이름을 '일일 퍼즐'·'일일 퀘스트'로 통일했어요.",
       "퍼즐 풀이 화면의 수순 모식도에서, 해결한 라인의 가장 마지막 수가 옆의 '라인 N' 표시에 밀려 글자가 잘려 보이던 문제를 고쳤어요.",
       "퍼즐 창을 열면 평가치 막대가 곧바로 살아 움직이며 지금 포지션을 다시 훑어봐요.",
-      "일일 퍼즐 캐러셀에서 카드를 눌러도 반응이 없던 문제를 고쳤어요.",
+      "일일 퍼즐 캐러셀에서 카드를 눌러도 반응이 없던 문제를 완전히 고쳤어요.",
       "퍼즐 힌트가 단계별로 겹쳐 보이던 문제를 고쳤어요 — 이제 1단계는 도착 칸만, 2단계는 기물 흔들림만, 3단계는 기물 흔들림과 경로를 따라 칸이 빛나는 연출만 순서대로 독립적으로 보여줘요. 빛나는 칸도 둥글게 보이던 것을 칸 전체를 채우는 더 진한 금빛으로 바꿨어요.",
       "리뷰 화면에서 빠르게 수를 넘길 때 엔진 추천 수 줄이 끝까지 다 써지지 않고 중간에 멈춰 보이던 문제를 완전히 고쳤어요.",
+      "일일 퍼즐 알림 창을 달력 다이어리 모양으로 새로 꾸몄어요 — 마스코트가 위에서 내려다보고, 날짜와 오늘의 오프닝·수·풀이수를 한눈에 보여줘요.",
     ],
   },
   {
@@ -12002,28 +12016,48 @@ function AnnouncementModal({ onClose }) {
     </div>
   );
 }
-// (v0.2.0 기능2) 오늘의 퍼즐 알림 — 이 모달만 예전 AnnouncementModal처럼 "오늘 하루 다시 보지
+// (v0.2.0 기능2) 일일 퍼즐 알림 — 이 모달만 예전 AnnouncementModal처럼 "오늘 하루 다시 보지
 // 않기" 체크박스를 그대로 둔다(공지 모달과 달리 하루 안에서도 여러 번 다시 뜨는 게 의도된 동작이라,
 // 완전히 끄고 싶다는 명시적 의사 표시가 있을 때만 그날 하루 동안 억제한다).
-function DailyPuzzleNoticeModal({ puzzle, cleared, onOpen, onClose }) {
+// (v0.2.7 개편) 사용자가 그려 준 스케치(마스코트가 위에서 내려다보는 달력 다이어리 형태 — 왼쪽
+// 페이지는 날짜+달력 모식, 오른쪽 페이지는 오늘의 오프닝·풀이수·풀기 버튼)를 그대로 옮겼다.
+function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }) {
   const [hide, setHide] = useState(false);
   const close = () => onClose(hide);
+  const t = todayStr();
+  const dateLabel = t.slice(0, 4) + "." + parseInt(t.slice(5, 7), 10) + "." + parseInt(t.slice(8, 10), 10);
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 20, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8, paddingRight: 32 }}>
-          <Bell size={17} style={{ color: T.brass, flexShrink: 0 }} />
-          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>일일 퍼즐이 도착했어요!</span>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 400, marginTop: 36 }}>
+        {/* (스케치) 다이어리 위에서 내려다보는 마스코트 — 카드 위 왼쪽에 살짝 겹쳐 뜬다. */}
+        <div style={{ position: "absolute", top: -38, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={62} /></div>
+        <div style={{ position: "relative", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: "20px 18px 16px" }}>
+          <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
+          {/* 스케치의 펼친 다이어리 두 페이지 — 왼쪽: 날짜+달력 모식(장식), 오른쪽: 오프닝·수·풀이수·버튼. */}
+          <div className="flex items-start" style={{ gap: 14, paddingRight: 20 }}>
+            <div style={{ flexShrink: 0, width: 104 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: "ui-monospace,monospace" }}>{dateLabel}</div>
+              <div aria-hidden="true" style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 8, border: "1.5px solid " + T.brass, background: "#fff", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", overflow: "hidden" }}>
+                {Array.from({ length: 16 }).map((_, i) => <div key={i} style={{ border: "0.5px solid rgba(196,154,80,.35)" }} />)}
+              </div>
+            </div>
+            <div style={{ minWidth: 0, flex: 1, paddingTop: 1, borderLeft: "1px dashed #DCCBA8", paddingLeft: 14 }}>
+              <div className="flex items-center gap-1" style={{ marginBottom: 4 }}>
+                <Bell size={12} style={{ color: T.brass, flexShrink: 0 }} />
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass }}>일일 퍼즐</span>
+              </div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: 6 }}>{puzzle.name || puzzle.opening}</div>
+              {solveCountText(solveCount, null) && <div style={{ fontSize: 11, color: "#2E6E2E", fontWeight: 700, marginBottom: 10 }}>{solveCountText(solveCount, null)}</div>}
+              {/* (사용자 요청) 풀기 버튼은 기존 금색 그라데이션을 그대로 유지한다. */}
+              <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer" }}><Play size={13} fill="#241509" />풀기</button>
+            </div>
+          </div>
+          <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "14px 0 10px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 일일 퍼즐도 풀어보세요." : "아직 일일 퀘스트를 다 마치지 못했어요 — 일일 퍼즐도 잊지 말고 풀어보세요!"}</p>
+          <label className="flex items-center gap-2" style={{ fontSize: 12, color: T.inkSoft, cursor: "pointer" }}>
+            <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
+            오늘 하루 다시 보지 않기
+          </label>
         </div>
-        <div style={{ marginBottom: 10 }}><AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={96} loopMs={2400} /></div>
-        <p style={{ fontSize: 13, fontWeight: 700, color: T.ink, margin: "0 0 4px" }}>{puzzle.opening}</p>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 일일 퍼즐도 풀어보세요." : "아직 일일 퀘스트를 다 마치지 못했어요 — 일일 퍼즐도 잊지 말고 풀어보세요!"}</p>
-        <button onClick={onOpen} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer", marginBottom: 10 }}>풀러 가기</button>
-        <label className="flex items-center gap-2" style={{ fontSize: 12, color: T.inkSoft, cursor: "pointer" }}>
-          <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
-          오늘 하루 다시 보지 않기
-        </label>
       </div>
     </div>
   );
@@ -15404,7 +15438,7 @@ export default function App() {
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
-      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
+      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
