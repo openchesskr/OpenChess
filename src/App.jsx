@@ -2102,9 +2102,9 @@ function saveChesscomCache(u, data) {
   try { window.localStorage.setItem(chesscomCacheKey(u), JSON.stringify(data)); } catch { /* 용량 초과 등은 무시 */ }
 }
 function useChessCom(username) {
-  const [state, setState] = useState({ status: "idle", games: [] });
+  const [state, setState] = useState({ status: "idle", games: [], stillFetching: false });
   useEffect(() => {
-    if (!username) { setState({ status: "idle", games: [] }); return; }
+    if (!username) { setState({ status: "idle", games: [], stillFetching: false }); return; }
     let cancelled = false;
     const u = username.toLowerCase().trim();
     // (v0.2.6 성능) 예전엔 이 훅이 마운트될 때마다(새로고침·다른 탭 갔다 오기 등) 계정 개설 이후
@@ -2122,7 +2122,7 @@ function useChessCom(username) {
     const cached = loadChesscomCache(u);
     let games = cached ? cached.games.slice() : [];
     const fetchedSet = new Set(cached ? cached.fetchedMonths : []);
-    setState(games.length ? { status: "ready", games } : { status: "loading", games: [] });
+    setState(games.length ? { status: "ready", games, stillFetching: true } : { status: "loading", games: [], stillFetching: true });
     (async () => {
       try {
         const arc = await fetch("https://api.chess.com/pub/player/" + u + "/games/archives");
@@ -2141,18 +2141,34 @@ function useChessCom(username) {
         // 최신 달부터 거꾸로 불러오고, 달 하나를 불러올 때마다 즉시 화면에 반영(status:"ready")해
         // 나머지 과거 달은 백그라운드에서 이어서 불러오는 동안에도 최근 대국부터 바로 보이게 한다.
         const ordered = monthsToFetch.slice().reverse();
-        for (const url of ordered) {
+        // (버그 수정) 한 달씩 순서대로 기다리며 받다 보니, 대국이 아주 많아(수백 달 분량) 달 개수가
+        // 많은 계정은 최근 몇 달치를 받는 데도 초 단위로 시간이 걸렸다 — 그 사이엔 특정 시간 규정
+        // (예: 최근엔 안 둔 불릿)이 실제로는 더 최근 달에 있는데도 아직 그 달까지 못 받아 그래프에
+        // "대국이 없다"고 잘못 보이는 것처럼 느껴졌다. 최신 달부터 여러 달을 동시에(배치) 요청해
+        // 같은 시간에 훨씬 더 많은 달을 받아 오도록 병렬화했다 — 기본 필터 기간(6개월~1년)이 대개
+        // 한 배치 안에 다 들어가, 처음 열자마자 최근 데이터가 거의 곧바로 채워진다.
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < ordered.length; i += BATCH_SIZE) {
           if (cancelled) return;
-          try {
-            const r = await fetch(url); if (!r.ok) continue;
-            const j = await r.json();
+          const batch = ordered.slice(i, i + BATCH_SIZE);
+          const results = await Promise.all(batch.map(async (url) => {
+            try {
+              const r = await fetch(url); if (!r.ok) return null;
+              const j = await r.json();
+              return { url, list: j.games || [] };
+            } catch { return null; }
+          }));
+          if (cancelled) return;
+          for (const res of results) {
+            if (!res) continue; // 실패한 달은 fetchedSet에 넣지 않아 다음 방문 때 다시 시도된다.
+            const { url, list } = res;
             games = games.filter((g) => g.__month !== url); // 이 달을 다시 받는 것이므로 이전 몫을 들어냄
-            for (const g of (j.games || [])) {
+            for (const g of list) {
               if (!g.pgn) continue;
               const userIsWhite = g.white && g.white.username && g.white.username.toLowerCase() === u;
               const side = userIsWhite ? g.white : g.black;
-              const res = side && side.result;
-              const result = res === "win" ? "win" : (["checkmated", "resigned", "timeout", "lose", "abandoned"].includes(res) ? "loss" : "draw");
+              const res2 = side && side.result;
+              const result = res2 === "win" ? "win" : (["checkmated", "resigned", "timeout", "lose", "abandoned"].includes(res2) ? "loss" : "draw");
               // (19차 기능6) ECO URL(g.eco)에서 오프닝 이름 슬러그를 뽑아 저장 — 칭호 조건의 오프닝별 플레이 횟수 집계에 사용.
               // (버그 보충) 레이팅 증감치·정확도 표기를 위해 이 대국에서의 내 레이팅(side.rating),
               // 타임클래스(레이팅 풀이 종류별로 나뉘므로 증감 계산 시 같은 클래스끼리만 비교해야 함),
@@ -2168,17 +2184,17 @@ function useChessCom(username) {
                 __month: url });
             }
             fetchedSet.add(url);
-            if (!cancelled) {
-              setState({ status: "ready", games: [...games] });
-              saveChesscomCache(u, { games, fetchedMonths: Array.from(fetchedSet) });
-            }
-          } catch (_) {}
+          }
+          if (!cancelled) {
+            setState({ status: "ready", games: [...games], stillFetching: true });
+            saveChesscomCache(u, { games, fetchedMonths: Array.from(fetchedSet) });
+          }
         }
         if (!cancelled) {
-          setState({ status: "ready", games });
+          setState({ status: "ready", games, stillFetching: false });
           saveChesscomCache(u, { games, fetchedMonths: Array.from(fetchedSet) });
         }
-      } catch (e) { if (!cancelled && !games.length) setState({ status: "error", games: [] }); }
+      } catch (e) { if (!cancelled) { if (!games.length) setState({ status: "error", games: [], stillFetching: false }); else setState({ status: "ready", games, stillFetching: false }); } }
     })();
     return () => { cancelled = true; };
   }, [username]);
@@ -10845,35 +10861,30 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
 // 대국 수순을 잘라(g.moves.slice(0, ply)) 그 정확한 포지션의 스냅샷 오프닝 이름(snapNode)을 다시
 // 찾고, 그 깊이(n=1~6)마다 가장 많이 나온 이름을 집계한다 — 다른 곳(가장 많이 둔 오프닝 트리 등)과
 // 동일하게 g.moves를 접미사(+/#) 그대로 스냅샷 트리 키에 맞춰 쓴다(parsePgnSans가 이미 그렇게 보존).
-function TopOpeningsAnimated({ games, color, label }) {
-  const top = useMemo(() => {
-    const use = games.filter((g) => g.color === color && g.moves && g.moves.length);
-    const out = [];
-    for (let n = 1; n <= 6; n++) {
-      const ply = color === "w" ? 2 * n - 1 : 2 * n;
-      const counts = {};
-      for (const g of use) {
-        if (g.moves.length < ply) continue;
-        const nd = snapNode(g.moves.slice(0, ply));
-        const name = nd && nd.opening ? nd.opening.name : null;
-        if (!name) continue;
-        counts[name] = (counts[name] || 0) + 1;
-      }
-      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-      if (sorted.length) out.push({ n, name: sorted[0][0], count: sorted[0][1] });
+function computeTopOpenings(games, color) {
+  const use = games.filter((g) => g.color === color && g.moves && g.moves.length);
+  const out = [];
+  for (let n = 1; n <= 6; n++) {
+    const ply = color === "w" ? 2 * n - 1 : 2 * n;
+    const counts = {};
+    for (const g of use) {
+      if (g.moves.length < ply) continue;
+      const nd = snapNode(g.moves.slice(0, ply));
+      const name = nd && nd.opening ? nd.opening.name : null;
+      if (!name) continue;
+      counts[name] = (counts[name] || 0) + 1;
     }
-    return out;
-  }, [games, color]);
-  const [idx, setIdx] = useState(0);
-  useEffect(() => { setIdx(0); }, [top.length]);
-  useEffect(() => {
-    if (top.length <= 1) return;
-    const iv = setInterval(() => setIdx((i) => (i + 1) % top.length), 2200);
-    return () => clearInterval(iv);
-  }, [top.length]);
-  if (!top.length) return null;
-  const curIdx = Math.min(idx, top.length - 1);
-  const cur = top[curIdx];
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    if (sorted.length) out.push({ n, name: sorted[0][0], count: sorted[0][1] });
+  }
+  return out;
+}
+// (버그 수정) "n수" 배지가 백/흑 박스마다 자기 목록 길이대로 따로 도는 타이머로 순환해, 두 박스가
+// 화면에 동시에 서로 다른 n(예: "백 1수"·"흑 5수")을 보여주는 경우가 있었다 — 사용자는 두 박스가
+// 항상 "같은 n"을 함께 보여주길 원한다. 백/흑 모두에 오프닝이 있는 n만 모아 공유 목록으로 만들고,
+// 단일 타이머로 그 목록만 순환해 두 박스가 항상 같은 n에서 함께 움직이도록 했다.
+function OpeningBox({ label, color, cur, dotsLen, dotsIdx }) {
+  if (!cur) return null;
   const nBadge = (color === "w" ? "백" : "흑") + " " + cur.n + "수";
   // (v0.2.6 UI) "백 n수"/"흑 n수" 배지를 라벨과 같은 줄에 붙이지 않고 오프닝 이름 바로 위 자기
   // 줄에 두며, 배지 배경을 금색 그라데이션으로 통일했다(백/흑 공통).
@@ -10896,9 +10907,38 @@ function TopOpeningsAnimated({ games, color, label }) {
         </AnimatePresence>
       </div>
       <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
-        {top.map((m, i) => <span key={i} style={{ width: i === idx ? 14 : 6, height: 4, borderRadius: 999, background: i === idx ? T.brass : "#DCCBA8", transition: "all .3s ease" }} />)}
+        {Array.from({ length: dotsLen }).map((_, i) => <span key={i} style={{ width: i === dotsIdx ? 14 : 6, height: 4, borderRadius: 999, background: i === dotsIdx ? T.brass : "#DCCBA8", transition: "all .3s ease" }} />)}
       </div>
     </div>
+  );
+}
+function TopOpeningsPair({ games, label }) {
+  const topW = useMemo(() => computeTopOpenings(games, "w"), [games]);
+  const topB = useMemo(() => computeTopOpenings(games, "b"), [games]);
+  const sharedNs = useMemo(() => {
+    const bSet = new Set(topB.map((o) => o.n));
+    const both = topW.filter((o) => bSet.has(o.n)).map((o) => o.n);
+    if (both.length) return both;
+    // 백/흑 둘 다에 있는 n이 하나도 없는 극히 드문 경우엔, 그래도 뭔가는 보여주도록 백 목록을 그대로 쓴다.
+    return topW.length ? topW.map((o) => o.n) : topB.map((o) => o.n);
+  }, [topW, topB]);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => { setIdx(0); }, [sharedNs.length]);
+  useEffect(() => {
+    if (sharedNs.length <= 1) return;
+    const iv = setInterval(() => setIdx((i) => (i + 1) % sharedNs.length), 2200);
+    return () => clearInterval(iv);
+  }, [sharedNs.length]);
+  if (!sharedNs.length) return null;
+  const curIdx = Math.min(idx, sharedNs.length - 1);
+  const n = sharedNs[curIdx];
+  const curW = topW.find((o) => o.n === n);
+  const curB = topB.find((o) => o.n === n);
+  return (
+    <>
+      <OpeningBox label={label} color="w" cur={curW} dotsLen={sharedNs.length} dotsIdx={curIdx} />
+      <OpeningBox color="b" cur={curB} dotsLen={sharedNs.length} dotsIdx={curIdx} />
+    </>
   );
 }
 // (v0.2.6 기능) 기간별 레이팅 변동 그래프 — 지금 필터(시간 규정·흑/백)가 적용된 대국들을 시간순으로
@@ -10926,13 +10966,17 @@ const TIME_CLASS_CHART_COLOR = { rapid: "#FF3B30", blitz: "#34C759", bullet: "#0
 // 좌우로 끌면(포인터 캡처) 그 x좌표에 해당하는 지점의 날짜·레이팅을 점선+역삼각형+말풍선으로 보여준다.
 // "전체"(여러 시간 규정 동시 표시) 모드에서는 x좌표가 시간 값이라, 시리즈마다 그 시간에 가장 가까운
 // 자기 지점을 각자 찾아 말풍선에 함께 나열한다.
-function RatingHistoryChart({ games, timeFilter }) {
+function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   const allPoints = useMemo(() => [...games].filter((g) => g.rating != null && g.endTime).sort((a, b) => (a.endTime || 0) - (b.endTime || 0)), [games]);
   const [period, setPeriod] = useState("180d");
   const [dragFrac, setDragFrac] = useState(null);
   const wrapRef = useRef(null);
   const draggingRef = useRef(false);
-  if (!allPoints.length) return null;
+  // (버그 수정) 대국이 아주 많은 계정은 달(月)을 배치로 병렬 로드해도 전체 기록을 다 받기까지 시간이
+  // 걸린다 — 아직 로딩 중인데 이 시간 규정의 대국을 하나도 못 찾았다고 "그래프가 안 그려지는 버그"로
+  // 오해하기 쉽다(예: 최근엔 안 둔 시간 규정이 사실은 더 최근 달에 있는데 아직 그 달을 못 받은 경우).
+  // 로딩 중엔 아예 숨기는 대신 "불러오는 중" 안내를 보여준다.
+  if (!allPoints.length) return stillFetching ? <div style={{ padding: "10px 12px", fontSize: 11, color: T.inkSoft }}>대국 기록을 불러오는 중이에요…</div> : null;
   const periodDef = RATING_CHART_PERIODS.find((p) => p.key === period) || RATING_CHART_PERIODS[2];
   const cutoff = Date.now() / 1000 - periodDef.days * 86400;
   const inPeriod = allPoints.filter((g) => g.endTime >= cutoff);
@@ -10966,7 +11010,7 @@ function RatingHistoryChart({ games, timeFilter }) {
   };
   const yTicks = (min, max) => [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(min + (max - min) * f));
   const xFracTicks = [0, 0.2, 0.4, 0.6, 0.8, 1];
-  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>이 기간엔 대국이 부족해요.</div>;
+  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? "대국 기록을 더 불러오는 중이에요…" : "이 기간엔 대국이 부족해요."}</div>;
   let body;
   if (isAll) {
     const series = ["rapid", "blitz", "bullet"].map((k) => ({ key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: inPeriod.filter((g) => g.timeClass === k) })).filter((s) => s.points.length >= 2);
@@ -11278,7 +11322,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         </div>
       )}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
-      <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} />
+      <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
@@ -11324,8 +11368,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       })()}
       {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
           애니메이션한다. 바로 아래에 흑 오프닝 레파토리도 같은 방식으로 보여준다. */}
-      <TopOpeningsAnimated games={games} color="w" label="가장 많이 둔 오프닝" />
-      <TopOpeningsAnimated games={games} color="b" />
+      <TopOpeningsPair games={games} label="가장 많이 둔 오프닝" />
       {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
           그 아래 하위 갈래들의 합산임을 보여준다. */}
       {openingTree.length > 0 && (
@@ -11467,6 +11510,8 @@ const CHANGELOG = [
       "'가장 많이 둔 오프닝'의 '백 n수'/'흑 n수' 표시가 실제 오프닝과 안 맞던 문제(백 1수인데 Italian Game이 뜨는 등)를 근본적으로 고쳤어요 — 이제 표시된 n수에서 실제로 그 오프닝에 도달하는지 정확히 확인해요. 배지는 오프닝 이름 위 별도 줄로 옮기고 금색으로 통일했어요.",
       "chess.com 통계를 로그인할 때만 새로 불러오고, 새로고침하거나 다른 페이지에 다녀와도 저장해둔 정보를 그대로 보여줘요(대국이 아주 많은 계정은 매번 불러오는 데 시간이 오래 걸렸었어요) — 최근에 끝난 실시간 대국만 그 위에 새로 얹어 갱신돼요. 대국이 아주 많은 계정에서 특정 시간 규정의 대국이 아예 안 보이던 문제의 진짜 원인도 찾아 고쳐서, 이제 여러 번 방문할수록 데이터가 점점 완전해져요.",
       "레이팅 변동 그래프의 '전체' 모드 아래 색칠이 조금 더 반투명해졌고, 범례 글자를 줄여 항상 한 줄에 다 들어가도록 했어요. 그래프를 끌 때 뜨는 말풍선이 화살표 모양 마커나 점선을 가리지 않도록 옆으로 살짝 비켜 뜨고, 손을 떼면 크로스헤어가 바로 사라져요.",
+      "대국이 아주 많은 계정에서 특정 시간 규정(예: 불릿) 그래프가 계속 안 그려지던 문제를 더 고쳤어요 — 달(月)별 기록을 여러 개씩 한꺼번에 받아오도록 해 최근 데이터가 훨씬 빨리 채워지고, 아직 다 받아오는 중일 땐 '대국이 없다'는 문구 대신 '불러오는 중'이라고 알려줘요.",
+      "'가장 많이 둔 오프닝'의 백/흑 배지가 서로 다른 n(예: 백 1수 vs 흑 5수)을 동시에 보여주던 문제를 고쳤어요 — 이제 두 배지는 항상 같은 n을 함께 보여줘요.",
     ],
   },
   {
