@@ -3538,7 +3538,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge }) {
   return (
     <div style={{ borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지 */}
-      {questBadge && <span title="오늘의 퀘스트 오프닝" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5 }}><MaterialIcon name="assignment" size={12} color="#241509" /></span>}
+      {questBadge && <span title="일일 퀘스트 오프닝" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5 }}><MaterialIcon name="assignment" size={12} color="#241509" /></span>}
       <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
         <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={kind} descOnClick /></span>
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -8889,7 +8889,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       it.shake = it.key === shakeKey;
     });
     const curItem = items.find((it) => it.isCur) || null;
-    const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 40;
+    // (v0.2.7 버그 수정) 리프 노드는 이제 "라인 N" 배지·개발자 버튼만큼 boxW보다 넓게 그려질 수
+    // 있으므로(위 렌더링 부분 참고), 오른쪽 여백을 배지가 잘리지 않을 만큼 넉넉히 잡는다.
+    const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 120;
     const height = (Math.max(...items.map((it) => it.y)) + 1) * rowH + 20;
     // (v0.1.2 기능) 팬 한계 계산(clampSchematicPan)은 블록의 화면 픽셀 좌표({x,y})를 기대하는데, 여기
     // items의 depth/y는 칸(그리드) 인덱스라 그대로 못 쓴다 — 실제 렌더 좌표(depth*colW, y*rowH)로
@@ -9065,11 +9067,18 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             // (20차 기능3) 라인 길이 삭제 — 리프에서만, 최소 1수는 남도록(라인 자체가 사라지지 않게)
             const canDeleteHere = canEdit && !isRoot && it.isLeaf && it.path.length > 1;
             return (
-              <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW, animation: it.celebrate ? "questclear 1s ease" : "none" }}>
+              // (v0.2.7 버그 수정) 리프(라인의 마지막 수) 노드는 오른쪽에 "라인 N"·체크 배지(그리고
+              // 개발자 모드에서는 추가·삭제 버튼)가 같은 줄에 나란히 붙는데, 이 바깥 wrapper의 폭이
+              // boxW로 고정돼 있어(바로 아래 버튼이 flex:1/minWidth:0로 그 폭 안에 욱여넣어졌었다)
+              // 배지가 버튼의 SAN 라벨 공간을 그대로 잠식했다 — 리프일수록(=풀이의 마지막 수일수록)
+              // 라벨이 더 심하게 잘려 정보가 빠져 보이는 원인이었다. wrapper를 내용에 맞춰 자라나는
+              // max-content로 바꾸고, 버튼은 boxW를 최소 폭으로만 보장(flex:1 제거)해 배지가 버튼을
+              // 짓누르지 않고 옆으로 자연스럽게 이어지도록 한다.
+              <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: "max-content", minWidth: boxW, animation: it.celebrate ? "questclear 1s ease" : "none" }}>
                 <div className="flex items-center gap-1">
                   <button onClick={() => !isRoot && onPick && onPick(it)} disabled={isRoot}
                     className={isRoot ? "" : "press"}
-                    style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
+                    style={{ flexShrink: 0, minWidth: boxW, textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
                       border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : incomplete ? "#D79A2F" : it.solved ? T.best : "#C9B58C"),
                       background: isRoot ? "linear-gradient(180deg,#3A2516,#241509)" : it.solved ? "#EAF3E0" : "#fff",
                       cursor: isRoot ? "default" : "pointer",
@@ -9250,6 +9259,27 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const done = pathNodes.length > 0 && pathNodes.length % 2 === 1 && passKids.length === 0;   // 리프(사용자 수)에 도달
   const doneTag = done ? (curNode.tag || pathNodes.map((n) => stripSuffix(n.san)).join(" ")) : null;
   const userToMove = !done && isUserPly && !wrong && !reply && !intro && allLines.length > 0;
+  // (v0.2.7 기능) 퍼즐 창을 열자마자 평가치 막대가 실제로 살아 움직이는 걸 보여준다 — 최종적으로
+  // 화면에 남는 숫자는 여전히 생성 시 미리 계산해 둔 curNode.ev(모든 유저에게 항상 같은 값, 아래
+  // EvalBar의 기본 cp)를 그대로 쓰지만, 그 자리에 멈춰 있기 전까지는 지금 포지션을 실제 엔진으로
+  // 짧게 다시 돌려(ReviewPage 엔진 라인과 같은 단일PV 진행 콜백 방식) depth가 깊어지는 과정을 그대로
+  // 보여준다. 검색이 끝나면(또는 다음 포지션으로 넘어가면) 다시 조용히 정적인 curNode.ev로 돌아간다
+  // — v0.2.6에서 "매번 다시 평가해 값이 미묘하게 흔들리는" 문제를 없애려 정적 표시로 바꿨던 결정은
+  // 유지하되, 이 짧은 탐색 애니메이션 동안만 예외적으로 실시간 값을 보여준다.
+  const [liveEval, setLiveEval] = useState(null);
+  const [liveDepth, setLiveDepth] = useState(null);
+  useEffect(() => {
+    setLiveEval(null); setLiveDepth(null);
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    engine.evaluate(sansToFen(curSans), 18, (partial) => {
+      if (cancelled) return;
+      const w = posEvalToWhite(partial, curSans);
+      if (w) setLiveEval(w);
+      setLiveDepth(partial.depth);
+    }, 900, "puzzle-eval").then(() => { if (!cancelled) { setLiveEval(null); setLiveDepth(null); } });
+    return () => { cancelled = true; };
+  }, [curSans.join(" "), engine && engine.status]);
   const [boardSize, boardRef] = useBoardSize(380);
   // (20차 UX4) 화면이 짧아 스크롤을 맨 위로 올려도 보드 하단이 여전히 하단 탭 뒤에 걸치는 경우를
   // 대비해, 보드의 scrollMarginBottom(아래 style)만큼 여유를 두고 딱 필요한 만큼만 아래로 더 스크롤한다.
@@ -9671,8 +9701,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
-                평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. */}
-            <div style={{ marginTop: 12 }}><EvalBar cp={curNode.ev} width={boardSize} /></div>
+                평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. (v0.2.7) 다만 창을 연 직후처럼
+                실제 엔진이 이 포지션을 짧게 다시 훑는 동안(liveDepth)에는 그 진행 중인 값을 보여줘
+                막대가 살아 움직이는 것처럼 느껴지게 하고, 검색이 끝나면 다시 정적인 curNode.ev로 돌아간다. */}
+            <div style={{ marginTop: 12 }}><EvalBar cp={liveDepth != null ? (liveEval || curNode.ev) : curNode.ev} width={boardSize} depth={liveDepth} /></div>
             <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
               <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
               {/* (버그 수정) 힌트 버튼이 현재 단계(1~3)를 그대로 보여준다 — 3단계에 닿으면 꽉 채운
@@ -9941,7 +9973,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
       <div className="flex items-center justify-between flex-wrap" style={{ marginBottom: 10, gap: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>오늘의 퀘스트</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>일일 퀘스트</div>
         <div className="flex items-center gap-2">
           {allDone && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>모두 완료!</span>}
           {/* (UX2) 갱신은 한국 시간(KST) 자정 기준 */}
@@ -9951,7 +9983,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {row("puzzle", "새 퍼즐 " + dq.puzzleTarget + "회 풀기", dq.puzzleCount + "/" + dq.puzzleTarget)}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
-        {row("dailypuzzle", "오늘의 퍼즐 풀기", "퍼즐 탭 맨 위 ‘오늘의 퍼즐’을 풀어보세요")}
+        {row("dailypuzzle", "일일 퍼즐 풀기", "퍼즐 탭 맨 위 ‘일일 퍼즐’을 풀어보세요")}
         {(dq.quests || []).map((q, i) => {
           const isOpening = q.type === "opening";
           // (버그) 각 퀘스트를 개별적으로 1회씩 리롤 — 이미 리롤했거나 이미 완료한 퀘스트는 불가.
@@ -10262,7 +10294,9 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
 const DAILY_SLOT_W = 96;
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
   const scale = isActive ? 1 : distance === 1 ? 0.8 : 0.68;
-  const opacity = isActive ? 1 : distance === 1 ? 0.5 : 0.28;
+  // (v0.2.7 버그 수정) 비활성 항목이 어두운 카드 배경 위에 낮은 opacity로 겹쳐지면서 거의 안 보일
+  // 만큼 어두워졌다는 지적 — 선택된 항목과의 구분은 유지하되 값을 전반적으로 끌어올렸다.
+  const opacity = isActive ? 1 : distance === 1 ? 0.78 : 0.58;
   const boxSize = isActive ? 86 : 62;
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? " · 오늘" : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
@@ -10321,15 +10355,41 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     setActiveIdx((prev) => (prev === idx ? prev : idx));
   };
   const scrollToIndex = (i) => { const el = scrollerRef.current; if (el) el.scrollTo({ left: i * DAILY_SLOT_W, behavior: "smooth" }); };
+  // (v0.2.7 버그 수정) overflow-x:auto의 브라우저 기본 스크롤만으로는 데스크톱 마우스로 좌우 스크롤이
+  // 거의 안 된다(엔진 라인·기보 줄과 같은 문제, DRAG_SCROLL_MULT 참고) — 포인터 이벤트로 직접
+  // scrollLeft를 옮기는 드래그 스크롤을 추가한다. 손을 뗄 때 가장 가까운 칸으로 스냅시켜, 드래그
+  // 도중 프로그램적으로 옮긴 scrollLeft에는 적용되지 않는 CSS scroll-snap을 보정한다. 드래그였다면
+  // (moved) 그 자리의 카드가 열리거나 다른 칸으로 다시 스크롤되지 않도록 클릭을 막는다.
+  const dragRef = useRef(null);
+  const onPointerDown = (e) => {
+    const el = scrollerRef.current;
+    dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    const el = scrollerRef.current;
+    if (!d || !el) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 3) d.moved = true;
+    el.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
+  };
+  const endDrag = () => {
+    const d = dragRef.current;
+    const el = scrollerRef.current;
+    dragRef.current = null;
+    if (d && d.moved && el && dates) scrollToIndex(Math.max(0, Math.min(dates.length - 1, Math.round(el.scrollLeft / DAILY_SLOT_W))));
+  };
+  const onClickCapture = (e) => { if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); } };
   if (!dates || !dates.length) return null;
   const spacer = Math.max(0, containerW / 2 - DAILY_SLOT_W / 2);
   return (
     <div style={{ marginBottom: 16 }}>
       <div className="flex items-center gap-1" style={{ marginBottom: 6, paddingLeft: 2 }}>
         <Sparkles size={13} style={{ color: T.brassHi }} />
-        <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi }}>오늘의 퍼즐</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi }}>일일 퍼즐</span>
       </div>
-      <div ref={scrollerRef} onScroll={onScroll} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
+      <div ref={scrollerRef} onScroll={onScroll} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", cursor: "grab", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
         <div style={{ flex: "0 0 auto", width: spacer }} />
         {dates.map((d, i) => {
           const pz = resolvedMap[d];
@@ -11572,11 +11632,14 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.7", date: "2026.7.29", dev: ["openchesskr"], items: [
-      "오늘의 퍼즐 화면을 고전 오락실 게임처럼 좌우로 스크롤해서 날짜를 고르는 방식으로 완전히 새로 만들었어요 — 가운데로 스크롤해 고른 날짜의 퍼즐은 크게 보이고, 다른 날짜들은 작고 어둡게 물러나요. 선택된 퍼즐 밑에는 그날 몇 명이 풀었는지도 바로 보여줘요.",
-      "오늘의 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
-      "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 오늘의 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 오늘의 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
+      "일일 퍼즐 화면을 좌우로 스크롤하는 캐러셀로 완전히 새로 만들었어요 — 가운데로 스크롤해 고른 날짜의 퍼즐은 크게 보이고, 다른 날짜들은 작고 흐리게 물러나요. 컴퓨터에서는 마우스로 눌러 끌어도 넘길 수 있고, 선택되지 않은 카드도 예전보다 덜 어둡게 잘 보이도록 밝기를 조정했어요. 선택된 퍼즐 밑에는 그날 몇 명이 풀었는지도 바로 보여줘요.",
+      "일일 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
+      "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 일일 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 일일 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
       "채팅에서 '/puzzle 000000' 명령어로 존재하지 않는 번호를 보내려 하면, 이제 전송 자체가 되지 않고 그 번호의 퍼즐을 찾을 수 없다는 안내가 떠요.",
-      "오늘의 퍼즐도 다른 퍼즐과 똑같이 고유 번호가 매겨져 채팅으로 공유하거나 '번호로 풀기'로 바로 열어볼 수 있어요.",
+      "일일 퍼즐도 다른 퍼즐과 똑같이 고유 번호가 매겨져 채팅으로 공유하거나 '번호로 풀기'로 바로 열어볼 수 있어요.",
+      "'오늘의 퍼즐'과 '오늘의 퀘스트'라는 이름을 '일일 퍼즐'·'일일 퀘스트'로 통일했어요.",
+      "퍼즐 풀이 화면의 수순 모식도에서, 해결한 라인의 가장 마지막 수가 옆의 '라인 N' 표시에 밀려 글자가 잘려 보이던 문제를 고쳤어요.",
+      "퍼즐 창을 열면 평가치 막대가 곧바로 살아 움직이며 지금 포지션을 다시 훑어봐요.",
     ],
   },
   {
@@ -11908,11 +11971,11 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, onOpen, onClose }) {
         <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
         <div className="flex items-center gap-2" style={{ marginBottom: 8, paddingRight: 32 }}>
           <Bell size={17} style={{ color: T.brass, flexShrink: 0 }} />
-          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>오늘의 퍼즐이 도착했어요!</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>일일 퍼즐이 도착했어요!</span>
         </div>
         <div style={{ marginBottom: 10 }}><AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={96} loopMs={2400} /></div>
         <p style={{ fontSize: 13, fontWeight: 700, color: T.ink, margin: "0 0 4px" }}>{puzzle.opening}</p>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 오늘의 퍼즐도 풀어보세요." : "아직 오늘의 퀘스트를 다 마치지 못했어요 — 오늘의 퍼즐도 잊지 말고 풀어보세요!"}</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 일일 퍼즐도 풀어보세요." : "아직 일일 퀘스트를 다 마치지 못했어요 — 일일 퍼즐도 잊지 말고 풀어보세요!"}</p>
         <button onClick={onOpen} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer", marginBottom: 10 }}>풀러 가기</button>
         <label className="flex items-center gap-2" style={{ fontSize: 12, color: T.inkSoft, cursor: "pointer" }}>
           <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
@@ -12062,8 +12125,8 @@ function DailyPuzzleDevPanel({ card }) {
   const btnStyle = { padding: "7px 12px", borderRadius: 8, border: "none", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>오늘의 퍼즐 (개발자)</div>
-      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>리체스 퍼즐 기반 오늘의 퍼즐의 오프닝 테마 로테이션과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>일일 퍼즐 (개발자)</div>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>리체스 퍼즐 기반 일일 퍼즐의 오프닝 테마 로테이션과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>2주 오프닝 테마</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 110, overflowY: "auto" }}>
         {(themes || []).map((t) => (
