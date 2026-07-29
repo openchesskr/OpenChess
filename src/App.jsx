@@ -10848,37 +10848,123 @@ const RATING_CHART_PERIODS = [
 // 뒀는지에 따라 요동치는, 사실상 의미 없는 그래프였다. "전체"일 때는 세 시간 규정을 각자 다른 색의
 // 선으로 같은 그래프 위에 겹쳐 그리고 범례를 달아 구분하고(대국이 2판 이상 있는 시간 규정만), 특정
 // 시간 규정 하나로 좁혀져 있을 때는 기존처럼 그 하나만 선 아래 영역 채우기와 함께 보여준다.
-const TIME_CLASS_CHART_COLOR = { rapid: T.brassHi, blitz: T.only, bullet: "#C8453B" };
+// (v0.2.6 UI) 색을 빛의 삼원색(RGB)에 가깝게 골랐다 — 아래 영역 채우기에 mix-blend-mode:screen
+// (가산혼합)을 걸어, 두 색이 겹치는 자리는 그 둘을 섞은 밝은 색으로, 세 색이 다 겹치는 자리는 흰색에
+// 가깝게 빛나 보인다. 특정 시간 규정 하나만 볼 때도 이제 평가치 등락 색 대신 이 색으로 고정해, 어느
+// 화면에서 보든 같은 시간 규정은 항상 같은 색으로 알아볼 수 있게 했다.
+const TIME_CLASS_CHART_COLOR = { rapid: "#FF3B30", blitz: "#34C759", bullet: "#0A84FF" };
+// (v0.2.6 기능) 리뷰 페이지 EvalGraph와 같은 방식의 드래그 크로스헤어를 얹었다 — 그래프를 누른 채
+// 좌우로 끌면(포인터 캡처) 그 x좌표에 해당하는 지점의 날짜·레이팅을 점선+역삼각형+말풍선으로 보여준다.
+// "전체"(여러 시간 규정 동시 표시) 모드에서는 x좌표가 시간 값이라, 시리즈마다 그 시간에 가장 가까운
+// 자기 지점을 각자 찾아 말풍선에 함께 나열한다.
 function RatingHistoryChart({ games, timeFilter }) {
   const allPoints = useMemo(() => [...games].filter((g) => g.rating != null && g.endTime).sort((a, b) => (a.endTime || 0) - (b.endTime || 0)), [games]);
   const [period, setPeriod] = useState("180d");
+  const [dragFrac, setDragFrac] = useState(null);
+  const wrapRef = useRef(null);
+  const draggingRef = useRef(false);
   if (!allPoints.length) return null;
   const periodDef = RATING_CHART_PERIODS.find((p) => p.key === period) || RATING_CHART_PERIODS[2];
   const cutoff = Date.now() / 1000 - periodDef.days * 86400;
   const inPeriod = allPoints.filter((g) => g.endTime >= cutoff);
-  const W = 320, H = 120, padL = 32, padR = 6, padT = 8, padB = 16;
+  // (v0.2.6 UI) 그래프를 더 크게(320x120 → 360x210), 축 기준선도 더 촘촘하게(y 3단 → 5단, x축
+  // 세로 기준선 신규) 다시 그렸다.
+  const W = 360, H = 210, padL = 40, padR = 12, padT = 14, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const fmtAxisDate = (t) => { const dt = new Date(t * 1000); return (dt.getMonth() + 1) + "/" + dt.getDate(); };
   const isAll = timeFilter === "all";
+  const jumpToClientX = (clientX) => {
+    if (!wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    if (!rect.width) return;
+    setDragFrac(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)));
+  };
+  // (버그 수정) 드래그가 SVG 안의 축 라벨(<text>) 위를 지나가면 브라우저 기본 텍스트 선택이
+  // 함께 시작돼, 크로스헤어 대신 파란 텍스트 선택 영역이 생기며 드래그 자체가 씹혔다 —
+  // preventDefault로 마우스 드래그의 기본 선택 동작을 막고, CSS로도 선택을 비활성화한다.
+  const onPointerDown = (e) => { e.preventDefault(); draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } jumpToClientX(e.clientX); };
+  const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
+  const onPointerUp = (e) => { draggingRef.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ } };
+  const dragX = dragFrac != null ? dragFrac * W : null;
+  const yTicks = (min, max) => [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(min + (max - min) * f));
+  const xFracTicks = [0, 0.2, 0.4, 0.6, 0.8, 1];
+  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>이 기간엔 대국이 부족해요.</div>;
   let body;
   if (isAll) {
     const series = ["rapid", "blitz", "bullet"].map((k) => ({ key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: inPeriod.filter((g) => g.timeClass === k) })).filter((s) => s.points.length >= 2);
     if (!series.length) {
-      body = <div style={{ height: H - 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>이 기간엔 대국이 부족해요.</div>;
+      body = emptyMsg;
     } else {
       const allRatings = series.flatMap((s) => s.points.map((g) => g.rating));
       const min = Math.min(...allRatings), max = Math.max(...allRatings);
       const span = Math.max(1, max - min);
-      const mid = Math.round((min + max) / 2);
       const allTimes = series.flatMap((s) => s.points.map((g) => g.endTime));
       const tMin = Math.min(...allTimes), tMax = Math.max(...allTimes);
       const tSpan = Math.max(1, tMax - tMin);
       const xAt = (t) => padL + ((t - tMin) / tSpan) * plotW;
       const yAt = (r) => padT + plotH - ((r - min) / span) * plotH;
+      // 드래그 중인 x좌표(시간)에서 시리즈마다 가장 가까운 지점을 각자 찾는다.
+      const dragT = dragX != null ? tMin + ((dragX - padL) / plotW) * tSpan : null;
+      const nearest = dragT != null ? series.map((s) => {
+        let best = s.points[0], bestDiff = Infinity;
+        for (const g of s.points) { const d = Math.abs(g.endTime - dragT); if (d < bestDiff) { bestDiff = d; best = g; } }
+        return { key: s.key, label: s.label, color: s.color, point: best };
+      }) : null;
       body = (
         <>
-          {/* 범례 — 시간 규정별 색상 점 + 첫 레이팅→마지막 레이팅 */}
-          <div className="flex items-center" style={{ gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+          <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+            style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
+            {dragX != null && <div aria-hidden style={{ position: "absolute", top: -1, left: (dragX / W) * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid " + T.brassHi, pointerEvents: "none", zIndex: 2 }} />}
+            {nearest && (
+              <div style={{ position: "absolute", top: 2, left: Math.min(80, Math.max(20, (dragX / W) * 100)) + "%", transform: "translateX(-50%)", background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)" }}>
+                <div style={{ fontWeight: 800, marginBottom: 2, color: T.brassHi }}>{fmtAxisDate(dragT)}</div>
+                {nearest.map((s) => (
+                  <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: s.color, display: "inline-block", flexShrink: 0 }} />
+                    {s.label} <b style={{ fontFamily: "ui-monospace,monospace" }}>{s.point.rating}</b>
+                  </div>
+                ))}
+              </div>
+            )}
+            <svg viewBox={"0 0 " + W + " " + H} style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
+              <rect x="0" y="0" width={W} height={H} fill="#211A13" rx="8" />
+              {yTicks(min, max).map((r, i) => (
+                <g key={i}>
+                  <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(255,255,255,.08)" strokeWidth={1} />
+                  <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill="#B8A98C">{r}</text>
+                </g>
+              ))}
+              {xFracTicks.slice(1, -1).map((f, i) => (
+                <line key={i} x1={padL + f * plotW} x2={padL + f * plotW} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.06)" strokeWidth={1} />
+              ))}
+              <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
+              <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
+              {/* (v0.2.6 기능) 세 시리즈 모두 선 아래 반투명 영역을 채우고, isolate된 그룹 안에서
+                  mix-blend-mode:screen(가산혼합)으로 겹쳐 — 두 색이 겹치면 둘을 섞은 밝은 색, 세 색이
+                  다 겹치면 흰색에 가깝게 빛난다(빛의 삼원색 원리). */}
+              <g style={{ isolation: "isolate" }}>
+                {series.map((s) => {
+                  const lineD = s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
+                  const areaD = lineD + " L" + xAt(s.points[s.points.length - 1].endTime).toFixed(1) + "," + (padT + plotH) + " L" + xAt(s.points[0].endTime).toFixed(1) + "," + (padT + plotH) + " Z";
+                  // (버그 수정) opacity를 낮게(0.55) 두면 screen 블렌드가 배경과 다시 섞이며 밝아지는
+                  // 정도가 옅어져, 겹치는 자리가 선명한 흰빛 대신 탁한 카키색으로 보였다 — screen
+                  // 자체가 이미 "밝게 겹치는" 효과를 내므로(어둡게 만들지 않음) opacity를 높여야
+                  // 빨강+초록+파랑이 실제로 각각 노랑/시안/마젠타를 거쳐 흰색까지 또렷하게 겹친다.
+                  return <path key={s.key} d={areaD} fill={s.color} opacity={0.88} stroke="none" style={{ mixBlendMode: "screen" }} />;
+                })}
+              </g>
+              {series.map((s) => (
+                <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+              ))}
+              {dragX != null && <line x1={dragX} x2={dragX} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
+              {nearest && nearest.map((s) => <circle key={s.key} cx={xAt(s.point.endTime)} cy={yAt(s.point.rating)} r="3" fill={s.color} stroke="#14100C" strokeWidth="0.8" />)}
+              {xFracTicks.map((f, i) => (
+                <text key={i} x={padL + f * plotW} y={H - 6} fontSize={8} textAnchor={i === 0 ? "start" : i === xFracTicks.length - 1 ? "end" : "middle"} fill="#B8A98C">{fmtAxisDate(tMin + f * tSpan)}</text>
+              ))}
+            </svg>
+          </div>
+          {/* (v0.2.6 UI) 범례를 그래프 위에서 아래로 옮겼다 — 시간 규정별 색상 점 + 첫 레이팅→마지막 레이팅. */}
+          <div className="flex items-center justify-center" style={{ gap: 12, marginTop: 8, flexWrap: "wrap" }}>
             {series.map((s) => (
               <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 700 }}>
                 <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: s.color, display: "inline-block" }} />
@@ -10886,63 +10972,67 @@ function RatingHistoryChart({ games, timeFilter }) {
               </span>
             ))}
           </div>
-          <svg viewBox={"0 0 " + W + " " + H} width="100%" height={H - 20}>
-            {[min, mid, max].map((r, i) => (
-              <g key={i}>
-                <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(0,0,0,.08)" strokeWidth={1} />
-                <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill={T.inkSoft}>{r}</text>
-              </g>
-            ))}
-            <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(0,0,0,.28)" strokeWidth={1} />
-            <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(0,0,0,.28)" strokeWidth={1} />
-            {series.map((s) => (
-              <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
-            ))}
-            <text x={xAt(tMin)} y={H - 6} fontSize={8} textAnchor="start" fill={T.inkSoft}>{fmtAxisDate(tMin)}</text>
-            <text x={xAt(tMax)} y={H - 6} fontSize={8} textAnchor="end" fill={T.inkSoft}>{fmtAxisDate(tMax)}</text>
-          </svg>
         </>
       );
     }
   } else if (inPeriod.length < 2) {
-    body = <div style={{ height: H - 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>이 기간엔 대국이 부족해요.</div>;
+    body = emptyMsg;
   } else {
     const points = inPeriod;
     const ratings = points.map((g) => g.rating);
     const min = Math.min(...ratings), max = Math.max(...ratings);
     const span = Math.max(1, max - min);
-    const mid = Math.round((min + max) / 2);
     const xAt = (i) => padL + (i / (points.length - 1)) * plotW;
     const yAt = (r) => padT + plotH - ((r - min) / span) * plotH;
     const lineD = points.map((g, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
     const areaD = lineD + " L" + xAt(points.length - 1).toFixed(1) + "," + (padT + plotH) + " L" + xAt(0).toFixed(1) + "," + (padT + plotH) + " Z";
     const first = points[0].rating, last = points[points.length - 1].rating;
     const rising = last >= first;
-    const lineColor = rising ? T.best : T.blunder;
+    const lineColor = TIME_CLASS_CHART_COLOR[timeFilter] || T.brassHi;
+    const dragIdx = dragX != null ? Math.round(Math.max(0, Math.min(1, (dragX - padL) / plotW)) * (points.length - 1)) : null;
+    const dragPoint = dragIdx != null ? points[dragIdx] : null;
     body = (
       <>
         <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
           <span style={{ fontSize: 10.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{points.length}판</span>
-          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: lineColor, fontWeight: 800 }}>{first} → {last}</span>
+          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.ink, fontWeight: 800 }}>{first} → {last} <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span></span>
         </div>
-        <svg viewBox={"0 0 " + W + " " + H} width="100%" height={H - 20}>
-          {/* y축 그리드(최저/중간/최고) — 값 라벨을 왼쪽에 함께 표시 */}
-          {[min, mid, max].map((r, i) => (
-            <g key={i}>
-              <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(0,0,0,.08)" strokeWidth={1} />
-              <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill={T.inkSoft}>{r}</text>
-            </g>
-          ))}
-          {/* x/y축 선 */}
-          <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(0,0,0,.28)" strokeWidth={1} />
-          <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(0,0,0,.28)" strokeWidth={1} />
-          {/* 선 아래 영역을 반투명하게 채움 */}
-          <path d={areaD} fill={lineColor} opacity={0.16} stroke="none" />
-          <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
-          {/* x축 날짜 라벨(시작/끝) */}
-          <text x={xAt(0)} y={H - 6} fontSize={8} textAnchor="start" fill={T.inkSoft}>{fmtAxisDate(points[0].endTime)}</text>
-          <text x={xAt(points.length - 1)} y={H - 6} fontSize={8} textAnchor="end" fill={T.inkSoft}>{fmtAxisDate(points[points.length - 1].endTime)}</text>
-        </svg>
+        <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+          style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
+          {dragPoint && <div aria-hidden style={{ position: "absolute", top: -1, left: (xAt(dragIdx) / W) * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid " + lineColor, pointerEvents: "none", zIndex: 2 }} />}
+          {dragPoint && (
+            <div style={{ position: "absolute", top: 2, left: Math.min(80, Math.max(20, (xAt(dragIdx) / W) * 100)) + "%", transform: "translateX(-50%)", background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)", textAlign: "center" }}>
+              <div style={{ fontWeight: 800, color: T.brassHi }}>{fmtAxisDate(dragPoint.endTime)}</div>
+              <div style={{ fontFamily: "ui-monospace,monospace" }}>{dragPoint.rating}</div>
+            </div>
+          )}
+          <svg viewBox={"0 0 " + W + " " + H} style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
+            <rect x="0" y="0" width={W} height={H} fill="#211A13" rx="8" />
+            {/* y축 그리드 — 값 라벨을 왼쪽에 함께 표시 */}
+            {yTicks(min, max).map((r, i) => (
+              <g key={i}>
+                <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(255,255,255,.08)" strokeWidth={1} />
+                <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill="#B8A98C">{r}</text>
+              </g>
+            ))}
+            {/* x축 세로 기준선 */}
+            {xFracTicks.slice(1, -1).map((f, i) => (
+              <line key={i} x1={padL + f * plotW} x2={padL + f * plotW} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.06)" strokeWidth={1} />
+            ))}
+            {/* x/y축 선 */}
+            <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
+            <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
+            {/* 선 아래 영역을 반투명하게 채움 */}
+            <path d={areaD} fill={lineColor} opacity={0.4} stroke="none" />
+            <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+            {dragPoint && <line x1={xAt(dragIdx)} x2={xAt(dragIdx)} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
+            {dragPoint && <circle cx={xAt(dragIdx)} cy={yAt(dragPoint.rating)} r="3.4" fill={lineColor} stroke="#14100C" strokeWidth="0.8" />}
+            {/* x축 날짜 라벨 */}
+            {xFracTicks.map((f, i) => (
+              <text key={i} x={padL + f * plotW} y={H - 6} fontSize={8} textAnchor={i === 0 ? "start" : i === xFracTicks.length - 1 ? "end" : "middle"} fill="#B8A98C">{fmtAxisDate(points[Math.round(f * (points.length - 1))].endTime)}</text>
+            ))}
+          </svg>
+        </div>
       </>
     );
   }
@@ -11293,6 +11383,7 @@ const CHANGELOG = [
       "다음 수 블록에 뜬 키워드(TOP LEVEL 등)와, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 키워드가 서로 다르게 보이던 문제를 고쳤어요 — 이제 항상 똑같이 보여요.",
       "집중학습의 '이 수가 두어진 내 대국' 목록에도 시간 규정·진영 선택 박스가 생겼어요. 대국 보기·리뷰 버튼 크기도 통일했어요.",
       "모바일에서 집중학습에 들어가면 다음 수 블록 목록이 화면 밖으로 밀려 보이지 않던 문제를 고쳤어요 — 이제 미니보드 아래를 옆으로 넘기면(드래그 또는 ‹/› 버튼) 1페이지엔 chess.com 통계·마스터 대국이, 2페이지엔 다음 수 블록이 나와요.",
+      "레이팅 변동 그래프가 더 커졌어요. 그래프를 누른 채 끌면 점선과 화살표로 그 지점의 날짜·레이팅을 바로 볼 수 있어요. 래피드는 빨강, 블리츠는 초록, 불릿은 파랑으로 색이 고정돼서 어느 화면에서 보든 항상 같은 색이에요. '전체'로 보면 세 그래프 아래가 반투명하게 채워지고, 겹치는 자리는 색이 더해져 밝게(다 겹치면 거의 흰색으로) 빛나요. 눈금선도 더 촘촘해지고 범례는 그래프 아래로 옮겼어요.",
       "레이팅 변동 그래프가 흑/백 필터에 영향받지 않도록 고쳤어요 — 레이팅은 어느 색으로 두든 합산되니까요. '가장 많이 둔 오프닝'에 몇 번째로 많이 둔 오프닝인지 보여주는 '백 n수'/'흑 n수' 표시를 되살렸고, 오프닝 이름 글자를 조금 줄여 긴 이름도 잘리지 않게 했어요. '자주 두는 첫 수'의 흑 응수 목록도 한 줄에 두 개씩 담아 더 짧고 좁게 보여줘요.",
     ],
   },
