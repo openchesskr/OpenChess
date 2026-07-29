@@ -2083,31 +2083,70 @@ function computeRatingChanges(games) {
   }
   return map;
 }
+// (v0.2.6 성능) chess.com 대국 캐시 — 계정별로 이미 받은 대국 목록 + 다 받은 달(archive) 목록을
+// localStorage에 저장해 둔다. 버전 번호를 키에 넣어 두면, 나중에 저장 구조가 바뀌어도 예전 캐시를
+// 안전하게 무시(재요청)하게 할 수 있다. 다른 localStorage 캐시들(occ_bgm_on 등)과 같은 접두어·
+// try/catch 관례를 따른다 — 캐시는 있으면 좋은 부가 기능일 뿐이라 실패해도 앱 동작에 지장이 없어야 한다.
+const CHESSCOM_CACHE_VERSION = 1;
+function chesscomCacheKey(u) { return "occ_chesscom_v" + CHESSCOM_CACHE_VERSION + "_" + u; }
+function loadChesscomCache(u) {
+  try {
+    const raw = window.localStorage.getItem(chesscomCacheKey(u));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.games) || !Array.isArray(parsed.fetchedMonths)) return null;
+    return parsed;
+  } catch { return null; }
+}
+function saveChesscomCache(u, data) {
+  try { window.localStorage.setItem(chesscomCacheKey(u), JSON.stringify(data)); } catch { /* 용량 초과 등은 무시 */ }
+}
 function useChessCom(username) {
   const [state, setState] = useState({ status: "idle", games: [] });
   useEffect(() => {
     if (!username) { setState({ status: "idle", games: [] }); return; }
     let cancelled = false;
+    const u = username.toLowerCase().trim();
+    // (v0.2.6 성능) 예전엔 이 훅이 마운트될 때마다(새로고침·다른 탭 갔다 오기 등) 계정 개설 이후
+    // 전체 기간의 모든 달을 처음부터 다시 받았다 — 대국이 아주 많은 계정은 그 자체로도 오래 걸렸고,
+    // 더 심각하게는 "끝까지 받기 전에 사용자가 다른 곳으로 이동"하는 일이 흔해(오래 기다리다 지쳐서)
+    // 매번 처음부터 다시 시작하다 또 중단되길 반복했다 — 오래된 달(그 안에 몰려 있는 특정 시간
+    // 규정 대국들)을 영영 못 받아, 그 시간 규정 데이터가 계속 안 보이는 게 근본 원인이었다(대국이
+    // 매우 많은 계정에서 특정 시간 규정 데이터가 아예 안 보이는 문제).
+    // localStorage에 계정별로 대국 목록 + 이미 다 받은 달 목록을 캐싱해 두고, 캐시가 있으면
+    // 네트워크 요청 전에 즉시 그 내용을 그대로 보여준다("로그인할 때만 다시 로드"하는 효과) — 그
+    // 뒤 백그라운드로는 한 번도 못 받은 달과, 마지막으로 받았던 달(그 사이 실시간으로 새로 끝난
+    // 대국이 쌓였을 수 있음)만 다시 받아 병합한다. 달 하나를 처리할 때마다 즉시 캐시에 저장해 두므로,
+    // 계정이 너무 커서 끝까지 못 받고 화면을 벗어나도 다음 방문에서 그만큼은 이어받아 결국 전체가
+    // 채워진다.
+    const cached = loadChesscomCache(u);
+    let games = cached ? cached.games.slice() : [];
+    const fetchedSet = new Set(cached ? cached.fetchedMonths : []);
+    setState(games.length ? { status: "ready", games } : { status: "loading", games: [] });
     (async () => {
-      setState({ status: "loading", games: [] });
       try {
-        const u = username.toLowerCase().trim();
         const arc = await fetch("https://api.chess.com/pub/player/" + u + "/games/archives");
         if (!arc.ok) throw new Error("archives " + arc.status);
         const aj = await arc.json();
         // (19차 기능6) 칭호 조건에 오프닝별 chess.com 플레이 횟수를 반영하기 위해
         // 최근 12개월이 아니라 계정 개설 이후 전체 기간의 모든 아카이브를 불러온다.
+        const allMonths = (aj.archives || []);
+        // 마지막으로 받았던 달은 그때는 "이번 달"처럼 아직 진행 중이었을 수 있어 그 사이 새로 끝난
+        // 실시간 대국이 쌓였을 수 있다 — 그 달만 다시 받고, 그보다 이전 달들(이미 완결된 달)은
+        // 다시 받지 않는다. 캐시에 아예 없던(새로 생긴) 달은 당연히 전부 받는다.
+        const latestMonth = allMonths.length ? allMonths[allMonths.length - 1] : null;
+        const monthsToFetch = allMonths.filter((m) => !fetchedSet.has(m) || m === latestMonth);
         // (버그 수정) chess.com의 archives 목록은 오래된 달부터 최신 달 순으로 온다 — 그대로 불러오면
         // 대국이 많은 계정에서 "최근 대국"이 표시되기까지 전체 기간을 다 불러올 때까지 기다려야 했다.
         // 최신 달부터 거꾸로 불러오고, 달 하나를 불러올 때마다 즉시 화면에 반영(status:"ready")해
         // 나머지 과거 달은 백그라운드에서 이어서 불러오는 동안에도 최근 대국부터 바로 보이게 한다.
-        const months = (aj.archives || []).slice().reverse();
-        const games = [];
-        for (const url of months) {
+        const ordered = monthsToFetch.slice().reverse();
+        for (const url of ordered) {
           if (cancelled) return;
           try {
             const r = await fetch(url); if (!r.ok) continue;
             const j = await r.json();
+            games = games.filter((g) => g.__month !== url); // 이 달을 다시 받는 것이므로 이전 몫을 들어냄
             for (const g of (j.games || [])) {
               if (!g.pgn) continue;
               const userIsWhite = g.white && g.white.username && g.white.username.toLowerCase() === u;
@@ -2125,13 +2164,21 @@ function useChessCom(username) {
               // 상대 이름·레이팅까지 보여주려면 이 시점에 양쪽을 그대로 저장해 둬야 한다.
               games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
                 white: { username: (g.white && g.white.username) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
-                black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null } });
+                black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
+                __month: url });
             }
-            if (!cancelled) setState({ status: "ready", games: [...games] });
+            fetchedSet.add(url);
+            if (!cancelled) {
+              setState({ status: "ready", games: [...games] });
+              saveChesscomCache(u, { games, fetchedMonths: Array.from(fetchedSet) });
+            }
           } catch (_) {}
         }
-        if (!cancelled) setState({ status: "ready", games });
-      } catch (e) { if (!cancelled) setState({ status: "error", games: [] }); }
+        if (!cancelled) {
+          setState({ status: "ready", games });
+          saveChesscomCache(u, { games, fetchedMonths: Array.from(fetchedSet) });
+        }
+      } catch (e) { if (!cancelled && !games.length) setState({ status: "error", games: [] }); }
     })();
     return () => { cancelled = true; };
   }, [username]);
@@ -10786,15 +10833,36 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
 // 실제로 어떤 오프닝을 즐겨 두는지 한눈에 알기 어려웠다 — 대국마다 이미 계산돼 있는 오프닝 이름
 // (g.opening)의 빈도를 세어, 실제로 가장 많이 나온 오프닝 이름들을 2.2초 간격으로 번갈아 보여준다.
 // color로 백/흑 어느 쪽 대국을 집계할지 고른다(games는 이미 시간 규정 필터가 적용된 목록).
-// (v0.2.6 UI) 예전 버전(TopWhiteMovesAnimated)에 있던 "백 n수" 식 배지를 되살려, 지금 몇 번째로
-// 많이 둔 오프닝을 보여주는 중인지 작은 박스로 표시한다(흑 쪽은 기존 "흑 오프닝 레파토리" 텍스트
-// 라벨을 이 배지로 완전히 대체). 오프닝 이름 글자 크기를 줄여 긴 이름도 잘리지 않게 했다.
+// (v0.2.6 UI) 예전 버전(TopWhiteMovesAnimated)에 있던 "백 n수" 식 배지를 되살려, 지금 몇 번째
+// 수까지 뒀을 때 도달하는 오프닝을 보여주는 중인지 작은 박스로 표시한다(흑 쪽은 기존 "흑 오프닝
+// 레파토리" 텍스트 라벨을 이 배지로 완전히 대체). 오프닝 이름 글자 크기를 줄여 긴 이름도 잘리지
+// 않게 했다.
+// (v0.2.6 버그 수정) "n수" 배지를 처음엔 "상위 몇 번째로 많이 둔 오프닝인가"(빈도 순위)로 계산해,
+// 그 순위를 그대로 "n수"(n번째 수)라고 잘못 표시했다 — 실제 그 수 깊이와 전혀 안 맞아, 예를 들어
+// 백의 3번째 수(Bc4)까지 둬야 나오는 Italian Game이 "백 1수"로 표시되는 식의 오류가 났다. "n수"는
+// 문자 그대로 백/흑이 정확히 그 번째 자기 수를 뒀을 때 도달하는 포지션이어야 한다 — 백의 n번째
+// 수는 ply 2n-1(백1수=ply1, 백2수=ply3 ...), 흑의 n번째 수는 ply 2n에 해당하는 지점까지 실제
+// 대국 수순을 잘라(g.moves.slice(0, ply)) 그 정확한 포지션의 스냅샷 오프닝 이름(snapNode)을 다시
+// 찾고, 그 깊이(n=1~6)마다 가장 많이 나온 이름을 집계한다 — 다른 곳(가장 많이 둔 오프닝 트리 등)과
+// 동일하게 g.moves를 접미사(+/#) 그대로 스냅샷 트리 키에 맞춰 쓴다(parsePgnSans가 이미 그렇게 보존).
 function TopOpeningsAnimated({ games, color, label }) {
   const top = useMemo(() => {
-    const use = games.filter((g) => g.color === color && g.opening);
-    const counts = {};
-    for (const g of use) counts[g.opening] = (counts[g.opening] || 0) + 1;
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }));
+    const use = games.filter((g) => g.color === color && g.moves && g.moves.length);
+    const out = [];
+    for (let n = 1; n <= 6; n++) {
+      const ply = color === "w" ? 2 * n - 1 : 2 * n;
+      const counts = {};
+      for (const g of use) {
+        if (g.moves.length < ply) continue;
+        const nd = snapNode(g.moves.slice(0, ply));
+        const name = nd && nd.opening ? nd.opening.name : null;
+        if (!name) continue;
+        counts[name] = (counts[name] || 0) + 1;
+      }
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      if (sorted.length) out.push({ n, name: sorted[0][0], count: sorted[0][1] });
+    }
+    return out;
   }, [games, color]);
   const [idx, setIdx] = useState(0);
   useEffect(() => { setIdx(0); }, [top.length]);
@@ -10806,13 +10874,14 @@ function TopOpeningsAnimated({ games, color, label }) {
   if (!top.length) return null;
   const curIdx = Math.min(idx, top.length - 1);
   const cur = top[curIdx];
-  const nBadge = (color === "w" ? "백" : "흑") + " " + (curIdx + 1) + "수";
+  const nBadge = (color === "w" ? "백" : "흑") + " " + cur.n + "수";
+  // (v0.2.6 UI) "백 n수"/"흑 n수" 배지를 라벨과 같은 줄에 붙이지 않고 오프닝 이름 바로 위 자기
+  // 줄에 두며, 배지 배경을 금색 그라데이션으로 통일했다(백/흑 공통).
+  const badgeStyle = { display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", fontSize: 10, fontWeight: 800, color: "#241509", fontFamily: "ui-monospace,monospace" };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-        {label && <span style={{ fontSize: 12, fontWeight: 800, color: T.brass }}>{label}</span>}
-        <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 7px", borderRadius: 999, background: "rgba(0,0,0,.06)", border: "1px solid #DCCBA8", fontSize: 10, fontWeight: 800, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{nBadge}</span>
-      </div>
+      {label && <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>{label}</div>}
+      <div style={{ marginBottom: 4 }}><span style={badgeStyle}>{nBadge}</span></div>
       {/* (v0.2.6 버그 수정) 오프닝 이름은 길이가 제각각이라(예: "Italian Game" vs "Sicilian Defense:
           Najdorf Variation, English Attack"), 번갈아 나올 때마다 짧은 이름은 1줄로 접히고 긴
           이름은 2줄로 늘어나며 카드 폭·높이가 들썩였다 — 폭은 항상 부모 너비 그대로(고정), 높이는
@@ -10820,7 +10889,7 @@ function TopOpeningsAnimated({ games, color, label }) {
           않는다. 글자 크기를 16→13으로 줄여 긴 이름이 2줄 안에서 잘리지 않고 온전히 들어가게 했다. */}
       <div style={{ position: "relative", minHeight: 38, overflow: "hidden", width: "100%" }}>
         <AnimatePresence mode="wait">
-          <motion.div key={cur.name} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          <motion.div key={cur.n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, lineHeight: 1.3 }}>{cur.name}</span>
             <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", flexShrink: 0, whiteSpace: "nowrap" }}>{fmtFull(cur.count)}회</span>
           </motion.div>
@@ -10884,8 +10953,17 @@ function RatingHistoryChart({ games, timeFilter }) {
   // preventDefault로 마우스 드래그의 기본 선택 동작을 막고, CSS로도 선택을 비활성화한다.
   const onPointerDown = (e) => { e.preventDefault(); draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } jumpToClientX(e.clientX); };
   const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
-  const onPointerUp = (e) => { draggingRef.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ } };
+  const onPointerUp = (e) => { draggingRef.current = false; setDragFrac(null); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ } };
   const dragX = dragFrac != null ? dragFrac * W : null;
+  // (v0.2.6 UI) 말풍선이 역삼각형 마커·점선을 가리지 않도록, 크로스헤어가 그래프 오른쪽 절반에
+  // 있으면 말풍선을 좌하단에, 왼쪽 절반에 있으면 우하단에 붙여 옆으로 비켜서게 한다.
+  const tooltipPos = (x) => {
+    const rightHalf = x / W > 0.5;
+    const leftPct = (x / W) * 100;
+    const gap = 3;
+    const anchorPct = rightHalf ? Math.max(6, leftPct - gap) : Math.min(94, leftPct + gap);
+    return { left: anchorPct + "%", top: "56%", transform: rightHalf ? "translate(-100%, 0)" : "translate(0, 0)" };
+  };
   const yTicks = (min, max) => [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(min + (max - min) * f));
   const xFracTicks = [0, 0.2, 0.4, 0.6, 0.8, 1];
   const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>이 기간엔 대국이 부족해요.</div>;
@@ -10916,7 +10994,7 @@ function RatingHistoryChart({ games, timeFilter }) {
             style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
             {dragX != null && <div aria-hidden style={{ position: "absolute", top: -1, left: (dragX / W) * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid " + T.brassHi, pointerEvents: "none", zIndex: 2 }} />}
             {nearest && (
-              <div style={{ position: "absolute", top: 2, left: Math.min(80, Math.max(20, (dragX / W) * 100)) + "%", transform: "translateX(-50%)", background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)" }}>
+              <div style={{ position: "absolute", ...tooltipPos(dragX), background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)" }}>
                 <div style={{ fontWeight: 800, marginBottom: 2, color: T.brassHi }}>{fmtAxisDate(dragT)}</div>
                 {nearest.map((s) => (
                   <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -10946,11 +11024,11 @@ function RatingHistoryChart({ games, timeFilter }) {
                 {series.map((s) => {
                   const lineD = s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
                   const areaD = lineD + " L" + xAt(s.points[s.points.length - 1].endTime).toFixed(1) + "," + (padT + plotH) + " L" + xAt(s.points[0].endTime).toFixed(1) + "," + (padT + plotH) + " Z";
-                  // (버그 수정) opacity를 낮게(0.55) 두면 screen 블렌드가 배경과 다시 섞이며 밝아지는
-                  // 정도가 옅어져, 겹치는 자리가 선명한 흰빛 대신 탁한 카키색으로 보였다 — screen
-                  // 자체가 이미 "밝게 겹치는" 효과를 내므로(어둡게 만들지 않음) opacity를 높여야
-                  // 빨강+초록+파랑이 실제로 각각 노랑/시안/마젠타를 거쳐 흰색까지 또렷하게 겹친다.
-                  return <path key={s.key} d={areaD} fill={s.color} opacity={0.88} stroke="none" style={{ mixBlendMode: "screen" }} />;
+                  // (버그 수정) opacity를 너무 낮게(0.55) 두면 screen 블렌드가 배경과 다시 섞이며
+                  // 밝아지는 정도가 옅어져 겹치는 자리가 탁한 카키색으로 보였다 — 그렇다고 너무
+                  // 높이면(0.88) 반투명한 느낌 없이 거의 불투명한 색 블록처럼 보인다. 0.7 정도가
+                  // 바닥까지 은은하게 비치면서도 겹침 구간은 여전히 또렷하게 밝아지는 절충점이다.
+                  return <path key={s.key} d={areaD} fill={s.color} opacity={0.7} stroke="none" style={{ mixBlendMode: "screen" }} />;
                 })}
               </g>
               {series.map((s) => (
@@ -10963,11 +11041,12 @@ function RatingHistoryChart({ games, timeFilter }) {
               ))}
             </svg>
           </div>
-          {/* (v0.2.6 UI) 범례를 그래프 위에서 아래로 옮겼다 — 시간 규정별 색상 점 + 첫 레이팅→마지막 레이팅. */}
-          <div className="flex items-center justify-center" style={{ gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+          {/* (v0.2.6 UI) 범례를 그래프 위에서 아래로 옮겼다 — 시간 규정별 색상 점 + 첫 레이팅→마지막 레이팅.
+              (v0.2.6 UI 재조정) 3개 항목이 줄바꿈 없이 한 줄에 들어가도록 글자·점·간격을 더 줄였다. */}
+          <div className="flex items-center justify-center" style={{ gap: 8, marginTop: 8, flexWrap: "nowrap" }}>
             {series.map((s) => (
-              <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 700 }}>
-                <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: s.color, display: "inline-block" }} />
+              <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 8.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 700, whiteSpace: "nowrap" }}>
+                <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: s.color, display: "inline-block", flexShrink: 0 }} />
                 <b style={{ color: T.ink }}>{s.label}</b> {s.points[0].rating}→{s.points[s.points.length - 1].rating}
               </span>
             ))}
@@ -11001,7 +11080,7 @@ function RatingHistoryChart({ games, timeFilter }) {
           style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
           {dragPoint && <div aria-hidden style={{ position: "absolute", top: -1, left: (xAt(dragIdx) / W) * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid " + lineColor, pointerEvents: "none", zIndex: 2 }} />}
           {dragPoint && (
-            <div style={{ position: "absolute", top: 2, left: Math.min(80, Math.max(20, (xAt(dragIdx) / W) * 100)) + "%", transform: "translateX(-50%)", background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)", textAlign: "center" }}>
+            <div style={{ position: "absolute", ...tooltipPos(xAt(dragIdx)), background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)", textAlign: "center" }}>
               <div style={{ fontWeight: 800, color: T.brassHi }}>{fmtAxisDate(dragPoint.endTime)}</div>
               <div style={{ fontFamily: "ui-monospace,monospace" }}>{dragPoint.rating}</div>
             </div>
@@ -11385,6 +11464,9 @@ const CHANGELOG = [
       "모바일에서 집중학습에 들어가면 다음 수 블록 목록이 화면 밖으로 밀려 보이지 않던 문제를 고쳤어요 — 이제 미니보드 아래를 옆으로 넘기면(드래그 또는 ‹/› 버튼) 1페이지엔 chess.com 통계·마스터 대국이, 2페이지엔 다음 수 블록이 나와요.",
       "레이팅 변동 그래프가 더 커졌어요. 그래프를 누른 채 끌면 점선과 화살표로 그 지점의 날짜·레이팅을 바로 볼 수 있어요. 래피드는 빨강, 블리츠는 초록, 불릿은 파랑으로 색이 고정돼서 어느 화면에서 보든 항상 같은 색이에요. '전체'로 보면 세 그래프 아래가 반투명하게 채워지고, 겹치는 자리는 색이 더해져 밝게(다 겹치면 거의 흰색으로) 빛나요. 눈금선도 더 촘촘해지고 범례는 그래프 아래로 옮겼어요.",
       "레이팅 변동 그래프가 흑/백 필터에 영향받지 않도록 고쳤어요 — 레이팅은 어느 색으로 두든 합산되니까요. '가장 많이 둔 오프닝'에 몇 번째로 많이 둔 오프닝인지 보여주는 '백 n수'/'흑 n수' 표시를 되살렸고, 오프닝 이름 글자를 조금 줄여 긴 이름도 잘리지 않게 했어요. '자주 두는 첫 수'의 흑 응수 목록도 한 줄에 두 개씩 담아 더 짧고 좁게 보여줘요.",
+      "'가장 많이 둔 오프닝'의 '백 n수'/'흑 n수' 표시가 실제 오프닝과 안 맞던 문제(백 1수인데 Italian Game이 뜨는 등)를 근본적으로 고쳤어요 — 이제 표시된 n수에서 실제로 그 오프닝에 도달하는지 정확히 확인해요. 배지는 오프닝 이름 위 별도 줄로 옮기고 금색으로 통일했어요.",
+      "chess.com 통계를 로그인할 때만 새로 불러오고, 새로고침하거나 다른 페이지에 다녀와도 저장해둔 정보를 그대로 보여줘요(대국이 아주 많은 계정은 매번 불러오는 데 시간이 오래 걸렸었어요) — 최근에 끝난 실시간 대국만 그 위에 새로 얹어 갱신돼요. 대국이 아주 많은 계정에서 특정 시간 규정의 대국이 아예 안 보이던 문제의 진짜 원인도 찾아 고쳐서, 이제 여러 번 방문할수록 데이터가 점점 완전해져요.",
+      "레이팅 변동 그래프의 '전체' 모드 아래 색칠이 조금 더 반투명해졌고, 범례 글자를 줄여 항상 한 줄에 다 들어가도록 했어요. 그래프를 끌 때 뜨는 말풍선이 화살표 모양 마커나 점선을 가리지 않도록 옆으로 살짝 비켜 뜨고, 손을 떼면 크로스헤어가 바로 사라져요.",
     ],
   },
   {
