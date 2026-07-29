@@ -10688,33 +10688,78 @@ function TopOpeningsAnimated({ games, color, label }) {
   );
 }
 // (v0.2.6 기능) 기간별 레이팅 변동 그래프 — 지금 필터(시간 규정·흑/백)가 적용된 대국들을 시간순으로
-// 이어 간단한 선 그래프로 보여준다. 대국이 2판 미만이면(선을 그릴 수 없음) 표시하지 않는다.
+// 이어 선 그래프로 보여준다. 최근 1주/1달/6개월/1년 중 고를 수 있는 기간 필터를 추가로 얹는다(위
+// 시간 규정·흑백 필터와는 별개 축). 대국이 아예 없으면 표시하지 않고, 고른 기간 안에 대국이 2판
+// 미만이면(선을 그릴 수 없음) 버튼은 그대로 둔 채 안내 문구만 보여준다.
+const RATING_CHART_PERIODS = [
+  { key: "7d", label: "1주", days: 7 },
+  { key: "30d", label: "1달", days: 30 },
+  { key: "180d", label: "6개월", days: 182 },
+  { key: "365d", label: "1년", days: 365 },
+];
 function RatingHistoryChart({ games }) {
-  const points = useMemo(() => [...games].filter((g) => g.rating != null && g.endTime).sort((a, b) => (a.endTime || 0) - (b.endTime || 0)), [games]);
-  if (points.length < 2) return null;
-  const W = 320, H = 64, PAD = 4;
-  const ratings = points.map((g) => g.rating);
-  const min = Math.min(...ratings), max = Math.max(...ratings);
-  const span = Math.max(1, max - min);
-  const xAt = (i) => PAD + (i / (points.length - 1)) * (W - PAD * 2);
-  const yAt = (r) => H - PAD - ((r - min) / span) * (H - PAD * 2);
-  const d = points.map((g, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
-  const first = points[0].rating, last = points[points.length - 1].rating;
-  const rising = last >= first;
-  const lineColor = rising ? T.best : T.blunder;
+  const allPoints = useMemo(() => [...games].filter((g) => g.rating != null && g.endTime).sort((a, b) => (a.endTime || 0) - (b.endTime || 0)), [games]);
+  const [period, setPeriod] = useState("180d");
+  if (!allPoints.length) return null;
+  const periodDef = RATING_CHART_PERIODS.find((p) => p.key === period) || RATING_CHART_PERIODS[2];
+  const cutoff = Date.now() / 1000 - periodDef.days * 86400;
+  const points = allPoints.filter((g) => g.endTime >= cutoff);
+  const W = 320, H = 120, padL = 32, padR = 6, padT = 8, padB = 16;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  let body;
+  if (points.length < 2) {
+    body = <div style={{ height: H - 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>이 기간엔 대국이 부족해요.</div>;
+  } else {
+    const ratings = points.map((g) => g.rating);
+    const min = Math.min(...ratings), max = Math.max(...ratings);
+    const span = Math.max(1, max - min);
+    const mid = Math.round((min + max) / 2);
+    const xAt = (i) => padL + (i / (points.length - 1)) * plotW;
+    const yAt = (r) => padT + plotH - ((r - min) / span) * plotH;
+    const lineD = points.map((g, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
+    const areaD = lineD + " L" + xAt(points.length - 1).toFixed(1) + "," + (padT + plotH) + " L" + xAt(0).toFixed(1) + "," + (padT + plotH) + " Z";
+    const first = points[0].rating, last = points[points.length - 1].rating;
+    const rising = last >= first;
+    const lineColor = rising ? T.best : T.blunder;
+    const fmtAxisDate = (t) => { const dt = new Date(t * 1000); return (dt.getMonth() + 1) + "/" + dt.getDate(); };
+    body = (
+      <>
+        <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+          <span style={{ fontSize: 10.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{points.length}판</span>
+          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: lineColor, fontWeight: 800 }}>{first} → {last}</span>
+        </div>
+        <svg viewBox={"0 0 " + W + " " + H} width="100%" height={H - 20}>
+          {/* y축 그리드(최저/중간/최고) — 값 라벨을 왼쪽에 함께 표시 */}
+          {[min, mid, max].map((r, i) => (
+            <g key={i}>
+              <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(0,0,0,.08)" strokeWidth={1} />
+              <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill={T.inkSoft}>{r}</text>
+            </g>
+          ))}
+          {/* x/y축 선 */}
+          <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(0,0,0,.28)" strokeWidth={1} />
+          <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(0,0,0,.28)" strokeWidth={1} />
+          {/* 선 아래 영역을 반투명하게 채움 */}
+          <path d={areaD} fill={lineColor} opacity={0.16} stroke="none" />
+          <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+          {/* x축 날짜 라벨(시작/끝) */}
+          <text x={xAt(0)} y={H - 6} fontSize={8} textAnchor="start" fill={T.inkSoft}>{fmtAxisDate(points[0].endTime)}</text>
+          <text x={xAt(points.length - 1)} y={H - 6} fontSize={8} textAnchor="end" fill={T.inkSoft}>{fmtAxisDate(points[points.length - 1].endTime)}</text>
+        </svg>
+      </>
+    );
+  }
   return (
     <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
         <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>기간별 레이팅 변동</span>
-        <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: lineColor, fontWeight: 800 }}>{first} → {last}</span>
+        <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
+          {RATING_CHART_PERIODS.map((p) => (
+            <button key={p.key} onClick={() => setPeriod(p.key)} className="press" style={{ padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 9.5, fontWeight: 800, background: period === p.key ? T.ebony2 : "transparent", color: period === p.key ? T.brassHi : T.inkSoft }}>{p.label}</button>
+          ))}
+        </div>
       </div>
-      <svg viewBox={"0 0 " + W + " " + H} width="100%" height={H} preserveAspectRatio="none">
-        <path d={d} fill="none" stroke={lineColor} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
-      </svg>
-      <div className="flex items-center justify-between" style={{ marginTop: 2 }}>
-        <span style={{ fontSize: 9.5, color: T.inkSoft }}>최저 {min}</span>
-        <span style={{ fontSize: 9.5, color: T.inkSoft }}>최고 {max}</span>
-      </div>
+      {body}
     </div>
   );
 }
@@ -10981,7 +11026,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
           헤더를 추가해 두 화면의 구성을 통일한다. */}
       {linked && (
         <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px dashed #C9B58C" }}>
-          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><ChesscomLogo height={19} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Chess.com 통계</span></div>
+          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><ChesscomLogo height={19} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>통계</span></div>
           <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
         </div>
       )}
@@ -11039,6 +11084,8 @@ const CHANGELOG = [
       "퍼즐 화면을 크게 다듬었어요 — 해결한 퍼즐도 오프닝별로 묶어 보여주고, 별 크기를 줄이고, 좋아요·재게시·공유 아이콘을 더 크고 보기 좋게 재배치했어요. 코치 말풍선이 지금 자리를 요약해 설명해주고, PGN은 따로 스크롤되는 한 줄 박스로 분리됐어요. 보드 아래엔 평가치 바가 새로 생겼고, 힌트는 칸 반짝임 → 기물 흔들림 → 이동 경로 표시의 3단계로 완전히 새로워졌어요.",
       "채팅에서 연속으로 온 상대 메시지 묶음 첫 줄에 프로필 사진이 보이고 눌러서 프로필로 이동할 수 있어요. '@사용자명' 멘션은 굵게 표시되고 누르면 그 사람 프로필로 이동해요. 입력 중 표시는 더 옅게 보이고, '/'를 입력하면 명령어 자동완성이 떠요 — '/puzzle 000000'으로 원하는 퍼즐을 바로 공유할 수 있어요.",
       "chess.com 통계를 시간 규정뿐 아니라 흑/백으로도 나눠 볼 수 있게 됐어요. '전체 기간 전적'과 '최근 대국' 사이에 기간별 레이팅 변동 그래프가 추가됐어요.",
+      "'자주 두는 첫 수'가 백/흑 두 박스가 나란히 놓인 모습으로 바뀌었어요 — 왼쪽엔 자주 두는 첫 수(백), 오른쪽엔 백의 각 첫 수에 대한 흑의 응수를 한눈에 볼 수 있어요. 프로필의 '통계' 헤더 문구도 더 짧아졌어요.",
+      "레이팅 변동 그래프에 축·눈금선이 생기고, 그래프 아래가 은은하게 채워져요. 최근 1주/1달/6개월/1년 중 원하는 기간을 골라 볼 수 있어요.",
     ],
   },
   {
@@ -12676,18 +12723,44 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     </div>
   );
 }
+// (v0.2.6 UI) 백/흑을 세로로 이어붙인 목록 대신, 사용자가 그린 스케치대로 "백"·"흑" 두 박스를
+// 나란히 두는 레이아웃으로 바꿨다 — 왼쪽 박스엔 자주 두는 첫 수(백) 하나를 크게, 오른쪽 박스엔
+// 백의 각 첫 수(e4/d4/c4/Nf3, 프로필 편집기에서 입력받는 순서 그대로)에 대한 흑의 응수를
+// "1.e4 e5" 형태의 한 줄씩으로 묶어 보여준다.
+const FIRST_MOVE_BLACK_ORDER = ["e4", "d4", "c4", "Nf3"];
 function FirstMovesDisplay({ firstMoves }) {
   const fm = firstMoves || {};
-  const blackEntries = Object.entries(fm.black || {}).filter(([, v]) => v);
+  const blackMap = fm.black || {};
+  const blackEntries = FIRST_MOVE_BLACK_ORDER.filter((w) => blackMap[w]).map((w) => [w, blackMap[w]]);
   if (!fm.white && !blackEntries.length) return null;
-  const row = { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", marginBottom: 5 };
-  const lab = { fontSize: 11, color: T.inkSoft, fontWeight: 700, flexShrink: 0, minWidth: 62 };
-  const val = { fontSize: 12.5, color: T.ink, fontWeight: 800, fontFamily: SEQ_FONT };
+  const boxStyle = { borderRadius: 10, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", overflow: "hidden" };
+  const headStyle = { fontSize: 10.5, fontWeight: 700, color: T.inkSoft, marginBottom: 4, textAlign: "center" };
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>자주 두는 첫 수</div>
-      {fm.white && <div style={row}><span style={lab}>백</span><span style={val}>{fm.white}</span></div>}
-      {blackEntries.map(([w, b]) => <div key={w} style={row}><span style={lab}>흑 · vs 1.{w}</span><span style={val}>{b}</span></div>)}
+      <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+        {fm.white && (
+          <div style={{ flex: "0 0 auto", width: 90, display: "flex", flexDirection: "column" }}>
+            <div style={headStyle}>백</div>
+            <div style={{ ...boxStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 6px" }}>
+              <span style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, whiteSpace: "nowrap" }}>1.{fm.white}</span>
+            </div>
+          </div>
+        )}
+        {blackEntries.length > 0 && (
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div style={headStyle}>흑</div>
+            <div style={boxStyle}>
+              {blackEntries.map(([w, b], i) => (
+                <div key={w} style={{ display: "flex", alignItems: "baseline", gap: 7, padding: "7px 10px", borderTop: i ? "1px solid #DCCBA8" : "none" }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, fontFamily: SEQ_FONT, flexShrink: 0 }}>1.{w}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT }}>{b}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
