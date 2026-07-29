@@ -8472,7 +8472,12 @@ const dailyPuzzleResolveCache = new Map(); // dateStr -> Promise<puzzle|null>
 function resolveDailyPuzzleCached(dateStr, engine) {
   if (dailyPuzzleResolveCache.has(dateStr)) return dailyPuzzleResolveCache.get(dateStr);
   if (!engine || engine.status !== "ready") return Promise.resolve(null);
-  const p = resolveDailyPuzzle(dateStr, engine);
+  // (v0.2.7 기능) 일반 퍼즐이 onSavePuzzle에서 처음 만들어질 때 puzzleShare로 puzzles 테이블에
+  // 업로드되는 것과 똑같이, 오늘의 퍼즐도 계산되는 즉시 같은 puzzleNo(id) 번호로 업로드해 둔다 —
+  // 그래야 채팅 "/puzzle 000000" 공유, 퍼즐 탭 "번호로 풀기" 등 다른 퍼즐과 동일한 경로로 오늘의
+  // 퍼즐도 찾을 수 있다(같은 날짜는 모든 유저에게 항상 같은 id로 결정적으로 계산되므로, 이미
+  // 누군가 올려 둔 데이터를 덮어써도 내용은 동일하다 — puzzleShare의 upsert가 이를 그대로 처리).
+  const p = resolveDailyPuzzle(dateStr, engine).then((pz) => { if (pz) puzzleShare(pz); return pz; });
   dailyPuzzleResolveCache.set(dateStr, p);
   return p;
 }
@@ -11571,6 +11576,7 @@ const CHANGELOG = [
       "오늘의 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
       "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 오늘의 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 오늘의 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
       "채팅에서 '/puzzle 000000' 명령어로 존재하지 않는 번호를 보내려 하면, 이제 전송 자체가 되지 않고 그 번호의 퍼즐을 찾을 수 없다는 안내가 떠요.",
+      "오늘의 퍼즐도 다른 퍼즐과 똑같이 고유 번호가 매겨져 채팅으로 공유하거나 '번호로 풀기'로 바로 열어볼 수 있어요.",
     ],
   },
   {
