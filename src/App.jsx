@@ -50,6 +50,10 @@ const BOARD_GLOSS = {
   borderImage: "linear-gradient(135deg, #F3DFAE, #C49A50 45%, #8A6C2F) 1",
   boxShadow: "0 0 0 1px rgba(196,154,80,.3), inset 0 1px 3px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.3)",
 };
+// (v0.2.6 버그 수정) 도감 탭 오프닝 모식도·학습 탭 기보·엔진 라인의 포인터 드래그 스크롤이 손가락·
+// 마우스가 움직인 만큼만(1:1) 옮겨져 너무 조금씩만 스크롤된다는 요청 — 드래그 델타에 이 배율을
+// 곱해 같은 드래그 거리로 더 멀리 스크롤·팬되게 한다(세 곳 모두 공용으로 참조).
+const DRAG_SCROLL_MULT = 2.2;
 /* (20\uCC28 \uAE30\uB2A53) \uAE30\uBB3C SVG \uC138\uD2B8 \u2014 \uC720\uB2C8\uCF54\uB4DC \uD14D\uC2A4\uD2B8 \uAE30\uBB3C(\u2654\u2655\u2656\u2657\u2658\u2659)\uC744 \uCCA8\uBD80 \uB808\uD37C\uB7F0\uC2A4(\uB85C\uC6B0\uD3F4\uB9AC\u00B7\uAE08\uC7A5 \uB300\uAC01\uC120
    \uD3F4\uB4DC \uB77C\uC778) \uC2A4\uD0C0\uC77C\uC758 \uBCA1\uD130 \uC544\uC774\uCF58\uC73C\uB85C \uAD50\uCCB4\uD55C\uB2E4. \uBAA8\uB4E0 \uAE30\uBB3C\uC774 \uACF5\uC720\uD558\uB294 \uBC11\uB2E8(base)\u00B7\uBAA9(neck) \uB2E4\uAC01\uD615\uC5D0
    \uAE30\uBB3C\uBCC4 \uBAB8\uD1B5(mid) \uC810 \uBAA9\uB85D\uC744 \uC774\uC5B4\uBD99\uC778 \uB2E8\uC77C \uC2E4\uB8E8\uC5E3 \uD558\uB098 + \uB300\uAC01\uC120 \uD3F4\uB4DC \uB77C\uC778 2\uAC1C + \uBC11\uB2E8 \uAE08\uC7A5 \uC0BC\uAC01 \uD3EC\uC778\uD2B8
@@ -783,8 +787,19 @@ function useEngine(enginePref) {
     if (i === 0 && running.current) {
       settle(job, job.multi ? [] : null);
       try { ref.current && ref.current.postMessage("stop"); } catch (_) { }
-      swallowBest.current++;
-      queue.current.shift(); running.current = false;
+      // (v0.2.6 버그 수정) 예전엔 여기서 곧장 큐에서 빼고 running을 false로 되돌려, 바로 이어지는
+      // pump()가 다음 요청의 "position"/"go"를 같은 엔진 워커에 즉시 보냈다 — 그런데 방금 보낸 "stop"의
+      // 실제 bestmove 응답은 아직 도착하기 전이라, 그 사이에 뒤늦게 도착하는 이전 탐색의 info 줄들이
+      // handleLine에서 "지금 큐 맨 앞"(=이미 새로 들어온 다음 요청)의 결과 버퍼에 그대로 합쳐졌다 —
+      // 전혀 다른 포지션의 PV가 새 요청의 MultiPV 줄에 섞여 들어가, 그 지점부터 SAN 변환이 실패하며
+      // 엔진 라인이 중간에 멈춘 것처럼 영원히 끊겨 보이는 원인이었다(빠르게 다음 수를 두거나 다른
+      // 포지션으로 넘길 때 특히 잘 재현됨). 이 자리를 곧장 비우지 않고 그대로 큐에 남겨 두면(호출자는
+      // 위 settle로 이미 즉시 진행), 실제 bestmove가 와서 아래 handleLine의 bestmove 분기가 자연스럽게
+      // shift·pump할 때까지는 다음 요청이 엔진에 보내지지 않는다 — 그동안 들어오는 뒤늦은 info 줄은
+      // 여전히 이 이미 settle된 자리로만 흘러가(그 자리의 onLines/onProgress는 자신의 key 검사에서
+      // 걸러 아무 일도 안 함), 다음 요청의 결과와 섞일 일이 없다. 혹시 bestmove가 끝내 안 오는
+      // 예외적인 경우에도, 이 job이 pump() 때 이미 걸어 둔 watch/hardWatch 워치독이 그대로 안전망
+      // 역할을 한다.
     } else {
       settle(job, job.multi ? [] : null);
       queue.current.splice(i, 1);
@@ -990,7 +1005,11 @@ async function puzzleCandidatesAt(engine, cur) {
   const moverWhite = cur.length % 2 === 0;
   const color = moverWhite ? "w" : "b";
   let pvs = null;
-  try { pvs = await engine.evaluateMulti(sansToFen(cur), 11, 6, 3500); } catch { pvs = null; }
+  // (v0.2.6 버그 수정) 예전엔 여기서 얕은 depth(11)로 평가해 저장한 등급·평가치가, 나중에 게임
+  // 리뷰와 같은 더 깊은 depth로 다시 매겨지면 서로 달라져(예: 최선의 수인데 평가치가 미묘하게
+  // 바뀜) 보였다 — 게임 리뷰와 동일한 REVIEW_DEPTH·REVIEW_MOVETIME_MS로 평가해 한 번 저장해 두면
+  // 이후 어디서 다시 봐도 항상 같은 값이 나온다.
+  try { pvs = await engine.evaluateMulti(sansToFen(cur), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS); } catch { pvs = null; }
   if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
   const bestCp = cpOfLine(pvs[0]);
   // (버그 수정) 이미 승부가 기운 위치(예: -600cp)에서 어차피 지는 형세를 못 바꾸는 희생 수까지
@@ -1016,7 +1035,7 @@ async function puzzleCandidatesAt(engine, cur) {
   if (topAdopt && topAdopt[1] >= 10 && sanSrc(brd, topAdopt[0], color)) {
     const san = decorateSan(brd, topAdopt[0], color);
     try {
-      const evc = await engine.evaluate(sansToFen([...cur, san]), 9);
+      const evc = await engine.evaluate(sansToFen([...cur, san]), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
       if (evc) {
         const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
         const loss = Math.max(0, bestCp - mvCp);
@@ -1082,7 +1101,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
         if (!terminal) {
-          const ev2 = await engine.evaluate(sansToFen(cur2), 6);
+          const ev2 = await engine.evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
           if (ev2) {
             const evw = posEvalToWhite(ev2, cur2); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
             if (ev2.mate != null && ev2.mate < 0) terminal = true;           // 상대(둘 차례)가 메이트당하는 수순 = 사용자 승
@@ -1113,7 +1132,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
     const cur2 = [...preSans, firstSan];
     bumpNode(cur2);
-    try { const ev2 = await engine.evaluate(sansToFen(cur2), 8); node.ev = posEvalToWhite(ev2, cur2); } catch { }
+    try { const ev2 = await engine.evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
       const lc = await fetchLichess(preSans, false);
       const hit = lc && lc.moves && lc.moves.find((m) => stripSuffix(m.san) === stripSuffix(firstSan));
@@ -1457,6 +1476,26 @@ function attacksPricierIndependent(board, color, minVal, hangSquare) {
   }
   return false;
 }
+// (v0.2.6 기능) 어떤 기물이 위협받는 상태에서 다른 칸으로 옮겨서도 여전히 위협받는 것처럼 보일 때,
+// 그 기물이 이동 가능한 다른 칸들 중 전혀 위협받지 않는 완전히 안전한 칸이 하나라도 있었는지 확인한다.
+// 그런 칸이 있었는데도 굳이 위협받는 칸을 골랐다면 "몰려서 어쩔 수 없이" 둔 게 아니다(isSacrifice 참고).
+function hasSaferSquare(board, fr, fc, piece, color) {
+  const enemy = color === "w" ? "b" : "w";
+  for (let tr = 0; tr < 8; tr++) for (let tc = 0; tc < 8; tc++) {
+    if (tr === fr && tc === fc) continue;
+    const occ = board[tr][tc];
+    if (occ && occ.c === color) continue;
+    if (!canMove(board, piece, color, fr, fc, tr, tc, !!occ)) continue;
+    if (exposesKing(board, fr, fc, tr, tc, color, null)) continue;
+    const b2 = board.map((row) => row.slice());
+    b2[tr][tc] = b2[fr][fc]; b2[fr][fc] = null;
+    let oppGain = seeSquare(b2, tr, tc, enemy);
+    const ekp = kingPos(b2, enemy);
+    if (oppGain > 0 && ekp && isAttacked(b2, ekp[0], ekp[1], color) && !canCaptureSquareLegally(b2, tr, tc, enemy)) oppGain = 0;
+    if (oppGain === 0) return true;
+  }
+  return false;
+}
 function isSacrifice(board, sanRaw, color) {
   const info = sanSrc(board, sanRaw, color);
   if (!info) return false;
@@ -1499,7 +1538,15 @@ function isSacrifice(board, sanRaw, color) {
   // 내주고 폰 두 개(1+1)를 되찾아 net=1-2=-1)가 다시 걸러지지 않게 되는 회귀를 만들었다. 바로 위
   // 블록(기능4) 주석이 설명하는 원래 의도대로 -1로 되돌린다.
   if (!info.castle && info.piece !== "P" && net <= -1) {
-    if (movedThreatLoss >= 1 && net >= -movedThreatLoss && !givesCheck) return false;  // 예정된 손실의 실현(반환)일 뿐
+    // (v0.2.6 버그 수정) 예전엔 이 기물이 이동 전부터 이미 위협받고 있었고(movedThreatLoss>=1) 새로
+    // 옮긴 칸의 손실도 그보다 크지 않으면(net>=-movedThreatLoss) 무조건 "예정된 손실을 그대로
+    // 실현할 뿐"으로 보고 희생 판정에서 제외했다. 하지만 이 기물이 갈 수 있었던 다른 칸 중 전혀
+    // 위협받지 않는 완전히 안전한 칸이 있었는데도 굳이 위협받는 것처럼 보이는 이 칸을 골랐다면
+    // (예: 24.Re1 — 퀸에게 물리던 룩이 Rd1·Rf1 같은 완전 안전지대 대신 상대 룩과 마주보는 e1로
+    // 피신. 겉보기엔 또 잡히는 자리 같지만 실제로 Rxe1을 받아주면 백랭크 메이트 함정이라 안전함)
+    // 이는 몰려서 어쩔 수 없이 둔 게 아니라 스스로 위험해 보이는 자리로 걸어 들어간 것이므로, 정말
+    // 안전한 대안이 하나도 없었을 때만(포크 등으로 진짜 궁지에 몰린 경우) 희생 판정에서 제외한다.
+    if (movedThreatLoss >= 1 && net >= -movedThreatLoss && !givesCheck && !hasSaferSquare(board, fr, fc, info.piece, color)) return false;
     return true;
   }
   // (16차) 이 수 자체가 기물을 잡히는 칸으로 옮기지 않아도, 상대가 이미 걸고 있던 기물 잡는 위협을
@@ -1533,18 +1580,33 @@ function isSacrifice(board, sanRaw, color) {
     // 방치된 나이트 d5를 무시하고 무관한 비숍 b3를 반격하지만, 결국 나이트 대 비숍의 동가 교환으로
     // 귀결되는 뻔한 수). attacksPricierIndependent가 false를 돌려주면(=진짜 반격이 아니면) 탁월이 아니다.
     if (attacksPricierIndependent(after, color, afterHang, afterHangSq)) return false;
-    // (버그 수정) 예전엔 beforeHang(이 수를 두기 전부터 이미 걸려 있던 손실) 이상으로 afterHang이
-    // 커지지 않은 경우(=새로 더 망치지는 않은 순수 방치) 반격(attacksPricier)으로 상쇄하지 못하면
-    // 희생으로 치지 않았는데, 바로 이 "이미 걸린 걸 그대로 방치" 케이스가 사용자가 요청한 전형적인
-    // 방치 희생(위 16.O-O-O·6...h5 예시 모두 beforeHang>=afterHang이면서 반격도 없는 경우)이라
-    // 이 요구조건이 오히려 정상적인 방치 희생을 걸러내고 있었다. 이 지점에 이르렀다는 것 자체가
-    // 이미 afterHang이 2점 이상이고 net-afterHang<=-2(실질 손실 확정)까지 확인됐다는
-    // 뜻이고, 호출부마다 이 판정 뒤에도 실제 엔진 평가(mvCp>=-40)로 한 번 더 걸러지며 유일한
-    // 합법수("only")는 애초에 isSacrifice를 호출하지 않는 kind 분기에서 걸러지므로, 포크 상황
-    // (movedThreatLoss>=1, 위에서 이미 별도 처리)을 제외하면 추가로 반격 여부까지 요구할 필요가 없다.
+    // (v0.2.6 버그 수정) 지금 당장(상대가 아직 잡기 전) 반격 위협이 안 보여도, 상대가 실제로 이
+    // 방치된 기물을 잡는 수 자체가 다른 아군 기물(주로 룩)의 시야를 가로막던 상대 기물을 치워 그
+    // 즉시 훨씬 더 비싼 기물이 뚫리는 경우가 있다(예: 13...Qxc3 이후 비숍 f5가 나이트에게 걸려
+    // 있지만, 그 나이트가 f5를 잡으러 움직이는 순간 d파일이 열려 룩이 곧장 퀸을 잡는다 — 상대가
+    // 방치된 기물을 잡으면 오히려 9>5+3으로 더 손해라 진짜 위험이 아니다). attacksPricierIndependent는
+    // 잡히기 '전' 보드만 보므로 이런 지연 발동 위협을 못 본다 — 상대의 최소가치 공격자로 실제 그
+    // 칸을 잡아본 뒤, 그 결과 포지션에서 다시 pricier 위협을 검사해 "상대가 잡으면 다음 수에 바로
+    // 그 이상을 회수당하는" 경우를 희생 판정에서 제외한다.
+    const hangAtt = lva(after, afterHangSq[0], afterHangSq[1], enemy);
+    if (hangAtt) {
+      const afterCap = after.map((row) => row.slice());
+      afterCap[afterHangSq[0]][afterHangSq[1]] = { c: enemy, t: hangAtt.t };
+      afterCap[hangAtt.r][hangAtt.c] = null;
+      if (attacksPricier(afterCap, color, afterHang)) return false;
+    }
     return true;
   }
   return false;
+}
+// (v0.2.6 버그 수정) 직전 자신의 수(2수 전 — 상대 응수 하나를 사이에 둔 같은 진영의 수)가 이미
+// 희생이었다면, 지금 이 수는 그 희생을 잇는 콤보의 연결 수(디플렉션·체크로 기물을 회수하는 수 등)일
+// 뿐 새로 찾아낸 탁월한 수가 아니므로 다시 브릴리언트로 태그하지 않는다. 예: 15...Qxd2(퀸 희생)
+// 다음의 16...Nf3+는 그 자체로도 SEE상 희생처럼 보이지만(나이트가 gxf3에 잡힘), 직전 수가 이미
+// 희생이었던 연장선이므로 중복으로 탁월 태그를 붙이지 않는다.
+function ownPriorMoveWasSacrifice(prevSans, color) {
+  if (!prevSans || prevSans.length < 2) return false;
+  try { return isSacrifice(boardFromSans(prevSans.slice(0, -2)), prevSans[prevSans.length - 2], color); } catch { return false; }
 }
 function kingPos(board, color) { for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p && p.c === color && p.t === "K") return [r, c]; } return null; }
 function isAttacked(board, tr, tc, byColor) {
@@ -2021,37 +2083,92 @@ function computeRatingChanges(games) {
   }
   return map;
 }
+// (v0.2.6 성능) chess.com 대국 캐시 — 계정별로 이미 받은 대국 목록 + 다 받은 달(archive) 목록을
+// localStorage에 저장해 둔다. 버전 번호를 키에 넣어 두면, 나중에 저장 구조가 바뀌어도 예전 캐시를
+// 안전하게 무시(재요청)하게 할 수 있다. 다른 localStorage 캐시들(occ_bgm_on 등)과 같은 접두어·
+// try/catch 관례를 따른다 — 캐시는 있으면 좋은 부가 기능일 뿐이라 실패해도 앱 동작에 지장이 없어야 한다.
+const CHESSCOM_CACHE_VERSION = 1;
+function chesscomCacheKey(u) { return "occ_chesscom_v" + CHESSCOM_CACHE_VERSION + "_" + u; }
+function loadChesscomCache(u) {
+  try {
+    const raw = window.localStorage.getItem(chesscomCacheKey(u));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.games) || !Array.isArray(parsed.fetchedMonths)) return null;
+    return parsed;
+  } catch { return null; }
+}
+function saveChesscomCache(u, data) {
+  try { window.localStorage.setItem(chesscomCacheKey(u), JSON.stringify(data)); } catch { /* 용량 초과 등은 무시 */ }
+}
 function useChessCom(username) {
-  const [state, setState] = useState({ status: "idle", games: [] });
+  const [state, setState] = useState({ status: "idle", games: [], stillFetching: false });
   useEffect(() => {
-    if (!username) { setState({ status: "idle", games: [] }); return; }
+    if (!username) { setState({ status: "idle", games: [], stillFetching: false }); return; }
     let cancelled = false;
+    const u = username.toLowerCase().trim();
+    // (v0.2.6 성능) 예전엔 이 훅이 마운트될 때마다(새로고침·다른 탭 갔다 오기 등) 계정 개설 이후
+    // 전체 기간의 모든 달을 처음부터 다시 받았다 — 대국이 아주 많은 계정은 그 자체로도 오래 걸렸고,
+    // 더 심각하게는 "끝까지 받기 전에 사용자가 다른 곳으로 이동"하는 일이 흔해(오래 기다리다 지쳐서)
+    // 매번 처음부터 다시 시작하다 또 중단되길 반복했다 — 오래된 달(그 안에 몰려 있는 특정 시간
+    // 규정 대국들)을 영영 못 받아, 그 시간 규정 데이터가 계속 안 보이는 게 근본 원인이었다(대국이
+    // 매우 많은 계정에서 특정 시간 규정 데이터가 아예 안 보이는 문제).
+    // localStorage에 계정별로 대국 목록 + 이미 다 받은 달 목록을 캐싱해 두고, 캐시가 있으면
+    // 네트워크 요청 전에 즉시 그 내용을 그대로 보여준다("로그인할 때만 다시 로드"하는 효과) — 그
+    // 뒤 백그라운드로는 한 번도 못 받은 달과, 마지막으로 받았던 달(그 사이 실시간으로 새로 끝난
+    // 대국이 쌓였을 수 있음)만 다시 받아 병합한다. 달 하나를 처리할 때마다 즉시 캐시에 저장해 두므로,
+    // 계정이 너무 커서 끝까지 못 받고 화면을 벗어나도 다음 방문에서 그만큼은 이어받아 결국 전체가
+    // 채워진다.
+    const cached = loadChesscomCache(u);
+    let games = cached ? cached.games.slice() : [];
+    const fetchedSet = new Set(cached ? cached.fetchedMonths : []);
+    setState(games.length ? { status: "ready", games, stillFetching: true } : { status: "loading", games: [], stillFetching: true });
     (async () => {
-      setState({ status: "loading", games: [] });
       try {
-        const u = username.toLowerCase().trim();
         const arc = await fetch("https://api.chess.com/pub/player/" + u + "/games/archives");
         if (!arc.ok) throw new Error("archives " + arc.status);
         const aj = await arc.json();
         // (19차 기능6) 칭호 조건에 오프닝별 chess.com 플레이 횟수를 반영하기 위해
         // 최근 12개월이 아니라 계정 개설 이후 전체 기간의 모든 아카이브를 불러온다.
+        const allMonths = (aj.archives || []);
+        // 마지막으로 받았던 달은 그때는 "이번 달"처럼 아직 진행 중이었을 수 있어 그 사이 새로 끝난
+        // 실시간 대국이 쌓였을 수 있다 — 그 달만 다시 받고, 그보다 이전 달들(이미 완결된 달)은
+        // 다시 받지 않는다. 캐시에 아예 없던(새로 생긴) 달은 당연히 전부 받는다.
+        const latestMonth = allMonths.length ? allMonths[allMonths.length - 1] : null;
+        const monthsToFetch = allMonths.filter((m) => !fetchedSet.has(m) || m === latestMonth);
         // (버그 수정) chess.com의 archives 목록은 오래된 달부터 최신 달 순으로 온다 — 그대로 불러오면
         // 대국이 많은 계정에서 "최근 대국"이 표시되기까지 전체 기간을 다 불러올 때까지 기다려야 했다.
         // 최신 달부터 거꾸로 불러오고, 달 하나를 불러올 때마다 즉시 화면에 반영(status:"ready")해
         // 나머지 과거 달은 백그라운드에서 이어서 불러오는 동안에도 최근 대국부터 바로 보이게 한다.
-        const months = (aj.archives || []).slice().reverse();
-        const games = [];
-        for (const url of months) {
+        const ordered = monthsToFetch.slice().reverse();
+        // (버그 수정) 한 달씩 순서대로 기다리며 받다 보니, 대국이 아주 많아(수백 달 분량) 달 개수가
+        // 많은 계정은 최근 몇 달치를 받는 데도 초 단위로 시간이 걸렸다 — 그 사이엔 특정 시간 규정
+        // (예: 최근엔 안 둔 불릿)이 실제로는 더 최근 달에 있는데도 아직 그 달까지 못 받아 그래프에
+        // "대국이 없다"고 잘못 보이는 것처럼 느껴졌다. 최신 달부터 여러 달을 동시에(배치) 요청해
+        // 같은 시간에 훨씬 더 많은 달을 받아 오도록 병렬화했다 — 기본 필터 기간(6개월~1년)이 대개
+        // 한 배치 안에 다 들어가, 처음 열자마자 최근 데이터가 거의 곧바로 채워진다.
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < ordered.length; i += BATCH_SIZE) {
           if (cancelled) return;
-          try {
-            const r = await fetch(url); if (!r.ok) continue;
-            const j = await r.json();
-            for (const g of (j.games || [])) {
+          const batch = ordered.slice(i, i + BATCH_SIZE);
+          const results = await Promise.all(batch.map(async (url) => {
+            try {
+              const r = await fetch(url); if (!r.ok) return null;
+              const j = await r.json();
+              return { url, list: j.games || [] };
+            } catch { return null; }
+          }));
+          if (cancelled) return;
+          for (const res of results) {
+            if (!res) continue; // 실패한 달은 fetchedSet에 넣지 않아 다음 방문 때 다시 시도된다.
+            const { url, list } = res;
+            games = games.filter((g) => g.__month !== url); // 이 달을 다시 받는 것이므로 이전 몫을 들어냄
+            for (const g of list) {
               if (!g.pgn) continue;
               const userIsWhite = g.white && g.white.username && g.white.username.toLowerCase() === u;
               const side = userIsWhite ? g.white : g.black;
-              const res = side && side.result;
-              const result = res === "win" ? "win" : (["checkmated", "resigned", "timeout", "lose", "abandoned"].includes(res) ? "loss" : "draw");
+              const res2 = side && side.result;
+              const result = res2 === "win" ? "win" : (["checkmated", "resigned", "timeout", "lose", "abandoned"].includes(res2) ? "loss" : "draw");
               // (19차 기능6) ECO URL(g.eco)에서 오프닝 이름 슬러그를 뽑아 저장 — 칭호 조건의 오프닝별 플레이 횟수 집계에 사용.
               // (버그 보충) 레이팅 증감치·정확도 표기를 위해 이 대국에서의 내 레이팅(side.rating),
               // 타임클래스(레이팅 풀이 종류별로 나뉘므로 증감 계산 시 같은 클래스끼리만 비교해야 함),
@@ -2063,13 +2180,21 @@ function useChessCom(username) {
               // 상대 이름·레이팅까지 보여주려면 이 시점에 양쪽을 그대로 저장해 둬야 한다.
               games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
                 white: { username: (g.white && g.white.username) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
-                black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null } });
+                black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
+                __month: url });
             }
-            if (!cancelled) setState({ status: "ready", games: [...games] });
-          } catch (_) {}
+            fetchedSet.add(url);
+          }
+          if (!cancelled) {
+            setState({ status: "ready", games: [...games], stillFetching: true });
+            saveChesscomCache(u, { games, fetchedMonths: Array.from(fetchedSet) });
+          }
         }
-        if (!cancelled) setState({ status: "ready", games });
-      } catch (e) { if (!cancelled) setState({ status: "error", games: [] }); }
+        if (!cancelled) {
+          setState({ status: "ready", games, stillFetching: false });
+          saveChesscomCache(u, { games, fetchedMonths: Array.from(fetchedSet) });
+        }
+      } catch (e) { if (!cancelled) { if (!games.length) setState({ status: "error", games: [], stillFetching: false }); else setState({ status: "ready", games, stillFetching: false }); } }
     })();
     return () => { cancelled = true; };
   }, [username]);
@@ -2175,7 +2300,7 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
   // 아무리 나빠져도, 두기 전이 팽팽했다면 그 수 자체가 승부를 가른 것이므로 완화 대상이 아니다.
   const decided = Math.abs(bestCp) > 200;
   const losing = bestCp <= -200;
-  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant";
+  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
   if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
   // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데 그 이점을 응징 못 해 평가치가 감소하되,
   // 결과가 뒤집힐(패배) 정도는 아닌 경우. 후보일 때만 직전 포지션을 1회 추가 평가해 상대 손실을 확인한다.
@@ -2465,7 +2590,10 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
       // (버그 수정) '완화' 판정을 둔 뒤 평가(playedCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로
       // 한다 — 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
       const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
+      // (v0.2.6 버그 수정) 직전 자신의 수(2수 전)가 이미 브릴리언트(희생)로 분류됐다면, 지금 수는
+      // 그 희생을 잇는 콤보의 연결 수일 뿐이므로 다시 탁월로 중복 태그하지 않는다.
+      const continuesOwnSacrifice = i >= 2 && moves[i - 2].kind === "brilliant";
+      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing) && !continuesOwnSacrifice) kind = "brilliant"; } catch { }
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
       // 유일한 수(Great, 매우 좋아요): 최선수를 뒀는데 2순위가 분명히 열세라(대안이 없다) 반드시 그 수여야 했던 경우.
       const gap = posEval[i].second == null ? 9999 : (bestCp - posEval[i].second);
@@ -2815,12 +2943,21 @@ function EngineLineSkeleton() {
 // 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
 function TypedMoveLine({ startPly, sans, posKey }) {
   const [shown, setShown] = useState(0);
-  useEffect(() => { setShown(0); }, [posKey]);
+  // (v0.2.6 버그 수정) 예전엔 setTimeout의 의존성 배열에 sans.length를 넣어, 엔진이 같은 라인을
+  // 더 깊이 파고들며 sans가 계속 늘어날 때마다(짧은 간격으로 반복 스트리밍되는 경우가 흔함) 대기
+  // 중이던 타이머가 매번 취소되고 처음부터(55ms) 다시 예약됐다 — 갱신이 55ms보다 촘촘하게 계속
+  // 들어오면 타이머가 단 한 번도 실행되지 못해 타이핑이 특정 지점에서 영원히 멈춘 것처럼 보였다
+  // (라인이 "끝까지 작성되지 않는" 원인). posKey(라인 자체가 바뀔 때)에만 55ms interval을 새로
+  // 만들고, 그 interval은 sans가 몇 번을 늘어나든 절대 취소·재예약되지 않는다 — 매 틱마다 그
+  // 시점의 최신 길이(sansLenRef)까지 도달했는지만 확인하므로, 데이터가 아무리 자주 갱신돼도 항상
+  // 꾸준히 앞으로 나아가 결국 끝까지 타이핑된다.
+  const sansLenRef = useRef(sans.length);
+  sansLenRef.current = sans.length;
   useEffect(() => {
-    if (shown >= sans.length) return;
-    const id = setTimeout(() => setShown((s) => Math.min(s + 1, sans.length)), 55);
-    return () => clearTimeout(id);
-  }, [shown, sans.length]);
+    setShown(0);
+    const id = setInterval(() => { setShown((s) => (s >= sansLenRef.current ? s : s + 1)); }, 55);
+    return () => clearInterval(id);
+  }, [posKey]);
   return <>{pvContinuationText(startPly, sans.slice(0, Math.min(shown, sans.length)))}</>;
 }
 // (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
@@ -2836,22 +2973,26 @@ function dedupeEngineLines(list) {
 // 옮기는 드래그 스크롤을 구현해 마우스·터치·펜 어디서나 동일하게 동작하게 하고, 실제로 끌었을
 // 때(moved)만 스크롤로 처리하고 그렇지 않으면(제자리 클릭) 그 줄의 첫 수를 둔다 — 스크롤하다 손을
 // 뗀 것이 수를 두는 클릭으로 오인되던 문제를 없앤다.
-// (v0.2.5 버그 수정 2) 드래그 스크롤 자체는 됐지만, 타이핑 효과(TypedMoveLine)로 수순이 시야보다
-// 길게 자라나도 scrollLeft는 그대로 0에 머물러 있어 새로 타이핑된 뒷부분이 화면 밖에서 계속
-// 이어지기만 할 뿐 사용자 눈에는 여전히 "8.fxe3 d6 9.Nd5 Be6"에서 멈춘 것처럼 보였다 — 사용자가
-// 직접 끌어야만 그 뒤를 볼 수 있었던 게 진짜 원인. 채팅창 자동 스크롤과 같은 패턴으로, 지금 보이는
-// 오른쪽 끝이 이미 콘텐츠 끝(atEnd)일 때는 새로 타이핑되는 글자를 계속 따라가며 자동으로 스크롤해
-// 항상 "지금 막 타이핑된 부분"이 보이게 한다. 사용자가 직접 드래그해 앞부분을 살펴보는 중에는
-// (moved=true) 그 위치를 존중해 자동 추적을 멈추고, 줄 정체성이 바뀌면(다음 포지션 등) 다시
-// 처음부터 추적을 재개한다. 아직 안 보이는 수순이 남아있으면 오른쪽 끝에 옅은 그라데이션 페이드도
-// 보여줘 "더 있다"는 것을 시각적으로 알려준다.
-function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst }) {
+// (v0.2.6 버그 수정) 예전엔 타이핑 효과로 수순이 시야보다 길게 자라날 때마다 scrollLeft를 콘텐츠
+// 오른쪽 끝에 맞춰 계속 따라가게 했는데, 그러면 지금 막 타이핑되는 수가 화면 맨 오른쪽 좁은 자리에
+// 끼여 보일 뿐 아니라, 각 줄이 실제로 대변하는 "바로 다음 수"(l.sans[0], 이 줄의 첫 수)가 계속
+// 화면 밖으로 밀려나 버렸다. 더 이상 타이핑에 맞춰 자동으로 스크롤을 옮기지 않고 항상 왼쪽 끝(=
+// 다음 수)에 고정해 둔다 — 뒷부분을 보고 싶으면 사용자가 직접 끌어서 보면 된다(더 있으면 오른쪽에
+// 옅은 그라데이션 페이드로 알려줌).
+// (v0.2.6 버그 수정) 예전엔 이 컴포넌트를 그 줄의 첫 수(lineKey)로 키를 잡아, 탐색 depth가 깊어지며
+// MultiPV 순위가 바뀔 때마다(포지션은 그대로인데 특정 자리에 다른 수순이 들어옴) React가 이 자리를
+// 통째로 언마운트·재마운트했다 — 안의 TypedMoveLine도 함께 다시 만들어져 shown이 0으로 리셋되며
+// 화면이 잠깐 완전히 비었다 다시 타이핑되길 반복했다(포지션은 안 바뀌었는데도 특정 줄이 계속
+// 빈칸↔부분 타이핑을 오가며 "끝까지 안 써지는" 것처럼 보인 진짜 원인). 이제 이 자리(슬롯 번호,
+// 포지션이 바뀌지 않는 한 항상 같음)로 키를 잡아, 순위가 바뀌어 다른 수순이 들어와도 같은 컴포넌트
+// 인스턴스가 그대로 유지된다 — 안의 TypedMoveLine도 재마운트되지 않으므로 shown이 리셋되지 않고,
+// 새 수순의 길이만큼 자연스럽게 이어서(또는 이미 더 길게 타이핑돼 있었다면 그대로) 표시된다.
+function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   const dragRef = useRef(null);
-  const followRef = useRef(true);
   const [showFade, setShowFade] = useState(false);
-  const identity = posKeyBase + ":" + lineKey;
+  const identity = posKeyBase + ":" + slotIdx;
   const recompute = () => {
     const outer = outerRef.current, inner = innerRef.current;
     if (!outer || !inner) return;
@@ -2859,18 +3000,12 @@ function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst 
     const atEnd = outer.scrollLeft + outer.clientWidth >= inner.scrollWidth - 1;
     setShowFade(overflowing && !atEnd);
   };
-  const followTail = () => {
-    const outer = outerRef.current, inner = innerRef.current;
-    if (!outer || !inner || !followRef.current) return;
-    outer.scrollLeft = Math.max(0, inner.scrollWidth - outer.clientWidth);
-  };
   useEffect(() => {
-    followRef.current = true;
-    followTail();
+    if (outerRef.current) outerRef.current.scrollLeft = 0;
     recompute();
     const inner = innerRef.current;
     if (!inner || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => { followTail(); recompute(); });
+    const ro = new ResizeObserver(recompute);
     ro.observe(inner);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2883,19 +3018,15 @@ function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst 
     const d = dragRef.current;
     if (!d) return;
     const dx = e.clientX - d.x;
-    if (Math.abs(dx) > 3) { d.moved = true; followRef.current = false; }
-    if (outerRef.current) outerRef.current.scrollLeft = d.scrollLeft - dx;
+    if (Math.abs(dx) > 3) d.moved = true;
+    if (outerRef.current) outerRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
     recompute();
   };
   const onPointerUp = () => {
     const d = dragRef.current;
     dragRef.current = null;
     if (d && !d.moved && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]);
-    else if (d) recompute(); // 드래그 후 손을 뗀 위치가 끝이면 다시 자동 추적을 재개
-    if (d && d.moved) {
-      const outer = outerRef.current, inner = innerRef.current;
-      if (outer && inner && outer.scrollLeft + outer.clientWidth >= inner.scrollWidth - 1) followRef.current = true;
-    }
+    else if (d) recompute();
   };
   return (
     <div className="no-pan press" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { dragRef.current = null; }}
@@ -2903,7 +3034,7 @@ function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst 
       <EvalBadge ev={l.ev} small />
       <div ref={outerRef} onScroll={recompute} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none" }}>
         <span ref={innerRef} style={{ display: "inline-block" }}>
-          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + lineKey} />
+          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + slotIdx} />
         </span>
       </div>
       {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 18, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,.9))", borderRadius: "0 6px 6px 0" }} />}
@@ -2931,15 +3062,16 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
       {hasLines
         ? <>
           {lines.map((l, i) => {
-            // (v0.2.4 버그 수정) 예전엔 배열 인덱스(i)로 key/posKey를 잡아, MultiPV 순위가 뒤바뀌면
-            // (탐색 depth가 깊어지며 흔히 일어남) 같은 자리(i)에 완전히 다른 수순이 들어와도 그
-            // 자리의 TypedMoveLine이 재사용돼(React reconciliation) 이전 수순만큼 이미 진행된 shown
-            // 값을 그대로 물려받았다 — 새 수순이 그보다 짧으면 shown>=length라 타이핑이 그 자리에서
-            // 바로 멈춘 것처럼 보였다. 수순의 정체성(첫 수)으로 key를 잡아, 순위가 바뀌어도 각 수순이
-            // 자기 자신의 타이핑 진행 상태를 계속 이어가게 한다.
-            const lineKey = (l.sans && l.sans[0]) || i;
+            // (v0.2.4 버그 수정, v0.2.6에서 슬롯 기반으로 재수정) 한때는 이 자리를 그 줄의 첫 수로
+            // 키를 잡았었다(MultiPV 순위가 바뀌면 배열 인덱스만으로는 완전히 다른 수순이 같은 자리에
+            // 재사용되며 이전 타이핑 진행 상태를 잘못 물려받는 문제가 있었기 때문). 그런데 첫 수로
+            // 키를 잡으면 반대로, 순위가 바뀔 때마다(포지션은 그대로인데도) 이 자리 전체가
+            // 언마운트·재마운트돼 타이핑이 처음부터 다시 시작되며 화면이 잠깐 비어 보이는 문제가
+            // 있었다(EngineLineRow 위 주석 참고) — 배열 인덱스(슬롯 번호)로 다시 돌아가되, 대신
+            // TypedMoveLine의 타이핑 진행 상태가 슬롯이 아니라 "포지션"에만 반응하도록 posKey를
+            // 구성해(EngineLineRow 참고) 두 문제를 모두 피한다.
             return (
-              <EngineLineRow key={lineKey} l={l} startPly={sans.length} lineKey={lineKey} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
+              <EngineLineRow key={i} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
             );
           })}
           {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
@@ -3057,7 +3189,13 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
   );
 }
 /* ============================================================ 보드 ============================================================ */
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval }) {
+// (v0.2.6 기능) 퍼즐 3단계 힌트용 오버레이 — hintTo(1단계, 도착 칸 반짝임)·hintFrom(2단계, 움직일
+// 기물 흔들림)·hintPathSq(3단계, 행마법 경로를 따라 순서대로 반짝이는 현재 칸)는 Board를 쓰는
+// 다른 화면(학습 탭 등)에는 항상 undefined라 아무 영향이 없다.
+// (버그 수정) hintPathProgress(0~1) — 경로 칸이 목적지에 얼마나 가까운지를 나타내, 그 칸의
+// 그라데이션 오버레이 농도(opacity)를 정한다. 넘기지 않으면 항상 옅은 농도로 표시된다.
+const HINT_GOLD_GRADIENT = "radial-gradient(circle at 50% 50%, rgba(255,224,153,.95) 0%, rgba(196,154,80,.6) 60%, rgba(196,154,80,.15) 100%)";
+function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
   // (v0.2.2 UX#4) 그랜드마스터 보드 스킨에만 주기적으로 지나가는 광택(빛 sweep)을 얹는다.
@@ -3116,7 +3254,24 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               {wrongAt && wrongAt[0] === r && wrongAt[1] === c && (
                 <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
               )}
-              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default" }} />}
+              {/* (버그 수정) 두어야 할 칸을 가느다란 윤곽선(inset box-shadow)만으로 표시해 눈에 잘
+                  안 띄었다 — 칸 전체를 금색 그라데이션으로 덧씌워 훨씬 또렷하게 보이도록 했다. 이
+                  칸은 힌트가 향하는 최종 목적지이므로 항상 가장 진한 농도(HINT_GOLD_GRADIENT)로 채운다. */}
+              {hintTo && hintTo[0] === r && hintTo[1] === c && (
+                <div style={{ position: "absolute", inset: cell * 0.04, borderRadius: 6, background: HINT_GOLD_GRADIENT, animation: "hintSquarePulse 1.1s ease-in-out infinite", pointerEvents: "none", zIndex: 4 }} />
+              )}
+              {/* (버그 수정) 행마법 경로 칸도 작은 원형 점 대신 칸 전체를 금색 그라데이션으로 덧씌우되,
+                  목적지 칸에 가까워질수록(hintPathProgress: 0→1) 바깥쪽 div의 opacity로 농도를 점점
+                  진하게 만든다 — 경로를 따라갈수록 색이 짙어지며 목적지로 이어지는 느낌을 준다. */}
+              {hintPathSq && hintPathSq[0] === r && hintPathSq[1] === c && (
+                <div key={hintPathSq[0] + "," + hintPathSq[1]} style={{ position: "absolute", inset: cell * 0.04, opacity: Math.max(0.35, Math.min(1, hintPathProgress || 0.35)), pointerEvents: "none", zIndex: 5 }}>
+                  <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: HINT_GOLD_GRADIENT, animation: "hintSquarePop .38s ease-out" }} />
+                </div>
+              )}
+              {/* (버그 수정) 움직여야 할 기물이 옆으로 미끄러지듯(translateX) 흔들려 부자연스러웠다 —
+                  마치 기물 윗부분을 손으로 잡고 흔드는 것처럼, 아래쪽(받침)을 축으로 각도만 조금씩
+                  바뀌며 흔들리도록 lineShake(좌우 이동) 대신 새 hintPieceWobble(회전)로 바꿨다. */}
+              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", transformOrigin: "50% 90%", animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />}
             </div>
           );
         }))}
@@ -3167,6 +3322,29 @@ function sansToPgnText(sans) {
 }
 // (18차 UI6) 기보는 Playfair Display 폰트로 표기한다.
 const SEQ_FONT = "'Playfair Display', 'Noto Sans KR', serif";
+// (v0.2.6 기능) 퍼즐 풀이 화면의 기보 — 예전엔 텍스트 한 줄을 그냥 중앙 정렬해 두어, 길어지면
+// 가운데 정렬 때문에 앞부분이 화면 밖으로 잘려 아예 안 보였다. 별도의 박스에 담아 한 줄(nowrap)로
+// 고정하고, 다른 곳(엔진 라인·SequenceBar)과 동일한 포인터 드래그 스크롤을 붙여 좌우로 끌어볼 수
+// 있게 한다.
+function PuzzlePgnBox({ text }) {
+  const scrollRef = useRef(null);
+  const dragRef = useRef(null);
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX, scrollLeft: scrollRef.current ? scrollRef.current.scrollLeft : 0 };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d || !scrollRef.current) return;
+    scrollRef.current.scrollLeft = d.scrollLeft - (e.clientX - d.x) * DRAG_SCROLL_MULT;
+  };
+  return (
+    <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerCancel={() => { dragRef.current = null; }} onPointerUp={() => { dragRef.current = null; }}
+      className="no-pan" style={{ marginBottom: 8, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.03)", padding: "6px 10px", cursor: "grab" }}>
+      <div ref={scrollRef} style={{ overflowX: "auto", whiteSpace: "nowrap", fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, minHeight: 16, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>{text || " "}</div>
+    </div>
+  );
+}
 // (18차 UX3) 수를 되돌리거나 기보를 클릭해 이전 수로 돌아가도 이후 수들(future)이 기보에서 사라지지 않고
 // 흐리게 계속 표시되며, 현재 수만 볼드로 강조된다. future 수를 클릭하면 그 수까지 다시 진행한다.
 // (v0.1.3 버그 수정) 기보가 길어지면 flex-wrap으로 줄바꿈돼 이 바의 높이가 계속 늘어나며 아래
@@ -3204,7 +3382,7 @@ function SequenceBar({ sans, future = [], onJump }) {
     if (!d) return;
     const dx = e.clientX - d.x;
     if (Math.abs(dx) > 3) d.moved = true;
-    if (scrollRef.current) scrollRef.current.scrollLeft = d.scrollLeft - dx;
+    if (scrollRef.current) scrollRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
   };
   const onClickCapture = (e) => {
     if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); }
@@ -3300,26 +3478,51 @@ function NotationTools({ sans, onLoadPgn }) {
   );
 }
 
-function CircleBadge({ kind, big, noTip, descOnClick }) {
-  const [hover, setHover] = useState(false);
+// (v0.2.6 버그 수정) 수 체계 설명 말풍선·채팅 롱프레스 메뉴·알림 카드가 화면 가장자리 근처의 기준
+// 요소에서 열리면, 원래 자리(중앙 정렬 또는 좌우 끝 맞춤) 그대로 뜨면서 팝업 폭만큼 화면 밖으로
+// 잘려 나갔다. 기준 요소의 화면상 위치(anchorRect)를 이용해, 팝업이 그 자리 그대로(정렬 방식에
+// 따라 중앙/오른쪽 끝/왼쪽 끝 맞춤) 뜬다고 가정했을 때의 좌우 경계가 화면 정중앙 기준 안전 영역
+// (margin)을 벗어나는 만큼만 반대 방향으로 밀어내는 오프셋(px)을 계산한다 — 세 곳(CircleBadge
+// 설명 말풍선, 채팅 롱프레스 메뉴, 알림 카드) 공용.
+function safeAreaDx(anchorRect, popupW, align, margin = 10) {
+  if (!anchorRect || typeof window === "undefined") return 0;
+  const vw = window.innerWidth;
+  const naturalLeft = align === "right" ? anchorRect.right - popupW : align === "left" ? anchorRect.left : anchorRect.left + anchorRect.width / 2 - popupW / 2;
+  if (naturalLeft < margin) return margin - naturalLeft;
+  if (naturalLeft + popupW > vw - margin) return (vw - margin) - (naturalLeft + popupW);
+  return 0;
+}
+const CIRCLE_BADGE_DESC_W = 220;
+function CircleBadge({ kind, big, descOnClick }) {
   const [descOpen, setDescOpen] = useState(false);
+  const [descDx, setDescDx] = useState(0);
+  const anchorRef = useRef(null);
   const sz = big ? 36 : 26;
-  // (v0.2.1) descOnClick — 아이콘을 클릭하면 등급 이름 + 조건/설명을 담은 조금 더 큰 말풍선을 토글한다.
-  const showLabelTip = hover && !noTip && !descOpen;
+  // (v0.2.1) descOnClick — 아이콘을 클릭하면 등급 이름 + 조건/설명을 담은 말풍선을 토글한다.
+  // (v0.2.6 버그 수정) 열 때마다 기준 아이콘의 실제 화면 위치를 재서 화면 밖으로 잘리지 않을
+  // 안전한 가로 오프셋을 함께 계산해 둔다.
+  const toggleDesc = (e) => {
+    e.stopPropagation();
+    setDescOpen((v) => {
+      const next = !v;
+      if (next && anchorRef.current) setDescDx(safeAreaDx(anchorRef.current.getBoundingClientRect(), CIRCLE_BADGE_DESC_W, "center"));
+      return next;
+    });
+  };
   return (
-    <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }} onMouseEnter={noTip ? undefined : () => setHover(true)} onMouseLeave={noTip ? undefined : () => setHover(false)}>
-      <span onClick={descOnClick ? (e) => { e.stopPropagation(); setDescOpen((v) => !v); } : undefined} style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)", cursor: descOnClick ? "pointer" : "default" }}>{badgeIcon(kind, sz - 4)}</span>
-      {showLabelTip && <span style={{ position: "absolute", bottom: sz + 6, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 7, background: T.ivoryHi, color: QCOLOR[kind], fontSize: 12, fontWeight: 800, border: "1px solid " + QCOLOR[kind], boxShadow: "0 4px 10px -4px rgba(0,0,0,.5)", zIndex: 30 }}>{QLABEL[kind]}</span>}
+    <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }}>
+      <span ref={anchorRef} onClick={descOnClick ? toggleDesc : undefined} style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)", cursor: descOnClick ? "pointer" : "default" }}>{badgeIcon(kind, sz - 4)}</span>
       {descOpen && descOnClick && (
         <>
           <span onClick={(e) => { e.stopPropagation(); setDescOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <span style={{ position: "absolute", bottom: sz + 9, left: "50%", transform: "translateX(-50%)", width: 220, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+          <span style={{ position: "absolute", bottom: sz + 9, left: "50%", transform: "translateX(calc(-50% + " + descDx + "px))", width: CIRCLE_BADGE_DESC_W, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ width: 22, height: 22, borderRadius: "50%", background: QCOLOR[kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{badgeIcon(kind, 18)}</span>
               <span style={{ fontSize: 13, fontWeight: 800, color: QCOLOR[kind] }}>{QLABEL[kind]}</span>
             </span>
             <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink, lineHeight: 1.5, whiteSpace: "normal" }}>{QDESC[kind]}</span>
-            <span style={{ position: "absolute", bottom: -7, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }} />
+            {/* 말풍선 꼬리는 팝업이 dx만큼 밀렸어도 항상 기준 아이콘을 가리키도록 반대로 보정한다. */}
+            <span style={{ position: "absolute", bottom: -7, left: "calc(50% - " + descDx + "px)", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }} />
           </span>
         </>
       )}
@@ -3850,6 +4053,18 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
   const tx = (vr, vc) => (flip ? [7 - vr, 7 - vc] : [vr, vc]);
   const rows = flip ? [...before].reverse().map((r) => [...r].reverse()) : before;
   const [dfr0, dfr1] = dv(fr[0], fr[1]); const [dto0, dto1] = dv(to[0], to[1]);
+  // (버그 수정) 예전엔 geo.from/to가 캐슬링일 때도 킹의 출발·도착 칸만 담고 있어(sanSrc가 캐슬링을
+  // 킹 이동으로만 기록) 룩은 이 컴포넌트가 전혀 모르는 존재였다 — 그리드가 항상 "이동 전(before)"
+  // 보드를 그대로 그리면서 킹 자리만 지우고 절대위치 오버레이로 슬라이드시켰을 뿐이라, 룩은 자기
+  // 원래 칸에 그대로 남아 "안 움직이는 것"처럼 보였다. 캐슬링이면 룩의 출발·도착 칸도 함께 계산해
+  // 킹과 똑같은 방식(원래 칸은 그리드에서 숨기고, 절대위치 오버레이가 슬라이드)으로 애니메이션한다.
+  const isCastle = !!geo.castle;
+  const rookFr = isCastle ? [fr[0], geo.castle === "k" ? 7 : 0] : null;
+  const rookTo = isCastle ? [fr[0], geo.castle === "k" ? 5 : 3] : null;
+  const rp = isCastle ? before[rookFr[0]][rookFr[1]] : null;
+  const [drf0, drf1] = isCastle ? dv(rookFr[0], rookFr[1]) : [0, 0];
+  const [drt0, drt1] = isCastle ? dv(rookTo[0], rookTo[1]) : [0, 0];
+  const rookDxPct = isCastle ? (drt1 - drf1) * 100 : 0, rookDyPct = isCastle ? (drt0 - drf0) * 100 : 0;
   // (버그 수정) Board와 동일하게 px(cell) 대신 그리드 전체 대비 퍼센트로 옮겨 슬라이드 이동을 계산 —
   // 이동 기물 요소 자신의 너비(12.5% = 칸 1개)를 기준으로 translate(N*100%)하면 실제 렌더 크기와
   // 무관하게 항상 정확히 N칸만큼 이동한다.
@@ -3894,7 +4109,9 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
       <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
         <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
           {rows.map((row, vr) => row.map((p, vc) => {
-            const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0; const hideFrom = r === fr[0] && c === fr[1]; const isTo = r === to[0] && c === to[1];
+            const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0;
+            const hideFrom = (r === fr[0] && c === fr[1]) || (isCastle && r === rookFr[0] && c === rookFr[1]);
+            const isTo = r === to[0] && c === to[1];
             return (
               <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
                 {p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}
@@ -3902,6 +4119,8 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
             );
           }))}
           {mp && <div key={cyc} style={{ position: "absolute", top: (dfr0 / 8 * 100) + "%", left: (dfr1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dxPct + "%," + dyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
+          {/* (버그 수정) 캐슬링일 때 룩도 킹과 똑같은 방식으로 슬라이드시킨다 */}
+          {isCastle && rp && <div key={"rook" + cyc} style={{ position: "absolute", top: (drf0 / 8 * 100) + "%", left: (drf1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + rookDxPct + "%," + rookDyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={rp.t} color={rp.c} size={cell * 0.72} /></div>}
           {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
           {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: ((dto0 - 0.16) / 8 * 100) + "%", left: ((dto1 + 0.7) / 8 * 100) + "%", width: "5.25%", height: "5.25%", borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.34)}</div>}
           <svg viewBox="0 0 8 8" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
@@ -3994,7 +4213,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       if (k === "best" && !matched) k = "excellent";
       // (버그 수정) '완화' 판정을 둔 뒤 평가(ourCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로 한다.
       const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-      if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(decided && losing)) k = "brilliant";
+      if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(sans, col)) k = "brilliant";
       if (decided) { if (k === "blunder") k = "mistake"; else if (k === "mistake") k = "inaccuracy"; else if (k === "inaccuracy") k = "good"; }
       const under = /=/.test(san) && !/=Q/.test(san); if (under && !["inaccuracy", "mistake", "blunder"].includes(k)) k = "brilliant";
       return k;
@@ -4314,9 +4533,79 @@ function AddMasterGameModal({ onClose, onSaved }) {
     </div>
   );
 }
-// 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 오른쪽 칼럼은
-// 집중학습 여부와 무관하게 항상 수 블록 목록을 보여준다(LearnTab에서 분기하지 않음).
-function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze }) {
+// (v0.2.6 버그 수정) 미니보드 하단 콘텐츠(chess.com 통계+마스터 대국 / 다음 수 블록)를 좌우로
+// 드래그하거나 </> 버튼으로 넘기는 2페이지 구성 — 집중학습이 전체화면 오버레이라 다음 수 블록이
+// 화면 아래로 스크롤해도 보이지 않던 문제(특히 모바일)를 해결한다. 휠·트랙패드 스크롤에는 반응하지
+// 않고(overflow가 아니라 transform 기반 캐러셀이라 애초에 스크롤 이벤트를 받지 않음), 오직
+// 드래그와 화살표 버튼으로만 페이지가 넘어간다.
+function FocusBoxPager({ pages }) {
+  const [idx, setIdx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [dragDx, setDragDx] = useState(0);
+  // (버그 수정) flex row(양옆으로 페이지를 늘어놓는 트랙)는 기본적으로 자기 자식 중 가장 키가 큰
+  // 페이지(보통 다음 수 블록 목록)에 맞춰 전체 높이가 정해진다 — 짧은 페이지(chess.com 통계 등)를
+  // 보고 있을 때도 항상 가장 긴 페이지 높이만큼 빈 공간이 아래에 크게 남았다. 각 페이지의 실제
+  // 콘텐츠 높이를 ResizeObserver로 재 두고, 지금 보이는 페이지의 높이로만 바깥 wrapper 높이를
+  // 맞춰(부드러운 트랜지션과 함께) 페이지를 넘길 때마다 자연스럽게 늘었다 줄었다 하게 한다.
+  const [heights, setHeights] = useState([]);
+  const wrapRef = useRef(null);
+  const dragRef = useRef(null);
+  const pageRefs = useRef([]);
+  const n = pages.length;
+  useEffect(() => { setIdx((i) => Math.min(i, n - 1)); }, [n]);
+  useLayoutEffect(() => {
+    const measure = () => setHeights(pageRefs.current.map((el) => (el ? el.offsetHeight : 0)));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    pageRefs.current.forEach((el) => el && ro.observe(el));
+    return () => ro.disconnect();
+  }, [pages, n]);
+  if (n <= 1) return pages[0] || null;
+  const goTo = (i) => setIdx(Math.max(0, Math.min(n - 1, i)));
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX };
+    setDragging(true);
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    if (!dragRef.current) return;
+    setDragDx(e.clientX - dragRef.current.x);
+  };
+  const endDrag = () => {
+    if (dragRef.current) {
+      const w = (wrapRef.current && wrapRef.current.clientWidth) || 300;
+      const threshold = w * 0.16;
+      if (dragDx < -threshold && idx < n - 1) goTo(idx + 1);
+      else if (dragDx > threshold && idx > 0) goTo(idx - 1);
+    }
+    dragRef.current = null;
+    setDragging(false);
+    setDragDx(0);
+  };
+  const activeHeight = heights[idx];
+  return (
+    <div>
+      <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+        style={{ overflow: "hidden", touchAction: "pan-y", cursor: dragging ? "grabbing" : "grab", height: activeHeight != null ? activeHeight : "auto", transition: dragging ? "none" : "height .32s cubic-bezier(.22,.9,.32,1)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", transform: "translateX(calc(" + (-idx * 100) + "% + " + dragDx + "px))", transition: dragging ? "none" : "transform .32s " + "cubic-bezier(.22,.9,.32,1)" }}>
+          {pages.map((p, i) => <div key={i} ref={(el) => { pageRefs.current[i] = el; }} style={{ width: "100%", flexShrink: 0, minWidth: 0 }}>{p}</div>)}
+        </div>
+      </div>
+      <div className="flex items-center justify-center" style={{ gap: 10, marginTop: 8 }}>
+        <button onClick={() => goTo(idx - 1)} disabled={idx === 0} aria-label="이전 페이지" className="press" style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.06)", color: idx === 0 ? "#C9B58C" : T.inkSoft, cursor: idx === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
+        <div className="flex items-center" style={{ gap: 5 }}>
+          {pages.map((_, i) => <span key={i} style={{ width: i === idx ? 16 : 6, height: 5, borderRadius: 999, background: i === idx ? T.brass : "#DCCBA8", transition: "all .25s ease" }} />)}
+        </div>
+        <button onClick={() => goTo(idx + 1)} disabled={idx === n - 1} aria-label="다음 페이지" className="press" style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.06)", color: idx === n - 1 ? "#C9B58C" : T.inkSoft, cursor: idx === n - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
+      </div>
+    </div>
+  );
+}
+// 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 미니보드 하단부(chess.com
+// 통계+마스터 대국, 다음 수 블록)는 FocusBoxPager로 2페이지에 나눠 담는다 — 다음 수 블록은
+// nextMovesPanel prop으로 LearnTab에서 미리 만들어 전달받는다(LearnTab 쪽 상태·로직을 그대로 재사용).
+function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel }) {
   if (!fa.active) return null;
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain, editing, setEditing, draft, setDraft,
@@ -4331,16 +4620,21 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   const [addGameOpen, setAddGameOpen] = useState(false);   // (v0.2.3 기능) 개발자 마스터 대국 추가 모달
   // (19차 기능2) 이 수([...sans, san])가 실제로 두어진 내 chess.com 대국 — 최근순으로 나열.
   // (버그 보충) 예전엔 최근 8판까지만 잘라 보여줬다 — 이제 전부 가져오고 화면에서 페이지를 넘겨 본다.
+  // (v0.2.6 기능) 프로필 카드의 chess.com 통계와 동일하게, 이 수가 두어진 내 대국 목록도 시간
+  // 규정·진영으로 나눠 볼 수 있게 한다.
+  const [myTimeFilter, setMyTimeFilter] = useState("all");
+  const [myColorFilter, setMyColorFilter] = useState("all");
   const myGames = useMemo(() => {
     if (!chesscom || chesscom.status !== "ready") return [];
     const path = [...sans, san];
-    return chesscom.games
-      .filter((g) => g.moves.length >= path.length && path.every((s, i) => g.moves[i] === s))
-      .sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
-  }, [chesscom && chesscom.games, chesscom && chesscom.status, sans.join(","), san]);
+    let out = chesscom.games.filter((g) => g.moves.length >= path.length && path.every((s, i) => g.moves[i] === s));
+    if (myTimeFilter !== "all") out = out.filter((g) => g.timeClass === myTimeFilter);
+    if (myColorFilter !== "all") out = out.filter((g) => g.color === myColorFilter);
+    return out.sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
+  }, [chesscom && chesscom.games, chesscom && chesscom.status, sans.join(","), san, myTimeFilter, myColorFilter]);
   const MY_GAMES_PAGE_SIZE = 5;
   const [myGamesPage, setMyGamesPage] = useState(0);
-  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san]);
+  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myTimeFilter, myColorFilter]);
   const myGamesPageCount = Math.max(1, Math.ceil(myGames.length / MY_GAMES_PAGE_SIZE));
   const myGamesPageItems = myGames.slice(myGamesPage * MY_GAMES_PAGE_SIZE, myGamesPage * MY_GAMES_PAGE_SIZE + MY_GAMES_PAGE_SIZE);
   // (버그 보충) 레이팅 증감치 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
@@ -4415,7 +4709,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         <CircleBadge kind={kind} big descOnClick />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
+          <div style={{ fontFamily: SEQ_FONT, fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
           {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, marginTop: 4, lineHeight: 1.25 }}>{title}</div>}
         </div>
         <div style={{ textAlign: "right" }}>
@@ -4488,9 +4782,30 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           <ol style={{ margin: 0, paddingLeft: 18, color: T.ivory, fontSize: 12.5, lineHeight: 1.7 }}>{punish.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
         </div>
       )}
+      {/* (v0.2.6 버그 수정) 미니보드 하단 콘텐츠를 2페이지로 나눈다 — 1페이지: chess.com 통계+마스터
+          대국(기존과 동일), 2페이지: 다음 수 블록(nextMovesPanel, LearnTab에서 전달). 드래그 또는
+          </> 버튼으로만 넘긴다(휠·스크롤 무반응). */}
+      <FocusBoxPager pages={[
+        <>
       {/* (버그) 내 chess.com 통계를 마스터 대국보다 위에 표시 — 최근 대국 목록 + 전적 요약 통합 블록 */}
       <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><span className="flex items-center" style={{ gap: 6, fontSize: 14, fontWeight: 800, color: T.ink }}><ChesscomLogo height={19} /> 통계</span></div>
+        {/* (v0.2.6 기능) 프로필 카드의 chess.com 통계와 동일하게 시간 규정·진영 선택 박스를 추가 —
+            이 수가 두어진 내 대국 목록을 시간 규정/진영으로 좁혀 볼 수 있다. */}
+        {chesscom && chesscom.status === "ready" && (
+          <div className="flex items-center" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+              {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
+                <button key={k} onClick={() => setMyTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myTimeFilter === k ? T.ebony2 : "transparent", color: myTimeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+              ))}
+            </div>
+            <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+              {[["all", "전체"], ["w", "백"], ["b", "흑"]].map(([k, lab]) => (
+                <button key={k} onClick={() => setMyColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myColorFilter === k ? T.ebony2 : "transparent", color: myColorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+              ))}
+            </div>
+          </div>
+        )}
         {!chesscom || chesscom.status === "idle" ? <p style={{ fontSize: 12, color: T.inkSoft }}>설정 탭에서 chess.com 계정을 연동하면 이 수로 진행된 내 실제 대국과 통계가 표시됩니다.</p>
           : chesscom.status === "loading" ? <p style={{ fontSize: 12, color: T.inkSoft }}>기보를 불러오는 중…</p>
             : chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>
@@ -4502,19 +4817,25 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                     : <div style={{ marginBottom: 10 }}>{myGamesPageItems.map((g, i) => {
                         const won = g.result === "win", lost = g.result === "loss";
                         const rc = ratingChanges.get(g);
+                        // (v0.2.6 버그 수정) 프로필 카드의 "최근 대국" 목록과 UI를 통일 —
+                        // "⬜ 백"/"⬛ 흑" 텍스트 대신 진영 색 막대, 상대 닉네임·레이팅 표시를 그대로 반영.
+                        const oppSide = g.color === "w" ? g.black : g.white;
                         return (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: i === 0 ? "none" : "1px solid #E4D5B6" }}>
+                            <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              {/* (디자인) 타임컨트롤 표기 + 레이팅 증감폭은 게임 결과 뒤 소괄호로 통일. */}
-                              <div style={{ fontSize: 12.5, color: T.ink }}>{g.color === "w" ? "⬜ 백" : "⬛ 흑"}으로 플레이 · <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                              <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
                                 {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                                {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
-                                {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                                {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
+                                {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
                               </div>
-                              <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtGameDate(g.endTime)}</div>
+                              {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
+                              {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                             </div>
                             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                              <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                              {/* (v0.2.6 버그 수정) 이 버튼만 28px로 옆의 리뷰 버튼(BestMoveJumpButton, 30px)과
+                                  크기가 미묘하게 달랐다 — 프로필 카드·마스터 대국 목록과 같은 30px로 통일. */}
+                              <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
                               <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(g)} />
                             </div>
                           </div>
@@ -4533,7 +4854,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
                             onJump로 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
                         {stats.top.map((t) => (
-                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: "ui-monospace,monospace", fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
+                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
                         ))}
                       </div>
                     )}
@@ -4548,7 +4869,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         : mistakes.map((mt, idx) => {
                           const seqStr = [san, ...mt.seq]; // 표기: 집중 학습 수부터
                           return (
-                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: "ui-monospace,monospace", fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
+                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
                               {seqStr.map((mv, i) => {
                                 const isMistake = i === seqStr.length - 1;
                                 const moverWhite = (ply + i) % 2 === 0;
@@ -4613,6 +4934,9 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
         {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 리뷰를 여는 데 실패했습니다. 잠시 후 다시 시도해 주세요.</p>}
       </div>
+        </>,
+        nextMovesPanel,
+      ]} />
       {addGameOpen && <AddMasterGameModal onClose={() => setAddGameOpen(false)} onSaved={onRetryMasterGames} />}
       {showExpl && (
         <div onClick={() => setShowExpl(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
@@ -5000,7 +5324,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
               <span style={{ position: "relative", display: "inline-flex", lineHeight: 0 }}>
                 <button onClick={() => setAccShow((v) => (v === key ? null : key))} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}>
                   {/* 오프닝처럼 하이라이트할 비이론 수가 없으면 이론 아이콘 대신 정확도로 등급을 정해 표시한다. */}
-                  <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind || gradeFromAccuracy(acc)} noTip /></span>
+                  <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind || gradeFromAccuracy(acc)} /></span>
                 </button>
                 {active && (
                   <span style={{ position: "absolute", bottom: 34, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "6px 10px", borderRadius: 8, background: T.brassHi, color: "#241509", fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", boxShadow: "0 6px 14px -5px rgba(0,0,0,.55)", zIndex: 30 }}>
@@ -5212,6 +5536,12 @@ function ReviewPage({ game, onClose }) {
   // 이 자유 탐색 수는 거기 표시되지 않는다.
   const [exploreSans, setExploreSans] = useState([]);
   const [exploreFuture, setExploreFuture] = useState([]);
+  // (v0.2.5 버그 수정) 이 state와 아래 activeMove 파생값은 원래 훨씬 아래(exploreMove 채점 effect
+  // 옆)에 선언돼 있었는데, 그보다 먼저 나오는 playFree의 useCallback 의존성 배열이 activeMove를
+  // 참조하고 있어 매 렌더 "Cannot access 'activeMove' before initialization"(TDZ 참조 에러)로
+  // ReviewPage 전체가 렌더링에 실패했다 — 에러 바운더리가 없어 리뷰 페이지 전체가 흰 화면으로
+  // 보이던 원인. playFree보다 먼저 선언되도록 이 자리로 옮긴다.
+  const [exploreMove, setExploreMove] = useState(null); // {san, white, kind, best} — result.moves 항목과 같은 형태
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
@@ -5246,6 +5576,10 @@ function ReviewPage({ game, onClose }) {
   const drawState = useMemo(() => gameEndState(effSans), [effSans]);
   const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
   const curMove = curPly > 0 && result ? result.moves[curPly - 1] : null;
+  // (v0.2.1) 지금 화면에 반영할 수/평가 — 자유 탐색 중이면 그 라이브 분석(exploreMove·엔진 라인 1순위
+  // 채점 결과), 아니면 실제 게임 수순의 채점 결과(curMove)를 쓴다. (v0.2.5) playFree보다 먼저
+  // 선언돼야 해 위 exploreMove state 선언 바로 다음이 아니라 여기(curMove 정의 직후)에 둔다.
+  const activeMove = exploring ? exploreMove : curMove;
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
@@ -5267,6 +5601,11 @@ function ReviewPage({ game, onClose }) {
   };
   const canBack = curPly > 0 || exploreSans.length > 0;
   const canFwd = (curPly < sans.length && exploreSans.length === 0) || exploreFuture.length > 0;
+  // (v0.2.5 버그 수정) engineLines도 activeMove/exploreMove와 같은 이유로 playFree보다 먼저
+  // 선언돼야 한다 — 원래 위치(아래 엔진 라인 effect 옆)에 있으면 이 useCallback의 의존성 배열
+  // 평가 시점에 "Cannot access 'engineLines' before initialization" TDZ 에러가 나 리뷰 페이지
+  // 렌더링이 매번 실패했다.
+  const [engineLines, setEngineLines] = useState([]);
   const playFree = useCallback((san) => {
     if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
     playMoveSfx(san);
@@ -5308,8 +5647,8 @@ function ReviewPage({ game, onClose }) {
   // 엔진 상위 3줄을 보여준다. 앱 전역에서 공유하는 단일 엔진 큐(engine)는 그 아래에 여전히 마운트된
   // 학습 탭(useMergedMoves)이 계속 점유하고 있어, 그걸 쓰면 라인이 영영 대기에 걸린다 — 게임 리뷰
   // (analyzeGame)와 같은 독립 풀(getAnalysisPool)에서 워커 하나를 받아 계산한다(분석이 끝난 뒤엔
-  // 풀이 유휴 상태이므로 곧바로 응답한다).
-  const [engineLines, setEngineLines] = useState([]);
+  // 풀이 유휴 상태이므로 곧바로 응답한다). (engineLines state는 playFree보다 먼저 선언돼야 해
+  // 위쪽으로 옮겨졌다.)
   const [linesPending, setLinesPending] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -5350,8 +5689,8 @@ function ReviewPage({ game, onClose }) {
   // (v0.2.1 기능) 기보에 없는 자유 탐색 수도 기보 수와 똑같이 — 코치 카드에 등급·평가·설명을, 보드에
   // 수 체계 아이콘("계산 중" 포함)을, Show 화살표에 최선수를 표시하기 위해, 마지막으로 둔 자유 탐색
   // 수를 게임 리뷰와 동일한 방식(analyzeGame의 채점 규칙)으로 라이브 분석한다. 공용 엔진 큐 대신 게임
-  // 리뷰와 같은 독립 풀을 써서 학습 탭과 충돌하지 않게 한다.
-  const [exploreMove, setExploreMove] = useState(null); // {san, white, kind, best} — result.moves 항목과 같은 형태
+  // 리뷰와 같은 독립 풀을 써서 학습 탭과 충돌하지 않게 한다. (exploreMove state는 playFree보다 먼저
+  // 선언돼야 해 위쪽으로 옮겨졌다.)
   useEffect(() => {
     if (!exploring) { setExploreMove(null); return; }
     let cancelled = false;
@@ -5388,7 +5727,7 @@ function ReviewPage({ game, onClose }) {
         let kind = tierOf(loss);
         if (kind === "best" && !matched) kind = "excellent";
         const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
+        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant"; } catch { }
         if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
         // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 학습 탭(evalMoveKind
         // 호출부의 applyKind)에는 있는데 이 자유 탐색 판정에는 빠져 있었다 — 같은 규칙을 그대로 적용한다.
@@ -5401,10 +5740,9 @@ function ReviewPage({ game, onClose }) {
     })();
     return () => { cancelled = true; };
   }, [exploring, effSans.join(" "), engine && engine.status, engine && engine.profile]);
-  // (v0.2.1) 지금 화면에 반영할 수/평가 — 자유 탐색 중이면 그 라이브 분석(exploreMove·엔진 라인 1순위
-  // 평가)을, 아니면 게임 리뷰 결과(curMove·evalDisp)를 쓴다. 이후 코치 카드·수 아이콘·평가 바·화살표가
-  // 모두 이 값 하나만 참조하므로 기보 수와 자유 탐색 수의 UX가 완전히 동일해진다.
-  const activeMove = exploring ? exploreMove : curMove;
+  // (v0.2.1) 지금 화면에 반영할 평가 — 자유 탐색 중이면 그 라이브 분석(엔진 라인 1순위 평가)을, 아니면
+  // 게임 리뷰 결과(evalDisp)를 쓴다. 이후 코치 카드·수 아이콘·평가 바·화살표가 activeMove(위쪽으로
+  // 옮겨짐)와 이 값만 참조하므로 기보 수와 자유 탐색 수의 UX가 완전히 동일해진다.
   const activeEvalDisp = exploring ? (engineLines[0] && engineLines[0].ev) : (result && result.evalDisp ? result.evalDisp[curPly] : null);
   // (v0.2.2 기능) 코치 설명에 쓸 "희생한 기물" — 탁월한 수(언더프로모션 제외)일 때만 계산한다.
   const sacrificedPiece = useMemo(() => {
@@ -5586,6 +5924,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 떠 있던 각 수의 확정 등급을 "이 위치 key + 수"로 pin해 두고, 그 수로 도달했을 때(클릭·드래그·엔진
   // 라인·앞으로/되돌리기) 블록과 정확히 같은 아이콘을 쓰게 한다.
   const pinnedKindRef = useRef({});
+  // (v0.2.6 버그 수정) 다음 수 블록(MoveTile)에 뜬 수 키워드(TOP LEVEL/SIDESTEPPING 등)를 그 수를
+  // 실제로 두면 현재 수 블록이 다시 계산해 다른 결과를 보여주는 문제 — MoveTile은 useMergedMoves가
+  // 만든 "지금 포지션의 다음 수" 객체(마스터/Lichess 채택률이 이미 채워져 있음)로 deriveKeywords를
+  // 부르는데, 현재 수 블록은 그 수를 둔 뒤 한 칸 전 포지션을 snapNode(정적 북 데이터, 채택률 필드
+  // 없음)로 다시 조회해 같은 함수를 불러 전혀 다른 입력으로 다른 결과를 냈다. 위 pinnedKindRef와
+  // 똑같은 패턴으로, 블록에 실제로 떴던 키워드 배열(순서까지)을 "이 위치 key + 수"로 pin해 두고
+  // 현재 수 블록은 그 값을 그대로 재사용한다.
+  const pinnedKwRef = useRef({});
   const [showAllNb, setShowAllNb] = useState(false);   // (UX1) 비이론 수 더보기(전체)
   const key = sans.join(" ");
   const board = useMemo(() => boardFromSans(sans), [key]);
@@ -5607,7 +5953,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 엔진 depth가 깊어지며 갱신되므로, 매 변경마다 최신값으로 덮어써 두면 그 수를 두는 시점의 표시가
   // 그대로 pin된다.
   useEffect(() => {
-    moves.forEach((m) => { if (m.kind && m.kind !== "pending") pinnedKindRef.current[key + "|" + stripSuffix(m.san)] = m.kind; });
+    moves.forEach((m) => {
+      if (m.kind && m.kind !== "pending") pinnedKindRef.current[key + "|" + stripSuffix(m.san)] = m.kind;
+      // MoveTile과 완전히 동일한 식으로 계산해(순서·종류까지) pin — 아래 curKws가 그대로 재사용한다.
+      pinnedKwRef.current[key + "|" + stripSuffix(m.san)] = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
+    });
   }, [key, moves]);
   // (20차 UX4) 스크롤이 많이 내려간 상태(예: 깊은 수 블록 클릭)에서 집중 학습에 들어가면, 페이지
   // 스크롤 위치가 그대로 유지되어 미니 보드가 화면 아래로 밀려 하단 탭에 가려 보이는 문제가 있었다 —
@@ -5677,7 +6027,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       // 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
       const decided = Math.abs(bestCp) > 200;  // 이 수를 두기 전, 최선의 수 기준으로도 이미 승부가 기울어 있었는가
       const losing = bestCp <= -200;           // 그 상태에서 이 수를 둔 쪽이 불리했는가
-      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing)) kind = "brilliant";
+      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }   // 실수류 완화(양측)
       return kind;
     };
@@ -5913,7 +6263,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const curMove = (parentNode && lastSan) ? parentNode.moves.find((mm) => stripSuffix(mm.san) === stripSuffix(lastSan)) : null;
   const curName = (nameOverride(parentKey, lastSan) ?? (curMove ? curMove.name : null));
   const curKind = (lastQ && lastQ.kind && lastQ.kind !== "pending") ? lastQ.kind : (curMove ? (curMove.book ? "book" : "good") : null);
-  const curKws = (curMove && curMove.book) ? deriveKeywords(curMove) : (kwOverride(parentKey, lastSan) || []);   // 비이론 수는 개발자 키워드만
+  // (v0.2.6 버그 수정) snapNode의 curMove는 마스터/Lichess 채택률 필드가 없는 정적 데이터라, 다음 수
+  // 블록(MoveTile)이 이미 그 필드들로 계산해 보여준 키워드와 다시 계산하면 자주 어긋났다 — 블록에
+  // 실제로 떴던 키워드(pinnedKwRef)가 있으면 그걸 그대로 쓰고, 없을 때만(블록을 거치지 않고 바로
+  // 도달한 경우 등) 기존 방식으로 계산한다.
+  const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
+  const curKws = pinnedKw || ((curMove && curMove.book) ? deriveKeywords(curMove) : (kwOverride(parentKey, lastSan) || []));   // 비이론 수는 개발자 키워드만
   const curGames = curMove && curMove.games != null ? curMove.games : null;
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
@@ -5930,6 +6285,61 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   }, [key, liveOn]);
 
   const fa = useFocusAnalysis(focus, { chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
+
+  // (v0.2.6 버그 수정) 예전엔 이 "다음 수" 블록 목록(전체/마스터·채택률순/평가치순 선택 포함)이 항상
+  // 오른쪽 칼럼에 그려져 있었지만, 집중학습(focus)이 켜지면 전체화면 오버레이(position:fixed,inset:0)가
+  // 화면 전체를 덮어 이 칼럼은 실제로는 절대 보이지 않았다(특히 모바일에서 두드러짐 — 미니보드
+  // 아래로 스크롤할 화면 자체가 없다). 이 JSX를 미리 변수로 뽑아 두고, focus가 꺼져 있을 때는 기존
+  // 위치(오른쪽 칼럼)에 그대로 두되, focus가 켜지면 FocusPanel 안(미니보드 하단 페이지 2)으로
+  // 넘겨 실제로 보이게 한다.
+  const nextMovesContent = (
+    <>
+      <div className="flex items-center justify-between flex-wrap" style={{ gap: 10, marginBottom: 10 }}>
+        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3 }} title="통계 범위: 전체 유저 대국 / 마스터 대국만">
+          <button onClick={() => setMode("normal")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: mode === "normal" ? T.ebony2 : "transparent", color: mode === "normal" ? T.brassHi : T.inkSoft }}>전체</button>
+          <button onClick={() => setMode("master")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: mode === "master" ? T.ebony2 : "transparent", color: mode === "master" ? T.brassHi : T.inkSoft }}>마스터</button>
+        </div>
+        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3 }} title="비이론 수 정렬 기준">
+          <button onClick={() => setSortBy("eval")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "eval" ? T.ebony2 : "transparent", color: sortBy === "eval" ? T.brassHi : T.inkSoft }}>평가치순</button>
+          <button onClick={() => setSortBy("adopt")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "adopt" ? T.ebony2 : "transparent", color: sortBy === "adopt" ? T.brassHi : T.inkSoft }}>채택률순</button>
+        </div>
+      </div>
+      {/* (v0.2.0 기능) 엔진이 이 포지션의 후보 수(수 블록)를 계산하는 동안 마스코트 안내를
+          보여준다 — linesPending은 이미 "새 엔진 결과를 기다리는 중"을 정확히 추적하고
+          있던 플래그라 그대로 재사용한다. */}
+      {linesPending && (
+        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+          <Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion="think" size={30} />
+          <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{(ply % 2 === 0 ? "MILKU" : "KOKOA")}가 수를 계산하고 있어요.</span>
+        </div>
+      )}
+      {moves.length === 0 ? (
+        <div style={{ background: T.paper, borderRadius: 12, padding: 16, border: "1px dashed #C9B58C", textAlign: "center" }}>
+          <div style={{ display: "flex", justifyContent: "center" }}><Mascot name="milku" emotion="sleep" size={92} /></div>
+          <p style={{ fontSize: 13, color: T.inkSoft, marginTop: 8 }}>제안된 수가 없어요. 보드에서 직접 두면 그 수가 평가되어 블록으로 추가됩니다.</p>
+        </div>
+      ) : (() => {
+        const bk = moves.filter((m) => m.book);
+        const nb = moves.filter((m) => !m.book);
+        const shownNb = (showAllNb ? nb : nb.slice(0, 3));
+        const shown = [...bk, ...shownNb];
+        return (
+          <>
+            {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
+                React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
+                감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
+            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} /></FadeIn>)}
+            {nb.length > 3 && (
+              <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
+                {showAllNb ? "접기" : "더보기"}
+              </button>
+            )}
+          </>
+        );
+      })()}
+    </>
+  );
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -5988,7 +6398,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
+              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} />
             </div>
           </div>
         )}
@@ -6078,55 +6488,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         </div>
       </div>
       <div>
-        <div>
-          {/* (UX) 집중학습 중에도 오른쪽 칼럼은 항상 수 블록 목록을 그대로 보여준다 */}
-          <>
-              <div className="flex items-center justify-between flex-wrap" style={{ gap: 10, marginBottom: 10 }}>
-                <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3 }} title="통계 범위: 전체 유저 대국 / 마스터 대국만">
-                  <button onClick={() => setMode("normal")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: mode === "normal" ? T.ebony2 : "transparent", color: mode === "normal" ? T.brassHi : T.inkSoft }}>전체</button>
-                  <button onClick={() => setMode("master")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: mode === "master" ? T.ebony2 : "transparent", color: mode === "master" ? T.brassHi : T.inkSoft }}>마스터</button>
-                </div>
-                <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3 }} title="비이론 수 정렬 기준">
-                  <button onClick={() => setSortBy("eval")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "eval" ? T.ebony2 : "transparent", color: sortBy === "eval" ? T.brassHi : T.inkSoft }}>평가치순</button>
-                  <button onClick={() => setSortBy("adopt")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "adopt" ? T.ebony2 : "transparent", color: sortBy === "adopt" ? T.brassHi : T.inkSoft }}>채택률순</button>
-                </div>
-              </div>
-              {/* (v0.2.0 기능) 엔진이 이 포지션의 후보 수(수 블록)를 계산하는 동안 마스코트 안내를
-                  보여준다 — linesPending은 이미 "새 엔진 결과를 기다리는 중"을 정확히 추적하고
-                  있던 플래그라 그대로 재사용한다. */}
-              {linesPending && (
-                <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-                  <Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion="think" size={30} />
-                  <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{(ply % 2 === 0 ? "MILKU" : "KOKOA")}가 수를 계산하고 있어요.</span>
-                </div>
-              )}
-              {moves.length === 0 ? (
-                <div style={{ background: T.paper, borderRadius: 12, padding: 16, border: "1px dashed #C9B58C", textAlign: "center" }}>
-                  <div style={{ display: "flex", justifyContent: "center" }}><Mascot name="milku" emotion="sleep" size={92} /></div>
-                  <p style={{ fontSize: 13, color: T.inkSoft, marginTop: 8 }}>제안된 수가 없어요. 보드에서 직접 두면 그 수가 평가되어 블록으로 추가됩니다.</p>
-                </div>
-              ) : (() => {
-                const bk = moves.filter((m) => m.book);
-                const nb = moves.filter((m) => !m.book);
-                const shownNb = (showAllNb ? nb : nb.slice(0, 3));
-                const shown = [...bk, ...shownNb];
-                return (
-                  <>
-                    {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
-                        React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
-                        감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
-                    {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} /></FadeIn>)}
-                    {nb.length > 3 && (
-                      <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-                        <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
-                        {showAllNb ? "접기" : "더보기"}
-                      </button>
-                    )}
-                  </>
-                );
-              })()}
-          </>
-        </div>
+        {/* (v0.2.6 버그 수정) 집중학습(focus) 중엔 이 오른쪽 칼럼이 전체화면 오버레이에 완전히 가려
+            보이지 않았다 — nextMovesContent를 FocusPanel 안(미니보드 하단 페이지 2)으로 넘겨 거기서
+            보여주므로, 여기서는 focus가 꺼져 있을 때만 렌더링해 중복 렌더를 피한다. */}
+        <div>{!focus && nextMovesContent}</div>
       </div>
     </div>
   );
@@ -6901,7 +7266,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
-    const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) };
+    const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx) * DRAG_SCROLL_MULT, y: dragRef.current.py + (e.clientY - dragRef.current.sy) * DRAG_SCROLL_MULT };
     // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 드래그해 갈 수 없도록 화면 크기 기준으로 한계를 둔다.
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const next = clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, items, boxW, boxH, SCHEMATIC_TOP_INSET);
@@ -8403,9 +8768,9 @@ function TierProgressStrip({ totalXp, onOpen }) {
 }
 function LineStars({ total, solved }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center" style={{ gap: 2 }}>
       {Array.from({ length: total }, (_, i) => (
-        <Star key={i} size={15} fill={i < solved ? T.brass : "none"} style={{ color: i < solved ? T.brass : "rgba(0,0,0,.25)" }} />
+        <Star key={i} size={12} fill={i < solved ? T.brass : "none"} style={{ color: i < solved ? T.brass : "rgba(0,0,0,.25)" }} />
       ))}
     </div>
   );
@@ -8698,7 +9063,6 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                     <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
                       {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 11)}</span>}
                       <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                      {it.solvedLeaf && <span style={{ marginLeft: "auto", flexShrink: 0, width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Check size={10} strokeWidth={3.5} /></span>}
                     </span>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
                       <span>{isRoot ? "시작 위치" : (evTxt || "–")}</span>
@@ -8706,6 +9070,14 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                     </span>
                     {incomplete && <div style={{ fontSize: 8.5, fontWeight: 800, color: "#9A6A18", marginTop: 1 }}>미완성 — 다음 수 필요</div>}
                   </button>
+                  {/* (v0.2.6 버그 수정) "라인 n" 표기를 마지막 수 블록 우측으로 옮기고, 해결 완료
+                      체크 표시도 SAN 옆(블록 내부) 대신 여기서 라인 n과 함께 보여준다. */}
+                  {it.isLeaf && !isRoot && it.node.tag && (
+                    <span className="flex items-center" style={{ gap: 3, flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: it.solvedLeaf ? T.best : T.inkSoft, whiteSpace: "nowrap" }}>
+                      {it.solvedLeaf && <span style={{ width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Check size={10} strokeWidth={3.5} /></span>}
+                      라인 {allLines.findIndex((l) => l.tag === it.node.tag) + 1}
+                    </span>
+                  )}
                   {/* (20차 기능1) 개발자 전용 — 이 라인 끝에 수를 하나 직접 추가(전체 재생성 없이 라인별 1수 연장) */}
                   {canAddHere && <button onClick={() => openAdd(it.path)} className="press no-pan" title="이 라인에 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
                   {/* (20차 기능3) 개발자 전용 — 이 라인의 마지막 수를 하나 삭제(라인 길이 단축, 한 번에 한 수씩) */}
@@ -8730,6 +9102,40 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       </div>
     </div>
   );
+}
+// (v0.2.6 기능) 퍼즐 힌트 3단계 — 기물의 행마법을 따라 출발 칸부터 도착 칸까지 한 칸씩 순서대로
+// 반짝일 경로를 만든다. 슬라이딩 기물(R/B/Q)은 지나가는 칸을 그대로 순서대로 담고, 킹·폰처럼
+// 한 칸만 움직이는 기물은 도착 칸 하나만 담는다. 나이트는 실제로는 두 칸을 "건너뛰"지만, 시각적
+// 연출을 위해 항상 같은 방식(더 긴 축을 먼저 두 칸 이동한 뒤 짧은 축으로 한 칸)으로 경로를
+// 고정해 매번 같은 모양으로 보이게 한다.
+function hintPathSquares(pieceType, from, to) {
+  const [fr, fc] = from, [tr, tc] = to;
+  const dr = tr - fr, dc = tc - fc;
+  if (pieceType === "N") {
+    const mid = Math.abs(dr) === 2 ? [tr, fc] : [fr, tc];
+    return [mid, [tr, tc]];
+  }
+  if (pieceType === "R" || pieceType === "B" || pieceType === "Q") {
+    const steps = Math.max(Math.abs(dr), Math.abs(dc));
+    const sr = dr === 0 ? 0 : dr / Math.abs(dr), sc = dc === 0 ? 0 : dc / Math.abs(dc);
+    const path = [];
+    for (let i = 1; i <= steps; i++) path.push([fr + sr * i, fc + sc * i]);
+    return path;
+  }
+  return [[tr, tc]];   // 킹·폰 — 한 칸만 이동하므로 도착 칸 자체가 유일한 "경로"
+}
+// (v0.2.6 기능) 퍼즐 코치 말풍선이 막연한 안내 대신 지금 보드 포지션을 짧게 요약해 설명한다 —
+// 사용자 진영 기준 기물 점수차와 체크 여부를 바탕으로 한 줄 코멘트를 만든다.
+function summarizePosition(board, userColor) {
+  const oppColor = userColor === "w" ? "b" : "w";
+  const kp = kingPos(board, oppColor);
+  if (kp && isAttacked(board, kp[0], kp[1], userColor)) return "상대 킹이 체크 상태예요 — 지금 공격이 통하고 있어요!";
+  const diff = materialDiff(board, userColor);
+  if (diff >= 3) return "지금 기물 점수에서 크게 앞서 있어요 — 확실히 마무리할 수를 찾아보세요.";
+  if (diff >= 1) return "지금 기물을 조금 앞서 있어요 — 이 이점을 굳히는 수를 찾아보세요.";
+  if (diff <= -3) return "지금 기물 점수가 크게 밀리고 있어요 — 반격할 결정적인 수가 필요해요.";
+  if (diff <= -1) return "지금 기물이 조금 부족해요 — 국면을 뒤집을 수를 찾아보세요.";
+  return "기물 점수는 팽팽해요 — 국면을 유리하게 이끌 수를 찾아보세요.";
 }
 /* (20차 기능1) 퍼즐 풀이 — 고정된 단일 라인이 아니라 분기 트리를 탐색한다.
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
@@ -8764,8 +9170,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const [revertStage, setRevertStage] = useState(null);   // null | "reply" | "wrong"
   const reverting = revertStage != null;   // (UX4) 오답 후 원위치로 되돌아가는 애니메이션 중(둘 중 한 단계라도)
   const [reply, setReply] = useState(null);      // { sans, san, node }  상대 응수 애니메이션
-  const [hintText, setHintText] = useState(null);
-  const [hintKey, setHintKey] = useState(0);
+  // (v0.2.6 개편) 텍스트 힌트("~을 움직여 보세요") 대신 3단계 시각 힌트로 개편 — 누를 때마다
+  // 단계가 올라간다(1: 도착 칸 반짝임, 2: 움직일 기물 흔들림, 3: 기물이 흔들리며 행마법을 따라
+  // 출발 칸부터 도착 칸까지 한 칸씩 순서대로 반짝이는 경로 애니메이션).
+  const [hintLevel, setHintLevel] = useState(0);
+  const [hintStepIdx, setHintStepIdx] = useState(0);
   // (20차 기능2) 보드 페이지(0)/모식도 페이지(1) 좌우 넘기기 — 모식도가 보드 위를 차지해 한눈에
   // 안 들어오던 문제를 해결한다. celebrate는 방금 해결한 라인의 클리어 애니메이션(모식도 페이지),
   // shakeTag는 그 직후 도전 가능해진 다음 라인을 살짝 흔들어 "클릭하면 바로 풀 수 있다"를 강조한다.
@@ -8793,7 +9202,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   useEffect(() => {
     setSessionSolved(new Set());
     setEverRevealed(new Set());
-    setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null);
+    setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0);
     setPage(0); setCelebrate(null);
     const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
     setTargetTag(first ? first.tag : null);
@@ -8947,7 +9356,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     })();
     return () => { cancelled = true; timers.forEach(clearTimeout); };
   }, [wrong]);
-  const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintText(null); setPage(0); setCelebrate(null); };
+  const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); };
   const restart = () => gotoLine(targetTag);
   // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
   // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
@@ -8964,8 +9373,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     }
     setPreviewNode(it);
   };
-  // (기능2) 힌트 — 그 시점에 실제로 두어야 할 수(목표 라인 기준)를 바탕으로 기물 또는 칸을 무작위로 알려준다.
-  useEffect(() => { setHintText(null); }, [pathNodes.length, targetTag, wrong]);
+  // (v0.2.6 개편) 힌트 — 그 시점에 실제로 두어야 할 수(목표 라인 기준)를 바탕으로 3단계 시각 힌트를 만든다.
+  useEffect(() => { setHintLevel(0); }, [pathNodes.length, targetTag, wrong]);
   const expectedSan = (() => {
     if (!isUserPly || done) return null;
     if (targetLine && targetLine.sans.length > pathNodes.length) {
@@ -8974,33 +9383,33 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     }
     return passKids[0] ? passKids[0].san : null;
   })();
-  const requestHint = () => {
-    if (!userToMove || !expectedSan) return;
-    const info = sanSrc(board, stripSuffix(expectedSan), color);
-    if (!info) return;
-    const pk = PIECE_KOR[info.piece] || "기물";
-    const dest = FILES[info.to[1]] + (8 - info.to[0]);
-    const bySquare = Math.random() < 0.5;
-    setHintText(bySquare ? `힌트: ${dest} 칸이 중요해요.` : `힌트: ${pk}을(를) 움직여 보세요.`);
-    setHintKey((k) => k + 1);
-  };
+  // (v0.2.6 개편) expectedSan이 가리키는 기물의 출발·도착 칸과, 3단계에서 순서대로 반짝일 경로.
+  const hintInfo = useMemo(() => (expectedSan ? sanSrc(board, stripSuffix(expectedSan), color) : null), [expectedSan, board, color]);
+  const hintPath = useMemo(() => (hintInfo ? hintPathSquares(hintInfo.piece, hintInfo.from, hintInfo.to) : []), [hintInfo]);
+  // (버그 수정) 3단계(꽉 채운 힌트)에 닿으면 버튼이 disabled로 막혀 힌트를 다시 숨길 방법이
+  // 없었다 — 3단계에서 한 번 더 누르면 0으로 되돌려(토글) 원래 상태로 되돌아가게 한다.
+  const requestHint = () => { if (userToMove && expectedSan) setHintLevel((l) => (l >= 3 ? 0 : l + 1)); };
+  // 경로 칸이 목적지에 가까워질수록(1단계 진행률) 그 칸의 금색 그라데이션 농도를 더 진하게.
+  const hintPathProgress = hintPath.length ? (hintStepIdx + 1) / hintPath.length : 0;
+  // (v0.2.6 개편) 3단계에서는 경로의 각 칸을 380ms마다 하나씩 순서대로 반짝인다 — hintLevel이 3
+  // 미만이거나 힌트가 리셋되면 즉시 멈춘다.
+  useEffect(() => {
+    if (hintLevel < 3 || !hintPath.length) { setHintStepIdx(0); return; }
+    setHintStepIdx(0);
+    const id = setInterval(() => setHintStepIdx((i) => (i + 1) % hintPath.length), 380);
+    return () => clearInterval(id);
+  }, [hintLevel, hintPath.length]);
   // (UX2) 마스코트 캐릭터는 둘 차례(백=MILKU, 흑=KOKOA), 표정은 풀이 상태에 따름
   const fullyComplete = solvedNow.size >= totalLines;
-  const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintText ? "wink"
+  const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintLevel > 0 ? "wink"
     : theme === "sacrifice" ? "great" : theme === "advantage" ? "think" : "surprise";
   const pm = [color === "w" ? "milku" : "kokoa", pmEmotion];
-  // (v0.1.2 기능) 오답 뒤 상대 응징 응수를 보여주는 동안·되돌리는 동안 문구를 단계별로 구분.
-  const prompt = intro ? "직전 수 재생 중…"
-    : done ? (fullyComplete ? "✓ 완성! 모든 라인을 정복했어요." : "✓ 라인 해결! 모든 수를 찾았어요.")
-    : wrong ? (wrongReply ? "✕ 다른 수예요. 상대라면 이렇게 응징해요." : "✕ 다른 수예요. 잠시 후 원래 위치로 되돌아갑니다.")
-      : reply ? "상대 응수 중…"
-        : theme === "sacrifice" ? "당신 차례 — 기물을 희생하는 탁월한 수를 두세요."
-          : theme === "advantage" ? "당신 차례 — 우위를 점하는 수를 두세요."
-            : "당신 차례 — 실수를 응징하는 최선의 수를 두세요.";
-  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : "막히면 아래 힌트 버튼을 눌러보세요.";
+  // (v0.2.6 버그 수정) "당신 차례" 안내 문구 대신, 코치 말풍선이 지금 보드 포지션을 짧게 요약해
+  // 설명하도록 바꾼다(막연한 "힌트 버튼을 눌러보세요" 대신 실제로 도움이 되는 상황 설명).
+  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : summarizePosition(board, color);
   const doneBubble = fullyComplete ? "훌륭해요! 모든 라인을 정복했어요."
     : "이 라인을 완료했어요! 모식도에서 다른 가지에 도전해 보세요.";
-  const bubbleText = done ? doneBubble : (hintText || idleBubble);
+  const bubbleText = done ? doneBubble : idleBubble;
   const nextTag = (allLines.find((l) => !solvedNow.has(l.tag)) || {}).tag;
   const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
   const lineLabel = targetLine ? (LINE_TAG_LABEL[targetLine.tag] || ("라인 " + (lineIdx + 1))) : "";
@@ -9075,8 +9484,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           try { const lc = await fetchLichess(prev, false); const hit = lc && lc.moves && lc.moves.find((x) => stripSuffix(x.san) === stripSuffix(it.node.san)); m.adopt = hit ? hit.adopt : null; } catch { m.adopt = null; }
         }
         if (liveOn && engine && engine.status === "ready") {
-          if (it.node.ev == null) { try { const ev = await engine.evaluate(sansToFen(full), 10); const w = posEvalToWhite(ev, full); if (w) m.ev = w; } catch { } }
-          if (it.node.kind == null) { try { const k = await classifyMoveKind(engine, prev, stripSuffix(it.node.san), 10); if (k) m.kind = k; } catch { } }
+          // (v0.2.6 버그 수정) 구버전 퍼즐(kind/ev 미기록)을 배경에서 보강할 때도 얕은 depth(10)
+          // 대신 게임 리뷰와 동일한 REVIEW_DEPTH로 평가해, 나중에 다시 봤을 때 값이 달라지지 않게 한다.
+          if (it.node.ev == null) { try { const ev = await engine.evaluate(sansToFen(full), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); const w = posEvalToWhite(ev, full); if (w) m.ev = w; } catch { } }
+          if (it.node.kind == null) { try { const k = await classifyMoveKind(engine, prev, stripSuffix(it.node.san), REVIEW_DEPTH); if (k) m.kind = k; } catch { } }
         }
         if (cancelled) return;
         if (Object.keys(m).length) setMeta((pm2) => ({ ...pm2, [key]: { ...pm2[key], ...m } }));
@@ -9185,25 +9596,26 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           {/* (20차 기능1) 별: 라인 1개 이상 ★1 · 50% 이상 ★2 · 전부 ★3 */}
           <div className="flex items-center" style={{ gap: 7, marginTop: 5 }}>
             <LineStars total={3} solved={starsOf(solvedNow.size, totalLines)} />
-            <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>라인 {solvedNow.size}/{totalLines} 해결</span>
-            <div className="flex items-center" style={{ gap: 10, marginLeft: "auto" }}>
-              {/* (v0.1.0) 리포스트·공유 — 좋아요와 나란히, 종이비행기 아이콘으로 친구 공유 시트를 연다 */}
-              {onToggleRepost && <button onClick={() => onToggleRepost(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="리포스트" title="리포스트">
-                <Repeat2 size={14} color={isReposted ? T.brilliant : T.inkSoft} />
-                <span style={{ fontSize: 10, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
+            <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{solvedNow.size}/{totalLines}</span>
+            {/* (v0.2.6 버그 수정) 소셜 정보 표시 순서를 좋아요 → 리포스트 → 공유로, 아이콘·글자 크기를
+                조금 더 키워 잘 보이도록 했다. */}
+            <div className="flex items-center" style={{ gap: 12, marginLeft: "auto" }}>
+              <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
+                <Heart size={17} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+              </button>
+              {onToggleRepost && <button onClick={() => onToggleRepost(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="리포스트" title="리포스트">
+                <Repeat2 size={17} color={isReposted ? T.brilliant : T.inkSoft} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
               </button>}
               {/* (v0.1.1) 공유 수는 눌러도 아무 동작 없는 순수 표시(집계)이고, 실제 공유 시트는 바로 옆의 별도 버튼이 연다 */}
-              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-                <Send size={13} color={T.inkSoft} />
-                <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
+              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Send size={16} color={T.inkSoft} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
               </span>
-              <button onClick={() => onToggleLike && onToggleLike(puzzle.id)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }} aria-label="좋아요">
-                <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
-                <span style={{ fontSize: 10, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
-              </button>
               {/* (v0.1.3 UI) PuzzleCard와 동일하게 라운딩된 사각형 배지(텍스트 포함)로 변경 */}
-              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 13px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }} aria-label="공유하기" title="공유하기">
-                <Send size={12} color={T.brass} />공유
+              {onShare && <button onClick={() => onShare(puzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 15px", borderRadius: 8, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }} aria-label="공유하기" title="공유하기">
+                <Send size={14} color={T.brass} />공유
               </button>}
             </div>
           </div>
@@ -9215,9 +9627,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         style={{ position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
         <div style={{ display: "flex", width: "200%", transform: `translateX(calc(${-page * 50}% + ${dragPx}px))`, transition: dragging ? "none" : "transform .34s cubic-bezier(.22,.9,.32,1)" }}>
           <div style={{ width: "50%", boxSizing: "border-box", paddingRight: 3 }}>
-            <div key={"bubble-" + hintKey} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
+            <div key={"bubble-" + bubbleText} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
             {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
-            <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{sansToPgnText(curSans) || " "}</div>
+            <PuzzlePgnBox text={sansToPgnText(curSans)} />
             {/* (버그 수정) 바깥 페이저(보드↔모식도 스와이프)의 onPagerPointerDown이 이 보드 위에서 눌러도
                 예외 없이 setPointerCapture를 걸어, 클릭의 대상이 실제 눌린 칸이 아니라 페이저 쪽으로
                 가로채어져 칸의 onClick(기물 선택)이 전혀 발동하지 않았다 — HTML5 네이티브 드래그 앤 드롭은
@@ -9240,12 +9652,19 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
               // effect의 evaluate 결과), 별도 등급 판정 없이 바로 "최선의 수" 배지를 붙인다.
               : wrongReply
                 ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
-              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove} />}
+              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove}
+                  hintTo={hintLevel >= 1 && hintInfo ? hintInfo.to : null} hintFrom={hintLevel >= 2 && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel >= 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
             </div>
-            <p style={{ fontSize: 13, color: done ? T.best : wrong ? T.blunder : T.ink, fontWeight: 700, marginTop: 12, textAlign: "center" }}>{prompt}</p>
+            {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
+                생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
+                평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. */}
+            <div style={{ marginTop: 12 }}><EvalBar cp={curNode.ev} width={boardSize} /></div>
             <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
               <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
-              {userToMove && <button onClick={requestHint} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: "transparent", color: "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트</button>}
+              {/* (버그 수정) 힌트 버튼이 현재 단계(1~3)를 그대로 보여준다 — 3단계에 닿으면 꽉 채운
+                  배경으로 바뀐다. 예전엔 여기서 disabled로 막혀 힌트를 다시 숨길 방법이 없었다 —
+                  이제 3단계에서도 눌러(토글) 원래(0단계, 힌트 없음) 상태로 되돌릴 수 있다. */}
+              {userToMove && <button onClick={requestHint} className="press" title={hintLevel >= 3 ? "눌러서 힌트 숨기기" : "힌트 보기"} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: hintLevel >= 3 ? "linear-gradient(180deg,#F3D57A," + T.brass + ")" : "transparent", color: hintLevel >= 3 ? "#241509" : "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트{hintLevel > 0 ? " " + hintLevel + "/3" : ""}</button>}
             </div>
           </div>
           <div style={{ width: "50%", boxSizing: "border-box", paddingLeft: 3 }}>
@@ -9254,7 +9673,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 애니메이션으로 재생해 복기할 수 있다(아직 안 둔 갈래는 예전처럼 그 라인을 풀도록 이동). */}
             {/* (v0.1.3 UI) "모식도의 수를 눌러 다시 보기" 안내 문구를 삭제 — 모바일에서 좁은 화면을
                 더 차지하기만 하고, 모식도 자체가 눌러보는 UI임은 이미 충분히 직관적이다. */}
-            <div style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, marginBottom: 8, minHeight: 16, textAlign: "center" }}>{previewNode ? sansToPgnText([...setup, ...previewNode.path]) : " "}</div>
+            <PuzzlePgnBox text={previewNode ? sansToPgnText([...setup, ...previewNode.path]) : ""} />
             <div style={{ width: "100%", maxWidth: 380, margin: "0 auto 12px" }}>
               {previewNode
                 ? <AnimatedMove key={previewNode.key} sans={[...setup, ...previewNode.path.slice(0, -1)]} san={previewNode.path[previewNode.path.length - 1]} size={boardSize} loopMs={2200} flip={userColor === "b"} />
@@ -9975,12 +10394,14 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
   const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
   const cleared = themed.filter((p) => solved.has(p.id)).sort(byOpening);
-  // (19차 UI3) 해결 완료 퍼즐을 오프닝별로 묶어 표기(cleared는 이미 오프닝순 정렬).
-  const clearedByOpening = (() => { const m = new Map(); for (const p of cleared) { const k = p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; })();
-  // (v0.2.2 UI#3) 미해결 퍼즐도 최상위 오프닝(King's Pawn/Queen's Pawn/English/Reti 등)별로 묶어,
+  // (v0.2.2 UI#3) 퍼즐을 최상위 오프닝(King's Pawn/Queen's Pawn/English/Reti 등)별로 묶어,
   // 각 오프닝을 점선 영역 + 가로 스크롤 행으로 보여준다(첨부 스케치 형태).
   const groupByTopOpening = (list) => { const m = new Map(); for (const p of list) { const k = (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; };
   const openByOpening = groupByTopOpening(open);
+  // (19차 UI3, v0.2.6 버그 수정) 해결 완료 퍼즐도 미해결과 동일한 기준(최상위 오프닝)으로 묶고,
+  // 같은 점선 영역 안에 표시한다 — 예전엔 이 섹션만 점선 테두리 없이 그냥 나열돼 미해결 목록과
+  // 시각적으로 통일감이 없었다.
+  const clearedByOpening = groupByTopOpening(cleared);
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
   const count = (k) => (k === "all" ? playablePuzzles.length : playablePuzzles.filter((p) => themesOf(p).includes(k)).length);
@@ -10060,10 +10481,14 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               ))}
             </div>}
             {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
+              {/* (버그 수정) 미해결 목록과 달리 그리드(줄바꿈)로 나열돼 오프닝 하나가 여러 줄을
+                  차지했다 — 미해결 목록과 똑같이 오프닝별 점선 상자 안에서 한 줄로만(가로 스크롤) 표시한다. */}
               {clearedByOpening.map(([op, list]) => (
-                <div key={op} style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 2 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}><AnimatePresence mode="popLayout">{list.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence></div>
+                <div key={op} style={{ marginBottom: 12, border: "1.5px dashed rgba(120,168,90,.45)", borderRadius: 14, padding: "8px 8px 10px" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 4 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
+                  <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+                    <AnimatePresence mode="popLayout">{list.map((p, i) => <FadeIn key={p.id} index={i} style={{ width: 168, minWidth: 168, flexShrink: 0 }}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence>
+                  </div>
                 </div>
               ))}
             </div>}
@@ -10454,47 +10879,331 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
     </div>
   );
 }
-// (v0.2.2 UX#3) "가장 많이 둔 오프닝"을 백의 첫 수로 결정되는 오프닝 이름 하나로 고정 표시하는 대신,
-// 백의 1~6번째 수 각각에 대해(상위 갈래를 따지지 않고 인덱스별 독립으로) 가장 많이 둔 수를 모아,
-// 2.2초 간격으로 번갈아 애니메이션하며 보여준다. games는 이미 시간 규정 필터가 적용된 목록이며,
-// 내가 백으로 둔 대국이 있으면 그 대국들만(내가 실제로 고른 수), 없으면 전체 대국의 백 수를 쓴다.
-function TopWhiteMovesAnimated({ games }) {
-  const top = useMemo(() => {
-    const asWhite = games.filter((g) => g.color === "w");
-    const use = asWhite.length ? asWhite : games;
-    const out = [];
-    for (let k = 0; k < 6; k++) {
-      const ply = k * 2, counts = {};
-      for (const g of use) { const s = g.moves[ply]; if (s) { const kk = stripSuffix(s); counts[kk] = (counts[kk] || 0) + 1; } }
-      const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-      if (best) out.push({ n: k + 1, san: best[0], count: best[1] });
+// (v0.2.6 버그 수정) "가장 많이 둔 오프닝"이 오프닝 이름 대신 각 수 인덱스별 최다 수(SAN)를 보여줘,
+// 실제로 어떤 오프닝을 즐겨 두는지 한눈에 알기 어려웠다 — 대국마다 이미 계산돼 있는 오프닝 이름
+// (g.opening)의 빈도를 세어, 실제로 가장 많이 나온 오프닝 이름들을 2.2초 간격으로 번갈아 보여준다.
+// color로 백/흑 어느 쪽 대국을 집계할지 고른다(games는 이미 시간 규정 필터가 적용된 목록).
+// (v0.2.6 UI) 예전 버전(TopWhiteMovesAnimated)에 있던 "백 n수" 식 배지를 되살려, 지금 몇 번째
+// 수까지 뒀을 때 도달하는 오프닝을 보여주는 중인지 작은 박스로 표시한다(흑 쪽은 기존 "흑 오프닝
+// 레파토리" 텍스트 라벨을 이 배지로 완전히 대체). 오프닝 이름 글자 크기를 줄여 긴 이름도 잘리지
+// 않게 했다.
+// (v0.2.6 버그 수정) "n수" 배지를 처음엔 "상위 몇 번째로 많이 둔 오프닝인가"(빈도 순위)로 계산해,
+// 그 순위를 그대로 "n수"(n번째 수)라고 잘못 표시했다 — 실제 그 수 깊이와 전혀 안 맞아, 예를 들어
+// 백의 3번째 수(Bc4)까지 둬야 나오는 Italian Game이 "백 1수"로 표시되는 식의 오류가 났다. "n수"는
+// 문자 그대로 백/흑이 정확히 그 번째 자기 수를 뒀을 때 도달하는 포지션이어야 한다 — 백의 n번째
+// 수는 ply 2n-1(백1수=ply1, 백2수=ply3 ...), 흑의 n번째 수는 ply 2n에 해당하는 지점까지 실제
+// 대국 수순을 잘라(g.moves.slice(0, ply)) 그 정확한 포지션의 스냅샷 오프닝 이름(snapNode)을 다시
+// 찾고, 그 깊이(n=1~6)마다 가장 많이 나온 이름을 집계한다 — 다른 곳(가장 많이 둔 오프닝 트리 등)과
+// 동일하게 g.moves를 접미사(+/#) 그대로 스냅샷 트리 키에 맞춰 쓴다(parsePgnSans가 이미 그렇게 보존).
+function computeTopOpenings(games, color) {
+  const use = games.filter((g) => g.color === color && g.moves && g.moves.length);
+  const out = [];
+  for (let n = 1; n <= 6; n++) {
+    const ply = color === "w" ? 2 * n - 1 : 2 * n;
+    const counts = {};
+    for (const g of use) {
+      if (g.moves.length < ply) continue;
+      const nd = snapNode(g.moves.slice(0, ply));
+      const name = nd && nd.opening ? nd.opening.name : null;
+      if (!name) continue;
+      counts[name] = (counts[name] || 0) + 1;
     }
-    return out;
-  }, [games]);
-  const [idx, setIdx] = useState(0);
-  useEffect(() => { setIdx(0); }, [top.length]);
-  useEffect(() => {
-    if (top.length <= 1) return;
-    const iv = setInterval(() => setIdx((i) => (i + 1) % top.length), 2200);
-    return () => clearInterval(iv);
-  }, [top.length]);
-  if (!top.length) return null;
-  const cur = top[Math.min(idx, top.length - 1)];
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    if (sorted.length) out.push({ n, name: sorted[0][0], count: sorted[0][1] });
+  }
+  return out;
+}
+// (버그 수정) "n수" 배지가 백/흑 박스마다 자기 목록 길이대로 따로 도는 타이머로 순환해, 두 박스가
+// 화면에 동시에 서로 다른 n(예: "백 1수"·"흑 5수")을 보여주는 경우가 있었다 — 사용자는 두 박스가
+// 항상 "같은 n"을 함께 보여주길 원한다. 백/흑 모두에 오프닝이 있는 n만 모아 공유 목록으로 만들고,
+// 단일 타이머로 그 목록만 순환해 두 박스가 항상 같은 n에서 함께 움직이도록 했다.
+function OpeningBox({ label, color, cur, dotsLen, dotsIdx }) {
+  if (!cur) return null;
+  const nBadge = (color === "w" ? "백" : "흑") + " " + cur.n + "수";
+  // (v0.2.6 UI) "백 n수"/"흑 n수" 배지를 라벨과 같은 줄에 붙이지 않고 오프닝 이름 바로 위 자기
+  // 줄에 두며, 배지 배경을 금색 그라데이션으로 통일했다(백/흑 공통).
+  const badgeStyle = { display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", fontSize: 10, fontWeight: 800, color: "#241509", fontFamily: "ui-monospace,monospace" };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>가장 많이 둔 오프닝</div>
-      <div style={{ position: "relative", height: 34, overflow: "hidden" }}>
+      {label && <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>{label}</div>}
+      <div style={{ marginBottom: 4 }}><span style={badgeStyle}>{nBadge}</span></div>
+      {/* (v0.2.6 버그 수정) 오프닝 이름은 길이가 제각각이라(예: "Italian Game" vs "Sicilian Defense:
+          Najdorf Variation, English Attack"), 번갈아 나올 때마다 짧은 이름은 1줄로 접히고 긴
+          이름은 2줄로 늘어나며 카드 폭·높이가 들썩였다 — 폭은 항상 부모 너비 그대로(고정), 높이는
+          1줄짜리 이름이 나와도 항상 2줄 분량을 미리 확보해 둬 어느 이름이 나오든 레이아웃이 흔들리지
+          않는다. 글자 크기를 16→13으로 줄여 긴 이름이 2줄 안에서 잘리지 않고 온전히 들어가게 했다. */}
+      <div style={{ position: "relative", minHeight: 38, overflow: "hidden", width: "100%" }}>
         <AnimatePresence mode="wait">
-          <motion.div key={cur.n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg,#F3D57A," + T.brass + ")", borderRadius: 7, padding: "3px 8px", flexShrink: 0, whiteSpace: "nowrap" }}>백 {cur.n}수</span>
-            <span style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{cur.san}</span>
-            <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{fmtFull(cur.count)}회</span>
+          <motion.div key={cur.n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, lineHeight: 1.3 }}>{cur.name}</span>
+            <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", flexShrink: 0, whiteSpace: "nowrap" }}>{fmtFull(cur.count)}회</span>
           </motion.div>
         </AnimatePresence>
       </div>
       <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
-        {top.map((m, i) => <span key={i} style={{ width: i === idx ? 14 : 6, height: 4, borderRadius: 999, background: i === idx ? T.brass : "#DCCBA8", transition: "all .3s ease" }} />)}
+        {Array.from({ length: dotsLen }).map((_, i) => <span key={i} style={{ width: i === dotsIdx ? 14 : 6, height: 4, borderRadius: 999, background: i === dotsIdx ? T.brass : "#DCCBA8", transition: "all .3s ease" }} />)}
       </div>
+    </div>
+  );
+}
+function TopOpeningsPair({ games, label }) {
+  const topW = useMemo(() => computeTopOpenings(games, "w"), [games]);
+  const topB = useMemo(() => computeTopOpenings(games, "b"), [games]);
+  const sharedNs = useMemo(() => {
+    const bSet = new Set(topB.map((o) => o.n));
+    const both = topW.filter((o) => bSet.has(o.n)).map((o) => o.n);
+    if (both.length) return both;
+    // 백/흑 둘 다에 있는 n이 하나도 없는 극히 드문 경우엔, 그래도 뭔가는 보여주도록 백 목록을 그대로 쓴다.
+    return topW.length ? topW.map((o) => o.n) : topB.map((o) => o.n);
+  }, [topW, topB]);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => { setIdx(0); }, [sharedNs.length]);
+  useEffect(() => {
+    if (sharedNs.length <= 1) return;
+    const iv = setInterval(() => setIdx((i) => (i + 1) % sharedNs.length), 2200);
+    return () => clearInterval(iv);
+  }, [sharedNs.length]);
+  if (!sharedNs.length) return null;
+  const curIdx = Math.min(idx, sharedNs.length - 1);
+  const n = sharedNs[curIdx];
+  const curW = topW.find((o) => o.n === n);
+  const curB = topB.find((o) => o.n === n);
+  return (
+    <>
+      <OpeningBox label={label} color="w" cur={curW} dotsLen={sharedNs.length} dotsIdx={curIdx} />
+      <OpeningBox color="b" cur={curB} dotsLen={sharedNs.length} dotsIdx={curIdx} />
+    </>
+  );
+}
+// (v0.2.6 기능) 기간별 레이팅 변동 그래프 — 지금 필터(시간 규정·흑/백)가 적용된 대국들을 시간순으로
+// 이어 선 그래프로 보여준다. 최근 1주/1달/6개월/1년 중 고를 수 있는 기간 필터를 추가로 얹는다(위
+// 시간 규정·흑백 필터와는 별개 축). 대국이 아예 없으면 표시하지 않고, 고른 기간 안에 대국이 2판
+// 미만이면(선을 그릴 수 없음) 버튼은 그대로 둔 채 안내 문구만 보여준다.
+const RATING_CHART_PERIODS = [
+  { key: "7d", label: "1주", days: 7 },
+  { key: "30d", label: "1달", days: 30 },
+  { key: "180d", label: "6개월", days: 182 },
+  { key: "365d", label: "1년", days: 365 },
+];
+// (v0.2.6 버그 수정) 위 시간 규정 필터가 "전체"일 때 이 그래프가 래피드/블리츠/불릿 대국을 시간순으로
+// 그냥 한 줄에 뒤섞어 그리고 있었다 — 세 시간 규정은 레이팅 체계 자체가 서로 달라(보통 래피드>블리츠>
+// 불릿 순으로 값 자체가 다름) 뒤섞은 선은 오르내림이 실제 실력 변화가 아니라 그날 어떤 시간 규정을
+// 뒀는지에 따라 요동치는, 사실상 의미 없는 그래프였다. "전체"일 때는 세 시간 규정을 각자 다른 색의
+// 선으로 같은 그래프 위에 겹쳐 그리고 범례를 달아 구분하고(대국이 2판 이상 있는 시간 규정만), 특정
+// 시간 규정 하나로 좁혀져 있을 때는 기존처럼 그 하나만 선 아래 영역 채우기와 함께 보여준다.
+// (v0.2.6 UI) 색을 빛의 삼원색(RGB)에 가깝게 골랐다 — 아래 영역 채우기에 mix-blend-mode:screen
+// (가산혼합)을 걸어, 두 색이 겹치는 자리는 그 둘을 섞은 밝은 색으로, 세 색이 다 겹치는 자리는 흰색에
+// 가깝게 빛나 보인다. 특정 시간 규정 하나만 볼 때도 이제 평가치 등락 색 대신 이 색으로 고정해, 어느
+// 화면에서 보든 같은 시간 규정은 항상 같은 색으로 알아볼 수 있게 했다.
+const TIME_CLASS_CHART_COLOR = { rapid: "#FF3B30", blitz: "#34C759", bullet: "#0A84FF" };
+// (v0.2.6 기능) 리뷰 페이지 EvalGraph와 같은 방식의 드래그 크로스헤어를 얹었다 — 그래프를 누른 채
+// 좌우로 끌면(포인터 캡처) 그 x좌표에 해당하는 지점의 날짜·레이팅을 점선+역삼각형+말풍선으로 보여준다.
+// "전체"(여러 시간 규정 동시 표시) 모드에서는 x좌표가 시간 값이라, 시리즈마다 그 시간에 가장 가까운
+// 자기 지점을 각자 찾아 말풍선에 함께 나열한다.
+function RatingHistoryChart({ games, timeFilter, stillFetching }) {
+  const allPoints = useMemo(() => [...games].filter((g) => g.rating != null && g.endTime).sort((a, b) => (a.endTime || 0) - (b.endTime || 0)), [games]);
+  const [period, setPeriod] = useState("180d");
+  const [dragFrac, setDragFrac] = useState(null);
+  const wrapRef = useRef(null);
+  const draggingRef = useRef(false);
+  // (버그 수정) 대국이 아주 많은 계정은 달(月)을 배치로 병렬 로드해도 전체 기록을 다 받기까지 시간이
+  // 걸린다 — 아직 로딩 중인데 이 시간 규정의 대국을 하나도 못 찾았다고 "그래프가 안 그려지는 버그"로
+  // 오해하기 쉽다(예: 최근엔 안 둔 시간 규정이 사실은 더 최근 달에 있는데 아직 그 달을 못 받은 경우).
+  // 로딩 중엔 아예 숨기는 대신 "불러오는 중" 안내를 보여준다.
+  if (!allPoints.length) return stillFetching ? <div style={{ padding: "10px 12px", fontSize: 11, color: T.inkSoft }}>대국 기록을 불러오는 중이에요…</div> : null;
+  const periodDef = RATING_CHART_PERIODS.find((p) => p.key === period) || RATING_CHART_PERIODS[2];
+  const cutoff = Date.now() / 1000 - periodDef.days * 86400;
+  const inPeriod = allPoints.filter((g) => g.endTime >= cutoff);
+  // (v0.2.6 UI) 그래프를 더 크게(320x120 → 360x210), 축 기준선도 더 촘촘하게(y 3단 → 5단, x축
+  // 세로 기준선 신규) 다시 그렸다.
+  const W = 360, H = 210, padL = 40, padR = 12, padT = 14, padB = 26;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const fmtAxisDate = (t) => { const dt = new Date(t * 1000); return (dt.getMonth() + 1) + "/" + dt.getDate(); };
+  const isAll = timeFilter === "all";
+  const jumpToClientX = (clientX) => {
+    if (!wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    if (!rect.width) return;
+    setDragFrac(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)));
+  };
+  // (버그 수정) 드래그가 SVG 안의 축 라벨(<text>) 위를 지나가면 브라우저 기본 텍스트 선택이
+  // 함께 시작돼, 크로스헤어 대신 파란 텍스트 선택 영역이 생기며 드래그 자체가 씹혔다 —
+  // preventDefault로 마우스 드래그의 기본 선택 동작을 막고, CSS로도 선택을 비활성화한다.
+  const onPointerDown = (e) => { e.preventDefault(); draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } jumpToClientX(e.clientX); };
+  const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
+  const onPointerUp = (e) => { draggingRef.current = false; setDragFrac(null); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ } };
+  const dragX = dragFrac != null ? dragFrac * W : null;
+  // (v0.2.6 UI) 말풍선이 역삼각형 마커·점선을 가리지 않도록, 크로스헤어가 그래프 오른쪽 절반에
+  // 있으면 말풍선을 좌하단에, 왼쪽 절반에 있으면 우하단에 붙여 옆으로 비켜서게 한다.
+  const tooltipPos = (x) => {
+    const rightHalf = x / W > 0.5;
+    const leftPct = (x / W) * 100;
+    const gap = 3;
+    const anchorPct = rightHalf ? Math.max(6, leftPct - gap) : Math.min(94, leftPct + gap);
+    return { left: anchorPct + "%", top: "56%", transform: rightHalf ? "translate(-100%, 0)" : "translate(0, 0)" };
+  };
+  const yTicks = (min, max) => [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(min + (max - min) * f));
+  const xFracTicks = [0, 0.2, 0.4, 0.6, 0.8, 1];
+  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? "대국 기록을 더 불러오는 중이에요…" : "이 기간엔 대국이 부족해요."}</div>;
+  let body;
+  if (isAll) {
+    const series = ["rapid", "blitz", "bullet"].map((k) => ({ key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: inPeriod.filter((g) => g.timeClass === k) })).filter((s) => s.points.length >= 2);
+    if (!series.length) {
+      body = emptyMsg;
+    } else {
+      const allRatings = series.flatMap((s) => s.points.map((g) => g.rating));
+      const min = Math.min(...allRatings), max = Math.max(...allRatings);
+      const span = Math.max(1, max - min);
+      const allTimes = series.flatMap((s) => s.points.map((g) => g.endTime));
+      const tMin = Math.min(...allTimes), tMax = Math.max(...allTimes);
+      const tSpan = Math.max(1, tMax - tMin);
+      const xAt = (t) => padL + ((t - tMin) / tSpan) * plotW;
+      const yAt = (r) => padT + plotH - ((r - min) / span) * plotH;
+      // 드래그 중인 x좌표(시간)에서 시리즈마다 가장 가까운 지점을 각자 찾는다.
+      const dragT = dragX != null ? tMin + ((dragX - padL) / plotW) * tSpan : null;
+      const nearest = dragT != null ? series.map((s) => {
+        let best = s.points[0], bestDiff = Infinity;
+        for (const g of s.points) { const d = Math.abs(g.endTime - dragT); if (d < bestDiff) { bestDiff = d; best = g; } }
+        return { key: s.key, label: s.label, color: s.color, point: best };
+      }) : null;
+      body = (
+        <>
+          <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+            style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
+            {dragX != null && <div aria-hidden style={{ position: "absolute", top: -1, left: (dragX / W) * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid " + T.brassHi, pointerEvents: "none", zIndex: 2 }} />}
+            {nearest && (
+              <div style={{ position: "absolute", ...tooltipPos(dragX), background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)" }}>
+                <div style={{ fontWeight: 800, marginBottom: 2, color: T.brassHi }}>{fmtAxisDate(dragT)}</div>
+                {nearest.map((s) => (
+                  <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: s.color, display: "inline-block", flexShrink: 0 }} />
+                    {s.label} <b style={{ fontFamily: "ui-monospace,monospace" }}>{s.point.rating}</b>
+                  </div>
+                ))}
+              </div>
+            )}
+            <svg viewBox={"0 0 " + W + " " + H} style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
+              <rect x="0" y="0" width={W} height={H} fill="#211A13" rx="8" />
+              {yTicks(min, max).map((r, i) => (
+                <g key={i}>
+                  <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(255,255,255,.08)" strokeWidth={1} />
+                  <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill="#B8A98C">{r}</text>
+                </g>
+              ))}
+              {xFracTicks.slice(1, -1).map((f, i) => (
+                <line key={i} x1={padL + f * plotW} x2={padL + f * plotW} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.06)" strokeWidth={1} />
+              ))}
+              <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
+              <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
+              {/* (v0.2.6 기능) 세 시리즈 모두 선 아래 반투명 영역을 채우고, isolate된 그룹 안에서
+                  mix-blend-mode:screen(가산혼합)으로 겹쳐 — 두 색이 겹치면 둘을 섞은 밝은 색, 세 색이
+                  다 겹치면 흰색에 가깝게 빛난다(빛의 삼원색 원리). */}
+              <g style={{ isolation: "isolate" }}>
+                {series.map((s) => {
+                  const lineD = s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
+                  const areaD = lineD + " L" + xAt(s.points[s.points.length - 1].endTime).toFixed(1) + "," + (padT + plotH) + " L" + xAt(s.points[0].endTime).toFixed(1) + "," + (padT + plotH) + " Z";
+                  // (버그 수정) opacity를 너무 낮게(0.55) 두면 screen 블렌드가 배경과 다시 섞이며
+                  // 밝아지는 정도가 옅어져 겹치는 자리가 탁한 카키색으로 보였다 — 그렇다고 너무
+                  // 높이면(0.88) 반투명한 느낌 없이 거의 불투명한 색 블록처럼 보인다. 0.7 정도가
+                  // 바닥까지 은은하게 비치면서도 겹침 구간은 여전히 또렷하게 밝아지는 절충점이다.
+                  return <path key={s.key} d={areaD} fill={s.color} opacity={0.7} stroke="none" style={{ mixBlendMode: "screen" }} />;
+                })}
+              </g>
+              {series.map((s) => (
+                <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+              ))}
+              {dragX != null && <line x1={dragX} x2={dragX} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
+              {nearest && nearest.map((s) => <circle key={s.key} cx={xAt(s.point.endTime)} cy={yAt(s.point.rating)} r="3" fill={s.color} stroke="#14100C" strokeWidth="0.8" />)}
+              {xFracTicks.map((f, i) => (
+                <text key={i} x={padL + f * plotW} y={H - 6} fontSize={8} textAnchor={i === 0 ? "start" : i === xFracTicks.length - 1 ? "end" : "middle"} fill="#B8A98C">{fmtAxisDate(tMin + f * tSpan)}</text>
+              ))}
+            </svg>
+          </div>
+          {/* (v0.2.6 UI) 범례를 그래프 위에서 아래로 옮겼다 — 시간 규정별 색상 점 + 첫 레이팅→마지막 레이팅.
+              (v0.2.6 UI 재조정) 3개 항목이 줄바꿈 없이 한 줄에 들어가도록 글자·점·간격을 더 줄였다. */}
+          <div className="flex items-center justify-center" style={{ gap: 8, marginTop: 8, flexWrap: "nowrap" }}>
+            {series.map((s) => (
+              <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 8.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 700, whiteSpace: "nowrap" }}>
+                <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: s.color, display: "inline-block", flexShrink: 0 }} />
+                <b style={{ color: T.ink }}>{s.label}</b> {s.points[0].rating}→{s.points[s.points.length - 1].rating}
+              </span>
+            ))}
+          </div>
+        </>
+      );
+    }
+  } else if (inPeriod.length < 2) {
+    body = emptyMsg;
+  } else {
+    const points = inPeriod;
+    const ratings = points.map((g) => g.rating);
+    const min = Math.min(...ratings), max = Math.max(...ratings);
+    const span = Math.max(1, max - min);
+    const xAt = (i) => padL + (i / (points.length - 1)) * plotW;
+    const yAt = (r) => padT + plotH - ((r - min) / span) * plotH;
+    const lineD = points.map((g, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
+    const areaD = lineD + " L" + xAt(points.length - 1).toFixed(1) + "," + (padT + plotH) + " L" + xAt(0).toFixed(1) + "," + (padT + plotH) + " Z";
+    const first = points[0].rating, last = points[points.length - 1].rating;
+    const rising = last >= first;
+    const lineColor = TIME_CLASS_CHART_COLOR[timeFilter] || T.brassHi;
+    const dragIdx = dragX != null ? Math.round(Math.max(0, Math.min(1, (dragX - padL) / plotW)) * (points.length - 1)) : null;
+    const dragPoint = dragIdx != null ? points[dragIdx] : null;
+    body = (
+      <>
+        <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+          <span style={{ fontSize: 10.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{points.length}판</span>
+          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.ink, fontWeight: 800 }}>{first} → {last} <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span></span>
+        </div>
+        <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+          style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
+          {dragPoint && <div aria-hidden style={{ position: "absolute", top: -1, left: (xAt(dragIdx) / W) * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid " + lineColor, pointerEvents: "none", zIndex: 2 }} />}
+          {dragPoint && (
+            <div style={{ position: "absolute", ...tooltipPos(xAt(dragIdx)), background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)", textAlign: "center" }}>
+              <div style={{ fontWeight: 800, color: T.brassHi }}>{fmtAxisDate(dragPoint.endTime)}</div>
+              <div style={{ fontFamily: "ui-monospace,monospace" }}>{dragPoint.rating}</div>
+            </div>
+          )}
+          <svg viewBox={"0 0 " + W + " " + H} style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
+            <rect x="0" y="0" width={W} height={H} fill="#211A13" rx="8" />
+            {/* y축 그리드 — 값 라벨을 왼쪽에 함께 표시 */}
+            {yTicks(min, max).map((r, i) => (
+              <g key={i}>
+                <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(255,255,255,.08)" strokeWidth={1} />
+                <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill="#B8A98C">{r}</text>
+              </g>
+            ))}
+            {/* x축 세로 기준선 */}
+            {xFracTicks.slice(1, -1).map((f, i) => (
+              <line key={i} x1={padL + f * plotW} x2={padL + f * plotW} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.06)" strokeWidth={1} />
+            ))}
+            {/* x/y축 선 */}
+            <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
+            <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
+            {/* 선 아래 영역을 반투명하게 채움 */}
+            <path d={areaD} fill={lineColor} opacity={0.4} stroke="none" />
+            <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+            {dragPoint && <line x1={xAt(dragIdx)} x2={xAt(dragIdx)} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
+            {dragPoint && <circle cx={xAt(dragIdx)} cy={yAt(dragPoint.rating)} r="3.4" fill={lineColor} stroke="#14100C" strokeWidth="0.8" />}
+            {/* x축 날짜 라벨 */}
+            {xFracTicks.map((f, i) => (
+              <text key={i} x={padL + f * plotW} y={H - 6} fontSize={8} textAnchor={i === 0 ? "start" : i === xFracTicks.length - 1 ? "end" : "middle"} fill="#B8A98C">{fmtAxisDate(points[Math.round(f * (points.length - 1))].endTime)}</text>
+            ))}
+          </svg>
+        </div>
+      </>
+    );
+  }
+  return (
+    <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>기간별 레이팅 변동</span>
+        <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
+          {RATING_CHART_PERIODS.map((p) => (
+            <button key={p.key} onClick={() => setPeriod(p.key)} className="press" style={{ padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 9.5, fontWeight: 800, background: period === p.key ? T.ebony2 : "transparent", color: period === p.key ? T.brassHi : T.inkSoft }}>{p.label}</button>
+          ))}
+        </div>
+      </div>
+      {body}
     </div>
   );
 }
@@ -10510,7 +11219,17 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   // (v0.2.2 UI#6#5) chess.com 통계를 전체/래피드/블리츠/불릿으로 나눠 본다. 통계 집계에서 일일 대국과
   // 체스960(변형)은 제외한다 — 표준 대국의 시간 규정별 실력만 반영한다.
   const [timeFilter, setTimeFilter] = useState("all");
+  // (v0.2.6 기능) 타임 컨트롤에 더해 흑/백으로도 나눠 볼 수 있도록 색 필터를 추가.
+  const [colorFilter, setColorFilter] = useState("all");
   const games = useMemo(() => {
+    const base = (ready ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess");
+    let out = timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter);
+    if (colorFilter !== "all") out = out.filter((g) => g.color === colorFilter);
+    return out;
+  }, [ready, chesscom && chesscom.games, timeFilter, colorFilter]);
+  // (v0.2.6 버그 수정) 레이팅은 어느 색으로 뒀든 하나로 합산 적용되므로, 흑/백 필터와는 무관하게
+  // 항상 같은 값이어야 한다 — 레이팅 그래프에는 색 필터를 뺀(시간 규정만 적용된) 목록을 따로 넘긴다.
+  const gamesForRating = useMemo(() => {
     const base = (ready ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess");
     return timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter);
   }, [ready, chesscom && chesscom.games, timeFilter]);
@@ -10571,7 +11290,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       if (r.own.n > 0 && kids.length > 0) {
         const o = r.own;
         // navName: 세부 갈래 이름이 없어 클릭해도 이동할 곳이 없으므로, 부모(name) 자신으로 이동시킨다.
-        kids.push({ name: name + " (그 외 변형)", navName: name, n: o.n, w: o.w, d: o.d, l: o.l, wr: o.n ? Math.round(100 * o.w / o.n) : 0, own: o, children: [] });
+        kids.push({ name: name + " (Side Line)", navName: name, n: o.n, w: o.w, d: o.d, l: o.l, wr: o.n ? Math.round(100 * o.w / o.n) : 0, own: o, children: [] });
       }
       return { ...r, children: kids.sort((a, b) => b.n - a.n) };
     };
@@ -10604,11 +11323,19 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{prof ? ["래피드 " + (prof.rapid ?? "—"), "블리츠 " + (prof.blitz ?? "—"), "불릿 " + (prof.bullet ?? "—")].join(" · ") : "레이팅 불러오는 중…"}</div>
         </div>
       </div>
-      {/* (v0.2.2 UI#6#5) 시간 규정 필터 — 전체/래피드/블리츠/불릿. 일일·체스960은 집계에서 제외. */}
-      <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3, marginBottom: 12, flexWrap: "wrap" }}>
-        {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
-          <button key={k} onClick={() => setTimeFilter(k)} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: timeFilter === k ? T.ebony2 : "transparent", color: timeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-        ))}
+      {/* (v0.2.2 UI#6#5) 시간 규정 필터 — 전체/래피드/블리츠/불릿. 일일·체스960은 집계에서 제외.
+          (v0.2.6 기능) 타임 컨트롤 선택 박스를 조금 줄이고, 같은 줄 우측에 흑/백 색 필터를 추가했다. */}
+      <div className="flex items-center" style={{ gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+          {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
+            <button key={k} onClick={() => setTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: timeFilter === k ? T.ebony2 : "transparent", color: timeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+          ))}
+        </div>
+        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+          {[["all", "전체"], ["w", "백"], ["b", "흑"]].map(([k, lab]) => (
+            <button key={k} onClick={() => setColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: colorFilter === k ? T.ebony2 : "transparent", color: colorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+          ))}
+        </div>
       </div>
       {/* 전적 */}
       {!overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>이 시간 규정의 대국이 없어요.</p>}
@@ -10628,6 +11355,8 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         </div>
       )}
+      {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
+      <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
@@ -10649,13 +11378,15 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                 {/* (v0.2.2 UI#6#7) "⬜ 백"/"⬛ 흑" 텍스트 대신, 학습 탭 수 블록처럼 행 좌측에 진영 색 막대로 표시 */}
                 <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승" : lost ? "패" : "무"}</b>
+                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
                     {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                    {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}> ({rc > 0 ? "+" + rc : rc})</span>}
-                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                    {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
+                    {/* (v0.2.6 버그 수정) 대국 날짜를 오프닝 이름 옆 별도 줄에 붙이는 대신, 타임컨트롤
+                        라벨 뒤에 괄호로 이어 붙인다. */}
+                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtD(g.endTime) + ")" : ""}</span>}
                   </div>
                   {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening || ""}{g.opening && g.endTime ? " · " : ""}{fmtD(g.endTime)}</div>
+                  {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                 </div>
                 {onOpenGame && (
                   <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -10669,8 +11400,9 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         );
       })()}
-      {/* (v0.2.2 UX#3) 가장 많이 둔 오프닝 — 백 1~6수 인덱스별 최다 수를 번갈아 애니메이션 */}
-      <TopWhiteMovesAnimated games={games} />
+      {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
+          애니메이션한다. 바로 아래에 흑 오프닝 레파토리도 같은 방식으로 보여준다. */}
+      <TopOpeningsPair games={games} label="가장 많이 둔 오프닝" />
       {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
           그 아래 하위 갈래들의 합산임을 보여준다. */}
       {openingTree.length > 0 && (
@@ -10738,8 +11470,12 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
             renderCard={(p, onClick) => <PuzzleCard key={p.id} p={p} isSolved onClick={onClick} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />} />
         </div>
       )}
+      {/* (v0.2.6 버그 수정) OpenChess 자체 정보(퀘스트·퍼즐)와 chess.com 통계 사이 구분을 실선 대신
+          점선으로, 집중 학습 모드의 chess.com 통계 카드와 같은 "Chess.com 통계" 아이콘+텍스트
+          헤더를 추가해 두 화면의 구성을 통일한다. */}
       {linked && (
-        <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
+        <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px dashed #C9B58C" }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><ChesscomLogo height={19} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>통계</span></div>
           <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
         </div>
       )}
@@ -10784,6 +11520,37 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.2.6", date: "2026.7.28", dev: ["openchesskr"], items: [
+      "게임 리뷰(/review) 페이지에 들어가면 흰 화면만 나오던 심각한 문제를 고쳤어요 — 리뷰 화면이 다시 정상적으로 열려요.",
+      "'탁월한 수' 판정을 더 정교하게 다듬었어요 — 방치된 것처럼 보이지만 사실 더 안전한 칸으로 피할 수 있는 기물이나, 잡아도 안전한 기물을 노린 수는 이제 제대로 탁월로 인정되고, 반대로 이미 희생한 기물의 점수를 회복해가는 후속 수는 더 이상 탁월로 중복 표시되지 않아요.",
+      "집중 학습 미니보드에서 캐슬링(00, 000)을 재생할 때 킹만 움직이고 룩은 제자리에 멈춰 있던 문제를 고쳤어요 — 이제 킹과 룩이 함께 움직여요.",
+      "엔진 추천 수 줄이 타이핑되다가 중간에 멈춰 보이던 문제를 고쳤어요. 또 줄이 길어져도 더 이상 마지막 수 쪽으로 자동으로 밀리지 않고, 다음 수가 항상 왼쪽에 붙어 보여요.",
+      "수를 빠르게 연달아 두거나 포지션을 빠르게 넘길 때, 엔진 추천 수 줄 하나가 특정 지점에서 영영 멈춰 보이던 진짜 원인을 찾아 고쳤어요 — 직전 포지션의 계산 결과가 새 포지션의 결과에 섞여 들어가던 문제였어요.",
+      "도감, 기보, 엔진 추천 수 줄에서 마우스나 손가락으로 끌어 스크롤할 때 더 잘 반응하도록 감도를 높였어요.",
+      "'자주 두는 수'와 집중 학습에 표시되는 모든 수에 새 서체(Playfair Display)를 적용했어요. 프로필 카드의 OpenChess 정보와 chess.com 통계 사이에 구분선과 헤더를 추가했고, 집중 학습의 chess.com 통계 카드도 프로필 카드와 같은 스타일로 통일했어요.",
+      "가장 많이 둔 오프닝을 수순 대신 이름으로 보여주고, 그 아래 흑 레퍼토리 오프닝도 함께 보여줘요. 승/패/무를 승리/패배/무승부로 풀어 쓰고, 레이팅 변동을 결과 옆에 바로 붙여 보여줘요(예: 승리(+9)). 대국 날짜는 시간 규정 옆으로 옮겼고, '그 외 변형'은 'Side Line'으로 이름이 바뀌었어요.",
+      "모바일에서 수 아이콘 설명이나 채팅 롱프레스 메뉴, 알림 카드가 화면 가장자리에서 잘려 보이던 문제를 고쳤어요.",
+      "퍼즐 화면을 크게 다듬었어요 — 해결한 퍼즐도 오프닝별로 묶어 보여주고, 별 크기를 줄이고, 좋아요·재게시·공유 아이콘을 더 크고 보기 좋게 재배치했어요. 코치 말풍선이 지금 자리를 요약해 설명해주고, PGN은 따로 스크롤되는 한 줄 박스로 분리됐어요. 보드 아래엔 평가치 바가 새로 생겼고, 힌트는 칸 반짝임 → 기물 흔들림 → 이동 경로 표시의 3단계로 완전히 새로워졌어요.",
+      "채팅에서 연속으로 온 상대 메시지 묶음 첫 줄에 프로필 사진이 보이고 눌러서 프로필로 이동할 수 있어요. '@사용자명' 멘션은 굵게 표시되고 누르면 그 사람 프로필로 이동해요. 입력 중 표시는 더 옅게 보이고, '/'를 입력하면 명령어 자동완성이 떠요 — '/puzzle 000000'으로 원하는 퍼즐을 바로 공유할 수 있어요.",
+      "chess.com 통계를 시간 규정뿐 아니라 흑/백으로도 나눠 볼 수 있게 됐어요. '전체 기간 전적'과 '최근 대국' 사이에 기간별 레이팅 변동 그래프가 추가됐어요.",
+      "'자주 두는 첫 수'가 백/흑 두 박스가 나란히 놓인 모습으로 바뀌었어요 — 왼쪽엔 자주 두는 첫 수(백), 오른쪽엔 백의 각 첫 수에 대한 흑의 응수를 한눈에 볼 수 있어요. 프로필의 '통계' 헤더 문구도 더 짧아졌어요.",
+      "레이팅 변동 그래프에 축·눈금선이 생기고, 그래프 아래가 은은하게 채워져요. 최근 1주/1달/6개월/1년 중 원하는 기간을 골라 볼 수 있어요. '전체'로 두면 래피드·블리츠·불릿 세 그래프를 색으로 구분해 한 화면에서 볼 수 있어요.",
+      "학습 탭에서 같은 자리에 머물러 있어도 엔진이 상위 몇 수의 순위를 다시 매길 때마다 그 줄이 빈칸으로 돌아갔다 다시 써지길 반복하던 진짜 원인을 찾아 고쳤어요 — 이제 순위가 바뀌어도 이어서 자연스럽게 이어져요.",
+      "다음 수 블록에 뜬 키워드(TOP LEVEL 등)와, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 키워드가 서로 다르게 보이던 문제를 고쳤어요 — 이제 항상 똑같이 보여요.",
+      "집중학습의 '이 수가 두어진 내 대국' 목록에도 시간 규정·진영 선택 박스가 생겼어요. 대국 보기·리뷰 버튼 크기도 통일했어요.",
+      "모바일에서 집중학습에 들어가면 다음 수 블록 목록이 화면 밖으로 밀려 보이지 않던 문제를 고쳤어요 — 이제 미니보드 아래를 옆으로 넘기면(드래그 또는 ‹/› 버튼) 1페이지엔 chess.com 통계·마스터 대국이, 2페이지엔 다음 수 블록이 나와요.",
+      "레이팅 변동 그래프가 더 커졌어요. 그래프를 누른 채 끌면 점선과 화살표로 그 지점의 날짜·레이팅을 바로 볼 수 있어요. 래피드는 빨강, 블리츠는 초록, 불릿은 파랑으로 색이 고정돼서 어느 화면에서 보든 항상 같은 색이에요. '전체'로 보면 세 그래프 아래가 반투명하게 채워지고, 겹치는 자리는 색이 더해져 밝게(다 겹치면 거의 흰색으로) 빛나요. 눈금선도 더 촘촘해지고 범례는 그래프 아래로 옮겼어요.",
+      "레이팅 변동 그래프가 흑/백 필터에 영향받지 않도록 고쳤어요 — 레이팅은 어느 색으로 두든 합산되니까요. '가장 많이 둔 오프닝'에 몇 번째로 많이 둔 오프닝인지 보여주는 '백 n수'/'흑 n수' 표시를 되살렸고, 오프닝 이름 글자를 조금 줄여 긴 이름도 잘리지 않게 했어요. '자주 두는 첫 수'의 흑 응수 목록도 한 줄에 두 개씩 담아 더 짧고 좁게 보여줘요.",
+      "'가장 많이 둔 오프닝'의 '백 n수'/'흑 n수' 표시가 실제 오프닝과 안 맞던 문제(백 1수인데 Italian Game이 뜨는 등)를 근본적으로 고쳤어요 — 이제 표시된 n수에서 실제로 그 오프닝에 도달하는지 정확히 확인해요. 배지는 오프닝 이름 위 별도 줄로 옮기고 금색으로 통일했어요.",
+      "chess.com 통계를 로그인할 때만 새로 불러오고, 새로고침하거나 다른 페이지에 다녀와도 저장해둔 정보를 그대로 보여줘요(대국이 아주 많은 계정은 매번 불러오는 데 시간이 오래 걸렸었어요) — 최근에 끝난 실시간 대국만 그 위에 새로 얹어 갱신돼요. 대국이 아주 많은 계정에서 특정 시간 규정의 대국이 아예 안 보이던 문제의 진짜 원인도 찾아 고쳐서, 이제 여러 번 방문할수록 데이터가 점점 완전해져요.",
+      "레이팅 변동 그래프의 '전체' 모드 아래 색칠이 조금 더 반투명해졌고, 범례 글자를 줄여 항상 한 줄에 다 들어가도록 했어요. 그래프를 끌 때 뜨는 말풍선이 화살표 모양 마커나 점선을 가리지 않도록 옆으로 살짝 비켜 뜨고, 손을 떼면 크로스헤어가 바로 사라져요.",
+      "대국이 아주 많은 계정에서 특정 시간 규정(예: 불릿) 그래프가 계속 안 그려지던 문제를 더 고쳤어요 — 달(月)별 기록을 여러 개씩 한꺼번에 받아오도록 해 최근 데이터가 훨씬 빨리 채워지고, 아직 다 받아오는 중일 땐 '대국이 없다'는 문구 대신 '불러오는 중'이라고 알려줘요.",
+      "'가장 많이 둔 오프닝'의 백/흑 배지가 서로 다른 n(예: 백 1수 vs 흑 5수)을 동시에 보여주던 문제를 고쳤어요 — 이제 두 배지는 항상 같은 n을 함께 보여줘요.",
+      "퍼즐 탭의 해결 완료 목록도 미해결 목록처럼 오프닝별로 한 줄에 담아 옆으로 스크롤해서 볼 수 있어요.",
+      "퍼즐 힌트 애니메이션을 다듬었어요 — 기물이 옆으로 흔들리던 것을 윗부분을 잡고 흔드는 것처럼 각도가 바뀌며 흔들리도록 바꿨고, 두어야 할 칸과 이동 경로 칸은 윤곽선 대신 금색 그라데이션으로 채워지며 목적지에 가까울수록 색이 진해져요. 3단계에서 힌트 버튼을 한 번 더 누르면 힌트가 사라지고 원래대로 돌아가요.",
+    ],
+  },
   {
     version: "0.2.5", date: "2026.7.24", dev: ["openchesskr"], items: [
       "엔진 추천 수 줄이 화면 폭보다 길 때, 데스크톱에서 마우스로 끌어도 좌우로 스크롤이 잘 안 돼 뒷부분 수순이 계속 가려져 있던 문제를 고쳤어요 — 이제 마우스·터치 모두 같은 방식으로 끌어서 볼 수 있어요. 학습 탭 상단의 기보 줄도 똑같이 마우스로 편하게 끌어볼 수 있어요.",
@@ -11859,8 +12626,12 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
   // 여전히 이전 상태인데 화면(과 새로고침 전까지의 localRead/localResult 오버레이)은 계속 성공한
   // 것처럼 보였다 — 성공 여부를 확인해 실패하면 해당 항목의 로컬 오버레이를 지우고 refresh()로
   // 서버의 실제 상태와 다시 맞춘다.
+  const [notifDx, setNotifDx] = useState(0);
   const toggle = () => {
     const next = !open; setOpen(next);
+    // (v0.2.6 버그 수정) 알림 벨이 화면 왼쪽에 가까이 있으면 오른쪽 끝에 맞춰 뜨는 320px 카드가
+    // 화면 밖으로 잘렸다 — 열 때마다 벨의 실제 위치를 재서 안전한 가로 오프셋을 계산해 둔다.
+    if (next && wrapRef.current) setNotifDx(safeAreaDx(wrapRef.current.getBoundingClientRect(), 320, "right"));
     // (18차 UX4→보충) 최초 확인 시 서버에 PATCH로 read=true를 확실히 반영 — 새로고침 후에도 배지가 되살아나지 않는다.
     if (next && unread) {
       const stale = items.filter((n) => !n.read);
@@ -11893,7 +12664,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
       <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0, y: -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.97 }} transition={{ duration: 0.18, ease: MOTION_EASE }}
-          onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
+          onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, transform: notifDx ? "translateX(" + notifDx + "px)" : undefined, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
           <div className="flex items-center justify-between" style={{ padding: "10px 14px", borderBottom: "1px solid #E4D5B6" }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>알림</span>
             {items.length > 0 && <button onClick={clearAll} className="press" style={{ padding: "3px 8px", borderRadius: 6, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, border: "1px solid #C9B58C", cursor: "pointer" }}>전체 삭제</button>}
@@ -12020,7 +12791,65 @@ function EmojiPicker({ onPick, onClose }) {
   );
 }
 // (17차) 친구 채팅 — 텍스트 + 이모티콘. 열려있는 동안 짧은 주기로 폴링해 새 메시지를 반영한다.
-function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle }) {
+// (v0.2.6 기능) 채팅 메시지에서 "@아이디" 멘션을 찾는다. 아이디 규칙(ALNUM, 3~20자)과 동일한
+// 글자 집합만 인정한다.
+const MENTION_RX = /@([A-Za-z0-9]{3,20})/g;
+function firstMention(body) {
+  if (!body) return null;
+  MENTION_RX.lastIndex = 0;
+  const m = MENTION_RX.exec(body);
+  return m ? m[1] : null;
+}
+// 메시지 본문에서 "@아이디" 부분만 볼드체로 감싸 렌더링한다.
+function renderMentionText(body) {
+  if (!body) return body;
+  MENTION_RX.lastIndex = 0;
+  const parts = []; let last = 0, m;
+  while ((m = MENTION_RX.exec(body))) {
+    if (m.index > last) parts.push(body.slice(last, m.index));
+    parts.push(<b key={m.index}>{m[0]}</b>);
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) parts.push(body.slice(last));
+  return parts;
+}
+// (v0.2.6 기능) 채팅에서 상대 프로필 사진·멘션을 클릭했을 때 뜨는 간단한 프로필 보기 모달 —
+// UserSearchModal의 프로필 상세 화면과 같은 구성(PublicProfileStats 재사용)을 아이디 하나만으로 연다.
+function ChatUserProfileModal({ username, onClose }) {
+  const [pub, setPub] = useState(null);
+  useEffect(() => {
+    let cc = false;
+    userProfile(username).then((r) => { if (!cc) setPub(r ? { ...(r.pub || {}), username: r.username || username } : { username }); });
+    return () => { cc = true; };
+  }, [username]);
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>프로필</span>
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+        </div>
+        <div style={{ padding: 18, overflowY: "auto" }}>
+          {!pub ? <p style={{ fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</p> : (
+            <>
+              <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+                {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                  : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</span>
+                  <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(pub.displayId || pub.username)}</div>
+                  {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
+                </div>
+              </div>
+              <PublicProfileStats pub={pub} hideChesscom={false} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle }) {
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -12029,8 +12858,12 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
   const [editingId, setEditingId] = useState(null);
   // (v0.1.4 기능) 꾹 눌러 연 수정/삭제(또는 전달/삭제) 메뉴가 떠 있는 메시지 id.
   const [menuFor, setMenuFor] = useState(null);
+  // (v0.2.6 버그 수정) 메뉴가 화면 가장자리 근처의 메시지에서 열리면 잘리던 문제 — 열 때 계산해 둔 안전한 가로 오프셋.
+  const [menuDx, setMenuDx] = useState(0);
   // (v0.1.4 기능) 퍼즐 카드의 "전달" 버튼으로 다른 친구에게 다시 공유할 때 띄우는 시트의 대상 퍼즐.
   const [forwardTarget, setForwardTarget] = useState(null);
+  // (v0.2.6 기능) 프로필 사진·멘션을 눌렀을 때 보여줄 프로필 모달 대상 아이디.
+  const [viewProfile, setViewProfile] = useState(null);
   // (v0.1.0) 퍼즐 공유 카드 미리보기 — puzzle_no가 설정된 메시지가 보이면 그 번호의 퍼즐 데이터를
   // 지연 조회해 캐싱한다(no -> 퍼즐 데이터 | null(찾을 수 없음), 아직 없으면 로딩 중으로 취급).
   const [puzzlePreviews, setPuzzlePreviews] = useState({});
@@ -12118,11 +12951,23 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
       return;
     }
     if (!body && !emoji) return;
+    // (v0.2.6 기능) "/puzzle 000000" 또는 "/puzzle -num 000000" 명령어 — 텍스트 대신 그 번호의
+    // 퍼즐을 공유 카드로 보낸다(기존 공유 버튼과 같은 puzzleShareSend 재사용).
+    const cmdMatch = body && body.match(/^\/puzzle\s+(?:-num\s+)?(\d{1,7})\s*$/i);
+    if (cmdMatch) {
+      setSending(true);
+      const ok = await puzzleShareSend(parseInt(cmdMatch[1], 10), myUid, otherUid);
+      setSending(false);
+      if (ok) { setText(""); load(); }
+      return;
+    }
     setSending(true);
     const ok = await chatSend(myUid, otherUid, body, emoji);
     setSending(false);
     if (ok) { setText(""); load(); }
   };
+  // (v0.2.6 기능) "/"로 시작하면 쓸 수 있는 명령어 — 이번 버전엔 /puzzle 하나만 존재한다.
+  const CHAT_COMMANDS = [{ cmd: "/puzzle -num 000000", desc: "그 번호의 퍼즐을 공유해요(또는 /puzzle 000000)" }];
   const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
   const cancelEdit = () => { setEditingId(null); setText(""); };
   const doDelete = async (m) => {
@@ -12168,7 +13013,12 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
             const onDown = (e) => {
               dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
               clearTimeout(longPressTimerRef.current);
-              longPressTimerRef.current = setTimeout(() => { setMenuFor(m.id); dragRef.current = null; setDrag(null); }, 480);
+              const anchorEl = e.currentTarget;
+              longPressTimerRef.current = setTimeout(() => {
+                setMenuFor(m.id);
+                setMenuDx(safeAreaDx(anchorEl.getBoundingClientRect(), 92, mine ? "right" : "left"));
+                dragRef.current = null; setDrag(null);
+              }, 480);
             };
             const onMove = (e) => {
               if (!dragRef.current || dragRef.current.id !== m.id) return;
@@ -12179,14 +13029,23 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
               setDrag({ id: m.id, dx: d2 });
             };
             const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
+            // (v0.2.6 기능) 상대 말풍선 묶음 중 가장 위에만 프로필 사진을 왼쪽에 표시.
+            const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
             return (
-              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", position: "relative" }}
-                onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
-                onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
+              <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
+                {!mine && (showAvatar
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                      {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                        : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+                    </button>
+                  : <div style={{ width: 26, flexShrink: 0 }} />)}
+                <div style={{ display: "flex", flexDirection: "column", flex: mine ? "0 1 auto" : "0 1 auto" }}
+                  onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+                  onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {menuFor === m.id && (
-                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                       <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Send size={10} />전달</button>
                       {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>}
                     </div>
@@ -12204,6 +13063,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
                     </div>
                   </div>
                 </div>
+                </div>
               </div>
             );
           }
@@ -12218,7 +13078,15 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
           const onDown = (e) => {
             dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
             // (v0.1.4 기능) 내가 보낸 메시지만 꾹 눌러 수정/삭제 메뉴를 열 수 있다.
-            if (mine) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = setTimeout(() => { setMenuFor(m.id); dragRef.current = null; setDrag(null); }, 480); }
+            if (mine) {
+              clearTimeout(longPressTimerRef.current);
+              const anchorEl = e.currentTarget;
+              longPressTimerRef.current = setTimeout(() => {
+                setMenuFor(m.id);
+                setMenuDx(safeAreaDx(anchorEl.getBoundingClientRect(), 92, "right"));
+                dragRef.current = null; setDrag(null);
+              }, 480);
+            }
           };
           const onMove = (e) => {
             if (!dragRef.current || dragRef.current.id !== m.id) return;
@@ -12231,12 +13099,28 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
             d2 = mine ? Math.max(-96, Math.min(0, d2)) : Math.min(96, Math.max(0, d2));
             setDrag({ id: m.id, dx: d2 });
           };
-          const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
+          // (v0.2.6 기능) 손을 뗐을 때 드래그도 아니고(제자리 탭) 롱프레스 메뉴도 안 열렸다면, 본문에
+          // 담긴 "@아이디" 멘션의 프로필로 리디렉션한다.
+          const onUp = () => {
+            clearTimeout(longPressTimerRef.current);
+            const wasTap = Math.abs(dx) < 6 && menuFor !== m.id;
+            dragRef.current = null; setDrag(null);
+            if (wasTap) { const mention = firstMention(m.body); if (mention) setViewProfile(mention); }
+          };
+          // (v0.2.6 기능) 상대 말풍선 묶음 중 가장 위에만 프로필 사진을 왼쪽에 표시.
+          const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
           return (
             <React.Fragment key={m.id}>
               {/* (v0.1.4 기능) 읽음 표시와 달리 말풍선 상단에 별도 줄로 "수정됨"을 표시한다. */}
               {m.edited && <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}><span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, opacity: .75 }}>수정됨</span></div>}
-              <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", alignItems: "center", gap: 4, position: "relative" }}
+              <div className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
+                {!mine && (showAvatar
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                      {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                        : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+                    </button>
+                  : <div style={{ width: 26, flexShrink: 0 }} />)}
+              <div className="flex items-center" style={{ gap: 4, position: "relative" }}
                 onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
                 onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
                 {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
@@ -12246,14 +13130,15 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
                 <span style={{ display: "inline-block", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
                   {/* (v0.1.4 기능) 꾹 눌러 연 수정/삭제 메뉴 — 이모티콘 메시지는 수정 대상이 아니므로 본문(body)이 있을 때만 수정 버튼을 보여준다. */}
                   {menuFor === m.id && (
-                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                       {m.body != null && <button onClick={() => startEdit(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>수정</button>}
                       <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
                     </div>
                   )}
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
-                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{m.body}</span>}
+                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{renderMentionText(m.body)}</span>}
                 </span>
+              </div>
               </div>
             </React.Fragment>
           );
@@ -12261,7 +13146,8 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
         {/* (v0.1.4 기능) 실시간 타이핑 표시 — 3-dot 바운스 모션 + "입력 중" 텍스트. */}
         <AnimatePresence>
         {otherTyping && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }} style={{ display: "flex", justifyContent: "flex-start" }}>
+          // (v0.2.6 버그 수정) 입력 중 말풍선은 투명도 50%로 표시해 "아직 확정된 메시지가 아님"을 시각적으로 구분한다.
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 0.5, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }} style={{ display: "flex", justifyContent: "flex-start" }}>
             <div className="flex items-center" style={{ gap: 6, padding: "7px 11px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
               <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>입력 중</span>
               <span className="flex items-center" style={{ gap: 3 }}>
@@ -12280,6 +13166,15 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
             <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
           </div>
         )}
+        {/* (v0.2.6 기능) 입력창 첫 글자가 "/"면 사용 가능한 명령어를 입력창 위 별도 블록으로 보여준다. */}
+        {editingId == null && text.startsWith("/") && (
+          <div style={{ marginBottom: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass }}>
+            <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>사용 가능한 명령어</div>
+            {CHAT_COMMANDS.map((c) => (
+              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, marginTop: 1 }}><b style={{ fontFamily: "ui-monospace,monospace" }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
@@ -12287,21 +13182,50 @@ function ChatPanel({ myUid, otherUid, otherUsername, onBack, onOpenSharedPuzzle 
         </div>
       </div>
       {forwardTarget && <PuzzleShareSheet puzzle={forwardTarget} myUid={myUid} onClose={() => setForwardTarget(null)} onShared={() => setForwardTarget(null)} />}
+      {viewProfile && <ChatUserProfileModal username={viewProfile} onClose={() => setViewProfile(null)} />}
     </div>
   );
 }
+// (v0.2.6 UI) 백/흑을 세로로 이어붙인 목록 대신, 사용자가 그린 스케치대로 "백"·"흑" 두 박스를
+// 나란히 두는 레이아웃으로 바꿨다 — 왼쪽 박스엔 자주 두는 첫 수(백) 하나를 크게, 오른쪽 박스엔
+// 백의 각 첫 수(e4/d4/c4/Nf3, 프로필 편집기에서 입력받는 순서 그대로)에 대한 흑의 응수를
+// "1.e4 e5" 형태로 묶어 보여준다.
+// (v0.2.6 UI) 흑 박스가 한 줄에 하나씩 총 4줄로 세로로 길게 늘어져 있던 것을, 한 줄에 두 항목씩
+// 2x2 그리드로 배치해 2줄로 줄이고 박스 폭도 함께 줄였다.
+const FIRST_MOVE_BLACK_ORDER = ["e4", "d4", "c4", "Nf3"];
 function FirstMovesDisplay({ firstMoves }) {
   const fm = firstMoves || {};
-  const blackEntries = Object.entries(fm.black || {}).filter(([, v]) => v);
+  const blackMap = fm.black || {};
+  const blackEntries = FIRST_MOVE_BLACK_ORDER.filter((w) => blackMap[w]).map((w) => [w, blackMap[w]]);
   if (!fm.white && !blackEntries.length) return null;
-  const row = { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", marginBottom: 5 };
-  const lab = { fontSize: 11, color: T.inkSoft, fontWeight: 700, flexShrink: 0, minWidth: 62 };
-  const val = { fontSize: 12.5, color: T.ink, fontWeight: 800, fontFamily: "ui-monospace,monospace" };
+  const boxStyle = { borderRadius: 10, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", overflow: "hidden" };
+  const headStyle = { fontSize: 10.5, fontWeight: 700, color: T.inkSoft, marginBottom: 4, textAlign: "center" };
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>자주 두는 첫 수</div>
-      {fm.white && <div style={row}><span style={lab}>백</span><span style={val}>{fm.white}</span></div>}
-      {blackEntries.map(([w, b]) => <div key={w} style={row}><span style={lab}>흑 · vs 1.{w}</span><span style={val}>{b}</span></div>)}
+      <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+        {fm.white && (
+          <div style={{ flex: "0 0 auto", width: 90, display: "flex", flexDirection: "column" }}>
+            <div style={headStyle}>백</div>
+            <div style={{ ...boxStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 6px" }}>
+              <span style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, whiteSpace: "nowrap" }}>1.{fm.white}</span>
+            </div>
+          </div>
+        )}
+        {blackEntries.length > 0 && (
+          <div style={{ flex: "0 1 200px", minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div style={headStyle}>흑</div>
+            <div style={{ ...boxStyle, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+              {blackEntries.map(([w, b], i) => (
+                <div key={w} style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, padding: "6px 8px", borderTop: i >= 2 ? "1px solid #DCCBA8" : "none", borderLeft: i % 2 === 1 ? "1px solid #DCCBA8" : "none" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, fontFamily: SEQ_FONT, flexShrink: 0 }}>1.{w}</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -12628,7 +13552,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         {chatWith ? (
-          <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
+          <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
         ) : (
           <div style={{ padding: 12, minHeight: 140, maxHeight: 440, overflowY: "auto" }}>
             {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
@@ -12637,7 +13561,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
                 const pr = profiles[uid] || {}; const pub = pr.pub || {};
                 return (
                   <FadeIn key={uid} index={i}>
-                  <button onClick={() => setChatWith({ uid, username: pr.username || "" })} className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}>
+                  <button onClick={() => setChatWith({ uid, username: pr.username || "", photo: pub.photo || null })} className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}>
                     {pub.photo ? <img src={pub.photo} alt="" style={{ width: 40, height: 40, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
                       : <span style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
                     <span style={{ minWidth: 0, flex: 1 }}>
@@ -14231,7 +15155,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
