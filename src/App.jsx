@@ -2367,8 +2367,21 @@ function bootAnalysisWorker(urls, eloOpts) {
       if (i === 0 && running) {
         settle(job, job.multi ? [] : null);
         try { worker && worker.postMessage("stop"); } catch (_) { }
-        swallowBest++;
-        queue.shift(); running = false;
+        // (v0.2.7 버그 수정) useEngine.supersede(위 782행 부근, v0.2.6에서 이미 고침)와 똑같은 원인이
+        // 여기 남아 있었다 — "stop"을 보내자마자 큐에서 바로 빼고 running을 되돌리면, 곧이어 pump()가
+        // 다음 요청의 "position"/"go"를 같은 워커에 즉시 보낸다. 그런데 방금 멈추라고 한 이전 탐색의
+        // bestmove는 아직 도착 전이라, 그 사이 뒤늦게 오는 이전 탐색의 info 줄들이 handleLine에서
+        // "지금 큐 맨 앞"(=새로 들어온 다음 요청)의 lines 버퍼에 그대로 섞여 들어갔다 — 전혀 다른
+        // 포지션의 PV가 새 MultiPV 줄에 합쳐져 pvUciToSans가 그 지점에서 실패하며 끊기고, 엔진 라인이
+        // 끝까지 다 써지지 않고 중간에 멈춘 것처럼 보이는 원인이었다(/review에서 빠르게 수를 넘길 때
+        // 특히 잘 재현됨 — getAnalysisPool을 쓰는 review-lines 슬롯이 이 supersede를 탄다). 이 자리를
+        // 곧장 비우지 않고 큐에 그대로 남겨 두면(호출자는 위 settle로 이미 즉시 진행), 진짜 bestmove가
+        // 와야 아래 handleLine의 bestmove 분기가 자연스럽게 shift·pump한다(그 분기의 settle은 이미
+        // 처리된 job에는 no-op이라 안전) — 그 전까지 도착하는 뒤늦은 info 줄은 여전히 이미 settle된
+        // 이 자리로만 흘러가 다음 요청과 섞이지 않는다. swallowBest는 여기서 건드리지 않는다 — 이
+        // 자리는 shift되지 않은 채 남아 있어 실제 bestmove가 정상적인 bestmove 분기로 자연스럽게
+        // 소비되므로(useEngine의 동일 수정과 같은 이유), swallowBest++까지 하면 그 실제 bestmove가
+        // 도리어 무시되며 큐가 running=true인 채로 영영 멈추는 새로운 버그가 생긴다.
       } else {
         settle(job, job.multi ? [] : null);
         queue.splice(i, 1);
@@ -11669,6 +11682,7 @@ const CHANGELOG = [
       "퍼즐 창을 열면 평가치 막대가 곧바로 살아 움직이며 지금 포지션을 다시 훑어봐요.",
       "일일 퍼즐 캐러셀에서 카드를 눌러도 반응이 없던 문제를 고쳤어요.",
       "퍼즐 힌트가 단계별로 겹쳐 보이던 문제를 고쳤어요 — 이제 1단계는 도착 칸만, 2단계는 기물 흔들림만, 3단계는 기물 흔들림과 경로를 따라 칸이 빛나는 연출만 순서대로 독립적으로 보여줘요. 빛나는 칸도 둥글게 보이던 것을 칸 전체를 채우는 더 진한 금빛으로 바꿨어요.",
+      "리뷰 화면에서 빠르게 수를 넘길 때 엔진 추천 수 줄이 끝까지 다 써지지 않고 중간에 멈춰 보이던 문제를 완전히 고쳤어요.",
     ],
   },
   {
