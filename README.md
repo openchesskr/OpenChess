@@ -25,6 +25,23 @@
 
 ## 버전 기록
 
+### OpenChess v0.2.7 — 2026/7/29
+
+**기능/UI — 오늘의 퍼즐 화면 전면 개편(캐러셀)**
+사용자가 첨부한 스케치(가운데 날짜 카드가 크고, 좌우 날짜 카드는 작고 어둡게 물러나는 형태)를 바탕으로, 기존의 단일 카드(`TodayPuzzleCard`)+접이식 날짜 목록(`PastDailyPuzzles`) 조합을 하나의 가로 스크롤 캐러셀(`DailyPuzzleCarousel`/`DailyPuzzleCarouselItem`)로 완전히 교체했다. 날짜 범위는 사용자 요청대로 "전체 기간"으로 — `daily_puzzle_themes`(오프닝 테마를 2주 단위로 배정하는 관리 테이블)의 가장 이른 `starts_on`부터 오늘까지 전체를 담되(테마가 아직 하나도 없으면 오늘 하루만), 오늘이 배열 맨 앞(인덱스 0)에 오도록 최신순으로 만든다(`useDailyPuzzleDates`). CSS `scroll-snap-type:x mandatory` + `scroll-snap-align:center`로 스냅시키고, 좌우에 `containerWidth/2 - SLOT_W/2` 만큼의 spacer div를 둬 첫/마지막 항목도 뷰포트 중앙에 스냅될 수 있게 했다(`ResizeObserver`로 컨테이너 폭을 재고 `useLayoutEffect`로 측정해 초기 깜빡임을 최소화). `onScroll`에서 `Math.round(scrollLeft/SLOT_W)`로 활성 인덱스를 구하고, 활성 항목은 `transform:scale(1)`·불투명, 바로 옆(distance 1)은 0.8배·반투명, 그 밖은 0.68배·더 흐리게 렌더한다. 카드를 누르면 활성 항목이면 바로 열리고, 비활성 항목이면 `scrollTo({left:i*SLOT_W, behavior:"smooth"})`로 그 항목을 가운데로 스냅시킨다(오락실 슬롯머신처럼 "스크롤=선택, 클릭(활성 상태)=플레이" 동작).
+
+**성능 — 캐러셀 항목의 지연 계산**
+`resolveDailyPuzzle`은 네트워크(Supabase)+실제 엔진 트리 생성(`genPuzzleTree`)이 필요한 무거운 비동기 함수라, 캐러셀에 보이는 모든 날짜를 한꺼번에 계산하면 안 된다는 게 기존 `PastDailyPuzzles` 주석에도 명시돼 있던 제약이었다. 사용자에게 "가운데(선택된) 것만 즉시 계산, 나머지는 스크롤해서 가까워지면 계산"으로 확인받아, 활성 인덱스가 바뀔 때마다 `[activeIdx-1, activeIdx, activeIdx+1]` 범위만 `resolveDailyPuzzleCached`로 계산하도록 했다. 여러 캐러셀 항목(및 알림 팝업의 "오늘의 퍼즐")이 같은 날짜를 중복 계산하지 않도록, 계산 결과(Promise)를 날짜별 모듈 캐시(`dailyPuzzleResolveCache`)에 담아 재사용한다 — 단, 엔진이 아직 준비되지 않아 계산을 시도조차 못 한 경우는 캐시하지 않고 다음 요청 때 다시 시도해, "엔진이 늦게 준비되는 것"과 "그 날짜엔 정말 데이터가 없는 것"을 구분한다. 아직 계산되지 않은(또는 계산 중인) 항목은 기존 힌트 애니메이션에 쓰던 `hintSquarePulse` 키프레임을 재사용한 흐릿한 사각형 placeholder로 표시한다.
+
+**기능 — 캐러셀에 풀이 인원 수 상시 표시**
+사용자 요청("일일 퍼즐 UI에는 그날 푼 사람 수를 표시해 달라")에 따라, 이미 존재하던 전역 풀이수 인프라(`puzzles.solves` 컬럼, `puzzle_solve` RPC, `puzzleNo(id)` 해시 기반 매핑, `solveCountText`)를 그대로 재사용해 캐러셀의 모든 카드(활성/비활성 무관, 계산 완료된 것만)에 "OOO명이 풀었습니다!"를 작은 글씨로 표시한다. 새 Supabase 테이블/RPC는 추가하지 않았다 — 일일 퍼즐도 결국 `id`를 가진 일반 퍼즐 객체라 기존 카운터가 그대로 작동한다. 다른 퍼즐 카드의 `solveCountFor`(`PuzzleTab`)와 동일하게, 아직 서버 집계가 반영되기 전이라도 내가 방금 푼 퍼즐은 최소 1명으로 보정한다.
+
+**버그 수정/삭제 — 폐기된 큐레이션 오늘의 퍼즐 완전 제거**
+`DAILY_PUZZLES`(Fool's Mate·Scholar's Mate·Légal's Mate·Blackburne Shilling Gambit 4개짜리 하드코딩 배열)와 그걸 날짜 시드로 뽑던 `curatedDailyPuzzleFor`를 완전히 삭제했다. 이 폴백은 v0.2.4에서 리체스 퍼즐 DB 기반 시스템(`resolveDailyPuzzle`)으로 넘어가면서 "엔진 부팅 전/테마 미배정 등 예외 상황에 화면이 비어 보이지 않게" 남겨둔 것이었는데, 실제로는 한 번도 사용자에게 정식으로 배정된 적 없는 임의의 퍼즐이 "오늘의 퍼즐"이라는 이름으로 뜨는 게 부적절하다는 사용자 지적에 따라 제거를 결정했다. `resolveDailyPuzzle`의 4개 폴백 분기(`!theme`, `!pool.length`, `!engine.ready`, `!gen.lines.length`)와 `useDailyPuzzle`의 1개 분기, 총 5개 호출부를 전부 `null` 반환으로 바꿨다 — 호출부(`PuzzleTab`의 캐러셀, 상단 `todayPuzzle`을 쓰는 `openDailyPuzzle`·일일 퀘스트 완료 감지 effect·`DailyPuzzleNoticeModal`)는 이미 대부분 `dailyPuzzle &&` 형태로 안전했지만, `openDailyPuzzle`(무조건 `setPuzzleActive(todayPuzzle)` 호출)과 `DailyPuzzleNoticeModal` 렌더 조건(`puzzleNoticeOpen &&`만 검사)에는 `null` 가드가 없어 두 곳에 `todayPuzzle &&` 조건을 추가했다. `isStaleDaily`(어제 이전 오늘의 퍼즐 복원 방지 가드, v0.2.3)는 `curatedDailyPuzzleFor`와 무관하게 `pz.isDaily`/`pz.date` 필드만 보므로 그대로 유지된다.
+
+**UX — 오늘의 퍼즐 이름을 일반 퍼즐과 통일**
+사용자 요청("현재 사용되는 일일 퍼즐의 명칭을 별도로 두지 말고, 그냥 다른 퍼즐들과 동일하게 표시")에 따라 `resolveDailyPuzzle`이 만드는 퍼즐 객체의 `name` 필드를 `opening + " — 오늘의 퍼즐"`(전용 접미사)에서 일반 퍼즐과 동일한 `puzzleName("punish", setupSans, mistakeSan)`(`"<오프닝 이름>, <수 이름>"` 형식)으로 바꿨다. 이 `name`은 퍼즐 풀이 화면(`PuzzleSolver`)에서 그대로 렌더되므로, 오늘의 퍼즐을 열어도 다른 퍼즐과 구분되지 않는 이름이 보인다. 다만 캐러셀 카드 자체의 "오늘의 퍼즐" 섹션 라벨과 `DailyPuzzleNoticeModal`(알림 팝업)의 `puzzle.opening` 표기는 그대로 유지했다 — 사용자의 요청은 퍼즐의 `name`(정체성 표기)에 한정된 것으로 판단했다.
+
 ### OpenChess v0.2.6 — 2026/7/28
 
 **버그 수정 — 게임 리뷰(/review) 페이지 흰 화면**
