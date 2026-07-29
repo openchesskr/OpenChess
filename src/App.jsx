@@ -2367,8 +2367,21 @@ function bootAnalysisWorker(urls, eloOpts) {
       if (i === 0 && running) {
         settle(job, job.multi ? [] : null);
         try { worker && worker.postMessage("stop"); } catch (_) { }
-        swallowBest++;
-        queue.shift(); running = false;
+        // (v0.2.7 버그 수정) useEngine.supersede(위 782행 부근, v0.2.6에서 이미 고침)와 똑같은 원인이
+        // 여기 남아 있었다 — "stop"을 보내자마자 큐에서 바로 빼고 running을 되돌리면, 곧이어 pump()가
+        // 다음 요청의 "position"/"go"를 같은 워커에 즉시 보낸다. 그런데 방금 멈추라고 한 이전 탐색의
+        // bestmove는 아직 도착 전이라, 그 사이 뒤늦게 오는 이전 탐색의 info 줄들이 handleLine에서
+        // "지금 큐 맨 앞"(=새로 들어온 다음 요청)의 lines 버퍼에 그대로 섞여 들어갔다 — 전혀 다른
+        // 포지션의 PV가 새 MultiPV 줄에 합쳐져 pvUciToSans가 그 지점에서 실패하며 끊기고, 엔진 라인이
+        // 끝까지 다 써지지 않고 중간에 멈춘 것처럼 보이는 원인이었다(/review에서 빠르게 수를 넘길 때
+        // 특히 잘 재현됨 — getAnalysisPool을 쓰는 review-lines 슬롯이 이 supersede를 탄다). 이 자리를
+        // 곧장 비우지 않고 큐에 그대로 남겨 두면(호출자는 위 settle로 이미 즉시 진행), 진짜 bestmove가
+        // 와야 아래 handleLine의 bestmove 분기가 자연스럽게 shift·pump한다(그 분기의 settle은 이미
+        // 처리된 job에는 no-op이라 안전) — 그 전까지 도착하는 뒤늦은 info 줄은 여전히 이미 settle된
+        // 이 자리로만 흘러가 다음 요청과 섞이지 않는다. swallowBest는 여기서 건드리지 않는다 — 이
+        // 자리는 shift되지 않은 채 남아 있어 실제 bestmove가 정상적인 bestmove 분기로 자연스럽게
+        // 소비되므로(useEngine의 동일 수정과 같은 이유), swallowBest++까지 하면 그 실제 bestmove가
+        // 도리어 무시되며 큐가 running=true인 채로 영영 멈추는 새로운 버그가 생긴다.
       } else {
         settle(job, job.multi ? [] : null);
         queue.splice(i, 1);
@@ -3194,7 +3207,11 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
 // 다른 화면(학습 탭 등)에는 항상 undefined라 아무 영향이 없다.
 // (버그 수정) hintPathProgress(0~1) — 경로 칸이 목적지에 얼마나 가까운지를 나타내, 그 칸의
 // 그라데이션 오버레이 농도(opacity)를 정한다. 넘기지 않으면 항상 옅은 농도로 표시된다.
-const HINT_GOLD_GRADIENT = "radial-gradient(circle at 50% 50%, rgba(255,224,153,.95) 0%, rgba(196,154,80,.6) 60%, rgba(196,154,80,.15) 100%)";
+// (v0.2.7 버그 수정) 예전엔 radial-gradient(circle...)라 칸 모서리는 15% 농도까지 옅어져 정사각형
+// 칸 안에 둥근 빛 덩어리 하나만 떠 있는 것처럼(원 모양) 보였다 — 칸 전체를 고르게 채우는 진한
+// 금색 대각선 그라데이션으로 바꾸고, 아래 HINT_GOLD_GLOW(외곽 발광 box-shadow)를 더해 훨씬 강하게 빛나 보이게 한다.
+const HINT_GOLD_GRADIENT = "linear-gradient(135deg, rgba(255,229,150,.98), rgba(216,163,58,.97))";
+const HINT_GOLD_GLOW = "0 0 16px 5px rgba(255,196,64,.9), inset 0 0 10px rgba(255,255,255,.55)";
 function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
@@ -3258,14 +3275,14 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
                   안 띄었다 — 칸 전체를 금색 그라데이션으로 덧씌워 훨씬 또렷하게 보이도록 했다. 이
                   칸은 힌트가 향하는 최종 목적지이므로 항상 가장 진한 농도(HINT_GOLD_GRADIENT)로 채운다. */}
               {hintTo && hintTo[0] === r && hintTo[1] === c && (
-                <div style={{ position: "absolute", inset: cell * 0.04, borderRadius: 6, background: HINT_GOLD_GRADIENT, animation: "hintSquarePulse 1.1s ease-in-out infinite", pointerEvents: "none", zIndex: 4 }} />
+                <div style={{ position: "absolute", inset: cell * 0.04, borderRadius: 6, background: HINT_GOLD_GRADIENT, boxShadow: HINT_GOLD_GLOW, animation: "hintSquarePulse 1.1s ease-in-out infinite", pointerEvents: "none", zIndex: 4 }} />
               )}
               {/* (버그 수정) 행마법 경로 칸도 작은 원형 점 대신 칸 전체를 금색 그라데이션으로 덧씌우되,
                   목적지 칸에 가까워질수록(hintPathProgress: 0→1) 바깥쪽 div의 opacity로 농도를 점점
                   진하게 만든다 — 경로를 따라갈수록 색이 짙어지며 목적지로 이어지는 느낌을 준다. */}
               {hintPathSq && hintPathSq[0] === r && hintPathSq[1] === c && (
                 <div key={hintPathSq[0] + "," + hintPathSq[1]} style={{ position: "absolute", inset: cell * 0.04, opacity: Math.max(0.35, Math.min(1, hintPathProgress || 0.35)), pointerEvents: "none", zIndex: 5 }}>
-                  <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: HINT_GOLD_GRADIENT, animation: "hintSquarePop .38s ease-out" }} />
+                  <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: HINT_GOLD_GRADIENT, boxShadow: HINT_GOLD_GLOW, animation: "hintSquarePop .38s ease-out" }} />
                 </div>
               )}
               {/* (버그 수정) 움직여야 할 기물이 옆으로 미끄러지듯(translateX) 흔들려 부자연스러웠다 —
@@ -3538,7 +3555,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge }) {
   return (
     <div style={{ borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지 */}
-      {questBadge && <span title="오늘의 퀘스트 오프닝" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5 }}><MaterialIcon name="assignment" size={12} color="#241509" /></span>}
+      {questBadge && <span title="일일 퀘스트 오프닝" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5 }}><MaterialIcon name="assignment" size={12} color="#241509" /></span>}
       <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
         <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={kind} descOnClick /></span>
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -8395,37 +8412,6 @@ function dailyQuestQuestsValid(quests) {
   return Array.isArray(quests) && quests.length > 0 && quests.every((q) => q && (q.type === "play5" || q.type === "win3" || (q.type === "opening" && typeof q.opening === "string" && q.opening.trim().length > 0)));
 }
 /* ============================================================ 일일 퍼즐 ============================================================ */
-// (v0.2.0 기능2) 매일 KST 자정 갱신되는 "오늘의 퍼즐" — 모든 유저에게 정확히 같은 문제가 나와야
-// 하므로(보통 퍼즐은 각자 다른 chess.com 대국에서 생성되어 유저마다 다름), 실시간 생성 대신 이미
-// 정확한 수순이 검증된 유명 오프닝 함정을 손수 큐레이션해 두고 날짜 문자열을 시드로 결정적으로
-// 하나씩 뽑아 순환시킨다(seedRand — 일일 퀘스트 생성과 같은 방식, 새로고침해도 안 바뀜).
-const DAILY_PUZZLES = [
-  {
-    opening: "Fool's Mate", setupSans: ["f3", "e5"], mistakeSan: "g4",
-    solution: ["Qh4#"], steps: ["2...Qh4# — f3·g4가 열어놓은 e1-h4 대각선으로 퀸이 곧장 들어가 세계 최단 체크메이트."],
-  },
-  {
-    opening: "Scholar's Mate", setupSans: ["e4", "e5", "Bc4", "Nc6", "Qh5"], mistakeSan: "Nf6",
-    solution: ["Qxf7#"], steps: ["4.Qxf7# — 비숍과 퀸이 동시에 노리던 f7이 그대로 뚫려 체크메이트."],
-  },
-  {
-    opening: "Légal's Mate (레갈의 함정)", setupSans: ["e4", "e5", "Nf3", "d6", "Bc4", "Bg4", "Nc3"], mistakeSan: "g6",
-    solution: ["Nxe5", "Bxd1", "Bxf7", "Ke7", "Nd5#"],
-    steps: ["5.Nxe5! — 나이트를 미끼로 던지며 f7-비숍 대각선을 연다.", "5...Bxd1 — 퀸을 잡으면(거의 강제) 비숍이 갇힌다.", "6.Bxf7+ Ke7 7.Nd5# — 나이트와 비숍이 협공해 그대로 체크메이트."],
-  },
-  {
-    opening: "Blackburne Shilling Gambit", setupSans: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nd4"], mistakeSan: "Nxe5",
-    solution: ["Qg5", "Nxf7", "Qxg2", "Rf1", "Qxe4", "Be2", "Nf3#"],
-    steps: ["6...Qg5! — 나이트와 g2를 동시에 노리는 더블 어택.", "7.Nxf7 Qxg2 8.Rf1 Qxe4+ — 계속 몰아치며 폰을 쓸어 담는다.", "9.Be2 Nf3# — 나이트가 킹을 그물에 가두며 체크메이트."],
-  },
-];
-// (v0.2.4) 아래 리체스 퍼즐 기반 오늘의 퍼즐(resolveDailyPuzzle)이 아직 못 뜬 동안(엔진 부팅 전,
-// 테마·풀 로딩 중, 또는 그 날짜에 테마가 하나도 배정 안 된 예외 상황)의 폴백으로 이름을 바꿔 남겨 둔다.
-function curatedDailyPuzzleFor(dateStr) {
-  const rnd = seedRand("daily:" + dateStr);
-  const src = DAILY_PUZZLES[Math.floor(rnd() * DAILY_PUZZLES.length)];
-  return { id: "daily_" + dateStr, themes: ["punish"], name: src.opening + " — 오늘의 퍼즐", opening: src.opening, setupSans: src.setupSans, mistakeSan: src.mistakeSan, solution: src.solution, steps: src.steps, isDaily: true, date: dateStr };
-}
 // (v0.2.4 기능) 리체스 퍼즐 DB 기반 오늘의 퍼즐 — 개발자가 2주 단위로 배정한 오프닝 태그
 // (daily_puzzle_themes)에 해당하는 후보 풀(scripts/build-daily-puzzles.mjs가 만들어 두는
 // public/daily-puzzles/<opening_tag>.json)에서 날짜를 시드로 결정적으로 하나 뽑는다. 리체스
@@ -8461,6 +8447,10 @@ async function fetchDailyPuzzleOverride(dateStr) {
 // XXXXXX-N — XXXXXX는 퍼즐 시작 포지션(설정 수순)의 puzzleNo 해시, N은 genPuzzleTree가 만든 여러
 // 라인 중 몇 번째 줄을 뽑았는지(1부터, 사람이 읽기 쉬운 번호).
 function dailyLineId(baseSans, lineIdx) { return puzzleNo(baseSans.join(" ")) + "-" + (lineIdx + 1); }
+// (v0.2.7) 테마·풀이 아직 없거나 엔진이 준비되지 않은 예외 상황에서는 그 날짜의 오늘의 퍼즐을 계산할
+// 수 없으므로 null을 돌려준다(예전엔 손수 만든 짧은 오프닝 함정 4개 중 하나를 대신 보여주는 폴백이
+// 있었으나, 실제로는 나온 적 없는 퍼즐이 "오늘의 퍼즐"로 뜨는 게 부적절해 완전히 제거했다 — 호출부는
+// null이면 그 날짜의 퍼즐이 아직 로딩 중/미배정 상태인 것으로 취급한다).
 async function resolveDailyPuzzle(dateStr, engine) {
   let setupSans, mistakeSan, opening;
   const override = await fetchDailyPuzzleOverride(dateStr);
@@ -8471,36 +8461,77 @@ async function resolveDailyPuzzle(dateStr, engine) {
   } else {
     const rows = await loadDailyThemeRows();
     const theme = themeForDate(dateStr, rows);
-    if (!theme) return curatedDailyPuzzleFor(dateStr); // 아직 테마가 하나도 배정 안 된 경우의 폴백
+    if (!theme) return null; // 아직 테마가 하나도 배정 안 된 날짜
     const pool = await loadDailyThemePool(theme.opening_tag);
-    if (!pool || !pool.length) return curatedDailyPuzzleFor(dateStr);
+    if (!pool || !pool.length) return null;
     const rnd = seedRand("daily:" + dateStr);
     const src = pool[Math.floor(rnd() * pool.length)];
     setupSans = src.setupSans; mistakeSan = src.mistakeSan;
     opening = theme.label || theme.opening_tag;
   }
-  if (!mistakeSan || !engine || engine.status !== "ready") return curatedDailyPuzzleFor(dateStr);
+  if (!mistakeSan || !engine || engine.status !== "ready") return null;
   let gen = null;
   try { gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts("punish")); } catch { gen = null; }
-  if (!gen || !gen.lines || !gen.lines.length) return curatedDailyPuzzleFor(dateStr);
+  if (!gen || !gen.lines || !gen.lines.length) return null;
   const rnd2 = seedRand("daily-line:" + dateStr);
   const lineIdx = Math.floor(rnd2() * gen.lines.length);
   const id = dailyLineId(setupSans, lineIdx);
-  return { id, themes: ["punish"], name: opening + " — 오늘의 퍼즐", opening, setupSans, mistakeSan, solution: gen.lines[lineIdx].solution, lines: gen.lines, tree: gen.tree, steps: [], isDaily: true, date: dateStr };
+  // (v0.2.7) 다른 퍼즐과 똑같이 "<오프닝 이름>, <수 이름>" 형식의 이름을 쓴다 — 예전엔 "<오프닝> —
+  // 오늘의 퍼즐"이라는 별도 이름을 붙였으나, 목록·풀이 화면에서 일반 퍼즐과 구분 없이 보이도록 통일한다.
+  const name = puzzleName("punish", setupSans, mistakeSan);
+  return { id, themes: ["punish"], name, opening, setupSans, mistakeSan, solution: gen.lines[lineIdx].solution, lines: gen.lines, tree: gen.tree, steps: [], isDaily: true, date: dateStr };
 }
-// (v0.2.4) resolveDailyPuzzle은 비동기(엔진·네트워크 필요)라 매 렌더 동기로 부를 수 없다 — 날짜가
-// 바뀌거나 엔진이 막 준비됐을 때만 다시 계산하고, 계산이 끝나기 전에는 즉시 보여줄 수 있는 큐레이션
-// 폴백(curatedDailyPuzzleFor)을 우선 반환해 화면이 비어 보이지 않게 한다.
+// (v0.2.7) resolveDailyPuzzle은 비동기(엔진·네트워크 필요)인 데다 이제 캐러셀에서 여러 날짜를 동시에
+// 다뤄야 하므로, 날짜별 계산 결과를 모듈 캐시에 담아 재사용한다(같은 날짜를 다시 열어도 엔진을 다시
+// 돌리지 않음). 엔진이 아직 준비되지 않아 계산을 시도조차 못 한 경우는 캐시하지 않고 다음 요청 때
+// 다시 시도한다(엔진이 늦게 준비되는 것과 "그 날짜엔 정말 데이터가 없는 것"을 구분하기 위함).
+const dailyPuzzleResolveCache = new Map(); // dateStr -> Promise<puzzle|null>
+function resolveDailyPuzzleCached(dateStr, engine) {
+  if (dailyPuzzleResolveCache.has(dateStr)) return dailyPuzzleResolveCache.get(dateStr);
+  if (!engine || engine.status !== "ready") return Promise.resolve(null);
+  // (v0.2.7 기능) 일반 퍼즐이 onSavePuzzle에서 처음 만들어질 때 puzzleShare로 puzzles 테이블에
+  // 업로드되는 것과 똑같이, 오늘의 퍼즐도 계산되는 즉시 같은 puzzleNo(id) 번호로 업로드해 둔다 —
+  // 그래야 채팅 "/puzzle 000000" 공유, 퍼즐 탭 "번호로 풀기" 등 다른 퍼즐과 동일한 경로로 오늘의
+  // 퍼즐도 찾을 수 있다(같은 날짜는 모든 유저에게 항상 같은 id로 결정적으로 계산되므로, 이미
+  // 누군가 올려 둔 데이터를 덮어써도 내용은 동일하다 — puzzleShare의 upsert가 이를 그대로 처리).
+  const p = resolveDailyPuzzle(dateStr, engine).then((pz) => { if (pz) puzzleShare(pz); return pz; });
+  dailyPuzzleResolveCache.set(dateStr, p);
+  return p;
+}
+// (v0.2.7) 계산이 끝나기 전에는 null을 반환한다(예전엔 즉시 보여줄 큐레이션 폴백이 있었으나 제거됨
+// — 호출부는 dailyPuzzle && ... 형태로 이미 null을 안전하게 다루고 있었다).
 function useDailyPuzzle(engine, dateStr) {
   const t = dateStr || todayStr();
   const [resolved, setResolved] = useState(null); // {date, puzzle}
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready") return;
-    resolveDailyPuzzle(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); });
+    resolveDailyPuzzleCached(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); });
     return () => { cancelled = true; };
   }, [t, engine && engine.status]);
-  return (resolved && resolved.date === t) ? resolved.puzzle : curatedDailyPuzzleFor(t);
+  return (resolved && resolved.date === t) ? resolved.puzzle : null;
+}
+// (v0.2.7) 캐러셀에 보여줄 날짜 목록 — 개발자가 처음 오프닝 테마를 배정한 날짜(daily_puzzle_themes의
+// 가장 이른 starts_on)부터 오늘까지 전체 기간을, 오늘이 맨 앞(배열 인덱스 0)에 오도록 최신순으로
+// 만든다. 아직 테마가 하나도 배정되지 않았으면 오늘 하루만 담는다.
+function useDailyPuzzleDates() {
+  const [dates, setDates] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadDailyThemeRows().then((rows) => {
+      if (cancelled) return;
+      const today = todayStr();
+      const earliest = (rows && rows.length && rows[0].starts_on < today) ? rows[0].starts_on : today;
+      const startMs = Date.parse(earliest + "T00:00:00Z");
+      const todayMs = Date.parse(today + "T00:00:00Z");
+      const spanDays = Math.max(0, Math.round((todayMs - startMs) / 86400000));
+      const out = [];
+      for (let i = 0; i <= spanDays; i++) out.push(todayStr(new Date(Date.now() - i * 86400e3)));
+      setDates(out);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  return dates;
 }
 // (버그) 각 활동 퀘스트를 개별적으로 하루 1회씩 리롤 — 다른 오프닝 플레이 퀘스트로 교체.
 // 이미 완료(claimed)한 퀘스트나 이미 리롤한 퀘스트는 교체할 수 없다. 바꿀 오프닝이 없으면 그대로 둔다.
@@ -8875,7 +8906,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       it.shake = it.key === shakeKey;
     });
     const curItem = items.find((it) => it.isCur) || null;
-    const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 40;
+    // (v0.2.7 버그 수정) 리프 노드는 이제 "라인 N" 배지·개발자 버튼만큼 boxW보다 넓게 그려질 수
+    // 있으므로(위 렌더링 부분 참고), 오른쪽 여백을 배지가 잘리지 않을 만큼 넉넉히 잡는다.
+    const width = (Math.max(...items.map((it) => it.depth)) + 1) * colW + 120;
     const height = (Math.max(...items.map((it) => it.y)) + 1) * rowH + 20;
     // (v0.1.2 기능) 팬 한계 계산(clampSchematicPan)은 블록의 화면 픽셀 좌표({x,y})를 기대하는데, 여기
     // items의 depth/y는 칸(그리드) 인덱스라 그대로 못 쓴다 — 실제 렌더 좌표(depth*colW, y*rowH)로
@@ -9051,11 +9084,18 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             // (20차 기능3) 라인 길이 삭제 — 리프에서만, 최소 1수는 남도록(라인 자체가 사라지지 않게)
             const canDeleteHere = canEdit && !isRoot && it.isLeaf && it.path.length > 1;
             return (
-              <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW, animation: it.celebrate ? "questclear 1s ease" : "none" }}>
+              // (v0.2.7 버그 수정) 리프(라인의 마지막 수) 노드는 오른쪽에 "라인 N"·체크 배지(그리고
+              // 개발자 모드에서는 추가·삭제 버튼)가 같은 줄에 나란히 붙는데, 이 바깥 wrapper의 폭이
+              // boxW로 고정돼 있어(바로 아래 버튼이 flex:1/minWidth:0로 그 폭 안에 욱여넣어졌었다)
+              // 배지가 버튼의 SAN 라벨 공간을 그대로 잠식했다 — 리프일수록(=풀이의 마지막 수일수록)
+              // 라벨이 더 심하게 잘려 정보가 빠져 보이는 원인이었다. wrapper를 내용에 맞춰 자라나는
+              // max-content로 바꾸고, 버튼은 boxW를 최소 폭으로만 보장(flex:1 제거)해 배지가 버튼을
+              // 짓누르지 않고 옆으로 자연스럽게 이어지도록 한다.
+              <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: "max-content", minWidth: boxW, animation: it.celebrate ? "questclear 1s ease" : "none" }}>
                 <div className="flex items-center gap-1">
                   <button onClick={() => !isRoot && onPick && onPick(it)} disabled={isRoot}
                     className={isRoot ? "" : "press"}
-                    style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
+                    style={{ flexShrink: 0, minWidth: boxW, textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
                       border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : incomplete ? "#D79A2F" : it.solved ? T.best : "#C9B58C"),
                       background: isRoot ? "linear-gradient(180deg,#3A2516,#241509)" : it.solved ? "#EAF3E0" : "#fff",
                       cursor: isRoot ? "default" : "pointer",
@@ -9236,6 +9276,27 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const done = pathNodes.length > 0 && pathNodes.length % 2 === 1 && passKids.length === 0;   // 리프(사용자 수)에 도달
   const doneTag = done ? (curNode.tag || pathNodes.map((n) => stripSuffix(n.san)).join(" ")) : null;
   const userToMove = !done && isUserPly && !wrong && !reply && !intro && allLines.length > 0;
+  // (v0.2.7 기능) 퍼즐 창을 열자마자 평가치 막대가 실제로 살아 움직이는 걸 보여준다 — 최종적으로
+  // 화면에 남는 숫자는 여전히 생성 시 미리 계산해 둔 curNode.ev(모든 유저에게 항상 같은 값, 아래
+  // EvalBar의 기본 cp)를 그대로 쓰지만, 그 자리에 멈춰 있기 전까지는 지금 포지션을 실제 엔진으로
+  // 짧게 다시 돌려(ReviewPage 엔진 라인과 같은 단일PV 진행 콜백 방식) depth가 깊어지는 과정을 그대로
+  // 보여준다. 검색이 끝나면(또는 다음 포지션으로 넘어가면) 다시 조용히 정적인 curNode.ev로 돌아간다
+  // — v0.2.6에서 "매번 다시 평가해 값이 미묘하게 흔들리는" 문제를 없애려 정적 표시로 바꿨던 결정은
+  // 유지하되, 이 짧은 탐색 애니메이션 동안만 예외적으로 실시간 값을 보여준다.
+  const [liveEval, setLiveEval] = useState(null);
+  const [liveDepth, setLiveDepth] = useState(null);
+  useEffect(() => {
+    setLiveEval(null); setLiveDepth(null);
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    engine.evaluate(sansToFen(curSans), 18, (partial) => {
+      if (cancelled) return;
+      const w = posEvalToWhite(partial, curSans);
+      if (w) setLiveEval(w);
+      setLiveDepth(partial.depth);
+    }, 900, "puzzle-eval").then(() => { if (!cancelled) { setLiveEval(null); setLiveDepth(null); } });
+    return () => { cancelled = true; };
+  }, [curSans.join(" "), engine && engine.status]);
   const [boardSize, boardRef] = useBoardSize(380);
   // (20차 UX4) 화면이 짧아 스크롤을 맨 위로 올려도 보드 하단이 여전히 하단 탭 뒤에 걸치는 경우를
   // 대비해, 보드의 scrollMarginBottom(아래 style)만큼 여유를 두고 딱 필요한 만큼만 아래로 더 스크롤한다.
@@ -9652,13 +9713,20 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
               // effect의 evaluate 결과), 별도 등급 판정 없이 바로 "최선의 수" 배지를 붙인다.
               : wrongReply
                 ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
+              // (v0.2.7 버그 수정) 예전엔 hintLevel이 올라갈수록(>=) 이전 단계 애니메이션까지 계속 함께
+              // 남아 있어(3단계에서 도착 칸 반짝임+기물 흔들림+경로 반짝임이 한꺼번에 겹쳐 보였다),
+              // 단계마다 독립된 연출만 보이도록 각 단계를 정확히 그 단계에서만 켠다 — 1단계: 도착
+              // 칸만, 2단계: 기물 흔들림만, 3단계: 기물 흔들림+경로 반짝임(도착 칸 단독 표시는
+              // 3단계에서 경로의 마지막 칸이 대신하므로 끈다).
               : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove}
-                  hintTo={hintLevel >= 1 && hintInfo ? hintInfo.to : null} hintFrom={hintLevel >= 2 && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel >= 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
+                  hintTo={hintLevel === 1 && hintInfo ? hintInfo.to : null} hintFrom={(hintLevel === 2 || hintLevel === 3) && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel === 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
-                평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. */}
-            <div style={{ marginTop: 12 }}><EvalBar cp={curNode.ev} width={boardSize} /></div>
+                평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. (v0.2.7) 다만 창을 연 직후처럼
+                실제 엔진이 이 포지션을 짧게 다시 훑는 동안(liveDepth)에는 그 진행 중인 값을 보여줘
+                막대가 살아 움직이는 것처럼 느껴지게 하고, 검색이 끝나면 다시 정적인 curNode.ev로 돌아간다. */}
+            <div style={{ marginTop: 12 }}><EvalBar cp={liveDepth != null ? (liveEval || curNode.ev) : curNode.ev} width={boardSize} depth={liveDepth} /></div>
             <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
               <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
               {/* (버그 수정) 힌트 버튼이 현재 단계(1~3)를 그대로 보여준다 — 3단계에 닿으면 꽉 채운
@@ -9927,7 +9995,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
       <div className="flex items-center justify-between flex-wrap" style={{ marginBottom: 10, gap: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>오늘의 퀘스트</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>일일 퀘스트</div>
         <div className="flex items-center gap-2">
           {allDone && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>모두 완료!</span>}
           {/* (UX2) 갱신은 한국 시간(KST) 자정 기준 */}
@@ -9937,7 +10005,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {row("puzzle", "새 퍼즐 " + dq.puzzleTarget + "회 풀기", dq.puzzleCount + "/" + dq.puzzleTarget)}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
-        {row("dailypuzzle", "오늘의 퍼즐 풀기", "퍼즐 탭 맨 위 ‘오늘의 퍼즐’을 풀어보세요")}
+        {row("dailypuzzle", "일일 퍼즐 풀기", "퍼즐 탭 맨 위 ‘일일 퍼즐’을 풀어보세요")}
         {(dq.quests || []).map((q, i) => {
           const isOpening = q.type === "opening";
           // (버그) 각 퀘스트를 개별적으로 1회씩 리롤 — 이미 리롤했거나 이미 완료한 퀘스트는 불가.
@@ -10243,58 +10311,154 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     </div>
   );
 }
-function TodayPuzzleCard({ puzzle, isSolved, onOpen }) {
-  const flip = ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0;
+// (v0.2.7) 오늘의 퍼즐 카드 폭 — 스크롤 스냅 계산을 단순하게 유지하기 위해 활성/비활성 여부와
+// 무관하게 "칸(slot)" 자체는 고정폭으로 두고, 안쪽 콘텐츠만 transform:scale로 커지고 작아진다.
+const DAILY_SLOT_W = 96;
+function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
+  const scale = isActive ? 1 : distance === 1 ? 0.8 : 0.68;
+  // (v0.2.7 버그 수정) 비활성 항목이 어두운 카드 배경 위에 낮은 opacity로 겹쳐지면서 거의 안 보일
+  // 만큼 어두워졌다는 지적 — 선택된 항목과의 구분은 유지하되 값을 전반적으로 끌어올렸다.
+  const opacity = isActive ? 1 : distance === 1 ? 0.78 : 0.58;
+  const boxSize = isActive ? 86 : 62;
+  const label = dateStr.slice(5).replace("-", ".") + (isToday ? " · 오늘" : "");
+  const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
   return (
-    <div onClick={onOpen} className="press text-left flex items-center gap-3" style={{ borderRadius: 14, padding: 12, marginBottom: 14, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + (isSolved ? "#A9C589" : T.brass), boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#00000055"), cursor: "pointer" }}>
-      <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={72} loopMs={2400} flip={flip} />
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="flex items-center gap-1" style={{ marginBottom: 3 }}>
-          <Sparkles size={13} style={{ color: isSolved ? T.best : T.brassHi, flexShrink: 0 }} />
-          <span style={{ fontSize: 11, fontWeight: 800, color: isSolved ? T.best : T.brassHi }}>오늘의 퍼즐</span>
-          {isSolved && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: T.best, borderRadius: 999, padding: "1px 7px" }}>해결 완료</span>}
+    <button onClick={onOpen} aria-label={label} className="press" style={{ flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", background: "transparent", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+      <div style={{ transform: "scale(" + scale + ")", opacity, transition: "transform .22s ease, opacity .22s ease", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+        <div style={{ width: boxSize, height: boxSize, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + (isSolved ? "#A9C589" : T.brass), boxShadow: isActive ? "0 4px 0 " + (isSolved ? "#9DB97E" : "#00000055") : "none", position: "relative" }}>
+          {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={boxSize - 16} loopMs={2400} flip={flip} /> : <div style={{ width: boxSize - 30, height: boxSize - 30, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
+          {isSolved && <Check size={13} strokeWidth={3.5} style={{ position: "absolute", top: -5, right: -5, color: "#fff", background: T.best, borderRadius: 999, padding: 2, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
         </div>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: isSolved ? T.ink : T.ivoryHi, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{puzzle.opening}</div>
-        <div style={{ fontSize: 11, color: isSolved ? T.inkSoft : "#C9B58C", marginTop: 2 }}>매일 자정 새로 갱신되는 큐레이션 퍼즐</div>
+        <div style={{ fontSize: 10, fontWeight: 800, color: isActive ? T.brassHi : "#C9B58C", whiteSpace: "nowrap" }}>{label}</div>
+      </div>
+      {isActive && (
+        <div style={{ maxWidth: 132, textAlign: "center" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{puzzle ? puzzle.opening : "불러오는 중…"}</div>
+        </div>
+      )}
+      {solveCountText(solveCount, null) && <div style={{ fontSize: 8.5, color: "#C9B58C", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
+    </button>
+  );
+}
+// (v0.2.7 기능) "오늘의 퍼즐"을 다른 일반 퍼즐과 이름·표기를 통일하는 대신, 고전 오락실 슬롯머신처럼
+// 좌우로 스크롤해 날짜를 고르는 캐러셀로 개편했다 — 가운데로 스냅된(선택된) 항목만 커지고 진하게,
+// 나머지는 작고 어둡게 보인다. 화면에 보이는 모든 항목이 한꺼번에 엔진을 돌리면 무거우므로, 선택된
+// 항목과 그 바로 양옆만 즉시 계산하고 나머지는 스크롤로 가까워질 때 계산한다(resolveDailyPuzzleCached
+// 덕분에 같은 날짜를 다시 스크롤해 돌아와도 다시 계산하지 않는다).
+function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
+  const dates = useDailyPuzzleDates();
+  const scrollerRef = useRef(null);
+  const [containerW, setContainerW] = useState(0);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [resolvedMap, setResolvedMap] = useState({}); // dateStr -> puzzle|null(계산 완료)
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const measure = () => setContainerW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!dates || !dates.length) return;
+    const idxs = [activeIdx - 1, activeIdx, activeIdx + 1].filter((i) => i >= 0 && i < dates.length);
+    idxs.forEach((i) => {
+      const d = dates[i];
+      if (resolvedMap[d] !== undefined) return;
+      resolveDailyPuzzleCached(d, engine).then((pz) => { setResolvedMap((m) => (m[d] !== undefined ? m : { ...m, [d]: pz })); });
+    });
+  }, [activeIdx, dates, engine]);
+  const onScroll = () => {
+    const el = scrollerRef.current;
+    if (!el || !dates) return;
+    const idx = Math.max(0, Math.min(dates.length - 1, Math.round(el.scrollLeft / DAILY_SLOT_W)));
+    setActiveIdx((prev) => (prev === idx ? prev : idx));
+  };
+  const scrollToIndex = (i) => { const el = scrollerRef.current; if (el) el.scrollTo({ left: i * DAILY_SLOT_W, behavior: "smooth" }); };
+  // (v0.2.7 버그 수정) overflow-x:auto의 브라우저 기본 스크롤만으로는 데스크톱 마우스로 좌우 스크롤이
+  // 거의 안 된다(엔진 라인·기보 줄과 같은 문제, DRAG_SCROLL_MULT 참고) — 포인터 이벤트로 직접
+  // scrollLeft를 옮기는 드래그 스크롤을 추가한다. 손을 뗄 때 가장 가까운 칸으로 스냅시켜, 드래그
+  // 도중 프로그램적으로 옮긴 scrollLeft에는 적용되지 않는 CSS scroll-snap을 보정한다. 드래그였다면
+  // (moved) 그 자리의 카드가 열리거나 다른 칸으로 다시 스크롤되지 않도록 클릭을 막는다.
+  // (v0.2.7 버그 수정) 위 최초 구현은 실제로는 클릭이 전혀 안 먹는 문제가 있었다 — 원인 두 가지를
+  // 함께 고쳤다: (1) 컨테이너에 scrollBehavior:"smooth"가 걸려 있어, 손 떨림 수준의 1px만 움직여도
+  // el.scrollLeft 대입이 애니메이션으로 처리되면서 손을 떼는 순간까지 카드가 커서 아래에서 계속
+  // 미끄러져, 브라우저가 pointerdown/up 타깃 불일치로 보고 click 자체를 합성하지 않았다 — 이제
+  // scrollLeft는 드래그 중 항상 즉시 반영되고(smooth는 scrollToIndex의 명시적 scrollTo 호출에만
+  // 적용), 실제로 임계값을 넘어 "이동"으로 확정되기 전까지는 scrollLeft를 아예 건드리지 않는다.
+  // (2) 클릭 판정 임계값(3px)이 실제 마우스/터치 클릭에서 흔한 손 떨림보다 작아 진짜 클릭도 자주
+  // 드래그로 오판했다 — 8px로 넉넉히 늘렸다. pointerId를 기억해 두었다가 손을 떼는 순간
+  // releasePointerCapture로 명시적으로 캡처를 풀어, 브라우저가 그 뒤 click을 정상적으로 합성하도록 한다.
+  const DRAG_CLICK_THRESHOLD = 8;
+  const dragRef = useRef(null);
+  // (v0.2.7 버그 수정) endDrag(pointerup)는 뒤이어 오는 click보다 항상 먼저 실행되므로, dragRef를
+  // 그 안에서 곧장 null로 비우면 click 시점엔 이미 null이라 "방금 드래그였는지" 판단이 늘 거짓이
+  // 됐다(=드래그 뒤 클릭 차단이 원천적으로 동작하지 않는 죽은 코드였다). click 핸들러가 볼 수 있게
+  // 별도 ref에 "직전 포인터 시퀀스가 실제 드래그였는지"만 남겨 두고, click에서 한 번 소비하고 지운다.
+  const wasDragRef = useRef(false);
+  // (v0.2.7 버그 수정) 위 두 수정 후에도 클릭이 여전히 안 된다는 신고가 있었다 — 남은 원인은
+  // setPointerCapture 자체였다. 이 커스텀 드래그는 애초에 "컴퓨터에서 마우스로 스크롤"이 목적이었는데
+  // 터치 포인터에도 똑같이 setPointerCapture를 걸고 있었다 — 일부 모바일 브라우저는 조상 요소가
+  // 포인터를 캡처한 채로 pointerup을 맞으면(우리가 releasePointerCapture를 명시적으로 부르기 전까지
+  // 짧은 순간이라도) 그 뒤 click 자체를 아예 합성하지 않는 경우가 있어, 이동이 전혀 없는 순수한
+  // 탭에서도 click이 사라졌다. 마우스 포인터(pointerType==="mouse")에서만 이 커스텀 드래그를 걸고,
+  // 터치·펜은 아예 손대지 않아 브라우저 기본 스크롤(overflow-x:auto)+click이 그대로 살아 있게 한다
+  // — 원래 요청도 "컴퓨터 환경에서 마우스로"였으므로 범위상으로도 맞다.
+  const onPointerDown = (e) => {
+    if (e.pointerType !== "mouse") return;
+    const el = scrollerRef.current;
+    dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false, pointerId: e.pointerId };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    const el = scrollerRef.current;
+    if (!d || !el || e.pointerType !== "mouse") return;
+    const dx = e.clientX - d.x;
+    if (!d.moved && Math.abs(dx) <= DRAG_CLICK_THRESHOLD) return;   // 임계값 전까지는 손 떨림으로 보고 아예 무시(스크롤도 안 밀림)
+    d.moved = true;
+    el.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
+  };
+  const endDrag = (e) => {
+    const d = dragRef.current;
+    const el = scrollerRef.current;
+    dragRef.current = null;
+    wasDragRef.current = !!(d && d.moved);
+    if (e && e.currentTarget && e.currentTarget.releasePointerCapture && d) { try { e.currentTarget.releasePointerCapture(d.pointerId); } catch { /* noop */ } }
+    if (d && d.moved && el && dates) scrollToIndex(Math.max(0, Math.min(dates.length - 1, Math.round(el.scrollLeft / DAILY_SLOT_W))));
+  };
+  const onClickCapture = (e) => { if (wasDragRef.current) { wasDragRef.current = false; e.preventDefault(); e.stopPropagation(); } };
+  if (!dates || !dates.length) return null;
+  const spacer = Math.max(0, containerW / 2 - DAILY_SLOT_W / 2);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div className="flex items-center gap-1" style={{ marginBottom: 6, paddingLeft: 2 }}>
+        <Sparkles size={13} style={{ color: T.brassHi }} />
+        <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi }}>일일 퍼즐</span>
+      </div>
+      {/* (v0.2.7 버그 수정) touchAction을 "pan-y"(수직만 브라우저가 처리)로 막아 두고 커스텀 드래그가
+          가로를 대신 처리하게 했었는데, 그 커스텀 드래그를 마우스 전용으로 좁히면서 터치에서는 아무도
+          가로 스크롤을 처리하지 않게 돼 버렸다 — touchAction을 지정하지 않아(기본값 auto) 터치는
+          브라우저 기본 가로/세로 스크롤을 그대로 쓰도록 되돌린다(스냅은 scroll-snap-type이 계속 담당). */}
+      <div ref={scrollerRef} onScroll={onScroll} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", cursor: "grab", userSelect: "none", WebkitUserSelect: "none" }}>
+        <div style={{ flex: "0 0 auto", width: spacer }} />
+        {dates.map((d, i) => {
+          const pz = resolvedMap[d];
+          const isSolved = pz ? solved.has(pz.id) : false;
+          const rawCount = pz ? ((solveCounts && solveCounts[puzzleNo(pz.id)]) || 0) : 0;
+          const count = Math.max(rawCount, isSolved ? 1 : 0);
+          return (
+            <DailyPuzzleCarouselItem key={d} dateStr={d} isToday={i === 0} puzzle={pz} isActive={i === activeIdx} distance={Math.abs(i - activeIdx)} isSolved={isSolved} solveCount={count} onOpen={() => { if (i === activeIdx) { if (pz) onOpen(pz); } else scrollToIndex(i); }} />
+          );
+        })}
+        <div style={{ flex: "0 0 auto", width: spacer }} />
       </div>
     </div>
   );
 }
-// (v0.2.4 기능) 지난 오늘의 퍼즐 목록 — curatedDailyPuzzleFor(옛 큐레이션)와 달리 resolveDailyPuzzle은
-// 네트워크·엔진이 필요한 비동기라, 13개 날짜를 한꺼번에 미리 계산해 "이미 풀었는지" 배지까지
-// 보여주면 매번 진입할 때마다 엔진 호출이 13번씩 발생한다 — 목록은 날짜만 가볍게 보여주고, 실제
-// 계산은 사용자가 그 날짜를 누른 시점에 딱 한 번만 한다(해결 여부는 열어보면 퍼즐 화면 안에서 바로 보임).
-function PastDailyPuzzles({ engine, onOpen }) {
-  const [open, setOpen] = useState(false);
-  const [busyDate, setBusyDate] = useState(null);
-  const dates = useMemo(() => {
-    const out = [];
-    for (let i = 1; i <= 13; i++) out.push(todayStr(new Date(Date.now() - i * 86400e3)));
-    return out;
-  }, []);
-  const openDate = async (dateStr) => {
-    if (busyDate || !engine || engine.status !== "ready") return;
-    setBusyDate(dateStr);
-    try { const pz = await resolveDailyPuzzle(dateStr, engine); onOpen(pz); } finally { setBusyDate(null); }
-  };
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <button onClick={() => setOpen((v) => !v)} className="press" style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 2px", border: "none", background: "transparent", color: T.brassHi, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-        <ChevronRight size={13} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} /> 지난 오늘의 퍼즐
-      </button>
-      {open && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-          {dates.map((d) => (
-            <button key={d} onClick={() => openDate(d)} disabled={!!busyDate} className="press" style={{ padding: "5px 9px", borderRadius: 8, border: "1px solid " + T.brass, background: "rgba(0,0,0,.25)", color: T.ivory, fontSize: 10.5, cursor: "pointer", opacity: busyDate && busyDate !== d ? .5 : 1 }}>
-              {busyDate === d ? "불러오는 중…" : d.slice(5)}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, dailyPuzzle }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -10419,10 +10583,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           작게 미리 보여준다. 누르면 전체 여정 지도가 열린다. */}
       <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} />
       {/* (18차 UI5) 안내 문구 삭제, (18차 UI2) 일일 퀘스트는 퀘스트 탭으로 이동 */}
-      {dailyPuzzle && <TodayPuzzleCard puzzle={dailyPuzzle} isSolved={solved.has(dailyPuzzle.id)} onOpen={() => setActive(dailyPuzzle)} />}
-      {/* (v0.2.4 기능) 지난 오늘의 퍼즐 다시 풀기 — resolveDailyPuzzle이 날짜만 주면 그날의 퍼즐을
-          그대로 재현하므로(순수 함수 + 결정적 시드), 과거 날짜를 눌러 그때그때 새로 계산해 연다. */}
-      <PastDailyPuzzles engine={engine} onOpen={setActive} />
+      {/* (v0.2.7 개편) 오늘의 퍼즐을 오락실 슬롯머신 스타일 캐러셀로 — 좌우로 스크롤해 날짜(오늘부터
+          테마가 처음 배정된 날짜까지 전체 기간)를 고르면 선택된 항목만 커지고 나머지는 어둡게 줄어든다. */}
+      <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByNumber()} inputMode="numeric" placeholder="퍼즐 번호로 풀기 (예: 123456)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
         <button onClick={solveByNumber} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
@@ -11521,6 +11684,22 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.2.7", date: "2026.7.29", dev: ["openchesskr", "g13sus4"], items: [
+      "일일 퍼즐 화면을 좌우로 스크롤하는 캐러셀로 완전히 새로 만들었어요 — 가운데로 스크롤해 고른 날짜의 퍼즐은 크게 보이고, 다른 날짜들은 작고 흐리게 물러나요. 컴퓨터에서는 마우스로 눌러 끌어도 넘길 수 있고, 선택되지 않은 카드도 예전보다 덜 어둡게 잘 보이도록 밝기를 조정했어요. 선택된 퍼즐 밑에는 그날 몇 명이 풀었는지도 바로 보여줘요.",
+      "일일 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
+      "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 일일 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 일일 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
+      "채팅에서 '/puzzle 000000' 명령어로 존재하지 않는 번호를 보내려 하면, 이제 전송 자체가 되지 않고 그 번호의 퍼즐을 찾을 수 없다는 안내가 떠요.",
+      "일일 퍼즐도 다른 퍼즐과 똑같이 고유 번호가 매겨져 채팅으로 공유하거나 '번호로 풀기'로 바로 열어볼 수 있어요.",
+      "'오늘의 퍼즐'과 '오늘의 퀘스트'라는 이름을 '일일 퍼즐'·'일일 퀘스트'로 통일했어요.",
+      "퍼즐 풀이 화면의 수순 모식도에서, 해결한 라인의 가장 마지막 수가 옆의 '라인 N' 표시에 밀려 글자가 잘려 보이던 문제를 고쳤어요.",
+      "퍼즐 창을 열면 평가치 막대가 곧바로 살아 움직이며 지금 포지션을 다시 훑어봐요.",
+      "일일 퍼즐 캐러셀에서 카드를 눌러도 반응이 없던 문제를 완전히 고쳤어요.",
+      "퍼즐 힌트가 단계별로 겹쳐 보이던 문제를 고쳤어요 — 이제 1단계는 도착 칸만, 2단계는 기물 흔들림만, 3단계는 기물 흔들림과 경로를 따라 칸이 빛나는 연출만 순서대로 독립적으로 보여줘요. 빛나는 칸도 둥글게 보이던 것을 칸 전체를 채우는 더 진한 금빛으로 바꿨어요.",
+      "리뷰 화면에서 빠르게 수를 넘길 때 엔진 추천 수 줄이 끝까지 다 써지지 않고 중간에 멈춰 보이던 문제를 완전히 고쳤어요.",
+      "일일 퍼즐 알림 창을 달력 다이어리 모양으로 새로 꾸몄어요 — 마스코트가 위에서 내려다보고, 날짜와 오늘의 오프닝·수·풀이수를 한눈에 보여줘요.",
+    ],
+  },
+  {
     version: "0.2.6", date: "2026.7.28", dev: ["openchesskr"], items: [
       "게임 리뷰(/review) 페이지에 들어가면 흰 화면만 나오던 심각한 문제를 고쳤어요 — 리뷰 화면이 다시 정상적으로 열려요.",
       "'탁월한 수' 판정을 더 정교하게 다듬었어요 — 방치된 것처럼 보이지만 사실 더 안전한 칸으로 피할 수 있는 기물이나, 잡아도 안전한 기물을 노린 수는 이제 제대로 탁월로 인정되고, 반대로 이미 희생한 기물의 점수를 회복해가는 후속 수는 더 이상 탁월로 중복 표시되지 않아요.",
@@ -11837,28 +12016,48 @@ function AnnouncementModal({ onClose }) {
     </div>
   );
 }
-// (v0.2.0 기능2) 오늘의 퍼즐 알림 — 이 모달만 예전 AnnouncementModal처럼 "오늘 하루 다시 보지
+// (v0.2.0 기능2) 일일 퍼즐 알림 — 이 모달만 예전 AnnouncementModal처럼 "오늘 하루 다시 보지
 // 않기" 체크박스를 그대로 둔다(공지 모달과 달리 하루 안에서도 여러 번 다시 뜨는 게 의도된 동작이라,
 // 완전히 끄고 싶다는 명시적 의사 표시가 있을 때만 그날 하루 동안 억제한다).
-function DailyPuzzleNoticeModal({ puzzle, cleared, onOpen, onClose }) {
+// (v0.2.7 개편) 사용자가 그려 준 스케치(마스코트가 위에서 내려다보는 달력 다이어리 형태 — 왼쪽
+// 페이지는 날짜+달력 모식, 오른쪽 페이지는 오늘의 오프닝·풀이수·풀기 버튼)를 그대로 옮겼다.
+function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }) {
   const [hide, setHide] = useState(false);
   const close = () => onClose(hide);
+  const t = todayStr();
+  const dateLabel = t.slice(0, 4) + "." + parseInt(t.slice(5, 7), 10) + "." + parseInt(t.slice(8, 10), 10);
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 20, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8, paddingRight: 32 }}>
-          <Bell size={17} style={{ color: T.brass, flexShrink: 0 }} />
-          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>오늘의 퍼즐이 도착했어요!</span>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 400, marginTop: 36 }}>
+        {/* (스케치) 다이어리 위에서 내려다보는 마스코트 — 카드 위 왼쪽에 살짝 겹쳐 뜬다. */}
+        <div style={{ position: "absolute", top: -38, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={62} /></div>
+        <div style={{ position: "relative", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: "20px 18px 16px" }}>
+          <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
+          {/* 스케치의 펼친 다이어리 두 페이지 — 왼쪽: 날짜+달력 모식(장식), 오른쪽: 오프닝·수·풀이수·버튼. */}
+          <div className="flex items-start" style={{ gap: 14, paddingRight: 20 }}>
+            <div style={{ flexShrink: 0, width: 104 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: "ui-monospace,monospace" }}>{dateLabel}</div>
+              <div aria-hidden="true" style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 8, border: "1.5px solid " + T.brass, background: "#fff", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", overflow: "hidden" }}>
+                {Array.from({ length: 16 }).map((_, i) => <div key={i} style={{ border: "0.5px solid rgba(196,154,80,.35)" }} />)}
+              </div>
+            </div>
+            <div style={{ minWidth: 0, flex: 1, paddingTop: 1, borderLeft: "1px dashed #DCCBA8", paddingLeft: 14 }}>
+              <div className="flex items-center gap-1" style={{ marginBottom: 4 }}>
+                <Bell size={12} style={{ color: T.brass, flexShrink: 0 }} />
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass }}>일일 퍼즐</span>
+              </div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: 6 }}>{puzzle.name || puzzle.opening}</div>
+              {solveCountText(solveCount, null) && <div style={{ fontSize: 11, color: "#2E6E2E", fontWeight: 700, marginBottom: 10 }}>{solveCountText(solveCount, null)}</div>}
+              {/* (사용자 요청) 풀기 버튼은 기존 금색 그라데이션을 그대로 유지한다. */}
+              <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer" }}><Play size={13} fill="#241509" />풀기</button>
+            </div>
+          </div>
+          <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "14px 0 10px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 일일 퍼즐도 풀어보세요." : "아직 일일 퀘스트를 다 마치지 못했어요 — 일일 퍼즐도 잊지 말고 풀어보세요!"}</p>
+          <label className="flex items-center gap-2" style={{ fontSize: 12, color: T.inkSoft, cursor: "pointer" }}>
+            <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
+            오늘 하루 다시 보지 않기
+          </label>
         </div>
-        <div style={{ marginBottom: 10 }}><AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={96} loopMs={2400} /></div>
-        <p style={{ fontSize: 13, fontWeight: 700, color: T.ink, margin: "0 0 4px" }}>{puzzle.opening}</p>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 오늘의 퍼즐도 풀어보세요." : "아직 오늘의 퀘스트를 다 마치지 못했어요 — 오늘의 퍼즐도 잊지 말고 풀어보세요!"}</p>
-        <button onClick={onOpen} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer", marginBottom: 10 }}>풀러 가기</button>
-        <label className="flex items-center gap-2" style={{ fontSize: 12, color: T.inkSoft, cursor: "pointer" }}>
-          <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
-          오늘 하루 다시 보지 않기
-        </label>
       </div>
     </div>
   );
@@ -12003,8 +12202,8 @@ function DailyPuzzleDevPanel({ card }) {
   const btnStyle = { padding: "7px 12px", borderRadius: 8, border: "none", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>오늘의 퍼즐 (개발자)</div>
-      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>리체스 퍼즐 기반 오늘의 퍼즐의 오프닝 테마 로테이션과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>일일 퍼즐 (개발자)</div>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>리체스 퍼즐 기반 일일 퍼즐의 오프닝 테마 로테이션과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>2주 오프닝 테마</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 110, overflowY: "auto" }}>
         {(themes || []).map((t) => (
@@ -12854,6 +13053,10 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  // (v0.2.7 버그 수정) "/puzzle 000000" 명령어가 존재하지 않는 번호를 그대로 공유 카드로 보내버려,
+  // 받는 쪽에는 빈/깨진 미리보기만 남는 문제가 있었다 — 전송 전 그 번호가 실제로 존재하는지 확인해,
+  // 없으면 전송 자체를 막고 이 메시지로 알려준다.
+  const [cmdError, setCmdError] = useState("");
   // (v0.1.4 기능) 수정 중인 메시지 id — 설정돼 있으면 입력창은 그 메시지 본문을 수정하는 모드로 동작.
   const [editingId, setEditingId] = useState(null);
   // (v0.1.4 기능) 꾹 눌러 연 수정/삭제(또는 전달/삭제) 메뉴가 떠 있는 메시지 id.
@@ -12933,6 +13136,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const onTextChange = (e) => {
     const v = e.target.value;
     setText(v);
+    if (cmdError) setCmdError("");
     if (!typingChanRef.current || editingId != null) return;
     const now = Date.now();
     if (now - lastTypingSentRef.current > 1500) {
@@ -12955,10 +13159,20 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     // 퍼즐을 공유 카드로 보낸다(기존 공유 버튼과 같은 puzzleShareSend 재사용).
     const cmdMatch = body && body.match(/^\/puzzle\s+(?:-num\s+)?(\d{1,7})\s*$/i);
     if (cmdMatch) {
+      setCmdError("");
+      const no = parseInt(cmdMatch[1], 10);
       setSending(true);
-      const ok = await puzzleShareSend(parseInt(cmdMatch[1], 10), myUid, otherUid);
+      // (v0.2.7 버그 수정) 존재하지 않는 퍼즐 번호는 공유 카드로 보낼 수 없다 — 먼저 서버에서
+      // 실제로 그 번호의 퍼즐 데이터가 있는지 확인하고, 없으면 전송을 막는다.
+      const data = puzzlePreviews[no] !== undefined ? puzzlePreviews[no] : await puzzleFetch(no);
+      if (!data) {
+        setSending(false);
+        setCmdError("#" + no + " 번호의 퍼즐을 찾을 수 없어 보낼 수 없어요.");
+        return;
+      }
+      const ok = await puzzleShareSend(no, myUid, otherUid);
       setSending(false);
-      if (ok) { setText(""); load(); }
+      if (ok) { setText(""); load(); } else setCmdError("퍼즐을 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
       return;
     }
     setSending(true);
@@ -13175,6 +13389,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
             ))}
           </div>
         )}
+        {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <div className="flex items-center gap-2">
           <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
@@ -14615,7 +14830,7 @@ export default function App() {
       // 새로 계산해 보여주므로 이 버그와 무관하게 항상 정상이었다).
       // (v0.2.4 버그 수정) 리체스 기반 오늘의 퍼즐은 id가 더 이상 "daily_" 접두사가 아니라
       // "XXXXXX-N" 형태라 접두사로는 "어제 이전의 오늘의 퍼즐"인지 구분할 수 없다 — 퍼즐 객체
-      // 자체의 isDaily/date 필드로 판정하되(curatedDailyPuzzleFor·resolveDailyPuzzle 둘 다 채움),
+      // 자체의 isDaily/date 필드로 판정하되(resolveDailyPuzzle이 채움),
       // 이 필드가 없는 배포 전 저장값(구버전 "daily_" id)은 접두사 검사로 그대로 폴백한다.
       const isStaleDaily = (pz) => !pz ? false : (pz.isDaily && pz.date) ? pz.date !== todayStr() : (/^daily_/.test(pz.id) ? pz.id !== "daily_" + todayStr() : false);
       const restoredPuzzleActive = d.puzzleActive && !isStaleDaily(d.puzzleActive) ? d.puzzleActive : null;
@@ -15125,7 +15340,7 @@ export default function App() {
   const openDailyPuzzle = useCallback(() => {
     setSearchOpen(false); setFriendsOpen(false);
     setTab("puzzle");
-    setPuzzleActive(todayPuzzle);
+    if (todayPuzzle) setPuzzleActive(todayPuzzle);
   }, [todayPuzzle]);
   // (v0.2.2 UI#4) '오늘의 퍼즐 풀기' 고정 퀘스트 — 오늘의 퍼즐(todayPuzzle)을 풀면(solved에 그 id가
   // 들어오면) 완료 처리하고 코인을 1회 지급한다. 퍼즐 카운트 퀘스트와 같은 방식(claimQuestCoins가
@@ -15223,7 +15438,7 @@ export default function App() {
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
-      {puzzleNoticeOpen && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
+      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
@@ -15292,7 +15507,7 @@ export default function App() {
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} dailyPuzzle={todayPuzzle} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}

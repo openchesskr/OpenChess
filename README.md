@@ -25,6 +25,59 @@
 
 ## 버전 기록
 
+### OpenChess v0.2.7 — 2026/7/29
+
+**기능/UI — 오늘의 퍼즐 화면 전면 개편(캐러셀)**
+사용자가 첨부한 스케치(가운데 날짜 카드가 크고, 좌우 날짜 카드는 작고 어둡게 물러나는 형태)를 바탕으로, 기존의 단일 카드(`TodayPuzzleCard`)+접이식 날짜 목록(`PastDailyPuzzles`) 조합을 하나의 가로 스크롤 캐러셀(`DailyPuzzleCarousel`/`DailyPuzzleCarouselItem`)로 완전히 교체했다. 날짜 범위는 사용자 요청대로 "전체 기간"으로 — `daily_puzzle_themes`(오프닝 테마를 2주 단위로 배정하는 관리 테이블)의 가장 이른 `starts_on`부터 오늘까지 전체를 담되(테마가 아직 하나도 없으면 오늘 하루만), 오늘이 배열 맨 앞(인덱스 0)에 오도록 최신순으로 만든다(`useDailyPuzzleDates`). CSS `scroll-snap-type:x mandatory` + `scroll-snap-align:center`로 스냅시키고, 좌우에 `containerWidth/2 - SLOT_W/2` 만큼의 spacer div를 둬 첫/마지막 항목도 뷰포트 중앙에 스냅될 수 있게 했다(`ResizeObserver`로 컨테이너 폭을 재고 `useLayoutEffect`로 측정해 초기 깜빡임을 최소화). `onScroll`에서 `Math.round(scrollLeft/SLOT_W)`로 활성 인덱스를 구하고, 활성 항목은 `transform:scale(1)`·불투명, 바로 옆(distance 1)은 0.8배·반투명, 그 밖은 0.68배·더 흐리게 렌더한다. 카드를 누르면 활성 항목이면 바로 열리고, 비활성 항목이면 `scrollTo({left:i*SLOT_W, behavior:"smooth"})`로 그 항목을 가운데로 스냅시킨다("스크롤=선택, 클릭(활성 상태)=플레이" 동작).
+
+**성능 — 캐러셀 항목의 지연 계산**
+`resolveDailyPuzzle`은 네트워크(Supabase)+실제 엔진 트리 생성(`genPuzzleTree`)이 필요한 무거운 비동기 함수라, 캐러셀에 보이는 모든 날짜를 한꺼번에 계산하면 안 된다는 게 기존 `PastDailyPuzzles` 주석에도 명시돼 있던 제약이었다. 사용자에게 "가운데(선택된) 것만 즉시 계산, 나머지는 스크롤해서 가까워지면 계산"으로 확인받아, 활성 인덱스가 바뀔 때마다 `[activeIdx-1, activeIdx, activeIdx+1]` 범위만 `resolveDailyPuzzleCached`로 계산하도록 했다. 여러 캐러셀 항목(및 알림 팝업의 "오늘의 퍼즐")이 같은 날짜를 중복 계산하지 않도록, 계산 결과(Promise)를 날짜별 모듈 캐시(`dailyPuzzleResolveCache`)에 담아 재사용한다 — 단, 엔진이 아직 준비되지 않아 계산을 시도조차 못 한 경우는 캐시하지 않고 다음 요청 때 다시 시도해, "엔진이 늦게 준비되는 것"과 "그 날짜엔 정말 데이터가 없는 것"을 구분한다. 아직 계산되지 않은(또는 계산 중인) 항목은 기존 힌트 애니메이션에 쓰던 `hintSquarePulse` 키프레임을 재사용한 흐릿한 사각형 placeholder로 표시한다.
+
+**기능 — 캐러셀에 풀이 인원 수 상시 표시**
+사용자 요청("일일 퍼즐 UI에는 그날 푼 사람 수를 표시해 달라")에 따라, 이미 존재하던 전역 풀이수 인프라(`puzzles.solves` 컬럼, `puzzle_solve` RPC, `puzzleNo(id)` 해시 기반 매핑, `solveCountText`)를 그대로 재사용해 캐러셀의 모든 카드(활성/비활성 무관, 계산 완료된 것만)에 "OOO명이 풀었습니다!"를 작은 글씨로 표시한다. 새 Supabase 테이블/RPC는 추가하지 않았다 — 일일 퍼즐도 결국 `id`를 가진 일반 퍼즐 객체라 기존 카운터가 그대로 작동한다. 다른 퍼즐 카드의 `solveCountFor`(`PuzzleTab`)와 동일하게, 아직 서버 집계가 반영되기 전이라도 내가 방금 푼 퍼즐은 최소 1명으로 보정한다.
+
+**버그 수정/삭제 — 폐기된 큐레이션 오늘의 퍼즐 완전 제거**
+`DAILY_PUZZLES`(Fool's Mate·Scholar's Mate·Légal's Mate·Blackburne Shilling Gambit 4개짜리 하드코딩 배열)와 그걸 날짜 시드로 뽑던 `curatedDailyPuzzleFor`를 완전히 삭제했다. 이 폴백은 v0.2.4에서 리체스 퍼즐 DB 기반 시스템(`resolveDailyPuzzle`)으로 넘어가면서 "엔진 부팅 전/테마 미배정 등 예외 상황에 화면이 비어 보이지 않게" 남겨둔 것이었는데, 실제로는 한 번도 사용자에게 정식으로 배정된 적 없는 임의의 퍼즐이 "오늘의 퍼즐"이라는 이름으로 뜨는 게 부적절하다는 사용자 지적에 따라 제거를 결정했다. `resolveDailyPuzzle`의 4개 폴백 분기(`!theme`, `!pool.length`, `!engine.ready`, `!gen.lines.length`)와 `useDailyPuzzle`의 1개 분기, 총 5개 호출부를 전부 `null` 반환으로 바꿨다 — 호출부(`PuzzleTab`의 캐러셀, 상단 `todayPuzzle`을 쓰는 `openDailyPuzzle`·일일 퀘스트 완료 감지 effect·`DailyPuzzleNoticeModal`)는 이미 대부분 `dailyPuzzle &&` 형태로 안전했지만, `openDailyPuzzle`(무조건 `setPuzzleActive(todayPuzzle)` 호출)과 `DailyPuzzleNoticeModal` 렌더 조건(`puzzleNoticeOpen &&`만 검사)에는 `null` 가드가 없어 두 곳에 `todayPuzzle &&` 조건을 추가했다. `isStaleDaily`(어제 이전 오늘의 퍼즐 복원 방지 가드, v0.2.3)는 `curatedDailyPuzzleFor`와 무관하게 `pz.isDaily`/`pz.date` 필드만 보므로 그대로 유지된다.
+
+**UX — 오늘의 퍼즐 이름을 일반 퍼즐과 통일**
+사용자 요청("현재 사용되는 일일 퍼즐의 명칭을 별도로 두지 말고, 그냥 다른 퍼즐들과 동일하게 표시")에 따라 `resolveDailyPuzzle`이 만드는 퍼즐 객체의 `name` 필드를 `opening + " — 오늘의 퍼즐"`(전용 접미사)에서 일반 퍼즐과 동일한 `puzzleName("punish", setupSans, mistakeSan)`(`"<오프닝 이름>, <수 이름>"` 형식)으로 바꿨다. 이 `name`은 퍼즐 풀이 화면(`PuzzleSolver`)에서 그대로 렌더되므로, 오늘의 퍼즐을 열어도 다른 퍼즐과 구분되지 않는 이름이 보인다. 다만 캐러셀 카드 자체의 "오늘의 퍼즐" 섹션 라벨과 `DailyPuzzleNoticeModal`(알림 팝업)의 `puzzle.opening` 표기는 그대로 유지했다 — 사용자의 요청은 퍼즐의 `name`(정체성 표기)에 한정된 것으로 판단했다.
+
+**시스템 — 퍼즐 데이터·유저 풀이 기록 초기화 SQL**
+`public.puzzles`·`puzzle_likes`·`puzzle_reposts`·`puzzle_solvers`·`puzzle_solve_events` 5개 테이블을 전부 `truncate`하고(테이블 구조·RLS·함수는 그대로 유지), `public.user_progress.progress`(jsonb) 안의 `solved`(푼 퍼즐 id 목록)·`lineSolves`(퍼즐별 풀어낸 라인 태그) 두 필드만 `jsonb_build_object`로 덮어써 초기화하는 스크립트를 사용자에게 채팅으로 전달했다(사용자 요청에 따라 저장소 파일로는 남기지 않음). XP·코인·칭호·퀘스트 진행도·chat_messages(퍼즐 공유 카드 포함)·친구 관계 등 풀이 기록과 무관한 나머지 진행 상황은 건드리지 않는다 — Supabase 대시보드 SQL Editor에서 개발자가 직접 실행해야 반영되는 일회성 스크립트.
+
+**UI/UX — 캐러셀 마우스 드래그 스크롤 지원, 밝기 조정**
+데스크톱에서 `overflow-x:auto`의 브라우저 기본 스크롤만으로는 마우스로 좌우 스크롤이 거의 안 된다는 지적(엔진 라인·기보 줄과 동일한 기존 이슈, `DRAG_SCROLL_MULT`)에 따라, `DailyPuzzleCarousel`에도 같은 포인터 이벤트 기반 드래그 스크롤 패턴을 추가했다. `onPointerDown`/`onPointerMove`로 직접 `scrollLeft`를 옮기고, `onPointerUp`/`onPointerCancel`에서 드래그였다면(`moved`) 가장 가까운 칸으로 `scrollToIndex`를 호출해 스냅을 보정한다(CSS `scroll-snap`은 네이티브 스크롤에만 적용되고 JS로 직접 옮긴 `scrollLeft`에는 관여하지 않으므로). `onClickCapture`로 드래그 직후의 의도치 않은 클릭(카드 열림/재스크롤)도 막는다. 별개로, 비활성 카드의 `opacity`가 어두운 카드 배경 위에서 너무 낮아(거리 1칸: .5, 그 밖: .28) 거의 안 보인다는 지적에 따라 값을 각각 .78/.58로 올렸다.
+
+**시스템 — '오늘의 퍼즐'/'오늘의 퀘스트' 표기를 '일일 퍼즐'/'일일 퀘스트'로 통일**
+사용자 요청에 따라 현재 화면에 표시되는 모든 위치(일일 퀘스트 카드 제목·오프닝 배지 title·퀘스트 두 번째 항목 라벨/설명, 캐러셀 섹션 라벨, 일일 퍼즐 알림 모달 제목·본문, 설정 탭 개발자 패널 제목·설명, `/about` 소개 페이지의 마스코트 인용구)에서 "오늘의 퍼즐"→"일일 퍼즐", "오늘의 퀘스트"→"일일 퀘스트"로 문구를 바꿨다. 과거 버전 기록(CHANGELOG/VERSION_HISTORY의 지난 항목들)은 그 시점의 실제 표기를 그대로 보존하는 역사적 기록이라 손대지 않았다.
+
+**버그 수정 — 퍼즐 모식도에서 마지막 수가 잘려 보이던 문제**
+`PuzzleSchematic`에서 리프(라인의 마지막 수) 노드는 오른쪽에 "라인 N"·해결 체크 배지(개발자 모드에서는 추가·삭제 버튼까지)가 같은 줄에 나란히 붙는데, 그 바깥 wrapper `<div>`의 폭이 `boxW`(104px, 개발자 모드 210px)로 고정돼 있고 정작 SAN 라벨을 담은 버튼이 `flex:1`+`minWidth:0`으로 그 폭 안에 욱여넣어지는 구조였다 — 배지가 넓을수록 버튼이 더 심하게 눌려, 정작 라인이 실제로 끝나는(=정보가 가장 중요한) 마지막 수의 라벨이 가장 심하게 말줄임(ellipsis)으로 잘렸다. wrapper를 `width:"max-content", minWidth:boxW`로, 버튼은 `flexShrink:0, minWidth:boxW`(flex:1 제거)로 바꿔 배지가 버튼을 짓누르지 않고 자연스럽게 옆으로 이어지도록 했다. 전체 캔버스 폭(`width` useMemo) 오른쪽 여백도 40→120px로 늘려, 넓어진 리프 노드가 캔버스 오른쪽 경계에서 잘리지 않게 했다.
+
+**기능 — 퍼즐 창을 열면 평가치 막대가 실시간으로 움직이도록**
+`PuzzleSolver`의 평가치 막대(`EvalBar`)는 v0.2.6부터 매번 재평가할 때의 미묘한 값 흔들림을 없애려 생성 시 미리 계산해 둔 `curNode.ev`(모든 유저 공통값)만 정적으로 표시하고 있었는데, 그 결과 창을 열어도 막대가 전혀 "살아 움직이지" 않아 죽어 있는 것처럼 보인다는 지적을 받았다. `curSans`(현재 포지션)가 바뀔 때마다 실제 `engine`으로 짧게(depth 18, movetime 900ms) 다시 평가하되(`engine.evaluate` + `onProgress` 콜백 — ReviewPage 엔진 라인과 같은 단일PV 진행 갱신 방식, `posEvalToWhite`로 백 관점 변환), 그 탐색이 진행되는 동안(`liveDepth != null`)만 `EvalBar`에 실시간 값과 depth(3-dot "탐색 중" 인디케이터)를 넘겨 막대가 눈에 보이게 움직이도록 했다. 탐색이 끝나면(또는 다음 포지션으로 넘어가면) `liveDepth`를 다시 `null`로 되돌려 곧바로 정적인 `curNode.ev` 표시로 돌아간다 — v0.2.6에서 고친 "매번 다시 평가해 값이 미묘하게 흔들리는" 문제는 재발하지 않으면서(최종 정지 값은 항상 `curNode.ev`), 창을 열자마자 잠깐 실제로 탐색하는 모습만 보여준다.
+
+**버그 수정 — 존재하지 않는 퍼즐 번호를 채팅 명령어로 보낼 수 있던 문제**
+채팅의 `/puzzle 000000`(또는 `/puzzle -num 000000`) 명령어가 번호 형식만 확인하고 실제로 그 번호의 퍼즐이 존재하는지는 검증하지 않은 채 `puzzleShareSend`를 그대로 호출했다 — 없는 번호를 보내면 받는 쪽 채팅에 내용이 비어 있거나 깨진 퍼즐 공유 카드만 남았다. `ChatPanel.send()`의 명령어 분기에서 `puzzleShareSend` 호출 전에 `puzzleFetch(no)`로 서버에 그 번호의 퍼즐 데이터가 실제로 있는지 먼저 확인하도록 바꿨다(이미 화면에 로드된 적 있는 번호면 기존 `puzzlePreviews` 캐시를 재사용해 중복 조회를 피한다). 데이터가 없으면 전송을 막고 새로 추가한 `cmdError` state로 "#000000 번호의 퍼즐을 찾을 수 없어 보낼 수 없어요."를 입력창 위 명령어 안내 블록 아래에 보여주며, 텍스트를 다시 입력하면 에러가 사라진다.
+
+**기능 — 오늘의 퍼즐도 puzzles 테이블에 저장해 번호 공유·풀기 지원**
+사용자 요청("일일 퍼즐도 puzzles 테이블에 똑같이 고유번호로 저장해서 공유, 숫자로 풀기 기능을 활용할 수 있게 해줘, 다른 퍼즐들과 구분을 아예 하지 말 것")에 따라, 일반 퍼즐이 처음 만들어질 때 `onSavePuzzle`이 `puzzleShare(pz)`로 서버 `puzzles` 테이블에 업로드하는 것과 동일한 경로를 오늘의 퍼즐에도 그대로 태웠다. 별도 분기 없이 `resolveDailyPuzzleCached`(캐러셀·`useDailyPuzzle` 둘 다 이 함수를 통해서만 오늘의 퍼즐을 계산함) 안에서 `resolveDailyPuzzle`이 성공적으로 계산을 끝낸 직후 그 결과 객체를 그대로 `puzzleShare`에 넘긴다 — 일반 퍼즐과 완전히 같은 `puzzleNo(id)` 해시·같은 업로드 함수(같은 upsert 병합 로직 포함)를 쓰므로 채팅 `/puzzle 000000` 공유, 퍼즐 탭 "번호로 풀기" 입력창이 오늘의 퍼즐도 다른 퍼즐과 구분 없이 그대로 찾아낸다. 같은 날짜는 모든 유저에게 결정적으로 같은 id·데이터로 계산되므로, 여러 유저가 각자 화면에서 오늘의 퍼즐을 열어 중복으로 업로드해도 upsert가 그대로 병합해 문제없다.
+
+**버그 수정 — 일일 퍼즐 캐러셀에서 카드를 눌러도 반응이 없던 문제**
+바로 앞서 추가한 마우스 드래그 스크롤 구현에 두 가지 원인이 겹쳐 있었다. (1) 컨테이너에 `scrollBehavior:"smooth"`가 걸려 있어, 드래그 중 `el.scrollLeft` 대입마다(손 떨림 수준의 1px만 움직여도) 애니메이션이 새로 시작돼 손을 떼는 순간까지도 카드가 커서 아래에서 계속 미끄러졌다 — pointerdown·pointerup 시점의 실제 타깃이 어긋나 브라우저가 `click`을 아예 합성하지 않는 경우가 있었다. `scrollBehavior:"smooth"`는 컨테이너 CSS에서 빼고, `scrollToIndex`의 명시적 `scrollTo({behavior:"smooth"})` 호출에만 남겨, 드래그 중 `scrollLeft` 대입은 항상 즉시 반영되도록 했다. 또한 클릭 임계값(3px)이 실제 손 떨림보다 작아 진짜 클릭도 드래그로 오판하기 쉬웠던 것을 8px로 늘리고, 임계값을 넘기 전까지는 `scrollLeft` 자체를 건드리지 않도록 했다(그전엔 임계값 판정과 무관하게 매 픽셀 스크롤이 적용됐음). (2) 더 근본적인 버그로, "드래그였으면 뒤이은 클릭을 막는다"는 로직이 `pointerup` 핸들러(`endDrag`) 안에서 `dragRef.current`를 곧장 `null`로 비우고 있었는데, `click` 이벤트는 항상 `pointerup`보다 나중에 발생하므로 `onClickCapture`가 실행되는 시점엔 이미 `dragRef.current`가 `null`이라 "방금 드래그였는지" 판정이 구조적으로 항상 거짓이었다(=클릭 차단이 원래부터 죽은 코드) — 다행히 원인 (1) 때문에 실제 드래그 뒤엔 애초에 click 자체가 잘 안 일어나 이 버그가 가려져 있었지만, (1)을 고치고 나면 진짜 드래그 뒤에도 스퓨리어스 클릭이 새어나갈 뻔했다. `pointerup`이 별도 ref(`wasDragRef`)에 "방금 드래그였는지" 결과를 남겨 두고, `onClickCapture`가 그 값을 읽어 소비(한 번 쓰고 리셋)하도록 바꿔 클릭 차단 로직이 실제로 의도대로 동작하게 했다.
+
+**버그 수정 — 퍼즐 힌트 단계별 애니메이션이 서로 겹쳐 보이던 문제**
+`hintTo`(1단계, 도착 칸)·`hintFrom`(2단계, 기물 흔들림)·`hintPathSq`(3단계, 경로 반짝임) 세 prop이 각각 `hintLevel >= 1`/`>= 2`/`>= 3` 조건으로 넘겨지고 있어, 3단계에 도달하면 세 애니메이션이 전부 동시에 켜진 채 화면에 겹쳐 보였다. 각 단계가 정확히 그 단계에서만(그리고 3단계는 명시적으로 기물 흔들림+경로 반짝임의 조합으로) 켜지도록 조건을 `=== 1`/`=== 2 || === 3`/`=== 3`로 바꿔, 1단계는 도착 칸만, 2단계는 기물 흔들림만, 3단계는 기물 흔들림과 경로 반짝임만 보이도록(단독 도착 칸 표시는 3단계에서 끔 — 경로의 마지막 칸이 도착 칸을 대신 비춤) 정리했다. 별개로 힌트 칸을 채우던 `HINT_GOLD_GRADIENT`가 `radial-gradient(circle at 50% 50%, ...)`라 칸 모서리가 15% 농도까지 옅어져 정사각형 칸 안에 둥근 빛 덩어리 하나만 뜬 것처럼(원 모양) 보였다는 지적에 따라, 칸 전체를 고르게 채우는 진한 대각선 그라데이션으로 바꾸고 외곽 발광 `box-shadow`(`HINT_GOLD_GLOW`)를 더해 훨씬 강하고 또렷한 금빛으로 보이도록 했다.
+
+**버그 수정 — 엔진 라인이 여전히 끝까지 작성되지 않던 문제(진짜 원인, 2)**
+v0.2.6(`af34f69`)에서 "엔진 추천 수 줄이 빠른 수 진행 중 섞여 멈추던 진짜 원인(큐 경합)"을 고쳤다고 기록했지만, 사용자가 이후에도 재현된다고 보고했다. 원인을 다시 조사한 결과 그 수정은 `useEngine`의 자체 큐(`supersede`, 782행)에만 적용됐고, 구조가 거의 동일한 **또 다른 엔진 큐**인 `bootAnalysisWorker`(2349행, `getAnalysisPool`/`/review`의 엔진 라인이 쓰는 독립 워커 풀)의 `supersede`(2362행)는 고치기 전의 버그 있는 버전 그대로 남아 있었다 — 같은 slot의 새 요청이 들어오면 이전 탐색에 "stop"을 보내자마자 `queue.shift(); running = false;`로 곧장 자리를 비워, 진짜 `bestmove`가 도착하기도 전에 다음 요청의 "position"/"go"를 같은 워커에 보내 버렸다. 그 사이 뒤늦게 오는 이전 탐색의 `info` 줄이 `handleLine`에서 "지금 큐 맨 앞"(=새 요청)의 MultiPV 버퍼에 그대로 섞여, 전혀 다른 포지션의 PV가 새 줄에 합쳐지고 `pvUciToSans`가 그 지점에서 실패해 조용히 끊긴 `sans` 배열을 반환했다 — 그 결과 `TypedMoveLine`의 타이핑 애니메이션은 (손상된) 목표 문자열까지는 정확히 다 타이핑하고 멈추므로, 사용자에게는 "엔진 라인이 끝까지 안 써진다"로 보였다. `useEngine.supersede`와 정확히 같은 수정(자리를 곧장 비우지 않고 큐에 남겨 둬, 진짜 `bestmove`가 와야 정상적인 bestmove 분기가 shift·pump하게 함)을 이식했다. 처음엔 `useEngine`에 있는 것처럼 `swallowBest++`도 함께 옮겼는데, `useEngine` 쪽은 이 자리를 shift하지 않으므로 그 실제 bestmove가 정상 분기로 자연스럽게 소비돼 애초에 `swallowBest`를 건드리지 않는다는 걸 재확인하고 제거했다 — 만약 그대로 뒀다면 빠르게 두 번 이상 슈퍼시드될 때(예: 세 포지션을 연달아 빠르게 넘길 때) `swallowBest`가 실제 필요한 값보다 더 커져, 진짜 도착한 `bestmove`를 도리어 무시하며 큐가 `running=true`인 채로 영영 멈추는 새로운 회귀를 만들 뻔했다. 영향 범위는 `getAnalysisPool`을 `slot`과 함께 쓰는 유일한 호출부인 `/review`의 엔진 라인(`"review-lines"`) — 빠르게 수를 넘기거나 자유 탐색으로 포지션을 자주 바꿀 때 재현됐다.
+
+**UI — 일일 퍼즐 알림 창 재디자인**
+사용자가 그려 준 스케치(마스코트가 위에서 내려다보는 펼친 달력 다이어리 — 왼쪽 페이지는 날짜+달력 모식 격자, 오른쪽 페이지는 오늘의 오프닝·수·풀이수·풀기 버튼)를 그대로 `DailyPuzzleNoticeModal`에 옮겼다. 기존의 보드 미리보기(`AnimatedMove`) 중심 레이아웃을 걷어내고, 왼쪽엔 `todayStr()` 기반 날짜 라벨 + 순수 장식용 4×4 CSS 그리드(달력 모식), 오른쪽엔 "일일 퍼즐" 라벨(종 아이콘)·`puzzle.name`·`solveCountText`(신규로 `solveCount` prop 추가 — 호출부에서 `puzzleNo(todayPuzzle.id)`로 기존 `solveCounts` 맵을 조회해 다른 퍼즐 카드와 동일한 "최소 1명 보정" 규칙까지 그대로 적용)·풀기 버튼을 배치했다. 두 "페이지" 사이는 점선 세로 구분선으로 나눴고, 마스코트(`kokoa`/`wink`)는 카드 왼쪽 위에 절반 겹쳐 떠 있도록 `position:absolute`로 올렸다. 사용자 요청대로 풀기 버튼은 기존 금색 그라데이션(`linear-gradient(180deg,T.brass,#A8842F)`)을 그대로 유지했다. "오늘 하루 다시 보지 않기" 체크박스와 퀘스트 미완료 안내 문구는 카드 하단에 그대로 남겼다.
+
+**버그 수정 — 일일 퍼즐 캐러셀 클릭이 여전히 안 되던 문제(진짜 원인, 3)**
+앞서 두 차례(scrollBehavior:smooth 제거, 클릭 임계값 확대, wasDragRef로 죽은 코드 수정) 손봤는데도 사용자가 재현했다. 남은 원인은 `setPointerCapture` 자체였다 — 이 드래그 스크롤은 애초에 "컴퓨터 환경에서 마우스로"라는 요청에서 시작됐는데, 구현이 포인터 타입을 구분하지 않고 터치에도 똑같이 걸려 있었다. 일부 모바일 브라우저는 조상 요소가 포인터를 캡처한 상태로 pointerup을 맞으면 그 직후의 click 합성 자체를 건너뛰는 경우가 있어(이동이 전혀 없는 순수한 탭에서도), 실제 사용 환경(모바일)에서는 클릭이 원천적으로 죽어 있었던 것으로 보인다. `onPointerDown`/`onPointerMove`에 `e.pointerType !== "mouse"` 가드를 추가해 커스텀 드래그·포인터 캡처를 마우스 전용으로 좁히고, 컨테이너의 `touchAction: "pan-y"`(가로는 커스텀 드래그가 처리한다는 전제로 막아 뒀던 값)도 지정하지 않도록(기본값 `auto`) 되돌려 터치는 브라우저 기본 스크롤+click을 그대로 쓰도록 했다(스냅은 `scroll-snap-type`이 계속 담당). 원래 요청 범위(데스크톱 마우스)와도 정확히 일치하는 수정이다.
+
 ### OpenChess v0.2.6 — 2026/7/28
 
 **버그 수정 — 게임 리뷰(/review) 페이지 흰 화면**
