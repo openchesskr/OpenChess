@@ -3194,7 +3194,11 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
 // 다른 화면(학습 탭 등)에는 항상 undefined라 아무 영향이 없다.
 // (버그 수정) hintPathProgress(0~1) — 경로 칸이 목적지에 얼마나 가까운지를 나타내, 그 칸의
 // 그라데이션 오버레이 농도(opacity)를 정한다. 넘기지 않으면 항상 옅은 농도로 표시된다.
-const HINT_GOLD_GRADIENT = "radial-gradient(circle at 50% 50%, rgba(255,224,153,.95) 0%, rgba(196,154,80,.6) 60%, rgba(196,154,80,.15) 100%)";
+// (v0.2.7 버그 수정) 예전엔 radial-gradient(circle...)라 칸 모서리는 15% 농도까지 옅어져 정사각형
+// 칸 안에 둥근 빛 덩어리 하나만 떠 있는 것처럼(원 모양) 보였다 — 칸 전체를 고르게 채우는 진한
+// 금색 대각선 그라데이션으로 바꾸고, 아래 HINT_GOLD_GLOW(외곽 발광 box-shadow)를 더해 훨씬 강하게 빛나 보이게 한다.
+const HINT_GOLD_GRADIENT = "linear-gradient(135deg, rgba(255,229,150,.98), rgba(216,163,58,.97))";
+const HINT_GOLD_GLOW = "0 0 16px 5px rgba(255,196,64,.9), inset 0 0 10px rgba(255,255,255,.55)";
 function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
@@ -3258,14 +3262,14 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
                   안 띄었다 — 칸 전체를 금색 그라데이션으로 덧씌워 훨씬 또렷하게 보이도록 했다. 이
                   칸은 힌트가 향하는 최종 목적지이므로 항상 가장 진한 농도(HINT_GOLD_GRADIENT)로 채운다. */}
               {hintTo && hintTo[0] === r && hintTo[1] === c && (
-                <div style={{ position: "absolute", inset: cell * 0.04, borderRadius: 6, background: HINT_GOLD_GRADIENT, animation: "hintSquarePulse 1.1s ease-in-out infinite", pointerEvents: "none", zIndex: 4 }} />
+                <div style={{ position: "absolute", inset: cell * 0.04, borderRadius: 6, background: HINT_GOLD_GRADIENT, boxShadow: HINT_GOLD_GLOW, animation: "hintSquarePulse 1.1s ease-in-out infinite", pointerEvents: "none", zIndex: 4 }} />
               )}
               {/* (버그 수정) 행마법 경로 칸도 작은 원형 점 대신 칸 전체를 금색 그라데이션으로 덧씌우되,
                   목적지 칸에 가까워질수록(hintPathProgress: 0→1) 바깥쪽 div의 opacity로 농도를 점점
                   진하게 만든다 — 경로를 따라갈수록 색이 짙어지며 목적지로 이어지는 느낌을 준다. */}
               {hintPathSq && hintPathSq[0] === r && hintPathSq[1] === c && (
                 <div key={hintPathSq[0] + "," + hintPathSq[1]} style={{ position: "absolute", inset: cell * 0.04, opacity: Math.max(0.35, Math.min(1, hintPathProgress || 0.35)), pointerEvents: "none", zIndex: 5 }}>
-                  <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: HINT_GOLD_GRADIENT, animation: "hintSquarePop .38s ease-out" }} />
+                  <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: HINT_GOLD_GRADIENT, boxShadow: HINT_GOLD_GLOW, animation: "hintSquarePop .38s ease-out" }} />
                 </div>
               )}
               {/* (버그 수정) 움직여야 할 기물이 옆으로 미끄러지듯(translateX) 흔들려 부자연스러웠다 —
@@ -9696,8 +9700,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
               // effect의 evaluate 결과), 별도 등급 판정 없이 바로 "최선의 수" 배지를 붙인다.
               : wrongReply
                 ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
+              // (v0.2.7 버그 수정) 예전엔 hintLevel이 올라갈수록(>=) 이전 단계 애니메이션까지 계속 함께
+              // 남아 있어(3단계에서 도착 칸 반짝임+기물 흔들림+경로 반짝임이 한꺼번에 겹쳐 보였다),
+              // 단계마다 독립된 연출만 보이도록 각 단계를 정확히 그 단계에서만 켠다 — 1단계: 도착
+              // 칸만, 2단계: 기물 흔들림만, 3단계: 기물 흔들림+경로 반짝임(도착 칸 단독 표시는
+              // 3단계에서 경로의 마지막 칸이 대신하므로 끈다).
               : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove}
-                  hintTo={hintLevel >= 1 && hintInfo ? hintInfo.to : null} hintFrom={hintLevel >= 2 && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel >= 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
+                  hintTo={hintLevel === 1 && hintInfo ? hintInfo.to : null} hintFrom={(hintLevel === 2 || hintLevel === 3) && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel === 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
@@ -10360,10 +10369,25 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   // scrollLeft를 옮기는 드래그 스크롤을 추가한다. 손을 뗄 때 가장 가까운 칸으로 스냅시켜, 드래그
   // 도중 프로그램적으로 옮긴 scrollLeft에는 적용되지 않는 CSS scroll-snap을 보정한다. 드래그였다면
   // (moved) 그 자리의 카드가 열리거나 다른 칸으로 다시 스크롤되지 않도록 클릭을 막는다.
+  // (v0.2.7 버그 수정) 위 최초 구현은 실제로는 클릭이 전혀 안 먹는 문제가 있었다 — 원인 두 가지를
+  // 함께 고쳤다: (1) 컨테이너에 scrollBehavior:"smooth"가 걸려 있어, 손 떨림 수준의 1px만 움직여도
+  // el.scrollLeft 대입이 애니메이션으로 처리되면서 손을 떼는 순간까지 카드가 커서 아래에서 계속
+  // 미끄러져, 브라우저가 pointerdown/up 타깃 불일치로 보고 click 자체를 합성하지 않았다 — 이제
+  // scrollLeft는 드래그 중 항상 즉시 반영되고(smooth는 scrollToIndex의 명시적 scrollTo 호출에만
+  // 적용), 실제로 임계값을 넘어 "이동"으로 확정되기 전까지는 scrollLeft를 아예 건드리지 않는다.
+  // (2) 클릭 판정 임계값(3px)이 실제 마우스/터치 클릭에서 흔한 손 떨림보다 작아 진짜 클릭도 자주
+  // 드래그로 오판했다 — 8px로 넉넉히 늘렸다. pointerId를 기억해 두었다가 손을 떼는 순간
+  // releasePointerCapture로 명시적으로 캡처를 풀어, 브라우저가 그 뒤 click을 정상적으로 합성하도록 한다.
+  const DRAG_CLICK_THRESHOLD = 8;
   const dragRef = useRef(null);
+  // (v0.2.7 버그 수정) endDrag(pointerup)는 뒤이어 오는 click보다 항상 먼저 실행되므로, dragRef를
+  // 그 안에서 곧장 null로 비우면 click 시점엔 이미 null이라 "방금 드래그였는지" 판단이 늘 거짓이
+  // 됐다(=드래그 뒤 클릭 차단이 원천적으로 동작하지 않는 죽은 코드였다). click 핸들러가 볼 수 있게
+  // 별도 ref에 "직전 포인터 시퀀스가 실제 드래그였는지"만 남겨 두고, click에서 한 번 소비하고 지운다.
+  const wasDragRef = useRef(false);
   const onPointerDown = (e) => {
     const el = scrollerRef.current;
-    dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false };
+    dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false, pointerId: e.pointerId };
     if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
   };
   const onPointerMove = (e) => {
@@ -10371,16 +10395,19 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     const el = scrollerRef.current;
     if (!d || !el) return;
     const dx = e.clientX - d.x;
-    if (Math.abs(dx) > 3) d.moved = true;
+    if (!d.moved && Math.abs(dx) <= DRAG_CLICK_THRESHOLD) return;   // 임계값 전까지는 손 떨림으로 보고 아예 무시(스크롤도 안 밀림)
+    d.moved = true;
     el.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
   };
-  const endDrag = () => {
+  const endDrag = (e) => {
     const d = dragRef.current;
     const el = scrollerRef.current;
     dragRef.current = null;
+    wasDragRef.current = !!(d && d.moved);
+    if (e && e.currentTarget && e.currentTarget.releasePointerCapture && d) { try { e.currentTarget.releasePointerCapture(d.pointerId); } catch { /* noop */ } }
     if (d && d.moved && el && dates) scrollToIndex(Math.max(0, Math.min(dates.length - 1, Math.round(el.scrollLeft / DAILY_SLOT_W))));
   };
-  const onClickCapture = (e) => { if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); } };
+  const onClickCapture = (e) => { if (wasDragRef.current) { wasDragRef.current = false; e.preventDefault(); e.stopPropagation(); } };
   if (!dates || !dates.length) return null;
   const spacer = Math.max(0, containerW / 2 - DAILY_SLOT_W / 2);
   return (
@@ -10389,7 +10416,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
         <Sparkles size={13} style={{ color: T.brassHi }} />
         <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi }}>일일 퍼즐</span>
       </div>
-      <div ref={scrollerRef} onScroll={onScroll} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", cursor: "grab", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+      <div ref={scrollerRef} onScroll={onScroll} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", cursor: "grab", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
         <div style={{ flex: "0 0 auto", width: spacer }} />
         {dates.map((d, i) => {
           const pz = resolvedMap[d];
@@ -11640,6 +11667,8 @@ const CHANGELOG = [
       "'오늘의 퍼즐'과 '오늘의 퀘스트'라는 이름을 '일일 퍼즐'·'일일 퀘스트'로 통일했어요.",
       "퍼즐 풀이 화면의 수순 모식도에서, 해결한 라인의 가장 마지막 수가 옆의 '라인 N' 표시에 밀려 글자가 잘려 보이던 문제를 고쳤어요.",
       "퍼즐 창을 열면 평가치 막대가 곧바로 살아 움직이며 지금 포지션을 다시 훑어봐요.",
+      "일일 퍼즐 캐러셀에서 카드를 눌러도 반응이 없던 문제를 고쳤어요.",
+      "퍼즐 힌트가 단계별로 겹쳐 보이던 문제를 고쳤어요 — 이제 1단계는 도착 칸만, 2단계는 기물 흔들림만, 3단계는 기물 흔들림과 경로를 따라 칸이 빛나는 연출만 순서대로 독립적으로 보여줘요. 빛나는 칸도 둥글게 보이던 것을 칸 전체를 채우는 더 진한 금빛으로 바꿨어요.",
     ],
   },
   {
