@@ -3192,7 +3192,10 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
 // (v0.2.6 기능) 퍼즐 3단계 힌트용 오버레이 — hintTo(1단계, 도착 칸 반짝임)·hintFrom(2단계, 움직일
 // 기물 흔들림)·hintPathSq(3단계, 행마법 경로를 따라 순서대로 반짝이는 현재 칸)는 Board를 쓰는
 // 다른 화면(학습 탭 등)에는 항상 undefined라 아무 영향이 없다.
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq }) {
+// (버그 수정) hintPathProgress(0~1) — 경로 칸이 목적지에 얼마나 가까운지를 나타내, 그 칸의
+// 그라데이션 오버레이 농도(opacity)를 정한다. 넘기지 않으면 항상 옅은 농도로 표시된다.
+const HINT_GOLD_GRADIENT = "radial-gradient(circle at 50% 50%, rgba(255,224,153,.95) 0%, rgba(196,154,80,.6) 60%, rgba(196,154,80,.15) 100%)";
+function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
   // (v0.2.2 UX#4) 그랜드마스터 보드 스킨에만 주기적으로 지나가는 광택(빛 sweep)을 얹는다.
@@ -3251,16 +3254,24 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               {wrongAt && wrongAt[0] === r && wrongAt[1] === c && (
                 <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
               )}
-              {/* (v0.2.6 기능) 퍼즐 힌트 1단계 — 두어야 할 칸이 계속 은은하게 반짝인다. */}
+              {/* (버그 수정) 두어야 할 칸을 가느다란 윤곽선(inset box-shadow)만으로 표시해 눈에 잘
+                  안 띄었다 — 칸 전체를 금색 그라데이션으로 덧씌워 훨씬 또렷하게 보이도록 했다. 이
+                  칸은 힌트가 향하는 최종 목적지이므로 항상 가장 진한 농도(HINT_GOLD_GRADIENT)로 채운다. */}
               {hintTo && hintTo[0] === r && hintTo[1] === c && (
-                <div style={{ position: "absolute", inset: cell * 0.04, borderRadius: 6, boxShadow: "inset 0 0 0 3px " + T.brass, animation: "hintSquarePulse 1.1s ease-in-out infinite", pointerEvents: "none", zIndex: 4 }} />
+                <div style={{ position: "absolute", inset: cell * 0.04, borderRadius: 6, background: HINT_GOLD_GRADIENT, animation: "hintSquarePulse 1.1s ease-in-out infinite", pointerEvents: "none", zIndex: 4 }} />
               )}
-              {/* (v0.2.6 기능) 퍼즐 힌트 3단계 — 행마법 경로의 지금 차례인 칸이 짧게 반짝인다. */}
+              {/* (버그 수정) 행마법 경로 칸도 작은 원형 점 대신 칸 전체를 금색 그라데이션으로 덧씌우되,
+                  목적지 칸에 가까워질수록(hintPathProgress: 0→1) 바깥쪽 div의 opacity로 농도를 점점
+                  진하게 만든다 — 경로를 따라갈수록 색이 짙어지며 목적지로 이어지는 느낌을 준다. */}
               {hintPathSq && hintPathSq[0] === r && hintPathSq[1] === c && (
-                <div key={hintPathSq[0] + "," + hintPathSq[1]} style={{ position: "absolute", inset: cell * 0.1, borderRadius: "50%", background: "rgba(196,154,80,.6)", animation: "hintSquarePop .38s ease-out", pointerEvents: "none", zIndex: 5 }} />
+                <div key={hintPathSq[0] + "," + hintPathSq[1]} style={{ position: "absolute", inset: cell * 0.04, opacity: Math.max(0.35, Math.min(1, hintPathProgress || 0.35)), pointerEvents: "none", zIndex: 5 }}>
+                  <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: HINT_GOLD_GRADIENT, animation: "hintSquarePop .38s ease-out" }} />
+                </div>
               )}
-              {/* (v0.2.6 기능) 퍼즐 힌트 2·3단계 — 움직여야 할 기물이 좌우로 흔들린다(기존 lineShake 재사용). */}
-              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "lineShake .5s ease-in-out infinite" : "none" }} />}
+              {/* (버그 수정) 움직여야 할 기물이 옆으로 미끄러지듯(translateX) 흔들려 부자연스러웠다 —
+                  마치 기물 윗부분을 손으로 잡고 흔드는 것처럼, 아래쪽(받침)을 축으로 각도만 조금씩
+                  바뀌며 흔들리도록 lineShake(좌우 이동) 대신 새 hintPieceWobble(회전)로 바꿨다. */}
+              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", transformOrigin: "50% 90%", animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />}
             </div>
           );
         }))}
@@ -9361,7 +9372,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // (v0.2.6 개편) expectedSan이 가리키는 기물의 출발·도착 칸과, 3단계에서 순서대로 반짝일 경로.
   const hintInfo = useMemo(() => (expectedSan ? sanSrc(board, stripSuffix(expectedSan), color) : null), [expectedSan, board, color]);
   const hintPath = useMemo(() => (hintInfo ? hintPathSquares(hintInfo.piece, hintInfo.from, hintInfo.to) : []), [hintInfo]);
-  const requestHint = () => { if (userToMove && expectedSan) setHintLevel((l) => Math.min(3, l + 1)); };
+  // (버그 수정) 3단계(꽉 채운 힌트)에 닿으면 버튼이 disabled로 막혀 힌트를 다시 숨길 방법이
+  // 없었다 — 3단계에서 한 번 더 누르면 0으로 되돌려(토글) 원래 상태로 되돌아가게 한다.
+  const requestHint = () => { if (userToMove && expectedSan) setHintLevel((l) => (l >= 3 ? 0 : l + 1)); };
+  // 경로 칸이 목적지에 가까워질수록(1단계 진행률) 그 칸의 금색 그라데이션 농도를 더 진하게.
+  const hintPathProgress = hintPath.length ? (hintStepIdx + 1) / hintPath.length : 0;
   // (v0.2.6 개편) 3단계에서는 경로의 각 칸을 380ms마다 하나씩 순서대로 반짝인다 — hintLevel이 3
   // 미만이거나 힌트가 리셋되면 즉시 멈춘다.
   useEffect(() => {
@@ -9624,7 +9639,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
               : wrongReply
                 ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
               : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove}
-                  hintTo={hintLevel >= 1 && hintInfo ? hintInfo.to : null} hintFrom={hintLevel >= 2 && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel >= 3 && hintPath.length ? hintPath[hintStepIdx] : null} />}
+                  hintTo={hintLevel >= 1 && hintInfo ? hintInfo.to : null} hintFrom={hintLevel >= 2 && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel >= 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
@@ -9632,9 +9647,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             <div style={{ marginTop: 12 }}><EvalBar cp={curNode.ev} width={boardSize} /></div>
             <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
               <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
-              {/* (v0.2.6 개편) 힌트 버튼이 현재 단계(1~3)를 그대로 보여준다 — 3단계에 닿으면 꽉 채운
-                  배경으로 바뀌어 더 이상 다음 단계가 없음을 알린다. */}
-              {userToMove && <button onClick={requestHint} disabled={hintLevel >= 3} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: hintLevel >= 3 ? "linear-gradient(180deg,#F3D57A," + T.brass + ")" : "transparent", color: hintLevel >= 3 ? "#241509" : "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: hintLevel >= 3 ? "default" : "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트{hintLevel > 0 ? " " + hintLevel + "/3" : ""}</button>}
+              {/* (버그 수정) 힌트 버튼이 현재 단계(1~3)를 그대로 보여준다 — 3단계에 닿으면 꽉 채운
+                  배경으로 바뀐다. 예전엔 여기서 disabled로 막혀 힌트를 다시 숨길 방법이 없었다 —
+                  이제 3단계에서도 눌러(토글) 원래(0단계, 힌트 없음) 상태로 되돌릴 수 있다. */}
+              {userToMove && <button onClick={requestHint} className="press" title={hintLevel >= 3 ? "눌러서 힌트 숨기기" : "힌트 보기"} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: hintLevel >= 3 ? "linear-gradient(180deg,#F3D57A," + T.brass + ")" : "transparent", color: hintLevel >= 3 ? "#241509" : "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트{hintLevel > 0 ? " " + hintLevel + "/3" : ""}</button>}
             </div>
           </div>
           <div style={{ width: "50%", boxSizing: "border-box", paddingLeft: 3 }}>
@@ -10451,10 +10467,14 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               ))}
             </div>}
             {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
+              {/* (버그 수정) 미해결 목록과 달리 그리드(줄바꿈)로 나열돼 오프닝 하나가 여러 줄을
+                  차지했다 — 미해결 목록과 똑같이 오프닝별 점선 상자 안에서 한 줄로만(가로 스크롤) 표시한다. */}
               {clearedByOpening.map(([op, list]) => (
                 <div key={op} style={{ marginBottom: 12, border: "1.5px dashed rgba(120,168,90,.45)", borderRadius: 14, padding: "8px 8px 10px" }}>
                   <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 4 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}><AnimatePresence mode="popLayout">{list.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence></div>
+                  <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+                    <AnimatePresence mode="popLayout">{list.map((p, i) => <FadeIn key={p.id} index={i} style={{ width: 168, minWidth: 168, flexShrink: 0 }}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence>
+                  </div>
                 </div>
               ))}
             </div>}
@@ -11512,6 +11532,8 @@ const CHANGELOG = [
       "레이팅 변동 그래프의 '전체' 모드 아래 색칠이 조금 더 반투명해졌고, 범례 글자를 줄여 항상 한 줄에 다 들어가도록 했어요. 그래프를 끌 때 뜨는 말풍선이 화살표 모양 마커나 점선을 가리지 않도록 옆으로 살짝 비켜 뜨고, 손을 떼면 크로스헤어가 바로 사라져요.",
       "대국이 아주 많은 계정에서 특정 시간 규정(예: 불릿) 그래프가 계속 안 그려지던 문제를 더 고쳤어요 — 달(月)별 기록을 여러 개씩 한꺼번에 받아오도록 해 최근 데이터가 훨씬 빨리 채워지고, 아직 다 받아오는 중일 땐 '대국이 없다'는 문구 대신 '불러오는 중'이라고 알려줘요.",
       "'가장 많이 둔 오프닝'의 백/흑 배지가 서로 다른 n(예: 백 1수 vs 흑 5수)을 동시에 보여주던 문제를 고쳤어요 — 이제 두 배지는 항상 같은 n을 함께 보여줘요.",
+      "퍼즐 탭의 해결 완료 목록도 미해결 목록처럼 오프닝별로 한 줄에 담아 옆으로 스크롤해서 볼 수 있어요.",
+      "퍼즐 힌트 애니메이션을 다듬었어요 — 기물이 옆으로 흔들리던 것을 윗부분을 잡고 흔드는 것처럼 각도가 바뀌며 흔들리도록 바꿨고, 두어야 할 칸과 이동 경로 칸은 윤곽선 대신 금색 그라데이션으로 채워지며 목적지에 가까울수록 색이 진해져요. 3단계에서 힌트 버튼을 한 번 더 누르면 힌트가 사라지고 원래대로 돌아가요.",
     ],
   },
   {
@@ -15118,7 +15140,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
