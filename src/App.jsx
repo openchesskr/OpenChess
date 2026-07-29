@@ -11570,6 +11570,7 @@ const CHANGELOG = [
       "오늘의 퍼즐 화면을 고전 오락실 게임처럼 좌우로 스크롤해서 날짜를 고르는 방식으로 완전히 새로 만들었어요 — 가운데로 스크롤해 고른 날짜의 퍼즐은 크게 보이고, 다른 날짜들은 작고 어둡게 물러나요. 선택된 퍼즐 밑에는 그날 몇 명이 풀었는지도 바로 보여줘요.",
       "오늘의 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
       "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 오늘의 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 오늘의 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
+      "채팅에서 '/puzzle 000000' 명령어로 존재하지 않는 번호를 보내려 하면, 이제 전송 자체가 되지 않고 그 번호의 퍼즐을 찾을 수 없다는 안내가 떠요.",
     ],
   },
   {
@@ -12906,6 +12907,10 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  // (v0.2.7 버그 수정) "/puzzle 000000" 명령어가 존재하지 않는 번호를 그대로 공유 카드로 보내버려,
+  // 받는 쪽에는 빈/깨진 미리보기만 남는 문제가 있었다 — 전송 전 그 번호가 실제로 존재하는지 확인해,
+  // 없으면 전송 자체를 막고 이 메시지로 알려준다.
+  const [cmdError, setCmdError] = useState("");
   // (v0.1.4 기능) 수정 중인 메시지 id — 설정돼 있으면 입력창은 그 메시지 본문을 수정하는 모드로 동작.
   const [editingId, setEditingId] = useState(null);
   // (v0.1.4 기능) 꾹 눌러 연 수정/삭제(또는 전달/삭제) 메뉴가 떠 있는 메시지 id.
@@ -12985,6 +12990,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const onTextChange = (e) => {
     const v = e.target.value;
     setText(v);
+    if (cmdError) setCmdError("");
     if (!typingChanRef.current || editingId != null) return;
     const now = Date.now();
     if (now - lastTypingSentRef.current > 1500) {
@@ -13007,10 +13013,20 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     // 퍼즐을 공유 카드로 보낸다(기존 공유 버튼과 같은 puzzleShareSend 재사용).
     const cmdMatch = body && body.match(/^\/puzzle\s+(?:-num\s+)?(\d{1,7})\s*$/i);
     if (cmdMatch) {
+      setCmdError("");
+      const no = parseInt(cmdMatch[1], 10);
       setSending(true);
-      const ok = await puzzleShareSend(parseInt(cmdMatch[1], 10), myUid, otherUid);
+      // (v0.2.7 버그 수정) 존재하지 않는 퍼즐 번호는 공유 카드로 보낼 수 없다 — 먼저 서버에서
+      // 실제로 그 번호의 퍼즐 데이터가 있는지 확인하고, 없으면 전송을 막는다.
+      const data = puzzlePreviews[no] !== undefined ? puzzlePreviews[no] : await puzzleFetch(no);
+      if (!data) {
+        setSending(false);
+        setCmdError("#" + no + " 번호의 퍼즐을 찾을 수 없어 보낼 수 없어요.");
+        return;
+      }
+      const ok = await puzzleShareSend(no, myUid, otherUid);
       setSending(false);
-      if (ok) { setText(""); load(); }
+      if (ok) { setText(""); load(); } else setCmdError("퍼즐을 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
       return;
     }
     setSending(true);
@@ -13227,6 +13243,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
             ))}
           </div>
         )}
+        {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <div className="flex items-center gap-2">
           <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />

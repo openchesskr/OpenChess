@@ -42,6 +42,12 @@
 **UX — 오늘의 퍼즐 이름을 일반 퍼즐과 통일**
 사용자 요청("현재 사용되는 일일 퍼즐의 명칭을 별도로 두지 말고, 그냥 다른 퍼즐들과 동일하게 표시")에 따라 `resolveDailyPuzzle`이 만드는 퍼즐 객체의 `name` 필드를 `opening + " — 오늘의 퍼즐"`(전용 접미사)에서 일반 퍼즐과 동일한 `puzzleName("punish", setupSans, mistakeSan)`(`"<오프닝 이름>, <수 이름>"` 형식)으로 바꿨다. 이 `name`은 퍼즐 풀이 화면(`PuzzleSolver`)에서 그대로 렌더되므로, 오늘의 퍼즐을 열어도 다른 퍼즐과 구분되지 않는 이름이 보인다. 다만 캐러셀 카드 자체의 "오늘의 퍼즐" 섹션 라벨과 `DailyPuzzleNoticeModal`(알림 팝업)의 `puzzle.opening` 표기는 그대로 유지했다 — 사용자의 요청은 퍼즐의 `name`(정체성 표기)에 한정된 것으로 판단했다.
 
+**시스템 — 퍼즐 데이터·유저 풀이 기록 초기화 SQL**
+사용자 요청으로 저장소 루트에 `reset-puzzles.sql`을 새로 추가했다. `public.puzzles`·`puzzle_likes`·`puzzle_reposts`·`puzzle_solvers`·`puzzle_solve_events` 5개 테이블을 전부 `truncate`하고(테이블 구조·RLS·함수는 그대로 유지), `public.user_progress.progress`(jsonb) 안의 `solved`(푼 퍼즐 id 목록)·`lineSolves`(퍼즐별 풀어낸 라인 태그) 두 필드만 `jsonb_build_object`로 덮어써 초기화한다. XP·코인·칭호·퀘스트 진행도·chat_messages(퍼즐 공유 카드 포함)·친구 관계 등 풀이 기록과 무관한 나머지 진행 상황은 건드리지 않는다 — Supabase 대시보드 SQL Editor에서 개발자가 직접 실행해야 반영되는 일회성 스크립트(다른 `supabase-setup.sql` 관련 파일처럼 앱 코드가 자동으로 실행하지 않음).
+
+**버그 수정 — 존재하지 않는 퍼즐 번호를 채팅 명령어로 보낼 수 있던 문제**
+채팅의 `/puzzle 000000`(또는 `/puzzle -num 000000`) 명령어가 번호 형식만 확인하고 실제로 그 번호의 퍼즐이 존재하는지는 검증하지 않은 채 `puzzleShareSend`를 그대로 호출했다 — 없는 번호를 보내면 받는 쪽 채팅에 내용이 비어 있거나 깨진 퍼즐 공유 카드만 남았다. `ChatPanel.send()`의 명령어 분기에서 `puzzleShareSend` 호출 전에 `puzzleFetch(no)`로 서버에 그 번호의 퍼즐 데이터가 실제로 있는지 먼저 확인하도록 바꿨다(이미 화면에 로드된 적 있는 번호면 기존 `puzzlePreviews` 캐시를 재사용해 중복 조회를 피한다). 데이터가 없으면 전송을 막고 새로 추가한 `cmdError` state로 "#000000 번호의 퍼즐을 찾을 수 없어 보낼 수 없어요."를 입력창 위 명령어 안내 블록 아래에 보여주며, 텍스트를 다시 입력하면 에러가 사라진다.
+
 ### OpenChess v0.2.6 — 2026/7/28
 
 **버그 수정 — 게임 리뷰(/review) 페이지 흰 화면**
