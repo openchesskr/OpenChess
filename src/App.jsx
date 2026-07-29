@@ -4459,9 +4459,79 @@ function AddMasterGameModal({ onClose, onSaved }) {
     </div>
   );
 }
-// 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 오른쪽 칼럼은
-// 집중학습 여부와 무관하게 항상 수 블록 목록을 보여준다(LearnTab에서 분기하지 않음).
-function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze }) {
+// (v0.2.6 버그 수정) 미니보드 하단 콘텐츠(chess.com 통계+마스터 대국 / 다음 수 블록)를 좌우로
+// 드래그하거나 </> 버튼으로 넘기는 2페이지 구성 — 집중학습이 전체화면 오버레이라 다음 수 블록이
+// 화면 아래로 스크롤해도 보이지 않던 문제(특히 모바일)를 해결한다. 휠·트랙패드 스크롤에는 반응하지
+// 않고(overflow가 아니라 transform 기반 캐러셀이라 애초에 스크롤 이벤트를 받지 않음), 오직
+// 드래그와 화살표 버튼으로만 페이지가 넘어간다.
+function FocusBoxPager({ pages }) {
+  const [idx, setIdx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [dragDx, setDragDx] = useState(0);
+  // (버그 수정) flex row(양옆으로 페이지를 늘어놓는 트랙)는 기본적으로 자기 자식 중 가장 키가 큰
+  // 페이지(보통 다음 수 블록 목록)에 맞춰 전체 높이가 정해진다 — 짧은 페이지(chess.com 통계 등)를
+  // 보고 있을 때도 항상 가장 긴 페이지 높이만큼 빈 공간이 아래에 크게 남았다. 각 페이지의 실제
+  // 콘텐츠 높이를 ResizeObserver로 재 두고, 지금 보이는 페이지의 높이로만 바깥 wrapper 높이를
+  // 맞춰(부드러운 트랜지션과 함께) 페이지를 넘길 때마다 자연스럽게 늘었다 줄었다 하게 한다.
+  const [heights, setHeights] = useState([]);
+  const wrapRef = useRef(null);
+  const dragRef = useRef(null);
+  const pageRefs = useRef([]);
+  const n = pages.length;
+  useEffect(() => { setIdx((i) => Math.min(i, n - 1)); }, [n]);
+  useLayoutEffect(() => {
+    const measure = () => setHeights(pageRefs.current.map((el) => (el ? el.offsetHeight : 0)));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    pageRefs.current.forEach((el) => el && ro.observe(el));
+    return () => ro.disconnect();
+  }, [pages, n]);
+  if (n <= 1) return pages[0] || null;
+  const goTo = (i) => setIdx(Math.max(0, Math.min(n - 1, i)));
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX };
+    setDragging(true);
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    if (!dragRef.current) return;
+    setDragDx(e.clientX - dragRef.current.x);
+  };
+  const endDrag = () => {
+    if (dragRef.current) {
+      const w = (wrapRef.current && wrapRef.current.clientWidth) || 300;
+      const threshold = w * 0.16;
+      if (dragDx < -threshold && idx < n - 1) goTo(idx + 1);
+      else if (dragDx > threshold && idx > 0) goTo(idx - 1);
+    }
+    dragRef.current = null;
+    setDragging(false);
+    setDragDx(0);
+  };
+  const activeHeight = heights[idx];
+  return (
+    <div>
+      <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+        style={{ overflow: "hidden", touchAction: "pan-y", cursor: dragging ? "grabbing" : "grab", height: activeHeight != null ? activeHeight : "auto", transition: dragging ? "none" : "height .32s cubic-bezier(.22,.9,.32,1)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", transform: "translateX(calc(" + (-idx * 100) + "% + " + dragDx + "px))", transition: dragging ? "none" : "transform .32s " + "cubic-bezier(.22,.9,.32,1)" }}>
+          {pages.map((p, i) => <div key={i} ref={(el) => { pageRefs.current[i] = el; }} style={{ width: "100%", flexShrink: 0, minWidth: 0 }}>{p}</div>)}
+        </div>
+      </div>
+      <div className="flex items-center justify-center" style={{ gap: 10, marginTop: 8 }}>
+        <button onClick={() => goTo(idx - 1)} disabled={idx === 0} aria-label="이전 페이지" className="press" style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.06)", color: idx === 0 ? "#C9B58C" : T.inkSoft, cursor: idx === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
+        <div className="flex items-center" style={{ gap: 5 }}>
+          {pages.map((_, i) => <span key={i} style={{ width: i === idx ? 16 : 6, height: 5, borderRadius: 999, background: i === idx ? T.brass : "#DCCBA8", transition: "all .25s ease" }} />)}
+        </div>
+        <button onClick={() => goTo(idx + 1)} disabled={idx === n - 1} aria-label="다음 페이지" className="press" style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.06)", color: idx === n - 1 ? "#C9B58C" : T.inkSoft, cursor: idx === n - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
+      </div>
+    </div>
+  );
+}
+// 체스보드 하단(왼쪽 칼럼)에 기존에 쓰던 집중학습 UI를 그대로 배치한다. 미니보드 하단부(chess.com
+// 통계+마스터 대국, 다음 수 블록)는 FocusBoxPager로 2페이지에 나눠 담는다 — 다음 수 블록은
+// nextMovesPanel prop으로 LearnTab에서 미리 만들어 전달받는다(LearnTab 쪽 상태·로직을 그대로 재사용).
+function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel }) {
   if (!fa.active) return null;
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, ownExplain, editing, setEditing, draft, setDraft,
@@ -4476,16 +4546,21 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   const [addGameOpen, setAddGameOpen] = useState(false);   // (v0.2.3 기능) 개발자 마스터 대국 추가 모달
   // (19차 기능2) 이 수([...sans, san])가 실제로 두어진 내 chess.com 대국 — 최근순으로 나열.
   // (버그 보충) 예전엔 최근 8판까지만 잘라 보여줬다 — 이제 전부 가져오고 화면에서 페이지를 넘겨 본다.
+  // (v0.2.6 기능) 프로필 카드의 chess.com 통계와 동일하게, 이 수가 두어진 내 대국 목록도 시간
+  // 규정·진영으로 나눠 볼 수 있게 한다.
+  const [myTimeFilter, setMyTimeFilter] = useState("all");
+  const [myColorFilter, setMyColorFilter] = useState("all");
   const myGames = useMemo(() => {
     if (!chesscom || chesscom.status !== "ready") return [];
     const path = [...sans, san];
-    return chesscom.games
-      .filter((g) => g.moves.length >= path.length && path.every((s, i) => g.moves[i] === s))
-      .sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
-  }, [chesscom && chesscom.games, chesscom && chesscom.status, sans.join(","), san]);
+    let out = chesscom.games.filter((g) => g.moves.length >= path.length && path.every((s, i) => g.moves[i] === s));
+    if (myTimeFilter !== "all") out = out.filter((g) => g.timeClass === myTimeFilter);
+    if (myColorFilter !== "all") out = out.filter((g) => g.color === myColorFilter);
+    return out.sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
+  }, [chesscom && chesscom.games, chesscom && chesscom.status, sans.join(","), san, myTimeFilter, myColorFilter]);
   const MY_GAMES_PAGE_SIZE = 5;
   const [myGamesPage, setMyGamesPage] = useState(0);
-  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san]);
+  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myTimeFilter, myColorFilter]);
   const myGamesPageCount = Math.max(1, Math.ceil(myGames.length / MY_GAMES_PAGE_SIZE));
   const myGamesPageItems = myGames.slice(myGamesPage * MY_GAMES_PAGE_SIZE, myGamesPage * MY_GAMES_PAGE_SIZE + MY_GAMES_PAGE_SIZE);
   // (버그 보충) 레이팅 증감치 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
@@ -4633,9 +4708,30 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           <ol style={{ margin: 0, paddingLeft: 18, color: T.ivory, fontSize: 12.5, lineHeight: 1.7 }}>{punish.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
         </div>
       )}
+      {/* (v0.2.6 버그 수정) 미니보드 하단 콘텐츠를 2페이지로 나눈다 — 1페이지: chess.com 통계+마스터
+          대국(기존과 동일), 2페이지: 다음 수 블록(nextMovesPanel, LearnTab에서 전달). 드래그 또는
+          </> 버튼으로만 넘긴다(휠·스크롤 무반응). */}
+      <FocusBoxPager pages={[
+        <>
       {/* (버그) 내 chess.com 통계를 마스터 대국보다 위에 표시 — 최근 대국 목록 + 전적 요약 통합 블록 */}
       <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><span className="flex items-center" style={{ gap: 6, fontSize: 14, fontWeight: 800, color: T.ink }}><ChesscomLogo height={19} /> 통계</span></div>
+        {/* (v0.2.6 기능) 프로필 카드의 chess.com 통계와 동일하게 시간 규정·진영 선택 박스를 추가 —
+            이 수가 두어진 내 대국 목록을 시간 규정/진영으로 좁혀 볼 수 있다. */}
+        {chesscom && chesscom.status === "ready" && (
+          <div className="flex items-center" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+              {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
+                <button key={k} onClick={() => setMyTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myTimeFilter === k ? T.ebony2 : "transparent", color: myTimeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+              ))}
+            </div>
+            <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+              {[["all", "전체"], ["w", "백"], ["b", "흑"]].map(([k, lab]) => (
+                <button key={k} onClick={() => setMyColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myColorFilter === k ? T.ebony2 : "transparent", color: myColorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+              ))}
+            </div>
+          </div>
+        )}
         {!chesscom || chesscom.status === "idle" ? <p style={{ fontSize: 12, color: T.inkSoft }}>설정 탭에서 chess.com 계정을 연동하면 이 수로 진행된 내 실제 대국과 통계가 표시됩니다.</p>
           : chesscom.status === "loading" ? <p style={{ fontSize: 12, color: T.inkSoft }}>기보를 불러오는 중…</p>
             : chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>
@@ -4663,7 +4759,9 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                               {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                             </div>
                             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                              <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                              {/* (v0.2.6 버그 수정) 이 버튼만 28px로 옆의 리뷰 버튼(BestMoveJumpButton, 30px)과
+                                  크기가 미묘하게 달랐다 — 프로필 카드·마스터 대국 목록과 같은 30px로 통일. */}
+                              <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
                               <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(g)} />
                             </div>
                           </div>
@@ -4762,6 +4860,9 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
         {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 리뷰를 여는 데 실패했습니다. 잠시 후 다시 시도해 주세요.</p>}
       </div>
+        </>,
+        nextMovesPanel,
+      ]} />
       {addGameOpen && <AddMasterGameModal onClose={() => setAddGameOpen(false)} onSaved={onRetryMasterGames} />}
       {showExpl && (
         <div onClick={() => setShowExpl(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
@@ -5735,6 +5836,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 떠 있던 각 수의 확정 등급을 "이 위치 key + 수"로 pin해 두고, 그 수로 도달했을 때(클릭·드래그·엔진
   // 라인·앞으로/되돌리기) 블록과 정확히 같은 아이콘을 쓰게 한다.
   const pinnedKindRef = useRef({});
+  // (v0.2.6 버그 수정) 다음 수 블록(MoveTile)에 뜬 수 키워드(TOP LEVEL/SIDESTEPPING 등)를 그 수를
+  // 실제로 두면 현재 수 블록이 다시 계산해 다른 결과를 보여주는 문제 — MoveTile은 useMergedMoves가
+  // 만든 "지금 포지션의 다음 수" 객체(마스터/Lichess 채택률이 이미 채워져 있음)로 deriveKeywords를
+  // 부르는데, 현재 수 블록은 그 수를 둔 뒤 한 칸 전 포지션을 snapNode(정적 북 데이터, 채택률 필드
+  // 없음)로 다시 조회해 같은 함수를 불러 전혀 다른 입력으로 다른 결과를 냈다. 위 pinnedKindRef와
+  // 똑같은 패턴으로, 블록에 실제로 떴던 키워드 배열(순서까지)을 "이 위치 key + 수"로 pin해 두고
+  // 현재 수 블록은 그 값을 그대로 재사용한다.
+  const pinnedKwRef = useRef({});
   const [showAllNb, setShowAllNb] = useState(false);   // (UX1) 비이론 수 더보기(전체)
   const key = sans.join(" ");
   const board = useMemo(() => boardFromSans(sans), [key]);
@@ -5756,7 +5865,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 엔진 depth가 깊어지며 갱신되므로, 매 변경마다 최신값으로 덮어써 두면 그 수를 두는 시점의 표시가
   // 그대로 pin된다.
   useEffect(() => {
-    moves.forEach((m) => { if (m.kind && m.kind !== "pending") pinnedKindRef.current[key + "|" + stripSuffix(m.san)] = m.kind; });
+    moves.forEach((m) => {
+      if (m.kind && m.kind !== "pending") pinnedKindRef.current[key + "|" + stripSuffix(m.san)] = m.kind;
+      // MoveTile과 완전히 동일한 식으로 계산해(순서·종류까지) pin — 아래 curKws가 그대로 재사용한다.
+      pinnedKwRef.current[key + "|" + stripSuffix(m.san)] = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
+    });
   }, [key, moves]);
   // (20차 UX4) 스크롤이 많이 내려간 상태(예: 깊은 수 블록 클릭)에서 집중 학습에 들어가면, 페이지
   // 스크롤 위치가 그대로 유지되어 미니 보드가 화면 아래로 밀려 하단 탭에 가려 보이는 문제가 있었다 —
@@ -6062,7 +6175,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const curMove = (parentNode && lastSan) ? parentNode.moves.find((mm) => stripSuffix(mm.san) === stripSuffix(lastSan)) : null;
   const curName = (nameOverride(parentKey, lastSan) ?? (curMove ? curMove.name : null));
   const curKind = (lastQ && lastQ.kind && lastQ.kind !== "pending") ? lastQ.kind : (curMove ? (curMove.book ? "book" : "good") : null);
-  const curKws = (curMove && curMove.book) ? deriveKeywords(curMove) : (kwOverride(parentKey, lastSan) || []);   // 비이론 수는 개발자 키워드만
+  // (v0.2.6 버그 수정) snapNode의 curMove는 마스터/Lichess 채택률 필드가 없는 정적 데이터라, 다음 수
+  // 블록(MoveTile)이 이미 그 필드들로 계산해 보여준 키워드와 다시 계산하면 자주 어긋났다 — 블록에
+  // 실제로 떴던 키워드(pinnedKwRef)가 있으면 그걸 그대로 쓰고, 없을 때만(블록을 거치지 않고 바로
+  // 도달한 경우 등) 기존 방식으로 계산한다.
+  const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
+  const curKws = pinnedKw || ((curMove && curMove.book) ? deriveKeywords(curMove) : (kwOverride(parentKey, lastSan) || []));   // 비이론 수는 개발자 키워드만
   const curGames = curMove && curMove.games != null ? curMove.games : null;
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
@@ -6079,6 +6197,61 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   }, [key, liveOn]);
 
   const fa = useFocusAnalysis(focus, { chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
+
+  // (v0.2.6 버그 수정) 예전엔 이 "다음 수" 블록 목록(전체/마스터·채택률순/평가치순 선택 포함)이 항상
+  // 오른쪽 칼럼에 그려져 있었지만, 집중학습(focus)이 켜지면 전체화면 오버레이(position:fixed,inset:0)가
+  // 화면 전체를 덮어 이 칼럼은 실제로는 절대 보이지 않았다(특히 모바일에서 두드러짐 — 미니보드
+  // 아래로 스크롤할 화면 자체가 없다). 이 JSX를 미리 변수로 뽑아 두고, focus가 꺼져 있을 때는 기존
+  // 위치(오른쪽 칼럼)에 그대로 두되, focus가 켜지면 FocusPanel 안(미니보드 하단 페이지 2)으로
+  // 넘겨 실제로 보이게 한다.
+  const nextMovesContent = (
+    <>
+      <div className="flex items-center justify-between flex-wrap" style={{ gap: 10, marginBottom: 10 }}>
+        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3 }} title="통계 범위: 전체 유저 대국 / 마스터 대국만">
+          <button onClick={() => setMode("normal")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: mode === "normal" ? T.ebony2 : "transparent", color: mode === "normal" ? T.brassHi : T.inkSoft }}>전체</button>
+          <button onClick={() => setMode("master")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: mode === "master" ? T.ebony2 : "transparent", color: mode === "master" ? T.brassHi : T.inkSoft }}>마스터</button>
+        </div>
+        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3 }} title="비이론 수 정렬 기준">
+          <button onClick={() => setSortBy("eval")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "eval" ? T.ebony2 : "transparent", color: sortBy === "eval" ? T.brassHi : T.inkSoft }}>평가치순</button>
+          <button onClick={() => setSortBy("adopt")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "adopt" ? T.ebony2 : "transparent", color: sortBy === "adopt" ? T.brassHi : T.inkSoft }}>채택률순</button>
+        </div>
+      </div>
+      {/* (v0.2.0 기능) 엔진이 이 포지션의 후보 수(수 블록)를 계산하는 동안 마스코트 안내를
+          보여준다 — linesPending은 이미 "새 엔진 결과를 기다리는 중"을 정확히 추적하고
+          있던 플래그라 그대로 재사용한다. */}
+      {linesPending && (
+        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+          <Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion="think" size={30} />
+          <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{(ply % 2 === 0 ? "MILKU" : "KOKOA")}가 수를 계산하고 있어요.</span>
+        </div>
+      )}
+      {moves.length === 0 ? (
+        <div style={{ background: T.paper, borderRadius: 12, padding: 16, border: "1px dashed #C9B58C", textAlign: "center" }}>
+          <div style={{ display: "flex", justifyContent: "center" }}><Mascot name="milku" emotion="sleep" size={92} /></div>
+          <p style={{ fontSize: 13, color: T.inkSoft, marginTop: 8 }}>제안된 수가 없어요. 보드에서 직접 두면 그 수가 평가되어 블록으로 추가됩니다.</p>
+        </div>
+      ) : (() => {
+        const bk = moves.filter((m) => m.book);
+        const nb = moves.filter((m) => !m.book);
+        const shownNb = (showAllNb ? nb : nb.slice(0, 3));
+        const shown = [...bk, ...shownNb];
+        return (
+          <>
+            {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
+                React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
+                감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
+            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} /></FadeIn>)}
+            {nb.length > 3 && (
+              <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
+                {showAllNb ? "접기" : "더보기"}
+              </button>
+            )}
+          </>
+        );
+      })()}
+    </>
+  );
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -6137,7 +6310,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />
+              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} />
             </div>
           </div>
         )}
@@ -6227,55 +6400,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         </div>
       </div>
       <div>
-        <div>
-          {/* (UX) 집중학습 중에도 오른쪽 칼럼은 항상 수 블록 목록을 그대로 보여준다 */}
-          <>
-              <div className="flex items-center justify-between flex-wrap" style={{ gap: 10, marginBottom: 10 }}>
-                <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3 }} title="통계 범위: 전체 유저 대국 / 마스터 대국만">
-                  <button onClick={() => setMode("normal")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: mode === "normal" ? T.ebony2 : "transparent", color: mode === "normal" ? T.brassHi : T.inkSoft }}>전체</button>
-                  <button onClick={() => setMode("master")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: mode === "master" ? T.ebony2 : "transparent", color: mode === "master" ? T.brassHi : T.inkSoft }}>마스터</button>
-                </div>
-                <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 3 }} title="비이론 수 정렬 기준">
-                  <button onClick={() => setSortBy("eval")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "eval" ? T.ebony2 : "transparent", color: sortBy === "eval" ? T.brassHi : T.inkSoft }}>평가치순</button>
-                  <button onClick={() => setSortBy("adopt")} className="press" style={{ padding: "6px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: sortBy === "adopt" ? T.ebony2 : "transparent", color: sortBy === "adopt" ? T.brassHi : T.inkSoft }}>채택률순</button>
-                </div>
-              </div>
-              {/* (v0.2.0 기능) 엔진이 이 포지션의 후보 수(수 블록)를 계산하는 동안 마스코트 안내를
-                  보여준다 — linesPending은 이미 "새 엔진 결과를 기다리는 중"을 정확히 추적하고
-                  있던 플래그라 그대로 재사용한다. */}
-              {linesPending && (
-                <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-                  <Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion="think" size={30} />
-                  <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{(ply % 2 === 0 ? "MILKU" : "KOKOA")}가 수를 계산하고 있어요.</span>
-                </div>
-              )}
-              {moves.length === 0 ? (
-                <div style={{ background: T.paper, borderRadius: 12, padding: 16, border: "1px dashed #C9B58C", textAlign: "center" }}>
-                  <div style={{ display: "flex", justifyContent: "center" }}><Mascot name="milku" emotion="sleep" size={92} /></div>
-                  <p style={{ fontSize: 13, color: T.inkSoft, marginTop: 8 }}>제안된 수가 없어요. 보드에서 직접 두면 그 수가 평가되어 블록으로 추가됩니다.</p>
-                </div>
-              ) : (() => {
-                const bk = moves.filter((m) => m.book);
-                const nb = moves.filter((m) => !m.book);
-                const shownNb = (showAllNb ? nb : nb.slice(0, 3));
-                const shown = [...bk, ...shownNb];
-                return (
-                  <>
-                    {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
-                        React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
-                        감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
-                    {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} /></FadeIn>)}
-                    {nb.length > 3 && (
-                      <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-                        <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
-                        {showAllNb ? "접기" : "더보기"}
-                      </button>
-                    )}
-                  </>
-                );
-              })()}
-          </>
-        </div>
+        {/* (v0.2.6 버그 수정) 집중학습(focus) 중엔 이 오른쪽 칼럼이 전체화면 오버레이에 완전히 가려
+            보이지 않았다 — nextMovesContent를 FocusPanel 안(미니보드 하단 페이지 2)으로 넘겨 거기서
+            보여주므로, 여기서는 focus가 꺼져 있을 때만 렌더링해 중복 렌더를 피한다. */}
+        <div>{!focus && nextMovesContent}</div>
       </div>
     </div>
   );
@@ -11162,6 +11290,9 @@ const CHANGELOG = [
       "'자주 두는 첫 수'가 백/흑 두 박스가 나란히 놓인 모습으로 바뀌었어요 — 왼쪽엔 자주 두는 첫 수(백), 오른쪽엔 백의 각 첫 수에 대한 흑의 응수를 한눈에 볼 수 있어요. 프로필의 '통계' 헤더 문구도 더 짧아졌어요.",
       "레이팅 변동 그래프에 축·눈금선이 생기고, 그래프 아래가 은은하게 채워져요. 최근 1주/1달/6개월/1년 중 원하는 기간을 골라 볼 수 있어요. '전체'로 두면 래피드·블리츠·불릿 세 그래프를 색으로 구분해 한 화면에서 볼 수 있어요.",
       "학습 탭에서 같은 자리에 머물러 있어도 엔진이 상위 몇 수의 순위를 다시 매길 때마다 그 줄이 빈칸으로 돌아갔다 다시 써지길 반복하던 진짜 원인을 찾아 고쳤어요 — 이제 순위가 바뀌어도 이어서 자연스럽게 이어져요.",
+      "다음 수 블록에 뜬 키워드(TOP LEVEL 등)와, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 키워드가 서로 다르게 보이던 문제를 고쳤어요 — 이제 항상 똑같이 보여요.",
+      "집중학습의 '이 수가 두어진 내 대국' 목록에도 시간 규정·진영 선택 박스가 생겼어요. 대국 보기·리뷰 버튼 크기도 통일했어요.",
+      "모바일에서 집중학습에 들어가면 다음 수 블록 목록이 화면 밖으로 밀려 보이지 않던 문제를 고쳤어요 — 이제 미니보드 아래를 옆으로 넘기면(드래그 또는 ‹/› 버튼) 1페이지엔 chess.com 통계·마스터 대국이, 2페이지엔 다음 수 블록이 나와요.",
       "레이팅 변동 그래프가 흑/백 필터에 영향받지 않도록 고쳤어요 — 레이팅은 어느 색으로 두든 합산되니까요. '가장 많이 둔 오프닝'에 몇 번째로 많이 둔 오프닝인지 보여주는 '백 n수'/'흑 n수' 표시를 되살렸고, 오프닝 이름 글자를 조금 줄여 긴 이름도 잘리지 않게 했어요. '자주 두는 첫 수'의 흑 응수 목록도 한 줄에 두 개씩 담아 더 짧고 좁게 보여줘요.",
     ],
   },
