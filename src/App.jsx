@@ -2916,12 +2916,20 @@ function dedupeEngineLines(list) {
 // 화면 밖으로 밀려나 버렸다. 더 이상 타이핑에 맞춰 자동으로 스크롤을 옮기지 않고 항상 왼쪽 끝(=
 // 다음 수)에 고정해 둔다 — 뒷부분을 보고 싶으면 사용자가 직접 끌어서 보면 된다(더 있으면 오른쪽에
 // 옅은 그라데이션 페이드로 알려줌).
-function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst }) {
+// (v0.2.6 버그 수정) 예전엔 이 컴포넌트를 그 줄의 첫 수(lineKey)로 키를 잡아, 탐색 depth가 깊어지며
+// MultiPV 순위가 바뀔 때마다(포지션은 그대로인데 특정 자리에 다른 수순이 들어옴) React가 이 자리를
+// 통째로 언마운트·재마운트했다 — 안의 TypedMoveLine도 함께 다시 만들어져 shown이 0으로 리셋되며
+// 화면이 잠깐 완전히 비었다 다시 타이핑되길 반복했다(포지션은 안 바뀌었는데도 특정 줄이 계속
+// 빈칸↔부분 타이핑을 오가며 "끝까지 안 써지는" 것처럼 보인 진짜 원인). 이제 이 자리(슬롯 번호,
+// 포지션이 바뀌지 않는 한 항상 같음)로 키를 잡아, 순위가 바뀌어 다른 수순이 들어와도 같은 컴포넌트
+// 인스턴스가 그대로 유지된다 — 안의 TypedMoveLine도 재마운트되지 않으므로 shown이 리셋되지 않고,
+// 새 수순의 길이만큼 자연스럽게 이어서(또는 이미 더 길게 타이핑돼 있었다면 그대로) 표시된다.
+function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   const dragRef = useRef(null);
   const [showFade, setShowFade] = useState(false);
-  const identity = posKeyBase + ":" + lineKey;
+  const identity = posKeyBase + ":" + slotIdx;
   const recompute = () => {
     const outer = outerRef.current, inner = innerRef.current;
     if (!outer || !inner) return;
@@ -2963,7 +2971,7 @@ function EngineLineRow({ l, startPly, lineKey, posKeyBase, pending, onPlayFirst 
       <EvalBadge ev={l.ev} small />
       <div ref={outerRef} onScroll={recompute} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none" }}>
         <span ref={innerRef} style={{ display: "inline-block" }}>
-          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + lineKey} />
+          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + slotIdx} />
         </span>
       </div>
       {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 18, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,.9))", borderRadius: "0 6px 6px 0" }} />}
@@ -2991,15 +2999,16 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
       {hasLines
         ? <>
           {lines.map((l, i) => {
-            // (v0.2.4 버그 수정) 예전엔 배열 인덱스(i)로 key/posKey를 잡아, MultiPV 순위가 뒤바뀌면
-            // (탐색 depth가 깊어지며 흔히 일어남) 같은 자리(i)에 완전히 다른 수순이 들어와도 그
-            // 자리의 TypedMoveLine이 재사용돼(React reconciliation) 이전 수순만큼 이미 진행된 shown
-            // 값을 그대로 물려받았다 — 새 수순이 그보다 짧으면 shown>=length라 타이핑이 그 자리에서
-            // 바로 멈춘 것처럼 보였다. 수순의 정체성(첫 수)으로 key를 잡아, 순위가 바뀌어도 각 수순이
-            // 자기 자신의 타이핑 진행 상태를 계속 이어가게 한다.
-            const lineKey = (l.sans && l.sans[0]) || i;
+            // (v0.2.4 버그 수정, v0.2.6에서 슬롯 기반으로 재수정) 한때는 이 자리를 그 줄의 첫 수로
+            // 키를 잡았었다(MultiPV 순위가 바뀌면 배열 인덱스만으로는 완전히 다른 수순이 같은 자리에
+            // 재사용되며 이전 타이핑 진행 상태를 잘못 물려받는 문제가 있었기 때문). 그런데 첫 수로
+            // 키를 잡으면 반대로, 순위가 바뀔 때마다(포지션은 그대로인데도) 이 자리 전체가
+            // 언마운트·재마운트돼 타이핑이 처음부터 다시 시작되며 화면이 잠깐 비어 보이는 문제가
+            // 있었다(EngineLineRow 위 주석 참고) — 배열 인덱스(슬롯 번호)로 다시 돌아가되, 대신
+            // TypedMoveLine의 타이핑 진행 상태가 슬롯이 아니라 "포지션"에만 반응하도록 posKey를
+            // 구성해(EngineLineRow 참고) 두 문제를 모두 피한다.
             return (
-              <EngineLineRow key={lineKey} l={l} startPly={sans.length} lineKey={lineKey} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
+              <EngineLineRow key={i} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
             );
           })}
           {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
@@ -10697,19 +10706,72 @@ const RATING_CHART_PERIODS = [
   { key: "180d", label: "6개월", days: 182 },
   { key: "365d", label: "1년", days: 365 },
 ];
-function RatingHistoryChart({ games }) {
+// (v0.2.6 버그 수정) 위 시간 규정 필터가 "전체"일 때 이 그래프가 래피드/블리츠/불릿 대국을 시간순으로
+// 그냥 한 줄에 뒤섞어 그리고 있었다 — 세 시간 규정은 레이팅 체계 자체가 서로 달라(보통 래피드>블리츠>
+// 불릿 순으로 값 자체가 다름) 뒤섞은 선은 오르내림이 실제 실력 변화가 아니라 그날 어떤 시간 규정을
+// 뒀는지에 따라 요동치는, 사실상 의미 없는 그래프였다. "전체"일 때는 세 시간 규정을 각자 다른 색의
+// 선으로 같은 그래프 위에 겹쳐 그리고 범례를 달아 구분하고(대국이 2판 이상 있는 시간 규정만), 특정
+// 시간 규정 하나로 좁혀져 있을 때는 기존처럼 그 하나만 선 아래 영역 채우기와 함께 보여준다.
+const TIME_CLASS_CHART_COLOR = { rapid: T.brassHi, blitz: T.only, bullet: "#C8453B" };
+function RatingHistoryChart({ games, timeFilter }) {
   const allPoints = useMemo(() => [...games].filter((g) => g.rating != null && g.endTime).sort((a, b) => (a.endTime || 0) - (b.endTime || 0)), [games]);
   const [period, setPeriod] = useState("180d");
   if (!allPoints.length) return null;
   const periodDef = RATING_CHART_PERIODS.find((p) => p.key === period) || RATING_CHART_PERIODS[2];
   const cutoff = Date.now() / 1000 - periodDef.days * 86400;
-  const points = allPoints.filter((g) => g.endTime >= cutoff);
+  const inPeriod = allPoints.filter((g) => g.endTime >= cutoff);
   const W = 320, H = 120, padL = 32, padR = 6, padT = 8, padB = 16;
   const plotW = W - padL - padR, plotH = H - padT - padB;
+  const fmtAxisDate = (t) => { const dt = new Date(t * 1000); return (dt.getMonth() + 1) + "/" + dt.getDate(); };
+  const isAll = timeFilter === "all";
   let body;
-  if (points.length < 2) {
+  if (isAll) {
+    const series = ["rapid", "blitz", "bullet"].map((k) => ({ key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: inPeriod.filter((g) => g.timeClass === k) })).filter((s) => s.points.length >= 2);
+    if (!series.length) {
+      body = <div style={{ height: H - 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>이 기간엔 대국이 부족해요.</div>;
+    } else {
+      const allRatings = series.flatMap((s) => s.points.map((g) => g.rating));
+      const min = Math.min(...allRatings), max = Math.max(...allRatings);
+      const span = Math.max(1, max - min);
+      const mid = Math.round((min + max) / 2);
+      const allTimes = series.flatMap((s) => s.points.map((g) => g.endTime));
+      const tMin = Math.min(...allTimes), tMax = Math.max(...allTimes);
+      const tSpan = Math.max(1, tMax - tMin);
+      const xAt = (t) => padL + ((t - tMin) / tSpan) * plotW;
+      const yAt = (r) => padT + plotH - ((r - min) / span) * plotH;
+      body = (
+        <>
+          {/* 범례 — 시간 규정별 색상 점 + 첫 레이팅→마지막 레이팅 */}
+          <div className="flex items-center" style={{ gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+            {series.map((s) => (
+              <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 700 }}>
+                <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: s.color, display: "inline-block" }} />
+                <b style={{ color: T.ink }}>{s.label}</b> {s.points[0].rating}→{s.points[s.points.length - 1].rating}
+              </span>
+            ))}
+          </div>
+          <svg viewBox={"0 0 " + W + " " + H} width="100%" height={H - 20}>
+            {[min, mid, max].map((r, i) => (
+              <g key={i}>
+                <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(0,0,0,.08)" strokeWidth={1} />
+                <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill={T.inkSoft}>{r}</text>
+              </g>
+            ))}
+            <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(0,0,0,.28)" strokeWidth={1} />
+            <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(0,0,0,.28)" strokeWidth={1} />
+            {series.map((s) => (
+              <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+            ))}
+            <text x={xAt(tMin)} y={H - 6} fontSize={8} textAnchor="start" fill={T.inkSoft}>{fmtAxisDate(tMin)}</text>
+            <text x={xAt(tMax)} y={H - 6} fontSize={8} textAnchor="end" fill={T.inkSoft}>{fmtAxisDate(tMax)}</text>
+          </svg>
+        </>
+      );
+    }
+  } else if (inPeriod.length < 2) {
     body = <div style={{ height: H - 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>이 기간엔 대국이 부족해요.</div>;
   } else {
+    const points = inPeriod;
     const ratings = points.map((g) => g.rating);
     const min = Math.min(...ratings), max = Math.max(...ratings);
     const span = Math.max(1, max - min);
@@ -10721,7 +10783,6 @@ function RatingHistoryChart({ games }) {
     const first = points[0].rating, last = points[points.length - 1].rating;
     const rising = last >= first;
     const lineColor = rising ? T.best : T.blunder;
-    const fmtAxisDate = (t) => { const dt = new Date(t * 1000); return (dt.getMonth() + 1) + "/" + dt.getDate(); };
     body = (
       <>
         <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
@@ -10906,7 +10967,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         </div>
       )}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
-      <RatingHistoryChart games={games} />
+      <RatingHistoryChart games={games} timeFilter={timeFilter} />
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
@@ -11085,7 +11146,8 @@ const CHANGELOG = [
       "채팅에서 연속으로 온 상대 메시지 묶음 첫 줄에 프로필 사진이 보이고 눌러서 프로필로 이동할 수 있어요. '@사용자명' 멘션은 굵게 표시되고 누르면 그 사람 프로필로 이동해요. 입력 중 표시는 더 옅게 보이고, '/'를 입력하면 명령어 자동완성이 떠요 — '/puzzle 000000'으로 원하는 퍼즐을 바로 공유할 수 있어요.",
       "chess.com 통계를 시간 규정뿐 아니라 흑/백으로도 나눠 볼 수 있게 됐어요. '전체 기간 전적'과 '최근 대국' 사이에 기간별 레이팅 변동 그래프가 추가됐어요.",
       "'자주 두는 첫 수'가 백/흑 두 박스가 나란히 놓인 모습으로 바뀌었어요 — 왼쪽엔 자주 두는 첫 수(백), 오른쪽엔 백의 각 첫 수에 대한 흑의 응수를 한눈에 볼 수 있어요. 프로필의 '통계' 헤더 문구도 더 짧아졌어요.",
-      "레이팅 변동 그래프에 축·눈금선이 생기고, 그래프 아래가 은은하게 채워져요. 최근 1주/1달/6개월/1년 중 원하는 기간을 골라 볼 수 있어요.",
+      "레이팅 변동 그래프에 축·눈금선이 생기고, 그래프 아래가 은은하게 채워져요. 최근 1주/1달/6개월/1년 중 원하는 기간을 골라 볼 수 있어요. '전체'로 두면 래피드·블리츠·불릿 세 그래프를 색으로 구분해 한 화면에서 볼 수 있어요.",
+      "학습 탭에서 같은 자리에 머물러 있어도 엔진이 상위 몇 수의 순위를 다시 매길 때마다 그 줄이 빈칸으로 돌아갔다 다시 써지길 반복하던 진짜 원인을 찾아 고쳤어요 — 이제 순위가 바뀌어도 이어서 자연스럽게 이어져요.",
     ],
   },
   {
