@@ -4184,6 +4184,17 @@ function sacrificedPieceKor(sans, san) {
   if (best) return PIECE_KOR[best];
   return mover ? PIECE_KOR[mover.t] : null;
 }
+// (기능) 탁월한 수 코멘트 보강 — 새 엔진 호출 없이, 브릴리언트 화살표(brilliantArrows)가 이미
+// 계산해 둔 "idea" 화살표(희생한 기물이 새 자리에서 다음으로 노릴 수 있는 상대 기물)를 문장으로
+// 바꾼다. "무엇을 희생했는지"(sacrificedPieceKor)에 이어 "그래서 무엇을 얻는지"까지 붙여준다.
+function brilliantIdeaNote(sansBeforeMove, san) {
+  const ideas = brilliantArrows(sansBeforeMove, san).filter((a) => a.kind === "idea");
+  if (!ideas.length) return null;
+  const after = boardFromSans([...sansBeforeMove, san]);
+  const target = after[ideas[0].to[0]][ideas[0].to[1]];
+  if (!target) return null;
+  return "이 자리에서 다음에 상대 " + PIECE_KOR[target.t] + "를 노릴 수 있어요.";
+}
 
 /* ============================================================ 자체 포지션 평가 AI (FEN·PGN 결합) ============================================================
    Stockfish 기반 수 등급 판정(brilliant~blunder)은 그대로 유지한다 — 이 평가 체계는 그 등급을
@@ -4276,6 +4287,24 @@ async function punishmentFacts(engine, sansAfterMove, plies = 2) {
   if (!engine || typeof engine.evaluate !== "function") return [];
   try { return await genPunishLine(engine, sansAfterMove, plies); } catch { return []; }
 }
+// (기능) "유일한 수" 코멘트 보강 — "다른 수는 안 돼요"라고만 말하면 설명력이 없어, 실제 2순위
+// 후보를 뒀다면 상대가 어떻게 응징하는지까지 보여준다. 2순위 수의 UCI 자체는 analyzeGame의
+// posEval에 저장돼 있지 않아(cp만 보존) 새로 MultiPV-2 평가가 필요하지만, 그다음 응징 라인은
+// 새 로직을 만들지 않고 punishmentFacts와 똑같이 genPunishLine을 재사용한다.
+async function onlyMoveRefutation(engine, sansBeforeMove, plies = 2) {
+  if (!engine || typeof engine.evaluateMulti !== "function") return null;
+  try {
+    const color = sansBeforeMove.length % 2 === 0 ? "w" : "b";
+    const lines = await engine.evaluateMulti(sansToFen(sansBeforeMove), 14, 2, 900);
+    const second = lines && lines[1];
+    if (!second || !second.uci) return null;
+    const altSan = uciToSan(boardFromSans(sansBeforeMove), second.uci, color);
+    if (!altSan) return null;
+    const continuation = await genPunishLine(engine, [...sansBeforeMove, altSan], plies);
+    if (!continuation.length) return null;
+    return { altSan: stripSuffix(altSan), continuation };
+  } catch { return null; }
+}
 // 위 세 갈래(FEN 긴장·PGN 발전도·캐슬링 권리) 중 엔진 없이 즉시 알 수 있는 사실만 문장 후보로
 // 만든다 — 응징 수순(punishmentFacts)은 비동기라 여기 포함하지 않고, 필요한 호출부(ReviewCoachCard)가
 // 따로 이어 붙인다. 가장 눈에 띄는 사실 한둘만 골라 코멘트가 장황해지지 않게 한다.
@@ -4292,13 +4321,17 @@ function positionInsightFacts(board, sans, color) {
 }
 
 /* ============================================================ MEC — Move Evaluation Codification (오프닝 원칙 코드화) ============================================================
-   사용자가 정리해 준 체스 오프닝 원칙 20개 중 코드로 명확히 판정 가능한 것들을 규칙화해, 위
-   positionInsightFacts와 같은 자리에서 MILKU·KOKOA 코멘트에 근거로 붙인다. Stockfish 등급·위
-   포지션 평가 AI(기물 긴장 등)와 마찬가지로 그 등급 자체를 바꾸지 않는 순수 보조 신호다. 오프닝
-   구간(MEC_OPENING_PLY_LIMIT 이전)에서만 작동한다 — 미들게임·엔드게임 포지션에는 원칙이 적용되지
-   않는다는 원칙 20("늘 예외를 생각하고 필요할 때는 원칙을 어기라")도 이런 식으로 반영했다. 판정이
-   모호하거나(예: 상대 캐슬링 방해, 공격 전 중앙 장악, 폰 구조 숙지) 사실상 자연어 판단이 필요한
-   원칙은 신뢰할 수 없는 오탐을 만들 바에 아예 코드화하지 않고 뺐다.
+   사용자가 정리해 준 체스 오프닝 원칙 20개 중 코드로 명확히 판정 가능한 것들을 규칙화한 것 —
+   Stockfish 등급·위 포지션 평가 AI와 마찬가지로 그 등급 자체를 바꾸지 않는 순수 보조 신호다. 오프닝
+   구간(MEC_OPENING_PLY_LIMIT 이전)에서만 작동한다.
+   (범위 축소) 처음엔 모든 수 등급에 붙였는데, 수십 년 검증된 정석 수(book)까지 얕은 휴리스틱으로
+   재단하는 건 과한 참견이라는 지적에 따라, 지금은 오직 블런더에서만("무엇이 실제 원인이었는지"
+   설명하는 용도로) 쓴다 — 최선·이론 등 다른 등급에는 아예 붙이지 않는다. 그래서 각 사실에
+   causal(전술적으로 손해와 직결되는 원인인지) 여부를 함께 매겨, 블런더 코멘트에는 causal한 사실만
+   추려 쓴다(예: "아직 캐슬링 안 함"처럼 일반적인 조언은 causal:false — 방금 둔 블런더의 원인이
+   아니라 우연히 같이 참인 사실일 뿐이므로 코멘트에서 제외한다).
+   판정이 모호하거나(예: 상대 캐슬링 방해, 공격 전 중앙 장악, 폰 구조 숙지) 사실상 자연어 판단이
+   필요한 원칙은 신뢰할 수 없는 오탐을 만들 바에 아예 코드화하지 않고 뺐다.
 */
 const MEC_OPENING_PLY_LIMIT = 24; // 한 진영 기준 12수 안팎 — 이 구간을 넘으면 오프닝 원칙 판정을 멈춘다.
 function hasCastledBy(sans, color) {
@@ -4319,72 +4352,65 @@ function mecFacts(sansBeforeMove, san, color) {
   const movedId = fromKey ? grid[fromKey] : null;
   const priorMoves = movedId ? (counts[movedId] || 0) : 0;
   const isFirstMoveOfThisPiece = priorMoves === 0;
-  // 원칙 2: 비숍보다 나이트를 먼저 전개하라 — 이 수가 그 비숍의 첫 전개인데 아직 홈스퀘어에 남은
-  // 나이트가 있다면 위반.
+  // 원칙 2: 비숍보다 나이트를 먼저 전개하라(스타일 조언, causal:false).
   if (!info.castle && info.piece === "B" && isFirstMoveOfThisPiece && undevelopedMinors(sansBeforeMove, color).includes("N")) {
-    facts.push("나이트를 비숍보다 먼저 전개하는 게 오프닝 원칙이에요.");
+    facts.push({ text: "나이트를 비숍보다 먼저 전개하는 게 오프닝 원칙이에요.", causal: false });
   }
-  // 원칙 3: 오프닝에서 같은 기물을 두 번 움직이지 말라 — 상대의 실제 위협(잡히는 상태) 때문에
-  // 어쩔 수 없이 물러나거나, 잡는 수라면 예외로 둔다.
+  // 원칙 3: 오프닝에서 같은 기물을 두 번 움직이지 말라(causal:true — 위협 때문에 물러나거나 잡는
+  // 수는 예외). 재이동 자체가 템포를 까먹어 다른 기물이 걸리는 등 손해로 바로 이어지기 쉽다.
   if (!info.castle && info.piece !== "P" && info.piece !== "K" && priorMoves >= 1 && !info.isCap) {
     const wasThreatened = seeSquare(board, info.from[0], info.from[1], enemy) > 0;
-    if (!wasThreatened) facts.push("오프닝에서는 같은 기물을 두 번 움직이지 않는 게 원칙이에요 — 다른 기물의 전개가 그만큼 늦어져요.");
+    if (!wasThreatened) facts.push({ text: "같은 기물을 오프닝에서 두 번 움직이며 다른 기물의 전개를 늦춘 게 손해로 이어졌어요.", causal: true });
   }
-  // 원칙 4: 불필요한 폰 이동 금지 — 폰은 되돌릴 수 없다. 룩폰(a·h)이 아직 발전 안 한 기물이 남은
-  // 채로 움직이면 성급한 폰 수로 본다(중앙·피앙케토 등 흔한 이론 수는 대상에서 뺀다).
+  // 원칙 4: 불필요한 폰 이동 금지(스타일 조언, causal:false).
   if (info.piece === "P" && !info.isCap && (FILES[info.to[1]] === "a" || FILES[info.to[1]] === "h") && undevelopedMinors(sansBeforeMove, color).length > 0) {
-    facts.push("당장 필요하지 않은 폰 수보다 기물 전개를 먼저 하는 게 좋아요 — 폰은 한번 두면 되돌릴 수 없어요.");
+    facts.push({ text: "당장 필요하지 않은 폰 수보다 기물 전개를 먼저 하는 게 좋아요 — 폰은 한번 두면 되돌릴 수 없어요.", causal: false });
   }
-  // 원칙 5: 필요하지 않다면 체크하지 말라 — 잡는 수도 메이트도 아닌 체크는 대개 상대의 응수를
-  // 도와줄 뿐인 템포 낭비다.
+  // 원칙 5: 필요하지 않다면 체크하지 말라(스타일 조언, causal:false).
   if (/\+/.test(san) && !/#/.test(san) && !info.isCap) {
-    facts.push("굳이 필요하지 않다면 체크를 남발하지 않는 게 좋아요 — 상대가 막으면서 오히려 전개할 수 있어요.");
+    facts.push({ text: "굳이 필요하지 않다면 체크를 남발하지 않는 게 좋아요 — 상대가 막으면서 오히려 전개할 수 있어요.", causal: false });
   }
-  // 원칙 6: 전개가 느리면 포지션을 열지 말라 — 내가 상대보다 미개발 기물이 많은데 폰을 교환(포지션을
-  // 여는 행위)하면 상대의 전개된 기물이 더 활발해진다.
+  // 원칙 6: 전개가 느리면 포지션을 열지 말라(causal:true) — 뒤처진 채 연 포지션에서 상대의 이미
+  // 전개된 기물들이 더 활발해져 바로 손해로 연결되는 경우가 많다.
   if (info.piece === "P" && info.isCap) {
     const myUndev = undevelopedMinors(sansBeforeMove, color).length, oppUndev = undevelopedMinors(sansBeforeMove, enemy).length;
-    if (myUndev > oppUndev) facts.push("전개가 상대보다 뒤처진 상태에서는 포지션을 여는(폰을 교환하는) 걸 피하는 게 좋아요.");
+    if (myUndev > oppUndev) facts.push({ text: "전개가 상대보다 뒤처진 상태에서 포지션을 열어(폰을 교환해) 상대의 기물들이 더 활발해졌어요.", causal: true });
   }
-  // 원칙 7: 퀸을 폰 뒤에 배치하라 — 이동한 파일에 내 폰이 하나도 없으면(열린/세미오픈 파일) 상대
-  // 룩에게 핀·디스커버드 어택 위협을 받기 쉽다.
+  // 원칙 7: 퀸을 폰 뒤에 배치하라(causal:true) — 열린 파일에 놓인 퀸은 상대 룩의 핀·디스커버드
+  // 어택으로 바로 손해를 볼 수 있다.
   if (info.piece === "Q") {
     const after = applySan(board, san, color);
     let ownPawnOnFile = false;
     for (let r = 0; r < 8; r++) { const p = after[r][info.to[1]]; if (p && p.c === color && p.t === "P") { ownPawnOnFile = true; break; } }
-    if (!ownPawnOnFile) facts.push("퀸은 자신의 폰 뒤(보호받는 자리)에 두는 게 안전해요 — 지금 자리는 상대 룩에게 노출될 수 있어요.");
+    if (!ownPawnOnFile) facts.push({ text: "퀸을 상대 룩에게 노출될 수 있는 열린 파일에 뒀어요 — 폰 뒤(보호받는 자리)가 더 안전해요.", causal: true });
   }
-  // 원칙 8: 전개된 내 기물과 상대의 미전개 기물 교환을 피하라 — 값이 같은 기물끼리(N-N, B-B 등)
-  // 교환인데 내 기물은 이미 한 번 움직였고(전개에 템포를 씀) 상대 기물은 시작 칸 그대로였다면,
-  // 나만 템포를 손해 본 셈이다.
+  // 원칙 8: 전개된 내 기물과 상대의 미전개 기물 교환을 피하라(causal:true) — 값이 같은 기물끼리
+  // 교환인데 내 기물은 이미 템포를 써 전개했고 상대 기물은 시작 칸 그대로였다면 나만 템포 손해다.
   if (info.isCap && !info.castle) {
     const captured = board[info.to[0]][info.to[1]];
     if (captured && VAL[captured.t] === VAL[info.piece]) {
       const capturedId = grid[info.to[0] + "," + info.to[1]];
       const capturedMoved = capturedId ? !!counts[capturedId] : false;
-      if (!capturedMoved && priorMoves >= 1) facts.push("전개해 둔 내 기물을 상대의 아직 전개 안 한 기물과 맞바꾸면 나만 템포를 손해 봐요.");
+      if (!capturedMoved && priorMoves >= 1) facts.push({ text: "전개해 둔 내 기물을 상대의 아직 전개 안 한 기물과 맞바꿔 나만 템포를 손해 봤어요.", causal: true });
     }
   }
-  // 원칙 9: 되도록 빠르게 캐슬링하라 — 아직 캐슬링을 안 했고 권리도 남아 있는데 이 수도 캐슬링이
-  // 아니라면(=계속 미루는 중이라면) 서두르라고 안내한다.
+  // 원칙 9: 되도록 빠르게 캐슬링하라(일반 조언, causal:false).
   if (!info.castle && !hasCastledBy(sansBeforeMove, color)) {
     const ceNow = castleEpFacts([...sansBeforeMove, san], color);
-    if (ceNow.myCastleRights && ply >= 10) facts.push("아직 캐슬링을 하지 않았어요 — 킹의 안전을 위해 서두르는 게 좋아요.");
+    if (ceNow.myCastleRights && ply >= 10) facts.push({ text: "아직 캐슬링을 하지 않았어요 — 킹의 안전을 위해 서두르는 게 좋아요.", causal: false });
   }
-  // 원칙 10: 킹사이드 캐슬링이 퀸사이드보다 안전하다 — 퀸사이드는 a열 폰이 보호받지 못한다.
-  if (/^O-O-O/.test(san)) facts.push("퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.");
-  // 원칙 15("기물을 중앙에 가깝게 유지하라")의 대표 사례 — 나이트를 구석(a·h)으로 보내면 활동 범위가
-  // 좁아진다("Knight on the rim is dim").
+  // 원칙 10: 킹사이드 캐슬링이 퀸사이드보다 안전하다(정보성, causal:false).
+  if (/^O-O-O/.test(san)) facts.push({ text: "퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.", causal: false });
+  // 원칙 15("기물을 중앙에 가깝게 유지하라") 대표 사례 — 나이트 림(스타일 조언, causal:false).
   if (info.piece === "N" && (FILES[info.to[1]] === "a" || FILES[info.to[1]] === "h")) {
-    facts.push("나이트는 구석보다 중앙에 가까운 자리가 훨씬 활발해요.");
+    facts.push({ text: "나이트는 구석보다 중앙에 가까운 자리가 훨씬 활발해요.", causal: false });
   }
-  // 원칙 18: 룩으로 빠르게 오픈/세미오픈 파일을 장악하라 — 이동한 파일에 내 폰이 없으면(오픈 또는
-  // 세미오픈) 룩의 활동 범위가 넓어지는 좋은 수다.
+  // 원칙 18: 룩으로 오픈/세미오픈 파일 장악(긍정적 조언, causal:false — 위반이 아니라 좋은 수 칭찬).
   if (info.piece === "R" && !info.castle) {
     const after = applySan(board, san, color);
     let ownPawnOnFile = false;
     for (let r = 0; r < 8; r++) { const p = after[r][info.to[1]]; if (p && p.c === color && p.t === "P") { ownPawnOnFile = true; break; } }
-    if (!ownPawnOnFile) facts.push("룩을 오픈 파일로 옮기는 좋은 수예요 — 막는 기물이 없는 파일에서 룩이 훨씬 강력해져요.");
+    if (!ownPawnOnFile) facts.push({ text: "룩을 오픈 파일로 옮기는 좋은 수예요 — 막는 기물이 없는 파일에서 룩이 훨씬 강력해져요.", causal: false });
   }
   return facts;
 }
@@ -5338,22 +5364,41 @@ const REVIEW_COACH_COPY = {
   blunder: { head: "은(는) 블런더예요!", mascot: ["kokoa", "angry"], body: ["이 수로 크게 불리해졌어요 — 다음엔 더 신중하게 살펴보세요.", "포지션이 크게 무너졌어요."] },
   pending: { head: "", mascot: ["milku", "think"], body: ["이 수는 아직 분석되지 않았어요."] },
 };
-// (기능) insightFacts·punishLine·mecFacts는 자체 평가 체계(positionInsightFacts·punishmentFacts·
-// MEC/오프닝 원칙 코드화)가 만든 근거다 — Stockfish 등급(m.kind) 자체는 그대로 두고, 등급과
-// 무관하게 모든 수에 "왜"를 뒷받침하는 문장을 이어 붙인다(응징 수순은 호출부가 아쉬운 수일 때만
-// 계산해 두므로 다른 등급에는 자연히 비어 있고, MEC는 오프닝 구간을 벗어나면 자연히 비어 있다).
-function reviewCoachCopy(m, sacrificedPiece, insightFacts, punishLine, mecFactsArr) {
+// (기능) 자체 평가 체계(positionInsightFacts·punishmentFacts·MEC·brilliantIdeaNote·
+// onlyMoveRefutation)의 근거를 코멘트에 덧붙인다 — Stockfish 등급(m.kind) 자체는 바꾸지 않는다.
+// (범위 축소) 처음엔 모든 등급에 붙였는데, 정석 수(book)를 포함한 평범한 좋은 수까지 얕은
+// 근거로 재단하는 게 과하다는 지적에 따라, 지금은 유일한 수·탁월한 수·블런더 — 세 "극단" 등급에만
+// 자세한 설명을 붙인다. 나머지 등급은 원래의 짧고 정형화된 코멘트만 보여준다.
+function reviewCoachCopy(m, sacrificedPiece, ideaNote, insightFacts, punishLine, mecFactsArr, onlyRefutation) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
   // (v0.2.2 기능) 탁월한 수는 어떤 기물을 희생했는지 알 수 있으면(언더프로모션 등은 제외되어 null로
   // 넘어옴) 일반 문구 대신 그 기물을 명시한 설명을 보여준다.
   let body = (m.kind === "brilliant" && sacrificedPiece)
     ? (sacrificedPiece + "에 대한 위협을 무시하고 희생하는 탁월한 수예요.")
     : c.body[m.ply % c.body.length];
-  const extra = [];
-  if (punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
-  if (insightFacts && insightFacts.length) extra.push(insightFacts[0]);
-  if (mecFactsArr && mecFactsArr.length) extra.push(mecFactsArr[0]);
-  if (extra.length) body = body + " " + extra.join(" ");
+  if (["only", "brilliant", "blunder"].includes(m.kind)) {
+    const extra = [];
+    // 블런더: 응징 수순 + 기물 긴장(무엇이 걸렸는지) + MEC 중 이 블런더의 실제 원인으로 보이는
+    // 것(causal:true)만 — "아직 캐슬링 안 함" 같은 일반 조언은 원인이 아니라면 넣지 않는다.
+    if (m.kind === "blunder") {
+      if (punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
+      if (insightFacts && insightFacts.length) extra.push(insightFacts[0]);
+      const causal = (mecFactsArr || []).find((f) => f.causal);
+      if (causal) extra.push(causal.text);
+    }
+    // 탁월한 수: 무엇을 희생했는지(위 body)에 이어, 그래서 무엇을 얻는지(ideaNote)와 지금 남은
+    // 기물 긴장까지.
+    if (m.kind === "brilliant") {
+      if (ideaNote) extra.push(ideaNote);
+      if (insightFacts && insightFacts.length) extra.push(insightFacts[0]);
+    }
+    // 유일한 수: "다른 수는 안 돼요"로 끝내지 않고, 실제 2순위 후보를 뒀다면 상대가 어떻게
+    // 응징하는지(onlyRefutation)까지 — 이게 없으면(엔진 계산 실패 등) 조용히 생략한다.
+    if (m.kind === "only" && onlyRefutation) {
+      extra.push(onlyRefutation.altSan + " 같은 다른 수를 뒀다면, 상대가 " + onlyRefutation.continuation.join(" ") + "로 응징해 상황이 나빠졌을 거예요.");
+    }
+    if (extra.length) body = body + " " + extra.join(" ");
+  }
   // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
   const emo = (c.mascot && c.mascot[1]) || "great";
@@ -5657,9 +5702,9 @@ function ReviewOpeningBanner({ text }) {
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
 // 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
-function ReviewCoachCard({ move, evalDisp, sacrificedPiece, insightFacts, punishLine, mecNotes, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, sacrificedPiece, ideaNote, insightFacts, punishLine, mecNotes, onlyRefutation, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
-  const copy = reviewCoachCopy(move, sacrificedPiece, insightFacts, punishLine, mecNotes);
+  const copy = reviewCoachCopy(move, sacrificedPiece, ideaNote, insightFacts, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
   return (
@@ -5981,19 +6026,44 @@ function ReviewPage({ game, onClose }) {
     if (isUnderpromo) return null;
     return sacrificedPieceKor(effSans.slice(0, -1), activeMove.san);
   }, [activeMove, effSans]);
+  // (범위 축소) 자체 평가 AI·MEC·"유일한 수" 반박 라인은 이제 유일한 수·탁월한 수·블런더 — 세
+  // "극단" 등급에만 계산한다. 그 밖의 등급(최선·우수·좋음·이론·부정확·실수·놓친 기회)은 원래의
+  // 짧고 정형화된 코멘트만 보여준다(정석 수까지 얕은 근거로 재단하지 않기 위함).
+  const EXTRA_EXPLAIN_KINDS = ["only", "brilliant", "blunder"];
   // (기능) 자체 포지션 평가 AI — Stockfish 등급 판정(activeMove.kind)은 그대로 두고, 그 등급을
   // 뒷받침할 근거를 덧붙인다. FEN·PGN 기반 사실(기물 긴장·미개발 기물·캐슬링 권리)은 동기 계산이라
   // 바로 useMemo로, 응징 수순(나쁜 수일 때만, 엔진 필요)은 비동기라 별도 effect로 채운다.
   const insightFacts = useMemo(() => {
-    if (!activeMove) return [];
+    if (!activeMove || !EXTRA_EXPLAIN_KINDS.includes(activeMove.kind)) return [];
     try { return positionInsightFacts(boardFromSans(effSans), effSans, activeMove.white ? "w" : "b"); } catch { return []; }
   }, [activeMove, effSans]);
   // (기능) MEC(Move Evaluation Codification) — 사용자가 정리해 준 오프닝 원칙을 코드화한 판정.
-  // 방금 둔 수(activeMove.san)와 그 직전까지의 수순만 있으면 되는 동기 계산이라 useMemo로 충분하다.
+  // 블런더의 "실제 원인"을 설명하는 용도로만 쓰므로 블런더에서만 계산한다(causal 필터는
+  // reviewCoachCopy에서 적용).
   const mecNotes = useMemo(() => {
-    if (!activeMove) return [];
+    if (!activeMove || activeMove.kind !== "blunder") return [];
     try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b"); } catch { return []; }
   }, [activeMove, effSans]);
+  // (기능) 탁월한 수 — "무엇을 얻는지"를 브릴리언트 화살표에서 뽑아낸 문장(엔진 불필요, 동기 계산).
+  const ideaNote = useMemo(() => {
+    if (!activeMove || activeMove.kind !== "brilliant") return null;
+    try { return brilliantIdeaNote(effSans.slice(0, -1), activeMove.san); } catch { return null; }
+  }, [activeMove, effSans]);
+  // (기능) 유일한 수 — 2순위 후보를 뒀다면 상대가 어떻게 응징하는지(엔진 필요, 비동기).
+  const [onlyRefutation, setOnlyRefutation] = useState(null);
+  useEffect(() => {
+    setOnlyRefutation(null);
+    if (!activeMove || activeMove.kind !== "only") return;
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    (async () => {
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
+      const w = (pool && pool[0]) || engine;
+      const r = await onlyMoveRefutation(w, effSans.slice(0, -1), 2);
+      if (!cancelled) setOnlyRefutation(r);
+    })();
+    return () => { cancelled = true; };
+  }, [activeMove, effSans.join(" "), engine && engine.status, engine && engine.profile]);
   const [punishLine, setPunishLine] = useState([]);
   useEffect(() => {
     setPunishLine([]);
@@ -6064,7 +6134,7 @@ function ReviewPage({ game, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} insightFacts={insightFacts} punishLine={punishLine} mecNotes={mecNotes} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} ideaNote={ideaNote} insightFacts={insightFacts} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -6098,7 +6168,7 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} insightFacts={insightFacts} punishLine={punishLine} mecNotes={mecNotes} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} ideaNote={ideaNote} insightFacts={insightFacts} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
@@ -11991,8 +12061,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
-      "게임 리뷰 오프닝 구간에서 MILKU·KOKOA가 '나이트를 비숍보다 먼저 전개하세요', '같은 기물을 두 번 움직이지 마세요', '캐슬링을 서두르세요' 같은 오프닝 원칙(MEC)까지 짚어줘요.",
-      "MILKU·KOKOA의 게임 리뷰 코멘트가 더 똑똑해졌어요 — 어떤 수를 두든 어떤 기물이 걸려 있는지, 아직 발전 안 한 기물이 있는지, 아쉬운 수라면 상대가 어떻게 응징할 수 있는지 등 구체적인 이유를 함께 알려줘요. 퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
+      "게임 리뷰에서 유일한 수·탁월한 수·블런더, 이 세 등급에만 MILKU·KOKOA가 자세한 이유를 알려줘요 — 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 오프닝 원칙(MEC) 중 실제 원인이 된 것까지 짚어줘요. 나머지 수(정석 수 포함)는 예전처럼 짧은 코멘트만 보여줘요 — 이론 수까지 이유를 캐묻지 않도록 범위를 좁혔어요.",
+      "퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
       "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       "'전체' 레이팅 그래프에서 대국이 적은 시간 규정(예: 블리츠 2판)이 그냥 수직선 하나처럼 보이던 문제를 고쳤어요 — 이제 대국이 없는 구간은 그 시점 레이팅으로 평평하게 기간 끝까지 이어져요.",
       "퍼즐 창을 열었을 때 평가치 막대가 거의 안 움직이는 것처럼 보이던 문제를 고쳤어요 — 이제 depth가 눈에 보이게 차례로 올라가며 실시간으로 움직여요.",
