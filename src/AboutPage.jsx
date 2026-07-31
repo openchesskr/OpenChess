@@ -708,14 +708,15 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.2.8", date: "2026.7.31",
-    summary: "레이팅 변동 그래프가 대국 기록이 없는 기간에도 최근 레이팅을 이어서 보여줘요. 퍼즐 창의 평가치 막대가 진짜로 실시간처럼 움직이고, 일일 퍼즐 캐러셀 클릭·로딩 문제도 마저 고쳤어요.",
+    summary: "MILKU·KOKOA의 코멘트가 더 똑똑해졌어요 — 자체 평가 시스템으로 왜 그런 수인지 이유를 짚어줘요. 레이팅 그래프도 기록이 없는 기간에 끊기지 않고, 퍼즐 창·캐러셀 문제도 마저 고쳤어요.",
     mascot: {
-      intro: { char: "milku", expr: "great", name: "MILKU 코치", align: "left", text: "레이팅 그래프가 이제 기록이 빈 기간에도 끊기지 않아요 — 최근 레이팅을 그대로 이어서 보여줘요." },
-      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "일일 퍼즐 캐러셀 클릭 문제, 이번엔 진짜 원인을 찾아서 고쳤어요!" },
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "이제 아쉬운 수를 두면 왜 아쉬운지, 상대가 어떻게 응징할 수 있는지까지 알려드릴게요!" },
+      outro: { char: "milku", expr: "happy", name: "MILKU 코치", align: "right", text: "레이팅 그래프가 이제 기록이 빈 기간에도 끊기지 않아요 — 최근 레이팅을 그대로 이어서 보여줘요." },
     },
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: "그래프·퍼즐 창 다듬기" },
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: "MILKU·KOKOA 코멘트 강화" },
     sections: [
       { cat: "feature", items: [
+        "MILKU·KOKOA의 코멘트에 자체 평가 시스템을 더했어요 — 부정확·실수·블런더·놓친 기회를 뒀을 때, 상대가 어떻게 응징할 수 있는지나 어떤 기물이 걸려 있는지 등 구체적인 이유를 함께 짚어줘요. 퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어주는 실질적인 힌트로 바뀌었어요.",
         "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       ] },
       { cat: "fix", items: [

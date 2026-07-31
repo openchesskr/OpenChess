@@ -4185,6 +4185,109 @@ function sacrificedPieceKor(sans, san) {
   return mover ? PIECE_KOR[mover.t] : null;
 }
 
+/* ============================================================ 자체 포지션 평가 AI (FEN·PGN 결합) ============================================================
+   Stockfish 기반 수 등급 판정(brilliant~blunder)은 그대로 유지한다 — 이 평가 체계는 그 등급을
+   대체하지 않고, MILKU·KOKOA의 코멘트에 "왜 그런지" 근거를 덧붙이는 보조 신호로만 쓴다. 세 갈래를
+   하나의 사실 목록으로 합친다.
+   1) FEN 기반 — 기물 점수차(materialDiff, 기존 함수 재사용), 기물 긴장(양쪽에서 지금 안전하게
+      잡힐 수 있는 기물 전체 — 위 sacrificedPieceKor가 쓰는 seeSquare+canCaptureSquareLegally
+      탐색과 같은 원리지만, 가장 큰 손실 하나만 보지 않고 양쪽 전부를 모은다).
+   2) PGN 기반 — 기물별 이동 횟수(미개발 기물 파악), 캐슬링/앙파상 권리(replaySans가 이미 누적
+      계산해 두는 값을 그대로 재사용).
+   3) 나쁜 수 이후 — 상대의 응징 수순(새 엔진 로직을 만들지 않고 기존 genPunishLine 재사용).
+*/
+// FEN 기반 — 기물 긴장. color 진영과 상대 진영 양쪽에서 지금 SEE상 순손실(>0)이 나는(=안전하게
+// 잡힐 수 있는) 기물을 전부 모은다.
+function tensionFacts(board, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const mine = [], theirs = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.t === "K") continue;
+    if (p.c === color) {
+      const loss = seeSquare(board, r, c, enemy);
+      if (loss > 0 && canCaptureSquareLegally(board, r, c, enemy)) mine.push({ sq: [r, c], piece: p.t, val: loss });
+    } else {
+      const gain = seeSquare(board, r, c, color);
+      if (gain > 0 && canCaptureSquareLegally(board, r, c, color)) theirs.push({ sq: [r, c], piece: p.t, val: gain });
+    }
+  }
+  mine.sort((a, b) => b.val - a.val); theirs.sort((a, b) => b.val - a.val);
+  return { mine, theirs };
+}
+// PGN 기반 — 시작 위치 기물마다 "색+종류+시작칸" id를 부여하고 수순 전체를 다시 재생하며 몇 번
+// 움직였는지 센다(sansToUci와 동일한 재생 방식 — 캐슬링은 킹·룩 둘 다 세고, 프로모션은 같은 기물의
+// 정체성을 유지한 채 승격). id는 곧 "시작 칸"이므로, 한 번도 안 움직인 기물은 counts에 없다.
+function pieceMoveCounts(sans) {
+  let board = startBoard();
+  const grid = {};
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p) grid[r + "," + c] = p.c + p.t + sqName(r, c); }
+  const counts = {};
+  const bump = (id) => { if (id) counts[id] = (counts[id] || 0) + 1; };
+  sans.forEach((s, i) => {
+    const color = i % 2 === 0 ? "w" : "b";
+    const info = sanSrc(board, s, color);
+    if (!info) return;
+    if (info.castle) {
+      const rank = color === "w" ? 7 : 0;
+      const kFrom = rank + ",4", kTo = rank + "," + (info.castle === "k" ? 6 : 2);
+      const rFrom = rank + "," + (info.castle === "k" ? 7 : 0), rTo = rank + "," + (info.castle === "k" ? 5 : 3);
+      bump(grid[kFrom]); bump(grid[rFrom]);
+      grid[kTo] = grid[kFrom]; delete grid[kFrom];
+      grid[rTo] = grid[rFrom]; delete grid[rFrom];
+    } else {
+      const [fr, fc] = info.from, [tr, tc] = info.to;
+      const fromKey = fr + "," + fc, toKey = tr + "," + tc;
+      bump(grid[fromKey]);
+      grid[toKey] = grid[fromKey]; delete grid[fromKey];
+    }
+    board = applySan(board, s, color);
+  });
+  return counts; // id("wNb1" 등) -> 움직인 횟수
+}
+// 나이트·비숍 중 한 번도 움직이지 않은(=시작 칸에 그대로 있는) 기물 목록 — "미개발 기물이 몇 개
+// 남았는지" 코멘트에 쓴다.
+function undevelopedMinors(sans, color) {
+  const counts = pieceMoveCounts(sans);
+  const board = startBoard();
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== color || (p.t !== "N" && p.t !== "B")) continue;
+    if (!counts[p.c + p.t + sqName(r, c)]) out.push(p.t);
+  }
+  return out;
+}
+// 캐슬링/앙파상 권리 — replaySans가 매 수마다 이미 누적 계산해 두는 rights/ep를 그대로 재사용한다
+// (sansToFen과 같은 캐시를 공유하므로 별도 재계산 비용이 거의 없다).
+function castleEpFacts(sans, color) {
+  const { rights, ep } = replaySans(sans);
+  const enemy = color === "w" ? "b" : "w";
+  const mineHas = color === "w" ? (rights.K || rights.Q) : (rights.k || rights.q);
+  const enemyHas = enemy === "w" ? (rights.K || rights.Q) : (rights.k || rights.q);
+  return { myCastleRights: mineHas, enemyCastleRights: enemyHas, epAvailable: !!ep };
+}
+// 나쁜 수(실수·블런더·놓친 기회) 다음 상대의 응징 수순 — 새 엔진 로직을 따로 만들지 않고 이미 있는
+// genPunishLine(엔진 최선 연쇄 n수)을 그대로 재사용한다. 엔진이 없으면 빈 배열(호출부가 넘기는
+// 값은 useEngine 인스턴스뿐 아니라 getAnalysisPool의 워커 래퍼일 수도 있어 status 필드가 없을 수
+// 있다 — evaluate 메서드 존재 여부만 확인한다).
+async function punishmentFacts(engine, sansAfterMove, plies = 2) {
+  if (!engine || typeof engine.evaluate !== "function") return [];
+  try { return await genPunishLine(engine, sansAfterMove, plies); } catch { return []; }
+}
+// 위 세 갈래(FEN 긴장·PGN 발전도·캐슬링 권리) 중 엔진 없이 즉시 알 수 있는 사실만 문장 후보로
+// 만든다 — 응징 수순(punishmentFacts)은 비동기라 여기 포함하지 않고, 필요한 호출부(ReviewCoachCard)가
+// 따로 이어 붙인다. 가장 눈에 띄는 사실 한둘만 골라 코멘트가 장황해지지 않게 한다.
+function positionInsightFacts(board, sans, color) {
+  const facts = [];
+  const t = tensionFacts(board, color);
+  if (t.mine.length) facts.push(PIECE_KOR[t.mine[0].piece] + "가 지금 안전하게 잡힐 수 있는 위치에 있어요.");
+  if (t.theirs.length) facts.push("상대 " + PIECE_KOR[t.theirs[0].piece] + "가 걸려 있어요 — 잡을 기회예요.");
+  const undev = undevelopedMinors(sans, color);
+  if (undev.length >= 2) facts.push("아직 발전하지 않은 기물이 " + undev.length + "개 남아 있어요.");
+  const ce = castleEpFacts(sans, color);
+  if (!t.mine.length && ce.myCastleRights === false) facts.push("캐슬링 권리를 이미 잃었어요.");
+  return facts;
+}
+
 // (UI/UX) 집중학습을 별개의 전체 창으로 띄우지 않고, 기존에 쓰던 집중학습 UI를 그대로
 // 체스보드 하단(왼쪽 칼럼)에 배치한다 — 오른쪽 칼럼은 집중학습 중에도 항상 수 블록 목록을 보여준다.
 // 상태/부수효과(퍼즐 자동저장 등)는 하나의 훅(useFocusAnalysis)에 모아 중복 실행을 막는다.
@@ -5134,13 +5237,22 @@ const REVIEW_COACH_COPY = {
   blunder: { head: "은(는) 블런더예요!", mascot: ["kokoa", "angry"], body: ["이 수로 크게 불리해졌어요 — 다음엔 더 신중하게 살펴보세요.", "포지션이 크게 무너졌어요."] },
   pending: { head: "", mascot: ["milku", "think"], body: ["이 수는 아직 분석되지 않았어요."] },
 };
-function reviewCoachCopy(m, sacrificedPiece) {
+// (기능) insightFacts·punishLine은 자체 포지션 평가 AI(positionInsightFacts·punishmentFacts)가
+// 만든 근거다 — Stockfish 등급(m.kind) 자체는 그대로 두고, 아쉬운 수(부정확·실수·블런더·놓친 기회)
+// 에만 "왜"를 뒷받침하는 문장을 이어 붙인다. 좋은 수에까지 붙이면 지적처럼 읽혀 어색해지므로 뺀다.
+function reviewCoachCopy(m, sacrificedPiece, insightFacts, punishLine) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
   // (v0.2.2 기능) 탁월한 수는 어떤 기물을 희생했는지 알 수 있으면(언더프로모션 등은 제외되어 null로
   // 넘어옴) 일반 문구 대신 그 기물을 명시한 설명을 보여준다.
-  const body = (m.kind === "brilliant" && sacrificedPiece)
+  let body = (m.kind === "brilliant" && sacrificedPiece)
     ? (sacrificedPiece + "에 대한 위협을 무시하고 희생하는 탁월한 수예요.")
     : c.body[m.ply % c.body.length];
+  if (["inaccuracy", "mistake", "blunder", "miss"].includes(m.kind)) {
+    const extra = [];
+    if (punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
+    if (insightFacts && insightFacts.length) extra.push(insightFacts[0]);
+    if (extra.length) body = body + " " + extra.join(" ");
+  }
   // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
   const emo = (c.mascot && c.mascot[1]) || "great";
@@ -5444,9 +5556,9 @@ function ReviewOpeningBanner({ text }) {
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
 // 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
-function ReviewCoachCard({ move, evalDisp, sacrificedPiece, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, sacrificedPiece, insightFacts, punishLine, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
-  const copy = reviewCoachCopy(move, sacrificedPiece);
+  const copy = reviewCoachCopy(move, sacrificedPiece, insightFacts, punishLine);
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
   return (
@@ -5768,6 +5880,27 @@ function ReviewPage({ game, onClose }) {
     if (isUnderpromo) return null;
     return sacrificedPieceKor(effSans.slice(0, -1), activeMove.san);
   }, [activeMove, effSans]);
+  // (기능) 자체 포지션 평가 AI — Stockfish 등급 판정(activeMove.kind)은 그대로 두고, 그 등급을
+  // 뒷받침할 근거를 덧붙인다. FEN·PGN 기반 사실(기물 긴장·미개발 기물·캐슬링 권리)은 동기 계산이라
+  // 바로 useMemo로, 응징 수순(나쁜 수일 때만, 엔진 필요)은 비동기라 별도 effect로 채운다.
+  const insightFacts = useMemo(() => {
+    if (!activeMove) return [];
+    try { return positionInsightFacts(boardFromSans(effSans), effSans, activeMove.white ? "w" : "b"); } catch { return []; }
+  }, [activeMove, effSans]);
+  const [punishLine, setPunishLine] = useState([]);
+  useEffect(() => {
+    setPunishLine([]);
+    if (!activeMove || !["mistake", "blunder", "miss"].includes(activeMove.kind)) return;
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    (async () => {
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
+      const w = (pool && pool[0]) || engine;
+      const line = await punishmentFacts(w, effSans, 2);
+      if (!cancelled) setPunishLine(line);
+    })();
+    return () => { cancelled = true; };
+  }, [effSans.join(" "), activeMove && activeMove.kind, engine && engine.status, engine && engine.profile]);
   const arrows = useMemo(() => {
     const out = [];
     if (activeMove && showingLine) {
@@ -5824,7 +5957,7 @@ function ReviewPage({ game, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} insightFacts={insightFacts} punishLine={punishLine} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -5858,7 +5991,7 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} insightFacts={insightFacts} punishLine={punishLine} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
@@ -9171,6 +9304,11 @@ function summarizePosition(board, userColor) {
   const oppColor = userColor === "w" ? "b" : "w";
   const kp = kingPos(board, oppColor);
   if (kp && isAttacked(board, kp[0], kp[1], userColor)) return "상대 킹이 체크 상태예요 — 지금 공격이 통하고 있어요!";
+  // (기능) 자체 포지션 평가 AI의 기물 긴장 신호 — 걸린 기물이 있으면 막연한 점수차 안내보다 훨씬
+  // 구체적인 힌트가 된다(FEN 기반 tensionFacts, Stockfish 없이 즉시 계산).
+  const t = tensionFacts(board, userColor);
+  if (t.theirs.length) return "상대 " + PIECE_KOR[t.theirs[0].piece] + "가 걸려 있어요 — 잡을 기회를 찾아보세요.";
+  if (t.mine.length) return "네 " + PIECE_KOR[t.mine[0].piece] + "가 위태로워요 — 안전하게 지킬 수를 찾아보세요.";
   const diff = materialDiff(board, userColor);
   if (diff >= 3) return "지금 기물 점수에서 크게 앞서 있어요 — 확실히 마무리할 수를 찾아보세요.";
   if (diff >= 1) return "지금 기물을 조금 앞서 있어요 — 이 이점을 굳히는 수를 찾아보세요.";
@@ -11734,6 +11872,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "MILKU·KOKOA의 게임 리뷰 코멘트가 더 똑똑해졌어요 — 아쉬운 수를 뒀을 때는 상대가 어떻게 응징할 수 있는지, 어떤 기물이 걸려 있는지 등 구체적인 이유를 함께 알려줘요. 퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
       "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       "퍼즐 창을 열었을 때 평가치 막대가 거의 안 움직이는 것처럼 보이던 문제를 고쳤어요 — 이제 depth가 눈에 보이게 차례로 올라가며 실시간으로 움직여요.",
       "일일 퍼즐 캐러셀에서 컴퓨터 마우스로 카드를 눌러도 간헐적으로 반응이 없던 문제의 진짜 원인을 찾아 완전히 고쳤어요.",

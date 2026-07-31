@@ -28,6 +28,11 @@
 
 ### OpenChess v0.2.8 — 2026/7/31
 
+**기능 — 자체 포지션 평가 AI(FEN·PGN 결합)를 MILKU·KOKOA 코멘트에 적용**
+Stockfish 등급 판정(brilliant~blunder)은 그대로 두고, 그 등급에 "왜"를 뒷받침하는 근거를 붙이는 보조 평가 체계를 새로 만들었다(`sacrificedPieceKor` 아래, 4189행 부근). 세 갈래를 하나의 사실 목록으로 합친다 — (1) FEN 기반: 기물 긴장(`tensionFacts`, 양쪽에서 지금 SEE상 순손실이 나는 방치 기물 전체를 모음 — 기존 `sacrificedPieceKor`가 쓰는 `seeSquare`+`canCaptureSquareLegally` 탐색과 같은 원리지만 가장 큰 손실 하나만 보지 않고 양쪽을 다 모은다), (2) PGN 기반: 기물별 이동 횟수(`pieceMoveCounts` — 시작 위치 기물마다 "색+종류+시작칸" id를 부여해 수순 전체를 재생하며 세고, 미개발 나이트·비숍을 `undevelopedMinors`로 뽑는다)와 캐슬링/앙파상 권리(`castleEpFacts` — 새로 계산하지 않고 `replaySans`가 이미 누적해 두는 값을 재사용), (3) 나쁜 수 이후 상대의 응징 수순(`punishmentFacts` — 새 엔진 로직을 만들지 않고 기존 `genPunishLine`을 그대로 재사용). `positionInsightFacts`가 (1)(2)를 동기적으로(엔진 없이 즉시) 합쳐 문장 후보를 만든다.
+
+`/review` 페이지의 `reviewCoachCopy`/`ReviewCoachCard`에 이 사실들을 연결했다 — `ReviewPage`가 `insightFacts`(useMemo, 동기)와 `punishLine`(엔진 필요, `getAnalysisPool`로 별도 effect에서 비동기 계산)을 만들어 코치 카드에 내려주고, 부정확·실수·블런더·놓친 기회 등급일 때만 기존 코멘트 뒤에 "상대가 OOO로 응징할 수 있어요"·"OOO가 걸려 있어요" 같은 문장을 이어 붙인다(좋은 수에 붙이면 지적처럼 읽혀 어색해지므로 그 등급들에는 붙이지 않음). 퍼즐 풀이 화면의 코치 말풍선(`summarizePosition`)에도 같은 `tensionFacts`를 연결해, 막연한 "기물 점수가 팽팽해요" 대신 "상대 나이트가 걸려 있어요 — 잡을 기회를 찾아보세요" 같은 구체적인 힌트를 우선 보여주도록 했다.
+
 **기능 — 대국 기록이 없는 기간에도 레이팅 변동 그래프가 최근 레이팅을 이어서 보여주도록**
 `RatingHistoryChart`는 고른 기간(`period`, 1주/1달/6개월/1년) 안에 대국이 2판 미만이면(선을 그릴 수 없음) "이 기간엔 대국이 부족해요"만 보여주고 그래프 자체를 비웠다 — 최근에 그 시간 규정으로 두지 않은 유저는 기간을 좁힐 때마다 그래프가 통째로 사라져 보였다. `inPeriod`가 부족해도 전체 기록(`allPoints`)에 대국이 하나라도 있으면, 그 마지막 대국 당시 레이팅(=현재 레이팅)으로 기간의 시작(`cutoff`)과 끝(현재 시각) 두 점을 만들어 평평한 선으로 이어 보여준다(`flatFallback`). "전체"(래피드·블리츠·불릿 동시 표시) 모드도 시간 규정별로 동일하게 적용해, 그 시간 규정을 최근에 안 뒀더라도 마지막 값에서 멈춰 있는 것으로 보이게 한다. 실제 대국 데이터가 아니라 값을 유지만 하는 선이라는 걸 구분할 수 있도록 점선(`strokeDasharray`)과 낮춘 불투명도로 그리고, 판수 표기 옆에 "· 최근 레이팅 유지"를 덧붙였다(상승/하락 화살표는 표시하지 않음).
 
