@@ -5238,8 +5238,9 @@ const REVIEW_COACH_COPY = {
   pending: { head: "", mascot: ["milku", "think"], body: ["이 수는 아직 분석되지 않았어요."] },
 };
 // (기능) insightFacts·punishLine은 자체 포지션 평가 AI(positionInsightFacts·punishmentFacts)가
-// 만든 근거다 — Stockfish 등급(m.kind) 자체는 그대로 두고, 아쉬운 수(부정확·실수·블런더·놓친 기회)
-// 에만 "왜"를 뒷받침하는 문장을 이어 붙인다. 좋은 수에까지 붙이면 지적처럼 읽혀 어색해지므로 뺀다.
+// 만든 근거다 — Stockfish 등급(m.kind) 자체는 그대로 두고, 등급과 무관하게 모든 수에 "왜"를
+// 뒷받침하는 문장을 이어 붙인다(응징 수순은 호출부가 아쉬운 수일 때만 계산해 두므로 다른 등급에는
+// 자연히 비어 있다).
 function reviewCoachCopy(m, sacrificedPiece, insightFacts, punishLine) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
   // (v0.2.2 기능) 탁월한 수는 어떤 기물을 희생했는지 알 수 있으면(언더프로모션 등은 제외되어 null로
@@ -5247,12 +5248,10 @@ function reviewCoachCopy(m, sacrificedPiece, insightFacts, punishLine) {
   let body = (m.kind === "brilliant" && sacrificedPiece)
     ? (sacrificedPiece + "에 대한 위협을 무시하고 희생하는 탁월한 수예요.")
     : c.body[m.ply % c.body.length];
-  if (["inaccuracy", "mistake", "blunder", "miss"].includes(m.kind)) {
-    const extra = [];
-    if (punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
-    if (insightFacts && insightFacts.length) extra.push(insightFacts[0]);
-    if (extra.length) body = body + " " + extra.join(" ");
-  }
+  const extra = [];
+  if (punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
+  if (insightFacts && insightFacts.length) extra.push(insightFacts[0]);
+  if (extra.length) body = body + " " + extra.join(" ");
   // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
   const emo = (c.mascot && c.mascot[1]) || "great";
@@ -11872,7 +11871,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
-      "MILKU·KOKOA의 게임 리뷰 코멘트가 더 똑똑해졌어요 — 아쉬운 수를 뒀을 때는 상대가 어떻게 응징할 수 있는지, 어떤 기물이 걸려 있는지 등 구체적인 이유를 함께 알려줘요. 퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
+      "MILKU·KOKOA의 게임 리뷰 코멘트가 더 똑똑해졌어요 — 어떤 수를 두든 어떤 기물이 걸려 있는지, 아직 발전 안 한 기물이 있는지, 아쉬운 수라면 상대가 어떻게 응징할 수 있는지 등 구체적인 이유를 함께 알려줘요. 퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
       "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       "퍼즐 창을 열었을 때 평가치 막대가 거의 안 움직이는 것처럼 보이던 문제를 고쳤어요 — 이제 depth가 눈에 보이게 차례로 올라가며 실시간으로 움직여요.",
       "일일 퍼즐 캐러셀에서 컴퓨터 마우스로 카드를 눌러도 간헐적으로 반응이 없던 문제의 진짜 원인을 찾아 완전히 고쳤어요.",
