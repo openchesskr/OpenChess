@@ -11326,6 +11326,18 @@ const RATING_CHART_PERIODS = [
 // 가깝게 빛나 보인다. 특정 시간 규정 하나만 볼 때도 이제 평가치 등락 색 대신 이 색으로 고정해, 어느
 // 화면에서 보든 같은 시간 규정은 항상 같은 색으로 알아볼 수 있게 했다.
 const TIME_CLASS_CHART_COLOR = { rapid: "#FF3B30", blitz: "#34C759", bullet: "#0A84FF" };
+// (버그 수정) "전체" 모드는 x좌표를 실제 시간(time-based)으로 잡는데, 대국이 적은 시간 규정(예:
+// 블리츠 딱 2판)은 그 두 판이 실제로 짧은 시간 안에 몰려 있으면 전체 기간 폭 안에서 거의 한 점처럼
+// 뭉쳐, 선이 그냥 수직으로 선 하나만 있는 것처럼 보였다(양옆으로 이어지는 선이 전혀 없으므로). 실제
+// 대국 구간 앞뒤로 그 시점의 레이팅을 유지한 채 기간의 시작(cutoff)·끝(nowT)까지 수평으로 이어
+// 붙여, 항상 기간 전체 폭을 채우는 선(대국이 있는 구간만 오르내리고 나머지는 평평)으로 보이게 한다.
+function extendToPeriodEdges(points, cutoff, nowT) {
+  if (!points.length) return points;
+  const out = points.slice();
+  if (out[0].endTime > cutoff) out.unshift({ endTime: cutoff, rating: out[0].rating });
+  if (out[out.length - 1].endTime < nowT) out.push({ endTime: nowT, rating: out[out.length - 1].rating });
+  return out;
+}
 // (v0.2.6 기능) 리뷰 페이지 EvalGraph와 같은 방식의 드래그 크로스헤어를 얹었다 — 그래프를 누른 채
 // 좌우로 끌면(포인터 캡처) 그 x좌표에 해당하는 지점의 날짜·레이팅을 점선+역삼각형+말풍선으로 보여준다.
 // "전체"(여러 시간 규정 동시 표시) 모드에서는 x좌표가 시간 값이라, 시리즈마다 그 시간에 가장 가까운
@@ -11383,7 +11395,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
     const nowT = Date.now() / 1000;
     const series = ["rapid", "blitz", "bullet"].map((k) => {
       const periodPts = inPeriod.filter((g) => g.timeClass === k);
-      if (periodPts.length >= 2) return { key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: periodPts, flat: false };
+      if (periodPts.length >= 2) return { key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: extendToPeriodEdges(periodPts, cutoff, nowT), flat: false };
       const allForClass = allPoints.filter((g) => g.timeClass === k);
       if (!allForClass.length) return null;
       const lastRating = allForClass[allForClass.length - 1].rating;
@@ -11873,6 +11885,7 @@ const CHANGELOG = [
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
       "MILKU·KOKOA의 게임 리뷰 코멘트가 더 똑똑해졌어요 — 어떤 수를 두든 어떤 기물이 걸려 있는지, 아직 발전 안 한 기물이 있는지, 아쉬운 수라면 상대가 어떻게 응징할 수 있는지 등 구체적인 이유를 함께 알려줘요. 퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
       "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
+      "'전체' 레이팅 그래프에서 대국이 적은 시간 규정(예: 블리츠 2판)이 그냥 수직선 하나처럼 보이던 문제를 고쳤어요 — 이제 대국이 없는 구간은 그 시점 레이팅으로 평평하게 기간 끝까지 이어져요.",
       "퍼즐 창을 열었을 때 평가치 막대가 거의 안 움직이는 것처럼 보이던 문제를 고쳤어요 — 이제 depth가 눈에 보이게 차례로 올라가며 실시간으로 움직여요.",
       "일일 퍼즐 캐러셀에서 컴퓨터 마우스로 카드를 눌러도 간헐적으로 반응이 없던 문제의 진짜 원인을 찾아 완전히 고쳤어요.",
       "일일 퍼즐 캐러셀의 미리보기 체스보드가 뜨는 시간을 조금 더 줄였어요.",
