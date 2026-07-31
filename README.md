@@ -28,6 +28,9 @@
 
 ### OpenChess v0.2.8 — 2026/7/31
 
+**기능 — MEC(Move Evaluation Codification): 사용자가 정리한 오프닝 원칙을 코드화해 코치 코멘트에 적용**
+사용자가 20개 항목으로 정리해 전달한 체스 오프닝 원칙(기물 전개 속도·순서, 같은 기물 재이동 금지, 불필요한 폰/체크 자제, 캐슬링 타이밍·안전성, 퀸·룩·나이트 배치 등)을 `mecFacts(sansBeforeMove, san, color)`로 코드화했다(`positionInsightFacts` 아래, MEC 전용 섹션). 20개 중 상대 캐슬링 방해·공격 전 중앙 장악·폰 구조 숙지처럼 자연어 판단이 필요해 신뢰할 수 없는 오탐을 낼 원칙은 코드화하지 않고 뺐고, 나머지(원칙 2·3·4·5·6·7·8·9·10·15·18)를 각각 독립된 판정 블록으로 구현했다 — 예: 원칙 2(나이트 먼저 전개)는 이 수가 그 비숍의 첫 전개인데 아직 홈스퀘어의 나이트가 있으면 위반, 원칙 3(같은 기물 재이동 금지)은 `pieceMoveState`(기존 `pieceMoveCounts`를 grid까지 함께 반환하도록 확장)로 이 기물이 이미 움직였는지 확인하되 실제 위협(SEE 손실)으로 인한 후퇴나 캡처는 예외로 두는 식이다. 판정은 오프닝 구간(`MEC_OPENING_PLY_LIMIT`, 한 진영 기준 12수)에서만 작동해, 미들게임·엔드게임 포지션에는 적용되지 않는다. `ReviewPage`가 `mecFacts`를 useMemo로 계산해 `mecNotes`로 `ReviewCoachCard`/`reviewCoachCopy`에 내려주고, 위 자체 포지션 평가 AI(insightFacts·punishLine)와 같은 방식으로 등급과 무관하게 모든 수의 코멘트 뒤에 위반/권장 사실 하나를 이어 붙인다.
+
 **기능 — 자체 포지션 평가 AI(FEN·PGN 결합)를 MILKU·KOKOA 코멘트에 적용**
 Stockfish 등급 판정(brilliant~blunder)은 그대로 두고, 그 등급에 "왜"를 뒷받침하는 근거를 붙이는 보조 평가 체계를 새로 만들었다(`sacrificedPieceKor` 아래, 4189행 부근). 세 갈래를 하나의 사실 목록으로 합친다 — (1) FEN 기반: 기물 긴장(`tensionFacts`, 양쪽에서 지금 SEE상 순손실이 나는 방치 기물 전체를 모음 — 기존 `sacrificedPieceKor`가 쓰는 `seeSquare`+`canCaptureSquareLegally` 탐색과 같은 원리지만 가장 큰 손실 하나만 보지 않고 양쪽을 다 모은다), (2) PGN 기반: 기물별 이동 횟수(`pieceMoveCounts` — 시작 위치 기물마다 "색+종류+시작칸" id를 부여해 수순 전체를 재생하며 세고, 미개발 나이트·비숍을 `undevelopedMinors`로 뽑는다)와 캐슬링/앙파상 권리(`castleEpFacts` — 새로 계산하지 않고 `replaySans`가 이미 누적해 두는 값을 재사용), (3) 나쁜 수 이후 상대의 응징 수순(`punishmentFacts` — 새 엔진 로직을 만들지 않고 기존 `genPunishLine`을 그대로 재사용). `positionInsightFacts`가 (1)(2)를 동기적으로(엔진 없이 즉시) 합쳐 문장 후보를 만든다.
 

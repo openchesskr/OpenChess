@@ -708,14 +708,15 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.2.8", date: "2026.7.31",
-    summary: "MILKU·KOKOA의 코멘트가 더 똑똑해졌어요 — 자체 평가 시스템으로 왜 그런 수인지 이유를 짚어줘요. 레이팅 그래프도 기록이 없는 기간에 끊기지 않고, 퍼즐 창·캐러셀 문제도 마저 고쳤어요.",
+    summary: "MILKU·KOKOA의 코멘트가 더 똑똑해졌어요 — 자체 평가 시스템과 오프닝 원칙(MEC)으로 왜 그런 수인지 이유를 짚어줘요. 레이팅 그래프도 기록이 없는 기간에 끊기지 않고, 퍼즐 창·캐러셀 문제도 마저 고쳤어요.",
     mascot: {
-      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "이제 아쉬운 수를 두면 왜 아쉬운지, 상대가 어떻게 응징할 수 있는지까지 알려드릴게요!" },
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "이제 오프닝에서 나이트를 비숍보다 먼저 전개해야 하는 이유처럼, 원칙에 어긋난 수도 콕 짚어드려요!" },
       outro: { char: "milku", expr: "happy", name: "MILKU 코치", align: "right", text: "레이팅 그래프가 이제 기록이 빈 기간에도 끊기지 않아요 — 최근 레이팅을 그대로 이어서 보여줘요." },
     },
     highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: "MILKU·KOKOA 코멘트 강화" },
     sections: [
       { cat: "feature", items: [
+        "게임 리뷰 오프닝 구간에서 MILKU·KOKOA가 오프닝 원칙(MEC)까지 짚어줘요 — '나이트를 비숍보다 먼저 전개하세요', '같은 기물을 두 번 움직이지 마세요', '캐슬링을 서두르세요' 같은 조언을 그 수에 맞춰 알려줘요.",
         "MILKU·KOKOA의 코멘트에 자체 평가 시스템을 더했어요 — 어떤 수를 두든 어떤 기물이 걸려 있는지, 발전 안 한 기물이 있는지, 아쉬운 수라면 상대가 어떻게 응징할 수 있는지 등 구체적인 이유를 함께 짚어줘요. 퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어주는 실질적인 힌트로 바뀌었어요.",
         "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       ] },

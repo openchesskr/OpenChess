@@ -4216,8 +4216,10 @@ function tensionFacts(board, color) {
 }
 // PGN 기반 — 시작 위치 기물마다 "색+종류+시작칸" id를 부여하고 수순 전체를 다시 재생하며 몇 번
 // 움직였는지 센다(sansToUci와 동일한 재생 방식 — 캐슬링은 킹·룩 둘 다 세고, 프로모션은 같은 기물의
-// 정체성을 유지한 채 승격). id는 곧 "시작 칸"이므로, 한 번도 안 움직인 기물은 counts에 없다.
-function pieceMoveCounts(sans) {
+// 정체성을 유지한 채 승격). id는 곧 "시작 칸"이므로, 한 번도 안 움직인 기물은 counts에 없다. grid도
+// 함께 돌려줘(현재 각 칸에 놓인 기물의 id) MEC(아래) 판정이 "이 기물이 몇 번째로 움직이는 건지"를
+// 이 수를 두기 직전 상태 기준으로 바로 조회할 수 있게 한다.
+function pieceMoveState(sans) {
   let board = startBoard();
   const grid = {};
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p) grid[r + "," + c] = p.c + p.t + sqName(r, c); }
@@ -4242,8 +4244,9 @@ function pieceMoveCounts(sans) {
     }
     board = applySan(board, s, color);
   });
-  return counts; // id("wNb1" 등) -> 움직인 횟수
+  return { grid, counts }; // counts: id("wNb1" 등) -> 움직인 횟수, grid: "r,c" -> 그 칸의 현재 id
 }
+function pieceMoveCounts(sans) { return pieceMoveState(sans).counts; }
 // 나이트·비숍 중 한 번도 움직이지 않은(=시작 칸에 그대로 있는) 기물 목록 — "미개발 기물이 몇 개
 // 남았는지" 코멘트에 쓴다.
 function undevelopedMinors(sans, color) {
@@ -4285,6 +4288,104 @@ function positionInsightFacts(board, sans, color) {
   if (undev.length >= 2) facts.push("아직 발전하지 않은 기물이 " + undev.length + "개 남아 있어요.");
   const ce = castleEpFacts(sans, color);
   if (!t.mine.length && ce.myCastleRights === false) facts.push("캐슬링 권리를 이미 잃었어요.");
+  return facts;
+}
+
+/* ============================================================ MEC — Move Evaluation Codification (오프닝 원칙 코드화) ============================================================
+   사용자가 정리해 준 체스 오프닝 원칙 20개 중 코드로 명확히 판정 가능한 것들을 규칙화해, 위
+   positionInsightFacts와 같은 자리에서 MILKU·KOKOA 코멘트에 근거로 붙인다. Stockfish 등급·위
+   포지션 평가 AI(기물 긴장 등)와 마찬가지로 그 등급 자체를 바꾸지 않는 순수 보조 신호다. 오프닝
+   구간(MEC_OPENING_PLY_LIMIT 이전)에서만 작동한다 — 미들게임·엔드게임 포지션에는 원칙이 적용되지
+   않는다는 원칙 20("늘 예외를 생각하고 필요할 때는 원칙을 어기라")도 이런 식으로 반영했다. 판정이
+   모호하거나(예: 상대 캐슬링 방해, 공격 전 중앙 장악, 폰 구조 숙지) 사실상 자연어 판단이 필요한
+   원칙은 신뢰할 수 없는 오탐을 만들 바에 아예 코드화하지 않고 뺐다.
+*/
+const MEC_OPENING_PLY_LIMIT = 24; // 한 진영 기준 12수 안팎 — 이 구간을 넘으면 오프닝 원칙 판정을 멈춘다.
+function hasCastledBy(sans, color) {
+  const startIdx = color === "w" ? 0 : 1;
+  for (let i = startIdx; i < sans.length; i += 2) if (/^O-O/.test(sans[i])) return true;
+  return false;
+}
+function mecFacts(sansBeforeMove, san, color) {
+  const ply = sansBeforeMove.length;
+  if (ply >= MEC_OPENING_PLY_LIMIT) return [];
+  const enemy = color === "w" ? "b" : "w";
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info) return [];
+  const facts = [];
+  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const fromKey = info.castle ? null : info.from[0] + "," + info.from[1];
+  const movedId = fromKey ? grid[fromKey] : null;
+  const priorMoves = movedId ? (counts[movedId] || 0) : 0;
+  const isFirstMoveOfThisPiece = priorMoves === 0;
+  // 원칙 2: 비숍보다 나이트를 먼저 전개하라 — 이 수가 그 비숍의 첫 전개인데 아직 홈스퀘어에 남은
+  // 나이트가 있다면 위반.
+  if (!info.castle && info.piece === "B" && isFirstMoveOfThisPiece && undevelopedMinors(sansBeforeMove, color).includes("N")) {
+    facts.push("나이트를 비숍보다 먼저 전개하는 게 오프닝 원칙이에요.");
+  }
+  // 원칙 3: 오프닝에서 같은 기물을 두 번 움직이지 말라 — 상대의 실제 위협(잡히는 상태) 때문에
+  // 어쩔 수 없이 물러나거나, 잡는 수라면 예외로 둔다.
+  if (!info.castle && info.piece !== "P" && info.piece !== "K" && priorMoves >= 1 && !info.isCap) {
+    const wasThreatened = seeSquare(board, info.from[0], info.from[1], enemy) > 0;
+    if (!wasThreatened) facts.push("오프닝에서는 같은 기물을 두 번 움직이지 않는 게 원칙이에요 — 다른 기물의 전개가 그만큼 늦어져요.");
+  }
+  // 원칙 4: 불필요한 폰 이동 금지 — 폰은 되돌릴 수 없다. 룩폰(a·h)이 아직 발전 안 한 기물이 남은
+  // 채로 움직이면 성급한 폰 수로 본다(중앙·피앙케토 등 흔한 이론 수는 대상에서 뺀다).
+  if (info.piece === "P" && !info.isCap && (FILES[info.to[1]] === "a" || FILES[info.to[1]] === "h") && undevelopedMinors(sansBeforeMove, color).length > 0) {
+    facts.push("당장 필요하지 않은 폰 수보다 기물 전개를 먼저 하는 게 좋아요 — 폰은 한번 두면 되돌릴 수 없어요.");
+  }
+  // 원칙 5: 필요하지 않다면 체크하지 말라 — 잡는 수도 메이트도 아닌 체크는 대개 상대의 응수를
+  // 도와줄 뿐인 템포 낭비다.
+  if (/\+/.test(san) && !/#/.test(san) && !info.isCap) {
+    facts.push("굳이 필요하지 않다면 체크를 남발하지 않는 게 좋아요 — 상대가 막으면서 오히려 전개할 수 있어요.");
+  }
+  // 원칙 6: 전개가 느리면 포지션을 열지 말라 — 내가 상대보다 미개발 기물이 많은데 폰을 교환(포지션을
+  // 여는 행위)하면 상대의 전개된 기물이 더 활발해진다.
+  if (info.piece === "P" && info.isCap) {
+    const myUndev = undevelopedMinors(sansBeforeMove, color).length, oppUndev = undevelopedMinors(sansBeforeMove, enemy).length;
+    if (myUndev > oppUndev) facts.push("전개가 상대보다 뒤처진 상태에서는 포지션을 여는(폰을 교환하는) 걸 피하는 게 좋아요.");
+  }
+  // 원칙 7: 퀸을 폰 뒤에 배치하라 — 이동한 파일에 내 폰이 하나도 없으면(열린/세미오픈 파일) 상대
+  // 룩에게 핀·디스커버드 어택 위협을 받기 쉽다.
+  if (info.piece === "Q") {
+    const after = applySan(board, san, color);
+    let ownPawnOnFile = false;
+    for (let r = 0; r < 8; r++) { const p = after[r][info.to[1]]; if (p && p.c === color && p.t === "P") { ownPawnOnFile = true; break; } }
+    if (!ownPawnOnFile) facts.push("퀸은 자신의 폰 뒤(보호받는 자리)에 두는 게 안전해요 — 지금 자리는 상대 룩에게 노출될 수 있어요.");
+  }
+  // 원칙 8: 전개된 내 기물과 상대의 미전개 기물 교환을 피하라 — 값이 같은 기물끼리(N-N, B-B 등)
+  // 교환인데 내 기물은 이미 한 번 움직였고(전개에 템포를 씀) 상대 기물은 시작 칸 그대로였다면,
+  // 나만 템포를 손해 본 셈이다.
+  if (info.isCap && !info.castle) {
+    const captured = board[info.to[0]][info.to[1]];
+    if (captured && VAL[captured.t] === VAL[info.piece]) {
+      const capturedId = grid[info.to[0] + "," + info.to[1]];
+      const capturedMoved = capturedId ? !!counts[capturedId] : false;
+      if (!capturedMoved && priorMoves >= 1) facts.push("전개해 둔 내 기물을 상대의 아직 전개 안 한 기물과 맞바꾸면 나만 템포를 손해 봐요.");
+    }
+  }
+  // 원칙 9: 되도록 빠르게 캐슬링하라 — 아직 캐슬링을 안 했고 권리도 남아 있는데 이 수도 캐슬링이
+  // 아니라면(=계속 미루는 중이라면) 서두르라고 안내한다.
+  if (!info.castle && !hasCastledBy(sansBeforeMove, color)) {
+    const ceNow = castleEpFacts([...sansBeforeMove, san], color);
+    if (ceNow.myCastleRights && ply >= 10) facts.push("아직 캐슬링을 하지 않았어요 — 킹의 안전을 위해 서두르는 게 좋아요.");
+  }
+  // 원칙 10: 킹사이드 캐슬링이 퀸사이드보다 안전하다 — 퀸사이드는 a열 폰이 보호받지 못한다.
+  if (/^O-O-O/.test(san)) facts.push("퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.");
+  // 원칙 15("기물을 중앙에 가깝게 유지하라")의 대표 사례 — 나이트를 구석(a·h)으로 보내면 활동 범위가
+  // 좁아진다("Knight on the rim is dim").
+  if (info.piece === "N" && (FILES[info.to[1]] === "a" || FILES[info.to[1]] === "h")) {
+    facts.push("나이트는 구석보다 중앙에 가까운 자리가 훨씬 활발해요.");
+  }
+  // 원칙 18: 룩으로 빠르게 오픈/세미오픈 파일을 장악하라 — 이동한 파일에 내 폰이 없으면(오픈 또는
+  // 세미오픈) 룩의 활동 범위가 넓어지는 좋은 수다.
+  if (info.piece === "R" && !info.castle) {
+    const after = applySan(board, san, color);
+    let ownPawnOnFile = false;
+    for (let r = 0; r < 8; r++) { const p = after[r][info.to[1]]; if (p && p.c === color && p.t === "P") { ownPawnOnFile = true; break; } }
+    if (!ownPawnOnFile) facts.push("룩을 오픈 파일로 옮기는 좋은 수예요 — 막는 기물이 없는 파일에서 룩이 훨씬 강력해져요.");
+  }
   return facts;
 }
 
@@ -5237,11 +5338,11 @@ const REVIEW_COACH_COPY = {
   blunder: { head: "은(는) 블런더예요!", mascot: ["kokoa", "angry"], body: ["이 수로 크게 불리해졌어요 — 다음엔 더 신중하게 살펴보세요.", "포지션이 크게 무너졌어요."] },
   pending: { head: "", mascot: ["milku", "think"], body: ["이 수는 아직 분석되지 않았어요."] },
 };
-// (기능) insightFacts·punishLine은 자체 포지션 평가 AI(positionInsightFacts·punishmentFacts)가
-// 만든 근거다 — Stockfish 등급(m.kind) 자체는 그대로 두고, 등급과 무관하게 모든 수에 "왜"를
-// 뒷받침하는 문장을 이어 붙인다(응징 수순은 호출부가 아쉬운 수일 때만 계산해 두므로 다른 등급에는
-// 자연히 비어 있다).
-function reviewCoachCopy(m, sacrificedPiece, insightFacts, punishLine) {
+// (기능) insightFacts·punishLine·mecFacts는 자체 평가 체계(positionInsightFacts·punishmentFacts·
+// MEC/오프닝 원칙 코드화)가 만든 근거다 — Stockfish 등급(m.kind) 자체는 그대로 두고, 등급과
+// 무관하게 모든 수에 "왜"를 뒷받침하는 문장을 이어 붙인다(응징 수순은 호출부가 아쉬운 수일 때만
+// 계산해 두므로 다른 등급에는 자연히 비어 있고, MEC는 오프닝 구간을 벗어나면 자연히 비어 있다).
+function reviewCoachCopy(m, sacrificedPiece, insightFacts, punishLine, mecFactsArr) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
   // (v0.2.2 기능) 탁월한 수는 어떤 기물을 희생했는지 알 수 있으면(언더프로모션 등은 제외되어 null로
   // 넘어옴) 일반 문구 대신 그 기물을 명시한 설명을 보여준다.
@@ -5251,6 +5352,7 @@ function reviewCoachCopy(m, sacrificedPiece, insightFacts, punishLine) {
   const extra = [];
   if (punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
   if (insightFacts && insightFacts.length) extra.push(insightFacts[0]);
+  if (mecFactsArr && mecFactsArr.length) extra.push(mecFactsArr[0]);
   if (extra.length) body = body + " " + extra.join(" ");
   // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
@@ -5555,9 +5657,9 @@ function ReviewOpeningBanner({ text }) {
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
 // 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
-function ReviewCoachCard({ move, evalDisp, sacrificedPiece, insightFacts, punishLine, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, sacrificedPiece, insightFacts, punishLine, mecNotes, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
-  const copy = reviewCoachCopy(move, sacrificedPiece, insightFacts, punishLine);
+  const copy = reviewCoachCopy(move, sacrificedPiece, insightFacts, punishLine, mecNotes);
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
   return (
@@ -5886,6 +5988,12 @@ function ReviewPage({ game, onClose }) {
     if (!activeMove) return [];
     try { return positionInsightFacts(boardFromSans(effSans), effSans, activeMove.white ? "w" : "b"); } catch { return []; }
   }, [activeMove, effSans]);
+  // (기능) MEC(Move Evaluation Codification) — 사용자가 정리해 준 오프닝 원칙을 코드화한 판정.
+  // 방금 둔 수(activeMove.san)와 그 직전까지의 수순만 있으면 되는 동기 계산이라 useMemo로 충분하다.
+  const mecNotes = useMemo(() => {
+    if (!activeMove) return [];
+    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b"); } catch { return []; }
+  }, [activeMove, effSans]);
   const [punishLine, setPunishLine] = useState([]);
   useEffect(() => {
     setPunishLine([]);
@@ -5956,7 +6064,7 @@ function ReviewPage({ game, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} insightFacts={insightFacts} punishLine={punishLine} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} insightFacts={insightFacts} punishLine={punishLine} mecNotes={mecNotes} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -5990,7 +6098,7 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} insightFacts={insightFacts} punishLine={punishLine} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} insightFacts={insightFacts} punishLine={punishLine} mecNotes={mecNotes} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
@@ -11883,6 +11991,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "게임 리뷰 오프닝 구간에서 MILKU·KOKOA가 '나이트를 비숍보다 먼저 전개하세요', '같은 기물을 두 번 움직이지 마세요', '캐슬링을 서두르세요' 같은 오프닝 원칙(MEC)까지 짚어줘요.",
       "MILKU·KOKOA의 게임 리뷰 코멘트가 더 똑똑해졌어요 — 어떤 수를 두든 어떤 기물이 걸려 있는지, 아직 발전 안 한 기물이 있는지, 아쉬운 수라면 상대가 어떻게 응징할 수 있는지 등 구체적인 이유를 함께 알려줘요. 퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
       "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       "'전체' 레이팅 그래프에서 대국이 적은 시간 규정(예: 블리츠 2판)이 그냥 수직선 하나처럼 보이던 문제를 고쳤어요 — 이제 대국이 없는 구간은 그 시점 레이팅으로 평평하게 기간 끝까지 이어져요.",
