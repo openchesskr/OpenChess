@@ -2685,8 +2685,8 @@ const KW = {
   // 상보쌍 (대비색, 상호 배타)
   "MAIN-LINE": { bg: "#CDE8C9", fg: "#1E6B2C", desc: "정석 메인 라인" },
   "SIDESTEPPING": { bg: "#E0DAEC", fg: "#574A78", desc: "잘 알려지지 않은 사이드라인" },
-  "BALANCE": { bg: "#D3E4F2", fg: "#235C86", desc: "균형 잡힌 국면" },
-  "IMBALANCE": { bg: "#F5DEC9", fg: "#9A5418", desc: "불균형(비대칭) 국면" },
+  "BALANCE": { bg: "#D3E4F2", fg: "#235C86", desc: "균형 잡힌 포지션" },
+  "IMBALANCE": { bg: "#F5DEC9", fg: "#9A5418", desc: "불균형(비대칭) 포지션" },
   "SHARP": { bg: "#F4D2D2", fg: "#A8322F", desc: "날카롭고 전술적인 수" },
   "QUIET": { bg: "#D2ECE6", fg: "#1F6E63", desc: "조용하고 포지셔널한 수" },
   "STRAIGHT-LINE": { bg: "#E6E2D8", fg: "#5C564A", desc: "이후가 단순·강제적인 수" },
@@ -8453,13 +8453,14 @@ function dailyLineId(baseSans, lineIdx) { return puzzleNo(baseSans.join(" ")) + 
 // null이면 그 날짜의 퍼즐이 아직 로딩 중/미배정 상태인 것으로 취급한다).
 async function resolveDailyPuzzle(dateStr, engine) {
   let setupSans, mistakeSan, opening;
-  const override = await fetchDailyPuzzleOverride(dateStr);
+  // (성능) 개발자 오버라이드 조회(sbSelect)와 테마 배정 조회(loadDailyThemeRows)는 서로 무관한 네트워크
+  // 요청인데 예전엔 오버라이드가 먼저 끝나야 테마 조회를 시작했다 — 동시에 쏴서 왕복 하나만큼 줄인다.
+  const [override, rows] = await Promise.all([fetchDailyPuzzleOverride(dateStr), loadDailyThemeRows()]);
   if (override) {
     setupSans = (override.sans || []).slice(0, override.puzzle_ply);
     mistakeSan = (override.sans || [])[override.puzzle_ply];
     opening = override.opening || "개발자 지정 퍼즐";
   } else {
-    const rows = await loadDailyThemeRows();
     const theme = themeForDate(dateStr, rows);
     if (!theme) return null; // 아직 테마가 하나도 배정 안 된 날짜
     const pool = await loadDailyThemePool(theme.opening_tag);
@@ -9174,8 +9175,8 @@ function summarizePosition(board, userColor) {
   if (diff >= 3) return "지금 기물 점수에서 크게 앞서 있어요 — 확실히 마무리할 수를 찾아보세요.";
   if (diff >= 1) return "지금 기물을 조금 앞서 있어요 — 이 이점을 굳히는 수를 찾아보세요.";
   if (diff <= -3) return "지금 기물 점수가 크게 밀리고 있어요 — 반격할 결정적인 수가 필요해요.";
-  if (diff <= -1) return "지금 기물이 조금 부족해요 — 국면을 뒤집을 수를 찾아보세요.";
-  return "기물 점수는 팽팽해요 — 국면을 유리하게 이끌 수를 찾아보세요.";
+  if (diff <= -1) return "지금 기물이 조금 부족해요 — 포지션을 뒤집을 수를 찾아보세요.";
+  return "기물 점수는 팽팽해요 — 포지션을 유리하게 이끌 수를 찾아보세요.";
 }
 /* (20차 기능1) 퍼즐 풀이 — 고정된 단일 라인이 아니라 분기 트리를 탐색한다.
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
@@ -9285,16 +9286,37 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 유지하되, 이 짧은 탐색 애니메이션 동안만 예외적으로 실시간 값을 보여준다.
   const [liveEval, setLiveEval] = useState(null);
   const [liveDepth, setLiveDepth] = useState(null);
+  // (버그 수정) 퍼즐 포지션 대부분은 좁고 전술적이라 스톡피시가 depth 18까지 사실상 순식간에(한 프레임
+  // 안에) 끝내 버린다 — onProgress는 매 depth마다 호출되지만 setState가 화면에 그려지기도 전에 다음
+  // depth로 덮여, 사용자 눈에는 "정적 값 → (깜빡할 새도 없이) 최종 depth 값"으로만 보였다. 들어오는
+  // depth 갱신을 즉시 반영하지 않고 작은 큐에 모아 뒀다가 최소 간격(STEP_MS)을 두고 하나씩 재생해,
+  // 탐색이 아무리 빨리 끝나도 depth가 눈에 보이게 차례로 올라가는 애니메이션이 되도록 한다.
   useEffect(() => {
     setLiveEval(null); setLiveDepth(null);
     if (!engine || engine.status !== "ready") return;
     let cancelled = false;
+    const STEP_MS = 55;
+    const pending = [];
+    let playing = false, searchDone = false;
+    const playNext = () => {
+      if (cancelled) return;
+      if (!pending.length) { playing = false; if (searchDone) { setLiveEval(null); setLiveDepth(null); } return; }
+      playing = true;
+      const next = pending.shift();
+      setLiveEval(next.ev); setLiveDepth(next.depth);
+      setTimeout(playNext, STEP_MS);
+    };
     engine.evaluate(sansToFen(curSans), 18, (partial) => {
       if (cancelled) return;
       const w = posEvalToWhite(partial, curSans);
-      if (w) setLiveEval(w);
-      setLiveDepth(partial.depth);
-    }, 900, "puzzle-eval").then(() => { if (!cancelled) { setLiveEval(null); setLiveDepth(null); } });
+      if (!w) return;
+      pending.push({ ev: w, depth: partial.depth });
+      if (!playing) playNext();
+    }, 900, "puzzle-eval").then(() => {
+      if (cancelled) return;
+      searchDone = true;
+      if (!playing) { setLiveEval(null); setLiveDepth(null); }
+    });
     return () => { cancelled = true; };
   }, [curSans.join(" "), engine && engine.status]);
   const [boardSize, boardRef] = useBoardSize(380);
@@ -10363,7 +10385,10 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   }, []);
   useEffect(() => {
     if (!dates || !dates.length) return;
-    const idxs = [activeIdx - 1, activeIdx, activeIdx + 1].filter((i) => i >= 0 && i < dates.length);
+    // (성능) 엔진 워커는 하나뿐이라 여러 날짜의 계산 요청이 FIFO로 줄을 선다 — 예전엔 activeIdx-1을
+    // activeIdx보다 먼저 요청해, 정작 화면 가운데 크게 보이는(가장 먼저 눈에 띄어야 할) 프리뷰가
+    // 옆 칸 계산이 끝날 때까지 뒤로 밀렸다. activeIdx를 항상 맨 먼저 큐에 넣어 그 프리뷰부터 뜨게 한다.
+    const idxs = [activeIdx, activeIdx - 1, activeIdx + 1].filter((i) => i >= 0 && i < dates.length);
     idxs.forEach((i) => {
       const d = dates[i];
       if (resolvedMap[d] !== undefined) return;
@@ -10406,11 +10431,15 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   // 탭에서도 click이 사라졌다. 마우스 포인터(pointerType==="mouse")에서만 이 커스텀 드래그를 걸고,
   // 터치·펜은 아예 손대지 않아 브라우저 기본 스크롤(overflow-x:auto)+click이 그대로 살아 있게 한다
   // — 원래 요청도 "컴퓨터 환경에서 마우스로"였으므로 범위상으로도 맞다.
+  // (버그 수정) 예전엔 pointerdown 시점에 곧장 setPointerCapture를 걸었다 — 실제로 끌지 않은 순수한
+  // 클릭에서도 컨테이너가 포인터를 캡처한 채로 pointerup을 맞는 셈이라, 브라우저에 따라 그 뒤에 이어질
+  // click 합성이 씹히는 경우가 있었다(위 세 차례의 수정 이후에도 데스크톱에서 간헐적으로 재현된 원인으로
+  // 추정). 실제로 임계값을 넘어 "이동"이 확정된 순간에만 캡처를 걸어, 캡처가 순수 클릭의 클릭 합성에는
+  // 아예 관여하지 않도록 한다.
   const onPointerDown = (e) => {
     if (e.pointerType !== "mouse") return;
     const el = scrollerRef.current;
-    dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false, pointerId: e.pointerId };
-    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+    dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false, pointerId: e.pointerId, target: e.currentTarget };
   };
   const onPointerMove = (e) => {
     const d = dragRef.current;
@@ -10418,6 +10447,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     if (!d || !el || e.pointerType !== "mouse") return;
     const dx = e.clientX - d.x;
     if (!d.moved && Math.abs(dx) <= DRAG_CLICK_THRESHOLD) return;   // 임계값 전까지는 손 떨림으로 보고 아예 무시(스크롤도 안 밀림)
+    if (!d.moved && d.target && d.target.setPointerCapture) { try { d.target.setPointerCapture(d.pointerId); } catch { /* noop */ } }
     d.moved = true;
     el.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
   };
@@ -10426,7 +10456,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     const el = scrollerRef.current;
     dragRef.current = null;
     wasDragRef.current = !!(d && d.moved);
-    if (e && e.currentTarget && e.currentTarget.releasePointerCapture && d) { try { e.currentTarget.releasePointerCapture(d.pointerId); } catch { /* noop */ } }
+    if (d && d.moved && d.target && d.target.releasePointerCapture) { try { d.target.releasePointerCapture(d.pointerId); } catch { /* noop */ } }
     if (d && d.moved && el && dates) scrollToIndex(Math.max(0, Math.min(dates.length - 1, Math.round(el.scrollLeft / DAILY_SLOT_W))));
   };
   const onClickCapture = (e) => { if (wasDragRef.current) { wasDragRef.current = false; e.preventDefault(); e.stopPropagation(); } };
@@ -11210,7 +11240,18 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? "대국 기록을 더 불러오는 중이에요…" : "이 기간엔 대국이 부족해요."}</div>;
   let body;
   if (isAll) {
-    const series = ["rapid", "blitz", "bullet"].map((k) => ({ key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: inPeriod.filter((g) => g.timeClass === k) })).filter((s) => s.points.length >= 2);
+    // (기능) 이 기간에 그 시간 규정 대국이 없어도(전체 기록엔 있으면) 마지막 대국 당시 레이팅(=현재
+    // 레이팅)을 기간 전체에 걸친 평평한 선으로 이어 보여준다 — "기록이 없으니 그래프가 사라짐" 대신
+    // "최근 그 값에서 머물러 있음"을 보여주기 위함.
+    const nowT = Date.now() / 1000;
+    const series = ["rapid", "blitz", "bullet"].map((k) => {
+      const periodPts = inPeriod.filter((g) => g.timeClass === k);
+      if (periodPts.length >= 2) return { key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: periodPts, flat: false };
+      const allForClass = allPoints.filter((g) => g.timeClass === k);
+      if (!allForClass.length) return null;
+      const lastRating = allForClass[allForClass.length - 1].rating;
+      return { key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: [{ endTime: cutoff, rating: lastRating }, { endTime: nowT, rating: lastRating }], flat: true };
+    }).filter(Boolean);
     if (!series.length) {
       body = emptyMsg;
     } else {
@@ -11273,7 +11314,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
                 })}
               </g>
               {series.map((s) => (
-                <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+                <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={s.flat ? "4 3" : undefined} opacity={s.flat ? 0.65 : 1} />
               ))}
               {dragX != null && <line x1={dragX} x2={dragX} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
               {nearest && nearest.map((s) => <circle key={s.key} cx={xAt(s.point.endTime)} cy={yAt(s.point.rating)} r="3" fill={s.color} stroke="#14100C" strokeWidth="0.8" />)}
@@ -11295,10 +11336,18 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
         </>
       );
     }
-  } else if (inPeriod.length < 2) {
+  } else if (inPeriod.length < 2 && !allPoints.length) {
     body = emptyMsg;
   } else {
-    const points = inPeriod;
+    // (기능) 이 기간에 대국이 없어도(전체 기록엔 있으면) 마지막 대국 당시 레이팅(=현재 레이팅)을
+    // 기간 전체에 걸친 평평한 선으로 이어 보여준다 — inPeriod가 비었을 때만 쓰는 fallback이라
+    // realCount(실제 이 기간 대국 수)는 별도로 남겨 "0판"이 정직하게 보이도록 한다.
+    const flatFallback = inPeriod.length < 2;
+    const realCount = inPeriod.length;
+    const nowT = Date.now() / 1000;
+    const points = flatFallback
+      ? [{ endTime: cutoff, rating: allPoints[allPoints.length - 1].rating }, { endTime: nowT, rating: allPoints[allPoints.length - 1].rating }]
+      : inPeriod;
     const ratings = points.map((g) => g.rating);
     const min = Math.min(...ratings), max = Math.max(...ratings);
     const span = Math.max(1, max - min);
@@ -11307,15 +11356,15 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
     const lineD = points.map((g, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
     const areaD = lineD + " L" + xAt(points.length - 1).toFixed(1) + "," + (padT + plotH) + " L" + xAt(0).toFixed(1) + "," + (padT + plotH) + " Z";
     const first = points[0].rating, last = points[points.length - 1].rating;
-    const rising = last >= first;
+    const rising = !flatFallback && last >= first;
     const lineColor = TIME_CLASS_CHART_COLOR[timeFilter] || T.brassHi;
     const dragIdx = dragX != null ? Math.round(Math.max(0, Math.min(1, (dragX - padL) / plotW)) * (points.length - 1)) : null;
     const dragPoint = dragIdx != null ? points[dragIdx] : null;
     body = (
       <>
         <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-          <span style={{ fontSize: 10.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{points.length}판</span>
-          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.ink, fontWeight: 800 }}>{first} → {last} <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span></span>
+          <span style={{ fontSize: 10.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{realCount}판{flatFallback && <span style={{ color: T.inkSoft, fontWeight: 700 }}> · 최근 레이팅 유지</span>}</span>
+          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.ink, fontWeight: 800 }}>{first} → {last} {!flatFallback && <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span>}</span>
         </div>
         <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
           style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
@@ -11343,8 +11392,8 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
             <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
             <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
             {/* 선 아래 영역을 반투명하게 채움 */}
-            <path d={areaD} fill={lineColor} opacity={0.4} stroke="none" />
-            <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+            <path d={areaD} fill={lineColor} opacity={flatFallback ? 0.22 : 0.4} stroke="none" />
+            <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={flatFallback ? "4 3" : undefined} opacity={flatFallback ? 0.65 : 1} />
             {dragPoint && <line x1={xAt(dragIdx)} x2={xAt(dragIdx)} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
             {dragPoint && <circle cx={xAt(dragIdx)} cy={yAt(dragPoint.rating)} r="3.4" fill={lineColor} stroke="#14100C" strokeWidth="0.8" />}
             {/* x축 날짜 라벨 */}
@@ -11684,13 +11733,20 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
+      "퍼즐 창을 열었을 때 평가치 막대가 거의 안 움직이는 것처럼 보이던 문제를 고쳤어요 — 이제 depth가 눈에 보이게 차례로 올라가며 실시간으로 움직여요.",
+      "일일 퍼즐 캐러셀에서 컴퓨터 마우스로 카드를 눌러도 간헐적으로 반응이 없던 문제의 진짜 원인을 찾아 완전히 고쳤어요.",
+      "일일 퍼즐 캐러셀의 미리보기 체스보드가 뜨는 시간을 조금 더 줄였어요.",
+    ],
+  },
+  {
     version: "0.2.7", date: "2026.7.29", dev: ["openchesskr", "g13sus4"], items: [
       "일일 퍼즐 화면을 좌우로 스크롤하는 캐러셀로 완전히 새로 만들었어요 — 가운데로 스크롤해 고른 날짜의 퍼즐은 크게 보이고, 다른 날짜들은 작고 흐리게 물러나요. 컴퓨터에서는 마우스로 눌러 끌어도 넘길 수 있고, 선택되지 않은 카드도 예전보다 덜 어둡게 잘 보이도록 밝기를 조정했어요. 선택된 퍼즐 밑에는 그날 몇 명이 풀었는지도 바로 보여줘요.",
       "일일 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
       "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 일일 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 일일 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
       "채팅에서 '/puzzle 000000' 명령어로 존재하지 않는 번호를 보내려 하면, 이제 전송 자체가 되지 않고 그 번호의 퍼즐을 찾을 수 없다는 안내가 떠요.",
       "일일 퍼즐도 다른 퍼즐과 똑같이 고유 번호가 매겨져 채팅으로 공유하거나 '번호로 풀기'로 바로 열어볼 수 있어요.",
-      "'오늘의 퍼즐'과 '오늘의 퀘스트'라는 이름을 '일일 퍼즐'·'일일 퀘스트'로 통일했어요.",
       "퍼즐 풀이 화면의 수순 모식도에서, 해결한 라인의 가장 마지막 수가 옆의 '라인 N' 표시에 밀려 글자가 잘려 보이던 문제를 고쳤어요.",
       "퍼즐 창을 열면 평가치 막대가 곧바로 살아 움직이며 지금 포지션을 다시 훑어봐요.",
       "일일 퍼즐 캐러셀에서 카드를 눌러도 반응이 없던 문제를 완전히 고쳤어요.",
