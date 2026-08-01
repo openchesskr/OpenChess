@@ -4755,6 +4755,18 @@ function redeployFact(sansBeforeMove, san, color, kind) {
   if (!id || (counts[id] || 0) < 2) return null;
   return { opening: isOpeningPhase(sansBeforeMove, color), piece: info.piece };
 }
+// (공용) attackerColor 진영이 지금 이 칸(r,c)을 실제로 공격(캡처 가능한 방식으로)하는 기물이 몇
+// 개인지 센다 — overprotectFact가 여러 과보호 후보 중 "상대 공격자가 많은 기물"부터 우선하는 데 쓴다.
+function countAttackers(board, r, c, attackerColor) {
+  let n = 0;
+  for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+    if (rr === r && cc === c) continue;
+    const p = board[rr][cc]; if (!p || p.c !== attackerColor) continue;
+    const can = p.t === "P" ? (Math.abs(cc - c) === 1 && (attackerColor === "w" ? rr === r + 1 : rr === r - 1)) : canMove(board, p.t, attackerColor, rr, cc, r, c, true);
+    if (can) n++;
+  }
+  return n;
+}
 // (공용) enemy 진영이 이 board에서 폰이나 기물로 (r,c) 칸에 도달할 수 있는지 — 도달할 수 있다면
 // 그 기물 종류들을 모아 돌려준다. 폰은 전진(1·2칸, 막혀 있지 않을 때)과 대각선 캡처를 모두 고려한다.
 function enemyCanReach(board, r, c, enemy) {
@@ -4873,7 +4885,8 @@ function latentThreatFact(sansBeforeMove, san, color) {
 }
 // R8 — 과보호. 이 수가 이미 안전한(SEE상 안 걸린) 아군 기물에 새로 방어자를 하나 더 붙였다면(그
 // 기물이 아직 실제 위협을 받는 상태는 아니었음) "과보호"다. 이미 걸려 있던 기물을 안전하게 만드는
-// controlFacts.defends("위협 대처")와는 반대로, 위협이 없는데 미리 대비하는 수다.
+// controlFacts.defends("위협 대처")와는 반대로, 위협이 없는데 미리 대비하는 수다. 대상 후보가 여럿이면
+// 상대 공격자 수가 많은 기물부터, 공격자 수가 같으면 기물 가치가 높은 쪽부터 우선 표시한다.
 function overprotectFact(sansBeforeMove, san, color) {
   const enemy = color === "w" ? "b" : "w";
   const before = boardFromSans(sansBeforeMove);
@@ -4883,6 +4896,7 @@ function overprotectFact(sansBeforeMove, san, color) {
   const [tr, tc] = info.to;
   const mover = after[tr][tc];
   if (!mover) return null;
+  const candidates = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     if (r === tr && c === tc) continue;
     const target = after[r][c]; if (!target || target.c !== color || target.t === "K") continue;
@@ -4890,9 +4904,11 @@ function overprotectFact(sansBeforeMove, san, color) {
     if (!controllable) continue;
     const wasWeak = seeSquare(before, r, c, enemy) > 0;
     if (wasWeak) continue; // 이미 위협받던 기물이면 controlFacts.defends("위협 대처") 몫이다
-    return { piece: target.t };
+    candidates.push({ piece: target.t, attackers: countAttackers(after, r, c, enemy), val: VAL[target.t] });
   }
-  return null;
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.attackers - a.attackers || b.val - a.val);
+  return { piece: candidates[0].piece };
 }
 // R14 — 오픈/세미오픈 파일. 룩이 이동한 파일에 폰이 아예 없으면 오픈 파일, 상대 폰만 남아 있으면
 // (내 폰은 없음) 세미오픈 파일이다.
@@ -5018,8 +5034,8 @@ const MEC_PHRASES = {
   redeployOpening: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재전개하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재전개했어요.", josaEulReul(p) + " 최적의 위치로 재전개하는 수예요."], s),
   redeployMidgame: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재배치하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재배치했어요.", josaEulReul(p) + " 최적의 위치로 재배치하는 수예요."], s),
   noObviousReason: (s) => mecPick(["직관적인 이득은 찾기 어렵지만, 엔진에 의하면 좋은 수예요.", "설명하긴 어렵지만, 엔진에 의하면 좋은 수예요.", "엔진에 의하면 좋은 수예요."], s),
-  preventDirect: (blocker, targetP, s) => mecPick(["상대가 이 칸에 " + josaEulReul(PIECE_KOR[blocker]) + " 뒀다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요, 이를 막기 위해 먼저 이 칸을 선점했어요.", "이 칸을 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 차지했다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요 — 미리 막는 예방 수예요.", "예방 수예요, 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 여기 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요."], s),
-  preventIndirect: (blocker, targetP, s) => mecPick(["이 칸의 컨트롤을 늘려, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 여기 와서 " + josaEulReul(PIECE_KOR[targetP]) + " 위협하는 걸 간접적으로 막았어요.", "간접 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 이 칸에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요.", "직접 막지는 않았지만 이 칸을 컨트롤해 상대 " + PIECE_KOR[blocker] + "의 진입을 막았어요."], s),
+  preventDirect: (sq, blocker, targetP, s) => mecPick(["상대가 " + sq + "에 " + josaEulReul(PIECE_KOR[blocker]) + " 뒀다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요, 이를 막기 위해 먼저 " + sq + "를 선점했어요.", sq + "를 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 차지했다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요 — 미리 막는 예방 수예요.", "예방 수예요, 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요."], s),
+  preventIndirect: (sq, blocker, targetP, s) => mecPick([sq + "의 컨트롤을 늘려, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 여기 와서 " + josaEulReul(PIECE_KOR[targetP]) + " 위협하는 걸 간접적으로 막았어요.", "간접 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요.", "직접 막지는 않았지만 " + sq + "의 컨트롤을 늘려 상대 " + PIECE_KOR[blocker] + "의 진입을 막았어요."], s),
   nextCastle: (s) => mecPick(["이 수로 다음 수에 캐슬링이 가능해졌어요.", "다음 수에는 캐슬링을 할 수 있어요.", "이제 다음 수에 캐슬링이 가능해요."], s),
   overprotect: (p, s) => mecPick([josaEulReul(p) + " 아직 위협받지 않았지만 미리 과보호했어요.", "당장 위협은 없지만 " + josaEulReul(p) + " 미리 지키는 기물을 늘렸어요, 과보호예요.", josaIGa(p) + " 위협받진 않지만 과보호하는 수예요."], s),
   latentThreat: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 노리는 공격자를 하나 더 늘렸어요, 아직 잡을 수는 없지만 잠재 위협이에요.", "당장 잡히진 않지만 상대 " + josaIGa(p) + " 잠재 위협을 받고 있어요.", "상대 " + josaEulReul(p) + " 향한 잠재 위협을 만드는 수예요."], s),
@@ -5074,10 +5090,10 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   // R4/R9 — 예방 수(직접 > 간접). 위에서 더 급한 전술적 사실(교환/회피)을 못 찾았을 때만 확인한다.
   if (!facts.length) {
     const directPrev = directPreventionFact(sansBeforeMove, san, color);
-    if (directPrev) facts.push(MEC_PHRASES.preventDirect(directPrev.piece, directPrev.targetPiece, seed));
+    if (directPrev) facts.push(MEC_PHRASES.preventDirect(FILES[directPrev.sq[1]] + (8 - directPrev.sq[0]), directPrev.piece, directPrev.targetPiece, seed));
     else {
       const indirectPrev = indirectPreventionFact(sansBeforeMove, san, color);
-      if (indirectPrev) facts.push(MEC_PHRASES.preventIndirect(indirectPrev.piece, indirectPrev.targetPiece, seed));
+      if (indirectPrev) facts.push(MEC_PHRASES.preventIndirect(FILES[indirectPrev.sq[1]] + (8 - indirectPrev.sq[0]), indirectPrev.piece, indirectPrev.targetPiece, seed));
     }
   }
   const pawnTrade = pawnTradeFact(sansBeforeMove, san, color);
@@ -12844,6 +12860,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "예방 수 설명에 이제 상대가 노리던 칸의 좌표를 직접 알려줘요. 과보호는 여러 기물이 후보일 때 상대 공격자가 많은 기물부터, 공격자 수가 같으면 더 값진 기물부터 짚어줘요.",
       "수 설명 중 '위협' 문구에는 밑줄이 생겼어요 — 눌러보면 그 기물을 노리는 내 공격자와 상대 수비자 화살표가 차례로 나타났다가 잠시 후 사라져요.",
       "MILKU·KOKOA의 코멘트가 훨씬 세밀해졌어요 — 같은 가치의 기물끼리 마주 보면 '위협'이 아니라 '교환 요청'으로, 그 요청을 잡거나 물리면 '수락/거절'로 표현하고, 같은 기물을 여러 번 움직여도 좋은 자리를 찾아간 거면 '재전개(재배치)'로, 상대가 특정 칸에 오는 걸 막기 위해 미리 자리를 잡거나 컨트롤을 늘렸으면 '예방 수'로 짚어줘요. 기물을 처음 전개하는 수, 캐슬링 전용 평가, 위협받지 않았는데 미리 보강하는 '과보호', 아직 잡을 순 없지만 공격자를 하나 더 늘린 '잠재 위협', 룩의 오픈/세미오픈 파일 배치, 다음 수 캐슬링 예고, 폰 희생까지 새로 알려줘요.",
       "나이트·비숍이 애써 전개했다가 시작 칸으로 그대로 되돌아가거나, 상대 폰에게 쫓겨 사실 한 수면 갈 수 있었던 자리에 두 수를 들여 도착하면 MILKU·KOKOA가 그 비효율을 짚어줘요.",
