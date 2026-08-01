@@ -4208,16 +4208,126 @@ const josaIGa = (w) => w + (hasBatchim(w) ? "이" : "가");
 const josaEunNeun = (w) => w + (hasBatchim(w) ? "은" : "는");
 const josaEulReul = (w) => w + (hasBatchim(w) ? "을" : "를");
 const josaGwaWa = (w) => w + (hasBatchim(w) ? "과" : "와");
-// (기능) 탁월한 수 코멘트 보강 — 새 엔진 호출 없이, 브릴리언트 화살표(brilliantArrows)가 이미
-// 계산해 둔 "idea" 화살표(희생한 기물이 새 자리에서 다음으로 노릴 수 있는 상대 기물)를 문장으로
-// 바꾼다. "무엇을 희생했는지"(sacrificedPieceKor)에 이어 "그래서 무엇을 얻는지"까지 붙여준다.
-function brilliantIdeaNote(sansBeforeMove, san) {
-  const ideas = brilliantArrows(sansBeforeMove, san).filter((a) => a.kind === "idea");
-  if (!ideas.length) return null;
-  const after = boardFromSans([...sansBeforeMove, san]);
-  const target = after[ideas[0].to[0]][ideas[0].to[1]];
-  if (!target) return null;
-  return "이 자리에서 다음에 상대 " + josaEulReul(PIECE_KOR[target.t]) + " 노릴 수 있어요.";
+// (기능) 탁월한 수의 세 갈래 유형 판정 — isSacrifice가 이미 참으로 확인한 수에 대해서만 호출되므로,
+// 그 판정 안의 예외 처리(hasSaferSquare 등)를 다시 반복할 필요 없이 "직접 희생"(움직인 기물 자신이
+// 도착 칸에서 순손실을 내는가)과 "방치 희생"(다른 기물을 그대로 걸어 둔 채 더 급한 일을 하는가)을
+// 가르는 조건식만 그대로 재사용해 어느 쪽인지 가려낸다. 언더프로모션은 항상 별도 갈래.
+function brilliantSubtype(board, sanRaw, color) {
+  if (/=/.test(sanRaw) && !/=Q/.test(sanRaw)) return { type: "underpromo" };
+  const info = sanSrc(board, sanRaw, color);
+  if (!info) return { type: "direct", piece: null };
+  const [tr, tc] = info.to;
+  const capturedVal = info.isCap ? (board[tr][tc] ? VAL[board[tr][tc].t] : 1) : 0;
+  const after = applySan(board, sanRaw, color);
+  const enemy = color === "w" ? "b" : "w";
+  let oppGain = seeSquare(after, tr, tc, enemy);
+  const ekp = kingPos(after, enemy);
+  if (oppGain > 0 && ekp && isAttacked(after, ekp[0], ekp[1], color) && !canCaptureSquareLegally(after, tr, tc, enemy)) oppGain = 0;
+  const net = capturedVal - oppGain;
+  if (!info.castle && info.piece !== "P" && net <= -1) {
+    const mover = after[tr][tc];
+    return { type: "direct", piece: mover ? mover.t : info.piece };
+  }
+  const { sq: afterHangSq } = hangingLossSq(after, color, [tr, tc]);
+  const hangPiece = afterHangSq ? after[afterHangSq[0]][afterHangSq[1]] : null;
+  return { type: "neglect", piece: hangPiece ? hangPiece.t : null };
+}
+// (기능) 언더프로모션이 왜 퀸이 아닌지 — 퀸으로 승진했다면 상대가 둘 수 있는 합법수가 아예 없어져
+// 스테일메이트가 되는지(=무승부를 피하려 일부러 덜 강한 기물로 승진), 또는 퀸으로 승진한 자리가
+// 바로 잡히는데 실제로 고른 기물의 자리는 안전한지(=잡히지 않기 위한 선택) 두 가지 원인만 실제로
+// 국면을 재구성해 확인한다. 둘 다 아니면 원인을 특정하지 않고 null을 돌려준다.
+function underpromoReason(board, sanRaw, color) {
+  const info = sanSrc(board, sanRaw, color);
+  if (!info || !info.promo) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const [sr, sc] = info.from, [dr, dc] = info.to;
+  const qBoard = board.map((row) => row.slice());
+  qBoard[dr][dc] = { c: color, t: "Q" }; qBoard[sr][sc] = null;
+  if (!hasAnyLegalMove(qBoard, enemy) && !isInCheck(qBoard, enemy)) return "stalemate";
+  if (seeSquare(qBoard, dr, dc, enemy) > 0 && canCaptureSquareLegally(qBoard, dr, dc, enemy)) {
+    const actual = applySan(board, sanRaw, color);
+    if (!(seeSquare(actual, dr, dc, enemy) > 0 && canCaptureSquareLegally(actual, dr, dc, enemy))) return "safety";
+  }
+  return null;
+}
+// (기능) 탁월한 수를 둔 뒤 엔진의 자연스러운 응수 흐름(genPunishLine과 같은 원리 — 매 수 상대의
+// 1순위 응수를 따라감)을 몇 수 더 따라가며, 그 사이 mover 관점 기물 점수차가 이 수를 두기 직후보다
+// 더 좋아지는 시점이 있는지 찾는다. 있다면 그 수순 자체가 "내준 기물을 실제로 되찾거나 더 큰 이득을
+// 보는 구체적인 근거"가 된다.
+async function brilliantRecoupLine(engine, sansAfterMove, color, slot) {
+  if (!engine || typeof engine.evaluate !== "function") return null;
+  const startDiff = materialDiff(boardFromSans(sansAfterMove), color);
+  const line = await genPunishLine(engine, sansAfterMove, 6, 900, slot);
+  if (!line.length) return null;
+  let cur = sansAfterMove.slice(), best = null;
+  for (let i = 0; i < line.length; i++) {
+    cur = [...cur, line[i]];
+    const diff = materialDiff(boardFromSans(cur), color);
+    if (diff > startDiff && (!best || diff > best.diff)) best = { diff, line: line.slice(0, i + 1) };
+  }
+  if (!best) return null;
+  return { gain: best.diff - startDiff, line: best.line };
+}
+// (기능) 이미 불리하던 상황에서 둔 희생이라면, 같은 자연스러운 응수 흐름을 따라가며 그 안에
+// 스테일메이트나 3회 동형 반복으로 실제 무승부가 되는 지점이 있는지 확인한다 — 있다면 "정상적으로
+// 두면 계속 밀릴 뿐이라 무승부를 강제해야 했던 수"라는 구체적인 근거가 된다.
+async function brilliantDrawSeekLine(engine, sansAfterMove, slot) {
+  if (!engine || typeof engine.evaluate !== "function") return null;
+  const line = await genPunishLine(engine, sansAfterMove, 8, 900, slot);
+  if (!line.length) return null;
+  let cur = sansAfterMove.slice();
+  for (let i = 0; i < line.length; i++) {
+    cur = [...cur, line[i]];
+    const end = gameEndState(cur).end;
+    if (end === "stalemate" || end === "threefold") return { end, line: line.slice(0, i + 1) };
+  }
+  return null;
+}
+// (기능) 탁월한 수 설명 — 예전엔 "희생한 기물"과 "그래서 얻는 것"이 따로 나뉘어 있던 것을 하나의
+// 논리적인 글로 합친다. 먼저 세 유형(직접 희생/방치 희생/언더프로모션) 중 어느 쪽인지 능동적인
+// 문장으로 밝히고, 이어 엔진 PV로 실제 기물 점수를 되찾는 수순을 찾을 수 있으면 그 수순을 구체적으로
+// 설명하며, 찾을 수 없으면 장기적인 포지션 이득으로 상대의 기물 희생을 강제할 수 있음을 명시한다.
+// 이미 불리하던 상황이었다면 무승부를 노린 수인지 먼저 확인해 그쪽을 우선 설명한다. 마지막으로 이
+// 수가 엔진의 1순위 수가 아니었다면(notBest) 그 사실도 덧붙인다. 기호는 마침표·쉼표만 쓴다.
+async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosing, notBest, slot) {
+  const board = boardFromSans(sansBeforeMove);
+  const sub = brilliantSubtype(board, san, color);
+  const sansAfterMove = [...sansBeforeMove, san];
+  let typeSentence;
+  if (sub.type === "underpromo") {
+    const info = sanSrc(board, san, color);
+    const promoKor = PIECE_KOR[(info && info.promo) || "N"] || "기물";
+    const reason = underpromoReason(board, san, color);
+    if (reason === "stalemate") typeSentence = "퀸으로 승진하면 상대가 둘 수 있는 합법수가 없어져 스테일메이트로 무승부가 되므로, 대신 " + josaEulReul(promoKor) + " 골라 승진하는 수예요";
+    else if (reason === "safety") typeSentence = "퀸으로 승진하면 곧바로 잡히지만 " + josaEunNeun(promoKor) + " 안전하게 남을 수 있어, 대신 " + josaEulReul(promoKor) + " 골라 승진하는 수예요";
+    else typeSentence = "퀸이 아닌 " + josaEulReul(promoKor) + " 골라 승진하는, 흔치 않은 감각의 수예요";
+  } else if (sub.type === "neglect" && sub.piece) {
+    typeSentence = josaEulReul(PIECE_KOR[sub.piece]) + " 그대로 걸어 둔 채 그 위협을 무시하고, 대신 더 큰 이득을 얻어내는 수예요";
+  } else if (sub.piece) {
+    typeSentence = josaEulReul(PIECE_KOR[sub.piece]) + " 내주는 과감한 희생으로, 눈앞의 손해를 감수하고 더 큰 것을 노리는 수예요";
+  } else {
+    typeSentence = "눈에 보이는 손해를 감수하면서까지 더 큰 것을 노리는, 찾기 쉽지 않은 수예요";
+  }
+  let reasonSentence = null;
+  if (alreadyLosing) {
+    try {
+      const drawSeek = await brilliantDrawSeekLine(engine, sansAfterMove, slot);
+      if (drawSeek) {
+        const endKor = drawSeek.end === "stalemate" ? "스테일메이트" : "3회 동형 반복";
+        reasonSentence = "이미 불리하던 상황에서 그대로 두면 계속 밀릴 뿐이라, " + drawSeek.line.join(" ") + " 수순으로 " + endKor + "를 만들어 무승부를 강제해야 했던 수예요";
+      }
+    } catch { }
+  }
+  if (!reasonSentence) {
+    try {
+      const recoup = await brilliantRecoupLine(engine, sansAfterMove, color, slot);
+      if (recoup) reasonSentence = "이후 " + recoup.line.join(" ") + " 수순을 거치면 내준 기물 점수를 그대로 되찾거나 오히려 더 큰 이득을 볼 수 있어, 당장은 손해로 보여도 결국 이득으로 돌아오는 수예요";
+    } catch { }
+  }
+  if (!reasonSentence) reasonSentence = "당장 기물 점수를 그대로 되찾지는 못해도, 이렇게 만든 포지션 이득으로 상대를 계속 압박하면 나중에 상대가 다시 기물을 내줄 수밖에 없는 상황을 강제할 수 있어, 길게 보면 게임을 유리하게 이끌 수 있는 수예요";
+  let text = typeSentence + ". " + reasonSentence + ".";
+  if (notBest) text += " 참고로 엔진이 고른 최선의 수는 아니지만, 찾기 힘든 감각적이고 탁월한 수예요.";
+  return text;
 }
 
 /* ============================================================ 자체 포지션 평가 AI (FEN·PGN 결합) ============================================================
@@ -5524,22 +5634,20 @@ const REVIEW_COACH_COPY = {
   blunder: { head: "은(는) 블런더예요!", mascot: ["kokoa", "angry"], body: ["이 수로 크게 불리해졌어요 — 다음엔 더 신중하게 살펴보세요.", "포지션이 크게 무너졌어요."] },
   pending: { head: "", mascot: ["milku", "think"], body: ["이 수는 아직 분석되지 않았어요."] },
 };
-// (기능) MEC(mecFactsArr)·punishLine·ideaNote·onlyRefutation의 근거를 코멘트에 덧붙인다 —
+// (기능) MEC(mecFactsArr)·punishLine·brilliantNote·onlyRefutation의 근거를 코멘트에 덧붙인다 —
 // Stockfish 등급(m.kind) 자체는 바꾸지 않는다. 정석 수(book)만 제외하고 모든 등급에 적용한다
 // (MEC가 이제 "원칙 위반 판정"이 아니라 사실 나열이라 정석 수를 제외한 나머지에는 부담 없이 붙일
 // 수 있다 — 자세한 설계는 mecFacts 정의부 주석 참고). 등급별 전용 근거(블런더의 punishLine, 탁월한
-// 수의 ideaNote, 유일한 수의 onlyRefutation)는 그 등급에만 덧붙인다.
-function reviewCoachCopy(m, sacrificedPiece, ideaNote, punishLine, mecFactsArr, onlyRefutation) {
+// 수의 brilliantNote, 유일한 수의 onlyRefutation)는 그 등급에만 덧붙인다.
+function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutation) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
-  // (v0.2.2 기능) 탁월한 수는 어떤 기물을 희생했는지 알 수 있으면(언더프로모션 등은 제외되어 null로
-  // 넘어옴) 일반 문구 대신 그 기물을 명시한 설명을 보여준다.
-  let body = (m.kind === "brilliant" && sacrificedPiece)
-    ? (sacrificedPiece + "에 대한 위협을 무시하고 희생하는 탁월한 수예요.")
-    : c.body[m.ply % c.body.length];
+  // (기능) 탁월한 수는 brilliantExplain이 만든 하나의 논리적인 글(유형 설명 + 엔진 PV 근거)이
+  // 준비되면 일반 문구 대신 그 글을 그대로 보여준다 — 계산 전(엔진 응답 대기 중)에는 기존 기본
+  // 문구로 대체해 빈 카드가 보이지 않게 한다.
+  let body = (m.kind === "brilliant" && brilliantNote) ? brilliantNote : c.body[m.ply % c.body.length];
   if (m.kind !== "book") {
     const extra = [];
     if (m.kind === "blunder" && punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
-    if (m.kind === "brilliant" && ideaNote) extra.push(ideaNote);
     // 유일한 수: "다른 수는 안 돼요"로 끝내지 않고, 실제 2순위 후보를 뒀다면 상대가 어떻게
     // 응징하는지(onlyRefutation)까지 — 이게 없으면(엔진 계산 실패 등) 조용히 생략한다.
     if (m.kind === "only" && onlyRefutation) {
@@ -5851,9 +5959,9 @@ function ReviewOpeningBanner({ text }) {
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
 // 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
-function ReviewCoachCard({ move, evalDisp, sacrificedPiece, ideaNote, punishLine, mecNotes, onlyRefutation, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
-  const copy = reviewCoachCopy(move, sacrificedPiece, ideaNote, punishLine, mecNotes, onlyRefutation);
+  const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
   return (
@@ -6183,11 +6291,33 @@ function ReviewPage({ game, onClose }) {
     if (!activeMove || activeMove.kind === "book") return [];
     try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best); } catch { return []; }
   }, [activeMove, effSans]);
-  // (기능) 탁월한 수 — "무엇을 얻는지"를 브릴리언트 화살표에서 뽑아낸 문장(엔진 불필요, 동기 계산).
-  const ideaNote = useMemo(() => {
-    if (!activeMove || activeMove.kind !== "brilliant") return null;
-    try { return brilliantIdeaNote(effSans.slice(0, -1), activeMove.san); } catch { return null; }
-  }, [activeMove, effSans]);
+  // (기능) 탁월한 수 — 유형(직접 희생/방치 희생/언더프로모션) + 엔진 PV 근거를 하나의 글로 엮은
+  // 설명(brilliantExplain, 엔진 필요, 비동기). 두기 전 평가(bestCp)가 이미 마이너스면(mover 관점)
+  // "지는 상황에서의 희생"으로 보고 무승부 수순부터 먼저 찾는다.
+  const [brilliantNote, setBrilliantNote] = useState(null);
+  useEffect(() => {
+    setBrilliantNote(null);
+    if (!activeMove || activeMove.kind !== "brilliant") return;
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    (async () => {
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
+      const w = (pool && pool[0]) || engine;
+      const prevSans = effSans.slice(0, -1);
+      const color = activeMove.white ? "w" : "b";
+      let alreadyLosing = false;
+      try {
+        const before = await w.evaluate(sansToFen(prevSans), 14, undefined, 900, "review-brilliant");
+        if (before && before.cp != null) alreadyLosing = before.cp < 0;
+        else if (before && before.mate != null) alreadyLosing = before.mate < 0;
+      } catch { }
+      try {
+        const note = await brilliantExplain(w, prevSans, activeMove.san, color, alreadyLosing, !!activeMove.best, "review-brilliant");
+        if (!cancelled) setBrilliantNote(note);
+      } catch { }
+    })();
+    return () => { cancelled = true; };
+  }, [activeMove, effSans.join(" "), engine && engine.status, engine && engine.profile]);
   // (기능) 유일한 수 — 2순위 후보를 뒀다면 상대가 어떻게 응징하는지(엔진 필요, 비동기).
   const [onlyRefutation, setOnlyRefutation] = useState(null);
   useEffect(() => {
@@ -6273,7 +6403,7 @@ function ReviewPage({ game, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} ideaNote={ideaNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -6307,7 +6437,7 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} ideaNote={ideaNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
@@ -12200,6 +12330,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "탁월한 수 설명이 훨씬 자세해졌어요 — 어떤 기물을 내주는 희생인지, 걸린 기물을 그대로 두고 더 큰 이득을 노린 수인지, 퀸이 아닌 다른 기물로 승진한 수인지부터 밝히고, 이후 수순을 분석해서 실제로 기물 점수를 되찾는 수순을 찾을 수 있으면 그걸 자세히, 못 찾으면 장기적으로 상대를 압박해 유리해지는 이유를 알려줘요. 이미 불리한 상황에서 무승부를 노린 희생이면 왜 그래야 했는지도, 최선의 수는 아니지만 감각적으로 찾은 수라면 그 사실도 짚어줘요.",
       "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격', 폰끼리 서로 노려보고 있으면 '서로 폰을 노리고 있어요', 폰을 교환했으면 '중앙 쪽으로 잡았는지'까지 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
       "공짜로 잡을 수 있는 상대 기물을 잡지 않아도, 그 수가 여전히 좋은 수면 '기물을 잡지 않았지만 여전히 좋은 수예요'라고 알려줘요. 그 기물을 잡는 게 사실 최선이었다면 그 사실까지 짚어줘요.",
       "기물을 교환하는 수에도 상황에 맞는 설명을 붙여줘요 — 유리할 때 교환은 게임을 쉽게 풀어가는 좋은 방법이라고, 불리할 때 교환은 원래 피하는 게 좋지만 이 교환이 불가피한 최선이었는지 알려주고, 반대로 상황에 안 맞는 교환이었다면 '목적을 갖고 교환해야 한다'고 짚어줘요.",
