@@ -4307,12 +4307,15 @@ async function onlyMoveRefutation(engine, sansBeforeMove, plies = 2) {
    tensionFacts(진짜 걸린 기물)가 최상위로 이미 말해주므로, 더 이상 무관한 스타일 조언이 끼어들
    여지가 없다.
    1) FEN — 기물 긴장(tensionFacts, 최우선 — 진짜 걸린 기물이야말로 대부분의 블런더의 실제 원인).
-   2) FEN — 이 수가 새로 만든 위협·방어(controlFacts, 아래) — "비숍이 이제 f7을 노린다", "이 수가
+   2) FEN — 회피·반격(evasionFact, 아래) — 걸려 있던 고가치 기물을 안전한 칸으로 옮기면 회피,
+      그러면서 상대의 동가·고가 기물까지 새로 노리면 반격.
+   3) FEN — 이 수가 새로 만든 위협·방어(controlFacts, 아래) — "비숍이 이제 f7을 노린다", "이 수가
       위태롭던 폰을 미리 지킨다" 같은, 이동한 기물의 실제 공격/방어 범위에 근거한 사실.
-   3) PGN — 템포 낭비(tempoWasteFact, 아래) — 한 번에 갈 수 있던 폰을 두 수에 나눠 감.
-   4) PGN — 캐슬링/앙파상은 판정 없이 정보로만(권리를 잃었다/퀸사이드라 a폰이 약하다).
+   4) PGN — 템포 낭비(tempoWasteFact, 아래) — 한 번에 갈 수 있던 폰을 두 수에 나눠 감.
+   5) PGN — 캐슬링/앙파상은 판정 없이 정보로만(권리를 잃었다/퀸사이드라 a폰이 약하다).
    여러 수에 걸친 기물 재배치 계획(엔진 PV 기반)은 매 수 엔진을 새로 돌려야 해 비용이 커서, 코치
    카드에 자동으로 붙이지 않고 온디맨드 기능으로 따로 둔다(아직 미구현).
+   각 사실은 매번 같은 문장이면 기계적으로 들려서(MEC_PHRASES) 여러 표현을 두고 ply로 순환시킨다.
 */
 const MEC_OPENING_PLY_LIMIT = 24; // 한 진영 기준 12수 안팎 — 캐슬링 권리 상실 안내는 이 구간에서만.
 // FEN 기반 — 이 수가 새로 만든 통제력. 이동한 기물이 도착 칸에서 실제로 공격 가능한 칸들을 훑어,
@@ -4357,16 +4360,58 @@ function tempoWasteFact(sansBeforeMove, san, color) {
   if (!id || !counts[id]) return null; // 첫 이동이면 낭비랄 게 없다
   const originFile = id[2]; // "wPa2" -> "a"
   if (originFile !== FILES[info.from[1]]) return null; // 그사이 대각선 캡처로 파일이 바뀐 적 있으면 판단 보류
-  return "이 폰을 처음에 두 칸 전진시켰으면 한 수를 아낄 수 있었어요.";
+  return { kind: "tempo" };
 }
-// 위 세 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이
-// 있으면 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 이 수가 만든 구체적 위협/방어, 마지막이
+// FEN 기반 — 회피/반격. 가치가 높은(폰 제외) 내 기물이 이 수를 두기 전부터 SEE상 걸려 있었는데,
+// 이 수가 바로 그 기물을 움직여 더 이상 안전하게 잡히지 않는 칸으로 옮겼다면 "회피". 그 와중에
+// 도착 칸에서 상대의 가치가 같거나 더 높은 기물을 SEE상 이득 있게 새로 노린다면 한 단계 더 적극적인
+// "반격" — 그냥 도망만 간 게 아니라 되받아친 것이다.
+function evasionFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece === "P") return null;
+  const [fr, fc] = info.from, [tr, tc] = info.to;
+  if (seeSquare(before, fr, fc, enemy) <= 0) return null; // 애초에 걸려 있지 않았으면 회피가 아니다
+  const after = applySan(before, san, color);
+  if (seeSquare(after, tr, tc, enemy) > 0) return null; // 옮긴 자리도 여전히 잡히면 회피 실패
+  const mover = after[tr][tc];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const target = after[r][c];
+    if (!target || target.c !== enemy || target.t === "K") continue;
+    if (VAL[target.t] < VAL[mover.t]) continue;
+    if (!canMove(after, mover.t, color, tr, tc, r, c, true)) continue;
+    if (seeSquare(after, r, c, color) > 0) return { kind: "counter", piece: info.piece, target: target.t };
+  }
+  return { kind: "evade", piece: info.piece };
+}
+// 같은 사실을 매번 똑같은 문장으로만 말하면 기계적으로 들려서, 유형별로 여러 표현을 두고 이 수의
+// ply(=sansBeforeMove.length)로 순환시킨다(REVIEW_COACH_COPY가 등급별 코멘트를 ply로 순환시키는
+// 것과 같은 방식) — 매번 랜덤하게 바뀌진 않지만, 대국을 훑어보는 동안 문구가 다양해진다.
+function mecPick(variants, seed) { return variants[((seed % variants.length) + variants.length) % variants.length]; }
+const MEC_PHRASES = {
+  mine: (p, s) => mecPick([p + "가 지금 안전하게 잡힐 수 있는 위치에 있어요.", "지금 " + p + "가 위태로워요 — 상대에게 잡힐 수 있어요.", p + "를 지킬 수를 찾아야 해요 — 지금은 잡혀요."], s),
+  threat: (p, s) => mecPick(["이 수는 상대 " + p + "를 노려요.", "상대 " + p + "가 이 수에 걸렸어요.", "이제 상대 " + p + "를 위협하고 있어요."], s),
+  preexistingTheirs: (p, s) => mecPick(["상대 " + p + "가 걸려 있어요 — 잡을 기회예요.", "상대 " + p + "를 잡을 수 있는 상황이에요.", "아직 상대 " + p + "가 방치돼 있어요 — 놓치지 마세요."], s),
+  defend: (p, s) => mecPick(["이 수는 위태롭던 아군 " + p + "를 미리 지켜요.", "덕분에 " + p + "가 더 이상 위험하지 않아요.", "이 수로 " + p + "를 안전하게 지켰어요."], s),
+  evade: (p, s) => mecPick([p + "가 위협을 피해 안전한 자리로 갔어요.", p + "를 안전한 칸으로 피신시켰어요.", "이 수로 " + p + "에 대한 위협을 피했어요."], s),
+  counter: (p, tgt, s) => mecPick(["위협을 피하면서 상대 " + tgt + "를 반격해요.", "피하는 동시에 상대 " + tgt + "를 노리는 반격이에요.", p + "를 피신시키면서 상대 " + tgt + "까지 반격했어요."], s),
+  tempo: (s) => mecPick(["이 폰을 처음에 두 칸 전진시켰으면 한 수를 아낄 수 있었어요.", "한 번에 두 칸 갈 수 있었는데 나눠서 전진했어요.", "이 폰, 처음부터 두 칸 밀었으면 템포를 아꼈을 거예요."], s),
+  castleLost: (s) => mecPick(["이 수로 캐슬링 권리를 잃었어요.", "캐슬링 권리가 이 수로 사라졌어요.", "이제 캐슬링을 할 수 없게 됐어요."], s),
+  queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.", "퀸사이드로 캐슬링했어요 — a열 폰이 다소 약점이 될 수 있어요.", "퀸사이드 캐슬링이에요, 킹사이드보다는 살짝 덜 안전해요."], s),
+};
+// 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
+// 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 이 수가 만든 구체적 위협/방어, 마지막이
 // 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중 맨 앞 하나만 코멘트에 붙인다.
 function mecFacts(sansBeforeMove, san, color) {
+  const seed = sansBeforeMove.length;
   const board = boardFromSans([...sansBeforeMove, san]);
   const facts = [];
   const t = tensionFacts(board, color);
-  if (t.mine.length) facts.push(PIECE_KOR[t.mine[0].piece] + "가 지금 안전하게 잡힐 수 있는 위치에 있어요.");
+  if (t.mine.length) facts.push(MEC_PHRASES.mine(PIECE_KOR[t.mine[0].piece], seed));
+  const evasion = evasionFact(sansBeforeMove, san, color);
+  if (evasion) facts.push(evasion.kind === "counter" ? MEC_PHRASES.counter(PIECE_KOR[evasion.piece], PIECE_KOR[evasion.target], seed) : MEC_PHRASES.evade(PIECE_KOR[evasion.piece], seed));
   const ctrl = controlFacts(sansBeforeMove, san, color);
   // (버그 수정) 상대 기물이 걸려 있어도, 그게 방금 이 수 자체가 새로 위협한 기물(ctrl.threats와
   // 같은 칸)이라면 "잡을 기회예요"(원래부터 있던 약점을 챙기는 뉘앙스)가 아니라 "노려요"(이 수가
@@ -4375,17 +4420,16 @@ function mecFacts(sansBeforeMove, san, color) {
   // 기물(다른 칸)만 "잡을 기회" 문구를 쓴다.
   const justThreatenedSq = ctrl.threats.length ? ctrl.threats[0].sq.join(",") : null;
   const preexistingTheirs = t.theirs.filter((x) => x.sq.join(",") !== justThreatenedSq);
-  if (ctrl.threats.length) facts.push("이 수는 상대 " + PIECE_KOR[ctrl.threats[0].piece] + "를 노려요.");
-  else if (preexistingTheirs.length) facts.push("상대 " + PIECE_KOR[preexistingTheirs[0].piece] + "가 걸려 있어요 — 잡을 기회예요.");
-  if (ctrl.defends.length) facts.push("이 수는 위태롭던 아군 " + PIECE_KOR[ctrl.defends[0].piece] + "를 미리 지켜요.");
-  const tempo = tempoWasteFact(sansBeforeMove, san, color);
-  if (tempo) facts.push(tempo);
+  if (ctrl.threats.length) facts.push(MEC_PHRASES.threat(PIECE_KOR[ctrl.threats[0].piece], seed));
+  else if (preexistingTheirs.length) facts.push(MEC_PHRASES.preexistingTheirs(PIECE_KOR[preexistingTheirs[0].piece], seed));
+  if (ctrl.defends.length) facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
+  if (tempoWasteFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.tempo(seed));
   if (sansBeforeMove.length < MEC_OPENING_PLY_LIMIT) {
-    if (/^O-O-O/.test(san)) facts.push("퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.");
+    if (/^O-O-O/.test(san)) facts.push(MEC_PHRASES.queensideNote(seed));
     else if (!/^O-O/.test(san)) {
       const before = castleEpFacts(sansBeforeMove, color);
       const after = castleEpFacts([...sansBeforeMove, san], color);
-      if (before.myCastleRights && !after.myCastleRights) facts.push("이 수로 캐슬링 권리를 잃었어요.");
+      if (before.myCastleRights && !after.myCastleRights) facts.push(MEC_PHRASES.castleLost(seed));
     }
   }
   return facts;
@@ -12016,7 +12060,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
-      "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
+      "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격'이라고 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
       "퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
       "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       "'전체' 레이팅 그래프에서 대국이 적은 시간 규정(예: 블리츠 2판)이 그냥 수직선 하나처럼 보이던 문제를 고쳤어요 — 이제 대국이 없는 구간은 그 시점 레이팅으로 평평하게 기간 끝까지 이어져요.",
