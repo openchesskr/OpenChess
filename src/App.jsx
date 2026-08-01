@@ -4178,6 +4178,24 @@ function brilliantArrows(sans, san) {
   if (mover) for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const t = after[r][c]; if (t && t.c === enemy && t.t !== "P" && canMove(after, mover.t, color, tr, tc, r, c, true)) out.push({ from: [tr, tc], to: [r, c], kind: "idea" }); }
   return out.slice(0, 6);
 }
+// (기능) 탁월한 수(희생) 뒤 "기물 점수를 되찾을 수 있는지" 엔진 PV로 판단하던 로직을 지우는 대신,
+// color 진영의 기물 중 지금 상대에게 안전하게 잡힐 수 있는(SEE상 순손실이 나는) 기물 전부를 찾아,
+// 그 각각을 실제로 잡을 수 있는 상대 기물마다 화살표 하나씩을 만든다 — "이후 수순을 두면 기물을
+// 되찾는다"는 텍스트 설명 대신, 지금 당장 무엇이 위험한 상태인지를 보드 위에서 직접 보여준다.
+function hangingPieceArrows(board, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== color || p.t === "K") continue;
+    if (!(seeSquare(board, r, c, enemy) > 0 && canCaptureSquareLegally(board, r, c, enemy))) continue;
+    for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+      const ap = board[rr][cc]; if (!ap || ap.c !== enemy) continue;
+      const can = ap.t === "P" ? (Math.abs(cc - c) === 1 && (enemy === "w" ? rr === r - 1 : rr === r + 1)) : canMove(board, ap.t, enemy, rr, cc, r, c, true);
+      if (can) out.push({ from: [rr, cc], to: [r, c], kind: "danger" });
+    }
+  }
+  return out;
+}
 // (v0.2.2 기능) 탁월한 수의 코치 설명에 "어떤 기물을 희생했는지" 명시하기 위한 헬퍼 — 방금 이동한
 // 기물 자신이 그 도착 칸에서 공격받고 있으면(직접 희생) 그 기물을, 그렇지 않으면(다른 기물을 방치한
 // "방치 희생") 지금 가장 크게 걸려 있는 기물을 찾아 그 기물의 한글 이름을 반환한다. 언더프로모션 등
@@ -4256,24 +4274,6 @@ function underpromoReason(board, sanRaw, color) {
   }
   return null;
 }
-// (기능) 탁월한 수를 둔 뒤 엔진의 자연스러운 응수 흐름(genPunishLine과 같은 원리 — 매 수 상대의
-// 1순위 응수를 따라감)을 몇 수 더 따라가며, 그 사이 mover 관점 기물 점수차가 이 수를 두기 직후보다
-// 더 좋아지는 시점이 있는지 찾는다. 있다면 그 수순 자체가 "내준 기물을 실제로 되찾거나 더 큰 이득을
-// 보는 구체적인 근거"가 된다.
-async function brilliantRecoupLine(engine, sansAfterMove, color, slot) {
-  if (!engine || typeof engine.evaluate !== "function") return null;
-  const startDiff = materialDiff(boardFromSans(sansAfterMove), color);
-  const line = await genPunishLine(engine, sansAfterMove, 6, 900, slot);
-  if (!line.length) return null;
-  let cur = sansAfterMove.slice(), best = null;
-  for (let i = 0; i < line.length; i++) {
-    cur = [...cur, line[i]];
-    const diff = materialDiff(boardFromSans(cur), color);
-    if (diff > startDiff && (!best || diff > best.diff)) best = { diff, line: line.slice(0, i + 1) };
-  }
-  if (!best) return null;
-  return { gain: best.diff - startDiff, line: best.line };
-}
 // (기능) 이미 불리하던 상황에서 둔 희생이라면, 같은 자연스러운 응수 흐름을 따라가며 그 안에
 // 스테일메이트나 3회 동형 반복으로 실제 무승부가 되는 지점이 있는지 확인한다 — 있다면 "정상적으로
 // 두면 계속 밀릴 뿐이라 무승부를 강제해야 했던 수"라는 구체적인 근거가 된다.
@@ -4289,10 +4289,11 @@ async function brilliantDrawSeekLine(engine, sansAfterMove, slot) {
   }
   return null;
 }
-// (기능) 탁월한 수 설명 — 예전엔 "희생한 기물"과 "그래서 얻는 것"이 따로 나뉘어 있던 것을 하나의
-// 논리적인 글로 합친다. 먼저 세 유형(직접 희생/방치 희생/언더프로모션) 중 어느 쪽인지 능동적인
-// 문장으로 밝히고, 이어 엔진 PV로 실제 기물 점수를 되찾는 수순을 찾을 수 있으면 그 수순을 구체적으로
-// 설명하며, 찾을 수 없으면 장기적인 포지션 이득으로 상대의 기물 희생을 강제할 수 있음을 명시한다.
+// (기능) 탁월한 수 설명 — 먼저 세 유형(직접 희생/방치 희생/언더프로모션) 중 어느 쪽인지 능동적인
+// 문장으로 밝힌다. (버그 수정) "기물 점수를 되찾는 수순을 엔진 PV로 찾아 설명"하던 로직은 지웠다 —
+// 몇 수 앞선 엔진 PV만으로 실제 회수 여부를 판단하기엔 근거가 얕았고, 대신 지금 상대에게 안전하게
+// 잡힐 수 있는 기물 전부를 ReviewPage가 보드 위에 붉은 화살표로 직접 보여준다(hangingPieceArrows).
+// 텍스트로는 장기적인 포지션 이득으로 상대의 기물 희생을 강제할 수 있다는 일반적인 근거만 남긴다.
 // 이미 불리하던 상황이었다면 무승부를 노린 수인지 먼저 확인해 그쪽을 우선 설명한다. 마지막으로 이
 // 수가 엔진의 1순위 수가 아니었다면(notBest) 그 사실도 덧붙인다. 기호는 마침표·쉼표만 쓴다.
 async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosing, notBest, slot) {
@@ -4322,12 +4323,6 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
         const endKor = drawSeek.end === "stalemate" ? "스테일메이트" : "3회 동형 반복";
         reasonSentence = "이미 불리하던 상황에서 그대로 두면 계속 밀릴 뿐이라, " + drawSeek.line.join(" ") + " 수순으로 " + endKor + "를 만들어 무승부를 강제해야 했던 수예요";
       }
-    } catch { }
-  }
-  if (!reasonSentence) {
-    try {
-      const recoup = await brilliantRecoupLine(engine, sansAfterMove, color, slot);
-      if (recoup) reasonSentence = "이후 " + recoup.line.join(" ") + " 수순을 거치면 내준 기물 점수를 그대로 되찾거나 오히려 더 큰 이득을 볼 수 있어, 당장은 손해로 보여도 결국 이득으로 돌아오는 수예요";
     } catch { }
   }
   if (!reasonSentence) reasonSentence = "당장 기물 점수를 그대로 되찾지는 못해도, 이렇게 만든 포지션 이득으로 상대를 계속 압박하면 나중에 상대가 다시 기물을 내줄 수밖에 없는 상황을 강제할 수 있어, 길게 보면 게임을 유리하게 이끌 수 있는 수예요";
@@ -5007,7 +5002,7 @@ function threatSquareDetail(board, sq, color) {
   return { targetSq: [tr, tc], attackers, defenders };
 }
 const MEC_PHRASES = {
-  mine: (p, s) => mecPick([josaIGa(p) + " 지금 안전하게 잡힐 수 있는 위치에 있어요.", "지금 " + josaIGa(p) + " 위태로워요 — 상대에게 잡힐 수 있어요.", josaEulReul(p) + " 지킬 수를 찾아야 해요 — 지금은 잡혀요."], s),
+  mine: (sq, p, s) => mecPick([sq + "에 있는 " + josaEulReul(p) + " 잃게 돼요.", sq + "의 " + josaEulReul(p) + " 이대로 두면 잃게 돼요.", "지금대로면 " + sq + "에 있는 " + josaEulReul(p) + " 잃어요."], s),
   threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 노려요.", "상대 " + josaIGa(p) + " 이 수에 걸렸어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
   preexistingTheirs: (p, s) => mecPick(["상대 " + josaIGa(p) + " 걸려 있어요 — 잡을 기회예요.", "상대 " + josaEulReul(p) + " 잡을 수 있는 상황이에요.", "아직 상대 " + josaIGa(p) + " 방치돼 있어요 — 놓치지 마세요."], s),
   declinedCapture: (p, s) => mecPick([josaEulReul(p) + " 잡지 않았지만 여전히 좋은 수예요.", josaEulReul(p) + " 잡을 수도 있었지만, 이 수도 충분히 좋아요.", "당장 " + josaEulReul(p) + " 안 잡아도 이 수면 충분해요."], s),
@@ -5081,7 +5076,7 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
     if (offer) facts.push(offer.offered ? MEC_PHRASES.exchangeOffered(PIECE_KOR[offer.piece], seed) : MEC_PHRASES.exchangeFreeGive(PIECE_KOR[offer.piece], seed));
     else {
       const mine = fairTradeSq ? t.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t.mine;
-      if (mine.length) facts.push(MEC_PHRASES.mine(PIECE_KOR[mine[0].piece], seed));
+      if (mine.length) facts.push(MEC_PHRASES.mine(FILES[mine[0].sq[1]] + (8 - mine[0].sq[0]), PIECE_KOR[mine[0].piece], seed));
       else if (redeployPhrase) facts.push(redeployPhrase);
     }
   }
@@ -6884,12 +6879,12 @@ function ReviewPage({ game, onClose }) {
       const info = sanSrc(prevBoard, target, activeMove.white ? "w" : "b");
       if (info && !info.castle) out.push({ from: info.from, to: info.to, adopt: 80 });
     }
-    // (v0.2.2 기능) 탁월한 수(언더프로모션 제외)가 두어진 위치에서는 "Show" 여부와 무관하게, 방금 둔
-    // 내 기물을 상대의 어떤 기물이 공격할 수 있는지 항상 붉은색 경고 화살표로 보여준다. sacrificedPiece가
-    // 있다는 것 자체가 이미 "탁월한 수 + 언더프로모션 아님"을 뜻하므로 그대로 게이트로 재사용한다.
+    // (기능) 탁월한 수(언더프로모션 제외)가 두어진 위치에서는 "Show" 여부와 무관하게, 지금 상대에게
+    // 안전하게 잡힐 수 있는 내 기물 전부를 항상 붉은색 경고 화살표로 보여준다(방금 옮긴 기물 하나만이
+    // 아니라, 그 수로 인해 방치된 다른 기물까지 전부) — sacrificedPiece가 있다는 것 자체가 이미
+    // "탁월한 수 + 언더프로모션 아님"을 뜻하므로 그대로 게이트로 재사용한다.
     if (sacrificedPiece) {
-      const danger = brilliantArrows(effSans.slice(0, -1), activeMove.san).filter((a) => a.kind === "danger");
-      out.push(...danger);
+      out.push(...hangingPieceArrows(boardFromSans(effSans), activeMove.white ? "w" : "b"));
     }
     out.push(...threatArrows);
     return out;
@@ -12860,6 +12855,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "기물이 걸렸을 때 이제 정확히 어느 칸의 기물인지 좌표로 알려줘요.",
+      "탁월한 수를 두면 방금 옮긴 기물뿐 아니라, 지금 상대에게 안전하게 잡힐 수 있는 다른 기물까지 전부 빨간 화살표로 한눈에 보여줘요.",
       "예방 수 설명에 이제 상대가 노리던 칸의 좌표를 직접 알려줘요. 과보호는 여러 기물이 후보일 때 상대 공격자가 많은 기물부터, 공격자 수가 같으면 더 값진 기물부터 짚어줘요.",
       "수 설명 중 '위협' 문구에는 밑줄이 생겼어요 — 눌러보면 그 기물을 노리는 내 공격자와 상대 수비자 화살표가 차례로 나타났다가 잠시 후 사라져요.",
       "MILKU·KOKOA의 코멘트가 훨씬 세밀해졌어요 — 같은 가치의 기물끼리 마주 보면 '위협'이 아니라 '교환 요청'으로, 그 요청을 잡거나 물리면 '수락/거절'로 표현하고, 같은 기물을 여러 번 움직여도 좋은 자리를 찾아간 거면 '재전개(재배치)'로, 상대가 특정 칸에 오는 걸 막기 위해 미리 자리를 잡거나 컨트롤을 늘렸으면 '예방 수'로 짚어줘요. 기물을 처음 전개하는 수, 캐슬링 전용 평가, 위협받지 않았는데 미리 보강하는 '과보호', 아직 잡을 순 없지만 공격자를 하나 더 늘린 '잠재 위협', 룩의 오픈/세미오픈 파일 배치, 다음 수 캐슬링 예고, 폰 희생까지 새로 알려줘요.",
