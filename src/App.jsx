@@ -4485,12 +4485,37 @@ function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan) {
   }
   return { piece: stillHanging[0].piece, wasBestCapture };
 }
+// FEN 기반(재료 우위) + 등급 기반 — 기물 교환의 전략적 타당성. 동가 교환(N-N, B-B, R-R, Q-Q 등 —
+// 폰끼리 교환은 pawnTradeFact가 이미 다루므로 여기서는 뺀다)일 때, 이 수를 두기 전 기물 점수차로
+// 유리/불리를 가르고, 그 상황에서 교환하는 게 원칙적으로 맞는 선택인지를 실제 등급과 대조한다 —
+// 유리하면 교환은 단순화 전략으로 원래 좋고, 불리하면 원래 피해야 하지만 예외(최선 이상=불가피,
+// 우수/좋음=그래도 괜찮은 선택)를 인정한다. 등급이 그 기대와 어긋나면(유리한데 나쁜 교환, 불리한데
+// 나쁜 교환) 반대로 "목적 없는 교환"이었다는 신호로 본다.
+function exchangeFact(sansBeforeMove, san, color, kind) {
+  if (!kind) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || !info.isCap || info.castle || info.piece === "P") return null;
+  const captured = board[info.to[0]][info.to[1]];
+  if (!captured || VAL[captured.t] !== VAL[info.piece]) return null; // 동가 교환일 때만
+  const diff = materialDiff(board, color);
+  if (diff === 0) return null; // 팽팽하면 유·불리 프레이밍이 적용되지 않는다
+  const ahead = diff > 0;
+  const good = MEC_GOOD_KINDS.includes(kind);
+  const strong = ["brilliant", "best", "only"].includes(kind);
+  return { ahead, good, strong };
+}
 const MEC_PHRASES = {
   mine: (p, s) => mecPick([josaIGa(p) + " 지금 안전하게 잡힐 수 있는 위치에 있어요.", "지금 " + josaIGa(p) + " 위태로워요 — 상대에게 잡힐 수 있어요.", josaEulReul(p) + " 지킬 수를 찾아야 해요 — 지금은 잡혀요."], s),
   threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 노려요.", "상대 " + josaIGa(p) + " 이 수에 걸렸어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
   preexistingTheirs: (p, s) => mecPick(["상대 " + josaIGa(p) + " 걸려 있어요 — 잡을 기회예요.", "상대 " + josaEulReul(p) + " 잡을 수 있는 상황이에요.", "아직 상대 " + josaIGa(p) + " 방치돼 있어요 — 놓치지 마세요."], s),
   declinedCapture: (p, s) => mecPick([josaEulReul(p) + " 잡지 않았지만 여전히 좋은 수예요.", josaEulReul(p) + " 잡을 수도 있었지만, 이 수도 충분히 좋아요.", "당장 " + josaEulReul(p) + " 안 잡아도 이 수면 충분해요."], s),
   declinedBestCapture: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 잡는 게 최선이었지만, 이 수도 여전히 좋아요.", "사실 " + josaEulReul(p) + " 잡을 수 있었어요 — 그래도 이 수 역시 좋은 선택이에요.", josaEulReul(p) + " 잡는 게 최선이었어요, 다만 이 수도 나쁘지 않아요."], s),
+  exchangeAheadGood: (s) => mecPick(["유리한 상황에서의 기물 교환은 게임을 쉽고 안정적으로 풀어가는 좋은 방법이에요.", "이기고 있을 때 기물을 교환해 상황을 단순하게 만드는 좋은 선택이에요.", "유리할 때는 기물을 바꿔가며 안정적으로 승리를 굳히는 게 좋아요."], s),
+  exchangeBehindForced: (s) => mecPick(["지고 있을 때는 기물 교환을 피하는 게 좋지만, 이 교환은 불가피한 최선의 선택이었어요.", "기물 교환은 원래 피해야 하는 상황이지만, 이 교환만큼은 어쩔 수 없는 최선이었어요.", "지고 있는 상황에서도 이 교환은 최선으로 불가피했어요."], s),
+  exchangeBehindGood: (s) => mecPick(["지고 있을 때는 기물 교환을 피하는 게 좋지만, 이 교환은 좋은 선택이었어요.", "원래는 피해야 할 기물 교환이지만, 이번엔 괜찮은 선택이었어요.", "지고 있는 상황이라도 이 교환만큼은 나쁘지 않은 선택이었어요."], s),
+  exchangeAheadBad: (s) => mecPick(["유리한 상황이라도 목적 없는 기물 교환은 손해가 될 수 있어요 — 기물 교환은 목적을 갖고 해야 해요.", "이기고 있어도 이 교환은 아쉬운 선택이었어요 — 기물 교환에는 목적이 있어야 해요.", "유리한 상황을 단순화하려던 거라면, 이번 교환은 아쉬운 선택이었어요."], s),
+  exchangeBehindBad: (s) => mecPick(["지고 있는 상황에서는 기물 교환을 피하는 게 좋은데, 이 교환은 아쉬운 선택이었어요 — 기물 교환은 목적을 갖고 해야 해요.", "지고 있을 때 기물을 바꾸면 역전 기회도 함께 줄어들어요 — 이 교환은 아쉬운 선택이었어요.", "역전을 노려야 할 때 목적 없이 기물을 교환한 건 아쉬운 선택이에요."], s),
   defend: (p, s) => mecPick(["이 수는 위태롭던 아군 " + josaEulReul(p) + " 미리 지켜요.", "덕분에 " + josaIGa(p) + " 더 이상 위험하지 않아요.", "이 수로 " + josaEulReul(p) + " 안전하게 지켰어요."], s),
   evade: (p, s) => mecPick([josaIGa(p) + " 위협을 피해 안전한 자리로 갔어요.", josaEulReul(p) + " 안전한 칸으로 피신시켰어요.", "이 수로 " + p + "에 대한 위협을 피했어요."], s),
   counter: (p, tgt, s) => mecPick(["위협을 피하면서 상대 " + josaEulReul(tgt) + " 반격해요.", "피하는 동시에 상대 " + josaEulReul(tgt) + " 노리는 반격이에요.", josaEulReul(p) + " 피신시키면서 상대 " + tgt + "까지 반격했어요."], s),
@@ -4516,6 +4541,14 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan) {
   const pawnTrade = pawnTradeFact(sansBeforeMove, san, color);
   if (pawnTrade) facts.push(MEC_PHRASES.pawnTrade(pawnTrade.fromSq, pawnTrade.capturedSq, pawnTrade.good, seed));
   else if (pawnTensionFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.pawnTension(seed));
+  // 기물(폰 제외) 동가 교환의 전략적 타당성 — 유리할 때 교환은 원래 좋고, 불리할 때는 원래 피해야
+  // 하지만 예외(최선 이상=불가피, 우수/좋음=그래도 괜찮음)를 인정한다. 기대와 등급이 어긋나면
+  // "목적 없는 교환"이었다는 반대 프레이밍을 쓴다.
+  const exchange = exchangeFact(sansBeforeMove, san, color, kind);
+  if (exchange) {
+    if (exchange.ahead) facts.push(exchange.good ? MEC_PHRASES.exchangeAheadGood(seed) : MEC_PHRASES.exchangeAheadBad(seed));
+    else facts.push(exchange.good ? (exchange.strong ? MEC_PHRASES.exchangeBehindForced(seed) : MEC_PHRASES.exchangeBehindGood(seed)) : MEC_PHRASES.exchangeBehindBad(seed));
+  }
   const ctrl = controlFacts(sansBeforeMove, san, color);
   // (버그 수정) 상대 기물이 걸려 있어도, 그게 방금 이 수 자체가 새로 위협한 기물(ctrl.threats와
   // 같은 칸)이라면 "잡을 기회예요"(원래부터 있던 약점을 챙기는 뉘앙스)가 아니라 "노려요"(이 수가
@@ -12169,6 +12202,7 @@ const CHANGELOG = [
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
       "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격', 폰끼리 서로 노려보고 있으면 '서로 폰을 노리고 있어요', 폰을 교환했으면 '중앙 쪽으로 잡았는지'까지 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
       "공짜로 잡을 수 있는 상대 기물을 잡지 않아도, 그 수가 여전히 좋은 수면 '기물을 잡지 않았지만 여전히 좋은 수예요'라고 알려줘요. 그 기물을 잡는 게 사실 최선이었다면 그 사실까지 짚어줘요.",
+      "기물을 교환하는 수에도 상황에 맞는 설명을 붙여줘요 — 유리할 때 교환은 게임을 쉽게 풀어가는 좋은 방법이라고, 불리할 때 교환은 원래 피하는 게 좋지만 이 교환이 불가피한 최선이었는지 알려주고, 반대로 상황에 안 맞는 교환이었다면 '목적을 갖고 교환해야 한다'고 짚어줘요.",
       "MILKU·KOKOA의 코멘트에서 '룩를 노려요'처럼 조사가 어색하게 붙던 문제를 고쳤어요 — 이제 기물 이름에 맞게 '을/를', '이/가'가 자연스럽게 붙어요.",
       "엔진 추천 수 줄이 끝까지 다 써지지 않고 중간에 멈춰 보이던 문제를 진짜로 마지막까지 고쳤어요 — 이번 버전에서 새로 추가한 기능이 같은 엔진 워커를 놓아주지 않고 계속 붙잡고 있던 게 원인이었어요.",
       "퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
