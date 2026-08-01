@@ -4459,10 +4459,40 @@ function controlFacts(sansBeforeMove, san, color) {
   }
   return { threats, defends };
 }
-// PGN 기반 — 템포 낭비. 이 폰이 예전에 이미 한 번 움직였고(첫 이동), 그때부터 지금까지 파일이
-// 바뀐 적이 없다면(=대각선으로 잡은 적 없이 계속 직진만 해 왔다면) 그 첫 이동이 홈스퀘어에서 한
-// 칸짜리 전진이었다는 뜻이다 — 처음부터 두 칸 전진할 수 있었는데 나눠서 온 것.
-// (재설계) 예전엔 같은 폰의 "두 번째" 전진마다 매번 "그때 두 칸 갈 수 있었다"고 지적했는데, 이러면
+// PGN 기반 — 시작 위치 기물마다 "색+종류+시작칸" id를 부여하고 수순 전체를 다시 재생하며 몇 번
+// 움직였는지 센다(sansToUci와 동일한 재생 방식 — 캐슬링은 킹·룩 둘 다 세고, 프로모션은 같은 기물의
+// 정체성을 유지한 채 승격). id는 곧 "시작 칸"이므로, 한 번도 안 움직인 기물은 counts에 없다. grid도
+// 함께 돌려줘(현재 각 칸에 놓인 기물의 id) 아래 MEC 판정이 "이 기물이 몇 번째로 움직이는 건지"를
+// 이 수를 두기 직전 상태 기준으로 바로 조회할 수 있게 한다. firstMovePly는 그 기물이 시작 칸을 처음
+// 떠난 수의 인덱스(그 시점 보드를 재구성해, "그때 곧장 지금 칸으로 갈 수 있었는지" 같은 판정에 쓴다).
+function pieceMoveState(sans) {
+  let board = startBoard();
+  const grid = {};
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p) grid[r + "," + c] = p.c + p.t + sqName(r, c); }
+  const counts = {}, firstMovePly = {};
+  const bump = (id, ply) => { if (!id) return; if (!counts[id] && ply != null) firstMovePly[id] = ply; counts[id] = (counts[id] || 0) + 1; };
+  sans.forEach((s, i) => {
+    const color = i % 2 === 0 ? "w" : "b";
+    const info = sanSrc(board, s, color);
+    if (!info) return;
+    if (info.castle) {
+      const rank = color === "w" ? 7 : 0;
+      const kFrom = rank + ",4", kTo = rank + "," + (info.castle === "k" ? 6 : 2);
+      const rFrom = rank + "," + (info.castle === "k" ? 7 : 0), rTo = rank + "," + (info.castle === "k" ? 5 : 3);
+      bump(grid[kFrom], i); bump(grid[rFrom], i);
+      grid[kTo] = grid[kFrom]; delete grid[kFrom];
+      grid[rTo] = grid[rFrom]; delete grid[rFrom];
+    } else {
+      const [fr, fc] = info.from, [tr, tc] = info.to;
+      const fromKey = fr + "," + fc, toKey = tr + "," + tc;
+      bump(grid[fromKey], i);
+      grid[toKey] = grid[fromKey]; delete grid[fromKey];
+    }
+    board = applySan(board, s, color);
+  });
+  return { grid, counts, firstMovePly }; // counts: id("wNb1" 등) -> 움직인 횟수, grid: "r,c" -> 그 칸의 현재 id
+}
+// PGN 기반 — 템포 낭비(폰). (재설계) 예전엔 같은 폰의 "두 번째" 전진마다 매번 "그때 두 칸 갈 수 있었다"고 지적했는데, 이러면
 // 낭비를 저지른 그 수(첫 전진)가 아니라 한참 뒤 무관한 후속 수에마다 반복해서 붙는 게 어색하고, 첫
 // 전진이 상대 기물을 쫓아내는 등 실질적인 이득이 있었어도(예: 진짜로는 좋은 수인데도) 무조건 낭비로
 // 몰았다. 이제 "두 칸 갈 수 있었는데 한 칸만 간 바로 그 수"에만, 그리고 그 수 자체가 이미 나쁜 등급
@@ -4482,6 +4512,37 @@ function tempoWasteFact(sansBeforeMove, san, color, kind) {
   const ctrl = controlFacts(sansBeforeMove, san, color);
   if (ctrl.threats.length) return null; // 상대 기물을 쫓아내는 등 새 위협을 만들었다면 낭비가 아니다
   return { kind: "tempo" };
+}
+// PGN 기반 — 나이트·비숍의 비효율적인 전개(템포 낭비). 이미 한 번 이상 움직인 기물이 이번 수로
+// (1) 정확히 자기 시작 칸으로 되돌아가거나(개발한 걸 완전히 무르는 것), (2) 상대 폰에게 쫓겨(그
+// 폰이 지금 이 기물이 있던 칸을 공격 중이라 밀려난 것) 다른 칸으로 옮기는데, 그 도착 칸이 사실
+// 시작 칸에서 곧장 한 수만에 갈 수 있는 자리였다면(=시작 칸을 처음 떠난 그 순간의 보드를 다시
+// 만들어 확인) — 상대에게 폰 한 수로 템포를 거저 내주며 같은 자리에 두 수를 들여 도착한 셈이다.
+// 좋은 수(kind가 이미 좋음)면 그럴 만한 이유가 있었을 가능성이 높으므로 지적하지 않는다.
+function pieceDetourFact(sansBeforeMove, san, color, kind) {
+  if (MEC_GOOD_KINDS.includes(kind)) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.castle || !["N", "B"].includes(info.piece)) return null;
+  const { grid, counts, firstMovePly } = pieceMoveState(sansBeforeMove);
+  const id = grid[info.from[0] + "," + info.from[1]];
+  if (!id || !counts[id]) return null; // 이 기물의 첫 이동이면 대상이 아니다
+  const originSq = id.slice(2); // "wNb1" -> "b1"
+  const originC = FILES.indexOf(originSq[0]), originR = 8 - parseInt(originSq[1], 10);
+  const [fr, fc] = info.from, [tr, tc] = info.to;
+  if (tr === originR && tc === originC) return { kind: "returned", piece: info.piece };
+  const enemy = color === "w" ? "b" : "w";
+  const dir = enemy === "w" ? -1 : 1; // 상대 폰이 전진하는 방향
+  const pr = fr - dir;
+  const chasedByPawn = (fc > 0 && board[pr] && board[pr][fc - 1] && board[pr][fc - 1].c === enemy && board[pr][fc - 1].t === "P")
+    || (fc < 7 && board[pr] && board[pr][fc + 1] && board[pr][fc + 1].c === enemy && board[pr][fc + 1].t === "P");
+  if (!chasedByPawn) return null;
+  const ply = firstMovePly[id];
+  if (ply == null) return null;
+  const originBoard = boardFromSans(sansBeforeMove.slice(0, ply));
+  const directCap = !!originBoard[tr][tc];
+  if (!canMove(originBoard, info.piece, color, originR, originC, tr, tc, directCap)) return null;
+  return { kind: "detour", piece: info.piece };
 }
 // FEN 기반 — 회피/반격. 가치가 높은(폰 제외) 내 기물이 이 수를 두기 전부터 SEE상 걸려 있었는데,
 // 이 수가 바로 그 기물을 움직여 더 이상 안전하게 잡히지 않는 칸으로 옮겼다면 "회피". 그 와중에
@@ -4618,6 +4679,8 @@ const MEC_PHRASES = {
   pawnTension: (s) => mecPick(["서로 폰을 노리고 있어요.", "폰끼리 서로 위협하고 있어요.", "이 폰과 상대 폰이 서로를 겨누고 있어요."], s),
   pawnTrade: (from, captured, good, s) => mecPick([from + "폰과 " + captured + "폰을 교환하는 것은 " + (good ? "좋은" : "좋지 않은") + " 선택이에요.", (good ? "중앙 쪽으로" : "사이드 쪽으로") + " 잡은 " + from + "폰과 " + captured + "폰의 교환은 " + (good ? "괜찮아요." : "아쉬워요."), from + "폰이 " + captured + "폰을 잡은 건 " + (good ? "중앙을 지키는 좋은 선택이에요." : "중앙에서 멀어지는 아쉬운 선택이에요.")], s),
   tempo: (s) => mecPick(["이 폰을 처음에 두 칸 전진시켰으면 한 수를 아낄 수 있었어요.", "한 번에 두 칸 갈 수 있었는데 나눠서 전진했어요.", "이 폰, 처음부터 두 칸 밀었으면 템포를 아꼈을 거예요."], s),
+  pieceReturned: (p, s) => mecPick([josaIGa(p) + " 시작 칸으로 그대로 돌아갔어요 — 그동안의 전개가 무의미해졌어요.", "애써 전개한 " + p + "가 다시 시작 칸으로 돌아갔어요.", p + "이(가) 원래 자리로 되돌아가며 한 수를 낭비했어요."], s),
+  pieceDetour: (p, s) => mecPick([p + "가 상대 폰에 쫓겨 옮긴 자리, 사실 처음부터 한 수에 갈 수 있었어요.", "상대 폰에게 쫓기느라 " + p + "가 두 수를 들여서야 도착했어요 — 처음부터 한 수면 됐어요.", "상대 폰 한 수에 템포를 내주며 " + p + "가 돌아갔어요, 원래 한 번에 갈 수 있는 자리였어요."], s),
   castleLost: (s) => mecPick(["이 수로 캐슬링 권리를 잃었어요.", "캐슬링 권리가 이 수로 사라졌어요.", "이제 캐슬링을 할 수 없게 됐어요."], s),
   queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.", "퀸사이드로 캐슬링했어요 — a열 폰이 다소 약점이 될 수 있어요.", "퀸사이드 캐슬링이에요, 킹사이드보다는 살짝 덜 안전해요."], s),
 };
@@ -4672,6 +4735,8 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp) {
   else if (preexistingTheirs.length) facts.push(MEC_PHRASES.preexistingTheirs(PIECE_KOR[preexistingTheirs[0].piece], seed));
   if (ctrl.defends.length) facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
   if (tempoWasteFact(sansBeforeMove, san, color, kind)) facts.push(MEC_PHRASES.tempo(seed));
+  const detour = pieceDetourFact(sansBeforeMove, san, color, kind);
+  if (detour) facts.push(detour.kind === "returned" ? MEC_PHRASES.pieceReturned(PIECE_KOR[detour.piece], seed) : MEC_PHRASES.pieceDetour(PIECE_KOR[detour.piece], seed));
   if (sansBeforeMove.length < MEC_OPENING_PLY_LIMIT) {
     if (/^O-O-O/.test(san)) facts.push(MEC_PHRASES.queensideNote(seed));
     else if (!/^O-O/.test(san)) {
@@ -12328,6 +12393,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "나이트·비숍이 애써 전개했다가 시작 칸으로 그대로 되돌아가거나, 상대 폰에게 쫓겨 사실 한 수면 갈 수 있었던 자리에 두 수를 들여 도착하면 MILKU·KOKOA가 그 비효율을 짚어줘요.",
       "MILKU·KOKOA의 설명이 더 정확해졌어요 — 실제로는 이기고 있는데 기물 교환에 대해 '지고 있을 때는 피하는 게 좋다'고 말하던 문제, 정상적으로 기물을 교환한 것뿐인데 '지켜야 한다'고 잘못 경고하던 문제, 폰이 한 칸만 전진해도 실질적인 이득(예: 상대 기물을 쫓아냄)이 있으면 '두 칸 갈 수 있었다'고 지적하지 않고, 정말 낭비였을 때만 그 수에 딱 한 번 짚어주도록 고쳤어요.",
       "탁월한 수 설명이 훨씬 자세해졌어요 — 어떤 기물을 내주는 희생인지, 걸린 기물을 그대로 두고 더 큰 이득을 노린 수인지, 퀸이 아닌 다른 기물로 승진한 수인지부터 밝히고, 이후 수순을 분석해서 실제로 기물 점수를 되찾는 수순을 찾을 수 있으면 그걸 자세히, 못 찾으면 장기적으로 상대를 압박해 유리해지는 이유를 알려줘요. 이미 불리한 상황에서 무승부를 노린 희생이면 왜 그래야 했는지도, 최선의 수는 아니지만 감각적으로 찾은 수라면 그 사실도 짚어줘요.",
       "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격', 폰끼리 서로 노려보고 있으면 '서로 폰을 노리고 있어요', 폰을 교환했으면 '중앙 쪽으로 잡았는지'까지 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
