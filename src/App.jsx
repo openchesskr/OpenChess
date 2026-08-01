@@ -914,26 +914,37 @@ function useEngine(enginePref) {
   const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
   return { status, evaluate, evaluateMulti, profile: enginePref, urls };
 }
-/* UCI -> SAN (보드 기준) */
-function uciToSan(board, uci, color) {
+/* UCI -> SAN (보드 기준). ep를 넘기면 앙파상 캡처도 올바르게 "x"를 붙인다. uci 5번째 글자(승진 기물,
+   소문자)가 있으면 승진 기물로 반영한다 — 예전엔 이 글자를 아예 읽지 않아 언더프로모션 계속 수순이
+   전부 퀸 승진으로 잘못 표기됐다. */
+function uciToSan(board, uci, color, ep) {
   if (!uci || uci.length < 4) return null;
   const fc = FILES.indexOf(uci[0]), fr = 8 - parseInt(uci[1], 10), tc = FILES.indexOf(uci[2]), tr = 8 - parseInt(uci[3], 10);
   if (fc < 0 || tc < 0 || !board[fr] || !board[fr][fc]) return null;
-  return buildSan(board, fr, fc, tr, tc, color);
+  const promo = uci.length > 4 ? uci[4].toUpperCase() : undefined;
+  return buildSan(board, fr, fc, tr, tc, color, ep, promo);
 }
 // (v0.1.3 기능) MultiPV 한 줄의 UCI 수 목록(그 줄이 시작하는 위치 prevSans 기준)을 순서대로 SAN으로
 // 바꾼다 — 학습 탭 엔진 라인(여러 수 앞까지 미리보기)에서 쓴다. 변환할 수 없는 수를 만나면(드묾)
 // 거기서 멈추고 그때까지 변환된 수만 돌려준다.
+// (버그 수정) 앙파상 타깃(ep)을 넘기지 않아 매 반복마다 uciToSan이 이를 일반 전진으로 오인했다 —
+// isCap이 빠지며 SAN 자체는 만들어지지만(null 아님) 그 앙파상으로 실제로 사라지는 상대 폰이 이후
+// 보드 재구성(boardFromSans)에는 반영되지 않아, 다음 반복의 uciToSan이 그 폰이 여전히 있다고 보고
+// 완전히 다른(때로는 불가능한) 수로 오판해 null을 반환하며 그 지점에서 라인이 조용히 끊겼다. 매
+// 반복마다 직전 수로 새로 생긴 ep 타깃을 계산해 다음 uciToSan 호출에 넘긴다.
 function pvUciToSans(prevSans, uciList, maxPlies) {
   const sans = [];
   const cur = prevSans.slice();
+  let ep = epTarget(cur);
   const n = Math.min(uciList.length, maxPlies || uciList.length);
   for (let i = 0; i < n; i++) {
     const color = cur.length % 2 === 0 ? "w" : "b";
-    const san = uciToSan(boardFromSans(cur), uciList[i], color);
+    const board = boardFromSans(cur);
+    const san = uciToSan(board, uciList[i], color, ep);
     if (!san) break;
     sans.push(san);
     cur.push(san);
+    ep = epTargetFromMoveInfo(sanSrc(board, san, color));
   }
   return sans;
 }
@@ -4761,12 +4772,13 @@ function isOpeningPhase(sansBeforeMove, color) {
 }
 // R3/R11 — 재전개/재배치. 같은 나이트·비숍을 3번 이상(2번까지는 흔한 정상 전개로 보고 무시) 움직였는데
 // 그 수 자체가 좋은 수라면, 여러 번 움직인 이유(더 나은 자리를 찾아가는 것)를 짚어준다. 오프닝
-// 단계에서는 "재전개", 그 이후에는 "재배치"로 용어만 바꾼다.
+// 단계에서는 "재전개", 그 이후에는 "재배치"로 용어만 바꾼다. 상대 기물을 잡는 수는 목적이 캡처지
+// 자리 찾기가 아니므로 제외한다.
 function redeployFact(sansBeforeMove, san, color, kind) {
   if (!MEC_GOOD_KINDS.includes(kind)) return null;
   const board = boardFromSans(sansBeforeMove);
   const info = sanSrc(board, san, color);
-  if (!info || info.castle || !["N", "B"].includes(info.piece)) return null;
+  if (!info || info.castle || info.isCap || !["N", "B"].includes(info.piece)) return null;
   const { grid, counts } = pieceMoveState(sansBeforeMove);
   const id = grid[info.from[0] + "," + info.from[1]];
   if (!id || (counts[id] || 0) < 2) return null;
@@ -6874,7 +6886,7 @@ function ReviewPage({ game, onClose }) {
     if (!activeMove || activeMove.kind === "book") return [];
     if (inMateSequence) {
       const n = Math.abs(activeEvalDisp.mate);
-      return [mecPick(["체크메이트로 몰아가는 강제 수순이에요, 메이트까지 " + n + "수 남았어요.", "이제부터는 체크메이트 수순이에요 — " + n + "수 뒤에 외통이에요.", "메이트 " + n + "수 전이에요, 체크메이트로 끝나는 강제 수순이에요."], effSans.length)];
+      return [mecPick(["체크메이트로 몰아가는 강제 수순이에요, 메이트까지 " + n + "수 남았어요.", "이제부터는 체크메이트 수순이에요 — " + n + "수 뒤에 체크메이트예요.", "메이트 " + n + "수 전이에요, 체크메이트로 끝나는 강제 수순이에요."], effSans.length)];
     }
     try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current); } catch { return []; }
   }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate]);
@@ -12959,16 +12971,13 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.2.9", date: "2026.8.1", dev: ["openchesskr"], items: [
-      "체크메이트로 몰아가는 강제 수순에 들어가면, 더 이상 기물 위협 설명 대신 몇 수 뒤에 외통인지 바로 알려줘요.",
+    version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "체크메이트로 몰아가는 강제 수순에 들어가면, 더 이상 기물 위협 설명 대신 몇 수 뒤에 체크메이트인지 바로 알려줘요.",
       "게임 리뷰 화면의 기보 줄 드래그 스크롤이 정해진 만큼씩 뻑뻑하게 움직이던 문제를 고쳤어요 — 이제 손가락·마우스 움직임에 그대로 반응하는 부드러운 스크롤이에요.",
       "과보호 설명에도 '위협' 설명처럼 밑줄이 생겼어요 — 눌러보면 그 기물을 지키는 이유가 된 상대 공격자들이 화살표로 차례로 나타나요.",
       "예방 수 설명에도 밑줄이 생겼어요 — 눌러보면 지키던 칸에 금빛 테두리가 뜨고, 상대가 노리던 진입 경로가 빨간 화살표로, 그걸 막은 내 대응이 초록 화살표로 나타나면서 빨간 화살표는 옅어지며 사라져요.",
-      "엔진 추천 수 줄이 끊겨 보이던 문제를 다시 한번 붙잡고 직접 재현 테스트를 거쳐 검증했어요.",
-    ],
-  },
-  {
-    version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "상대 기물을 잡는 수에는 더 이상 '재전개(재배치)' 설명이 붙지 않아요 — 캡처는 자리를 찾아가는 것과는 다른 목적이니까요.",
+      "엔진 추천 수 줄이 중간에 끊기던 진짜 원인을 찾았어요 — 앙파상으로 잡는 수가 낀 예상 수순에서 그 이후 수순 전체가 조용히 계산에서 빠지고 있었어요, 이제 앙파상이 포함된 수순도 끝까지 제대로 이어져요.",
       "과보호 설명에서 아직 한 번도 안 움직인 기물(퀸 등)이 실제로 지켜지는 폰을 제치고 잘못 뽑히던 문제를 고쳤어요.",
       "모바일 게임 리뷰 화면의 기보 줄을 스와이프로 빠르게 좌우로 넘길 수 있어요.",
       "엔진 추천 수 줄이 끝까지 안 써지던 문제의 진짜 원인을 찾아 고쳤어요 — 게임 리뷰를 열어도 그 밑에 있던 학습·퍼즐 화면이 배경에서 계속 엔진을 쓰고 있었던 게 문제였어요, 이제 리뷰가 열려 있는 동안은 그 화면들의 실시간 분석을 멈추고 엔진을 리뷰에 전부 양보해요.",
