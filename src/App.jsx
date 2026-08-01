@@ -3239,7 +3239,8 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
 // 금색 대각선 그라데이션으로 바꾸고, 아래 HINT_GOLD_GLOW(외곽 발광 box-shadow)를 더해 훨씬 강하게 빛나 보이게 한다.
 const HINT_GOLD_GRADIENT = "linear-gradient(135deg, rgba(255,229,150,.98), rgba(216,163,58,.97))";
 const HINT_GOLD_GLOW = "0 0 16px 5px rgba(255,196,64,.9), inset 0 0 10px rgba(255,255,255,.55)";
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
+function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
+  const haloSet = useMemo(() => new Set((haloSquares || []).map(([r, c]) => r + "," + c)), [haloSquares]);
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
   // (v0.2.2 UX#4) 그랜드마스터 보드 스킨에만 주기적으로 지나가는 광택(빛 sweep)을 얹는다.
@@ -3288,6 +3289,12 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               {/* (버그 수정) 기물이 하단 정렬로 바뀌면서, top/left 없이 정적 위치에 의존하던 이 점도
                   칸 바닥 쪽으로 딸려 내려가 버렸다 — 칸 정중앙에 고정되도록 명시적으로 중앙 정렬한다. */}
               {isTarget && <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
+              {/* (기능) 예방 수 시각화 — 방어 대상 칸에 금색 그라데이션 테두리(피스는 가리지 않는 링
+                  형태)를 씌운다. hintTo(전체 채움)와 달리 이미 기물이 놓인 칸도 자연스럽게 강조해야 해
+                  border-image 링 + glow만 쓴다. */}
+              {haloSet.has(r + "," + c) && (
+                <div style={{ position: "absolute", inset: cell * 0.03, borderRadius: 6, border: Math.max(2, cell * 0.055) + "px solid transparent", borderImage: "linear-gradient(135deg, #FFE596, #D8A33A) 1", boxShadow: HINT_GOLD_GLOW, pointerEvents: "none", zIndex: 5 }} />
+              )}
               {lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
                 <>
                   <div style={{ position: "absolute", inset: 0, background: QCOLOR[lastQ.kind], opacity: 0.5, pointerEvents: "none" }} />
@@ -3339,7 +3346,10 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
             // (v0.2.2 기능) 탁월한 수의 "내 기물이 공격받는다" 경고 화살표는 채택률·평가치와 무관하게
             // 항상 눈에 띄게 두껍고 진하게, 색은 확실한 붉은색(T.danger)으로 그린다.
             const w = (isDanger || isDefender) ? 0.11 : 0.05 + t * 0.14;
-            const op = (isDanger || isDefender) ? 0.92 : 0.45 + t * 0.5;
+            // (기능) 예방 수 애니메이션 — 수비자 화살표가 뜨는 순간 공격자 화살표를 지우지 않고
+            // fading 플래그만 얹어 옅게(거의 사라지듯) 남겨, "수비자가 나타나며 공격자가 사라진다"는
+            // 전환이 느껴지게 한다.
+            const op = a.fading ? 0.12 : ((isDanger || isDefender) ? 0.92 : 0.45 + t * 0.5);
             const head = (isDanger || isDefender) ? 0.32 : 0.28 + t * 0.14;    // 화살촉도 두께에 비례
             const bx = x2 - ux * head, by = y2 - uy * head;  // 샤프트 끝(=화살촉 밑변 중심)
             const nx = -uy, ny = ux;                          // 수직 단위벡터
@@ -3347,7 +3357,7 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
             const pts = (x2) + "," + (y2) + " " + (bx + nx * hw) + "," + (by + ny * hw) + " " + (bx - nx * hw) + "," + (by - ny * hw);
             const col = isDanger ? T.danger : isDefender ? T.good : T.arrow;
             return (
-              <g key={i} opacity={op}>
+              <g key={i} opacity={op} style={{ transition: "opacity .5s ease" }}>
                 <line x1={x1} y1={y1} x2={bx} y2={by} stroke={col} strokeWidth={w} strokeLinecap="round" />
                 <polygon points={pts} fill={col} />
               </g>
@@ -4783,10 +4793,10 @@ function enemyCanReach(board, r, c, enemy) {
   for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
     const p = board[rr][cc]; if (!p || p.c !== enemy) continue;
     if (p.t === "P") {
-      if (destOccupied) { if (Math.abs(cc - c) === 1 && rr + dir === r) out.push("P"); }
-      else if (cc === c && rr + dir === r) out.push("P");
-      else if (cc === c && rr === startR && rr + 2 * dir === r && !board[rr + dir][cc]) out.push("P");
-    } else if (canMove(board, p.t, enemy, rr, cc, r, c, destOccupied)) out.push(p.t);
+      if (destOccupied) { if (Math.abs(cc - c) === 1 && rr + dir === r) out.push({ type: "P", from: [rr, cc] }); }
+      else if (cc === c && rr + dir === r) out.push({ type: "P", from: [rr, cc] });
+      else if (cc === c && rr === startR && rr + 2 * dir === r && !board[rr + dir][cc]) out.push({ type: "P", from: [rr, cc] });
+    } else if (canMove(board, p.t, enemy, rr, cc, r, c, destOccupied)) out.push({ type: p.t, from: [rr, cc] });
   }
   return out;
 }
@@ -4806,22 +4816,25 @@ function wouldThreatenIfEnemyReaches(board, r, c, pieceType, color) {
   return null;
 }
 // R4 — 직접 예방 수. 이 수가(캡처가 아닌) 빈 칸을 선점했는데, 이 수가 없었다면 상대가 폰이나
-// 기물로 바로 그 칸에 와서(다음 수) 내 기물을 새로 위협할 수 있었다면 "직접 예방 수"다.
+// 기물로 바로 그 칸에 와서(다음 수) 내 기물을 새로 위협할 수 있었다면 "직접 예방 수"다. 시각화용으로
+// 상대가 그 칸에 들어왔을 진입 경로(attackerFrom→sq)와, 그걸 막은 내 응수 경로(이 수 자체의
+// from→to, sq와 동일)도 함께 돌려준다.
 function directPreventionFact(sansBeforeMove, san, color) {
   const enemy = color === "w" ? "b" : "w";
   const before = boardFromSans(sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle || info.isCap) return null;
   const [tr, tc] = info.to;
-  for (const t of enemyCanReach(before, tr, tc, enemy)) {
-    const threatened = wouldThreatenIfEnemyReaches(before, tr, tc, t, color);
-    if (threatened) return { piece: t, sq: [tr, tc], targetPiece: threatened.piece };
+  for (const cand of enemyCanReach(before, tr, tc, enemy)) {
+    const threatened = wouldThreatenIfEnemyReaches(before, tr, tc, cand.type, color);
+    if (threatened) return { piece: cand.type, sq: [tr, tc], targetPiece: threatened.piece, attackerFrom: cand.from, myFrom: info.from, myTo: [tr, tc] };
   }
   return null;
 }
 // R9 — 간접 예방 수. 이 수(폰의 비캡처 전진)가 새로 대각선으로 컨트롤하게 된 빈 칸 중, 원래는
 // 상대가 안전하게 갈 수 있었지만(갔다면 내 기물을 위협했을 것) 이 폰 때문에 더 이상 안전하지
-// 않게 된 칸이 있다면 "간접 예방 수"다.
+// 않게 된 칸이 있다면 "간접 예방 수"다. 시각화용으로 상대의 진입 경로(attackerFrom→sq)와, 지금
+// 그 칸을 컨트롤하는 내 기물의 칸에서 그 칸까지의 경로(myFrom→sq, myFrom은 이 수의 도착 칸)도 돌려준다.
 function indirectPreventionFact(sansBeforeMove, san, color) {
   const enemy = color === "w" ? "b" : "w";
   const before = boardFromSans(sansBeforeMove);
@@ -4832,14 +4845,14 @@ function indirectPreventionFact(sansBeforeMove, san, color) {
   for (const dc of [-1, 1]) {
     const r = tr + dir, c = tc + dc;
     if (r < 0 || r > 7 || c < 0 || c > 7 || before[r][c]) continue;
-    for (const t of enemyCanReach(before, r, c, enemy)) {
-      const threatened = wouldThreatenIfEnemyReaches(before, r, c, t, color);
+    for (const cand of enemyCanReach(before, r, c, enemy)) {
+      const threatened = wouldThreatenIfEnemyReaches(before, r, c, cand.type, color);
       if (!threatened) continue;
       const after = applySan(before, san, color);
       const afterHypo = after.map((row) => row.slice());
-      afterHypo[r][c] = { c: enemy, t };
+      afterHypo[r][c] = { c: enemy, t: cand.type };
       if (seeSquare(afterHypo, r, c, color) > 0 && canCaptureSquareLegally(afterHypo, r, c, color)) {
-        return { piece: t, sq: [r, c], targetPiece: threatened.piece };
+        return { piece: cand.type, sq: [r, c], targetPiece: threatened.piece, attackerFrom: cand.from, myFrom: [tr, tc], myTo: [r, c] };
       }
     }
   }
@@ -4918,11 +4931,11 @@ function overprotectFact(sansBeforeMove, san, color) {
     if (wasWeak) continue; // 이미 위협받던 기물이면 controlFacts.defends("위협 대처") 몫이다
     const id = grid[r + "," + c];
     const developed = !!(id && counts[id]);
-    candidates.push({ piece: target.t, attackers: countAttackers(after, r, c, enemy), val: VAL[target.t], developed });
+    candidates.push({ piece: target.t, sq: [r, c], attackers: countAttackers(after, r, c, enemy), val: VAL[target.t], developed });
   }
   if (!candidates.length) return null;
   candidates.sort((a, b) => (b.developed - a.developed) || (b.attackers - a.attackers) || (b.val - a.val));
-  return { piece: candidates[0].piece };
+  return { piece: candidates[0].piece, sq: candidates[0].sq };
 }
 // R14 — 오픈/세미오픈 파일. 룩이 이동한 파일에 폰이 아예 없으면 오픈 파일, 상대 폰만 남아 있으면
 // (내 폰은 없음) 세미오픈 파일이다.
@@ -5102,12 +5115,19 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   const evasion = evasionFact(sansBeforeMove, san, color);
   if (evasion) facts.push(evasion.kind === "counter" ? MEC_PHRASES.counter(PIECE_KOR[evasion.piece], PIECE_KOR[evasion.target], seed) : MEC_PHRASES.evade(PIECE_KOR[evasion.piece], seed));
   // R4/R9 — 예방 수(직접 > 간접). 위에서 더 급한 전술적 사실(교환/회피)을 못 찾았을 때만 확인한다.
+  // (기능) 시각화용 — 이 사실이 facts[0]으로 뽑히면 threatOut.prevent에 방어 대상 칸(halo), 상대
+  // 진입 경로(attacker), 내 응수 경로(defender)를 담아 준다(ReviewPage의 클릭 애니메이션이 사용).
   if (!facts.length) {
     const directPrev = directPreventionFact(sansBeforeMove, san, color);
-    if (directPrev) facts.push(MEC_PHRASES.preventDirect(FILES[directPrev.sq[1]] + (8 - directPrev.sq[0]), directPrev.piece, directPrev.targetPiece, seed));
-    else {
+    if (directPrev) {
+      facts.push(MEC_PHRASES.preventDirect(FILES[directPrev.sq[1]] + (8 - directPrev.sq[0]), directPrev.piece, directPrev.targetPiece, seed));
+      if (threatOut) threatOut.prevent = { targetSq: directPrev.sq, attackerFrom: directPrev.attackerFrom, myFrom: directPrev.myFrom, myTo: directPrev.myTo };
+    } else {
       const indirectPrev = indirectPreventionFact(sansBeforeMove, san, color);
-      if (indirectPrev) facts.push(MEC_PHRASES.preventIndirect(FILES[indirectPrev.sq[1]] + (8 - indirectPrev.sq[0]), indirectPrev.piece, indirectPrev.targetPiece, seed));
+      if (indirectPrev) {
+        facts.push(MEC_PHRASES.preventIndirect(FILES[indirectPrev.sq[1]] + (8 - indirectPrev.sq[0]), indirectPrev.piece, indirectPrev.targetPiece, seed));
+        if (threatOut) threatOut.prevent = { targetSq: indirectPrev.sq, attackerFrom: indirectPrev.attackerFrom, myFrom: indirectPrev.myFrom, myTo: indirectPrev.myTo };
+      }
     }
   }
   const pawnTrade = pawnTradeFact(sansBeforeMove, san, color);
@@ -5151,7 +5171,12 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   if (ctrl.defends.length) facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
   else {
     const overprotect = overprotectFact(sansBeforeMove, san, color);
-    if (overprotect) facts.push(MEC_PHRASES.overprotect(PIECE_KOR[overprotect.piece], seed));
+    if (overprotect) {
+      // (기능) 이 사실이 facts[0]으로 뽑히면(=여기까지 아무것도 못 찾았으면) 시각화용 공격자/수비자
+      // 정보를 threatOut에 담아 준다(R7과 같은 애니메이션을 과보호에도 재사용).
+      if (!facts.length && threatOut) threatOut.detail = threatSquareDetail(board, overprotect.sq, color);
+      facts.push(MEC_PHRASES.overprotect(PIECE_KOR[overprotect.piece], seed));
+    }
   }
   if (tempoWasteFact(sansBeforeMove, san, color, kind)) facts.push(MEC_PHRASES.tempo(seed));
   const detour = pieceDetourFact(sansBeforeMove, san, color, kind);
@@ -6436,7 +6461,7 @@ function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext
     <div className="flex items-center" style={{ gap: 4, padding: "8px 4px" }}>
       <button onClick={onPrev} disabled={!canPrev} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? RV.text : RV.dim, cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
       <div ref={scrollRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture}
-        className="flex items-center no-pan" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y", cursor: "grab" }}>
+        className="flex items-center no-pan" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y", cursor: "grab" }}>
         {sans.map((s, ply) => {
           const isCur = ply === curPly - 1;
           const showNum = ply % 2 === 0;
@@ -6496,7 +6521,7 @@ function ReviewOpeningBanner({ text }) {
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
 // 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
-function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -6513,11 +6538,14 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
             {evalDisp && <EvalBadge ev={evalDisp} />}
           </div>
           <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
-          {/* (R7 기능) "위협" 사실이면 밑줄 표시 + 클릭 시 공격자→수비자 화살표 애니메이션 재생 —
-              threatDetail(공격자/수비자 칸 목록)이 있을 때만 클릭 가능하게 한다. */}
+          {/* (R7 기능, 예방 수까지 확장) "위협"·"과보호"·"예방 수" 사실이면 밑줄 표시 + 클릭 시
+              애니메이션 재생 — threatDetail(공격자/수비자) 또는 preventDetail(진입/응수 경로)이
+              있을 때만 클릭 가능하게 한다. */}
           {copy.mecLine && (
             threatDetail ? (
               <p onClick={() => onThreatClick && onThreatClick(threatDetail)} className="press" style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer" }}>{copy.mecLine}</p>
+            ) : preventDetail ? (
+              <p onClick={() => onPreventClick && onPreventClick(preventDetail)} className="press" style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer" }}>{copy.mecLine}</p>
             ) : (
               <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.mecLine}</p>
             )
@@ -6833,24 +6861,41 @@ function ReviewPage({ game, onClose }) {
   // 템포 낭비 → 캐슬링 정보)이라, 정석 수(book)만 빼고 모든 등급에 부담 없이 적용한다 — 걸린
   // 기물이 있으면 그게 항상 맨 앞에 오므로, 예전처럼 무관한 스타일 조언이 원인인 것처럼 보일 일이
   // 없다. 동기 계산이라 useMemo로 충분하다(엔진 불필요).
+  // (버그 수정) 체크메이트로 몰아가는 강제 수순에 들어서면(activeEvalDisp.mate != null), 그 뒤로는
+  // 기물 하나하나가 걸렸는지 여부는 더 이상 의미 있는 정보가 아니다(이기는 쪽은 어차피 메이트로
+  // 끝나고, 지는 쪽은 뭘 지켜도 소용없다) — 이럴 때는 걸린 기물·예방 수 같은 MEC 사실 대신 지금이
+  // 체크메이트 수순이라는 것 자체와 남은 수를 명시한다.
+  const inMateSequence = !!(activeEvalDisp && activeEvalDisp.mate != null);
   // (R7 기능) mecFacts가 대표 사실로 "위협"을 뽑았으면, mecThreatOut.detail에 그 공격자/수비자
   // 칸 정보가 함께 채워진다 — useMemo 안에서 채워지는 out-parameter라 ref로 들고 다닌다.
   const mecThreatOut = useRef({});
   const mecNotes = useMemo(() => {
     mecThreatOut.current = {};
     if (!activeMove || activeMove.kind === "book") return [];
+    if (inMateSequence) {
+      const n = Math.abs(activeEvalDisp.mate);
+      return [mecPick(["체크메이트로 몰아가는 강제 수순이에요, 메이트까지 " + n + "수 남았어요.", "이제부터는 체크메이트 수순이에요 — " + n + "수 뒤에 외통이에요.", "메이트 " + n + "수 전이에요, 체크메이트로 끝나는 강제 수순이에요."], effSans.length)];
+    }
     try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current); } catch { return []; }
-  }, [activeMove, effSans]);
+  }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate]);
   const threatDetail = mecThreatOut.current.detail || null;
-  // (R7 기능) "위협" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서 수비자 화살표를 하나씩
-  // 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 수를 넘기면(activeMove가
-  // 바뀌면) 예약된 다음 단계를 모두 취소하고 화살표도 즉시 지운다.
+  // (기능) 예방 수(R4/R9)의 시각화 데이터 — mecThreatOut.current.prevent에 방어 대상 칸·상대 진입
+  // 경로·내 응수 경로가 채워져 있으면(그 사실이 facts[0]으로 뽑혔을 때만), 그 칸에 금색 테두리를
+  // 씌우고 클릭하면 진입 경로(공격자)→응수 경로(수비자) 애니메이션을 재생할 수 있게 한다.
+  const preventDetail = mecThreatOut.current.prevent || null;
+  // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
+  // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
+  // 구조가 달라서(공격자 1개→수비자 1개로 교체되는 느낌을 내야 함) 공격자를 보여준 뒤 그 공격자를
+  // 옅게 흐리면서(사라지는 연출) 동시에 수비자를 띄우고, 방어 대상 칸에는 금색 테두리(halo)를 함께
+  // 표시한다. 수를 넘기면(activeMove가 바뀌면) 예약된 다음 단계를 모두 취소하고 즉시 지운다.
   const [threatArrows, setThreatArrows] = useState([]);
+  const [haloSquares, setHaloSquares] = useState([]);
   const threatTimers = useRef([]);
   const clearThreatTimers = () => { threatTimers.current.forEach(clearTimeout); threatTimers.current = []; };
-  useEffect(() => { clearThreatTimers(); setThreatArrows([]); return clearThreatTimers; }, [activeMove, effSans]);
+  useEffect(() => { clearThreatTimers(); setThreatArrows([]); setHaloSquares([]); return clearThreatTimers; }, [activeMove, effSans]);
   const playThreatAnimation = (detail) => {
     clearThreatTimers();
+    setHaloSquares([]);
     const steps = [
       ...detail.attackers.map((sq) => ({ from: sq, to: detail.targetSq, kind: "threatAttacker" })),
       ...detail.defenders.map((sq) => ({ from: sq, to: detail.targetSq, kind: "threatDefender" })),
@@ -6860,6 +6905,20 @@ function ReviewPage({ game, onClose }) {
       threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), i * 450));
     });
     threatTimers.current.push(setTimeout(() => setThreatArrows([]), steps.length * 450 + 1000));
+  };
+  // (기능) 예방 수 애니메이션 — 금색 테두리로 방어 대상 칸을 밝히고, 상대의 진입 경로를 빨간 공격자
+  // 화살표로 먼저 보여준 뒤, 그 화살표가 옅게 사라지는 것과 동시에(fading) 내 응수 경로를 초록
+  // 수비자 화살표로 띄운다.
+  const playPreventAnimation = (detail) => {
+    clearThreatTimers();
+    setThreatArrows([]);
+    setHaloSquares([detail.targetSq]);
+    const attacker = { from: detail.attackerFrom, to: detail.targetSq, kind: "threatAttacker" };
+    const defender = { from: detail.myFrom, to: detail.myTo, kind: "threatDefender" };
+    threatTimers.current.push(setTimeout(() => setThreatArrows([attacker]), 0));
+    threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }]), 700));
+    threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }, defender]), 950));
+    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, 2400));
   };
   // (기능) 탁월한 수 — 유형(직접 희생/방치 희생/언더프로모션) + 엔진 PV 근거를 하나의 글로 엮은
   // 설명(brilliantExplain, 엔진 필요, 비동기). 두기 전 평가(bestCp)가 이미 마이너스면(mover 관점)
@@ -6974,13 +7033,13 @@ function ReviewPage({ game, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
@@ -7008,12 +7067,12 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
               leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
@@ -12899,6 +12958,15 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.2.9", date: "2026.8.1", dev: ["openchesskr"], items: [
+      "체크메이트로 몰아가는 강제 수순에 들어가면, 더 이상 기물 위협 설명 대신 몇 수 뒤에 외통인지 바로 알려줘요.",
+      "게임 리뷰 화면의 기보 줄 드래그 스크롤이 정해진 만큼씩 뻑뻑하게 움직이던 문제를 고쳤어요 — 이제 손가락·마우스 움직임에 그대로 반응하는 부드러운 스크롤이에요.",
+      "과보호 설명에도 '위협' 설명처럼 밑줄이 생겼어요 — 눌러보면 그 기물을 지키는 이유가 된 상대 공격자들이 화살표로 차례로 나타나요.",
+      "예방 수 설명에도 밑줄이 생겼어요 — 눌러보면 지키던 칸에 금빛 테두리가 뜨고, 상대가 노리던 진입 경로가 빨간 화살표로, 그걸 막은 내 대응이 초록 화살표로 나타나면서 빨간 화살표는 옅어지며 사라져요.",
+      "엔진 추천 수 줄이 끊겨 보이던 문제를 다시 한번 붙잡고 직접 재현 테스트를 거쳐 검증했어요.",
+    ],
+  },
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
       "과보호 설명에서 아직 한 번도 안 움직인 기물(퀸 등)이 실제로 지켜지는 폰을 제치고 잘못 뽑히던 문제를 고쳤어요.",
