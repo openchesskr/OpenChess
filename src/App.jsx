@@ -4893,7 +4893,11 @@ function latentThreatFact(sansBeforeMove, san, color) {
 // R8 — 과보호. 이 수가 이미 안전한(SEE상 안 걸린) 아군 기물에 새로 방어자를 하나 더 붙였다면(그
 // 기물이 아직 실제 위협을 받는 상태는 아니었음) "과보호"다. 이미 걸려 있던 기물을 안전하게 만드는
 // controlFacts.defends("위협 대처")와는 반대로, 위협이 없는데 미리 대비하는 수다. 대상 후보가 여럿이면
-// 상대 공격자 수가 많은 기물부터, 공격자 수가 같으면 기물 가치가 높은 쪽부터 우선 표시한다.
+// (버그 수정) 아직 전개되지 않은(시작 칸에 그대로 있는) 기물은 후보에서 가장 낮은 우선순위로 미룬다 —
+// 예전엔 공격자 수·기물 가치만으로 정렬해, 나이트 하나가 우연히 폰과 퀸을 동시에 "컨트롤"하면(둘 다
+// 공격자 0으로 동률) 기물 가치가 높다는 이유만으로 아직 한 번도 안 움직인 퀸을 "과보호 대상"으로
+// 짚는 경우가 있었다 — 누가 봐도 실제로 의미 있는 대상은 그 자리에서 진짜로 지켜지는 폰 쪽이었다.
+// 전개된 기물끼리는 여전히 공격자 수 내림차순, 그다음 기물 가치 내림차순으로 우선한다.
 function overprotectFact(sansBeforeMove, san, color) {
   const enemy = color === "w" ? "b" : "w";
   const before = boardFromSans(sansBeforeMove);
@@ -4903,6 +4907,7 @@ function overprotectFact(sansBeforeMove, san, color) {
   const [tr, tc] = info.to;
   const mover = after[tr][tc];
   if (!mover) return null;
+  const { grid, counts } = pieceMoveState(sansBeforeMove);
   const candidates = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     if (r === tr && c === tc) continue;
@@ -4911,10 +4916,12 @@ function overprotectFact(sansBeforeMove, san, color) {
     if (!controllable) continue;
     const wasWeak = seeSquare(before, r, c, enemy) > 0;
     if (wasWeak) continue; // 이미 위협받던 기물이면 controlFacts.defends("위협 대처") 몫이다
-    candidates.push({ piece: target.t, attackers: countAttackers(after, r, c, enemy), val: VAL[target.t] });
+    const id = grid[r + "," + c];
+    const developed = !!(id && counts[id]);
+    candidates.push({ piece: target.t, attackers: countAttackers(after, r, c, enemy), val: VAL[target.t], developed });
   }
   if (!candidates.length) return null;
-  candidates.sort((a, b) => b.attackers - a.attackers || b.val - a.val);
+  candidates.sort((a, b) => (b.developed - a.developed) || (b.attackers - a.attackers) || (b.val - a.val));
   return { piece: candidates[0].piece };
 }
 // R14 — 오픈/세미오픈 파일. 룩이 이동한 파일에 폰이 아예 없으면 오픈 파일, 상대 폰만 남아 있으면
@@ -6388,29 +6395,56 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
     </div>
   );
 }
-// (기능) 모바일용 이동 스트립 — 현재 수 주변만 가로로 보여주고 좌우 화살표로 한 수씩 이동.
+// (기능) 모바일용 이동 스트립 — 예전엔 현재 수 주변 5개만 보여주고 좌우 화살표로 한 수씩만 이동할 수
+// 있었다. 사용자가 "스크롤해서 빠르게 좌우로 넘기고 싶다"고 요청해, SequenceBar·기보 줄과 같은 방식
+// (전체 수순을 한 줄에 다 렌더링 + 포인터 드래그 스크롤, 터치는 overflow-x:auto 네이티브 스크롤이
+// 이미 자연스럽게 동작함)으로 다시 만들었다 — 이제 手가 아무리 많아도 스와이프 한 번으로 쭉 넘길 수
+// 있다. 현재 수가 바뀌면(버튼 클릭·기보 클릭 등) 그 수가 항상 화면 가운데로 부드럽게 스크롤된다.
 // (v0.2.1) 양끝 </> 버튼은 이제 onJump(정확한 ply로 점프, 자유 탐색 초기화)가 아니라 onPrev/onNext
 // (보드에서 자유롭게 둔 수가 있으면 그것부터 한 수씩 되돌리는 stepBack/stepForward)로 동작한다 —
 // 가운데 기보 항목 클릭은 여전히 onJump로 그 실제 게임 수순 위치로 하드 점프한다.
 // (v0.2.1) moves·dotPlies가 주어지면, 그래프에 원이 찍히는 수(dotPlies)만 그 등급 색을 입히고 왼쪽에
 // 수 체계 아이콘을 붙인다 — 나머지 수는 평범한 흰 글씨로 둔다(모바일 스트립이 아이콘으로 뒤덮이지 않게).
 function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext, canPrev, canNext }) {
-  const WINDOW = 5;
-  const start = Math.max(0, Math.min(curPly - Math.floor(WINDOW / 2), sans.length - WINDOW));
-  const items = sans.slice(Math.max(0, start), Math.max(0, start) + WINDOW);
+  const scrollRef = useRef(null);
+  const curRef = useRef(null);
+  useEffect(() => {
+    const el = scrollRef.current, cur = curRef.current;
+    if (!el || !cur) return;
+    const target = cur.offsetLeft + cur.offsetWidth / 2 - el.clientWidth / 2;
+    el.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }, [curPly]);
+  // 데스크톱 마우스로도 끌어서 스크롤할 수 있게(터치는 overflow-x:auto 네이티브 스크롤로 이미 동작) —
+  // SequenceBar·기보 줄과 동일한 포인터 드래그 스크롤 패턴, 드래그로 실제 스크롤했으면 클릭(점프)을 막는다.
+  const dragRef = useRef(null);
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX, scrollLeft: scrollRef.current ? scrollRef.current.scrollLeft : 0, moved: false };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current; if (!d) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 3) d.moved = true;
+    if (scrollRef.current) scrollRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
+  };
+  const endDrag = () => { dragRef.current = null; };
+  const onClickCapture = (e) => {
+    if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); }
+    dragRef.current = null;
+  };
   return (
     <div className="flex items-center" style={{ gap: 4, padding: "8px 4px" }}>
       <button onClick={onPrev} disabled={!canPrev} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? RV.text : RV.dim, cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
-      <div className="flex items-center" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", justifyContent: "center" }}>
-        {items.map((s, i) => {
-          const ply = Math.max(0, start) + i;
+      <div ref={scrollRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture}
+        className="flex items-center no-pan" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y", cursor: "grab" }}>
+        {sans.map((s, ply) => {
           const isCur = ply === curPly - 1;
           const showNum = ply % 2 === 0;
           const m = moves && moves[ply];
           const isDot = !!(dotPlies && dotPlies.has(ply) && m && QCOLOR[m.kind]);
           const txtColor = isCur ? "#241509" : isDot ? QCOLOR[m.kind] : RV.text;
           return (
-            <span key={ply} className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
+            <span key={ply} ref={isCur ? curRef : undefined} className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
               {showNum && <span style={{ fontSize: 12, color: RV.soft, fontWeight: 700 }}>{ply / 2 + 1}.</span>}
               <button onClick={() => onJump(ply + 1)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? T.brassHi : "transparent", color: txtColor, fontWeight: (isCur || isDot) ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{isDot && badgeIcon(m.kind, 13)}{stripSuffix(s)}</button>
             </span>
@@ -12867,6 +12901,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "과보호 설명에서 아직 한 번도 안 움직인 기물(퀸 등)이 실제로 지켜지는 폰을 제치고 잘못 뽑히던 문제를 고쳤어요.",
+      "모바일 게임 리뷰 화면의 기보 줄을 스와이프로 빠르게 좌우로 넘길 수 있어요.",
       "엔진 추천 수 줄이 끝까지 안 써지던 문제의 진짜 원인을 찾아 고쳤어요 — 게임 리뷰를 열어도 그 밑에 있던 학습·퍼즐 화면이 배경에서 계속 엔진을 쓰고 있었던 게 문제였어요, 이제 리뷰가 열려 있는 동안은 그 화면들의 실시간 분석을 멈추고 엔진을 리뷰에 전부 양보해요.",
       "리뷰 화면에서 자유롭게 다른 수를 둬 봐도, 실제로 둔 수와 똑같이 MEC 설명이 붙어요.",
       "기물이 걸렸을 때 이제 정확히 어느 칸의 기물인지 좌표로 알려줘요.",
