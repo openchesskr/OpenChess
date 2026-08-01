@@ -4362,43 +4362,6 @@ function tensionFacts(board, color) {
   mine.sort((a, b) => b.val - a.val); theirs.sort((a, b) => b.val - a.val);
   return { mine, theirs };
 }
-// PGN 기반 — 시작 위치 기물마다 "색+종류+시작칸" id를 부여하고 수순 전체를 다시 재생하며 몇 번
-// 움직였는지 센다(sansToUci와 동일한 재생 방식 — 캐슬링은 킹·룩 둘 다 세고, 프로모션은 같은 기물의
-// 정체성을 유지한 채 승격). id는 곧 "시작 칸"이므로, 한 번도 안 움직인 기물은 counts에 없다. grid도
-// 함께 돌려줘(현재 각 칸에 놓인 기물의 id) 아래 MEC 판정이 "이 기물이 몇 번째로 움직이는 건지"를
-// 이 수를 두기 직전 상태 기준으로 바로 조회할 수 있게 한다.
-function pieceMoveState(sans) {
-  let board = startBoard();
-  const grid = {};
-  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p) grid[r + "," + c] = p.c + p.t + sqName(r, c); }
-  const counts = {};
-  // (버그 수정) firstMoveDist — 그 기물의 "첫" 이동이 몇 칸짜리였는지 기억해 둔다. tempoWasteFact가
-  // "두 칸 갈 수 있었는데 나눠서 전진했다"고 말하려면 첫 이동이 실제로 한 칸짜리(홈 랭크에서 두 칸
-  // 갈 수 있었는데 한 칸만 감)였어야 한다 — 첫 이동이 이미 두 칸이었다면(a2-a4 등) 그 뒤 몇 번을 더
-  // 움직이든 낭비된 템포가 없다.
-  const firstMoveDist = {};
-  const bump = (id, dist) => { if (!id) return; if (!counts[id] && dist != null) firstMoveDist[id] = dist; counts[id] = (counts[id] || 0) + 1; };
-  sans.forEach((s, i) => {
-    const color = i % 2 === 0 ? "w" : "b";
-    const info = sanSrc(board, s, color);
-    if (!info) return;
-    if (info.castle) {
-      const rank = color === "w" ? 7 : 0;
-      const kFrom = rank + ",4", kTo = rank + "," + (info.castle === "k" ? 6 : 2);
-      const rFrom = rank + "," + (info.castle === "k" ? 7 : 0), rTo = rank + "," + (info.castle === "k" ? 5 : 3);
-      bump(grid[kFrom]); bump(grid[rFrom]);
-      grid[kTo] = grid[kFrom]; delete grid[kFrom];
-      grid[rTo] = grid[rFrom]; delete grid[rFrom];
-    } else {
-      const [fr, fc] = info.from, [tr, tc] = info.to;
-      const fromKey = fr + "," + fc, toKey = tr + "," + tc;
-      bump(grid[fromKey], Math.abs(tr - fr));
-      grid[toKey] = grid[fromKey]; delete grid[fromKey];
-    }
-    board = applySan(board, s, color);
-  });
-  return { grid, counts, firstMoveDist }; // counts: id("wNb1" 등) -> 움직인 횟수, grid: "r,c" -> 그 칸의 현재 id
-}
 // 캐슬링/앙파상 권리 — replaySans가 매 수마다 이미 누적 계산해 두는 rights/ep를 그대로 재사용한다
 // (sansToFen과 같은 캐시를 공유하므로 별도 재계산 비용이 거의 없다).
 function castleEpFacts(sans, color) {
@@ -4499,16 +4462,25 @@ function controlFacts(sansBeforeMove, san, color) {
 // PGN 기반 — 템포 낭비. 이 폰이 예전에 이미 한 번 움직였고(첫 이동), 그때부터 지금까지 파일이
 // 바뀐 적이 없다면(=대각선으로 잡은 적 없이 계속 직진만 해 왔다면) 그 첫 이동이 홈스퀘어에서 한
 // 칸짜리 전진이었다는 뜻이다 — 처음부터 두 칸 전진할 수 있었는데 나눠서 온 것.
-function tempoWasteFact(sansBeforeMove, san, color) {
+// (재설계) 예전엔 같은 폰의 "두 번째" 전진마다 매번 "그때 두 칸 갈 수 있었다"고 지적했는데, 이러면
+// 낭비를 저지른 그 수(첫 전진)가 아니라 한참 뒤 무관한 후속 수에마다 반복해서 붙는 게 어색하고, 첫
+// 전진이 상대 기물을 쫓아내는 등 실질적인 이득이 있었어도(예: 진짜로는 좋은 수인데도) 무조건 낭비로
+// 몰았다. 이제 "두 칸 갈 수 있었는데 한 칸만 간 바로 그 수"에만, 그리고 그 수 자체가 이미 나쁜 등급
+// (kind)이고 상대 기물을 쫓아내는 등 새 위협을 전혀 만들지 않았을 때만 붙인다 — 좋은 수거나 뭔가를
+// 얻어낸 수라면 애초에 "낭비"라고 부를 수 없다.
+function tempoWasteFact(sansBeforeMove, san, color, kind) {
+  if (MEC_GOOD_KINDS.includes(kind)) return null; // 좋은 수엔 낭비랄 게 없다
   const board = boardFromSans(sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || info.piece !== "P" || info.isCap || info.castle) return null;
-  const { grid, counts, firstMoveDist } = pieceMoveState(sansBeforeMove);
-  const id = grid[info.from[0] + "," + info.from[1]];
-  if (!id || !counts[id]) return null; // 첫 이동이면 낭비랄 게 없다
-  const originFile = id[2]; // "wPa2" -> "a"
-  if (originFile !== FILES[info.from[1]]) return null; // 그사이 대각선 캡처로 파일이 바뀐 적 있으면 판단 보류
-  if (firstMoveDist[id] !== 1) return null; // 첫 이동이 이미 두 칸이었으면(a2-a4 등) 낭비된 템포가 없다
+  const [fr, fc] = info.from, [tr, tc] = info.to;
+  const startRank = color === "w" ? 6 : 1;
+  if (fr !== startRank || Math.abs(tr - fr) !== 1) return null; // 홈 랭크에서 한 칸만 나간 이동만 대상
+  const dir = color === "w" ? -1 : 1;
+  const twoStepR = fr + 2 * dir;
+  if (board[twoStepR] && board[twoStepR][fc]) return null; // 두 칸째가 애초에 막혀 있었으면 낭비가 아니다
+  const ctrl = controlFacts(sansBeforeMove, san, color);
+  if (ctrl.threats.length) return null; // 상대 기물을 쫓아내는 등 새 위협을 만들었다면 낭비가 아니다
   return { kind: "tempo" };
 }
 // FEN 기반 — 회피/반격. 가치가 높은(폰 제외) 내 기물이 이 수를 두기 전부터 SEE상 걸려 있었는데,
@@ -4699,7 +4671,7 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp) {
   else if (declined) facts.push(declined.wasBestCapture ? MEC_PHRASES.declinedBestCapture(PIECE_KOR[declined.piece], seed) : MEC_PHRASES.declinedCapture(PIECE_KOR[declined.piece], seed));
   else if (preexistingTheirs.length) facts.push(MEC_PHRASES.preexistingTheirs(PIECE_KOR[preexistingTheirs[0].piece], seed));
   if (ctrl.defends.length) facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
-  if (tempoWasteFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.tempo(seed));
+  if (tempoWasteFact(sansBeforeMove, san, color, kind)) facts.push(MEC_PHRASES.tempo(seed));
   if (sansBeforeMove.length < MEC_OPENING_PLY_LIMIT) {
     if (/^O-O-O/.test(san)) facts.push(MEC_PHRASES.queensideNote(seed));
     else if (!/^O-O/.test(san)) {
@@ -12356,7 +12328,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
-      "MILKU·KOKOA의 설명이 더 정확해졌어요 — 실제로는 이기고 있는데 기물 교환에 대해 '지고 있을 때는 피하는 게 좋다'고 말하던 문제, 정상적으로 기물을 교환한 것뿐인데 '지켜야 한다'고 잘못 경고하던 문제, 이미 두 칸을 뛴 폰인데 '두 칸 갈 수 있었다'고 잘못 말하던 문제를 모두 고쳤어요.",
+      "MILKU·KOKOA의 설명이 더 정확해졌어요 — 실제로는 이기고 있는데 기물 교환에 대해 '지고 있을 때는 피하는 게 좋다'고 말하던 문제, 정상적으로 기물을 교환한 것뿐인데 '지켜야 한다'고 잘못 경고하던 문제, 폰이 한 칸만 전진해도 실질적인 이득(예: 상대 기물을 쫓아냄)이 있으면 '두 칸 갈 수 있었다'고 지적하지 않고, 정말 낭비였을 때만 그 수에 딱 한 번 짚어주도록 고쳤어요.",
       "탁월한 수 설명이 훨씬 자세해졌어요 — 어떤 기물을 내주는 희생인지, 걸린 기물을 그대로 두고 더 큰 이득을 노린 수인지, 퀸이 아닌 다른 기물로 승진한 수인지부터 밝히고, 이후 수순을 분석해서 실제로 기물 점수를 되찾는 수순을 찾을 수 있으면 그걸 자세히, 못 찾으면 장기적으로 상대를 압박해 유리해지는 이유를 알려줘요. 이미 불리한 상황에서 무승부를 노린 희생이면 왜 그래야 했는지도, 최선의 수는 아니지만 감각적으로 찾은 수라면 그 사실도 짚어줘요.",
       "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격', 폰끼리 서로 노려보고 있으면 '서로 폰을 노리고 있어요', 폰을 교환했으면 '중앙 쪽으로 잡았는지'까지 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
       "공짜로 잡을 수 있는 상대 기물을 잡지 않아도, 그 수가 여전히 좋은 수면 '기물을 잡지 않았지만 여전히 좋은 수예요'라고 알려줘요. 그 기물을 잡는 게 사실 최선이었다면 그 사실까지 짚어줘요.",
