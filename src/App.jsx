@@ -942,10 +942,17 @@ function pvUciToSans(prevSans, uciList, maxPlies) {
 // 걸릴 수 있어, 코치 카드에서 이 결과를 기다리는 UI가 몇 초씩(plies가 2면 최악 30초 가까이) 응답이
 // 없는 것처럼 보였다("유일한 수" 보강이 안 되는 것처럼 보인 원인 중 하나). 호출부가 movetime을
 // 넘기면 그만큼 상한을 걸어 체감 응답 속도를 보장한다(넘기지 않으면 기존과 동일하게 무제한).
-async function genPunishLine(engine, sans, plies = 3, movetime) {
+// (버그 수정) slot 없이 그냥 큐에 넣기만 하면, 유저가 다음 포지션으로 넘어가 이 호출이 이미
+// 쓸모없어져도 아무도 이 진행 중인 요청을 멈추지 않아 워커가 끝까지 다 돌 때까지 큐를 붙잡고
+// 있었다 — 같은 워커를 공유하는 진짜 중요한 요청(엔진 라인 스트리밍, slot "review-lines")이 그
+// 뒤에서 계속 밀려, 화면에는 "엔진 라인이 끝까지 타이핑되지 않는다"로 보였다(실제로는 라인 자체가
+// 아직 서버에서 안 왔을 뿐 — TypedMoveLine은 받은 데이터만큼은 항상 끝까지 타이핑한다). slot을
+// 넘기면 같은 slot의 새 호출이 들어올 때 이전 호출을 즉시 중단시켜(supersede) 무한정 큐를 붙잡지
+// 않게 한다.
+async function genPunishLine(engine, sans, plies = 3, movetime, slot) {
   let cur = sans.slice(); const out = [];
   for (let i = 0; i < plies; i++) {
-    const ev = await engine.evaluate(sansToFen(cur), 14, undefined, movetime);
+    const ev = await engine.evaluate(sansToFen(cur), 14, undefined, movetime, slot);
     if (!ev || !ev.best) break;
     const san = uciToSan(boardFromSans(cur), ev.best, cur.length % 2 === 0 ? "w" : "b");
     if (!san) break;
@@ -4289,7 +4296,17 @@ function castleEpFacts(sans, color) {
 // 있다 — evaluate 메서드 존재 여부만 확인한다).
 async function punishmentFacts(engine, sansAfterMove, plies = 2) {
   if (!engine || typeof engine.evaluate !== "function") return [];
-  try { return await genPunishLine(engine, sansAfterMove, plies, 900); } catch { return []; }
+  try { return await genPunishLine(engine, sansAfterMove, plies, 900, "review-punish"); } catch { return []; }
+}
+// (버그 수정) useEngine 훅이 돌려주는 인스턴스와 getAnalysisPool의 워커 래퍼는 evaluateMulti
+// 인자 순서가 다르다 — 전자는 (fen,depth,multipv,movetime,onProgress,onLines,slot) 7개, 후자는
+// onProgress가 아예 없는 (fen,d,multipv,mt,onLines,slot) 6개. 이 차이를 모르고 그대로 호출하면
+// slot 문자열이 워커 래퍼에서는 onLines 자리에 들어가 나중에 함수처럼 호출되며 크래시할 수 있다
+// (undefined가 아니라 실제 문자열이 그 자리에 들어가므로). useEngine 인스턴스만 갖는 status
+// 필드로 두 종류를 구분해 각자 맞는 인자 개수로 호출한다.
+function callEvaluateMulti(engine, fen, depth, multipv, movetime, slot) {
+  if ("status" in engine) return engine.evaluateMulti(fen, depth, multipv, movetime, undefined, undefined, slot);
+  return engine.evaluateMulti(fen, depth, multipv, movetime, undefined, slot);
 }
 // (기능) "유일한 수" 코멘트 보강 — "다른 수는 안 돼요"라고만 말하면 설명력이 없어, 실제 2순위
 // 후보를 뒀다면 상대가 어떻게 응징하는지까지 보여준다. 2순위 수의 UCI 자체는 analyzeGame의
@@ -4299,12 +4316,12 @@ async function onlyMoveRefutation(engine, sansBeforeMove, plies = 2) {
   if (!engine || typeof engine.evaluateMulti !== "function") return null;
   try {
     const color = sansBeforeMove.length % 2 === 0 ? "w" : "b";
-    const lines = await engine.evaluateMulti(sansToFen(sansBeforeMove), 14, 2, 900);
+    const lines = await callEvaluateMulti(engine, sansToFen(sansBeforeMove), 14, 2, 900, "review-only");
     const second = lines && lines[1];
     if (!second || !second.uci) return null;
     const altSan = uciToSan(boardFromSans(sansBeforeMove), second.uci, color);
     if (!altSan) return null;
-    const continuation = await genPunishLine(engine, [...sansBeforeMove, altSan], plies, 900);
+    const continuation = await genPunishLine(engine, [...sansBeforeMove, altSan], plies, 900, "review-only");
     if (!continuation.length) return null;
     return { altSan: stripSuffix(altSan), continuation };
   } catch { return null; }
@@ -4440,10 +4457,40 @@ function pawnTensionFact(sansBeforeMove, san, color) {
 // 것과 같은 방식) — 매번 랜덤하게 바뀌진 않지만, 대국을 훑어보는 동안 문구가 다양해진다. 기물
 // 이름(PIECE_KOR)은 "나이트"만 받침이 없어 조사가 갈리므로, 직접 붙이지 않고 josa* 헬퍼를 쓴다.
 function mecPick(variants, seed) { return variants[((seed % variants.length) + variants.length) % variants.length]; }
+// FEN 기반 — 공짜 기물을 잡지 않고도 좋은 수. 상대의 방치된(공짜로 잡을 수 있는) 기물이 있는데
+// 이 수가 그걸 잡지 않았고, 그런데도 이 수의 Stockfish 등급이 나쁘지 않다면(MEC_GOOD_KINDS)
+// "잡지 않았지만 여전히 좋은 수"임을 짚어준다. bestSan(호출부가 activeMove.best로 넘김 — 실제
+// 둔 수가 엔진 최선수가 아닐 때만 채워짐)이 바로 그 기물을 잡는 수라면, 잡는 게 객관적으로
+// 최선이었다는 사실까지 구체적으로 밝힌다.
+const MEC_GOOD_KINDS = ["brilliant", "best", "only", "excellent", "good", "book"];
+function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan) {
+  if (!MEC_GOOD_KINDS.includes(kind)) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info) return null;
+  const hanging = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = before[r][c]; if (!p || p.c !== enemy || p.t === "K") continue;
+    if (seeSquare(before, r, c, color) > 0 && canCaptureSquareLegally(before, r, c, color)) hanging.push({ sq: [r, c], piece: p.t });
+  }
+  if (!hanging.length) return null;
+  const capturedThisSq = info.isCap ? info.to.join(",") : null;
+  const stillHanging = hanging.filter((h) => h.sq.join(",") !== capturedThisSq);
+  if (!stillHanging.length) return null; // 이 수가 이미 그 기물을 잡았다 — 해당 없음
+  let wasBestCapture = false;
+  if (bestSan) {
+    const bestInfo = sanSrc(before, bestSan, color);
+    if (bestInfo && bestInfo.isCap && stillHanging.some((h) => h.sq.join(",") === bestInfo.to.join(","))) wasBestCapture = true;
+  }
+  return { piece: stillHanging[0].piece, wasBestCapture };
+}
 const MEC_PHRASES = {
   mine: (p, s) => mecPick([josaIGa(p) + " 지금 안전하게 잡힐 수 있는 위치에 있어요.", "지금 " + josaIGa(p) + " 위태로워요 — 상대에게 잡힐 수 있어요.", josaEulReul(p) + " 지킬 수를 찾아야 해요 — 지금은 잡혀요."], s),
   threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 노려요.", "상대 " + josaIGa(p) + " 이 수에 걸렸어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
   preexistingTheirs: (p, s) => mecPick(["상대 " + josaIGa(p) + " 걸려 있어요 — 잡을 기회예요.", "상대 " + josaEulReul(p) + " 잡을 수 있는 상황이에요.", "아직 상대 " + josaIGa(p) + " 방치돼 있어요 — 놓치지 마세요."], s),
+  declinedCapture: (p, s) => mecPick([josaEulReul(p) + " 잡지 않았지만 여전히 좋은 수예요.", josaEulReul(p) + " 잡을 수도 있었지만, 이 수도 충분히 좋아요.", "당장 " + josaEulReul(p) + " 안 잡아도 이 수면 충분해요."], s),
+  declinedBestCapture: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 잡는 게 최선이었지만, 이 수도 여전히 좋아요.", "사실 " + josaEulReul(p) + " 잡을 수 있었어요 — 그래도 이 수 역시 좋은 선택이에요.", josaEulReul(p) + " 잡는 게 최선이었어요, 다만 이 수도 나쁘지 않아요."], s),
   defend: (p, s) => mecPick(["이 수는 위태롭던 아군 " + josaEulReul(p) + " 미리 지켜요.", "덕분에 " + josaIGa(p) + " 더 이상 위험하지 않아요.", "이 수로 " + josaEulReul(p) + " 안전하게 지켰어요."], s),
   evade: (p, s) => mecPick([josaIGa(p) + " 위협을 피해 안전한 자리로 갔어요.", josaEulReul(p) + " 안전한 칸으로 피신시켰어요.", "이 수로 " + p + "에 대한 위협을 피했어요."], s),
   counter: (p, tgt, s) => mecPick(["위협을 피하면서 상대 " + josaEulReul(tgt) + " 반격해요.", "피하는 동시에 상대 " + josaEulReul(tgt) + " 노리는 반격이에요.", josaEulReul(p) + " 피신시키면서 상대 " + tgt + "까지 반격했어요."], s),
@@ -4456,8 +4503,9 @@ const MEC_PHRASES = {
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
 // 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
-// 맨 앞 하나만 코멘트에 붙인다.
-function mecFacts(sansBeforeMove, san, color) {
+// 맨 앞 하나만 코멘트에 붙인다. kind·bestSan은 declinedCaptureFact(공짜 기물을 안 잡고도 좋은 수)
+// 판정에만 쓰이며, 넘기지 않으면(다른 호출부) 그 판정만 자연히 건너뛴다.
+function mecFacts(sansBeforeMove, san, color, kind, bestSan) {
   const seed = sansBeforeMove.length;
   const board = boardFromSans([...sansBeforeMove, san]);
   const facts = [];
@@ -4473,10 +4521,13 @@ function mecFacts(sansBeforeMove, san, color) {
   // 같은 칸)이라면 "잡을 기회예요"(원래부터 있던 약점을 챙기는 뉘앙스)가 아니라 "노려요"(이 수가
   // 방금 만든 위협)라고 하는 게 맞다 — 상대 차례가 지나야 실제로 잡을 수 있는데 "잡을 기회"라고
   // 하면 지금 당장 잡을 수 있는 것처럼 들려 어색하다는 지적. 이 수와 무관하게 이미 걸려 있던
-  // 기물(다른 칸)만 "잡을 기회" 문구를 쓴다.
+  // 기물(다른 칸)만 "잡을 기회" 문구를 쓴다. 그중에서도 이 수 자체의 등급이 좋으면(declined),
+  // "놓쳤다"는 뉘앙스의 "잡을 기회예요" 대신 "잡지 않았지만 여전히 좋은 수"로 프레이밍한다.
   const justThreatenedSq = ctrl.threats.length ? ctrl.threats[0].sq.join(",") : null;
   const preexistingTheirs = t.theirs.filter((x) => x.sq.join(",") !== justThreatenedSq);
+  const declined = declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan);
   if (ctrl.threats.length) facts.push(MEC_PHRASES.threat(PIECE_KOR[ctrl.threats[0].piece], seed));
+  else if (declined) facts.push(declined.wasBestCapture ? MEC_PHRASES.declinedBestCapture(PIECE_KOR[declined.piece], seed) : MEC_PHRASES.declinedCapture(PIECE_KOR[declined.piece], seed));
   else if (preexistingTheirs.length) facts.push(MEC_PHRASES.preexistingTheirs(PIECE_KOR[preexistingTheirs[0].piece], seed));
   if (ctrl.defends.length) facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
   if (tempoWasteFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.tempo(seed));
@@ -6097,7 +6148,7 @@ function ReviewPage({ game, onClose }) {
   // 없다. 동기 계산이라 useMemo로 충분하다(엔진 불필요).
   const mecNotes = useMemo(() => {
     if (!activeMove || activeMove.kind === "book") return [];
-    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b"); } catch { return []; }
+    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best); } catch { return []; }
   }, [activeMove, effSans]);
   // (기능) 탁월한 수 — "무엇을 얻는지"를 브릴리언트 화살표에서 뽑아낸 문장(엔진 불필요, 동기 계산).
   const ideaNote = useMemo(() => {
@@ -12117,7 +12168,9 @@ const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
       "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격', 폰끼리 서로 노려보고 있으면 '서로 폰을 노리고 있어요', 폰을 교환했으면 '중앙 쪽으로 잡았는지'까지 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
+      "공짜로 잡을 수 있는 상대 기물을 잡지 않아도, 그 수가 여전히 좋은 수면 '기물을 잡지 않았지만 여전히 좋은 수예요'라고 알려줘요. 그 기물을 잡는 게 사실 최선이었다면 그 사실까지 짚어줘요.",
       "MILKU·KOKOA의 코멘트에서 '룩를 노려요'처럼 조사가 어색하게 붙던 문제를 고쳤어요 — 이제 기물 이름에 맞게 '을/를', '이/가'가 자연스럽게 붙어요.",
+      "엔진 추천 수 줄이 끝까지 다 써지지 않고 중간에 멈춰 보이던 문제를 진짜로 마지막까지 고쳤어요 — 이번 버전에서 새로 추가한 기능이 같은 엔진 워커를 놓아주지 않고 계속 붙잡고 있던 게 원인이었어요.",
       "퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
       "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       "'전체' 레이팅 그래프에서 대국이 적은 시간 규정(예: 블리츠 2판)이 그냥 수직선 하나처럼 보이던 문제를 고쳤어요 — 이제 대국이 없는 구간은 그 시점 레이팅으로 평평하게 기간 끝까지 이어져요.",
