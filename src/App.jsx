@@ -2509,6 +2509,19 @@ function getAnalysisPool(profile, urls) {
   analysisPoolCache.set(profile, promise);
   return promise;
 }
+// (버그 수정) 리뷰 페이지가 pool[0](간혹 pool[1])만 계속 재사용해 온 게, "엔진 라인이 끝까지 타이핑
+// 안 된다"는 문제가 여러 차례 고쳤다는데도 계속 재발한 진짜 원인 중 하나였다 — 실시간 엔진 라인
+// 스트리밍(review-lines, idx 0)과 그 외 보조 기능(유일한 수 응징, 블런더 응징, 탁월한 수 설명,
+// 자유 탐색 채점 등)이 전부 같은 워커 하나의 FIFO 큐에 몰려, 보조 기능의 900ms짜리 평가 하나가
+// 진행 중이면 정작 화면에 매 depth마다 갱신돼야 할 라인 스트리밍이 그만큼 밀렸다(타이핑 자체가
+// 멈춘 게 아니라 데이터가 늦게 도착해 멈춘 것처럼 보였다). idx 0은 review-lines 전용으로 항상
+// 고정해 절대 다른 기능과 겹치지 않게 하고, 나머지 idx는 그 뒤의 워커들에만 분산시킨다(풀 크기가
+// 작아 겹치더라도 idx 0과는 절대 겹치지 않는다). 풀이 통째로 없으면(부팅 실패) engine으로 폴백한다.
+function poolWorker(pool, idx, engine) {
+  if (!pool || !pool.length) return engine;
+  if (idx <= 0 || pool.length === 1) return pool[0];
+  return pool[1 + ((idx - 1) % (pool.length - 1))];
+}
 // 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
 // 실제 최선수를 뒀을 때 손실이 정확히 0이 되어, 얕은 depth 탐색 노이즈로 인한 가짜 실수가 사라진다.
 // (분석 최적화) 각 포지션을 '딱 한 번'만 단일 PV로 평가해 캐싱한다. 예전엔 둔 수가 1순위가 아니면
@@ -4325,8 +4338,7 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
       }
     } catch { }
   }
-  if (!reasonSentence) reasonSentence = "당장 기물 점수를 그대로 되찾지는 못해도, 이렇게 만든 포지션 이득으로 상대를 계속 압박하면 나중에 상대가 다시 기물을 내줄 수밖에 없는 상황을 강제할 수 있어, 길게 보면 게임을 유리하게 이끌 수 있는 수예요";
-  let text = typeSentence + ". " + reasonSentence + ".";
+  let text = reasonSentence ? typeSentence + ". " + reasonSentence + "." : typeSentence + ".";
   if (notBest) text += " 참고로 엔진이 고른 최선의 수는 아니지만, 찾기 힘든 감각적이고 탁월한 수예요.";
   return text;
 }
@@ -6707,7 +6719,7 @@ function ReviewPage({ game, onClose }) {
     (async () => {
       try {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
-        const w = pool[0] || engine;
+        const w = poolWorker(pool, 0, engine); // 실시간 라인 스트리밍 — 항상 전용 워커
         // (v0.2.1) onLines로 depth마다 실시간 갱신 — 평가치가 살아 움직이고 수순이 점점 길어진다.
         // (v0.2.4 성능) slot="review-lines" — 빠르게 수를 넘기면 이전 포지션 계산이 큐를 막지 않고 즉시 중단된다.
         const pvsAll = await w.evaluateMulti(sansToFen(effSans), REVIEW_DEPTH, 3, REVIEW_MOVETIME_MS, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } }, "review-lines");
@@ -6738,7 +6750,7 @@ function ReviewPage({ game, onClose }) {
       if (!engine || engine.status !== "ready") return;
       try {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
-        const wBest = pool[0] || engine, wAfter = pool[1] || pool[0] || engine;
+        const wBest = poolWorker(pool, 1, engine), wAfter = poolWorker(pool, 2, engine);
         const col = white ? "w" : "b";
         // (v0.2.4) 게임 리뷰는 이제 학습 탭과 다른 엔진(고정 Stockfish 16, 세기 제한)을 쓰므로 depth·
         // movetime도 리뷰 전용 값(REVIEW_DEPTH·REVIEW_MOVETIME_MS)을 그대로 쓴다 — 학습 탭(evalMoveKind,
@@ -6826,7 +6838,7 @@ function ReviewPage({ game, onClose }) {
     let cancelled = false;
     (async () => {
       const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
-      const w = (pool && pool[0]) || engine;
+      const w = poolWorker(pool, 3, engine);
       const prevSans = effSans.slice(0, -1);
       const color = activeMove.white ? "w" : "b";
       let alreadyLosing = false;
@@ -6851,7 +6863,7 @@ function ReviewPage({ game, onClose }) {
     let cancelled = false;
     (async () => {
       const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
-      const w = (pool && pool[0]) || engine;
+      const w = poolWorker(pool, 4, engine);
       const r = await onlyMoveRefutation(w, effSans.slice(0, -1), 2);
       if (!cancelled) setOnlyRefutation(r);
     })();
@@ -6865,7 +6877,7 @@ function ReviewPage({ game, onClose }) {
     let cancelled = false;
     (async () => {
       const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
-      const w = (pool && pool[0]) || engine;
+      const w = poolWorker(pool, 5, engine);
       const line = await punishmentFacts(w, effSans, 2);
       if (!cancelled) setPunishLine(line);
     })();
@@ -12855,6 +12867,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "엔진 추천 수 줄이 끝까지 안 써지던 문제의 진짜 원인을 찾아 고쳤어요 — 게임 리뷰를 열어도 그 밑에 있던 학습·퍼즐 화면이 배경에서 계속 엔진을 쓰고 있었던 게 문제였어요, 이제 리뷰가 열려 있는 동안은 그 화면들의 실시간 분석을 멈추고 엔진을 리뷰에 전부 양보해요.",
+      "리뷰 화면에서 자유롭게 다른 수를 둬 봐도, 실제로 둔 수와 똑같이 MEC 설명이 붙어요.",
       "기물이 걸렸을 때 이제 정확히 어느 칸의 기물인지 좌표로 알려줘요.",
       "탁월한 수를 두면 방금 옮긴 기물뿐 아니라, 지금 상대에게 안전하게 잡힐 수 있는 다른 기물까지 전부 빨간 화살표로 한눈에 보여줘요.",
       "예방 수 설명에 이제 상대가 노리던 칸의 좌표를 직접 알려줘요. 과보호는 여러 기물이 후보일 때 상대 공격자가 많은 기물부터, 공격자 수가 같으면 더 값진 기물부터 짚어줘요.",
@@ -16697,9 +16711,19 @@ export default function App() {
           동적으로 접히는 안드로이드 브라우저)에서 목록 맨 마지막 카드가 하단 탭에 살짝 가려 보이는
           경우가 있었다 — 여유를 더 둔다. */}
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} />}
+        {/* (버그 수정) 엔진 라인 타이핑이 도중에 멈추는 문제의 진짜 원인 — ReviewPage(reviewGame)는
+            어느 탭에서 열렸든 그 탭을 언마운트하지 않고 위에 오버레이로만 덮는다(openReview가 setTab을
+            부르지 않음, 뒤로가기 시 원래 탭으로 돌아가기 위함). 그런데 LearnTab·PuzzleTab은 여전히
+            마운트된 채로 liveOn이 켜져 있으면 배경에서 실시간 엔진 평가를 계속 돌리고, 이건 리뷰
+            페이지와 정확히 같은 공용 워커 풀(getAnalysisPool, profile당 하나만 캐시됨)을 나눠 쓴다 —
+            "학습 탭과 별도 독립 풀을 쓴다"는 주석은 useEngine(단일 공유 워커)과는 독립이라는 뜻이었을
+            뿐, 같은 profile의 분석 풀 자체는 앱 전체에서 하나뿐이라 전혀 독립적이지 않았다. 리뷰가
+            열려 있는 동안 이 두 탭에는 liveOn을 강제로 꺼서(!reviewGame) 분석 풀 전체를 리뷰 페이지에
+            양보한다 — "분석 모달이 열려 있는 동안 학습 탭 실시간 평가를 멈춘다"던 예전 주석이 가리키던
+            의도가 ReviewPage로 교체되며 실제로는 빠져 있었다. */}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
