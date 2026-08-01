@@ -2582,6 +2582,9 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     const color = moverWhite ? "w" : "b";
     const playedSan = stripSuffix(fullSans[i]);
     const bestCp = posEval[i].cp;                         // 이 포지션의 최선(둔 사람 관점)
+    // (기능) MEC의 기물 교환 유·불리 판정(exchangeFact)이 순수 기물 점수차 대신 실제 형세를 쓸 수
+    // 있도록, 이 수를 두기 직전 평가(mover 관점, 메이트면 ±100000으로 뭉갬)를 함께 들고 다닌다.
+    const moveBeforeCp = posEval[i].mate != null ? (posEval[i].mate > 0 ? 1e5 : -1e5) : bestCp;
     const bestSan = posEval[i].best ? uciToSan(brd, posEval[i].best, color) : null;
     const matched = !!(bestSan && stripSuffix(bestSan) === playedSan);
     // (v0.2.4 버그 수정) 둔 수가 엔진 최선수와 일치하면(matched) 다음 포지션은 바로 그 최선수를 둔
@@ -2599,7 +2602,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     // 건너뛴다. 예전엔 평가 실패 시 cp=0으로 취급돼 loss=0 → '최선의 수' → 정확도 100이 되어, 엔진이
     // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 pending으로 두고 정확도 집계에서 뺀다.
     if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
-      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, best: null });
+      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
       gradeBoard = applySan(gradeBoard, fullSans[i], color);
       continue;
     }
@@ -2639,7 +2642,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     // (v0.2.0 기능) /review 페이지가 "최선의 수는 Xx였어요" 코멘트·"수 보기" 화살표를 보여주려면
     // 실제로 둔 수와 다른 최선수만 있으면 된다 — 이미 최선수를 뒀다면(matched) 굳이 같은 수를
     // 다시 "더 나은 수"로 제안할 필요가 없어 null로 둔다.
-    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, best: matched ? null : bestSan });
+    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, best: matched ? null : bestSan, beforeCp: moveBeforeCp });
     if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
@@ -4369,7 +4372,12 @@ function pieceMoveState(sans) {
   const grid = {};
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p) grid[r + "," + c] = p.c + p.t + sqName(r, c); }
   const counts = {};
-  const bump = (id) => { if (id) counts[id] = (counts[id] || 0) + 1; };
+  // (버그 수정) firstMoveDist — 그 기물의 "첫" 이동이 몇 칸짜리였는지 기억해 둔다. tempoWasteFact가
+  // "두 칸 갈 수 있었는데 나눠서 전진했다"고 말하려면 첫 이동이 실제로 한 칸짜리(홈 랭크에서 두 칸
+  // 갈 수 있었는데 한 칸만 감)였어야 한다 — 첫 이동이 이미 두 칸이었다면(a2-a4 등) 그 뒤 몇 번을 더
+  // 움직이든 낭비된 템포가 없다.
+  const firstMoveDist = {};
+  const bump = (id, dist) => { if (!id) return; if (!counts[id] && dist != null) firstMoveDist[id] = dist; counts[id] = (counts[id] || 0) + 1; };
   sans.forEach((s, i) => {
     const color = i % 2 === 0 ? "w" : "b";
     const info = sanSrc(board, s, color);
@@ -4384,12 +4392,12 @@ function pieceMoveState(sans) {
     } else {
       const [fr, fc] = info.from, [tr, tc] = info.to;
       const fromKey = fr + "," + fc, toKey = tr + "," + tc;
-      bump(grid[fromKey]);
+      bump(grid[fromKey], Math.abs(tr - fr));
       grid[toKey] = grid[fromKey]; delete grid[fromKey];
     }
     board = applySan(board, s, color);
   });
-  return { grid, counts }; // counts: id("wNb1" 등) -> 움직인 횟수, grid: "r,c" -> 그 칸의 현재 id
+  return { grid, counts, firstMoveDist }; // counts: id("wNb1" 등) -> 움직인 횟수, grid: "r,c" -> 그 칸의 현재 id
 }
 // 캐슬링/앙파상 권리 — replaySans가 매 수마다 이미 누적 계산해 두는 rights/ep를 그대로 재사용한다
 // (sansToFen과 같은 캐시를 공유하므로 별도 재계산 비용이 거의 없다).
@@ -4495,11 +4503,12 @@ function tempoWasteFact(sansBeforeMove, san, color) {
   const board = boardFromSans(sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || info.piece !== "P" || info.isCap || info.castle) return null;
-  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const { grid, counts, firstMoveDist } = pieceMoveState(sansBeforeMove);
   const id = grid[info.from[0] + "," + info.from[1]];
   if (!id || !counts[id]) return null; // 첫 이동이면 낭비랄 게 없다
   const originFile = id[2]; // "wPa2" -> "a"
   if (originFile !== FILES[info.from[1]]) return null; // 그사이 대각선 캡처로 파일이 바뀐 적 있으면 판단 보류
+  if (firstMoveDist[id] !== 1) return null; // 첫 이동이 이미 두 칸이었으면(a2-a4 등) 낭비된 템포가 없다
   return { kind: "tempo" };
 }
 // FEN 기반 — 회피/반격. 가치가 높은(폰 제외) 내 기물이 이 수를 두기 전부터 SEE상 걸려 있었는데,
@@ -4601,15 +4610,20 @@ function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan) {
 // 유리하면 교환은 단순화 전략으로 원래 좋고, 불리하면 원래 피해야 하지만 예외(최선 이상=불가피,
 // 우수/좋음=그래도 괜찮은 선택)를 인정한다. 등급이 그 기대와 어긋나면(유리한데 나쁜 교환, 불리한데
 // 나쁜 교환) 반대로 "목적 없는 교환"이었다는 신호로 본다.
-function exchangeFact(sansBeforeMove, san, color, kind) {
+// (버그 수정) "이기고 있다/지고 있다"는 원래 실제 포지션 평가(승패 형세)를 뜻하는데, 예전엔
+// materialDiff(순수 기물 점수차)로만 판정했다 — 포지션이 확실히 유리해도(예: +0.7) 기물 점수 자체는
+// 팽팽하거나 살짝 밀리는 국면이 흔해서, 이기고 있는데도 "지고 있을 때는 교환을 피하는 게 좋다"는
+// 엉뚱한 문구가 나왔다. 이 수를 두기 직전 엔진 평가(beforeCp, mover 관점 — 양수면 이 수를 두는
+// 쪽이 유리)가 있으면 그걸로 유·불리를 가르고, 평가가 없을 때만(자유 탐색 등) materialDiff로 대체한다.
+function exchangeFact(sansBeforeMove, san, color, kind, beforeCp) {
   if (!kind) return null;
   const board = boardFromSans(sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || !info.isCap || info.castle || info.piece === "P") return null;
   const captured = board[info.to[0]][info.to[1]];
   if (!captured || VAL[captured.t] !== VAL[info.piece]) return null; // 동가 교환일 때만
-  const diff = materialDiff(board, color);
-  if (diff === 0) return null; // 팽팽하면 유·불리 프레이밍이 적용되지 않는다
+  const diff = beforeCp != null ? beforeCp : materialDiff(board, color) * 100;
+  if (Math.abs(diff) < 40) return null; // 팽팽하면 유·불리 프레이밍이 적용되지 않는다
   const ahead = diff > 0;
   const good = MEC_GOOD_KINDS.includes(kind);
   const strong = ["brilliant", "best", "only"].includes(kind);
@@ -4640,12 +4654,24 @@ const MEC_PHRASES = {
 // 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
 // 맨 앞 하나만 코멘트에 붙인다. kind·bestSan은 declinedCaptureFact(공짜 기물을 안 잡고도 좋은 수)
 // 판정에만 쓰이며, 넘기지 않으면(다른 호출부) 그 판정만 자연히 건너뛴다.
-function mecFacts(sansBeforeMove, san, color, kind, bestSan) {
+function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp) {
   const seed = sansBeforeMove.length;
+  const beforeBoard = boardFromSans(sansBeforeMove);
   const board = boardFromSans([...sansBeforeMove, san]);
   const facts = [];
   const t = tensionFacts(board, color);
-  if (t.mine.length) facts.push(MEC_PHRASES.mine(PIECE_KOR[t.mine[0].piece], seed));
+  // (버그 수정) 이 수 자체가 동가 이상으로 기물을 잡는 수였다면(예: 나이트를 잡은 비숍), 그 도착
+  // 칸이 곧 되잡힐 수 있는 것은 원래 그 교환이 완성되는 것일 뿐 새로 위태로워진 게 아니다 —
+  // tensionFacts.mine이 "이 기물을 지킬 수를 찾아야 한다"고 경고하지 않도록 그 칸을 제외한다(이
+  // 교환의 유불리는 아래 exchangeFact가 대신 설명한다).
+  const moveInfo = sanSrc(beforeBoard, san, color);
+  let fairTradeSq = null;
+  if (moveInfo && moveInfo.isCap && !moveInfo.castle) {
+    const captured = beforeBoard[moveInfo.to[0]][moveInfo.to[1]];
+    if (captured && VAL[captured.t] >= VAL[moveInfo.piece]) fairTradeSq = moveInfo.to.join(",");
+  }
+  const mine = fairTradeSq ? t.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t.mine;
+  if (mine.length) facts.push(MEC_PHRASES.mine(PIECE_KOR[mine[0].piece], seed));
   const evasion = evasionFact(sansBeforeMove, san, color);
   if (evasion) facts.push(evasion.kind === "counter" ? MEC_PHRASES.counter(PIECE_KOR[evasion.piece], PIECE_KOR[evasion.target], seed) : MEC_PHRASES.evade(PIECE_KOR[evasion.piece], seed));
   const pawnTrade = pawnTradeFact(sansBeforeMove, san, color);
@@ -4654,7 +4680,7 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan) {
   // 기물(폰 제외) 동가 교환의 전략적 타당성 — 유리할 때 교환은 원래 좋고, 불리할 때는 원래 피해야
   // 하지만 예외(최선 이상=불가피, 우수/좋음=그래도 괜찮음)를 인정한다. 기대와 등급이 어긋나면
   // "목적 없는 교환"이었다는 반대 프레이밍을 쓴다.
-  const exchange = exchangeFact(sansBeforeMove, san, color, kind);
+  const exchange = exchangeFact(sansBeforeMove, san, color, kind, beforeCp);
   if (exchange) {
     if (exchange.ahead) facts.push(exchange.good ? MEC_PHRASES.exchangeAheadGood(seed) : MEC_PHRASES.exchangeAheadBad(seed));
     else facts.push(exchange.good ? (exchange.strong ? MEC_PHRASES.exchangeBehindForced(seed) : MEC_PHRASES.exchangeBehindGood(seed)) : MEC_PHRASES.exchangeBehindBad(seed));
@@ -6267,7 +6293,7 @@ function ReviewPage({ game, onClose }) {
         if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
         const gap = secondCp == null ? 9999 : (bestCp - secondCp);
         if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
-        if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan });
+        if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
       } catch { }
     })();
     return () => { cancelled = true; };
@@ -6289,7 +6315,7 @@ function ReviewPage({ game, onClose }) {
   // 없다. 동기 계산이라 useMemo로 충분하다(엔진 불필요).
   const mecNotes = useMemo(() => {
     if (!activeMove || activeMove.kind === "book") return [];
-    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best); } catch { return []; }
+    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp); } catch { return []; }
   }, [activeMove, effSans]);
   // (기능) 탁월한 수 — 유형(직접 희생/방치 희생/언더프로모션) + 엔진 PV 근거를 하나의 글로 엮은
   // 설명(brilliantExplain, 엔진 필요, 비동기). 두기 전 평가(bestCp)가 이미 마이너스면(mover 관점)
@@ -12330,6 +12356,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "MILKU·KOKOA의 설명이 더 정확해졌어요 — 실제로는 이기고 있는데 기물 교환에 대해 '지고 있을 때는 피하는 게 좋다'고 말하던 문제, 정상적으로 기물을 교환한 것뿐인데 '지켜야 한다'고 잘못 경고하던 문제, 이미 두 칸을 뛴 폰인데 '두 칸 갈 수 있었다'고 잘못 말하던 문제를 모두 고쳤어요.",
       "탁월한 수 설명이 훨씬 자세해졌어요 — 어떤 기물을 내주는 희생인지, 걸린 기물을 그대로 두고 더 큰 이득을 노린 수인지, 퀸이 아닌 다른 기물로 승진한 수인지부터 밝히고, 이후 수순을 분석해서 실제로 기물 점수를 되찾는 수순을 찾을 수 있으면 그걸 자세히, 못 찾으면 장기적으로 상대를 압박해 유리해지는 이유를 알려줘요. 이미 불리한 상황에서 무승부를 노린 희생이면 왜 그래야 했는지도, 최선의 수는 아니지만 감각적으로 찾은 수라면 그 사실도 짚어줘요.",
       "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격', 폰끼리 서로 노려보고 있으면 '서로 폰을 노리고 있어요', 폰을 교환했으면 '중앙 쪽으로 잡았는지'까지 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
       "공짜로 잡을 수 있는 상대 기물을 잡지 않아도, 그 수가 여전히 좋은 수면 '기물을 잡지 않았지만 여전히 좋은 수예요'라고 알려줘요. 그 기물을 잡는 게 사실 최선이었다면 그 사실까지 짚어줘요.",
