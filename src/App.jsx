@@ -4555,6 +4555,12 @@ function evasionFact(sansBeforeMove, san, color) {
   if (!info || info.castle || info.piece === "P") return null;
   const [fr, fc] = info.from, [tr, tc] = info.to;
   if (seeSquare(before, fr, fc, enemy) <= 0) return null; // 애초에 걸려 있지 않았으면 회피가 아니다
+  // (R1/R2와의 역할 분리) 이 기물을 위협하는 상대의 최소가치 공격자가 이 기물과 같은 가치라면,
+  // 그건 일방적인 "위협"이 아니라 대등한 "교환 요청"(exchangeOfferFact) 상황이다 — 그 요청에
+  // 응하지 않고 물러나는 건 "위협을 피한다"가 아니라 "교환 요청을 거절한다"고 표현해야 하므로
+  // (exchangeOfferResponseFact가 담당), 여기서는 그 경우를 회피 판정에서 제외한다.
+  const mainAttacker = lva(before, fr, fc, enemy);
+  if (mainAttacker && VAL[mainAttacker.t] === VAL[info.piece]) return null;
   const after = applySan(before, san, color);
   if (seeSquare(after, tr, tc, enemy) > 0) return null; // 옮긴 자리도 여전히 잡히면 회피 실패
   const mover = after[tr][tc];
@@ -4662,6 +4668,303 @@ function exchangeFact(sansBeforeMove, san, color, kind, beforeCp) {
   const strong = ["brilliant", "best", "only"].includes(kind);
   return { ahead, good, strong };
 }
+/* ============================================================ MEC Reference(사용자 제공, 16수 기준) 반영 ============================================================
+   R1 교환 요청, R2 요청 수락/거절, R3·R11 재전개/재배치, R4 직접 예방 수, R5 다음 수 캐슬링 예고,
+   R6 전개 표현, R8 위협 대처/과보호, R9 간접 예방 수, R10 교환론, R12 캐슬링 전용 평가, R13 잠재 위협,
+   R14 오픈 파일, R15 폰 희생. R7(위협 밑줄+화살표 애니메이션)은 UI 성격이 달라 이번엔 제외.
+*/
+// R1 — 교환 요청. 이 수가(폰·킹 제외) 상대의 같은 가치 기물이 공격할 수 있는 칸으로 기물을 옮겼다면,
+// 그 상대 기물이 핀에 걸려 실제로는 못 잡는 특수한 경우가 아닌 한 이건 "위협"이 아니라 "교환
+// 요청"이다 — 잡히면 나도 똑같이 되잡을 수 있어 일방적인 위협이 아니라 대등한 제안이기 때문이다.
+// 그 칸이 아군에 보호받고 있으면(잡혀도 바로 되잡음) "교환 요청", 보호받지 못하면(그리고 이 수
+// 자체가 탁월한 수가 아니면) 그냥 "공짜로 내주는" 것이다.
+function exchangeOfferFact(sansBeforeMove, san, color, kind) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  const mover = after[tr][tc];
+  if (!mover) return null;
+  let attacker = null;
+  for (let r = 0; r < 8 && !attacker; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const p = after[r][c]; if (!p || p.c !== enemy || VAL[p.t] !== VAL[mover.t]) continue;
+    const canAttack = p.t === "P" ? (Math.abs(c - tc) === 1 && (enemy === "w" ? r === tr - 1 : r === tr + 1)) : canMove(after, p.t, enemy, r, c, tr, tc, true);
+    if (canAttack && !exposesKing(after, r, c, tr, tc, enemy, null)) { attacker = p; break; }
+  }
+  if (!attacker) return null;
+  const offered = !(seeSquare(after, tr, tc, enemy) > 0); // 상대가 잡아도 순손실 없음 = 되잡음
+  if (offered) return { offered: true, piece: mover.t };
+  if (kind === "brilliant") return null; // 탁월한 수의 희생은 이미 다른 경로로 설명된다
+  return { offered: false, piece: mover.t };
+}
+// R2 — 교환 요청에 대한 응답. 상대의 직전 수가 exchangeOfferFact의 "교환 요청"이었고, 그 요청이
+// 걸린 내 기물을 이번 수로 잡으면 "수락", 그 기물을 다른 칸으로 옮겨 대치를 풀면 "거절"로 판정한다.
+function exchangeOfferResponseFact(sansBeforeMove, san, color) {
+  if (!sansBeforeMove.length) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const lastSan = sansBeforeMove[sansBeforeMove.length - 1];
+  const prevSans = sansBeforeMove.slice(0, -1);
+  let offer;
+  try { offer = exchangeOfferFact(prevSans, lastSan, enemy); } catch { return null; }
+  if (!offer || !offer.offered) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const oppInfo = sanSrc(boardFromSans(prevSans), lastSan, enemy);
+  if (!oppInfo) return null;
+  const [orr, occ] = oppInfo.to;
+  const offerer = board[orr][occ];
+  if (!offerer) return null;
+  let mySq = null;
+  for (let r = 0; r < 8 && !mySq; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== color || VAL[p.t] !== VAL[offerer.t]) continue;
+    const canAttack = p.t === "P" ? (Math.abs(c - occ) === 1 && (color === "w" ? r === orr - 1 : r === orr + 1)) : canMove(board, p.t, color, r, c, orr, occ, true);
+    if (canAttack) mySq = [r, c];
+  }
+  if (!mySq) return null;
+  const info = sanSrc(board, san, color);
+  if (!info || info.castle) return null;
+  if (info.isCap && info.to[0] === orr && info.to[1] === occ) return { accepted: true, piece: offerer.t };
+  if (info.from[0] === mySq[0] && info.from[1] === mySq[1]) return { accepted: false, piece: offerer.t };
+  return null;
+}
+// R3/R11 — 오프닝 단계 판정(나이트·비숍 네 개가 모두 홈 칸을 떠났고 캐슬링도 마쳤으면 종료).
+function isOpeningPhase(sansBeforeMove, color) {
+  const board = boardFromSans(sansBeforeMove);
+  const homeRow = color === "w" ? 7 : 0;
+  for (const [t, cols] of [["N", [1, 6]], ["B", [2, 5]]]) {
+    for (const c of cols) { const p = board[homeRow][c]; if (p && p.c === color && p.t === t) return true; }
+  }
+  const castled = sansBeforeMove.some((s, i) => (i % 2 === 0 ? "w" : "b") === color && /^O-O/.test(s));
+  return !castled;
+}
+// R3/R11 — 재전개/재배치. 같은 나이트·비숍을 3번 이상(2번까지는 흔한 정상 전개로 보고 무시) 움직였는데
+// 그 수 자체가 좋은 수라면, 여러 번 움직인 이유(더 나은 자리를 찾아가는 것)를 짚어준다. 오프닝
+// 단계에서는 "재전개", 그 이후에는 "재배치"로 용어만 바꾼다.
+function redeployFact(sansBeforeMove, san, color, kind) {
+  if (!MEC_GOOD_KINDS.includes(kind)) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.castle || !["N", "B"].includes(info.piece)) return null;
+  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const id = grid[info.from[0] + "," + info.from[1]];
+  if (!id || (counts[id] || 0) < 2) return null;
+  return { opening: isOpeningPhase(sansBeforeMove, color), piece: info.piece };
+}
+// (공용) enemy 진영이 이 board에서 폰이나 기물로 (r,c) 칸에 도달할 수 있는지 — 도달할 수 있다면
+// 그 기물 종류들을 모아 돌려준다. 폰은 전진(1·2칸, 막혀 있지 않을 때)과 대각선 캡처를 모두 고려한다.
+function enemyCanReach(board, r, c, enemy) {
+  const out = [];
+  const dir = enemy === "w" ? -1 : 1, startR = enemy === "w" ? 6 : 1;
+  const destOccupied = !!board[r][c];
+  for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+    const p = board[rr][cc]; if (!p || p.c !== enemy) continue;
+    if (p.t === "P") {
+      if (destOccupied) { if (Math.abs(cc - c) === 1 && rr + dir === r) out.push("P"); }
+      else if (cc === c && rr + dir === r) out.push("P");
+      else if (cc === c && rr === startR && rr + 2 * dir === r && !board[rr + dir][cc]) out.push("P");
+    } else if (canMove(board, p.t, enemy, rr, cc, r, c, destOccupied)) out.push(p.t);
+  }
+  return out;
+}
+// (공용) 상대가 pieceType 기물로 (r,c)에 실제로 도달했다고 가정했을 때, 그 기물이 안전하며(내가
+// 못 잡거나 잡아도 손해) 내 기물(폰 제외) 중 하나를 SEE상 이득 있게 공격하는지 확인한다.
+function wouldThreatenIfEnemyReaches(board, r, c, pieceType, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const hypo = board.map((row) => row.slice());
+  hypo[r][c] = { c: enemy, t: pieceType };
+  if (seeSquare(hypo, r, c, color) > 0 && canCaptureSquareLegally(hypo, r, c, color)) return null;
+  for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+    if (rr === r && cc === c) continue;
+    const target = hypo[rr][cc]; if (!target || target.c !== color || target.t === "K") continue;
+    const controllable = pieceType === "P" ? (Math.abs(cc - c) === 1 && (enemy === "w" ? rr === r - 1 : rr === r + 1)) : canMove(hypo, pieceType, enemy, r, c, rr, cc, true);
+    if (controllable && seeSquare(hypo, rr, cc, enemy) > 0) return { sq: [rr, cc], piece: target.t };
+  }
+  return null;
+}
+// R4 — 직접 예방 수. 이 수가(캡처가 아닌) 빈 칸을 선점했는데, 이 수가 없었다면 상대가 폰이나
+// 기물로 바로 그 칸에 와서(다음 수) 내 기물을 새로 위협할 수 있었다면 "직접 예방 수"다.
+function directPreventionFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.isCap) return null;
+  const [tr, tc] = info.to;
+  for (const t of enemyCanReach(before, tr, tc, enemy)) {
+    const threatened = wouldThreatenIfEnemyReaches(before, tr, tc, t, color);
+    if (threatened) return { piece: t, sq: [tr, tc], targetPiece: threatened.piece };
+  }
+  return null;
+}
+// R9 — 간접 예방 수. 이 수(폰의 비캡처 전진)가 새로 대각선으로 컨트롤하게 된 빈 칸 중, 원래는
+// 상대가 안전하게 갈 수 있었지만(갔다면 내 기물을 위협했을 것) 이 폰 때문에 더 이상 안전하지
+// 않게 된 칸이 있다면 "간접 예방 수"다.
+function indirectPreventionFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece !== "P" || info.isCap) return null;
+  const [tr, tc] = info.to;
+  const dir = color === "w" ? -1 : 1;
+  for (const dc of [-1, 1]) {
+    const r = tr + dir, c = tc + dc;
+    if (r < 0 || r > 7 || c < 0 || c > 7 || before[r][c]) continue;
+    for (const t of enemyCanReach(before, r, c, enemy)) {
+      const threatened = wouldThreatenIfEnemyReaches(before, r, c, t, color);
+      if (!threatened) continue;
+      const after = applySan(before, san, color);
+      const afterHypo = after.map((row) => row.slice());
+      afterHypo[r][c] = { c: enemy, t };
+      if (seeSquare(afterHypo, r, c, color) > 0 && canCaptureSquareLegally(afterHypo, r, c, color)) {
+        return { piece: t, sq: [r, c], targetPiece: threatened.piece };
+      }
+    }
+  }
+  return null;
+}
+// R13 — 잠재 위협. 이 수 자체가 SEE상 순이득 있는 "진짜 위협"을 만들지 못했더라도, 상대 기물(폰
+// 제외)에 새로 공격자 하나를 추가했다면 그 자체로 "잠재 위협"이다. 미는 기물(비숍·룩·퀸)이면 첫
+// 번째로 막힌 상대 기물 뒤에 놓인 기물까지(한 겹만) 대상에 포함한다 — 앞의 기물이 사라지거나
+// 비키면 그 즉시 노출되는 배터리이기 때문이다.
+function latentThreatFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  const mover = after[tr][tc];
+  if (!mover) return null;
+  const out = [];
+  const KNIGHT_D = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
+  const SLIDE_D = { B: [[1, 1], [1, -1], [-1, 1], [-1, -1]], R: [[1, 0], [-1, 0], [0, 1], [0, -1]], Q: [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]] };
+  if (mover.t === "N") {
+    for (const [dr, dc] of KNIGHT_D) {
+      const r = tr + dr, c = tc + dc;
+      if (r < 0 || r > 7 || c < 0 || c > 7) continue;
+      const target = after[r][c];
+      if (target && target.c === enemy && target.t !== "K" && !(seeSquare(after, r, c, color) > 0)) out.push({ sq: [r, c], piece: target.t });
+    }
+  } else if (SLIDE_D[mover.t]) {
+    for (const [dr, dc] of SLIDE_D[mover.t]) {
+      let r = tr + dr, c = tc + dc, pierced = 0;
+      while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+        const target = after[r][c];
+        if (target) {
+          if (target.c === enemy && target.t !== "K") {
+            if (!(seeSquare(after, r, c, color) > 0)) out.push({ sq: [r, c], piece: target.t });
+            pierced++;
+            if (pierced >= 2) break;
+            r += dr; c += dc; continue;
+          }
+          break;
+        }
+        r += dr; c += dc;
+      }
+    }
+  }
+  if (!out.length) return null;
+  out.sort((a, b) => VAL[b.piece] - VAL[a.piece]);
+  return { piece: out[0].piece };
+}
+// R8 — 과보호. 이 수가 이미 안전한(SEE상 안 걸린) 아군 기물에 새로 방어자를 하나 더 붙였다면(그
+// 기물이 아직 실제 위협을 받는 상태는 아니었음) "과보호"다. 이미 걸려 있던 기물을 안전하게 만드는
+// controlFacts.defends("위협 대처")와는 반대로, 위협이 없는데 미리 대비하는 수다.
+function overprotectFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle) return null;
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  const mover = after[tr][tc];
+  if (!mover) return null;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const target = after[r][c]; if (!target || target.c !== color || target.t === "K") continue;
+    const controllable = mover.t === "P" ? (Math.abs(c - tc) === 1 && (color === "w" ? r === tr - 1 : r === tr + 1)) : canMove(after, mover.t, color, tr, tc, r, c, true);
+    if (!controllable) continue;
+    const wasWeak = seeSquare(before, r, c, enemy) > 0;
+    if (wasWeak) continue; // 이미 위협받던 기물이면 controlFacts.defends("위협 대처") 몫이다
+    return { piece: target.t };
+  }
+  return null;
+}
+// R14 — 오픈/세미오픈 파일. 룩이 이동한 파일에 폰이 아예 없으면 오픈 파일, 상대 폰만 남아 있으면
+// (내 폰은 없음) 세미오픈 파일이다.
+function openFileFact(sansBeforeMove, san, color) {
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece !== "R") return null;
+  const after = applySan(before, san, color);
+  const tc = info.to[1];
+  let mine = 0, theirs = 0;
+  for (let r = 0; r < 8; r++) { const p = after[r][tc]; if (p && p.t === "P") { if (p.c === color) mine++; else theirs++; } }
+  if (mine > 0) return null; // 내 폰이 남아 있으면 오픈도 세미오픈도 아니다
+  return { open: theirs === 0 };
+}
+// R15 — 폰 희생. 이 수를 두기 전 내 폰 중 상대에게 안전하게 잡힐 수 있는 게 있었는데, 이 수가 그
+// 폰을 지키지도 옮기지도 잡지도 않고 그대로 두었고(이 수 자체는 좋은 수), 이 수를 둔 뒤에도 여전히
+// 안전하게 잡힐 수 있는 상태라면 "폰 희생"이다.
+function pawnSacrificeFact(sansBeforeMove, san, color, kind) {
+  if (!MEC_GOOD_KINDS.includes(kind)) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info) return null;
+  const hangingPawns = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = before[r][c]; if (!p || p.c !== color || p.t !== "P") continue;
+    if (seeSquare(before, r, c, enemy) > 0 && canCaptureSquareLegally(before, r, c, enemy)) hangingPawns.push([r, c]);
+  }
+  if (!hangingPawns.length) return null;
+  const movedFrom = info.from ? info.from.join(",") : null;
+  const stillHanging = hangingPawns.filter((sq) => sq.join(",") !== movedFrom);
+  if (!stillHanging.length) return null;
+  const after = applySan(before, san, color);
+  const [hr, hc] = stillHanging[0];
+  if (!(seeSquare(after, hr, hc, enemy) > 0 && canCaptureSquareLegally(after, hr, hc, enemy))) return null; // 이 수가 결국 그 폰을 지켰다
+  return { sq: FILES[hc] + (8 - hr) };
+}
+// R5 — 다음 수 캐슬링 예고. 캐슬링 권리가 있는 상태에서, 이 수를 두기 전엔 경로에 다른 기물이
+// 있어 아직 캐슬링이 불가능했는데 이 수로 그 경로가 완전히 비어 다음 수에 캐슬링이 가능해졌다면
+// 짚어준다.
+function nextMoveCastleFact(sansBeforeMove, san, color) {
+  const rightsInfo = castleEpFacts(sansBeforeMove, color);
+  if (!rightsInfo.myCastleRights) return null;
+  const before = boardFromSans(sansBeforeMove);
+  const kp = kingPos(before, color);
+  const couldBefore = kp && legalDests(before, kp[0], kp[1], color, null).some(([r, c]) => c === 2 || c === 6);
+  if (couldBefore) return null;
+  const after = boardFromSans([...sansBeforeMove, san]);
+  const kp2 = kingPos(after, color);
+  const canNow = kp2 && legalDests(after, kp2[0], kp2[1], color, null).some(([r, c]) => c === 2 || c === 6);
+  return !!canNow;
+}
+// R6 — 전개. 폰·킹을 제외한 기물이 처음으로 홈 칸을 떠나는 수라면 "전개했다"는 표현을, 그 수의
+// 등급이 좋으면 "적절한 칸"이라는 표현까지 덧붙인 문장을 만든다. mecFacts가 최종적으로 고른 문장
+// 앞에 이 문장을 붙여, "전개 + 그 수가 만드는 실제 위협/방어"가 하나의 글로 이어지게 한다.
+function developmentNote(sansBeforeMove, san, color, kind) {
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
+  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const id = grid[info.from[0] + "," + info.from[1]];
+  if (!id || counts[id]) return null; // 이 기물의 첫 이동일 때만
+  const [tr, tc] = info.to;
+  const sq = FILES[tc] + (8 - tr);
+  const pieceKor = PIECE_KOR[info.piece];
+  const seed = sansBeforeMove.length;
+  return MEC_GOOD_KINDS.includes(kind)
+    ? mecPick([josaEulReul(pieceKor) + " 적절한 칸인 " + sq + "에 전개했어요.", "적절한 칸 " + sq + "로 " + josaEulReul(pieceKor) + " 전개했어요.", josaEulReul(pieceKor) + " " + sq + "에 전개했어요, 적절한 칸이에요."], seed)
+    : mecPick([josaEulReul(pieceKor) + " " + sq + "에 전개했어요.", sq + "로 " + josaEulReul(pieceKor) + " 전개했어요.", josaEulReul(pieceKor) + " " + sq + "로 옮겨 전개했어요."], seed);
+}
+// R12 — 캐슬링 전용 평가. 좋은 수면 항상 같은 취지의 긍정 문구를, 나쁜 수인데 다른 사실로 원인을
+// 못 찾았으면 "엔진에 의하면" 키워드로 대체한다.
+function castleQualityGoodPhrase(seed) {
+  return mecPick(["킹의 안전을 도모하는 것은 대부분의 상황에서 좋은 선택이에요.", "캐슬링으로 킹을 안전한 곳에 두는 건 언제나 우선순위가 높은 선택이에요.", "킹을 미리 안전지대로 옮겨두는 좋은 선택이에요."], seed);
+}
 const MEC_PHRASES = {
   mine: (p, s) => mecPick([josaIGa(p) + " 지금 안전하게 잡힐 수 있는 위치에 있어요.", "지금 " + josaIGa(p) + " 위태로워요 — 상대에게 잡힐 수 있어요.", josaEulReul(p) + " 지킬 수를 찾아야 해요 — 지금은 잡혀요."], s),
   threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 노려요.", "상대 " + josaIGa(p) + " 이 수에 걸렸어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
@@ -4679,10 +4982,26 @@ const MEC_PHRASES = {
   pawnTension: (s) => mecPick(["서로 폰을 노리고 있어요.", "폰끼리 서로 위협하고 있어요.", "이 폰과 상대 폰이 서로를 겨누고 있어요."], s),
   pawnTrade: (from, captured, good, s) => mecPick([from + "폰과 " + captured + "폰을 교환하는 것은 " + (good ? "좋은" : "좋지 않은") + " 선택이에요.", (good ? "중앙 쪽으로" : "사이드 쪽으로") + " 잡은 " + from + "폰과 " + captured + "폰의 교환은 " + (good ? "괜찮아요." : "아쉬워요."), from + "폰이 " + captured + "폰을 잡은 건 " + (good ? "중앙을 지키는 좋은 선택이에요." : "중앙에서 멀어지는 아쉬운 선택이에요.")], s),
   tempo: (s) => mecPick(["이 폰을 처음에 두 칸 전진시켰으면 한 수를 아낄 수 있었어요.", "한 번에 두 칸 갈 수 있었는데 나눠서 전진했어요.", "이 폰, 처음부터 두 칸 밀었으면 템포를 아꼈을 거예요."], s),
-  pieceReturned: (p, s) => mecPick([josaIGa(p) + " 시작 칸으로 그대로 돌아갔어요 — 그동안의 전개가 무의미해졌어요.", "애써 전개한 " + p + "가 다시 시작 칸으로 돌아갔어요.", p + "이(가) 원래 자리로 되돌아가며 한 수를 낭비했어요."], s),
+  pieceReturned: (p, s) => mecPick([josaIGa(p) + " 시작 칸으로 그대로 돌아갔어요 — 그동안의 전개가 무의미해졌어요.", "애써 전개한 " + josaIGa(p) + " 다시 시작 칸으로 돌아갔어요.", josaIGa(p) + " 원래 자리로 되돌아가며 한 수를 낭비했어요."], s),
   pieceDetour: (p, s) => mecPick([p + "가 상대 폰에 쫓겨 옮긴 자리, 사실 처음부터 한 수에 갈 수 있었어요.", "상대 폰에게 쫓기느라 " + p + "가 두 수를 들여서야 도착했어요 — 처음부터 한 수면 됐어요.", "상대 폰 한 수에 템포를 내주며 " + p + "가 돌아갔어요, 원래 한 번에 갈 수 있는 자리였어요."], s),
   castleLost: (s) => mecPick(["이 수로 캐슬링 권리를 잃었어요.", "캐슬링 권리가 이 수로 사라졌어요.", "이제 캐슬링을 할 수 없게 됐어요."], s),
   queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.", "퀸사이드로 캐슬링했어요 — a열 폰이 다소 약점이 될 수 있어요.", "퀸사이드 캐슬링이에요, 킹사이드보다는 살짝 덜 안전해요."], s),
+  exchangeOffered: (p, s) => mecPick([josaEulReul(p) + " 상대의 같은 기물이 공격할 수 있는 칸으로 옮겨, 교환을 요청했어요.", "상대와 동가 기물로 맞바꾸자는 교환 요청이에요.", josaIGa(p) + " 상대 기물과 서로 마주 보고 있어요, 교환 요청이에요."], s),
+  exchangeFreeGive: (p, s) => mecPick([josaEulReul(p) + " 아무 대가 없이 상대에게 내주는 수예요.", "지켜주는 기물 없이 " + josaEulReul(p) + " 공짜로 내줬어요.", josaIGa(p) + " 공짜로 잡히는 자리로 갔어요."], s),
+  exchangeAccepted: (p, s) => mecPick(["상대의 교환 요청을 받아들여 " + josaEulReul(p) + " 잡았어요.", "교환 요청을 수락하고 " + josaEulReul(p) + " 그대로 잡았어요.", josaEulReul(p) + " 잡으며 교환 요청을 받아들였어요."], s),
+  exchangeDeclined: (p, s) => mecPick(["상대의 교환 요청을 거절하고 기물을 물렸어요.", "교환에 응하지 않고 " + josaEulReul(p) + " 노리던 기물을 피신시켰어요.", "상대와의 교환을 거절하는 수예요."], s),
+  redeployOpening: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재전개하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재전개했어요.", josaEulReul(p) + " 최적의 위치로 재전개하는 수예요."], s),
+  redeployMidgame: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재배치하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재배치했어요.", josaEulReul(p) + " 최적의 위치로 재배치하는 수예요."], s),
+  noObviousReason: (s) => mecPick(["직관적인 이득은 찾기 어렵지만, 엔진에 의하면 좋은 수예요.", "설명하긴 어렵지만, 엔진에 의하면 좋은 수예요.", "엔진에 의하면 좋은 수예요."], s),
+  preventDirect: (blocker, targetP, s) => mecPick(["상대가 이 칸에 " + josaEulReul(PIECE_KOR[blocker]) + " 뒀다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요, 이를 막기 위해 먼저 이 칸을 선점했어요.", "이 칸을 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 차지했다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요 — 미리 막는 예방 수예요.", "예방 수예요, 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 여기 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요."], s),
+  preventIndirect: (blocker, targetP, s) => mecPick(["이 칸의 컨트롤을 늘려, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 여기 와서 " + josaEulReul(PIECE_KOR[targetP]) + " 위협하는 걸 간접적으로 막았어요.", "간접 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 이 칸에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요.", "직접 막지는 않았지만 이 칸을 컨트롤해 상대 " + PIECE_KOR[blocker] + "의 진입을 막았어요."], s),
+  nextCastle: (s) => mecPick(["이 수로 다음 수에 캐슬링이 가능해졌어요.", "다음 수에는 캐슬링을 할 수 있어요.", "이제 다음 수에 캐슬링이 가능해요."], s),
+  overprotect: (p, s) => mecPick([josaEulReul(p) + " 아직 위협받지 않았지만 미리 과보호했어요.", "당장 위협은 없지만 " + josaEulReul(p) + " 미리 지키는 기물을 늘렸어요, 과보호예요.", josaIGa(p) + " 위협받진 않지만 과보호하는 수예요."], s),
+  latentThreat: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 노리는 공격자를 하나 더 늘렸어요, 아직 잡을 수는 없지만 잠재 위협이에요.", "당장 잡히진 않지만 상대 " + josaIGa(p) + " 잠재 위협을 받고 있어요.", "상대 " + josaEulReul(p) + " 향한 잠재 위협을 만드는 수예요."], s),
+  openFile: (s) => mecPick(["룩을 오픈 파일에 배치했어요.", "이 파일엔 폰이 하나도 없어서, 룩을 오픈 파일에 세웠어요.", "룩을 완전히 열린 파일에 배치하는 좋은 수예요."], s),
+  semiOpenFile: (s) => mecPick(["룩을 세미오픈 파일에 배치했어요.", "내 폰은 없고 상대 폰만 남은 세미오픈 파일에 룩을 세웠어요.", "룩을 세미오픈 파일에 배치해 상대 폰에 잠재 위협을 줘요."], s),
+  pawnSac: (sq, s) => mecPick([sq + "폰이 위협받고 있지만 지키지 않았어요, 폰 희생이에요.", sq + "폰을 지키는 대신 희생하는 수예요.", "위협받는 " + sq + "폰을 그대로 두고 폰 희생을 택했어요."], s),
+  castleBadFallback: (s) => mecPick(["엔진에 의하면 지금은 캐슬링이 좋은 타이밍이 아니에요.", "엔진에 의하면 이 캐슬링은 아쉬운 타이밍이에요.", "엔진에 의하면 지금 캐슬링하기엔 좋지 않은 순간이에요."], s),
 };
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
@@ -4695,26 +5014,54 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp) {
   const board = boardFromSans([...sansBeforeMove, san]);
   const facts = [];
   const t = tensionFacts(board, color);
+  const moveInfo = sanSrc(beforeBoard, san, color);
   // (버그 수정) 이 수 자체가 동가 이상으로 기물을 잡는 수였다면(예: 나이트를 잡은 비숍), 그 도착
   // 칸이 곧 되잡힐 수 있는 것은 원래 그 교환이 완성되는 것일 뿐 새로 위태로워진 게 아니다 —
   // tensionFacts.mine이 "이 기물을 지킬 수를 찾아야 한다"고 경고하지 않도록 그 칸을 제외한다(이
   // 교환의 유불리는 아래 exchangeFact가 대신 설명한다).
-  const moveInfo = sanSrc(beforeBoard, san, color);
   let fairTradeSq = null;
   if (moveInfo && moveInfo.isCap && !moveInfo.castle) {
     const captured = beforeBoard[moveInfo.to[0]][moveInfo.to[1]];
     if (captured && VAL[captured.t] >= VAL[moveInfo.piece]) fairTradeSq = moveInfo.to.join(",");
   }
-  const mine = fairTradeSq ? t.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t.mine;
-  if (mine.length) facts.push(MEC_PHRASES.mine(PIECE_KOR[mine[0].piece], seed));
+  // R2 > R1 > 기존 tensionFacts.mine 순으로, 이 수 자체가 만든 "내 기물의 안위" 관련 사실 하나만
+  // 고른다. R2(상대의 직전 교환 요청에 대한 수락/거절)가 우선이고, 그게 아니면 R1(이 수 자체가 새로
+  // 만든 교환 요청/공짜로 내줌)을, 그것도 아니면 이 수와 무관하게 이미 걸려 있던 tensionFacts.mine을
+  // 쓴다. R3/R11(재전개/재배치)이 같은 수에 함께 적용되면(예: 교환 요청을 거절하며 원래 자리로
+  // 재전개) 하나의 글로 잇는다 — 없으면 재전개/재배치 단독으로라도 이 자리를 채운다.
+  const offerResponse = exchangeOfferResponseFact(sansBeforeMove, san, color);
+  const redeploy = redeployFact(sansBeforeMove, san, color, kind);
+  const redeployPhrase = redeploy && (redeploy.opening ? MEC_PHRASES.redeployOpening(PIECE_KOR[redeploy.piece], seed) : MEC_PHRASES.redeployMidgame(PIECE_KOR[redeploy.piece], seed));
+  if (offerResponse) {
+    const base = offerResponse.accepted ? MEC_PHRASES.exchangeAccepted(PIECE_KOR[offerResponse.piece], seed) : MEC_PHRASES.exchangeDeclined(PIECE_KOR[offerResponse.piece], seed);
+    facts.push(redeployPhrase ? base + " " + redeployPhrase : base);
+  } else {
+    const offer = exchangeOfferFact(sansBeforeMove, san, color, kind);
+    if (offer) facts.push(offer.offered ? MEC_PHRASES.exchangeOffered(PIECE_KOR[offer.piece], seed) : MEC_PHRASES.exchangeFreeGive(PIECE_KOR[offer.piece], seed));
+    else {
+      const mine = fairTradeSq ? t.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t.mine;
+      if (mine.length) facts.push(MEC_PHRASES.mine(PIECE_KOR[mine[0].piece], seed));
+      else if (redeployPhrase) facts.push(redeployPhrase);
+    }
+  }
   const evasion = evasionFact(sansBeforeMove, san, color);
   if (evasion) facts.push(evasion.kind === "counter" ? MEC_PHRASES.counter(PIECE_KOR[evasion.piece], PIECE_KOR[evasion.target], seed) : MEC_PHRASES.evade(PIECE_KOR[evasion.piece], seed));
+  // R4/R9 — 예방 수(직접 > 간접). 위에서 더 급한 전술적 사실(교환/회피)을 못 찾았을 때만 확인한다.
+  if (!facts.length) {
+    const directPrev = directPreventionFact(sansBeforeMove, san, color);
+    if (directPrev) facts.push(MEC_PHRASES.preventDirect(directPrev.piece, directPrev.targetPiece, seed));
+    else {
+      const indirectPrev = indirectPreventionFact(sansBeforeMove, san, color);
+      if (indirectPrev) facts.push(MEC_PHRASES.preventIndirect(indirectPrev.piece, indirectPrev.targetPiece, seed));
+    }
+  }
   const pawnTrade = pawnTradeFact(sansBeforeMove, san, color);
   if (pawnTrade) facts.push(MEC_PHRASES.pawnTrade(pawnTrade.fromSq, pawnTrade.capturedSq, pawnTrade.good, seed));
   else if (pawnTensionFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.pawnTension(seed));
   // 기물(폰 제외) 동가 교환의 전략적 타당성 — 유리할 때 교환은 원래 좋고, 불리할 때는 원래 피해야
   // 하지만 예외(최선 이상=불가피, 우수/좋음=그래도 괜찮음)를 인정한다. 기대와 등급이 어긋나면
-  // "목적 없는 교환"이었다는 반대 프레이밍을 쓴다.
+  // "목적 없는 교환"이었다는 반대 프레이밍을 쓴다(R10 — 비숍쌍 유지·상대 폰 구조 약화 근거는 등급이
+  // 이미 그 판단을 반영하고 있으므로, 여기서는 그 등급이 곧 "어느 근거가 우세했는지"의 증거로 쓰인다).
   const exchange = exchangeFact(sansBeforeMove, san, color, kind, beforeCp);
   if (exchange) {
     if (exchange.ahead) facts.push(exchange.good ? MEC_PHRASES.exchangeAheadGood(seed) : MEC_PHRASES.exchangeAheadBad(seed));
@@ -4726,24 +5073,61 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp) {
   // 방금 만든 위협)라고 하는 게 맞다 — 상대 차례가 지나야 실제로 잡을 수 있는데 "잡을 기회"라고
   // 하면 지금 당장 잡을 수 있는 것처럼 들려 어색하다는 지적. 이 수와 무관하게 이미 걸려 있던
   // 기물(다른 칸)만 "잡을 기회" 문구를 쓴다. 그중에서도 이 수 자체의 등급이 좋으면(declined),
-  // "놓쳤다"는 뉘앙스의 "잡을 기회예요" 대신 "잡지 않았지만 여전히 좋은 수"로 프레이밍한다.
+  // "놓쳤다"는 뉘앙스의 "잡을 기회예요" 대신 "잡지 않았지만 여전히 좋은 수"로 프레이밍한다. 아무
+  // 진짜 위협·기회도 없으면 마지막으로 R13(잠재 위협 — 아직 SEE상 이득은 없지만 공격자를 하나 더
+  // 늘린 상태)을 확인한다.
   const justThreatenedSq = ctrl.threats.length ? ctrl.threats[0].sq.join(",") : null;
   const preexistingTheirs = t.theirs.filter((x) => x.sq.join(",") !== justThreatenedSq);
   const declined = declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan);
   if (ctrl.threats.length) facts.push(MEC_PHRASES.threat(PIECE_KOR[ctrl.threats[0].piece], seed));
   else if (declined) facts.push(declined.wasBestCapture ? MEC_PHRASES.declinedBestCapture(PIECE_KOR[declined.piece], seed) : MEC_PHRASES.declinedCapture(PIECE_KOR[declined.piece], seed));
   else if (preexistingTheirs.length) facts.push(MEC_PHRASES.preexistingTheirs(PIECE_KOR[preexistingTheirs[0].piece], seed));
+  else {
+    const latent = latentThreatFact(sansBeforeMove, san, color);
+    if (latent) facts.push(MEC_PHRASES.latentThreat(PIECE_KOR[latent.piece], seed));
+  }
+  // R8 — 위협 대처(이미 걸려 있던 기물을 지키는 것, 기존 ctrl.defends) vs 과보호(걸리지 않은 기물을
+  // 미리 지키는 것, 새 overprotectFact) 구분.
   if (ctrl.defends.length) facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
+  else {
+    const overprotect = overprotectFact(sansBeforeMove, san, color);
+    if (overprotect) facts.push(MEC_PHRASES.overprotect(PIECE_KOR[overprotect.piece], seed));
+  }
   if (tempoWasteFact(sansBeforeMove, san, color, kind)) facts.push(MEC_PHRASES.tempo(seed));
   const detour = pieceDetourFact(sansBeforeMove, san, color, kind);
   if (detour) facts.push(detour.kind === "returned" ? MEC_PHRASES.pieceReturned(PIECE_KOR[detour.piece], seed) : MEC_PHRASES.pieceDetour(PIECE_KOR[detour.piece], seed));
+  // R14 — 오픈/세미오픈 파일.
+  const openFile = openFileFact(sansBeforeMove, san, color);
+  if (openFile) facts.push(openFile.open ? MEC_PHRASES.openFile(seed) : MEC_PHRASES.semiOpenFile(seed));
+  // R15 — 폰 희생.
+  const pawnSac = pawnSacrificeFact(sansBeforeMove, san, color, kind);
+  if (pawnSac) facts.push(MEC_PHRASES.pawnSac(pawnSac.sq, seed));
   if (sansBeforeMove.length < MEC_OPENING_PLY_LIMIT) {
     if (/^O-O-O/.test(san)) facts.push(MEC_PHRASES.queensideNote(seed));
     else if (!/^O-O/.test(san)) {
       const before = castleEpFacts(sansBeforeMove, color);
       const after = castleEpFacts([...sansBeforeMove, san], color);
       if (before.myCastleRights && !after.myCastleRights) facts.push(MEC_PHRASES.castleLost(seed));
+      // R5 — 다음 수 캐슬링 예고(권리를 잃은 수가 아닐 때만 의미가 있다).
+      else if (nextMoveCastleFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.nextCastle(seed));
     }
+  }
+  // R6 — 전개. 이 기물의 첫 이동이면, 최종적으로 고른 문장(facts[0]) 앞에 "전개했다" 문장을 붙여
+  // 하나의 글로 잇는다. 붙일 다른 사실이 없으면 전개 문장 하나만 남긴다.
+  const devNote = developmentNote(sansBeforeMove, san, color, kind);
+  if (devNote) { if (facts.length) facts[0] = devNote + " " + facts[0]; else facts.push(devNote); }
+  // R12 — 캐슬링은 판단 기준이 다르다. 좋은 수면 고정된 긍정 평가로 다른 사실을 전부 대체하고(퀸사이드면
+  // 안전성 안내를 이어 붙인다), 나쁜 수인데 위에서 아무 원인도 못 찾았으면 "엔진에 의하면"으로 대체한다.
+  if (/^O-O/.test(san)) {
+    if (MEC_GOOD_KINDS.includes(kind)) {
+      const good = castleQualityGoodPhrase(seed);
+      facts.length = 0;
+      facts.push(/^O-O-O/.test(san) ? good + " " + MEC_PHRASES.queensideNote(seed) : good);
+    } else if (!facts.length) facts.push(MEC_PHRASES.castleBadFallback(seed));
+  } else if (!facts.length && MEC_GOOD_KINDS.includes(kind)) {
+    // R2/R3의 "엔진에 의하면" 취지를 일반화 — 좋은 수인데 위 어떤 사실도 찾지 못했으면, 설명할 수
+    // 있는 직관적인 이유가 없다는 사실 자체를 명시한다.
+    facts.push(MEC_PHRASES.noObviousReason(seed));
   }
   return facts;
 }
@@ -12393,6 +12777,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "MILKU·KOKOA의 코멘트가 훨씬 세밀해졌어요 — 같은 가치의 기물끼리 마주 보면 '위협'이 아니라 '교환 요청'으로, 그 요청을 잡거나 물리면 '수락/거절'로 표현하고, 같은 기물을 여러 번 움직여도 좋은 자리를 찾아간 거면 '재전개(재배치)'로, 상대가 특정 칸에 오는 걸 막기 위해 미리 자리를 잡거나 컨트롤을 늘렸으면 '예방 수'로 짚어줘요. 기물을 처음 전개하는 수, 캐슬링 전용 평가, 위협받지 않았는데 미리 보강하는 '과보호', 아직 잡을 순 없지만 공격자를 하나 더 늘린 '잠재 위협', 룩의 오픈/세미오픈 파일 배치, 다음 수 캐슬링 예고, 폰 희생까지 새로 알려줘요.",
       "나이트·비숍이 애써 전개했다가 시작 칸으로 그대로 되돌아가거나, 상대 폰에게 쫓겨 사실 한 수면 갈 수 있었던 자리에 두 수를 들여 도착하면 MILKU·KOKOA가 그 비효율을 짚어줘요.",
       "MILKU·KOKOA의 설명이 더 정확해졌어요 — 실제로는 이기고 있는데 기물 교환에 대해 '지고 있을 때는 피하는 게 좋다'고 말하던 문제, 정상적으로 기물을 교환한 것뿐인데 '지켜야 한다'고 잘못 경고하던 문제, 폰이 한 칸만 전진해도 실질적인 이득(예: 상대 기물을 쫓아냄)이 있으면 '두 칸 갈 수 있었다'고 지적하지 않고, 정말 낭비였을 때만 그 수에 딱 한 번 짚어주도록 고쳤어요.",
       "탁월한 수 설명이 훨씬 자세해졌어요 — 어떤 기물을 내주는 희생인지, 걸린 기물을 그대로 두고 더 큰 이득을 노린 수인지, 퀸이 아닌 다른 기물로 승진한 수인지부터 밝히고, 이후 수순을 분석해서 실제로 기물 점수를 되찾는 수순을 찾을 수 있으면 그걸 자세히, 못 찾으면 장기적으로 상대를 압박해 유리해지는 이유를 알려줘요. 이미 불리한 상황에서 무승부를 노린 희생이면 왜 그래야 했는지도, 최선의 수는 아니지만 감각적으로 찾은 수라면 그 사실도 짚어줘요.",
