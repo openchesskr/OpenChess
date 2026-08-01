@@ -4367,9 +4367,16 @@ function mecFacts(sansBeforeMove, san, color) {
   const facts = [];
   const t = tensionFacts(board, color);
   if (t.mine.length) facts.push(PIECE_KOR[t.mine[0].piece] + "가 지금 안전하게 잡힐 수 있는 위치에 있어요.");
-  if (t.theirs.length) facts.push("상대 " + PIECE_KOR[t.theirs[0].piece] + "가 걸려 있어요 — 잡을 기회예요.");
   const ctrl = controlFacts(sansBeforeMove, san, color);
+  // (버그 수정) 상대 기물이 걸려 있어도, 그게 방금 이 수 자체가 새로 위협한 기물(ctrl.threats와
+  // 같은 칸)이라면 "잡을 기회예요"(원래부터 있던 약점을 챙기는 뉘앙스)가 아니라 "노려요"(이 수가
+  // 방금 만든 위협)라고 하는 게 맞다 — 상대 차례가 지나야 실제로 잡을 수 있는데 "잡을 기회"라고
+  // 하면 지금 당장 잡을 수 있는 것처럼 들려 어색하다는 지적. 이 수와 무관하게 이미 걸려 있던
+  // 기물(다른 칸)만 "잡을 기회" 문구를 쓴다.
+  const justThreatenedSq = ctrl.threats.length ? ctrl.threats[0].sq.join(",") : null;
+  const preexistingTheirs = t.theirs.filter((x) => x.sq.join(",") !== justThreatenedSq);
   if (ctrl.threats.length) facts.push("이 수는 상대 " + PIECE_KOR[ctrl.threats[0].piece] + "를 노려요.");
+  else if (preexistingTheirs.length) facts.push("상대 " + PIECE_KOR[preexistingTheirs[0].piece] + "가 걸려 있어요 — 잡을 기회예요.");
   if (ctrl.defends.length) facts.push("이 수는 위태롭던 아군 " + PIECE_KOR[ctrl.defends[0].piece] + "를 미리 지켜요.");
   const tempo = tempoWasteFact(sansBeforeMove, san, color);
   if (tempo) facts.push(tempo);
