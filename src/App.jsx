@@ -4188,6 +4188,19 @@ function sacrificedPieceKor(sans, san) {
   if (best) return PIECE_KOR[best];
   return mover ? PIECE_KOR[mover.t] : null;
 }
+// (버그 수정) PIECE_KOR 값("킹"·"퀸"·"룩"·"비숍"·"폰"은 받침 있음, "나이트"만 받침 없음)에 조사를
+// 하드코딩해 붙이면(예: 항상 "를") 받침 있는 기물 이름에는 "룩를"처럼 문법이 깨졌다 — 유니코드
+// 완성형 한글의 마지막 글자 코드로 받침 유무를 계산해 조사를 올바르게 골라 붙인다.
+function hasBatchim(word) {
+  if (!word) return false;
+  const code = word.charCodeAt(word.length - 1);
+  if (code < 0xAC00 || code > 0xD7A3) return false; // 한글 완성형 범위 밖(숫자·영문 등)이면 받침 없는 쪽으로
+  return (code - 0xAC00) % 28 !== 0;
+}
+const josaIGa = (w) => w + (hasBatchim(w) ? "이" : "가");
+const josaEunNeun = (w) => w + (hasBatchim(w) ? "은" : "는");
+const josaEulReul = (w) => w + (hasBatchim(w) ? "을" : "를");
+const josaGwaWa = (w) => w + (hasBatchim(w) ? "과" : "와");
 // (기능) 탁월한 수 코멘트 보강 — 새 엔진 호출 없이, 브릴리언트 화살표(brilliantArrows)가 이미
 // 계산해 둔 "idea" 화살표(희생한 기물이 새 자리에서 다음으로 노릴 수 있는 상대 기물)를 문장으로
 // 바꾼다. "무엇을 희생했는지"(sacrificedPieceKor)에 이어 "그래서 무엇을 얻는지"까지 붙여준다.
@@ -4197,7 +4210,7 @@ function brilliantIdeaNote(sansBeforeMove, san) {
   const after = boardFromSans([...sansBeforeMove, san]);
   const target = after[ideas[0].to[0]][ideas[0].to[1]];
   if (!target) return null;
-  return "이 자리에서 다음에 상대 " + PIECE_KOR[target.t] + "를 노릴 수 있어요.";
+  return "이 자리에서 다음에 상대 " + josaEulReul(PIECE_KOR[target.t]) + " 노릴 수 있어요.";
 }
 
 /* ============================================================ 자체 포지션 평가 AI (FEN·PGN 결합) ============================================================
@@ -4386,24 +4399,64 @@ function evasionFact(sansBeforeMove, san, color) {
   }
   return { kind: "evade", piece: info.piece };
 }
+// FEN 기반 — 폰끼리 교환. 이 수가 폰으로 폰을 잡는 수(앙파상 포함)라면, 잡은 뒤 내 폰이 중앙에
+// 더 가까워졌는지(같은 자리 유지 포함)로 좋은/나쁜 선택을 가른다 — "폰 교환은 사이드에서 중앙
+// 쪽으로 하라"는 원칙을 SEE 없이 파일 거리만으로 그대로 코드화한 것.
+function pawnTradeFact(sansBeforeMove, san, color) {
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.piece !== "P" || !info.isCap || info.castle) return null;
+  const [tr, tc] = info.to;
+  const isEp = !board[tr][tc]; // 캡처인데 도착 칸이 비어 있으면 앙파상
+  const capturedR = isEp ? (color === "w" ? tr + 1 : tr - 1) : tr;
+  const captured = isEp ? { t: "P" } : board[tr][tc];
+  if (!captured || captured.t !== "P") return null; // 폰끼리 교환일 때만
+  const fromSq = FILES[info.from[1]] + (8 - info.from[0]);
+  const capturedSq = FILES[tc] + (8 - capturedR);
+  const fromDist = Math.abs(info.from[1] - 3.5), toDist = Math.abs(tc - 3.5);
+  return { fromSq, capturedSq, good: toDist <= fromDist };
+}
+// FEN 기반 — 상호 폰 긴장. 이 수(폰을 잡지 않는 전진)가 내 폰을 상대 폰과 서로 대각선으로 마주보게
+// 만들면(둘 다 서로를 잡을 수 있는 상태 — 아직 어느 쪽도 잡지 않은 순수 긴장) 그 자체를 사실로
+// 짚어준다. 폰의 대각선 캡처는 서로 마주보면 항상 상호적이라, 한쪽만 확인하면 된다.
+function pawnTensionFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.piece !== "P" || info.isCap || info.castle) return null;
+  const after = applySan(board, san, color);
+  const [tr, tc] = info.to;
+  const dir = color === "w" ? -1 : 1;
+  for (const dc of [-1, 1]) {
+    const er = tr + dir, ec = tc + dc;
+    if (er < 0 || er > 7 || ec < 0 || ec > 7) continue;
+    const target = after[er][ec];
+    if (target && target.c === enemy && target.t === "P") return true;
+  }
+  return false;
+}
 // 같은 사실을 매번 똑같은 문장으로만 말하면 기계적으로 들려서, 유형별로 여러 표현을 두고 이 수의
 // ply(=sansBeforeMove.length)로 순환시킨다(REVIEW_COACH_COPY가 등급별 코멘트를 ply로 순환시키는
-// 것과 같은 방식) — 매번 랜덤하게 바뀌진 않지만, 대국을 훑어보는 동안 문구가 다양해진다.
+// 것과 같은 방식) — 매번 랜덤하게 바뀌진 않지만, 대국을 훑어보는 동안 문구가 다양해진다. 기물
+// 이름(PIECE_KOR)은 "나이트"만 받침이 없어 조사가 갈리므로, 직접 붙이지 않고 josa* 헬퍼를 쓴다.
 function mecPick(variants, seed) { return variants[((seed % variants.length) + variants.length) % variants.length]; }
 const MEC_PHRASES = {
-  mine: (p, s) => mecPick([p + "가 지금 안전하게 잡힐 수 있는 위치에 있어요.", "지금 " + p + "가 위태로워요 — 상대에게 잡힐 수 있어요.", p + "를 지킬 수를 찾아야 해요 — 지금은 잡혀요."], s),
-  threat: (p, s) => mecPick(["이 수는 상대 " + p + "를 노려요.", "상대 " + p + "가 이 수에 걸렸어요.", "이제 상대 " + p + "를 위협하고 있어요."], s),
-  preexistingTheirs: (p, s) => mecPick(["상대 " + p + "가 걸려 있어요 — 잡을 기회예요.", "상대 " + p + "를 잡을 수 있는 상황이에요.", "아직 상대 " + p + "가 방치돼 있어요 — 놓치지 마세요."], s),
-  defend: (p, s) => mecPick(["이 수는 위태롭던 아군 " + p + "를 미리 지켜요.", "덕분에 " + p + "가 더 이상 위험하지 않아요.", "이 수로 " + p + "를 안전하게 지켰어요."], s),
-  evade: (p, s) => mecPick([p + "가 위협을 피해 안전한 자리로 갔어요.", p + "를 안전한 칸으로 피신시켰어요.", "이 수로 " + p + "에 대한 위협을 피했어요."], s),
-  counter: (p, tgt, s) => mecPick(["위협을 피하면서 상대 " + tgt + "를 반격해요.", "피하는 동시에 상대 " + tgt + "를 노리는 반격이에요.", p + "를 피신시키면서 상대 " + tgt + "까지 반격했어요."], s),
+  mine: (p, s) => mecPick([josaIGa(p) + " 지금 안전하게 잡힐 수 있는 위치에 있어요.", "지금 " + josaIGa(p) + " 위태로워요 — 상대에게 잡힐 수 있어요.", josaEulReul(p) + " 지킬 수를 찾아야 해요 — 지금은 잡혀요."], s),
+  threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 노려요.", "상대 " + josaIGa(p) + " 이 수에 걸렸어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
+  preexistingTheirs: (p, s) => mecPick(["상대 " + josaIGa(p) + " 걸려 있어요 — 잡을 기회예요.", "상대 " + josaEulReul(p) + " 잡을 수 있는 상황이에요.", "아직 상대 " + josaIGa(p) + " 방치돼 있어요 — 놓치지 마세요."], s),
+  defend: (p, s) => mecPick(["이 수는 위태롭던 아군 " + josaEulReul(p) + " 미리 지켜요.", "덕분에 " + josaIGa(p) + " 더 이상 위험하지 않아요.", "이 수로 " + josaEulReul(p) + " 안전하게 지켰어요."], s),
+  evade: (p, s) => mecPick([josaIGa(p) + " 위협을 피해 안전한 자리로 갔어요.", josaEulReul(p) + " 안전한 칸으로 피신시켰어요.", "이 수로 " + p + "에 대한 위협을 피했어요."], s),
+  counter: (p, tgt, s) => mecPick(["위협을 피하면서 상대 " + josaEulReul(tgt) + " 반격해요.", "피하는 동시에 상대 " + josaEulReul(tgt) + " 노리는 반격이에요.", josaEulReul(p) + " 피신시키면서 상대 " + tgt + "까지 반격했어요."], s),
+  pawnTension: (s) => mecPick(["서로 폰을 노리고 있어요.", "폰끼리 서로 위협하고 있어요.", "이 폰과 상대 폰이 서로를 겨누고 있어요."], s),
+  pawnTrade: (from, captured, good, s) => mecPick([from + "폰과 " + captured + "폰을 교환하는 것은 " + (good ? "좋은" : "좋지 않은") + " 선택이에요.", (good ? "중앙 쪽으로" : "사이드 쪽으로") + " 잡은 " + from + "폰과 " + captured + "폰의 교환은 " + (good ? "괜찮아요." : "아쉬워요."), from + "폰이 " + captured + "폰을 잡은 건 " + (good ? "중앙을 지키는 좋은 선택이에요." : "중앙에서 멀어지는 아쉬운 선택이에요.")], s),
   tempo: (s) => mecPick(["이 폰을 처음에 두 칸 전진시켰으면 한 수를 아낄 수 있었어요.", "한 번에 두 칸 갈 수 있었는데 나눠서 전진했어요.", "이 폰, 처음부터 두 칸 밀었으면 템포를 아꼈을 거예요."], s),
   castleLost: (s) => mecPick(["이 수로 캐슬링 권리를 잃었어요.", "캐슬링 권리가 이 수로 사라졌어요.", "이제 캐슬링을 할 수 없게 됐어요."], s),
   queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.", "퀸사이드로 캐슬링했어요 — a열 폰이 다소 약점이 될 수 있어요.", "퀸사이드 캐슬링이에요, 킹사이드보다는 살짝 덜 안전해요."], s),
 };
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
-// 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 이 수가 만든 구체적 위협/방어, 마지막이
-// 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중 맨 앞 하나만 코멘트에 붙인다.
+// 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
+// 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
+// 맨 앞 하나만 코멘트에 붙인다.
 function mecFacts(sansBeforeMove, san, color) {
   const seed = sansBeforeMove.length;
   const board = boardFromSans([...sansBeforeMove, san]);
@@ -4412,6 +4465,9 @@ function mecFacts(sansBeforeMove, san, color) {
   if (t.mine.length) facts.push(MEC_PHRASES.mine(PIECE_KOR[t.mine[0].piece], seed));
   const evasion = evasionFact(sansBeforeMove, san, color);
   if (evasion) facts.push(evasion.kind === "counter" ? MEC_PHRASES.counter(PIECE_KOR[evasion.piece], PIECE_KOR[evasion.target], seed) : MEC_PHRASES.evade(PIECE_KOR[evasion.piece], seed));
+  const pawnTrade = pawnTradeFact(sansBeforeMove, san, color);
+  if (pawnTrade) facts.push(MEC_PHRASES.pawnTrade(pawnTrade.fromSq, pawnTrade.capturedSq, pawnTrade.good, seed));
+  else if (pawnTensionFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.pawnTension(seed));
   const ctrl = controlFacts(sansBeforeMove, san, color);
   // (버그 수정) 상대 기물이 걸려 있어도, 그게 방금 이 수 자체가 새로 위협한 기물(ctrl.threats와
   // 같은 칸)이라면 "잡을 기회예요"(원래부터 있던 약점을 챙기는 뉘앙스)가 아니라 "노려요"(이 수가
@@ -12060,7 +12116,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
-      "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격'이라고 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
+      "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격', 폰끼리 서로 노려보고 있으면 '서로 폰을 노리고 있어요', 폰을 교환했으면 '중앙 쪽으로 잡았는지'까지 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
+      "MILKU·KOKOA의 코멘트에서 '룩를 노려요'처럼 조사가 어색하게 붙던 문제를 고쳤어요 — 이제 기물 이름에 맞게 '을/를', '이/가'가 자연스럽게 붙어요.",
       "퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
       "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
       "'전체' 레이팅 그래프에서 대국이 적은 시간 규정(예: 블리츠 2판)이 그냥 수직선 하나처럼 보이던 문제를 고쳤어요 — 이제 대국이 없는 구간은 그 시점 레이팅으로 평평하게 기간 끝까지 이어져요.",
