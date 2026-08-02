@@ -1446,6 +1446,21 @@ function canCaptureSquareLegally(board, tr, tc, side) {
   }
   return false;
 }
+// (기능) canCaptureSquareLegally와 같은 조건이되, 있는지 없는지가 아니라 합법적으로 이 칸을 잡을 수
+// 있는 내 기물이 몇 개인지 센다 — 되잡기(recaptureFact)가 "대안이 없어 직관적으로 명백한 수"인지
+// (후보가 정확히 1개) 판정하는 데 쓴다.
+function countLegalCapturesOnSquare(board, tr, tc, side) {
+  let n = 0;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== side) continue;
+    let can;
+    if (p.t === "P") { const dir = side === "w" ? -1 : 1; can = (tr - r === dir && Math.abs(tc - c) === 1); }
+    else if (p.t === "K") can = Math.abs(tr - r) <= 1 && Math.abs(tc - c) <= 1;
+    else can = canMove(board, p.t, side, r, c, tr, tc, true);
+    if (can && !exposesKing(board, r, c, tr, tc, side, null)) n++;
+  }
+  return n;
+}
 // (16차→18차) color 진영 기물 중, 상대가 다음 수에 잡아 실질 손실(≥1)을 낼 수 있는 기물이 있는지 — 있다면 그 최대 손실값과 그 칸(sq).
 // (18차) SEE 기하학 계산만으론 "체크 중이라 위협을 실행할 수 없는" 경우(예: Bxf7+ 이후 Qxg5는 체크 방치라 불법)를
 // 걸러내지 못해 탁월 오탐의 원인이 됐다 — 실제로 그 칸을 합법적으로 잡을 수 있을 때만 위협으로 인정한다.
@@ -2647,8 +2662,13 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
       try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing) && !continuesOwnSacrifice) kind = "brilliant"; } catch { }
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
       // 유일한 수(Great, 매우 좋아요): 최선수를 뒀는데 2순위가 분명히 열세라(대안이 없다) 반드시 그 수여야 했던 경우.
+      // (버그 수정) 상대가 방금 잡은 자리를 되잡을 수 있는 내 기물이 이 하나뿐인 수(단순 되잡기)는
+      // 기물 점수를 맞추는 게 너무 직관적이라 "유일한 수"로 놀라워할 이유가 없다 — recaptureFact로
+      // 감지해 이런 수는 "유일한 수" 승격에서 제외한다(등급은 그대로 최선의 수로 남는다).
       const gap = posEval[i].second == null ? 9999 : (bestCp - posEval[i].second);
-      if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
+      let singleRecapture = false;
+      try { const rc = recaptureFact(fullSans.slice(0, i), fullSans[i], color); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+      if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture) kind = "only";
       // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데, 그 이점을 응징 못 해 평가치가
       // 의미있게 감소(loss≥100)하되, 결과가 뒤집힐(패배) 정도는 아닌 경우(playedCp≥-30).
       if (["inaccuracy", "mistake", "good"].includes(kind) && i >= 1
@@ -4284,10 +4304,23 @@ function brilliantSubtype(board, sanRaw, color) {
   const net = capturedVal - oppGain;
   if (!info.castle && info.piece !== "P" && net <= -1) {
     const mover = after[tr][tc];
+    // "교환 희생" — 룩으로 상대의 지켜진 나이트·비숍을 그냥 잡아 곧바로 되잡히는, 룩-마이너 교환.
+    // 여러 수에 걸친 막연한 "희생"이 아니라 그 자리에서 바로 완결되는 구체적인 교환이므로 별도
+    // 갈래로 구분한다.
+    const capturedPiece = board[tr][tc];
+    if (mover && mover.t === "R" && capturedPiece && (capturedPiece.t === "N" || capturedPiece.t === "B")) {
+      return { type: "exchangeSac", give: "R", get: capturedPiece.t };
+    }
     return { type: "direct", piece: mover ? mover.t : info.piece };
   }
   const { sq: afterHangSq } = hangingLossSq(after, color, [tr, tc]);
   const hangPiece = afterHangSq ? after[afterHangSq[0]][afterHangSq[1]] : null;
+  // "교환 희생"의 방치형 — 내 룩이 상대 나이트·비숍에게 공격당하고 있는데 구하지 않고 다른 급한
+  // 일을 해, 그 룩이 마이너 기물과 교환되도록 놔두는 경우도 같은 갈래로 묶는다.
+  if (hangPiece && hangPiece.t === "R") {
+    const attacker = lva(after, afterHangSq[0], afterHangSq[1], enemy);
+    if (attacker && (attacker.t === "N" || attacker.t === "B")) return { type: "exchangeSac", give: "R", get: attacker.t };
+  }
   return { type: "neglect", piece: hangPiece ? hangPiece.t : null };
 }
 // (기능) 언더프로모션이 왜 퀸이 아닌지 — 퀸으로 승진했다면 상대가 둘 수 있는 합법수가 아예 없어져
@@ -4342,6 +4375,8 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
     if (reason === "stalemate") typeSentence = "퀸으로 승진하면 상대가 둘 수 있는 합법수가 없어져 스테일메이트로 무승부가 되므로, 대신 " + josaEulReul(promoKor) + " 골라 승진하는 수예요";
     else if (reason === "safety") typeSentence = "퀸으로 승진하면 곧바로 잡히지만 " + josaEunNeun(promoKor) + " 안전하게 남을 수 있어, 대신 " + josaEulReul(promoKor) + " 골라 승진하는 수예요";
     else typeSentence = "퀸이 아닌 " + josaEulReul(promoKor) + " 골라 승진하는, 흔치 않은 감각의 수예요";
+  } else if (sub.type === "exchangeSac") {
+    typeSentence = josaGwaWa(PIECE_KOR[sub.give]) + " " + josaEulReul(PIECE_KOR[sub.get]) + " 교환하는 건 쉽지 않은 선택이지만, 지금 상황에선 탁월한 선택이에요";
   } else if (sub.type === "neglect" && sub.piece) {
     typeSentence = josaEulReul(PIECE_KOR[sub.piece]) + " 그대로 걸어 둔 채 그 위협을 무시하고, 대신 더 큰 이득을 얻어내는 수예요";
   } else if (sub.piece) {
@@ -4578,6 +4613,26 @@ function pieceDetourFact(sansBeforeMove, san, color, kind) {
 // FEN 기반 — 회피/반격. 가치가 높은(폰 제외) 내 기물이 이 수를 두기 전부터 SEE상 걸려 있었는데,
 // 이 수가 바로 그 기물을 움직여 더 이상 안전하게 잡히지 않는 칸으로 옮겼다면 "회피". 그 와중에
 // 도착 칸에서 상대의 가치가 같거나 더 높은 기물을 SEE상 이득 있게 새로 노린다면 한 단계 더 적극적인
+// FEN 기반 — 단순 되잡기. 상대의 직전 수가 어떤 칸에서 캡처였고, 이번 수도 같은 칸을 잡는
+// 캡처라면 "기물을 교환한 것뿐"이라는 가장 직관적인 이유를 짚어준다. 되잡을 수 있는 내 기물이
+// 이 자리 하나뿐이면(대안이 없어 굳이 설명할 필요가 없을 만큼 명백한 수) onlyCandidate를 함께
+// 돌려준다 — "유일한 수" 등급 판정이 이런 수를 제외하는 데 재사용한다.
+function recaptureFact(sansBeforeMove, san, color) {
+  if (!sansBeforeMove.length) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const lastSan = sansBeforeMove[sansBeforeMove.length - 1];
+  const prevBoard = boardFromSans(sansBeforeMove.slice(0, -1));
+  const oppInfo = sanSrc(prevBoard, lastSan, enemy);
+  if (!oppInfo || !oppInfo.isCap) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || !info.isCap || info.castle) return null;
+  if (info.to[0] !== oppInfo.to[0] || info.to[1] !== oppInfo.to[1]) return null;
+  const captured = board[info.to[0]][info.to[1]];
+  if (!captured) return null; // 이 수 자체가 앙파상이면(도착 칸이 비어 있음) 대상 아님
+  const onlyCandidate = countLegalCapturesOnSquare(board, info.to[0], info.to[1], color) === 1;
+  return { piece: info.piece, capturedPiece: captured.t, onlyCandidate };
+}
 // "반격" — 그냥 도망만 간 게 아니라 되받아친 것이다.
 function evasionFact(sansBeforeMove, san, color) {
   const enemy = color === "w" ? "b" : "w";
@@ -5070,6 +5125,7 @@ const MEC_PHRASES = {
   exchangeFreeGive: (p, s) => mecPick([josaEulReul(p) + " 아무 대가 없이 상대에게 내주는 수예요.", "지켜주는 기물 없이 " + josaEulReul(p) + " 공짜로 내줬어요.", josaIGa(p) + " 공짜로 잡히는 자리로 갔어요."], s),
   exchangeAccepted: (p, s) => mecPick(["상대의 교환 요청을 받아들여 " + josaEulReul(p) + " 잡았어요.", "교환 요청을 수락하고 " + josaEulReul(p) + " 그대로 잡았어요.", josaEulReul(p) + " 잡으며 교환 요청을 받아들였어요."], s),
   exchangeDeclined: (p, s) => mecPick(["상대의 교환 요청을 거절하고 기물을 물렸어요.", "교환에 응하지 않고 " + josaEulReul(p) + " 노리던 기물을 피신시켰어요.", "상대와의 교환을 거절하는 수예요."], s),
+  recapture: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 되잡아서 기물 상황을 유지했어요.", "상대가 잡은 자리에서 " + josaEulReul(p) + " 그대로 되잡았어요.", "되잡기로 기물 상황을 다시 맞췄어요."], s),
   redeployOpening: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재전개하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재전개했어요.", josaEulReul(p) + " 최적의 위치로 재전개하는 수예요."], s),
   redeployMidgame: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재배치하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재배치했어요.", josaEulReul(p) + " 최적의 위치로 재배치하는 수예요."], s),
   noObviousReason: (s) => mecPick(["직관적인 이득은 찾기 어렵지만, 엔진에 의하면 좋은 수예요.", "설명하긴 어렵지만, 엔진에 의하면 좋은 수예요.", "엔진에 의하면 좋은 수예요."], s),
@@ -5121,7 +5177,13 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
     else {
       const mine = fairTradeSq ? t.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t.mine;
       if (mine.length) facts.push(MEC_PHRASES.mine(FILES[mine[0].sq[1]] + (8 - mine[0].sq[0]), PIECE_KOR[mine[0].piece], seed));
-      else if (redeployPhrase) facts.push(redeployPhrase);
+      else {
+        // 되잡기 — 상대가 방금 잡은 자리를 그대로 되잡는 것뿐인 수는 별다른 위협·방어 사실 없이도
+        // "왜 좋은 수인지"가 명확하므로, noObviousReason으로 떨어지기 전에 여기서 짚어준다.
+        const recap = recaptureFact(sansBeforeMove, san, color);
+        if (recap) facts.push(MEC_PHRASES.recapture(PIECE_KOR[recap.capturedPiece], seed));
+        else if (redeployPhrase) facts.push(redeployPhrase);
+      }
     }
   }
   const evasion = evasionFact(sansBeforeMove, san, color);
@@ -6852,7 +6914,11 @@ function ReviewPage({ game, onClose }) {
         const under = /=/.test(san) && !/=Q/.test(san);
         if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
         const gap = secondCp == null ? 9999 : (bestCp - secondCp);
-        if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
+        // (버그 수정) analyzeGame과 동일 — 단순 되잡기(되잡을 수 있는 내 기물이 이 하나뿐)는 "유일한
+        // 수"로 승격하지 않는다.
+        let singleRecapture = false;
+        try { const rc = recaptureFact(prevSans, san, col); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+        if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture) kind = "only";
         if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
       } catch { }
     })();
@@ -12972,6 +13038,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "단순히 상대 기물을 되잡는 수는 더 이상 '유일한 수'로 표시하지 않고, 대신 '상대 기물을 되잡아서 기물 상황을 유지했다'고 알기 쉽게 설명해줘요.",
+      "룩으로 상대의 지켜진 나이트·비숍을 교환하거나, 그렇게 교환되도록 룩을 방치하는 수를 '교환 희생'으로 짚어주고, '이런 교환은 쉽지 않은 선택이지만 지금 상황에선 탁월한 선택'이라고 설명해줘요.",
       "체크메이트로 몰아가는 강제 수순에 들어가면, 더 이상 기물 위협 설명 대신 몇 수 뒤에 체크메이트인지 바로 알려줘요.",
       "게임 리뷰 화면의 기보 줄 드래그 스크롤이 정해진 만큼씩 뻑뻑하게 움직이던 문제를 고쳤어요 — 이제 손가락·마우스 움직임에 그대로 반응하는 부드러운 스크롤이에요.",
       "과보호 설명에도 '위협' 설명처럼 밑줄이 생겼어요 — 눌러보면 그 기물을 지키는 이유가 된 상대 공격자들이 화살표로 차례로 나타나요.",
