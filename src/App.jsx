@@ -3978,9 +3978,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       }))).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
+      // (기능) 사용자 요청으로 MultiPV를 7→5로 더 낮춘다 — 순위가 늘어날수록 노드당 비용이 커져
+      // 목표 depth(20)에 도달하기 더 어려워지므로, 후보 수 보충(아래)에 필요한 최소치만 남긴다.
       // (v0.2.4 성능) slot="learn-lines" — 빠르게 다음/이전 수로 넘기면 이전 포지션의 계산이 아직 큐에
       // 남아 있어도 즉시 중단되고 지금 포지션의 요청이 바로 시작된다(더 이상 순서대로 밀리지 않음).
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 7, 700, onEvalProgress, streamLines, "learn-lines");
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 5, 700, onEvalProgress, streamLines, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -3991,6 +3993,30 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (버그 수정) 위 linesPending 주석 참고 — 이 포지션의 결과가 나온 시점(빈 배열이어도, 예: 외통
       // 직전 포지션)에만 실제로 engineLines를 교체하고 "계산 중" 표시를 끈다.
       setEngineLines(lines);
+      // (기능) 사용자 요청 — 엔진 라인·평가치·수 체계 아이콘을 전부 기존 movetime(700ms) 안에 먼저
+      // 확정해 화면이 바로 반응하게 한 다음, 이 자리에서 추가로 5초("extra movetime")를 더 들여
+      // 같은 포지션을 목표 depth(20)까지 더 깊이 파본다. 스톡피시는 "go" 명령 사이에도 치환
+      // 테이블(Hash)이 그대로 남아 있으므로, 이 두 번째 탐색은 사실상 처음부터 다시 하는 게 아니라
+      // 얕은 depth는 대부분 캐시 적중으로 순식간에 훑고 지나가 방금 700ms 안에 못 갔던 더 깊은
+      // depth부터 실질적으로 이어간다. 같은 slot("learn-lines")을 그대로 써서, 사용자가 다른
+      // 수·포지션으로 넘어가 이 effect가 다시 실행되면(key가 바뀌어 새 요청이 같은 slot으로 들어옴)
+      // 아직 안 끝난 5초 심화 탐색은 evaluateMulti의 supersede로 자동 중단된다. moves.length 변화로
+      // 이 effect가 같은 포지션에서 여러 번 재실행돼도(비이론 수 보충 등) posCacheRef에 시작 여부를
+      // 남겨 심화 탐색이 한 포지션당 한 번만 시작되게 한다.
+      if (cache.extraKey !== key) {
+        cache.extraKey = key;
+        engine.evaluateMulti(sansToFen(sans), 20, 5, 5000, onEvalProgress, streamLines, "learn-lines").then((deepPvs) => {
+          if (posCacheRef.current.key !== key || !deepPvs || !deepPvs.length) return;
+          setPosEval(mkPosEval(deepPvs[0]));
+          const deepLines = toLines3(deepPvs);
+          setEngineLines(deepLines);
+          if (deepLines.length) {
+            const deepEvBySan = {};
+            deepLines.forEach((l) => { if (l.sans && l.sans.length) deepEvBySan[stripSuffix(l.sans[0])] = l.ev; });
+            setMoves((prev) => prev.map((m) => { const hit = deepEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+          }
+        }).catch(() => {});
+      }
       setLinesPending(false);
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
@@ -13346,6 +13372,7 @@ const CHANGELOG = [
       "일일 퍼즐 캐러셀 카드를 정사각형으로 바꾸고 체스보드를 약 3배 크게 키웠어요 — 오프닝명 같은 텍스트 없이 보드와 그 아래 작은 '풀이수'만 보여줘요.",
       "엔진 추천 수 줄의 '타이핑' 애니메이션을 없앴어요 — 이제 계산된 수순이 지연 없이 한 번에 전부 표시돼요.",
       "짧은 시간 제한 안에서도 엔진이 조금 더 깊이 탐색할 수 있도록 치환 테이블(Hash) 크기를 키웠어요 — 엔진 라인·평가치가 같은 시간 안에 더 정확해져요.",
+      "학습 탭 엔진 계산 방식을 개선했어요 — 엔진 라인·평가치·수 체계 아이콘이 먼저 빠르게 확정된 뒤, 화면 뒤에서 5초간 더 깊이(depth 20까지) 계속 분석해 조용히 더 정확한 값으로 갱신돼요.",
       "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
       "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
       "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
