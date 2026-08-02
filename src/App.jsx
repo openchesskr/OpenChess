@@ -3134,68 +3134,20 @@ function dedupeEngineLines(list) {
 // 포지션이 바뀌지 않는 한 항상 같음)로 키를 잡아, 순위가 바뀌어 다른 수순이 들어와도 같은 컴포넌트
 // 인스턴스가 그대로 유지된다 — 안의 TypedMoveLine도 재마운트되지 않으므로 shown이 리셋되지 않고,
 // 새 수순의 길이만큼 자연스럽게 이어서(또는 이미 더 길게 타이핑돼 있었다면 그대로) 표시된다.
+// (버그 수정) 가로 스크롤+오른쪽 페이드로 "잘린 부분은 드래그해서 보라"는 설계였는데, 사용자가
+// 여러 번에 걸쳐 이걸 "수순이 끝까지 안 보인다"는 버그로 반복 제보했다 — 페이드를 아무리 진하게
+// 만들어도, 애초에 "숨겨진 내용이 있다"를 한눈에 알아채기 어려운 디자인 자체가 문제였다. 드래그·
+// 페이드·ResizeObserver 폴백까지 다 걷어내고, 그냥 줄이 박스보다 길면 다음 줄로 자연스럽게
+// 줄바꿈하도록 바꿨다 — 이제 수순 전체가 항상 스크롤 없이 그대로 보인다(줄 수가 늘어난 만큼 이
+// 블록의 높이는 유동적으로 커진다).
 function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst }) {
-  const outerRef = useRef(null);
-  const innerRef = useRef(null);
-  const dragRef = useRef(null);
-  const [showFade, setShowFade] = useState(false);
-  const identity = posKeyBase + ":" + slotIdx;
-  const recompute = () => {
-    const outer = outerRef.current, inner = innerRef.current;
-    if (!outer || !inner) return;
-    const overflowing = inner.scrollWidth > outer.clientWidth + 1;
-    const atEnd = outer.scrollLeft + outer.clientWidth >= inner.scrollWidth - 1;
-    setShowFade(overflowing && !atEnd);
-  };
-  useEffect(() => {
-    if (outerRef.current) outerRef.current.scrollLeft = 0;
-    recompute();
-    const inner = innerRef.current;
-    // (안전장치) ResizeObserver가 안의 타이핑 텍스트가 자라날 때마다 recompute를 다시 불러 "더
-    // 볼 내용이 있어요" 페이드를 갱신해 주는 게 정상 경로지만, 일부 인앱 브라우저(카카오톡·인스타
-    // 그램 내장 웹뷰 등)는 ResizeObserver 콜백이 누락되거나 지연되는 경우가 보고돼 있다 — 그러면
-    // 줄이 실제로는 계속 이어지는데도(드래그하면 나머지가 보임) 페이드가 안 떠서 마치 그 자리에서
-    // 완전히 멈춘 것처럼 보일 수 있다. ResizeObserver와 별개로 200ms마다 한 번씩 더 recompute를
-    // 불러, 어떤 브라우저에서든 실제 콘텐츠 폭 기준으로 페이드 표시가 항상 맞게 유지되도록 한다.
-    const iv = setInterval(recompute, 200);
-    if (!inner || typeof ResizeObserver === "undefined") return () => clearInterval(iv);
-    const ro = new ResizeObserver(recompute);
-    ro.observe(inner);
-    return () => { ro.disconnect(); clearInterval(iv); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity]);
-  const onPointerDown = (e) => {
-    dragRef.current = { x: e.clientX, scrollLeft: outerRef.current ? outerRef.current.scrollLeft : 0, moved: false };
-    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
-  };
-  const onPointerMove = (e) => {
-    const d = dragRef.current;
-    if (!d) return;
-    const dx = e.clientX - d.x;
-    if (Math.abs(dx) > 3) d.moved = true;
-    if (outerRef.current) outerRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
-    recompute();
-  };
-  const onPointerUp = () => {
-    const d = dragRef.current;
-    dragRef.current = null;
-    if (d && !d.moved && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]);
-    else if (d) recompute();
-  };
   return (
-    <div className="no-pan press" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { dragRef.current = null; }}
-      style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "grab" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative", touchAction: "pan-y" }}>
-      <EvalBadge ev={l.ev} small />
-      <div ref={outerRef} onScroll={recompute} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none" }}>
-        <span ref={innerRef} style={{ display: "inline-block" }}>
-          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + slotIdx} />
-        </span>
+    <div className="no-pan press" onClick={() => l.sans[0] && onPlayFirst && onPlayFirst(l.sans[0])}
+      style={{ display: "flex", alignItems: "flex-start", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "pointer" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease" }}>
+      <div style={{ paddingTop: 1 }}><EvalBadge ev={l.ev} small /></div>
+      <div style={{ flex: "1 1 auto", minWidth: 0, whiteSpace: "normal", wordBreak: "break-word", fontSize: 10, lineHeight: 1.5, color: T.ivory, fontFamily: SEQ_FONT, userSelect: "none", WebkitUserSelect: "none" }}>
+        <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + slotIdx} />
       </div>
-      {/* (버그 수정) 페이드 폭·최종 불투명도가 너무 작아(18px, .9) 어두운 배경 위에서는 거의 안
-          보였다 — "줄이 끊긴 게 아니라 드래그하면 더 있다"는 신호가 사실상 전달되지 않아, 박스
-          오른쪽 끝에서 글자가 뚝 잘린 것처럼(=버그처럼) 보이는 원인이 됐다. 폭을 넓히고 완전
-          불투명까지 이어지게 해 "여기서 잘렸다"가 아니라 "더 있다"는 게 분명히 보이게 한다. */}
-      {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 26, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,1) 80%)", borderRadius: "0 6px 6px 0" }} />}
     </div>
   );
 }
@@ -13359,7 +13311,7 @@ const CHANGELOG = [
       "일일 퍼즐 캐러셀에서 컴퓨터 마우스로 카드를 눌러도 간헐적으로 반응이 없던 문제의 진짜 원인을 찾아 완전히 고쳤어요.",
       "일일 퍼즐 캐러셀의 미리보기 체스보드가 뜨는 시간을 조금 더 줄였어요.",
       "학습 탭 엔진 추천 수 줄이 방금까지 보이던 수순이 갑자기 짧아지며 끊긴 것처럼 보이던 문제를 고쳤어요 — 엔진이 depth를 더 깊이 탐색하며 같은 줄을 다시 보고할 때 수순이 이전보다 짧아지는 건 정상적인 현상인데, 그걸 그대로 화면에 반영해 이미 타이핑된 글자가 눈앞에서 줄어들어 보였어요. 이제 첫 수가 같은 줄인 동안은 지금까지 본 것 중 가장 긴 수순을 계속 보여주고, 화면에 실제로 표시되는 수 번호 개수 자체도 실시간으로 세어 줄어들지 않도록 이중으로 막아뒀어요.",
-      "엔진 추천 수 줄이 박스 폭보다 길면 글자가 중간에 뚝 잘려 마치 끊긴 것처럼 보였던 문제를 고쳤어요 — 원래도 드래그해서 더 볼 수 있는 줄이었지만 '더 있어요' 표시(오른쪽 옅은 그림자)가 너무 흐리고, 일부 인앱 브라우저에서는 그 표시 자체가 갱신되지 않는 경우가 있었어요. 표시를 더 진하고 넓게 바꾸고, 어떤 브라우저에서든 항상 올바르게 갱신되도록 이중 안전장치를 추가했어요.",
+      "엔진 추천 수 줄이 박스 폭보다 길면 글자가 중간에 뚝 잘려 마치 끊긴 것처럼 보였던 문제를 근본적으로 고쳤어요 — 드래그해서 더 보는 대신, 이제 수순이 길면 박스 안에서 자동으로 다음 줄로 넘어가 전체 수순이 항상 스크롤 없이 그대로 보여요.",
       "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
       "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
       "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
