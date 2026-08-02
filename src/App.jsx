@@ -895,6 +895,12 @@ function useEngine(enginePref) {
         w.onerror = () => { try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
         w.postMessage("uci");
         if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
+        // (성능) 스톡피시 WASM 빌드의 기본 Hash(치환 테이블)는 보통 16MB로 아주 작다 — 같은 국면을
+        // 반복해서 다시 계산하는 비중이 커져, movetime(700ms) 같은 짧은 시간 상한 안에서는 도달하는
+        // depth 자체가 눈에 띄게 줄어든다. 64MB로 올리면 같은 700ms 안에서도 치환 테이블 적중률이
+        // 높아져 실질적으로 더 깊이 탐색할 수 있다 — 이 엔진 인스턴스는 워커 1개뿐이라 메모리 부담도
+        // 작다(태블릿·저사양 기기에서도 64MB는 안전한 수준).
+        w.postMessage("setoption name Hash value 64");
         eloSetoptions(ENGINE_PROFILES[enginePref]).forEach((c) => w.postMessage(c));
         w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
@@ -2541,6 +2547,10 @@ function bootAnalysisWorker(urls, eloOpts) {
         };
         w.onerror = () => { try { w.terminate(); } catch (_) { } if (!booted) tryNext(); };
         w.postMessage("uci");
+        // (성능) useEngine 싱글턴과 동일한 이유(위 Hash 주석 참고) — 다만 이 풀은 기기 코어 수만큼
+        // 워커를 띄우므로(analyzePoolSize) 워커당 크기를 32MB로 더 보수적으로 잡아, 코어가 많은
+        // 기기에서도 총 메모리 사용량이 과하게 불어나지 않게 한다.
+        w.postMessage("setoption name Hash value 32");
         (eloOpts || []).forEach((c) => w.postMessage(c));
         w.postMessage("isready");
         setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
@@ -13335,6 +13345,7 @@ const CHANGELOG = [
       "게임 리뷰 자유 탐색에서도 이론 수를 두면 실시간 분석 없이 곧바로 '이론' 아이콘으로 표시돼요.",
       "일일 퍼즐 캐러셀 카드를 정사각형으로 바꾸고 체스보드를 약 3배 크게 키웠어요 — 오프닝명 같은 텍스트 없이 보드와 그 아래 작은 '풀이수'만 보여줘요.",
       "엔진 추천 수 줄의 '타이핑' 애니메이션을 없앴어요 — 이제 계산된 수순이 지연 없이 한 번에 전부 표시돼요.",
+      "짧은 시간 제한 안에서도 엔진이 조금 더 깊이 탐색할 수 있도록 치환 테이블(Hash) 크기를 키웠어요 — 엔진 라인·평가치가 같은 시간 안에 더 정확해져요.",
       "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
       "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
       "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
