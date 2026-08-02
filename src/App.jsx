@@ -772,7 +772,7 @@ function useEngine(enginePref) {
   const running = useRef(false);
   const offRef = useRef(false);
   const swallowBest = useRef(0); // 강제 해제된 작업의 뒤늦은 bestmove를 무시할 개수
-  const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+  const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); clearTimeout(job.softTimer); job.resolve(val); };
   const resultOf = (job, bm) => job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : (job.last ? { ...job.last, best: bm || "" } : (bm ? { best: bm } : null));
   // (v0.2.4 성능) 같은 slot의 새 요청이 들어오면 이전 요청을 큐에서 즉시 치운다 — 아직 실행 전이면
   // 그냥 빼내고, 이미 엔진에 보낸(실행 중인) 요청이면 "stop"으로 즉시 중단시키고 그 뒤늦은 bestmove는
@@ -811,6 +811,20 @@ function useEngine(enginePref) {
     if (!ref.current) { if (offRef.current) { queue.current.shift(); settle(job, job.multi ? [] : null); pump(); } return; }
     running.current = true;
     job.cmds.forEach((c) => ref.current.postMessage(c));
+    // (버그 수정) bootAnalysisWorker.pump()와 동일한 이유 — MultiPV 요청은 movetime을 "go"에 직접
+    // 넣지 않고(아래 evaluateMulti), 요청한 순위(multipvTarget) 전부가 적어도 한 번씩 보고될
+    // 때까지 여기서 기다렸다가 stop을 보낸다. 느린 기기에서 낮은 순위 줄이 movetime 안에 한 번도
+    // 못 나온 채 엔진이 스스로 멈춰, 그 줄이 통째로 빠진 채 확정되던 문제(학습 탭 엔진 라인이 3개가
+    // 아니라 2개만 뜨는 현상)를 없앤다.
+    clearTimeout(job.softTimer);
+    if (job.multi && job.mt) {
+      const trySoftStop = () => {
+        if (queue.current[0] !== job || job.settled) return;
+        if (Object.keys(job.lines).length >= job.multipvTarget) { try { ref.current && ref.current.postMessage("stop"); } catch (_) { } }
+        else job.softTimer = setTimeout(trySoftStop, 150);
+      };
+      job.softTimer = setTimeout(trySoftStop, job.mt);
+    }
     // (버그 수정) 워치독 — 배치 분석 중 특정 포지션에서 엔진이 bestmove를 끝내 안 보내면 running이
     // true로 굳어 이후 모든 요청이 큐에서 멈춘다(그래프가 도중부터 일자·정확도 100). 제한 시간 안에
     // bestmove가 없으면 부분 결과로 마무리하고 'stop'을 보내 큐를 다시 흐르게 한다. stop 후에도 응답이
@@ -906,8 +920,10 @@ function useEngine(enginePref) {
   }), [pump, supersede]);
   const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress, onLines, slot) => new Promise((resolve) => {
     supersede(slot);
-    const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, slot, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+    // (버그 수정) movetime을 "go"에 직접 넣지 않는다 — pump()의 soft-stop 타이머가 multipv개 순위가
+    // 전부 보고될 때까지 기다렸다가 stop을 보낸다.
+    const go = "go depth " + depth;
+    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, mt: movetime, multipvTarget: multipv, slot, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump, supersede]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
@@ -2392,7 +2408,7 @@ function bootAnalysisWorker(urls, eloOpts) {
     // 풀을 세션 내내 재사용하므로, 워치독 없이는 한 번 멈춘 워커가 세션 끝까지 그 자리만큼 풀을 영구히
     // 줄여버린다. useEngine의 워치독(548-557행)과 동일한 방식 — 제한 시간 안에 bestmove가 없으면
     // 부분 결과로 마무리하고 'stop'을 보내며, 그래도 응답이 없으면 큐를 강제로 흘려보낸다.
-    const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+    const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); clearTimeout(job.softTimer); job.resolve(val); };
     // (v0.2.4 성능) useEngine의 supersede와 동일한 패턴 — 같은 slot의 새 요청이 오면 이전 요청을
     // 큐에서 즉시 치운다(실행 중이면 "stop"으로 중단). 풀에서 특정 자리(pool[0] 등)를 매번 같은
     // 용도로 재사용하는 호출부(리뷰 엔진 라인 패널 등)가 빠른 수 넘김에도 밀리지 않게 해 준다.
@@ -2428,6 +2444,24 @@ function bootAnalysisWorker(urls, eloOpts) {
       if (running || !queue.length) return; running = true;
       const job = queue[0];
       job.cmds.forEach((c) => worker.postMessage(c));
+      // (버그 수정) MultiPV 요청(job.multi)은 이제 "go" 명령에 movetime을 직접 넣지 않는다(아래
+      // evaluateMulti 참고) — 대신 여기서 요청한 순위(multipvTarget) 전부가 적어도 한 번씩 보고될
+      // 때까지 기다렸다가 "stop"을 보낸다. 느린 기기(특히 모바일)에서는 낮은 순위(3순위 등) 줄이
+      // 원래의 movetime 안에 단 한 번도 보고되지 못한 채 엔진이 스스로 멈춰버려, 그 줄이 짧게
+      // 잘리는 게 아니라 통째로 빠진(job.lines에 그 키 자체가 없는) 채 확정되곤 했다 — 화면에는
+      // "엔진 라인이 3개가 아니라 2개만 뜨고 다시 늘어나지 않는" 것처럼 보였다. movetime을 다 채운
+      // 시점에도 아직 모자란 순위가 있으면 150ms 간격으로 재확인하며 계속 기다리고, 다 나오는 즉시
+      // stop을 보낸다 — 이미 다 나온 흔한 경우(빠른 기기)는 movetime 시점에 바로 멈추므로 체감
+      // 속도에 변화가 없다. 혹시 정말 오래 걸리는 극단적인 경우에도 아래 워치독(mt+4000)이 그대로
+      // 최종 안전망 역할을 한다.
+      if (job.multi && job.mt) {
+        const trySoftStop = () => {
+          if (queue[0] !== job || job.settled) return;
+          if (Object.keys(job.lines).length >= job.multipvTarget) { try { worker.postMessage("stop"); } catch (_) { } }
+          else job.softTimer = setTimeout(trySoftStop, 150);
+        };
+        job.softTimer = setTimeout(trySoftStop, job.mt);
+      }
       job.watch = setTimeout(() => {
         if (queue[0] !== job || job.settled) return;
         settle(job, job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : job.last);
@@ -2487,7 +2521,9 @@ function bootAnalysisWorker(urls, eloOpts) {
               evaluateMulti(fen, d, multipv, mt, onLines, slot) {
                 return new Promise((res) => {
                   supersede(slot);
-                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, slot, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  // (버그 수정) movetime을 "go" 명령에 직접 넣지 않는다 — pump()의 soft-stop 타이머가
+                  // multipvTarget개 순위가 전부 보고될 때까지 기다렸다가 stop을 보낸다(위 pump() 참고).
+                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, multipvTarget: multipv, slot, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d] });
                   pump();
                 });
               },
@@ -5017,6 +5053,37 @@ function openFileFact(sansBeforeMove, san, color) {
   if (mine > 0) return null; // 내 폰이 남아 있으면 오픈도 세미오픈도 아니다
   return { open: theirs === 0 };
 }
+// (공용) 특정 파일이 color 진영 기준 오픈(양쪽 폰 없음)/세미오픈(내 폰만 없음)인지 — connectionFact가
+// 룩의 "중첩" 여부를 판정하는 데 openFileFact와 같은 기준으로 재사용한다.
+function fileIsOpenOrSemi(board, file, color) {
+  let mine = 0, theirs = 0;
+  for (let r = 0; r < 8; r++) { const p = board[r][file]; if (p && p.t === "P") { if (p.c === color) mine++; else theirs++; } }
+  return mine === 0;
+}
+// (기능) "연결" — 한 진영의 룩 2개 또는 나이트 2개가 서로의 캡처 가능 칸에 있어 서로를 지켜주는
+// 상태. 이 수로 그 연결이 새로 생겼을 때만(이 수 이전엔 이 기물이 짝과 연결돼 있지 않았는데 이
+// 수로 연결됐을 때) 짚어준다 — 이미 오래전부터 연결돼 있던 상태를 매 수마다 반복해서 짚지 않기
+// 위함. 룩이 같은 파일(세로)로 연결됐고 그 파일이 오픈/세미오픈 파일이면 "연결" 대신 "중첩"으로
+// 구분한다(가로로 연결되거나 파일이 막혀 있으면 그냥 "연결"). 이 수 자체가 룩·나이트를 움직인
+// 경우만 대상으로 한다 — 다른 기물이 사이 폰을 치워 우연히 연결이 생긴 경우는 다루지 않는다.
+function connectionFact(sansBeforeMove, san, color) {
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle) return null;
+  const piece = info.piece;
+  if (piece !== "R" && piece !== "N") return null;
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const p = after[r][c]; if (!p || p.c !== color || p.t !== piece) continue;
+    if (!canMove(after, piece, color, tr, tc, r, c, true)) continue;
+    if (canMove(before, piece, color, info.from[0], info.from[1], r, c, true)) continue; // 이미 연결돼 있었다
+    const stacked = piece === "R" && tc === c && fileIsOpenOrSemi(after, tc, color);
+    return { partnerSq: [r, c], stacked };
+  }
+  return null;
+}
 // R15 — 폰 희생. 이 수를 두기 전 내 폰 중 상대에게 안전하게 잡힐 수 있는 게 있었는데, 이 수가 그
 // 폰을 지키지도 옮기지도 잡지도 않고 그대로 두었고(이 수 자체는 좋은 수), 이 수를 둔 뒤에도 여전히
 // 안전하게 잡힐 수 있는 상태라면 "폰 희생"이다.
@@ -5102,7 +5169,7 @@ function threatSquareDetail(board, sq, color) {
 }
 const MEC_PHRASES = {
   mine: (sq, p, s) => mecPick([sq + "에 있는 " + josaEulReul(p) + " 잃게 돼요.", sq + "의 " + josaEulReul(p) + " 이대로 두면 잃게 돼요.", "지금대로면 " + sq + "에 있는 " + josaEulReul(p) + " 잃어요."], s),
-  threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 노려요.", "상대 " + josaIGa(p) + " 이 수에 걸렸어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
+  threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 위협해요.", "상대 " + josaIGa(p) + " 이 수의 위협을 받고 있어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
   preexistingTheirs: (p, s) => mecPick(["상대 " + josaIGa(p) + " 걸려 있어요 — 잡을 기회예요.", "상대 " + josaEulReul(p) + " 잡을 수 있는 상황이에요.", "아직 상대 " + josaIGa(p) + " 방치돼 있어요 — 놓치지 마세요."], s),
   declinedCapture: (p, s) => mecPick([josaEulReul(p) + " 잡지 않았지만 여전히 좋은 수예요.", josaEulReul(p) + " 잡을 수도 있었지만, 이 수도 충분히 좋아요.", "당장 " + josaEulReul(p) + " 안 잡아도 이 수면 충분해요."], s),
   declinedBestCapture: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 잡는 게 최선이었지만, 이 수도 여전히 좋아요.", "사실 " + josaEulReul(p) + " 잡을 수 있었어요 — 그래도 이 수 역시 좋은 선택이에요.", josaEulReul(p) + " 잡는 게 최선이었어요, 다만 이 수도 나쁘지 않아요."], s),
@@ -5111,7 +5178,7 @@ const MEC_PHRASES = {
   exchangeBehindGood: (s) => mecPick(["지고 있을 때는 기물 교환을 피하는 게 좋지만, 이 교환은 좋은 선택이었어요.", "원래는 피해야 할 기물 교환이지만, 이번엔 괜찮은 선택이었어요.", "지고 있는 상황이라도 이 교환만큼은 나쁘지 않은 선택이었어요."], s),
   exchangeAheadBad: (s) => mecPick(["유리한 상황이라도 목적 없는 기물 교환은 손해가 될 수 있어요 — 기물 교환은 목적을 갖고 해야 해요.", "이기고 있어도 이 교환은 아쉬운 선택이었어요 — 기물 교환에는 목적이 있어야 해요.", "유리한 상황을 단순화하려던 거라면, 이번 교환은 아쉬운 선택이었어요."], s),
   exchangeBehindBad: (s) => mecPick(["지고 있는 상황에서는 기물 교환을 피하는 게 좋은데, 이 교환은 아쉬운 선택이었어요 — 기물 교환은 목적을 갖고 해야 해요.", "지고 있을 때 기물을 바꾸면 역전 기회도 함께 줄어들어요 — 이 교환은 아쉬운 선택이었어요.", "역전을 노려야 할 때 목적 없이 기물을 교환한 건 아쉬운 선택이에요."], s),
-  defend: (p, s) => mecPick(["이 수는 위태롭던 아군 " + josaEulReul(p) + " 미리 지켜요.", "덕분에 " + josaIGa(p) + " 더 이상 위험하지 않아요.", "이 수로 " + josaEulReul(p) + " 안전하게 지켰어요."], s),
+  defend: (p, s) => mecPick(["위태롭던 아군 " + josaEulReul(p) + " 위협 대처로 지켜냈어요.", "상대 위협에 대한 위협 대처로, 덕분에 " + josaIGa(p) + " 더 이상 위험하지 않아요.", josaEulReul(p) + " 안전하게 지키는 위협 대처예요."], s),
   evade: (p, s) => mecPick([josaIGa(p) + " 위협을 피해 안전한 자리로 갔어요.", josaEulReul(p) + " 안전한 칸으로 피신시켰어요.", "이 수로 " + p + "에 대한 위협을 피했어요."], s),
   counter: (p, tgt, s) => mecPick(["위협을 피하면서 상대 " + josaEulReul(tgt) + " 반격해요.", "피하는 동시에 상대 " + josaEulReul(tgt) + " 노리는 반격이에요.", josaEulReul(p) + " 피신시키면서 상대 " + tgt + "까지 반격했어요."], s),
   pawnTension: (s) => mecPick(["서로 폰을 노리고 있어요.", "폰끼리 서로 위협하고 있어요.", "이 폰과 상대 폰이 서로를 겨누고 있어요."], s),
@@ -5129,13 +5196,15 @@ const MEC_PHRASES = {
   redeployOpening: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재전개하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재전개했어요.", josaEulReul(p) + " 최적의 위치로 재전개하는 수예요."], s),
   redeployMidgame: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재배치하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재배치했어요.", josaEulReul(p) + " 최적의 위치로 재배치하는 수예요."], s),
   noObviousReason: (s) => mecPick(["직관적인 이득은 찾기 어렵지만, 엔진에 의하면 좋은 수예요.", "설명하긴 어렵지만, 엔진에 의하면 좋은 수예요.", "엔진에 의하면 좋은 수예요."], s),
-  preventDirect: (sq, blocker, targetP, s) => mecPick(["상대가 " + sq + "에 " + josaEulReul(PIECE_KOR[blocker]) + " 뒀다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요, 이를 막기 위해 먼저 " + sq + "를 선점했어요.", sq + "를 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 차지했다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요 — 미리 막는 예방 수예요.", "예방 수예요, 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요."], s),
-  preventIndirect: (sq, blocker, targetP, s) => mecPick([sq + "의 컨트롤을 늘려, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 여기 와서 " + josaEulReul(PIECE_KOR[targetP]) + " 위협하는 걸 간접적으로 막았어요.", "간접 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요.", "직접 막지는 않았지만 " + sq + "의 컨트롤을 늘려 상대 " + PIECE_KOR[blocker] + "의 진입을 막았어요."], s),
+  preventDirect: (sq, blocker, targetP, s) => mecPick(["상대가 " + sq + "에 " + josaEulReul(PIECE_KOR[blocker]) + " 뒀다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요, 먼저 " + sq + "를 선점하는 예방 수예요.", sq + "를 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 차지했다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요 — 미리 막는 예방 수예요.", "예방 수예요, 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요."], s),
+  preventIndirect: (sq, blocker, targetP, s) => mecPick([sq + "의 컨트롤을 늘린 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 여기 와서 " + josaEulReul(PIECE_KOR[targetP]) + " 위협하는 걸 간접적으로 막았어요.", "간접 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요.", "직접 막지는 않았지만 " + sq + "의 컨트롤을 늘린 예방 수로 상대 " + PIECE_KOR[blocker] + "의 진입을 막았어요."], s),
   nextCastle: (s) => mecPick(["이 수로 다음 수에 캐슬링이 가능해졌어요.", "다음 수에는 캐슬링을 할 수 있어요.", "이제 다음 수에 캐슬링이 가능해요."], s),
   overprotect: (p, s) => mecPick([josaEulReul(p) + " 아직 위협받지 않았지만 미리 과보호했어요.", "당장 위협은 없지만 " + josaEulReul(p) + " 미리 지키는 기물을 늘렸어요, 과보호예요.", josaIGa(p) + " 위협받진 않지만 과보호하는 수예요."], s),
   latentThreat: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 노리는 공격자를 하나 더 늘렸어요, 아직 잡을 수는 없지만 잠재 위협이에요.", "당장 잡히진 않지만 상대 " + josaIGa(p) + " 잠재 위협을 받고 있어요.", "상대 " + josaEulReul(p) + " 향한 잠재 위협을 만드는 수예요."], s),
   openFile: (s) => mecPick(["룩을 오픈 파일에 배치했어요.", "이 파일엔 폰이 하나도 없어서, 룩을 오픈 파일에 세웠어요.", "룩을 완전히 열린 파일에 배치하는 좋은 수예요."], s),
   semiOpenFile: (s) => mecPick(["룩을 세미오픈 파일에 배치했어요.", "내 폰은 없고 상대 폰만 남은 세미오픈 파일에 룩을 세웠어요.", "룩을 세미오픈 파일에 배치해 상대 폰에 잠재 위협을 줘요."], s),
+  connect: (p, s) => mecPick([josaEulReul(p) + " 서로 지켜주는 연결을 만들었어요.", "다른 " + josaGwaWa(p) + " 연결돼 서로를 지켜줘요.", josaIGa(p) + " 짝과 연결되어 서로 보호하는 관계가 됐어요."], s),
+  stacked: (s) => mecPick(["룩 두 개가 오픈 파일에서 중첩됐어요.", "같은 파일에서 룩끼리 중첩되어 서로를 지켜줘요.", "룩 중첩으로 그 파일을 강하게 장악했어요."], s),
   pawnSac: (sq, s) => mecPick([sq + "폰이 위협받고 있지만 지키지 않았어요, 폰 희생이에요.", sq + "폰을 지키는 대신 희생하는 수예요.", "위협받는 " + sq + "폰을 그대로 두고 폰 희생을 택했어요."], s),
   castleBadFallback: (s) => mecPick(["엔진에 의하면 지금은 캐슬링이 좋은 타이밍이 아니에요.", "엔진에 의하면 이 캐슬링은 아쉬운 타이밍이에요.", "엔진에 의하면 지금 캐슬링하기엔 좋지 않은 순간이에요."], s),
 };
@@ -5195,12 +5264,12 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
     const directPrev = directPreventionFact(sansBeforeMove, san, color);
     if (directPrev) {
       facts.push(MEC_PHRASES.preventDirect(FILES[directPrev.sq[1]] + (8 - directPrev.sq[0]), directPrev.piece, directPrev.targetPiece, seed));
-      if (threatOut) threatOut.prevent = { targetSq: directPrev.sq, attackerFrom: directPrev.attackerFrom, myFrom: directPrev.myFrom, myTo: directPrev.myTo };
+      if (threatOut) { threatOut.prevent = { targetSq: directPrev.sq, attackerFrom: directPrev.attackerFrom, myFrom: directPrev.myFrom, myTo: directPrev.myTo }; threatOut.keyword = "예방 수"; }
     } else {
       const indirectPrev = indirectPreventionFact(sansBeforeMove, san, color);
       if (indirectPrev) {
         facts.push(MEC_PHRASES.preventIndirect(FILES[indirectPrev.sq[1]] + (8 - indirectPrev.sq[0]), indirectPrev.piece, indirectPrev.targetPiece, seed));
-        if (threatOut) threatOut.prevent = { targetSq: indirectPrev.sq, attackerFrom: indirectPrev.attackerFrom, myFrom: indirectPrev.myFrom, myTo: indirectPrev.myTo };
+        if (threatOut) { threatOut.prevent = { targetSq: indirectPrev.sq, attackerFrom: indirectPrev.attackerFrom, myFrom: indirectPrev.myFrom, myTo: indirectPrev.myTo }; threatOut.keyword = "예방 수"; }
       }
     }
   }
@@ -5230,8 +5299,9 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   const declined = declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan);
   if (ctrl.threats.length) {
     // R7 — 이 위협이 지금 이 수의 대표 사실(facts[0])로 뽑힐 참이면(=여기까지 아무것도 못 찾았으면)
-    // 시각화용 공격자/수비자 정보를 threatOut에 담아 준다.
-    if (!facts.length && threatOut) threatOut.detail = threatSquareDetail(board, ctrl.threats[0].sq, color);
+    // 시각화용 공격자/수비자 정보를 threatOut에 담아 준다. sq가 상대 기물의 칸이므로, 내(color) 쪽이
+    // "공격자"가 되도록 threatSquareDetail에 color를 그대로 넘긴다.
+    if (!facts.length && threatOut) { threatOut.detail = threatSquareDetail(board, ctrl.threats[0].sq, color); threatOut.keyword = "위협"; }
     facts.push(MEC_PHRASES.threat(PIECE_KOR[ctrl.threats[0].piece], seed));
   }
   else if (declined) facts.push(declined.wasBestCapture ? MEC_PHRASES.declinedBestCapture(PIECE_KOR[declined.piece], seed) : MEC_PHRASES.declinedCapture(PIECE_KOR[declined.piece], seed));
@@ -5241,15 +5311,28 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
     if (latent) facts.push(MEC_PHRASES.latentThreat(PIECE_KOR[latent.piece], seed));
   }
   // R8 — 위협 대처(이미 걸려 있던 기물을 지키는 것, 기존 ctrl.defends) vs 과보호(걸리지 않은 기물을
-  // 미리 지키는 것, 새 overprotectFact) 구분.
-  if (ctrl.defends.length) facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
+  // 미리 지키는 것, 새 overprotectFact) 구분. 이번엔 sq가 "내" 기물의 칸이므로, threatSquareDetail을
+  // enemy 기준으로 뒤집어 넘겨야 상대(진짜 위협하는 쪽)가 빨간 공격자, 내가 초록 수비자로 올바르게
+  // 표시된다(R7과 반대 — 예전엔 과보호에 color를 그대로 넘겨 색이 뒤바뀌어 있었다).
+  const enemy2 = color === "w" ? "b" : "w";
+  if (ctrl.defends.length) {
+    if (!facts.length && threatOut) { threatOut.detail = threatSquareDetail(board, ctrl.defends[0].sq, enemy2); threatOut.keyword = "위협 대처"; }
+    facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
+  }
   else {
     const overprotect = overprotectFact(sansBeforeMove, san, color);
     if (overprotect) {
       // (기능) 이 사실이 facts[0]으로 뽑히면(=여기까지 아무것도 못 찾았으면) 시각화용 공격자/수비자
       // 정보를 threatOut에 담아 준다(R7과 같은 애니메이션을 과보호에도 재사용).
-      if (!facts.length && threatOut) threatOut.detail = threatSquareDetail(board, overprotect.sq, color);
+      if (!facts.length && threatOut) { threatOut.detail = threatSquareDetail(board, overprotect.sq, enemy2); threatOut.keyword = "과보호"; }
       facts.push(MEC_PHRASES.overprotect(PIECE_KOR[overprotect.piece], seed));
+    } else {
+      // (기능) "연결"/"중첩" — 위협·과보호 어느 쪽도 아닐 때만 확인한다(더 급한 사실을 밀어내지 않도록).
+      const connection = connectionFact(sansBeforeMove, san, color);
+      if (connection && moveInfo) {
+        if (!facts.length && threatOut) { threatOut.connect = { sqA: moveInfo.to, sqB: connection.partnerSq }; threatOut.keyword = connection.stacked ? "중첩" : "연결"; }
+        facts.push(connection.stacked ? MEC_PHRASES.stacked(seed) : MEC_PHRASES.connect(PIECE_KOR[moveInfo.piece], seed));
+      }
     }
   }
   if (tempoWasteFact(sansBeforeMove, san, color, kind)) facts.push(MEC_PHRASES.tempo(seed));
@@ -6595,7 +6678,24 @@ function ReviewOpeningBanner({ text }) {
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
 // 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
-function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, onShowLine, showingLine, onNext, isLast, narrow }) {
+// (기능) 애니메이션이 있는 MEC 문장에서 문장 전체가 아니라 실제 용어(keyword, 예: "위협"·"과보호")
+// 하나만 밑줄+클릭 가능하게 렌더링한다. text 안에서 keyword를 찾아 그 부분만 별도 span으로 감싸고
+// 클릭 핸들러를 그 span에만 건다 — keyword가 없거나 onClick이 없으면(=애니메이션 없는 일반 사실)
+// 그냥 평범한 문단으로 렌더링한다. keyword가 문장 안에 없으면(방어적으로) 역시 평범하게 렌더링한다.
+function MecKeywordLine({ text, keyword, onClick, style }) {
+  if (!keyword || !onClick) return <p style={style}>{text}</p>;
+  const idx = text.indexOf(keyword);
+  if (idx < 0) return <p style={style}>{text}</p>;
+  const before = text.slice(0, idx), mid = text.slice(idx, idx + keyword.length), after = text.slice(idx + keyword.length);
+  return (
+    <p style={style}>
+      {before}
+      <span onClick={onClick} className="press" style={{ textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", fontWeight: 700 }}>{mid}</span>
+      {after}
+    </p>
+  );
+}
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -6612,17 +6712,20 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
             {evalDisp && <EvalBadge ev={evalDisp} />}
           </div>
           <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
-          {/* (R7 기능, 예방 수까지 확장) "위협"·"과보호"·"예방 수" 사실이면 밑줄 표시 + 클릭 시
-              애니메이션 재생 — threatDetail(공격자/수비자) 또는 preventDetail(진입/응수 경로)이
-              있을 때만 클릭 가능하게 한다. */}
+          {/* (R7 기능, 예방 수·연결까지 확장) "위협"·"위협 대처"·"과보호"·"예방 수"·"연결"·"중첩"
+              사실이면 그 용어(mecKeyword)에만 밑줄 표시 + 클릭 시 애니메이션 재생 — 문장 전체가
+              아니라 실제 그 단어를 눌러야만 재생된다(MecKeywordLine). threatDetail/preventDetail/
+              connectDetail 중 이 사실이 실제로 채운 것만 클릭 핸들러로 연결한다. */}
           {copy.mecLine && (
-            threatDetail ? (
-              <p onClick={() => onThreatClick && onThreatClick(threatDetail)} className="press" style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer" }}>{copy.mecLine}</p>
-            ) : preventDetail ? (
-              <p onClick={() => onPreventClick && onPreventClick(preventDetail)} className="press" style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer" }}>{copy.mecLine}</p>
-            ) : (
-              <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.mecLine}</p>
-            )
+            <MecKeywordLine
+              text={copy.mecLine}
+              keyword={mecKeyword}
+              onClick={threatDetail ? () => onThreatClick && onThreatClick(threatDetail)
+                : preventDetail ? () => onPreventClick && onPreventClick(preventDetail)
+                : connectDetail ? () => onConnectClick && onConnectClick(connectDetail)
+                : null}
+              style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}
+            />
           )}
         </div>
       </div>
@@ -6961,6 +7064,12 @@ function ReviewPage({ game, onClose }) {
   // 경로·내 응수 경로가 채워져 있으면(그 사실이 facts[0]으로 뽑혔을 때만), 그 칸에 금색 테두리를
   // 씌우고 클릭하면 진입 경로(공격자)→응수 경로(수비자) 애니메이션을 재생할 수 있게 한다.
   const preventDetail = mecThreatOut.current.prevent || null;
+  // (기능) "연결"/"중첩"의 시각화 데이터 — 서로 지켜주는 두 기물의 칸.
+  const connectDetail = mecThreatOut.current.connect || null;
+  // (기능) 애니메이션이 있는 MEC 문장에서 실제로 밑줄·클릭 대상이 될 단어 — mecFacts가 이 사실을
+  // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"). 문장
+  // 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
+  const mecKeyword = mecThreatOut.current.keyword || null;
   // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
   // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
   // 구조가 달라서(공격자 1개→수비자 1개로 교체되는 느낌을 내야 함) 공격자를 보여준 뒤 그 공격자를
@@ -6997,6 +7106,21 @@ function ReviewPage({ game, onClose }) {
     threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }]), 700));
     threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }, defender]), 950));
     threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, 2400));
+  };
+  // (기능) 연결/중첩 애니메이션 — 서로 지켜주는 두 기물 사이를 수비자(초록) 화살표로 양방향
+  // 순서대로 보여준다(R7과 같은 순차 등장 패턴, 색만 둘 다 수비자).
+  const playConnectAnimation = (detail) => {
+    clearThreatTimers();
+    setHaloSquares([]);
+    const steps = [
+      { from: detail.sqA, to: detail.sqB, kind: "threatDefender" },
+      { from: detail.sqB, to: detail.sqA, kind: "threatDefender" },
+    ];
+    setThreatArrows([]);
+    steps.forEach((arrow, i) => {
+      threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), i * 450));
+    });
+    threatTimers.current.push(setTimeout(() => setThreatArrows([]), steps.length * 450 + 1000));
   };
   // (기능) 탁월한 수 — 유형(직접 희생/방치 희생/언더프로모션) + 엔진 PV 근거를 하나의 글로 엮은
   // 설명(brilliantExplain, 엔진 필요, 비동기). 두기 전 평가(bestCp)가 이미 마이너스면(mover 관점)
@@ -7111,7 +7235,7 @@ function ReviewPage({ game, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -7145,7 +7269,7 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
@@ -13038,6 +13162,10 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "룩 2개 또는 나이트 2개가 서로 지켜주는 '연결'(룩이 오픈·세미오픈 파일에서 세로로 연결되면 '중첩')을 새로 알려주고, 눌러보면 서로를 향한 화살표가 차례로 나타나요.",
+      "위협받던 기물을 지키는 '위협 대처' 설명에도 밑줄이 생겼어요 — 눌러보면 상대 공격자와 내 수비자 화살표가 차례로 나타나요. 과보호 애니메이션의 색도 진짜 상대 공격자는 빨강, 내 기물은 초록으로 바로잡았어요.",
+      "위협·위협 대처·과보호·예방 수·연결·중첩처럼 애니메이션이 있는 설명은 이제 문장 전체가 아니라 그 용어 하나에만 밑줄이 생기고, 그 단어를 눌러야만 애니메이션이 재생돼요.",
+      "엔진 추천 수 줄이 3개가 아니라 2개만 뜨고 다시 늘어나지 않던 문제의 근본 원인을 찾았어요 — 느린 기기에서 3순위 줄이 제한 시간 안에 단 한 번도 보고되지 못한 채 엔진이 스스로 멈춰버려 그 줄이 통째로 빠진 채 확정되고 있었어요. 이제 요청한 줄 수가 전부 나올 때까지 기다렸다가 멈추도록 고쳤어요(학습 탭·게임 리뷰 둘 다).",
       "단순히 상대 기물을 되잡는 수는 더 이상 '유일한 수'로 표시하지 않고, 대신 '상대 기물을 되잡아서 기물 상황을 유지했다'고 알기 쉽게 설명해줘요.",
       "룩으로 상대의 지켜진 나이트·비숍을 교환하거나, 그렇게 교환되도록 룩을 방치하는 수를 '교환 희생'으로 짚어주고, '이런 교환은 쉽지 않은 선택이지만 지금 상황에선 탁월한 선택'이라고 설명해줘요.",
       "체크메이트로 몰아가는 강제 수순에 들어가면, 더 이상 기물 위협 설명 대신 몇 수 뒤에 체크메이트인지 바로 알려줘요.",
