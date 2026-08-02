@@ -13340,7 +13340,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.2.8", date: "2026.8.2", dev: ["openchesskr"], items: [
+    version: "0.2.8", date: "2026.8.2", dev: ["openchesskr", "g13sus4"], items: [
       "퍼즐 풀이 화면의 평가치 막대가 중간에 0.00으로 멈춰버리던 문제를 고쳤어요 — 이제 실시간 검색 값이 끝까지 살아 있어요.",
       "퍼즐 풀이 화면의 코치 말풍선도 게임 리뷰와 똑같이, 방금 둔 수가 실제로 뭘 위협·방어·예방·전개했는지 구체적으로 짚어줘요.",
       "일일 퍼즐 캐러셀의 카드 모양이 스크롤 중에 갑자기 바뀌던 문제를 고쳤어요 — 이제 모든 날짜가 같은 모양의 카드로, 선택된 날짜만 커지고 진해져요.",
