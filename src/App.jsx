@@ -11752,30 +11752,38 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
 // (v0.2.7) 오늘의 퍼즐 카드 폭 — 스크롤 스냅 계산을 단순하게 유지하기 위해 활성/비활성 여부와
 // 무관하게 "칸(slot)" 자체는 고정폭으로 두고, 안쪽 콘텐츠만 transform:scale로 커지고 작아진다.
 const DAILY_SLOT_W = 96;
+// (스케치 개편) 날짜는 카드 "위"에 얹힌 헤더 라벨로 분리하고, 선택된 카드만 보드+텍스트(일일 퍼즐·
+// 오프닝명·풀이수)를 가로로 나란히 담는 넓은 카드로 키운다 — 나머지는 날짜만 얹힌 텅 빈 작은
+// 테두리 박스로 축소해, 사용자가 그린 스케치의 "선택된 날짜만 크게, 나머지는 점점 작아지는" 구성을
+// 그대로 옮긴다. 스크롤 스냅 계산은 여전히 고정폭 슬롯(DAILY_SLOT_W)에 의존하므로, 활성 카드는
+// position:absolute로 문서 흐름에서 빠져 자기 슬롯보다 넓게 그려져도 스크롤 너비 계산에 영향을 주지
+// 않는다(양옆 슬롯 위로 살짝 겹쳐 보이는 것은 의도된 "떠 있는 카드" 효과).
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
-  const scale = isActive ? 1 : distance === 1 ? 0.8 : 0.68;
-  // (v0.2.7 버그 수정) 비활성 항목이 어두운 카드 배경 위에 낮은 opacity로 겹쳐지면서 거의 안 보일
-  // 만큼 어두워졌다는 지적 — 선택된 항목과의 구분은 유지하되 값을 전반적으로 끌어올렸다.
-  const opacity = isActive ? 1 : distance === 1 ? 0.78 : 0.58;
-  const boxSize = isActive ? 86 : 62;
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? " · 오늘" : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
+  const dateColor = isActive ? T.brassHi : distance === 1 ? "#C9B58C" : "#8A7654";
+  const miniSize = distance === 1 ? 56 : 44;
   return (
-    <button onClick={onOpen} aria-label={label} className="press" style={{ flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", background: "transparent", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-      <div style={{ transform: "scale(" + scale + ")", opacity, transition: "transform .22s ease, opacity .22s ease", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-        <div style={{ width: boxSize, height: boxSize, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + (isSolved ? "#A9C589" : T.brass), boxShadow: isActive ? "0 4px 0 " + (isSolved ? "#9DB97E" : "#00000055") : "none", position: "relative" }}>
-          {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={boxSize - 16} loopMs={2400} flip={flip} /> : <div style={{ width: boxSize - 30, height: boxSize - 30, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
-          {isSolved && <Check size={13} strokeWidth={3.5} style={{ position: "absolute", top: -5, right: -5, color: "#fff", background: T.best, borderRadius: 999, padding: 2, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
-        </div>
-        <div style={{ fontSize: 10, fontWeight: 800, color: isActive ? T.brassHi : "#C9B58C", whiteSpace: "nowrap" }}>{label}</div>
-      </div>
-      {isActive && (
-        <div style={{ maxWidth: 132, textAlign: "center" }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{puzzle ? puzzle.opening : "불러오는 중…"}</div>
-        </div>
-      )}
-      {solveCountText(solveCount, null) && <div style={{ fontSize: 8.5, color: "#C9B58C", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
-    </button>
+    <div style={{ position: "relative", flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", height: 112, display: "flex", justifyContent: "center" }}>
+      <button onClick={onOpen} aria-label={label} className="press" style={{ position: isActive ? "absolute" : "static", left: isActive ? "50%" : undefined, top: 0, transform: isActive ? "translateX(-50%)" : "none", zIndex: isActive ? 3 : 1, background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+        <div style={{ fontSize: isActive ? 11 : 9.5, fontWeight: 800, color: dateColor, whiteSpace: "nowrap" }}>{label}</div>
+        {isActive ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 9, width: 208, padding: "9px 11px", borderRadius: 14, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.55)" }}>
+            <div style={{ width: 68, height: 68, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#1C1006", border: "1px solid " + (isSolved ? "#A9C589" : "rgba(196,154,80,.5)"), position: "relative" }}>
+              {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={54} loopMs={2400} flip={flip} /> : <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
+              {isSolved && <Check size={13} strokeWidth={3.5} style={{ position: "absolute", top: -5, right: -5, color: "#fff", background: T.best, borderRadius: 999, padding: 2, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
+            </div>
+            <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
+              <div style={{ fontSize: 9, fontWeight: 800, color: T.brass }}>일일 퍼즐</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{puzzle ? puzzle.opening : "불러오는 중…"}</div>
+              {solveCountText(solveCount, null) && <div style={{ fontSize: 9, color: "#C9B58C", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
+            </div>
+          </div>
+        ) : (
+          <div style={{ width: miniSize, height: miniSize, borderRadius: 12, border: "1px solid rgba(196,154,80," + (distance === 1 ? ".5)" : ".3)"), opacity: distance === 1 ? 0.85 : 0.55, transition: "width .22s ease, height .22s ease, opacity .22s ease" }} />
+        )}
+      </button>
+    </div>
   );
 }
 // (v0.2.7 기능) "오늘의 퍼즐"을 다른 일반 퍼즐과 이름·표기를 통일하는 대신, 고전 오락실 슬롯머신처럼
@@ -11789,6 +11797,13 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   const [containerW, setContainerW] = useState(0);
   const [activeIdx, setActiveIdx] = useState(0);
   const [resolvedMap, setResolvedMap] = useState({}); // dateStr -> puzzle|null(계산 완료)
+  // (버그 수정) dates는 비동기로 채워지므로, 이 컴포넌트의 "첫" 렌더에서는 dates가 아직 비어 있어
+  // 아래 `if (!dates.length) return null`에 걸려 스크롤러 자체가 DOM에 없다 — 그 시점에 이 effect가
+  // (빈 deps라 딱 한 번만) 실행되면 scrollerRef.current가 null이라 측정을 건너뛰고, dates가 나중에
+  // 채워져 스크롤러가 실제로 마운트돼도 이 effect는 다시 실행되지 않아 containerW가 영원히 0으로
+  // 남았다 — spacer(가운데 정렬용 여백)가 항상 0이 되어, 활성 카드가 화면 중앙이 아니라 스크롤러
+  // 왼쪽 끝에 붙어 렌더링됐다(기존 디자인은 카드가 슬롯 폭 안에 머물러 눈에 띄지 않았을 뿐).
+  // dates.length를 deps에 넣어, 스크롤러가 실제로 처음 DOM에 나타나는 시점에 다시 측정하게 한다.
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -11798,7 +11813,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [dates && dates.length]);
   useEffect(() => {
     if (!dates || !dates.length) return;
     // (성능) 엔진 워커는 하나뿐이라 여러 날짜의 계산 요청이 FIFO로 줄을 선다 — 예전엔 activeIdx-1을
@@ -13162,6 +13177,8 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 const CHANGELOG = [
   {
     version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+      "일일 퍼즐 캐러셀을 사용자가 그려 준 스케치대로 다시 꾸몄어요 — 날짜가 카드 위에 얹히고, 선택된 날짜만 미니 체스보드와 오프닝·풀이수를 나란히 보여주는 넓은 카드로 커져요.",
+      "일일 퀘스트 알림 창의 왼쪽 달력 칸도 장식이 아니라 실제 오늘의 퍼즐 포지션을 보여주는 미니 체스보드로 바뀌었어요.",
       "룩 2개 또는 나이트 2개가 서로 지켜주는 '연결'(룩이 오픈·세미오픈 파일에서 세로로 연결되면 '중첩')을 새로 알려주고, 눌러보면 서로를 향한 화살표가 차례로 나타나요.",
       "위협받던 기물을 지키는 '위협 대처' 설명에도 밑줄이 생겼어요 — 눌러보면 상대 공격자와 내 수비자 화살표가 차례로 나타나요. 과보호 애니메이션의 색도 진짜 상대 공격자는 빨강, 내 기물은 초록으로 바로잡았어요.",
       "위협·위협 대처·과보호·예방 수·연결·중첩처럼 애니메이션이 있는 설명은 이제 문장 전체가 아니라 그 용어 하나에만 밑줄이 생기고, 그 단어를 눌러야만 애니메이션이 재생돼요.",
@@ -13541,6 +13558,10 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
   const close = () => onClose(hide);
   const t = todayStr();
   const dateLabel = t.slice(0, 4) + "." + parseInt(t.slice(5, 7), 10) + "." + parseInt(t.slice(8, 10), 10);
+  // (스케치 개편) 왼쪽 페이지의 격자는 더 이상 장식용 달력 모식이 아니라, 캐러셀 카드와 같은
+  // 실제 오늘의 퍼즐 포지션 미리보기(AnimatedMove)다 — 사용자 스케치의 "정사각형 격자 = 미니
+  // 체스보드" 의도를 그대로 반영한다.
+  const flip = ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0;
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 400, marginTop: 36 }}>
@@ -13548,12 +13569,12 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
         <div style={{ position: "absolute", top: -38, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={62} /></div>
         <div style={{ position: "relative", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: "20px 18px 16px" }}>
           <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
-          {/* 스케치의 펼친 다이어리 두 페이지 — 왼쪽: 날짜+달력 모식(장식), 오른쪽: 오프닝·수·풀이수·버튼. */}
+          {/* 스케치의 펼친 다이어리 두 페이지 — 왼쪽: 날짜+실제 퍼즐 미니보드, 오른쪽: 오프닝·수·풀이수·버튼. */}
           <div className="flex items-start" style={{ gap: 14, paddingRight: 20 }}>
             <div style={{ flexShrink: 0, width: 104 }}>
               <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: "ui-monospace,monospace" }}>{dateLabel}</div>
-              <div aria-hidden="true" style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 8, border: "1.5px solid " + T.brass, background: "#fff", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", overflow: "hidden" }}>
-                {Array.from({ length: 16 }).map((_, i) => <div key={i} style={{ border: "0.5px solid rgba(196,154,80,.35)" }} />)}
+              <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 8, border: "1.5px solid " + T.brass, background: "linear-gradient(135deg,#3A2516,#241509)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={100} loopMs={2400} flip={flip} />
               </div>
             </div>
             <div style={{ minWidth: 0, flex: 1, paddingTop: 1, borderLeft: "1px dashed #DCCBA8", paddingLeft: 14 }}>
