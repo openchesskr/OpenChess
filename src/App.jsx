@@ -3063,48 +3063,21 @@ function EngineLineSkeleton() {
 }
 // (v0.2.1) 엔진 라인 수순을 한 번에 다 찍지 않고 한 수씩 "타이핑"되듯 드러낸다 — posKey(포지션)가
 // 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
+// (버그 수정 — 근본) 한 수씩 55ms 간격으로 늘려 보여주던 "타이핑" 애니메이션이 이 세션 내내
+// 반복 재발한 버그들(줄어듦·멈춤·초기화 경쟁 등)의 근본 원인이었다 — 순전히 장식 효과 하나가
+// 이렇게 많은 사이드 이펙트를 낳을 가치가 없다고 판단해 애니메이션 자체를 없앴다. 이제 지금까지
+// 확보된 수순(sans)을 지연 없이 즉시 전부 렌더링한다. 그래도 같은 줄(같은 posKey+첫 수)이 depth
+// 심화로 다시 보고될 때 PV가 일시적으로 더 짧아지는 건 정상적인 탐색 변동이므로, 화면에 보여준
+// 적 있는 가장 긴 텍스트보다 짧아지지 않게 하는 안전장치만 그대로 유지한다.
 function TypedMoveLine({ startPly, sans, posKey }) {
-  const [shown, setShown] = useState(0);
-  // (v0.2.6 버그 수정) 예전엔 setTimeout의 의존성 배열에 sans.length를 넣어, 엔진이 같은 라인을
-  // 더 깊이 파고들며 sans가 계속 늘어날 때마다(짧은 간격으로 반복 스트리밍되는 경우가 흔함) 대기
-  // 중이던 타이머가 매번 취소되고 처음부터(55ms) 다시 예약됐다 — 갱신이 55ms보다 촘촘하게 계속
-  // 들어오면 타이머가 단 한 번도 실행되지 못해 타이핑이 특정 지점에서 영원히 멈춘 것처럼 보였다
-  // (라인이 "끝까지 작성되지 않는" 원인). posKey(라인 자체가 바뀔 때)에만 55ms interval을 새로
-  // 만들고, 그 interval은 sans가 몇 번을 늘어나든 절대 취소·재예약되지 않는다 — 매 틱마다 그
-  // 시점의 최신 길이(sansLenRef)까지 도달했는지만 확인하므로, 데이터가 아무리 자주 갱신돼도 항상
-  // 꾸준히 앞으로 나아가 결국 끝까지 타이핑된다.
-  // (버그 수정) 엔진이 같은 순위(같은 첫 수)의 PV를 depth가 깊어지며 다시 보고할 때, 그 PV가 이전
-  // 보고보다 항상 더 길다는 보장은 없다(정상적인 탐색 변동 — 실제로 더 짧아질 수 있다). sans를
-  // 그대로 렌더링하면 이미 타이핑돼 보이던 수순이 사용자 눈앞에서 갑자기 줄어들어("타이핑이 끊긴다"는
-  // 오해로 이어짐) 계속 문제로 오인됐다. 첫 수(sans[0])가 같은 한(=같은 줄이 갱신된 것) 지금까지
-  // 본 것 중 가장 긴 수순을 계속 사용하고, 첫 수 자체가 바뀌면(=다른 줄로 교체됨) 즉시 새 수순으로
-  // 전환한다 — 렌더 중에 ref를 갱신하는 것만으로 충분해 별도 effect 없이도 다음 렌더부터 반영된다.
-  const bestSansRef = useRef(sans);
-  if (sans[0] !== bestSansRef.current[0] || sans.length > bestSansRef.current.length) bestSansRef.current = sans;
-  const effectiveSans = bestSansRef.current;
-  const sansLenRef = useRef(effectiveSans.length);
-  sansLenRef.current = effectiveSans.length;
-  useEffect(() => {
-    setShown(0);
-    bestSansRef.current = sans;
-    const id = setInterval(() => { setShown((s) => (s >= sansLenRef.current ? s : s + 1)); }, 55);
-    return () => clearInterval(id);
-  }, [posKey]);
-  const text = pvContinuationText(startPly, effectiveSans.slice(0, Math.min(shown, effectiveSans.length)));
-  // (안전장치) 위 sans 배열 비교(sans[0]·길이) 기반 로직에 아직 못 찾은 예외 경로가 남아 있어도,
-  // 화면에 최종적으로 보여줄 문자열 자체에 들어있는 수 번호("2." 같은 토큰) 개수만큼은 절대 줄지
-  // 않게 하는 마지막 방어선을 둔다 — 렌더될 텍스트에서 수 번호 개수를 직접 세어, 이 슬롯(posKey)에서
-  // 지금까지 실제로 보여준 적 있는 최대 개수보다 지금 계산된 텍스트의 개수가 더 적으면(=뭔가 이유로
-  // 표시가 뒷걸음질쳤으면) 새로 계산된 텍스트를 버리고 직전에 도달했던 가장 긴 텍스트를 그대로
-  // 유지한다. sans 배열이 어떻게 흘러가든 상관없이 "화면에 보이는 수 번호 개수는 늘어나기만 한다"는
-  // 사실 자체를 기준으로 삼으므로, 위 로직이 놓친 어떤 경로에도 안전하다.
-  const maxNumsRef = useRef(0);
+  const text = pvContinuationText(startPly, sans);
   const maxTextRef = useRef("");
-  const prevIdentityRef = useRef(posKey + "|" + effectiveSans[0]);
-  const identity = posKey + "|" + effectiveSans[0];
-  if (prevIdentityRef.current !== identity) { prevIdentityRef.current = identity; maxNumsRef.current = 0; maxTextRef.current = ""; }
+  const prevIdentityRef = useRef(null);
+  const identity = posKey + "|" + sans[0];
+  if (prevIdentityRef.current !== identity) { prevIdentityRef.current = identity; maxTextRef.current = ""; }
   const numCount = (text.match(/\d+\./g) || []).length;
-  if (numCount >= maxNumsRef.current) { maxNumsRef.current = numCount; maxTextRef.current = text; }
+  const maxNumCount = (maxTextRef.current.match(/\d+\./g) || []).length;
+  if (numCount >= maxNumCount) maxTextRef.current = text;
   return <>{maxTextRef.current}</>;
 }
 // (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
@@ -11855,25 +11828,24 @@ const DAILY_SLOT_W = 96;
 // 스크롤 중에도 자연스럽게 커지고 작아지는 느낌만 남는다. 모든 카드를 position:absolute로 슬롯
 // 중앙에 띄워, 스크롤 스냅이 의존하는 고정폭 슬롯(DAILY_SLOT_W)의 너비 계산에는 영향을 주지 않으면서
 // 카드 자체는 슬롯보다 넓게 그려지고 옆 슬롯과 살짝 겹쳐 보이게 한다(의도된 카드형 캐러셀 효과).
+// (기능) 사용자 요청 — 오프닝명·"일일 퍼즐" 라벨 등 텍스트를 다 빼고, 정사각형 블록 안에 체스보드만
+// 기존(68px)보다 약 3배 크게 보여준 뒤, 그 아래에 작게 "N명이 풀었습니다"만 표시한다.
+const DAILY_BOARD_SIZE = 190;
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? " · 오늘" : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
   const scale = isActive ? 1 : distance === 1 ? 0.8 : 0.68;
   const opacity = isActive ? 1 : distance === 1 ? 0.78 : 0.58;
   return (
-    <div style={{ position: "relative", flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", height: 112 }}>
+    <div style={{ position: "relative", flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", height: 250 }}>
       <button onClick={onOpen} aria-label={label} className="press" style={{ position: "absolute", left: "50%", top: 0, transform: "translateX(-50%) scale(" + scale + ")", transformOrigin: "top center", opacity, transition: "transform .22s ease, opacity .22s ease", zIndex: isActive ? 3 : 1, background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: isActive ? T.brassHi : "#C9B58C", whiteSpace: "nowrap" }}>{label}</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, width: 208, padding: "9px 11px", borderRadius: 14, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + (isActive ? T.brass : "rgba(196,154,80,.45)"), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.55)" : "none" }}>
-          <div style={{ width: 68, height: 68, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#1C1006", border: "1px solid " + (isSolved ? "#A9C589" : "rgba(196,154,80,.5)"), position: "relative" }}>
-            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={54} loopMs={2400} flip={flip} /> : <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
-            {isSolved && <Check size={13} strokeWidth={3.5} style={{ position: "absolute", top: -5, right: -5, color: "#fff", background: T.best, borderRadius: 999, padding: 2, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_BOARD_SIZE + 16, padding: 8, borderRadius: 14, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + (isActive ? T.brass : "rgba(196,154,80,.45)"), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.55)" : "none" }}>
+          <div style={{ width: DAILY_BOARD_SIZE, height: DAILY_BOARD_SIZE, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#1C1006", border: "1px solid " + (isSolved ? "#A9C589" : "rgba(196,154,80,.5)"), position: "relative" }}>
+            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div style={{ width: 100, height: 100, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
+            {isSolved && <Check size={16} strokeWidth={3.5} style={{ position: "absolute", top: -6, right: -6, color: "#fff", background: T.best, borderRadius: 999, padding: 3, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
           </div>
-          <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
-            <div style={{ fontSize: 9, fontWeight: 800, color: T.brass }}>일일 퍼즐</div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{puzzle ? puzzle.opening : "불러오는 중…"}</div>
-            {solveCountText(solveCount, null) && <div style={{ fontSize: 9, color: "#C9B58C", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
-          </div>
+          {solveCountText(solveCount, null) && <div style={{ fontSize: 10.5, color: "#C9B58C", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
         </div>
       </button>
     </div>
@@ -13361,6 +13333,8 @@ const CHANGELOG = [
       "엔진 추천 수 줄에서 손가락으로 밀어도 반응이 없어 뒷부분이 안 보이던 문제를 고쳤어요 — 자체 구현 드래그 대신 브라우저 기본 터치 스크롤을 쓰도록 바꿔, 어떤 브라우저에서도 밀면 확실히 나머지 수순이 나와요.",
       "게임 리뷰에서 자유 탐색 중 실제 기보에 있는 바로 그 수를 그대로 두면, 다시 분석하지 않고 곧장 원래 리뷰의 그 지점으로 이동해요.",
       "게임 리뷰 자유 탐색에서도 이론 수를 두면 실시간 분석 없이 곧바로 '이론' 아이콘으로 표시돼요.",
+      "일일 퍼즐 캐러셀 카드를 정사각형으로 바꾸고 체스보드를 약 3배 크게 키웠어요 — 오프닝명 같은 텍스트 없이 보드와 그 아래 작은 '풀이수'만 보여줘요.",
+      "엔진 추천 수 줄의 '타이핑' 애니메이션을 없앴어요 — 이제 계산된 수순이 지연 없이 한 번에 전부 표시돼요.",
       "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
       "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
       "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
