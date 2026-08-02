@@ -2847,7 +2847,7 @@ function whiteEvalObj(m) {
   return null;
 }
 function hasRealEval(m) { return !!m.live || m.evalCp != null || m.mate != null; }
-function assignTiers(moves, ply, board, keyStr) {
+function assignTiers(moves, ply, board, keyStr, sans) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
   const best = evals.length ? Math.max(...evals) : null;
@@ -2891,7 +2891,15 @@ function assignTiers(moves, ply, board, keyStr) {
   const goods = out.filter((m) => goodSet.includes(m.kind));
   const others = out.filter((m) => !goodSet.includes(m.kind));
   const allOthersBad = others.length > 0 && others.every((m) => ["inaccuracy", "mistake", "blunder"].includes(m.kind));
-  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600) {
+  // (기능) 리뷰·퍼즐 채점과 동일하게, 그 유일한 좋은 수가 사실은 상대가 방금 잡은 기물을 그대로
+  // 되잡는 단순 리캡처(다른 후보가 애초에 없었을 뿐인 뻔한 수)라면 '유일한 수'로 승격하지 않는다 —
+  // recaptureFact는 실제로 두어진 수 이력(sans)이 있어야 상대의 직전 수를 볼 수 있으므로, 그 이력을
+  // 넘겨줄 수 있는 호출자에서만 이 예외가 적용된다.
+  let singleRecapture = false;
+  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600 && sans) {
+    try { const rc = recaptureFact(sans, goods[0].san, color); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+  }
+  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600 && !singleRecapture) {
     const i = out.indexOf(goods[0]);
     out[i] = { ...out[i], kind: out[i].kind === "brilliant" ? "brilliant" : "only" };
   }
@@ -3065,14 +3073,24 @@ function TypedMoveLine({ startPly, sans, posKey }) {
   // 만들고, 그 interval은 sans가 몇 번을 늘어나든 절대 취소·재예약되지 않는다 — 매 틱마다 그
   // 시점의 최신 길이(sansLenRef)까지 도달했는지만 확인하므로, 데이터가 아무리 자주 갱신돼도 항상
   // 꾸준히 앞으로 나아가 결국 끝까지 타이핑된다.
-  const sansLenRef = useRef(sans.length);
-  sansLenRef.current = sans.length;
+  // (버그 수정) 엔진이 같은 순위(같은 첫 수)의 PV를 depth가 깊어지며 다시 보고할 때, 그 PV가 이전
+  // 보고보다 항상 더 길다는 보장은 없다(정상적인 탐색 변동 — 실제로 더 짧아질 수 있다). sans를
+  // 그대로 렌더링하면 이미 타이핑돼 보이던 수순이 사용자 눈앞에서 갑자기 줄어들어("타이핑이 끊긴다"는
+  // 오해로 이어짐) 계속 문제로 오인됐다. 첫 수(sans[0])가 같은 한(=같은 줄이 갱신된 것) 지금까지
+  // 본 것 중 가장 긴 수순을 계속 사용하고, 첫 수 자체가 바뀌면(=다른 줄로 교체됨) 즉시 새 수순으로
+  // 전환한다 — 렌더 중에 ref를 갱신하는 것만으로 충분해 별도 effect 없이도 다음 렌더부터 반영된다.
+  const bestSansRef = useRef(sans);
+  if (sans[0] !== bestSansRef.current[0] || sans.length > bestSansRef.current.length) bestSansRef.current = sans;
+  const effectiveSans = bestSansRef.current;
+  const sansLenRef = useRef(effectiveSans.length);
+  sansLenRef.current = effectiveSans.length;
   useEffect(() => {
     setShown(0);
+    bestSansRef.current = sans;
     const id = setInterval(() => { setShown((s) => (s >= sansLenRef.current ? s : s + 1)); }, 55);
     return () => clearInterval(id);
   }, [posKey]);
-  return <>{pvContinuationText(startPly, sans.slice(0, Math.min(shown, sans.length)))}</>;
+  return <>{pvContinuationText(startPly, effectiveSans.slice(0, Math.min(shown, effectiveSans.length)))}</>;
 }
 // (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
 // 라인이 나타났다 사라지는 깜빡임이 있었다 — 첫 수가 같은 라인은 먼저 나온 것만 남겨 중복을 제거한다.
@@ -4124,7 +4142,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const tiled = useMemo(() => {
     const seen = new Set();
     const uniq = moves.filter((m) => { const k = stripSuffix(m.san); if (seen.has(k)) return false; seen.add(k); return true; });
-    let t = assignTiers(uniq, ply, board, key).map((m) => {
+    let t = assignTiers(uniq, ply, board, key, sans).map((m) => {
       const mainMain = isMainline(key, m.san) ? { isMain: true } : {};
       const nm = nameOverride(key, m.san); const kwo = kwOverride(key, m.san);
       return { ...m, ...mainMain, ...(nm !== null ? { name: nm } : {}), ...(kwo ? { kw: kwo } : {}), disp: decorateSan(board, m.san, color) };
@@ -8075,7 +8093,7 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
     const node = snapNode(path);
     const rawMoves = node ? node.moves.slice() : [];
     addsFor(path.join(" ")).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
-    const tiered = assignTiers(rawMoves, ply, board, path.join(" "));
+    const tiered = assignTiers(rawMoves, ply, board, path.join(" "), path);
     return tiered.find((x) => x.san === m.san) || null;
   }, [path.join(" "), m.san, board]);
   const kind = (tier && tier.kind) || (m.book ? "book" : "pending");
@@ -8407,7 +8425,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           }
           ordered = sanOrder.map((s) => filtered.find((m) => m.san === s)).filter(Boolean);
         }
-        const tiered = assignTiers(filtered, path.length, board, key);
+        const tiered = assignTiers(filtered, path.length, board, key, path);
         const color = path.length % 2 === 0 ? "w" : "b";
         for (const m of ordered) {
           const t = tiered.find((x) => x.san === m.san);
@@ -10647,6 +10665,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // shakeTag는 그 직후 도전 가능해진 다음 라인을 살짝 흔들어 "클릭하면 바로 풀 수 있다"를 강조한다.
   const [page, setPage] = useState(0);
   const [celebrate, setCelebrate] = useState(null);   // { tag } | null
+  // (기능) 코치(마스코트) 말풍선을 숨겼다 보였다 — 보드가 작은 화면에서 말풍선이 차지하는 공간이
+  // 부담스럽거나, 이미 익숙한 안내를 계속 다시 보고 싶지 않을 때를 위한 토글. 퍼즐이 바뀌어도 계속
+  // 숨겨 두고 싶다는 요구는 없었으므로 세션 state로만 두고 퍼즐마다 초기화하지는 않는다.
+  const [coachHidden, setCoachHidden] = useState(false);
   const pagerRef = useRef(null);
   const dragRef = useRef(null);
   const [dragPx, setDragPx] = useState(0);
@@ -11165,7 +11187,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         style={{ position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
         <div style={{ display: "flex", width: "200%", transform: `translateX(calc(${-page * 50}% + ${dragPx}px))`, transition: dragging ? "none" : "transform .34s cubic-bezier(.22,.9,.32,1)" }}>
           <div style={{ width: "50%", boxSizing: "border-box", paddingRight: 3 }}>
-            <div key={"bubble-" + bubbleText} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
+            <div style={{ position: "relative", marginBottom: 10, minHeight: coachHidden ? 34 : undefined }}>
+              {coachHidden ? null : <div key={"bubble-" + bubbleText} style={{ animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>}
+              <button onClick={() => setCoachHidden((h) => !h)} className="press no-pan" aria-label={coachHidden ? "코치 보이기" : "코치 숨기기"} title={coachHidden ? "코치 보이기" : "코치 숨기기"}
+                style={{ position: "absolute", top: coachHidden ? 0 : 8, right: 8, zIndex: 5, width: 26, height: 26, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>
+                {coachHidden ? <Eye size={13} /> : <EyeOff size={13} />}
+              </button>
+            </div>
             {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
             <PuzzlePgnBox text={sansToPgnText(curSans)} />
             {/* (버그 수정) 바깥 페이저(보드↔모식도 스와이프)의 onPagerPointerDown이 이 보드 위에서 눌러도
@@ -12049,6 +12077,22 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
     return arr.slice(0, 6);
   }, [recommendedPool, recSeed]);
+  // (버그 수정) 이 useMemo가 예전엔 아래쪽(다른 지역 변수들 사이)에 있었다 — puzzle 목록 화면에서만
+  // 쓰이는 값이라 그 자리가 자연스러워 보였지만, 바로 위 "if (active) return <PuzzleSolver .../>"
+  // 조기 반환 때문에 퍼즐을 열어 둔 동안(active 있음)에는 이 훅 자체가 아예 호출되지 않다가, 닫으면
+  // (active만 null) 그제서야 호출되는 셈이 됐다 — 렌더마다 호출되는 훅의 개수·순서가 달라지는 Rules of
+  // Hooks 위반으로, React가 "Rendered more hooks than during the previous render"를 던지며 이
+  // 컴포넌트 트리 전체가 깨진다. 이 앱에는 ErrorBoundary가 없어 그 에러가 화면 전체를 먹통으로
+  // 만들었다 — 퍼즐 창의 X 버튼을 누르면 사이트가 통째로 멈추는 것처럼 보인 원인이 바로 이것이었다.
+  // 모든 훅은 조건 없이 항상 같은 순서로 호출돼야 하므로, 조기 반환보다 앞으로 옮긴다. (isDateInput은
+  // 아래쪽 solveByInput 근처에서만 쓰이던 순수 파생값이라 여기서는 같은 식을 그대로 다시 계산한다.)
+  const numSuggestions = useMemo(() => {
+    if (numInput.includes("/") || !numInput) return [];
+    const byId = new Map();
+    for (const p of puzzles) byId.set(p.id, p);
+    for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
+    return [...byId.values()].filter((p) => String(puzzleNo(p.id)).startsWith(numInput)).slice(0, 6);
+  }, [numInput, puzzles, archivedPuzzles]);
   if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
@@ -12093,16 +12137,6 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (!hit) { setNumMsg("불러오는 중…"); const d = await puzzleFetch(n); if (d) hit = d; }
     if (hit) { setNumMsg(""); setNumInput(""); setActive(hit); } else setNumMsg("#" + n + " 번호의 퍼즐을 찾을 수 없습니다.");
   };
-  // (기능) 입력 중인 번호로 시작하는 퍼즐을 로컬에 알려진 목록(puzzles·archivedPuzzles)에서
-  // 찾아 번호·이름과 함께 추천으로 보여준다. 날짜 입력 모드(numInput에 "/" 포함)이거나 입력이
-  // 비어 있으면 표시하지 않는다.
-  const numSuggestions = useMemo(() => {
-    if (isDateInput || !numInput) return [];
-    const byId = new Map();
-    for (const p of puzzles) byId.set(p.id, p);
-    for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
-    return [...byId.values()].filter((p) => String(puzzleNo(p.id)).startsWith(numInput)).slice(0, 6);
-  }, [numInput, isDateInput, puzzles, archivedPuzzles]);
   return (
     <div>
       <div className="flex items-center gap-2"><Mascot name="kokoa" emotion="celebrate" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퍼즐</h2></div>
@@ -13256,7 +13290,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.2.8", date: "2026.7.31", dev: ["openchesskr"], items: [
+    version: "0.2.8", date: "2026.8.2", dev: ["openchesskr"], items: [
       "퍼즐 풀이 화면의 평가치 막대가 중간에 0.00으로 멈춰버리던 문제를 고쳤어요 — 이제 실시간 검색 값이 끝까지 살아 있어요.",
       "퍼즐 풀이 화면의 코치 말풍선도 게임 리뷰와 똑같이, 방금 둔 수가 실제로 뭘 위협·방어·예방·전개했는지 구체적으로 짚어줘요.",
       "일일 퍼즐 캐러셀의 카드 모양이 스크롤 중에 갑자기 바뀌던 문제를 고쳤어요 — 이제 모든 날짜가 같은 모양의 카드로, 선택된 날짜만 커지고 진해져요.",
@@ -13298,6 +13332,10 @@ const CHANGELOG = [
       "퍼즐 창을 열었을 때 평가치 막대가 거의 안 움직이는 것처럼 보이던 문제를 고쳤어요 — 이제 depth가 눈에 보이게 차례로 올라가며 실시간으로 움직여요.",
       "일일 퍼즐 캐러셀에서 컴퓨터 마우스로 카드를 눌러도 간헐적으로 반응이 없던 문제의 진짜 원인을 찾아 완전히 고쳤어요.",
       "일일 퍼즐 캐러셀의 미리보기 체스보드가 뜨는 시간을 조금 더 줄였어요.",
+      "학습 탭 엔진 추천 수 줄이 방금까지 보이던 수순이 갑자기 짧아지며 끊긴 것처럼 보이던 문제를 고쳤어요 — 엔진이 depth를 더 깊이 탐색하며 같은 줄을 다시 보고할 때 수순이 이전보다 짧아지는 건 정상적인 현상인데, 그걸 그대로 화면에 반영해 이미 타이핑된 글자가 눈앞에서 줄어들어 보였어요. 이제 첫 수가 같은 줄인 동안은 지금까지 본 것 중 가장 긴 수순을 계속 보여줘요.",
+      "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
+      "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
+      "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
     ],
   },
   {
