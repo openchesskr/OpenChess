@@ -3090,7 +3090,22 @@ function TypedMoveLine({ startPly, sans, posKey }) {
     const id = setInterval(() => { setShown((s) => (s >= sansLenRef.current ? s : s + 1)); }, 55);
     return () => clearInterval(id);
   }, [posKey]);
-  return <>{pvContinuationText(startPly, effectiveSans.slice(0, Math.min(shown, effectiveSans.length)))}</>;
+  const text = pvContinuationText(startPly, effectiveSans.slice(0, Math.min(shown, effectiveSans.length)));
+  // (안전장치) 위 sans 배열 비교(sans[0]·길이) 기반 로직에 아직 못 찾은 예외 경로가 남아 있어도,
+  // 화면에 최종적으로 보여줄 문자열 자체에 들어있는 수 번호("2." 같은 토큰) 개수만큼은 절대 줄지
+  // 않게 하는 마지막 방어선을 둔다 — 렌더될 텍스트에서 수 번호 개수를 직접 세어, 이 슬롯(posKey)에서
+  // 지금까지 실제로 보여준 적 있는 최대 개수보다 지금 계산된 텍스트의 개수가 더 적으면(=뭔가 이유로
+  // 표시가 뒷걸음질쳤으면) 새로 계산된 텍스트를 버리고 직전에 도달했던 가장 긴 텍스트를 그대로
+  // 유지한다. sans 배열이 어떻게 흘러가든 상관없이 "화면에 보이는 수 번호 개수는 늘어나기만 한다"는
+  // 사실 자체를 기준으로 삼으므로, 위 로직이 놓친 어떤 경로에도 안전하다.
+  const maxNumsRef = useRef(0);
+  const maxTextRef = useRef("");
+  const prevIdentityRef = useRef(posKey + "|" + effectiveSans[0]);
+  const identity = posKey + "|" + effectiveSans[0];
+  if (prevIdentityRef.current !== identity) { prevIdentityRef.current = identity; maxNumsRef.current = 0; maxTextRef.current = ""; }
+  const numCount = (text.match(/\d+\./g) || []).length;
+  if (numCount >= maxNumsRef.current) { maxNumsRef.current = numCount; maxTextRef.current = text; }
+  return <>{maxTextRef.current}</>;
 }
 // (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
 // 라인이 나타났다 사라지는 깜빡임이 있었다 — 첫 수가 같은 라인은 먼저 나온 것만 남겨 중복을 제거한다.
@@ -13332,7 +13347,7 @@ const CHANGELOG = [
       "퍼즐 창을 열었을 때 평가치 막대가 거의 안 움직이는 것처럼 보이던 문제를 고쳤어요 — 이제 depth가 눈에 보이게 차례로 올라가며 실시간으로 움직여요.",
       "일일 퍼즐 캐러셀에서 컴퓨터 마우스로 카드를 눌러도 간헐적으로 반응이 없던 문제의 진짜 원인을 찾아 완전히 고쳤어요.",
       "일일 퍼즐 캐러셀의 미리보기 체스보드가 뜨는 시간을 조금 더 줄였어요.",
-      "학습 탭 엔진 추천 수 줄이 방금까지 보이던 수순이 갑자기 짧아지며 끊긴 것처럼 보이던 문제를 고쳤어요 — 엔진이 depth를 더 깊이 탐색하며 같은 줄을 다시 보고할 때 수순이 이전보다 짧아지는 건 정상적인 현상인데, 그걸 그대로 화면에 반영해 이미 타이핑된 글자가 눈앞에서 줄어들어 보였어요. 이제 첫 수가 같은 줄인 동안은 지금까지 본 것 중 가장 긴 수순을 계속 보여줘요.",
+      "학습 탭 엔진 추천 수 줄이 방금까지 보이던 수순이 갑자기 짧아지며 끊긴 것처럼 보이던 문제를 고쳤어요 — 엔진이 depth를 더 깊이 탐색하며 같은 줄을 다시 보고할 때 수순이 이전보다 짧아지는 건 정상적인 현상인데, 그걸 그대로 화면에 반영해 이미 타이핑된 글자가 눈앞에서 줄어들어 보였어요. 이제 첫 수가 같은 줄인 동안은 지금까지 본 것 중 가장 긴 수순을 계속 보여주고, 화면에 실제로 표시되는 수 번호 개수 자체도 실시간으로 세어 줄어들지 않도록 이중으로 막아뒀어요.",
       "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
       "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
       "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
