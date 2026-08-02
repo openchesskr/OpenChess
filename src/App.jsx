@@ -6927,6 +6927,15 @@ function ReviewPage({ game, onClose }) {
   const [engineLines, setEngineLines] = useState([]);
   const playFree = useCallback((san) => {
     if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
+    // (기능) 자유 탐색이 아직 실제 기보 위치(exploreSans 없음)에서 시작됐고, 방금 둔 수가 그 지점의
+    // 실제 기보 수와 정확히 같다면 — 이건 "새로운 가지"가 아니라 그냥 원래 대국을 그대로 이어서 둔
+    // 것이다. 굳이 exploreMove effect로 다시 실시간 분석을 돌릴 필요 없이, 이미 게임 리뷰 시작할 때
+    // 다 계산해 둔 result.moves를 그대로 쓰면 되므로 곧장 그 지점(curPly+1)의 원래 리뷰로 이동한다.
+    if (!exploreSans.length && curPly < sans.length && stripSuffix(san) === stripSuffix(sans[curPly])) {
+      playMoveSfx(san);
+      jump(curPly + 1);
+      return;
+    }
     playMoveSfx(san);
     // (v0.2.4 버그 수정) 지금 화면에 "최선"으로 안내 중이던 수(Show 화살표 또는 엔진 라인 1순위)를
     // 그대로 뒀다면, 그 사실 자체를 기록해 둔다 — 아래 exploreMove 채점 effect가 재검색을 새로
@@ -6937,7 +6946,7 @@ function ReviewPage({ game, onClose }) {
     if (shownBest && stripSuffix(shownBest) === stripSuffix(san)) forcedBestRef.current = effSans.join(" ") + "|" + san;
     setExploreSans((s) => [...s, san]); setExploreFuture([]);
     setSel(null); setDrag(null);
-  }, [gameDrawn, activeMove, engineLines, effSans]);
+  }, [gameDrawn, activeMove, engineLines, effSans, exploreSans, curPly, sans]);
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
     if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
@@ -7016,6 +7025,11 @@ function ReviewPage({ game, onClose }) {
     const prevSans = effSans.slice(0, -1);
     const san = effSans[effSans.length - 1];
     const white = prevSans.length % 2 === 0;
+    // (기능) 게임 리뷰 본편(analyzeGame)·학습 탭 후보 블록은 이론 수를 만나면 곧장 "이론" 등급으로
+    // 확정하고 실시간 분석을 건너뛰는데, 자유 탐색 채점만 이 확인이 빠져 있어 이론 수를 둬도 매번
+    // 실시간 재검색을 거쳐 평가치 기반 등급(최선/우수 등)으로 잘못 표시됐다. 같은 isBookMoveAt
+    // 확인을 그대로 적용해, 자유 탐색 중에도 이론 수는 즉시 "이론" 아이콘으로 확정한다.
+    if (isBookMoveAt(prevSans.join(" "), san)) { setExploreMove({ san, white, kind: "book", best: null }); return; }
     // (v0.2.4 버그 수정) playFree가 남겨 둔 "이 포지션|이 수" 기록 — 방금 화면에 보여준 추천을
     // 그대로 뒀다면 아래 재검색 결과와 무관하게 최선의 수로 확정한다(재검색은 movetime 상한 안에서
     // 타이밍에 따라 살짝 다른 1순위를 낼 수 있어, 방금 안내한 추천과 다른 수로 오판정되곤 했다).
@@ -13345,6 +13359,8 @@ const CHANGELOG = [
       "일일 퍼즐 캐러셀의 미리보기 체스보드가 뜨는 시간을 조금 더 줄였어요.",
       "학습 탭 엔진 추천 수 줄이 방금까지 보이던 수순이 갑자기 짧아지며 끊긴 것처럼 보이던 문제를 고쳤어요 — 엔진이 depth를 더 깊이 탐색하며 같은 줄을 다시 보고할 때 수순이 이전보다 짧아지는 건 정상적인 현상인데, 그걸 그대로 화면에 반영해 이미 타이핑된 글자가 눈앞에서 줄어들어 보였어요. 이제 첫 수가 같은 줄인 동안은 지금까지 본 것 중 가장 긴 수순을 계속 보여주고, 화면에 실제로 표시되는 수 번호 개수 자체도 실시간으로 세어 줄어들지 않도록 이중으로 막아뒀어요.",
       "엔진 추천 수 줄에서 손가락으로 밀어도 반응이 없어 뒷부분이 안 보이던 문제를 고쳤어요 — 자체 구현 드래그 대신 브라우저 기본 터치 스크롤을 쓰도록 바꿔, 어떤 브라우저에서도 밀면 확실히 나머지 수순이 나와요.",
+      "게임 리뷰에서 자유 탐색 중 실제 기보에 있는 바로 그 수를 그대로 두면, 다시 분석하지 않고 곧장 원래 리뷰의 그 지점으로 이동해요.",
+      "게임 리뷰 자유 탐색에서도 이론 수를 두면 실시간 분석 없이 곧바로 '이론' 아이콘으로 표시돼요.",
       "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
       "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
       "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
