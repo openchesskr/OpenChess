@@ -772,7 +772,7 @@ function useEngine(enginePref) {
   const running = useRef(false);
   const offRef = useRef(false);
   const swallowBest = useRef(0); // 강제 해제된 작업의 뒤늦은 bestmove를 무시할 개수
-  const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+  const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); clearTimeout(job.softTimer); job.resolve(val); };
   const resultOf = (job, bm) => job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : (job.last ? { ...job.last, best: bm || "" } : (bm ? { best: bm } : null));
   // (v0.2.4 성능) 같은 slot의 새 요청이 들어오면 이전 요청을 큐에서 즉시 치운다 — 아직 실행 전이면
   // 그냥 빼내고, 이미 엔진에 보낸(실행 중인) 요청이면 "stop"으로 즉시 중단시키고 그 뒤늦은 bestmove는
@@ -811,6 +811,20 @@ function useEngine(enginePref) {
     if (!ref.current) { if (offRef.current) { queue.current.shift(); settle(job, job.multi ? [] : null); pump(); } return; }
     running.current = true;
     job.cmds.forEach((c) => ref.current.postMessage(c));
+    // (버그 수정) bootAnalysisWorker.pump()와 동일한 이유 — MultiPV 요청은 movetime을 "go"에 직접
+    // 넣지 않고(아래 evaluateMulti), 요청한 순위(multipvTarget) 전부가 적어도 한 번씩 보고될
+    // 때까지 여기서 기다렸다가 stop을 보낸다. 느린 기기에서 낮은 순위 줄이 movetime 안에 한 번도
+    // 못 나온 채 엔진이 스스로 멈춰, 그 줄이 통째로 빠진 채 확정되던 문제(학습 탭 엔진 라인이 3개가
+    // 아니라 2개만 뜨는 현상)를 없앤다.
+    clearTimeout(job.softTimer);
+    if (job.multi && job.mt) {
+      const trySoftStop = () => {
+        if (queue.current[0] !== job || job.settled) return;
+        if (Object.keys(job.lines).length >= job.multipvTarget) { try { ref.current && ref.current.postMessage("stop"); } catch (_) { } }
+        else job.softTimer = setTimeout(trySoftStop, 150);
+      };
+      job.softTimer = setTimeout(trySoftStop, job.mt);
+    }
     // (버그 수정) 워치독 — 배치 분석 중 특정 포지션에서 엔진이 bestmove를 끝내 안 보내면 running이
     // true로 굳어 이후 모든 요청이 큐에서 멈춘다(그래프가 도중부터 일자·정확도 100). 제한 시간 안에
     // bestmove가 없으면 부분 결과로 마무리하고 'stop'을 보내 큐를 다시 흐르게 한다. stop 후에도 응답이
@@ -881,6 +895,12 @@ function useEngine(enginePref) {
         w.onerror = () => { try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
         w.postMessage("uci");
         if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
+        // (성능) 스톡피시 WASM 빌드의 기본 Hash(치환 테이블)는 보통 16MB로 아주 작다 — 같은 국면을
+        // 반복해서 다시 계산하는 비중이 커져, movetime(700ms) 같은 짧은 시간 상한 안에서는 도달하는
+        // depth 자체가 눈에 띄게 줄어든다. 64MB로 올리면 같은 700ms 안에서도 치환 테이블 적중률이
+        // 높아져 실질적으로 더 깊이 탐색할 수 있다 — 이 엔진 인스턴스는 워커 1개뿐이라 메모리 부담도
+        // 작다(태블릿·저사양 기기에서도 64MB는 안전한 수준).
+        w.postMessage("setoption name Hash value 64");
         eloSetoptions(ENGINE_PROFILES[enginePref]).forEach((c) => w.postMessage(c));
         w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
@@ -906,42 +926,66 @@ function useEngine(enginePref) {
   }), [pump, supersede]);
   const evaluateMulti = useCallback((fen, depth = 12, multipv = 5, movetime, onProgress, onLines, slot) => new Promise((resolve) => {
     supersede(slot);
-    const go = "go depth " + depth + (movetime ? " movetime " + movetime : "");
-    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, slot, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
+    // (버그 수정) movetime을 "go"에 직접 넣지 않는다 — pump()의 soft-stop 타이머가 multipv개 순위가
+    // 전부 보고될 때까지 기다렸다가 stop을 보낸다.
+    const go = "go depth " + depth;
+    queue.current.push({ resolve, multi: true, lines: {}, onProgress, onLines, mt: movetime, multipvTarget: multipv, slot, watchMs: movetime ? movetime + 4000 : 15000, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, go] }); pump();
   }), [pump, supersede]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
   const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
   return { status, evaluate, evaluateMulti, profile: enginePref, urls };
 }
-/* UCI -> SAN (보드 기준) */
-function uciToSan(board, uci, color) {
+/* UCI -> SAN (보드 기준). ep를 넘기면 앙파상 캡처도 올바르게 "x"를 붙인다. uci 5번째 글자(승진 기물,
+   소문자)가 있으면 승진 기물로 반영한다 — 예전엔 이 글자를 아예 읽지 않아 언더프로모션 계속 수순이
+   전부 퀸 승진으로 잘못 표기됐다. */
+function uciToSan(board, uci, color, ep) {
   if (!uci || uci.length < 4) return null;
   const fc = FILES.indexOf(uci[0]), fr = 8 - parseInt(uci[1], 10), tc = FILES.indexOf(uci[2]), tr = 8 - parseInt(uci[3], 10);
   if (fc < 0 || tc < 0 || !board[fr] || !board[fr][fc]) return null;
-  return buildSan(board, fr, fc, tr, tc, color);
+  const promo = uci.length > 4 ? uci[4].toUpperCase() : undefined;
+  return buildSan(board, fr, fc, tr, tc, color, ep, promo);
 }
 // (v0.1.3 기능) MultiPV 한 줄의 UCI 수 목록(그 줄이 시작하는 위치 prevSans 기준)을 순서대로 SAN으로
 // 바꾼다 — 학습 탭 엔진 라인(여러 수 앞까지 미리보기)에서 쓴다. 변환할 수 없는 수를 만나면(드묾)
 // 거기서 멈추고 그때까지 변환된 수만 돌려준다.
+// (버그 수정) 앙파상 타깃(ep)을 넘기지 않아 매 반복마다 uciToSan이 이를 일반 전진으로 오인했다 —
+// isCap이 빠지며 SAN 자체는 만들어지지만(null 아님) 그 앙파상으로 실제로 사라지는 상대 폰이 이후
+// 보드 재구성(boardFromSans)에는 반영되지 않아, 다음 반복의 uciToSan이 그 폰이 여전히 있다고 보고
+// 완전히 다른(때로는 불가능한) 수로 오판해 null을 반환하며 그 지점에서 라인이 조용히 끊겼다. 매
+// 반복마다 직전 수로 새로 생긴 ep 타깃을 계산해 다음 uciToSan 호출에 넘긴다.
 function pvUciToSans(prevSans, uciList, maxPlies) {
   const sans = [];
   const cur = prevSans.slice();
+  let ep = epTarget(cur);
   const n = Math.min(uciList.length, maxPlies || uciList.length);
   for (let i = 0; i < n; i++) {
     const color = cur.length % 2 === 0 ? "w" : "b";
-    const san = uciToSan(boardFromSans(cur), uciList[i], color);
+    const board = boardFromSans(cur);
+    const san = uciToSan(board, uciList[i], color, ep);
     if (!san) break;
     sans.push(san);
     cur.push(san);
+    ep = epTargetFromMoveInfo(sanSrc(board, san, color));
   }
   return sans;
 }
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
-async function genPunishLine(engine, sans, plies = 3) {
+// (버그 수정) movetime 없이 "go depth 14"만 보내면 워커 큐의 기본 워치독(15000ms)에 걸릴 때까지
+// 걸릴 수 있어, 코치 카드에서 이 결과를 기다리는 UI가 몇 초씩(plies가 2면 최악 30초 가까이) 응답이
+// 없는 것처럼 보였다("유일한 수" 보강이 안 되는 것처럼 보인 원인 중 하나). 호출부가 movetime을
+// 넘기면 그만큼 상한을 걸어 체감 응답 속도를 보장한다(넘기지 않으면 기존과 동일하게 무제한).
+// (버그 수정) slot 없이 그냥 큐에 넣기만 하면, 유저가 다음 포지션으로 넘어가 이 호출이 이미
+// 쓸모없어져도 아무도 이 진행 중인 요청을 멈추지 않아 워커가 끝까지 다 돌 때까지 큐를 붙잡고
+// 있었다 — 같은 워커를 공유하는 진짜 중요한 요청(엔진 라인 스트리밍, slot "review-lines")이 그
+// 뒤에서 계속 밀려, 화면에는 "엔진 라인이 끝까지 타이핑되지 않는다"로 보였다(실제로는 라인 자체가
+// 아직 서버에서 안 왔을 뿐 — TypedMoveLine은 받은 데이터만큼은 항상 끝까지 타이핑한다). slot을
+// 넘기면 같은 slot의 새 호출이 들어올 때 이전 호출을 즉시 중단시켜(supersede) 무한정 큐를 붙잡지
+// 않게 한다.
+async function genPunishLine(engine, sans, plies = 3, movetime, slot) {
   let cur = sans.slice(); const out = [];
   for (let i = 0; i < plies; i++) {
-    const ev = await engine.evaluate(sansToFen(cur), 14);
+    const ev = await engine.evaluate(sansToFen(cur), 14, undefined, movetime, slot);
     if (!ev || !ev.best) break;
     const san = uciToSan(boardFromSans(cur), ev.best, cur.length % 2 === 0 ? "w" : "b");
     if (!san) break;
@@ -1423,6 +1467,21 @@ function canCaptureSquareLegally(board, tr, tc, side) {
     if (can && !exposesKing(board, r, c, tr, tc, side, null)) return true;
   }
   return false;
+}
+// (기능) canCaptureSquareLegally와 같은 조건이되, 있는지 없는지가 아니라 합법적으로 이 칸을 잡을 수
+// 있는 내 기물이 몇 개인지 센다 — 되잡기(recaptureFact)가 "대안이 없어 직관적으로 명백한 수"인지
+// (후보가 정확히 1개) 판정하는 데 쓴다.
+function countLegalCapturesOnSquare(board, tr, tc, side) {
+  let n = 0;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== side) continue;
+    let can;
+    if (p.t === "P") { const dir = side === "w" ? -1 : 1; can = (tr - r === dir && Math.abs(tc - c) === 1); }
+    else if (p.t === "K") can = Math.abs(tr - r) <= 1 && Math.abs(tc - c) <= 1;
+    else can = canMove(board, p.t, side, r, c, tr, tc, true);
+    if (can && !exposesKing(board, r, c, tr, tc, side, null)) n++;
+  }
+  return n;
 }
 // (16차→18차) color 진영 기물 중, 상대가 다음 수에 잡아 실질 손실(≥1)을 낼 수 있는 기물이 있는지 — 있다면 그 최대 손실값과 그 칸(sq).
 // (18차) SEE 기하학 계산만으론 "체크 중이라 위협을 실행할 수 없는" 경우(예: Bxf7+ 이후 Qxg5는 체크 방치라 불법)를
@@ -2276,7 +2335,10 @@ function tierOf(loss) {
 }
 // (18차 보충 UX10) 어떤 수든 그 수의 실제 평가치(loss) 기반으로 수 체계 등급을 계산하는 공용 헬퍼.
 // LearnTab의 evalMoveKind와 동일한 규칙 — 퍼즐 풀이 창에서도 테마와 무관하게 이 등급으로 아이콘을 표시한다.
-async function classifyMoveKind(engine, prevSans, san, depth = 12) {
+// (기능) classifyMoveKind는 kind 문자열 하나만 돌려주는 게 기존 세 호출부의 계약이라 그대로 두고,
+// 퍼즐 코치의 MEC 연동(mecFacts는 bestSan·beforeCp도 필요)을 위해 같은 계산을 공유하는 상세 버전을
+// 새로 둔다 — classifyMoveKind는 이 함수를 감싸 kind만 꺼내 쓰는 얇은 래퍼가 된다.
+async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12) {
   if (!engine || engine.status !== "ready") return null;
   const best = await engine.evaluate(sansToFen(prevSans), depth);
   if (!best) return null;
@@ -2310,7 +2372,11 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
       if (oppBest) { const oppBestCp = oppBest.mate != null ? (oppBest.mate > 0 ? 1e5 : -1e5) : oppBest.cp; if (oppBestCp + bestCp >= 100) kind = "miss"; }
     } catch { }
   }
-  return kind;
+  return { kind, bestSan: matched ? null : bestSan, beforeCp: bestCp };
+}
+async function classifyMoveKind(engine, prevSans, san, depth = 12) {
+  const r = await classifyMoveKindDetailed(engine, prevSans, san, depth);
+  return r ? r.kind : null;
 }
 // (19차 기능3) chess.com 게임 리뷰식 정확도 — 공개된 승률 기대값 모델 기반 근사(오차 ~1% 이내 목표).
 // cp는 백 관점(양수=백 우세). 반환은 백의 기대 승률(0~100).
@@ -2355,7 +2421,7 @@ function bootAnalysisWorker(urls, eloOpts) {
     // 풀을 세션 내내 재사용하므로, 워치독 없이는 한 번 멈춘 워커가 세션 끝까지 그 자리만큼 풀을 영구히
     // 줄여버린다. useEngine의 워치독(548-557행)과 동일한 방식 — 제한 시간 안에 bestmove가 없으면
     // 부분 결과로 마무리하고 'stop'을 보내며, 그래도 응답이 없으면 큐를 강제로 흘려보낸다.
-    const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); job.resolve(val); };
+    const settle = (job, val) => { if (job.settled) return; job.settled = true; clearTimeout(job.watch); clearTimeout(job.hardWatch); clearTimeout(job.softTimer); job.resolve(val); };
     // (v0.2.4 성능) useEngine의 supersede와 동일한 패턴 — 같은 slot의 새 요청이 오면 이전 요청을
     // 큐에서 즉시 치운다(실행 중이면 "stop"으로 중단). 풀에서 특정 자리(pool[0] 등)를 매번 같은
     // 용도로 재사용하는 호출부(리뷰 엔진 라인 패널 등)가 빠른 수 넘김에도 밀리지 않게 해 준다.
@@ -2391,6 +2457,24 @@ function bootAnalysisWorker(urls, eloOpts) {
       if (running || !queue.length) return; running = true;
       const job = queue[0];
       job.cmds.forEach((c) => worker.postMessage(c));
+      // (버그 수정) MultiPV 요청(job.multi)은 이제 "go" 명령에 movetime을 직접 넣지 않는다(아래
+      // evaluateMulti 참고) — 대신 여기서 요청한 순위(multipvTarget) 전부가 적어도 한 번씩 보고될
+      // 때까지 기다렸다가 "stop"을 보낸다. 느린 기기(특히 모바일)에서는 낮은 순위(3순위 등) 줄이
+      // 원래의 movetime 안에 단 한 번도 보고되지 못한 채 엔진이 스스로 멈춰버려, 그 줄이 짧게
+      // 잘리는 게 아니라 통째로 빠진(job.lines에 그 키 자체가 없는) 채 확정되곤 했다 — 화면에는
+      // "엔진 라인이 3개가 아니라 2개만 뜨고 다시 늘어나지 않는" 것처럼 보였다. movetime을 다 채운
+      // 시점에도 아직 모자란 순위가 있으면 150ms 간격으로 재확인하며 계속 기다리고, 다 나오는 즉시
+      // stop을 보낸다 — 이미 다 나온 흔한 경우(빠른 기기)는 movetime 시점에 바로 멈추므로 체감
+      // 속도에 변화가 없다. 혹시 정말 오래 걸리는 극단적인 경우에도 아래 워치독(mt+4000)이 그대로
+      // 최종 안전망 역할을 한다.
+      if (job.multi && job.mt) {
+        const trySoftStop = () => {
+          if (queue[0] !== job || job.settled) return;
+          if (Object.keys(job.lines).length >= job.multipvTarget) { try { worker.postMessage("stop"); } catch (_) { } }
+          else job.softTimer = setTimeout(trySoftStop, 150);
+        };
+        job.softTimer = setTimeout(trySoftStop, job.mt);
+      }
       job.watch = setTimeout(() => {
         if (queue[0] !== job || job.settled) return;
         settle(job, job.multi ? Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k]) : job.last);
@@ -2450,7 +2534,9 @@ function bootAnalysisWorker(urls, eloOpts) {
               evaluateMulti(fen, d, multipv, mt, onLines, slot) {
                 return new Promise((res) => {
                   supersede(slot);
-                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, slot, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d + (mt ? " movetime " + mt : "")] });
+                  // (버그 수정) movetime을 "go" 명령에 직접 넣지 않는다 — pump()의 soft-stop 타이머가
+                  // multipvTarget개 순위가 전부 보고될 때까지 기다렸다가 stop을 보낸다(위 pump() 참고).
+                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, multipvTarget: multipv, slot, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d] });
                   pump();
                 });
               },
@@ -2461,6 +2547,10 @@ function bootAnalysisWorker(urls, eloOpts) {
         };
         w.onerror = () => { try { w.terminate(); } catch (_) { } if (!booted) tryNext(); };
         w.postMessage("uci");
+        // (성능) useEngine 싱글턴과 동일한 이유(위 Hash 주석 참고) — 다만 이 풀은 기기 코어 수만큼
+        // 워커를 띄우므로(analyzePoolSize) 워커당 크기를 32MB로 더 보수적으로 잡아, 코어가 많은
+        // 기기에서도 총 메모리 사용량이 과하게 불어나지 않게 한다.
+        w.postMessage("setoption name Hash value 32");
         (eloOpts || []).forEach((c) => w.postMessage(c));
         w.postMessage("isready");
         setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
@@ -2497,6 +2587,19 @@ function getAnalysisPool(profile, urls) {
   const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls, eloOpts))).then((ws) => ws.filter(Boolean));
   analysisPoolCache.set(profile, promise);
   return promise;
+}
+// (버그 수정) 리뷰 페이지가 pool[0](간혹 pool[1])만 계속 재사용해 온 게, "엔진 라인이 끝까지 타이핑
+// 안 된다"는 문제가 여러 차례 고쳤다는데도 계속 재발한 진짜 원인 중 하나였다 — 실시간 엔진 라인
+// 스트리밍(review-lines, idx 0)과 그 외 보조 기능(유일한 수 응징, 블런더 응징, 탁월한 수 설명,
+// 자유 탐색 채점 등)이 전부 같은 워커 하나의 FIFO 큐에 몰려, 보조 기능의 900ms짜리 평가 하나가
+// 진행 중이면 정작 화면에 매 depth마다 갱신돼야 할 라인 스트리밍이 그만큼 밀렸다(타이핑 자체가
+// 멈춘 게 아니라 데이터가 늦게 도착해 멈춘 것처럼 보였다). idx 0은 review-lines 전용으로 항상
+// 고정해 절대 다른 기능과 겹치지 않게 하고, 나머지 idx는 그 뒤의 워커들에만 분산시킨다(풀 크기가
+// 작아 겹치더라도 idx 0과는 절대 겹치지 않는다). 풀이 통째로 없으면(부팅 실패) engine으로 폴백한다.
+function poolWorker(pool, idx, engine) {
+  if (!pool || !pool.length) return engine;
+  if (idx <= 0 || pool.length === 1) return pool[0];
+  return pool[1 + ((idx - 1) % (pool.length - 1))];
 }
 // 게임 전체를 한 수씩 분석. 핵심: 같은 포지션에서 "엔진 최선수 vs 실제 둔 수"를 비교해 손실을 구한다.
 // 실제 최선수를 뒀을 때 손실이 정확히 0이 되어, 얕은 depth 탐색 노이즈로 인한 가짜 실수가 사라진다.
@@ -2571,6 +2674,9 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     const color = moverWhite ? "w" : "b";
     const playedSan = stripSuffix(fullSans[i]);
     const bestCp = posEval[i].cp;                         // 이 포지션의 최선(둔 사람 관점)
+    // (기능) MEC의 기물 교환 유·불리 판정(exchangeFact)이 순수 기물 점수차 대신 실제 형세를 쓸 수
+    // 있도록, 이 수를 두기 직전 평가(mover 관점, 메이트면 ±100000으로 뭉갬)를 함께 들고 다닌다.
+    const moveBeforeCp = posEval[i].mate != null ? (posEval[i].mate > 0 ? 1e5 : -1e5) : bestCp;
     const bestSan = posEval[i].best ? uciToSan(brd, posEval[i].best, color) : null;
     const matched = !!(bestSan && stripSuffix(bestSan) === playedSan);
     // (v0.2.4 버그 수정) 둔 수가 엔진 최선수와 일치하면(matched) 다음 포지션은 바로 그 최선수를 둔
@@ -2588,7 +2694,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     // 건너뛴다. 예전엔 평가 실패 시 cp=0으로 취급돼 loss=0 → '최선의 수' → 정확도 100이 되어, 엔진이
     // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 pending으로 두고 정확도 집계에서 뺀다.
     if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
-      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, best: null });
+      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
       gradeBoard = applySan(gradeBoard, fullSans[i], color);
       continue;
     }
@@ -2609,8 +2715,13 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
       try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing) && !continuesOwnSacrifice) kind = "brilliant"; } catch { }
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
       // 유일한 수(Great, 매우 좋아요): 최선수를 뒀는데 2순위가 분명히 열세라(대안이 없다) 반드시 그 수여야 했던 경우.
+      // (버그 수정) 상대가 방금 잡은 자리를 되잡을 수 있는 내 기물이 이 하나뿐인 수(단순 되잡기)는
+      // 기물 점수를 맞추는 게 너무 직관적이라 "유일한 수"로 놀라워할 이유가 없다 — recaptureFact로
+      // 감지해 이런 수는 "유일한 수" 승격에서 제외한다(등급은 그대로 최선의 수로 남는다).
       const gap = posEval[i].second == null ? 9999 : (bestCp - posEval[i].second);
-      if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
+      let singleRecapture = false;
+      try { const rc = recaptureFact(fullSans.slice(0, i), fullSans[i], color); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+      if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture) kind = "only";
       // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데, 그 이점을 응징 못 해 평가치가
       // 의미있게 감소(loss≥100)하되, 결과가 뒤집힐(패배) 정도는 아닌 경우(playedCp≥-30).
       if (["inaccuracy", "mistake", "good"].includes(kind) && i >= 1
@@ -2628,7 +2739,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     // (v0.2.0 기능) /review 페이지가 "최선의 수는 Xx였어요" 코멘트·"수 보기" 화살표를 보여주려면
     // 실제로 둔 수와 다른 최선수만 있으면 된다 — 이미 최선수를 뒀다면(matched) 굳이 같은 수를
     // 다시 "더 나은 수"로 제안할 필요가 없어 null로 둔다.
-    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, best: matched ? null : bestSan });
+    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, best: matched ? null : bestSan, beforeCp: moveBeforeCp });
     if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
@@ -2685,8 +2796,8 @@ const KW = {
   // 상보쌍 (대비색, 상호 배타)
   "MAIN-LINE": { bg: "#CDE8C9", fg: "#1E6B2C", desc: "정석 메인 라인" },
   "SIDESTEPPING": { bg: "#E0DAEC", fg: "#574A78", desc: "잘 알려지지 않은 사이드라인" },
-  "BALANCE": { bg: "#D3E4F2", fg: "#235C86", desc: "균형 잡힌 국면" },
-  "IMBALANCE": { bg: "#F5DEC9", fg: "#9A5418", desc: "불균형(비대칭) 국면" },
+  "BALANCE": { bg: "#D3E4F2", fg: "#235C86", desc: "균형 잡힌 포지션" },
+  "IMBALANCE": { bg: "#F5DEC9", fg: "#9A5418", desc: "불균형(비대칭) 포지션" },
   "SHARP": { bg: "#F4D2D2", fg: "#A8322F", desc: "날카롭고 전술적인 수" },
   "QUIET": { bg: "#D2ECE6", fg: "#1F6E63", desc: "조용하고 포지셔널한 수" },
   "STRAIGHT-LINE": { bg: "#E6E2D8", fg: "#5C564A", desc: "이후가 단순·강제적인 수" },
@@ -2746,7 +2857,7 @@ function whiteEvalObj(m) {
   return null;
 }
 function hasRealEval(m) { return !!m.live || m.evalCp != null || m.mate != null; }
-function assignTiers(moves, ply, board, keyStr) {
+function assignTiers(moves, ply, board, keyStr, sans) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
   const best = evals.length ? Math.max(...evals) : null;
@@ -2790,7 +2901,15 @@ function assignTiers(moves, ply, board, keyStr) {
   const goods = out.filter((m) => goodSet.includes(m.kind));
   const others = out.filter((m) => !goodSet.includes(m.kind));
   const allOthersBad = others.length > 0 && others.every((m) => ["inaccuracy", "mistake", "blunder"].includes(m.kind));
-  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600) {
+  // (기능) 리뷰·퍼즐 채점과 동일하게, 그 유일한 좋은 수가 사실은 상대가 방금 잡은 기물을 그대로
+  // 되잡는 단순 리캡처(다른 후보가 애초에 없었을 뿐인 뻔한 수)라면 '유일한 수'로 승격하지 않는다 —
+  // recaptureFact는 실제로 두어진 수 이력(sans)이 있어야 상대의 직전 수를 볼 수 있으므로, 그 이력을
+  // 넘겨줄 수 있는 호출자에서만 이 예외가 적용된다.
+  let singleRecapture = false;
+  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600 && sans) {
+    try { const rc = recaptureFact(sans, goods[0].san, color); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+  }
+  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600 && !singleRecapture) {
     const i = out.indexOf(goods[0]);
     out[i] = { ...out[i], kind: out[i].kind === "brilliant" ? "brilliant" : "only" };
   }
@@ -2954,24 +3073,29 @@ function EngineLineSkeleton() {
 }
 // (v0.2.1) 엔진 라인 수순을 한 번에 다 찍지 않고 한 수씩 "타이핑"되듯 드러낸다 — posKey(포지션)가
 // 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
-function TypedMoveLine({ startPly, sans, posKey }) {
-  const [shown, setShown] = useState(0);
-  // (v0.2.6 버그 수정) 예전엔 setTimeout의 의존성 배열에 sans.length를 넣어, 엔진이 같은 라인을
-  // 더 깊이 파고들며 sans가 계속 늘어날 때마다(짧은 간격으로 반복 스트리밍되는 경우가 흔함) 대기
-  // 중이던 타이머가 매번 취소되고 처음부터(55ms) 다시 예약됐다 — 갱신이 55ms보다 촘촘하게 계속
-  // 들어오면 타이머가 단 한 번도 실행되지 못해 타이핑이 특정 지점에서 영원히 멈춘 것처럼 보였다
-  // (라인이 "끝까지 작성되지 않는" 원인). posKey(라인 자체가 바뀔 때)에만 55ms interval을 새로
-  // 만들고, 그 interval은 sans가 몇 번을 늘어나든 절대 취소·재예약되지 않는다 — 매 틱마다 그
-  // 시점의 최신 길이(sansLenRef)까지 도달했는지만 확인하므로, 데이터가 아무리 자주 갱신돼도 항상
-  // 꾸준히 앞으로 나아가 결국 끝까지 타이핑된다.
-  const sansLenRef = useRef(sans.length);
-  sansLenRef.current = sans.length;
-  useEffect(() => {
-    setShown(0);
-    const id = setInterval(() => { setShown((s) => (s >= sansLenRef.current ? s : s + 1)); }, 55);
-    return () => clearInterval(id);
-  }, [posKey]);
-  return <>{pvContinuationText(startPly, sans.slice(0, Math.min(shown, sans.length)))}</>;
+// (버그 수정 — 근본) 한 수씩 55ms 간격으로 늘려 보여주던 "타이핑" 애니메이션이 이 세션 내내
+// 반복 재발한 버그들(줄어듦·멈춤·초기화 경쟁 등)의 근본 원인이었다 — 순전히 장식 효과 하나가
+// 이렇게 많은 사이드 이펙트를 낳을 가치가 없다고 판단해 애니메이션 자체를 없앴다. 이제 지금까지
+// 확보된 수순(sans)을 지연 없이 즉시 전부 렌더링한다. 그래도 같은 줄(같은 posKey+첫 수)이 depth
+// 심화로 다시 보고될 때 PV가 일시적으로 더 짧아지는 건 정상적인 탐색 변동이므로, 화면에 보여준
+// 적 있는 가장 긴 텍스트보다 짧아지지 않게 하는 안전장치만 그대로 유지한다.
+// (버그 수정) 위 "가장 긴 텍스트 유지" 안전장치를 컴포넌트 인스턴스의 useRef에 뒀더니, MultiPV
+// 순위가 흔들리며 이 후보 수가 화면 상위 3줄에서 잠깐 밀려났다 곧 다시 들어오는 순간(EngineLineRow가
+// key={슬롯 번호}로 자리를 재사용하므로, 그 자리를 다른 후보가 잠깐 차지했다가 이 후보가 되돌아오면
+// React가 이 컴포넌트를 완전히 새로 마운트한다) useRef가 통째로 초기화되며 지금까지 쌓아 둔 "가장
+// 긴 텍스트" 기억이 사라졌다 — 실제로는 같은 포지션·같은 첫 수(=같은 후보 수)인데도 화면에는 그
+// 수가 갑자기 처음 본 것처럼 짧게 다시 나타나, "특정 depth에서 라인이 뚝 끊긴다"는 제보로 이어졌다.
+// 컴포넌트가 마운트·언마운트되어도 살아남도록, 이 기억을 React 트리 바깥의 모듈 레벨 캐시(posKeyBase
+// 기준 — 포지션이 바뀌면 통째로 비움)로 옮긴다.
+const engineLineMaxTextCache = { base: null, map: new Map() };
+function TypedMoveLine({ startPly, sans, posKeyBase }) {
+  const text = pvContinuationText(startPly, sans);
+  if (engineLineMaxTextCache.base !== posKeyBase) { engineLineMaxTextCache.base = posKeyBase; engineLineMaxTextCache.map = new Map(); }
+  const firstMove = sans[0];
+  const numCount = (text.match(/\d+\./g) || []).length;
+  const prev = engineLineMaxTextCache.map.get(firstMove);
+  if (!prev || numCount >= prev.numCount) { engineLineMaxTextCache.map.set(firstMove, { text, numCount }); return <>{text}</>; }
+  return <>{prev.text}</>;
 }
 // (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
 // 라인이 나타났다 사라지는 깜빡임이 있었다 — 첫 수가 같은 라인은 먼저 나온 것만 남겨 중복을 제거한다.
@@ -3000,10 +3124,18 @@ function dedupeEngineLines(list) {
 // 포지션이 바뀌지 않는 한 항상 같음)로 키를 잡아, 순위가 바뀌어 다른 수순이 들어와도 같은 컴포넌트
 // 인스턴스가 그대로 유지된다 — 안의 TypedMoveLine도 재마운트되지 않으므로 shown이 리셋되지 않고,
 // 새 수순의 길이만큼 자연스럽게 이어서(또는 이미 더 길게 타이핑돼 있었다면 그대로) 표시된다.
+// (되돌림 + 진짜 원인 수정) 한 줄 유지가 맞는 디자인이라는 지적을 받아 가로 스크롤로 되돌린다.
+// 대신 이번엔 스크롤 자체를 자체 구현 pointer 드래그(setPointerCapture + 수동 scrollLeft 대입)
+// 대신 브라우저 네이티브 터치 스크롤(overflowX:auto + WebkitOverflowScrolling:touch)에만 맡긴다 —
+// 자체 구현 드래그가 일부 모바일 브라우저(특히 인앱 웹뷰)에서 네이티브 터치 스크롤과 충돌해 손가락
+// 으로 밀어도 반응이 없는(=화면상 아무것도 안 움직이는) 경우가 있었을 것으로 보이는데, 사용자에게는
+// "밀어도 안 움직이니 그 뒤에 수가 아예 없다(정보 누락)"로 보였을 것이다. 실제로는 pvUciToSans가
+// maxPlies=15까지, MultiPV 탐색이 도달한 depth만큼 수를 이미 다 갖고 있고(TypedMoveLine이 그걸
+// 전부 타이핑해 준다) 화면에 한 번에 안 보일 뿐이었다 — 네이티브 스크롤은 어떤 모바일 브라우저에서도
+// 항상 동작이 보장되므로, 이제 실제로 밀면 반드시 나머지가 나온다.
 function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
-  const dragRef = useRef(null);
   const [showFade, setShowFade] = useState(false);
   const identity = posKeyBase + ":" + slotIdx;
   const recompute = () => {
@@ -3017,40 +3149,28 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
     if (outerRef.current) outerRef.current.scrollLeft = 0;
     recompute();
     const inner = innerRef.current;
-    if (!inner || typeof ResizeObserver === "undefined") return;
+    const iv = setInterval(recompute, 200);
+    if (!inner || typeof ResizeObserver === "undefined") return () => clearInterval(iv);
     const ro = new ResizeObserver(recompute);
     ro.observe(inner);
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); clearInterval(iv); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity]);
-  const onPointerDown = (e) => {
-    dragRef.current = { x: e.clientX, scrollLeft: outerRef.current ? outerRef.current.scrollLeft : 0, moved: false };
-    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
-  };
-  const onPointerMove = (e) => {
-    const d = dragRef.current;
-    if (!d) return;
-    const dx = e.clientX - d.x;
-    if (Math.abs(dx) > 3) d.moved = true;
-    if (outerRef.current) outerRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
-    recompute();
-  };
-  const onPointerUp = () => {
-    const d = dragRef.current;
-    dragRef.current = null;
-    if (d && !d.moved && l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]);
-    else if (d) recompute();
-  };
+  const downRef = useRef(null);
+  const onPointerDownCap = (e) => { downRef.current = { x: e.clientX, y: e.clientY, moved: false }; };
+  const onPointerMoveCap = (e) => { const d = downRef.current; if (d && (Math.abs(e.clientX - d.x) > 4 || Math.abs(e.clientY - d.y) > 4)) d.moved = true; };
+  const onClick = () => { if (downRef.current && downRef.current.moved) return; if (l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); };
   return (
-    <div className="no-pan press" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { dragRef.current = null; }}
-      style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", cursor: onPlayFirst ? "grab" : "default", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative", touchAction: "pan-y" }}>
+    <div className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
+      style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
       <EvalBadge ev={l.ev} small />
-      <div ref={outerRef} onScroll={recompute} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none" }}>
+      <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
+        style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
         <span ref={innerRef} style={{ display: "inline-block" }}>
-          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + slotIdx} />
+          <TypedMoveLine startPly={startPly} sans={l.sans} posKeyBase={posKeyBase} />
         </span>
       </div>
-      {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 18, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,.9))", borderRadius: "0 6px 6px 0" }} />}
+      {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 26, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,1) 80%)", borderRadius: "0 6px 6px 0" }} />}
     </div>
   );
 }
@@ -3212,7 +3332,8 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
 // 금색 대각선 그라데이션으로 바꾸고, 아래 HINT_GOLD_GLOW(외곽 발광 box-shadow)를 더해 훨씬 강하게 빛나 보이게 한다.
 const HINT_GOLD_GRADIENT = "linear-gradient(135deg, rgba(255,229,150,.98), rgba(216,163,58,.97))";
 const HINT_GOLD_GLOW = "0 0 16px 5px rgba(255,196,64,.9), inset 0 0 10px rgba(255,255,255,.55)";
-function Board({ board, flip, size = 336, arrows = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
+function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
+  const haloSet = useMemo(() => new Set((haloSquares || []).map(([r, c]) => r + "," + c)), [haloSquares]);
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
   // (v0.2.2 UX#4) 그랜드마스터 보드 스킨에만 주기적으로 지나가는 광택(빛 sweep)을 얹는다.
@@ -3261,6 +3382,12 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
               {/* (버그 수정) 기물이 하단 정렬로 바뀌면서, top/left 없이 정적 위치에 의존하던 이 점도
                   칸 바닥 쪽으로 딸려 내려가 버렸다 — 칸 정중앙에 고정되도록 명시적으로 중앙 정렬한다. */}
               {isTarget && <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: cell * 0.3, height: cell * 0.3, borderRadius: "50%", background: "rgba(62,124,196,.4)", pointerEvents: "none" }} />}
+              {/* (기능) 예방 수 시각화 — 방어 대상 칸에 금색 그라데이션 테두리(피스는 가리지 않는 링
+                  형태)를 씌운다. hintTo(전체 채움)와 달리 이미 기물이 놓인 칸도 자연스럽게 강조해야 해
+                  border-image 링 + glow만 쓴다. */}
+              {haloSet.has(r + "," + c) && (
+                <div style={{ position: "absolute", inset: cell * 0.03, borderRadius: 6, border: Math.max(2, cell * 0.055) + "px solid transparent", borderImage: "linear-gradient(135deg, #FFE596, #D8A33A) 1", boxShadow: HINT_GOLD_GLOW, pointerEvents: "none", zIndex: 5 }} />
+              )}
               {lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
                 <>
                   <div style={{ position: "absolute", inset: 0, background: QCOLOR[lastQ.kind], opacity: 0.5, pointerEvents: "none" }} />
@@ -3304,20 +3431,26 @@ function Board({ board, flip, size = 336, arrows = [], legalTargets = [], select
             // (18차 UI3) 채택률(또는 평가치) 차이가 화살표에서 분간되지 않던 문제 — 두께 범위를 크게
             // 벌리고(0.05~0.19), 불투명도도 비례(0.45~0.95)시켜 인기·우수한 수가 한눈에 도드라지게 한다.
             // weight(0~1, 이미 정규화됨)가 있으면 그대로 쓰고, 없으면 예전처럼 adopt(0~60%)에서 계산한다.
-            const isDanger = a.kind === "danger";
+            const isDanger = a.kind === "danger" || a.kind === "threatAttacker";
+            // (R7 기능) "위협" 애니메이션의 공격자 화살표는 danger와 같은 굵고 붉은 스타일을, 수비자
+            // 화살표는 같은 굵기의 초록색(T.good)을 쓴다 — 둘 다 채택률·평가치와 무관한 고정 강조 화살표다.
+            const isDefender = a.kind === "threatDefender";
             const t = Math.min(1, Math.max(0, a.weight != null ? a.weight : (a.adopt || 0) / 60));
             // (v0.2.2 기능) 탁월한 수의 "내 기물이 공격받는다" 경고 화살표는 채택률·평가치와 무관하게
             // 항상 눈에 띄게 두껍고 진하게, 색은 확실한 붉은색(T.danger)으로 그린다.
-            const w = isDanger ? 0.11 : 0.05 + t * 0.14;
-            const op = isDanger ? 0.92 : 0.45 + t * 0.5;
-            const head = isDanger ? 0.32 : 0.28 + t * 0.14;    // 화살촉도 두께에 비례
+            const w = (isDanger || isDefender) ? 0.11 : 0.05 + t * 0.14;
+            // (기능) 예방 수 애니메이션 — 수비자 화살표가 뜨는 순간 공격자 화살표를 지우지 않고
+            // fading 플래그만 얹어 옅게(거의 사라지듯) 남겨, "수비자가 나타나며 공격자가 사라진다"는
+            // 전환이 느껴지게 한다.
+            const op = a.fading ? 0.12 : ((isDanger || isDefender) ? 0.92 : 0.45 + t * 0.5);
+            const head = (isDanger || isDefender) ? 0.32 : 0.28 + t * 0.14;    // 화살촉도 두께에 비례
             const bx = x2 - ux * head, by = y2 - uy * head;  // 샤프트 끝(=화살촉 밑변 중심)
             const nx = -uy, ny = ux;                          // 수직 단위벡터
             const hw = head * 0.62;                           // 화살촉 반폭
             const pts = (x2) + "," + (y2) + " " + (bx + nx * hw) + "," + (by + ny * hw) + " " + (bx - nx * hw) + "," + (by - ny * hw);
-            const col = isDanger ? T.danger : T.arrow;
+            const col = isDanger ? T.danger : isDefender ? T.good : T.arrow;
             return (
-              <g key={i} opacity={op}>
+              <g key={i} opacity={op} style={{ transition: "opacity .5s ease" }}>
                 <line x1={x1} y1={y1} x2={bx} y2={by} stroke={col} strokeWidth={w} strokeLinecap="round" />
                 <polygon points={pts} fill={col} />
               </g>
@@ -3811,8 +3944,18 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       const mkPosEval = (ev) => ev.mate != null
         ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
         : { cp: ev.cp * baseWhite };
+      // (버그 수정) 이 콜백이 예전엔 이 effect 실행(generation) 하나에만 묶인 `cancelled` 플래그로
+      // 막았는데, 바로 아래 cache.multiPromise/extraKey 가드가 "같은 포지션이면 진행 중인 요청을
+      // 이어받아 재사용"하도록 설계돼 있어(중복 요청 방지) 실제 엔진 작업은 여러 번의 effect 재실행
+      // (moves.length가 점진적으로 채워지며 자주 재실행됨)을 가로질러 계속 살아있다 — 그런데 그
+      // 작업을 처음 만든 특정 실행이 재실행으로 정리(cleanup)되며 그 실행의 cancelled만 true가 되면,
+      // 이 콜백은 그 뒤로 영원히 아무 일도 안 하는 채로 조용히 죽어버렸다(엔진은 계속 depth를 파고
+      // 있는데도 평가치 바·"n수 후까지 탐색 중" depth 표시만 그 시점에서 멈춘 것처럼 보임 — 특히
+      // 5초짜리 심화 탐색 도중 moves.length가 바뀌기 쉬워 눈에 띄게 됐다). streamLines와 동일하게
+      // "지금도 같은 포지션인가"(posCacheRef.current.key !== key)만으로 판단해, 어느 실행이 이
+      // 콜백을 만들었든 포지션이 그대로인 한 계속 살아있게 한다.
       const onEvalProgress = (partial) => {
-        if (cancelled || !partial) return;
+        if (posCacheRef.current.key !== key || !partial) return;
         setPosEval(mkPosEval(partial));
         bumpDepth(partial.depth);
       };
@@ -3852,9 +3995,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       }))).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
+      // (기능) 사용자 요청으로 MultiPV를 7→5로 더 낮춘다 — 순위가 늘어날수록 노드당 비용이 커져
+      // 목표 depth(20)에 도달하기 더 어려워지므로, 후보 수 보충(아래)에 필요한 최소치만 남긴다.
       // (v0.2.4 성능) slot="learn-lines" — 빠르게 다음/이전 수로 넘기면 이전 포지션의 계산이 아직 큐에
       // 남아 있어도 즉시 중단되고 지금 포지션의 요청이 바로 시작된다(더 이상 순서대로 밀리지 않음).
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 7, 700, onEvalProgress, streamLines, "learn-lines");
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 5, 700, onEvalProgress, streamLines, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -3865,6 +4010,30 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (버그 수정) 위 linesPending 주석 참고 — 이 포지션의 결과가 나온 시점(빈 배열이어도, 예: 외통
       // 직전 포지션)에만 실제로 engineLines를 교체하고 "계산 중" 표시를 끈다.
       setEngineLines(lines);
+      // (기능) 사용자 요청 — 엔진 라인·평가치·수 체계 아이콘을 전부 기존 movetime(700ms) 안에 먼저
+      // 확정해 화면이 바로 반응하게 한 다음, 이 자리에서 추가로 5초("extra movetime")를 더 들여
+      // 같은 포지션을 목표 depth(20)까지 더 깊이 파본다. 스톡피시는 "go" 명령 사이에도 치환
+      // 테이블(Hash)이 그대로 남아 있으므로, 이 두 번째 탐색은 사실상 처음부터 다시 하는 게 아니라
+      // 얕은 depth는 대부분 캐시 적중으로 순식간에 훑고 지나가 방금 700ms 안에 못 갔던 더 깊은
+      // depth부터 실질적으로 이어간다. 같은 slot("learn-lines")을 그대로 써서, 사용자가 다른
+      // 수·포지션으로 넘어가 이 effect가 다시 실행되면(key가 바뀌어 새 요청이 같은 slot으로 들어옴)
+      // 아직 안 끝난 5초 심화 탐색은 evaluateMulti의 supersede로 자동 중단된다. moves.length 변화로
+      // 이 effect가 같은 포지션에서 여러 번 재실행돼도(비이론 수 보충 등) posCacheRef에 시작 여부를
+      // 남겨 심화 탐색이 한 포지션당 한 번만 시작되게 한다.
+      if (cache.extraKey !== key) {
+        cache.extraKey = key;
+        engine.evaluateMulti(sansToFen(sans), 20, 5, 5000, onEvalProgress, streamLines, "learn-lines").then((deepPvs) => {
+          if (posCacheRef.current.key !== key || !deepPvs || !deepPvs.length) return;
+          setPosEval(mkPosEval(deepPvs[0]));
+          const deepLines = toLines3(deepPvs);
+          setEngineLines(deepLines);
+          if (deepLines.length) {
+            const deepEvBySan = {};
+            deepLines.forEach((l) => { if (l.sans && l.sans.length) deepEvBySan[stripSuffix(l.sans[0])] = l.ev; });
+            setMoves((prev) => prev.map((m) => { const hit = deepEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+          }
+        }).catch(() => {});
+      }
       setLinesPending(false);
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
@@ -4010,7 +4179,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const tiled = useMemo(() => {
     const seen = new Set();
     const uniq = moves.filter((m) => { const k = stripSuffix(m.san); if (seen.has(k)) return false; seen.add(k); return true; });
-    let t = assignTiers(uniq, ply, board, key).map((m) => {
+    let t = assignTiers(uniq, ply, board, key, sans).map((m) => {
       const mainMain = isMainline(key, m.san) ? { isMain: true } : {};
       const nm = nameOverride(key, m.san); const kwo = kwOverride(key, m.san);
       return { ...m, ...mainMain, ...(nm !== null ? { name: nm } : {}), ...(kwo ? { kw: kwo } : {}), disp: decorateSan(board, m.san, color) };
@@ -4161,6 +4330,24 @@ function brilliantArrows(sans, san) {
   if (mover) for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const t = after[r][c]; if (t && t.c === enemy && t.t !== "P" && canMove(after, mover.t, color, tr, tc, r, c, true)) out.push({ from: [tr, tc], to: [r, c], kind: "idea" }); }
   return out.slice(0, 6);
 }
+// (기능) 탁월한 수(희생) 뒤 "기물 점수를 되찾을 수 있는지" 엔진 PV로 판단하던 로직을 지우는 대신,
+// color 진영의 기물 중 지금 상대에게 안전하게 잡힐 수 있는(SEE상 순손실이 나는) 기물 전부를 찾아,
+// 그 각각을 실제로 잡을 수 있는 상대 기물마다 화살표 하나씩을 만든다 — "이후 수순을 두면 기물을
+// 되찾는다"는 텍스트 설명 대신, 지금 당장 무엇이 위험한 상태인지를 보드 위에서 직접 보여준다.
+function hangingPieceArrows(board, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== color || p.t === "K") continue;
+    if (!(seeSquare(board, r, c, enemy) > 0 && canCaptureSquareLegally(board, r, c, enemy))) continue;
+    for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+      const ap = board[rr][cc]; if (!ap || ap.c !== enemy) continue;
+      const can = ap.t === "P" ? (Math.abs(cc - c) === 1 && (enemy === "w" ? rr === r - 1 : rr === r + 1)) : canMove(board, ap.t, enemy, rr, cc, r, c, true);
+      if (can) out.push({ from: [rr, cc], to: [r, c], kind: "danger" });
+    }
+  }
+  return out;
+}
 // (v0.2.2 기능) 탁월한 수의 코치 설명에 "어떤 기물을 희생했는지" 명시하기 위한 헬퍼 — 방금 이동한
 // 기물 자신이 그 도착 칸에서 공격받고 있으면(직접 희생) 그 기물을, 그렇지 않으면(다른 기물을 방치한
 // "방치 희생") 지금 가장 크게 걸려 있는 기물을 찾아 그 기물의 한글 이름을 반환한다. 언더프로모션 등
@@ -4183,6 +4370,1070 @@ function sacrificedPieceKor(sans, san) {
   }
   if (best) return PIECE_KOR[best];
   return mover ? PIECE_KOR[mover.t] : null;
+}
+// (버그 수정) PIECE_KOR 값("킹"·"퀸"·"룩"·"비숍"·"폰"은 받침 있음, "나이트"만 받침 없음)에 조사를
+// 하드코딩해 붙이면(예: 항상 "를") 받침 있는 기물 이름에는 "룩를"처럼 문법이 깨졌다 — 유니코드
+// 완성형 한글의 마지막 글자 코드로 받침 유무를 계산해 조사를 올바르게 골라 붙인다.
+function hasBatchim(word) {
+  if (!word) return false;
+  const code = word.charCodeAt(word.length - 1);
+  if (code < 0xAC00 || code > 0xD7A3) return false; // 한글 완성형 범위 밖(숫자·영문 등)이면 받침 없는 쪽으로
+  return (code - 0xAC00) % 28 !== 0;
+}
+const josaIGa = (w) => w + (hasBatchim(w) ? "이" : "가");
+const josaEunNeun = (w) => w + (hasBatchim(w) ? "은" : "는");
+const josaEulReul = (w) => w + (hasBatchim(w) ? "을" : "를");
+const josaGwaWa = (w) => w + (hasBatchim(w) ? "과" : "와");
+// (기능) 탁월한 수의 세 갈래 유형 판정 — isSacrifice가 이미 참으로 확인한 수에 대해서만 호출되므로,
+// 그 판정 안의 예외 처리(hasSaferSquare 등)를 다시 반복할 필요 없이 "직접 희생"(움직인 기물 자신이
+// 도착 칸에서 순손실을 내는가)과 "방치 희생"(다른 기물을 그대로 걸어 둔 채 더 급한 일을 하는가)을
+// 가르는 조건식만 그대로 재사용해 어느 쪽인지 가려낸다. 언더프로모션은 항상 별도 갈래.
+function brilliantSubtype(board, sanRaw, color) {
+  if (/=/.test(sanRaw) && !/=Q/.test(sanRaw)) return { type: "underpromo" };
+  const info = sanSrc(board, sanRaw, color);
+  if (!info) return { type: "direct", piece: null };
+  const [tr, tc] = info.to;
+  const capturedVal = info.isCap ? (board[tr][tc] ? VAL[board[tr][tc].t] : 1) : 0;
+  const after = applySan(board, sanRaw, color);
+  const enemy = color === "w" ? "b" : "w";
+  let oppGain = seeSquare(after, tr, tc, enemy);
+  const ekp = kingPos(after, enemy);
+  if (oppGain > 0 && ekp && isAttacked(after, ekp[0], ekp[1], color) && !canCaptureSquareLegally(after, tr, tc, enemy)) oppGain = 0;
+  const net = capturedVal - oppGain;
+  if (!info.castle && info.piece !== "P" && net <= -1) {
+    const mover = after[tr][tc];
+    // "교환 희생" — 룩으로 상대의 지켜진 나이트·비숍을 그냥 잡아 곧바로 되잡히는, 룩-마이너 교환.
+    // 여러 수에 걸친 막연한 "희생"이 아니라 그 자리에서 바로 완결되는 구체적인 교환이므로 별도
+    // 갈래로 구분한다.
+    const capturedPiece = board[tr][tc];
+    if (mover && mover.t === "R" && capturedPiece && (capturedPiece.t === "N" || capturedPiece.t === "B")) {
+      return { type: "exchangeSac", give: "R", get: capturedPiece.t };
+    }
+    return { type: "direct", piece: mover ? mover.t : info.piece };
+  }
+  const { sq: afterHangSq } = hangingLossSq(after, color, [tr, tc]);
+  const hangPiece = afterHangSq ? after[afterHangSq[0]][afterHangSq[1]] : null;
+  // "교환 희생"의 방치형 — 내 룩이 상대 나이트·비숍에게 공격당하고 있는데 구하지 않고 다른 급한
+  // 일을 해, 그 룩이 마이너 기물과 교환되도록 놔두는 경우도 같은 갈래로 묶는다.
+  if (hangPiece && hangPiece.t === "R") {
+    const attacker = lva(after, afterHangSq[0], afterHangSq[1], enemy);
+    if (attacker && (attacker.t === "N" || attacker.t === "B")) return { type: "exchangeSac", give: "R", get: attacker.t };
+  }
+  return { type: "neglect", piece: hangPiece ? hangPiece.t : null };
+}
+// (기능) 언더프로모션이 왜 퀸이 아닌지 — 퀸으로 승진했다면 상대가 둘 수 있는 합법수가 아예 없어져
+// 스테일메이트가 되는지(=무승부를 피하려 일부러 덜 강한 기물로 승진), 또는 퀸으로 승진한 자리가
+// 바로 잡히는데 실제로 고른 기물의 자리는 안전한지(=잡히지 않기 위한 선택) 두 가지 원인만 실제로
+// 국면을 재구성해 확인한다. 둘 다 아니면 원인을 특정하지 않고 null을 돌려준다.
+function underpromoReason(board, sanRaw, color) {
+  const info = sanSrc(board, sanRaw, color);
+  if (!info || !info.promo) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const [sr, sc] = info.from, [dr, dc] = info.to;
+  const qBoard = board.map((row) => row.slice());
+  qBoard[dr][dc] = { c: color, t: "Q" }; qBoard[sr][sc] = null;
+  if (!hasAnyLegalMove(qBoard, enemy) && !isInCheck(qBoard, enemy)) return "stalemate";
+  if (seeSquare(qBoard, dr, dc, enemy) > 0 && canCaptureSquareLegally(qBoard, dr, dc, enemy)) {
+    const actual = applySan(board, sanRaw, color);
+    if (!(seeSquare(actual, dr, dc, enemy) > 0 && canCaptureSquareLegally(actual, dr, dc, enemy))) return "safety";
+  }
+  return null;
+}
+// (기능) 이미 불리하던 상황에서 둔 희생이라면, 같은 자연스러운 응수 흐름을 따라가며 그 안에
+// 스테일메이트나 3회 동형 반복으로 실제 무승부가 되는 지점이 있는지 확인한다 — 있다면 "정상적으로
+// 두면 계속 밀릴 뿐이라 무승부를 강제해야 했던 수"라는 구체적인 근거가 된다.
+async function brilliantDrawSeekLine(engine, sansAfterMove, slot) {
+  if (!engine || typeof engine.evaluate !== "function") return null;
+  const line = await genPunishLine(engine, sansAfterMove, 8, 900, slot);
+  if (!line.length) return null;
+  let cur = sansAfterMove.slice();
+  for (let i = 0; i < line.length; i++) {
+    cur = [...cur, line[i]];
+    const end = gameEndState(cur).end;
+    if (end === "stalemate" || end === "threefold") return { end, line: line.slice(0, i + 1) };
+  }
+  return null;
+}
+// (기능) 탁월한 수 설명 — 먼저 세 유형(직접 희생/방치 희생/언더프로모션) 중 어느 쪽인지 능동적인
+// 문장으로 밝힌다. (버그 수정) "기물 점수를 되찾는 수순을 엔진 PV로 찾아 설명"하던 로직은 지웠다 —
+// 몇 수 앞선 엔진 PV만으로 실제 회수 여부를 판단하기엔 근거가 얕았고, 대신 지금 상대에게 안전하게
+// 잡힐 수 있는 기물 전부를 ReviewPage가 보드 위에 붉은 화살표로 직접 보여준다(hangingPieceArrows).
+// 텍스트로는 장기적인 포지션 이득으로 상대의 기물 희생을 강제할 수 있다는 일반적인 근거만 남긴다.
+// 이미 불리하던 상황이었다면 무승부를 노린 수인지 먼저 확인해 그쪽을 우선 설명한다. 마지막으로 이
+// 수가 엔진의 1순위 수가 아니었다면(notBest) 그 사실도 덧붙인다. 기호는 마침표·쉼표만 쓴다.
+async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosing, notBest, slot) {
+  const board = boardFromSans(sansBeforeMove);
+  const sub = brilliantSubtype(board, san, color);
+  const sansAfterMove = [...sansBeforeMove, san];
+  let typeSentence;
+  if (sub.type === "underpromo") {
+    const info = sanSrc(board, san, color);
+    const promoKor = PIECE_KOR[(info && info.promo) || "N"] || "기물";
+    const reason = underpromoReason(board, san, color);
+    if (reason === "stalemate") typeSentence = "퀸으로 승진하면 상대가 둘 수 있는 합법수가 없어져 스테일메이트로 무승부가 되므로, 대신 " + josaEulReul(promoKor) + " 골라 승진하는 수예요";
+    else if (reason === "safety") typeSentence = "퀸으로 승진하면 곧바로 잡히지만 " + josaEunNeun(promoKor) + " 안전하게 남을 수 있어, 대신 " + josaEulReul(promoKor) + " 골라 승진하는 수예요";
+    else typeSentence = "퀸이 아닌 " + josaEulReul(promoKor) + " 골라 승진하는, 흔치 않은 감각의 수예요";
+  } else if (sub.type === "exchangeSac") {
+    typeSentence = josaGwaWa(PIECE_KOR[sub.give]) + " " + josaEulReul(PIECE_KOR[sub.get]) + " 교환하는 건 쉽지 않은 선택이지만, 지금 상황에선 탁월한 선택이에요";
+  } else if (sub.type === "neglect" && sub.piece) {
+    typeSentence = josaEulReul(PIECE_KOR[sub.piece]) + " 그대로 걸어 둔 채 그 위협을 무시하고, 대신 더 큰 이득을 얻어내는 수예요";
+  } else if (sub.piece) {
+    typeSentence = josaEulReul(PIECE_KOR[sub.piece]) + " 내주는 과감한 희생으로, 눈앞의 손해를 감수하고 더 큰 것을 노리는 수예요";
+  } else {
+    typeSentence = "눈에 보이는 손해를 감수하면서까지 더 큰 것을 노리는, 찾기 쉽지 않은 수예요";
+  }
+  let reasonSentence = null;
+  if (alreadyLosing) {
+    try {
+      const drawSeek = await brilliantDrawSeekLine(engine, sansAfterMove, slot);
+      if (drawSeek) {
+        const endKor = drawSeek.end === "stalemate" ? "스테일메이트" : "3회 동형 반복";
+        reasonSentence = "이미 불리하던 상황에서 그대로 두면 계속 밀릴 뿐이라, " + drawSeek.line.join(" ") + " 수순으로 " + endKor + "를 만들어 무승부를 강제해야 했던 수예요";
+      }
+    } catch { }
+  }
+  let text = reasonSentence ? typeSentence + ". " + reasonSentence + "." : typeSentence + ".";
+  if (notBest) text += " 참고로 엔진이 고른 최선의 수는 아니지만, 찾기 힘든 감각적이고 탁월한 수예요.";
+  return text;
+}
+
+/* ============================================================ 자체 포지션 평가 AI (FEN·PGN 결합) ============================================================
+   Stockfish 기반 수 등급 판정(brilliant~blunder)은 그대로 유지한다 — 이 평가 체계는 그 등급을
+   대체하지 않고, MILKU·KOKOA의 코멘트에 "왜 그런지" 근거를 덧붙이는 보조 신호로만 쓴다. 세 갈래를
+   하나의 사실 목록으로 합친다.
+   1) FEN 기반 — 기물 점수차(materialDiff, 기존 함수 재사용), 기물 긴장(양쪽에서 지금 안전하게
+      잡힐 수 있는 기물 전체 — 위 sacrificedPieceKor가 쓰는 seeSquare+canCaptureSquareLegally
+      탐색과 같은 원리지만, 가장 큰 손실 하나만 보지 않고 양쪽 전부를 모은다).
+   2) PGN 기반 — 기물별 이동 횟수(미개발 기물 파악), 캐슬링/앙파상 권리(replaySans가 이미 누적
+      계산해 두는 값을 그대로 재사용).
+   3) 나쁜 수 이후 — 상대의 응징 수순(새 엔진 로직을 만들지 않고 기존 genPunishLine 재사용).
+*/
+// FEN 기반 — 기물 긴장. color 진영과 상대 진영 양쪽에서 지금 SEE상 순손실(>0)이 나는(=안전하게
+// 잡힐 수 있는) 기물을 전부 모은다.
+function tensionFacts(board, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const mine = [], theirs = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.t === "K") continue;
+    if (p.c === color) {
+      const loss = seeSquare(board, r, c, enemy);
+      if (loss > 0 && canCaptureSquareLegally(board, r, c, enemy)) mine.push({ sq: [r, c], piece: p.t, val: loss });
+    } else {
+      const gain = seeSquare(board, r, c, color);
+      if (gain > 0 && canCaptureSquareLegally(board, r, c, color)) theirs.push({ sq: [r, c], piece: p.t, val: gain });
+    }
+  }
+  mine.sort((a, b) => b.val - a.val); theirs.sort((a, b) => b.val - a.val);
+  return { mine, theirs };
+}
+// 캐슬링/앙파상 권리 — replaySans가 매 수마다 이미 누적 계산해 두는 rights/ep를 그대로 재사용한다
+// (sansToFen과 같은 캐시를 공유하므로 별도 재계산 비용이 거의 없다).
+function castleEpFacts(sans, color) {
+  const { rights, ep } = replaySans(sans);
+  const enemy = color === "w" ? "b" : "w";
+  const mineHas = color === "w" ? (rights.K || rights.Q) : (rights.k || rights.q);
+  const enemyHas = enemy === "w" ? (rights.K || rights.Q) : (rights.k || rights.q);
+  return { myCastleRights: mineHas, enemyCastleRights: enemyHas, epAvailable: !!ep };
+}
+// 나쁜 수(실수·블런더·놓친 기회) 다음 상대의 응징 수순 — 새 엔진 로직을 따로 만들지 않고 이미 있는
+// genPunishLine(엔진 최선 연쇄 n수)을 그대로 재사용한다. 엔진이 없으면 빈 배열(호출부가 넘기는
+// 값은 useEngine 인스턴스뿐 아니라 getAnalysisPool의 워커 래퍼일 수도 있어 status 필드가 없을 수
+// 있다 — evaluate 메서드 존재 여부만 확인한다).
+async function punishmentFacts(engine, sansAfterMove, plies = 2) {
+  if (!engine || typeof engine.evaluate !== "function") return [];
+  try { return await genPunishLine(engine, sansAfterMove, plies, 900, "review-punish"); } catch { return []; }
+}
+// (버그 수정) useEngine 훅이 돌려주는 인스턴스와 getAnalysisPool의 워커 래퍼는 evaluateMulti
+// 인자 순서가 다르다 — 전자는 (fen,depth,multipv,movetime,onProgress,onLines,slot) 7개, 후자는
+// onProgress가 아예 없는 (fen,d,multipv,mt,onLines,slot) 6개. 이 차이를 모르고 그대로 호출하면
+// slot 문자열이 워커 래퍼에서는 onLines 자리에 들어가 나중에 함수처럼 호출되며 크래시할 수 있다
+// (undefined가 아니라 실제 문자열이 그 자리에 들어가므로). useEngine 인스턴스만 갖는 status
+// 필드로 두 종류를 구분해 각자 맞는 인자 개수로 호출한다.
+function callEvaluateMulti(engine, fen, depth, multipv, movetime, slot) {
+  if ("status" in engine) return engine.evaluateMulti(fen, depth, multipv, movetime, undefined, undefined, slot);
+  return engine.evaluateMulti(fen, depth, multipv, movetime, undefined, slot);
+}
+// (기능) "유일한 수" 코멘트 보강 — "다른 수는 안 돼요"라고만 말하면 설명력이 없어, 실제 2순위
+// 후보를 뒀다면 상대가 어떻게 응징하는지까지 보여준다. 2순위 수의 UCI 자체는 analyzeGame의
+// posEval에 저장돼 있지 않아(cp만 보존) 새로 MultiPV-2 평가가 필요하지만, 그다음 응징 라인은
+// 새 로직을 만들지 않고 punishmentFacts와 똑같이 genPunishLine을 재사용한다.
+async function onlyMoveRefutation(engine, sansBeforeMove, plies = 2) {
+  if (!engine || typeof engine.evaluateMulti !== "function") return null;
+  try {
+    const color = sansBeforeMove.length % 2 === 0 ? "w" : "b";
+    const lines = await callEvaluateMulti(engine, sansToFen(sansBeforeMove), 14, 2, 900, "review-only");
+    const second = lines && lines[1];
+    if (!second || !second.uci) return null;
+    const altSan = uciToSan(boardFromSans(sansBeforeMove), second.uci, color);
+    if (!altSan) return null;
+    const continuation = await genPunishLine(engine, [...sansBeforeMove, altSan], plies, 900, "review-only");
+    if (!continuation.length) return null;
+    return { altSan: stripSuffix(altSan), continuation };
+  } catch { return null; }
+}
+
+/* ============================================================ MEC — Move Evaluation Codification (FEN·PGN 기반 재구축) ============================================================
+   (재설계) 처음엔 "오프닝 원칙 위반 여부"를 판정했는데, 실전에서 문제가 드러났다 — 퀸이 나이트에게
+   그냥 잡히는 블런더에 "공격받지도 않는 룩 걱정에 폰 뒤에 숨어라"는 무관한 원칙을 갖다 붙이는 식으로,
+   추상적인 원칙과 실제 이 수의 인과관계가 없는데도 마치 원인인 것처럼 보였다. 그래서 "원칙 위반
+   판정" 접근을 버리고, 이 수가 실제로 만들어내는 구체적인 사실만 코드화하는 쪽으로 다시 세웠다 —
+   판정(옳다/그르다)이 아니라 사실(FEN상 지금 뭘 위협·방어하는지, PGN상 몇 수를 썼는지)만 보여주고,
+   해석은 그 사실들의 우선순위(아래 순서)로 자연스럽게 드러나게 한다. 예: 블런더의 원인은 대개
+   tensionFacts(진짜 걸린 기물)가 최상위로 이미 말해주므로, 더 이상 무관한 스타일 조언이 끼어들
+   여지가 없다.
+   1) FEN — 기물 긴장(tensionFacts, 최우선 — 진짜 걸린 기물이야말로 대부분의 블런더의 실제 원인).
+   2) FEN — 회피·반격(evasionFact, 아래) — 걸려 있던 고가치 기물을 안전한 칸으로 옮기면 회피,
+      그러면서 상대의 동가·고가 기물까지 새로 노리면 반격.
+   3) FEN — 이 수가 새로 만든 위협·방어(controlFacts, 아래) — "비숍이 이제 f7을 노린다", "이 수가
+      위태롭던 폰을 미리 지킨다" 같은, 이동한 기물의 실제 공격/방어 범위에 근거한 사실.
+   4) PGN — 템포 낭비(tempoWasteFact, 아래) — 한 번에 갈 수 있던 폰을 두 수에 나눠 감.
+   5) PGN — 캐슬링/앙파상은 판정 없이 정보로만(권리를 잃었다/퀸사이드라 a폰이 약하다).
+   여러 수에 걸친 기물 재배치 계획(엔진 PV 기반)은 매 수 엔진을 새로 돌려야 해 비용이 커서, 코치
+   카드에 자동으로 붙이지 않고 온디맨드 기능으로 따로 둔다(아직 미구현).
+   각 사실은 매번 같은 문장이면 기계적으로 들려서(MEC_PHRASES) 여러 표현을 두고 ply로 순환시킨다.
+*/
+const MEC_OPENING_PLY_LIMIT = 24; // 한 진영 기준 12수 안팎 — 캐슬링 권리 상실 안내는 이 구간에서만.
+// FEN 기반 — 이 수가 새로 만든 통제력. 이동한 기물이 도착 칸에서 실제로 공격 가능한 칸들을 훑어,
+// 상대 기물이면 위협(SEE상 순이득이 있을 때만 — 그냥 막혀 있는 공격은 위협이 아니다), 내 기물이면
+// "이 수 덕분에 새로 안전해졌는지"(이 수 전엔 뺏길 수 있었는데 지금은 아님)만 방어로 인정한다.
+function controlFacts(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle) return { threats: [], defends: [] };
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  const mover = after[tr][tc];
+  if (!mover) return { threats: [], defends: [] };
+  const threats = [], defends = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const controllable = mover.t === "P"
+      ? (Math.abs(c - tc) === 1 && (color === "w" ? r === tr - 1 : r === tr + 1))
+      : canMove(after, mover.t, color, tr, tc, r, c, true);
+    if (!controllable) continue;
+    const target = after[r][c];
+    if (target && target.c === enemy && target.t !== "K") {
+      if (seeSquare(after, r, c, color) > 0) threats.push({ sq: [r, c], piece: target.t });
+    } else if (target && target.c === color) {
+      const wasWeak = seeSquare(before, r, c, enemy) > 0;
+      const stillWeak = seeSquare(after, r, c, enemy) > 0;
+      if (wasWeak && !stillWeak) defends.push({ sq: [r, c], piece: target.t });
+    }
+  }
+  return { threats, defends };
+}
+// PGN 기반 — 시작 위치 기물마다 "색+종류+시작칸" id를 부여하고 수순 전체를 다시 재생하며 몇 번
+// 움직였는지 센다(sansToUci와 동일한 재생 방식 — 캐슬링은 킹·룩 둘 다 세고, 프로모션은 같은 기물의
+// 정체성을 유지한 채 승격). id는 곧 "시작 칸"이므로, 한 번도 안 움직인 기물은 counts에 없다. grid도
+// 함께 돌려줘(현재 각 칸에 놓인 기물의 id) 아래 MEC 판정이 "이 기물이 몇 번째로 움직이는 건지"를
+// 이 수를 두기 직전 상태 기준으로 바로 조회할 수 있게 한다. firstMovePly는 그 기물이 시작 칸을 처음
+// 떠난 수의 인덱스(그 시점 보드를 재구성해, "그때 곧장 지금 칸으로 갈 수 있었는지" 같은 판정에 쓴다).
+function pieceMoveState(sans) {
+  let board = startBoard();
+  const grid = {};
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p) grid[r + "," + c] = p.c + p.t + sqName(r, c); }
+  const counts = {}, firstMovePly = {};
+  const bump = (id, ply) => { if (!id) return; if (!counts[id] && ply != null) firstMovePly[id] = ply; counts[id] = (counts[id] || 0) + 1; };
+  sans.forEach((s, i) => {
+    const color = i % 2 === 0 ? "w" : "b";
+    const info = sanSrc(board, s, color);
+    if (!info) return;
+    if (info.castle) {
+      const rank = color === "w" ? 7 : 0;
+      const kFrom = rank + ",4", kTo = rank + "," + (info.castle === "k" ? 6 : 2);
+      const rFrom = rank + "," + (info.castle === "k" ? 7 : 0), rTo = rank + "," + (info.castle === "k" ? 5 : 3);
+      bump(grid[kFrom], i); bump(grid[rFrom], i);
+      grid[kTo] = grid[kFrom]; delete grid[kFrom];
+      grid[rTo] = grid[rFrom]; delete grid[rFrom];
+    } else {
+      const [fr, fc] = info.from, [tr, tc] = info.to;
+      const fromKey = fr + "," + fc, toKey = tr + "," + tc;
+      bump(grid[fromKey], i);
+      grid[toKey] = grid[fromKey]; delete grid[fromKey];
+    }
+    board = applySan(board, s, color);
+  });
+  return { grid, counts, firstMovePly }; // counts: id("wNb1" 등) -> 움직인 횟수, grid: "r,c" -> 그 칸의 현재 id
+}
+// PGN 기반 — 템포 낭비(폰). (재설계) 예전엔 같은 폰의 "두 번째" 전진마다 매번 "그때 두 칸 갈 수 있었다"고 지적했는데, 이러면
+// 낭비를 저지른 그 수(첫 전진)가 아니라 한참 뒤 무관한 후속 수에마다 반복해서 붙는 게 어색하고, 첫
+// 전진이 상대 기물을 쫓아내는 등 실질적인 이득이 있었어도(예: 진짜로는 좋은 수인데도) 무조건 낭비로
+// 몰았다. 이제 "두 칸 갈 수 있었는데 한 칸만 간 바로 그 수"에만, 그리고 그 수 자체가 이미 나쁜 등급
+// (kind)이고 상대 기물을 쫓아내는 등 새 위협을 전혀 만들지 않았을 때만 붙인다 — 좋은 수거나 뭔가를
+// 얻어낸 수라면 애초에 "낭비"라고 부를 수 없다.
+function tempoWasteFact(sansBeforeMove, san, color, kind) {
+  if (MEC_GOOD_KINDS.includes(kind)) return null; // 좋은 수엔 낭비랄 게 없다
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.piece !== "P" || info.isCap || info.castle) return null;
+  const [fr, fc] = info.from, [tr, tc] = info.to;
+  const startRank = color === "w" ? 6 : 1;
+  if (fr !== startRank || Math.abs(tr - fr) !== 1) return null; // 홈 랭크에서 한 칸만 나간 이동만 대상
+  const dir = color === "w" ? -1 : 1;
+  const twoStepR = fr + 2 * dir;
+  if (board[twoStepR] && board[twoStepR][fc]) return null; // 두 칸째가 애초에 막혀 있었으면 낭비가 아니다
+  const ctrl = controlFacts(sansBeforeMove, san, color);
+  if (ctrl.threats.length) return null; // 상대 기물을 쫓아내는 등 새 위협을 만들었다면 낭비가 아니다
+  return { kind: "tempo" };
+}
+// PGN 기반 — 나이트·비숍의 비효율적인 전개(템포 낭비). 이미 한 번 이상 움직인 기물이 이번 수로
+// (1) 정확히 자기 시작 칸으로 되돌아가거나(개발한 걸 완전히 무르는 것), (2) 상대 폰에게 쫓겨(그
+// 폰이 지금 이 기물이 있던 칸을 공격 중이라 밀려난 것) 다른 칸으로 옮기는데, 그 도착 칸이 사실
+// 시작 칸에서 곧장 한 수만에 갈 수 있는 자리였다면(=시작 칸을 처음 떠난 그 순간의 보드를 다시
+// 만들어 확인) — 상대에게 폰 한 수로 템포를 거저 내주며 같은 자리에 두 수를 들여 도착한 셈이다.
+// 좋은 수(kind가 이미 좋음)면 그럴 만한 이유가 있었을 가능성이 높으므로 지적하지 않는다.
+function pieceDetourFact(sansBeforeMove, san, color, kind) {
+  if (MEC_GOOD_KINDS.includes(kind)) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.castle || !["N", "B"].includes(info.piece)) return null;
+  const { grid, counts, firstMovePly } = pieceMoveState(sansBeforeMove);
+  const id = grid[info.from[0] + "," + info.from[1]];
+  if (!id || !counts[id]) return null; // 이 기물의 첫 이동이면 대상이 아니다
+  const originSq = id.slice(2); // "wNb1" -> "b1"
+  const originC = FILES.indexOf(originSq[0]), originR = 8 - parseInt(originSq[1], 10);
+  const [fr, fc] = info.from, [tr, tc] = info.to;
+  if (tr === originR && tc === originC) return { kind: "returned", piece: info.piece };
+  const enemy = color === "w" ? "b" : "w";
+  const dir = enemy === "w" ? -1 : 1; // 상대 폰이 전진하는 방향
+  const pr = fr - dir;
+  const chasedByPawn = (fc > 0 && board[pr] && board[pr][fc - 1] && board[pr][fc - 1].c === enemy && board[pr][fc - 1].t === "P")
+    || (fc < 7 && board[pr] && board[pr][fc + 1] && board[pr][fc + 1].c === enemy && board[pr][fc + 1].t === "P");
+  if (!chasedByPawn) return null;
+  const ply = firstMovePly[id];
+  if (ply == null) return null;
+  const originBoard = boardFromSans(sansBeforeMove.slice(0, ply));
+  const directCap = !!originBoard[tr][tc];
+  if (!canMove(originBoard, info.piece, color, originR, originC, tr, tc, directCap)) return null;
+  return { kind: "detour", piece: info.piece };
+}
+// FEN 기반 — 회피/반격. 가치가 높은(폰 제외) 내 기물이 이 수를 두기 전부터 SEE상 걸려 있었는데,
+// 이 수가 바로 그 기물을 움직여 더 이상 안전하게 잡히지 않는 칸으로 옮겼다면 "회피". 그 와중에
+// 도착 칸에서 상대의 가치가 같거나 더 높은 기물을 SEE상 이득 있게 새로 노린다면 한 단계 더 적극적인
+// FEN 기반 — 단순 되잡기. 상대의 직전 수가 어떤 칸에서 캡처였고, 이번 수도 같은 칸을 잡는
+// 캡처라면 "기물을 교환한 것뿐"이라는 가장 직관적인 이유를 짚어준다. 되잡을 수 있는 내 기물이
+// 이 자리 하나뿐이면(대안이 없어 굳이 설명할 필요가 없을 만큼 명백한 수) onlyCandidate를 함께
+// 돌려준다 — "유일한 수" 등급 판정이 이런 수를 제외하는 데 재사용한다.
+function recaptureFact(sansBeforeMove, san, color) {
+  if (!sansBeforeMove.length) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const lastSan = sansBeforeMove[sansBeforeMove.length - 1];
+  const prevBoard = boardFromSans(sansBeforeMove.slice(0, -1));
+  const oppInfo = sanSrc(prevBoard, lastSan, enemy);
+  if (!oppInfo || !oppInfo.isCap) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || !info.isCap || info.castle) return null;
+  if (info.to[0] !== oppInfo.to[0] || info.to[1] !== oppInfo.to[1]) return null;
+  const captured = board[info.to[0]][info.to[1]];
+  if (!captured) return null; // 이 수 자체가 앙파상이면(도착 칸이 비어 있음) 대상 아님
+  const onlyCandidate = countLegalCapturesOnSquare(board, info.to[0], info.to[1], color) === 1;
+  return { piece: info.piece, capturedPiece: captured.t, onlyCandidate };
+}
+// "반격" — 그냥 도망만 간 게 아니라 되받아친 것이다.
+function evasionFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece === "P") return null;
+  const [fr, fc] = info.from, [tr, tc] = info.to;
+  if (seeSquare(before, fr, fc, enemy) <= 0) return null; // 애초에 걸려 있지 않았으면 회피가 아니다
+  // (R1/R2와의 역할 분리) 이 기물을 위협하는 상대의 최소가치 공격자가 이 기물과 같은 가치라면,
+  // 그건 일방적인 "위협"이 아니라 대등한 "교환 요청"(exchangeOfferFact) 상황이다 — 그 요청에
+  // 응하지 않고 물러나는 건 "위협을 피한다"가 아니라 "교환 요청을 거절한다"고 표현해야 하므로
+  // (exchangeOfferResponseFact가 담당), 여기서는 그 경우를 회피 판정에서 제외한다.
+  const mainAttacker = lva(before, fr, fc, enemy);
+  if (mainAttacker && VAL[mainAttacker.t] === VAL[info.piece]) return null;
+  const after = applySan(before, san, color);
+  if (seeSquare(after, tr, tc, enemy) > 0) return null; // 옮긴 자리도 여전히 잡히면 회피 실패
+  const mover = after[tr][tc];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const target = after[r][c];
+    if (!target || target.c !== enemy || target.t === "K") continue;
+    if (VAL[target.t] < VAL[mover.t]) continue;
+    if (!canMove(after, mover.t, color, tr, tc, r, c, true)) continue;
+    if (seeSquare(after, r, c, color) > 0) return { kind: "counter", piece: info.piece, target: target.t };
+  }
+  return { kind: "evade", piece: info.piece };
+}
+// FEN 기반 — 폰끼리 교환. 이 수가 폰으로 폰을 잡는 수(앙파상 포함)라면, 잡은 뒤 내 폰이 중앙에
+// 더 가까워졌는지(같은 자리 유지 포함)로 좋은/나쁜 선택을 가른다 — "폰 교환은 사이드에서 중앙
+// 쪽으로 하라"는 원칙을 SEE 없이 파일 거리만으로 그대로 코드화한 것.
+function pawnTradeFact(sansBeforeMove, san, color) {
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.piece !== "P" || !info.isCap || info.castle) return null;
+  const [tr, tc] = info.to;
+  const isEp = !board[tr][tc]; // 캡처인데 도착 칸이 비어 있으면 앙파상
+  const capturedR = isEp ? (color === "w" ? tr + 1 : tr - 1) : tr;
+  const captured = isEp ? { t: "P" } : board[tr][tc];
+  if (!captured || captured.t !== "P") return null; // 폰끼리 교환일 때만
+  const fromSq = FILES[info.from[1]] + (8 - info.from[0]);
+  const capturedSq = FILES[tc] + (8 - capturedR);
+  const fromDist = Math.abs(info.from[1] - 3.5), toDist = Math.abs(tc - 3.5);
+  return { fromSq, capturedSq, good: toDist <= fromDist };
+}
+// FEN 기반 — 상호 폰 긴장. 이 수(폰을 잡지 않는 전진)가 내 폰을 상대 폰과 서로 대각선으로 마주보게
+// 만들면(둘 다 서로를 잡을 수 있는 상태 — 아직 어느 쪽도 잡지 않은 순수 긴장) 그 자체를 사실로
+// 짚어준다. 폰의 대각선 캡처는 서로 마주보면 항상 상호적이라, 한쪽만 확인하면 된다.
+function pawnTensionFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.piece !== "P" || info.isCap || info.castle) return null;
+  const after = applySan(board, san, color);
+  const [tr, tc] = info.to;
+  const dir = color === "w" ? -1 : 1;
+  for (const dc of [-1, 1]) {
+    const er = tr + dir, ec = tc + dc;
+    if (er < 0 || er > 7 || ec < 0 || ec > 7) continue;
+    const target = after[er][ec];
+    if (target && target.c === enemy && target.t === "P") return true;
+  }
+  return false;
+}
+// 같은 사실을 매번 똑같은 문장으로만 말하면 기계적으로 들려서, 유형별로 여러 표현을 두고 이 수의
+// ply(=sansBeforeMove.length)로 순환시킨다(REVIEW_COACH_COPY가 등급별 코멘트를 ply로 순환시키는
+// 것과 같은 방식) — 매번 랜덤하게 바뀌진 않지만, 대국을 훑어보는 동안 문구가 다양해진다. 기물
+// 이름(PIECE_KOR)은 "나이트"만 받침이 없어 조사가 갈리므로, 직접 붙이지 않고 josa* 헬퍼를 쓴다.
+function mecPick(variants, seed) { return variants[((seed % variants.length) + variants.length) % variants.length]; }
+// FEN 기반 — 공짜 기물을 잡지 않고도 좋은 수. 상대의 방치된(공짜로 잡을 수 있는) 기물이 있는데
+// 이 수가 그걸 잡지 않았고, 그런데도 이 수의 Stockfish 등급이 나쁘지 않다면(MEC_GOOD_KINDS)
+// "잡지 않았지만 여전히 좋은 수"임을 짚어준다. bestSan(호출부가 activeMove.best로 넘김 — 실제
+// 둔 수가 엔진 최선수가 아닐 때만 채워짐)이 바로 그 기물을 잡는 수라면, 잡는 게 객관적으로
+// 최선이었다는 사실까지 구체적으로 밝힌다.
+const MEC_GOOD_KINDS = ["brilliant", "best", "only", "excellent", "good", "book"];
+function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan) {
+  if (!MEC_GOOD_KINDS.includes(kind)) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info) return null;
+  const hanging = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = before[r][c]; if (!p || p.c !== enemy || p.t === "K") continue;
+    if (seeSquare(before, r, c, color) > 0 && canCaptureSquareLegally(before, r, c, color)) hanging.push({ sq: [r, c], piece: p.t });
+  }
+  if (!hanging.length) return null;
+  const capturedThisSq = info.isCap ? info.to.join(",") : null;
+  const stillHanging = hanging.filter((h) => h.sq.join(",") !== capturedThisSq);
+  if (!stillHanging.length) return null; // 이 수가 이미 그 기물을 잡았다 — 해당 없음
+  let wasBestCapture = false;
+  if (bestSan) {
+    const bestInfo = sanSrc(before, bestSan, color);
+    if (bestInfo && bestInfo.isCap && stillHanging.some((h) => h.sq.join(",") === bestInfo.to.join(","))) wasBestCapture = true;
+  }
+  return { piece: stillHanging[0].piece, wasBestCapture };
+}
+// FEN 기반(재료 우위) + 등급 기반 — 기물 교환의 전략적 타당성. 동가 교환(N-N, B-B, R-R, Q-Q 등 —
+// 폰끼리 교환은 pawnTradeFact가 이미 다루므로 여기서는 뺀다)일 때, 이 수를 두기 전 기물 점수차로
+// 유리/불리를 가르고, 그 상황에서 교환하는 게 원칙적으로 맞는 선택인지를 실제 등급과 대조한다 —
+// 유리하면 교환은 단순화 전략으로 원래 좋고, 불리하면 원래 피해야 하지만 예외(최선 이상=불가피,
+// 우수/좋음=그래도 괜찮은 선택)를 인정한다. 등급이 그 기대와 어긋나면(유리한데 나쁜 교환, 불리한데
+// 나쁜 교환) 반대로 "목적 없는 교환"이었다는 신호로 본다.
+// (버그 수정) "이기고 있다/지고 있다"는 원래 실제 포지션 평가(승패 형세)를 뜻하는데, 예전엔
+// materialDiff(순수 기물 점수차)로만 판정했다 — 포지션이 확실히 유리해도(예: +0.7) 기물 점수 자체는
+// 팽팽하거나 살짝 밀리는 국면이 흔해서, 이기고 있는데도 "지고 있을 때는 교환을 피하는 게 좋다"는
+// 엉뚱한 문구가 나왔다. 이 수를 두기 직전 엔진 평가(beforeCp, mover 관점 — 양수면 이 수를 두는
+// 쪽이 유리)가 있으면 그걸로 유·불리를 가르고, 평가가 없을 때만(자유 탐색 등) materialDiff로 대체한다.
+function exchangeFact(sansBeforeMove, san, color, kind, beforeCp) {
+  if (!kind) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || !info.isCap || info.castle || info.piece === "P") return null;
+  const captured = board[info.to[0]][info.to[1]];
+  if (!captured || VAL[captured.t] !== VAL[info.piece]) return null; // 동가 교환일 때만
+  const diff = beforeCp != null ? beforeCp : materialDiff(board, color) * 100;
+  if (Math.abs(diff) < 40) return null; // 팽팽하면 유·불리 프레이밍이 적용되지 않는다
+  const ahead = diff > 0;
+  const good = MEC_GOOD_KINDS.includes(kind);
+  const strong = ["brilliant", "best", "only"].includes(kind);
+  return { ahead, good, strong };
+}
+/* ============================================================ MEC Reference(사용자 제공, 16수 기준) 반영 ============================================================
+   R1 교환 요청, R2 요청 수락/거절, R3·R11 재전개/재배치, R4 직접 예방 수, R5 다음 수 캐슬링 예고,
+   R6 전개 표현, R8 위협 대처/과보호, R9 간접 예방 수, R10 교환론, R12 캐슬링 전용 평가, R13 잠재 위협,
+   R14 오픈 파일, R15 폰 희생. R7(위협 밑줄+화살표 애니메이션)은 UI 성격이 달라 이번엔 제외.
+*/
+// R1 — 교환 요청. 이 수가(폰·킹 제외) 상대의 같은 가치 기물이 공격할 수 있는 칸으로 기물을 옮겼다면,
+// 그 상대 기물이 핀에 걸려 실제로는 못 잡는 특수한 경우가 아닌 한 이건 "위협"이 아니라 "교환
+// 요청"이다 — 잡히면 나도 똑같이 되잡을 수 있어 일방적인 위협이 아니라 대등한 제안이기 때문이다.
+// 그 칸이 아군에 보호받고 있으면(잡혀도 바로 되잡음) "교환 요청", 보호받지 못하면(그리고 이 수
+// 자체가 탁월한 수가 아니면) 그냥 "공짜로 내주는" 것이다.
+function exchangeOfferFact(sansBeforeMove, san, color, kind) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  const mover = after[tr][tc];
+  if (!mover) return null;
+  let attacker = null;
+  for (let r = 0; r < 8 && !attacker; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const p = after[r][c]; if (!p || p.c !== enemy || VAL[p.t] !== VAL[mover.t]) continue;
+    const canAttack = p.t === "P" ? (Math.abs(c - tc) === 1 && (enemy === "w" ? r === tr - 1 : r === tr + 1)) : canMove(after, p.t, enemy, r, c, tr, tc, true);
+    if (canAttack && !exposesKing(after, r, c, tr, tc, enemy, null)) { attacker = p; break; }
+  }
+  if (!attacker) return null;
+  const offered = !(seeSquare(after, tr, tc, enemy) > 0); // 상대가 잡아도 순손실 없음 = 되잡음
+  if (offered) return { offered: true, piece: mover.t };
+  if (kind === "brilliant") return null; // 탁월한 수의 희생은 이미 다른 경로로 설명된다
+  return { offered: false, piece: mover.t };
+}
+// R2 — 교환 요청에 대한 응답. 상대의 직전 수가 exchangeOfferFact의 "교환 요청"이었고, 그 요청이
+// 걸린 내 기물을 이번 수로 잡으면 "수락", 그 기물을 다른 칸으로 옮겨 대치를 풀면 "거절"로 판정한다.
+function exchangeOfferResponseFact(sansBeforeMove, san, color) {
+  if (!sansBeforeMove.length) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const lastSan = sansBeforeMove[sansBeforeMove.length - 1];
+  const prevSans = sansBeforeMove.slice(0, -1);
+  let offer;
+  try { offer = exchangeOfferFact(prevSans, lastSan, enemy); } catch { return null; }
+  if (!offer || !offer.offered) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const oppInfo = sanSrc(boardFromSans(prevSans), lastSan, enemy);
+  if (!oppInfo) return null;
+  const [orr, occ] = oppInfo.to;
+  const offerer = board[orr][occ];
+  if (!offerer) return null;
+  let mySq = null;
+  for (let r = 0; r < 8 && !mySq; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== color || VAL[p.t] !== VAL[offerer.t]) continue;
+    const canAttack = p.t === "P" ? (Math.abs(c - occ) === 1 && (color === "w" ? r === orr - 1 : r === orr + 1)) : canMove(board, p.t, color, r, c, orr, occ, true);
+    if (canAttack) mySq = [r, c];
+  }
+  if (!mySq) return null;
+  const info = sanSrc(board, san, color);
+  if (!info || info.castle) return null;
+  if (info.isCap && info.to[0] === orr && info.to[1] === occ) return { accepted: true, piece: offerer.t };
+  if (info.from[0] === mySq[0] && info.from[1] === mySq[1]) return { accepted: false, piece: offerer.t };
+  return null;
+}
+// R3/R11 — 오프닝 단계 판정(나이트·비숍 네 개가 모두 홈 칸을 떠났고 캐슬링도 마쳤으면 종료).
+function isOpeningPhase(sansBeforeMove, color) {
+  const board = boardFromSans(sansBeforeMove);
+  const homeRow = color === "w" ? 7 : 0;
+  for (const [t, cols] of [["N", [1, 6]], ["B", [2, 5]]]) {
+    for (const c of cols) { const p = board[homeRow][c]; if (p && p.c === color && p.t === t) return true; }
+  }
+  const castled = sansBeforeMove.some((s, i) => (i % 2 === 0 ? "w" : "b") === color && /^O-O/.test(s));
+  return !castled;
+}
+// R3/R11 — 재전개/재배치. 같은 나이트·비숍을 3번 이상(2번까지는 흔한 정상 전개로 보고 무시) 움직였는데
+// 그 수 자체가 좋은 수라면, 여러 번 움직인 이유(더 나은 자리를 찾아가는 것)를 짚어준다. 오프닝
+// 단계에서는 "재전개", 그 이후에는 "재배치"로 용어만 바꾼다. 상대 기물을 잡는 수는 목적이 캡처지
+// 자리 찾기가 아니므로 제외한다.
+function redeployFact(sansBeforeMove, san, color, kind) {
+  if (!MEC_GOOD_KINDS.includes(kind)) return null;
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.castle || info.isCap || !["N", "B"].includes(info.piece)) return null;
+  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const id = grid[info.from[0] + "," + info.from[1]];
+  if (!id || (counts[id] || 0) < 2) return null;
+  return { opening: isOpeningPhase(sansBeforeMove, color), piece: info.piece };
+}
+// (공용) attackerColor 진영이 지금 이 칸(r,c)을 실제로 공격(캡처 가능한 방식으로)하는 기물이 몇
+// 개인지 센다 — overprotectFact가 여러 과보호 후보 중 "상대 공격자가 많은 기물"부터 우선하는 데 쓴다.
+function countAttackers(board, r, c, attackerColor) {
+  let n = 0;
+  for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+    if (rr === r && cc === c) continue;
+    const p = board[rr][cc]; if (!p || p.c !== attackerColor) continue;
+    const can = p.t === "P" ? (Math.abs(cc - c) === 1 && (attackerColor === "w" ? rr === r + 1 : rr === r - 1)) : canMove(board, p.t, attackerColor, rr, cc, r, c, true);
+    if (can) n++;
+  }
+  return n;
+}
+// (공용) enemy 진영이 이 board에서 폰이나 기물로 (r,c) 칸에 도달할 수 있는지 — 도달할 수 있다면
+// 그 기물 종류들을 모아 돌려준다. 폰은 전진(1·2칸, 막혀 있지 않을 때)과 대각선 캡처를 모두 고려한다.
+function enemyCanReach(board, r, c, enemy) {
+  const out = [];
+  const dir = enemy === "w" ? -1 : 1, startR = enemy === "w" ? 6 : 1;
+  const destOccupied = !!board[r][c];
+  for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+    const p = board[rr][cc]; if (!p || p.c !== enemy) continue;
+    if (p.t === "P") {
+      if (destOccupied) { if (Math.abs(cc - c) === 1 && rr + dir === r) out.push({ type: "P", from: [rr, cc] }); }
+      else if (cc === c && rr + dir === r) out.push({ type: "P", from: [rr, cc] });
+      else if (cc === c && rr === startR && rr + 2 * dir === r && !board[rr + dir][cc]) out.push({ type: "P", from: [rr, cc] });
+    } else if (canMove(board, p.t, enemy, rr, cc, r, c, destOccupied)) out.push({ type: p.t, from: [rr, cc] });
+  }
+  return out;
+}
+// (공용) 상대가 pieceType 기물로 (r,c)에 실제로 도달했다고 가정했을 때, 그 기물이 안전하며(내가
+// 못 잡거나 잡아도 손해) 내 기물(폰 제외) 중 하나를 SEE상 이득 있게 공격하는지 확인한다.
+function wouldThreatenIfEnemyReaches(board, r, c, pieceType, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const hypo = board.map((row) => row.slice());
+  hypo[r][c] = { c: enemy, t: pieceType };
+  if (seeSquare(hypo, r, c, color) > 0 && canCaptureSquareLegally(hypo, r, c, color)) return null;
+  for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+    if (rr === r && cc === c) continue;
+    const target = hypo[rr][cc]; if (!target || target.c !== color || target.t === "K") continue;
+    const controllable = pieceType === "P" ? (Math.abs(cc - c) === 1 && (enemy === "w" ? rr === r - 1 : rr === r + 1)) : canMove(hypo, pieceType, enemy, r, c, rr, cc, true);
+    if (controllable && seeSquare(hypo, rr, cc, enemy) > 0) return { sq: [rr, cc], piece: target.t };
+  }
+  return null;
+}
+// R4 — 직접 예방 수. 이 수가(캡처가 아닌) 빈 칸을 선점했는데, 이 수가 없었다면 상대가 폰이나
+// 기물로 바로 그 칸에 와서(다음 수) 내 기물을 새로 위협할 수 있었다면 "직접 예방 수"다. 시각화용으로
+// 상대가 그 칸에 들어왔을 진입 경로(attackerFrom→sq)와, 그걸 막은 내 응수 경로(이 수 자체의
+// from→to, sq와 동일)도 함께 돌려준다.
+function directPreventionFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.isCap) return null;
+  const [tr, tc] = info.to;
+  for (const cand of enemyCanReach(before, tr, tc, enemy)) {
+    const threatened = wouldThreatenIfEnemyReaches(before, tr, tc, cand.type, color);
+    if (threatened) return { piece: cand.type, sq: [tr, tc], targetPiece: threatened.piece, attackerFrom: cand.from, myFrom: info.from, myTo: [tr, tc] };
+  }
+  return null;
+}
+// R9 — 간접 예방 수. 이 수(폰의 비캡처 전진)가 새로 대각선으로 컨트롤하게 된 빈 칸 중, 원래는
+// 상대가 안전하게 갈 수 있었지만(갔다면 내 기물을 위협했을 것) 이 폰 때문에 더 이상 안전하지
+// 않게 된 칸이 있다면 "간접 예방 수"다. 시각화용으로 상대의 진입 경로(attackerFrom→sq)와, 지금
+// 그 칸을 컨트롤하는 내 기물의 칸에서 그 칸까지의 경로(myFrom→sq, myFrom은 이 수의 도착 칸)도 돌려준다.
+function indirectPreventionFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece !== "P" || info.isCap) return null;
+  const [tr, tc] = info.to;
+  const dir = color === "w" ? -1 : 1;
+  for (const dc of [-1, 1]) {
+    const r = tr + dir, c = tc + dc;
+    if (r < 0 || r > 7 || c < 0 || c > 7 || before[r][c]) continue;
+    for (const cand of enemyCanReach(before, r, c, enemy)) {
+      const threatened = wouldThreatenIfEnemyReaches(before, r, c, cand.type, color);
+      if (!threatened) continue;
+      const after = applySan(before, san, color);
+      const afterHypo = after.map((row) => row.slice());
+      afterHypo[r][c] = { c: enemy, t: cand.type };
+      if (seeSquare(afterHypo, r, c, color) > 0 && canCaptureSquareLegally(afterHypo, r, c, color)) {
+        return { piece: cand.type, sq: [r, c], targetPiece: threatened.piece, attackerFrom: cand.from, myFrom: [tr, tc], myTo: [r, c] };
+      }
+    }
+  }
+  return null;
+}
+// R13 — 잠재 위협. 이 수 자체가 SEE상 순이득 있는 "진짜 위협"을 만들지 못했더라도, 상대 기물(폰
+// 제외)에 새로 공격자 하나를 추가했다면 그 자체로 "잠재 위협"이다. 미는 기물(비숍·룩·퀸)이면 첫
+// 번째로 막힌 상대 기물 뒤에 놓인 기물까지(한 겹만) 대상에 포함한다 — 앞의 기물이 사라지거나
+// 비키면 그 즉시 노출되는 배터리이기 때문이다.
+function latentThreatFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  const mover = after[tr][tc];
+  if (!mover) return null;
+  const out = [];
+  const KNIGHT_D = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
+  const SLIDE_D = { B: [[1, 1], [1, -1], [-1, 1], [-1, -1]], R: [[1, 0], [-1, 0], [0, 1], [0, -1]], Q: [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]] };
+  if (mover.t === "N") {
+    for (const [dr, dc] of KNIGHT_D) {
+      const r = tr + dr, c = tc + dc;
+      if (r < 0 || r > 7 || c < 0 || c > 7) continue;
+      const target = after[r][c];
+      if (target && target.c === enemy && target.t !== "K" && !(seeSquare(after, r, c, color) > 0)) out.push({ sq: [r, c], piece: target.t });
+    }
+  } else if (SLIDE_D[mover.t]) {
+    for (const [dr, dc] of SLIDE_D[mover.t]) {
+      let r = tr + dr, c = tc + dc, pierced = 0;
+      while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+        const target = after[r][c];
+        if (target) {
+          if (target.c === enemy && target.t !== "K") {
+            if (!(seeSquare(after, r, c, color) > 0)) out.push({ sq: [r, c], piece: target.t });
+            pierced++;
+            if (pierced >= 2) break;
+            r += dr; c += dc; continue;
+          }
+          break;
+        }
+        r += dr; c += dc;
+      }
+    }
+  }
+  if (!out.length) return null;
+  out.sort((a, b) => VAL[b.piece] - VAL[a.piece]);
+  return { piece: out[0].piece };
+}
+// R8 — 과보호. 이 수가 이미 안전한(SEE상 안 걸린) 아군 기물에 새로 방어자를 하나 더 붙였다면(그
+// 기물이 아직 실제 위협을 받는 상태는 아니었음) "과보호"다. 이미 걸려 있던 기물을 안전하게 만드는
+// controlFacts.defends("위협 대처")와는 반대로, 위협이 없는데 미리 대비하는 수다. 대상 후보가 여럿이면
+// (버그 수정) 아직 전개되지 않은(시작 칸에 그대로 있는) 기물은 후보에서 가장 낮은 우선순위로 미룬다 —
+// 예전엔 공격자 수·기물 가치만으로 정렬해, 나이트 하나가 우연히 폰과 퀸을 동시에 "컨트롤"하면(둘 다
+// 공격자 0으로 동률) 기물 가치가 높다는 이유만으로 아직 한 번도 안 움직인 퀸을 "과보호 대상"으로
+// 짚는 경우가 있었다 — 누가 봐도 실제로 의미 있는 대상은 그 자리에서 진짜로 지켜지는 폰 쪽이었다.
+// 전개된 기물끼리는 여전히 공격자 수 내림차순, 그다음 기물 가치 내림차순으로 우선한다.
+function overprotectFact(sansBeforeMove, san, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle) return null;
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  const mover = after[tr][tc];
+  if (!mover) return null;
+  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const candidates = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const target = after[r][c]; if (!target || target.c !== color || target.t === "K") continue;
+    const controllable = mover.t === "P" ? (Math.abs(c - tc) === 1 && (color === "w" ? r === tr - 1 : r === tr + 1)) : canMove(after, mover.t, color, tr, tc, r, c, true);
+    if (!controllable) continue;
+    const wasWeak = seeSquare(before, r, c, enemy) > 0;
+    if (wasWeak) continue; // 이미 위협받던 기물이면 controlFacts.defends("위협 대처") 몫이다
+    const id = grid[r + "," + c];
+    const developed = !!(id && counts[id]);
+    candidates.push({ piece: target.t, sq: [r, c], attackers: countAttackers(after, r, c, enemy), val: VAL[target.t], developed });
+  }
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => (b.developed - a.developed) || (b.attackers - a.attackers) || (b.val - a.val));
+  return { piece: candidates[0].piece, sq: candidates[0].sq };
+}
+// R14 — 오픈/세미오픈 파일. 룩이 이동한 파일에 폰이 아예 없으면 오픈 파일, 상대 폰만 남아 있으면
+// (내 폰은 없음) 세미오픈 파일이다.
+function openFileFact(sansBeforeMove, san, color) {
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle || info.piece !== "R") return null;
+  const after = applySan(before, san, color);
+  const tc = info.to[1];
+  let mine = 0, theirs = 0;
+  for (let r = 0; r < 8; r++) { const p = after[r][tc]; if (p && p.t === "P") { if (p.c === color) mine++; else theirs++; } }
+  if (mine > 0) return null; // 내 폰이 남아 있으면 오픈도 세미오픈도 아니다
+  return { open: theirs === 0 };
+}
+// (공용) 특정 파일이 color 진영 기준 오픈(양쪽 폰 없음)/세미오픈(내 폰만 없음)인지 — connectionFact가
+// 룩의 "중첩" 여부를 판정하는 데 openFileFact와 같은 기준으로 재사용한다.
+function fileIsOpenOrSemi(board, file, color) {
+  let mine = 0, theirs = 0;
+  for (let r = 0; r < 8; r++) { const p = board[r][file]; if (p && p.t === "P") { if (p.c === color) mine++; else theirs++; } }
+  return mine === 0;
+}
+// (기능) "연결" — 한 진영의 룩 2개 또는 나이트 2개가 서로의 캡처 가능 칸에 있어 서로를 지켜주는
+// 상태. 이 수로 그 연결이 새로 생겼을 때만(이 수 이전엔 이 기물이 짝과 연결돼 있지 않았는데 이
+// 수로 연결됐을 때) 짚어준다 — 이미 오래전부터 연결돼 있던 상태를 매 수마다 반복해서 짚지 않기
+// 위함. 룩이 같은 파일(세로)로 연결됐고 그 파일이 오픈/세미오픈 파일이면 "연결" 대신 "중첩"으로
+// 구분한다(가로로 연결되거나 파일이 막혀 있으면 그냥 "연결"). 이 수 자체가 룩·나이트를 움직인
+// 경우만 대상으로 한다 — 다른 기물이 사이 폰을 치워 우연히 연결이 생긴 경우는 다루지 않는다.
+function connectionFact(sansBeforeMove, san, color) {
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || info.castle) return null;
+  const piece = info.piece;
+  if (piece !== "R" && piece !== "N") return null;
+  const after = applySan(before, san, color);
+  const [tr, tc] = info.to;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const p = after[r][c]; if (!p || p.c !== color || p.t !== piece) continue;
+    if (!canMove(after, piece, color, tr, tc, r, c, true)) continue;
+    if (canMove(before, piece, color, info.from[0], info.from[1], r, c, true)) continue; // 이미 연결돼 있었다
+    const stacked = piece === "R" && tc === c && fileIsOpenOrSemi(after, tc, color);
+    return { partnerSq: [r, c], stacked };
+  }
+  return null;
+}
+// R15 — 폰 희생. 이 수를 두기 전 내 폰 중 상대에게 안전하게 잡힐 수 있는 게 있었는데, 이 수가 그
+// 폰을 지키지도 옮기지도 잡지도 않고 그대로 두었고(이 수 자체는 좋은 수), 이 수를 둔 뒤에도 여전히
+// 안전하게 잡힐 수 있는 상태라면 "폰 희생"이다.
+function pawnSacrificeFact(sansBeforeMove, san, color, kind) {
+  if (!MEC_GOOD_KINDS.includes(kind)) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info) return null;
+  const hangingPawns = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = before[r][c]; if (!p || p.c !== color || p.t !== "P") continue;
+    if (seeSquare(before, r, c, enemy) > 0 && canCaptureSquareLegally(before, r, c, enemy)) hangingPawns.push([r, c]);
+  }
+  if (!hangingPawns.length) return null;
+  const movedFrom = info.from ? info.from.join(",") : null;
+  const stillHanging = hangingPawns.filter((sq) => sq.join(",") !== movedFrom);
+  if (!stillHanging.length) return null;
+  const after = applySan(before, san, color);
+  const [hr, hc] = stillHanging[0];
+  if (!(seeSquare(after, hr, hc, enemy) > 0 && canCaptureSquareLegally(after, hr, hc, enemy))) return null; // 이 수가 결국 그 폰을 지켰다
+  return { sq: FILES[hc] + (8 - hr) };
+}
+// R5 — 다음 수 캐슬링 예고. 캐슬링 권리가 있는 상태에서, 이 수를 두기 전엔 경로에 다른 기물이
+// 있어 아직 캐슬링이 불가능했는데 이 수로 그 경로가 완전히 비어 다음 수에 캐슬링이 가능해졌다면
+// 짚어준다.
+function nextMoveCastleFact(sansBeforeMove, san, color) {
+  const rightsInfo = castleEpFacts(sansBeforeMove, color);
+  if (!rightsInfo.myCastleRights) return null;
+  const before = boardFromSans(sansBeforeMove);
+  const kp = kingPos(before, color);
+  const couldBefore = kp && legalDests(before, kp[0], kp[1], color, null).some(([r, c]) => c === 2 || c === 6);
+  if (couldBefore) return null;
+  const after = boardFromSans([...sansBeforeMove, san]);
+  const kp2 = kingPos(after, color);
+  const canNow = kp2 && legalDests(after, kp2[0], kp2[1], color, null).some(([r, c]) => c === 2 || c === 6);
+  return !!canNow;
+}
+// R6 — 전개. 폰·킹을 제외한 기물이 처음으로 홈 칸을 떠나는 수라면 "전개했다"는 표현을, 그 수의
+// 등급이 좋으면 "적절한 칸"이라는 표현까지 덧붙인 문장을 만든다. mecFacts가 최종적으로 고른 문장
+// 앞에 이 문장을 붙여, "전개 + 그 수가 만드는 실제 위협/방어"가 하나의 글로 이어지게 한다.
+function developmentNote(sansBeforeMove, san, color, kind) {
+  const board = boardFromSans(sansBeforeMove);
+  const info = sanSrc(board, san, color);
+  if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
+  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const id = grid[info.from[0] + "," + info.from[1]];
+  if (!id || counts[id]) return null; // 이 기물의 첫 이동일 때만
+  const [tr, tc] = info.to;
+  const sq = FILES[tc] + (8 - tr);
+  const pieceKor = PIECE_KOR[info.piece];
+  const seed = sansBeforeMove.length;
+  return MEC_GOOD_KINDS.includes(kind)
+    ? mecPick([josaEulReul(pieceKor) + " 적절한 칸인 " + sq + "에 전개했어요.", "적절한 칸 " + sq + "로 " + josaEulReul(pieceKor) + " 전개했어요.", josaEulReul(pieceKor) + " " + sq + "에 전개했어요, 적절한 칸이에요."], seed)
+    : mecPick([josaEulReul(pieceKor) + " " + sq + "에 전개했어요.", sq + "로 " + josaEulReul(pieceKor) + " 전개했어요.", josaEulReul(pieceKor) + " " + sq + "로 옮겨 전개했어요."], seed);
+}
+// R12 — 캐슬링 전용 평가. 좋은 수면 항상 같은 취지의 긍정 문구를, 나쁜 수인데 다른 사실로 원인을
+// 못 찾았으면 "엔진에 의하면" 키워드로 대체한다.
+function castleQualityGoodPhrase(seed) {
+  return mecPick(["킹의 안전을 도모하는 것은 대부분의 상황에서 좋은 선택이에요.", "캐슬링으로 킹을 안전한 곳에 두는 건 언제나 우선순위가 높은 선택이에요.", "킹을 미리 안전지대로 옮겨두는 좋은 선택이에요."], seed);
+}
+// R7 — 위협 시각화용 데이터. "위협"(ctrl.threats)이 실제로 mecFacts의 대표 사실로 뽑혔을 때만, 그
+// 칸을 노리는 내 공격자 전부와 그 칸을 지키는 상대 수비자 전부를 모아 돌려준다(ReviewCoachCard가
+// 이 데이터로 밑줄+클릭 애니메이션을 만든다). 이 수 자체가 만든 위협인지와 무관하게, "지금 이 칸을
+// 둘러싼 실제 공격/방어 구도가 어떤지"를 그대로 보여주는 것이 목적이라 이동한 기물 하나만 보지
+// 않고 판을 전부 훑는다.
+function threatSquareDetail(board, sq, color) {
+  const enemy = color === "w" ? "b" : "w";
+  const [tr, tc] = sq;
+  const attackers = [], defenders = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === tr && c === tc) continue;
+    const p = board[r][c]; if (!p) continue;
+    if (p.c === color) {
+      const can = p.t === "P" ? (Math.abs(c - tc) === 1 && (color === "w" ? r === tr + 1 : r === tr - 1)) : canMove(board, p.t, color, r, c, tr, tc, true);
+      if (can) attackers.push([r, c]);
+    } else {
+      const can = p.t === "P" ? (Math.abs(c - tc) === 1 && (enemy === "w" ? r === tr + 1 : r === tr - 1)) : canMove(board, p.t, enemy, r, c, tr, tc, true);
+      if (can) defenders.push([r, c]);
+    }
+  }
+  return { targetSq: [tr, tc], attackers, defenders };
+}
+const MEC_PHRASES = {
+  mine: (sq, p, s) => mecPick([sq + "에 있는 " + josaEulReul(p) + " 잃게 돼요.", sq + "의 " + josaEulReul(p) + " 이대로 두면 잃게 돼요.", "지금대로면 " + sq + "에 있는 " + josaEulReul(p) + " 잃어요."], s),
+  threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 위협해요.", "상대 " + josaIGa(p) + " 이 수의 위협을 받고 있어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
+  preexistingTheirs: (p, s) => mecPick(["상대 " + josaIGa(p) + " 걸려 있어요 — 잡을 기회예요.", "상대 " + josaEulReul(p) + " 잡을 수 있는 상황이에요.", "아직 상대 " + josaIGa(p) + " 방치돼 있어요 — 놓치지 마세요."], s),
+  declinedCapture: (p, s) => mecPick([josaEulReul(p) + " 잡지 않았지만 여전히 좋은 수예요.", josaEulReul(p) + " 잡을 수도 있었지만, 이 수도 충분히 좋아요.", "당장 " + josaEulReul(p) + " 안 잡아도 이 수면 충분해요."], s),
+  declinedBestCapture: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 잡는 게 최선이었지만, 이 수도 여전히 좋아요.", "사실 " + josaEulReul(p) + " 잡을 수 있었어요 — 그래도 이 수 역시 좋은 선택이에요.", josaEulReul(p) + " 잡는 게 최선이었어요, 다만 이 수도 나쁘지 않아요."], s),
+  exchangeAheadGood: (s) => mecPick(["유리한 상황에서의 기물 교환은 게임을 쉽고 안정적으로 풀어가는 좋은 방법이에요.", "이기고 있을 때 기물을 교환해 상황을 단순하게 만드는 좋은 선택이에요.", "유리할 때는 기물을 바꿔가며 안정적으로 승리를 굳히는 게 좋아요."], s),
+  exchangeBehindForced: (s) => mecPick(["지고 있을 때는 기물 교환을 피하는 게 좋지만, 이 교환은 불가피한 최선의 선택이었어요.", "기물 교환은 원래 피해야 하는 상황이지만, 이 교환만큼은 어쩔 수 없는 최선이었어요.", "지고 있는 상황에서도 이 교환은 최선으로 불가피했어요."], s),
+  exchangeBehindGood: (s) => mecPick(["지고 있을 때는 기물 교환을 피하는 게 좋지만, 이 교환은 좋은 선택이었어요.", "원래는 피해야 할 기물 교환이지만, 이번엔 괜찮은 선택이었어요.", "지고 있는 상황이라도 이 교환만큼은 나쁘지 않은 선택이었어요."], s),
+  exchangeAheadBad: (s) => mecPick(["유리한 상황이라도 목적 없는 기물 교환은 손해가 될 수 있어요 — 기물 교환은 목적을 갖고 해야 해요.", "이기고 있어도 이 교환은 아쉬운 선택이었어요 — 기물 교환에는 목적이 있어야 해요.", "유리한 상황을 단순화하려던 거라면, 이번 교환은 아쉬운 선택이었어요."], s),
+  exchangeBehindBad: (s) => mecPick(["지고 있는 상황에서는 기물 교환을 피하는 게 좋은데, 이 교환은 아쉬운 선택이었어요 — 기물 교환은 목적을 갖고 해야 해요.", "지고 있을 때 기물을 바꾸면 역전 기회도 함께 줄어들어요 — 이 교환은 아쉬운 선택이었어요.", "역전을 노려야 할 때 목적 없이 기물을 교환한 건 아쉬운 선택이에요."], s),
+  defend: (p, s) => mecPick(["위태롭던 아군 " + josaEulReul(p) + " 위협 대처로 지켜냈어요.", "상대 위협에 대한 위협 대처로, 덕분에 " + josaIGa(p) + " 더 이상 위험하지 않아요.", josaEulReul(p) + " 안전하게 지키는 위협 대처예요."], s),
+  evade: (p, s) => mecPick([josaIGa(p) + " 위협을 피해 안전한 자리로 갔어요.", josaEulReul(p) + " 안전한 칸으로 피신시켰어요.", "이 수로 " + p + "에 대한 위협을 피했어요."], s),
+  counter: (p, tgt, s) => mecPick(["위협을 피하면서 상대 " + josaEulReul(tgt) + " 반격해요.", "피하는 동시에 상대 " + josaEulReul(tgt) + " 노리는 반격이에요.", josaEulReul(p) + " 피신시키면서 상대 " + tgt + "까지 반격했어요."], s),
+  pawnTension: (s) => mecPick(["서로 폰을 노리고 있어요.", "폰끼리 서로 위협하고 있어요.", "이 폰과 상대 폰이 서로를 겨누고 있어요."], s),
+  pawnTrade: (from, captured, good, s) => mecPick([from + "폰과 " + captured + "폰을 교환하는 것은 " + (good ? "좋은" : "좋지 않은") + " 선택이에요.", (good ? "중앙 쪽으로" : "사이드 쪽으로") + " 잡은 " + from + "폰과 " + captured + "폰의 교환은 " + (good ? "괜찮아요." : "아쉬워요."), from + "폰이 " + captured + "폰을 잡은 건 " + (good ? "중앙을 지키는 좋은 선택이에요." : "중앙에서 멀어지는 아쉬운 선택이에요.")], s),
+  tempo: (s) => mecPick(["이 폰을 처음에 두 칸 전진시켰으면 한 수를 아낄 수 있었어요.", "한 번에 두 칸 갈 수 있었는데 나눠서 전진했어요.", "이 폰, 처음부터 두 칸 밀었으면 템포를 아꼈을 거예요."], s),
+  pieceReturned: (p, s) => mecPick([josaIGa(p) + " 시작 칸으로 그대로 돌아갔어요 — 그동안의 전개가 무의미해졌어요.", "애써 전개한 " + josaIGa(p) + " 다시 시작 칸으로 돌아갔어요.", josaIGa(p) + " 원래 자리로 되돌아가며 한 수를 낭비했어요."], s),
+  pieceDetour: (p, s) => mecPick([p + "가 상대 폰에 쫓겨 옮긴 자리, 사실 처음부터 한 수에 갈 수 있었어요.", "상대 폰에게 쫓기느라 " + p + "가 두 수를 들여서야 도착했어요 — 처음부터 한 수면 됐어요.", "상대 폰 한 수에 템포를 내주며 " + p + "가 돌아갔어요, 원래 한 번에 갈 수 있는 자리였어요."], s),
+  castleLost: (s) => mecPick(["이 수로 캐슬링 권리를 잃었어요.", "캐슬링 권리가 이 수로 사라졌어요.", "이제 캐슬링을 할 수 없게 됐어요."], s),
+  queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.", "퀸사이드로 캐슬링했어요 — a열 폰이 다소 약점이 될 수 있어요.", "퀸사이드 캐슬링이에요, 킹사이드보다는 살짝 덜 안전해요."], s),
+  exchangeOffered: (p, s) => mecPick([josaEulReul(p) + " 상대의 같은 기물이 공격할 수 있는 칸으로 옮겨, 교환을 요청했어요.", "상대와 동가 기물로 맞바꾸자는 교환 요청이에요.", josaIGa(p) + " 상대 기물과 서로 마주 보고 있어요, 교환 요청이에요."], s),
+  exchangeFreeGive: (p, s) => mecPick([josaEulReul(p) + " 아무 대가 없이 상대에게 내주는 수예요.", "지켜주는 기물 없이 " + josaEulReul(p) + " 공짜로 내줬어요.", josaIGa(p) + " 공짜로 잡히는 자리로 갔어요."], s),
+  exchangeAccepted: (p, s) => mecPick(["상대의 교환 요청을 받아들여 " + josaEulReul(p) + " 잡았어요.", "교환 요청을 수락하고 " + josaEulReul(p) + " 그대로 잡았어요.", josaEulReul(p) + " 잡으며 교환 요청을 받아들였어요."], s),
+  exchangeDeclined: (p, s) => mecPick(["상대의 교환 요청을 거절하고 기물을 물렸어요.", "교환에 응하지 않고 " + josaEulReul(p) + " 노리던 기물을 피신시켰어요.", "상대와의 교환을 거절하는 수예요."], s),
+  recapture: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 되잡아서 기물 상황을 유지했어요.", "상대가 잡은 자리에서 " + josaEulReul(p) + " 그대로 되잡았어요.", "되잡기로 기물 상황을 다시 맞췄어요."], s),
+  redeployOpening: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재전개하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재전개했어요.", josaEulReul(p) + " 최적의 위치로 재전개하는 수예요."], s),
+  redeployMidgame: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재배치하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재배치했어요.", josaEulReul(p) + " 최적의 위치로 재배치하는 수예요."], s),
+  noObviousReason: (s) => mecPick(["직관적인 이득은 찾기 어렵지만, 엔진에 의하면 좋은 수예요.", "설명하긴 어렵지만, 엔진에 의하면 좋은 수예요.", "엔진에 의하면 좋은 수예요."], s),
+  preventDirect: (sq, blocker, targetP, s) => mecPick(["상대가 " + sq + "에 " + josaEulReul(PIECE_KOR[blocker]) + " 뒀다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요, 먼저 " + sq + "를 선점하는 예방 수예요.", sq + "를 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 차지했다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요 — 미리 막는 예방 수예요.", "예방 수예요, 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요."], s),
+  preventIndirect: (sq, blocker, targetP, s) => mecPick([sq + "의 컨트롤을 늘린 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 여기 와서 " + josaEulReul(PIECE_KOR[targetP]) + " 위협하는 걸 간접적으로 막았어요.", "간접 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요.", "직접 막지는 않았지만 " + sq + "의 컨트롤을 늘린 예방 수로 상대 " + PIECE_KOR[blocker] + "의 진입을 막았어요."], s),
+  nextCastle: (s) => mecPick(["이 수로 다음 수에 캐슬링이 가능해졌어요.", "다음 수에는 캐슬링을 할 수 있어요.", "이제 다음 수에 캐슬링이 가능해요."], s),
+  overprotect: (p, s) => mecPick([josaEulReul(p) + " 아직 위협받지 않았지만 미리 과보호했어요.", "당장 위협은 없지만 " + josaEulReul(p) + " 미리 지키는 기물을 늘렸어요, 과보호예요.", josaIGa(p) + " 위협받진 않지만 과보호하는 수예요."], s),
+  latentThreat: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 노리는 공격자를 하나 더 늘렸어요, 아직 잡을 수는 없지만 잠재 위협이에요.", "당장 잡히진 않지만 상대 " + josaIGa(p) + " 잠재 위협을 받고 있어요.", "상대 " + josaEulReul(p) + " 향한 잠재 위협을 만드는 수예요."], s),
+  openFile: (s) => mecPick(["룩을 오픈 파일에 배치했어요.", "이 파일엔 폰이 하나도 없어서, 룩을 오픈 파일에 세웠어요.", "룩을 완전히 열린 파일에 배치하는 좋은 수예요."], s),
+  semiOpenFile: (s) => mecPick(["룩을 세미오픈 파일에 배치했어요.", "내 폰은 없고 상대 폰만 남은 세미오픈 파일에 룩을 세웠어요.", "룩을 세미오픈 파일에 배치해 상대 폰에 잠재 위협을 줘요."], s),
+  connect: (p, s) => mecPick([josaEulReul(p) + " 서로 지켜주는 연결을 만들었어요.", "다른 " + josaGwaWa(p) + " 연결돼 서로를 지켜줘요.", josaIGa(p) + " 짝과 연결되어 서로 보호하는 관계가 됐어요."], s),
+  stacked: (s) => mecPick(["룩 두 개가 오픈 파일에서 중첩됐어요.", "같은 파일에서 룩끼리 중첩되어 서로를 지켜줘요.", "룩 중첩으로 그 파일을 강하게 장악했어요."], s),
+  pawnSac: (sq, s) => mecPick([sq + "폰이 위협받고 있지만 지키지 않았어요, 폰 희생이에요.", sq + "폰을 지키는 대신 희생하는 수예요.", "위협받는 " + sq + "폰을 그대로 두고 폰 희생을 택했어요."], s),
+  castleBadFallback: (s) => mecPick(["엔진에 의하면 지금은 캐슬링이 좋은 타이밍이 아니에요.", "엔진에 의하면 이 캐슬링은 아쉬운 타이밍이에요.", "엔진에 의하면 지금 캐슬링하기엔 좋지 않은 순간이에요."], s),
+};
+// 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
+// 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
+// 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
+// 맨 앞 하나만 코멘트에 붙인다. kind·bestSan은 declinedCaptureFact(공짜 기물을 안 잡고도 좋은 수)
+// 판정에만 쓰이며, 넘기지 않으면(다른 호출부) 그 판정만 자연히 건너뛴다.
+function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut) {
+  const seed = sansBeforeMove.length;
+  const beforeBoard = boardFromSans(sansBeforeMove);
+  const board = boardFromSans([...sansBeforeMove, san]);
+  const facts = [];
+  const t = tensionFacts(board, color);
+  const moveInfo = sanSrc(beforeBoard, san, color);
+  // (버그 수정) 이 수 자체가 동가 이상으로 기물을 잡는 수였다면(예: 나이트를 잡은 비숍), 그 도착
+  // 칸이 곧 되잡힐 수 있는 것은 원래 그 교환이 완성되는 것일 뿐 새로 위태로워진 게 아니다 —
+  // tensionFacts.mine이 "이 기물을 지킬 수를 찾아야 한다"고 경고하지 않도록 그 칸을 제외한다(이
+  // 교환의 유불리는 아래 exchangeFact가 대신 설명한다).
+  let fairTradeSq = null;
+  if (moveInfo && moveInfo.isCap && !moveInfo.castle) {
+    const captured = beforeBoard[moveInfo.to[0]][moveInfo.to[1]];
+    if (captured && VAL[captured.t] >= VAL[moveInfo.piece]) fairTradeSq = moveInfo.to.join(",");
+  }
+  // R2 > R1 > 기존 tensionFacts.mine 순으로, 이 수 자체가 만든 "내 기물의 안위" 관련 사실 하나만
+  // 고른다. R2(상대의 직전 교환 요청에 대한 수락/거절)가 우선이고, 그게 아니면 R1(이 수 자체가 새로
+  // 만든 교환 요청/공짜로 내줌)을, 그것도 아니면 이 수와 무관하게 이미 걸려 있던 tensionFacts.mine을
+  // 쓴다. R3/R11(재전개/재배치)이 같은 수에 함께 적용되면(예: 교환 요청을 거절하며 원래 자리로
+  // 재전개) 하나의 글로 잇는다 — 없으면 재전개/재배치 단독으로라도 이 자리를 채운다.
+  const offerResponse = exchangeOfferResponseFact(sansBeforeMove, san, color);
+  const redeploy = redeployFact(sansBeforeMove, san, color, kind);
+  const redeployPhrase = redeploy && (redeploy.opening ? MEC_PHRASES.redeployOpening(PIECE_KOR[redeploy.piece], seed) : MEC_PHRASES.redeployMidgame(PIECE_KOR[redeploy.piece], seed));
+  if (offerResponse) {
+    const base = offerResponse.accepted ? MEC_PHRASES.exchangeAccepted(PIECE_KOR[offerResponse.piece], seed) : MEC_PHRASES.exchangeDeclined(PIECE_KOR[offerResponse.piece], seed);
+    facts.push(redeployPhrase ? base + " " + redeployPhrase : base);
+  } else {
+    const offer = exchangeOfferFact(sansBeforeMove, san, color, kind);
+    if (offer) facts.push(offer.offered ? MEC_PHRASES.exchangeOffered(PIECE_KOR[offer.piece], seed) : MEC_PHRASES.exchangeFreeGive(PIECE_KOR[offer.piece], seed));
+    else {
+      const mine = fairTradeSq ? t.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t.mine;
+      if (mine.length) facts.push(MEC_PHRASES.mine(FILES[mine[0].sq[1]] + (8 - mine[0].sq[0]), PIECE_KOR[mine[0].piece], seed));
+      else {
+        // 되잡기 — 상대가 방금 잡은 자리를 그대로 되잡는 것뿐인 수는 별다른 위협·방어 사실 없이도
+        // "왜 좋은 수인지"가 명확하므로, noObviousReason으로 떨어지기 전에 여기서 짚어준다.
+        const recap = recaptureFact(sansBeforeMove, san, color);
+        if (recap) facts.push(MEC_PHRASES.recapture(PIECE_KOR[recap.capturedPiece], seed));
+        else if (redeployPhrase) facts.push(redeployPhrase);
+      }
+    }
+  }
+  const evasion = evasionFact(sansBeforeMove, san, color);
+  if (evasion) facts.push(evasion.kind === "counter" ? MEC_PHRASES.counter(PIECE_KOR[evasion.piece], PIECE_KOR[evasion.target], seed) : MEC_PHRASES.evade(PIECE_KOR[evasion.piece], seed));
+  // R4/R9 — 예방 수(직접 > 간접). 위에서 더 급한 전술적 사실(교환/회피)을 못 찾았을 때만 확인한다.
+  // (기능) 시각화용 — 이 사실이 facts[0]으로 뽑히면 threatOut.prevent에 방어 대상 칸(halo), 상대
+  // 진입 경로(attacker), 내 응수 경로(defender)를 담아 준다(ReviewPage의 클릭 애니메이션이 사용).
+  if (!facts.length) {
+    const directPrev = directPreventionFact(sansBeforeMove, san, color);
+    if (directPrev) {
+      facts.push(MEC_PHRASES.preventDirect(FILES[directPrev.sq[1]] + (8 - directPrev.sq[0]), directPrev.piece, directPrev.targetPiece, seed));
+      if (threatOut) { threatOut.prevent = { targetSq: directPrev.sq, attackerFrom: directPrev.attackerFrom, myFrom: directPrev.myFrom, myTo: directPrev.myTo }; threatOut.keyword = "예방 수"; }
+    } else {
+      const indirectPrev = indirectPreventionFact(sansBeforeMove, san, color);
+      if (indirectPrev) {
+        facts.push(MEC_PHRASES.preventIndirect(FILES[indirectPrev.sq[1]] + (8 - indirectPrev.sq[0]), indirectPrev.piece, indirectPrev.targetPiece, seed));
+        if (threatOut) { threatOut.prevent = { targetSq: indirectPrev.sq, attackerFrom: indirectPrev.attackerFrom, myFrom: indirectPrev.myFrom, myTo: indirectPrev.myTo }; threatOut.keyword = "예방 수"; }
+      }
+    }
+  }
+  const pawnTrade = pawnTradeFact(sansBeforeMove, san, color);
+  if (pawnTrade) facts.push(MEC_PHRASES.pawnTrade(pawnTrade.fromSq, pawnTrade.capturedSq, pawnTrade.good, seed));
+  else if (pawnTensionFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.pawnTension(seed));
+  // 기물(폰 제외) 동가 교환의 전략적 타당성 — 유리할 때 교환은 원래 좋고, 불리할 때는 원래 피해야
+  // 하지만 예외(최선 이상=불가피, 우수/좋음=그래도 괜찮음)를 인정한다. 기대와 등급이 어긋나면
+  // "목적 없는 교환"이었다는 반대 프레이밍을 쓴다(R10 — 비숍쌍 유지·상대 폰 구조 약화 근거는 등급이
+  // 이미 그 판단을 반영하고 있으므로, 여기서는 그 등급이 곧 "어느 근거가 우세했는지"의 증거로 쓰인다).
+  const exchange = exchangeFact(sansBeforeMove, san, color, kind, beforeCp);
+  if (exchange) {
+    if (exchange.ahead) facts.push(exchange.good ? MEC_PHRASES.exchangeAheadGood(seed) : MEC_PHRASES.exchangeAheadBad(seed));
+    else facts.push(exchange.good ? (exchange.strong ? MEC_PHRASES.exchangeBehindForced(seed) : MEC_PHRASES.exchangeBehindGood(seed)) : MEC_PHRASES.exchangeBehindBad(seed));
+  }
+  const ctrl = controlFacts(sansBeforeMove, san, color);
+  // (버그 수정) 상대 기물이 걸려 있어도, 그게 방금 이 수 자체가 새로 위협한 기물(ctrl.threats와
+  // 같은 칸)이라면 "잡을 기회예요"(원래부터 있던 약점을 챙기는 뉘앙스)가 아니라 "노려요"(이 수가
+  // 방금 만든 위협)라고 하는 게 맞다 — 상대 차례가 지나야 실제로 잡을 수 있는데 "잡을 기회"라고
+  // 하면 지금 당장 잡을 수 있는 것처럼 들려 어색하다는 지적. 이 수와 무관하게 이미 걸려 있던
+  // 기물(다른 칸)만 "잡을 기회" 문구를 쓴다. 그중에서도 이 수 자체의 등급이 좋으면(declined),
+  // "놓쳤다"는 뉘앙스의 "잡을 기회예요" 대신 "잡지 않았지만 여전히 좋은 수"로 프레이밍한다. 아무
+  // 진짜 위협·기회도 없으면 마지막으로 R13(잠재 위협 — 아직 SEE상 이득은 없지만 공격자를 하나 더
+  // 늘린 상태)을 확인한다.
+  const justThreatenedSq = ctrl.threats.length ? ctrl.threats[0].sq.join(",") : null;
+  const preexistingTheirs = t.theirs.filter((x) => x.sq.join(",") !== justThreatenedSq);
+  const declined = declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan);
+  if (ctrl.threats.length) {
+    // R7 — 이 위협이 지금 이 수의 대표 사실(facts[0])로 뽑힐 참이면(=여기까지 아무것도 못 찾았으면)
+    // 시각화용 공격자/수비자 정보를 threatOut에 담아 준다. sq가 상대 기물의 칸이므로, 내(color) 쪽이
+    // "공격자"가 되도록 threatSquareDetail에 color를 그대로 넘긴다.
+    if (!facts.length && threatOut) { threatOut.detail = threatSquareDetail(board, ctrl.threats[0].sq, color); threatOut.keyword = "위협"; }
+    facts.push(MEC_PHRASES.threat(PIECE_KOR[ctrl.threats[0].piece], seed));
+  }
+  else if (declined) facts.push(declined.wasBestCapture ? MEC_PHRASES.declinedBestCapture(PIECE_KOR[declined.piece], seed) : MEC_PHRASES.declinedCapture(PIECE_KOR[declined.piece], seed));
+  else if (preexistingTheirs.length) facts.push(MEC_PHRASES.preexistingTheirs(PIECE_KOR[preexistingTheirs[0].piece], seed));
+  else {
+    const latent = latentThreatFact(sansBeforeMove, san, color);
+    if (latent) facts.push(MEC_PHRASES.latentThreat(PIECE_KOR[latent.piece], seed));
+  }
+  // R8 — 위협 대처(이미 걸려 있던 기물을 지키는 것, 기존 ctrl.defends) vs 과보호(걸리지 않은 기물을
+  // 미리 지키는 것, 새 overprotectFact) 구분. 이번엔 sq가 "내" 기물의 칸이므로, threatSquareDetail을
+  // enemy 기준으로 뒤집어 넘겨야 상대(진짜 위협하는 쪽)가 빨간 공격자, 내가 초록 수비자로 올바르게
+  // 표시된다(R7과 반대 — 예전엔 과보호에 color를 그대로 넘겨 색이 뒤바뀌어 있었다).
+  const enemy2 = color === "w" ? "b" : "w";
+  if (ctrl.defends.length) {
+    if (!facts.length && threatOut) { threatOut.detail = threatSquareDetail(board, ctrl.defends[0].sq, enemy2); threatOut.keyword = "위협 대처"; }
+    facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
+  }
+  else {
+    const overprotect = overprotectFact(sansBeforeMove, san, color);
+    if (overprotect) {
+      // (기능) 이 사실이 facts[0]으로 뽑히면(=여기까지 아무것도 못 찾았으면) 시각화용 공격자/수비자
+      // 정보를 threatOut에 담아 준다(R7과 같은 애니메이션을 과보호에도 재사용).
+      if (!facts.length && threatOut) { threatOut.detail = threatSquareDetail(board, overprotect.sq, enemy2); threatOut.keyword = "과보호"; }
+      facts.push(MEC_PHRASES.overprotect(PIECE_KOR[overprotect.piece], seed));
+    } else {
+      // (기능) "연결"/"중첩" — 위협·과보호 어느 쪽도 아닐 때만 확인한다(더 급한 사실을 밀어내지 않도록).
+      const connection = connectionFact(sansBeforeMove, san, color);
+      if (connection && moveInfo) {
+        if (!facts.length && threatOut) { threatOut.connect = { sqA: moveInfo.to, sqB: connection.partnerSq }; threatOut.keyword = connection.stacked ? "중첩" : "연결"; }
+        facts.push(connection.stacked ? MEC_PHRASES.stacked(seed) : MEC_PHRASES.connect(PIECE_KOR[moveInfo.piece], seed));
+      }
+    }
+  }
+  if (tempoWasteFact(sansBeforeMove, san, color, kind)) facts.push(MEC_PHRASES.tempo(seed));
+  const detour = pieceDetourFact(sansBeforeMove, san, color, kind);
+  if (detour) facts.push(detour.kind === "returned" ? MEC_PHRASES.pieceReturned(PIECE_KOR[detour.piece], seed) : MEC_PHRASES.pieceDetour(PIECE_KOR[detour.piece], seed));
+  // R14 — 오픈/세미오픈 파일.
+  const openFile = openFileFact(sansBeforeMove, san, color);
+  if (openFile) facts.push(openFile.open ? MEC_PHRASES.openFile(seed) : MEC_PHRASES.semiOpenFile(seed));
+  // R15 — 폰 희생.
+  const pawnSac = pawnSacrificeFact(sansBeforeMove, san, color, kind);
+  if (pawnSac) facts.push(MEC_PHRASES.pawnSac(pawnSac.sq, seed));
+  if (sansBeforeMove.length < MEC_OPENING_PLY_LIMIT) {
+    if (/^O-O-O/.test(san)) facts.push(MEC_PHRASES.queensideNote(seed));
+    else if (!/^O-O/.test(san)) {
+      const before = castleEpFacts(sansBeforeMove, color);
+      const after = castleEpFacts([...sansBeforeMove, san], color);
+      if (before.myCastleRights && !after.myCastleRights) facts.push(MEC_PHRASES.castleLost(seed));
+      // R5 — 다음 수 캐슬링 예고(권리를 잃은 수가 아닐 때만 의미가 있다).
+      else if (nextMoveCastleFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.nextCastle(seed));
+    }
+  }
+  // R6 — 전개. 이 기물의 첫 이동이면, 최종적으로 고른 문장(facts[0]) 앞에 "전개했다" 문장을 붙여
+  // 하나의 글로 잇는다. 붙일 다른 사실이 없으면 전개 문장 하나만 남긴다.
+  const devNote = developmentNote(sansBeforeMove, san, color, kind);
+  if (devNote) { if (facts.length) facts[0] = devNote + " " + facts[0]; else facts.push(devNote); }
+  // R12 — 캐슬링은 판단 기준이 다르다. 좋은 수면 고정된 긍정 평가로 다른 사실을 전부 대체하고(퀸사이드면
+  // 안전성 안내를 이어 붙인다), 나쁜 수인데 위에서 아무 원인도 못 찾았으면 "엔진에 의하면"으로 대체한다.
+  if (/^O-O/.test(san)) {
+    if (MEC_GOOD_KINDS.includes(kind)) {
+      const good = castleQualityGoodPhrase(seed);
+      facts.length = 0;
+      facts.push(/^O-O-O/.test(san) ? good + " " + MEC_PHRASES.queensideNote(seed) : good);
+    } else if (!facts.length) facts.push(MEC_PHRASES.castleBadFallback(seed));
+  } else if (!facts.length && MEC_GOOD_KINDS.includes(kind)) {
+    // R2/R3의 "엔진에 의하면" 취지를 일반화 — 좋은 수인데 위 어떤 사실도 찾지 못했으면, 설명할 수
+    // 있는 직관적인 이유가 없다는 사실 자체를 명시한다.
+    facts.push(MEC_PHRASES.noObviousReason(seed));
+  }
+  return facts;
 }
 
 // (UI/UX) 집중학습을 별개의 전체 창으로 띄우지 않고, 기존에 쓰던 집중학습 UI를 그대로
@@ -5134,18 +6385,36 @@ const REVIEW_COACH_COPY = {
   blunder: { head: "은(는) 블런더예요!", mascot: ["kokoa", "angry"], body: ["이 수로 크게 불리해졌어요 — 다음엔 더 신중하게 살펴보세요.", "포지션이 크게 무너졌어요."] },
   pending: { head: "", mascot: ["milku", "think"], body: ["이 수는 아직 분석되지 않았어요."] },
 };
-function reviewCoachCopy(m, sacrificedPiece) {
+// (기능) MEC(mecFactsArr)·punishLine·brilliantNote·onlyRefutation의 근거를 코멘트에 덧붙인다 —
+// Stockfish 등급(m.kind) 자체는 바꾸지 않는다. 정석 수(book)만 제외하고 모든 등급에 적용한다
+// (MEC가 이제 "원칙 위반 판정"이 아니라 사실 나열이라 정석 수를 제외한 나머지에는 부담 없이 붙일
+// 수 있다 — 자세한 설계는 mecFacts 정의부 주석 참고). 등급별 전용 근거(블런더의 punishLine, 탁월한
+// 수의 brilliantNote, 유일한 수의 onlyRefutation)는 그 등급에만 덧붙인다.
+function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutation) {
   const c = REVIEW_COACH_COPY[m.kind] || REVIEW_COACH_COPY.good;
-  // (v0.2.2 기능) 탁월한 수는 어떤 기물을 희생했는지 알 수 있으면(언더프로모션 등은 제외되어 null로
-  // 넘어옴) 일반 문구 대신 그 기물을 명시한 설명을 보여준다.
-  const body = (m.kind === "brilliant" && sacrificedPiece)
-    ? (sacrificedPiece + "에 대한 위협을 무시하고 희생하는 탁월한 수예요.")
-    : c.body[m.ply % c.body.length];
+  // (기능) 탁월한 수는 brilliantExplain이 만든 하나의 논리적인 글(유형 설명 + 엔진 PV 근거)이
+  // 준비되면 일반 문구 대신 그 글을 그대로 보여준다 — 계산 전(엔진 응답 대기 중)에는 기존 기본
+  // 문구로 대체해 빈 카드가 보이지 않게 한다.
+  let body = (m.kind === "brilliant" && brilliantNote) ? brilliantNote : c.body[m.ply % c.body.length];
+  if (m.kind !== "book") {
+    const extra = [];
+    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
+    // 유일한 수: "다른 수는 안 돼요"로 끝내지 않고, 실제 2순위 후보를 뒀다면 상대가 어떻게
+    // 응징하는지(onlyRefutation)까지 — 이게 없으면(엔진 계산 실패 등) 조용히 생략한다.
+    if (m.kind === "only" && onlyRefutation) {
+      extra.push(onlyRefutation.altSan + " 같은 다른 수를 뒀다면, 상대가 " + onlyRefutation.continuation.join(" ") + "로 응징해 상황이 나빠졌을 거예요.");
+    }
+    if (extra.length) body = body + " " + extra.join(" ");
+  }
+  // (R7 기능) MEC의 마지막 한 줄(mecFactsArr[0])은 body 문자열에 그냥 이어붙이지 않고 mecLine으로
+  // 따로 돌려준다 — "위협" 사실이면 ReviewCoachCard가 이 줄만 밑줄+클릭 가능하게 렌더링해서, 눌렀을
+  // 때 공격자→수비자 화살표 애니메이션을 재생할 수 있게 하기 위함이다.
+  const mecLine = (m.kind !== "book" && mecFactsArr && mecFactsArr.length) ? mecFactsArr[0] : null;
   // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
   const emo = (c.mascot && c.mascot[1]) || "great";
   const name = m.white ? "milku" : "kokoa";
-  return { headline: stripSuffix(m.san) + c.head, body, mascot: [name, emo] };
+  return { headline: stripSuffix(m.san) + c.head, body, mecLine, mascot: [name, emo] };
 }
 // (v0.2.0 기능) side("w"|"b")의 표시용 이름·레이팅 — game.white/game.black(chess.com 원본 양쪽
 // 정보)가 있으면 그대로 쓰고, 없으면(예전 형태로 저장된 대국) game.color 기준 "나"/"상대"로,
@@ -5370,29 +6639,56 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
     </div>
   );
 }
-// (기능) 모바일용 이동 스트립 — 현재 수 주변만 가로로 보여주고 좌우 화살표로 한 수씩 이동.
+// (기능) 모바일용 이동 스트립 — 예전엔 현재 수 주변 5개만 보여주고 좌우 화살표로 한 수씩만 이동할 수
+// 있었다. 사용자가 "스크롤해서 빠르게 좌우로 넘기고 싶다"고 요청해, SequenceBar·기보 줄과 같은 방식
+// (전체 수순을 한 줄에 다 렌더링 + 포인터 드래그 스크롤, 터치는 overflow-x:auto 네이티브 스크롤이
+// 이미 자연스럽게 동작함)으로 다시 만들었다 — 이제 手가 아무리 많아도 스와이프 한 번으로 쭉 넘길 수
+// 있다. 현재 수가 바뀌면(버튼 클릭·기보 클릭 등) 그 수가 항상 화면 가운데로 부드럽게 스크롤된다.
 // (v0.2.1) 양끝 </> 버튼은 이제 onJump(정확한 ply로 점프, 자유 탐색 초기화)가 아니라 onPrev/onNext
 // (보드에서 자유롭게 둔 수가 있으면 그것부터 한 수씩 되돌리는 stepBack/stepForward)로 동작한다 —
 // 가운데 기보 항목 클릭은 여전히 onJump로 그 실제 게임 수순 위치로 하드 점프한다.
 // (v0.2.1) moves·dotPlies가 주어지면, 그래프에 원이 찍히는 수(dotPlies)만 그 등급 색을 입히고 왼쪽에
 // 수 체계 아이콘을 붙인다 — 나머지 수는 평범한 흰 글씨로 둔다(모바일 스트립이 아이콘으로 뒤덮이지 않게).
 function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext, canPrev, canNext }) {
-  const WINDOW = 5;
-  const start = Math.max(0, Math.min(curPly - Math.floor(WINDOW / 2), sans.length - WINDOW));
-  const items = sans.slice(Math.max(0, start), Math.max(0, start) + WINDOW);
+  const scrollRef = useRef(null);
+  const curRef = useRef(null);
+  useEffect(() => {
+    const el = scrollRef.current, cur = curRef.current;
+    if (!el || !cur) return;
+    const target = cur.offsetLeft + cur.offsetWidth / 2 - el.clientWidth / 2;
+    el.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }, [curPly]);
+  // 데스크톱 마우스로도 끌어서 스크롤할 수 있게(터치는 overflow-x:auto 네이티브 스크롤로 이미 동작) —
+  // SequenceBar·기보 줄과 동일한 포인터 드래그 스크롤 패턴, 드래그로 실제 스크롤했으면 클릭(점프)을 막는다.
+  const dragRef = useRef(null);
+  const onPointerDown = (e) => {
+    dragRef.current = { x: e.clientX, scrollLeft: scrollRef.current ? scrollRef.current.scrollLeft : 0, moved: false };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current; if (!d) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 3) d.moved = true;
+    if (scrollRef.current) scrollRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
+  };
+  const endDrag = () => { dragRef.current = null; };
+  const onClickCapture = (e) => {
+    if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); }
+    dragRef.current = null;
+  };
   return (
     <div className="flex items-center" style={{ gap: 4, padding: "8px 4px" }}>
       <button onClick={onPrev} disabled={!canPrev} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? RV.text : RV.dim, cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
-      <div className="flex items-center" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", justifyContent: "center" }}>
-        {items.map((s, i) => {
-          const ply = Math.max(0, start) + i;
+      <div ref={scrollRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture}
+        className="flex items-center no-pan" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y", cursor: "grab" }}>
+        {sans.map((s, ply) => {
           const isCur = ply === curPly - 1;
           const showNum = ply % 2 === 0;
           const m = moves && moves[ply];
           const isDot = !!(dotPlies && dotPlies.has(ply) && m && QCOLOR[m.kind]);
           const txtColor = isCur ? "#241509" : isDot ? QCOLOR[m.kind] : RV.text;
           return (
-            <span key={ply} className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
+            <span key={ply} ref={isCur ? curRef : undefined} className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
               {showNum && <span style={{ fontSize: 12, color: RV.soft, fontWeight: 700 }}>{ply / 2 + 1}.</span>}
               <button onClick={() => onJump(ply + 1)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? T.brassHi : "transparent", color: txtColor, fontWeight: (isCur || isDot) ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{isDot && badgeIcon(m.kind, 13)}{stripSuffix(s)}</button>
             </span>
@@ -5444,9 +6740,26 @@ function ReviewOpeningBanner({ text }) {
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
 // 수가 없을 때(이미 최선을 뒀을 때)는 Show 자체를 비활성화한다. Retry는 실질적으로 쓰이지 않아 제거했다.
-function ReviewCoachCard({ move, evalDisp, sacrificedPiece, onShowLine, showingLine, onNext, isLast, narrow }) {
+// (기능) 애니메이션이 있는 MEC 문장에서 문장 전체가 아니라 실제 용어(keyword, 예: "위협"·"과보호")
+// 하나만 밑줄+클릭 가능하게 렌더링한다. text 안에서 keyword를 찾아 그 부분만 별도 span으로 감싸고
+// 클릭 핸들러를 그 span에만 건다 — keyword가 없거나 onClick이 없으면(=애니메이션 없는 일반 사실)
+// 그냥 평범한 문단으로 렌더링한다. keyword가 문장 안에 없으면(방어적으로) 역시 평범하게 렌더링한다.
+function MecKeywordLine({ text, keyword, onClick, style }) {
+  if (!keyword || !onClick) return <p style={style}>{text}</p>;
+  const idx = text.indexOf(keyword);
+  if (idx < 0) return <p style={style}>{text}</p>;
+  const before = text.slice(0, idx), mid = text.slice(idx, idx + keyword.length), after = text.slice(idx + keyword.length);
+  return (
+    <p style={style}>
+      {before}
+      <span onClick={onClick} className="press" style={{ textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", fontWeight: 700 }}>{mid}</span>
+      {after}
+    </p>
+  );
+}
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
-  const copy = reviewCoachCopy(move, sacrificedPiece);
+  const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
   return (
@@ -5461,6 +6774,21 @@ function ReviewCoachCard({ move, evalDisp, sacrificedPiece, onShowLine, showingL
             {evalDisp && <EvalBadge ev={evalDisp} />}
           </div>
           <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
+          {/* (R7 기능, 예방 수·연결까지 확장) "위협"·"위협 대처"·"과보호"·"예방 수"·"연결"·"중첩"
+              사실이면 그 용어(mecKeyword)에만 밑줄 표시 + 클릭 시 애니메이션 재생 — 문장 전체가
+              아니라 실제 그 단어를 눌러야만 재생된다(MecKeywordLine). threatDetail/preventDetail/
+              connectDetail 중 이 사실이 실제로 채운 것만 클릭 핸들러로 연결한다. */}
+          {copy.mecLine && (
+            <MecKeywordLine
+              text={copy.mecLine}
+              keyword={mecKeyword}
+              onClick={threatDetail ? () => onThreatClick && onThreatClick(threatDetail)
+                : preventDetail ? () => onPreventClick && onPreventClick(preventDetail)
+                : connectDetail ? () => onConnectClick && onConnectClick(connectDetail)
+                : null}
+              style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}
+            />
+          )}
         </div>
       </div>
       <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: "8px 10px", gap: 6 }}>
@@ -5625,6 +6953,15 @@ function ReviewPage({ game, onClose }) {
   const [engineLines, setEngineLines] = useState([]);
   const playFree = useCallback((san) => {
     if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
+    // (기능) 자유 탐색이 아직 실제 기보 위치(exploreSans 없음)에서 시작됐고, 방금 둔 수가 그 지점의
+    // 실제 기보 수와 정확히 같다면 — 이건 "새로운 가지"가 아니라 그냥 원래 대국을 그대로 이어서 둔
+    // 것이다. 굳이 exploreMove effect로 다시 실시간 분석을 돌릴 필요 없이, 이미 게임 리뷰 시작할 때
+    // 다 계산해 둔 result.moves를 그대로 쓰면 되므로 곧장 그 지점(curPly+1)의 원래 리뷰로 이동한다.
+    if (!exploreSans.length && curPly < sans.length && stripSuffix(san) === stripSuffix(sans[curPly])) {
+      playMoveSfx(san);
+      jump(curPly + 1);
+      return;
+    }
     playMoveSfx(san);
     // (v0.2.4 버그 수정) 지금 화면에 "최선"으로 안내 중이던 수(Show 화살표 또는 엔진 라인 1순위)를
     // 그대로 뒀다면, 그 사실 자체를 기록해 둔다 — 아래 exploreMove 채점 effect가 재검색을 새로
@@ -5635,7 +6972,7 @@ function ReviewPage({ game, onClose }) {
     if (shownBest && stripSuffix(shownBest) === stripSuffix(san)) forcedBestRef.current = effSans.join(" ") + "|" + san;
     setExploreSans((s) => [...s, san]); setExploreFuture([]);
     setSel(null); setDrag(null);
-  }, [gameDrawn, activeMove, engineLines, effSans]);
+  }, [gameDrawn, activeMove, engineLines, effSans, exploreSans, curPly, sans]);
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
     if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
@@ -5692,7 +7029,7 @@ function ReviewPage({ game, onClose }) {
     (async () => {
       try {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
-        const w = pool[0] || engine;
+        const w = poolWorker(pool, 0, engine); // 실시간 라인 스트리밍 — 항상 전용 워커
         // (v0.2.1) onLines로 depth마다 실시간 갱신 — 평가치가 살아 움직이고 수순이 점점 길어진다.
         // (v0.2.4 성능) slot="review-lines" — 빠르게 수를 넘기면 이전 포지션 계산이 큐를 막지 않고 즉시 중단된다.
         const pvsAll = await w.evaluateMulti(sansToFen(effSans), REVIEW_DEPTH, 3, REVIEW_MOVETIME_MS, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } }, "review-lines");
@@ -5714,6 +7051,11 @@ function ReviewPage({ game, onClose }) {
     const prevSans = effSans.slice(0, -1);
     const san = effSans[effSans.length - 1];
     const white = prevSans.length % 2 === 0;
+    // (기능) 게임 리뷰 본편(analyzeGame)·학습 탭 후보 블록은 이론 수를 만나면 곧장 "이론" 등급으로
+    // 확정하고 실시간 분석을 건너뛰는데, 자유 탐색 채점만 이 확인이 빠져 있어 이론 수를 둬도 매번
+    // 실시간 재검색을 거쳐 평가치 기반 등급(최선/우수 등)으로 잘못 표시됐다. 같은 isBookMoveAt
+    // 확인을 그대로 적용해, 자유 탐색 중에도 이론 수는 즉시 "이론" 아이콘으로 확정한다.
+    if (isBookMoveAt(prevSans.join(" "), san)) { setExploreMove({ san, white, kind: "book", best: null }); return; }
     // (v0.2.4 버그 수정) playFree가 남겨 둔 "이 포지션|이 수" 기록 — 방금 화면에 보여준 추천을
     // 그대로 뒀다면 아래 재검색 결과와 무관하게 최선의 수로 확정한다(재검색은 movetime 상한 안에서
     // 타이밍에 따라 살짝 다른 1순위를 낼 수 있어, 방금 안내한 추천과 다른 수로 오판정되곤 했다).
@@ -5723,7 +7065,7 @@ function ReviewPage({ game, onClose }) {
       if (!engine || engine.status !== "ready") return;
       try {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
-        const wBest = pool[0] || engine, wAfter = pool[1] || pool[0] || engine;
+        const wBest = poolWorker(pool, 1, engine), wAfter = poolWorker(pool, 2, engine);
         const col = white ? "w" : "b";
         // (v0.2.4) 게임 리뷰는 이제 학습 탭과 다른 엔진(고정 Stockfish 16, 세기 제한)을 쓰므로 depth·
         // movetime도 리뷰 전용 값(REVIEW_DEPTH·REVIEW_MOVETIME_MS)을 그대로 쓴다 — 학습 탭(evalMoveKind,
@@ -5751,8 +7093,12 @@ function ReviewPage({ game, onClose }) {
         const under = /=/.test(san) && !/=Q/.test(san);
         if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
         const gap = secondCp == null ? 9999 : (bestCp - secondCp);
-        if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600) kind = "only";
-        if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan });
+        // (버그 수정) analyzeGame과 동일 — 단순 되잡기(되잡을 수 있는 내 기물이 이 하나뿐)는 "유일한
+        // 수"로 승격하지 않는다.
+        let singleRecapture = false;
+        try { const rc = recaptureFact(prevSans, san, col); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+        if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture) kind = "only";
+        if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
       } catch { }
     })();
     return () => { cancelled = true; };
@@ -5768,6 +7114,146 @@ function ReviewPage({ game, onClose }) {
     if (isUnderpromo) return null;
     return sacrificedPieceKor(effSans.slice(0, -1), activeMove.san);
   }, [activeMove, effSans]);
+  // (재설계) MEC가 이제 "원칙 위반 판정"이 아니라 사실 나열(기물 긴장 최우선 → 이 수의 위협/방어 →
+  // 템포 낭비 → 캐슬링 정보)이라, 정석 수(book)만 빼고 모든 등급에 부담 없이 적용한다 — 걸린
+  // 기물이 있으면 그게 항상 맨 앞에 오므로, 예전처럼 무관한 스타일 조언이 원인인 것처럼 보일 일이
+  // 없다. 동기 계산이라 useMemo로 충분하다(엔진 불필요).
+  // (버그 수정) 체크메이트로 몰아가는 강제 수순에 들어서면(activeEvalDisp.mate != null), 그 뒤로는
+  // 기물 하나하나가 걸렸는지 여부는 더 이상 의미 있는 정보가 아니다(이기는 쪽은 어차피 메이트로
+  // 끝나고, 지는 쪽은 뭘 지켜도 소용없다) — 이럴 때는 걸린 기물·예방 수 같은 MEC 사실 대신 지금이
+  // 체크메이트 수순이라는 것 자체와 남은 수를 명시한다.
+  const inMateSequence = !!(activeEvalDisp && activeEvalDisp.mate != null);
+  // (R7 기능) mecFacts가 대표 사실로 "위협"을 뽑았으면, mecThreatOut.detail에 그 공격자/수비자
+  // 칸 정보가 함께 채워진다 — useMemo 안에서 채워지는 out-parameter라 ref로 들고 다닌다.
+  const mecThreatOut = useRef({});
+  const mecNotes = useMemo(() => {
+    mecThreatOut.current = {};
+    if (!activeMove || activeMove.kind === "book") return [];
+    if (inMateSequence) {
+      const n = Math.abs(activeEvalDisp.mate);
+      return [mecPick(["체크메이트로 몰아가는 강제 수순이에요, 메이트까지 " + n + "수 남았어요.", "이제부터는 체크메이트 수순이에요 — " + n + "수 뒤에 체크메이트예요.", "메이트 " + n + "수 전이에요, 체크메이트로 끝나는 강제 수순이에요."], effSans.length)];
+    }
+    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current); } catch { return []; }
+  }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate]);
+  const threatDetail = mecThreatOut.current.detail || null;
+  // (기능) 예방 수(R4/R9)의 시각화 데이터 — mecThreatOut.current.prevent에 방어 대상 칸·상대 진입
+  // 경로·내 응수 경로가 채워져 있으면(그 사실이 facts[0]으로 뽑혔을 때만), 그 칸에 금색 테두리를
+  // 씌우고 클릭하면 진입 경로(공격자)→응수 경로(수비자) 애니메이션을 재생할 수 있게 한다.
+  const preventDetail = mecThreatOut.current.prevent || null;
+  // (기능) "연결"/"중첩"의 시각화 데이터 — 서로 지켜주는 두 기물의 칸.
+  const connectDetail = mecThreatOut.current.connect || null;
+  // (기능) 애니메이션이 있는 MEC 문장에서 실제로 밑줄·클릭 대상이 될 단어 — mecFacts가 이 사실을
+  // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"). 문장
+  // 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
+  const mecKeyword = mecThreatOut.current.keyword || null;
+  // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
+  // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
+  // 구조가 달라서(공격자 1개→수비자 1개로 교체되는 느낌을 내야 함) 공격자를 보여준 뒤 그 공격자를
+  // 옅게 흐리면서(사라지는 연출) 동시에 수비자를 띄우고, 방어 대상 칸에는 금색 테두리(halo)를 함께
+  // 표시한다. 수를 넘기면(activeMove가 바뀌면) 예약된 다음 단계를 모두 취소하고 즉시 지운다.
+  const [threatArrows, setThreatArrows] = useState([]);
+  const [haloSquares, setHaloSquares] = useState([]);
+  const threatTimers = useRef([]);
+  const clearThreatTimers = () => { threatTimers.current.forEach(clearTimeout); threatTimers.current = []; };
+  useEffect(() => { clearThreatTimers(); setThreatArrows([]); setHaloSquares([]); return clearThreatTimers; }, [activeMove, effSans]);
+  const playThreatAnimation = (detail) => {
+    clearThreatTimers();
+    setHaloSquares([]);
+    const steps = [
+      ...detail.attackers.map((sq) => ({ from: sq, to: detail.targetSq, kind: "threatAttacker" })),
+      ...detail.defenders.map((sq) => ({ from: sq, to: detail.targetSq, kind: "threatDefender" })),
+    ];
+    setThreatArrows([]);
+    steps.forEach((arrow, i) => {
+      threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), i * 450));
+    });
+    threatTimers.current.push(setTimeout(() => setThreatArrows([]), steps.length * 450 + 1000));
+  };
+  // (기능) 예방 수 애니메이션 — 금색 테두리로 방어 대상 칸을 밝히고, 상대의 진입 경로를 빨간 공격자
+  // 화살표로 먼저 보여준 뒤, 그 화살표가 옅게 사라지는 것과 동시에(fading) 내 응수 경로를 초록
+  // 수비자 화살표로 띄운다.
+  const playPreventAnimation = (detail) => {
+    clearThreatTimers();
+    setThreatArrows([]);
+    setHaloSquares([detail.targetSq]);
+    const attacker = { from: detail.attackerFrom, to: detail.targetSq, kind: "threatAttacker" };
+    const defender = { from: detail.myFrom, to: detail.myTo, kind: "threatDefender" };
+    threatTimers.current.push(setTimeout(() => setThreatArrows([attacker]), 0));
+    threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }]), 700));
+    threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }, defender]), 950));
+    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, 2400));
+  };
+  // (기능) 연결/중첩 애니메이션 — 서로 지켜주는 두 기물 사이를 수비자(초록) 화살표로 양방향
+  // 순서대로 보여준다(R7과 같은 순차 등장 패턴, 색만 둘 다 수비자).
+  const playConnectAnimation = (detail) => {
+    clearThreatTimers();
+    setHaloSquares([]);
+    const steps = [
+      { from: detail.sqA, to: detail.sqB, kind: "threatDefender" },
+      { from: detail.sqB, to: detail.sqA, kind: "threatDefender" },
+    ];
+    setThreatArrows([]);
+    steps.forEach((arrow, i) => {
+      threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), i * 450));
+    });
+    threatTimers.current.push(setTimeout(() => setThreatArrows([]), steps.length * 450 + 1000));
+  };
+  // (기능) 탁월한 수 — 유형(직접 희생/방치 희생/언더프로모션) + 엔진 PV 근거를 하나의 글로 엮은
+  // 설명(brilliantExplain, 엔진 필요, 비동기). 두기 전 평가(bestCp)가 이미 마이너스면(mover 관점)
+  // "지는 상황에서의 희생"으로 보고 무승부 수순부터 먼저 찾는다.
+  const [brilliantNote, setBrilliantNote] = useState(null);
+  useEffect(() => {
+    setBrilliantNote(null);
+    if (!activeMove || activeMove.kind !== "brilliant") return;
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    (async () => {
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
+      const w = poolWorker(pool, 3, engine);
+      const prevSans = effSans.slice(0, -1);
+      const color = activeMove.white ? "w" : "b";
+      let alreadyLosing = false;
+      try {
+        const before = await w.evaluate(sansToFen(prevSans), 14, undefined, 900, "review-brilliant");
+        if (before && before.cp != null) alreadyLosing = before.cp < 0;
+        else if (before && before.mate != null) alreadyLosing = before.mate < 0;
+      } catch { }
+      try {
+        const note = await brilliantExplain(w, prevSans, activeMove.san, color, alreadyLosing, !!activeMove.best, "review-brilliant");
+        if (!cancelled) setBrilliantNote(note);
+      } catch { }
+    })();
+    return () => { cancelled = true; };
+  }, [activeMove, effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  // (기능) 유일한 수 — 2순위 후보를 뒀다면 상대가 어떻게 응징하는지(엔진 필요, 비동기).
+  const [onlyRefutation, setOnlyRefutation] = useState(null);
+  useEffect(() => {
+    setOnlyRefutation(null);
+    if (!activeMove || activeMove.kind !== "only") return;
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    (async () => {
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
+      const w = poolWorker(pool, 4, engine);
+      const r = await onlyMoveRefutation(w, effSans.slice(0, -1), 2);
+      if (!cancelled) setOnlyRefutation(r);
+    })();
+    return () => { cancelled = true; };
+  }, [activeMove, effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  const [punishLine, setPunishLine] = useState([]);
+  useEffect(() => {
+    setPunishLine([]);
+    if (!activeMove || !["mistake", "blunder", "miss"].includes(activeMove.kind)) return;
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    (async () => {
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
+      const w = poolWorker(pool, 5, engine);
+      const line = await punishmentFacts(w, effSans, 2);
+      if (!cancelled) setPunishLine(line);
+    })();
+    return () => { cancelled = true; };
+  }, [effSans.join(" "), activeMove && activeMove.kind, engine && engine.status, engine && engine.profile]);
   const arrows = useMemo(() => {
     const out = [];
     if (activeMove && showingLine) {
@@ -5776,15 +7262,16 @@ function ReviewPage({ game, onClose }) {
       const info = sanSrc(prevBoard, target, activeMove.white ? "w" : "b");
       if (info && !info.castle) out.push({ from: info.from, to: info.to, adopt: 80 });
     }
-    // (v0.2.2 기능) 탁월한 수(언더프로모션 제외)가 두어진 위치에서는 "Show" 여부와 무관하게, 방금 둔
-    // 내 기물을 상대의 어떤 기물이 공격할 수 있는지 항상 붉은색 경고 화살표로 보여준다. sacrificedPiece가
-    // 있다는 것 자체가 이미 "탁월한 수 + 언더프로모션 아님"을 뜻하므로 그대로 게이트로 재사용한다.
+    // (기능) 탁월한 수(언더프로모션 제외)가 두어진 위치에서는 "Show" 여부와 무관하게, 지금 상대에게
+    // 안전하게 잡힐 수 있는 내 기물 전부를 항상 붉은색 경고 화살표로 보여준다(방금 옮긴 기물 하나만이
+    // 아니라, 그 수로 인해 방치된 다른 기물까지 전부) — sacrificedPiece가 있다는 것 자체가 이미
+    // "탁월한 수 + 언더프로모션 아님"을 뜻하므로 그대로 게이트로 재사용한다.
     if (sacrificedPiece) {
-      const danger = brilliantArrows(effSans.slice(0, -1), activeMove.san).filter((a) => a.kind === "danger");
-      out.push(...danger);
+      out.push(...hangingPieceArrows(boardFromSans(effSans), activeMove.white ? "w" : "b"));
     }
+    out.push(...threatArrows);
     return out;
-  }, [activeMove, showingLine, effSans, sacrificedPiece]);
+  }, [activeMove, showingLine, effSans, sacrificedPiece, threatArrows]);
   const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardFromSans(effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
   // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
   // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
@@ -5824,13 +7311,13 @@ function ReviewPage({ game, onClose }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
@@ -5858,12 +7345,12 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} sacrificedPiece={sacrificedPiece} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
               leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
@@ -6657,7 +8144,7 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
     const node = snapNode(path);
     const rawMoves = node ? node.moves.slice() : [];
     addsFor(path.join(" ")).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
-    const tiered = assignTiers(rawMoves, ply, board, path.join(" "));
+    const tiered = assignTiers(rawMoves, ply, board, path.join(" "), path);
     return tiered.find((x) => x.san === m.san) || null;
   }, [path.join(" "), m.san, board]);
   const kind = (tier && tier.kind) || (m.book ? "book" : "pending");
@@ -6989,7 +8476,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           }
           ordered = sanOrder.map((s) => filtered.find((m) => m.san === s)).filter(Boolean);
         }
-        const tiered = assignTiers(filtered, path.length, board, key);
+        const tiered = assignTiers(filtered, path.length, board, key, path);
         const color = path.length % 2 === 0 ? "w" : "b";
         for (const m of ordered) {
           const t = tiered.find((x) => x.san === m.san);
@@ -8453,13 +9940,14 @@ function dailyLineId(baseSans, lineIdx) { return puzzleNo(baseSans.join(" ")) + 
 // null이면 그 날짜의 퍼즐이 아직 로딩 중/미배정 상태인 것으로 취급한다).
 async function resolveDailyPuzzle(dateStr, engine) {
   let setupSans, mistakeSan, opening;
-  const override = await fetchDailyPuzzleOverride(dateStr);
+  // (성능) 개발자 오버라이드 조회(sbSelect)와 테마 배정 조회(loadDailyThemeRows)는 서로 무관한 네트워크
+  // 요청인데 예전엔 오버라이드가 먼저 끝나야 테마 조회를 시작했다 — 동시에 쏴서 왕복 하나만큼 줄인다.
+  const [override, rows] = await Promise.all([fetchDailyPuzzleOverride(dateStr), loadDailyThemeRows()]);
   if (override) {
     setupSans = (override.sans || []).slice(0, override.puzzle_ply);
     mistakeSan = (override.sans || [])[override.puzzle_ply];
     opening = override.opening || "개발자 지정 퍼즐";
   } else {
-    const rows = await loadDailyThemeRows();
     const theme = themeForDate(dateStr, rows);
     if (!theme) return null; // 아직 테마가 하나도 배정 안 된 날짜
     const pool = await loadDailyThemePool(theme.opening_tag);
@@ -8514,6 +10002,9 @@ function useDailyPuzzle(engine, dateStr) {
 // (v0.2.7) 캐러셀에 보여줄 날짜 목록 — 개발자가 처음 오프닝 테마를 배정한 날짜(daily_puzzle_themes의
 // 가장 이른 starts_on)부터 오늘까지 전체 기간을, 오늘이 맨 앞(배열 인덱스 0)에 오도록 최신순으로
 // 만든다. 아직 테마가 하나도 배정되지 않았으면 오늘 하루만 담는다.
+// (기능) 사용자 요청으로 스와이프 가능한 범위를 최근 7일로 제한한다 — 그 이전 날짜는 "번호로
+// 풀기" 입력창에 YYYY/MM/DD로 직접 입력해 찾는다(더 밑 solveByInput 참고).
+const DAILY_CAROUSEL_MAX_DAYS = 7;
 function useDailyPuzzleDates() {
   const [dates, setDates] = useState(null);
   useEffect(() => {
@@ -8524,7 +10015,7 @@ function useDailyPuzzleDates() {
       const earliest = (rows && rows.length && rows[0].starts_on < today) ? rows[0].starts_on : today;
       const startMs = Date.parse(earliest + "T00:00:00Z");
       const todayMs = Date.parse(today + "T00:00:00Z");
-      const spanDays = Math.max(0, Math.round((todayMs - startMs) / 86400000));
+      const spanDays = Math.min(DAILY_CAROUSEL_MAX_DAYS - 1, Math.max(0, Math.round((todayMs - startMs) / 86400000)));
       const out = [];
       for (let i = 0; i <= spanDays; i++) out.push(todayStr(new Date(Date.now() - i * 86400e3)));
       setDates(out);
@@ -9170,12 +10661,17 @@ function summarizePosition(board, userColor) {
   const oppColor = userColor === "w" ? "b" : "w";
   const kp = kingPos(board, oppColor);
   if (kp && isAttacked(board, kp[0], kp[1], userColor)) return "상대 킹이 체크 상태예요 — 지금 공격이 통하고 있어요!";
+  // (기능) 자체 포지션 평가 AI의 기물 긴장 신호 — 걸린 기물이 있으면 막연한 점수차 안내보다 훨씬
+  // 구체적인 힌트가 된다(FEN 기반 tensionFacts, Stockfish 없이 즉시 계산).
+  const t = tensionFacts(board, userColor);
+  if (t.theirs.length) return "상대 " + PIECE_KOR[t.theirs[0].piece] + "가 걸려 있어요 — 잡을 기회를 찾아보세요.";
+  if (t.mine.length) return "네 " + PIECE_KOR[t.mine[0].piece] + "가 위태로워요 — 안전하게 지킬 수를 찾아보세요.";
   const diff = materialDiff(board, userColor);
   if (diff >= 3) return "지금 기물 점수에서 크게 앞서 있어요 — 확실히 마무리할 수를 찾아보세요.";
   if (diff >= 1) return "지금 기물을 조금 앞서 있어요 — 이 이점을 굳히는 수를 찾아보세요.";
   if (diff <= -3) return "지금 기물 점수가 크게 밀리고 있어요 — 반격할 결정적인 수가 필요해요.";
-  if (diff <= -1) return "지금 기물이 조금 부족해요 — 국면을 뒤집을 수를 찾아보세요.";
-  return "기물 점수는 팽팽해요 — 국면을 유리하게 이끌 수를 찾아보세요.";
+  if (diff <= -1) return "지금 기물이 조금 부족해요 — 포지션을 뒤집을 수를 찾아보세요.";
+  return "기물 점수는 팽팽해요 — 포지션을 유리하게 이끌 수를 찾아보세요.";
 }
 /* (20차 기능1) 퍼즐 풀이 — 고정된 단일 라인이 아니라 분기 트리를 탐색한다.
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
@@ -9220,6 +10716,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // shakeTag는 그 직후 도전 가능해진 다음 라인을 살짝 흔들어 "클릭하면 바로 풀 수 있다"를 강조한다.
   const [page, setPage] = useState(0);
   const [celebrate, setCelebrate] = useState(null);   // { tag } | null
+  // (기능) 코치(마스코트) 말풍선을 숨겼다 보였다 — 보드가 작은 화면에서 말풍선이 차지하는 공간이
+  // 부담스럽거나, 이미 익숙한 안내를 계속 다시 보고 싶지 않을 때를 위한 토글. 퍼즐이 바뀌어도 계속
+  // 숨겨 두고 싶다는 요구는 없었으므로 세션 state로만 두고 퍼즐마다 초기화하지는 않는다.
+  const [coachHidden, setCoachHidden] = useState(false);
   const pagerRef = useRef(null);
   const dragRef = useRef(null);
   const [dragPx, setDragPx] = useState(0);
@@ -9285,16 +10785,40 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 유지하되, 이 짧은 탐색 애니메이션 동안만 예외적으로 실시간 값을 보여준다.
   const [liveEval, setLiveEval] = useState(null);
   const [liveDepth, setLiveDepth] = useState(null);
+  // (버그 수정) 탐색이 끝나면(searchDone) liveEval을 곧장 null로 비우고 정적인 curNode.ev로
+  // 돌아갔는데, curNode.ev는 트리 루트나 개발자가 손으로 만든/구버전 노드에서 애초에 없는 경우가
+  // 흔했다(아래 meta 보강 effect가 이런 누락을 채우지만 모식도 전용으로만 쓰이고 있었음) — 그러면
+  // 막대가 "실제 엔진 값이 잠깐 보였다가 0.00에 멈추는" 것처럼 보였다(사용자 제보 영상과 일치).
+  // 이 포지션에서 마지막으로 실제 계산된 값을 settledEval에 별도로 남겨 두고, curNode.ev가 없을
+  // 때의 최종 폴백으로 쓴다 — curNode.ev가 있으면(대부분의 정식 생성 퍼즐) 여전히 그 정적값을
+  // 우선하므로 v0.2.6에서 고친 "값이 미묘하게 흔들리는" 문제는 재발하지 않는다.
+  const [settledEval, setSettledEval] = useState(null);
   useEffect(() => {
-    setLiveEval(null); setLiveDepth(null);
+    setLiveEval(null); setLiveDepth(null); setSettledEval(null);
     if (!engine || engine.status !== "ready") return;
     let cancelled = false;
+    const STEP_MS = 55;
+    const pending = [];
+    let playing = false, searchDone = false;
+    const playNext = () => {
+      if (cancelled) return;
+      if (!pending.length) { playing = false; if (searchDone) { setLiveEval(null); setLiveDepth(null); } return; }
+      playing = true;
+      const next = pending.shift();
+      setLiveEval(next.ev); setLiveDepth(next.depth); setSettledEval(next.ev);
+      setTimeout(playNext, STEP_MS);
+    };
     engine.evaluate(sansToFen(curSans), 18, (partial) => {
       if (cancelled) return;
       const w = posEvalToWhite(partial, curSans);
-      if (w) setLiveEval(w);
-      setLiveDepth(partial.depth);
-    }, 900, "puzzle-eval").then(() => { if (!cancelled) { setLiveEval(null); setLiveDepth(null); } });
+      if (!w) return;
+      pending.push({ ev: w, depth: partial.depth });
+      if (!playing) playNext();
+    }, 900, "puzzle-eval").then(() => {
+      if (cancelled) return;
+      searchDone = true;
+      if (!playing) { setLiveEval(null); setLiveDepth(null); }
+    });
     return () => { cancelled = true; };
   }, [curSans.join(" "), engine && engine.status]);
   const [boardSize, boardRef] = useBoardSize(380);
@@ -9465,9 +10989,35 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintLevel > 0 ? "wink"
     : theme === "sacrifice" ? "great" : theme === "advantage" ? "think" : "surprise";
   const pm = [color === "w" ? "milku" : "kokoa", pmEmotion];
+  // (기능) 퍼즐 코치도 게임 리뷰와 같은 MEC(mecFacts) 설명을 쓴다 — "직전 수를 살펴보는 중이에요…"
+  // 같은 막연한 안내 대신, 방금 두어진 수가 실제로 뭘 위협·방어·예방·전개했는지 구체적으로 짚어준다.
+  // moveIcon effect(위)와 정확히 같은 방식으로 "지금 설명할 수"(prevSans/mvSan)를 고른다 — 응수
+  // 애니메이션 중이면 reply의 수, 이미 둔 수가 있으면 그 마지막 수, 아직 하나도 안 뒀으면 상대의
+  // 실수 수(mistakeSan)를 대상으로 삼는다. classifyMoveKindDetailed로 kind·bestSan·beforeCp를
+  // 한 번에 얻어 mecFacts에 그대로 넘긴다(게임 리뷰의 mecNotes와 동일한 인자 순서).
+  const [mecBubble, setMecBubble] = useState(null);
+  useEffect(() => {
+    setMecBubble(null);
+    let prevSans, mvSan;
+    if (reply) { prevSans = reply.sans; mvSan = reply.san; }
+    else if (pathNodes.length >= 1 && !wrong && !reverting) { prevSans = curSans.slice(0, -1); mvSan = pathNodes[pathNodes.length - 1].san; }
+    else if (pathNodes.length === 0 && puzzle.setupSans && puzzle.mistakeSan) { prevSans = puzzle.setupSans; mvSan = puzzle.mistakeSan; }
+    else return;
+    if (!liveOn || !engine || engine.status !== "ready") return;
+    const moverColor = prevSans.length % 2 === 0 ? "w" : "b";
+    let cancelled = false;
+    classifyMoveKindDetailed(engine, prevSans, stripSuffix(mvSan)).then((r) => {
+      if (cancelled || !r) return;
+      try {
+        const facts = mecFacts(prevSans, stripSuffix(mvSan), moverColor, r.kind, r.bestSan, r.beforeCp, null);
+        if (facts && facts.length) setMecBubble(facts[0]);
+      } catch { }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [reply, pathNodes.length, wrong, reverting, curSans.join(" "), puzzle.id, liveOn, engine && engine.status]);
   // (v0.2.6 버그 수정) "당신 차례" 안내 문구 대신, 코치 말풍선이 지금 보드 포지션을 짧게 요약해
   // 설명하도록 바꾼다(막연한 "힌트 버튼을 눌러보세요" 대신 실제로 도움이 되는 상황 설명).
-  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : summarizePosition(board, color);
+  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : (mecBubble || summarizePosition(board, color));
   const doneBubble = fullyComplete ? "훌륭해요! 모든 라인을 정복했어요."
     : "이 라인을 완료했어요! 모식도에서 다른 가지에 도전해 보세요.";
   const bubbleText = done ? doneBubble : idleBubble;
@@ -9688,7 +11238,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         style={{ position: "relative", overflow: "hidden", touchAction: "pan-y" }}>
         <div style={{ display: "flex", width: "200%", transform: `translateX(calc(${-page * 50}% + ${dragPx}px))`, transition: dragging ? "none" : "transform .34s cubic-bezier(.22,.9,.32,1)" }}>
           <div style={{ width: "50%", boxSizing: "border-box", paddingRight: 3 }}>
-            <div key={"bubble-" + bubbleText} style={{ marginBottom: 10, animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
+            <div style={{ position: "relative", marginBottom: 10, minHeight: coachHidden ? 34 : undefined }}>
+              {coachHidden ? null : <div key={"bubble-" + bubbleText} style={{ animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>}
+              <button onClick={() => setCoachHidden((h) => !h)} className="press no-pan" aria-label={coachHidden ? "코치 보이기" : "코치 숨기기"} title={coachHidden ? "코치 보이기" : "코치 숨기기"}
+                style={{ position: "absolute", top: coachHidden ? 0 : 8, right: 8, zIndex: 5, width: 26, height: 26, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>
+                {coachHidden ? <Eye size={13} /> : <EyeOff size={13} />}
+              </button>
+            </div>
             {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
             <PuzzlePgnBox text={sansToPgnText(curSans)} />
             {/* (버그 수정) 바깥 페이저(보드↔모식도 스와이프)의 onPagerPointerDown이 이 보드 위에서 눌러도
@@ -9725,8 +11281,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
                 평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. (v0.2.7) 다만 창을 연 직후처럼
                 실제 엔진이 이 포지션을 짧게 다시 훑는 동안(liveDepth)에는 그 진행 중인 값을 보여줘
-                막대가 살아 움직이는 것처럼 느껴지게 하고, 검색이 끝나면 다시 정적인 curNode.ev로 돌아간다. */}
-            <div style={{ marginTop: 12 }}><EvalBar cp={liveDepth != null ? (liveEval || curNode.ev) : curNode.ev} width={boardSize} depth={liveDepth} /></div>
+                막대가 살아 움직이는 것처럼 느껴지게 하고, 검색이 끝나면 다시 정적인 값으로 돌아간다.
+                (버그 수정) curNode.ev가 없는 노드(트리 루트, 개발자가 손으로 만든/구버전 노드)에서는
+                검색이 끝나는 순간 없는 정적값으로 돌아가며 0.00으로 고정돼 보였다 — settledEval(위,
+                이 포지션에서 실제로 계산된 마지막 값)을 curNode.ev 다음 폴백으로 써서, 정식 생성
+                퍼즐은 여전히 정적값을 그대로 쓰되 그 값이 없을 때만 방금 검색한 실제 값이 남아 있게 한다. */}
+            <div style={{ marginTop: 12 }}><EvalBar cp={liveDepth != null ? (liveEval || curNode.ev) : (curNode.ev ?? settledEval)} width={boardSize} depth={liveDepth} /></div>
             <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
               <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
               {/* (버그 수정) 힌트 버튼이 현재 단계(1~3)를 그대로 보여준다 — 3단계에 닿으면 꽉 채운
@@ -10314,30 +11874,34 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
 // (v0.2.7) 오늘의 퍼즐 카드 폭 — 스크롤 스냅 계산을 단순하게 유지하기 위해 활성/비활성 여부와
 // 무관하게 "칸(slot)" 자체는 고정폭으로 두고, 안쪽 콘텐츠만 transform:scale로 커지고 작아진다.
 const DAILY_SLOT_W = 96;
+// (버그 수정 재개편) 활성 카드만 넓은 카드, 비활성은 텅 빈 작은 박스로 서로 다른 모양을 쓰던
+// 전 버전은 스크롤하며 넘어갈 때 카드 모양 자체가 바뀌는 게 "이상하다"는 지적을 받았다. 이제는
+// 모든 카드가 동일한 넓은 카드(보드+"일일 퍼즐"+오프닝명+풀이수)를 쓰고, 활성이 아닌 카드는 예전
+// 방식 그대로 `transform: scale()`로 작고 흐리게 줄어들 뿐이다 — 카드 구조 자체는 항상 같아서
+// 스크롤 중에도 자연스럽게 커지고 작아지는 느낌만 남는다. 모든 카드를 position:absolute로 슬롯
+// 중앙에 띄워, 스크롤 스냅이 의존하는 고정폭 슬롯(DAILY_SLOT_W)의 너비 계산에는 영향을 주지 않으면서
+// 카드 자체는 슬롯보다 넓게 그려지고 옆 슬롯과 살짝 겹쳐 보이게 한다(의도된 카드형 캐러셀 효과).
+// (기능) 사용자 요청 — 오프닝명·"일일 퍼즐" 라벨 등 텍스트를 다 빼고, 정사각형 블록 안에 체스보드만
+// 기존(68px)보다 약 3배 크게 보여준 뒤, 그 아래에 작게 "N명이 풀었습니다"만 표시한다.
+const DAILY_BOARD_SIZE = 190;
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
-  const scale = isActive ? 1 : distance === 1 ? 0.8 : 0.68;
-  // (v0.2.7 버그 수정) 비활성 항목이 어두운 카드 배경 위에 낮은 opacity로 겹쳐지면서 거의 안 보일
-  // 만큼 어두워졌다는 지적 — 선택된 항목과의 구분은 유지하되 값을 전반적으로 끌어올렸다.
-  const opacity = isActive ? 1 : distance === 1 ? 0.78 : 0.58;
-  const boxSize = isActive ? 86 : 62;
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? " · 오늘" : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
+  const scale = isActive ? 1 : distance === 1 ? 0.8 : 0.68;
+  const opacity = isActive ? 1 : distance === 1 ? 0.78 : 0.58;
   return (
-    <button onClick={onOpen} aria-label={label} className="press" style={{ flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", background: "transparent", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-      <div style={{ transform: "scale(" + scale + ")", opacity, transition: "transform .22s ease, opacity .22s ease", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-        <div style={{ width: boxSize, height: boxSize, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + (isSolved ? "#A9C589" : T.brass), boxShadow: isActive ? "0 4px 0 " + (isSolved ? "#9DB97E" : "#00000055") : "none", position: "relative" }}>
-          {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={boxSize - 16} loopMs={2400} flip={flip} /> : <div style={{ width: boxSize - 30, height: boxSize - 30, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
-          {isSolved && <Check size={13} strokeWidth={3.5} style={{ position: "absolute", top: -5, right: -5, color: "#fff", background: T.best, borderRadius: 999, padding: 2, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
+    <div style={{ position: "relative", flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", height: 250 }}>
+      <button onClick={onOpen} aria-label={label} className="press" style={{ position: "absolute", left: "50%", top: 0, transform: "translateX(-50%) scale(" + scale + ")", transformOrigin: "top center", opacity, transition: "transform .22s ease, opacity .22s ease", zIndex: isActive ? 3 : 1, background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: isActive ? T.brassHi : "#C9B58C", whiteSpace: "nowrap" }}>{label}</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_BOARD_SIZE + 16, padding: 8, borderRadius: 14, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + (isActive ? T.brass : "rgba(196,154,80,.45)"), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.55)" : "none" }}>
+          <div style={{ width: DAILY_BOARD_SIZE, height: DAILY_BOARD_SIZE, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#1C1006", border: "1px solid " + (isSolved ? "#A9C589" : "rgba(196,154,80,.5)"), position: "relative" }}>
+            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div style={{ width: 100, height: 100, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
+            {isSolved && <Check size={16} strokeWidth={3.5} style={{ position: "absolute", top: -6, right: -6, color: "#fff", background: T.best, borderRadius: 999, padding: 3, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
+          </div>
+          {solveCountText(solveCount, null) && <div style={{ fontSize: 10.5, color: "#C9B58C", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
         </div>
-        <div style={{ fontSize: 10, fontWeight: 800, color: isActive ? T.brassHi : "#C9B58C", whiteSpace: "nowrap" }}>{label}</div>
-      </div>
-      {isActive && (
-        <div style={{ maxWidth: 132, textAlign: "center" }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{puzzle ? puzzle.opening : "불러오는 중…"}</div>
-        </div>
-      )}
-      {solveCountText(solveCount, null) && <div style={{ fontSize: 8.5, color: "#C9B58C", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
-    </button>
+      </button>
+    </div>
   );
 }
 // (v0.2.7 기능) "오늘의 퍼즐"을 다른 일반 퍼즐과 이름·표기를 통일하는 대신, 고전 오락실 슬롯머신처럼
@@ -10351,6 +11915,13 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   const [containerW, setContainerW] = useState(0);
   const [activeIdx, setActiveIdx] = useState(0);
   const [resolvedMap, setResolvedMap] = useState({}); // dateStr -> puzzle|null(계산 완료)
+  // (버그 수정) dates는 비동기로 채워지므로, 이 컴포넌트의 "첫" 렌더에서는 dates가 아직 비어 있어
+  // 아래 `if (!dates.length) return null`에 걸려 스크롤러 자체가 DOM에 없다 — 그 시점에 이 effect가
+  // (빈 deps라 딱 한 번만) 실행되면 scrollerRef.current가 null이라 측정을 건너뛰고, dates가 나중에
+  // 채워져 스크롤러가 실제로 마운트돼도 이 effect는 다시 실행되지 않아 containerW가 영원히 0으로
+  // 남았다 — spacer(가운데 정렬용 여백)가 항상 0이 되어, 활성 카드가 화면 중앙이 아니라 스크롤러
+  // 왼쪽 끝에 붙어 렌더링됐다(기존 디자인은 카드가 슬롯 폭 안에 머물러 눈에 띄지 않았을 뿐).
+  // dates.length를 deps에 넣어, 스크롤러가 실제로 처음 DOM에 나타나는 시점에 다시 측정하게 한다.
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -10360,10 +11931,13 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [dates && dates.length]);
   useEffect(() => {
     if (!dates || !dates.length) return;
-    const idxs = [activeIdx - 1, activeIdx, activeIdx + 1].filter((i) => i >= 0 && i < dates.length);
+    // (성능) 엔진 워커는 하나뿐이라 여러 날짜의 계산 요청이 FIFO로 줄을 선다 — 예전엔 activeIdx-1을
+    // activeIdx보다 먼저 요청해, 정작 화면 가운데 크게 보이는(가장 먼저 눈에 띄어야 할) 프리뷰가
+    // 옆 칸 계산이 끝날 때까지 뒤로 밀렸다. activeIdx를 항상 맨 먼저 큐에 넣어 그 프리뷰부터 뜨게 한다.
+    const idxs = [activeIdx, activeIdx - 1, activeIdx + 1].filter((i) => i >= 0 && i < dates.length);
     idxs.forEach((i) => {
       const d = dates[i];
       if (resolvedMap[d] !== undefined) return;
@@ -10406,11 +11980,15 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   // 탭에서도 click이 사라졌다. 마우스 포인터(pointerType==="mouse")에서만 이 커스텀 드래그를 걸고,
   // 터치·펜은 아예 손대지 않아 브라우저 기본 스크롤(overflow-x:auto)+click이 그대로 살아 있게 한다
   // — 원래 요청도 "컴퓨터 환경에서 마우스로"였으므로 범위상으로도 맞다.
+  // (버그 수정) 예전엔 pointerdown 시점에 곧장 setPointerCapture를 걸었다 — 실제로 끌지 않은 순수한
+  // 클릭에서도 컨테이너가 포인터를 캡처한 채로 pointerup을 맞는 셈이라, 브라우저에 따라 그 뒤에 이어질
+  // click 합성이 씹히는 경우가 있었다(위 세 차례의 수정 이후에도 데스크톱에서 간헐적으로 재현된 원인으로
+  // 추정). 실제로 임계값을 넘어 "이동"이 확정된 순간에만 캡처를 걸어, 캡처가 순수 클릭의 클릭 합성에는
+  // 아예 관여하지 않도록 한다.
   const onPointerDown = (e) => {
     if (e.pointerType !== "mouse") return;
     const el = scrollerRef.current;
-    dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false, pointerId: e.pointerId };
-    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+    dragRef.current = { x: e.clientX, scrollLeft: el ? el.scrollLeft : 0, moved: false, pointerId: e.pointerId, target: e.currentTarget };
   };
   const onPointerMove = (e) => {
     const d = dragRef.current;
@@ -10418,6 +11996,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     if (!d || !el || e.pointerType !== "mouse") return;
     const dx = e.clientX - d.x;
     if (!d.moved && Math.abs(dx) <= DRAG_CLICK_THRESHOLD) return;   // 임계값 전까지는 손 떨림으로 보고 아예 무시(스크롤도 안 밀림)
+    if (!d.moved && d.target && d.target.setPointerCapture) { try { d.target.setPointerCapture(d.pointerId); } catch { /* noop */ } }
     d.moved = true;
     el.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
   };
@@ -10426,7 +12005,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     const el = scrollerRef.current;
     dragRef.current = null;
     wasDragRef.current = !!(d && d.moved);
-    if (e && e.currentTarget && e.currentTarget.releasePointerCapture && d) { try { e.currentTarget.releasePointerCapture(d.pointerId); } catch { /* noop */ } }
+    if (d && d.moved && d.target && d.target.releasePointerCapture) { try { d.target.releasePointerCapture(d.pointerId); } catch { /* noop */ } }
     if (d && d.moved && el && dates) scrollToIndex(Math.max(0, Math.min(dates.length - 1, Math.round(el.scrollLeft / DAILY_SLOT_W))));
   };
   const onClickCapture = (e) => { if (wasDragRef.current) { wasDragRef.current = false; e.preventDefault(); e.stopPropagation(); } };
@@ -10462,6 +12041,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
+  const [numFocus, setNumFocus] = useState(false);
   // (16차) 이 퍼즐을 푼 사람 중 내 친구의 이름 목록(최대 무제한 수집 — 표기 시 앞 2명만 사용)
   // (18차 UI7) 풀이수에 나 자신도 포함 — 내가 최초 해결자라면 "1명이 풀었습니다!"가 보이도록,
   // 서버 집계가 아직 반영되지 않았어도 내가 푼 퍼즐은 최소 1로 보정한다.
@@ -10547,6 +12127,22 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
     return arr.slice(0, 6);
   }, [recommendedPool, recSeed]);
+  // (버그 수정) 이 useMemo가 예전엔 아래쪽(다른 지역 변수들 사이)에 있었다 — puzzle 목록 화면에서만
+  // 쓰이는 값이라 그 자리가 자연스러워 보였지만, 바로 위 "if (active) return <PuzzleSolver .../>"
+  // 조기 반환 때문에 퍼즐을 열어 둔 동안(active 있음)에는 이 훅 자체가 아예 호출되지 않다가, 닫으면
+  // (active만 null) 그제서야 호출되는 셈이 됐다 — 렌더마다 호출되는 훅의 개수·순서가 달라지는 Rules of
+  // Hooks 위반으로, React가 "Rendered more hooks than during the previous render"를 던지며 이
+  // 컴포넌트 트리 전체가 깨진다. 이 앱에는 ErrorBoundary가 없어 그 에러가 화면 전체를 먹통으로
+  // 만들었다 — 퍼즐 창의 X 버튼을 누르면 사이트가 통째로 멈추는 것처럼 보인 원인이 바로 이것이었다.
+  // 모든 훅은 조건 없이 항상 같은 순서로 호출돼야 하므로, 조기 반환보다 앞으로 옮긴다. (isDateInput은
+  // 아래쪽 solveByInput 근처에서만 쓰이던 순수 파생값이라 여기서는 같은 식을 그대로 다시 계산한다.)
+  const numSuggestions = useMemo(() => {
+    if (numInput.includes("/") || !numInput) return [];
+    const byId = new Map();
+    for (const p of puzzles) byId.set(p.id, p);
+    for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
+    return [...byId.values()].filter((p) => String(puzzleNo(p.id)).startsWith(numInput)).slice(0, 6);
+  }, [numInput, puzzles, archivedPuzzles]);
   if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
@@ -10569,7 +12165,22 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
   const count = (k) => (k === "all" ? playablePuzzles.length : playablePuzzles.filter((p) => themesOf(p).includes(k)).length);
-  const solveByNumber = async () => {
+  // (기능) 캐러셀 스와이프 범위가 최근 7일로 제한된 대신, "번호로 풀기" 입력창에 YYYY/MM/DD
+  // 형식으로 날짜를 입력하면 그 날짜의 일일 퍼즐을 직접 찾아 연다 — 캐러셀과 똑같이
+  // resolveDailyPuzzleCached(dateStr, engine)를 재사용하므로 계산 결과도 항상 일치한다.
+  const isDateInput = numInput.includes("/");
+  const solveByInput = async () => {
+    if (isDateInput) {
+      const m = numInput.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+      if (!m) { setNumMsg("날짜는 YYYY/MM/DD 형식으로 입력하세요."); return; }
+      const dateStr = m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0");
+      if (dateStr > todayStr()) { setNumMsg("아직 오지 않은 날짜예요."); return; }
+      if (!engine || engine.status !== "ready") { setNumMsg("엔진이 아직 준비되지 않았어요."); return; }
+      setNumMsg("불러오는 중…");
+      const pz = await resolveDailyPuzzleCached(dateStr, engine);
+      if (pz) { setNumMsg(""); setNumInput(""); setActive(pz); } else setNumMsg(dateStr + " 날짜의 일일 퍼즐을 찾을 수 없습니다.");
+      return;
+    }
     const n = parseInt(numInput, 10);
     if (!Number.isFinite(n)) { setNumMsg("번호를 입력하세요."); return; }
     let hit = puzzles.find((p) => puzzleNo(p.id) === n);
@@ -10586,9 +12197,23 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       {/* (v0.2.7 개편) 오늘의 퍼즐을 오락실 슬롯머신 스타일 캐러셀로 — 좌우로 스크롤해 날짜(오늘부터
           테마가 처음 배정된 날짜까지 전체 기간)를 고르면 선택된 항목만 커지고 나머지는 어둡게 줄어든다. */}
       <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
-      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
-        <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByNumber()} inputMode="numeric" placeholder="퍼즐 번호로 풀기 (예: 123456)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
-        <button onClick={solveByNumber} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <div className="flex items-center gap-2">
+          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9/]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="text" placeholder="번호 또는 날짜로 풀기 (예: 123456 / 2026/07/29)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
+          <button onClick={solveByInput} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
+        </div>
+        {/* (기능) 입력 중인 번호로 시작하는 퍼즐을 번호·이름과 함께 추천 — onMouseDown에서
+            preventDefault해 클릭 전에 input의 onBlur가 목록을 먼저 숨겨버리지 않게 한다. */}
+        {numFocus && numSuggestions.length > 0 && (
+          <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)" }}>
+            {numSuggestions.map((p) => (
+              <button key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setActive(p); setNumInput(""); setNumMsg(""); }} className="press flex items-center gap-2" style={{ width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", textAlign: "left" }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
+                <span style={{ fontSize: 12, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {numMsg && <p style={{ fontSize: 11.5, color: T.blunder, margin: "-4px 0 10px" }}>{numMsg}</p>}
       {/* (v0.2.2 UI#3) 수 체계(테마) 칩은 줄바꿈 없이 한 줄에 다 들어가도록 크기를 줄이고, 아주 좁은
@@ -11159,6 +12784,18 @@ const RATING_CHART_PERIODS = [
 // 가깝게 빛나 보인다. 특정 시간 규정 하나만 볼 때도 이제 평가치 등락 색 대신 이 색으로 고정해, 어느
 // 화면에서 보든 같은 시간 규정은 항상 같은 색으로 알아볼 수 있게 했다.
 const TIME_CLASS_CHART_COLOR = { rapid: "#FF3B30", blitz: "#34C759", bullet: "#0A84FF" };
+// (버그 수정) "전체" 모드는 x좌표를 실제 시간(time-based)으로 잡는데, 대국이 적은 시간 규정(예:
+// 블리츠 딱 2판)은 그 두 판이 실제로 짧은 시간 안에 몰려 있으면 전체 기간 폭 안에서 거의 한 점처럼
+// 뭉쳐, 선이 그냥 수직으로 선 하나만 있는 것처럼 보였다(양옆으로 이어지는 선이 전혀 없으므로). 실제
+// 대국 구간 앞뒤로 그 시점의 레이팅을 유지한 채 기간의 시작(cutoff)·끝(nowT)까지 수평으로 이어
+// 붙여, 항상 기간 전체 폭을 채우는 선(대국이 있는 구간만 오르내리고 나머지는 평평)으로 보이게 한다.
+function extendToPeriodEdges(points, cutoff, nowT) {
+  if (!points.length) return points;
+  const out = points.slice();
+  if (out[0].endTime > cutoff) out.unshift({ endTime: cutoff, rating: out[0].rating });
+  if (out[out.length - 1].endTime < nowT) out.push({ endTime: nowT, rating: out[out.length - 1].rating });
+  return out;
+}
 // (v0.2.6 기능) 리뷰 페이지 EvalGraph와 같은 방식의 드래그 크로스헤어를 얹었다 — 그래프를 누른 채
 // 좌우로 끌면(포인터 캡처) 그 x좌표에 해당하는 지점의 날짜·레이팅을 점선+역삼각형+말풍선으로 보여준다.
 // "전체"(여러 시간 규정 동시 표시) 모드에서는 x좌표가 시간 값이라, 시리즈마다 그 시간에 가장 가까운
@@ -11210,7 +12847,18 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? "대국 기록을 더 불러오는 중이에요…" : "이 기간엔 대국이 부족해요."}</div>;
   let body;
   if (isAll) {
-    const series = ["rapid", "blitz", "bullet"].map((k) => ({ key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: inPeriod.filter((g) => g.timeClass === k) })).filter((s) => s.points.length >= 2);
+    // (기능) 이 기간에 그 시간 규정 대국이 없어도(전체 기록엔 있으면) 마지막 대국 당시 레이팅(=현재
+    // 레이팅)을 기간 전체에 걸친 평평한 선으로 이어 보여준다 — "기록이 없으니 그래프가 사라짐" 대신
+    // "최근 그 값에서 머물러 있음"을 보여주기 위함.
+    const nowT = Date.now() / 1000;
+    const series = ["rapid", "blitz", "bullet"].map((k) => {
+      const periodPts = inPeriod.filter((g) => g.timeClass === k);
+      if (periodPts.length >= 2) return { key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: extendToPeriodEdges(periodPts, cutoff, nowT), flat: false };
+      const allForClass = allPoints.filter((g) => g.timeClass === k);
+      if (!allForClass.length) return null;
+      const lastRating = allForClass[allForClass.length - 1].rating;
+      return { key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: [{ endTime: cutoff, rating: lastRating }, { endTime: nowT, rating: lastRating }], flat: true };
+    }).filter(Boolean);
     if (!series.length) {
       body = emptyMsg;
     } else {
@@ -11273,7 +12921,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
                 })}
               </g>
               {series.map((s) => (
-                <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+                <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={s.flat ? "4 3" : undefined} opacity={s.flat ? 0.65 : 1} />
               ))}
               {dragX != null && <line x1={dragX} x2={dragX} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
               {nearest && nearest.map((s) => <circle key={s.key} cx={xAt(s.point.endTime)} cy={yAt(s.point.rating)} r="3" fill={s.color} stroke="#14100C" strokeWidth="0.8" />)}
@@ -11295,10 +12943,18 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
         </>
       );
     }
-  } else if (inPeriod.length < 2) {
+  } else if (inPeriod.length < 2 && !allPoints.length) {
     body = emptyMsg;
   } else {
-    const points = inPeriod;
+    // (기능) 이 기간에 대국이 없어도(전체 기록엔 있으면) 마지막 대국 당시 레이팅(=현재 레이팅)을
+    // 기간 전체에 걸친 평평한 선으로 이어 보여준다 — inPeriod가 비었을 때만 쓰는 fallback이라
+    // realCount(실제 이 기간 대국 수)는 별도로 남겨 "0판"이 정직하게 보이도록 한다.
+    const flatFallback = inPeriod.length < 2;
+    const realCount = inPeriod.length;
+    const nowT = Date.now() / 1000;
+    const points = flatFallback
+      ? [{ endTime: cutoff, rating: allPoints[allPoints.length - 1].rating }, { endTime: nowT, rating: allPoints[allPoints.length - 1].rating }]
+      : inPeriod;
     const ratings = points.map((g) => g.rating);
     const min = Math.min(...ratings), max = Math.max(...ratings);
     const span = Math.max(1, max - min);
@@ -11307,15 +12963,15 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
     const lineD = points.map((g, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
     const areaD = lineD + " L" + xAt(points.length - 1).toFixed(1) + "," + (padT + plotH) + " L" + xAt(0).toFixed(1) + "," + (padT + plotH) + " Z";
     const first = points[0].rating, last = points[points.length - 1].rating;
-    const rising = last >= first;
+    const rising = !flatFallback && last >= first;
     const lineColor = TIME_CLASS_CHART_COLOR[timeFilter] || T.brassHi;
     const dragIdx = dragX != null ? Math.round(Math.max(0, Math.min(1, (dragX - padL) / plotW)) * (points.length - 1)) : null;
     const dragPoint = dragIdx != null ? points[dragIdx] : null;
     body = (
       <>
         <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-          <span style={{ fontSize: 10.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{points.length}판</span>
-          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.ink, fontWeight: 800 }}>{first} → {last} <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span></span>
+          <span style={{ fontSize: 10.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{realCount}판{flatFallback && <span style={{ color: T.inkSoft, fontWeight: 700 }}> · 최근 레이팅 유지</span>}</span>
+          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.ink, fontWeight: 800 }}>{first} → {last} {!flatFallback && <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span>}</span>
         </div>
         <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
           style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
@@ -11343,8 +12999,8 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
             <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
             <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
             {/* 선 아래 영역을 반투명하게 채움 */}
-            <path d={areaD} fill={lineColor} opacity={0.4} stroke="none" />
-            <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+            <path d={areaD} fill={lineColor} opacity={flatFallback ? 0.22 : 0.4} stroke="none" />
+            <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={flatFallback ? "4 3" : undefined} opacity={flatFallback ? 0.65 : 1} />
             {dragPoint && <line x1={xAt(dragIdx)} x2={xAt(dragIdx)} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
             {dragPoint && <circle cx={xAt(dragIdx)} cy={yAt(dragPoint.rating)} r="3.4" fill={lineColor} stroke="#14100C" strokeWidth="0.8" />}
             {/* x축 날짜 라벨 */}
@@ -11684,13 +13340,70 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.2.8", date: "2026.8.2", dev: ["openchesskr", "g13sus4"], items: [
+      "퍼즐 풀이 화면의 평가치 막대가 중간에 0.00으로 멈춰버리던 문제를 고쳤어요 — 이제 실시간 검색 값이 끝까지 살아 있어요.",
+      "퍼즐 풀이 화면의 코치 말풍선도 게임 리뷰와 똑같이, 방금 둔 수가 실제로 뭘 위협·방어·예방·전개했는지 구체적으로 짚어줘요.",
+      "일일 퍼즐 캐러셀의 카드 모양이 스크롤 중에 갑자기 바뀌던 문제를 고쳤어요 — 이제 모든 날짜가 같은 모양의 카드로, 선택된 날짜만 커지고 진해져요.",
+      "일일 퍼즐 캐러셀에서 스와이프로 넘길 수 있는 날짜를 최근 7일로 좁히는 대신, '번호로 풀기' 입력창에 YYYY/MM/DD 형식으로 날짜를 입력하면 그 날짜의 퍼즐을 바로 찾을 수 있어요. 번호를 입력하는 동안에는 일치하는 퍼즐을 번호·이름과 함께 추천해줘요.",
+      "일일 퍼즐 캐러셀을 사용자가 그려 준 스케치대로 다시 꾸몄어요 — 날짜가 카드 위에 얹히고, 선택된 날짜만 미니 체스보드와 오프닝·풀이수를 나란히 보여주는 넓은 카드로 커져요.",
+      "일일 퀘스트 알림 창의 왼쪽 달력 칸도 장식이 아니라 실제 오늘의 퍼즐 포지션을 보여주는 미니 체스보드로 바뀌었어요.",
+      "룩 2개 또는 나이트 2개가 서로 지켜주는 '연결'(룩이 오픈·세미오픈 파일에서 세로로 연결되면 '중첩')을 새로 알려주고, 눌러보면 서로를 향한 화살표가 차례로 나타나요.",
+      "위협받던 기물을 지키는 '위협 대처' 설명에도 밑줄이 생겼어요 — 눌러보면 상대 공격자와 내 수비자 화살표가 차례로 나타나요. 과보호 애니메이션의 색도 진짜 상대 공격자는 빨강, 내 기물은 초록으로 바로잡았어요.",
+      "위협·위협 대처·과보호·예방 수·연결·중첩처럼 애니메이션이 있는 설명은 이제 문장 전체가 아니라 그 용어 하나에만 밑줄이 생기고, 그 단어를 눌러야만 애니메이션이 재생돼요.",
+      "엔진 추천 수 줄이 3개가 아니라 2개만 뜨고 다시 늘어나지 않던 문제의 근본 원인을 찾았어요 — 느린 기기에서 3순위 줄이 제한 시간 안에 단 한 번도 보고되지 못한 채 엔진이 스스로 멈춰버려 그 줄이 통째로 빠진 채 확정되고 있었어요. 이제 요청한 줄 수가 전부 나올 때까지 기다렸다가 멈추도록 고쳤어요(학습 탭·게임 리뷰 둘 다).",
+      "단순히 상대 기물을 되잡는 수는 더 이상 '유일한 수'로 표시하지 않고, 대신 '상대 기물을 되잡아서 기물 상황을 유지했다'고 알기 쉽게 설명해줘요.",
+      "룩으로 상대의 지켜진 나이트·비숍을 교환하거나, 그렇게 교환되도록 룩을 방치하는 수를 '교환 희생'으로 짚어주고, '이런 교환은 쉽지 않은 선택이지만 지금 상황에선 탁월한 선택'이라고 설명해줘요.",
+      "체크메이트로 몰아가는 강제 수순에 들어가면, 더 이상 기물 위협 설명 대신 몇 수 뒤에 체크메이트인지 바로 알려줘요.",
+      "게임 리뷰 화면의 기보 줄 드래그 스크롤이 정해진 만큼씩 뻑뻑하게 움직이던 문제를 고쳤어요 — 이제 손가락·마우스 움직임에 그대로 반응하는 부드러운 스크롤이에요.",
+      "과보호 설명에도 '위협' 설명처럼 밑줄이 생겼어요 — 눌러보면 그 기물을 지키는 이유가 된 상대 공격자들이 화살표로 차례로 나타나요.",
+      "예방 수 설명에도 밑줄이 생겼어요 — 눌러보면 지키던 칸에 금빛 테두리가 뜨고, 상대가 노리던 진입 경로가 빨간 화살표로, 그걸 막은 내 대응이 초록 화살표로 나타나면서 빨간 화살표는 옅어지며 사라져요.",
+      "상대 기물을 잡는 수에는 더 이상 '재전개(재배치)' 설명이 붙지 않아요 — 캡처는 자리를 찾아가는 것과는 다른 목적이니까요.",
+      "엔진 추천 수 줄이 중간에 끊기던 진짜 원인을 찾았어요 — 앙파상으로 잡는 수가 낀 예상 수순에서 그 이후 수순 전체가 조용히 계산에서 빠지고 있었어요, 이제 앙파상이 포함된 수순도 끝까지 제대로 이어져요.",
+      "과보호 설명에서 아직 한 번도 안 움직인 기물(퀸 등)이 실제로 지켜지는 폰을 제치고 잘못 뽑히던 문제를 고쳤어요.",
+      "모바일 게임 리뷰 화면의 기보 줄을 스와이프로 빠르게 좌우로 넘길 수 있어요.",
+      "엔진 추천 수 줄이 끝까지 안 써지던 문제의 진짜 원인을 찾아 고쳤어요 — 게임 리뷰를 열어도 그 밑에 있던 학습·퍼즐 화면이 배경에서 계속 엔진을 쓰고 있었던 게 문제였어요, 이제 리뷰가 열려 있는 동안은 그 화면들의 실시간 분석을 멈추고 엔진을 리뷰에 전부 양보해요.",
+      "리뷰 화면에서 자유롭게 다른 수를 둬 봐도, 실제로 둔 수와 똑같이 MEC 설명이 붙어요.",
+      "기물이 걸렸을 때 이제 정확히 어느 칸의 기물인지 좌표로 알려줘요.",
+      "탁월한 수를 두면 방금 옮긴 기물뿐 아니라, 지금 상대에게 안전하게 잡힐 수 있는 다른 기물까지 전부 빨간 화살표로 한눈에 보여줘요.",
+      "예방 수 설명에 이제 상대가 노리던 칸의 좌표를 직접 알려줘요. 과보호는 여러 기물이 후보일 때 상대 공격자가 많은 기물부터, 공격자 수가 같으면 더 값진 기물부터 짚어줘요.",
+      "수 설명 중 '위협' 문구에는 밑줄이 생겼어요 — 눌러보면 그 기물을 노리는 내 공격자와 상대 수비자 화살표가 차례로 나타났다가 잠시 후 사라져요.",
+      "MILKU·KOKOA의 코멘트가 훨씬 세밀해졌어요 — 같은 가치의 기물끼리 마주 보면 '위협'이 아니라 '교환 요청'으로, 그 요청을 잡거나 물리면 '수락/거절'로 표현하고, 같은 기물을 여러 번 움직여도 좋은 자리를 찾아간 거면 '재전개(재배치)'로, 상대가 특정 칸에 오는 걸 막기 위해 미리 자리를 잡거나 컨트롤을 늘렸으면 '예방 수'로 짚어줘요. 기물을 처음 전개하는 수, 캐슬링 전용 평가, 위협받지 않았는데 미리 보강하는 '과보호', 아직 잡을 순 없지만 공격자를 하나 더 늘린 '잠재 위협', 룩의 오픈/세미오픈 파일 배치, 다음 수 캐슬링 예고, 폰 희생까지 새로 알려줘요.",
+      "나이트·비숍이 애써 전개했다가 시작 칸으로 그대로 되돌아가거나, 상대 폰에게 쫓겨 사실 한 수면 갈 수 있었던 자리에 두 수를 들여 도착하면 MILKU·KOKOA가 그 비효율을 짚어줘요.",
+      "MILKU·KOKOA의 설명이 더 정확해졌어요 — 실제로는 이기고 있는데 기물 교환에 대해 '지고 있을 때는 피하는 게 좋다'고 말하던 문제, 정상적으로 기물을 교환한 것뿐인데 '지켜야 한다'고 잘못 경고하던 문제, 폰이 한 칸만 전진해도 실질적인 이득(예: 상대 기물을 쫓아냄)이 있으면 '두 칸 갈 수 있었다'고 지적하지 않고, 정말 낭비였을 때만 그 수에 딱 한 번 짚어주도록 고쳤어요.",
+      "탁월한 수 설명이 훨씬 자세해졌어요 — 어떤 기물을 내주는 희생인지, 걸린 기물을 그대로 두고 더 큰 이득을 노린 수인지, 퀸이 아닌 다른 기물로 승진한 수인지부터 밝히고, 이후 수순을 분석해서 실제로 기물 점수를 되찾는 수순을 찾을 수 있으면 그걸 자세히, 못 찾으면 장기적으로 상대를 압박해 유리해지는 이유를 알려줘요. 이미 불리한 상황에서 무승부를 노린 희생이면 왜 그래야 했는지도, 최선의 수는 아니지만 감각적으로 찾은 수라면 그 사실도 짚어줘요.",
+      "MILKU·KOKOA가 정석 수를 뺀 거의 모든 수에 '지금 이 수가 실제로 뭘 위협하는지·뭘 지키는지' 같은 구체적인 이유(MEC)를 짚어줘요 — 걸려 있던 기물을 피했으면 '회피', 피하면서 상대 기물까지 노렸으면 '반격', 폰끼리 서로 노려보고 있으면 '서로 폰을 노리고 있어요', 폰을 교환했으면 '중앙 쪽으로 잡았는지'까지 알려주고, 같은 상황도 매번 문구를 조금씩 다르게 말해줘요. 특히 유일한 수는 다른 후보를 뒀다면 상대가 어떻게 응징했을지, 탁월한 수는 희생 이후 무엇을 노릴 수 있는지, 블런더는 걸린 기물이 무엇인지까지 훨씬 자세히 알려줘요.",
+      "공짜로 잡을 수 있는 상대 기물을 잡지 않아도, 그 수가 여전히 좋은 수면 '기물을 잡지 않았지만 여전히 좋은 수예요'라고 알려줘요. 그 기물을 잡는 게 사실 최선이었다면 그 사실까지 짚어줘요.",
+      "기물을 교환하는 수에도 상황에 맞는 설명을 붙여줘요 — 유리할 때 교환은 게임을 쉽게 풀어가는 좋은 방법이라고, 불리할 때 교환은 원래 피하는 게 좋지만 이 교환이 불가피한 최선이었는지 알려주고, 반대로 상황에 안 맞는 교환이었다면 '목적을 갖고 교환해야 한다'고 짚어줘요.",
+      "MILKU·KOKOA의 코멘트에서 '룩를 노려요'처럼 조사가 어색하게 붙던 문제를 고쳤어요 — 이제 기물 이름에 맞게 '을/를', '이/가'가 자연스럽게 붙어요.",
+      "엔진 추천 수 줄이 끝까지 다 써지지 않고 중간에 멈춰 보이던 문제를 진짜로 마지막까지 고쳤어요 — 이번 버전에서 새로 추가한 기능이 같은 엔진 워커를 놓아주지 않고 계속 붙잡고 있던 게 원인이었어요.",
+      "퍼즐 풀이 화면의 말풍선도 막연한 안내 대신 걸린 기물을 짚어 더 실질적인 힌트를 줘요.",
+      "chess.com 레이팅 변동 그래프에서, 고른 기간 동안 그 시간 규정 대국이 없어도 그래프가 아예 사라지지 않고 마지막으로 두었을 때의 레이팅을 점선으로 이어서 보여줘요.",
+      "'전체' 레이팅 그래프에서 대국이 적은 시간 규정(예: 블리츠 2판)이 그냥 수직선 하나처럼 보이던 문제를 고쳤어요 — 이제 대국이 없는 구간은 그 시점 레이팅으로 평평하게 기간 끝까지 이어져요.",
+      "퍼즐 창을 열었을 때 평가치 막대가 거의 안 움직이는 것처럼 보이던 문제를 고쳤어요 — 이제 depth가 눈에 보이게 차례로 올라가며 실시간으로 움직여요.",
+      "일일 퍼즐 캐러셀에서 컴퓨터 마우스로 카드를 눌러도 간헐적으로 반응이 없던 문제의 진짜 원인을 찾아 완전히 고쳤어요.",
+      "일일 퍼즐 캐러셀의 미리보기 체스보드가 뜨는 시간을 조금 더 줄였어요.",
+      "학습 탭 엔진 추천 수 줄이 방금까지 보이던 수순이 갑자기 짧아지며 끊긴 것처럼 보이던 문제를 고쳤어요 — 엔진이 depth를 더 깊이 탐색하며 같은 줄을 다시 보고할 때 수순이 이전보다 짧아지는 건 정상적인 현상인데, 그걸 그대로 화면에 반영해 이미 타이핑된 글자가 눈앞에서 줄어들어 보였어요. 이제 첫 수가 같은 줄인 동안은 지금까지 본 것 중 가장 긴 수순을 계속 보여주고, 화면에 실제로 표시되는 수 번호 개수 자체도 실시간으로 세어 줄어들지 않도록 이중으로 막아뒀어요.",
+      "엔진 추천 수 줄에서 손가락으로 밀어도 반응이 없어 뒷부분이 안 보이던 문제를 고쳤어요 — 자체 구현 드래그 대신 브라우저 기본 터치 스크롤을 쓰도록 바꿔, 어떤 브라우저에서도 밀면 확실히 나머지 수순이 나와요.",
+      "게임 리뷰에서 자유 탐색 중 실제 기보에 있는 바로 그 수를 그대로 두면, 다시 분석하지 않고 곧장 원래 리뷰의 그 지점으로 이동해요.",
+      "게임 리뷰 자유 탐색에서도 이론 수를 두면 실시간 분석 없이 곧바로 '이론' 아이콘으로 표시돼요.",
+      "일일 퍼즐 캐러셀 카드를 정사각형으로 바꾸고 체스보드를 약 3배 크게 키웠어요 — 오프닝명 같은 텍스트 없이 보드와 그 아래 작은 '풀이수'만 보여줘요.",
+      "엔진 추천 수 줄의 '타이핑' 애니메이션을 없앴어요 — 이제 계산된 수순이 지연 없이 한 번에 전부 표시돼요.",
+      "짧은 시간 제한 안에서도 엔진이 조금 더 깊이 탐색할 수 있도록 치환 테이블(Hash) 크기를 키웠어요 — 엔진 라인·평가치가 같은 시간 안에 더 정확해져요.",
+      "학습 탭 엔진 계산 방식을 개선했어요 — 엔진 라인·평가치·수 체계 아이콘이 먼저 빠르게 확정된 뒤, 화면 뒤에서 5초간 더 깊이(depth 20까지) 계속 분석해 조용히 더 정확한 값으로 갱신돼요.",
+      "평가치 바의 'n수 후까지 탐색 중' 표시가 실제로는 엔진이 훨씬 더 깊이 탐색하고 있는데도 낮은 값에 멈춰 보이던 문제를 고쳤어요 — 이제 실제 탐색 depth를 정확히 따라가요.",
+      "엔진 추천 수 줄이 특정 depth에서 갑자기 뚝 짧아져 보이던 진짜 원인을 찾아 고쳤어요 — 순위가 잠깐 흔들리며 같은 후보 수가 화면에서 밀려났다 되돌아올 때마다 '가장 긴 수순을 기억해 두는' 장치 자체가 초기화되고 있었어요. 이제 그 기억이 화면 재구성과 무관하게 유지돼, 같은 수는 한 번 길게 표시된 뒤로 다시 짧아지지 않아요.",
+      "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
+      "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
+      "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
+    ],
+  },
+  {
     version: "0.2.7", date: "2026.7.29", dev: ["openchesskr", "g13sus4"], items: [
       "일일 퍼즐 화면을 좌우로 스크롤하는 캐러셀로 완전히 새로 만들었어요 — 가운데로 스크롤해 고른 날짜의 퍼즐은 크게 보이고, 다른 날짜들은 작고 흐리게 물러나요. 컴퓨터에서는 마우스로 눌러 끌어도 넘길 수 있고, 선택되지 않은 카드도 예전보다 덜 어둡게 잘 보이도록 밝기를 조정했어요. 선택된 퍼즐 밑에는 그날 몇 명이 풀었는지도 바로 보여줘요.",
       "일일 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
       "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 일일 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 일일 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
       "채팅에서 '/puzzle 000000' 명령어로 존재하지 않는 번호를 보내려 하면, 이제 전송 자체가 되지 않고 그 번호의 퍼즐을 찾을 수 없다는 안내가 떠요.",
       "일일 퍼즐도 다른 퍼즐과 똑같이 고유 번호가 매겨져 채팅으로 공유하거나 '번호로 풀기'로 바로 열어볼 수 있어요.",
-      "'오늘의 퍼즐'과 '오늘의 퀘스트'라는 이름을 '일일 퍼즐'·'일일 퀘스트'로 통일했어요.",
       "퍼즐 풀이 화면의 수순 모식도에서, 해결한 라인의 가장 마지막 수가 옆의 '라인 N' 표시에 밀려 글자가 잘려 보이던 문제를 고쳤어요.",
       "퍼즐 창을 열면 평가치 막대가 곧바로 살아 움직이며 지금 포지션을 다시 훑어봐요.",
       "일일 퍼즐 캐러셀에서 카드를 눌러도 반응이 없던 문제를 완전히 고쳤어요.",
@@ -12026,6 +13739,10 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
   const close = () => onClose(hide);
   const t = todayStr();
   const dateLabel = t.slice(0, 4) + "." + parseInt(t.slice(5, 7), 10) + "." + parseInt(t.slice(8, 10), 10);
+  // (스케치 개편) 왼쪽 페이지의 격자는 더 이상 장식용 달력 모식이 아니라, 캐러셀 카드와 같은
+  // 실제 오늘의 퍼즐 포지션 미리보기(AnimatedMove)다 — 사용자 스케치의 "정사각형 격자 = 미니
+  // 체스보드" 의도를 그대로 반영한다.
+  const flip = ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0;
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 400, marginTop: 36 }}>
@@ -12033,12 +13750,12 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
         <div style={{ position: "absolute", top: -38, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={62} /></div>
         <div style={{ position: "relative", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: "20px 18px 16px" }}>
           <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
-          {/* 스케치의 펼친 다이어리 두 페이지 — 왼쪽: 날짜+달력 모식(장식), 오른쪽: 오프닝·수·풀이수·버튼. */}
+          {/* 스케치의 펼친 다이어리 두 페이지 — 왼쪽: 날짜+실제 퍼즐 미니보드, 오른쪽: 오프닝·수·풀이수·버튼. */}
           <div className="flex items-start" style={{ gap: 14, paddingRight: 20 }}>
             <div style={{ flexShrink: 0, width: 104 }}>
               <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: "ui-monospace,monospace" }}>{dateLabel}</div>
-              <div aria-hidden="true" style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 8, border: "1.5px solid " + T.brass, background: "#fff", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", overflow: "hidden" }}>
-                {Array.from({ length: 16 }).map((_, i) => <div key={i} style={{ border: "0.5px solid rgba(196,154,80,.35)" }} />)}
+              <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 8, border: "1.5px solid " + T.brass, background: "linear-gradient(135deg,#3A2516,#241509)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={100} loopMs={2400} flip={flip} />
               </div>
             </div>
             <div style={{ minWidth: 0, flex: 1, paddingTop: 1, borderLeft: "1px dashed #DCCBA8", paddingLeft: 14 }}>
@@ -15505,9 +17222,19 @@ export default function App() {
           동적으로 접히는 안드로이드 브라우저)에서 목록 맨 마지막 카드가 하단 탭에 살짝 가려 보이는
           경우가 있었다 — 여유를 더 둔다. */}
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} />}
+        {/* (버그 수정) 엔진 라인 타이핑이 도중에 멈추는 문제의 진짜 원인 — ReviewPage(reviewGame)는
+            어느 탭에서 열렸든 그 탭을 언마운트하지 않고 위에 오버레이로만 덮는다(openReview가 setTab을
+            부르지 않음, 뒤로가기 시 원래 탭으로 돌아가기 위함). 그런데 LearnTab·PuzzleTab은 여전히
+            마운트된 채로 liveOn이 켜져 있으면 배경에서 실시간 엔진 평가를 계속 돌리고, 이건 리뷰
+            페이지와 정확히 같은 공용 워커 풀(getAnalysisPool, profile당 하나만 캐시됨)을 나눠 쓴다 —
+            "학습 탭과 별도 독립 풀을 쓴다"는 주석은 useEngine(단일 공유 워커)과는 독립이라는 뜻이었을
+            뿐, 같은 profile의 분석 풀 자체는 앱 전체에서 하나뿐이라 전혀 독립적이지 않았다. 리뷰가
+            열려 있는 동안 이 두 탭에는 liveOn을 강제로 꺼서(!reviewGame) 분석 풀 전체를 리뷰 페이지에
+            양보한다 — "분석 모달이 열려 있는 동안 학습 탭 실시간 평가를 멈춘다"던 예전 주석이 가리키던
+            의도가 ReviewPage로 교체되며 실제로는 빠져 있었다. */}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} />}
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
