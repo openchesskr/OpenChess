@@ -3937,8 +3937,18 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       const mkPosEval = (ev) => ev.mate != null
         ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
         : { cp: ev.cp * baseWhite };
+      // (버그 수정) 이 콜백이 예전엔 이 effect 실행(generation) 하나에만 묶인 `cancelled` 플래그로
+      // 막았는데, 바로 아래 cache.multiPromise/extraKey 가드가 "같은 포지션이면 진행 중인 요청을
+      // 이어받아 재사용"하도록 설계돼 있어(중복 요청 방지) 실제 엔진 작업은 여러 번의 effect 재실행
+      // (moves.length가 점진적으로 채워지며 자주 재실행됨)을 가로질러 계속 살아있다 — 그런데 그
+      // 작업을 처음 만든 특정 실행이 재실행으로 정리(cleanup)되며 그 실행의 cancelled만 true가 되면,
+      // 이 콜백은 그 뒤로 영원히 아무 일도 안 하는 채로 조용히 죽어버렸다(엔진은 계속 depth를 파고
+      // 있는데도 평가치 바·"n수 후까지 탐색 중" depth 표시만 그 시점에서 멈춘 것처럼 보임 — 특히
+      // 5초짜리 심화 탐색 도중 moves.length가 바뀌기 쉬워 눈에 띄게 됐다). streamLines와 동일하게
+      // "지금도 같은 포지션인가"(posCacheRef.current.key !== key)만으로 판단해, 어느 실행이 이
+      // 콜백을 만들었든 포지션이 그대로인 한 계속 살아있게 한다.
       const onEvalProgress = (partial) => {
-        if (cancelled || !partial) return;
+        if (posCacheRef.current.key !== key || !partial) return;
         setPosEval(mkPosEval(partial));
         bumpDepth(partial.depth);
       };
@@ -13373,6 +13383,7 @@ const CHANGELOG = [
       "엔진 추천 수 줄의 '타이핑' 애니메이션을 없앴어요 — 이제 계산된 수순이 지연 없이 한 번에 전부 표시돼요.",
       "짧은 시간 제한 안에서도 엔진이 조금 더 깊이 탐색할 수 있도록 치환 테이블(Hash) 크기를 키웠어요 — 엔진 라인·평가치가 같은 시간 안에 더 정확해져요.",
       "학습 탭 엔진 계산 방식을 개선했어요 — 엔진 라인·평가치·수 체계 아이콘이 먼저 빠르게 확정된 뒤, 화면 뒤에서 5초간 더 깊이(depth 20까지) 계속 분석해 조용히 더 정확한 값으로 갱신돼요.",
+      "평가치 바의 'n수 후까지 탐색 중' 표시가 실제로는 엔진이 훨씬 더 깊이 탐색하고 있는데도 낮은 값에 멈춰 보이던 문제를 고쳤어요 — 이제 실제 탐색 depth를 정확히 따라가요.",
       "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
       "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
       "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
