@@ -3079,16 +3079,23 @@ function EngineLineSkeleton() {
 // 확보된 수순(sans)을 지연 없이 즉시 전부 렌더링한다. 그래도 같은 줄(같은 posKey+첫 수)이 depth
 // 심화로 다시 보고될 때 PV가 일시적으로 더 짧아지는 건 정상적인 탐색 변동이므로, 화면에 보여준
 // 적 있는 가장 긴 텍스트보다 짧아지지 않게 하는 안전장치만 그대로 유지한다.
-function TypedMoveLine({ startPly, sans, posKey }) {
+// (버그 수정) 위 "가장 긴 텍스트 유지" 안전장치를 컴포넌트 인스턴스의 useRef에 뒀더니, MultiPV
+// 순위가 흔들리며 이 후보 수가 화면 상위 3줄에서 잠깐 밀려났다 곧 다시 들어오는 순간(EngineLineRow가
+// key={슬롯 번호}로 자리를 재사용하므로, 그 자리를 다른 후보가 잠깐 차지했다가 이 후보가 되돌아오면
+// React가 이 컴포넌트를 완전히 새로 마운트한다) useRef가 통째로 초기화되며 지금까지 쌓아 둔 "가장
+// 긴 텍스트" 기억이 사라졌다 — 실제로는 같은 포지션·같은 첫 수(=같은 후보 수)인데도 화면에는 그
+// 수가 갑자기 처음 본 것처럼 짧게 다시 나타나, "특정 depth에서 라인이 뚝 끊긴다"는 제보로 이어졌다.
+// 컴포넌트가 마운트·언마운트되어도 살아남도록, 이 기억을 React 트리 바깥의 모듈 레벨 캐시(posKeyBase
+// 기준 — 포지션이 바뀌면 통째로 비움)로 옮긴다.
+const engineLineMaxTextCache = { base: null, map: new Map() };
+function TypedMoveLine({ startPly, sans, posKeyBase }) {
   const text = pvContinuationText(startPly, sans);
-  const maxTextRef = useRef("");
-  const prevIdentityRef = useRef(null);
-  const identity = posKey + "|" + sans[0];
-  if (prevIdentityRef.current !== identity) { prevIdentityRef.current = identity; maxTextRef.current = ""; }
+  if (engineLineMaxTextCache.base !== posKeyBase) { engineLineMaxTextCache.base = posKeyBase; engineLineMaxTextCache.map = new Map(); }
+  const firstMove = sans[0];
   const numCount = (text.match(/\d+\./g) || []).length;
-  const maxNumCount = (maxTextRef.current.match(/\d+\./g) || []).length;
-  if (numCount >= maxNumCount) maxTextRef.current = text;
-  return <>{maxTextRef.current}</>;
+  const prev = engineLineMaxTextCache.map.get(firstMove);
+  if (!prev || numCount >= prev.numCount) { engineLineMaxTextCache.map.set(firstMove, { text, numCount }); return <>{text}</>; }
+  return <>{prev.text}</>;
 }
 // (v0.2.1 버그) 멀티PV 스트리밍 도중 서로 다른 multipv 슬롯이 잠깐 같은 첫 수를 담아, 완전히 겹치는
 // 라인이 나타났다 사라지는 깜빡임이 있었다 — 첫 수가 같은 라인은 먼저 나온 것만 남겨 중복을 제거한다.
@@ -3160,7 +3167,7 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
         style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
         <span ref={innerRef} style={{ display: "inline-block" }}>
-          <TypedMoveLine startPly={startPly} sans={l.sans} posKey={posKeyBase + ":" + slotIdx} />
+          <TypedMoveLine startPly={startPly} sans={l.sans} posKeyBase={posKeyBase} />
         </span>
       </div>
       {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 26, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,1) 80%)", borderRadius: "0 6px 6px 0" }} />}
@@ -13384,6 +13391,7 @@ const CHANGELOG = [
       "짧은 시간 제한 안에서도 엔진이 조금 더 깊이 탐색할 수 있도록 치환 테이블(Hash) 크기를 키웠어요 — 엔진 라인·평가치가 같은 시간 안에 더 정확해져요.",
       "학습 탭 엔진 계산 방식을 개선했어요 — 엔진 라인·평가치·수 체계 아이콘이 먼저 빠르게 확정된 뒤, 화면 뒤에서 5초간 더 깊이(depth 20까지) 계속 분석해 조용히 더 정확한 값으로 갱신돼요.",
       "평가치 바의 'n수 후까지 탐색 중' 표시가 실제로는 엔진이 훨씬 더 깊이 탐색하고 있는데도 낮은 값에 멈춰 보이던 문제를 고쳤어요 — 이제 실제 탐색 depth를 정확히 따라가요.",
+      "엔진 추천 수 줄이 특정 depth에서 갑자기 뚝 짧아져 보이던 진짜 원인을 찾아 고쳤어요 — 순위가 잠깐 흔들리며 같은 후보 수가 화면에서 밀려났다 되돌아올 때마다 '가장 긴 수순을 기억해 두는' 장치 자체가 초기화되고 있었어요. 이제 그 기억이 화면 재구성과 무관하게 유지돼, 같은 수는 한 번 길게 표시된 뒤로 다시 짧아지지 않아요.",
       "퍼즐 풀이 화면에서 코치(마스코트) 말풍선을 숨겼다 보였다 할 수 있는 버튼을 추가했어요.",
       "퍼즐 창의 X 버튼을 누르면 사이트 전체가 먹통이 되던 심각한 버그를 고쳤어요 — 퍼즐 목록 화면의 일부 코드가 조건에 따라 호출되거나 안 되거나 해서, 퍼즐을 열어 둔 채로는 건너뛰던 계산이 닫는 순간에만 갑자기 실행되며 화면 전체가 깨지고 있었어요.",
       "단순 기물 되잡기를 '유일한 수' 승격 대상에서 제외하는 규칙을 게임 리뷰뿐 아니라 학습 탭(오프닝 트리의 후보 수 카드)에도 동일하게 적용했어요.",
