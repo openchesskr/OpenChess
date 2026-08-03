@@ -7103,10 +7103,13 @@ function ReviewPage({ game, onClose }) {
     })();
     return () => { cancelled = true; };
   }, [exploring, effSans.join(" "), engine && engine.status, engine && engine.profile]);
-  // (v0.2.1) 지금 화면에 반영할 평가 — 자유 탐색 중이면 그 라이브 분석(엔진 라인 1순위 평가)을, 아니면
-  // 게임 리뷰 결과(evalDisp)를 쓴다. 이후 코치 카드·수 아이콘·평가 바·화살표가 activeMove(위쪽으로
-  // 옮겨짐)와 이 값만 참조하므로 기보 수와 자유 탐색 수의 UX가 완전히 동일해진다.
-  const activeEvalDisp = exploring ? (engineLines[0] && engineLines[0].ev) : (result && result.evalDisp ? result.evalDisp[curPly] : null);
+  // (v0.2.9 기능) 평가치 바가 실시간 엔진 라인 1순위 평가를 따라 계속 움직이도록 — engineLines는 포지션이
+  // 바뀔 때 곧장 []로 비워졌다가(위 효과의 setEngineLines([])) 스트리밍(onLines)으로 depth가 깊어질
+  // 때마다 갱신되므로, 채워져 있는 한 그 1순위 줄의 평가치를 그대로 쓰면 바가 탐색 내내 실시간으로
+  // 계속 바뀐다(이전엔 자유 탐색 중일 때만 그랬고, 실제 기보 수를 볼 땐 analyzeGame이 미리 계산해 둔
+  // 정적값(evalDisp)에 고정돼 있었다). 포지션 진입 직후 아직 첫 스트리밍이 도착하기 전(engineLines가
+  // 비어 있는 짧은 순간)에만 자유 탐색은 값 없음, 실제 기보 수는 정적값으로 임시 표시한다.
+  const activeEvalDisp = engineLines.length ? engineLines[0].ev : (exploring ? null : (result && result.evalDisp ? result.evalDisp[curPly] : null));
   // (v0.2.2 기능) 코치 설명에 쓸 "희생한 기물" — 탁월한 수(언더프로모션 제외)일 때만 계산한다.
   const sacrificedPiece = useMemo(() => {
     if (!activeMove || activeMove.kind !== "brilliant") return null;
@@ -13339,6 +13342,11 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.2.9", date: "2026.8.3", dev: ["openchesskr"], items: [
+      "게임 리뷰 화면의 평가치 막대가 실시간 엔진 분석과 함께 계속 움직여요 — 이전엔 실제로 둔 수를 볼 때는 미리 계산해 둔 값에 멈춰 있었는데, 이제 엔진이 더 깊이 볼수록 막대도 그만큼 계속 반응해요.",
+    ]
+  },
   {
     version: "0.2.8", date: "2026.8.2", dev: ["openchesskr", "g13sus4"], items: [
       "퍼즐 풀이 화면의 평가치 막대가 중간에 0.00으로 멈춰버리던 문제를 고쳤어요 — 이제 실시간 검색 값이 끝까지 살아 있어요.",

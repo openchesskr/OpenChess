@@ -26,6 +26,11 @@
 
 ## 버전 기록
 
+### OpenChess v0.2.9 — 2026/8/3
+
+**기능 — 게임 리뷰 평가치 막대가 실시간 엔진 라인 1순위 평가를 따라 계속 움직이도록 변경**
+사용자 요청 — 리뷰 페이지의 평가치 막대(`EvalBar`)가 실시간 엔진 추천 수 줄(`engineLines`) 1순위의 평가 변화를 따라 계속 함께 바뀌도록 해 달라는 요청. 기존 `activeEvalDisp`는 `exploring`(자유 탐색 중)일 때만 `engineLines[0].ev`를 쓰고, 실제 기보 수를 볼 때는 페이지 진입 시 `analyzeGame`이 미리 한 번 계산해 둔 정적값(`result.evalDisp[curPly]`)에 그대로 고정돼 있었다 — 정작 그 아래 엔진 라인 effect(`evaluateMulti`의 `onLines` 스트리밍 콜백)는 `exploring` 여부와 무관하게 이미 모든 포지션에서 depth가 깊어질 때마다 `engineLines`를 계속 갱신하고 있었으므로, 실제 기보 수를 볼 때는 그 살아있는 값을 그냥 버리고 있었던 셈이다. `activeEvalDisp`를 `engineLines.length ? engineLines[0].ev : (exploring ? null : evalDisp[curPly])`로 바꿔, `engineLines`가 채워져 있는 한(포지션이 바뀔 때 곧장 `[]`로 비워지므로 항상 "지금 포지션" 결과만 반영됨) 항상 그 값을 우선하고, 아직 첫 스트리밍이 도착하기 전(포지션 진입 직후 짧은 순간)에만 기존 정적값으로 임시 표시한다. 학습 탭(`useMergedMoves`)의 `barEval`과 같은 방향이지만, 학습 탭은 `linesPending`(검색 완료 여부) 동안엔 별도의 단일PV 진행 콜백(`onEvalProgress`→`posEval`)으로 임시값을 채우는 구조라 그 게이트를 그대로 가져오면 이 페이지에서는 검색이 끝날 때까지 스트리밍을 아예 무시하게 돼(리뷰 페이지엔 그 별도 채널이 없음) 의도와 반대로 동작했다 — `!linesPending` 게이트 없이 `engineLines.length`만으로 판단하도록 고쳤다. Playwright로 실제 브라우저에 접속해(임시 디버그 훅으로 `openReview` 호출) 새 미들게임 포지션에 진입한 직후 ~1초 movetime 동안 평가치를 프레임 단위로 로깅한 결과, `cp: 0 → 17 → 8 → 8 → 8 → 13 → 13 → 15`로 depth가 깊어짐에 따라 막대 값이 실시간으로 여러 번 갱신되는 것을 확인했다(수정 전에는 이 구간 내내 진입 시점의 정적값 하나로 고정돼 있었음).
+
 ### OpenChess v0.2.8 — 2026/8/2
 
 **버그 수정(진짜 근본 원인) — 엔진 추천 수 줄이 특정 depth에서 갑자기 뚝 짧아지던 문제**
