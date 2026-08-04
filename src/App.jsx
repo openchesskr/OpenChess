@@ -9875,6 +9875,20 @@ function questLabel(q) {
   if (q.type === "win3") return "chess.com에서 게임 3회 승리";
   return (q.opening || "오프닝") + "로 chess.com에서 게임 1회 플레이하기";
 }
+// (v0.2.9 기능) 일일 퀘스트 클리어 팝업(DailyQuestClearedModal)에서 "이 퀘스트를 실제로 클리어한
+// 대국"을 보여주기 위해, 오늘의 판정 effect(dailyQuest.done 갱신 로직)와 정확히 같은 기준으로 오늘
+// chess.com 대국 중 그 퀘스트 조건에 맞는 것만 골라낸다 — play5/win3는 특정 한 판이 아니라 오늘의
+// 활동 전체가 조건이므로, 오늘 대국 전부(win3는 그중 승리한 것만)를 후보로 돌려주고 호출부에서 최근
+// 순으로 필요한 만큼만 보여준다.
+function questMatchingGames(q, chesscom) {
+  if (!q || !chesscom || !chesscom.games || !chesscom.games.length) return [];
+  const t = todayStr();
+  const todays = chesscom.games.filter((g) => isSameLocalDay(g.endTime, t));
+  if (q.type === "opening") return todays.filter((g) => openingNameOf(g.moves) === q.opening);
+  if (q.type === "win3") return todays.filter((g) => g.result === "win");
+  if (q.type === "play5") return todays;
+  return [];
+}
 // (기능2→18차 보충 UX2) 오늘의 퀘스트 생성 — 퍼즐 2회 풀기(고정) + 활동 퀘스트 3개(오프닝 플레이 / 5회 플레이 / 3회 승리).
 // recentOpenings에는 5수 이상 진행한 하위 오프닝 이름도 들어오므로(집중학습/퍼즐 경로) 그대로 후보가 된다.
 function genDailyQuest(recentOpenings, dateStr) {
@@ -13348,6 +13362,7 @@ const CHANGELOG = [
     version: "0.2.9", date: "2026.8.4", dev: ["openchesskr"], items: [
       "게임 리뷰 화면의 평가치 막대가 실시간 엔진 분석과 함께 계속 움직여요 — 이전엔 실제로 둔 수를 볼 때는 미리 계산해 둔 값에 멈춰 있었는데, 이제 엔진이 더 깊이 볼수록 막대도 그만큼 계속 반응해요.",
       "일일 퀘스트를 모두 클리어하면 이제 눈에 띄는 팝업으로 알려드려요. 사이트에 접속하지 않은 사이(예: chess.com에서만 대국을 둬서) 클리어됐어도, 다음에 접속하면 그때 바로 알려드려요.",
+      "일일 퀘스트 클리어 팝업을 더 화려하게 다듬었어요 — 마스코트가 금빛 원판 위에서 반짝임과 함께 등장해요. 어떤 퀘스트를 깼는지 목록으로 보여주고, 오프닝 퀘스트는 그 수순을, chess.com 활동 퀘스트는 실제로 클리어한 대국 정보(상대·결과·타임컨트롤)까지 함께 보여줘요 — 대국 옆 돋보기를 누르면 바로 그 대국 리뷰로 이동해요.",
     ]
   },
   {
@@ -13806,35 +13821,100 @@ const QUEST_CLEAR_SPARKLES = [
   { left: "20%", top: "72%", size: 9, delay: ".45s" },
   { left: "82%", top: "68%", size: 12, delay: ".22s" },
 ];
-function DailyQuestClearedModal({ onClose }) {
+// (v0.2.9 기능) 대국 한 판을 압축해 보여주는 행 — 프로필의 chess.com "최근 대국" 행(AccountChessStats)과
+// 같은 요소(진영 색 막대, 승/패/무, 타임컨트롤·날짜, 상대 닉네임·레이팅, 분석 이동 버튼)를 그대로 쓰되,
+// 이 팝업의 좁은 폭·paper 배경에 맞춰 크기와 색만 줄인 버전이다.
+function QuestClearGameRow({ g, onOpenGameAnalyze }) {
+  const won = g.result === "win", lost = g.result === "loss";
+  const oppSide = g.color === "w" ? g.black : g.white;
+  const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return (d.getMonth() + 1) + "." + d.getDate() + "."; };
+  return (
+    <div className="flex items-center gap-2" style={{ marginTop: 5, padding: "6px 8px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #E4D5B6" }}>
+      <span title={g.color === "w" ? "백" : "흑"} style={{ width: 4, alignSelf: "stretch", minHeight: 24, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 11, color: T.ink }}>
+          <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
+          {g.timeClass && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>{(TIME_CLASS_LABEL[g.timeClass] || g.timeClass) + (g.endTime ? " · " + fmtD(g.endTime) : "")}</span>}
+        </div>
+        {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}> ({oppSide.rating})</span>}</div>}
+      </div>
+      {onOpenGameAnalyze && g.moves && g.moves.length > 0 && (
+        <button onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black })} aria-label="대국 분석" title="대국 분석" className="press"
+          style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={11} /></button>
+      )}
+    </div>
+  );
+}
+// (v0.2.9 기능) 클리어한 퀘스트 한 줄 — 오프닝 퀘스트는 그 오프닝의 기보(수순)를, chess.com 활동
+// 퀘스트는 실제로 그 조건을 채운 오늘의 대국(들)을 함께 보여준다(questMatchingGames). 대국은 최근
+// 것부터 최대 2개까지만 — 5판 채우기 퀘스트라고 5판을 다 늘어놓으면 팝업이 한없이 길어진다.
+function QuestClearRow({ label, moveText, games, onOpenGameAnalyze }) {
+  return (
+    <div style={{ padding: "8px 10px", borderRadius: 9, background: "rgba(60,138,60,.12)", border: "1px solid rgba(120,200,120,.4)" }}>
+      <div className="flex items-center gap-2">
+        <span style={{ width: 16, height: 16, borderRadius: 999, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: T.best }}><Check size={10} color="#fff" strokeWidth={3} /></span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, textAlign: "left" }}>{label}</span>
+      </div>
+      {moveText && <div style={{ fontSize: 10, fontFamily: "ui-monospace,monospace", color: T.inkSoft, marginTop: 5, marginLeft: 24, textAlign: "left", lineHeight: 1.5 }}>{moveText}</div>}
+      {games && games.slice(0, 2).map((g, i) => <QuestClearGameRow key={i} g={g} onOpenGameAnalyze={onOpenGameAnalyze} />)}
+    </div>
+  );
+}
+function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClose }) {
+  const dq = dailyQuest;
+  // (버그 방지) 이 팝업은 dq.bonusClaimed가 true가 되는 순간에만 열리므로 dq 자체는 항상 존재하지만,
+  // 방어적으로 없으면 목록 없이(체크리스트만 비워) 그려 화면이 깨지지 않게 한다.
+  const rows = useMemo(() => {
+    if (!dq) return [];
+    const list = [
+      { key: "puzzle", label: "새 퍼즐 " + (dq.puzzleTarget || 2) + "회 풀기", moveText: null, games: [] },
+      { key: "dailypuzzle", label: "일일 퍼즐 풀기", moveText: null, games: [] },
+    ];
+    (dq.quests || []).forEach((q, i) => {
+      list.push({ key: "cc_" + i, label: questLabel(q), moveText: q.type === "opening" ? questOpeningMovesText(q.opening) : null, games: questMatchingGames(q, chesscom) });
+    });
+    return list;
+  }, [dq, chesscom]);
   return (
     <motion.div onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
       <motion.div onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 6 }}
         transition={{ type: "spring", stiffness: 340, damping: 24 }}
-        style={{ position: "relative", width: "100%", maxWidth: 320, borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
+        style={{ position: "relative", width: "100%", maxWidth: 340, margin: "auto", borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
         {/* 상단 배너 — 사이트 전역 배경과 같은 짙은 라디얼 그러데이션 위에, 마스코트를 금빛 원판(다른 곳의
             GOLD_DISC와 같은 톤)에 얹어 "보상 연출"임을 한눈에 알아보게 한다. */}
-        <div style={{ position: "relative", padding: "32px 20px 26px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
+        <div style={{ position: "relative", padding: "28px 20px 22px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
           {QUEST_CLEAR_SPARKLES.map((p, i) => (
             <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
           ))}
           <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
-          <div style={{ width: 96, height: 96, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5)" }}>
-            <Mascot name="kokoa" emotion="celebrate" size={80} />
+          <div style={{ width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5)" }}>
+            <Mascot name="kokoa" emotion="celebrate" size={68} />
           </div>
         </div>
         {/* 하단 본문 — 종이 카드 */}
-        <div style={{ background: T.paper, padding: "20px 20px 22px", textAlign: "center" }}>
+        <div style={{ background: T.paper, padding: "18px 18px 20px", textAlign: "center" }}>
           <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
             <Target size={15} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontSize: 18, fontWeight: 800, color: T.ink, letterSpacing: "-.01em" }}>오늘의 퀘스트 클리어!</span>
+            <span style={{ fontSize: 17, fontWeight: 800, color: T.ink, letterSpacing: "-.01em" }}>오늘의 퀘스트 클리어!</span>
           </div>
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 16px", lineHeight: 1.55 }}>일일 퀘스트 5개를 모두 완료해서<br />완료 보상까지 받았어요.</p>
-          <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 20 }}>
+          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px", lineHeight: 1.5 }}>일일 퀘스트 5개를 모두 완료해서<br />완료 보상까지 받았어요.</p>
+          <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 16 }}>
             <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass }}><Star size={12} fill={T.brassHi} style={{ color: T.brassHi }} />+20 XP</span>
             <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass }}><CoinIcon size={14} />+50</span>
           </div>
+          {rows.length > 0 && (
+            <>
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, textAlign: "left", marginBottom: 6 }}>오늘 완료한 퀘스트</div>
+              {/* (버그 방지) 바깥 배경(overflowY:auto)이 이미 팝업 전체 스크롤을 맡고 있으므로, 여기 안에
+                  또 maxHeight+overflow로 중첩 스크롤 상자를 만들면 그 상자 높이를 넘는 항목(예: 5개 슬롯
+                  중 세 번째 chess.com 퀘스트)이 안 보이면서도 스크롤 힌트가 없어 통째로 빠진 것처럼
+                  보였다 — 목록은 그냥 자연스러운 높이로 흐르게 두고 스크롤은 바깥 하나로 통일한다. */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+                {rows.map((r) => <QuestClearRow key={r.key} label={r.label} moveText={r.moveText} games={r.games} onOpenGameAnalyze={onOpenGameAnalyze} />)}
+              </div>
+            </>
+          )}
           <button onClick={onClose} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}><Check size={14} strokeWidth={3} />확인</button>
         </div>
       </motion.div>
@@ -17229,7 +17309,7 @@ export default function App() {
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
-      <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
+      <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
