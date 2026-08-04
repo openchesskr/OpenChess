@@ -9890,7 +9890,9 @@ function genDailyQuest(recentOpenings, dateStr) {
   while (openingQuests.length < nOpening) openingQuests.push({ type: "opening", opening: DEFAULT_QUEST_OPENINGS[openingQuests.length % DEFAULT_QUEST_OPENINGS.length] });
   const quests = [...chosenSpecials, ...openingQuests].map((v) => [v, rnd()]).sort((a, b) => a[1] - b[1]).map(([v]) => v);
   // seen: 완료 애니메이션용 확인 플래그. done: 슬롯별 완료 여부(인덱스 기반). resetUsed/banned: 오프닝 퀘스트 1회 리롤.
-  return { date: dateStr, quests, puzzleTarget: 2, puzzleCount: 0, done: {}, claimed: {}, bonusClaimed: false, seen: {}, rerolled: {}, banned: [], v: 2 };
+  // (v0.2.9) clearAnnounced: 전체 클리어 축하 팝업(DailyQuestClearedModal)을 이미 띄웠는지 — bonusClaimed와
+  // 분리해 둬야, 접속하지 않은 사이(예: chess.com 연동만으로) 이미 클리어됐지만 아직 못 본 경우도 다음 접속 시 띄울 수 있다.
+  return { date: dateStr, quests, puzzleTarget: 2, puzzleCount: 0, done: {}, claimed: {}, bonusClaimed: false, clearAnnounced: false, seen: {}, rerolled: {}, banned: [], v: 2 };
 }
 // (v0.1.2 버그 수정) "오프닝로 chess.com에서 1국 플레이"처럼 오프닝 이름이 비어 questLabel의
 // 기본값("오프닝")으로 대체 표시되던 문제 — 18차 이전의 구버전 스키마(quests 대신 featured: 문자열
@@ -13343,8 +13345,9 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.2.9", date: "2026.8.3", dev: ["openchesskr"], items: [
+    version: "0.2.9", date: "2026.8.4", dev: ["openchesskr"], items: [
       "게임 리뷰 화면의 평가치 막대가 실시간 엔진 분석과 함께 계속 움직여요 — 이전엔 실제로 둔 수를 볼 때는 미리 계산해 둔 값에 멈춰 있었는데, 이제 엔진이 더 깊이 볼수록 막대도 그만큼 계속 반응해요.",
+      "일일 퀘스트를 모두 클리어하면 이제 눈에 띄는 팝업으로 알려드려요. 사이트에 접속하지 않은 사이(예: chess.com에서만 대국을 둬서) 클리어됐어도, 다음에 접속하면 그때 바로 알려드려요.",
     ]
   },
   {
@@ -13783,6 +13786,31 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
             오늘 하루 다시 보지 않기
           </label>
         </div>
+      </div>
+    </div>
+  );
+}
+// (v0.2.9 기능) 일일 퀘스트 전체 클리어 축하 팝업 — 예전엔 작은 코인 토스트(1.8초, 다른 보상 토스트와
+// 구분 안 됨) 하나로만 알렸는데, 사용자가 그걸 놓치기 쉽다며 더 명시적인 팝업을 요청했다. 특히 접속하지
+// 않는 동안(예: chess.com에서만 대국을 두어 활동 퀘스트가 채워진 경우) 클리어됐다면, 그걸 알아챌 계기가
+// 전혀 없었으므로 다음 접속(로드) 시 반드시 이 팝업으로 알려준다 — App의 dailyQuest.clearAnnounced
+// 플래그로 "이미 이 팝업을 띄운 적 있는지"를 bonusClaimed(보상 지급 여부)와 별도로 추적한다.
+function DailyQuestClearedModal({ onClose }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 340, background: T.paper, borderRadius: 18, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: "28px 20px 20px", textAlign: "center" }}>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}><Mascot name="kokoa" emotion="celebrate" size={84} /></div>
+        <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
+          <Target size={16} style={{ color: T.brassHi, flexShrink: 0 }} />
+          <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>오늘의 퀘스트 클리어!</span>
+        </div>
+        <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 16px", lineHeight: 1.5 }}>일일 퀘스트 5개를 모두 완료해서<br />완료 보상까지 받았어요.</p>
+        <div className="flex items-center justify-center" style={{ gap: 14, marginBottom: 18 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 800, color: T.brassHi }}>+20 XP</span>
+          <span className="flex items-center gap-1" style={{ fontSize: 13.5, fontWeight: 800, color: T.brassHi }}>+50 <CoinIcon size={15} /></span>
+        </div>
+        <button onClick={onClose} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer" }}>확인</button>
       </div>
     </div>
   );
@@ -16323,6 +16351,8 @@ export default function App() {
   const [dailyPuzzleLastShownAt, setDailyPuzzleLastShownAt] = useState(0);
   const [dailyPuzzleHideDate, setDailyPuzzleHideDate] = useState(null);
   const [puzzleNoticeOpen, setPuzzleNoticeOpen] = useState(false);
+  // (v0.2.9 기능) 일일 퀘스트 전체 클리어 축하 팝업 — 아래 dailyQuest.clearAnnounced effect가 연다.
+  const [questClearOpen, setQuestClearOpen] = useState(false);
   const [learnFocus, setLearnFocus] = useState(null);   // (UX4) 탭 이동에도 집중 학습 유지
   const [puzzleActive, setPuzzleActive] = useState(null);   // (UX4) 탭 이동에도 퍼즐 창 유지
   // (v0.1.0) 채팅으로 공유받은 퍼즐을 "풀러 가기"로 열었을 때의 공유 출처 — { msgId, no, fromUid(공유자) }.
@@ -16971,16 +17001,25 @@ export default function App() {
     (dailyQuest.quests || []).forEach((q, i) => { if (dailyQuest.done[i]) claimQuestCoins("cc_" + i, 10); });
   }, [dailyQuest && JSON.stringify(dailyQuest.done), claimQuestCoins]);
   // 4개 퀘스트 모두 완료 시 보너스 +20(한 번만)
+  // (v0.2.9 변경) 작은 코인 토스트(1.8초, 다른 보상 토스트와 구분이 안 돼 놓치기 쉬웠다) 대신, 아래
+  // DailyQuestClearedModal이 전체 클리어를 명시적으로 알려주므로 이 자리의 토스트는 없앤다.
   useEffect(() => {
     if (!dailyQuest || dailyQuest.bonusClaimed) return;
     const allDone = dailyQuest.claimed.puzzle && dailyQuest.claimed.dailypuzzle && [0, 1, 2].every((i) => dailyQuest.claimed["cc_" + i]);
     if (!allDone) return;
     setTotalXp((x) => x + 20);
     setOcCoins((c) => c + 50); // (19차 기능5) 일일 퀘스트 전체 완료 보상: OC 나이트 코인 50개
-    setToast({ type: "coins", amount: 50 });
-    setTimeout(() => setToast((t) => (t && t.type === "coins" ? null : t)), 1800);
     setDailyQuest((dq) => (dq && !dq.bonusClaimed ? { ...dq, bonusClaimed: true } : dq));
   }, [dailyQuest && JSON.stringify(dailyQuest.claimed), dailyQuest && dailyQuest.bonusClaimed]);
+  // (v0.2.9 기능) 전체 클리어를 실제로 "봤는지"는 bonusClaimed(보상 지급 여부)와 별개로 추적한다 —
+  // 이번 접속에서 방금 클리어했든, 접속하지 않는 사이(예: chess.com 연동 활동만으로) 이미 클리어돼
+  // 있었든 상관없이 아직 이 팝업을 못 봤으면(clearAnnounced가 아직 false) 지금 접속에서 반드시 한
+  // 번은 명시적으로 띄운다.
+  useEffect(() => {
+    if (!loaded || !dailyQuest || !dailyQuest.bonusClaimed || dailyQuest.clearAnnounced) return;
+    setQuestClearOpen(true);
+    setDailyQuest((dq) => (dq && dq.bonusClaimed && !dq.clearAnnounced ? { ...dq, clearAnnounced: true } : dq));
+  }, [loaded, dailyQuest && dailyQuest.bonusClaimed, dailyQuest && dailyQuest.clearAnnounced]);
   useEffect(() => {
     // (20차 기능1) 트리 기준 전체 라인을 모두 해결하면(별 3개) '해결완료'로 승격. 현재 트리에 실제로
     // 존재하는 라인 태그만 집계해, 라인이 재생성돼 태그가 바뀐 과거 기록으로 잘못 승격되지 않도록 한다.
@@ -17164,6 +17203,7 @@ export default function App() {
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
+      {questClearOpen && <DailyQuestClearedModal onClose={() => setQuestClearOpen(false)} />}
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}

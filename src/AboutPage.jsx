@@ -707,16 +707,17 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
-    version: "0.2.9", date: "2026.8.3",
-    summary: "게임 리뷰 화면의 평가치 막대가 실시간 엔진 분석과 함께 계속 움직여요 — 엔진이 더 깊이 볼수록 막대도 그만큼 계속 반응해요.",
+    version: "0.2.9", date: "2026.8.4",
+    summary: "게임 리뷰 화면의 평가치 막대가 실시간 엔진 분석과 함께 계속 움직여요. 일일 퀘스트를 다 클리어하면 이제 눈에 띄는 팝업으로 알려드리고, 접속하지 않은 사이 클리어됐어도 다음 접속 때 바로 알려드려요.",
     mascot: {
       intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "평가치 막대가 이제 제가 계산하는 동안 계속 살아 움직여요!" },
-      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "실제로 둔 수를 볼 때도 자유 탐색 때처럼 실시간 값을 그대로 보여드려요." },
+      outro: { char: "kokoa", expr: "celebrate", name: "KOKOA 코치", align: "right", text: "오늘의 퀘스트를 다 클리어하면 이제 이렇게 팝업으로 크게 축하해드려요!" },
     },
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: "리뷰 평가치 막대 실시간화" },
+    highlight: { kind: "icon", Icon: Target, color: T.brassHi, label: "일일 퀘스트 클리어 팝업" },
     sections: [
       { cat: "feature", items: [
         "게임 리뷰 화면의 평가치 막대가 실시간 엔진 추천 수 줄의 1순위 평가를 그대로 따라가요 — 이전엔 실제로 둔 수를 볼 때는 페이지 진입 시 미리 계산해 둔 값에 멈춰 있었는데, 이제 자유 탐색 중일 때처럼 엔진이 더 깊이 볼수록 막대도 계속 반응해요.",
+        "일일 퀘스트 5개를 모두 클리어하면 이제 작은 코인 알림 대신 눈에 띄는 팝업으로 완료 보상(+20 XP, +50 코인)을 확실하게 알려드려요. 사이트에 접속하지 않은 사이(예: chess.com에서만 대국을 둬서) 이미 클리어됐어도, 그 사실을 놓치지 않도록 다음에 접속하면 그때 바로 띄워드려요.",
       ] },
     ],
   },
