@@ -13363,6 +13363,7 @@ const CHANGELOG = [
       "게임 리뷰 화면의 평가치 막대가 실시간 엔진 분석과 함께 계속 움직여요 — 이전엔 실제로 둔 수를 볼 때는 미리 계산해 둔 값에 멈춰 있었는데, 이제 엔진이 더 깊이 볼수록 막대도 그만큼 계속 반응해요.",
       "일일 퀘스트를 모두 클리어하면 이제 눈에 띄는 팝업으로 알려드려요. 사이트에 접속하지 않은 사이(예: chess.com에서만 대국을 둬서) 클리어됐어도, 다음에 접속하면 그때 바로 알려드려요.",
       "일일 퀘스트 클리어 팝업을 더 화려하게 다듬었어요 — 마스코트가 금빛 원판 위에서 반짝임과 함께 등장해요. 어떤 퀘스트를 깼는지 목록으로 보여주고, 오프닝 퀘스트는 그 수순을, chess.com 활동 퀘스트는 실제로 클리어한 대국 정보(상대·결과·타임컨트롤)까지 함께 보여줘요 — 대국 옆 돋보기를 누르면 바로 그 대국 리뷰로 이동해요.",
+      "일일 퀘스트 클리어 팝업이 더 게임처럼 화려해졌어요 — 마스코트 뒤로 햇살이 은은하게 돌아가고, 색색 컨페티가 떨어지고, 원판 테두리가 숨쉬듯 반짝여요. 보상 숫자는 0부터 목표치까지 빠르게 올라가고, 클리어한 퀘스트 목록도 하나씩 차례로 펼쳐지듯 나타나요.",
     ]
   },
   {
@@ -13821,6 +13822,35 @@ const QUEST_CLEAR_SPARKLES = [
   { left: "20%", top: "72%", size: 9, delay: ".45s" },
   { left: "82%", top: "68%", size: 12, delay: ".22s" },
 ];
+// (디자인) 종이 조각처럼 떨어지는 색색 컨페티 조각 — 사용자 요청("게임처럼")에 맞춰 별 반짝임만으로는
+// 부족했던 "보상 화면" 느낌을 더한다. 작은 사각형을 questConfettiFall로 위에서 아래로 흩뿌리며 회전·
+// 페이드시킨다(별과 같은 이유로 animationFillMode:forwards 필수).
+const QUEST_CLEAR_CONFETTI = [
+  { left: "8%", color: "#F3DFAE", delay: "0s", rot: 0 },
+  { left: "22%", color: "#FFFFFF", delay: ".12s", rot: 20 },
+  { left: "38%", color: "#7BC47F", delay: ".05s", rot: -15 },
+  { left: "58%", color: "#F3DFAE", delay: ".2s", rot: 10 },
+  { left: "70%", color: "#EAA23A", delay: ".08s", rot: -25 },
+  { left: "84%", color: "#FFFFFF", delay: ".18s", rot: 15 },
+  { left: "94%", color: "#7BC47F", delay: ".1s", rot: -10 },
+];
+// (디자인) 보상 숫자가 0에서 목표치까지 빠르게 카운트업되는 연출 — 게임의 보상 화면에서 흔한 패턴.
+// ease-out(세제곱)으로 처음엔 빠르게, 끝에는 서서히 목표치에 도달한다.
+function AnimatedCountUp({ to, duration = 550 }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let raf, start;
+    const step = (t) => {
+      if (start == null) start = t;
+      const p = Math.min(1, (t - start) / duration);
+      setN(Math.round(to * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [to, duration]);
+  return n;
+}
 // (v0.2.9 기능) 대국 한 판을 압축해 보여주는 행 — 프로필의 chess.com "최근 대국" 행(AccountChessStats)과
 // 같은 요소(진영 색 막대, 승/패/무, 타임컨트롤·날짜, 상대 닉네임·레이팅, 분석 이동 버튼)를 그대로 쓰되,
 // 이 팝업의 좁은 폭·paper 배경에 맞춰 크기와 색만 줄인 버전이다.
@@ -13882,26 +13912,42 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
         transition={{ type: "spring", stiffness: 340, damping: 24 }}
         style={{ position: "relative", width: "100%", maxWidth: 340, margin: "auto", borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
         {/* 상단 배너 — 사이트 전역 배경과 같은 짙은 라디얼 그러데이션 위에, 마스코트를 금빛 원판(다른 곳의
-            GOLD_DISC와 같은 톤)에 얹어 "보상 연출"임을 한눈에 알아보게 한다. */}
-        <div style={{ position: "relative", padding: "28px 20px 22px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
+            GOLD_DISC와 같은 톤)에 얹어 "보상 연출"임을 한눈에 알아보게 한다. (디자인 2차) 사용자가
+            "게임처럼" 더 만들어 달라고 요청 — 게임 보상 화면의 흔한 문법인 (1) 원판 뒤에서 천천히 도는
+            햇살(sunburst) 광선, (2) 원판 테두리를 숨쉬듯 부풀리는 발광 펄스, (3) 별 반짝임에 더해 위에서
+            떨어지는 색색 컨페티까지 겹쳐 "보상을 열었다"는 느낌을 강하게 준다. */}
+        <div style={{ position: "relative", padding: "30px 20px 24px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
+          {/* 햇살 광선 — conic-gradient로 만든 부채꼴들을 원판 뒤에 두고 천천히 회전시킨다. */}
+          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 220, height: 220, marginTop: -6, transform: "translate(-50%,-50%)", background: "repeating-conic-gradient(from 0deg, rgba(243,223,174,.35) 0deg 7deg, transparent 7deg 22deg)", borderRadius: "50%", opacity: 0.7, animationName: "questRaySpin", animationDuration: "16s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
+          {QUEST_CLEAR_CONFETTI.map((c, i) => (
+            <span key={"c" + i} aria-hidden="true" style={{ position: "absolute", left: c.left, top: -6, width: 6, height: 10, background: c.color, borderRadius: 1, transform: "rotate(" + c.rot + "deg)", animationName: "questConfettiFall", animationDuration: "1.6s", animationTimingFunction: "ease-in", animationDelay: c.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
+          ))}
           {QUEST_CLEAR_SPARKLES.map((p, i) => (
             <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
           ))}
           <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
-          <div style={{ width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5)" }}>
+          <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
             <Mascot name="kokoa" emotion="celebrate" size={68} />
           </div>
         </div>
         {/* 하단 본문 — 종이 카드 */}
         <div style={{ background: T.paper, padding: "18px 18px 20px", textAlign: "center" }}>
+          {/* (디자인) 제목을 밋밋한 잉크색 텍스트 대신, 게임 보상 화면의 "각인된 금속 글자" 느낌으로 —
+              금빛 세로 그러데이션을 텍스트에 그대로 입히고(backgroundClip:text) 아래로 진한 그림자를
+              깔아 도드라져 보이게 한다. 양옆의 가는 금선+다이아몬드로 "배너/현판"처럼 감싼다. */}
           <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
-            <Target size={15} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontSize: 17, fontWeight: 800, color: T.ink, letterSpacing: "-.01em" }}>오늘의 퀘스트 클리어!</span>
+            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
+            <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
+            <span style={{ fontSize: 18, fontWeight: 900, letterSpacing: "-.01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>오늘의 퀘스트 클리어!</span>
+            <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
+            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
           </div>
           <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px", lineHeight: 1.5 }}>일일 퀘스트 5개를 모두 완료해서<br />완료 보상까지 받았어요.</p>
+          {/* (디자인) 보상 배지는 카드가 자리 잡은 뒤 살짝 늦게, 하나씩 튕기며 등장하고(questBadgePop),
+              숫자는 0에서 목표치까지 빠르게 카운트업된다 — 둘 다 게임 보상 화면에서 흔히 보이는 연출. */}
           <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 16 }}>
-            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass }}><Star size={12} fill={T.brassHi} style={{ color: T.brassHi }} />+20 XP</span>
-            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass }}><CoinIcon size={14} />+50</span>
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".25s", animationFillMode: "backwards" }}><Star size={12} fill={T.brassHi} style={{ color: T.brassHi }} />+<AnimatedCountUp to={20} /> XP</span>
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".38s", animationFillMode: "backwards" }}><CoinIcon size={14} />+<AnimatedCountUp to={50} /></span>
           </div>
           {rows.length > 0 && (
             <>
@@ -13911,11 +13957,20 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
                   중 세 번째 chess.com 퀘스트)이 안 보이면서도 스크롤 힌트가 없어 통째로 빠진 것처럼
                   보였다 — 목록은 그냥 자연스러운 높이로 흐르게 두고 스크롤은 바깥 하나로 통일한다. */}
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
-                {rows.map((r) => <QuestClearRow key={r.key} label={r.label} moveText={r.moveText} games={r.games} onOpenGameAnalyze={onOpenGameAnalyze} />)}
+                {rows.map((r, i) => (
+                  <motion.div key={r.key} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 + i * 0.06, duration: 0.28 }}>
+                    <QuestClearRow label={r.label} moveText={r.moveText} games={r.games} onOpenGameAnalyze={onOpenGameAnalyze} />
+                  </motion.div>
+                ))}
               </div>
             </>
           )}
-          <button onClick={onClose} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}><Check size={14} strokeWidth={3} />확인</button>
+          {/* (디자인) 확인 버튼에 gm-board-shine(다른 화면의 금속 광택 스윕과 동일한 클래스)을 얹어, 다른
+              "특별한" 화면들과 같은 시각 언어로 은은한 하이라이트가 주기적으로 스쳐 지나가게 한다. */}
+          <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
+            <span className="gm-board-shine" style={{ borderRadius: 11 }} />
+            <Check size={14} strokeWidth={3} />확인
+          </button>
         </div>
       </motion.div>
     </motion.div>
@@ -17240,7 +17295,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
