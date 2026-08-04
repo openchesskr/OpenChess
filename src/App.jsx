@@ -13795,24 +13795,50 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
 // 않는 동안(예: chess.com에서만 대국을 두어 활동 퀘스트가 채워진 경우) 클리어됐다면, 그걸 알아챌 계기가
 // 전혀 없었으므로 다음 접속(로드) 시 반드시 이 팝업으로 알려준다 — App의 dailyQuest.clearAnnounced
 // 플래그로 "이미 이 팝업을 띄운 적 있는지"를 bonusClaimed(보상 지급 여부)와 별도로 추적한다.
+// (디자인) 은은한 별빛 반짝임 — 이미 있는 xpStarPop 키프레임(팝인→살짝 떠오르며 사라짐)을 재사용해,
+// 배너 안에 위치·크기·지연만 다르게 흩뿌려 한 번의 축하 반짝임을 연출한다. animation-fill-mode:
+// forwards가 없으면 애니메이션이 끝난 뒤 인라인 style의 기본 opacity로 되돌아가(다시 보였다 사라지는
+// 것처럼) 깜빡여 보이므로, longhand로 각 속성을 명시해 최종 상태(투명)를 그대로 유지한다.
+const QUEST_CLEAR_SPARKLES = [
+  { left: "12%", top: "20%", size: 12, delay: "0s" },
+  { left: "85%", top: "16%", size: 10, delay: ".15s" },
+  { left: "50%", top: "6%", size: 9, delay: ".3s" },
+  { left: "20%", top: "72%", size: 9, delay: ".45s" },
+  { left: "82%", top: "68%", size: 12, delay: ".22s" },
+];
 function DailyQuestClearedModal({ onClose }) {
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 340, background: T.paper, borderRadius: 18, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: "28px 20px 20px", textAlign: "center" }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}><Mascot name="kokoa" emotion="celebrate" size={84} /></div>
-        <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
-          <Target size={16} style={{ color: T.brassHi, flexShrink: 0 }} />
-          <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>오늘의 퀘스트 클리어!</span>
+    <motion.div onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <motion.div onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 6 }}
+        transition={{ type: "spring", stiffness: 340, damping: 24 }}
+        style={{ position: "relative", width: "100%", maxWidth: 320, borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
+        {/* 상단 배너 — 사이트 전역 배경과 같은 짙은 라디얼 그러데이션 위에, 마스코트를 금빛 원판(다른 곳의
+            GOLD_DISC와 같은 톤)에 얹어 "보상 연출"임을 한눈에 알아보게 한다. */}
+        <div style={{ position: "relative", padding: "32px 20px 26px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
+          {QUEST_CLEAR_SPARKLES.map((p, i) => (
+            <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
+          ))}
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+          <div style={{ width: 96, height: 96, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5)" }}>
+            <Mascot name="kokoa" emotion="celebrate" size={80} />
+          </div>
         </div>
-        <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 16px", lineHeight: 1.5 }}>일일 퀘스트 5개를 모두 완료해서<br />완료 보상까지 받았어요.</p>
-        <div className="flex items-center justify-center" style={{ gap: 14, marginBottom: 18 }}>
-          <span style={{ fontSize: 13.5, fontWeight: 800, color: T.brassHi }}>+20 XP</span>
-          <span className="flex items-center gap-1" style={{ fontSize: 13.5, fontWeight: 800, color: T.brassHi }}>+50 <CoinIcon size={15} /></span>
+        {/* 하단 본문 — 종이 카드 */}
+        <div style={{ background: T.paper, padding: "20px 20px 22px", textAlign: "center" }}>
+          <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
+            <Target size={15} style={{ color: T.brassHi, flexShrink: 0 }} />
+            <span style={{ fontSize: 18, fontWeight: 800, color: T.ink, letterSpacing: "-.01em" }}>오늘의 퀘스트 클리어!</span>
+          </div>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 16px", lineHeight: 1.55 }}>일일 퀘스트 5개를 모두 완료해서<br />완료 보상까지 받았어요.</p>
+          <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 20 }}>
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass }}><Star size={12} fill={T.brassHi} style={{ color: T.brassHi }} />+20 XP</span>
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass }}><CoinIcon size={14} />+50</span>
+          </div>
+          <button onClick={onClose} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}><Check size={14} strokeWidth={3} />확인</button>
         </div>
-        <button onClick={onClose} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer" }}>확인</button>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 // (기능) 문의/FAQ — 아직 등록된 FAQ는 없고(개발진이 추후 이 배열에 직접 채워 넣음), "문의하기"를
@@ -17203,7 +17229,7 @@ export default function App() {
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
-      {questClearOpen && <DailyQuestClearedModal onClose={() => setQuestClearOpen(false)} />}
+      <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
