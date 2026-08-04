@@ -13396,6 +13396,7 @@ const CHANGELOG = [
       "사이트 전체 기본 폰트를 IBM Plex Sans KR로 바꿨어요.",
       "티어 승급 팝업에 기물 교체 애니메이션이 끝난 뒤 카드 곳곳에서 하나씩 순서대로 터지는 폭죽을 추가했어요 — 그랜드마스터로 승급하면 보라·민트·핑크·금색이 뒤섞인 훨씬 화려한 폭죽이 터져요.",
       "일일 퀘스트 클리어 팝업과 티어 승급 팝업 모두 이제 시간이 지나거나 배경을 눌러도 저절로 닫히지 않아요 — X 버튼이나 확인 버튼을 직접 눌러야만 닫혀요.",
+      "새 칭호를 얻었을 때도 이제 일일 퀘스트·티어 승급처럼 화려한 팝업으로 알려드려요 — 팝업 안에서 칭호를 바로 눌러 장착할 수 있고, X·확인 버튼을 눌러야만 닫혀요.",
     ]
   },
   {
@@ -14001,6 +14002,57 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
           )}
           {/* (디자인) 확인 버튼에 gm-board-shine(다른 화면의 금속 광택 스윕과 동일한 클래스)을 얹어, 다른
               "특별한" 화면들과 같은 시각 언어로 은은한 하이라이트가 주기적으로 스쳐 지나가게 한다. */}
+          <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
+            <span className="gm-board-shine" style={{ borderRadius: 11 }} />
+            <Check size={14} strokeWidth={3} />확인
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+// (v0.2.9 기능) 사용자 요청 — 칭호 획득도 일일 퀘스트 클리어·티어 승급과 같은 "보상 화면" 팝업으로.
+// 예전에는 상단에 잠깐 떴다 6초 뒤 자동으로 사라지는 작은 토스트뿐이었다 — 같은 시각 언어(금빛 원판
+// 마스코트·햇살·컨페티·반짝임, DailyQuestClearedModal과 동일한 구성 요소를 그대로 재사용)로 확대하고,
+// 자동/배경 클릭으로 닫히지 않고 X·확인 버튼을 눌러야만 닫히도록 다른 두 팝업과 동작을 통일한다.
+function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
+  const [famKey, rank] = id.split(":");
+  const fam = TITLE_OPENINGS.find((f) => f.key === famKey);
+  const tier = TITLE_TIERS.find((t) => t.rank === rank);
+  if (!fam || !tier) return null;
+  const equipped = currentTitle === id;
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
+      <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 6 }}
+        transition={{ type: "spring", stiffness: 340, damping: 24 }}
+        style={{ position: "relative", width: "100%", maxWidth: 340, margin: "auto", borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
+        <div style={{ position: "relative", padding: "30px 20px 24px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
+          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 220, height: 220, marginTop: -6, transform: "translate(-50%,-50%)", background: "repeating-conic-gradient(from 0deg, rgba(243,223,174,.35) 0deg 7deg, transparent 7deg 22deg)", borderRadius: "50%", opacity: 0.7, animationName: "questRaySpin", animationDuration: "16s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
+          {QUEST_CLEAR_CONFETTI.map((c, i) => (
+            <span key={"c" + i} aria-hidden="true" style={{ position: "absolute", left: c.left, top: -6, width: 6, height: 10, background: c.color, borderRadius: 1, transform: "rotate(" + c.rot + "deg)", animationName: "questConfettiFall", animationDuration: "1.6s", animationTimingFunction: "ease-in", animationDelay: c.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
+          ))}
+          {QUEST_CLEAR_SPARKLES.map((p, i) => (
+            <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
+          ))}
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+          <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
+            <Mascot name="milku" emotion="wink" size={68} />
+          </div>
+        </div>
+        <div style={{ background: T.paper, padding: "18px 18px 20px", textAlign: "center" }}>
+          <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
+            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
+            <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
+            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>새로운 칭호 획득!</span>
+            <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
+            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
+          </div>
+          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{fam.label} 오프닝을 충분히 연습해서<br />새 칭호를 얻었어요.</p>
+          <div style={{ padding: "0 6px", marginBottom: 10 }}>
+            <TitleBadge id={id} earned equipped={equipped} onEquip={onEquip} />
+          </div>
+          <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "0 0 16px" }}>{equipped ? "지금 장착 중인 칭호예요." : "칭호를 눌러 바로 장착할 수 있어요."}</p>
           <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
             <span className="gm-board-shine" style={{ borderRadius: 11 }} />
             <Check size={14} strokeWidth={3} />확인
@@ -16658,6 +16710,7 @@ export default function App() {
   const [solverNames, setSolverNames] = useState({});              // (16차) uid -> username (친구 중 해결자만)
   const [earnedTitles, setEarnedTitles] = useState(new Set());     // (기능4) 획득 칭호(영구)
   const [currentTitle, setCurrentTitle] = useState(null);         // 장착 칭호
+  const [titleEarnedPopup, setTitleEarnedPopup] = useState(null); // (v0.2.9 기능) 새 칭호 획득 팝업(id) — X/확인으로만 닫힘
   // (20차 기능4) 보드 스킨·기물 스킨은 독립적으로 구매·장착한다 — ownedSkins는 "board:ocean" 같은
   // "종류:id" 키 집합(영구), boardSkin/pieceSkin은 지금 장착 중인 스킨 id(기본 "classic").
   const [ownedSkins, setOwnedSkins] = useState(new Set());
@@ -16988,10 +17041,10 @@ export default function App() {
     setNewTitles((n) => n + newly.length); // (버그) 새 칭호 획득 → 도감 탭 빨간 배지
     const order = TITLE_TIERS.map((t) => t.rank);
     const top = newly.slice().sort((a, b) => order.indexOf(b.split(":")[1]) - order.indexOf(a.split(":")[1]))[0];
-    setToast({ type: "title", id: top }); setTimeout(() => setToast((t) => (t && t.type === "title" ? null : t)), 6000);
-    if (uid) notifyCreate(uid, "title_earned", { titleId: top }); // (17차) 알림 기록에도 남긴다(토스트는 사라지므로)
+    setTitleEarnedPopup(top); // (v0.2.9 기능) 작은 토스트 대신 X/확인으로만 닫히는 축하 팝업
+    if (uid) notifyCreate(uid, "title_earned", { titleId: top }); // (17차) 알림 기록에도 남긴다(팝업은 닫으면 사라지므로)
   }, [titleCounts, ccTitleCounts, loaded]);
-  const equipTitle = useCallback((id) => { setCurrentTitle(id); setToast((t) => (t && t.type === "title" ? null : t)); }, []);
+  const equipTitle = useCallback((id) => { setCurrentTitle(id); }, []);
   // (20차 기능4) 스킨 구매·장착 — 보드 스킨과 기물 스킨은 독립적으로 사고팔고 섞어서 장착할 수 있다.
   const buySkin = useCallback((kind, id) => {
     const registry = kind === "board" ? BOARD_SKINS : PIECE_SKINS;
@@ -17494,6 +17547,7 @@ export default function App() {
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
+      <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
@@ -17536,12 +17590,7 @@ export default function App() {
       )}
       {toast && toast.type !== "xp" && toast.type !== "coins" && (
         <div style={{ position: "fixed", top: 70, left: "50%", transform: "translateX(-50%)", zIndex: 60, animation: "lockpop .4s ease", width: "calc(100% - 32px)", maxWidth: 360 }}>
-          {toast.type === "title" ? (
-            <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: 14, borderRadius: 14, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
-              <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><Mascot name="kokoa" emotion="celebrate" size={58} /><div style={{ fontWeight: 800, fontSize: 13.5, color: T.brassHi }}>새로운 칭호 획득!</div></div>
-              <TitleBadge id={toast.id} earned equipped={currentTitle === toast.id} onEquip={equipTitle} />
-            </div>
-          ) : toast.type === "share_reward" ? (
+          {toast.type === "share_reward" ? (
             /* (v0.1.0) 내가 공유한 퍼즐을 친구가 풀어 XP를 나눠 받았을 때 — 실시간으로 도착하는 순간 뜨는 알림. */
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <span style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(196,154,80,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Send size={20} style={{ color: T.brassHi }} /></span>
