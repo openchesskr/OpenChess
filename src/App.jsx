@@ -3472,6 +3472,10 @@ function sansToPgnText(sans) {
 }
 // (18차 UI6) 기보는 Playfair Display 폰트로 표기한다.
 const SEQ_FONT = "'Playfair Display', 'Noto Sans KR', serif";
+// (v0.2.9 디자인) 사용자가 지정한 굵고 각진 한글 디스플레이 폰트(Gasoek One) — 문단 본문에 쓰기엔
+// 너무 두꺼워 가독성이 떨어지므로, 퀘스트 클리어·티어 승급 같은 "게임 보상 화면" 팝업의 큰 제목에만
+// 적용한다.
+const GAME_FONT = "'Gasoek One', 'Noto Sans KR', sans-serif";
 // (v0.2.6 기능) 퍼즐 풀이 화면의 기보 — 예전엔 텍스트 한 줄을 그냥 중앙 정렬해 두어, 길어지면
 // 가운데 정렬 때문에 앞부분이 화면 밖으로 잘려 아예 안 보였다. 별도의 박스에 담아 한 줄(nowrap)로
 // 고정하고, 다른 곳(엔진 라인·SequenceBar)과 동일한 포인터 드래그 스크롤을 붙여 좌우로 끌어볼 수
@@ -13386,7 +13390,7 @@ const CHANGELOG = [
       "일일 퀘스트 클리어 팝업을 더 화려하게 다듬었어요 — 마스코트가 금빛 원판 위에서 반짝임과 함께 등장해요. 어떤 퀘스트를 깼는지 목록으로 보여주고, 오프닝 퀘스트는 그 수순을, chess.com 활동 퀘스트는 실제로 클리어한 대국 정보(상대·결과·타임컨트롤)까지 함께 보여줘요 — 대국 옆 돋보기를 누르면 바로 그 대국 리뷰로 이동해요.",
       "일일 퀘스트 클리어 팝업이 더 게임처럼 화려해졌어요 — 마스코트 뒤로 햇살이 은은하게 돌아가고, 색색 컨페티가 떨어지고, 원판 테두리가 숨쉬듯 반짝여요. 보상 숫자는 0부터 목표치까지 빠르게 올라가고, 클리어한 퀘스트 목록도 하나씩 차례로 펼쳐지듯 나타나요.",
       "일일 퀘스트 5개 중 하나만 클리어해도 어떤 퀘스트를 깼는지 알려주는 팝업이 상단에 떠요 — 확인 없이 잠깐 보였다 자동으로 사라져요.",
-      "티어 승급 연출도 카드형 팝업으로 새 단장했어요 — 기존 기물 교체 애니메이션은 그대로 두고, 도달한 티어 색으로 물든 햇살·발광·컨페티를 더했어요. 예전엔 안 보이던 승급 보상(OC 나이트 코인)도 이제 팝업 안에서 바로 확인할 수 있어요.",
+      "티어 승급 연출도 카드형 팝업으로 새 단장했어요 — 기존 기물 교체 애니메이션은 그대로 두고, 도달한 티어 색으로 물든 햇살·발광·컨페티를 더했어요. 예전엔 안 보이던 승급 보상(OC 나이트 코인)도 이제 팝업 안에서 바로 확인할 수 있어요. 두 팝업 제목에는 새 한글 디스플레이 폰트(Gasoek One)를 적용했어요.",
     ]
   },
   {
@@ -13961,7 +13965,7 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
           <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
             <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontSize: 18, fontWeight: 900, letterSpacing: "-.01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>오늘의 퀘스트 클리어!</span>
+            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>오늘의 퀘스트 클리어!</span>
             <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
           </div>
@@ -16033,7 +16037,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
         {QUEST_CLEAR_SPARKLES.map((p, i) => (
           <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: glowHex, animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
         ))}
-        <div style={{ position: "relative", fontSize: 19, fontWeight: 900, letterSpacing: ".02em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.6))" }}>티어 승급!</div>
+        <div style={{ position: "relative", fontFamily: GAME_FONT, fontSize: 21, fontWeight: 400, letterSpacing: ".01em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.6))" }}>티어 승급!</div>
         <div style={{ position: "relative", width: 200, height: 200 }}>
           {/* 숨쉬듯 부풀었다 가라앉는 발광 — 기물 이미지 뒤에서 도달한 티어 색으로. */}
           <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 190, height: 190, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle," + glowHex + "77 0%, transparent 72%)", animationName: "tierGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }} />
