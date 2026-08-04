@@ -9889,6 +9889,19 @@ function questMatchingGames(q, chesscom) {
   if (q.type === "play5") return todays;
   return [];
 }
+// (v0.2.9 기능) 5개 퀘스트 슬롯 키("puzzle"/"dailypuzzle"/"cc_0"~"cc_2")를 사람이 읽는 라벨로 — 클리어
+// 팝업(DailyQuestClearedModal)의 체크리스트와, 개별 퀘스트 하나를 클리어했을 때 뜨는 토스트가 똑같은
+// 라벨 로직을 공유해야 두 화면에서 같은 퀘스트를 다른 이름으로 부르는 일이 없다.
+function questSlotLabel(key, dq) {
+  if (key === "puzzle") return "새 퍼즐 " + ((dq && dq.puzzleTarget) || 2) + "회 풀기";
+  if (key === "dailypuzzle") return "일일 퍼즐 풀기";
+  if (key.indexOf("cc_") === 0) {
+    const i = parseInt(key.slice(3), 10);
+    const q = dq && dq.quests && dq.quests[i];
+    return q ? questLabel(q) : "chess.com 활동 퀘스트";
+  }
+  return "";
+}
 // (기능2→18차 보충 UX2) 오늘의 퀘스트 생성 — 퍼즐 2회 풀기(고정) + 활동 퀘스트 3개(오프닝 플레이 / 5회 플레이 / 3회 승리).
 // recentOpenings에는 5수 이상 진행한 하위 오프닝 이름도 들어오므로(집중학습/퍼즐 경로) 그대로 후보가 된다.
 function genDailyQuest(recentOpenings, dateStr) {
@@ -13364,6 +13377,7 @@ const CHANGELOG = [
       "일일 퀘스트를 모두 클리어하면 이제 눈에 띄는 팝업으로 알려드려요. 사이트에 접속하지 않은 사이(예: chess.com에서만 대국을 둬서) 클리어됐어도, 다음에 접속하면 그때 바로 알려드려요.",
       "일일 퀘스트 클리어 팝업을 더 화려하게 다듬었어요 — 마스코트가 금빛 원판 위에서 반짝임과 함께 등장해요. 어떤 퀘스트를 깼는지 목록으로 보여주고, 오프닝 퀘스트는 그 수순을, chess.com 활동 퀘스트는 실제로 클리어한 대국 정보(상대·결과·타임컨트롤)까지 함께 보여줘요 — 대국 옆 돋보기를 누르면 바로 그 대국 리뷰로 이동해요.",
       "일일 퀘스트 클리어 팝업이 더 게임처럼 화려해졌어요 — 마스코트 뒤로 햇살이 은은하게 돌아가고, 색색 컨페티가 떨어지고, 원판 테두리가 숨쉬듯 반짝여요. 보상 숫자는 0부터 목표치까지 빠르게 올라가고, 클리어한 퀘스트 목록도 하나씩 차례로 펼쳐지듯 나타나요.",
+      "일일 퀘스트 5개 중 하나만 클리어해도 어떤 퀘스트를 깼는지 알려주는 팝업이 상단에 떠요 — 확인 없이 잠깐 보였다 자동으로 사라져요.",
     ]
   },
   {
@@ -13897,8 +13911,8 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
   const rows = useMemo(() => {
     if (!dq) return [];
     const list = [
-      { key: "puzzle", label: "새 퍼즐 " + (dq.puzzleTarget || 2) + "회 풀기", moveText: null, games: [] },
-      { key: "dailypuzzle", label: "일일 퍼즐 풀기", moveText: null, games: [] },
+      { key: "puzzle", label: questSlotLabel("puzzle", dq), moveText: null, games: [] },
+      { key: "dailypuzzle", label: questSlotLabel("dailypuzzle", dq), moveText: null, games: [] },
     ];
     (dq.quests || []).forEach((q, i) => {
       list.push({ key: "cc_" + i, label: questLabel(q), moveText: q.type === "opening" ? questOpeningMovesText(q.opening) : null, games: questMatchingGames(q, chesscom) });
@@ -17098,12 +17112,18 @@ export default function App() {
   }, [loaded, dailyQuest, recentOpenings]);
   // (v0.1.2) 일일 퀘스트 개별 클리어 보상을 XP에서 OC 나이트 코인으로 바꿈 — 완료 표시는 한 곳에서
   // 처리(퍼즐/체스닷컴 퀘스트 공용), 이미 지급됐으면 다시 주지 않는다.
+  // (v0.2.9 기능) 사용자 요청 — 일일 퀘스트 5개 중 하나를 클리어할 때도(전체 클리어 팝업과는 별개로)
+  // 어떤 퀘스트를 깼는지 알아볼 수 있는 팝업을 띄워 달라는 것. 예전엔 어떤 퀘스트인지 알 수 없는
+  // 공용 "coins" 토스트(화면 중앙 별 팝업)만 떴다 — questSlotLabel로 그 슬롯의 라벨을 함께 실어
+  // 전용 "questClear" 토스트(상단 배너, 라벨+보상 표시)를 띄운다. 다섯 번 다 뜰 수 있으므로 전체 클리어
+  // 팝업(DailyQuestClearedModal)과 달리 확인 없이 2.6초 후 자동으로 사라진다.
   const claimQuestCoins = useCallback((questKey, amount) => {
     setDailyQuest((dq) => {
       if (!dq || dq.claimed[questKey]) return dq;
       setOcCoins((c) => c + amount);
-      setToast({ type: "coins", amount });
-      setTimeout(() => setToast((t) => (t && t.type === "coins" ? null : t)), 1800);
+      const label = questSlotLabel(questKey, dq);
+      setToast({ type: "questClear", amount, label });
+      setTimeout(() => setToast((t) => (t && t.type === "questClear" ? null : t)), 2600);
       return { ...dq, claimed: { ...dq.claimed, [questKey]: true } };
     });
   }, []);
@@ -17417,6 +17437,19 @@ export default function App() {
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <span style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(196,154,80,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Send size={20} style={{ color: T.brassHi }} /></span>
               <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>공유 보상 도착!</div><div style={{ fontSize: 12 }}>친구가 내가 공유한 퍼즐을 풀어 <b>+{toast.amount} XP</b>를 받았어요.</div></div>
+            </div>
+          ) : toast.type === "questClear" ? (
+            /* (v0.2.9 기능) 일일 퀘스트 5개 중 하나를 클리어할 때 — 전체 클리어 팝업(DailyQuestClearedModal)과
+                같은 시각 언어(체크 배지·금속 광택 스윕)를 축소해 쓰되, 확인 없이 자동으로 사라지는 가벼운
+                배너로 둔다(하루에 최대 5번 뜰 수 있어 매번 클릭을 요구하면 번거롭다). */
+            <div className="flex items-center gap-2" style={{ position: "relative", overflow: "hidden", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 14px", borderRadius: 13, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
+              <span className="gm-board-shine" style={{ borderRadius: 13 }} />
+              <span style={{ width: 34, height: 34, borderRadius: 999, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: T.best, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)" }}><Check size={18} color="#fff" strokeWidth={3} /></span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>퀘스트 완료!</div>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.label}</div>
+              </div>
+              <span className="flex items-center gap-1" style={{ flexShrink: 0, fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={16} /></span>
             </div>
           ) : (
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
