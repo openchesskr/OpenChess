@@ -9745,7 +9745,9 @@ const TIER_COLORS = {
 };
 // (v0.2.9 기능) 티어 승급 팝업(TierUpOverlay)의 햇살·발광 펄스·제목 그러데이션을 "도달한 티어" 고유
 // 색으로 물들이기 위한 헬퍼 — TIER_COLORS를 그대로 재사용해 배지·진행바와 같은 색 언어를 따른다.
-function tierGlowHex(tierKey) { const c = TIER_COLORS[tierKey]; return (c && (c.hi || (c.stops && c.stops[0]))) || "#F3DFAE"; }
+// (v0.2.9 디자인) 승급 팝업이 밝은 카드로 바뀌면서, 어두운 배경 전제로 골랐던 옅은 .hi색(특히 실버는
+// 거의 흰색이라 밝은 카드 위에서 안 보임) 대신 더 짙고 채도 높은 .lo색을 기본으로 쓴다.
+function tierGlowHex(tierKey) { const c = TIER_COLORS[tierKey]; return (c && (c.lo || (c.stops && c.stops[0]))) || "#8A6428"; }
 function tierGradientCss(tierKey) {
   const c = TIER_COLORS[tierKey];
   if (!c) return "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)";
@@ -13390,9 +13392,9 @@ const CHANGELOG = [
       "일일 퀘스트 클리어 팝업을 더 화려하게 다듬었어요 — 마스코트가 금빛 원판 위에서 반짝임과 함께 등장해요. 어떤 퀘스트를 깼는지 목록으로 보여주고, 오프닝 퀘스트는 그 수순을, chess.com 활동 퀘스트는 실제로 클리어한 대국 정보(상대·결과·타임컨트롤)까지 함께 보여줘요 — 대국 옆 돋보기를 누르면 바로 그 대국 리뷰로 이동해요.",
       "일일 퀘스트 클리어 팝업이 더 게임처럼 화려해졌어요 — 마스코트 뒤로 햇살이 은은하게 돌아가고, 색색 컨페티가 떨어지고, 원판 테두리가 숨쉬듯 반짝여요. 보상 숫자는 0부터 목표치까지 빠르게 올라가고, 클리어한 퀘스트 목록도 하나씩 차례로 펼쳐지듯 나타나요.",
       "일일 퀘스트 5개 중 하나만 클리어해도 어떤 퀘스트를 깼는지 알려주는 팝업이 상단에 떠요 — 확인 없이 잠깐 보였다 자동으로 사라져요.",
-      "티어 승급 연출도 카드형 팝업으로 새 단장했어요 — 기존 기물 교체 애니메이션은 그대로 두고, 도달한 티어 색으로 물든 햇살·발광을 더했어요. 예전엔 안 보이던 승급 보상(OC 나이트 코인)도 이제 팝업 안에서 바로 확인할 수 있어요. 두 팝업 제목에는 새 한글 디스플레이 폰트(Gasoek One)를 적용했어요.",
+      "티어 승급 연출도 카드형 팝업으로 새 단장했어요 — 기존 기물 교체 애니메이션은 그대로 두고, 밝은 카드 위에 기물 전용 무대와 도달한 티어 색으로 물든 발광을 더했어요. 예전엔 안 보이던 승급 보상(OC 나이트 코인)도 이제 팝업 안에서 바로 확인할 수 있어요. 두 팝업 제목에는 새 한글 디스플레이 폰트(Gasoek One)를 적용했어요.",
       "사이트 전체 기본 폰트를 IBM Plex Sans KR로 바꿨어요.",
-      "티어 승급 팝업에 기물 교체 애니메이션이 끝난 뒤 카드 곳곳에서 하나씩 순서대로 터지는 폭죽을 추가했어요 — 그랜드마스터로 승급하면 보라·민트·핑크·금색·흰색이 뒤섞인 훨씬 화려한 폭죽이 터져요.",
+      "티어 승급 팝업에 기물 교체 애니메이션이 끝난 뒤 카드 곳곳에서 하나씩 순서대로 터지는 폭죽을 추가했어요 — 그랜드마스터로 승급하면 보라·민트·핑크·금색이 뒤섞인 훨씬 화려한 폭죽이 터져요.",
     ]
   },
   {
@@ -16020,12 +16022,15 @@ const TIER_FIREWORK_SPOTS = [
   { left: "22%", top: "86%", delay: 1280 },
   { left: "78%", top: "84%", delay: 1600 },
 ];
-// (디자인) 일반 티어는 그 티어 고유색 위주(흰 스파크를 섞어 대비만 줌)로, 그랜드마스터는 사용자 요청대로
-// 그 홀로그램 그러데이션에서 색을 "스포이드로 여러 개 따서"(3색 stops + 금색·흰색 스파크) 더 화려하게 만든다.
+// (디자인) 일반 티어는 그 티어의 짙은(.lo) 색 위주로 채도·명도를 확보하고(밝은 .hi색은 골드·실버처럼
+// 밝은 카드 배경과 비슷한 톤이면 묻혀 보여서 뺐다) 짙은 잉크색 스파크로 대비를 준다. 그랜드마스터는
+// 사용자 요청대로 그 홀로그램 그러데이션에서 색을 "스포이드로 여러 개 따서"(3색 stops + 금색·잉크색
+// 스파크) 더 화려하게 만든다.
 function fireworkColorsFor(tierKey) {
-  if (tierKey === "grandmaster") return [...TIER_COLORS.grandmaster.stops, "#FFD76A", "#FFFFFF"];
-  const hex = tierGlowHex(tierKey);
-  return [hex, hex, "#FFFFFF"];
+  if (tierKey === "grandmaster") return [...TIER_COLORS.grandmaster.stops, "#D98A2B", T.ink];
+  const c = TIER_COLORS[tierKey];
+  const hex = (c && c.lo) || "#8A6428";
+  return [hex, hex, T.ink];
 }
 // (v0.1.1) 티어(대분류)가 실제로 바뀔 때 전체 화면을 덮는 승급 연출 — 반투명 검은 배경으로 화면을
 // 어둡게 가리고, 그 위에서 이전 티어 이미지가 좌우로 살짝 흔들리다 왼쪽 바깥으로 밀려나며, 오른쪽
@@ -16060,16 +16065,18 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
   const fireColors = fireworkColorsFor(toTierKey);
   return (
     <div onClick={onDone} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 16 }}>
+      {/* (v0.2.9 디자인) 사용자 요청 — 어두운 카드 대신 MILKU 마스코트 톤의 밝은 종이색(T.paper·T.ivoryHi
+          계열)으로 바꿨다. 어두운 배경 전제로 골랐던 글자·장식 색(T.ivory 계열, 옅은 tier hi색 등)도
+          전부 밝은 카드에서 읽히도록 다시 골랐다 — tierGlowHex가 이제 더 짙고 채도 높은 tier .lo색을
+          돌려주도록 바꿔, 실버처럼 거의 흰색인 .hi색이 밝은 카드 위에서 안 보이는 문제도 함께 없앴다. */}
       <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 320, damping: 22 }}
-        style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#3A2610 0%,#150C06 70%)", border: "1px solid rgba(196,154,80,.4)", boxShadow: "0 30px 70px -14px rgba(0,0,0,.8), 0 0 0 1px rgba(196,154,80,.25)" }}>
-        {/* 도달한 티어 색으로 물든 햇살 — 퀘스트 팝업의 questRaySpin을 그대로 재사용(색만 다르게 준다). */}
-        <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: 86, width: 240, height: 240, transform: "translate(-50%,-50%)", background: "repeating-conic-gradient(from 0deg, " + glowHex + "59 0deg 7deg, transparent 7deg 22deg)", borderRadius: "50%", opacity: 0.6, animationName: "questRaySpin", animationDuration: "18s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
-        {/* (v0.2.9 디자인) 위에서 떨어지는 색종이 컨페티는 이 어두운 단색 배경과 안 어울린다는 피드백으로
-            뺐다(퀘스트 클리어 팝업의 컨페티는 그대로 유지) — 대신 기물 교체가 다 끝난 뒤(fireworksOn)
-            카드 곳곳에서 하나씩 순서대로 터지는 진짜 "폭죽"으로 바꿨다. 각 지점(TIER_FIREWORK_SPOTS)의
-            파티클(TIER_FIREWORK_PARTICLES)은 CSS 커스텀 프로퍼티(--dx/--dy)로 각자 다른 방향·거리로
-            튀어나가고, animationFillMode:"both"라 자기 차례(그 지점의 delay)가 오기 전에는 완전히
-            숨어 있다가 터진 뒤엔 다시 사라진 채로 남는다. */}
+        style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#FFFDF7 0%,#F1E6D0 70%)", border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
+        {/* (v0.2.9 디자인) 사용자 피드백 — 뒤에서 돌아가던 부채꼴 햇살이 "풍차 같다"는 지적으로 제거했다.
+            위에서 떨어지는 색종이 컨페티도 이 카드와 안 어울린다는 이전 피드백으로 이미 뺐고, 대신
+            기물 교체가 다 끝난 뒤(fireworksOn) 카드 곳곳에서 하나씩 순서대로 터지는 진짜 "폭죽"만
+            남긴다. 각 지점(TIER_FIREWORK_SPOTS)의 파티클(TIER_FIREWORK_PARTICLES)은 CSS 커스텀
+            프로퍼티(--dx/--dy)로 각자 다른 방향·거리로 튀어나가고, animationFillMode:"both"라 자기
+            차례(그 지점의 delay)가 오기 전에는 완전히 숨어 있다가 터진 뒤엔 다시 사라진 채로 남는다. */}
         {fireworksOn && TIER_FIREWORK_SPOTS.map((spot, si) => (
           <div key={si} aria-hidden="true" style={{ position: "absolute", left: spot.left, top: spot.top, width: 0, height: 0 }}>
             {TIER_FIREWORK_PARTICLES.map((p, pi) => {
@@ -16085,40 +16092,45 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
         {QUEST_CLEAR_SPARKLES.map((p, i) => (
           <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: glowHex, animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
         ))}
-        <div style={{ position: "relative", fontFamily: GAME_FONT, fontSize: 21, fontWeight: 400, letterSpacing: ".01em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.6))" }}>티어 승급!</div>
-        <div style={{ position: "relative", width: 200, height: 200 }}>
-          {/* 숨쉬듯 부풀었다 가라앉는 발광 — 기물 이미지 뒤에서 도달한 티어 색으로. */}
-          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 190, height: 190, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle," + glowHex + "77 0%, transparent 72%)", animationName: "tierGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }} />
-          <AnimatePresence>
-            {phase !== "enter" && (
-              <motion.img
-                key="from"
-                src={tierPieceSrc(fromTierKey, fromDivision)}
-                alt=""
-                initial={{ x: 0, opacity: 1 }}
-                animate={phase === "shake" ? { x: [0, -16, 16, -12, 12, -5, 5, 0] } : { x: -260, opacity: 0 }}
-                transition={phase === "shake" ? { duration: 0.6, ease: "easeInOut" } : { duration: 0.4, ease: "easeIn" }}
-                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-              />
-            )}
-            {phase === "enter" && (
-              <motion.img
-                key="to"
-                src={tierPieceSrc(toTierKey, toDivision)}
-                alt=""
-                initial={{ x: 260, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-              />
-            )}
-          </AnimatePresence>
+        <div style={{ position: "relative", fontFamily: GAME_FONT, fontSize: 21, fontWeight: 400, letterSpacing: ".01em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>티어 승급!</div>
+        {/* (버그 수정) 기물 이미지 자체가 흰색/밝은 선화라 카드를 밝은 색으로 바꾸자 거의 안 보이게
+            됐다(그랜드마스터만 홀로그램 다색이라 그나마 보임) — 사이트 전역 배경과 같은 톤의 짙은
+            원판을 기물 전용 "무대"로 깔아, 카드는 밝게 유지하면서 기물만 원래처럼 잘 보이게 한다. */}
+        <div style={{ position: "relative", width: 220, height: 220, borderRadius: "50%", background: "radial-gradient(130% 130% at 50% 35%,#3A2610 0%,#150C06 75%)", border: "1px solid rgba(196,154,80,.35)", boxShadow: "inset 0 2px 8px rgba(0,0,0,.4), 0 8px 20px -6px rgba(0,0,0,.35)" }}>
+          <div style={{ position: "absolute", inset: 10 }}>
+            {/* 숨쉬듯 부풀었다 가라앉는 발광 — 기물 이미지 뒤에서 도달한 티어 색으로. */}
+            <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 190, height: 190, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle," + glowHex + "77 0%, transparent 72%)", animationName: "tierGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }} />
+            <AnimatePresence>
+              {phase !== "enter" && (
+                <motion.img
+                  key="from"
+                  src={tierPieceSrc(fromTierKey, fromDivision)}
+                  alt=""
+                  initial={{ x: 0, opacity: 1 }}
+                  animate={phase === "shake" ? { x: [0, -16, 16, -12, 12, -5, 5, 0] } : { x: -260, opacity: 0 }}
+                  transition={phase === "shake" ? { duration: 0.6, ease: "easeInOut" } : { duration: 0.4, ease: "easeIn" }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              )}
+              {phase === "enter" && (
+                <motion.img
+                  key="to"
+                  src={tierPieceSrc(toTierKey, toDivision)}
+                  alt=""
+                  initial={{ x: 260, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              )}
+            </AnimatePresence>
+          </div>
         </div>
-        {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ivoryHi, marginTop: 6 }}>{toLabel} 티어 도달!</div>}
+        {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ink, marginTop: 6 }}>{toLabel} 티어 도달!</div>}
         {reward > 0 && (
           <span className="flex items-center gap-1" style={{ position: "relative", marginTop: 12, fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={15} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
         )}
-        <div style={{ position: "relative", fontSize: 11.5, color: T.ivory, opacity: .7, marginTop: 16 }}>화면을 누르면 바로 닫혀요</div>
+        <div style={{ position: "relative", fontSize: 11.5, color: T.inkSoft, marginTop: 16 }}>화면을 누르면 바로 닫혀요</div>
       </motion.div>
     </div>
   );
