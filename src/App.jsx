@@ -13390,7 +13390,8 @@ const CHANGELOG = [
       "일일 퀘스트 클리어 팝업을 더 화려하게 다듬었어요 — 마스코트가 금빛 원판 위에서 반짝임과 함께 등장해요. 어떤 퀘스트를 깼는지 목록으로 보여주고, 오프닝 퀘스트는 그 수순을, chess.com 활동 퀘스트는 실제로 클리어한 대국 정보(상대·결과·타임컨트롤)까지 함께 보여줘요 — 대국 옆 돋보기를 누르면 바로 그 대국 리뷰로 이동해요.",
       "일일 퀘스트 클리어 팝업이 더 게임처럼 화려해졌어요 — 마스코트 뒤로 햇살이 은은하게 돌아가고, 색색 컨페티가 떨어지고, 원판 테두리가 숨쉬듯 반짝여요. 보상 숫자는 0부터 목표치까지 빠르게 올라가고, 클리어한 퀘스트 목록도 하나씩 차례로 펼쳐지듯 나타나요.",
       "일일 퀘스트 5개 중 하나만 클리어해도 어떤 퀘스트를 깼는지 알려주는 팝업이 상단에 떠요 — 확인 없이 잠깐 보였다 자동으로 사라져요.",
-      "티어 승급 연출도 카드형 팝업으로 새 단장했어요 — 기존 기물 교체 애니메이션은 그대로 두고, 도달한 티어 색으로 물든 햇살·발광·컨페티를 더했어요. 예전엔 안 보이던 승급 보상(OC 나이트 코인)도 이제 팝업 안에서 바로 확인할 수 있어요. 두 팝업 제목에는 새 한글 디스플레이 폰트(Gasoek One)를 적용했어요.",
+      "티어 승급 연출도 카드형 팝업으로 새 단장했어요 — 기존 기물 교체 애니메이션은 그대로 두고, 도달한 티어 색으로 물든 햇살·발광을 더했어요. 예전엔 안 보이던 승급 보상(OC 나이트 코인)도 이제 팝업 안에서 바로 확인할 수 있어요. 두 팝업 제목에는 새 한글 디스플레이 폰트(Gasoek One)를 적용했어요.",
+      "사이트 전체 기본 폰트를 IBM Plex Sans KR로 바꿨어요.",
     ]
   },
   {
@@ -16031,9 +16032,8 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
         style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#3A2610 0%,#150C06 70%)", border: "1px solid rgba(196,154,80,.4)", boxShadow: "0 30px 70px -14px rgba(0,0,0,.8), 0 0 0 1px rgba(196,154,80,.25)" }}>
         {/* 도달한 티어 색으로 물든 햇살 — 퀘스트 팝업의 questRaySpin을 그대로 재사용(색만 다르게 준다). */}
         <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: 86, width: 240, height: 240, transform: "translate(-50%,-50%)", background: "repeating-conic-gradient(from 0deg, " + glowHex + "59 0deg 7deg, transparent 7deg 22deg)", borderRadius: "50%", opacity: 0.6, animationName: "questRaySpin", animationDuration: "18s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
-        {QUEST_CLEAR_CONFETTI.map((c, i) => (
-          <span key={"c" + i} aria-hidden="true" style={{ position: "absolute", left: c.left, top: -6, width: 6, height: 10, background: c.color, borderRadius: 1, transform: "rotate(" + c.rot + "deg)", animationName: "questConfettiFall", animationDuration: "1.8s", animationTimingFunction: "ease-in", animationDelay: c.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
-        ))}
+        {/* (v0.2.9 디자인) 사용자 피드백 — 색색 컨페티가 이 승급 카드의 어두운 단색 배경과 어울리지
+            않는다는 지적으로 제거했다(퀘스트 클리어 팝업의 컨페티는 그대로 유지). */}
         {QUEST_CLEAR_SPARKLES.map((p, i) => (
           <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: glowHex, animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
         ))}
