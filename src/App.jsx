@@ -13395,6 +13395,7 @@ const CHANGELOG = [
       "티어 승급 연출도 카드형 팝업으로 새 단장했어요 — 기존 기물 교체 애니메이션은 그대로 두고, 밝은 카드 위에 기물 전용 무대와 도달한 티어 색으로 물든 발광을 더했어요. 예전엔 안 보이던 승급 보상(OC 나이트 코인)도 이제 팝업 안에서 바로 확인할 수 있어요. 두 팝업 제목에는 새 한글 디스플레이 폰트(Gasoek One)를 적용했어요.",
       "사이트 전체 기본 폰트를 IBM Plex Sans KR로 바꿨어요.",
       "티어 승급 팝업에 기물 교체 애니메이션이 끝난 뒤 카드 곳곳에서 하나씩 순서대로 터지는 폭죽을 추가했어요 — 그랜드마스터로 승급하면 보라·민트·핑크·금색이 뒤섞인 훨씬 화려한 폭죽이 터져요.",
+      "일일 퀘스트 클리어 팝업과 티어 승급 팝업 모두 이제 시간이 지나거나 배경을 눌러도 저절로 닫히지 않아요 — X 버튼이나 확인 버튼을 직접 눌러야만 닫혀요.",
     ]
   },
   {
@@ -13936,10 +13937,12 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
     });
     return list;
   }, [dq, chesscom]);
+  // (v0.2.9 기능) 사용자 요청 — 배경을 눌러도 실수로 닫히지 않게, 우측 상단 X 버튼(또는 "확인" 버튼)을
+  // 눌러야만 닫히도록 배경 div의 onClick(닫기)을 없앴다.
   return (
-    <motion.div onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
-      <motion.div onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 6 }}
+      <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 6 }}
         transition={{ type: "spring", stiffness: 340, damping: 24 }}
         style={{ position: "relative", width: "100%", maxWidth: 340, margin: "auto", borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
         {/* 상단 배너 — 사이트 전역 배경과 같은 짙은 라디얼 그러데이션 위에, 마스코트를 금빛 원판(다른 곳의
@@ -16049,28 +16052,31 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
   // (v0.2.9 디자인) 사용자 요청 — 폭죽이 처음부터 다 같이 뜨지 않고, 기물 교체 애니메이션(흔들림→
   // 퇴장→등장, 등장 슬라이드 자체도 0.5초 걸림)이 완전히 끝난 뒤에야 터지기 시작해야 한다. enter로
   // phase가 바뀌는 1050ms에 그 슬라이드가 막 시작되므로, 슬라이드가 끝나는 시점(+0.5s)보다 살짝
-  // 뒤인 1650ms에 켠다. 순차 폭죽(TIER_FIREWORK_SPOTS)이 다 터지는 데 시간이 더 필요해져, 자동으로
-  // 닫히는 시점도 2700ms→4000ms로 늦췄다("화면을 누르면 바로 닫혀요"로 언제든 건너뛸 수 있다).
+  // 뒤인 1650ms에 켠다.
   const [fireworksOn, setFireworksOn] = useState(false);
+  // (v0.2.9 기능) 사용자 요청 — 자동으로 닫히거나 배경을 눌러 실수로 닫히지 않고, 우측 상단 X 버튼을
+  // 눌러야만 닫히도록 바꿨다. 기존엔 4초 뒤 자동으로 닫히는 타이머(onDone)와 배경 전체를 덮는
+  // onClick={onDone}이 있었는데 둘 다 없앴다 — 폭죽이 다 터지는 데 시간이 걸려도(마지막 폭죽이
+  // 1650+1600=3250ms에 시작) 사용자가 직접 닫기 전까지 서두르지 않고 계속 볼 수 있다.
   useEffect(() => {
     const t1 = setTimeout(() => setPhase("exit"), 650);
     const t2 = setTimeout(() => setPhase("enter"), 1050);
     const t3 = setTimeout(() => setFireworksOn(true), 1650);
-    const t4 = setTimeout(() => onDone && onDone(), 4000);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const glowHex = tierGlowHex(toTierKey);
   const toLabel = (TIERS.find((t) => t.key === toTierKey) || {}).label || "";
   const fireColors = fireworkColorsFor(toTierKey);
   return (
-    <div onClick={onDone} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 16 }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       {/* (v0.2.9 디자인) 사용자 요청 — 어두운 카드 대신 MILKU 마스코트 톤의 밝은 종이색(T.paper·T.ivoryHi
           계열)으로 바꿨다. 어두운 배경 전제로 골랐던 글자·장식 색(T.ivory 계열, 옅은 tier hi색 등)도
           전부 밝은 카드에서 읽히도록 다시 골랐다 — tierGlowHex가 이제 더 짙고 채도 높은 tier .lo색을
           돌려주도록 바꿔, 실버처럼 거의 흰색인 .hi색이 밝은 카드 위에서 안 보이는 문제도 함께 없앴다. */}
       <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 320, damping: 22 }}
         style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#FFFDF7 0%,#F1E6D0 70%)", border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
+        <button onClick={onDone} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
         {/* (v0.2.9 디자인) 사용자 피드백 — 뒤에서 돌아가던 부채꼴 햇살이 "풍차 같다"는 지적으로 제거했다.
             위에서 떨어지는 색종이 컨페티도 이 카드와 안 어울린다는 이전 피드백으로 이미 뺐고, 대신
             기물 교체가 다 끝난 뒤(fireworksOn) 카드 곳곳에서 하나씩 순서대로 터지는 진짜 "폭죽"만
@@ -16130,7 +16136,9 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
         {reward > 0 && (
           <span className="flex items-center gap-1" style={{ position: "relative", marginTop: 12, fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={15} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
         )}
-        <div style={{ position: "relative", fontSize: 11.5, color: T.inkSoft, marginTop: 16 }}>화면을 누르면 바로 닫혀요</div>
+        {/* (v0.2.9 기능) 우측 상단 X와 같은 역할의 확인 버튼 — 일일 퀘스트 클리어 팝업과 같은 스타일로,
+            눌러야만 닫히는 걸 명확한 CTA로도 한 번 더 보여준다. */}
+        <button onClick={onDone} className="press" style={{ position: "relative", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 18, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}><Check size={14} strokeWidth={3} />확인</button>
       </motion.div>
     </div>
   );
