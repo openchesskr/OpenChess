@@ -9739,6 +9739,14 @@ const TIER_COLORS = {
   master: { lo: "#3B1568", hi: "#B98CFF" },
   grandmaster: { stops: ["#B983FF", "#6EE7C8", "#FF8FD1"] },
 };
+// (v0.2.9 기능) 티어 승급 팝업(TierUpOverlay)의 햇살·발광 펄스·제목 그러데이션을 "도달한 티어" 고유
+// 색으로 물들이기 위한 헬퍼 — TIER_COLORS를 그대로 재사용해 배지·진행바와 같은 색 언어를 따른다.
+function tierGlowHex(tierKey) { const c = TIER_COLORS[tierKey]; return (c && (c.hi || (c.stops && c.stops[0]))) || "#F3DFAE"; }
+function tierGradientCss(tierKey) {
+  const c = TIER_COLORS[tierKey];
+  if (!c) return "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)";
+  return c.stops ? "linear-gradient(135deg," + c.stops.join(",") + ")" : "linear-gradient(180deg," + c.hi + "," + c.lo + ")";
+}
 // 티어[0..5](아이언..마스터)를 깨는 데 필요한 XP — 한 곳에서만 관리하는 튜닝 가능한 상수. 누적
 // 500/2,000/10,000/50,000/100,000 XP에 브론즈/실버/골드/다이아몬드/마스터에 도달하고, 그
 // 두 배(누적 200,000)에 그랜드마스터에 도달한다.
@@ -13378,6 +13386,7 @@ const CHANGELOG = [
       "일일 퀘스트 클리어 팝업을 더 화려하게 다듬었어요 — 마스코트가 금빛 원판 위에서 반짝임과 함께 등장해요. 어떤 퀘스트를 깼는지 목록으로 보여주고, 오프닝 퀘스트는 그 수순을, chess.com 활동 퀘스트는 실제로 클리어한 대국 정보(상대·결과·타임컨트롤)까지 함께 보여줘요 — 대국 옆 돋보기를 누르면 바로 그 대국 리뷰로 이동해요.",
       "일일 퀘스트 클리어 팝업이 더 게임처럼 화려해졌어요 — 마스코트 뒤로 햇살이 은은하게 돌아가고, 색색 컨페티가 떨어지고, 원판 테두리가 숨쉬듯 반짝여요. 보상 숫자는 0부터 목표치까지 빠르게 올라가고, 클리어한 퀘스트 목록도 하나씩 차례로 펼쳐지듯 나타나요.",
       "일일 퀘스트 5개 중 하나만 클리어해도 어떤 퀘스트를 깼는지 알려주는 팝업이 상단에 떠요 — 확인 없이 잠깐 보였다 자동으로 사라져요.",
+      "티어 승급 연출도 카드형 팝업으로 새 단장했어요 — 기존 기물 교체 애니메이션은 그대로 두고, 도달한 티어 색으로 물든 햇살·발광·컨페티를 더했어요. 예전엔 안 보이던 승급 보상(OC 나이트 코인)도 이제 팝업 안에서 바로 확인할 수 있어요.",
     ]
   },
   {
@@ -15993,7 +16002,15 @@ function TierJourneyMap({ totalXp, onClose }) {
 // 어둡게 가리고, 그 위에서 이전 티어 이미지가 좌우로 살짝 흔들리다 왼쪽 바깥으로 밀려나며, 오른쪽
 // 바깥에서 새 티어 이미지가 들어와 가운데 자리를 대신한다(각 단계 시간은 phase별 setTimeout으로
 // 순서대로 넘긴다). 배경을 눌러도 언제든 바로 스킵하고 닫을 수 있다.
-function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, onDone }) {
+// (v0.2.9 디자인) 사용자 요청 — 일일 퀘스트 클리어 팝업과 비슷하게, 이 승급 연출도 맨 텍스트+이미지
+// 대신 카드형 "팝업 창"에 담고 추가 장식을 더해 달라는 것. 기존 흔들림→퇴장→등장 애니메이션과 반투명
+// 배경(rgba(6,3,1,.75))은 그대로 두고, 그 위에 카드(라운드 코너·테두리·그림자)를 얹었다. 카드 안
+// 장식(햇살·발광 펄스·제목 그러데이션)은 도달한 티어 고유 색(TIER_COLORS)으로 물들여, 예를 들어
+// 다이아몬드 승급은 시안 톤으로, 마스터 승급은 보라 톤으로 승급마다 다른 색감이 느껴지게 했다 —
+// 퀘스트 팝업의 반짝임·컨페티(QUEST_CLEAR_SPARKLES/CONFETTI)는 그대로 재사용해 "이 앱의 축하 연출"
+// 이라는 공통 언어는 유지한다. 예전엔 승급 보상(+N 코인)이 이 오버레이(zIndex 200)에 완전히 가려진
+// 별도 토스트(zIndex 65)로만 표시돼 사실상 안 보였는데, 이제 카드 안에 직접 보여준다.
+function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, reward, onDone }) {
   const [phase, setPhase] = useState("shake"); // shake(흔들림) -> exit(퇴장) -> enter(새 티어 등장)
   useEffect(() => {
     const t1 = setTimeout(() => setPhase("exit"), 650);
@@ -16002,36 +16019,55 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, onDon
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const glowHex = tierGlowHex(toTierKey);
+  const toLabel = (TIERS.find((t) => t.key === toTierKey) || {}).label || "";
   return (
-    <div onClick={onDone} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,3,1,.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-      <div style={{ fontSize: 18, fontWeight: 900, color: T.brassHi, letterSpacing: ".02em", textShadow: "0 2px 10px rgba(0,0,0,.7)", marginBottom: 18 }}>티어 승급!</div>
-      <div style={{ position: "relative", width: 200, height: 200 }}>
-        <AnimatePresence>
-          {phase !== "enter" && (
-            <motion.img
-              key="from"
-              src={tierPieceSrc(fromTierKey, fromDivision)}
-              alt=""
-              initial={{ x: 0, opacity: 1 }}
-              animate={phase === "shake" ? { x: [0, -16, 16, -12, 12, -5, 5, 0] } : { x: -260, opacity: 0 }}
-              transition={phase === "shake" ? { duration: 0.6, ease: "easeInOut" } : { duration: 0.4, ease: "easeIn" }}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-            />
-          )}
-          {phase === "enter" && (
-            <motion.img
-              key="to"
-              src={tierPieceSrc(toTierKey, toDivision)}
-              alt=""
-              initial={{ x: 260, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-            />
-          )}
-        </AnimatePresence>
-      </div>
-      <div style={{ fontSize: 11.5, color: T.ivory, opacity: .7, marginTop: 18 }}>화면을 누르면 바로 닫혀요</div>
+    <div onClick={onDone} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 16 }}>
+      <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 320, damping: 22 }}
+        style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#3A2610 0%,#150C06 70%)", border: "1px solid rgba(196,154,80,.4)", boxShadow: "0 30px 70px -14px rgba(0,0,0,.8), 0 0 0 1px rgba(196,154,80,.25)" }}>
+        {/* 도달한 티어 색으로 물든 햇살 — 퀘스트 팝업의 questRaySpin을 그대로 재사용(색만 다르게 준다). */}
+        <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: 86, width: 240, height: 240, transform: "translate(-50%,-50%)", background: "repeating-conic-gradient(from 0deg, " + glowHex + "59 0deg 7deg, transparent 7deg 22deg)", borderRadius: "50%", opacity: 0.6, animationName: "questRaySpin", animationDuration: "18s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
+        {QUEST_CLEAR_CONFETTI.map((c, i) => (
+          <span key={"c" + i} aria-hidden="true" style={{ position: "absolute", left: c.left, top: -6, width: 6, height: 10, background: c.color, borderRadius: 1, transform: "rotate(" + c.rot + "deg)", animationName: "questConfettiFall", animationDuration: "1.8s", animationTimingFunction: "ease-in", animationDelay: c.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
+        ))}
+        {QUEST_CLEAR_SPARKLES.map((p, i) => (
+          <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: glowHex, animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
+        ))}
+        <div style={{ position: "relative", fontSize: 19, fontWeight: 900, letterSpacing: ".02em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.6))" }}>티어 승급!</div>
+        <div style={{ position: "relative", width: 200, height: 200 }}>
+          {/* 숨쉬듯 부풀었다 가라앉는 발광 — 기물 이미지 뒤에서 도달한 티어 색으로. */}
+          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 190, height: 190, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle," + glowHex + "77 0%, transparent 72%)", animationName: "tierGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }} />
+          <AnimatePresence>
+            {phase !== "enter" && (
+              <motion.img
+                key="from"
+                src={tierPieceSrc(fromTierKey, fromDivision)}
+                alt=""
+                initial={{ x: 0, opacity: 1 }}
+                animate={phase === "shake" ? { x: [0, -16, 16, -12, 12, -5, 5, 0] } : { x: -260, opacity: 0 }}
+                transition={phase === "shake" ? { duration: 0.6, ease: "easeInOut" } : { duration: 0.4, ease: "easeIn" }}
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+              />
+            )}
+            {phase === "enter" && (
+              <motion.img
+                key="to"
+                src={tierPieceSrc(toTierKey, toDivision)}
+                alt=""
+                initial={{ x: 260, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+              />
+            )}
+          </AnimatePresence>
+        </div>
+        {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ivoryHi, marginTop: 6 }}>{toLabel} 티어 도달!</div>}
+        {reward > 0 && (
+          <span className="flex items-center gap-1" style={{ position: "relative", marginTop: 12, fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={15} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
+        )}
+        <div style={{ position: "relative", fontSize: 11.5, color: T.ivory, opacity: .7, marginTop: 16 }}>화면을 누르면 바로 닫혀요</div>
+      </motion.div>
     </div>
   );
 }
@@ -17082,22 +17118,23 @@ export default function App() {
   const prevTierIndexRef = useRef(null);
   // (v0.1.1) 작은 토스트 대신 전체 화면 승급 연출(TierUpOverlay)을 띄운다 — 직전 티어의 마지막
   // 구간(1, 가장 높은 구간)에서 새 티어로 넘어온 것으로 보고 시작 이미지를 정한다.
-  const [tierUpAnim, setTierUpAnim] = useState(null); // { fromKey, fromDiv, toKey, toDiv } | null
+  const [tierUpAnim, setTierUpAnim] = useState(null); // { fromKey, fromDiv, toKey, toDiv, reward } | null
   useEffect(() => {
     if (!loaded) return; // 최초 데이터 복원 시점의 티어 변화는 "승급"으로 취급하지 않는다
     if (prevTierIndexRef.current != null && tierInfo.tierIndex > prevTierIndexRef.current) {
+      // (v0.2.3 기능) 티어 승급 보상 — 새로 도달한 티어가 높을수록(tierIndex가 클수록) 더 많은 나이트
+      // OC 코인을 지급한다(브론즈 50 ~ 그랜드마스터 300, 50 단위).
+      // (v0.2.9 버그 수정) 예전엔 이 보상을 별도 "coins" 토스트(zIndex 65)로 띄웠는데, 같은 순간 뜨는
+      // TierUpOverlay(zIndex 200)에 화면 전체가 가려져 사실상 보이지 않았다 — 토스트 대신 승급 연출
+      // 카드 안에 직접 보여주도록 tierUpAnim에 실어 보낸다.
+      const tierUpReward = tierInfo.tierIndex * 50;
       setTierUpAnim({
         fromKey: TIERS[prevTierIndexRef.current].key, fromDiv: 1,
         toKey: tierInfo.tier.key, toDiv: tierInfo.division,
+        reward: tierUpReward,
       });
       if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
-      // (v0.2.3 기능) 티어 승급 보상 — 새로 도달한 티어가 높을수록(tierIndex가 클수록) 더 많은 나이트
-      // OC 코인을 지급한다(브론즈 50 ~ 그랜드마스터 300, 50 단위). 승급 연출(TierUpOverlay)이 뜨는
-      // 시점에 함께 지급하고, 기존 퀘스트 코인 지급과 같은 토스트 UI를 재사용해 바로 눈에 띄게 한다.
-      const tierUpReward = tierInfo.tierIndex * 50;
       setOcCoins((c) => c + tierUpReward);
-      setToast({ type: "coins", amount: tierUpReward });
-      setTimeout(() => setToast((t) => (t && t.type === "coins" && t.amount === tierUpReward ? null : t)), 1800);
     }
     prevTierIndexRef.current = tierInfo.tierIndex;
   }, [tierInfo.tierIndex, loaded]);
@@ -17315,7 +17352,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
@@ -17393,7 +17430,7 @@ export default function App() {
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} />}
-      {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} onDone={() => setTierUpAnim(null)} />}
+      {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
