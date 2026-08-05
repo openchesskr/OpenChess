@@ -6913,18 +6913,22 @@ function useReviewEngine() {
 // 이 로딩 화면만을 위한 새 애니메이션을 따로 만들지 않았다.
 const REVIEW_LOADING_PANELS = [
   { src: "/ilust-7-web.webp", pos: "center 38%", delay: 0 },
-  { src: "/ilust-6-web.webp", pos: "center 22%", delay: 0.14 },
-  { src: "/ilust-5-web.webp", pos: "center 46%", delay: 0.28 },
+  { src: "/ilust-6-web.webp", pos: "center 22%", delay: 0.5 },
+  { src: "/ilust-5-web.webp", pos: "center 46%", delay: 1.0 },
 ];
+// (v0.2.9 UI 조정) 사용자 요청 — 화면을 더 꽉 채우고, 위 패널이 자리를 완전히 잡은 뒤에야 다음 패널이
+// 등장하도록 delay 간격을 늘렸다(기존 0.14초 간격은 duration .45초와 겹쳐 거의 동시에 튀어나오는
+// 것처럼 보였다). 패널이 부모의 남는 세로 공간을 균등히 나눠 갖도록(flex:1) 바꿔, 로딩 화면 전체
+// 높이에 맞춰 3장이 커진다 — 부모(ReviewPage 로딩 분기)가 flex column이어야 의도대로 늘어난다.
 function ReviewLoadingSplit() {
   return (
-    <div style={{ maxWidth: 380, margin: "0 auto", display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ width: "100%", maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 8, flex: "1 1 auto", minHeight: 0, maxHeight: 620 }}>
       {REVIEW_LOADING_PANELS.map((p, i) => (
-        <motion.div key={p.src} initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ delay: p.delay, duration: 0.45, ease: "easeOut" }}
-          style={{ position: "relative", height: 92, borderRadius: 12, overflow: "hidden", border: "1px solid " + RV.border, boxShadow: "0 8px 20px -8px rgba(0,0,0,.6)" }}>
+        <motion.div key={p.src} initial={{ opacity: 0, y: -28 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: p.delay, duration: 0.5, ease: "easeOut" }}
+          style={{ position: "relative", flex: "1 1 0", minHeight: 110, borderRadius: 14, overflow: "hidden", border: "1px solid " + RV.border, boxShadow: "0 8px 20px -8px rgba(0,0,0,.6)" }}>
           <img src={p.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: p.pos, display: "block" }} />
-          <span className="gm-board-shine" style={{ borderRadius: 12, animationDelay: (i * 0.6) + "s" }} />
+          <span className="gm-board-shine" style={{ borderRadius: 14, animationDelay: (i * 0.6) + "s" }} />
         </motion.div>
       ))}
     </div>
@@ -7395,11 +7399,12 @@ function ReviewPage({ game, onClose }) {
     <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: RV.text, fontSize: 13 }}>분석할 수 없습니다. 엔진이 준비되었는지 확인해 주세요.</p></div></div>
   );
   if (!result) return (
-    <div style={wrap}>{header}
-      <div style={{ padding: "28px 20px 40px", textAlign: "center" }}>
+    <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
+      {header}
+      <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewLoadingSplit />
-        <p style={{ color: RV.soft, fontSize: 13, fontWeight: 700, marginTop: 16 }}>기보를 분석하는 중… {Math.round(prog * 100)}%</p>
-        <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
+        <p style={{ color: RV.soft, fontSize: 13, fontWeight: 700, marginTop: 16, flexShrink: 0 }}>기보를 분석하는 중… {Math.round(prog * 100)}%</p>
+        <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
       </div>
     </div>
   );
