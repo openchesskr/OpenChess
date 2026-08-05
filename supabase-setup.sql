@@ -752,8 +752,14 @@ alter table public.move_notes enable row level security;
 -- 나온다. 숫자·영문·한글만 남기고 나머지(공백·구두점·이모지 등)는 전부 지운 뒤 부분 문자열로
 -- 대조한다 — 같은 단어를 특수문자로 쪼개 피하는 경우("시🌟발")도 걸러진다. 완벽한 검열은 아니며,
 -- 이를 뚫는 표현은 개발자가 delete 정책(아래)으로 사후에 지운다.
+-- (보안 검토 반영) author_username은 처음엔 클라이언트가 그대로 보내는 값을 믿었다 — insert 정책은
+-- auth.uid()=uid만 확인할 뿐 author_username까지는 검증하지 않아, 자기 uid로 등록하면서 다른 사람의
+-- 아이디를 작성자로 사칭해 표시할 수 있는 구멍이었다(권한 검증 필드와 실제 표시 필드가 어긋난
+-- 전형적인 authorization-gate-field-mismatch). 클라이언트 입력을 아예 신뢰하지 않고, 이 트리거가
+-- 등록 시점에 profiles에서 실제 로그인 계정의 username으로 강제로 덮어쓴다 — 수정(update, 개발자
+-- 전용)에서는 TG_OP로 걸러 원래 작성자 표시를 건드리지 않는다.
 create or replace function public.move_notes_moderate()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql security definer set search_path = public as $$
 declare v_norm text; v_word text;
   v_words text[] := array[
     '시발','씨발','씨팔','시팔','개새끼','개새기','병신','븅신','좆','좃','자지','보지','걸레년',
@@ -761,6 +767,10 @@ declare v_norm text; v_word text;
     'fuck','shit','bitch','asshole','cunt','nigger','nigga','faggot','rape','porn'
   ];
 begin
+  if TG_OP = 'INSERT' then
+    select username into new.author_username from public.profiles where id = auth.uid();
+    new.author_username := coalesce(new.author_username, '');
+  end if;
   v_norm := lower(regexp_replace(new.body, '[^0-9a-zA-Zㄱ-ㆎ가-힣]', '', 'g'));
   foreach v_word in array v_words loop
     if v_norm like '%' || v_word || '%' then
