@@ -764,6 +764,12 @@ function sansToFen(sans) {
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 
+// (v0.2.9 기능) 학습 탭 실시간 분석(evaluateMulti)에 더 이상 depth 상한(예전엔 20)을 걸지 않기 위한
+// 값 — UCI "go depth N"은 프로토콜상 숫자가 필요하지만, 스톡피시 WASM이 movetime 몇 초~몇십 초 안에
+// 실제로 도달할 수 있는 depth(대체로 20~40대)보다 훨씬 큰 값을 줘서 사실상 도달 불가능한 상한으로
+// 만든다 — 그러면 각 단계를 실제로 멈추는 건 depth가 아니라 movetime뿐이 되어, 주어진 시간 동안
+// depth가 막힘없이 계속 늘어난다.
+const LEARN_MAX_DEPTH = 99;
 /* ============================================================ 라이브 Stockfish (Web Worker) ============================================================ */
 function useEngine(enginePref) {
   const ref = useRef(null);
@@ -4000,10 +4006,15 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
       // (기능) 사용자 요청으로 MultiPV를 7→5로 더 낮춘다 — 순위가 늘어날수록 노드당 비용이 커져
-      // 목표 depth(20)에 도달하기 더 어려워지므로, 후보 수 보충(아래)에 필요한 최소치만 남긴다.
+      // 목표 depth에 도달하기 더 어려워지므로, 후보 수 보충(아래)에 필요한 최소치만 남긴다.
       // (v0.2.4 성능) slot="learn-lines" — 빠르게 다음/이전 수로 넘기면 이전 포지션의 계산이 아직 큐에
       // 남아 있어도 즉시 중단되고 지금 포지션의 요청이 바로 시작된다(더 이상 순서대로 밀리지 않음).
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), 20, 5, 700, onEvalProgress, streamLines, "learn-lines");
+      // (v0.2.9 기능) 사용자 요청 — depth에 더 이상 인위적인 상한(예전엔 20)을 두지 않는다. "go depth"에
+      // 넘기는 값은 UCI 프로토콜상 어차피 필요하지만, 스톡피시가 몇 초 안에 실제로 도달할 수 있는
+      // depth보다 훨씬 큰 값(LEARN_MAX_DEPTH)을 넘겨 사실상 "무제한"으로 취급한다 — 각 단계를 실제로
+      // 멈추는 건 depth가 아니라 movetime(아래 세 단계의 시간 상한)이므로, 주어진 시간 안에서 depth가
+      // 끝까지(더 이상 못 깊어질 때까지) 계속 늘어난다.
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), LEARN_MAX_DEPTH, 5, 700, onEvalProgress, streamLines, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -4016,7 +4027,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       setEngineLines(lines);
       // (기능) 사용자 요청 — 엔진 라인·평가치·수 체계 아이콘을 전부 기존 movetime(700ms) 안에 먼저
       // 확정해 화면이 바로 반응하게 한 다음, 이 자리에서 추가로 5초("extra movetime")를 더 들여
-      // 같은 포지션을 목표 depth(20)까지 더 깊이 파본다. 스톡피시는 "go" 명령 사이에도 치환
+      // 같은 포지션을 더 깊이 파본다. 스톡피시는 "go" 명령 사이에도 치환
       // 테이블(Hash)이 그대로 남아 있으므로, 이 두 번째 탐색은 사실상 처음부터 다시 하는 게 아니라
       // 얕은 depth는 대부분 캐시 적중으로 순식간에 훑고 지나가 방금 700ms 안에 못 갔던 더 깊은
       // depth부터 실질적으로 이어간다. 같은 slot("learn-lines")을 그대로 써서, 사용자가 다른
@@ -4026,7 +4037,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 남겨 심화 탐색이 한 포지션당 한 번만 시작되게 한다.
       if (cache.extraKey !== key) {
         cache.extraKey = key;
-        engine.evaluateMulti(sansToFen(sans), 20, 5, 5000, onEvalProgress, streamLines, "learn-lines").then((deepPvs) => {
+        engine.evaluateMulti(sansToFen(sans), LEARN_MAX_DEPTH, 5, 5000, onEvalProgress, streamLines, "learn-lines").then((deepPvs) => {
           if (posCacheRef.current.key !== key || !deepPvs || !deepPvs.length) return;
           setPosEval(mkPosEval(deepPvs[0]));
           const deepLines = toLines3(deepPvs);
@@ -4035,6 +4046,24 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
             const deepEvBySan = {};
             deepLines.forEach((l) => { if (l.sans && l.sans.length) deepEvBySan[stripSuffix(l.sans[0])] = l.ev; });
             setMoves((prev) => prev.map((m) => { const hit = deepEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+          }
+          // (v0.2.9 기능) 사용자 요청 — 세 번째 단계("third movetime")를 추가한다. 5초 심화 탐색이 끝난
+          // 뒤에도 사용자가 이 포지션에 그대로 머물러 있다면, 같은 slot으로 한 번 더(이번엔 20초) 이어서
+          // 판다 — 위와 마찬가지로 Hash 적중으로 처음부터 다시 하는 게 아니라 5초 지점에서 이어간다.
+          // extraKey와 별개인 thirdKey로 한 포지션당 정확히 한 번만 시작되게 가드한다.
+          if (cache.thirdKey !== key) {
+            cache.thirdKey = key;
+            engine.evaluateMulti(sansToFen(sans), LEARN_MAX_DEPTH, 5, 20000, onEvalProgress, streamLines, "learn-lines").then((deeperPvs) => {
+              if (posCacheRef.current.key !== key || !deeperPvs || !deeperPvs.length) return;
+              setPosEval(mkPosEval(deeperPvs[0]));
+              const deeperLines = toLines3(deeperPvs);
+              setEngineLines(deeperLines);
+              if (deeperLines.length) {
+                const deeperEvBySan = {};
+                deeperLines.forEach((l) => { if (l.sans && l.sans.length) deeperEvBySan[stripSuffix(l.sans[0])] = l.ev; });
+                setMoves((prev) => prev.map((m) => { const hit = deeperEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+              }
+            }).catch(() => {});
           }
         }).catch(() => {});
       }
@@ -13397,6 +13426,7 @@ const CHANGELOG = [
       "티어 승급 팝업에 기물 교체 애니메이션이 끝난 뒤 카드 곳곳에서 하나씩 순서대로 터지는 폭죽을 추가했어요 — 그랜드마스터로 승급하면 보라·민트·핑크·금색이 뒤섞인 훨씬 화려한 폭죽이 터져요.",
       "일일 퀘스트 클리어 팝업과 티어 승급 팝업 모두 이제 시간이 지나거나 배경을 눌러도 저절로 닫히지 않아요 — X 버튼이나 확인 버튼을 직접 눌러야만 닫혀요.",
       "새 칭호를 얻었을 때도 이제 일일 퀘스트·티어 승급처럼 화려한 팝업으로 알려드려요 — 팝업 안에서 칭호를 바로 눌러 장착할 수 있고, X·확인 버튼을 눌러야만 닫혀요.",
+      "학습 탭 엔진 분석이 더 깊어졌어요 — 첫 화면 확정(0.7초)과 5초 심화 탐색 뒤에, 같은 포지션에 머무는 동안 20초 더 이어서 분석해요. 예전엔 depth 20에서 더 못 나갔는데, 이제 그 상한을 없애 시간이 허락하는 한 계속 더 깊이 파고들어요.",
     ]
   },
   {
