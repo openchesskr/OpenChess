@@ -6904,6 +6904,32 @@ function useReviewEngine() {
     evaluateMulti: (...args) => getFallback().then((w) => w ? w.evaluateMulti(...args) : []),
   }), [profile, getFallback]);
 }
+// (v0.2.9 기능) 사용자 요청 — 게임 리뷰(analyzeGame)가 도는 동안 보여줄 3분할 일러스트 애니메이션.
+// 사용자가 올려 준 세 장(MILKU·KOKOA가 체스보드를 사이에 두고 있는 장면들)을 위에서부터 ilust-7 →
+// ilust-6 → ilust-5 순으로 쌓는다("7이 가장 위, 5가 가장 아래"). 각 장이 순서대로 팝인하며 등장하고
+// (framer-motion stagger), 자리를 잡은 뒤에는 다른 화면(그랜드마스터 보드 등)과 같은 금속 광택 스윕
+// 클래스(gm-board-shine)를 패널마다 다른 지연으로 얹어, 대국 분석이 몇 초 넘게 걸려도 "계속 진행
+// 중"이라는 인상을 준다 — 이 앱의 "특별한" 화면들이 이미 공유하는 시각 언어를 그대로 재사용한 것이라
+// 이 로딩 화면만을 위한 새 애니메이션을 따로 만들지 않았다.
+const REVIEW_LOADING_PANELS = [
+  { src: "/ilust-7-web.webp", pos: "center 38%", delay: 0 },
+  { src: "/ilust-6-web.webp", pos: "center 22%", delay: 0.14 },
+  { src: "/ilust-5-web.webp", pos: "center 46%", delay: 0.28 },
+];
+function ReviewLoadingSplit() {
+  return (
+    <div style={{ maxWidth: 380, margin: "0 auto", display: "flex", flexDirection: "column", gap: 6 }}>
+      {REVIEW_LOADING_PANELS.map((p, i) => (
+        <motion.div key={p.src} initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ delay: p.delay, duration: 0.45, ease: "easeOut" }}
+          style={{ position: "relative", height: 92, borderRadius: 12, overflow: "hidden", border: "1px solid " + RV.border, boxShadow: "0 8px 20px -8px rgba(0,0,0,.6)" }}>
+          <img src={p.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: p.pos, display: "block" }} />
+          <span className="gm-board-shine" style={{ borderRadius: 12, animationDelay: (i * 0.6) + "s" }} />
+        </motion.div>
+      ))}
+    </div>
+  );
+}
 // (v0.2.4) 게임 리뷰는 사용자가 설정 탭에서 고른 분석 엔진과 무관하게 항상 Stockfish 16(사람
 // 최상급 수준으로 세기 제한, ENGINE_PROFILES.full.elo)으로 고정한다.
 function ReviewPage({ game, onClose }) {
@@ -7370,9 +7396,9 @@ function ReviewPage({ game, onClose }) {
   );
   if (!result) return (
     <div style={wrap}>{header}
-      <div style={{ padding: "40px 20px", textAlign: "center" }}>
-        <Mascot name="kokoa" emotion="think" size={64} />
-        <p style={{ color: RV.soft, fontSize: 13, fontWeight: 700, marginTop: 10 }}>기보를 분석하는 중… {Math.round(prog * 100)}%</p>
+      <div style={{ padding: "28px 20px 40px", textAlign: "center" }}>
+        <ReviewLoadingSplit />
+        <p style={{ color: RV.soft, fontSize: 13, fontWeight: 700, marginTop: 16 }}>기보를 분석하는 중… {Math.round(prog * 100)}%</p>
         <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
       </div>
     </div>
@@ -13483,6 +13509,7 @@ const CHANGELOG = [
       "게임 리뷰 화면에서도 학습 탭과 똑같이, 지금 보고 있는 포지션의 엔진 라인·평가치 막대(실제로 둔 수를 볼 때든 자유 탐색 중이든)와 자유 탐색 수의 등급 아이콘이 depth 상한 없이 계속 더 깊이 분석되고, 더 정확한 값이 나오면 실시간으로 바뀌어요. 대국의 정확도%·각 수의 등급 판정 자체는 기존 기준 그대로예요.",
       "이제 대국을 하나 리뷰로 열 때마다 리뷰 티켓을 1개 써요 — 한 번 연 대국은 그다음부터는 티켓 없이 몇 번이든 다시 볼 수 있어요. 일일 퀘스트 1개를 클리어할 때마다 티켓 1개, 5개를 모두 클리어하면 2개를 더(하루 최대 7개), 티어 승급마다 10개를 받아요. 상점 화면 상단에서 OC 나이트 코인과 나란히 보유 티켓 수를 확인할 수 있어요.",
       "개발자 전용 설정 화면이 하나로 통합됐어요 — OC 코인·리뷰 티켓·경험치를 숫자로 직접 입력하고, 티어·구간(또는 그랜드마스터 ★)도 직접 골라 그 즉시 해당 경험치로 이동할 수 있어요.",
+      "리뷰 티켓 아이콘이 실제 그림(초록 티켓)으로 바뀌었어요. 게임 리뷰를 불러오는 동안 MILKU·KOKOA가 체스보드를 사이에 둔 그림 3장이 위에서부터 차례로 나타나는 로딩 화면도 추가했어요.",
     ]
   },
   {
