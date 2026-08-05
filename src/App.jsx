@@ -764,12 +764,12 @@ function sansToFen(sans) {
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 
-// (v0.2.9 기능) 학습 탭 실시간 분석(evaluateMulti)에 더 이상 depth 상한(예전엔 20)을 걸지 않기 위한
-// 값 — UCI "go depth N"은 프로토콜상 숫자가 필요하지만, 스톡피시 WASM이 movetime 몇 초~몇십 초 안에
-// 실제로 도달할 수 있는 depth(대체로 20~40대)보다 훨씬 큰 값을 줘서 사실상 도달 불가능한 상한으로
-// 만든다 — 그러면 각 단계를 실제로 멈추는 건 depth가 아니라 movetime뿐이 되어, 주어진 시간 동안
-// depth가 막힘없이 계속 늘어난다.
-const LEARN_MAX_DEPTH = 99;
+// (v0.2.9 기능) 실시간 분석(evaluateMulti)에 더 이상 depth 상한(예전엔 20)을 걸지 않기 위한 값 —
+// 학습 탭·게임 리뷰(자유 탐색 엔진 라인·평가치 막대·수 체계 아이콘)가 공유한다. UCI "go depth N"은
+// 프로토콜상 숫자가 필요하지만, 스톡피시 WASM이 movetime 몇 초~몇십 초 안에 실제로 도달할 수 있는
+// depth(대체로 20~40대)보다 훨씬 큰 값을 줘서 사실상 도달 불가능한 상한으로 만든다 — 그러면 각 단계를
+// 실제로 멈추는 건 depth가 아니라 movetime뿐이 되어, 주어진 시간 동안 depth가 막힘없이 계속 늘어난다.
+const MAX_SEARCH_DEPTH = 99;
 /* ============================================================ 라이브 Stockfish (Web Worker) ============================================================ */
 function useEngine(enginePref) {
   const ref = useRef(null);
@@ -4011,10 +4011,10 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 남아 있어도 즉시 중단되고 지금 포지션의 요청이 바로 시작된다(더 이상 순서대로 밀리지 않음).
       // (v0.2.9 기능) 사용자 요청 — depth에 더 이상 인위적인 상한(예전엔 20)을 두지 않는다. "go depth"에
       // 넘기는 값은 UCI 프로토콜상 어차피 필요하지만, 스톡피시가 몇 초 안에 실제로 도달할 수 있는
-      // depth보다 훨씬 큰 값(LEARN_MAX_DEPTH)을 넘겨 사실상 "무제한"으로 취급한다 — 각 단계를 실제로
+      // depth보다 훨씬 큰 값(MAX_SEARCH_DEPTH)을 넘겨 사실상 "무제한"으로 취급한다 — 각 단계를 실제로
       // 멈추는 건 depth가 아니라 movetime(아래 세 단계의 시간 상한)이므로, 주어진 시간 안에서 depth가
       // 끝까지(더 이상 못 깊어질 때까지) 계속 늘어난다.
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), LEARN_MAX_DEPTH, 5, 700, onEvalProgress, streamLines, "learn-lines");
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 700, onEvalProgress, streamLines, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
@@ -4037,7 +4037,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 남겨 심화 탐색이 한 포지션당 한 번만 시작되게 한다.
       if (cache.extraKey !== key) {
         cache.extraKey = key;
-        engine.evaluateMulti(sansToFen(sans), LEARN_MAX_DEPTH, 5, 5000, onEvalProgress, streamLines, "learn-lines").then((deepPvs) => {
+        engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 5000, onEvalProgress, streamLines, "learn-lines").then((deepPvs) => {
           if (posCacheRef.current.key !== key || !deepPvs || !deepPvs.length) return;
           setPosEval(mkPosEval(deepPvs[0]));
           const deepLines = toLines3(deepPvs);
@@ -4053,7 +4053,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           // extraKey와 별개인 thirdKey로 한 포지션당 정확히 한 번만 시작되게 가드한다.
           if (cache.thirdKey !== key) {
             cache.thirdKey = key;
-            engine.evaluateMulti(sansToFen(sans), LEARN_MAX_DEPTH, 5, 20000, onEvalProgress, streamLines, "learn-lines").then((deeperPvs) => {
+            engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 20000, onEvalProgress, streamLines, "learn-lines").then((deeperPvs) => {
               if (posCacheRef.current.key !== key || !deeperPvs || !deeperPvs.length) return;
               setPosEval(mkPosEval(deeperPvs[0]));
               const deeperLines = toLines3(deeperPvs);
@@ -7065,9 +7065,23 @@ function ReviewPage({ game, onClose }) {
         const w = poolWorker(pool, 0, engine); // 실시간 라인 스트리밍 — 항상 전용 워커
         // (v0.2.1) onLines로 depth마다 실시간 갱신 — 평가치가 살아 움직이고 수순이 점점 길어진다.
         // (v0.2.4 성능) slot="review-lines" — 빠르게 수를 넘기면 이전 포지션 계산이 큐를 막지 않고 즉시 중단된다.
-        const pvsAll = await w.evaluateMulti(sansToFen(effSans), REVIEW_DEPTH, 3, REVIEW_MOVETIME_MS, (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } }, "review-lines");
+        // (v0.2.9 기능) 사용자 요청 — 자유 탐색·실시간 표시용 엔진 라인·평가치 막대는 학습 탭과 똑같이
+        // depth 상한을 없애고(MAX_SEARCH_DEPTH), 첫 확정(기존 REVIEW_MOVETIME_MS) 이후에도 5초·20초
+        // 두 단계를 더 이어서(third movetime) 배경에서 계속 더 깊이 판다 — "초기 정확도와 평가치
+        // 판정"(analyzeGame, 실제로 둔 수의 등급·정확도%)은 이 변경과 무관하게 기존 REVIEW_DEPTH·
+        // REVIEW_MOVETIME_MS 그대로 유지된다(아래 참고). 여기서 깊어진 결과는 화면(엔진 라인 패널·
+        // 평가치 막대)에만 실시간으로 반영되고, 이미 확정된 점수·등급표는 건드리지 않는다.
+        const onLines = (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } };
+        const pvsAll = await w.evaluateMulti(sansToFen(effSans), MAX_SEARCH_DEPTH, 3, REVIEW_MOVETIME_MS, onLines, "review-lines");
         if (cancelled) return;
         setEngineLines(toLines(pvsAll));
+        setLinesPending(false);
+        const deepPvs = await w.evaluateMulti(sansToFen(effSans), MAX_SEARCH_DEPTH, 3, 5000, onLines, "review-lines");
+        if (cancelled) return;
+        if (deepPvs && deepPvs.length) setEngineLines(toLines(deepPvs));
+        const deeperPvs = await w.evaluateMulti(sansToFen(effSans), MAX_SEARCH_DEPTH, 3, 20000, onLines, "review-lines");
+        if (cancelled) return;
+        if (deeperPvs && deeperPvs.length) setEngineLines(toLines(deeperPvs));
       } catch { if (!cancelled) setEngineLines([]); }
       finally { if (!cancelled) setLinesPending(false); }
     })();
@@ -7100,38 +7114,50 @@ function ReviewPage({ game, onClose }) {
         const pool = await getAnalysisPool(engine.profile, engine.urls);
         const wBest = poolWorker(pool, 1, engine), wAfter = poolWorker(pool, 2, engine);
         const col = white ? "w" : "b";
-        // (v0.2.4) 게임 리뷰는 이제 학습 탭과 다른 엔진(고정 Stockfish 16, 세기 제한)을 쓰므로 depth·
-        // movetime도 리뷰 전용 값(REVIEW_DEPTH·REVIEW_MOVETIME_MS)을 그대로 쓴다 — 학습 탭(evalMoveKind,
-        // depth 13·MOVETIME_MS)과 등급이 갈리는 건 서로 다른 엔진을 쓰는 이상 자연스러운 결과다.
-        const pvs = await wBest.evaluateMulti(sansToFen(prevSans), REVIEW_DEPTH, 2, REVIEW_MOVETIME_MS, undefined, "review-best");
+        // (v0.2.4) 게임 리뷰는 이제 학습 탭과 다른 엔진(고정 Stockfish 16, 세기 제한)을 쓰므로 depth는
+        // 학습 탭(evalMoveKind, depth 13·MOVETIME_MS)과 갈리는 게 자연스럽다 — 리뷰 전용 값을 쓴다.
+        // (v0.2.9 기능) 사용자 요청 — 자유 탐색 수 체계 아이콘도 엔진 라인·평가치 막대와 똑같이 depth
+        // 상한 없이(MAX_SEARCH_DEPTH) 첫 확정(기존 REVIEW_MOVETIME_MS) 이후 5초·20초 두 단계를 더
+        // 이어서(third movetime) 다시 채점한다 — 등급이 바뀌면(예: 첫 판정은 "우수"였는데 더 깊이 보니
+        // 실은 "최선"이었던 경우) 아이콘이 그 자리에서 실시간으로 갱신된다. "초기 정확도와 평가치
+        // 판정"(analyzeGame, 실제로 둔 수의 채점)은 이 변경과 무관하다 — 이건 기보에 없는 자유 탐색
+        // 수 전용 채점이라 애초에 analyzeGame과 별개다.
+        const grade = async (movetime) => {
+          const pvs = await wBest.evaluateMulti(sansToFen(prevSans), MAX_SEARCH_DEPTH, 2, movetime, undefined, "review-best");
+          if (cancelled) return;
+          const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
+          if (!p0) return;
+          const bestCp = p0.mate != null ? (p0.mate > 0 ? 1e5 : -1e5) : p0.cp;
+          const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
+          const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
+          const matched = forced || (!!bestSan && stripSuffix(bestSan) === stripSuffix(san));
+          const after = await wAfter.evaluate(sansToFen(effSans), MAX_SEARCH_DEPTH, undefined, movetime, "review-after");
+          if (cancelled || !after) return;
+          const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
+          const ourCp = -afterOpp;
+          const loss = matched ? 0 : bestCp - ourCp;
+          let kind = tierOf(loss);
+          if (kind === "best" && !matched) kind = "excellent";
+          const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
+          try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant"; } catch { }
+          if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+          // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 학습 탭(evalMoveKind
+          // 호출부의 applyKind)에는 있는데 이 자유 탐색 판정에는 빠져 있었다 — 같은 규칙을 그대로 적용한다.
+          const under = /=/.test(san) && !/=Q/.test(san);
+          if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+          const gap = secondCp == null ? 9999 : (bestCp - secondCp);
+          // (버그 수정) analyzeGame과 동일 — 단순 되잡기(되잡을 수 있는 내 기물이 이 하나뿐)는 "유일한
+          // 수"로 승격하지 않는다.
+          let singleRecapture = false;
+          try { const rc = recaptureFact(prevSans, san, col); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+          if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture) kind = "only";
+          if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
+        };
+        await grade(REVIEW_MOVETIME_MS);
         if (cancelled) return;
-        const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
-        if (!p0) return;
-        const bestCp = p0.mate != null ? (p0.mate > 0 ? 1e5 : -1e5) : p0.cp;
-        const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
-        const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
-        const matched = forced || (!!bestSan && stripSuffix(bestSan) === stripSuffix(san));
-        const after = await wAfter.evaluate(sansToFen(effSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS, "review-after");
-        if (cancelled || !after) return;
-        const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
-        const ourCp = -afterOpp;
-        const loss = matched ? 0 : bestCp - ourCp;
-        let kind = tierOf(loss);
-        if (kind === "best" && !matched) kind = "excellent";
-        const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant"; } catch { }
-        if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-        // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 학습 탭(evalMoveKind
-        // 호출부의 applyKind)에는 있는데 이 자유 탐색 판정에는 빠져 있었다 — 같은 규칙을 그대로 적용한다.
-        const under = /=/.test(san) && !/=Q/.test(san);
-        if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
-        const gap = secondCp == null ? 9999 : (bestCp - secondCp);
-        // (버그 수정) analyzeGame과 동일 — 단순 되잡기(되잡을 수 있는 내 기물이 이 하나뿐)는 "유일한
-        // 수"로 승격하지 않는다.
-        let singleRecapture = false;
-        try { const rc = recaptureFact(prevSans, san, col); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
-        if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture) kind = "only";
-        if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
+        await grade(5000);
+        if (cancelled) return;
+        await grade(20000);
       } catch { }
     })();
     return () => { cancelled = true; };
@@ -13427,6 +13453,7 @@ const CHANGELOG = [
       "일일 퀘스트 클리어 팝업과 티어 승급 팝업 모두 이제 시간이 지나거나 배경을 눌러도 저절로 닫히지 않아요 — X 버튼이나 확인 버튼을 직접 눌러야만 닫혀요.",
       "새 칭호를 얻었을 때도 이제 일일 퀘스트·티어 승급처럼 화려한 팝업으로 알려드려요 — 팝업 안에서 칭호를 바로 눌러 장착할 수 있고, X·확인 버튼을 눌러야만 닫혀요.",
       "학습 탭 엔진 분석이 더 깊어졌어요 — 첫 화면 확정(0.7초)과 5초 심화 탐색 뒤에, 같은 포지션에 머무는 동안 20초 더 이어서 분석해요. 예전엔 depth 20에서 더 못 나갔는데, 이제 그 상한을 없애 시간이 허락하는 한 계속 더 깊이 파고들어요.",
+      "게임 리뷰 화면에서도 학습 탭과 똑같이, 지금 보고 있는 포지션의 엔진 라인·평가치 막대(실제로 둔 수를 볼 때든 자유 탐색 중이든)와 자유 탐색 수의 등급 아이콘이 depth 상한 없이 계속 더 깊이 분석되고, 더 정확한 값이 나오면 실시간으로 바뀌어요. 대국의 정확도%·각 수의 등급 판정 자체는 기존 기준 그대로예요.",
     ]
   },
   {
