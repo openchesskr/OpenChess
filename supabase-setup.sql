@@ -724,3 +724,66 @@ create policy "daily puzzles dev update" on public.daily_puzzles_dev for update 
 create policy "daily puzzles dev delete" on public.daily_puzzles_dev for delete using (public.is_content_editor(auth.uid()));
 grant select on public.daily_puzzles_dev to anon, authenticated;
 grant insert, update, delete on public.daily_puzzles_dev to authenticated;
+
+-- ============================================================================
+-- 15) move_notes — 학습 탭 "수 설명" 커뮤니티 게시판 (v0.2.9)
+-- ============================================================================
+-- 예전엔 특정 수(move_key = "<그 수까지의 SAN 공백연결>|<그 수 SAN>")에 대한 설명을 app_content(위
+-- 3번 섹션, is_content_editor만 쓸 수 있는 단일 값 콘텐츠 블롭)에 개발자/공동개발자만 등록할 수
+-- 있었다. 이제 로그인한 모든 유저가 짧은 설명을 남길 수 있도록 완전히 별도 테이블로 분리한다 —
+-- app_content는 그대로 두고(다른 콘텐츠가 계속 그 테이블을 쓰므로) 이 기능만 여기로 옮겼다.
+-- 1인당 같은 수에는 1개만(스팸 방지 — puzzle_likes/puzzle_solvers와 같은 1인 1행 패턴). 수정·삭제는
+-- 개발자/공동개발자만 가능하고(is_content_editor), 작성자 본인도 스스로 고치거나 지울 수 없다 —
+-- 이 캐러셀은 "게시판"이라 최종 편집권을 항상 운영진에게 남기는 설계다.
+create table if not exists public.move_notes (
+  id bigint generated always as identity primary key,
+  move_key text not null,
+  uid uuid not null references auth.users(id) on delete cascade,
+  author_username text not null default '',
+  body text not null check (char_length(body) between 1 and 100),
+  created_at timestamptz not null default now(),
+  unique (move_key, uid)
+);
+create index if not exists idx_move_notes_key on public.move_notes(move_key, created_at);
+alter table public.move_notes enable row level security;
+
+-- 등록·수정 시 서버에서도 흔한 욕설·혐오 표현을 다시 검사한다 — 클라이언트 필터(src/App.jsx의
+-- containsBannedWord)는 REST를 직접 호출하면 우회할 수 있으므로, 실제 강제력은 이 트리거에서
+-- 나온다. 숫자·영문·한글만 남기고 나머지(공백·구두점·이모지 등)는 전부 지운 뒤 부분 문자열로
+-- 대조한다 — 같은 단어를 특수문자로 쪼개 피하는 경우("시🌟발")도 걸러진다. 완벽한 검열은 아니며,
+-- 이를 뚫는 표현은 개발자가 delete 정책(아래)으로 사후에 지운다.
+create or replace function public.move_notes_moderate()
+returns trigger language plpgsql as $$
+declare v_norm text; v_word text;
+  v_words text[] := array[
+    '시발','씨발','씨팔','시팔','개새끼','개새기','병신','븅신','좆','좃','자지','보지','걸레년',
+    '미친놈','미친년','닥쳐','꺼져','죽어라','죽여버','강간','섹스','야동','포르노',
+    'fuck','shit','bitch','asshole','cunt','nigger','nigga','faggot','rape','porn'
+  ];
+begin
+  v_norm := lower(regexp_replace(new.body, '[^0-9a-zA-Zㄱ-ㆎ가-힣]', '', 'g'));
+  foreach v_word in array v_words loop
+    if v_norm like '%' || v_word || '%' then
+      raise exception 'move_notes_moderation_blocked';
+    end if;
+  end loop;
+  return new;
+end; $$;
+drop trigger if exists move_notes_moderate_trigger on public.move_notes;
+create trigger move_notes_moderate_trigger
+  before insert or update on public.move_notes
+  for each row execute function public.move_notes_moderate();
+
+drop policy if exists "move notes read"   on public.move_notes;
+drop policy if exists "move notes insert" on public.move_notes;
+drop policy if exists "move notes update" on public.move_notes;
+drop policy if exists "move notes delete" on public.move_notes;
+-- 읽기는 누구나(로그인 없이도 학습 탭을 쓸 수 있으므로), 등록은 로그인 유저 본인 이름으로만,
+-- 수정·삭제는 개발자/공동개발자만(app_content·master_games_dev와 동일한 is_content_editor 재사용).
+create policy "move notes read"   on public.move_notes for select using (true);
+create policy "move notes insert" on public.move_notes for insert with check (auth.uid() = uid);
+create policy "move notes update" on public.move_notes for update using (public.is_content_editor(auth.uid())) with check (public.is_content_editor(auth.uid()));
+create policy "move notes delete" on public.move_notes for delete using (public.is_content_editor(auth.uid()));
+grant select on public.move_notes to anon, authenticated;
+grant insert on public.move_notes to authenticated;
+grant update, delete on public.move_notes to authenticated;

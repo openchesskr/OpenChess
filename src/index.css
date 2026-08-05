@@ -1,6 +1,9 @@
-/* (18차) Google Fonts — 본문은 Noto Sans KR(한글)/Noto Sans(라틴), 브랜드 워드마크는 Black Ops One,
-   착용한 칭호 텍스트에는 Playfair Display를 개별적으로 적용한다(App.jsx 참고). */
-html, body { font-family: "Noto Sans KR", "Noto Sans", -apple-system, BlinkMacSystemFont, sans-serif; }
+/* (v0.2.9 디자인) 사용자 요청으로 사이트 전체 기본 폰트를 IBM Plex Sans KR로 교체 — 이 선언 하나가
+   html/body에 걸리므로 별도로 폰트를 지정하지 않은 모든 화면(퀘스트 클리어·티어 승급 팝업의 본문·
+   목록 텍스트 포함)에 자동으로 적용된다. Noto Sans KR/Noto Sans는 IBM Plex Sans KR이 못 커버하는
+   굵기·글리프의 폴백으로 남겨 둔다. 브랜드 워드마크는 Black Ops One, 게임 보상 팝업 제목은
+   Gasoek One, 착용한 칭호 텍스트에는 Playfair Display를 개별적으로 적용한다(App.jsx 참고). */
+html, body { font-family: "IBM Plex Sans KR", "Noto Sans KR", "Noto Sans", -apple-system, BlinkMacSystemFont, sans-serif; }
 /* (버그·모바일) 배경 장식 SVG·화살표 등이 뷰포트 밖으로 살짝 삐져나와 생기는 가로 스크롤/왜곡을 차단.
    실제 콘텐츠는 단일 컬럼으로 뷰포트 안에 들어오므로 가로 오버플로는 항상 잘라낸다. */
 html, body { overflow-x: hidden; max-width: 100%; }
