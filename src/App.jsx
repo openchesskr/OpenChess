@@ -6470,6 +6470,18 @@ function avatarUsernameFor(game, side) {
   if (game.color === side && game.username) return game.username;
   return null;
 }
+// (v0.2.9 기능) 리뷰 티켓 — "게임 하나당 1회만 소비, 이후 영구 무료 열람"을 구현하려면 그 게임을
+// 구분할 안정적인 키가 필요하다. 현재 리뷰로 열리는 모든 대국은 chess.com에서 온 것뿐이라(양쪽
+// 닉네임+종료 시각을 항상 함께 저장해 둠), 이 셋을 합쳐 키로 쓴다 — 같은 두 사람이 같은 초 단위
+// 시각에 게임을 두 번 끝내는 경우는 사실상 없어 충분히 안정적이다. 언젠가 chess.com 아닌 대국(예:
+// 마스터 대국 라이브러리)을 리뷰로 열게 되면 white/black/endTime이 없을 수 있으므로, 그때는 null을
+// 돌려주고(openReview가 null 키는 무조건 무료로 취급) 나중에 그 소스에 맞는 키를 추가하면 된다.
+function reviewGameKey(game) {
+  if (!game) return null;
+  const w = game.white && game.white.username, b = game.black && game.black.username;
+  if (!w || !b || !game.endTime) return null;
+  return w + "|" + b + "|" + game.endTime;
+}
 // (v0.2.1 기능) 대국 참가자의 chess.com 아바타 — username이 확정된 경우에만 프로필을 조회한다.
 // 계정이 없거나(예: 옛날 마스터 대국) 요청이 실패해도 null로 남아 기본 나이트 이미지로 대체된다.
 function useChesscomAvatar(username) {
@@ -9840,6 +9852,21 @@ function tierFromXp(totalXp) {
   }
   const gmStars = Math.floor(remaining / GM_STAR_XP);
   return { tierIndex: idx, tier, xpInTier: remaining % GM_STAR_XP, xpForNext: GM_STAR_XP, maxed: true, gmStars, division: null, xpInDivision: remaining % GM_STAR_XP, xpForNextDivision: GM_STAR_XP };
+}
+// (v0.2.9 기능) 개발자 재화·티어 패널 — tierFromXp(XP → 티어/구간)의 반대 방향. 티어·구간(또는
+// 그랜드마스터의 ★ 프레스티지)을 직접 고르면 그 지점의 누적 XP를 계산해 setTotalXp에 그대로 넣을 수
+// 있다 — tierFromXp와 같은 경계값 규칙(구간 5=그 티어 진입 직후, 1=다음 티어 승급 직전)을 공유하므로
+// 두 함수를 오가도(XP→티어→XP) 항상 같은 값으로 왕복된다.
+function xpForTierDivision(tierKey, division, gmStars) {
+  const idx = TIERS.findIndex((t) => t.key === tierKey);
+  if (idx < 0) return 0;
+  let base = 0;
+  for (let i = 0; i < idx && i < TIER_XP_REQ.length; i++) base += TIER_XP_REQ[i];
+  if (idx >= TIER_XP_REQ.length) return base + Math.max(0, gmStars || 0) * GM_STAR_XP; // 그랜드마스터: 구간 없음, ★만
+  const perDiv = TIER_XP_REQ[idx] / DIVISIONS_PER_TIER;
+  const div = Math.min(DIVISIONS_PER_TIER, Math.max(1, division || DIVISIONS_PER_TIER));
+  const divIdx = DIVISIONS_PER_TIER - div; // 구간 5(방금 진입)→0, 구간 1(승급 직전)→4
+  return Math.round(base + divIdx * perDiv);
 }
 // (디자인 개선) 세부 티어(1~5) 구간은 아라비아 숫자 대신 로마 숫자로 표기한다 — 인덱스 1~5만
 // 쓰이므로(그랜드마스터의 ★프레스티지는 구간과 무관한 별도 카운터라 그대로 아라비아 숫자) 조회
@@ -13454,6 +13481,8 @@ const CHANGELOG = [
       "새 칭호를 얻었을 때도 이제 일일 퀘스트·티어 승급처럼 화려한 팝업으로 알려드려요 — 팝업 안에서 칭호를 바로 눌러 장착할 수 있고, X·확인 버튼을 눌러야만 닫혀요.",
       "학습 탭 엔진 분석이 더 깊어졌어요 — 첫 화면 확정(0.7초)과 5초 심화 탐색 뒤에, 같은 포지션에 머무는 동안 20초 더 이어서 분석해요. 예전엔 depth 20에서 더 못 나갔는데, 이제 그 상한을 없애 시간이 허락하는 한 계속 더 깊이 파고들어요.",
       "게임 리뷰 화면에서도 학습 탭과 똑같이, 지금 보고 있는 포지션의 엔진 라인·평가치 막대(실제로 둔 수를 볼 때든 자유 탐색 중이든)와 자유 탐색 수의 등급 아이콘이 depth 상한 없이 계속 더 깊이 분석되고, 더 정확한 값이 나오면 실시간으로 바뀌어요. 대국의 정확도%·각 수의 등급 판정 자체는 기존 기준 그대로예요.",
+      "이제 대국을 하나 리뷰로 열 때마다 리뷰 티켓을 1개 써요 — 한 번 연 대국은 그다음부터는 티켓 없이 몇 번이든 다시 볼 수 있어요. 일일 퀘스트 1개를 클리어할 때마다 티켓 1개, 5개를 모두 클리어하면 2개를 더(하루 최대 7개), 티어 승급마다 10개를 받아요. 상점 화면 상단에서 OC 나이트 코인과 나란히 보유 티켓 수를 확인할 수 있어요.",
+      "개발자 전용 설정 화면이 하나로 통합됐어요 — OC 코인·리뷰 티켓·경험치를 숫자로 직접 입력하고, 티어·구간(또는 그랜드마스터 ★)도 직접 골라 그 즉시 해당 경험치로 이동할 수 있어요.",
     ]
   },
   {
@@ -14040,6 +14069,8 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
           <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 16 }}>
             <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".25s", animationFillMode: "backwards" }}><Star size={12} fill={T.brassHi} style={{ color: T.brassHi }} />+<AnimatedCountUp to={20} /> XP</span>
             <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".38s", animationFillMode: "backwards" }}><CoinIcon size={14} />+<AnimatedCountUp to={50} /></span>
+            {/* (v0.2.9 기능) 전체 클리어 추가 보상 — 리뷰 티켓 2개(개별 클리어분 5개는 각 항목 클리어 순간의 questClear 토스트에서 이미 받았다). */}
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".5s", animationFillMode: "backwards" }}><TicketIcon size={14} />+<AnimatedCountUp to={2} /></span>
           </div>
           {rows.length > 0 && (
             <>
@@ -14119,6 +14150,30 @@ function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
     </motion.div>
   );
 }
+// (v0.2.9 기능) 리뷰 티켓이 부족해 게임 리뷰를 열지 못했을 때 — 다른 세 팝업(퀘스트 클리어·티어
+// 승급·칭호 획득)과 같은 밝은 카드 스타일로, X·확인을 눌러야만 닫힌다.
+function NoReviewTicketsModal({ reviewTickets, onClose }) {
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
+      <motion.div initial={{ opacity: 0, scale: 0.9, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 4 }}
+        transition={{ type: "spring", stiffness: 340, damping: 26 }}
+        style={{ position: "relative", width: "100%", maxWidth: 320, margin: "auto", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 20, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", textAlign: "center" }}>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+        <div style={{ margin: "4px auto 10px", width: 60, height: 60, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}><TicketIcon size={32} /></div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>리뷰 티켓이 부족해요</div>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>보유 중인 리뷰 티켓 <b style={{ color: T.brassHi }}>{fmtFull(reviewTickets)}개</b> — 대국을 하나 리뷰할 때마다 1개가 필요해요. 한 번 리뷰한 대국은 이후 티켓 없이 계속 다시 볼 수 있어요.</p>
+        <div style={{ textAlign: "left", fontSize: 11.5, color: T.inkSoft, background: "rgba(196,154,80,.08)", border: "1px solid " + T.brass, borderRadius: 10, padding: "10px 12px", marginBottom: 16, lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 800, color: T.brass, marginBottom: 4 }}>티켓 얻는 방법</div>
+          <div>· 일일 퀘스트 1개 클리어 → 티켓 1개</div>
+          <div>· 일일 퀘스트 5개 모두 클리어 → 티켓 2개 추가</div>
+          <div>· 티어 승급 → 티켓 10개</div>
+        </div>
+        <button onClick={onClose} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>확인</button>
+      </motion.div>
+    </motion.div>
+  );
+}
 // (기능) 문의/FAQ — 아직 등록된 FAQ는 없고(개발진이 추후 이 배열에 직접 채워 넣음), "문의하기"를
 // 누르면 메일 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
 const FAQ_ITEMS = [];
@@ -14177,27 +14232,72 @@ function InquiryModal({ onClose, user }) {
 // 임의 증감량을 즉시 적용하거나 특정 티어의 시작 지점(그 티어 5구간)으로 곧장 점프해 승급 연출·
 // 색상·토스트·여정 지도를 바로 확인할 수 있게 한다. 티어 시작 누적치는 TIER_XP_REQ에서 그때그때
 // 계산해, 그 상수가 나중에 바뀌어도(티어 요구치 재조정 등) 항상 맞는 값을 가리킨다.
-function DevXpPanel({ totalXp, setTotalXp, card }) {
-  const [amt, setAmt] = useState("1000");
+// (v0.2.9 기능) 사용자 요청 — 개발자 권한으로 모든 재화(OC 코인·리뷰 티켓)와 티어·XP를 한 블록에서
+// 숫자로 직접 설정한다. 이전 DevXpPanel(XP 증감만 가능)을 대체·확장한다. XP와 티어는 totalXp 하나를
+// 공유 진실 소스로 삼아 서로 연동된다 — XP를 직접 입력해 적용하면 tierFromXp(totalXp)로 티어·구간
+// 표시와 아래 티어/구간 선택기가 즉시 그 값에 맞춰 갱신되고(useEffect), 반대로 티어·구간(또는
+// 그랜드마스터의 ★)을 골라 "티어 적용"을 누르면 xpForTierDivision으로 그 지점의 XP를 역산해
+// setTotalXp에 반영한다 — 결과적으로 어느 쪽을 조작해도 항상 같은 totalXp 값으로 왕복 일치한다.
+function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, card }) {
   const info = tierFromXp(totalXp);
+  const [xpInput, setXpInput] = useState(String(totalXp));
+  const [coinInput, setCoinInput] = useState(String(ocCoins));
+  const [ticketInput, setTicketInput] = useState(String(reviewTickets));
+  const [tierSel, setTierSel] = useState(info.tier.key);
+  const [divSel, setDivSel] = useState(info.division || 1);
+  const [starSel, setStarSel] = useState(info.gmStars || 0);
+  // 바깥에서(예: 티어 승급 보상 등) 값이 바뀌어도 입력창·선택기가 최신 값을 그대로 반영하게 동기화.
+  useEffect(() => { setXpInput(String(totalXp)); const i2 = tierFromXp(totalXp); setTierSel(i2.tier.key); setDivSel(i2.division || 1); setStarSel(i2.gmStars || 0); }, [totalXp]);
+  useEffect(() => { setCoinInput(String(ocCoins)); }, [ocCoins]);
+  useEffect(() => { setTicketInput(String(reviewTickets)); }, [reviewTickets]);
   const tierStarts = useMemo(() => {
     let acc = 0; const starts = [0];
     for (const req of TIER_XP_REQ) { acc += req; starts.push(acc); }
     return starts; // starts[i] = TIERS[i]로 들어서는 데 필요한 누적 XP
   }, []);
-  const apply = (delta) => setTotalXp((x) => Math.max(0, (x || 0) + delta));
+  const rowStyle = { marginBottom: 10 };
+  const inputStyle = { flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box", fontFamily: "ui-monospace,monospace" };
+  const selectStyle = { padding: "9px 8px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" };
+  const applyBtnStyle = { padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" };
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>티어/경험치 테스트</div>
-      <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP</div>
-      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
-        <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="XP 증감량(음수 가능)" style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" }} />
-        <button onClick={() => apply(parseInt(amt, 10) || 0)} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>적용</button>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 재화·티어·경험치 설정</div>
+      <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>
+        지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={12} /> {fmtFull(ocCoins)} · <TicketIcon size={12} /> {fmtFull(reviewTickets)}
+      </div>
+      <div className="flex items-center gap-2" style={rowStyle}>
+        <CoinIcon size={16} />
+        <input type="number" value={coinInput} onChange={(e) => setCoinInput(e.target.value)} placeholder="OC 코인 수치" style={inputStyle} />
+        <button onClick={() => setOcCoins(Math.max(0, parseInt(coinInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
+      </div>
+      <div className="flex items-center gap-2" style={rowStyle}>
+        <TicketIcon size={16} />
+        <input type="number" value={ticketInput} onChange={(e) => setTicketInput(e.target.value)} placeholder="리뷰 티켓 수치" style={inputStyle} />
+        <button onClick={() => setReviewTickets(Math.max(0, parseInt(ticketInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
+      </div>
+      <div style={{ height: 1, background: "#E4D5B6", margin: "12px 0" }} />
+      <div className="flex items-center gap-2" style={rowStyle}>
+        <Star size={14} style={{ color: T.brass, flexShrink: 0 }} />
+        <input type="number" value={xpInput} onChange={(e) => setXpInput(e.target.value)} placeholder="누적 XP 수치" style={inputStyle} />
+        <button onClick={() => setTotalXp(Math.max(0, parseInt(xpInput, 10) || 0))} className="press" style={applyBtnStyle}>XP 적용</button>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap" style={rowStyle}>
+        <select value={tierSel} onChange={(e) => setTierSel(e.target.value)} style={selectStyle}>
+          {TIERS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        {tierSel === "grandmaster" ? (
+          <input type="number" value={starSel} onChange={(e) => setStarSel(parseInt(e.target.value, 10) || 0)} placeholder="★ 프레스티지" style={{ ...inputStyle, flex: "0 0 110px" }} />
+        ) : (
+          <select value={divSel} onChange={(e) => setDivSel(parseInt(e.target.value, 10))} style={selectStyle}>
+            {[1, 2, 3, 4, 5].map((d) => <option key={d} value={d}>{DIVISION_ROMAN[d]} 구간</option>)}
+          </select>
+        )}
+        <button onClick={() => setTotalXp(xpForTierDivision(tierSel, divSel, starSel))} className="press" style={applyBtnStyle}>티어 적용</button>
       </div>
       <div className="flex flex-wrap gap-2">
         {TIERS.map((t, i) => <button key={t.key} onClick={() => setTotalXp(tierStarts[i])} className="press" style={btnStyle}>{t.label}</button>)}
-        <button onClick={() => setTotalXp(0)} className="press" style={{ ...btnStyle, color: T.blunder, borderColor: T.blunder }}>0으로 초기화</button>
+        <button onClick={() => setTotalXp(0)} className="press" style={{ ...btnStyle, color: T.blunder, borderColor: T.blunder }}>XP 0으로 초기화</button>
       </div>
     </div>
   );
@@ -14290,7 +14390,7 @@ function DailyPuzzleDevPanel({ card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -14361,7 +14461,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
 
       {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
           않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
-      {isDev && devOn && <DevXpPanel totalXp={totalXp} setTotalXp={setTotalXp} card={card} />}
+      {isDev && devOn && <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={card} />}
       {canEdit && <DailyPuzzleDevPanel card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
@@ -14548,6 +14648,13 @@ function CoinIcon({ size = 16 }) {
   if (err) return <span style={{ fontSize: Math.round(size * 0.95), lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>🪙</span>;
   return <img src="/oc-coin.png" alt="OC 나이트 코인" onError={() => setErr(true)} style={{ width: size, height: size, objectFit: "contain", display: "inline-block", verticalAlign: "middle" }} />;
 }
+// (v0.2.9 기능) 리뷰 티켓 아이콘 — CoinIcon과 같은 패턴(전용 이미지가 없거나 못 불러오면 이모지로
+// 폴백)이라, public/review-ticket.png를 나중에 채워 넣기만 하면 코드 변경 없이 바로 반영된다.
+function TicketIcon({ size = 16 }) {
+  const [err, setErr] = useState(false);
+  if (err) return <span style={{ fontSize: Math.round(size * 0.95), lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>🎫</span>;
+  return <img src="/review-ticket.png" alt="리뷰 티켓" onError={() => setErr(true)} style={{ width: size, height: size, objectFit: "contain", display: "inline-block", verticalAlign: "middle" }} />;
+}
 // (21차) chess.com 데이터를 보여주는 곳에는 "chess.com"이라는 글자 대신(또는 함께) 실제 로고를 쓴다.
 // 밝은(양피지색) 카드 위에서는 검정 로고, 어두운(흑단색) 카드/버튼 위에서는 흰색 로고를 쓴다.
 function ChesscomLogo({ height = 14, dark }) {
@@ -14600,16 +14707,23 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
     </div>
   );
 }
-function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
+function StoreTab({ coins, reviewTickets, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
   return (
     <div>
-      {/* (디자인) 코인 보유 UI를 화면을 가로지르는 큰 배너 대신, 제목 옆 우상단의 작은 칩으로 축소. */}
-      <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+      {/* (디자인) 코인 보유 UI를 화면을 가로지르는 큰 배너 대신, 제목 옆 우상단의 작은 칩으로 축소.
+          (v0.2.9 기능) 사용자 요청 — 리뷰 티켓도 재화이므로 같은 자리에 코인과 나란히 표시한다. */}
+      <div className="flex items-center justify-between" style={{ marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 상점 아이콘과 중복돼 제거. */}
         <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
-        <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
-          <CoinIcon size={18} />
-          <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(coins || 0)}</span>
+        <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+          <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
+            <CoinIcon size={18} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(coins || 0)}</span>
+          </div>
+          <div className="flex items-center gap-1" title="보유 중인 리뷰 티켓 — 게임 리뷰를 하나 열 때마다 1개 소비, 한 번 연 대국은 이후 무료" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
+            <TicketIcon size={18} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(reviewTickets || 0)}</span>
+          </div>
         </div>
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
@@ -16156,7 +16270,7 @@ function fireworkColorsFor(tierKey) {
 // 퀘스트 팝업의 반짝임·컨페티(QUEST_CLEAR_SPARKLES/CONFETTI)는 그대로 재사용해 "이 앱의 축하 연출"
 // 이라는 공통 언어는 유지한다. 예전엔 승급 보상(+N 코인)이 이 오버레이(zIndex 200)에 완전히 가려진
 // 별도 토스트(zIndex 65)로만 표시돼 사실상 안 보였는데, 이제 카드 안에 직접 보여준다.
-function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, reward, onDone }) {
+function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, reward, ticketReward, onDone }) {
   const [phase, setPhase] = useState("shake"); // shake(흔들림) -> exit(퇴장) -> enter(새 티어 등장)
   // (v0.2.9 디자인) 사용자 요청 — 폭죽이 처음부터 다 같이 뜨지 않고, 기물 교체 애니메이션(흔들림→
   // 퇴장→등장, 등장 슬라이드 자체도 0.5초 걸림)이 완전히 끝난 뒤에야 터지기 시작해야 한다. enter로
@@ -16242,8 +16356,16 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
           </div>
         </div>
         {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ink, marginTop: 6 }}>{toLabel} 티어 도달!</div>}
-        {reward > 0 && (
-          <span className="flex items-center gap-1" style={{ position: "relative", marginTop: 12, fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={15} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
+        {(reward > 0 || ticketReward > 0) && (
+          <div className="flex items-center justify-center flex-wrap" style={{ gap: 8, marginTop: 12 }}>
+            {reward > 0 && (
+              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={15} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
+            )}
+            {/* (v0.2.9 기능) 티어 승급 보상에 리뷰 티켓 10개를 추가 — 코인 배지와 같은 자리에 나란히. */}
+            {ticketReward > 0 && (
+              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".68s", animationFillMode: "backwards" }}><TicketIcon size={15} />+<AnimatedCountUp to={ticketReward} /> 리뷰 티켓</span>
+            )}
+          </div>
         )}
         {/* (v0.2.9 기능) 우측 상단 X와 같은 역할의 확인 버튼 — 일일 퀘스트 클리어 팝업과 같은 스타일로,
             눌러야만 닫히는 걸 명확한 CTA로도 한 번 더 보여준다. */}
@@ -16796,6 +16918,11 @@ export default function App() {
     });
   }, [totalXp]);
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
+  // (v0.2.9 기능) 리뷰 티켓 — 대국 하나를 리뷰로 열 때마다 1개 소비(첫 열람만, 이후 그 대국은
+  // reviewUnlocked에 영구히 남아 무료). 일일 퀘스트(개별 클리어 +1, 전체 클리어 +2 추가 = 하루 7개)와
+  // 티어 승급(+10)으로 얻는다. reviewUnlocked는 reviewGameKey(game)가 돌려주는 문자열의 집합.
+  const [reviewTickets, setReviewTickets] = useState(0);
+  const [reviewUnlocked, setReviewUnlocked] = useState(new Set());
   // (버그) 개발자 계정 코인 지급을 "코인 기록이 아예 없을 때"로만 한정했더니, 이미 로그인해 progress가
   // 저장돼 있던 기존 개발자·공동 개발자 계정에는 소급 적용되지 않았다. 대신 "1회 지급 여부" 플래그를
   // 따로 저장해, 이미 progress가 있는 계정이라도 아직 못 받았으면 로그인 시 10000개까지 채워준다.
@@ -16969,7 +17096,7 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); setReviewTickets(d.reviewTickets || 0); setReviewUnlocked(new Set(d.reviewUnlocked || [])); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       // (v0.2.3 버그 수정) 복원 대상이 "어제 이전"의 오늘의 퍼즐(id: "daily_YYYY-MM-DD", 그 문자열
       // 자체가 날짜를 담고 있음)이면 복원하지 않는다 — 예전엔 이 값이 그대로 복원돼, 어제 오늘의
@@ -16997,7 +17124,7 @@ export default function App() {
     // 되돌린다. 새로고침 타이밍이 나쁘면 방금 dev 패널로 바꾼 값이 한 번 되돌아 보일 수 있지만(진짜
     // 서버 저장 자체는 그대로 진행 중이므로 곧 다시 저장되어 정상화된다), 클라이언트가 서버 값을
     // 임의로 이기게 하는 것보다 이 쪽이 안전하다.
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewTickets != null) setReviewTickets(pr.reviewTickets); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
@@ -17052,8 +17179,8 @@ export default function App() {
   // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest) }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId, mainQuest]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewTickets, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewTickets, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewTickets, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewTickets, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
   // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
   // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
@@ -17142,7 +17269,7 @@ export default function App() {
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
-    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setRepostedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
+    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setRepostedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setReviewTickets(0); setReviewUnlocked(new Set()); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "", displayId: "", photo: "", firstMoves: null }); setDevBonusGranted(false);
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
     // (버그 수정) 이 두 값은 여기서 안 비워지고 있었다 — dismissedAnnounceVersion을 그대로 두면
@@ -17310,13 +17437,15 @@ export default function App() {
       // TierUpOverlay(zIndex 200)에 화면 전체가 가려져 사실상 보이지 않았다 — 토스트 대신 승급 연출
       // 카드 안에 직접 보여주도록 tierUpAnim에 실어 보낸다.
       const tierUpReward = tierInfo.tierIndex * 50;
+      const tierUpTicketReward = 10; // (v0.2.9 기능) 티어 승급 보상 — 리뷰 티켓 10개(티어 무관 고정)
       setTierUpAnim({
         fromKey: TIERS[prevTierIndexRef.current].key, fromDiv: 1,
         toKey: tierInfo.tier.key, toDiv: tierInfo.division,
-        reward: tierUpReward,
+        reward: tierUpReward, ticketReward: tierUpTicketReward,
       });
       if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
       setOcCoins((c) => c + tierUpReward);
+      setReviewTickets((t) => t + tierUpTicketReward);
     }
     prevTierIndexRef.current = tierInfo.tierIndex;
   }, [tierInfo.tierIndex, loaded]);
@@ -17340,6 +17469,7 @@ export default function App() {
     setDailyQuest((dq) => {
       if (!dq || dq.claimed[questKey]) return dq;
       setOcCoins((c) => c + amount);
+      setReviewTickets((t) => t + 1); // (v0.2.9 기능) 일일 퀘스트 개별 클리어 보상 — 리뷰 티켓 1개
       const label = questSlotLabel(questKey, dq);
       setToast({ type: "questClear", amount, label });
       setTimeout(() => setToast((t) => (t && t.type === "questClear" ? null : t)), 2600);
@@ -17409,6 +17539,7 @@ export default function App() {
     if (!allDone) return;
     setTotalXp((x) => x + 20);
     setOcCoins((c) => c + 50); // (19차 기능5) 일일 퀘스트 전체 완료 보상: OC 나이트 코인 50개
+    setReviewTickets((t) => t + 2); // (v0.2.9 기능) 전체 클리어 추가 보상 — 리뷰 티켓 2개(개별 클리어 5개 + 이 2개 = 하루 총 7개)
     setDailyQuest((dq) => (dq && !dq.bonusClaimed ? { ...dq, bonusClaimed: true } : dq));
   }, [dailyQuest && JSON.stringify(dailyQuest.claimed), dailyQuest && dailyQuest.bonusClaimed]);
   // (v0.2.9 기능) 전체 클리어를 실제로 "봤는지"는 bonusClaimed(보상 지급 여부)와 별개로 추적한다 —
@@ -17475,15 +17606,30 @@ export default function App() {
   // 타임클래스 같은 대국 메타데이터를 갖춘 완전한 리뷰 화면으로 대체한다 — 학습 보드 상태는
   // 건드리지 않는다(onOpenGame과 달리 setTab("learn")을 호출하지 않음).
   const [reviewGame, setReviewGame] = useState(null);
+  // (v0.2.9 기능) 사용자 요청 — 대국 하나를 리뷰로 여는 데 리뷰 티켓 1개를 쓴다. 한 번 연 대국은
+  // reviewGameKey로 기억해 두고, 그 대국은 이후 티켓 없이 몇 번이든 다시 볼 수 있다. 개발자 모드에선
+  // 티켓 시스템 자체를 건너뛴다(devUnlockAll이 다른 잠금들을 건너뛰는 것과 같은 결). 키를 만들 수
+  // 없는 대국(현재는 항상 chess.com 대국이라 실질적으로 없지만, 나중에 다른 소스가 생길 경우 대비)은
+  // 구분할 방법이 없으므로 안전하게 무료로 취급한다.
+  const [ticketBlockedOpen, setTicketBlockedOpen] = useState(false);
   const openReview = useCallback((game) => {
     if (!game || !game.sans || !game.sans.length) return;
+    const bypass = isDev && devOn;
+    if (!bypass) {
+      const key = reviewGameKey(game);
+      if (key && !reviewUnlocked.has(key)) {
+        if (reviewTickets <= 0) { setTicketBlockedOpen(true); return; }
+        setReviewTickets((t) => Math.max(0, t - 1));
+        setReviewUnlocked((prev) => { const n = new Set(prev); n.add(key); return n; });
+      }
+    }
     // (v0.2.1) 리뷰를 연 경로(검색 모달·설정 탭 내 프로필·집중학습의 마스터 대국 등)를 그대로 유지한다 —
     // 예전엔 검색·친구 모달을 닫아 리뷰를 닫으면 그 원래 화면이 아니라 밑의 탭으로 튕겨 나갔다. 이제 그
     // 모달·오버레이(z-index 90/70)를 그대로 마운트해 두고 리뷰(z-index 300)로 덮기만 하므로, 리뷰를
     // 닫으면(뒤로가기) 곧장 그 경로로 되돌아간다.
     setReviewGame(game);
     try { if (window.location.pathname !== "/review") window.history.pushState({ review: true }, "", "/review"); } catch { }
-  }, []);
+  }, [isDev, devOn, reviewUnlocked, reviewTickets]);
   const closeReview = useCallback(() => {
     setReviewGame(null);
     try { if (window.location.pathname === "/review") window.history.back(); } catch { }
@@ -17605,6 +17751,7 @@ export default function App() {
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
+      <AnimatePresence>{ticketBlockedOpen && <NoReviewTicketsModal key="noTicketsModal" reviewTickets={reviewTickets} onClose={() => setTicketBlockedOpen(false)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
@@ -17613,7 +17760,7 @@ export default function App() {
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} />}
-      {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} onDone={() => setTierUpAnim(null)} />}
+      {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} ticketReward={tierUpAnim.ticketReward} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
@@ -17664,7 +17811,10 @@ export default function App() {
                 <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>퀘스트 완료!</div>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.label}</div>
               </div>
-              <span className="flex items-center gap-1" style={{ flexShrink: 0, fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={16} /></span>
+              <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
+                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={16} /></span>
+                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+1<TicketIcon size={16} /></span>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
@@ -17693,8 +17843,8 @@ export default function App() {
         {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
-        {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
+        {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
