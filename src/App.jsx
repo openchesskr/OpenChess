@@ -5946,8 +5946,12 @@ function MoveNoteCard({ n, canModerate, onSaved, onDeleted }) {
     try { await sbDelete("move_notes", "id=eq." + n.id); onDeleted(n.id); } catch { setBusy(false); }
   };
   return (
-    <div style={{ flex: "0 0 100%", scrollSnapAlign: "start", boxSizing: "border-box", padding: "0 2px" }}>
-      <div style={{ minHeight: 92, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+    <div style={{ flexShrink: 0, scrollSnapAlign: "start", boxSizing: "border-box", minHeight: 96, display: "flex", flexDirection: "column", justifyContent: "space-between", paddingBottom: 8 }}>
+      <div>
+        <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass }}>@{n.author_username || "익명"}</span>
+          <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(n.created_at)}</span>
+        </div>
         {editing ? (
           <div>
             <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, MOVE_NOTE_MAX_LEN))} rows={3} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
@@ -5955,29 +5959,28 @@ function MoveNoteCard({ n, canModerate, onSaved, onDeleted }) {
               <span style={{ fontSize: 10, color: T.inkSoft }}>{draft.length}/{MOVE_NOTE_MAX_LEN}</span>
               <div className="flex gap-2">
                 <button disabled={busy} onClick={save} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>저장</button>
-                <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press" style={{ fontSize: 10.5, padding: "3px 9px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>취소</button>
+                <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press" style={{ fontSize: 10.5, padding: "3px 9px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.inkSoft, cursor: "pointer" }}>취소</button>
               </div>
             </div>
           </div>
         ) : (
           <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{n.body}</p>
         )}
-        {!editing && (
-          <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
-            <span style={{ fontSize: 10.5, color: T.inkSoft }}>{n.author_username || "익명"} · {relTime(n.created_at)}</span>
-            {canModerate && (
-              <div className="flex gap-2">
-                <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
-                <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
+      {!editing && canModerate && (
+        <div className="flex gap-2" style={{ marginTop: 6, justifyContent: "flex-end" }}>
+          <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
+          <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
+        </div>
+      )}
     </div>
   );
 }
-function MoveNotesCarousel({ moveKey, canModerate, uid, username }) {
+// (v0.3.0 기능) 사용자 요청 — 수 설명 캐러셀을 보드 옆의 별도 카드로 따로 두지 않고, 기존 "해설"
+// 박스 자리에 그대로 병합한다. 설명이 하나도 없을 때만 기존 개발자 정적 해설(explain)을 그 자리에
+// 보여주는 폴백으로 남긴다. 가로 스와이프 대신 세로로 자동 스크롤되도록 축을 바꿨고(5초 간격),
+// 카드 좌상단에 "@아이디"를 보여준다. 손으로 위아래 스크롤하면 기존과 동일하게 6초간 자동 넘김을 쉰다.
+function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explainLong, title, setShowExpl }) {
   const [notes, setNotes] = useState(null); // null=로딩 중
   const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState("");
@@ -5991,33 +5994,25 @@ function MoveNotesCarousel({ moveKey, canModerate, uid, username }) {
     catch { setNotes([]); }
   }, [moveKey]);
   useEffect(() => { setNotes(null); setIdx(0); setDraft(""); setErr(""); load(); }, [moveKey, load]);
-  // (기능) 카드가 2개 이상이면 4.5초마다 자동으로 다음 카드로 — 방금 손으로 스크롤/버튼 조작을
-  // 했으면 6초간은 자동 넘김을 쉬어 사용자가 읽던 카드가 갑자기 넘어가지 않게 한다.
   useEffect(() => {
     if (!notes || notes.length < 2) return;
-    const iv = setInterval(() => { if (Date.now() >= pauseUntilRef.current) setIdx((i) => (i + 1) % notes.length); }, 4500);
+    const iv = setInterval(() => { if (Date.now() >= pauseUntilRef.current) setIdx((i) => (i + 1) % notes.length); }, 5000);
     return () => clearInterval(iv);
   }, [notes]);
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    el.scrollTo({ left: idx * el.clientWidth, behavior: "smooth" });
+    el.scrollTo({ top: idx * el.clientHeight, behavior: "smooth" });
   }, [idx]);
   const jump = (i) => { pauseUntilRef.current = Date.now() + 6000; setIdx(i); };
-  // (버그 수정) el.scrollTo(...)로 프로그램상 스크롤을 시작하면(위 idx effect, jump 버튼) 그 애니메이션
-  // 도중에도 scroll 이벤트가 여러 번 연속으로 발생한다 — 매번 즉시 scrollLeft로 idx를 되계산하면
-  // 아직 절반쯤만 이동한 중간 지점에서 "이전 idx"로 되돌려 계산해 setIdx가 다시 옛 값으로 튕기고,
-  // 그 idx 변화가 다시 scrollTo를 옛 위치로 불러 애니메이션이 끝나기도 전에 취소돼 버렸다(다음/이전
-  // 버튼을 눌러도 안 넘어가는 것처럼 보인 원인). 스크롤이 실제로 멈춘 뒤(120ms 동안 추가 이벤트가
-  // 없을 때)에만 최종 위치로 idx를 동기화하도록 디바운스한다 — 손으로 스와이프할 때도 자연스럽다.
   const scrollDebounceRef = useRef(null);
   const onManualScroll = () => {
     pauseUntilRef.current = Date.now() + 6000;
     if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
     scrollDebounceRef.current = setTimeout(() => {
       const el = scrollerRef.current;
-      if (!el || !el.clientWidth) return;
-      const i = Math.round(el.scrollLeft / el.clientWidth);
+      if (!el || !el.clientHeight) return;
+      const i = Math.round(el.scrollTop / el.clientHeight);
       setIdx((cur) => (i !== cur ? i : cur));
     }, 120);
   };
@@ -6034,25 +6029,23 @@ function MoveNotesCarousel({ moveKey, canModerate, uid, username }) {
     } catch { setErr("등록에 실패했어요. 잠시 후 다시 시도해주세요."); }
     setBusy(false);
   };
-  const card = { background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, marginTop: 12, boxSizing: "border-box" };
+  const hasNotes = notes && notes.length > 0;
   return (
-    <div style={card}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div className="flex items-center gap-2"><MessageCircle size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>수 설명</span>{notes && notes.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{idx + 1}/{notes.length}</span>}</div>
-        {notes && notes.length > 1 && (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>해설</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{idx + 1}/{notes.length}</span>}</div>
+        {hasNotes && notes.length > 1 && (
           <div className="flex items-center gap-1">
-            <button onClick={() => jump((idx - 1 + notes.length) % notes.length)} className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={13} /></button>
-            <button onClick={() => jump((idx + 1) % notes.length)} className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={13} /></button>
+            <button onClick={() => jump((idx - 1 + notes.length) % notes.length)} aria-label="이전 설명" className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={13} /></button>
+            <button onClick={() => jump((idx + 1) % notes.length)} aria-label="다음 설명" className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={13} /></button>
           </div>
         )}
       </div>
       {notes === null ? (
         <p style={{ fontSize: 11.5, color: T.inkSoft }}>불러오는 중…</p>
-      ) : notes.length === 0 ? (
-        <p style={{ fontSize: 11.5, color: T.inkSoft }}>아직 등록된 수 설명이 없어요. 첫 설명을 남겨보세요!</p>
-      ) : (
+      ) : hasNotes ? (
         <>
-          <div ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
+          <div ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
             {notes.map((n) => (
               <MoveNoteCard key={n.id} n={n} canModerate={canModerate}
                 onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
@@ -6065,6 +6058,8 @@ function MoveNotesCarousel({ moveKey, canModerate, uid, username }) {
             </div>
           )}
         </>
+      ) : (
+        <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>{explain ? (explainLong ? explain.slice(0, 88) + "… " : explain) : (title ? title + " 라인입니다." : "이 수에 대한 해설 데이터가 아직 없습니다.")}{explainLong && <button onClick={() => setShowExpl(true)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, background: "none", border: "none", cursor: "pointer", padding: 0 }}>더보기</button>}</p>
       )}
       <div style={{ height: 1, background: "#E4D5B6", margin: "10px 0" }} />
       {!uid ? (
@@ -6203,15 +6198,9 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {/* (18차 UI5) 미니보드 하단 범례 텍스트 삭제 */}
         </div>
         <div style={{ flex: 1, minWidth: 180 }}>
-          {/* (버그 수정) box-sizing 기본값(content-box)에서 height:100%에 padding/border가 더해져
-              카드가 부모(flex stretch)보다 커지며 바로 아래 "마스터 대국" 블록과 겹치던 문제 수정 */}
-          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, height: "100%", boxSizing: "border-box" }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 6 }}><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>해설</span></div>
-            <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>{explain ? (explainLong ? explain.slice(0, 88) + "… " : explain) : (title ? title + " 라인입니다." : "이 수에 대한 해설 데이터가 아직 없습니다.")}{explainLong && <button onClick={() => setShowExpl(true)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, background: "none", border: "none", cursor: "pointer", padding: 0 }}>더보기</button>}</p>
-          </div>
+          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} explain={explain} explainLong={explainLong} title={title} setShowExpl={setShowExpl} />
         </div>
       </div>
-      <MoveNotesCarousel moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} />
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>
