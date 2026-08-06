@@ -14959,62 +14959,91 @@ function StoreTab({ coins, reviewTickets, ownedSkins, boardSkin, pieceSkin, onBu
   );
 }
 const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "퀘스트", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
-// (v0.3.0 기능·모바일 시험 적용) 하단 탭을 대신하는 홈 화면 — 사용자가 그린 손그림 스케치의 블록
-// 배치(위에서부터 좁은 꼭짓점 → 큰 머리 → 목 좌우 → 넓은 받침대)를 그대로 따라, 멀리서 보면 나이트
-// (체스 기물) 옆모습 실루엣이 보이도록 각 조각을 비스듬한 다각형으로 깎아 쌓는다. 각 조각은 기존
-// TABS의 실제 목적지로 이동하되, 스케치에 쓰인 이름을 그대로 라벨로 쓴다("퍼즐"→"플레이",
-// "설정"→"프로필", "상점"→"기록").
-const HOME_BLOCKS = [
-  { key: "puzzle", label: "플레이", sub: "퍼즐 풀기", icon: "extension", clip: "polygon(6% 8%, 100% 0%, 94% 100%, 0% 92%)", rotate: -2, w: "100%", h: 118 },
-  { key: "learn", label: "학습", sub: "오프닝 배우기", Icon: GraduationCap, clip: "polygon(14% 0%, 100% 16%, 88% 100%, 0% 82%)", rotate: 3, w: "80%", h: 108, align: "flex-end" },
-  { key: "quest", label: "퀘스트", sub: "오늘의 과제", questIcon: true, clip: "polygon(0% 4%, 100% 0%, 96% 100%, 4% 96%)", rotate: -2, w: "47%", h: 114 },
-  { key: "set", label: "프로필", sub: "설정·계정", Icon: Settings, clip: "polygon(4% 0%, 100% 4%, 96% 100%, 0% 96%)", rotate: 2, w: "47%", h: 114 },
-  { key: "store", label: "기록", sub: "상점·보관함", Icon: ShoppingBag, clip: "polygon(2% 0%, 98% 0%, 100% 100%, 0% 100%)", rotate: -1, w: "47%", h: 90 },
-  { key: "dex", label: "도감", sub: "오프닝 도감", Icon: Library, clip: "polygon(0% 0%, 100% 0%, 98% 100%, 2% 100%)", rotate: 1, w: "47%", h: 90 },
-];
+// (v0.3.0 기능·모바일 시험 적용) 하단 탭을 대신하는 홈 화면 — 사용자가 손으로 그린 스케치를 그대로
+// 디지타이즈해(1080×1920 원본 기준 좌표를 y-280만큼 올려 1080×1400 뷰박스에 맞춤) SVG 다각형으로
+// 재현한다. 각 조각의 모양·서로 맞닿는 경계까지 스케치와 동일하게 두어 "멀리서 보면 나이트 실루엣"
+// 특징을 살리고, 클릭은 그 다각형 모양 그대로(사각형 히트박스가 아니라) 반응한다. 목적지는 기존
+// TABS를 그대로 쓰되, 스케치에 적힌 이름을 라벨로 쓴다("퍼즐"→"플레이", "설정"→"프로필",
+// "상점"→"기록"). 맨 아래 받침대는 스케치처럼 구분선 없이 한 덩어리로 그리되, 왼쪽(기록)·
+// 오른쪽(도감) 클릭 영역만 보이지 않게 나눈다.
+const HOME_VB = "0 0 1080 1400";
+const HOME_SHAPES = {
+  friend: "460,25 430,270 755,265",
+  puzzle: "430,275 755,265 620,615 150,570",
+  learn: "755,265 965,308 1010,535 755,860 620,615",
+  quest: "515,675 230,735 245,1120 515,1120",
+  set: "515,675 755,860 765,1120 515,1120",
+  base: "230,1120 765,1120 930,1335 110,1320",
+  storeHit: "230,1120 470,1120 470,1327 110,1320",
+  dexHit: "470,1120 765,1120 930,1335 470,1327",
+};
 function KnightHomeMenu({ onNavigate, onOpenFriends, user, pendingFriendCount, onLogout, onLogin, dexBadge, questIconName }) {
-  const face = {
-    background: "linear-gradient(160deg,#F6EBD2 0%,#DDBA79 45%,#A9793F 100%)",
-    border: "1px solid #8A6C2F",
-    boxShadow: "inset 0 1px 2px rgba(255,255,255,.55), inset 0 -3px 7px rgba(0,0,0,.22), 0 10px 18px -8px rgba(74,48,20,.5)",
-  };
-  const Block = ({ b, badge }) => (
-    <button onClick={() => onNavigate(b.key)} className="press" style={{
-      position: "relative", width: b.w, height: b.h, alignSelf: b.align || "center", flexShrink: 0,
-      clipPath: b.clip, transform: "rotate(" + b.rotate + "deg)", border: "none", cursor: "pointer",
-      display: "flex", alignItems: "center", justifyContent: "center", padding: "0 10px", boxSizing: "border-box", ...face,
-    }}>
-      <span style={{ transform: "rotate(" + (-b.rotate) + "deg)", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-        <span style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(90,58,34,.14)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#5A3A22" }}>
-          {b.questIcon ? <MaterialIcon name={questIconName} size={17} /> : b.icon ? <MaterialIcon name={b.icon} size={17} /> : <b.Icon size={17} />}
-        </span>
-        <span style={{ fontSize: 14, fontWeight: 800, color: "#4A2E18" }}>{b.label}</span>
-        <span style={{ fontSize: 9.5, fontWeight: 700, color: "#7A5B3A" }}>{b.sub}</span>
-      </span>
-      {badge > 0 && <span style={{ position: "absolute", top: 6, right: 10, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#C8453B", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
-    </button>
+  const Icon = ({ children, cx, cy }) => (
+    <foreignObject x={cx - 20} y={cy - 20} width={40} height={40} style={{ pointerEvents: "none" }}>
+      <div xmlns="http://www.w3.org/1999/xhtml" style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(90,58,34,.16)", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A2E18" }}>{children}</div>
+    </foreignObject>
+  );
+  const Label = ({ x, y, children, sub }) => (
+    <foreignObject x={x - 90} y={y} width={180} height={44} style={{ pointerEvents: "none" }}>
+      <div xmlns="http://www.w3.org/1999/xhtml" style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#3E2712", textShadow: "0 1px 0 rgba(255,255,255,.35)" }}>{children}</div>
+        {sub && <div style={{ fontSize: 10.5, fontWeight: 700, color: "#6E5424", marginTop: 1 }}>{sub}</div>}
+      </div>
+    </foreignObject>
   );
   return (
-    <div style={{ maxWidth: 380, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-      <div style={{ textAlign: "center", marginBottom: 2 }}>
+    <div style={{ maxWidth: 380, margin: "0 auto" }}>
+      <div style={{ textAlign: "center", marginBottom: 8 }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: "#4A2E18" }}>어디로 가시겠어요?</div>
         <div style={{ fontSize: 11.5, fontWeight: 600, color: "#8A6C4A", marginTop: 2 }}>블록을 눌러 원하는 화면으로 이동하세요</div>
       </div>
-      <button onClick={onOpenFriends} aria-label="친구" className="press" style={{ position: "relative", width: 100, height: 54, clipPath: "polygon(50% 0%, 100% 100%, 0% 100%)", transform: "rotate(-3deg)", border: "none", cursor: "pointer", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 8, boxSizing: "border-box", ...face }}>
-        <span style={{ transform: "rotate(3deg)", display: "flex", alignItems: "center", gap: 4, color: "#4A2E18" }}><Users size={14} /><Search size={12} /></span>
-        {pendingFriendCount > 0 && <span style={{ position: "absolute", top: 2, right: 10, minWidth: 14, height: 14, padding: "0 3px", borderRadius: 7, background: "#C8453B", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{pendingFriendCount}</span>}
-      </button>
-      <Block b={HOME_BLOCKS[0]} />
-      <Block b={HOME_BLOCKS[1]} />
-      <div className="flex" style={{ gap: 8, width: "100%", justifyContent: "center" }}>
-        <Block b={HOME_BLOCKS[2]} />
-        <Block b={HOME_BLOCKS[3]} />
+      <div style={{ position: "relative", width: "100%", aspectRatio: "1080/1400" }}>
+        <svg viewBox={HOME_VB} style={{ width: "100%", height: "100%", display: "block", filter: "drop-shadow(0 14px 22px rgba(74,48,20,.35))" }}>
+          <defs>
+            <linearGradient id="hgA" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#FBF1DA" /><stop offset="50%" stopColor="#E7C989" /><stop offset="100%" stopColor="#B98A45" /></linearGradient>
+            <linearGradient id="hgB" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#F1DDAF" /><stop offset="50%" stopColor="#D2A660" /><stop offset="100%" stopColor="#97722E" /></linearGradient>
+            <linearGradient id="hgC" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#E7CE9C" /><stop offset="50%" stopColor="#BE9052" /><stop offset="100%" stopColor="#7C5B27" /></linearGradient>
+            <pattern id="hgGrid" width="46" height="46" patternTransform="rotate(-8)" patternUnits="userSpaceOnUse">
+              <path d="M0 0H46M0 23H46M0 0V46M23 0V46" stroke="#4A2E18" strokeWidth="3" fill="none" />
+            </pattern>
+          </defs>
+          {/* 스케치 순서대로: 받침대(맨 뒤) → 퀘스트/프로필 → 플레이/학습 → 친구 nub(맨 앞) */}
+          <polygon points={HOME_SHAPES.base} fill="url(#hgC)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" />
+          <polygon className="home-poly" points={HOME_SHAPES.storeHit} fill="transparent" onClick={() => onNavigate("store")} aria-label="기록" />
+          <polygon className="home-poly" points={HOME_SHAPES.dexHit} fill="transparent" onClick={() => onNavigate("dex")} aria-label="도감" />
+          <polygon className="home-poly" points={HOME_SHAPES.quest} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("quest")} aria-label="퀘스트" />
+          <polygon className="home-poly" points={HOME_SHAPES.set} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("set")} aria-label="프로필" />
+          <polygon className="home-poly" points={HOME_SHAPES.puzzle} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("puzzle")} aria-label="플레이" />
+          <polygon points={HOME_SHAPES.puzzle} fill="url(#hgGrid)" opacity="0.3" style={{ pointerEvents: "none" }} />
+          <polygon className="home-poly" points={HOME_SHAPES.learn} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("learn")} aria-label="학습" />
+          <polygon className="home-poly" points={HOME_SHAPES.friend} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={onOpenFriends} aria-label="친구" />
+
+          <Icon cx={560} cy={130}><Users size={15} /></Icon>
+          <Icon cx={560} cy={185}><Search size={13} /></Icon>
+          {pendingFriendCount > 0 && <foreignObject x={700} y={40} width={30} height={30} style={{ pointerEvents: "none" }}><div xmlns="http://www.w3.org/1999/xhtml" style={{ minWidth: 20, height: 20, padding: "0 4px", borderRadius: 10, background: "#C8453B", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{pendingFriendCount}</div></foreignObject>}
+
+          <Icon cx={430} cy={400}><MaterialIcon name="extension" size={19} /></Icon>
+          <Label x={500} y={430} sub="퍼즐 풀기">플레이</Label>
+
+          <Icon cx={840} cy={470}><GraduationCap size={19} /></Icon>
+          <Label x={830} y={500} sub="오프닝 배우기">학습</Label>
+
+          <Icon cx={376} cy={860}><MaterialIcon name={questIconName} size={19} /></Icon>
+          <Label x={376} y={890} sub="오늘의 과제">퀘스트</Label>
+
+          <Icon cx={637} cy={900}><Settings size={19} /></Icon>
+          <Label x={637} y={930} sub="설정·계정">프로필</Label>
+
+          <Icon cx={320} cy={1180}><BarChart3 size={18} /></Icon>
+          <Label x={320} y={1205} sub="상점·보관함">기록</Label>
+
+          <Icon cx={659} cy={1185}><Library size={18} /></Icon>
+          <Label x={659} y={1210} sub="오프닝 도감">
+            {dexBadge > 0 ? <span>도감<span style={{ marginLeft: 4, display: "inline-flex", minWidth: 15, height: 15, padding: "0 3px", borderRadius: 8, background: "#C8453B", color: "#fff", fontSize: 9, fontWeight: 800, alignItems: "center", justifyContent: "center", verticalAlign: 2 }}>{dexBadge}</span></span> : "도감"}
+          </Label>
+        </svg>
       </div>
-      <div className="flex" style={{ gap: 8, width: "100%", justifyContent: "center" }}>
-        <Block b={HOME_BLOCKS[4]} />
-        <Block b={HOME_BLOCKS[5]} badge={dexBadge} />
-      </div>
-      <div className="flex items-center justify-between" style={{ width: "100%", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(90,58,34,.2)" }}>
+      <div className="flex items-center justify-between" style={{ width: "100%", marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(90,58,34,.2)" }}>
         <div className="flex items-center gap-2">
           <span style={{ fontSize: 12, fontWeight: 800, color: "#8A6C4A" }}>openchess.kr</span>
           {user ? (
@@ -17975,7 +18004,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .home-poly{cursor:pointer;transition:filter .1s ease} .home-poly:active{filter:brightness(.9)}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
