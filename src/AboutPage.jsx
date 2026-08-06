@@ -14,7 +14,7 @@ import {
 const T = {
   ebony: "#1B1009", ebony2: "#2E1B10",
   ivory: "#EBDDC4", ivoryHi: "#FAF2E2",
-  ink: "#2A1A0E", inkSoft: "#B8A78C",
+  ink: "#5A3A22", inkSoft: "#B8A78C",
   brass: "#C49A50", brassHi: "#ECCB86",
 };
 // (기존 BOARD_GLOSS와 동일한 금색 광택 테두리 — 보드·모식도 등 사이트 전역에서 쓰는 것과 같은 처리)

@@ -12,7 +12,7 @@ import {
 const T = {
   ebony: "#1B1009", ebony2: "#2E1B10", ebony3: "#3D2616",
   ivory: "#EBDDC4", ivoryHi: "#FAF2E2", paper: "#F1E6D0",
-  ink: "#2A1A0E", inkSoft: "#7A6650",
+  ink: "#5A3A22", inkSoft: "#7A6650", cocoa: "#5A3A22",
   boardLight: "#E8D2A6", boardDark: "#7C4F2E",
   brass: "#C49A50", brassHi: "#ECCB86",
   brilliant: "#16B5A6", only: "#3E7CC4",
@@ -5964,7 +5964,7 @@ function MoveNoteCard({ n, canModerate, onSaved, onDeleted }) {
             </div>
           </div>
         ) : (
-          <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{n.body}</p>
+          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{n.body}</p>
         )}
       </div>
       {!editing && canModerate && (
@@ -6303,7 +6303,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                   {/* 전적 요약 */}
                   {!stats ? <p style={{ fontSize: 12, color: T.inkSoft, margin: 0, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>이 수순으로 둔 대국 통계가 없습니다.</p>
                     : (
-                  <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.7, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
+                  <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
                     <div><b>{fmtFull(stats.total)} 게임</b> · <span style={{ color: T.best }}>{stats.w}승</span> {stats.d}무 <span style={{ color: T.blunder }}>{stats.l}패</span> · 승률 <b>{stats.winRate}%</b></div>
                     {stats.top.length > 0 && (
                       <div style={{ marginTop: 6 }}>
@@ -6311,7 +6311,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
                             onJump로 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
                         {stats.top.map((t) => (
-                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
+                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
                         ))}
                       </div>
                     )}
@@ -6326,7 +6326,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         : mistakes.map((mt, idx) => {
                           const seqStr = [san, ...mt.seq]; // 표기: 집중 학습 수부터
                           return (
-                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
+                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
                               {seqStr.map((mv, i) => {
                                 const isMistake = i === seqStr.length - 1;
                                 const moverWhite = (ply + i) % 2 === 0;
@@ -6402,7 +6402,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
               <div className="flex items-center gap-2"><BookOpen size={16} style={{ color: T.brass }} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{moveNumber(ply)}{san} 해설</span></div>
               <button onClick={() => setShowExpl(false)} className="press" style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, background: "none", border: "none", cursor: "pointer" }}>✕</button>
             </div>
-            <p style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{explain}</p>
+            <p style={{ fontSize: 13.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{explain}</p>
           </div>
         </div>
       )}
@@ -8211,18 +8211,18 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                     {branch ? (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}><Cpu size={12} /> 주요 분기점</span>
-                        <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{branch}</p>
+                        <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{branch}</p>
                       </>
                     ) : (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}><ThumbsUp size={12} /> 수 추천</span>
                         {rec ? (
-                          <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>
+                          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply)}{recSan}</b>
                             {reason ? " — " + reason : null}
                           </p>
                         ) : (
-                          <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{lastMascot}</p>
+                          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{lastMascot}</p>
                         )}
                         {canEdit && <RecommendReasonEditor sentKey={key} bumpContent={bumpContent} />}
                       </>
@@ -12550,7 +12550,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             {numSuggestions.map((p) => (
               <button key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setActive(p); setNumInput(""); setNumMsg(""); }} className="press flex items-center gap-2" style={{ width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", textAlign: "left" }}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
-                <span style={{ fontSize: 12, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
+                <span style={{ fontSize: 12, color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
               </button>
             ))}
           </div>
@@ -14082,7 +14082,7 @@ function AnnouncementModal({ onClose }) {
                 {i === 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: T.brass, borderRadius: 999, padding: "1px 7px" }}>최신</span>}
               </div>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {v.items.map((t, j) => <li key={j} style={{ fontSize: 12, color: T.ink, lineHeight: 1.6, marginBottom: 4 }}>{t}</li>)}
+                {v.items.map((t, j) => <li key={j} style={{ fontSize: 12, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 4 }}>{t}</li>)}
               </ul>
               {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>개발: {v.dev.join(", ")}</div>}
             </div>
@@ -14784,7 +14784,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
                   <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 16 }}>
-                  {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
+                  {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
                 </ul>
                 {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>개발: {v.dev.join(", ")}</div>}
               </div>
@@ -14818,7 +14818,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
                 <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{v != null ? v : "—"}</div></div>
               ))}
             </div>
-            <p style={{ fontSize: 12.5, color: T.ink, marginBottom: 14 }}>이 계정이 맞나요?</p>
+            <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 14 }}>이 계정이 맞나요?</p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setPending(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>아니요</button>
               <button onClick={confirmLink} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>이 계정으로 연동</button>
@@ -15263,7 +15263,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
                 <FadeIn key={n.id} index={i} y={6} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderBottom: "1px solid #EFE3C8" }}>
                   <span style={{ marginTop: 1 }}>{notifIcon(n.kind)}</span>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12, color: T.ink, lineHeight: 1.4 }}>{notifText(n)}</div>
+                    <div style={{ fontSize: 12, color: T.ink, fontWeight: 600, lineHeight: 1.4 }}>{notifText(n)}</div>
                     <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 2 }}>{relTime(n.created_at)}</div>
                     {n.kind === "friend_request" && (result ? (
                       <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: result === "accepted" ? T.best : T.inkSoft }}>{result === "accepted" ? "수락함" : "거절함"}</div>
@@ -15773,7 +15773,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
           <div style={{ marginBottom: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass }}>
             <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>사용 가능한 명령어</div>
             {CHAT_COMMANDS.map((c) => (
-              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, marginTop: 1 }}><b style={{ fontFamily: "ui-monospace,monospace" }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: "ui-monospace,monospace" }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
             ))}
           </div>
         )}
@@ -16975,7 +16975,7 @@ function AuthModal({ onClose, onAuth, initialMode }) {
         </div>
         {mode === "reset" ? (sent ? (
           <>
-            <p style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, marginBottom: 14 }}>입력하신 계정이 존재하면 연동된 이메일로 비밀번호 재설정 링크를 보냈습니다. 메일함(스팸함 포함)을 확인해 주세요.</p>
+            <p style={{ fontSize: 13, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 14 }}>입력하신 계정이 존재하면 연동된 이메일로 비밀번호 재설정 링크를 보냈습니다. 메일함(스팸함 포함)을 확인해 주세요.</p>
             <button onClick={() => { setMode("login"); setSent(false); setErr(""); setPw(""); }} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>로그인으로 돌아가기</button>
           </>
         ) : (
