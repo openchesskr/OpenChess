@@ -2614,7 +2614,7 @@ function poolWorker(pool, idx, engine) {
 // "둔 뒤 포지션"을 추가로 평가했는데, 그 포지션은 다음 반복에서 또 평가돼(중복) 시간이 2배 가까이 들었다.
 // posEval[i] 하나로 최선수 손실(둔 수==1순위면 0)과 다음 포지션 평가치를 모두 얻는다. movetime 상한으로
 // 포지션당 시간을 제한해 전체 분석 시간을 예측 가능하게 한다.
-async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) {
+async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, onMove) {
   // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
   fullSans = decorateLine(fullSans);
   const N = fullSans.length;
@@ -2654,28 +2654,23 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   // 이후로는 이미 떠 있는 워커를 그대로 재사용한다.
   const dedicated = await getAnalysisPool(engine.profile, engine.urls);
   const workers = dedicated.length ? dedicated : [{ evaluateMulti: engine.evaluateMulti }];
-  let nextIdx = 0, doneCount = 0;
-  async function runWorker(w) {
-    for (;;) {
-      const i = nextIdx++; if (i > N) return;
-      const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
-      const p0 = lines && lines[0], p1 = lines && lines[1];
-      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
-      // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
-      // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
-      // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
-      // 승률로만 변환되므로 문제없다).
-      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
-      doneCount++;
-      onProgress && onProgress(doneCount / (N + 1));
-    }
-  }
-  await Promise.all(workers.map(runWorker));
-  // (성능) 여기서 워커를 끄지 않는다 — getAnalysisPool이 세션 내내 재사용하도록 관리한다(프로필을
-  // 바꾸면 그때 이전 풀이 정리된다).
+  // (v0.3.0 성능) 예전엔 포지션 N+1개를 전부 평가(await Promise.all)한 "다음"에야 채점 루프를 한
+  // 번에 돌려 결과를 통째로 반환했다 — 그래서 화면(ReviewPage)은 분석이 100% 끝날 때까지 진행률
+  // 막대만 보여줄 수 있었다. 여기서는 포지션이 하나 끝날 때마다(work-stealing이라 순서 없이 끝남)
+  // "다음으로 채점 가능한 수"가 있는지 즉시 확인해 그 자리에서 채점하고(gradeIdx가 항상 0부터
+  // 순서대로 진행), onMove로 그때까지의 부분 결과를 흘려보낸다. 실제 엔진 탐색량(depth·movetime)은
+  // 전혀 건드리지 않고, 화면이 결과를 "기다리는" 방식만 바꾼다 — moves[i] 채점은 posEval[i]와
+  // posEval[i+1]이 둘 다 준비돼야 하므로(최선수 일치 시 다음 포지션 평가치를 이어받는 보정 때문),
+  // 그 둘이 갖춰지는 순서대로 진행된다(대개 앞에서부터 순서대로 끝나지만, 몇 수 앞서 끝나도
+  // gradeIdx가 따라잡을 때까지 큐잉되므로 안전하다).
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
-  let gradeBoard = startBoard();
-  for (let i = 0; i < N; i++) {
+  const graphCp = new Array(N + 1), evalDisp = new Array(N + 1);
+  let gradeBoard = startBoard(), gradeIdx = 0;
+  function computeDisplay(i) {
+    graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; // 백 관점 시퀀스
+    evalDisp[i] = posEvalToWhite({ cp: posEval[i].cp, mate: posEval[i].mate }, fullSans.slice(0, i));
+  }
+  function gradeOne(i) {
     const moverWhite = i % 2 === 0;
     const brd = gradeBoard;
     const color = moverWhite ? "w" : "b";
@@ -2703,7 +2698,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
       moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
       gradeBoard = applySan(gradeBoard, fullSans[i], color);
-      continue;
+      return;
     }
     // 둔 수가 엔진 최선수면 손실 0(노이즈 제거), 아니면 둔 뒤 포지션(= posEval[i+1], 상대 관점) 부호 반전
     const playedCp = matched ? bestCp : -posEval[i + 1].cp;
@@ -2750,17 +2745,51 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
-  // (v0.2.4 버그 수정) posEval을 최선 수 구간에서 이어받도록 위 채점 루프 안에서 보정하므로, 그 보정이
-  // 끝난 뒤(루프 종료 후)에 graphCp를 만들어야 한다 — 예전엔 루프 시작 전에 미리 만들어 보정 이전의
-  // 값을 그대로 썼다.
-  const graphCp = new Array(N + 1);
-  for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
-  // (v0.2.0 기능) /review 페이지의 코치 카드가 수마다 실제 평가치(+4.67 등)를 표시해야 해서, 이미
-  // 계산해 둔 백 관점 centipawn 시퀀스(graphCp)를 승률(evalWin)과 함께 그대로 내보낸다.
-  // (v0.2.1 기능) evalDisp — evalCp(그래프 전용, 메이트를 ±100000으로 뭉갬)와 별개로, 텍스트 표시에는
-  // {cp}|{mate,win,plies} 형태가 필요하다(fmtEvalCp/evalDisplayText가 이 모양을 기대함) — posEvalToWhite로
-  // 포지션마다 다시 만든다.
-  const evalDisp = posEval.map((p, i) => posEvalToWhite({ cp: p.cp, mate: p.mate }, fullSans.slice(0, i)));
+  // (v0.3.0 성능) EvalGraph는 evalWin.length를 x축 스케일로 쓴다 — 아직 안 끝난 구간을 그냥 잘라
+  // 넘기면(slice) 수 하나가 채점될 때마다 배열 길이가 늘어나 그래프 전체가 매번 다시 스케일되며
+  // 흔들려 보인다. 실제 게임 길이(N+1)로 항상 고정된 배열을 만들고, 아직 채점 안 된 구간은 지금까지의
+  // 마지막 값으로 채워 넣어(평평하게 이어짐) 그래프 선이 스케일 변화 없이 오른쪽으로 "채워지는"
+  // 모양으로만 자라도록 한다.
+  function paddedTo(arr, fillIdx) {
+    const out = new Array(N + 1);
+    const last = arr[fillIdx];
+    for (let k = 0; k <= N; k++) out[k] = k <= fillIdx ? arr[k] : last;
+    return out;
+  }
+  function tryFlush() {
+    if (!posEval[0]) return;
+    if (graphCp[0] === undefined) computeDisplay(0);
+    while (gradeIdx < N && posEval[gradeIdx] && posEval[gradeIdx + 1]) {
+      gradeOne(gradeIdx);
+      computeDisplay(gradeIdx + 1);
+      gradeIdx++;
+      if (onMove) {
+        const filledCp = paddedTo(graphCp, gradeIdx);
+        onMove({ moves, evalWin: filledCp.map(winPctFromCp), evalCp: filledCp, evalDisp: paddedTo(evalDisp, gradeIdx) }, gradeIdx, N);
+      }
+    }
+  }
+  let nextIdx = 0, doneCount = 0;
+  async function runWorker(w) {
+    for (;;) {
+      const i = nextIdx++; if (i > N) return;
+      const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
+      const p0 = lines && lines[0], p1 = lines && lines[1];
+      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
+      // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
+      // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
+      // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
+      // 승률로만 변환되므로 문제없다).
+      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
+      doneCount++;
+      onProgress && onProgress(doneCount / (N + 1));
+      tryFlush();
+    }
+  }
+  await Promise.all(workers.map(runWorker));
+  tryFlush(); // 안전망 — 위에서 이미 다 흘려보냈어야 하지만, 마지막 자리가 비는 경우를 대비해 한 번 더.
+  // (성능) 여기서 워커를 끄지 않는다 — getAnalysisPool이 세션 내내 재사용하도록 관리한다(프로필을
+  // 바꾸면 그때 이전 풀이 정리된다).
   // (v0.2.1) 마지막 수가 체크메이트(#)면 종료 포지션은 엔진이 평가를 못 준다(둘 수가 없음) — cp 0으로 남아
   // 코치 카드가 "+0.00", 평가치 바·그래프가 무승부처럼 보였다. 실제 승패로 채워 "1-0"/"0-1"과 완승 막대로 표시한다.
   if (N > 0 && /#/.test(fullSans[N - 1])) {
@@ -7124,6 +7153,12 @@ function ReviewPage({ game, onClose }) {
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
   const [prog, setProg] = useState(0);
   const [result, setResult] = useState(null);
+  // (v0.3.0 성능) analyzeGame이 이제 수 하나씩 채점되는 대로 onMove로 흘려보낸다 — result는 첫 수가
+  // 채점되자마자(전체 분석이 끝나기 훨씬 전에) 채워지고, 이후 계속 자라난다. resultDone은 전체 분석이
+  // 100% 끝났는지(정확도%·수 등급 최종 집계가 신뢰 가능한지)를 따로 표시한다 — 요약 화면(정확도%,
+  // 단계별 하이라이트)처럼 완결된 통계가 필요한 곳만 이 값을 기다린다.
+  const [resultDone, setResultDone] = useState(false);
+  const [gradedCount, setGradedCount] = useState(0);
   const [err, setErr] = useState(false);
   // (버그 수정) 0(시작 위치)으로 두면 코치 카드가 아직 설명할 수가 없어 텅 비어 보인다 — 데스크톱은
   // 요약 단계 없이 바로 리뷰 화면으로 들어오므로 처음부터 1(첫 수)로 시작한다. 모바일은 요약 화면의
@@ -7160,7 +7195,13 @@ function ReviewPage({ game, onClose }) {
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready" || !sans || sans.length < 1) { setErr(true); return; }
-    (async () => { try { const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS); if (!cancelled) setResult(r); } catch { if (!cancelled) setErr(true); } })();
+    (async () => {
+      try {
+        const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
+          (partial, gradedIdx) => { if (!cancelled) { setResult(partial); setGradedCount(gradedIdx); } });
+        if (!cancelled) { setResult(r); setGradedCount(sans.length); setResultDone(true); }
+      } catch { if (!cancelled) setErr(true); }
+    })();
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { setShowingLine(false); }, [curPly]);
@@ -7573,7 +7614,11 @@ function ReviewPage({ game, onClose }) {
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
       <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
       <span style={{ fontSize: 15, fontWeight: 800, color: RV.text }}>게임 리뷰</span>
-      <span style={{ width: 34 }} />
+      {/* (v0.3.0 기능) result가 있어도(=첫 수 채점 완료) 전체 분석은 백그라운드에서 계속 진행 중일 수
+          있다 — 아직 안 끝났으면 진행 중임을 알리는 작은 배지를 보여준다(끝나면 조용히 사라짐). */}
+      {result && !resultDone && sans && sans.length > 0 ? (
+        <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: RV.dim, whiteSpace: "nowrap" }}><Cpu size={11} /> 분석 중 {Math.round((gradedCount / sans.length) * 100)}%</span>
+      ) : <span style={{ width: 34 }} />}
     </div>
   );
   if (err) return (
@@ -7595,7 +7640,19 @@ function ReviewPage({ game, onClose }) {
       <div style={wrap}>
         {header}
         {phase === "summary"
-          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
+          ? (resultDone ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
+            : (
+              // (v0.3.0 성능) 정확도%·단계별 하이라이트 같은 요약 통계는 분석이 100% 끝나야 신뢰할 수
+              // 있어 그대로 기다린다 — 다만 그 사이에도 이미 채점된 수부터 곧장 리뷰를 시작할 수 있는
+              // 지름길을 준다(기다리기 싫은 사용자는 굳이 요약까지 기다릴 필요가 없다).
+              <div style={{ padding: "14px 16px 24px", textAlign: "center" }}>
+                <ReviewLoadingSplit />
+                <div style={{ marginTop: 16 }}><AnalyzingPiecesAnim /></div>
+                <div style={{ maxWidth: 280, margin: "12px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><div style={{ width: (gradedCount / sans.length * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
+                <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6 }}>요약 준비 중 {Math.round(gradedCount / sans.length * 100)}%</p>
+                <button onClick={() => { setPhase("review"); setCurPly(1); }} className="press" style={{ marginTop: 14, padding: "10px 18px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: RV.text, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>기다리지 않고 바로 리뷰 시작</button>
+              </div>
+            ))
           : (
             <div style={{ padding: "0 12px 24px" }}>
               <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
