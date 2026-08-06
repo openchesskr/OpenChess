@@ -14959,6 +14959,75 @@ function StoreTab({ coins, reviewTickets, ownedSkins, boardSkin, pieceSkin, onBu
   );
 }
 const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "퀘스트", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
+// (v0.3.0 기능·모바일 시험 적용) 하단 탭을 대신하는 홈 화면 — 사용자가 그린 손그림 스케치의 블록
+// 배치(위에서부터 좁은 꼭짓점 → 큰 머리 → 목 좌우 → 넓은 받침대)를 그대로 따라, 멀리서 보면 나이트
+// (체스 기물) 옆모습 실루엣이 보이도록 각 조각을 비스듬한 다각형으로 깎아 쌓는다. 각 조각은 기존
+// TABS의 실제 목적지로 이동하되, 스케치에 쓰인 이름을 그대로 라벨로 쓴다("퍼즐"→"플레이",
+// "설정"→"프로필", "상점"→"기록").
+const HOME_BLOCKS = [
+  { key: "puzzle", label: "플레이", sub: "퍼즐 풀기", icon: "extension", clip: "polygon(6% 8%, 100% 0%, 94% 100%, 0% 92%)", rotate: -2, w: "100%", h: 118 },
+  { key: "learn", label: "학습", sub: "오프닝 배우기", Icon: GraduationCap, clip: "polygon(14% 0%, 100% 16%, 88% 100%, 0% 82%)", rotate: 3, w: "80%", h: 108, align: "flex-end" },
+  { key: "quest", label: "퀘스트", sub: "오늘의 과제", questIcon: true, clip: "polygon(0% 4%, 100% 0%, 96% 100%, 4% 96%)", rotate: -2, w: "47%", h: 114 },
+  { key: "set", label: "프로필", sub: "설정·계정", Icon: Settings, clip: "polygon(4% 0%, 100% 4%, 96% 100%, 0% 96%)", rotate: 2, w: "47%", h: 114 },
+  { key: "store", label: "기록", sub: "상점·보관함", Icon: ShoppingBag, clip: "polygon(2% 0%, 98% 0%, 100% 100%, 0% 100%)", rotate: -1, w: "47%", h: 90 },
+  { key: "dex", label: "도감", sub: "오프닝 도감", Icon: Library, clip: "polygon(0% 0%, 100% 0%, 98% 100%, 2% 100%)", rotate: 1, w: "47%", h: 90 },
+];
+function KnightHomeMenu({ onNavigate, onOpenFriends, user, pendingFriendCount, onLogout, onLogin, dexBadge, questIconName }) {
+  const face = {
+    background: "linear-gradient(160deg,#F6EBD2 0%,#DDBA79 45%,#A9793F 100%)",
+    border: "1px solid #8A6C2F",
+    boxShadow: "inset 0 1px 2px rgba(255,255,255,.55), inset 0 -3px 7px rgba(0,0,0,.22), 0 10px 18px -8px rgba(74,48,20,.5)",
+  };
+  const Block = ({ b, badge }) => (
+    <button onClick={() => onNavigate(b.key)} className="press" style={{
+      position: "relative", width: b.w, height: b.h, alignSelf: b.align || "center", flexShrink: 0,
+      clipPath: b.clip, transform: "rotate(" + b.rotate + "deg)", border: "none", cursor: "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: "0 10px", boxSizing: "border-box", ...face,
+    }}>
+      <span style={{ transform: "rotate(" + (-b.rotate) + "deg)", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+        <span style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(90,58,34,.14)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#5A3A22" }}>
+          {b.questIcon ? <MaterialIcon name={questIconName} size={17} /> : b.icon ? <MaterialIcon name={b.icon} size={17} /> : <b.Icon size={17} />}
+        </span>
+        <span style={{ fontSize: 14, fontWeight: 800, color: "#4A2E18" }}>{b.label}</span>
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: "#7A5B3A" }}>{b.sub}</span>
+      </span>
+      {badge > 0 && <span style={{ position: "absolute", top: 6, right: 10, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#C8453B", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
+    </button>
+  );
+  return (
+    <div style={{ maxWidth: 380, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+      <div style={{ textAlign: "center", marginBottom: 2 }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: "#4A2E18" }}>어디로 가시겠어요?</div>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: "#8A6C4A", marginTop: 2 }}>블록을 눌러 원하는 화면으로 이동하세요</div>
+      </div>
+      <button onClick={onOpenFriends} aria-label="친구" className="press" style={{ position: "relative", width: 100, height: 54, clipPath: "polygon(50% 0%, 100% 100%, 0% 100%)", transform: "rotate(-3deg)", border: "none", cursor: "pointer", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 8, boxSizing: "border-box", ...face }}>
+        <span style={{ transform: "rotate(3deg)", display: "flex", alignItems: "center", gap: 4, color: "#4A2E18" }}><Users size={14} /><Search size={12} /></span>
+        {pendingFriendCount > 0 && <span style={{ position: "absolute", top: 2, right: 10, minWidth: 14, height: 14, padding: "0 3px", borderRadius: 7, background: "#C8453B", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{pendingFriendCount}</span>}
+      </button>
+      <Block b={HOME_BLOCKS[0]} />
+      <Block b={HOME_BLOCKS[1]} />
+      <div className="flex" style={{ gap: 8, width: "100%", justifyContent: "center" }}>
+        <Block b={HOME_BLOCKS[2]} />
+        <Block b={HOME_BLOCKS[3]} />
+      </div>
+      <div className="flex" style={{ gap: 8, width: "100%", justifyContent: "center" }}>
+        <Block b={HOME_BLOCKS[4]} />
+        <Block b={HOME_BLOCKS[5]} badge={dexBadge} />
+      </div>
+      <div className="flex items-center justify-between" style={{ width: "100%", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(90,58,34,.2)" }}>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: 12, fontWeight: 800, color: "#8A6C4A" }}>openchess.kr</span>
+          {user ? (
+            <button onClick={onLogout} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 8, border: "1px solid #8A6C4A", background: "transparent", color: "#5A3A22", cursor: "pointer" }}>로그아웃</button>
+          ) : (
+            <button onClick={onLogin} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 8, border: "none", background: "linear-gradient(180deg,#C49A50,#A8842F)", color: "#241509", cursor: "pointer" }}>로그인</button>
+          )}
+        </div>
+        <button onClick={() => onNavigate("set")} aria-label="설정" className="press" style={{ width: 32, height: 32, borderRadius: 10, border: "1px solid #8A6C4A", background: "rgba(90,58,34,.08)", color: "#5A3A22", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Settings size={15} /></button>
+      </div>
+    </div>
+  );
+}
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 const TAB_PATH = { learn: "/learn", dex: "/book", puzzle: "/puzzle", quest: "/quest", store: "/store", set: "/setting" };
 const PATH_TAB = { "/learn": "learn", "/book": "dex", "/puzzle": "puzzle", "/quest": "quest", "/store": "store", "/setting": "set" };
@@ -17050,6 +17119,11 @@ export default function App() {
   // (16차) 주소창의 서브패스(/learn, /book, /puzzle, /setting)로 직접 들어온 경우 그 탭을 우선한다.
   const urlTabRef = useRef(typeof window !== "undefined" ? tabFromPath(window.location.pathname) : null);
   const [tab, setTab] = useState(() => urlTabRef.current || "learn");
+  // (v0.3.0 기능·모바일 시험 적용) 하단 탭 대신 나이트 실루엣 홈 화면을 모바일 폭에서만 첫 진입 시
+  // 보여준다. 주소로 특정 탭에 바로 들어온 경우(딥링크)는 홈을 건너뛰고 그 탭으로 곧장 이동한다.
+  const isMobileHome = useNarrow(768);
+  const [homeOpen, setHomeOpen] = useState(() => isMobileHome && !urlTabRef.current);
+  useEffect(() => { if (!isMobileHome) setHomeOpen(false); }, [isMobileHome]);
   // (버그 수정) 도감 오프닝 트리를 배경에서 계속 더 깊이 채워나가는 useOpeningTreeAuto가 도감 탭
   // 컴포넌트(CollectionTab) 안에서 호출되고 있었다 — {tab === "dex" && <CollectionTab .../>}처럼
   // 탭을 조건부로 마운트하는 구조라, 다른 탭으로 갔다가 돌아오기만 해도(퍼즐 확인 등 흔한 사용
@@ -17783,6 +17857,10 @@ export default function App() {
     urlTabRef.current = k;
     try { const p = TAB_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState(null, "", p); } catch { }
   };
+  // (v0.3.0 기능) 홈 화면(나이트 실루엣)에서 블록을 누르면 그 탭으로 이동하며 홈을 닫는다.
+  // goHome은 반대로 — 모바일 헤더 로고를 누르거나 페이지 안에서 홈으로 돌아갈 때 쓴다.
+  const navigateFromHome = (k) => { setHomeOpen(false); switchTab(k); };
+  const goHome = () => setHomeOpen(true);
   // (v0.2.0 기능) /review는 세션 안에서 리뷰할 대국 데이터(reviewGame)가 있어야만 의미가 있는
   // 화면이라 URL만으로 복원할 방법이 없다 — 이 주소로 직접 들어오거나 새로고침하면 조용히
   // 학습 탭으로 되돌린다(빈 화면·깨진 화면 대신).
@@ -17923,7 +18001,9 @@ export default function App() {
             (버그 수정) 로고와 버전 텍스트 사이가 붕 떠 보여 음수 marginTop으로 로고 바로 아래에
             바짝 붙였다. 눌러서 소개 페이지(/about)로 바로 이동할 수 있는 링크로 바꿨다. */}
         <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 0 }}>
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          {/* (v0.3.0 기능) 모바일 시험 적용 — 나이트 실루엣 홈이 활성화된 화면 폭에서는 로고를 누르면
+              언제든 그 홈 화면으로 돌아간다(하단 탭이 없어졌으니 이게 유일한 "처음으로" 경로). */}
+          <img src="/OpenChessLogo.png" alt="OpenChess" onClick={isMobileHome ? goHome : undefined} style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", cursor: isMobileHome ? "pointer" : "default" }} />
           <a href="/about" style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
@@ -18045,7 +18125,11 @@ export default function App() {
       {/* (버그 수정) 하단 고정 내비게이션(66px + safe-area) 위 여백이 아슬아슬해, 실기기(특히 주소창이
           동적으로 접히는 안드로이드 브라우저)에서 목록 맨 마지막 카드가 하단 탭에 살짝 가려 보이는
           경우가 있었다 — 여유를 더 둔다. */}
-      <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
+      <main style={homeOpen ? { maxWidth: 1080, margin: "0 auto", padding: "28px 16px 60px", minHeight: "calc(100vh - 64px)", background: "linear-gradient(180deg,#FBF3E1,#F2E4C6)" } : { maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
+        {homeOpen ? (
+          <KnightHomeMenu onNavigate={navigateFromHome} onOpenFriends={() => { setHomeOpen(false); setFriendsOpen(true); }} user={user} pendingFriendCount={pendingFriendCount} onLogout={() => setConfirmLogout(true)} onLogin={() => openAuth("login")} dexBadge={newUnlocks + newTitles} questIconName={questIconName} />
+        ) : (
+        <>
         {/* (버그 수정) 엔진 라인 타이핑이 도중에 멈추는 문제의 진짜 원인 — ReviewPage(reviewGame)는
             어느 탭에서 열렸든 그 탭을 언마운트하지 않고 위에 오버레이로만 덮는다(openReview가 setTab을
             부르지 않음, 뒤로가기 시 원래 탭으로 돌아가기 위함). 그런데 LearnTab·PuzzleTab은 여전히
@@ -18062,12 +18146,18 @@ export default function App() {
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
+        </>
+        )}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
           바뀌는데, 이때 하단 고정 내비게이션이 별도의 GPU 합성 레이어로 승격돼 있지 않으면 방금
           스크롤된 페이지 내용이 잠깐 다시 그려지며 내비게이션 위로 겹쳐 보이는 경우가 있었다.
-          transform으로 강제로 자체 레이어를 만들고 z-index를 명시해 항상 맨 위에 고정되게 한다. */}
+          transform으로 강제로 자체 레이어를 만들고 z-index를 명시해 항상 맨 위에 고정되게 한다.
+          (v0.3.0 기능·모바일 시험 적용) 나이트 실루엣 홈이 적용되는 화면 폭(isMobileHome)에서는 이
+          하단 탭 자체를 없앤다 — 대신 홈 화면의 블록을 눌러 각 페이지로 들어가고, 페이지 안에서는
+          우하단의 작은 "홈" 버튼으로 돌아온다. */}
+      {!isMobileHome && (
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderTop: "1px solid #000", height: 66, paddingBottom: "env(safe-area-inset-bottom)", transform: "translateZ(0)", willChange: "transform" }}>
         {(
           /* (버그·모바일) 6개 탭을 균등 분배 — 고정폭+큰 gap이면 좁은 화면에서 버튼이 찌그러져 라벨이 세로로 깨졌다. */
@@ -18081,6 +18171,12 @@ export default function App() {
           </div>
         )}
       </nav>
+      )}
+      {isMobileHome && !homeOpen && (
+        <button onClick={goHome} aria-label="홈으로" className="press" style={{ position: "fixed", right: 16, bottom: "calc(16px + env(safe-area-inset-bottom))", zIndex: 40, width: 50, height: 50, borderRadius: "50%", background: "linear-gradient(160deg,#F6EBD2,#C49A50 60%,#8A6C2F)", border: "1px solid #6E5424", color: "#4A2E18", boxShadow: "0 10px 22px -6px rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          <span style={{ fontSize: 24, lineHeight: 1 }} aria-hidden="true">♞</span>
+        </button>
+      )}
     </div>
     </SkinContext.Provider>
   );
