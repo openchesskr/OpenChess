@@ -11890,7 +11890,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       </div>
       {extras}
       {/* (v0.1.2) 개별 퀘스트 클리어 보상을 XP에서 OC 나이트 코인으로 바꿈. */}
-      <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, flexShrink: 0 }}>+10 <CoinIcon size={12} /></span>
+      <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, flexShrink: 0 }}>+10 <CoinIcon size={16} /></span>
     </div>
   ); };
   return (
@@ -11928,7 +11928,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
         const doneCount = (dq.claimed.puzzle ? 1 : 0) + (dq.claimed.dailypuzzle ? 1 : 0) + [0, 1, 2].filter((i) => dq.claimed["cc_" + i]).length;
         return (
           <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, border: "1px solid " + (allDone ? "rgba(120,200,120,.55)" : T.brass), background: allDone ? "rgba(60,138,60,.18)" : "rgba(196,154,80,.08)", display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ position: "relative", flexShrink: 0 }}><CoinIcon size={40} /></div>
+            <div style={{ position: "relative", flexShrink: 0 }}><CoinIcon size={46} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? "#BEEAB0" : T.brassHi }}>모든 퀘스트 완료 보상</div>
               <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>OC 나이트 코인 <b style={{ color: T.brassHi }}>50개</b> · {doneCount}/5 완료</div>
@@ -11959,7 +11959,7 @@ function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit
     <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), marginLeft: sub ? 14 : 0, opacity: locked ? .55 : 1 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: complete ? "#BEEAB0" : T.ivoryHi, minWidth: 0 }}>{ch.title}</span>
-        <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 7px", flexShrink: 0 }}><CoinIcon size={11} /> {ch.reward || 100}</span>
+        <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 7px", flexShrink: 0 }}><CoinIcon size={15} /> {ch.reward || 100}</span>
         <span style={{ marginLeft: "auto", flexShrink: 0 }}>
           {locked ? <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}><Lock size={12} /> 잠김</span>
             : claimed ? <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>완료</span>
@@ -12169,7 +12169,7 @@ function QuestChapterEditor({ chKey, bumpContent, onClose }) {
         <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 11, color: T.inkSoft }}>클리어 보상</span>
           <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
-          <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={13} /> OC 나이트 코인</span>
+          <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={17} /> OC 나이트 코인</span>
         </div>
         <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>문항 {draft.items.length}개</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -14285,9 +14285,9 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
               숫자는 0에서 목표치까지 빠르게 카운트업된다 — 둘 다 게임 보상 화면에서 흔히 보이는 연출. */}
           <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 16 }}>
             <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".25s", animationFillMode: "backwards" }}><Star size={12} fill={T.brassHi} style={{ color: T.brassHi }} />+<AnimatedCountUp to={20} /> XP</span>
-            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".38s", animationFillMode: "backwards" }}><CoinIcon size={14} />+<AnimatedCountUp to={50} /></span>
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".38s", animationFillMode: "backwards" }}><CoinIcon size={18} />+<AnimatedCountUp to={50} /></span>
             {/* (v0.2.9 기능) 전체 클리어 추가 보상 — 리뷰 티켓 2개(개별 클리어분 5개는 각 항목 클리어 순간의 questClear 토스트에서 이미 받았다). */}
-            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".5s", animationFillMode: "backwards" }}><TicketIcon size={18} />+<AnimatedCountUp to={2} /></span>
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".5s", animationFillMode: "backwards" }}><TicketIcon size={22} />+<AnimatedCountUp to={2} /></span>
           </div>
           {rows.length > 0 && (
             <>
@@ -14377,7 +14377,7 @@ function NoReviewTicketsModal({ reviewTickets, onClose }) {
         transition={{ type: "spring", stiffness: 340, damping: 26 }}
         style={{ position: "relative", width: "100%", maxWidth: 320, margin: "auto", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 20, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", textAlign: "center" }}>
         <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
-        <div style={{ margin: "4px auto 10px", width: 68, height: 68, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}><TicketIcon size={40} /></div>
+        <div style={{ margin: "4px auto 10px", width: 68, height: 68, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}><TicketIcon size={46} /></div>
         <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>리뷰 티켓이 부족해요</div>
         <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>보유 중인 리뷰 티켓 <b style={{ color: T.brassHi }}>{fmtFull(reviewTickets)}개</b> — 대국을 하나 리뷰할 때마다 1개가 필요해요. 한 번 리뷰한 대국은 이후 티켓 없이 계속 다시 볼 수 있어요.</p>
         <div style={{ textAlign: "left", fontSize: 11.5, color: T.inkSoft, background: "rgba(196,154,80,.08)", border: "1px solid " + T.brass, borderRadius: 10, padding: "10px 12px", marginBottom: 16, lineHeight: 1.7 }}>
@@ -14481,15 +14481,15 @@ function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, reviewTick
     <div style={card}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 재화·티어·경험치 설정</div>
       <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>
-        지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={12} /> {fmtFull(ocCoins)} · <TicketIcon size={15} /> {fmtFull(reviewTickets)}
+        지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={16} /> {fmtFull(ocCoins)} · <TicketIcon size={18} /> {fmtFull(reviewTickets)}
       </div>
       <div className="flex items-center gap-2" style={rowStyle}>
-        <CoinIcon size={16} />
+        <CoinIcon size={20} />
         <input type="number" value={coinInput} onChange={(e) => setCoinInput(e.target.value)} placeholder="OC 코인 수치" style={inputStyle} />
         <button onClick={() => setOcCoins(Math.max(0, parseInt(coinInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
       </div>
       <div className="flex items-center gap-2" style={rowStyle}>
-        <TicketIcon size={20} />
+        <TicketIcon size={24} />
         <input type="number" value={ticketInput} onChange={(e) => setTicketInput(e.target.value)} placeholder="리뷰 티켓 수치" style={inputStyle} />
         <button onClick={() => setReviewTickets(Math.max(0, parseInt(ticketInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
       </div>
@@ -14909,7 +14909,7 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
         <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
           {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tierLabel.label} 티어 전용 · 코인으로 구매 불가</span>
             : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>무료 · 기본 제공</span>
-              : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={13} /> {sk.price}</span>}
+              : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={17} /> {sk.price}</span>}
         </div>
         {equipped ? (
           <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>✓ 장착됨</button>
@@ -14934,11 +14934,11 @@ function StoreTab({ coins, reviewTickets, ownedSkins, boardSkin, pieceSkin, onBu
         <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
         <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
           <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
-            <CoinIcon size={18} />
+            <CoinIcon size={26} />
             <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(coins || 0)}</span>
           </div>
           <div className="flex items-center gap-1" title="보유 중인 리뷰 티켓 — 게임 리뷰를 하나 열 때마다 1개 소비, 한 번 연 대국은 이후 무료" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
-            <TicketIcon size={22} />
+            <TicketIcon size={30} />
             <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(reviewTickets || 0)}</span>
           </div>
         </div>
@@ -16674,11 +16674,11 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
         {(reward > 0 || ticketReward > 0) && (
           <div className="flex items-center justify-center flex-wrap" style={{ gap: 8, marginTop: 12 }}>
             {reward > 0 && (
-              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={15} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
+              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={19} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
             )}
             {/* (v0.2.9 기능) 티어 승급 보상에 리뷰 티켓 10개를 추가 — 코인 배지와 같은 자리에 나란히. */}
             {ticketReward > 0 && (
-              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".68s", animationFillMode: "backwards" }}><TicketIcon size={19} />+<AnimatedCountUp to={ticketReward} /> 리뷰 티켓</span>
+              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".68s", animationFillMode: "backwards" }}><TicketIcon size={23} />+<AnimatedCountUp to={ticketReward} /> 리뷰 티켓</span>
             )}
           </div>
         )}
@@ -18113,7 +18113,7 @@ export default function App() {
       {toast && toast.type === "coins" && (
         <div style={{ position: "fixed", inset: 0, zIndex: 65, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
           <div style={{ animation: "xpStarPop 1.1s ease forwards", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <CoinIcon size={52} />
+            <CoinIcon size={58} />
             <div style={{ fontSize: 16, fontWeight: 800, color: T.brass, letterSpacing: "-.01em" }}>+{toast.amount} OC 나이트 코인</div>
           </div>
         </div>
@@ -18138,8 +18138,8 @@ export default function App() {
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.label}</div>
               </div>
               <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={16} /></span>
-                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+1<TicketIcon size={20} /></span>
+                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={20} /></span>
+                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+1<TicketIcon size={24} /></span>
               </div>
             </div>
           ) : (
