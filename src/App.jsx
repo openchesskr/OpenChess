@@ -15025,15 +15025,39 @@ const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "de
 // 오른쪽(도감) 클릭 영역만 보이지 않게 나눈다.
 const HOME_VB = "0 0 1080 1400";
 const HOME_SHAPES = {
-  friend: "460,25 430,270 755,265",
-  puzzle: "430,275 755,265 620,615 150,570",
-  learn: "755,265 965,308 1010,535 755,860 620,615",
-  quest: "515,675 230,735 245,1120 515,1120",
-  set: "515,675 755,860 765,1120 515,1120",
-  base: "230,1120 765,1120 930,1335 110,1320",
-  storeHit: "230,1120 470,1120 470,1327 110,1320",
-  dexHit: "470,1120 765,1120 930,1335 470,1327",
+  friend: [[460, 25], [430, 270], [755, 265]],
+  puzzle: [[430, 275], [755, 265], [620, 615], [150, 570]],
+  learn: [[755, 265], [965, 308], [1010, 535], [755, 860], [620, 615]],
+  quest: [[515, 675], [230, 735], [245, 1120], [515, 1120]],
+  set: [[515, 675], [755, 860], [765, 1120], [515, 1120]],
+  base: [[230, 1120], [765, 1120], [930, 1335], [110, 1320]],
+  storeHit: [[230, 1120], [470, 1120], [470, 1327], [110, 1320]],
+  dexHit: [[470, 1120], [765, 1120], [930, 1335], [470, 1327]],
 };
+const ptsAttr = (pts) => pts.map((p) => p[0] + "," + p[1]).join(" ");
+// (v0.3.0 기능) PPT 등 일반 도형 도구에는 다각형 개별 꼭짓점 라운딩 기능이 없어, 사용자가 준 스케치
+// 배치는 살리되 각 조각의 뾰족한 꼭짓점만 둥글게 다듬어 기존 사이트 블록들과 같은 카드 느낌을 낸다.
+// 각 꼭짓점에서 양쪽 변을 r만큼(단, 그 변 길이의 절반을 넘지 않게) 잘라내고 원래 꼭짓점을 제어점 삼아
+// 2차 베지어로 둥글게 잇는다 — 표준 "라운디드 폴리곤" 기법. 서로 맞닿은 조각들도 이 라운딩 때문에
+// 꼭짓점 부근에 살짝 크림색 배경이 비쳐, 자연스럽게 "블록이 조금씩 떨어져 보이는" 효과를 겸한다.
+function roundedPolyPath(pts, r) {
+  const n = pts.length;
+  const cut = (a, b, dist) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const t = Math.min(dist, len / 2) / len;
+    return [a[0] + dx * t, a[1] + dy * t];
+  };
+  const d = [];
+  for (let i = 0; i < n; i++) {
+    const prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n];
+    const p1 = cut(cur, prev, r), p2 = cut(cur, next, r);
+    d.push((i === 0 ? "M" : "L") + p1[0].toFixed(1) + "," + p1[1].toFixed(1));
+    d.push("Q" + cur[0] + "," + cur[1] + " " + p2[0].toFixed(1) + "," + p2[1].toFixed(1));
+  }
+  d.push("Z");
+  return d.join(" ");
+}
 function KnightHomeMenu({ onNavigate, onOpenFriends, user, pendingFriendCount, onLogout, onLogin, dexBadge, questIconName }) {
   const Icon = ({ children, cx, cy }) => (
     <foreignObject x={cx - 20} y={cy - 20} width={40} height={40} style={{ pointerEvents: "none" }}>
@@ -15063,17 +15087,20 @@ function KnightHomeMenu({ onNavigate, onOpenFriends, user, pendingFriendCount, o
             <pattern id="hgGrid" width="46" height="46" patternTransform="rotate(-8)" patternUnits="userSpaceOnUse">
               <path d="M0 0H46M0 23H46M0 0V46M23 0V46" stroke="#4A2E18" strokeWidth="3" fill="none" />
             </pattern>
+            <clipPath id="hgClipPuzzle"><path d={roundedPolyPath(HOME_SHAPES.puzzle, 34)} /></clipPath>
           </defs>
-          {/* 스케치 순서대로: 받침대(맨 뒤) → 퀘스트/프로필 → 플레이/학습 → 친구 nub(맨 앞) */}
-          <polygon points={HOME_SHAPES.base} fill="url(#hgC)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" />
-          <polygon className="home-poly" points={HOME_SHAPES.storeHit} fill="transparent" onClick={() => onNavigate("store")} aria-label="기록" />
-          <polygon className="home-poly" points={HOME_SHAPES.dexHit} fill="transparent" onClick={() => onNavigate("dex")} aria-label="도감" />
-          <polygon className="home-poly" points={HOME_SHAPES.quest} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("quest")} aria-label="퀘스트" />
-          <polygon className="home-poly" points={HOME_SHAPES.set} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("set")} aria-label="프로필" />
-          <polygon className="home-poly" points={HOME_SHAPES.puzzle} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("puzzle")} aria-label="플레이" />
-          <polygon points={HOME_SHAPES.puzzle} fill="url(#hgGrid)" opacity="0.3" style={{ pointerEvents: "none" }} />
-          <polygon className="home-poly" points={HOME_SHAPES.learn} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("learn")} aria-label="학습" />
-          <polygon className="home-poly" points={HOME_SHAPES.friend} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={onOpenFriends} aria-label="친구" />
+          {/* 스케치 순서대로: 받침대(맨 뒤) → 퀘스트/프로필 → 플레이/학습 → 친구 nub(맨 앞).
+              뾰족한 꼭짓점은 roundedPolyPath로 둥글려, 기존 사이트 블록(border-radius)과 같은 카드
+              느낌을 낸다 — 작은 친구 조각은 변이 짧아 더 작은 반지름(18)을 쓴다. */}
+          <path d={roundedPolyPath(HOME_SHAPES.base, 30)} fill="url(#hgC)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" />
+          <polygon className="home-poly" points={ptsAttr(HOME_SHAPES.storeHit)} fill="transparent" onClick={() => onNavigate("store")} aria-label="기록" />
+          <polygon className="home-poly" points={ptsAttr(HOME_SHAPES.dexHit)} fill="transparent" onClick={() => onNavigate("dex")} aria-label="도감" />
+          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.quest, 26)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("quest")} aria-label="퀘스트" />
+          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.set, 26)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("set")} aria-label="프로필" />
+          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.puzzle, 34)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("puzzle")} aria-label="플레이" />
+          <g clipPath="url(#hgClipPuzzle)" style={{ pointerEvents: "none" }}><rect x="150" y="265" width="860" height="350" fill="url(#hgGrid)" opacity="0.3" /></g>
+          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.learn, 30)} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("learn")} aria-label="학습" />
+          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.friend, 18)} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={onOpenFriends} aria-label="친구" />
 
           <Icon cx={560} cy={130}><Users size={15} /></Icon>
           <Icon cx={560} cy={185}><Search size={13} /></Icon>
