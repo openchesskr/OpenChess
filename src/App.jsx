@@ -15016,138 +15016,6 @@ function StoreTab({ coins, reviewTickets, ownedSkins, boardSkin, pieceSkin, onBu
   );
 }
 const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "퀘스트", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
-// (v0.3.0 기능·모바일 시험 적용) 하단 탭을 대신하는 홈 화면 — 사용자가 손으로 그린 스케치를 그대로
-// 디지타이즈해(1080×1920 원본 기준 좌표를 y-280만큼 올려 1080×1400 뷰박스에 맞춤) SVG 다각형으로
-// 재현한다. 각 조각의 모양·서로 맞닿는 경계까지 스케치와 동일하게 두어 "멀리서 보면 나이트 실루엣"
-// 특징을 살리고, 클릭은 그 다각형 모양 그대로(사각형 히트박스가 아니라) 반응한다. 목적지는 기존
-// TABS를 그대로 쓰되, 스케치에 적힌 이름을 라벨로 쓴다("퍼즐"→"플레이", "설정"→"프로필",
-// "상점"→"기록"). 맨 아래 받침대는 스케치처럼 구분선 없이 한 덩어리로 그리되, 왼쪽(기록)·
-// 오른쪽(도감) 클릭 영역만 보이지 않게 나눈다.
-const HOME_VB = "0 0 1080 1400";
-// (v0.3.0 기능) 손그림 스케치 좌표를 눈대중으로 옮기는 대신, 사용자가 요청한 정확한 도형 정의로
-// 좌표를 직접 계산했다 — 친구 조각은 직각이등변삼각형(꼭짓점 각 90°, 두 변 길이 같음), 플레이는
-// 평행사변형(대변 벡터가 정확히 같음), 학습은 마름모(네 변 길이가 전부 같음, 대각선이 서로
-// 수직이등분), 받침대는 사다리꼴(위·아래 변만 평행, 양 다리는 평행하지 않음)이다. 퀘스트·프로필은
-// x=600 축을 기준으로 정확한 좌우 대칭이 되도록 좌표를 그대로 미러링했다. 서로 맞닿는 두 조각은
-// 아예 같은 좌표를 공유해(예: 플레이의 오른쪽 변 = 학습의 왼쪽 변) 그 경계선이 항상 평행(같은
-// 직선)하도록 만들었다 — 아래 각 배열 옆 주석이 그 변이 어느 이웃과 같은 벡터를 공유하는지 밝힌다.
-const HOME_SHAPES = {
-  friend: [[405, 75], [230, 250], [580, 250]],                 // 밑변(230,250)-(580,250)이 플레이 윗변 위에 놓인다
-  puzzle: [[230, 250], [600, 250], [390, 550], [20, 550]],      // 오른쪽 변(600,250)-(390,550) = 학습의 왼쪽 변
-  learn: [[600, 250], [810, 550], [600, 850], [390, 550]],      // 왼쪽 변이 플레이 오른쪽 변과 완전히 같은 두 점
-  quest: [[390, 550], [600, 850], [600, 1120], [370, 1120]],    // 프로필의 x=600 기준 좌우 대칭
-  set: [[810, 550], [600, 850], [600, 1120], [830, 1120]],      // 퀘스트를 x=600 축으로 미러링한 좌표
-  base: [[370, 1120], [830, 1120], [1030, 1350], [170, 1350]],  // 위·아래 변만 평행한 사다리꼴
-  storeHit: [[370, 1120], [600, 1120], [600, 1350], [170, 1350]],
-  dexHit: [[600, 1120], [830, 1120], [1030, 1350], [600, 1350]],
-};
-const ptsAttr = (pts) => pts.map((p) => p[0] + "," + p[1]).join(" ");
-// (v0.3.0 기능) PPT 등 일반 도형 도구에는 다각형 개별 꼭짓점 라운딩 기능이 없어, 사용자가 준 스케치
-// 배치는 살리되 각 조각의 뾰족한 꼭짓점만 둥글게 다듬어 기존 사이트 블록들과 같은 카드 느낌을 낸다.
-// 각 꼭짓점에서 양쪽 변을 r만큼(단, 그 변 길이의 절반을 넘지 않게) 잘라내고 원래 꼭짓점을 제어점 삼아
-// 2차 베지어로 둥글게 잇는다 — 표준 "라운디드 폴리곤" 기법. 서로 맞닿은 조각들도 이 라운딩 때문에
-// 꼭짓점 부근에 살짝 크림색 배경이 비쳐, 자연스럽게 "블록이 조금씩 떨어져 보이는" 효과를 겸한다.
-function roundedPolyPath(pts, r) {
-  const n = pts.length;
-  const cut = (a, b, dist) => {
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    const len = Math.hypot(dx, dy) || 1;
-    const t = Math.min(dist, len / 2) / len;
-    return [a[0] + dx * t, a[1] + dy * t];
-  };
-  const d = [];
-  for (let i = 0; i < n; i++) {
-    const prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n];
-    const p1 = cut(cur, prev, r), p2 = cut(cur, next, r);
-    d.push((i === 0 ? "M" : "L") + p1[0].toFixed(1) + "," + p1[1].toFixed(1));
-    d.push("Q" + cur[0] + "," + cur[1] + " " + p2[0].toFixed(1) + "," + p2[1].toFixed(1));
-  }
-  d.push("Z");
-  return d.join(" ");
-}
-function KnightHomeMenu({ onNavigate, onOpenFriends, user, pendingFriendCount, onLogout, onLogin, dexBadge, questIconName }) {
-  const Icon = ({ children, cx, cy }) => (
-    <foreignObject x={cx - 20} y={cy - 20} width={40} height={40} style={{ pointerEvents: "none" }}>
-      <div xmlns="http://www.w3.org/1999/xhtml" style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(90,58,34,.16)", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A2E18" }}>{children}</div>
-    </foreignObject>
-  );
-  const Label = ({ x, y, children, sub }) => (
-    <foreignObject x={x - 90} y={y} width={180} height={44} style={{ pointerEvents: "none" }}>
-      <div xmlns="http://www.w3.org/1999/xhtml" style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 18, fontWeight: 800, color: "#3E2712", textShadow: "0 1px 0 rgba(255,255,255,.35)" }}>{children}</div>
-        {sub && <div style={{ fontSize: 10.5, fontWeight: 700, color: "#6E5424", marginTop: 1 }}>{sub}</div>}
-      </div>
-    </foreignObject>
-  );
-  return (
-    <div style={{ maxWidth: 380, margin: "0 auto" }}>
-      <div style={{ textAlign: "center", marginBottom: 8 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: "#4A2E18" }}>어디로 가시겠어요?</div>
-        <div style={{ fontSize: 11.5, fontWeight: 600, color: "#8A6C4A", marginTop: 2 }}>블록을 눌러 원하는 화면으로 이동하세요</div>
-      </div>
-      <div style={{ position: "relative", width: "100%", aspectRatio: "1080/1400" }}>
-        <svg viewBox={HOME_VB} style={{ width: "100%", height: "100%", display: "block", filter: "drop-shadow(0 14px 22px rgba(74,48,20,.35))" }}>
-          <defs>
-            <linearGradient id="hgA" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#FBF1DA" /><stop offset="50%" stopColor="#E7C989" /><stop offset="100%" stopColor="#B98A45" /></linearGradient>
-            <linearGradient id="hgB" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#F1DDAF" /><stop offset="50%" stopColor="#D2A660" /><stop offset="100%" stopColor="#97722E" /></linearGradient>
-            <linearGradient id="hgC" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#E7CE9C" /><stop offset="50%" stopColor="#BE9052" /><stop offset="100%" stopColor="#7C5B27" /></linearGradient>
-            <pattern id="hgGrid" width="46" height="46" patternTransform="rotate(-8)" patternUnits="userSpaceOnUse">
-              <path d="M0 0H46M0 23H46M0 0V46M23 0V46" stroke="#4A2E18" strokeWidth="3" fill="none" />
-            </pattern>
-            <clipPath id="hgClipPuzzle"><path d={roundedPolyPath(HOME_SHAPES.puzzle, 34)} /></clipPath>
-          </defs>
-          {/* 스케치 순서대로: 받침대(맨 뒤) → 퀘스트/프로필 → 플레이/학습 → 친구 nub(맨 앞).
-              뾰족한 꼭짓점은 roundedPolyPath로 둥글려, 기존 사이트 블록(border-radius)과 같은 카드
-              느낌을 낸다 — 작은 친구 조각은 변이 짧아 더 작은 반지름(18)을 쓴다. */}
-          <path d={roundedPolyPath(HOME_SHAPES.base, 30)} fill="url(#hgC)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" />
-          <polygon className="home-poly" points={ptsAttr(HOME_SHAPES.storeHit)} fill="transparent" onClick={() => onNavigate("store")} aria-label="기록" />
-          <polygon className="home-poly" points={ptsAttr(HOME_SHAPES.dexHit)} fill="transparent" onClick={() => onNavigate("dex")} aria-label="도감" />
-          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.quest, 26)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("quest")} aria-label="퀘스트" />
-          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.set, 26)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("set")} aria-label="프로필" />
-          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.puzzle, 34)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("puzzle")} aria-label="플레이" />
-          <g clipPath="url(#hgClipPuzzle)" style={{ pointerEvents: "none" }}><rect x="20" y="250" width="580" height="300" fill="url(#hgGrid)" opacity="0.3" /></g>
-          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.learn, 30)} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("learn")} aria-label="학습" />
-          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.friend, 22)} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={onOpenFriends} aria-label="친구" />
-
-          <Icon cx={405} cy={140}><Users size={15} /></Icon>
-          <Icon cx={405} cy={195}><Search size={13} /></Icon>
-          {pendingFriendCount > 0 && <foreignObject x={520} y={95} width={30} height={30} style={{ pointerEvents: "none" }}><div xmlns="http://www.w3.org/1999/xhtml" style={{ minWidth: 20, height: 20, padding: "0 4px", borderRadius: 10, background: "#C8453B", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{pendingFriendCount}</div></foreignObject>}
-
-          <Icon cx={310} cy={370}><MaterialIcon name="extension" size={19} /></Icon>
-          <Label x={310} y={400} sub="퍼즐 풀기">플레이</Label>
-
-          <Icon cx={600} cy={520}><GraduationCap size={19} /></Icon>
-          <Label x={600} y={550} sub="오프닝 배우기">학습</Label>
-
-          <Icon cx={490} cy={880}><MaterialIcon name={questIconName} size={19} /></Icon>
-          <Label x={490} y={910} sub="오늘의 과제">퀘스트</Label>
-
-          <Icon cx={710} cy={880}><Settings size={19} /></Icon>
-          <Label x={710} y={910} sub="설정·계정">프로필</Label>
-
-          <Icon cx={435} cy={1205}><BarChart3 size={18} /></Icon>
-          <Label x={435} y={1235} sub="상점·보관함">기록</Label>
-
-          <Icon cx={765} cy={1205}><Library size={18} /></Icon>
-          <Label x={765} y={1235} sub="오프닝 도감">
-            {dexBadge > 0 ? <span>도감<span style={{ marginLeft: 4, display: "inline-flex", minWidth: 15, height: 15, padding: "0 3px", borderRadius: 8, background: "#C8453B", color: "#fff", fontSize: 9, fontWeight: 800, alignItems: "center", justifyContent: "center", verticalAlign: 2 }}>{dexBadge}</span></span> : "도감"}
-          </Label>
-        </svg>
-      </div>
-      <div className="flex items-center justify-between" style={{ width: "100%", marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(90,58,34,.2)" }}>
-        <div className="flex items-center gap-2">
-          <span style={{ fontSize: 12, fontWeight: 800, color: "#8A6C4A" }}>openchess.kr</span>
-          {user ? (
-            <button onClick={onLogout} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 8, border: "1px solid #8A6C4A", background: "transparent", color: "#5A3A22", cursor: "pointer" }}>로그아웃</button>
-          ) : (
-            <button onClick={onLogin} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 8, border: "none", background: "linear-gradient(180deg,#C49A50,#A8842F)", color: "#241509", cursor: "pointer" }}>로그인</button>
-          )}
-        </div>
-        <button onClick={() => onNavigate("set")} aria-label="설정" className="press" style={{ width: 32, height: 32, borderRadius: 10, border: "1px solid #8A6C4A", background: "rgba(90,58,34,.08)", color: "#5A3A22", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Settings size={15} /></button>
-      </div>
-    </div>
-  );
-}
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 const TAB_PATH = { learn: "/learn", dex: "/book", puzzle: "/puzzle", quest: "/quest", store: "/store", set: "/setting" };
 const PATH_TAB = { "/learn": "learn", "/book": "dex", "/puzzle": "puzzle", "/quest": "quest", "/store": "store", "/setting": "set" };
@@ -17239,11 +17107,6 @@ export default function App() {
   // (16차) 주소창의 서브패스(/learn, /book, /puzzle, /setting)로 직접 들어온 경우 그 탭을 우선한다.
   const urlTabRef = useRef(typeof window !== "undefined" ? tabFromPath(window.location.pathname) : null);
   const [tab, setTab] = useState(() => urlTabRef.current || "learn");
-  // (v0.3.0 기능·모바일 시험 적용) 하단 탭 대신 나이트 실루엣 홈 화면을 모바일 폭에서만 첫 진입 시
-  // 보여준다. 주소로 특정 탭에 바로 들어온 경우(딥링크)는 홈을 건너뛰고 그 탭으로 곧장 이동한다.
-  const isMobileHome = useNarrow(768);
-  const [homeOpen, setHomeOpen] = useState(() => isMobileHome && !urlTabRef.current);
-  useEffect(() => { if (!isMobileHome) setHomeOpen(false); }, [isMobileHome]);
   // (버그 수정) 도감 오프닝 트리를 배경에서 계속 더 깊이 채워나가는 useOpeningTreeAuto가 도감 탭
   // 컴포넌트(CollectionTab) 안에서 호출되고 있었다 — {tab === "dex" && <CollectionTab .../>}처럼
   // 탭을 조건부로 마운트하는 구조라, 다른 탭으로 갔다가 돌아오기만 해도(퍼즐 확인 등 흔한 사용
@@ -17977,10 +17840,6 @@ export default function App() {
     urlTabRef.current = k;
     try { const p = TAB_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState(null, "", p); } catch { }
   };
-  // (v0.3.0 기능) 홈 화면(나이트 실루엣)에서 블록을 누르면 그 탭으로 이동하며 홈을 닫는다.
-  // goHome은 반대로 — 모바일 헤더 로고를 누르거나 페이지 안에서 홈으로 돌아갈 때 쓴다.
-  const navigateFromHome = (k) => { setHomeOpen(false); switchTab(k); };
-  const goHome = () => setHomeOpen(true);
   // (v0.2.0 기능) /review는 세션 안에서 리뷰할 대국 데이터(reviewGame)가 있어야만 의미가 있는
   // 화면이라 URL만으로 복원할 방법이 없다 — 이 주소로 직접 들어오거나 새로고침하면 조용히
   // 학습 탭으로 되돌린다(빈 화면·깨진 화면 대신).
@@ -18095,7 +17954,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .home-poly{cursor:pointer;transition:filter .1s ease} .home-poly:active{filter:brightness(.9)}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
@@ -18121,9 +17980,7 @@ export default function App() {
             (버그 수정) 로고와 버전 텍스트 사이가 붕 떠 보여 음수 marginTop으로 로고 바로 아래에
             바짝 붙였다. 눌러서 소개 페이지(/about)로 바로 이동할 수 있는 링크로 바꿨다. */}
         <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 0 }}>
-          {/* (v0.3.0 기능) 모바일 시험 적용 — 나이트 실루엣 홈이 활성화된 화면 폭에서는 로고를 누르면
-              언제든 그 홈 화면으로 돌아간다(하단 탭이 없어졌으니 이게 유일한 "처음으로" 경로). */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" onClick={isMobileHome ? goHome : undefined} style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", cursor: isMobileHome ? "pointer" : "default" }} />
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <a href="/about" style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
@@ -18245,11 +18102,7 @@ export default function App() {
       {/* (버그 수정) 하단 고정 내비게이션(66px + safe-area) 위 여백이 아슬아슬해, 실기기(특히 주소창이
           동적으로 접히는 안드로이드 브라우저)에서 목록 맨 마지막 카드가 하단 탭에 살짝 가려 보이는
           경우가 있었다 — 여유를 더 둔다. */}
-      <main style={homeOpen ? { maxWidth: 1080, margin: "0 auto", padding: "28px 16px 60px", minHeight: "calc(100vh - 64px)", background: "linear-gradient(180deg,#FBF3E1,#F2E4C6)" } : { maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
-        {homeOpen ? (
-          <KnightHomeMenu onNavigate={navigateFromHome} onOpenFriends={() => { setHomeOpen(false); setFriendsOpen(true); }} user={user} pendingFriendCount={pendingFriendCount} onLogout={() => setConfirmLogout(true)} onLogin={() => openAuth("login")} dexBadge={newUnlocks + newTitles} questIconName={questIconName} />
-        ) : (
-        <>
+      <main style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 18px 150px" }}>
         {/* (버그 수정) 엔진 라인 타이핑이 도중에 멈추는 문제의 진짜 원인 — ReviewPage(reviewGame)는
             어느 탭에서 열렸든 그 탭을 언마운트하지 않고 위에 오버레이로만 덮는다(openReview가 setTab을
             부르지 않음, 뒤로가기 시 원래 탭으로 돌아가기 위함). 그런데 LearnTab·PuzzleTab은 여전히
@@ -18266,18 +18119,12 @@ export default function App() {
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
-        </>
-        )}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
           바뀌는데, 이때 하단 고정 내비게이션이 별도의 GPU 합성 레이어로 승격돼 있지 않으면 방금
           스크롤된 페이지 내용이 잠깐 다시 그려지며 내비게이션 위로 겹쳐 보이는 경우가 있었다.
-          transform으로 강제로 자체 레이어를 만들고 z-index를 명시해 항상 맨 위에 고정되게 한다.
-          (v0.3.0 기능·모바일 시험 적용) 나이트 실루엣 홈이 적용되는 화면 폭(isMobileHome)에서는 이
-          하단 탭 자체를 없앤다 — 대신 홈 화면의 블록을 눌러 각 페이지로 들어가고, 페이지 안에서는
-          우하단의 작은 "홈" 버튼으로 돌아온다. */}
-      {!isMobileHome && (
+          transform으로 강제로 자체 레이어를 만들고 z-index를 명시해 항상 맨 위에 고정되게 한다. */}
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderTop: "1px solid #000", height: 66, paddingBottom: "env(safe-area-inset-bottom)", transform: "translateZ(0)", willChange: "transform" }}>
         {(
           /* (버그·모바일) 6개 탭을 균등 분배 — 고정폭+큰 gap이면 좁은 화면에서 버튼이 찌그러져 라벨이 세로로 깨졌다. */
@@ -18291,12 +18138,6 @@ export default function App() {
           </div>
         )}
       </nav>
-      )}
-      {isMobileHome && !homeOpen && (
-        <button onClick={goHome} aria-label="홈으로" className="press" style={{ position: "fixed", right: 16, bottom: "calc(16px + env(safe-area-inset-bottom))", zIndex: 40, width: 50, height: 50, borderRadius: "50%", background: "linear-gradient(160deg,#F6EBD2,#C49A50 60%,#8A6C2F)", border: "1px solid #6E5424", color: "#4A2E18", boxShadow: "0 10px 22px -6px rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <span style={{ fontSize: 24, lineHeight: 1 }} aria-hidden="true">♞</span>
-        </button>
-      )}
     </div>
     </SkinContext.Provider>
   );
