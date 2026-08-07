@@ -15024,15 +15024,22 @@ const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "de
 // "상점"→"기록"). 맨 아래 받침대는 스케치처럼 구분선 없이 한 덩어리로 그리되, 왼쪽(기록)·
 // 오른쪽(도감) 클릭 영역만 보이지 않게 나눈다.
 const HOME_VB = "0 0 1080 1400";
+// (v0.3.0 기능) 손그림 스케치 좌표를 눈대중으로 옮기는 대신, 사용자가 요청한 정확한 도형 정의로
+// 좌표를 직접 계산했다 — 친구 조각은 직각이등변삼각형(꼭짓점 각 90°, 두 변 길이 같음), 플레이는
+// 평행사변형(대변 벡터가 정확히 같음), 학습은 마름모(네 변 길이가 전부 같음, 대각선이 서로
+// 수직이등분), 받침대는 사다리꼴(위·아래 변만 평행, 양 다리는 평행하지 않음)이다. 퀘스트·프로필은
+// x=600 축을 기준으로 정확한 좌우 대칭이 되도록 좌표를 그대로 미러링했다. 서로 맞닿는 두 조각은
+// 아예 같은 좌표를 공유해(예: 플레이의 오른쪽 변 = 학습의 왼쪽 변) 그 경계선이 항상 평행(같은
+// 직선)하도록 만들었다 — 아래 각 배열 옆 주석이 그 변이 어느 이웃과 같은 벡터를 공유하는지 밝힌다.
 const HOME_SHAPES = {
-  friend: [[460, 25], [430, 270], [755, 265]],
-  puzzle: [[430, 275], [755, 265], [620, 615], [150, 570]],
-  learn: [[755, 265], [965, 308], [1010, 535], [755, 860], [620, 615]],
-  quest: [[515, 675], [230, 735], [245, 1120], [515, 1120]],
-  set: [[515, 675], [755, 860], [765, 1120], [515, 1120]],
-  base: [[230, 1120], [765, 1120], [930, 1335], [110, 1320]],
-  storeHit: [[230, 1120], [470, 1120], [470, 1327], [110, 1320]],
-  dexHit: [[470, 1120], [765, 1120], [930, 1335], [470, 1327]],
+  friend: [[405, 75], [230, 250], [580, 250]],                 // 밑변(230,250)-(580,250)이 플레이 윗변 위에 놓인다
+  puzzle: [[230, 250], [600, 250], [390, 550], [20, 550]],      // 오른쪽 변(600,250)-(390,550) = 학습의 왼쪽 변
+  learn: [[600, 250], [810, 550], [600, 850], [390, 550]],      // 왼쪽 변이 플레이 오른쪽 변과 완전히 같은 두 점
+  quest: [[390, 550], [600, 850], [600, 1120], [370, 1120]],    // 프로필의 x=600 기준 좌우 대칭
+  set: [[810, 550], [600, 850], [600, 1120], [830, 1120]],      // 퀘스트를 x=600 축으로 미러링한 좌표
+  base: [[370, 1120], [830, 1120], [1030, 1350], [170, 1350]],  // 위·아래 변만 평행한 사다리꼴
+  storeHit: [[370, 1120], [600, 1120], [600, 1350], [170, 1350]],
+  dexHit: [[600, 1120], [830, 1120], [1030, 1350], [600, 1350]],
 };
 const ptsAttr = (pts) => pts.map((p) => p[0] + "," + p[1]).join(" ");
 // (v0.3.0 기능) PPT 등 일반 도형 도구에는 다각형 개별 꼭짓점 라운딩 기능이 없어, 사용자가 준 스케치
@@ -15098,31 +15105,31 @@ function KnightHomeMenu({ onNavigate, onOpenFriends, user, pendingFriendCount, o
           <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.quest, 26)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("quest")} aria-label="퀘스트" />
           <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.set, 26)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("set")} aria-label="프로필" />
           <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.puzzle, 34)} fill="url(#hgB)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("puzzle")} aria-label="플레이" />
-          <g clipPath="url(#hgClipPuzzle)" style={{ pointerEvents: "none" }}><rect x="150" y="265" width="860" height="350" fill="url(#hgGrid)" opacity="0.3" /></g>
+          <g clipPath="url(#hgClipPuzzle)" style={{ pointerEvents: "none" }}><rect x="20" y="250" width="580" height="300" fill="url(#hgGrid)" opacity="0.3" /></g>
           <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.learn, 30)} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={() => onNavigate("learn")} aria-label="학습" />
-          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.friend, 18)} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={onOpenFriends} aria-label="친구" />
+          <path className="home-poly" d={roundedPolyPath(HOME_SHAPES.friend, 22)} fill="url(#hgA)" stroke="#6E5424" strokeWidth="7" strokeLinejoin="round" onClick={onOpenFriends} aria-label="친구" />
 
-          <Icon cx={560} cy={130}><Users size={15} /></Icon>
-          <Icon cx={560} cy={185}><Search size={13} /></Icon>
-          {pendingFriendCount > 0 && <foreignObject x={700} y={40} width={30} height={30} style={{ pointerEvents: "none" }}><div xmlns="http://www.w3.org/1999/xhtml" style={{ minWidth: 20, height: 20, padding: "0 4px", borderRadius: 10, background: "#C8453B", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{pendingFriendCount}</div></foreignObject>}
+          <Icon cx={405} cy={140}><Users size={15} /></Icon>
+          <Icon cx={405} cy={195}><Search size={13} /></Icon>
+          {pendingFriendCount > 0 && <foreignObject x={520} y={95} width={30} height={30} style={{ pointerEvents: "none" }}><div xmlns="http://www.w3.org/1999/xhtml" style={{ minWidth: 20, height: 20, padding: "0 4px", borderRadius: 10, background: "#C8453B", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{pendingFriendCount}</div></foreignObject>}
 
-          <Icon cx={430} cy={400}><MaterialIcon name="extension" size={19} /></Icon>
-          <Label x={500} y={430} sub="퍼즐 풀기">플레이</Label>
+          <Icon cx={310} cy={370}><MaterialIcon name="extension" size={19} /></Icon>
+          <Label x={310} y={400} sub="퍼즐 풀기">플레이</Label>
 
-          <Icon cx={840} cy={470}><GraduationCap size={19} /></Icon>
-          <Label x={830} y={500} sub="오프닝 배우기">학습</Label>
+          <Icon cx={600} cy={520}><GraduationCap size={19} /></Icon>
+          <Label x={600} y={550} sub="오프닝 배우기">학습</Label>
 
-          <Icon cx={376} cy={860}><MaterialIcon name={questIconName} size={19} /></Icon>
-          <Label x={376} y={890} sub="오늘의 과제">퀘스트</Label>
+          <Icon cx={490} cy={880}><MaterialIcon name={questIconName} size={19} /></Icon>
+          <Label x={490} y={910} sub="오늘의 과제">퀘스트</Label>
 
-          <Icon cx={637} cy={900}><Settings size={19} /></Icon>
-          <Label x={637} y={930} sub="설정·계정">프로필</Label>
+          <Icon cx={710} cy={880}><Settings size={19} /></Icon>
+          <Label x={710} y={910} sub="설정·계정">프로필</Label>
 
-          <Icon cx={320} cy={1180}><BarChart3 size={18} /></Icon>
-          <Label x={320} y={1205} sub="상점·보관함">기록</Label>
+          <Icon cx={435} cy={1205}><BarChart3 size={18} /></Icon>
+          <Label x={435} y={1235} sub="상점·보관함">기록</Label>
 
-          <Icon cx={659} cy={1185}><Library size={18} /></Icon>
-          <Label x={659} y={1210} sub="오프닝 도감">
+          <Icon cx={765} cy={1205}><Library size={18} /></Icon>
+          <Label x={765} y={1235} sub="오프닝 도감">
             {dexBadge > 0 ? <span>도감<span style={{ marginLeft: 4, display: "inline-flex", minWidth: 15, height: 15, padding: "0 3px", borderRadius: 8, background: "#C8453B", color: "#fff", fontSize: 9, fontWeight: 800, alignItems: "center", justifyContent: "center", verticalAlign: 2 }}>{dexBadge}</span></span> : "도감"}
           </Label>
         </svg>
