@@ -1116,6 +1116,16 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   const workers = pool.length ? pool : [engine];
   let wIdx = 0;
   const nextWorker = () => workers[wIdx++ % workers.length];
+  // (v0.3.0 기능) "실질적인 이득" 판정 개선 — 예전엔 매 수를 둔 뒤의 절대 평가치(cp)만으로 종료
+  // 여부를 판단해, 시작 포지션이 이미 유리했으면 한 수 만에 끝나버리고(그 유리함이 그대로
+  // target을 넘겨버림), 반대로 거의 균형인 포지션에서 서서히 조여가는 수순은 target을 넘기지
+  // 못한 채 maxPlies·maxNodes 상한에 먼저 걸려 라인이 뚝 끊겼다. 퍼즐 시작 포지션의 평가치를
+  // 미리 한 번 재서(startCp), 이후로는 "시작 대비 실제로 얻어낸 cp 이득"을 기준으로 삼는다.
+  let startCp = 0;
+  try {
+    const se = await nextWorker().evaluate(sansToFen(preSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+    if (se) startCp = se.mate != null ? (se.mate > 0 ? 100000 : -100000) : (se.cp || 0);
+  } catch { }
   // (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — 진행률 숫자만 보내던
   // 것을, 지금 막 탐색해 늘어난 수순(path)도 함께 실어 보낸다. 집중 학습 화면이 이 path로 미니 보드를
   // 그 자리에서 계속 갱신하며, 실제로 트리가 만들어지는 과정을 그대로 시각화할 수 있게 한다.
@@ -1123,8 +1133,12 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   // 진행률(%) 자체는 여전히 정확하다.)
   const bumpNode = (path) => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes), path); };
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
-  async function expand(cur, depth, sawUserCapture) {
-    if (depth >= maxPlies || nodeCount >= maxNodes) return [];
+  // (v0.3.0 기능) forceMate — 이 가지가 이미 "상대가 강제 메이트당하는 수순"에 들어섰다는 표시.
+  // 한 번 true가 되면 자손 노드에도 그대로 물려줘, 실제 체크메이트(#)가 나올 때까지는 maxPlies
+  // 상한을 무시하고 계속 확장한다(요청: "메이트 수순에 돌입하면 반드시 그 가지가 체크메이트까지
+  // 이어지도록"). maxNodes(전체 노드 예산)는 폭주 방지용 안전망으로 그대로 유지한다.
+  async function expand(cur, depth, sawUserCapture, forceMate) {
+    if ((depth >= maxPlies && !forceMate) || nodeCount >= maxNodes) return [];
     const isUserTurn = depth % 2 === 0;
     let cands = await puzzleCandidatesAt(nextWorker(), cur);
     if (!cands || !cands.length) return [];
@@ -1166,24 +1180,34 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
       if (isUserTurn) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
+        let childForceMate = forceMate;
         if (!terminal) {
           const ev2 = await nextWorker().evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
           if (ev2) {
             const evw = posEvalToWhite(ev2, cur2); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
-            if (ev2.mate != null && ev2.mate < 0) terminal = true;           // 상대(둘 차례)가 메이트당하는 수순 = 사용자 승
-            else {
-              const userCp = ev2.mate != null ? -100000 : -(ev2.cp || 0);    // 상대 관점 → 사용자 관점
+            if (ev2.mate != null && ev2.mate < 0) {
+              // (v0.3.0 기능) 상대(둘 차례)가 강제 메이트당하는 수순을 찾았다고 여기서 곧장 끝내지
+              // 않는다 — 실제 체크메이트(#)가 나오는 수까지 이 가지를 계속 확장해서, "이겼다"는
+              // 평가치만 보여주고 끊기지 않고 마무리하는 수순 전체를 보여준다.
+              childForceMate = true;
+            } else {
+              const userCp = -(ev2.cp || 0);                                 // 상대 관점 → 사용자 관점
+              // (v0.3.0 기능) "실질적인 이득" = 절대 cp가 아니라 시작 대비 얻어낸 cp(cpGain) 기준.
+              // 여기에 기물점수도 실제로 유리해졌을 때만(matGain > 0) 인정한다 — 기물 변동 없이
+              // 포지션만 조금씩 좋아지는 수순은 아직 "실질적인 이득"으로 치지 않는다.
+              const cpGain = userCp - startCp;
+              const matGain = materialDiff(boardFromSans(cur2), userColor) - startMat;
               const matOk = !requireMaterialRecovery || materialDiff(boardFromSans(cur2), userColor) >= Math.min(0, startMat);
               const capOk = !requireCapture || captured;
-              if (userCp >= target && matOk && capOk) terminal = true;
+              if (cpGain >= target && matGain > 0 && matOk && capOk) terminal = true;
             }
           }
         }
-        if (!terminal) node.children = await expand(cur2, depth + 1, captured);
+        if (!terminal) node.children = await expand(cur2, depth + 1, captured, childForceMate);
         // 상대 응수가 만들어지지 않아도(깊이 상한 등) 사용자 수로 끝나는 리프이므로 그대로 둔다
         return node;
       } else {
-        node.children = await expand(cur2, depth + 1, sawUserCapture);
+        node.children = await expand(cur2, depth + 1, sawUserCapture, forceMate);
         if (!node.children.some((k) => k.pass !== false)) return null;   // 상대 수로 끝나는 가지는 버린다(항상 사용자 수로 끝맺음)
         return node;
       }
