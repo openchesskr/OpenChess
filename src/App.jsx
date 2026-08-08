@@ -1106,15 +1106,27 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
+  // (v0.3.0 성능) 예전엔 트리의 모든 노드를 단일 엔진(engine, FIFO 큐 하나)으로 순서대로 평가해,
+  // 형제 가지(예: 상대 응수 최대 3갈래)가 서로 독립적인데도 하나씩 차례로만 계산됐다 — 라인이
+  // 깊어질수록(maxPlies) 노드 수가 그만큼 늘어나 생성 시간이 거의 선형으로 길어졌다. 게임 리뷰
+  // (analyzeGame)와 같은 전용 워커 풀(getAnalysisPool)을 빌려 써서, 서로 다른 가지의 노드 평가를
+  // 여러 워커에 나눠 동시에 돌린다 — depth·movetime(정확도)은 전혀 건드리지 않고 병렬도만큼 순수하게
+  // 시간을 줄인다. 풀 부팅이 실패하면(드묾) 기존처럼 단일 engine으로 폴백한다.
+  const pool = await getAnalysisPool(engine.profile, engine.urls);
+  const workers = pool.length ? pool : [engine];
+  let wIdx = 0;
+  const nextWorker = () => workers[wIdx++ % workers.length];
   // (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — 진행률 숫자만 보내던
   // 것을, 지금 막 탐색해 늘어난 수순(path)도 함께 실어 보낸다. 집중 학습 화면이 이 path로 미니 보드를
   // 그 자리에서 계속 갱신하며, 실제로 트리가 만들어지는 과정을 그대로 시각화할 수 있게 한다.
+  // (병렬화로 여러 가지가 동시에 끝나므로 이 path가 항상 한 줄로 매끄럽게 이어지지는 않지만,
+  // 진행률(%) 자체는 여전히 정확하다.)
   const bumpNode = (path) => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes), path); };
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
   async function expand(cur, depth, sawUserCapture) {
     if (depth >= maxPlies || nodeCount >= maxNodes) return [];
     const isUserTurn = depth % 2 === 0;
-    let cands = await puzzleCandidatesAt(engine, cur);
+    let cands = await puzzleCandidatesAt(nextWorker(), cur);
     if (!cands || !cands.length) return [];
     // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음)
     if (depth >= 1 || firstSan) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));
@@ -1140,19 +1152,22 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
       chosen = [plausible[0]];
       for (const c of ranked) { if (chosen.length >= (canBranch ? 3 : 1)) break; if (!chosen.includes(c)) chosen.push(c); }
     }
-    const out = [];
-    for (const c of chosen) {
-      if (nodeCount >= maxNodes && out.length) break;
+    // (v0.3.0 성능) 예전엔 이 for...await 루프가 형제 가지를 하나씩 순서대로 확장해, 노드 예산
+    // (maxNodes) 초과 여부를 매 가지마다 정확히 확인할 수 있었다. Promise.all로 동시에 확장하면
+    // 그 정밀한 순서 제어는 느슨해지지만(형제들이 서로의 진행 상황을 못 보고 거의 동시에 시작),
+    // expand() 진입부의 nodeCount 체크가 각 가지 내부에서 여전히 살아 있어 예산을 크게 벗어나지는
+    // 않는다 — 정확한 상한보다 실제 생성 속도가 훨씬 중요한 트레이드오프.
+    const results = await Promise.all(chosen.map(async (c) => {
       const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(c.kind) : true;
       const node = { san: c.san, kind: c.kind, ev: c.ev, adopt: c.adopt, pass, children: [] };
       const cur2 = [...cur, c.san];
       bumpNode(cur2);
-      if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
+      if (!pass) return node;   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       if (isUserTurn) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
         if (!terminal) {
-          const ev2 = await engine.evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+          const ev2 = await nextWorker().evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
           if (ev2) {
             const evw = posEvalToWhite(ev2, cur2); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
             if (ev2.mate != null && ev2.mate < 0) terminal = true;           // 상대(둘 차례)가 메이트당하는 수순 = 사용자 승
@@ -1166,13 +1181,14 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
         }
         if (!terminal) node.children = await expand(cur2, depth + 1, captured);
         // 상대 응수가 만들어지지 않아도(깊이 상한 등) 사용자 수로 끝나는 리프이므로 그대로 둔다
+        return node;
       } else {
         node.children = await expand(cur2, depth + 1, sawUserCapture);
-        if (!node.children.some((k) => k.pass !== false)) continue;   // 상대 수로 끝나는 가지는 버린다(항상 사용자 수로 끝맺음)
+        if (!node.children.some((k) => k.pass !== false)) return null;   // 상대 수로 끝나는 가지는 버린다(항상 사용자 수로 끝맺음)
+        return node;
       }
-      out.push(node);
-    }
-    return out;
+    }));
+    return results.filter(Boolean);
   }
   let children;
   if (firstSan) {
@@ -1183,7 +1199,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
     const cur2 = [...preSans, firstSan];
     bumpNode(cur2);
-    try { const ev2 = await engine.evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2); } catch { }
+    try { const ev2 = await nextWorker().evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
       const lc = await fetchLichess(preSans, false);
       const hit = lc && lc.moves && lc.moves.find((m) => stripSuffix(m.san) === stripSuffix(firstSan));
