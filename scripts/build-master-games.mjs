@@ -20,19 +20,27 @@
  * (v0.3.1 변경) 예전엔 포지션당 대표 게임을 TOP_K개(기본 5, 이후 20)로만 잘라 저장했는데,
  * Lichess 마스터 DB가 얕은 오프닝 수순 밖에서는 게임을 거의 안 내려주는 탓에 깊은
  * 포지션(오프닝 트리 노드의 92%)에서는 이 정적 데이터가 사실상 유일한 소스가 되고, 그
- * 결과 실제 매칭 대국 수와 무관하게 화면엔 항상 그 상한만큼만 표시됐다. 지금은 기본적으로
- * 상한 없이 각 노드에 매칭되는 게임을 전부 저장한다(화면 쪽은 처음 20개만 보여주고 페이지를
- * 넘기며 나머지를 계속 불러오는데, 이미 다운로드된 로컬 데이터라 추가 네트워크 요청 없이
- * 그대로 넘어간다 — `src/App.jsx`의 `MASTER_PAGE_SIZE`/`ListPager` 참고). 단, 이 상한이
- * 없다 보니 "e4"처럼 아주 얕은(대중적인) 노드는 매칭 대국이 수십만 건에 달할 수 있어 그런
- * 노드의 용량이 크게 늘어난다 — 필요하면 MAX_PER_NODE 환경변수로 다시 상한을 둘 수 있다.
+ * 결과 실제 매칭 대국 수와 무관하게 화면엔 항상 그 상한만큼만 표시됐다.
+ *
+ * 처음엔 상한을 아예 없애 봤는데(MAX_PER_NODE=0), 실제 pgnmentor.com 전체 데이터(480만
+ * 게임)로 돌려보니 "e4"·"d4"처럼 아주 얕은 노드가 유효 게임의 대부분(수백만 건)을 그대로
+ * 흡수해 버려 `games` 배열이 감당 안 되는 크기로 불어났고, 결국 `JSON.stringify`가
+ * `RangeError: Invalid string length`(V8 문자열 최대 길이 초과)로 터졌다 — "노드 수 ×
+ * 노드당 개수"로 크기를 제한한다는 이 스크립트의 원래 설계 전제 자체가 무제한에서는
+ * 깨진다. 그래서 기본값을 다시 상한이 있는 방식(MAX_PER_NODE=50)으로 되돌렸다 — 5보다
+ * 훨씬 넉넉해 "항상 5판" 문제는 해결되면서도, 전체 실행이 실패하지 않을 만큼은 작다. 화면
+ * 쪽은 처음 20개만 보여주고 페이지를 넘기며 나머지를 계속 불러오는데(`src/App.jsx`의
+ * `MASTER_PAGE_SIZE`/`ListPager`), 이미 다운로드된 로컬 데이터라 추가 네트워크 요청은
+ * 없다.
  *
  * 사용법:
  *   node scripts/build-master-games.mjs pgnmentor-games.ndjson [출력.json]
  *
  * 옵션(환경변수):
- *   MAX_PER_NODE=0   포지션(오프닝 트리 노드)당 저장할 게임 수 상한 — 레이팅 합 기준 상위
- *                    N개만 남긴다. 0(기본값)이면 상한 없이 매칭되는 게임을 전부 저장한다.
+ *   MAX_PER_NODE=50   포지션(오프닝 트리 노드)당 저장할 게임 수 상한(기본값) — 레이팅 합
+ *                     기준 상위 N개만 남긴다. 0으로 주면 상한 없이 전부 저장하려 시도하는데,
+ *                     위에 적은 이유로 전체 pgnmentor 데이터셋에서는 십중팔구 메모리 부족·
+ *                     RangeError로 실패한다 — 데이터 일부만 받아 테스트할 때가 아니면 쓰지 말 것.
  */
 import { createReadStream, writeFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -44,7 +52,7 @@ if (!inPath) {
   process.exit(1);
 }
 
-const MAX_PER_NODE = +(process.env.MAX_PER_NODE || 0); // 0 = 무제한
+const MAX_PER_NODE = +(process.env.MAX_PER_NODE || 50); // 0 = 무제한(위 헤더 주석 참고 — 전체 데이터셋에서는 비권장)
 
 const openings = JSON.parse(readFileSync("src/data/openings.json", "utf8"));
 const knownKeys = new Set(Object.keys(openings.tree).filter(Boolean)); // ""(시작 포지션)는 제외
