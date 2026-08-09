@@ -1765,6 +1765,10 @@ const SYM2KIND = [["??", "blunder"], ["?!", "inaccuracy"], ["!!", "brilliant"], 
 function splitSym(tok) { for (const [sym, kind] of SYM2KIND) { if (tok.endsWith(sym)) return { san: tok.slice(0, -sym.length), kind }; } return { san: tok, kind: null }; }
 let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, questChapters: {} };
 let CONTENT_SEEDED = false;
+// PGN Mentor "Openings" 카테고리(파일명 자체가 세부 변형 이름인 zip들)에서 뽑아낸 대표
+// 수순 — scripts/build-theory-book.mjs 로 생성. 각 항목 { moves:[san,...], name } 을
+// seedContent()에서 이론 수 체계(CONTENT.treeAdds/names)에 풀어 넣는다.
+const THEORY_BOOK = /*__THEORYBOOK__*/ [];
 function seedContent() {
   if (CONTENT_SEEDED) return; CONTENT_SEEDED = true;
   const addMove = (posKey, san, kind) => {
@@ -1795,6 +1799,20 @@ function seedContent() {
   addMove("e4 d5 exd5 Qxd5 Nc3", "Qa5"); addMove("e4 d5 exd5 Qxd5 Nc3", "Qd6"); addMove("e4 d5 exd5 Qxd5 Nc3", "Qd8");
   CONTENT.mainline["e4 d5|exd5"] = true; CONTENT.mainline["e4 d5 exd5|Qxd5"] = true; CONTENT.mainline["e4 d5 exd5 Qxd5|Nc3"] = true;
   if (!("e4 d5" in CONTENT.explains)) CONTENT.explains["e4 d5"] = "스칸디나비안 디펜스. 흑이 즉시 d5로 중앙을 교환해 빠른 전개를 노린다. 백은 2.exd5 후 퀸/나이트 회수 라인으로 분기.";
+  // PGN Mentor 마스터 게임 기반 이론 라인(THEORY_BOOK) 반영 — 각 라인을 한 수씩 훑으며
+  // addMove로 이론 등록하고, 마지막 수의 도착 위치에만 이름을 붙인다(중간 위치는 이미 다른
+  // 라인이 이름을 갖고 있을 수 있어 덮어쓰지 않음).
+  for (const entry of THEORY_BOOK) {
+    let posKey = "";
+    entry.moves.forEach((san, i) => {
+      addMove(posKey, san);
+      if (i === entry.moves.length - 1 && entry.name) {
+        const nk = posKey + "|" + san;
+        if (!(nk in CONTENT.names)) CONTENT.names[nk] = entry.name;
+      }
+      posKey = posKey ? posKey + " " + san : san;
+    });
+  }
   seedQuestChapters();
 }
 /* ============================================================ 메인 퀘스트 · CHAPTER (20차 기능4) ============================================================ */
