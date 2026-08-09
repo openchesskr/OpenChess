@@ -63,6 +63,8 @@ function insert(key, gi, rating) {
 
 const rl = createInterface({ input: createReadStream(inPath, "utf8"), crlfDelay: Infinity });
 
+let skippedRating = 0;
+
 rl.on("line", (line) => {
   if (!line) return;
   total++;
@@ -71,6 +73,17 @@ rl.on("line", (line) => {
   if (!g.moves) return;
   const moves = g.moves.split(" ");
   if (!moves.length) return;
+
+  // (데이터 품질) 실사용 표본에서 확인된 문제: 사람 대국인데 헤더가 깨져 BlackElo가 204269 같은
+  // 말도 안 되는 값으로 들어오거나(Events 폴더 일부 파일), TCEC 등 컴퓨터 엔진끼리의 대국이
+  // Elo 3900대로 섞여 들어온다. 실제 인간 최고 레이팅은 2900을 넘지 않으므로, 둘 중 하나라도
+  // 이 상한을 넘으면(엔진 대국이거나 헤더 손상) "마스터 대국"에서 아예 제외한다 — 그대로
+  // 두면 레이팅 합산 정렬에서 항상 1위를 차지해 진짜 GM 대국들을 밀어낸다.
+  const MAX_PLAUSIBLE_ELO = 2900;
+  if ((g.whiteElo && g.whiteElo > MAX_PLAUSIBLE_ELO) || (g.blackElo && g.blackElo > MAX_PLAUSIBLE_ELO)) {
+    skippedRating++;
+    return;
+  }
 
   const fp = fnv1a(`${g.white}|${g.black}|${g.date}|${g.result}|${moves.slice(0, 20).join(" ")}`);
   if (seen.has(fp)) { dup++; return; }
@@ -116,7 +129,7 @@ rl.on("close", () => {
 
   writeFileSync(outPath, JSON.stringify({ games: finalGames, index }));
   console.log(
-    `완료: 전체 ${total}건 중 유효 ${kept}건(중복 ${dup}건 제외), ` +
+    `완료: 전체 ${total}건 중 유효 ${kept}건(중복 ${dup}건, 레이팅 이상치 ${skippedRating}건 제외), ` +
     `오프닝 트리 노드 ${buckets.size}개(전체 ${knownKeys.size}개 중)에 매칭, ` +
     `유니크 게임 ${finalGames.length}개 → ${outPath}`
   );
