@@ -2,12 +2,17 @@
 /**
  * fetch-pgnmentor.mjs — pgnmentor.com에서 받은 다운로드 URL 목록(json)을 읽어
  * 전부 내려받고(zip은 압축 해제, pgn은 그대로), 게임 단위로 파싱해서
- * 하나의 JSON 배열로 합친다. 이 환경(샌드박스)은 pgnmentor.com 접속이 네트워크
- * 정책으로 막혀 있어서, 이 스크립트는 사용자가 로컬 PC에서 직접 실행해야 한다.
+ * NDJSON(한 줄에 게임 하나)으로 흘려쓴다. 이 환경(샌드박스)은 pgnmentor.com 접속이
+ * 네트워크 정책으로 막혀 있어서, 이 스크립트는 사용자가 로컬 PC에서 직접 실행해야 한다.
+ *
+ * (메모리 이슈 수정) 실제 데이터량이 수십만 게임 규모라, 전체를 배열에 모았다가
+ * 마지막에 한 번에 JSON.stringify 하면 힙이 터진다(직렬화 시점에 원본+문자열이 동시에
+ * 메모리에 떠서 사실상 두 배). 그래서 파일 하나 처리할 때마다 게임을 즉시 출력
+ * 스트림에 한 줄씩 써서 흘려보내고 버린다 — 어떤 시점에도 메모리엔 파일 하나 분량만 있다.
  *
  * 사용법:
  *   npm install                     # adm-zip 등 devDependencies 설치
- *   node scripts/fetch-pgnmentor.mjs pgnmentor-urls.json [출력파일.json]
+ *   node scripts/fetch-pgnmentor.mjs pgnmentor-urls.json [출력파일.ndjson]
  *
  * 옵션(환경변수):
  *   CONCURRENCY=4        동시 다운로드 개수
@@ -15,17 +20,20 @@
  *   PGNMENTOR_COOKIE=""   다운로드가 로그인(유료 회원) 세션을 요구할 경우, 브라우저
  *                         개발자도구 Network 탭에서 zip 요청의 Cookie 헤더 값을 복사해 지정
  *
+ * 출력 형식: NDJSON — 한 줄에 게임 객체 하나(JSON.parse per line). 큰 배열 하나로
+ * 만들지 않는 이유도 위와 같다(읽는 쪽도 통째로 파싱하면 다시 터진다).
+ *
  * 재실행 시 .pgnmentor-cache/ 에 이미 받아둔 원본 파일은 다시 받지 않는다 — 중간에
  * 실패해도 CONCURRENCY·네트워크 문제로 처음부터 다시 받을 필요가 없다.
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, createWriteStream } from "node:fs";
 import { join } from "node:path";
 import AdmZip from "adm-zip";
 
 const urlsPath = process.argv[2];
-const outPath = process.argv[3] || "pgnmentor-games.json";
+const outPath = process.argv[3] || "pgnmentor-games.ndjson";
 if (!urlsPath) {
-  console.error("사용법: node scripts/fetch-pgnmentor.mjs <urls.json> [출력.json]");
+  console.error("사용법: node scripts/fetch-pgnmentor.mjs <urls.json> [출력.ndjson]");
   process.exit(1);
 }
 
@@ -98,7 +106,10 @@ function extractCategory(url) {
   return m ? m[1].toLowerCase() : "other";
 }
 
-function processFile(filePath, sourceUrl) {
+// moves는 배열이 아니라 공백으로 이어붙인 문자열로 저장한다 — 게임 수십만 건 규모에서
+// 토큰 하나하나가 별도 JS 문자열 객체가 되면(배열) 오버헤드가 커서 메모리·용량을 크게 먹는다.
+// 필요할 때 parsePgnSans(움직임문자열)로 다시 토큰화하면 되므로 정보 손실은 없다.
+function* processFile(filePath, sourceUrl) {
   let pgnText;
   if (sourceUrl.toLowerCase().endsWith(".zip")) {
     const zip = new AdmZip(filePath);
@@ -111,12 +122,11 @@ function processFile(filePath, sourceUrl) {
     pgnText = readFileSync(filePath, "utf8");
   }
   const category = extractCategory(sourceUrl);
-  const games = [];
   for (const block of splitGames(pgnText)) {
     const headers = parseHeaders(block);
     const moves = parsePgnSans(block);
     if (!moves.length) continue;
-    games.push({
+    yield {
       white: headers.White || null,
       black: headers.Black || null,
       whiteElo: headers.WhiteElo ? +headers.WhiteElo : null,
@@ -125,18 +135,25 @@ function processFile(filePath, sourceUrl) {
       date: headers.Date || null,
       result: headers.Result || null,
       eco: headers.ECO || null,
-      moves,
+      moves: moves.join(" "),
       category,
-    });
+    };
   }
-  return games;
+}
+
+function writeLine(stream, obj) {
+  const chunk = JSON.stringify(obj) + "\n";
+  const ok = stream.write(chunk);
+  if (ok) return Promise.resolve();
+  return new Promise((resolve) => stream.once("drain", resolve));
 }
 
 async function main() {
   console.log(`총 ${urls.length}개 파일 처리 시작 (동시성 ${CONCURRENCY}, 딜레이 ${DELAY_MS}ms)`);
   const queue = [...urls];
-  const allGames = [];
   const failed = [];
+  const out = createWriteStream(outPath, { flags: "w" });
+  let gameCount = 0;
   let done = 0;
 
   async function worker() {
@@ -144,22 +161,25 @@ async function main() {
       const url = queue.shift();
       try {
         const filePath = await downloadOne(url);
-        allGames.push(...processFile(filePath, url));
+        for (const game of processFile(filePath, url)) {
+          await writeLine(out, game);
+          gameCount++;
+        }
       } catch (e) {
         failed.push({ url, error: String((e && e.message) || e) });
       }
       done++;
       if (done % 20 === 0 || done === urls.length) {
-        console.log(`진행: ${done}/${urls.length} (누적 게임 ${allGames.length}개)`);
+        console.log(`진행: ${done}/${urls.length} (누적 게임 ${gameCount}개)`);
       }
       await sleep(DELAY_MS);
     }
   }
 
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  await new Promise((resolve) => out.end(resolve));
 
-  writeFileSync(outPath, JSON.stringify(allGames));
-  console.log(`완료: 게임 ${allGames.length}개 → ${outPath}`);
+  console.log(`완료: 게임 ${gameCount}개 → ${outPath} (NDJSON, 한 줄에 게임 하나씩)`);
   if (failed.length) {
     writeFileSync("pgnmentor-failed.json", JSON.stringify(failed, null, 2));
     console.log(`실패 ${failed.length}개 → pgnmentor-failed.json (원인 확인 후 그 목록만 다시 돌리면 됨)`);
