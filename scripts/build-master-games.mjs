@@ -2,13 +2,21 @@
 /**
  * build-master-games.mjs — fetch-pgnmentor.mjs가 만든 거대한 NDJSON(수백만 게임)을
  * 스트리밍으로 읽어, src/data/openings.json 에 이미 있는 오프닝 포지션(수순 접두사)에
- * 맞춰 대표 게임 몇 개만 골라 작은 인덱스로 압축한다.
+ * 맞춰 대표 게임 몇 개만 골라 작은 인덱스로 압축한다. src/App.jsx의 "마스터 대국"
+ * 목록(fetchAllMasterGames)에 Lichess 마스터 DB·개발자 추가분과 함께 구분 없이
+ * 합쳐질 세 번째 소스로 쓰인다.
  *
  * 원본을 통째로 쓰지 않는 이유: 480만 게임 전체를 포지션별로 나누면(임의의 수순 접두사
  * 기준) 사실상 거의 모든 접두사가 유일해서(전술집·이벤트 게임 등은 "이론"과 무관하게
  * 갈라짐) 축소가 안 되고 오히려 커진다. 대신 refresh-data.mjs가 이미 만들어 둔, 실제로
  * 자주 채택돼 이름이 붙은 오프닝 트리의 노드(4천여 개)에만 게임을 매칭시켜, 결과 크기를
  * "포지션 수 × 포지션당 보관 개수"로 확실히 제한한다.
+ *
+ * 출력 형식(정규화): { games: [{white,black,whiteElo,blackElo,event,date,result,eco,moves}],
+ * index: { "e4 e5": [게임 인덱스, ...] } }. 인덱스 배열에 게임 전체를 복사하지 않고
+ * games 배열의 인덱스만 담는 이유 — 같은 고레이팅 게임(예: 유명 GM 대국)이 자기 자신의
+ * 수순을 따라가는 여러 포지션(노드)에서 동시에 상위 K에 들 수 있어, 복사해 넣으면(특히
+ * moves 필드까지 포함하면) 같은 큰 문자열이 수십 번 중복 저장돼 용량이 크게 부풀었다.
  *
  * 사용법:
  *   node scripts/build-master-games.mjs pgnmentor-games.ndjson [출력.json]
@@ -40,15 +48,16 @@ function fnv1a(str) {
   return h >>> 0;
 }
 
-const seen = new Set();
-const buckets = new Map(); // key -> [{white,black,whiteElo,blackElo,event,date,result,eco,_rating}]
-let total = 0, kept = 0, dup = 0, matched = 0;
+const seen = new Set();       // 중복 게임 지문
+const games = [];             // 유니크 게임 원본(전체, moves 포함) — 인덱스가 곧 id
+const buckets = new Map();    // key -> [{gi, rating}] (rating 내림차순, 최대 TOP_K)
+let total = 0, kept = 0, dup = 0;
 
-function insert(key, game) {
+function insert(key, gi, rating) {
   let bucket = buckets.get(key);
   if (!bucket) { bucket = []; buckets.set(key, bucket); }
-  bucket.push(game);
-  bucket.sort((a, b) => b._rating - a._rating);
+  bucket.push({ gi, rating });
+  bucket.sort((a, b) => b.rating - a.rating);
   if (bucket.length > TOP_K) bucket.length = TOP_K;
 }
 
@@ -69,29 +78,46 @@ rl.on("line", (line) => {
   kept++;
 
   const rating = (g.whiteElo || 0) + (g.blackElo || 0);
-  const game = { white: g.white, black: g.black, whiteElo: g.whiteElo, blackElo: g.blackElo, event: g.event, date: g.date, result: g.result, eco: g.eco, _rating: rating };
+  let gi = -1; // 이 게임이 실제로 어느 노드든 top-K에 들 때만 games 배열에 등록(아래에서 지연 등록)
 
   const maxLen = Math.min(moves.length, openings.maxPly || 20);
   for (let ply = 1; ply <= maxLen; ply++) {
     const key = moves.slice(0, ply).join(" ");
     if (!knownKeys.has(key)) continue;
-    matched++;
-    insert(key, game);
+    const bucket = buckets.get(key);
+    // 이미 TOP_K가 채워져 있고 이 게임 레이팅이 최하위보다도 낮으면, games 배열 등록조차
+    // 필요 없다(스캔 대상 노드가 매우 많아 이 체크가 성능에 크게 기여한다).
+    if (bucket && bucket.length >= TOP_K && rating <= bucket[bucket.length - 1].rating) continue;
+    if (gi === -1) {
+      gi = games.length;
+      games.push({ white: g.white, black: g.black, whiteElo: g.whiteElo, blackElo: g.blackElo, event: g.event, date: g.date, result: g.result, eco: g.eco, moves: g.moves });
+    }
+    insert(key, gi, rating);
   }
 
   if (total % 300000 === 0) {
-    console.log(`처리 ${total}건 (유효 ${kept}, 중복 ${dup}, 매칭된 포지션 ${buckets.size}개)`);
+    console.log(`처리 ${total}건 (유효 ${kept}, 중복 ${dup}, 매칭된 포지션 ${buckets.size}개, 후보 게임 ${games.length}개)`);
   }
 });
 
 rl.on("close", () => {
-  const out = {};
+  // 마지막에 top-K 밀려나 어떤 버킷에도 안 남은 게임이 있을 수 있어(뒤에 더 레이팅 높은
+  // 게임이 그 자리를 밀어낸 경우), 실제로 참조되는 게임만 남기고 인덱스를 재배치한다.
+  const used = new Set();
+  for (const bucket of buckets.values()) for (const { gi } of bucket) used.add(gi);
+  const remap = new Map();
+  const finalGames = [];
+  for (const gi of used) { remap.set(gi, finalGames.length); finalGames.push(games[gi]); }
+
+  const index = {};
   for (const [key, bucket] of buckets) {
-    out[key] = bucket.map(({ _rating, ...rest }) => rest);
+    index[key] = bucket.map(({ gi }) => remap.get(gi));
   }
-  writeFileSync(outPath, JSON.stringify(out));
+
+  writeFileSync(outPath, JSON.stringify({ games: finalGames, index }));
   console.log(
     `완료: 전체 ${total}건 중 유효 ${kept}건(중복 ${dup}건 제외), ` +
-    `오프닝 트리 노드 ${buckets.size}개(전체 ${knownKeys.size}개 중)에 게임 매칭 → ${outPath}`
+    `오프닝 트리 노드 ${buckets.size}개(전체 ${knownKeys.size}개 중)에 매칭, ` +
+    `유니크 게임 ${finalGames.length}개 → ${outPath}`
   );
 });

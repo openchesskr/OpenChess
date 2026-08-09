@@ -1224,13 +1224,48 @@ async function fetchDevMasterGames(sans) {
       year: r.year,
     }));
 }
-// Lichess 마스터 DB + 개발자 추가분을 한 목록으로 합친다 — 화면(FocusPanel)에서 출처를 구분하지 않는다.
+// (기능) PGN Mentor(선수/이벤트/오프닝 zip)에서 뽑아낸 정적 마스터 대국 — scripts/build-master-games.mjs로
+// public/master-games.json 생성. Lichess 마스터 DB 표본이 적은 포지션을 보충하려고 만들었지만,
+// 지금은 "출처 구분 없이 항상 합쳐서 보여주기"로 정해서 매번 Lichess·개발자 추가분과 함께 합친다.
+// 최초 1회만 fetch해서 메모리에 캐싱 — 파일이 몇 MB급이라 초기 번들에는 안 넣고 마스터 대국을
+// 처음 조회할 때만 지연 로드한다.
+const PGNMENTOR_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
+let pgnMentorGamesData = null;
+let pgnMentorLoadPromise = null;
+function loadPgnMentorGames() {
+  if (pgnMentorGamesData) return Promise.resolve(pgnMentorGamesData);
+  if (!pgnMentorLoadPromise) {
+    pgnMentorLoadPromise = fetch(PGNMENTOR_BASE + "master-games.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { pgnMentorGamesData = d; return d; })
+      .catch(() => null);
+  }
+  return pgnMentorLoadPromise;
+}
+// index는 build-master-games.mjs가 openings.json 트리 노드 키(수순을 공백으로 이은 문자열)로
+// 정확히 매칭해 둔 것이라, 여기서도 같은 방식(체크/메이트 기호 보존한 san 그대로)으로 조회한다.
+function pgnMentorGamesFor(sans, data) {
+  if (!data) return [];
+  const key = sans.join(" ");
+  const idxs = data.index[key];
+  if (!idxs || !idxs.length) return [];
+  return idxs.map((gi) => {
+    const g = data.games[gi];
+    const winner = g.result === "1-0" ? "white" : g.result === "0-1" ? "black" : null;
+    const year = g.date ? parseInt(g.date.slice(0, 4), 10) : null;
+    return { id: "pgnm_" + gi, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null };
+  });
+}
+// Lichess 마스터 DB + 개발자 추가분 + PGN Mentor 정적 데이터를 한 목록으로 합친다 —
+// 화면(FocusPanel)에서 출처를 구분하지 않는다.
 async function fetchAllMasterGames(sans, count = 15) {
-  const [lichess, dev] = await Promise.all([
+  const [lichess, dev, pgnMentorData] = await Promise.all([
     fetchMasterTopGames(sans, count).catch(() => []),
     fetchDevMasterGames(sans).catch(() => []),
+    loadPgnMentorGames(),
   ]);
-  return [...dev, ...lichess];
+  const pgnMentor = pgnMentorGamesFor(sans, pgnMentorData);
+  return [...dev, ...pgnMentor, ...lichess];
 }
 // PGN 안에 명시된 결과 토큰("1-0"/"0-1"/"1/2-1/2"/"*")을 찾는다(없으면 null).
 function pgnResultToken(pgn) {
@@ -1320,6 +1355,12 @@ async function fetchAnyMasterGamePgn(id) {
     const rows = await sbSelect("master_games_dev?id=eq." + id.slice(4) + "&select=sans&limit=1");
     if (!rows || !rows[0]) throw new Error("not-found");
     return rows[0].sans;
+  }
+  if (typeof id === "string" && id.startsWith("pgnm_")) {
+    const data = await loadPgnMentorGames();
+    const g = data && data.games[+id.slice(5)];
+    if (!g) throw new Error("not-found");
+    return g.moves.split(" ");
   }
   return fetchMasterGamePgn(id);
 }
