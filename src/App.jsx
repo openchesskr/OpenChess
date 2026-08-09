@@ -4403,7 +4403,12 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     };
     const adopt = (m) => (m.adopt != null ? m.adopt : (m.games != null ? m.games : -Infinity));
     const rank = sortBy === "adopt" ? adopt : ev;
-    const books = t.filter((m) => m.book);
+    // (버그 수정) 예전엔 이론 수(book)를 정렬 대상에서 아예 빼고 고정 순서로 뒀다 — 그래서 라이브
+    // 분석 depth가 깊어지며 각 수의 평가치(m.live)가 계속 바뀌어도(화면엔 숫자만 갱신됨) 이론 수
+    // 블록의 순서는 절대 움직이지 않아 "정렬되지 않고 멈춘 것처럼" 보였다. 이론 수도 똑같이 rank로
+    // 정렬해, depth가 바뀔 때마다 이론 수 블록도 함께 순위를 다시 매기고(FadeIn layout이 그 이동을
+    // 애니메이션으로 보여준다) — 이론 수 묶음이 비이론 수보다 항상 먼저 온다는 것만 유지한다.
+    const books = t.filter((m) => m.book).sort((a, b) => rank(b) - rank(a));
     const nonbooks = t.filter((m) => !m.book).sort((a, b) => rank(b) - rank(a));
     return [...books, ...nonbooks];
   }, [moves, ply, board, key, contentVer, sortBy, liveOn, engine && engine.status]);
