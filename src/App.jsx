@@ -3421,6 +3421,55 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const tx = (r, c) => (flip ? [7 - r, 7 - c] : [r, c]);
   const px = (r, c) => { const [vr, vc] = flip ? [7 - r, 7 - c] : [r, c]; return [vc * cell + cell / 2, vr * cell + cell / 2]; };
   const targetSet = new Set(legalTargets.map(([r, c]) => r + "," + c));
+  // (v0.3.0 기능) 모바일 드래그 무브 — 기물의 draggable(네이티브 HTML5 드래그)은 터치에서 아예
+  // 동작하지 않는다(dragstart/drop 이벤트가 터치로는 발생하지 않음). 그래서 지금까지 모바일에서는
+  // 탭으로 선택 → 탭으로 목적지 지정만 가능했다. 마우스·터치·펜을 모두 아우르는 Pointer Events로
+  // 직접 드래그를 구현해, 기물을 손가락으로 집어 옮기는 제스처를 desktop 마우스 드래그와 동일하게
+  // onPieceDrag/onDrop 콜백으로 연결한다(호출부는 손댈 필요 없음 — 기존 prop 그대로 재사용).
+  const gridRef = useRef(null);
+  const dragStartRef = useRef(null);       // { r, c, x, y } — pointerdown 시점
+  const suppressClickRef = useRef(false);  // 드래그가 실제로 일어났으면 뒤이어 오는 합성 click을 무시
+  const [ptrDrag, setPtrDrag] = useState(null); // { r, c, x, y } — 드래그 임계값을 넘겼을 때만 채워짐(고스트 표시용)
+  const DRAG_THRESHOLD = 5;
+  const squareFromClient = (clientX, clientY) => {
+    const el = gridRef.current; if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const relX = (clientX - rect.left) / rect.width, relY = (clientY - rect.top) / rect.height;
+    if (relX < 0 || relX >= 1 || relY < 0 || relY >= 1) return null;
+    const vc = Math.min(7, Math.max(0, Math.floor(relX * 8))), vr = Math.min(7, Math.max(0, Math.floor(relY * 8)));
+    return flip ? [7 - vr, 7 - vc] : [vr, vc];
+  };
+  const onPiecePointerDown = (e, r, c) => {
+    if (!interactive || !onPieceDrag) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+    dragStartRef.current = { r, c, x: e.clientX, y: e.clientY };
+    onPieceDrag([r, c]);
+  };
+  const onPiecePointerMove = (e) => {
+    const d = dragStartRef.current; if (!d) return;
+    e.preventDefault();
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!ptrDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return; // 임계값 전엔 탭일 수도 있으니 아직 고스트를 안 띄운다
+    setPtrDrag({ r: d.r, c: d.c, x: e.clientX, y: e.clientY });
+  };
+  const endPiecePointerDrag = (e, drop) => {
+    const d = dragStartRef.current;
+    const wasDragging = !!ptrDrag;
+    dragStartRef.current = null;
+    setPtrDrag(null);
+    if (!d) return;
+    if (drop && wasDragging) {
+      suppressClickRef.current = true;   // 실제로 옮긴 드래그 뒤에 따라오는 합성 click(재선택처럼 보임) 무시
+      const target = squareFromClient(e.clientX, e.clientY);
+      onDrop && onDrop(target || [d.r, d.c]);   // 보드 바깥에 놓으면 제자리(불법 수 취급 → 취소)로
+    }
+    // 임계값을 못 넘긴 단순 탭이면 onDrop을 부르지 않는다 — pointerdown의 onPieceDrag가 이미
+    // 선택 상태를 만들어 뒀으므로(기존 탭-선택과 동일한 효과), 그대로 두면 충분하다.
+  };
+  const onPiecePointerUp = (e) => endPiecePointerDrag(e, true);
+  const onPiecePointerCancel = (e) => endPiecePointerDrag(e, false);
   return (
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
       {showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}
@@ -3434,7 +3483,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           비율이 달라진 상자에 맞춰 늘어나며 왜곡됐다(바다 스킨처럼 이어진 이미지 텍스처에서 특히 눈에
           띔). aspectRatio:"1/1"인 CSS 그리드로 바꾸면 실제 렌더링 폭이 얼마로 계산되든 높이가 항상
           똑같이 따라가 칸이 항상 정사각형으로 유지된다. */}
-      <div style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+      <div ref={gridRef} style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
         {isGmBoard && <div className="gm-board-shine" aria-hidden="true" />}
         {rows.map((row, ri) => row.map((p, ci) => {
           const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
@@ -3443,9 +3492,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           const coordCol = sk.image ? "rgba(255,255,255,.9)" : (light ? sk.dark : sk.light);
           return (
             <div key={ri + "_" + ci}
-              onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
-              onDragOver={interactive ? (e) => e.preventDefault() : undefined}
-              onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
+              onClick={interactive && onSquareClick ? () => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } onSquareClick([r, c]); } : undefined}
               // (버그 수정) 기물을 하단(받침 기준) 정렬했더니, 폰처럼 짧은 기물은 칸 위쪽에 큰 빈
               // 공간이 남아 정중앙이 아니라 아래로 치우쳐 보였다(특히 바다 스킨처럼 기물 높이 편차가
               // 큰 스킨에서 두드러짐) — 모든 기물을 칸의 실제 정중앙에 오도록 되돌린다.
@@ -3491,10 +3538,38 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
               {/* (버그 수정) 움직여야 할 기물이 옆으로 미끄러지듯(translateX) 흔들려 부자연스러웠다 —
                   마치 기물 윗부분을 손으로 잡고 흔드는 것처럼, 아래쪽(받침)을 축으로 각도만 조금씩
                   바뀌며 흔들리도록 lineShake(좌우 이동) 대신 새 hintPieceWobble(회전)로 바꿨다. */}
-              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", transformOrigin: "50% 90%", animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />}
+              {/* (v0.3.0 기능) 네이티브 draggable 대신 이 래핑 div에 Pointer Events를 달아 마우스·터치
+                  모두에서 드래그가 동작하게 한다 — touchAction:"none"이 없으면 터치에서 손가락을
+                  움직이는 순간 브라우저가 페이지 스크롤로 먼저 채가서 드래그 제스처가 아예 시작되지
+                  않는다. 드래그 중인 기물은 살짝 옅게 만들고, 실제 기물은 아래 고스트로 대신 보여준다. */}
+              {p && (
+                <div
+                  onPointerDown={interactive && onPieceDrag ? (e) => onPiecePointerDown(e, r, c) : undefined}
+                  onPointerMove={interactive && onPieceDrag ? onPiecePointerMove : undefined}
+                  onPointerUp={interactive && onPieceDrag ? onPiecePointerUp : undefined}
+                  onPointerCancel={interactive && onPieceDrag ? onPiecePointerCancel : undefined}
+                  style={{ display: "flex", touchAction: interactive && onPieceDrag ? "none" : undefined }}>
+                  <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", transformOrigin: "50% 90%", opacity: ptrDrag && ptrDrag.r === r && ptrDrag.c === c ? 0.25 : 1, animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />
+                </div>
+              )}
             </div>
           );
         }))}
+        {/* (v0.3.0 기능) 드래그 중인 기물을 손가락/커서 위치를 따라다니는 고스트로 보여준다 — 그리드
+            div(position:relative, overflow:visible) 안에 절대 위치로 그려 fixed-positioning이 조상의
+            transform 때문에 어긋나는(흔한 CSS 함정) 문제를 피한다. 손가락에 가려 안 보이지 않도록
+            칸 절반 높이만큼 위로 띄운다. */}
+        {ptrDrag && gridRef.current && (() => {
+          const gp = board[ptrDrag.r][ptrDrag.c];
+          if (!gp) return null;
+          const rect = gridRef.current.getBoundingClientRect();
+          const gx = ptrDrag.x - rect.left, gy = ptrDrag.y - rect.top - cell * 0.5;
+          return (
+            <div style={{ position: "absolute", left: gx, top: gy, transform: "translate(-50%,-50%)", zIndex: 20, pointerEvents: "none", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.5))" }}>
+              <PieceGlyph type={gp.t} color={gp.c} size={cell * 0.86} pieceSkin={effPieceSkin} />
+            </div>
+          );
+        })()}
         {/* (17차) 화살표 끝이 칸 중앙에서 어긋나던 문제 — 픽셀 좌표(cell 값) 대신 보드 칸 단위(0~8)의
             논리 좌표계를 viewBox로 선언해, 실제 렌더링 크기(반응형 축소 등)와 무관하게 항상 정확히 칸
             중앙을 가리키도록 한다. */}
