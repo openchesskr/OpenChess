@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "refresh": "node scripts/refresh-data.mjs",
+    "list-pgnmentor-urls": "node scripts/list-pgnmentor-urls.mjs",
     "fetch-pgnmentor": "node scripts/fetch-pgnmentor.mjs",
     "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs"
   },
