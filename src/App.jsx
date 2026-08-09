@@ -15062,7 +15062,10 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
   // 항상 검증된 pending.username을 신뢰하고, cc.trim()은 pending이 비어 있는 이론상의 경우에만 대체값으로 쓴다.
   // (20차 UX3) 연동/재연동 시점을 기록해 30일 쿨다운의 기준으로 삼는다.
   const confirmLink = () => { setProfile({ ...profile, chesscom: (pending && pending.username) || cc.trim(), chesscomChangedAt: Date.now() }); setPending(null); };
-  const chesscomChangeBypass = isDev && devOn;
+  // (버그 수정) 공동 개발자 모드에서도 "공동 개발자 임명" 권한만 빼고 개발자와 동일한 모든 권한을
+  // 쓸 수 있어야 하는데, 이 bypass는 isDev && devOn으로만 걸려 있어 공동 개발자는 chess.com 계정
+  // 변경 30일 쿨다운을 그대로 적용받고 있었다 — 공동 개발자 모드에서도 우회하도록 조건을 넓힌다.
+  const chesscomChangeBypass = (isDev && devOn) || (isCodev && codevOn);
   const chesscomDaysLeft = chesscomChangeBypass ? 0 : chesscomChangeDaysLeft(profile.chesscomChangedAt);
   const changeChesscom = () => { if (chesscomDaysLeft > 0) return; setProfile({ ...profile, chesscom: "" }); setCc(""); setCcState("idle"); };
   const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8", marginTop: 14 };
@@ -15108,7 +15111,9 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
 
       {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
           않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
-      {isDev && devOn && <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={card} />}
+      {/* (버그 수정) 공동 개발자도 임명 권한 외에는 개발자와 동일한 권한을 써야 하므로, 자원 조정
+          패널도 공동 개발자 모드에서 함께 보여준다. */}
+      {((isDev && devOn) || (isCodev && codevOn)) && <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={card} />}
       {canEdit && <DailyPuzzleDevPanel card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
@@ -18261,7 +18266,9 @@ export default function App() {
   const [ticketBlockedOpen, setTicketBlockedOpen] = useState(false);
   const openReview = useCallback((game) => {
     if (!game || !game.sans || !game.sans.length) return;
-    const bypass = isDev && devOn;
+    // (버그 수정) devUnlockAll과 같은 결로 공동 개발자 모드도 포함하도록 — 임명 권한만 빼고
+    // 개발자와 동일하게 리뷰 티켓 시스템을 건너뛴다.
+    const bypass = devUnlockAll;
     if (!bypass) {
       const key = reviewGameKey(game);
       if (key && !reviewUnlocked.has(key)) {
@@ -18276,7 +18283,7 @@ export default function App() {
     // 닫으면(뒤로가기) 곧장 그 경로로 되돌아간다.
     setReviewGame(game);
     try { if (window.location.pathname !== "/review") window.history.pushState({ review: true }, "", "/review"); } catch { }
-  }, [isDev, devOn, reviewUnlocked, reviewTickets]);
+  }, [devUnlockAll, reviewUnlocked, reviewTickets]);
   const closeReview = useCallback(() => {
     setReviewGame(null);
     try { if (window.location.pathname === "/review") window.history.back(); } catch { }
