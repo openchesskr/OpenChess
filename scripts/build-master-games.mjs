@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * build-master-games.mjs — fetch-pgnmentor.mjs가 만든 거대한 NDJSON(수백만 게임)을
+ * build-master-games.mjs — fetch-external-games.mjs가 만든 거대한 NDJSON(수백만 게임)을
  * 스트리밍으로 읽어, src/data/openings.json 에 이미 있는 오프닝 포지션(수순 접두사)에
  * 맞춰 대표 게임 몇 개만 골라 작은 인덱스로 압축한다. src/App.jsx의 "마스터 대국"
  * 목록(fetchAllMasterGames)에 Lichess 마스터 DB·개발자 추가분과 함께 구분 없이
@@ -19,7 +19,7 @@
  * moves 필드까지 포함하면) 같은 큰 문자열이 수십 번 중복 저장돼 용량이 크게 부풀었다.
  *
  * 사용법:
- *   node scripts/build-master-games.mjs pgnmentor-games.ndjson [출력.json]
+ *   node scripts/build-master-games.mjs external-games.ndjson [출력.json]
  *
  * 옵션(환경변수):
  *   TOP_K=5   포지션(오프닝 트리 노드)당 남길 대표 게임 수 — 레이팅 합 기준 상위 K개
