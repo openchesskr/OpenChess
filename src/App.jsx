@@ -1142,8 +1142,15 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
     const isUserTurn = depth % 2 === 0;
     let cands = await puzzleCandidatesAt(nextWorker(), cur);
     if (!cands || !cands.length) return [];
-    // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음)
-    if (depth >= 1 || firstSan) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));
+    // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음).
+    // (v0.3.0 버그 수정) 이 필터가 상대 응수(!isUserTurn)에도 그대로 걸려 있었다 — 트레이니의
+    // 두 번째 이후 수가 "그냥 기물 전개"라 배울 게 없다는 취지인데, depth>=1이 상대 차례에도
+    // 참이라 실제로는 "상대의 최선(또는 유일한) 응수가 하필 마이너 기물을 홈스퀘어에서 움직이는
+    // 수"인 경우(체크에 대응해 기물을 처음 전개시켜 막는 흔한 상황 등)에도 그 응수가 통째로
+    // 걸러졌다. 남은 후보 중 최상위가 무조건 plausible[0]으로 채택되니, 진짜 최선 응수가
+    // 사라지고 훨씬 나쁜(때론 블런더급) 수만 유일한 갈래로 남는 원인이었다 — 이 필터는
+    // 사용자 차례에만 적용한다.
+    if (isUserTurn && (depth >= 1 || firstSan)) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));
     if (!cands.length) return [];
     const canBranch = nodeCount + 2 < maxNodes;
     let chosen;
@@ -10025,6 +10032,32 @@ function extendPuzzleLeaf(tree, preSans, leafPath, sanRaw, seedSeq) {
   leaf.children = [child];
   return { tree: clone, seq };
 }
+// (v0.3.0 기능) 개발자 전용 — 이미 갈래가 있는 노드(주로 상대 응수)에 형제 갈래를 하나 더 추가한다.
+// extendPuzzleLeaf(리프에 다음 수를 잇는 것)와 달리, 기존 children은 하나도 건드리지 않고 그
+// 배열에 새 자식만 덧붙인다. cand는 puzzleCandidatesAt이 이미 계산해 둔 { san, kind, ev, adopt }를
+// 그대로 받는다(추가 엔진 호출 없음) — 자동 생성(genPuzzleTree)의 isDevelopingMove 필터 등에 걸려
+// 사라진, 실제로는 멀쩡한 응수를 다시 채워 넣는 용도. parentPath.length가 홀수면(=사용자가 방금
+// 수를 둔 자리) 새로 추가하는 자식은 상대 응수이므로 pass는 항상 true, 태그는 붙지 않는다(라인은
+// 항상 사용자 수로 끝나야 하므로) — extendPuzzleLeaf와 동일한 규칙.
+function addSiblingBranch(tree, parentPath, cand, seedSeq) {
+  const clone = cloneTree(tree);
+  const parent = parentPath.length ? findTreeNode(clone, parentPath) : clone;
+  if (!parent) return { error: "위치를 찾을 수 없습니다." };
+  const key = stripSuffix(cand.san);
+  if ((parent.children || []).some((c) => stripSuffix(c.san) === key)) return { error: "이미 있는 수입니다." };
+  const depth = parentPath.length;
+  const isUserTurn = depth % 2 === 0;
+  const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(cand.kind) : true;
+  const child = { san: cand.san, kind: cand.kind ?? null, ev: cand.ev ?? null, adopt: cand.adopt ?? null, pass, children: [] };
+  let seq = seedSeq || 0;
+  if (pass) {
+    const isValidTerminus = (depth + 1) % 2 === 1;
+    if (isValidTerminus) { const r = nextLeafTag(clone, seedSeq); child.tag = r.tag; seq = r.seq; }
+  }
+  if (!parent.children) parent.children = [];
+  parent.children.push(child);
+  return { tree: clone, seq };
+}
 // (20차 기능3) 개발자 전용 — 라인의 마지막 수를 하나씩 삭제해 그 라인을 한 수 짧게 만든다. 실수로
 // 라인 전체가 한 번에 사라지지 않도록, 한 번에 정확히 한 수만(그 리프 자신) 지운다. 삭제 후 남는
 // 마지막 지점이 사용자 수(홀수 길이)로 끝나면 새 고유 태그를 부여해 다시 완결된 라인이 되고,
@@ -10821,7 +10854,7 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, celebrateTag, shakeTag }) {
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag }) {
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
@@ -11036,6 +11069,35 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     setDelBusyKey(null);
     if (errMsg) setDelErrKey({ key: it.key, msg: errMsg });
   };
+  // (v0.3.0 기능) 개발자 전용 — 상대 응수 노드에 형제 갈래(다른 응수 선택지)를 추가한다. 열면
+  // onSuggestSiblings가 그 자리에서 자동 생성이 실제로 봤던 후보 목록(필터로 걸러졌던 것 포함)을
+  // 다시 불러온다 — 골라서 누르면 바로 추가되고, 목록에 없는 수는 직접 입력할 수도 있다.
+  const [siblingAt, setSiblingAt] = useState(null);   // path|null
+  const [siblingCands, setSiblingCands] = useState(null); // null=불러오는 중
+  const [siblingManualSan, setSiblingManualSan] = useState("");
+  const [siblingErr, setSiblingErr] = useState("");
+  const [siblingBusy, setSiblingBusy] = useState(false);
+  const openSibling = async (path) => {
+    setSiblingAt(path); setSiblingCands(null); setSiblingErr(""); setSiblingManualSan("");
+    const cands = await onSuggestSiblings(path);
+    setSiblingCands(cands || []);
+  };
+  const pickSibling = async (cand) => {
+    if (siblingBusy) return;
+    setSiblingBusy(true);
+    const errMsg = await onAddSibling(siblingAt, cand);
+    setSiblingBusy(false);
+    if (errMsg) { setSiblingErr(errMsg); return; }
+    setSiblingAt(null);
+  };
+  const submitManualSibling = async () => {
+    const san = siblingManualSan.trim(); if (!san || siblingBusy) return;
+    setSiblingBusy(true);
+    const errMsg = await onAddSibling(siblingAt, { san, manual: true });
+    setSiblingBusy(false);
+    if (errMsg) { setSiblingErr(errMsg); return; }
+    setSiblingAt(null);
+  };
   return (
     <div style={{ marginBottom: 12 }}>
       <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
@@ -11087,6 +11149,10 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             const incomplete = !isRoot && it.isLeaf && it.depth % 2 === 0 && !it.node.tag;
             // (20차 기능3) 라인 길이 삭제 — 리프에서만, 최소 1수는 남도록(라인 자체가 사라지지 않게)
             const canDeleteHere = canEdit && !isRoot && it.isLeaf && it.path.length > 1;
+            // (v0.3.0 기능) 형제 갈래 추가 — it.depth가 홀수(사용자 수)인 노드의 children이 상대
+            // 응수 갈래다. 리프 여부와 무관하게(응수가 아예 없는 노드에도) 허용해, 자동 생성이
+            // isDevelopingMove 필터 등으로 응수 후보를 통째로 걸러낸 경우에도 되살릴 수 있게 한다.
+            const canAddSiblingHere = canEdit && !isRoot && it.depth % 2 === 1;
             return (
               // (v0.2.7 버그 수정) 리프(라인의 마지막 수) 노드는 오른쪽에 "라인 N"·체크 배지(그리고
               // 개발자 모드에서는 추가·삭제 버튼)가 같은 줄에 나란히 붙는데, 이 바깥 wrapper의 폭이
@@ -11126,6 +11192,8 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                   {canAddHere && <button onClick={() => openAdd(it.path)} className="press no-pan" title="이 라인에 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
                   {/* (20차 기능3) 개발자 전용 — 이 라인의 마지막 수를 하나 삭제(라인 길이 단축, 한 번에 한 수씩) */}
                   {canDeleteHere && <button onClick={() => submitDelete(it)} disabled={delBusyKey === it.key} className="press no-pan" title="이 라인의 마지막 수 삭제" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={13} /></button>}
+                  {/* (v0.3.0 기능) 개발자 전용 — 이 수 다음에 올 상대 응수의 형제 갈래(다른 응수 선택지) 추가 */}
+                  {canAddSiblingHere && <button onClick={() => openSibling(it.path)} className="press no-pan" title="상대 응수의 형제 갈래 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.only, background: "transparent", color: T.only, fontSize: 13, fontWeight: 800, cursor: "pointer", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>⑂</button>}
                 </div>
                 {delErrKey && delErrKey.key === it.key && <div className="no-pan" style={{ fontSize: 9.5, color: T.blunder, marginTop: 3, background: "#fff", borderRadius: 6, padding: "2px 6px", border: "1px solid " + T.blunder }}>{delErrKey.msg}</div>}
               </div>
@@ -11141,6 +11209,37 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
               <button onClick={() => setAddAt(null)} className="press" style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>취소</button>
             </div>
             {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{err}</div>}
+          </div>
+        )}
+        {/* (v0.3.0 기능) 형제 갈래 추가 패널 — onSuggestSiblings가 돌려준(자동 생성이 실제로 봤던)
+            후보 목록을 등급·평가치·채택률과 함께 보여준다. 골라 누르면 바로 추가되고, 목록에 없는
+            수는 아래 직접 입력으로도 추가할 수 있다(kind/ev/adopt는 비워 두고 배경 보강이 채운다). */}
+        {siblingAt && (
+          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(320px, calc(100% - 20px))", maxHeight: 188, overflowY: "auto", padding: 10, borderRadius: 10, border: "1px solid " + T.only, background: "#fff", boxShadow: "0 10px 24px -8px rgba(0,0,0,.4)" }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 10.5, color: T.inkSoft }}>이 자리의 상대 응수 후보</div>
+              <button onClick={() => setSiblingAt(null)} className="press" style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 11 }}>닫기</button>
+            </div>
+            {siblingCands === null ? (
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>엔진으로 후보를 다시 불러오는 중…</div>
+            ) : siblingCands.length === 0 ? (
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>더 추천할 후보가 없어요 — 아래에 직접 입력하세요.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                {siblingCands.map((c) => (
+                  <button key={c.san} onClick={() => pickSibling(c)} disabled={siblingBusy} className="press" style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 7, border: "1px solid #DCCBA8", background: "#FBF5E8", cursor: siblingBusy ? "default" : "pointer", textAlign: "left" }}>
+                    {c.kind && QCOLOR[c.kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[c.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(c.kind, 11)}</span>}
+                    <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 800, color: T.ink, flexShrink: 0 }}>{c.san}</span>
+                    <span style={{ fontSize: 10, color: T.inkSoft, marginLeft: "auto", flexShrink: 0 }}>{c.adopt != null ? Math.round(c.adopt) + "%" : "–%"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+              <input value={siblingManualSan} onChange={(e) => setSiblingManualSan(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitManualSibling()} placeholder="직접 입력(예: Be6)" style={{ width: 100, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (siblingErr ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
+              <button onClick={submitManualSibling} disabled={siblingBusy} className="press" style={{ padding: "6px 12px", borderRadius: 7, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{siblingBusy ? "추가 중…" : "추가"}</button>
+            </div>
+            {siblingErr && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{siblingErr}</div>}
           </div>
         )}
       </div>
@@ -11661,6 +11760,38 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     setOverrideTree(res.tree);
     return null;
   };
+  // (v0.3.0 기능) 개발자 전용 — 임의의 상대 응수 노드에 형제 갈래를 추가한다. genPuzzleTree가 실제로
+  // 계산해 뒀던 후보 목록(puzzleCandidatesAt)을 그대로 다시 불러와 보여준다 — isDevelopingMove 필터나
+  // "채택률·손실 점수 상위 3개만" 규칙 때문에 자동 생성 단계에서 걸러진 멀쩡한 응수가 여기서는 그대로
+  // 드러나므로, 개발자가 골라 다시 채워 넣을 수 있다(추가 엔진 호출 없이 kind/ev/adopt 그대로 재사용).
+  const suggestSiblings = async (path) => {
+    if (!engine || engine.status !== "ready") return [];
+    try {
+      const raw = await puzzleCandidatesAt(engine, [...setup, ...path]);
+      const parentNode = path.length ? findTreeNode(tree, path) : tree;
+      const existing = new Set(((parentNode && parentNode.children) || []).map((c) => stripSuffix(c.san)));
+      return (raw || []).filter((c) => !existing.has(stripSuffix(c.san)));
+    } catch { return []; }
+  };
+  const addSibling = async (path, cand) => {
+    let finalCand = cand;
+    if (cand.manual) {
+      const board = boardFromSans([...setup, ...path]);
+      const color = (setup.length + path.length) % 2 === 0 ? "w" : "b";
+      if (!sanSrc(board, cand.san, color)) return "불법 수입니다.";
+      finalCand = { san: decorateSan(board, cand.san, color), kind: null, ev: null, adopt: null };
+    }
+    const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
+    const res = addSiblingBranch(tree, path, finalCand, seedSeq);
+    if (res.error) return res.error;
+    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
+    persistTagSeq(res.seq);
+    if (bumpContent) await bumpContent();
+    setOverrideTree(res.tree);
+    return null;
+  };
   // (20차 기능3) 개발자 전용 — 이 퍼즐의 "기본 이점 기준"(자동 생성이 확실한 이점으로 볼 cp 기준)을
   // 퍼즐마다 직접 설정한다. 값을 바꾸는 것만으로는 아무 일도 벌어지지 않고(저장만 됨), 명시적으로
   // "이 기준으로 기본 트리 재생성"을 눌러야 실제로 트리 전체를 새로 만든다 — 수동으로 추가/삭제한
@@ -11821,7 +11952,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
             </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
             {canEdit && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
