@@ -3256,7 +3256,11 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
   const onPointerMoveCap = (e) => { const d = downRef.current; if (d && (Math.abs(e.clientX - d.x) > 4 || Math.abs(e.clientY - d.y) > 4)) d.moved = true; };
   const onClick = () => { if (downRef.current && downRef.current.moved) return; if (l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); };
   return (
-    <div className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
+    // (신규) depth가 깊어지며 MultiPV 순위가 바뀔 때 이 줄이 새 자리로 "이동"하는 것을 보여주기 위해
+    // motion.div layout을 쓴다 — 아래 EngineLines에서 이 줄의 key를 슬롯 번호가 아니라 이 줄의 첫
+    // 수(수의 정체성)로 잡아야, 순위가 바뀌어도 같은 컴포넌트 인스턴스가 유지되며 framer-motion이
+    // 옛 위치→새 위치로의 이동을 자동으로(FLIP) 애니메이션할 수 있다.
+    <motion.div layout transition={{ duration: 0.32, ease: MOTION_EASE }} className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
       style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
       <EvalBadge ev={l.ev} small />
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
@@ -3266,7 +3270,7 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
         </span>
       </div>
       {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 26, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,1) 80%)", borderRadius: "0 6px 6px 0" }} />}
-    </div>
+    </motion.div>
   );
 }
 function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
@@ -3298,8 +3302,15 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
             // 있었다(EngineLineRow 위 주석 참고) — 배열 인덱스(슬롯 번호)로 다시 돌아가되, 대신
             // TypedMoveLine의 타이핑 진행 상태가 슬롯이 아니라 "포지션"에만 반응하도록 posKey를
             // 구성해(EngineLineRow 참고) 두 문제를 모두 피한다.
+            // (신규) 이제는 타이핑 애니메이션 자체가 없어졌으므로(TypedMoveLine 주석 참고) 재마운트로
+            // 인한 리스크가 사라졌다 — depth가 깊어지며 순위가 바뀔 때 그 이동을 그대로 보여주기
+            // 위해, 슬롯 번호 대신 이 줄의 첫 수(수의 정체성)로 key를 잡는다. 같은 첫 수가 그대로
+            // 다른 순위로 옮겨가면 React가 같은 DOM 노드를 재사용해 이동시키고, motion.div layout이
+            // 그 이동을 부드러운 애니메이션으로 자동 보여준다(FLIP). 첫 수가 아예 새로 등장/이탈하면
+            // (다른 후보로 완전히 교체) 자연스럽게 새 컴포넌트로 마운트/언마운트된다.
+            const rowKey = (l.sans && l.sans[0]) || ("slot" + i);
             return (
-              <EngineLineRow key={i} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
+              <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
             );
           })}
           {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
