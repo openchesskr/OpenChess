@@ -1029,14 +1029,22 @@ function isDevelopingMove(uci, san) {
 const PUZZLE_PASS_KINDS = ["brilliant", "best", "only", "excellent"];   // 사용자 진영에서 '통과'되는 수 체계
 // (20차 기능3) 테마별 자동 생성 기본값 — "확실한 이점"의 기준(target, 백분 폰 단위 cp)과 종료 조건.
 // 퍼즐마다 target은 CONTENT.puzzleOverrides[no].target로 덮어쓸 수 있다(개발자가 직접 설정하는 기본값).
+// (신규) puzzleType — "positional"(포지션 우위, 기본값)은 기존과 동일하게 시작 대비 cp 이득
+// (target)을 기준으로 종료한다. "material"(기물 우위)은 "수비자 제거"처럼 최선의 수만 이어지지만
+// 명확한 기물 이득을 보는 전술 전용 — cp 기준 없이, 기물 점수가 실제로 유리해지는 순간(matGain > 0)
+// 바로 라인을 끝낸다(그 전술이 끝난 뒤 바로 퍼즐을 종료해야 한다는 요청).
 const PUZZLE_THEME_OPTS = {
-  punish: { target: 170, maxPlies: 8, requireCapture: true },
-  advantage: { target: 220, maxPlies: 8 },
-  sacrifice: { target: 110, maxPlies: 8, requireMaterialRecovery: true },
+  punish: { target: 170, maxPlies: 8, requireCapture: true, puzzleType: "positional" },
+  advantage: { target: 220, maxPlies: 8, puzzleType: "positional" },
+  sacrifice: { target: 110, maxPlies: 8, requireMaterialRecovery: true, puzzleType: "positional" },
 };
-function puzzleThemeOpts(theme, overrideTarget) {
+function puzzleThemeOpts(theme, overrideTarget, overridePuzzleType) {
   const base = PUZZLE_THEME_OPTS[theme] || PUZZLE_THEME_OPTS.punish;
-  return overrideTarget != null ? { ...base, target: overrideTarget } : base;
+  return {
+    ...base,
+    ...(overrideTarget != null ? { target: overrideTarget } : null),
+    ...(overridePuzzleType != null ? { puzzleType: overridePuzzleType } : null),
+  };
 }
 function puzzleUciOf(board, san, color) {
   const info = sanSrc(board, stripSuffix(san), color);
@@ -1102,7 +1110,7 @@ async function puzzleCandidatesAt(engine, cur) {
 // "퍼즐을 생성하는 중입니다" 게이지가 완전히 멈춰 있지 않고 자연스럽게 움직이는 정도로는 충분하다.
 async function genPuzzleTree(engine, preSans, opts, onProgress) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
-    firstSan = null, maxNodes = 34, tagSeq = 0 } = opts || {};
+    firstSan = null, maxNodes = 34, tagSeq = 0, puzzleType = "positional" } = opts || {};
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
@@ -1200,13 +1208,17 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
             } else {
               const userCp = -(ev2.cp || 0);                                 // 상대 관점 → 사용자 관점
               // (v0.3.0 기능) "실질적인 이득" = 절대 cp가 아니라 시작 대비 얻어낸 cp(cpGain) 기준.
-              // 여기에 기물점수도 실제로 유리해졌을 때만(matGain > 0) 인정한다 — 기물 변동 없이
-              // 포지션만 조금씩 좋아지는 수순은 아직 "실질적인 이득"으로 치지 않는다.
               const cpGain = userCp - startCp;
               const matGain = materialDiff(boardFromSans(cur2), userColor) - startMat;
               const matOk = !requireMaterialRecovery || materialDiff(boardFromSans(cur2), userColor) >= Math.min(0, startMat);
               const capOk = !requireCapture || captured;
-              if (cpGain >= target && matGain > 0 && matOk && capOk) terminal = true;
+              // (신규) 퍼즐 종류에 따라 종료 기준이 다르다. "포지션 우위"(기본값)는 기존과 동일하게
+              // cp 이득(cpGain >= target)에 더해 기물점수도 실제로 유리해졌을 때만(matGain > 0)
+              // 인정한다 — 기물 변동 없이 포지션만 조금씩 좋아지는 수순은 아직 "실질적인 이득"으로
+              // 치지 않는다. "기물 우위"(수비자 제거처럼 최선의 수만 이어지지만 명확한 기물 이득을
+              // 보는 전술)는 cp 기준 없이, 기물 점수가 실제로 유리해지는 순간 곧바로 끝낸다.
+              const gainOk = puzzleType === "material" ? matGain > 0 : (cpGain >= target && matGain > 0);
+              if (gainOk && matOk && capOk) terminal = true;
             }
           }
         }
@@ -5037,6 +5049,44 @@ function exchangeFact(sansBeforeMove, san, color, kind, beforeCp) {
   const strong = ["brilliant", "best", "only"].includes(kind);
   return { ahead, good, strong };
 }
+// fr,fc의 기물(board 기준 color 소유)이 tr,tc 칸을 공격/방어할 수 있는지 — canCaptureSquareLegally처럼
+// 보드 전체를 훑는 게 아니라, 이미 알고 있는 특정 기물 하나에 대해서만 확인하는 버전.
+function attacksSquareRaw(board, fr, fc, tr, tc, color) {
+  const p = board[fr][fc]; if (!p || p.c !== color) return false;
+  if (fr === tr && fc === tc) return false;
+  if (p.t === "P") { const dir = color === "w" ? -1 : 1; return tr - fr === dir && Math.abs(tc - fc) === 1; }
+  if (p.t === "K") return Math.abs(tr - fr) <= 1 && Math.abs(tc - fc) <= 1;
+  return canMove(board, p.t, color, fr, fc, tr, tc, true);
+}
+// (신규) "수비자 제거"(Remove the Defender) — 이 수가 상대 기물을 잡았는데, 잡힌 그 기물이 다른
+// 상대 기물 Y를 지키고 있었다면(=Y 칸을 되잡을 수 있었다면), 그 수비자가 사라지며 Y가 공짜로(SEE상
+// 순이득) 잡히게 된다. 이 수를 두기 전에는 Y가 이미 공짜로 잡히는 상태가 아니었어야(=이 수가 원인)
+// 하고, 이 수를 둔 뒤에는 실제로 합법적으로 잡을 수 있어야 한다. 대부분 이어지는 수가 최선의 수뿐인
+// 명확하고 강력한 전술이라, mecFacts에서 다른 어떤 사실보다 우선한다.
+function removeDefenderFact(sansBeforeMove, san, color) {
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || !info.isCap || info.castle) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const [dr, dc] = info.to;   // 잡힌(=사라진 수비자) 기물이 있던 칸
+  const removedDefender = before[dr][dc];
+  if (!removedDefender || removedDefender.c !== enemy) return null;
+  const after = applySan(before, san, color);
+  let best = null;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === dr && c === dc) continue;
+    const y = before[r][c];
+    if (!y || y.c !== enemy || y.t === "K") continue;
+    if (!attacksSquareRaw(before, dr, dc, r, c, enemy)) continue;      // 방금 잡힌 기물이 Y를 지키고 있었는가
+    if (seeSquare(before, r, c, color) > 0) continue;                  // 이 수 전에도 이미 공짜로 잡혔다면 이 수 덕분이 아니다
+    const gain = seeSquare(after, r, c, color);
+    if (gain > 0 && canCaptureSquareLegally(after, r, c, color)) {
+      if (!best || gain > best.gain) best = { targetSq: [r, c], targetPiece: y.t, defenderSq: [dr, dc], gain };
+    }
+  }
+  if (!best) return null;
+  return { targetSq: best.targetSq, targetPiece: best.targetPiece, defenderSq: best.defenderSq, attackers: threatSquareDetail(after, best.targetSq, color).attackers };
+}
 /* ============================================================ MEC Reference(사용자 제공, 16수 기준) 반영 ============================================================
    R1 교환 요청, R2 요청 수락/거절, R3·R11 재전개/재배치, R4 직접 예방 수, R5 다음 수 캐슬링 예고,
    R6 전개 표현, R8 위협 대처/과보호, R9 간접 예방 수, R10 교환론, R12 캐슬링 전용 평가, R13 잠재 위협,
@@ -5454,6 +5504,9 @@ const MEC_PHRASES = {
   stacked: (s) => mecPick(["룩 두 개가 오픈 파일에서 중첩됐어요.", "같은 파일에서 룩끼리 중첩되어 서로를 지켜줘요.", "룩 중첩으로 그 파일을 강하게 장악했어요."], s),
   pawnSac: (sq, s) => mecPick([sq + "폰이 위협받고 있지만 지키지 않았어요, 폰 희생이에요.", sq + "폰을 지키는 대신 희생하는 수예요.", "위협받는 " + sq + "폰을 그대로 두고 폰 희생을 택했어요."], s),
   castleBadFallback: (s) => mecPick(["엔진에 의하면 지금은 캐슬링이 좋은 타이밍이 아니에요.", "엔진에 의하면 이 캐슬링은 아쉬운 타이밍이에요.", "엔진에 의하면 지금 캐슬링하기엔 좋지 않은 순간이에요."], s),
+  // (신규) 수비자 제거 — 사용자 요청에 따라 매번 같은 고정 문구를 쓴다(다른 사실처럼 무작위로
+  // 바뀌지 않는다).
+  removeDefender: () => "수비자 제거 전술은 간단하지만 매우 강력합니다!",
 };
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
@@ -5465,6 +5518,13 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   const beforeBoard = boardFromSans(sansBeforeMove);
   const board = boardFromSans([...sansBeforeMove, san]);
   const facts = [];
+  // (신규) 수비자 제거 — 다른 어떤 사실보다 먼저 확인한다. 대부분 이어지는 수가 최선의 수뿐인
+  // 명확하고 강력한 전술이라, 이게 있으면 다른 사실은 밀어내고 고정 문구 하나로 대체한다.
+  const removeDef = removeDefenderFact(sansBeforeMove, san, color);
+  if (removeDef) {
+    if (threatOut) { threatOut.removeDefender = removeDef; threatOut.keyword = "수비자 제거"; }
+    return [MEC_PHRASES.removeDefender(seed)];
+  }
   const t = tensionFacts(board, color);
   const moveInfo = sanSrc(beforeBoard, san, color);
   // (버그 수정) 이 수 자체가 동가 이상으로 기물을 잡는 수였다면(예: 나이트를 잡은 비숍), 그 도착
@@ -7109,7 +7169,7 @@ function MecKeywordLine({ text, keyword, onClick, style }) {
     </p>
   );
 }
-function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -7134,7 +7194,8 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
             <MecKeywordLine
               text={copy.mecLine}
               keyword={mecKeyword}
-              onClick={threatDetail ? () => onThreatClick && onThreatClick(threatDetail)
+              onClick={removeDefenderDetail ? () => onRemoveDefenderClick && onRemoveDefenderClick(removeDefenderDetail)
+                : threatDetail ? () => onThreatClick && onThreatClick(threatDetail)
                 : preventDetail ? () => onPreventClick && onPreventClick(preventDetail)
                 : connectDetail ? () => onConnectClick && onConnectClick(connectDetail)
                 : null}
@@ -7590,9 +7651,12 @@ function ReviewPage({ game, onClose }) {
   const preventDetail = mecThreatOut.current.prevent || null;
   // (기능) "연결"/"중첩"의 시각화 데이터 — 서로 지켜주는 두 기물의 칸.
   const connectDetail = mecThreatOut.current.connect || null;
+  // (신규) 수비자 제거의 시각화 데이터 — 공짜로 잡히게 될 상대 기물 칸(targetSq)·그 기물을 지키던
+  // (지금 막 잡힌) 수비자의 원래 칸(defenderSq)·그 기물을 잡을 수 있는 내 공격자들(attackers).
+  const removeDefenderDetail = mecThreatOut.current.removeDefender || null;
   // (기능) 애니메이션이 있는 MEC 문장에서 실제로 밑줄·클릭 대상이 될 단어 — mecFacts가 이 사실을
-  // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"). 문장
-  // 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
+  // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"/"수비자
+  // 제거"). 문장 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
   const mecKeyword = mecThreatOut.current.keyword || null;
   // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
   // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
@@ -7601,9 +7665,12 @@ function ReviewPage({ game, onClose }) {
   // 표시한다. 수를 넘기면(activeMove가 바뀌면) 예약된 다음 단계를 모두 취소하고 즉시 지운다.
   const [threatArrows, setThreatArrows] = useState([]);
   const [haloSquares, setHaloSquares] = useState([]);
+  // (신규) 수비자 제거 애니메이션의 1단계("수를 두기 전 포지션으로 되돌리기")용 — 값이 있는 동안
+  // 보드에 이 포지션을 표시하고, null이면 평소대로 현재 수(activeMove)까지 둔 포지션을 보여준다.
+  const [rdBoardOverride, setRdBoardOverride] = useState(null);
   const threatTimers = useRef([]);
   const clearThreatTimers = () => { threatTimers.current.forEach(clearTimeout); threatTimers.current = []; };
-  useEffect(() => { clearThreatTimers(); setThreatArrows([]); setHaloSquares([]); return clearThreatTimers; }, [activeMove, effSans]);
+  useEffect(() => { clearThreatTimers(); setThreatArrows([]); setHaloSquares([]); setRdBoardOverride(null); return clearThreatTimers; }, [activeMove, effSans]);
   const playThreatAnimation = (detail) => {
     clearThreatTimers();
     setHaloSquares([]);
@@ -7645,6 +7712,22 @@ function ReviewPage({ game, onClose }) {
       threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), i * 450));
     });
     threatTimers.current.push(setTimeout(() => setThreatArrows([]), steps.length * 450 + 1000));
+  };
+  // (신규) 수비자 제거 애니메이션 — 사용자 요청 3단계: ① 이 수를 두기 전 포지션으로 되돌려서 공짜로
+  // 잡힐 기물에 대한 공격자·수비자 화살표를 함께 보여준다. ② 잠시 뒤 수비자를 제거하는 실제 수를
+  // 애니메이션(포지션을 이 수를 둔 뒤로 전환)으로 보여준다 — 공격자 화살표는 "이제 공짜로 잡을 수
+  // 있다"는 걸 보여주기 위해 그대로 남겨 둔다. ③ 이제 사라진 수비자를 가리키던 화살표를 서서히
+  // 지운다(fading). 마지막으로 halo·화살표·되돌린 포지션을 모두 정리한다.
+  const playRemoveDefenderAnimation = (detail) => {
+    clearThreatTimers();
+    setHaloSquares([detail.targetSq]);
+    const attackerArrows = detail.attackers.map((sq) => ({ from: sq, to: detail.targetSq, kind: "threatAttacker" }));
+    const defenderArrow = { from: detail.defenderSq, to: detail.targetSq, kind: "threatDefender" };
+    setRdBoardOverride(boardFromSans(effSans.slice(0, -1)));
+    setThreatArrows([...attackerArrows, defenderArrow]);
+    threatTimers.current.push(setTimeout(() => setRdBoardOverride(null), 900));
+    threatTimers.current.push(setTimeout(() => setThreatArrows([...attackerArrows, { ...defenderArrow, fading: true }]), 1050));
+    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); setRdBoardOverride(null); }, 2400));
   };
   // (기능) 탁월한 수 — 유형(직접 희생/방치 희생/언더프로모션) + 엔진 PV 근거를 하나의 글로 엮은
   // 설명(brilliantExplain, 엔진 필요, 비동기). 두기 전 평가(bestCp)가 이미 마이너스면(mover 관점)
@@ -7777,13 +7860,13 @@ function ReviewPage({ game, onClose }) {
             ))
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
@@ -7811,12 +7894,12 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
               leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
@@ -11800,6 +11883,20 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const defaultTarget = savedTarget != null ? savedTarget : puzzleThemeOpts(theme).target;
   const [targetInput, setTargetInput] = useState(defaultTarget);
   useEffect(() => { setTargetInput(defaultTarget); }, [puzzle.id, savedTarget]);
+  // (신규) 개발자 전용 — 퍼즐 종류(기물 우위/포지션 우위) 표시·설정. 목표 cp는 포지션 우위일 때만
+  // 의미가 있으므로(기물 우위는 cp 기준 없이 기물 이득만으로 종료), 종류가 포지션 우위일 때만
+  // 위의 목표 cp 입력을 노출한다.
+  const savedPuzzleType = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).puzzleType;
+  const defaultPuzzleType = savedPuzzleType != null ? savedPuzzleType : puzzleThemeOpts(theme).puzzleType;
+  const [puzzleTypeInput, setPuzzleTypeInput] = useState(defaultPuzzleType);
+  useEffect(() => { setPuzzleTypeInput(defaultPuzzleType); }, [puzzle.id, savedPuzzleType]);
+  const savePuzzleType = async (v) => {
+    setPuzzleTypeInput(v);
+    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, puzzleType: v };
+    if (bumpContent) await bumpContent();
+  };
   const [regenBusy, setRegenBusy] = useState(false);
   const [regenErr, setRegenErr] = useState("");
   const saveDefaultTarget = async (v) => {
@@ -11814,12 +11911,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     try {
       const th = primaryTheme(puzzle);
       const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
-      const opts = { ...puzzleThemeOpts(th, targetInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedSeq };
+      const opts = { ...puzzleThemeOpts(th, targetInput, puzzleTypeInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedSeq };
       const gen = await genPuzzleTree(engine, setup, opts);
       if (!gen) { setRegenErr("이 기준으로는 트리를 만들 수 없어요(기준을 낮춰보세요)."); return; }
       if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
       const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
-      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: gen.tree, lines: gen.lines, target: targetInput, tagSeq: gen.seq };
+      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: gen.tree, lines: gen.lines, target: targetInput, puzzleType: puzzleTypeInput, tagSeq: gen.seq };
       if (bumpContent) await bumpContent();
       setOverrideTree(gen.tree);
     } finally { setRegenBusy(false); }
@@ -11956,11 +12053,25 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
             {canEdit && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
-                <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-                  <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
-                    style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
-                  <span style={{ fontSize: 10.5, color: T.inkSoft }}>cp (현재 기본값 {defaultTarget})</span>
+                {/* (신규) 퍼즐 종류 — 포지션 우위(cp 이득 기준)/기물 우위(기물 이득 즉시 종료, 수비자
+                    제거 같은 전술용). 목표 cp는 포지션 우위일 때만 의미가 있으므로 그때만 보여준다. */}
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 퍼즐 종류</div>
+                <div className="flex items-center gap-2" style={{ flexWrap: "wrap", marginBottom: 10 }}>
+                  {[["positional", "포지션 우위"], ["material", "기물 우위"]].map(([v, label]) => (
+                    <button key={v} onClick={() => savePuzzleType(v)} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: puzzleTypeInput === v ? T.brass : "transparent", color: puzzleTypeInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>{label}</button>
+                  ))}
+                </div>
+                {puzzleTypeInput === "positional" && (
+                  <>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
+                    <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                      <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
+                        style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
+                      <span style={{ fontSize: 10.5, color: T.inkSoft }}>cp (현재 기본값 {defaultTarget})</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex items-center gap-2" style={{ flexWrap: "wrap", marginTop: 8 }}>
                   <button onClick={regenerateWithTarget} disabled={!engine || engine.status !== "ready" || regenBusy} className="press" style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 11.5, opacity: (!engine || engine.status !== "ready") ? 0.5 : 1 }}>{regenBusy ? "재생성 중…" : "이 기준으로 기본 트리 재생성"}</button>
                 </div>
                 <div style={{ fontSize: 9.5, color: T.blunder, marginTop: 5 }}>재생성하면 이 퍼즐의 트리가 통째로 새로 만들어져 수동으로 추가·삭제한 내용이 모두 사라져요.</div>
