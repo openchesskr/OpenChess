@@ -22,7 +22,11 @@
  *   node scripts/build-master-games.mjs pgnmentor-games.ndjson [출력.json]
  *
  * 옵션(환경변수):
- *   TOP_K=5   포지션(오프닝 트리 노드)당 남길 대표 게임 수 — 레이팅 합 기준 상위 K개
+ *   TOP_K=20   포지션(오프닝 트리 노드)당 남길 대표 게임 수(기본값) — 레이팅 합 기준 상위 K개.
+ *              Lichess 마스터 DB가 얕은 오프닝 수순 밖에서는 게임을 거의 안 내려주기 때문에,
+ *              깊은 포지션일수록 이 정적 데이터가 "마스터 대국" 목록의 사실상 유일한 소스가
+ *              된다 — 이전 기본값(5)에서는 그런 포지션 전체(오프닝 트리 노드의 92%)가 항상
+ *              정확히 5판만 표시되는 문제로 이어졌다(v0.3.1에서 20으로 상향).
  */
 import { createReadStream, writeFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -34,7 +38,7 @@ if (!inPath) {
   process.exit(1);
 }
 
-const TOP_K = +(process.env.TOP_K || 5);
+const TOP_K = +(process.env.TOP_K || 20);
 
 const openings = JSON.parse(readFileSync("src/data/openings.json", "utf8"));
 const knownKeys = new Set(Object.keys(openings.tree).filter(Boolean)); // ""(시작 포지션)는 제외
