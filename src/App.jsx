@@ -12,7 +12,7 @@ import {
 const T = {
   ebony: "#1B1009", ebony2: "#2E1B10", ebony3: "#3D2616",
   ivory: "#EBDDC4", ivoryHi: "#FAF2E2", paper: "#F1E6D0",
-  ink: "#2A1A0E", inkSoft: "#7A6650",
+  ink: "#5A3A22", inkSoft: "#7A6650", cocoa: "#5A3A22",
   boardLight: "#E8D2A6", boardDark: "#7C4F2E",
   brass: "#C49A50", brassHi: "#ECCB86",
   brilliant: "#16B5A6", only: "#3E7CC4",
@@ -1029,14 +1029,22 @@ function isDevelopingMove(uci, san) {
 const PUZZLE_PASS_KINDS = ["brilliant", "best", "only", "excellent"];   // 사용자 진영에서 '통과'되는 수 체계
 // (20차 기능3) 테마별 자동 생성 기본값 — "확실한 이점"의 기준(target, 백분 폰 단위 cp)과 종료 조건.
 // 퍼즐마다 target은 CONTENT.puzzleOverrides[no].target로 덮어쓸 수 있다(개발자가 직접 설정하는 기본값).
+// (신규) puzzleType — "positional"(포지션 우위, 기본값)은 기존과 동일하게 시작 대비 cp 이득
+// (target)을 기준으로 종료한다. "material"(기물 우위)은 "수비자 제거"처럼 최선의 수만 이어지지만
+// 명확한 기물 이득을 보는 전술 전용 — cp 기준 없이, 기물 점수가 실제로 유리해지는 순간(matGain > 0)
+// 바로 라인을 끝낸다(그 전술이 끝난 뒤 바로 퍼즐을 종료해야 한다는 요청).
 const PUZZLE_THEME_OPTS = {
-  punish: { target: 170, maxPlies: 8, requireCapture: true },
-  advantage: { target: 220, maxPlies: 8 },
-  sacrifice: { target: 110, maxPlies: 8, requireMaterialRecovery: true },
+  punish: { target: 170, maxPlies: 8, requireCapture: true, puzzleType: "positional" },
+  advantage: { target: 220, maxPlies: 8, puzzleType: "positional" },
+  sacrifice: { target: 110, maxPlies: 8, requireMaterialRecovery: true, puzzleType: "positional" },
 };
-function puzzleThemeOpts(theme, overrideTarget) {
+function puzzleThemeOpts(theme, overrideTarget, overridePuzzleType) {
   const base = PUZZLE_THEME_OPTS[theme] || PUZZLE_THEME_OPTS.punish;
-  return overrideTarget != null ? { ...base, target: overrideTarget } : base;
+  return {
+    ...base,
+    ...(overrideTarget != null ? { target: overrideTarget } : null),
+    ...(overridePuzzleType != null ? { puzzleType: overridePuzzleType } : null),
+  };
 }
 function puzzleUciOf(board, san, color) {
   const info = sanSrc(board, stripSuffix(san), color);
@@ -1102,22 +1110,55 @@ async function puzzleCandidatesAt(engine, cur) {
 // "퍼즐을 생성하는 중입니다" 게이지가 완전히 멈춰 있지 않고 자연스럽게 움직이는 정도로는 충분하다.
 async function genPuzzleTree(engine, preSans, opts, onProgress) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
-    firstSan = null, maxNodes = 34, tagSeq = 0 } = opts || {};
+    firstSan = null, maxNodes = 34, tagSeq = 0, puzzleType = "positional" } = opts || {};
   const userColor = preSans.length % 2 === 0 ? "w" : "b";
   const startMat = materialDiff(boardFromSans(preSans), userColor);
   let nodeCount = 0;
+  // (v0.3.0 성능) 예전엔 트리의 모든 노드를 단일 엔진(engine, FIFO 큐 하나)으로 순서대로 평가해,
+  // 형제 가지(예: 상대 응수 최대 3갈래)가 서로 독립적인데도 하나씩 차례로만 계산됐다 — 라인이
+  // 깊어질수록(maxPlies) 노드 수가 그만큼 늘어나 생성 시간이 거의 선형으로 길어졌다. 게임 리뷰
+  // (analyzeGame)와 같은 전용 워커 풀(getAnalysisPool)을 빌려 써서, 서로 다른 가지의 노드 평가를
+  // 여러 워커에 나눠 동시에 돌린다 — depth·movetime(정확도)은 전혀 건드리지 않고 병렬도만큼 순수하게
+  // 시간을 줄인다. 풀 부팅이 실패하면(드묾) 기존처럼 단일 engine으로 폴백한다.
+  const pool = await getAnalysisPool(engine.profile, engine.urls);
+  const workers = pool.length ? pool : [engine];
+  let wIdx = 0;
+  const nextWorker = () => workers[wIdx++ % workers.length];
+  // (v0.3.0 기능) "실질적인 이득" 판정 개선 — 예전엔 매 수를 둔 뒤의 절대 평가치(cp)만으로 종료
+  // 여부를 판단해, 시작 포지션이 이미 유리했으면 한 수 만에 끝나버리고(그 유리함이 그대로
+  // target을 넘겨버림), 반대로 거의 균형인 포지션에서 서서히 조여가는 수순은 target을 넘기지
+  // 못한 채 maxPlies·maxNodes 상한에 먼저 걸려 라인이 뚝 끊겼다. 퍼즐 시작 포지션의 평가치를
+  // 미리 한 번 재서(startCp), 이후로는 "시작 대비 실제로 얻어낸 cp 이득"을 기준으로 삼는다.
+  let startCp = 0;
+  try {
+    const se = await nextWorker().evaluate(sansToFen(preSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+    if (se) startCp = se.mate != null ? (se.mate > 0 ? 100000 : -100000) : (se.cp || 0);
+  } catch { }
   // (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — 진행률 숫자만 보내던
   // 것을, 지금 막 탐색해 늘어난 수순(path)도 함께 실어 보낸다. 집중 학습 화면이 이 path로 미니 보드를
   // 그 자리에서 계속 갱신하며, 실제로 트리가 만들어지는 과정을 그대로 시각화할 수 있게 한다.
+  // (병렬화로 여러 가지가 동시에 끝나므로 이 path가 항상 한 줄로 매끄럽게 이어지지는 않지만,
+  // 진행률(%) 자체는 여전히 정확하다.)
   const bumpNode = (path) => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes), path); };
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
-  async function expand(cur, depth, sawUserCapture) {
-    if (depth >= maxPlies || nodeCount >= maxNodes) return [];
+  // (v0.3.0 기능) forceMate — 이 가지가 이미 "상대가 강제 메이트당하는 수순"에 들어섰다는 표시.
+  // 한 번 true가 되면 자손 노드에도 그대로 물려줘, 실제 체크메이트(#)가 나올 때까지는 maxPlies
+  // 상한을 무시하고 계속 확장한다(요청: "메이트 수순에 돌입하면 반드시 그 가지가 체크메이트까지
+  // 이어지도록"). maxNodes(전체 노드 예산)는 폭주 방지용 안전망으로 그대로 유지한다.
+  async function expand(cur, depth, sawUserCapture, forceMate) {
+    if ((depth >= maxPlies && !forceMate) || nodeCount >= maxNodes) return [];
     const isUserTurn = depth % 2 === 0;
-    let cands = await puzzleCandidatesAt(engine, cur);
+    let cands = await puzzleCandidatesAt(nextWorker(), cur);
     if (!cands || !cands.length) return [];
-    // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음)
-    if (depth >= 1 || firstSan) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));
+    // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음).
+    // (v0.3.0 버그 수정) 이 필터가 상대 응수(!isUserTurn)에도 그대로 걸려 있었다 — 트레이니의
+    // 두 번째 이후 수가 "그냥 기물 전개"라 배울 게 없다는 취지인데, depth>=1이 상대 차례에도
+    // 참이라 실제로는 "상대의 최선(또는 유일한) 응수가 하필 마이너 기물을 홈스퀘어에서 움직이는
+    // 수"인 경우(체크에 대응해 기물을 처음 전개시켜 막는 흔한 상황 등)에도 그 응수가 통째로
+    // 걸러졌다. 남은 후보 중 최상위가 무조건 plausible[0]으로 채택되니, 진짜 최선 응수가
+    // 사라지고 훨씬 나쁜(때론 블런더급) 수만 유일한 갈래로 남는 원인이었다 — 이 필터는
+    // 사용자 차례에만 적용한다.
+    if (isUserTurn && (depth >= 1 || firstSan)) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));
     if (!cands.length) return [];
     const canBranch = nodeCount + 2 < maxNodes;
     let chosen;
@@ -1140,39 +1181,57 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
       chosen = [plausible[0]];
       for (const c of ranked) { if (chosen.length >= (canBranch ? 3 : 1)) break; if (!chosen.includes(c)) chosen.push(c); }
     }
-    const out = [];
-    for (const c of chosen) {
-      if (nodeCount >= maxNodes && out.length) break;
+    // (v0.3.0 성능) 예전엔 이 for...await 루프가 형제 가지를 하나씩 순서대로 확장해, 노드 예산
+    // (maxNodes) 초과 여부를 매 가지마다 정확히 확인할 수 있었다. Promise.all로 동시에 확장하면
+    // 그 정밀한 순서 제어는 느슨해지지만(형제들이 서로의 진행 상황을 못 보고 거의 동시에 시작),
+    // expand() 진입부의 nodeCount 체크가 각 가지 내부에서 여전히 살아 있어 예산을 크게 벗어나지는
+    // 않는다 — 정확한 상한보다 실제 생성 속도가 훨씬 중요한 트레이드오프.
+    const results = await Promise.all(chosen.map(async (c) => {
       const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(c.kind) : true;
       const node = { san: c.san, kind: c.kind, ev: c.ev, adopt: c.adopt, pass, children: [] };
       const cur2 = [...cur, c.san];
       bumpNode(cur2);
-      if (!pass) { out.push(node); continue; }   // 막힌 가지(표시 전용)는 더 확장하지 않는다
+      if (!pass) return node;   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       if (isUserTurn) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
+        let childForceMate = forceMate;
         if (!terminal) {
-          const ev2 = await engine.evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+          const ev2 = await nextWorker().evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
           if (ev2) {
             const evw = posEvalToWhite(ev2, cur2); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
-            if (ev2.mate != null && ev2.mate < 0) terminal = true;           // 상대(둘 차례)가 메이트당하는 수순 = 사용자 승
-            else {
-              const userCp = ev2.mate != null ? -100000 : -(ev2.cp || 0);    // 상대 관점 → 사용자 관점
+            if (ev2.mate != null && ev2.mate < 0) {
+              // (v0.3.0 기능) 상대(둘 차례)가 강제 메이트당하는 수순을 찾았다고 여기서 곧장 끝내지
+              // 않는다 — 실제 체크메이트(#)가 나오는 수까지 이 가지를 계속 확장해서, "이겼다"는
+              // 평가치만 보여주고 끊기지 않고 마무리하는 수순 전체를 보여준다.
+              childForceMate = true;
+            } else {
+              const userCp = -(ev2.cp || 0);                                 // 상대 관점 → 사용자 관점
+              // (v0.3.0 기능) "실질적인 이득" = 절대 cp가 아니라 시작 대비 얻어낸 cp(cpGain) 기준.
+              const cpGain = userCp - startCp;
+              const matGain = materialDiff(boardFromSans(cur2), userColor) - startMat;
               const matOk = !requireMaterialRecovery || materialDiff(boardFromSans(cur2), userColor) >= Math.min(0, startMat);
               const capOk = !requireCapture || captured;
-              if (userCp >= target && matOk && capOk) terminal = true;
+              // (신규) 퍼즐 종류에 따라 종료 기준이 다르다. "포지션 우위"(기본값)는 기존과 동일하게
+              // cp 이득(cpGain >= target)에 더해 기물점수도 실제로 유리해졌을 때만(matGain > 0)
+              // 인정한다 — 기물 변동 없이 포지션만 조금씩 좋아지는 수순은 아직 "실질적인 이득"으로
+              // 치지 않는다. "기물 우위"(수비자 제거처럼 최선의 수만 이어지지만 명확한 기물 이득을
+              // 보는 전술)는 cp 기준 없이, 기물 점수가 실제로 유리해지는 순간 곧바로 끝낸다.
+              const gainOk = puzzleType === "material" ? matGain > 0 : (cpGain >= target && matGain > 0);
+              if (gainOk && matOk && capOk) terminal = true;
             }
           }
         }
-        if (!terminal) node.children = await expand(cur2, depth + 1, captured);
+        if (!terminal) node.children = await expand(cur2, depth + 1, captured, childForceMate);
         // 상대 응수가 만들어지지 않아도(깊이 상한 등) 사용자 수로 끝나는 리프이므로 그대로 둔다
+        return node;
       } else {
-        node.children = await expand(cur2, depth + 1, sawUserCapture);
-        if (!node.children.some((k) => k.pass !== false)) continue;   // 상대 수로 끝나는 가지는 버린다(항상 사용자 수로 끝맺음)
+        node.children = await expand(cur2, depth + 1, sawUserCapture, forceMate);
+        if (!node.children.some((k) => k.pass !== false)) return null;   // 상대 수로 끝나는 가지는 버린다(항상 사용자 수로 끝맺음)
+        return node;
       }
-      out.push(node);
-    }
-    return out;
+    }));
+    return results.filter(Boolean);
   }
   let children;
   if (firstSan) {
@@ -1183,7 +1242,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
     const cur2 = [...preSans, firstSan];
     bumpNode(cur2);
-    try { const ev2 = await engine.evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2); } catch { }
+    try { const ev2 = await nextWorker().evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2); } catch { }
     try {
       const lc = await fetchLichess(preSans, false);
       const hit = lc && lc.moves && lc.moves.find((m) => stripSuffix(m.san) === stripSuffix(firstSan));
@@ -1294,13 +1353,48 @@ async function fetchDevMasterGames(sans) {
       year: r.year,
     }));
 }
-// Lichess 마스터 DB + 개발자 추가분을 한 목록으로 합친다 — 화면(FocusPanel)에서 출처를 구분하지 않는다.
+// (기능) PGN Mentor(선수/이벤트/오프닝 zip)에서 뽑아낸 정적 마스터 대국 — scripts/build-master-games.mjs로
+// public/master-games.json 생성. Lichess 마스터 DB 표본이 적은 포지션을 보충하려고 만들었지만,
+// 지금은 "출처 구분 없이 항상 합쳐서 보여주기"로 정해서 매번 Lichess·개발자 추가분과 함께 합친다.
+// 최초 1회만 fetch해서 메모리에 캐싱 — 파일이 몇 MB급이라 초기 번들에는 안 넣고 마스터 대국을
+// 처음 조회할 때만 지연 로드한다.
+const PGNMENTOR_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
+let pgnMentorGamesData = null;
+let pgnMentorLoadPromise = null;
+function loadPgnMentorGames() {
+  if (pgnMentorGamesData) return Promise.resolve(pgnMentorGamesData);
+  if (!pgnMentorLoadPromise) {
+    pgnMentorLoadPromise = fetch(PGNMENTOR_BASE + "master-games.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { pgnMentorGamesData = d; return d; })
+      .catch(() => null);
+  }
+  return pgnMentorLoadPromise;
+}
+// index는 build-master-games.mjs가 openings.json 트리 노드 키(수순을 공백으로 이은 문자열)로
+// 정확히 매칭해 둔 것이라, 여기서도 같은 방식(체크/메이트 기호 보존한 san 그대로)으로 조회한다.
+function pgnMentorGamesFor(sans, data) {
+  if (!data) return [];
+  const key = sans.join(" ");
+  const idxs = data.index[key];
+  if (!idxs || !idxs.length) return [];
+  return idxs.map((gi) => {
+    const g = data.games[gi];
+    const winner = g.result === "1-0" ? "white" : g.result === "0-1" ? "black" : null;
+    const year = g.date ? parseInt(g.date.slice(0, 4), 10) : null;
+    return { id: "pgnm_" + gi, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null };
+  });
+}
+// Lichess 마스터 DB + 개발자 추가분 + PGN Mentor 정적 데이터를 한 목록으로 합친다 —
+// 화면(FocusPanel)에서 출처를 구분하지 않는다.
 async function fetchAllMasterGames(sans, count = 15) {
-  const [lichess, dev] = await Promise.all([
+  const [lichess, dev, pgnMentorData] = await Promise.all([
     fetchMasterTopGames(sans, count).catch(() => []),
     fetchDevMasterGames(sans).catch(() => []),
+    loadPgnMentorGames(),
   ]);
-  return [...dev, ...lichess];
+  const pgnMentor = pgnMentorGamesFor(sans, pgnMentorData);
+  return [...dev, ...pgnMentor, ...lichess];
 }
 // PGN 안에 명시된 결과 토큰("1-0"/"0-1"/"1/2-1/2"/"*")을 찾는다(없으면 null).
 function pgnResultToken(pgn) {
@@ -1390,6 +1484,12 @@ async function fetchAnyMasterGamePgn(id) {
     const rows = await sbSelect("master_games_dev?id=eq." + id.slice(4) + "&select=sans&limit=1");
     if (!rows || !rows[0]) throw new Error("not-found");
     return rows[0].sans;
+  }
+  if (typeof id === "string" && id.startsWith("pgnm_")) {
+    const data = await loadPgnMentorGames();
+    const g = data && data.games[+id.slice(5)];
+    if (!g) throw new Error("not-found");
+    return g.moves.split(" ");
   }
   return fetchMasterGamePgn(id);
 }
@@ -1893,6 +1993,10 @@ const SYM2KIND = [["??", "blunder"], ["?!", "inaccuracy"], ["!!", "brilliant"], 
 function splitSym(tok) { for (const [sym, kind] of SYM2KIND) { if (tok.endsWith(sym)) return { san: tok.slice(0, -sym.length), kind }; } return { san: tok, kind: null }; }
 let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, questChapters: {} };
 let CONTENT_SEEDED = false;
+// PGN Mentor "Openings" 카테고리(파일명 자체가 세부 변형 이름인 zip들)에서 뽑아낸 대표
+// 수순 — scripts/build-theory-book.mjs 로 생성. 각 항목 { moves:[san,...], name } 을
+// seedContent()에서 이론 수 체계(CONTENT.treeAdds/names)에 풀어 넣는다.
+const THEORY_BOOK = /*__THEORYBOOK__*/ [{"moves":["d4","g6","c4","Bg7","Nc3","d6","e4","Nc6","Be3","e5","d5","Nce7","g4","f5","gxf5","gxf5","Qh5+","Ng6","exf5","Qh4","Qf3","N6e7","Bd3","Nh6"],"name":"Modern"},{"moves":["d4","c5","d5","e5","e4","d6","Nc3","Be7","Nf3","Bg4","h3","Bxf3","Qxf3","Bg5","Bxg5","Qxg5","Nb5","Qd8","Qg4","Kf8","Nxd6","Nf6","Qc8","Qxc8"],"name":"Semi Benoni"},{"moves":["d4","Nf6","Bg5","Ne4","Bf4","c5","f3","Qa5+","c3","Nf6","d5","Qb6","Bc1","e6","e4","exd5","exd5","Bd6","Na3","O-O","Nc4","Re8+","Kf2","Qc7"],"name":"Trompowsky 2.Ne4"},{"moves":["d4","Nf6","Bg5","e6","e4","h6","Bxf6","Qxf6","c3","d6","Bd3","g6","Ne2","Bg7","O-O","O-O","f4","Qe7","Nd2","Nd7","Nf3"],"name":"Trompowsky2e6"},{"moves":["d4","Nf6","Bg5","d5","Bxf6","exf6","e3","Bd6","c4","dxc4","Bxc4","O-O","Nc3","f5","Nf3","Nd7","O-O","Nf6","Qc2","c6","Rfd1","Qe7"],"name":"Trompowsky Other"},{"moves":["d4","Nf6","Nf3","e6","Bg5","c5","e3","Be7","Nbd2","b6","Bd3","Bb7","O-O","O-O","c3","cxd4","exd4","d6","Re1","Nbd7","a4","a6","h3"],"name":"Torre2e6"},{"moves":["d4","Nf6","Nf3","g6","Bg5","Bg7","Nbd2","O-O","c3","d6","e4","c5","dxc5","dxc5","Bc4","Nc6","O-O","Qc7","Qe2","h6","Bxf6","exf6","Nh4","g5"],"name":"Torre2g6"},{"moves":["d4","Nf6","Nf3","e6","Bf4","c5","e3","Nc6","c3","d5","Nbd2","Bd6","Bg3","O-O","Bd3","b6","e4","Be7","e5","Nh5","Ng5","Bxg5","Qxh5","g6"],"name":"London2e6"},{"moves":["d4","Nf6","Nf3","g6","Bf4","Bg7","e3","O-O","Be2","d6","h3","Nbd7","O-O","Qe8","c4","e5","Bh2","Ne4","Nbd2","Nxd2","Qxd2","e4","Ne1","f5"],"name":"London2g6"},{"moves":["d4","Nf6","c4","e6","g3","Bb4+","Bd2","Qe7","Bg2","Nc6","Nf3","Bxd2+","Nbxd2","d6","O-O","O-O","e4","e5","d5","Nb8","Ne1","a5","Nd3","Na6"],"name":"Catalan 3.Bb4"},{"moves":["d4","Nf6","c4","e6","g3","c5","d5","exd5","cxd5","d6","Nc3","g6","Bg2","Bg7","Nf3","O-O","O-O","Re8","Bf4","a6","a4","Nh5","Bg5","Qc7"],"name":"Catalan3c5"},{"moves":["d4","Nf6","c4","e6","g3","d5","Bg2","dxc4","Nf3","a6","O-O","Nc6","e3","Bd7","Qe2","b5","b3","cxb3","axb3","Be7"],"name":"Catalan Open"},{"moves":["d4","Nf6","c4","e6","g3","d5","Bg2","Be7","Nf3","O-O","O-O","dxc4","Qc2","a6","a4","Bd7","Qxc4","Bc6","Bg5","Bd5","Qc2","Be4","Qc1","h6"],"name":"Catalan Closed"},{"moves":["d4","Nf6","c4","Nc6","Nf3","e6","Nc3","Bb4","Qc2","d6","Bd2","O-O","a3","Bxc3","Bxc3","Qe7","e3","e5","d5","Nb8","Nd2","c6","e4"],"name":"Black Knight Tango"},{"moves":["d4","Nf6","c4","e5","dxe5","Ng4","Nf3","Bc5","e3","Nc6","Be2","O-O","O-O","Re8","Nc3","Ngxe5","Nxe5","Nxe5","b3","a5","Bb2","Ra6","Ne4","Ba7"],"name":"Budapest Gambit"},{"moves":["d4","Nf6","c4","d6","Nc3","Nbd7","e4","e5","Nf3","Be7","Be2","O-O","O-O","c6","Re1","a6","Bf1","b5","a3","Bb7"],"name":"Old Indian"},{"moves":["d4","Nf6","c4","c5","d5","e5","Nc3","d6","e4","Be7","Bd3","O-O","Nge2","Ne8","O-O","Bg5","a3","Bxc1","Qxc1","Nd7"],"name":"Czech Benoni"},{"moves":["d4","Nf6","c4","c5","d5","b5","cxb5","a6","bxa6","g6","Nc3","Bxa6","e4","Bxf1","Kxf1","d6","Nf3","Bg7","g3","O-O","Kg2","Nbd7","a4","Ra6"],"name":"Benko Gambit"},{"moves":["d4","Nf6","c4","e6","Nf3","c5","d5","exd5","cxd5","d6","Nc3","g6","e4","Bg7","Be2","O-O","O-O","Re8","Nd2","Na6","f3","Nc7","a4","b6"],"name":"Modern Benoni 6.Nf3"},{"moves":["d4","Nf6","c4","c5","d5","e6","Nc3","exd5","cxd5","d6","e4","g6","f4","Bg7","Bb5+","Nfd7","a4","O-O","Nf3","Na6","O-O","Nb4","Re1","a6"],"name":"Modern Benoni6e4"},{"moves":["d4","f5","g3","Nf6","Bg2","g6","Nf3","Bg7","O-O","O-O","c4","d6","Nc3","Qe8","d5","Na6","Rb1","Bd7","b4","c6","dxc6","bxc6","a3","Nc7"],"name":"Dutch Leningrad"},{"moves":["d4","e6","c4","f5","g3","Nf6","Bg2","Be7","Nf3","O-O","O-O","d6","Nc3","Ne4","Qc2","Nxc3","Qxc3","a5","b3","Nc6","Bb2","Bf6","Rad1","Qe8"],"name":"Dutch Classical"},{"moves":["d4","f5","c4","Nf6","Nc3","g6","g3","Bg7","Bg2","O-O","Nf3","d6","O-O"],"name":"Dutch 3.Nc3"},{"moves":["d4","f5","Nc3","Nf6","Bg5","d5","Bxf6","exf6","e3","Be6","Bd3","Nc6","a3","Qd7","Nge2","O-O-O","b4","Ne7","Nc1"],"name":"Dutch Other"},{"moves":["d4","Nf6","Nf3","g6","g3","Bg7","Bg2","O-O","O-O","d5","c4","c6","cxd5","cxd5","Nc3","Nc6","Ne5","e6","Nxc6","bxc6","Bf4","Nh5","Be3"],"name":"Grunfeld Fianchetto"},{"moves":["d4","Nf6","c4","g6","Nc3","d5","Nf3","Bg7","Qb3","dxc4","Qxc4","O-O","e4","a6","Be2","b5","Qb3","c5","dxc5","Be6","Qc2","Nbd7","Be3","Rc8"],"name":"Grunfeld 4.Nf3"},{"moves":["d4","Nf6","c4","g6","Nc3","d5","Bf4","Bg7","e3","O-O","Rc1","c5","dxc5","Be6","Nf3","Nc6","Be2","Ne4","Nd4","Nxd4","exd4","Nxc3","bxc3","dxc4"],"name":"Grunfeld Other"},{"moves":["d4","Nf6","c4","g6","Nc3","d5","cxd5","Nxd5","e4","Nxc3","bxc3","Bg7","Bc4","c5","Ne2","Nc6","Be3","O-O","O-O","Bg4","f3","Na5","Bd3","cxd4"],"name":"Grunfeld Exchange"},{"moves":["d4","Nf6","c4","e6","Nf3","Bb4+","Bd2","Qe7","g3","Nc6","Bg2","Bxd2+","Nbxd2","d6","O-O","a5","e4","e5","d5","Nb8","Ne1","O-O","Nd3","Na6"],"name":"Bogo 4.Bd2"},{"moves":["d4","Nf6","c4","e6","Nf3","Bb4+","Nbd2","O-O","a3","Be7","e4","d6","Be2","Nfd7","b4","e5","d5","a5","Bb2","c6","O-O","cxd5","cxd5","Nb6"],"name":"Bogo 4.Nbd2"},{"moves":["d4","Nf6","c4","e6","Nf3","b6","a3","Bb7","Nc3","d5","cxd5","Nxd5","Qc2","Nxc3","bxc3","Be7","e4","O-O","Bd3","c5","O-O","Qc7","Qe2","Nd7"],"name":"QID4a3"},{"moves":["d4","Nf6","c4","e6","Nf3","b6","Nc3","Bb7","a3","d5","cxd5","Nxd5","Qc2","Nxc3","bxc3","Be7","e4","O-O","Bd3","c5","O-O","Qc8","Qe2","Ba6"],"name":"QID 4.Nc3"},{"moves":["d4","Nf6","c4","e6","Nf3","b6","e3","Bb7","Bd3","d5","O-O","Bd6","Nc3","O-O","b3","Nbd7","Bb2","a6","Rc1","Qe7","cxd5","exd5","Ne2","Ne4"],"name":"QID4e3"},{"moves":["d4","Nf6","c4","e6","Nf3","b6","Bf4","Bb7","e3","Be7","h3","O-O","Nc3","d5","cxd5","Nxd5","Nxd5","Bxd5","Bd3","Bb4+","Ke2","Bd6","Bxd6","cxd6"],"name":"QID Other"},{"moves":["d4","Nf6","c4","e6","Nf3","b6","g3","Ba6","b3","Bb4+","Bd2","Be7","Bg2","c6","Bc3","d5","Ne5","Nfd7","Nxd7","Nxd7","Nd2","O-O","O-O","Rc8"],"name":"QID4g3-Ba6"},{"moves":["d4","Nf6","c4","e6","Nf3","b6","g3","Bb7","Bg2","Be7","O-O","O-O","Nc3","Ne4","Qc2","Nxc3","Qxc3","c5","Rd1","d6","b3","Bf6","Bb2","Qe7"],"name":"QID4g 3.Other"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","Nf3","b6","Bg5","Bb7","e3","h6","Bh4","g5","Bg3","Ne4","Qc2","Bxc3+","bxc3","d6","Bd3","f5","d5","Nd7"],"name":"Nimzo 4.Nf3"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","a3","Bxc3+","bxc3","c5","e3","Nc6","Bd3","O-O","Ne2","b6","e4","Ne8","O-O","Ba6","f4","f5","exf5","exf5"],"name":"Nimzo Saemisch"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","Bg5","h6","Bh4","c5","d5","d6","e3","Bxc3+","bxc3","e5","Bd3","e4","Bc2"],"name":"Nimzo Leningrad"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","f3","d5","a3","Bxc3+","bxc3","c5","cxd5","Nxd5","dxc5","Qa5","e4","Ne7","Be3","O-O","Qb3","Qc7","Bb5","Nec6"],"name":"Nimzo4f3"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","Bd2","O-O","Nf3","b6","e3","Bb7","Bd3","d5","O-O"],"name":"Nimzo Other4"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","Qc2","O-O","a3","Bxc3+","Qxc3","b6","Bg5","Bb7","f3","h6","Bh4","d5","e3","Nbd7","cxd5","Nxd5","Bxd8","Nxc3"],"name":"Nimzo Cl 4.O-O"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","Qc2","c5","dxc5","O-O","a3","Bxc5","Nf3","b6","Bf4","Bb7","Rd1","Nc6","e3","Nh5","Bg3","f5","Be2","Rc8"],"name":"Nimzo Cl4c5"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","Qc2","d5","cxd5","exd5","Bg5","h6","Bh4","c5","dxc5","g5","Bg3","Ne4","e3","Qa5","Ne2","Bf5","Be5","O-O"],"name":"Nimzo Cl Other"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","e3","O-O","Bd3","d5","Nf3","c5","O-O","Nc6","a3","Bxc3","bxc3","dxc4","Bxc4","Qc7","Bb2","e5","h3","Bf5"],"name":"Nimzo Rub 4.O-O"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","e3","c5","Bd3","Nc6","Ne2","cxd4","exd4","d5","cxd5","Nxd5","O-O","O-O","Bc2","Bd6","Ne4","Be7","a3"],"name":"Nimzo Rub4c5"},{"moves":["d4","Nf6","c4","e6","Nc3","Bb4","e3","b6","Ne2","Ba6","a3","Bxc3+","Nxc3","d5","b3","O-O","Be2","Nc6","a4","dxc4","bxc4","Na5"],"name":"Nimzo Rub Other"},{"moves":["d4","Nf6","c4","g6","Nc3","Bg7","e4","d6","Be2","O-O","Bg5","c5","d5","h6","Bf4","e6","dxe6","Bxe6","Bxd6","Re8","Nf3","Nc6","O-O","Nd4"],"name":"KID Averbakh"},{"moves":["d4","Nf6","c4","g6","Nf3","Bg7","g3","O-O","Bg2","d6","O-O","Nc6","Nc3","a6","b3","Rb8","Nd5","Nh5","Bb2","e6","Nc3","b5","d5","Ne7"],"name":"KID Fianchetto"},{"moves":["d4","Nf6","c4","g6","Nc3","Bg7","e4","d6","f4","O-O","Nf3","c5","d5","e6","Be2","exd5","cxd5","Re8","e5","dxe5","fxe5","Ng4","Bg5","Qb6"],"name":"KID4pawns"},{"moves":["d4","Nf6","c4","g6","Nc3","Bg7","e4","d6","f3","O-O","Be3","e5","d5","c6","Qd2","cxd5","cxd5","a6","Bd3","Nbd7","Nge2","b5","O-O","Nb6"],"name":"KID Saemisch"},{"moves":["d4","Nf6","c4","g6","Nc3","Bg7","e4","d6","Nf3","O-O","Be2","e5","O-O","Nc6","d5","Ne7","Ne1","Nd7","Be3","f5","f3","f4","Bf2","g5"],"name":"KID Classical"},{"moves":["d4","Nf6","c4","g6","Nc3","Bg7","e4","d6","Nf3","O-O","Be2","e5","O-O","Na6","Be3","Ng4","Bg5","Qe8","dxe5","dxe5","h3","h6","Bd2","Nf6"],"name":"KID Other7"},{"moves":["d4","Nf6","c4","g6","Nc3","Bg7","e4","d6","Nf3","O-O","Be2","e5","d5","a5","Bg5","h6","Bh4","Na6","Nd2","Qe8","O-O","Nh7","a3","Bd7"],"name":"KID Petrosian"},{"moves":["d4","Nf6","c4","g6","Nc3","Bg7","e4","d6","Nf3","O-O","h3","e5","d5","a5","Bg5","Na6","Nd2","Qe8","Be2","Nd7","a3"],"name":"KID Other56"},{"moves":["d4","d5","Bg5","h6","Bh4","c6","e3","Qb6","Qc1","e5","Nf3","e4","Nfd2","Ne7","c4","Nf5","Bg3","Nxg3","hxg3","Be6","Nc3","Be7","Be2","O-O"],"name":"Hodgson"},{"moves":["d4","d5","Nf3","Nf6","e3","e6","Bd3","c5","b3","Nc6","Bb2","Bd6","Nbd2","O-O","O-O","b6","Ne5","Bb7","f4","Rc8","a3","Ne7"],"name":"Colle"},{"moves":["d4","d5","c4","Bf5","Nc3","e6","Nf3","c6","Qb3","Qb6","c5","Qc7","Bf4","Qc8","Nh4","Nf6","Nxf5","exf5","e3","Be7"],"name":"QG Sym-Baltic"},{"moves":["d4","d5","c4","e5","dxe5","d4","Nf3","Nc6","g3","Nge7","Bg2","Ng6","O-O","Ngxe5","Nxe5","Nxe5","b3","Bc5","Bb2","O-O","Nd2","a5","Ne4","Ba7"],"name":"QG-Albin"},{"moves":["d4","d5","c4","Nc6","Nf3","Bg4","cxd5","Bxf3","gxf3","Qxd5","e3","e5","Nc3","Bb4","Bd2","Bxc3","bxc3","Qd6","Rb1","b6","f4","exf4","e4","Nge7"],"name":"QG-Chigorin"},{"moves":["d4","d5","c4","c6","Nf3","Nf6","Qc2","dxc4","Qxc4","Bf5","g3","e6","Bg2","Nbd7","O-O","Be7","Nc3","O-O","Re1","Ne4","Qb3","Qb6","Nh4","Bxh4"],"name":"Slav Other34"},{"moves":["d4","d5","c4","c6","cxd5","cxd5","Nc3","Nf6","Nf3","Nc6","Bf4","Bf5","e3","e6","Bd3","Bxd3","Qxd3","Bd6","Bxd6","Qxd6","O-O","O-O","Rfc1","Rfc8"],"name":"Slav Exchange"},{"moves":["d4","d5","c4","c6","Nf3","Nf6","Nc3","a6","c5","Nbd7","Bf4","Nh5","Bd2","Nhf6","Bf4","Nh5","Bd2","Nhf6","Rc1","g6","h3","Bg7","Bf4"],"name":"Slav4a6"},{"moves":["d4","d5","c4","c6","Nf3","Nf6","Nc3","dxc4","a4","e6","e3","c5","Bxc4","Nc6","O-O","cxd4","exd4","Be7","Qe2","O-O","Rd1","Nb4","Bg5","h6"],"name":"Slav Other5"},{"moves":["d4","d5","c4","c6","Nf3","Nf6","Nc3","dxc4","a4","Bf5","e3","e6","Bxc4","Bb4","O-O","O-O","Qe2","Nbd7","e4","Bg6","Bd3","Bh5","e5","Nd5"],"name":"Slav Main"},{"moves":["d4","d5","c4","dxc4","e4","e5","Nf3","exd4","Bxc4","Nc6","O-O","Be6","Bxe6","fxe6","Qb3","Qd7","Qxb7","Rb8","Qa6","Nf6","Nbd2","Bd6","b3","O-O"],"name":"QGA3e4"},{"moves":["d4","d5","c4","dxc4","Nf3","a6","e3","Bg4","Bxc4","e6","h3","Bh5","Nc3","Nc6","O-O","Nf6","Re1","Be7","g4","Bg6","e4","O-O","a3"],"name":"QGA Other3"},{"moves":["d4","d5","c4","dxc4","Nf3","Nf6","e3","Bg4","Bxc4","e6","h3","Bh5","Nc3","Nbd7","O-O","Bd6","e4","e5","g4","Bg6","dxe5","Nxe5","Nxe5","Bxe5"],"name":"QGA Other4"},{"moves":["d4","d5","c4","dxc4","Nf3","Nf6","e3","e6","Bxc4","c5","O-O","a6","a4","Nc6","Qe2","cxd4","Rd1","Be7","exd4","O-O","Nc3","Nb4","Ne5","Bd7"],"name":"QGA Main"},{"moves":["d4","d5","c4","e6","Nc3","c6","e4","dxe4","Nxe4","Bb4+","Bd2","Qxd4","Bxb4","Qxe4+","Be2","Na6","Ba5","b6","Qd6","Bd7","Bc3","f6","Nf3","Nh6"],"name":"QGD Other34"},{"moves":["d4","d5","c4","e6","Nc3","c5","cxd5","exd5","Nf3","Nc6","g3","Nf6","Bg2","Be7","O-O","O-O","Bg5","cxd4","Nxd4","h6","Be3","Re8","Rc1","Bf8"],"name":"QGD Tarrasch"},{"moves":["d4","d5","c4","e6","Nc3","Nf6","cxd5","exd5","Bg5","Be7","e3","O-O","Bd3","c6","Qc2","Nbd7","Nge2","Re8","O-O","Nf8","f3","Be6","Rad1","Rc8"],"name":"QGD Exchange"},{"moves":["d4","d5","c4","e6","Nc3","Be7","Nf3","Nf6","Bf4","O-O","e3","c5","dxc5","Bxc5","Qc2","Nc6","a3","Qa5","Rd1","Be7","Be2","dxc4","Bxc4","Nh5"],"name":"QGD 5.Bf4"},{"moves":["d4","d5","c4","e6","Nc3","c5","e3","Nf6","Nf3","Nc6","a3","a6","dxc5","Bxc5","b4","Ba7","Bb2","O-O","Qc2","Qe7","Rd1","Rd8","Be2","dxc4"],"name":"Semi Tarr5e3-Nc6"},{"moves":["d4","Nf6","c4","e6","Nf3","d5","Nc3","c5","cxd5","Nxd5","e4","Nxc3","bxc3","cxd4","cxd4","Bb4+","Bd2","Bxd2+","Qxd2","O-O","Bc4","Nd7","O-O","b6"],"name":"Semi Tarrasch Main"},{"moves":["d4","d5","c4","c6","Nf3","Nf6","Nc3","e6","Qb3","dxc4","Qxc4","b5","Qd3","a6"],"name":"Semi Slav Other5"},{"moves":["d4","d5","c4","c6","Nf3","Nf6","Nc3","e6","Bg5","h6","Bxf6","Qxf6","e3","Nd7","Bd3","dxc4","Bxc4","g6","O-O","Bg7"],"name":"Semi Slav Botvinnik"},{"moves":["d4","d5","c4","c6","Nc3","Nf6","e3","e6","Nf3","Nbd7","Qc2","Bd6","Bd3","O-O","O-O","dxc4","Bxc4","b5","Be2","Bb7","Rd1","Qc7","e4","e5"],"name":"Semi Slav Meran"},{"moves":["d4","d5","c4","e6","Nc3","Nf6","Bg5","Nbd7","e3","c6","Nf3","Qa5","Nd2","Bb4","Qc2","O-O","Be2","e5","O-O","exd4","Nb3","Qc7","Nxd4","dxc4"],"name":"QGD Ortho Other4"},{"moves":["d4","d5","c4","e6","Nc3","Nf6","Bg5","Be7","e3","O-O","Nf3","Nbd7","Rc1","c6","Bd3","dxc4","Bxc4","Nd5","Bxe7","Qxe7","O-O","Nxc3","Rxc3","e5"],"name":"QGD Ortho Main"},{"moves":["e4","b6","d4","Bb7","Bd3","e6","Nf3","c5","c3","Nf6","Qe2","Be7","O-O","Nc6","a3","Na5","Nbd2","c4","Bc2","Qc7","Re1","O-O","Rb1","Rae8"],"name":"Owen Defense"},{"moves":["e4","Nc6","Nf3","d6","d4","Nf6","Nc3","Bg4","Be3","e6","h3","Bh5","d5","exd5","exd5","Ne5","g4","Nxf3+","Qxf3","Bg6","O-O-O","Be7","Qg2","Nd7"],"name":"Nimzo Defense"},{"moves":["e4","d5","exd5","Qxd5","Nc3","Qd6","d4","Nf6","Nf3","a6","g3","Bg4","Bg2","Nc6","O-O","O-O-O","d5","Ne5","Bf4","Nxf3+","Bxf3","Bxf3","Qxf3","e5"],"name":"Scand 3.Qd6-Qd8"},{"moves":["e4","d5","exd5","Qxd5","Nc3","Qa5","d4","Nf6","Nf3","Bf5","Bc4","e6","Bd2","Bb4","a3","Bxc3","Bxc3","Qb6","O-O","Nc6","a4","a5","Bb5","O-O"],"name":"Scand 2.Qxd5-3Qa5"},{"moves":["e4","d5","exd5","Nf6","d4","Nxd5","c4","Nb6","Nf3","g6","Nc3","Bg7","c5","Nd5","Bc4","c6","Qb3","O-O","O-O","Nxc3","bxc3","b5","cxb6","axb6"],"name":"Scand 2.Nf6-3d4"},{"moves":["e4","d5","exd5","Nf6","Nf3","Nxd5","d4","g6","c4","Nb6","Nc3","Bg7","c5","Nd5","Bc4","c6","O-O","O-O","Re1","Bg4","Bg5","Nf6","h3"],"name":"Scand 2.Nf 6.Other"},{"moves":["e4","Nf6","Nc3","d5","exd5","Nxd5","Bc4","Nb6","Bb3","Nc6","Nf3","Bf5","O-O","e6","d4","Be7","Bf4","O-O","h3","Bf6"],"name":"Alekhine 2.Nc3-d5"},{"moves":["e4","Nf6","e5","Nd5","c4","Nb6","d4","d6","exd6","cxd6","Nc3","g6","Be3","Bg7","Rc1","O-O","b3","Bf5","Nf3","d5","c5","Nc8","Be2","Nc6"],"name":"Alekhine Other3"},{"moves":["e4","Nf6","e5","Nd5","d4","d6","c4","Nb6","exd6","cxd6","Nc3","g6","Be3","Bg7","Rc1","O-O","b3","Nc6","d5","Ne5","Be2","f5","f4","Ng4"],"name":"Alekhine Exchange"},{"moves":["e4","Nf6","e5","Nd5","d4","d6","c4","Nb6","f4","dxe5","fxe5","Nc6","Be3","Bf5","Nc3","e6","Nf3","Be7","Be2","O-O","O-O","f6","exf6","Bxf6"],"name":"Alekhine 4.Pawns"},{"moves":["e4","Nf6","e5","Nd5","d4","d6","Nf3","Bg4","Be2","e6","O-O","Be7","c4","Nb6","Nc3","O-O","Be3","Nc6","exd6","cxd6","d5","exd5","Nxd5","Nxd5"],"name":"Alekhine Modern"},{"moves":["e4","g6","d4","Bg7","Nf3","d6","Bc4","Nf6","Qe2","O-O","O-O","Bg4","Nbd2","Nc6","c3","e5","h3","Bxf3","Nxf3","exd4","cxd4","d5","exd5","Nxd5"],"name":"Modern 3.Nf3"},{"moves":["e4","g6","d4","Bg7","Nc3","d6","Be3","a6","Qd2","b5","f3","Nd7","h4","h5","Nh3","Bb7","Ng5"],"name":"Modern 3.Nc3-d6"},{"moves":["e4","g6","d4","Bg7","Nc3","c6","Nf3","d5","h3","dxe4","Nxe4","Nf6","Nxf6+","exf6","Bc4","O-O","O-O","Nd7","Re1","Nb6","Bb3","a5","a3","a4"],"name":"Modern 3.Nc3-c6"},{"moves":["e4","g6","d4","Bg7","Nc3","a6","Be3","b5","Qd2","Bb7","f3","d6","h4","h5","Nh3","Nd7","Ng5","Ngf6","a4","b4","Ne2","a5"],"name":"Modern 3.Nc 3.Other"},{"moves":["e4","g6","d4","Bg7","c3","d6","Nf3","Nf6","Bd3","O-O","O-O","Nc6","h3","e5","Re1","Re8","Nbd2"],"name":"Modern Other3"},{"moves":["e4","d6","d4","Nf6","Bd3","e5","c3","d5","dxe5","Nxe4","Nf3","Nc6","Nbd2","Nc5","Bb1","Bg4","b4","Ne6","Qa4","Bh5","O-O","Qd7","b5","Ncd8"],"name":"Pirc Other White3"},{"moves":["e4","d6","d4","Nf6","Nc3","e5","Nf3","Nbd7","Bc4","Be7","O-O","O-O","Re1","c6","a4","a5","h3","Nb6","Ba2","Nfd7","Be3","exd4","Bxd4","Nc5"],"name":"Pirc Other Black3"},{"moves":["e4","d6","d4","Nf6","Nc3","g6","f4","Bg7","Nf3","O-O","Bd3","Nc6","O-O","e5","fxe5","dxe5","d5","Nd4","Nxe5","Nxe4","Bxe4","Bxe5","Bf4","Bg7"],"name":"Pirc Austrian"},{"moves":["e4","d6","d4","Nf6","Nc3","g6","Be3","c6","Qd2","b5","Bd3","Nbd7","Nf3","e5","dxe5","dxe5","h3","Bb7","O-O","Bg7","a4","a6","Ne2","Qe7"],"name":"Pirc Other White4"},{"moves":["e4","d6","d4","Nf6","Nc3","g6","Nf3","Bg7","Be2","O-O","O-O","c6","a4","Qc7","h3","e5","dxe5","dxe5","Be3","Nh5","Bc4","Nf4"],"name":"Pirc Classical"},{"moves":["e4","c6","c4","d5","exd5","cxd5","cxd5","Nf6","Nc3","Nxd5","Nf3","Nc6","Bb5","e6","O-O","Be7","d4","O-O","Re1","Bd7","Bd3","Rc8","a3","Bf6"],"name":"Caro-Kann2c4"},{"moves":["e4","c6","Nc3","d5","Nf3","Bg4","h3","Bxf3","Qxf3","e6","d3","Nd7","Bd2","Ngf6","g4","h6","O-O-O","Bb4"],"name":"Caro-Kann 2.Knight"},{"moves":["e4","c6","d4","d5","exd5","cxd5","Bd3","Nc6","c3","Nf6","Bf4","Bg4","Qb3","Qd7","Nd2","e6","Ngf3","Bd6","Bxd6","Qxd6","O-O","O-O","Rae1","Bxf3"],"name":"Caro-Kann Ex"},{"moves":["e4","c6","d4","d5","exd5","cxd5","c4","Nf6","Nc3","e6","Nf3","Bb4","cxd5","Nxd5","Bd2","Nc6","Bd3","O-O","O-O","Be7","a3","Bf6","Qc2","g6"],"name":"Caro-Kann Pan-Bot"},{"moves":["e4","c6","d4","d5","e5","Bf5","Nf3","e6","Be2","Nd7","O-O","Ne7","Nbd2","h6","Nb3","g5","Ne1","Qc7","Nd3","Ng6","Be3","O-O-O"],"name":"Caro-Kann Adv"},{"moves":["e4","c6","d4","d5","Nc3","dxe4","Nxe4","Nf6","Nxf6+","exf6","c3","Bd6","Bd3","O-O","Qc2","Re8+","Ne2","h5","O-O","h4","h3","Nd7","Bd2","Nf8"],"name":"Caro-Kann 4.Nf6"},{"moves":["e4","c6","d4","d5","Nc3","dxe4","Nxe4","Nd7","Nf3","Ngf6","Nxf6+","Nxf6","Bc4","Bf5","O-O","e6","c3","Be7","Re1","O-O","Bg5","h6"],"name":"Caro-Kann 4.Nd7"},{"moves":["e4","c6","d4","d5","Nc3","dxe4","Nxe4","Bf5","Ng3","Bg6","h4","h6","Nf3","Nd7","h5","Bh7","Bd3","Bxd3","Qxd3","e6","Bd2","Ngf6","O-O-O","Be7"],"name":"Caro-Kann Classic"},{"moves":["e4","e6","d3","d5","Nd2","Nf6","Ngf3","c5","g3","Nc6","Bg2","Be7","O-O","O-O","Re1","b5","e5","Nd7","Nf1","a5","h4","b4"],"name":"French KIA"},{"moves":["e4","e6","Nf3","d5","Nc3","Nf6","e5","Nfd7","d4","c5","dxc5","Nc6","Bf4","Bxc5","Bd3","f6","exf6","Nxf6","O-O","O-O","Ne5","Bd7","Qe2","Qe7"],"name":"French Other2"},{"moves":["e4","e6","d4","d5","exd5","exd5","Nf3","Nf6","Bd3","Bd6","O-O","O-O","Bg5","Bg4","Nbd2","Nbd7","c3","c6","Qc2","Qc7","Rfe1","Rfe8","Bh4","Bh5"],"name":"French Exchange"},{"moves":["e4","e6","d4","d5","Bd3","dxe4","Bxe4","Nf6","Bf3","c5","Ne2","Nc6","Be3","cxd4","Nxd4","Ne5","Nc3","a6","Qe2","Nxf3+","Qxf3","e5","Nb3","Bb4"],"name":"French Schlechter"},{"moves":["e4","e6","d4","d5","e5","c5","c3","Nc6","Nf3","Qb6","a3","c4","Nbd2","Na5","Be2","Bd7","O-O","Ne7","Rb1","Qc7","Re1","Nc8","Nf1","Nb6"],"name":"French Advance"},{"moves":["e4","e6","d4","d5","Nd2","Be7","Ngf3","Nf6","e5","Nfd7","Bd3","c5","c3","Nc6","O-O","g5","dxc5","g4","Nd4","Ndxe5","Bb5","Bd7","N2b3","h5"],"name":"Fr Tarrasch Other3"},{"moves":["e4","e6","d4","d5","Nd2","c5","exd5","Qxd5","Ngf3","cxd4","Bc4","Qd6","O-O","Nf6","Nb3","Nc6","Nbxd4","Nxd4","Nxd4","a6","Re1","Qc7","Bb3","Bd6"],"name":"Fr Tarrasch3c5"},{"moves":["e4","e6","d4","d5","Nd2","Nf6","e5","Nfd7","Bd3","c5","c3","Nc6","Ne2","cxd4","cxd4","f6","exf6","Nxf6","Nf3","Bd6","O-O","Qc7","Bg5","O-O"],"name":"Fr Tarrasch 3.Nf6"},{"moves":["e4","e6","d4","d5","Nc3","dxe4","Nxe4","Nd7","Nf3","Ngf6","Nxf6+","Nxf6","Bd3","c5","dxc5","Bxc5","O-O","O-O","Bg5","b6","Qe2","Bb7","Rad1","Qc7"],"name":"French Rubinstein"},{"moves":["e4","e6","d4","d5","Nc3","Bb4","exd5","exd5","Bd3","Nc6","a3","Bxc3+","bxc3","Nge7","Qh5","Be6","Rb1","b6","Nf3","Qd7","Ng5","O-O-O","Nxe6","Qxe6+"],"name":"Fr Winawer Other W4"},{"moves":["e4","e6","d4","d5","Nc3","Bb4","e5","Ne7","a3","Bxc3+","bxc3","c5","Qg4","O-O","Bd3","Nbc6","Qh5","Ng6","Nf3","Qc7","Be3","c4","Bxg6","fxg6"],"name":"Fr Winawer Other B4"},{"moves":["e4","e6","d4","d5","Nc3","Bb4","e5","c5","a3","Bxc3+","bxc3","Ne7","Qg4","Qc7","Qxg7","Rg8","Qxh7","cxd4","Ne2","Nbc6","f4","Bd7","Qd3","dxc3"],"name":"Fr Winawer Main"},{"moves":["e4","e6","d4","d5","Nc3","Nf6","e5","Nfd7","f4","c5","Nf3","Nc6","Be3","a6","Qd2","b5","dxc5","Bxc5","Bxc5","Nxc5","Qf2","Qb6","Bd3","b4"],"name":"French Steinitz"},{"moves":["e4","e6","d4","d5","Nc3","Nf6","Bg5","Bb4","e5","h6","Bd2","Bxc3","bxc3","Ne4","Qg4","g6","Bd3","Nxd2","Kxd2","c5","Nf3","Nc6","Qf4","Qa5"],"name":"French Mac Cutcheon"},{"moves":["e4","e6","d4","d5","Nc3","Nf6","Bg5","dxe4","Nxe4","Be7","Bxf6","gxf6","Nf3","f5","Nc3","a6","g3","b5","Bg2","Bb7","O-O","O-O","Ne5","Bxg2"],"name":"French Burn"},{"moves":["e4","e6","d4","d5","Nc3","Nf6","Bg5","Be7","e5","Nfd7","Bxe7","Qxe7","f4","a6","Nf3","c5","Qd2","Nc6","dxc5","Nxc5","Bd3","b5","O-O","b4"],"name":"French Classical"},{"moves":["e4","c5","b3","Nc6","Bb2","d6","Bb5","Bd7","f4","a6","Bxc6","Bxc6","d3","e6","Nf3","Nf6","O-O","Be7","Nbd2","O-O","Qe1"],"name":"Sicilian Misc2"},{"moves":["e4","c5","f4","Nc6","Nf3","g6","Bb5","Bg7","Bxc6","bxc6","d3","d6","O-O","Nf6","Nc3","O-O","Qe1"],"name":"Sicilian2f4"},{"moves":["e4","c5","d4","cxd4","c3","dxc3","Nxc3","Nc6","Nf3","d6","Bc4","e6","O-O","Nf6","Qe2","Be7","Rd1","e5","h3","O-O","Be3","Be6","Bxe6","fxe6"],"name":"Sicilian Smith-Morra"},{"moves":["e4","c5","c3","e6","d4","d5","exd5","exd5","Nf3","Nc6","Bb5","Bd6","dxc5","Bxc5","O-O","Ne7","Nbd2","O-O","Nb3","Bb6","Re1"],"name":"Sicilian Alapin Other2"},{"moves":["e4","c5","c3","Nf6","e5","Nd5","d4","cxd4","Nf3","Nc6","cxd4","d6","Bc4","Nb6","Bb5","dxe5","Nxe5","Bd7","Nxd7","Qxd7","Nc3","e6","O-O","Be7"],"name":"Sicilian Alapin 2.Nf6"},{"moves":["e4","c5","c3","d5","exd5","Qxd5","d4","Nf6","Nf3","Bg4","Be2","e6","O-O","Nc6","h3","Bh5","Be3","cxd4","cxd4","Be7","Nc3","Qd6","Qb3","O-O"],"name":"Sicilian Alapin2d5"},{"moves":["e4","c5","Nc3","e6","g3","Nc6","Bg2","g6","d3","Bg7","Be3","d6","Qd2","Rb8","Nge2","Nd4","O-O","Ne7","Bh6","O-O","Bxg7","Kxg7","Nxd4","cxd4"],"name":"Sicilian 2.Nc3-e6"},{"moves":["e4","c5","Nc3","d6","f4","g6","Nf3","Bg7","Bc4","Nc6","O-O","e6","d3","Nge7","Qe1","O-O","f5","gxf5","Qh4","fxe4","dxe4","Ng6","Qh5","Nce5"],"name":"Sicilian 2.Nc3-d6"},{"moves":["e4","c5","Nc3","Nc6","f4","g6","Nf3","Bg7","Bb5","Nd4","O-O","Nxb5","Nxb5","d5","exd5","a6","Nc3","Nf6","d4","c4","Qe2","b5","Re1","O-O"],"name":"Sicilian Grand Prix"},{"moves":["e4","c5","Nc3","Nc6","Bb5","Nd4","Nf3","a6","Bd3","g6","O-O","Bg7","Re1","d6","Nxd4","cxd4","Ne2","e5","c3","dxc3","dxc3","Ne7","Be3"],"name":"Sicilian Closed Other3"},{"moves":["e4","c5","Nc3","Nc6","g3","g6","Bg2","Bg7","d3","d6","Be3","e6","Qd2","Rb8","Nge2","Nd4","O-O","Ne7","Nd1","O-O","c3","Nxe2+","Qxe2","b5"],"name":"Sicilian Closed Main"},{"moves":["e4","c5","Nf3","g6","d4","cxd4","Nxd4","Bg7","Nc3","Nc6","Be3","Nf6","Bc4","O-O","Bb3","d6","f3","Bd7","Qd2","Nxd4","Bxd4","b5","h4","a5"],"name":"Sicilian 2.Nf 3.Other2"},{"moves":["e4","c5","Nf3","Nc6","Bb5","g6","O-O","Bg7","c3","Nf6","Re1","O-O","d4","cxd4","cxd4","d5","e5","Ne4","Nc3","Nxc3","bxc3","Na5","Bg5"],"name":"Sicilian Rossolimo"},{"moves":["e4","c5","Nf3","Nc6","d4","cxd4","Nxd4","Qb6","Nb3","Nf6","Nc3","e6","Be3","Qc7","a3","a6","f4","d6","Be2","b5"],"name":"Sic 2.Nc6-4Qc7-4Qb6"},{"moves":["e4","c5","Nf3","Nc6","d4","cxd4","Nxd4","e5","Nb5","d6","N1c3","a6","Na3","b5","Nd5","Nge7","c4","Nd4","Be3","Nxd5","cxd5","Be7","Bd3","O-O"],"name":"Sicilian Lowenthal"},{"moves":["e4","c5","Nf3","Nc6","d4","cxd4","Nxd4","Nf6","Nc3","g6","Be3","Bg7","Bc4","O-O","Bb3","d6","f3","Bd7","Qd2","Nxd4","Bxd4","b5"],"name":"Sicilian 2.Nc 6.Other5"},{"moves":["e4","c5","Nf3","Nc6","d4","cxd4","Nxd4","g6","c4","Bg7","Be3","Nf6","Nc3","O-O","Be2","d6","O-O","Bd7","Qd2","Nxd4","Bxd4","Bc6","f3","a5"],"name":"Sicilian Accel Dragon"},{"moves":["e4","c5","Nf3","Nc6","d4","cxd4","Nxd4","Nf6","Nc3","e5","Ndb5","d6","Bg5","a6","Na3","b5","Nd5","Be7","Bxf6","Bxf6","c3","O-O","Nc2","Bg5"],"name":"Sicilian Sveshnikov"},{"moves":["e4","c5","Nf3","e6","d4","cxd4","Nxd4","a6","Be2","Nf6","Nc3","Qc7","O-O","Nc6","Be3","Bb4","Na4","Be7","Nxc6","bxc6","Nb6","Rb8","Nxc8","Qxc8"],"name":"Sicilian Kan Other5"},{"moves":["e4","c5","Nf3","e6","d4","cxd4","Nxd4","a6","c4","Nf6","Nc3","Qc7","a3","b6","Be3","Bb7","f3","d6","Be2","Nbd7","O-O","Be7","Rc1","O-O"],"name":"Sicilian Kan5c4"},{"moves":["e4","c5","Nf3","e6","d4","cxd4","Nxd4","a6","Nc3","Qc7","Bd3","Nf6","O-O","d6","Kh1","Nbd7","f4","b5","Qe2","Bb7","Bd2","Be7","b4","O-O"],"name":"Sicilian Kan 5.Nc3"},{"moves":["e4","c5","Nf3","e6","d4","cxd4","Nxd4","a6","Bd3","Bc5","Nb3","Ba7","Qe2","Nc6","Be3","d6","O-O","Nf6","c4","O-O","Nc3","e5","Bxa7","Rxa7"],"name":"Sicilian Kan 5.Bd3"},{"moves":["e4","c5","Nf3","e6","d4","cxd4","Nxd4","Nc6","Nxc6","bxc6","Bd3","Nf6","O-O","d5","Nd2","Be7","Qe2","O-O","c4"],"name":"Sicilian Taimanov Other5"},{"moves":["e4","c5","Nf3","e6","d4","cxd4","Nxd4","Nc6","Nb5","d6","c4","Nf6","N1c3","a6","Na3","Be7","Be2","O-O","O-O","b6","Be3","Bb7","Qb3","Nd7"],"name":"Sicilian Taimanov 5.Nb5"},{"moves":["e4","c5","Nf3","e6","d4","cxd4","Nxd4","Nc6","Nc3","Qc7","Be3","a6","Qd2","Nf6","O-O-O","Bb4","f3","Ne5","Nb3","b5","Qe1","Be7","f4","Ng6"],"name":"Sicilian Taimanov Main"},{"moves":["e4","c5","Nf3","d6","Bb5+","Bd7","Bxd7+","Qxd7","O-O","Nc6","c3","Nf6","Re1","e6","d4","cxd4","cxd4","d5","e5","Ne4","Nbd2","Nxd2","Bxd2","Be7"],"name":"Sicilian Moscow"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Qxd4","Nc6","Bb5","Bd7","Bxc6","Bxc6","Nc3","Nf6","Bg5","e6","O-O-O","Be7","Rhe1","O-O","Kb1","Qa5","Qd2","Qa6"],"name":"Sicilian2d6-4Qxd4"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","g6","f3","Bg7","Be3","O-O","Qd2","Nc6","O-O-O","d5","exd5","Nxd5","Nxc6","bxc6","Bd4","e5"],"name":"Sicilian Dragon Other6"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","g6","Be2","Bg7","O-O","O-O","Be3","Nc6","Nb3","Be6","f4","Qc8","Kh1","Rd8","Bg1","d5"],"name":"Sic Dragon 6.Be2-6Bc4"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","g6","Be3","Bg7","f3","O-O","Qd2","Nc6","O-O-O","d5","exd5","Nxd5","Nxc6","bxc6","Bd4","e5"],"name":"Sicilian Dragon Yugoslav"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","Nc6","Be2","e5","Nb3","Be7","O-O","O-O","Be3","a5","a4","Nb4","f4","Be6","Kh1","Rc8"],"name":"Sicilian Classical Other6"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","Nc6","Bc4","e6","Be3","a6","Qe2","Qc7","O-O-O","Na5","Bd3","b5","a3","Rb8","g4","Nd7"],"name":"Sicilian Classical Sozin"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","Nc6","Bg5","e6","Qd2","a6","O-O-O","Bd7","f4","b5","Bxf6","gxf6","Kb1","Qb6","Nxc6","Bxc6"],"name":"Sicilian Richter-Rauzer"},{"moves":["e4","c5","Nf3","e6","d4","cxd4","Nxd4","Nf6","Nc3","d6","Be2","Be7","O-O","O-O","f4","Nc6","Be3","a6","a4","Qc7","Kh1","Re8","Bf3"],"name":"Sicilian Scheveningen"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","a4","e5","Nf3","Be7","Bg5","Be6","Bxf6","Bxf6","Nd5","Nd7","Bc4","Rc8","Qe2","Nb6"],"name":"Sicilian Najdorf6a4"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","g3","e5","Nde2","Be7","Bg2","O-O","O-O","b5","Nd5","Nxd5","Qxd5","Ra7","Be3","Rb7"],"name":"Sicilian Najdorf6g3"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","f3","e5","Nb3","Be6","Be3","Be7","Qd2","O-O","O-O-O","Nbd7","g4","b5","g5","b4"],"name":"Sicilian Najdorf6f3"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","f4","e5","Nf3","Nbd7","a4","Be7","Bd3","O-O","O-O","exf4","Kh1","Nc5","Bxf4","Bg4"],"name":"Sicilian Najdorf6f4"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","Bc4","e6","Bb3","b5","O-O","Be7","Qf3","Qc7","Qg3","O-O","Bh6","Ne8","Rad1","Bd7"],"name":"Sicilian Najdorf 6.Bc4"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","Be3","e5","Nb3","Be6","f3","Be7","Qd2","O-O","O-O-O","Nbd7","g4","b5","g5","b4"],"name":"Sicilian Najdorf 6.Be3"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","Be2","e5","Nb3","Be7","O-O","O-O","Be3","Be6","Qd2","Nbd7","a4","Rc8","a5","Qc7"],"name":"Sicilian Najdorf 6.Be2"},{"moves":["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","Bg5","e6","f4","Be7","Qf3","Qc7","O-O-O","Nbd7","g4","b5","Bxf6","Nxf6","g5","Nd7"],"name":"Sicilian Najdorf 6.Bg5"},{"moves":["e4","e5","d4","exd4","Qxd4","Nc6","Qe3","Nf6","Nc3","Bb4","Bd2","O-O","O-O-O","Re8","Qg3","Rxe4","a3","Bd6","f4","Re8","Bd3","Bf8","Nf3","d5"],"name":"Center Game-Danish"},{"moves":["e4","e5","Bc4","Nf6","d3","Nc6","Nf3","Bc5","c3","d6","Bb3","a6","Nbd2","Ba7","h3","O-O","Nf1"],"name":"Bishops Opening"},{"moves":["e4","e5","f4","exf4","Nf3","g5","h4","g4","Ne5","Nf6","Bc4","d5","exd5","Bd6","d4","Nh5","O-O","Qxh4","Qe1","Qxe1","Rxe1","O-O","Nc3","Bf5"],"name":"Kings Gambit"},{"moves":["e4","e5","Nc3","Nf6","f4","d5","fxe5","Nxe4","Nf3","Be7","Qe2","Nxc3","dxc3","c5","Bf4","Nc6","O-O-O","Be6","h4","h6","g3","Qa5","Kb1","O-O-O"],"name":"Vienna"},{"moves":["e4","e5","Nf3","f5","Nxe5","Qf6","d4","d6","Nc4","fxe4","Nc3","Qg6","Ne3","Nf6","Be2","c6","O-O","Be7","f3","exf3"],"name":"Latvian-Elephant"},{"moves":["e4","e5","Nf3","d6","d4","exd4","Nxd4","Nf6","Nc3","Be7","Be2","O-O","O-O","Re8","f4","Bf8","Bf3","c5","Nb3","Nc6","Re1","a5","a4","Nb4"],"name":"Philidor"},{"moves":["e4","e5","Nf3","Nf6","Nc3","Nc6","Bb5","Bb4","O-O","O-O","d3","d6","Bg5","Bxc3","bxc3","Qe7","Re1","Nd8","d4","Ne6","Bc1","Rd8","Bf1","Nf8"],"name":"Petroff Other3"},{"moves":["e4","e5","Nf3","Nf6","Nxe5","d6","Nf3","Nxe4","d4","d5","Bd3","Bd6","O-O","O-O","c4","c6","Nc3","Nxc3","bxc3","dxc4","Bxc4","Bf5","Bg5","Qa5"],"name":"Petroff Main"},{"moves":["e4","e5","Nf3","Nc6","c3","Nf6","d4","Nxe4","d5","Ne7","Nxe5","Ng6","Nxg6","hxg6","Bd3","Nf6","O-O","Be7","Re1","O-O","c4"],"name":"Ponziani"},{"moves":["e4","e5","Nf3","Nc6","Nc3","Bc5","Nxe5","Nxe5","d4","Bd6","dxe5","Bxe5","Bd3","Nf6","O-O","O-O","f4","Bd4+","Kh1","Bxc3"],"name":"Three Knights"},{"moves":["e4","e5","Nf3","Nc6","Nc3","Nf6","d4","exd4","Nxd4","Bb4","Nxc6","bxc6","Bd3","d5","exd5","cxd5","O-O","O-O","Bg5","c6","Qf3","Be7","h3","h6"],"name":"Four Knights"},{"moves":["e4","e5","Nf3","Nc6","d4","exd4","c3","d5","exd5","Qxd5","cxd4","Bg4","Be2","Bb4+","Nc3","Bxf3","Bxf3","Qc4","Bxc6+","bxc6","Qe2+","Qxe2+","Kxe2","O-O-O"],"name":"Goring Gambit"},{"moves":["e4","e5","Nf3","Nc6","d4","exd4","Bc4","Nf6","e5","d5","Bb5","Ne4","Nxd4","Bd7","Bxc6","bxc6","O-O","Bc5","f3","Ng5","f4","Ne4","Be3","Bb6"],"name":"Scotch Gambit"},{"moves":["e4","e5","Nf3","Nc6","d4","exd4","Nxd4","Qf6","Be3","Bc5","c3","Nge7","Bc4","O-O","O-O","b6","Qd2","Qg6","Nxc6","Qxc6","Bxc5","Qxc5","Na3"],"name":"Scotch Other4"},{"moves":["e4","e5","Nf3","Nc6","d4","exd4","Nxd4","Nf6","Nxc6","bxc6","e5","Qe7","Qe2","Nd5","c4","Ba6","b3","g6","f4","Bg7","Qf2","Nb6","Ba3","Qe6"],"name":"Scotch 4.Nf6"},{"moves":["e4","e5","Nf3","Nc6","d4","exd4","Nxd4","Bc5","Be3","Qf6","c3","Nge7","Bc4","Ne5","Be2","Qg6","O-O","d6","f3","O-O","Kh1","Bb6","a4","N5c6"],"name":"Scotch 4.Bc5"},{"moves":["e4","e5","Nf3","Nc6","Bc4","Be7","d4","d6","dxe5","dxe5","Qxd8+","Bxd8","Nc3","Nf6","Be3","O-O","Bc5","Re8","Ng5","Be6","Nxe6","fxe6","f3"],"name":"Hungarian"},{"moves":["e4","e5","Nf3","Nc6","Bc4","Nf6","d3","Bc5","c3","d6","O-O","O-O","Re1","a5","h3","h6","Nbd2","Be6","Bb5","Qb8","Nf1","Qa7","Re2","a4"],"name":"Two Knights"},{"moves":["e4","e5","Nf3","Nc6","Bc4","Bc5","c3","Nf6","d3","d6","O-O","O-O","Re1","a5","h3","h6","Nbd2","Be6","Bb5","Qb8","Nf1","Qa7","Be3"],"name":"Giuoco Piano"},{"moves":["e4","e5","Nf3","Nc6","Bb5","Nge7","O-O","g6","c3","Bg7","d4","exd4","cxd4","d5","exd5","Nxd5","Re1+","Be6","Bg5","Qd6","Nbd2","O-O","Ne4","Qb4"],"name":"Ruy Lopez Other3"},{"moves":["e4","e5","Nf3","Nc6","Bb5","Bc5","O-O","Nd4","Nxd4","Bxd4","c3","Bb6","d4","c6","Ba4","d6","Na3","Nf6","Bg5","h6","Bxf6","Qxf6","d5","Bd7"],"name":"Ruy Lopez Classical"},{"moves":["e4","e5","Nf3","Nc6","Bb5","f5","d3","fxe4","dxe4","Nf6","O-O","Bc5","Bxc6","bxc6","Nxe5","O-O","Nc3","d6","Na4","Qe8","Nd3","Bg4","Qe1","Bd4"],"name":"Ruy Lopez Schliemann"},{"moves":["e4","e5","Nf3","Nc6","Bb5","Nf6","O-O","Nxe4","d4","Nd6","Bxc6","dxc6","dxe5","Nf5","Qxd8+","Kxd8","Nc3","Ke8","h3","h5","Bf4","Be7","Rad1","Be6"],"name":"Ruy Lopez Berlin"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Bxc6","dxc6","O-O","f6","d4","exd4","Nxd4","c5","Nb3","Qxd1","Rxd1","Bg4","f3","Be6","Be3","b6","Nc3","Bd6"],"name":"Ruy Lopez Exchange"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","d6","O-O","Bd7","c3","g6","d4","Bg7","Re1","Nf6","Nbd2","O-O","h3","Re8","Bc2","a5","Nf1","a4"],"name":"Ruy Lopez Mod Steinitz"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","d3","b5","Bb3","Be7","O-O","O-O","Re1","d6","c3","Na5","Bc2","c5","Nbd2","Nc6","Nf1","Re8"],"name":"Ruy Lopez Other5"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Nxe4","d4","b5","Bb3","d5","dxe5","Be6","c3","Bc5","Nbd2","O-O","Bc2","Nxf2","Rxf2","f6"],"name":"Ruy Lopez Open"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Bc5","c3","b5","Bb3","d6","d4","Bb6","a4","Bg4","h3","Bh5","Bg5","Rb8","axb5","axb5"],"name":"Ruy Moeller-Stein Def"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","b5","Bb3","Bb7","d3","Be7","Nc3","O-O","a3","d6","Re1","Qd7","Ne2","Nd8","Ng3","Ne6"],"name":"Ruy Lopez Archangelsk"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","d3","b5","Bb3","d6","a3","O-O","Nc3","Na5","Ba2","Be6","b4","Bxa2","Rxa2","Nc6"],"name":"Ruy Lopez Other6"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","Re1","b5","Bb3","O-O","a4","Bb7","d3","d6","Nbd2","Na5","Ba2","c5","Nf1","b4"],"name":"Ruy Lopez Anti Marshall"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","Re1","b5","Bb3","O-O","c3","d5","exd5","Nxd5","Nxe5","Nxe5","Rxe5","c6","d4","Bd6"],"name":"Ruy Lopez Marshall"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","Re1","b5","Bb3","d6","c3","O-O","d4","Bg4","Be3","exd4","cxd4","Na5","Bc2","Nc4"],"name":"Ruy Lopez Other9"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","Re1","b5","Bb3","d6","c3","O-O","h3","Nd7","d4","Bf6","a4","Bb7","Na3","exd4"],"name":"Ruy Lopez Kar-Smy-Khol"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","Re1","b5","Bb3","d6","c3","O-O","h3","Nb8","d4","Nbd7","Nbd2","Bb7","Bc2","Re8"],"name":"Ruy Lopez Breyer"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","Re1","b5","Bb3","d6","c3","O-O","h3","Bb7","d4","Re8","Nbd2","Bf8","a4","h6"],"name":"Ruy Lopez Flohr-Zaitsev"},{"moves":["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","Re1","b5","Bb3","d6","c3","O-O","h3","Na5","Bc2","c5","d4","Qc7","Nbd2","cxd4"],"name":"Ruy Lopez Chigorin"},{"moves":["c4","b6","Nc3","Bb7","e4","e6","Nf3","Bb4","Bd3","Ne7","O-O","O-O","Bc2","f5","Qe2","Bxc3","dxc3"],"name":"English1b6"},{"moves":["c4","f5","Nc3","Nf6","g3","g6","Bg2","Bg7","d3","O-O","e4","d6","Nge2","Nc6","O-O","e5","Nd5","Nxd5","cxd5","Ne7"],"name":"English1f5"},{"moves":["c4","c6","Nf3","d5","e3","Nf6","Nc3","e6","b3","Bd6","Bb2","O-O","Be2","e5","cxd5","cxd5","Nb5","Nc6","Nxd6","Qxd6","d4","e4","Ne5","Nd7"],"name":"English1c6"},{"moves":["c4","g6","Nc3","Bg7","g3","e5","Bg2","d6","d3","f5","e3","Nf6","Nge2","O-O","O-O","c6"],"name":"English1g6"},{"moves":["Nf3","Nf6","c4","b6","g3","c5","Bg2","Bb7","O-O","g6","Nc3","Bg7","d4","cxd4","Qxd4","d6","Rd1","Nbd7","Be3","Rc8","Rac1","O-O","Qh4","a6"],"name":"Eng Sym Double Fianchetto"},{"moves":["Nf3","Nf6","c4","e6","g3","b6","Bg2","Bb7","O-O","c5","Nc3","Be7","d4","cxd4","Qxd4","d6","Rd1","a6","b3","Nbd7","e4","Qc7","Ba3","Nc5"],"name":"English Sym Hedgehog"},{"moves":["d4","Nf6","c4","c5","Nf3","cxd4","Nxd4","e5","Nb5","d5","cxd5","Bc5","e3","O-O","N5c3","e4","Be2","Qe7","a3","Rd8","b4","Bd6","Bb2","a5"],"name":"English Sym3d4"},{"moves":["Nf3","Nf6","c4","c5","Nc3","e6","g3","b6","Bg2","Bb7","O-O","Be7","d4","cxd4","Qxd4","d6","Bg5","a6","Bxf6","Bxf6","Qf4","O-O","Rfd1","Be7"],"name":"English Sym Other B3"},{"moves":["Nf3","Nf6","c4","c5","Nc3","Nc6","g3","g6","Bg2","Bg7","O-O","O-O","d4","cxd4","Nxd4","Nxd4","Qxd4","d6","Qd3","a6","Bd2","Rb8","Rac1","Bd7"],"name":"English Sym Four Knights"},{"moves":["c4","c5","Nc3","Nc6","g3","g6","Bg2","Bg7","Nf3","Nf6","O-O","O-O","d4","cxd4","Nxd4","Nxd4","Qxd4","d6","Qd3","a6","Bd2","Rb8","Rac1","Bd7"],"name":"English Sym Main"},{"moves":["Nf3","d5","c4","e6","g3","Nf6","Bg2","Be7","O-O","O-O","b3","c5","Bb2","Nc6","e3","b6","Nc3","Bb7","cxd5","Nxd5","Nxd5","Qxd5","d4"],"name":"English1e6-2Nf3-d5"},{"moves":["c4","e6","Nc3","d5","d4","Nf6","cxd5","exd5","Bg5","c6","e3","Be7","Bd3","Nbd7","Qc2","Nh5","Bxe7","Qxe7","Nge2","g6","O-O-O","Nb6","Kb1","Ng7"],"name":"English1e6-2Nc3-d5"},{"moves":["c4","Nf6","Nc3","e6","e4","d5","e5","d4","exf6","dxc3","bxc3","Qxf6","d4","e5","Nf3","exd4","Bg5","Qe6+","Be2","Be7","cxd4","Bxg5","Nxg5","Qe7"],"name":"English Flohr-Mikenas"},{"moves":["Nf3","Nf6","c4","e6","Nc3","d5","d4","Be7","Bg5","O-O","e3","h6","Bh4","b6","Be2","Bb7","Bxf6","Bxf6","cxd5","exd5","b4","c6","O-O","Qd6"],"name":"English1e 6.Main"},{"moves":["c4","e5","g3","Nf6","Bg2","d5","cxd5","Nxd5","Nc3","Nb6","Nf3","Nc6","O-O","Be7","a3","O-O","b4","Be6","Rb1","f6","d3","a5","b5","Nd4"],"name":"English Sic Rev2g3"},{"moves":["c4","e5","Nc3","Bb4","Nd5","Be7","d4","d6","e4","Nf6","Nxe7","Qxe7","f3","exd4","Qxd4","Nc6","Qc3","O-O","Ne2","Nh5","g4","Qh4+","Kd1","Nf6"],"name":"English Sic Rev Other B2"},{"moves":["c4","e5","Nc3","Nf6","Nf3","Nc6","g3","d5","cxd5","Nxd5","Bg2","Nb6","O-O","Be7","a3","O-O","b4","Be6","Rb1","f6","d3"],"name":"English Sic Rev 4.Knights"},{"moves":["c4","e5","Nc3","Nf6","g3","d5","cxd5","Nxd5","Bg2","Nb6","Nf3","Nc6","O-O","Be7","d3","O-O","Be3","Be6","Rc1","f5","a3"],"name":"English Sic Rev Bremen"},{"moves":["c4","e5","Nc3","Nc6","g3","g6","Bg2","Bg7","e3","d6","Nge2","Be6","Nd5","Qd7","Qa4"],"name":"English Sic Rev Closed"},{"moves":["c4","Nf6","g3","g6","Bg2","Bg7","Nc3","O-O","e4","d6","Nge2","c5","O-O","Nc6","d3","a6","h3","Rb8","a4","Ne8","Be3","Nc7","d4","cxd4"],"name":"English 1.Nf6-2g3"},{"moves":["Nf3","Nf6","c4","g6","g3","Bg7","Bg2","O-O","O-O","d6","d4","Nc6","Nc3","a6","h3","Rb8","Be3","b5","Nd2","Bd7","Rc1","e5","dxe5","Nxe5"],"name":"English 1.Nf6-2Nf3"},{"moves":["c4","Nf6","Nc3","g6","g3","Bg7","Bg2","O-O","Nf3","d6","O-O","e5","d3","Nc6","Rb1","a5","a3","h6","b4","axb4","axb4","Be6","b5","Ne7"],"name":"English 1.Nf6-2Nc3"},{"moves":["Nf3","d5","b3","Nf6","Bb2","e6","e3","Be7","c4","O-O","Nc3","c5","cxd5","exd5","d4","Nc6","Be2"],"name":"Reti2b3"},{"moves":["Nf3","d5","c4","e6","g3","Nf6","Bg2","Be7","O-O","O-O","b3","c5","Bb2","Nc6","e3","b6","Nc3","Bb7","cxd5","Nxd5","Nxd5","Qxd5","d4"],"name":"Reti2c4"},{"moves":["Nf3","d5","g3","Nf6","Bg2","e6","O-O","Be7","d3","O-O","Nbd2","c5","e4","Nc6","Re1","b5","e5","Nd7","Nf1","a5","h4","b4","N1h2","a4"],"name":"Reti KIA"},{"moves":["f4","d5","Nf3","Nf6","e3","g6","b3","Bg7","Bb2","O-O","Be2","c5","O-O","Nc6","Ne5","Qc7","Nxc6","Qxc6","Bf3","Bf5","d3"],"name":"Bird"},{"moves":["b3","e5","Bb2","Nc6","e3","Nf6","Bb5","Bd6","Na3","Na5","Be2","a6","c4","O-O","Nc2","Re8","d3","b5","Nf3","bxc4","dxc4"],"name":"Nimzowitsch-Larsen"},{"moves":["b4","e5","Bb2","Bxb4","Bxe5","Nf6","Nf3","O-O","e3","d5","Be2","c5","O-O","Nc6","Bb2","Re8","d3","Ba5","Nbd2","Bc7","c4","dxc4"],"name":"Sokolsky"},{"moves":["Nc3","d5","e4","d4","Nce2","e5","Ng3","Be6","Nf3","f6","Bb5+","c6","Ba4","Na6","Bb3","Bxb3","axb3","d3","O-O","Nb4","cxd3"],"name":"Dunst"}];
 function seedContent() {
   if (CONTENT_SEEDED) return; CONTENT_SEEDED = true;
   const addMove = (posKey, san, kind) => {
@@ -1923,6 +2027,20 @@ function seedContent() {
   addMove("e4 d5 exd5 Qxd5 Nc3", "Qa5"); addMove("e4 d5 exd5 Qxd5 Nc3", "Qd6"); addMove("e4 d5 exd5 Qxd5 Nc3", "Qd8");
   CONTENT.mainline["e4 d5|exd5"] = true; CONTENT.mainline["e4 d5 exd5|Qxd5"] = true; CONTENT.mainline["e4 d5 exd5 Qxd5|Nc3"] = true;
   if (!("e4 d5" in CONTENT.explains)) CONTENT.explains["e4 d5"] = "스칸디나비안 디펜스. 흑이 즉시 d5로 중앙을 교환해 빠른 전개를 노린다. 백은 2.exd5 후 퀸/나이트 회수 라인으로 분기.";
+  // PGN Mentor 마스터 게임 기반 이론 라인(THEORY_BOOK) 반영 — 각 라인을 한 수씩 훑으며
+  // addMove로 이론 등록하고, 마지막 수의 도착 위치에만 이름을 붙인다(중간 위치는 이미 다른
+  // 라인이 이름을 갖고 있을 수 있어 덮어쓰지 않음).
+  for (const entry of THEORY_BOOK) {
+    let posKey = "";
+    entry.moves.forEach((san, i) => {
+      addMove(posKey, san);
+      if (i === entry.moves.length - 1 && entry.name) {
+        const nk = posKey + "|" + san;
+        if (!(nk in CONTENT.names)) CONTENT.names[nk] = entry.name;
+      }
+      posKey = posKey ? posKey + " " + san : san;
+    });
+  }
   seedQuestChapters();
 }
 /* ============================================================ 메인 퀘스트 · CHAPTER (20차 기능4) ============================================================ */
@@ -2614,7 +2732,7 @@ function poolWorker(pool, idx, engine) {
 // "둔 뒤 포지션"을 추가로 평가했는데, 그 포지션은 다음 반복에서 또 평가돼(중복) 시간이 2배 가까이 들었다.
 // posEval[i] 하나로 최선수 손실(둔 수==1순위면 0)과 다음 포지션 평가치를 모두 얻는다. movetime 상한으로
 // 포지션당 시간을 제한해 전체 분석 시간을 예측 가능하게 한다.
-async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) {
+async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, onMove) {
   // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
   fullSans = decorateLine(fullSans);
   const N = fullSans.length;
@@ -2654,28 +2772,23 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
   // 이후로는 이미 떠 있는 워커를 그대로 재사용한다.
   const dedicated = await getAnalysisPool(engine.profile, engine.urls);
   const workers = dedicated.length ? dedicated : [{ evaluateMulti: engine.evaluateMulti }];
-  let nextIdx = 0, doneCount = 0;
-  async function runWorker(w) {
-    for (;;) {
-      const i = nextIdx++; if (i > N) return;
-      const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
-      const p0 = lines && lines[0], p1 = lines && lines[1];
-      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
-      // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
-      // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
-      // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
-      // 승률로만 변환되므로 문제없다).
-      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
-      doneCount++;
-      onProgress && onProgress(doneCount / (N + 1));
-    }
-  }
-  await Promise.all(workers.map(runWorker));
-  // (성능) 여기서 워커를 끄지 않는다 — getAnalysisPool이 세션 내내 재사용하도록 관리한다(프로필을
-  // 바꾸면 그때 이전 풀이 정리된다).
+  // (v0.3.0 성능) 예전엔 포지션 N+1개를 전부 평가(await Promise.all)한 "다음"에야 채점 루프를 한
+  // 번에 돌려 결과를 통째로 반환했다 — 그래서 화면(ReviewPage)은 분석이 100% 끝날 때까지 진행률
+  // 막대만 보여줄 수 있었다. 여기서는 포지션이 하나 끝날 때마다(work-stealing이라 순서 없이 끝남)
+  // "다음으로 채점 가능한 수"가 있는지 즉시 확인해 그 자리에서 채점하고(gradeIdx가 항상 0부터
+  // 순서대로 진행), onMove로 그때까지의 부분 결과를 흘려보낸다. 실제 엔진 탐색량(depth·movetime)은
+  // 전혀 건드리지 않고, 화면이 결과를 "기다리는" 방식만 바꾼다 — moves[i] 채점은 posEval[i]와
+  // posEval[i+1]이 둘 다 준비돼야 하므로(최선수 일치 시 다음 포지션 평가치를 이어받는 보정 때문),
+  // 그 둘이 갖춰지는 순서대로 진행된다(대개 앞에서부터 순서대로 끝나지만, 몇 수 앞서 끝나도
+  // gradeIdx가 따라잡을 때까지 큐잉되므로 안전하다).
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
-  let gradeBoard = startBoard();
-  for (let i = 0; i < N; i++) {
+  const graphCp = new Array(N + 1), evalDisp = new Array(N + 1);
+  let gradeBoard = startBoard(), gradeIdx = 0;
+  function computeDisplay(i) {
+    graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; // 백 관점 시퀀스
+    evalDisp[i] = posEvalToWhite({ cp: posEval[i].cp, mate: posEval[i].mate }, fullSans.slice(0, i));
+  }
+  function gradeOne(i) {
     const moverWhite = i % 2 === 0;
     const brd = gradeBoard;
     const color = moverWhite ? "w" : "b";
@@ -2703,7 +2816,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
       moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
       gradeBoard = applySan(gradeBoard, fullSans[i], color);
-      continue;
+      return;
     }
     // 둔 수가 엔진 최선수면 손실 0(노이즈 제거), 아니면 둔 뒤 포지션(= posEval[i+1], 상대 관점) 부호 반전
     const playedCp = matched ? bestCp : -posEval[i + 1].cp;
@@ -2750,17 +2863,51 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250) 
     if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
-  // (v0.2.4 버그 수정) posEval을 최선 수 구간에서 이어받도록 위 채점 루프 안에서 보정하므로, 그 보정이
-  // 끝난 뒤(루프 종료 후)에 graphCp를 만들어야 한다 — 예전엔 루프 시작 전에 미리 만들어 보정 이전의
-  // 값을 그대로 썼다.
-  const graphCp = new Array(N + 1);
-  for (let i = 0; i <= N; i++) { graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; } // 백 관점 시퀀스
-  // (v0.2.0 기능) /review 페이지의 코치 카드가 수마다 실제 평가치(+4.67 등)를 표시해야 해서, 이미
-  // 계산해 둔 백 관점 centipawn 시퀀스(graphCp)를 승률(evalWin)과 함께 그대로 내보낸다.
-  // (v0.2.1 기능) evalDisp — evalCp(그래프 전용, 메이트를 ±100000으로 뭉갬)와 별개로, 텍스트 표시에는
-  // {cp}|{mate,win,plies} 형태가 필요하다(fmtEvalCp/evalDisplayText가 이 모양을 기대함) — posEvalToWhite로
-  // 포지션마다 다시 만든다.
-  const evalDisp = posEval.map((p, i) => posEvalToWhite({ cp: p.cp, mate: p.mate }, fullSans.slice(0, i)));
+  // (v0.3.0 성능) EvalGraph는 evalWin.length를 x축 스케일로 쓴다 — 아직 안 끝난 구간을 그냥 잘라
+  // 넘기면(slice) 수 하나가 채점될 때마다 배열 길이가 늘어나 그래프 전체가 매번 다시 스케일되며
+  // 흔들려 보인다. 실제 게임 길이(N+1)로 항상 고정된 배열을 만들고, 아직 채점 안 된 구간은 지금까지의
+  // 마지막 값으로 채워 넣어(평평하게 이어짐) 그래프 선이 스케일 변화 없이 오른쪽으로 "채워지는"
+  // 모양으로만 자라도록 한다.
+  function paddedTo(arr, fillIdx) {
+    const out = new Array(N + 1);
+    const last = arr[fillIdx];
+    for (let k = 0; k <= N; k++) out[k] = k <= fillIdx ? arr[k] : last;
+    return out;
+  }
+  function tryFlush() {
+    if (!posEval[0]) return;
+    if (graphCp[0] === undefined) computeDisplay(0);
+    while (gradeIdx < N && posEval[gradeIdx] && posEval[gradeIdx + 1]) {
+      gradeOne(gradeIdx);
+      computeDisplay(gradeIdx + 1);
+      gradeIdx++;
+      if (onMove) {
+        const filledCp = paddedTo(graphCp, gradeIdx);
+        onMove({ moves, evalWin: filledCp.map(winPctFromCp), evalCp: filledCp, evalDisp: paddedTo(evalDisp, gradeIdx) }, gradeIdx, N);
+      }
+    }
+  }
+  let nextIdx = 0, doneCount = 0;
+  async function runWorker(w) {
+    for (;;) {
+      const i = nextIdx++; if (i > N) return;
+      const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
+      const p0 = lines && lines[0], p1 = lines && lines[1];
+      // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
+      // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
+      // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
+      // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
+      // 승률로만 변환되므로 문제없다).
+      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
+      doneCount++;
+      onProgress && onProgress(doneCount / (N + 1));
+      tryFlush();
+    }
+  }
+  await Promise.all(workers.map(runWorker));
+  tryFlush(); // 안전망 — 위에서 이미 다 흘려보냈어야 하지만, 마지막 자리가 비는 경우를 대비해 한 번 더.
+  // (성능) 여기서 워커를 끄지 않는다 — getAnalysisPool이 세션 내내 재사용하도록 관리한다(프로필을
+  // 바꾸면 그때 이전 풀이 정리된다).
   // (v0.2.1) 마지막 수가 체크메이트(#)면 종료 포지션은 엔진이 평가를 못 준다(둘 수가 없음) — cp 0으로 남아
   // 코치 카드가 "+0.00", 평가치 바·그래프가 무승부처럼 보였다. 실제 승패로 채워 "1-0"/"0-1"과 완승 막대로 표시한다.
   if (N > 0 && /#/.test(fullSans[N - 1])) {
@@ -3168,7 +3315,11 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
   const onPointerMoveCap = (e) => { const d = downRef.current; if (d && (Math.abs(e.clientX - d.x) > 4 || Math.abs(e.clientY - d.y) > 4)) d.moved = true; };
   const onClick = () => { if (downRef.current && downRef.current.moved) return; if (l.sans[0]) onPlayFirst && onPlayFirst(l.sans[0]); };
   return (
-    <div className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
+    // (신규) depth가 깊어지며 MultiPV 순위가 바뀔 때 이 줄이 새 자리로 "이동"하는 것을 보여주기 위해
+    // motion.div layout을 쓴다 — 아래 EngineLines에서 이 줄의 key를 슬롯 번호가 아니라 이 줄의 첫
+    // 수(수의 정체성)로 잡아야, 순위가 바뀌어도 같은 컴포넌트 인스턴스가 유지되며 framer-motion이
+    // 옛 위치→새 위치로의 이동을 자동으로(FLIP) 애니메이션할 수 있다.
+    <motion.div layout transition={{ duration: 0.32, ease: MOTION_EASE }} className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
       style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
       <EvalBadge ev={l.ev} small />
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
@@ -3178,7 +3329,7 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
         </span>
       </div>
       {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 26, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,1) 80%)", borderRadius: "0 6px 6px 0" }} />}
-    </div>
+    </motion.div>
   );
 }
 function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
@@ -3210,8 +3361,15 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
             // 있었다(EngineLineRow 위 주석 참고) — 배열 인덱스(슬롯 번호)로 다시 돌아가되, 대신
             // TypedMoveLine의 타이핑 진행 상태가 슬롯이 아니라 "포지션"에만 반응하도록 posKey를
             // 구성해(EngineLineRow 참고) 두 문제를 모두 피한다.
+            // (신규) 이제는 타이핑 애니메이션 자체가 없어졌으므로(TypedMoveLine 주석 참고) 재마운트로
+            // 인한 리스크가 사라졌다 — depth가 깊어지며 순위가 바뀔 때 그 이동을 그대로 보여주기
+            // 위해, 슬롯 번호 대신 이 줄의 첫 수(수의 정체성)로 key를 잡는다. 같은 첫 수가 그대로
+            // 다른 순위로 옮겨가면 React가 같은 DOM 노드를 재사용해 이동시키고, motion.div layout이
+            // 그 이동을 부드러운 애니메이션으로 자동 보여준다(FLIP). 첫 수가 아예 새로 등장/이탈하면
+            // (다른 후보로 완전히 교체) 자연스럽게 새 컴포넌트로 마운트/언마운트된다.
+            const rowKey = (l.sans && l.sans[0]) || ("slot" + i);
             return (
-              <EngineLineRow key={i} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
+              <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
             );
           })}
           {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
@@ -3352,6 +3510,55 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const tx = (r, c) => (flip ? [7 - r, 7 - c] : [r, c]);
   const px = (r, c) => { const [vr, vc] = flip ? [7 - r, 7 - c] : [r, c]; return [vc * cell + cell / 2, vr * cell + cell / 2]; };
   const targetSet = new Set(legalTargets.map(([r, c]) => r + "," + c));
+  // (v0.3.0 기능) 모바일 드래그 무브 — 기물의 draggable(네이티브 HTML5 드래그)은 터치에서 아예
+  // 동작하지 않는다(dragstart/drop 이벤트가 터치로는 발생하지 않음). 그래서 지금까지 모바일에서는
+  // 탭으로 선택 → 탭으로 목적지 지정만 가능했다. 마우스·터치·펜을 모두 아우르는 Pointer Events로
+  // 직접 드래그를 구현해, 기물을 손가락으로 집어 옮기는 제스처를 desktop 마우스 드래그와 동일하게
+  // onPieceDrag/onDrop 콜백으로 연결한다(호출부는 손댈 필요 없음 — 기존 prop 그대로 재사용).
+  const gridRef = useRef(null);
+  const dragStartRef = useRef(null);       // { r, c, x, y } — pointerdown 시점
+  const suppressClickRef = useRef(false);  // 드래그가 실제로 일어났으면 뒤이어 오는 합성 click을 무시
+  const [ptrDrag, setPtrDrag] = useState(null); // { r, c, x, y } — 드래그 임계값을 넘겼을 때만 채워짐(고스트 표시용)
+  const DRAG_THRESHOLD = 5;
+  const squareFromClient = (clientX, clientY) => {
+    const el = gridRef.current; if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const relX = (clientX - rect.left) / rect.width, relY = (clientY - rect.top) / rect.height;
+    if (relX < 0 || relX >= 1 || relY < 0 || relY >= 1) return null;
+    const vc = Math.min(7, Math.max(0, Math.floor(relX * 8))), vr = Math.min(7, Math.max(0, Math.floor(relY * 8)));
+    return flip ? [7 - vr, 7 - vc] : [vr, vc];
+  };
+  const onPiecePointerDown = (e, r, c) => {
+    if (!interactive || !onPieceDrag) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+    dragStartRef.current = { r, c, x: e.clientX, y: e.clientY };
+    onPieceDrag([r, c]);
+  };
+  const onPiecePointerMove = (e) => {
+    const d = dragStartRef.current; if (!d) return;
+    e.preventDefault();
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!ptrDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return; // 임계값 전엔 탭일 수도 있으니 아직 고스트를 안 띄운다
+    setPtrDrag({ r: d.r, c: d.c, x: e.clientX, y: e.clientY });
+  };
+  const endPiecePointerDrag = (e, drop) => {
+    const d = dragStartRef.current;
+    const wasDragging = !!ptrDrag;
+    dragStartRef.current = null;
+    setPtrDrag(null);
+    if (!d) return;
+    if (drop && wasDragging) {
+      suppressClickRef.current = true;   // 실제로 옮긴 드래그 뒤에 따라오는 합성 click(재선택처럼 보임) 무시
+      const target = squareFromClient(e.clientX, e.clientY);
+      onDrop && onDrop(target || [d.r, d.c]);   // 보드 바깥에 놓으면 제자리(불법 수 취급 → 취소)로
+    }
+    // 임계값을 못 넘긴 단순 탭이면 onDrop을 부르지 않는다 — pointerdown의 onPieceDrag가 이미
+    // 선택 상태를 만들어 뒀으므로(기존 탭-선택과 동일한 효과), 그대로 두면 충분하다.
+  };
+  const onPiecePointerUp = (e) => endPiecePointerDrag(e, true);
+  const onPiecePointerCancel = (e) => endPiecePointerDrag(e, false);
   return (
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
       {showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}
@@ -3365,7 +3572,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           비율이 달라진 상자에 맞춰 늘어나며 왜곡됐다(바다 스킨처럼 이어진 이미지 텍스처에서 특히 눈에
           띔). aspectRatio:"1/1"인 CSS 그리드로 바꾸면 실제 렌더링 폭이 얼마로 계산되든 높이가 항상
           똑같이 따라가 칸이 항상 정사각형으로 유지된다. */}
-      <div style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+      <div ref={gridRef} style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
         {isGmBoard && <div className="gm-board-shine" aria-hidden="true" />}
         {rows.map((row, ri) => row.map((p, ci) => {
           const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
@@ -3374,9 +3581,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           const coordCol = sk.image ? "rgba(255,255,255,.9)" : (light ? sk.dark : sk.light);
           return (
             <div key={ri + "_" + ci}
-              onClick={interactive && onSquareClick ? () => onSquareClick([r, c]) : undefined}
-              onDragOver={interactive ? (e) => e.preventDefault() : undefined}
-              onDrop={interactive && onDrop ? (e) => { e.preventDefault(); onDrop([r, c]); } : undefined}
+              onClick={interactive && onSquareClick ? () => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } onSquareClick([r, c]); } : undefined}
               // (버그 수정) 기물을 하단(받침 기준) 정렬했더니, 폰처럼 짧은 기물은 칸 위쪽에 큰 빈
               // 공간이 남아 정중앙이 아니라 아래로 치우쳐 보였다(특히 바다 스킨처럼 기물 높이 편차가
               // 큰 스킨에서 두드러짐) — 모든 기물을 칸의 실제 정중앙에 오도록 되돌린다.
@@ -3422,10 +3627,38 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
               {/* (버그 수정) 움직여야 할 기물이 옆으로 미끄러지듯(translateX) 흔들려 부자연스러웠다 —
                   마치 기물 윗부분을 손으로 잡고 흔드는 것처럼, 아래쪽(받침)을 축으로 각도만 조금씩
                   바뀌며 흔들리도록 lineShake(좌우 이동) 대신 새 hintPieceWobble(회전)로 바꿨다. */}
-              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} draggable={interactive && !!onPieceDrag} onDragStart={interactive && onPieceDrag ? () => onPieceDrag([r, c]) : undefined} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", transformOrigin: "50% 90%", animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />}
+              {/* (v0.3.0 기능) 네이티브 draggable 대신 이 래핑 div에 Pointer Events를 달아 마우스·터치
+                  모두에서 드래그가 동작하게 한다 — touchAction:"none"이 없으면 터치에서 손가락을
+                  움직이는 순간 브라우저가 페이지 스크롤로 먼저 채가서 드래그 제스처가 아예 시작되지
+                  않는다. 드래그 중인 기물은 살짝 옅게 만들고, 실제 기물은 아래 고스트로 대신 보여준다. */}
+              {p && (
+                <div
+                  onPointerDown={interactive && onPieceDrag ? (e) => onPiecePointerDown(e, r, c) : undefined}
+                  onPointerMove={interactive && onPieceDrag ? onPiecePointerMove : undefined}
+                  onPointerUp={interactive && onPieceDrag ? onPiecePointerUp : undefined}
+                  onPointerCancel={interactive && onPieceDrag ? onPiecePointerCancel : undefined}
+                  style={{ display: "flex", touchAction: interactive && onPieceDrag ? "none" : undefined }}>
+                  <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", transformOrigin: "50% 90%", opacity: ptrDrag && ptrDrag.r === r && ptrDrag.c === c ? 0.25 : 1, animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />
+                </div>
+              )}
             </div>
           );
         }))}
+        {/* (v0.3.0 기능) 드래그 중인 기물을 손가락/커서 위치를 따라다니는 고스트로 보여준다 — 그리드
+            div(position:relative, overflow:visible) 안에 절대 위치로 그려 fixed-positioning이 조상의
+            transform 때문에 어긋나는(흔한 CSS 함정) 문제를 피한다. 손가락에 가려 안 보이지 않도록
+            칸 절반 높이만큼 위로 띄운다. */}
+        {ptrDrag && gridRef.current && (() => {
+          const gp = board[ptrDrag.r][ptrDrag.c];
+          if (!gp) return null;
+          const rect = gridRef.current.getBoundingClientRect();
+          const gx = ptrDrag.x - rect.left, gy = ptrDrag.y - rect.top - cell * 0.5;
+          return (
+            <div style={{ position: "absolute", left: gx, top: gy, transform: "translate(-50%,-50%)", zIndex: 20, pointerEvents: "none", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.5))" }}>
+              <PieceGlyph type={gp.t} color={gp.c} size={cell * 0.86} pieceSkin={effPieceSkin} />
+            </div>
+          );
+        })()}
         {/* (17차) 화살표 끝이 칸 중앙에서 어긋나던 문제 — 픽셀 좌표(cell 값) 대신 보드 칸 단위(0~8)의
             논리 좌표계를 viewBox로 선언해, 실제 렌더링 크기(반응형 축소 등)와 무관하게 항상 정확히 칸
             중앙을 가리키도록 한다. */}
@@ -4229,7 +4462,12 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     };
     const adopt = (m) => (m.adopt != null ? m.adopt : (m.games != null ? m.games : -Infinity));
     const rank = sortBy === "adopt" ? adopt : ev;
-    const books = t.filter((m) => m.book);
+    // (버그 수정) 예전엔 이론 수(book)를 정렬 대상에서 아예 빼고 고정 순서로 뒀다 — 그래서 라이브
+    // 분석 depth가 깊어지며 각 수의 평가치(m.live)가 계속 바뀌어도(화면엔 숫자만 갱신됨) 이론 수
+    // 블록의 순서는 절대 움직이지 않아 "정렬되지 않고 멈춘 것처럼" 보였다. 이론 수도 똑같이 rank로
+    // 정렬해, depth가 바뀔 때마다 이론 수 블록도 함께 순위를 다시 매기고(FadeIn layout이 그 이동을
+    // 애니메이션으로 보여준다) — 이론 수 묶음이 비이론 수보다 항상 먼저 온다는 것만 유지한다.
+    const books = t.filter((m) => m.book).sort((a, b) => rank(b) - rank(a));
     const nonbooks = t.filter((m) => !m.book).sort((a, b) => rank(b) - rank(a));
     return [...books, ...nonbooks];
   }, [moves, ply, board, key, contentVer, sortBy, liveOn, engine && engine.status]);
@@ -4886,6 +5124,44 @@ function exchangeFact(sansBeforeMove, san, color, kind, beforeCp) {
   const strong = ["brilliant", "best", "only"].includes(kind);
   return { ahead, good, strong };
 }
+// fr,fc의 기물(board 기준 color 소유)이 tr,tc 칸을 공격/방어할 수 있는지 — canCaptureSquareLegally처럼
+// 보드 전체를 훑는 게 아니라, 이미 알고 있는 특정 기물 하나에 대해서만 확인하는 버전.
+function attacksSquareRaw(board, fr, fc, tr, tc, color) {
+  const p = board[fr][fc]; if (!p || p.c !== color) return false;
+  if (fr === tr && fc === tc) return false;
+  if (p.t === "P") { const dir = color === "w" ? -1 : 1; return tr - fr === dir && Math.abs(tc - fc) === 1; }
+  if (p.t === "K") return Math.abs(tr - fr) <= 1 && Math.abs(tc - fc) <= 1;
+  return canMove(board, p.t, color, fr, fc, tr, tc, true);
+}
+// (신규) "수비자 제거"(Remove the Defender) — 이 수가 상대 기물을 잡았는데, 잡힌 그 기물이 다른
+// 상대 기물 Y를 지키고 있었다면(=Y 칸을 되잡을 수 있었다면), 그 수비자가 사라지며 Y가 공짜로(SEE상
+// 순이득) 잡히게 된다. 이 수를 두기 전에는 Y가 이미 공짜로 잡히는 상태가 아니었어야(=이 수가 원인)
+// 하고, 이 수를 둔 뒤에는 실제로 합법적으로 잡을 수 있어야 한다. 대부분 이어지는 수가 최선의 수뿐인
+// 명확하고 강력한 전술이라, mecFacts에서 다른 어떤 사실보다 우선한다.
+function removeDefenderFact(sansBeforeMove, san, color) {
+  const before = boardFromSans(sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || !info.isCap || info.castle) return null;
+  const enemy = color === "w" ? "b" : "w";
+  const [dr, dc] = info.to;   // 잡힌(=사라진 수비자) 기물이 있던 칸
+  const removedDefender = before[dr][dc];
+  if (!removedDefender || removedDefender.c !== enemy) return null;
+  const after = applySan(before, san, color);
+  let best = null;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (r === dr && c === dc) continue;
+    const y = before[r][c];
+    if (!y || y.c !== enemy || y.t === "K") continue;
+    if (!attacksSquareRaw(before, dr, dc, r, c, enemy)) continue;      // 방금 잡힌 기물이 Y를 지키고 있었는가
+    if (seeSquare(before, r, c, color) > 0) continue;                  // 이 수 전에도 이미 공짜로 잡혔다면 이 수 덕분이 아니다
+    const gain = seeSquare(after, r, c, color);
+    if (gain > 0 && canCaptureSquareLegally(after, r, c, color)) {
+      if (!best || gain > best.gain) best = { targetSq: [r, c], targetPiece: y.t, defenderSq: [dr, dc], gain };
+    }
+  }
+  if (!best) return null;
+  return { targetSq: best.targetSq, targetPiece: best.targetPiece, defenderSq: best.defenderSq, attackers: threatSquareDetail(after, best.targetSq, color).attackers };
+}
 /* ============================================================ MEC Reference(사용자 제공, 16수 기준) 반영 ============================================================
    R1 교환 요청, R2 요청 수락/거절, R3·R11 재전개/재배치, R4 직접 예방 수, R5 다음 수 캐슬링 예고,
    R6 전개 표현, R8 위협 대처/과보호, R9 간접 예방 수, R10 교환론, R12 캐슬링 전용 평가, R13 잠재 위협,
@@ -5303,6 +5579,9 @@ const MEC_PHRASES = {
   stacked: (s) => mecPick(["룩 두 개가 오픈 파일에서 중첩됐어요.", "같은 파일에서 룩끼리 중첩되어 서로를 지켜줘요.", "룩 중첩으로 그 파일을 강하게 장악했어요."], s),
   pawnSac: (sq, s) => mecPick([sq + "폰이 위협받고 있지만 지키지 않았어요, 폰 희생이에요.", sq + "폰을 지키는 대신 희생하는 수예요.", "위협받는 " + sq + "폰을 그대로 두고 폰 희생을 택했어요."], s),
   castleBadFallback: (s) => mecPick(["엔진에 의하면 지금은 캐슬링이 좋은 타이밍이 아니에요.", "엔진에 의하면 이 캐슬링은 아쉬운 타이밍이에요.", "엔진에 의하면 지금 캐슬링하기엔 좋지 않은 순간이에요."], s),
+  // (신규) 수비자 제거 — 사용자 요청에 따라 매번 같은 고정 문구를 쓴다(다른 사실처럼 무작위로
+  // 바뀌지 않는다).
+  removeDefender: () => "수비자 제거 전술은 간단하지만 매우 강력합니다!",
 };
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
@@ -5314,6 +5593,13 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   const beforeBoard = boardFromSans(sansBeforeMove);
   const board = boardFromSans([...sansBeforeMove, san]);
   const facts = [];
+  // (신규) 수비자 제거 — 다른 어떤 사실보다 먼저 확인한다. 대부분 이어지는 수가 최선의 수뿐인
+  // 명확하고 강력한 전술이라, 이게 있으면 다른 사실은 밀어내고 고정 문구 하나로 대체한다.
+  const removeDef = removeDefenderFact(sansBeforeMove, san, color);
+  if (removeDef) {
+    if (threatOut) { threatOut.removeDefender = removeDef; threatOut.keyword = "수비자 제거"; }
+    return [MEC_PHRASES.removeDefender(seed)];
+  }
   const t = tensionFacts(board, color);
   const moveInfo = sanSrc(beforeBoard, san, color);
   // (버그 수정) 이 수 자체가 동가 이상으로 기물을 잡는 수였다면(예: 나이트를 잡은 비숍), 그 도착
@@ -5946,8 +6232,12 @@ function MoveNoteCard({ n, canModerate, onSaved, onDeleted }) {
     try { await sbDelete("move_notes", "id=eq." + n.id); onDeleted(n.id); } catch { setBusy(false); }
   };
   return (
-    <div style={{ flex: "0 0 100%", scrollSnapAlign: "start", boxSizing: "border-box", padding: "0 2px" }}>
-      <div style={{ minHeight: 92, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+    <div style={{ flexShrink: 0, scrollSnapAlign: "start", boxSizing: "border-box", minHeight: 96, display: "flex", flexDirection: "column", justifyContent: "space-between", paddingBottom: 8 }}>
+      <div>
+        <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass }}>@{n.author_username || "익명"}</span>
+          <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(n.created_at)}</span>
+        </div>
         {editing ? (
           <div>
             <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, MOVE_NOTE_MAX_LEN))} rows={3} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
@@ -5955,29 +6245,28 @@ function MoveNoteCard({ n, canModerate, onSaved, onDeleted }) {
               <span style={{ fontSize: 10, color: T.inkSoft }}>{draft.length}/{MOVE_NOTE_MAX_LEN}</span>
               <div className="flex gap-2">
                 <button disabled={busy} onClick={save} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>저장</button>
-                <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press" style={{ fontSize: 10.5, padding: "3px 9px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>취소</button>
+                <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press" style={{ fontSize: 10.5, padding: "3px 9px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.inkSoft, cursor: "pointer" }}>취소</button>
               </div>
             </div>
           </div>
         ) : (
-          <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{n.body}</p>
-        )}
-        {!editing && (
-          <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
-            <span style={{ fontSize: 10.5, color: T.inkSoft }}>{n.author_username || "익명"} · {relTime(n.created_at)}</span>
-            {canModerate && (
-              <div className="flex gap-2">
-                <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
-                <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
-              </div>
-            )}
-          </div>
+          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{n.body}</p>
         )}
       </div>
+      {!editing && canModerate && (
+        <div className="flex gap-2" style={{ marginTop: 6, justifyContent: "flex-end" }}>
+          <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
+          <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
+        </div>
+      )}
     </div>
   );
 }
-function MoveNotesCarousel({ moveKey, canModerate, uid, username }) {
+// (v0.3.0 기능) 사용자 요청 — 수 설명 캐러셀을 보드 옆의 별도 카드로 따로 두지 않고, 기존 "해설"
+// 박스 자리에 그대로 병합한다. 설명이 하나도 없을 때만 기존 개발자 정적 해설(explain)을 그 자리에
+// 보여주는 폴백으로 남긴다. 가로 스와이프 대신 세로로 자동 스크롤되도록 축을 바꿨고(5초 간격),
+// 카드 좌상단에 "@아이디"를 보여준다. 손으로 위아래 스크롤하면 기존과 동일하게 6초간 자동 넘김을 쉰다.
+function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explainLong, title, setShowExpl }) {
   const [notes, setNotes] = useState(null); // null=로딩 중
   const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState("");
@@ -5991,33 +6280,25 @@ function MoveNotesCarousel({ moveKey, canModerate, uid, username }) {
     catch { setNotes([]); }
   }, [moveKey]);
   useEffect(() => { setNotes(null); setIdx(0); setDraft(""); setErr(""); load(); }, [moveKey, load]);
-  // (기능) 카드가 2개 이상이면 4.5초마다 자동으로 다음 카드로 — 방금 손으로 스크롤/버튼 조작을
-  // 했으면 6초간은 자동 넘김을 쉬어 사용자가 읽던 카드가 갑자기 넘어가지 않게 한다.
   useEffect(() => {
     if (!notes || notes.length < 2) return;
-    const iv = setInterval(() => { if (Date.now() >= pauseUntilRef.current) setIdx((i) => (i + 1) % notes.length); }, 4500);
+    const iv = setInterval(() => { if (Date.now() >= pauseUntilRef.current) setIdx((i) => (i + 1) % notes.length); }, 5000);
     return () => clearInterval(iv);
   }, [notes]);
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    el.scrollTo({ left: idx * el.clientWidth, behavior: "smooth" });
+    el.scrollTo({ top: idx * el.clientHeight, behavior: "smooth" });
   }, [idx]);
   const jump = (i) => { pauseUntilRef.current = Date.now() + 6000; setIdx(i); };
-  // (버그 수정) el.scrollTo(...)로 프로그램상 스크롤을 시작하면(위 idx effect, jump 버튼) 그 애니메이션
-  // 도중에도 scroll 이벤트가 여러 번 연속으로 발생한다 — 매번 즉시 scrollLeft로 idx를 되계산하면
-  // 아직 절반쯤만 이동한 중간 지점에서 "이전 idx"로 되돌려 계산해 setIdx가 다시 옛 값으로 튕기고,
-  // 그 idx 변화가 다시 scrollTo를 옛 위치로 불러 애니메이션이 끝나기도 전에 취소돼 버렸다(다음/이전
-  // 버튼을 눌러도 안 넘어가는 것처럼 보인 원인). 스크롤이 실제로 멈춘 뒤(120ms 동안 추가 이벤트가
-  // 없을 때)에만 최종 위치로 idx를 동기화하도록 디바운스한다 — 손으로 스와이프할 때도 자연스럽다.
   const scrollDebounceRef = useRef(null);
   const onManualScroll = () => {
     pauseUntilRef.current = Date.now() + 6000;
     if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
     scrollDebounceRef.current = setTimeout(() => {
       const el = scrollerRef.current;
-      if (!el || !el.clientWidth) return;
-      const i = Math.round(el.scrollLeft / el.clientWidth);
+      if (!el || !el.clientHeight) return;
+      const i = Math.round(el.scrollTop / el.clientHeight);
       setIdx((cur) => (i !== cur ? i : cur));
     }, 120);
   };
@@ -6034,25 +6315,23 @@ function MoveNotesCarousel({ moveKey, canModerate, uid, username }) {
     } catch { setErr("등록에 실패했어요. 잠시 후 다시 시도해주세요."); }
     setBusy(false);
   };
-  const card = { background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, marginTop: 12, boxSizing: "border-box" };
+  const hasNotes = notes && notes.length > 0;
   return (
-    <div style={card}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div className="flex items-center gap-2"><MessageCircle size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>수 설명</span>{notes && notes.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{idx + 1}/{notes.length}</span>}</div>
-        {notes && notes.length > 1 && (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>해설</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{idx + 1}/{notes.length}</span>}</div>
+        {hasNotes && notes.length > 1 && (
           <div className="flex items-center gap-1">
-            <button onClick={() => jump((idx - 1 + notes.length) % notes.length)} className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={13} /></button>
-            <button onClick={() => jump((idx + 1) % notes.length)} className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={13} /></button>
+            <button onClick={() => jump((idx - 1 + notes.length) % notes.length)} aria-label="이전 설명" className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={13} /></button>
+            <button onClick={() => jump((idx + 1) % notes.length)} aria-label="다음 설명" className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={13} /></button>
           </div>
         )}
       </div>
       {notes === null ? (
         <p style={{ fontSize: 11.5, color: T.inkSoft }}>불러오는 중…</p>
-      ) : notes.length === 0 ? (
-        <p style={{ fontSize: 11.5, color: T.inkSoft }}>아직 등록된 수 설명이 없어요. 첫 설명을 남겨보세요!</p>
-      ) : (
+      ) : hasNotes ? (
         <>
-          <div ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
+          <div ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
             {notes.map((n) => (
               <MoveNoteCard key={n.id} n={n} canModerate={canModerate}
                 onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
@@ -6065,6 +6344,8 @@ function MoveNotesCarousel({ moveKey, canModerate, uid, username }) {
             </div>
           )}
         </>
+      ) : (
+        <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>{explain ? (explainLong ? explain.slice(0, 88) + "… " : explain) : (title ? title + " 라인입니다." : "이 수에 대한 해설 데이터가 아직 없습니다.")}{explainLong && <button onClick={() => setShowExpl(true)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, background: "none", border: "none", cursor: "pointer", padding: 0 }}>더보기</button>}</p>
       )}
       <div style={{ height: 1, background: "#E4D5B6", margin: "10px 0" }} />
       {!uid ? (
@@ -6203,15 +6484,9 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {/* (18차 UI5) 미니보드 하단 범례 텍스트 삭제 */}
         </div>
         <div style={{ flex: 1, minWidth: 180 }}>
-          {/* (버그 수정) box-sizing 기본값(content-box)에서 height:100%에 padding/border가 더해져
-              카드가 부모(flex stretch)보다 커지며 바로 아래 "마스터 대국" 블록과 겹치던 문제 수정 */}
-          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, height: "100%", boxSizing: "border-box" }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 6 }}><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>해설</span></div>
-            <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>{explain ? (explainLong ? explain.slice(0, 88) + "… " : explain) : (title ? title + " 라인입니다." : "이 수에 대한 해설 데이터가 아직 없습니다.")}{explainLong && <button onClick={() => setShowExpl(true)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, background: "none", border: "none", cursor: "pointer", padding: 0 }}>더보기</button>}</p>
-          </div>
+          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} explain={explain} explainLong={explainLong} title={title} setShowExpl={setShowExpl} />
         </div>
       </div>
-      <MoveNotesCarousel moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} />
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>
@@ -6314,7 +6589,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                   {/* 전적 요약 */}
                   {!stats ? <p style={{ fontSize: 12, color: T.inkSoft, margin: 0, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>이 수순으로 둔 대국 통계가 없습니다.</p>
                     : (
-                  <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.7, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
+                  <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
                     <div><b>{fmtFull(stats.total)} 게임</b> · <span style={{ color: T.best }}>{stats.w}승</span> {stats.d}무 <span style={{ color: T.blunder }}>{stats.l}패</span> · 승률 <b>{stats.winRate}%</b></div>
                     {stats.top.length > 0 && (
                       <div style={{ marginTop: 6 }}>
@@ -6322,7 +6597,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
                             onJump로 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
                         {stats.top.map((t) => (
-                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
+                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({t.n} 게임) • 총 {t.w}승 {t.d}무 {t.l}패 • 승률 {t.wr}%</button>
                         ))}
                       </div>
                     )}
@@ -6337,7 +6612,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                         : mistakes.map((mt, idx) => {
                           const seqStr = [san, ...mt.seq]; // 표기: 집중 학습 수부터
                           return (
-                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
+                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
                               {seqStr.map((mv, i) => {
                                 const isMistake = i === seqStr.length - 1;
                                 const moverWhite = (ply + i) % 2 === 0;
@@ -6413,7 +6688,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
               <div className="flex items-center gap-2"><BookOpen size={16} style={{ color: T.brass }} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{moveNumber(ply)}{san} 해설</span></div>
               <button onClick={() => setShowExpl(false)} className="press" style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, background: "none", border: "none", cursor: "pointer" }}>✕</button>
             </div>
-            <p style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{explain}</p>
+            <p style={{ fontSize: 13.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{explain}</p>
           </div>
         </div>
       )}
@@ -6969,7 +7244,7 @@ function MecKeywordLine({ text, keyword, onClick, style }) {
     </p>
   );
 }
-function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -6994,7 +7269,8 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
             <MecKeywordLine
               text={copy.mecLine}
               keyword={mecKeyword}
-              onClick={threatDetail ? () => onThreatClick && onThreatClick(threatDetail)
+              onClick={removeDefenderDetail ? () => onRemoveDefenderClick && onRemoveDefenderClick(removeDefenderDetail)
+                : threatDetail ? () => onThreatClick && onThreatClick(threatDetail)
                 : preventDetail ? () => onPreventClick && onPreventClick(preventDetail)
                 : connectDetail ? () => onConnectClick && onConnectClick(connectDetail)
                 : null}
@@ -7135,6 +7411,12 @@ function ReviewPage({ game, onClose }) {
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
   const [prog, setProg] = useState(0);
   const [result, setResult] = useState(null);
+  // (v0.3.0 성능) analyzeGame이 이제 수 하나씩 채점되는 대로 onMove로 흘려보낸다 — result는 첫 수가
+  // 채점되자마자(전체 분석이 끝나기 훨씬 전에) 채워지고, 이후 계속 자라난다. resultDone은 전체 분석이
+  // 100% 끝났는지(정확도%·수 등급 최종 집계가 신뢰 가능한지)를 따로 표시한다 — 요약 화면(정확도%,
+  // 단계별 하이라이트)처럼 완결된 통계가 필요한 곳만 이 값을 기다린다.
+  const [resultDone, setResultDone] = useState(false);
+  const [gradedCount, setGradedCount] = useState(0);
   const [err, setErr] = useState(false);
   // (버그 수정) 0(시작 위치)으로 두면 코치 카드가 아직 설명할 수가 없어 텅 비어 보인다 — 데스크톱은
   // 요약 단계 없이 바로 리뷰 화면으로 들어오므로 처음부터 1(첫 수)로 시작한다. 모바일은 요약 화면의
@@ -7171,7 +7453,13 @@ function ReviewPage({ game, onClose }) {
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready" || !sans || sans.length < 1) { setErr(true); return; }
-    (async () => { try { const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS); if (!cancelled) setResult(r); } catch { if (!cancelled) setErr(true); } })();
+    (async () => {
+      try {
+        const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
+          (partial, gradedIdx) => { if (!cancelled) { setResult(partial); setGradedCount(gradedIdx); } });
+        if (!cancelled) { setResult(r); setGradedCount(sans.length); setResultDone(true); }
+      } catch { if (!cancelled) setErr(true); }
+    })();
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { setShowingLine(false); }, [curPly]);
@@ -7438,9 +7726,12 @@ function ReviewPage({ game, onClose }) {
   const preventDetail = mecThreatOut.current.prevent || null;
   // (기능) "연결"/"중첩"의 시각화 데이터 — 서로 지켜주는 두 기물의 칸.
   const connectDetail = mecThreatOut.current.connect || null;
+  // (신규) 수비자 제거의 시각화 데이터 — 공짜로 잡히게 될 상대 기물 칸(targetSq)·그 기물을 지키던
+  // (지금 막 잡힌) 수비자의 원래 칸(defenderSq)·그 기물을 잡을 수 있는 내 공격자들(attackers).
+  const removeDefenderDetail = mecThreatOut.current.removeDefender || null;
   // (기능) 애니메이션이 있는 MEC 문장에서 실제로 밑줄·클릭 대상이 될 단어 — mecFacts가 이 사실을
-  // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"). 문장
-  // 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
+  // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"/"수비자
+  // 제거"). 문장 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
   const mecKeyword = mecThreatOut.current.keyword || null;
   // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
   // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
@@ -7449,9 +7740,12 @@ function ReviewPage({ game, onClose }) {
   // 표시한다. 수를 넘기면(activeMove가 바뀌면) 예약된 다음 단계를 모두 취소하고 즉시 지운다.
   const [threatArrows, setThreatArrows] = useState([]);
   const [haloSquares, setHaloSquares] = useState([]);
+  // (신규) 수비자 제거 애니메이션의 1단계("수를 두기 전 포지션으로 되돌리기")용 — 값이 있는 동안
+  // 보드에 이 포지션을 표시하고, null이면 평소대로 현재 수(activeMove)까지 둔 포지션을 보여준다.
+  const [rdBoardOverride, setRdBoardOverride] = useState(null);
   const threatTimers = useRef([]);
   const clearThreatTimers = () => { threatTimers.current.forEach(clearTimeout); threatTimers.current = []; };
-  useEffect(() => { clearThreatTimers(); setThreatArrows([]); setHaloSquares([]); return clearThreatTimers; }, [activeMove, effSans]);
+  useEffect(() => { clearThreatTimers(); setThreatArrows([]); setHaloSquares([]); setRdBoardOverride(null); return clearThreatTimers; }, [activeMove, effSans]);
   const playThreatAnimation = (detail) => {
     clearThreatTimers();
     setHaloSquares([]);
@@ -7493,6 +7787,22 @@ function ReviewPage({ game, onClose }) {
       threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), i * 450));
     });
     threatTimers.current.push(setTimeout(() => setThreatArrows([]), steps.length * 450 + 1000));
+  };
+  // (신규) 수비자 제거 애니메이션 — 사용자 요청 3단계: ① 이 수를 두기 전 포지션으로 되돌려서 공짜로
+  // 잡힐 기물에 대한 공격자·수비자 화살표를 함께 보여준다. ② 잠시 뒤 수비자를 제거하는 실제 수를
+  // 애니메이션(포지션을 이 수를 둔 뒤로 전환)으로 보여준다 — 공격자 화살표는 "이제 공짜로 잡을 수
+  // 있다"는 걸 보여주기 위해 그대로 남겨 둔다. ③ 이제 사라진 수비자를 가리키던 화살표를 서서히
+  // 지운다(fading). 마지막으로 halo·화살표·되돌린 포지션을 모두 정리한다.
+  const playRemoveDefenderAnimation = (detail) => {
+    clearThreatTimers();
+    setHaloSquares([detail.targetSq]);
+    const attackerArrows = detail.attackers.map((sq) => ({ from: sq, to: detail.targetSq, kind: "threatAttacker" }));
+    const defenderArrow = { from: detail.defenderSq, to: detail.targetSq, kind: "threatDefender" };
+    setRdBoardOverride(boardFromSans(effSans.slice(0, -1)));
+    setThreatArrows([...attackerArrows, defenderArrow]);
+    threatTimers.current.push(setTimeout(() => setRdBoardOverride(null), 900));
+    threatTimers.current.push(setTimeout(() => setThreatArrows([...attackerArrows, { ...defenderArrow, fading: true }]), 1050));
+    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); setRdBoardOverride(null); }, 2400));
   };
   // (기능) 탁월한 수 — 유형(직접 희생/방치 희생/언더프로모션) + 엔진 PV 근거를 하나의 글로 엮은
   // 설명(brilliantExplain, 엔진 필요, 비동기). 두기 전 평가(bestCp)가 이미 마이너스면(mover 관점)
@@ -7584,7 +7894,11 @@ function ReviewPage({ game, onClose }) {
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
       <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
       <span style={{ fontSize: 15, fontWeight: 800, color: RV.text }}>게임 리뷰</span>
-      <span style={{ width: 34 }} />
+      {/* (v0.3.0 기능) result가 있어도(=첫 수 채점 완료) 전체 분석은 백그라운드에서 계속 진행 중일 수
+          있다 — 아직 안 끝났으면 진행 중임을 알리는 작은 배지를 보여준다(끝나면 조용히 사라짐). */}
+      {result && !resultDone && sans && sans.length > 0 ? (
+        <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: RV.dim, whiteSpace: "nowrap" }}><Cpu size={11} /> 분석 중 {Math.round((gradedCount / sans.length) * 100)}%</span>
+      ) : <span style={{ width: 34 }} />}
     </div>
   );
   if (err) return (
@@ -7606,16 +7920,28 @@ function ReviewPage({ game, onClose }) {
       <div style={wrap}>
         {header}
         {phase === "summary"
-          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
+          ? (resultDone ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
+            : (
+              // (v0.3.0 성능) 정확도%·단계별 하이라이트 같은 요약 통계는 분석이 100% 끝나야 신뢰할 수
+              // 있어 그대로 기다린다 — 다만 그 사이에도 이미 채점된 수부터 곧장 리뷰를 시작할 수 있는
+              // 지름길을 준다(기다리기 싫은 사용자는 굳이 요약까지 기다릴 필요가 없다).
+              <div style={{ padding: "14px 16px 24px", textAlign: "center" }}>
+                <ReviewLoadingSplit />
+                <div style={{ marginTop: 16 }}><AnalyzingPiecesAnim /></div>
+                <div style={{ maxWidth: 280, margin: "12px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><div style={{ width: (gradedCount / sans.length * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
+                <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6 }}>요약 준비 중 {Math.round(gradedCount / sans.length * 100)}%</p>
+                <button onClick={() => { setPhase("review"); setCurPly(1); }} className="press" style={{ marginTop: 14, padding: "10px 18px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: RV.text, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>기다리지 않고 바로 리뷰 시작</button>
+              </div>
+            ))
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
@@ -7643,12 +7969,12 @@ function ReviewPage({ game, onClose }) {
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
               leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
@@ -8222,18 +8548,18 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                     {branch ? (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}><Cpu size={12} /> 주요 분기점</span>
-                        <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{branch}</p>
+                        <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{branch}</p>
                       </>
                     ) : (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}><ThumbsUp size={12} /> 수 추천</span>
                         {rec ? (
-                          <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>
+                          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply)}{recSan}</b>
                             {reason ? " — " + reason : null}
                           </p>
                         ) : (
-                          <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{lastMascot}</p>
+                          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{lastMascot}</p>
                         )}
                         {canEdit && <RecommendReasonEditor sentKey={key} bumpContent={bumpContent} />}
                       </>
@@ -9864,6 +10190,32 @@ function extendPuzzleLeaf(tree, preSans, leafPath, sanRaw, seedSeq) {
   leaf.children = [child];
   return { tree: clone, seq };
 }
+// (v0.3.0 기능) 개발자 전용 — 이미 갈래가 있는 노드(주로 상대 응수)에 형제 갈래를 하나 더 추가한다.
+// extendPuzzleLeaf(리프에 다음 수를 잇는 것)와 달리, 기존 children은 하나도 건드리지 않고 그
+// 배열에 새 자식만 덧붙인다. cand는 puzzleCandidatesAt이 이미 계산해 둔 { san, kind, ev, adopt }를
+// 그대로 받는다(추가 엔진 호출 없음) — 자동 생성(genPuzzleTree)의 isDevelopingMove 필터 등에 걸려
+// 사라진, 실제로는 멀쩡한 응수를 다시 채워 넣는 용도. parentPath.length가 홀수면(=사용자가 방금
+// 수를 둔 자리) 새로 추가하는 자식은 상대 응수이므로 pass는 항상 true, 태그는 붙지 않는다(라인은
+// 항상 사용자 수로 끝나야 하므로) — extendPuzzleLeaf와 동일한 규칙.
+function addSiblingBranch(tree, parentPath, cand, seedSeq) {
+  const clone = cloneTree(tree);
+  const parent = parentPath.length ? findTreeNode(clone, parentPath) : clone;
+  if (!parent) return { error: "위치를 찾을 수 없습니다." };
+  const key = stripSuffix(cand.san);
+  if ((parent.children || []).some((c) => stripSuffix(c.san) === key)) return { error: "이미 있는 수입니다." };
+  const depth = parentPath.length;
+  const isUserTurn = depth % 2 === 0;
+  const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(cand.kind) : true;
+  const child = { san: cand.san, kind: cand.kind ?? null, ev: cand.ev ?? null, adopt: cand.adopt ?? null, pass, children: [] };
+  let seq = seedSeq || 0;
+  if (pass) {
+    const isValidTerminus = (depth + 1) % 2 === 1;
+    if (isValidTerminus) { const r = nextLeafTag(clone, seedSeq); child.tag = r.tag; seq = r.seq; }
+  }
+  if (!parent.children) parent.children = [];
+  parent.children.push(child);
+  return { tree: clone, seq };
+}
 // (20차 기능3) 개발자 전용 — 라인의 마지막 수를 하나씩 삭제해 그 라인을 한 수 짧게 만든다. 실수로
 // 라인 전체가 한 번에 사라지지 않도록, 한 번에 정확히 한 수만(그 리프 자신) 지운다. 삭제 후 남는
 // 마지막 지점이 사용자 수(홀수 길이)로 끝나면 새 고유 태그를 부여해 다시 완결된 라인이 되고,
@@ -10660,7 +11012,7 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, celebrateTag, shakeTag }) {
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag }) {
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
@@ -10875,6 +11227,35 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     setDelBusyKey(null);
     if (errMsg) setDelErrKey({ key: it.key, msg: errMsg });
   };
+  // (v0.3.0 기능) 개발자 전용 — 상대 응수 노드에 형제 갈래(다른 응수 선택지)를 추가한다. 열면
+  // onSuggestSiblings가 그 자리에서 자동 생성이 실제로 봤던 후보 목록(필터로 걸러졌던 것 포함)을
+  // 다시 불러온다 — 골라서 누르면 바로 추가되고, 목록에 없는 수는 직접 입력할 수도 있다.
+  const [siblingAt, setSiblingAt] = useState(null);   // path|null
+  const [siblingCands, setSiblingCands] = useState(null); // null=불러오는 중
+  const [siblingManualSan, setSiblingManualSan] = useState("");
+  const [siblingErr, setSiblingErr] = useState("");
+  const [siblingBusy, setSiblingBusy] = useState(false);
+  const openSibling = async (path) => {
+    setSiblingAt(path); setSiblingCands(null); setSiblingErr(""); setSiblingManualSan("");
+    const cands = await onSuggestSiblings(path);
+    setSiblingCands(cands || []);
+  };
+  const pickSibling = async (cand) => {
+    if (siblingBusy) return;
+    setSiblingBusy(true);
+    const errMsg = await onAddSibling(siblingAt, cand);
+    setSiblingBusy(false);
+    if (errMsg) { setSiblingErr(errMsg); return; }
+    setSiblingAt(null);
+  };
+  const submitManualSibling = async () => {
+    const san = siblingManualSan.trim(); if (!san || siblingBusy) return;
+    setSiblingBusy(true);
+    const errMsg = await onAddSibling(siblingAt, { san, manual: true });
+    setSiblingBusy(false);
+    if (errMsg) { setSiblingErr(errMsg); return; }
+    setSiblingAt(null);
+  };
   return (
     <div style={{ marginBottom: 12 }}>
       <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
@@ -10926,6 +11307,10 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             const incomplete = !isRoot && it.isLeaf && it.depth % 2 === 0 && !it.node.tag;
             // (20차 기능3) 라인 길이 삭제 — 리프에서만, 최소 1수는 남도록(라인 자체가 사라지지 않게)
             const canDeleteHere = canEdit && !isRoot && it.isLeaf && it.path.length > 1;
+            // (v0.3.0 기능) 형제 갈래 추가 — it.depth가 홀수(사용자 수)인 노드의 children이 상대
+            // 응수 갈래다. 리프 여부와 무관하게(응수가 아예 없는 노드에도) 허용해, 자동 생성이
+            // isDevelopingMove 필터 등으로 응수 후보를 통째로 걸러낸 경우에도 되살릴 수 있게 한다.
+            const canAddSiblingHere = canEdit && !isRoot && it.depth % 2 === 1;
             return (
               // (v0.2.7 버그 수정) 리프(라인의 마지막 수) 노드는 오른쪽에 "라인 N"·체크 배지(그리고
               // 개발자 모드에서는 추가·삭제 버튼)가 같은 줄에 나란히 붙는데, 이 바깥 wrapper의 폭이
@@ -10965,6 +11350,8 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                   {canAddHere && <button onClick={() => openAdd(it.path)} className="press no-pan" title="이 라인에 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
                   {/* (20차 기능3) 개발자 전용 — 이 라인의 마지막 수를 하나 삭제(라인 길이 단축, 한 번에 한 수씩) */}
                   {canDeleteHere && <button onClick={() => submitDelete(it)} disabled={delBusyKey === it.key} className="press no-pan" title="이 라인의 마지막 수 삭제" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={13} /></button>}
+                  {/* (v0.3.0 기능) 개발자 전용 — 이 수 다음에 올 상대 응수의 형제 갈래(다른 응수 선택지) 추가 */}
+                  {canAddSiblingHere && <button onClick={() => openSibling(it.path)} className="press no-pan" title="상대 응수의 형제 갈래 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.only, background: "transparent", color: T.only, fontSize: 13, fontWeight: 800, cursor: "pointer", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>⑂</button>}
                 </div>
                 {delErrKey && delErrKey.key === it.key && <div className="no-pan" style={{ fontSize: 9.5, color: T.blunder, marginTop: 3, background: "#fff", borderRadius: 6, padding: "2px 6px", border: "1px solid " + T.blunder }}>{delErrKey.msg}</div>}
               </div>
@@ -10980,6 +11367,37 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
               <button onClick={() => setAddAt(null)} className="press" style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>취소</button>
             </div>
             {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{err}</div>}
+          </div>
+        )}
+        {/* (v0.3.0 기능) 형제 갈래 추가 패널 — onSuggestSiblings가 돌려준(자동 생성이 실제로 봤던)
+            후보 목록을 등급·평가치·채택률과 함께 보여준다. 골라 누르면 바로 추가되고, 목록에 없는
+            수는 아래 직접 입력으로도 추가할 수 있다(kind/ev/adopt는 비워 두고 배경 보강이 채운다). */}
+        {siblingAt && (
+          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(320px, calc(100% - 20px))", maxHeight: 188, overflowY: "auto", padding: 10, borderRadius: 10, border: "1px solid " + T.only, background: "#fff", boxShadow: "0 10px 24px -8px rgba(0,0,0,.4)" }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 10.5, color: T.inkSoft }}>이 자리의 상대 응수 후보</div>
+              <button onClick={() => setSiblingAt(null)} className="press" style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 11 }}>닫기</button>
+            </div>
+            {siblingCands === null ? (
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>엔진으로 후보를 다시 불러오는 중…</div>
+            ) : siblingCands.length === 0 ? (
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>더 추천할 후보가 없어요 — 아래에 직접 입력하세요.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                {siblingCands.map((c) => (
+                  <button key={c.san} onClick={() => pickSibling(c)} disabled={siblingBusy} className="press" style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 7, border: "1px solid #DCCBA8", background: "#FBF5E8", cursor: siblingBusy ? "default" : "pointer", textAlign: "left" }}>
+                    {c.kind && QCOLOR[c.kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[c.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(c.kind, 11)}</span>}
+                    <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 800, color: T.ink, flexShrink: 0 }}>{c.san}</span>
+                    <span style={{ fontSize: 10, color: T.inkSoft, marginLeft: "auto", flexShrink: 0 }}>{c.adopt != null ? Math.round(c.adopt) + "%" : "–%"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+              <input value={siblingManualSan} onChange={(e) => setSiblingManualSan(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitManualSibling()} placeholder="직접 입력(예: Be6)" style={{ width: 100, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (siblingErr ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
+              <button onClick={submitManualSibling} disabled={siblingBusy} className="press" style={{ padding: "6px 12px", borderRadius: 7, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{siblingBusy ? "추가 중…" : "추가"}</button>
+            </div>
+            {siblingErr && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{siblingErr}</div>}
           </div>
         )}
       </div>
@@ -11500,6 +11918,38 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     setOverrideTree(res.tree);
     return null;
   };
+  // (v0.3.0 기능) 개발자 전용 — 임의의 상대 응수 노드에 형제 갈래를 추가한다. genPuzzleTree가 실제로
+  // 계산해 뒀던 후보 목록(puzzleCandidatesAt)을 그대로 다시 불러와 보여준다 — isDevelopingMove 필터나
+  // "채택률·손실 점수 상위 3개만" 규칙 때문에 자동 생성 단계에서 걸러진 멀쩡한 응수가 여기서는 그대로
+  // 드러나므로, 개발자가 골라 다시 채워 넣을 수 있다(추가 엔진 호출 없이 kind/ev/adopt 그대로 재사용).
+  const suggestSiblings = async (path) => {
+    if (!engine || engine.status !== "ready") return [];
+    try {
+      const raw = await puzzleCandidatesAt(engine, [...setup, ...path]);
+      const parentNode = path.length ? findTreeNode(tree, path) : tree;
+      const existing = new Set(((parentNode && parentNode.children) || []).map((c) => stripSuffix(c.san)));
+      return (raw || []).filter((c) => !existing.has(stripSuffix(c.san)));
+    } catch { return []; }
+  };
+  const addSibling = async (path, cand) => {
+    let finalCand = cand;
+    if (cand.manual) {
+      const board = boardFromSans([...setup, ...path]);
+      const color = (setup.length + path.length) % 2 === 0 ? "w" : "b";
+      if (!sanSrc(board, cand.san, color)) return "불법 수입니다.";
+      finalCand = { san: decorateSan(board, cand.san, color), kind: null, ev: null, adopt: null };
+    }
+    const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
+    const res = addSiblingBranch(tree, path, finalCand, seedSeq);
+    if (res.error) return res.error;
+    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
+    persistTagSeq(res.seq);
+    if (bumpContent) await bumpContent();
+    setOverrideTree(res.tree);
+    return null;
+  };
   // (20차 기능3) 개발자 전용 — 이 퍼즐의 "기본 이점 기준"(자동 생성이 확실한 이점으로 볼 cp 기준)을
   // 퍼즐마다 직접 설정한다. 값을 바꾸는 것만으로는 아무 일도 벌어지지 않고(저장만 됨), 명시적으로
   // "이 기준으로 기본 트리 재생성"을 눌러야 실제로 트리 전체를 새로 만든다 — 수동으로 추가/삭제한
@@ -11508,6 +11958,20 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const defaultTarget = savedTarget != null ? savedTarget : puzzleThemeOpts(theme).target;
   const [targetInput, setTargetInput] = useState(defaultTarget);
   useEffect(() => { setTargetInput(defaultTarget); }, [puzzle.id, savedTarget]);
+  // (신규) 개발자 전용 — 퍼즐 종류(기물 우위/포지션 우위) 표시·설정. 목표 cp는 포지션 우위일 때만
+  // 의미가 있으므로(기물 우위는 cp 기준 없이 기물 이득만으로 종료), 종류가 포지션 우위일 때만
+  // 위의 목표 cp 입력을 노출한다.
+  const savedPuzzleType = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).puzzleType;
+  const defaultPuzzleType = savedPuzzleType != null ? savedPuzzleType : puzzleThemeOpts(theme).puzzleType;
+  const [puzzleTypeInput, setPuzzleTypeInput] = useState(defaultPuzzleType);
+  useEffect(() => { setPuzzleTypeInput(defaultPuzzleType); }, [puzzle.id, savedPuzzleType]);
+  const savePuzzleType = async (v) => {
+    setPuzzleTypeInput(v);
+    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, puzzleType: v };
+    if (bumpContent) await bumpContent();
+  };
   const [regenBusy, setRegenBusy] = useState(false);
   const [regenErr, setRegenErr] = useState("");
   const saveDefaultTarget = async (v) => {
@@ -11522,12 +11986,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     try {
       const th = primaryTheme(puzzle);
       const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
-      const opts = { ...puzzleThemeOpts(th, targetInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedSeq };
+      const opts = { ...puzzleThemeOpts(th, targetInput, puzzleTypeInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedSeq };
       const gen = await genPuzzleTree(engine, setup, opts);
       if (!gen) { setRegenErr("이 기준으로는 트리를 만들 수 없어요(기준을 낮춰보세요)."); return; }
       if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
       const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
-      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: gen.tree, lines: gen.lines, target: targetInput, tagSeq: gen.seq };
+      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: gen.tree, lines: gen.lines, target: targetInput, puzzleType: puzzleTypeInput, tagSeq: gen.seq };
       if (bumpContent) await bumpContent();
       setOverrideTree(gen.tree);
     } finally { setRegenBusy(false); }
@@ -11660,15 +12124,29 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
             </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
             {canEdit && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
-                <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-                  <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
-                    style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
-                  <span style={{ fontSize: 10.5, color: T.inkSoft }}>cp (현재 기본값 {defaultTarget})</span>
+                {/* (신규) 퍼즐 종류 — 포지션 우위(cp 이득 기준)/기물 우위(기물 이득 즉시 종료, 수비자
+                    제거 같은 전술용). 목표 cp는 포지션 우위일 때만 의미가 있으므로 그때만 보여준다. */}
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 퍼즐 종류</div>
+                <div className="flex items-center gap-2" style={{ flexWrap: "wrap", marginBottom: 10 }}>
+                  {[["positional", "포지션 우위"], ["material", "기물 우위"]].map(([v, label]) => (
+                    <button key={v} onClick={() => savePuzzleType(v)} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: puzzleTypeInput === v ? T.brass : "transparent", color: puzzleTypeInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>{label}</button>
+                  ))}
+                </div>
+                {puzzleTypeInput === "positional" && (
+                  <>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
+                    <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                      <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
+                        style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
+                      <span style={{ fontSize: 10.5, color: T.inkSoft }}>cp (현재 기본값 {defaultTarget})</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex items-center gap-2" style={{ flexWrap: "wrap", marginTop: 8 }}>
                   <button onClick={regenerateWithTarget} disabled={!engine || engine.status !== "ready" || regenBusy} className="press" style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 11.5, opacity: (!engine || engine.status !== "ready") ? 0.5 : 1 }}>{regenBusy ? "재생성 중…" : "이 기준으로 기본 트리 재생성"}</button>
                 </div>
                 <div style={{ fontSize: 9.5, color: T.blunder, marginTop: 5 }}>재생성하면 이 퍼즐의 트리가 통째로 새로 만들어져 수동으로 추가·삭제한 내용이 모두 사라져요.</div>
@@ -11901,7 +12379,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       </div>
       {extras}
       {/* (v0.1.2) 개별 퀘스트 클리어 보상을 XP에서 OC 나이트 코인으로 바꿈. */}
-      <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, flexShrink: 0 }}>+10 <CoinIcon size={12} /></span>
+      <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, flexShrink: 0 }}>+10 <CoinIcon size={16} /></span>
     </div>
   ); };
   return (
@@ -11939,7 +12417,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
         const doneCount = (dq.claimed.puzzle ? 1 : 0) + (dq.claimed.dailypuzzle ? 1 : 0) + [0, 1, 2].filter((i) => dq.claimed["cc_" + i]).length;
         return (
           <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, border: "1px solid " + (allDone ? "rgba(120,200,120,.55)" : T.brass), background: allDone ? "rgba(60,138,60,.18)" : "rgba(196,154,80,.08)", display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ position: "relative", flexShrink: 0 }}><CoinIcon size={40} /></div>
+            <div style={{ position: "relative", flexShrink: 0 }}><CoinIcon size={46} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? "#BEEAB0" : T.brassHi }}>모든 퀘스트 완료 보상</div>
               <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>OC 나이트 코인 <b style={{ color: T.brassHi }}>50개</b> · {doneCount}/5 완료</div>
@@ -11970,7 +12448,7 @@ function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit
     <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), marginLeft: sub ? 14 : 0, opacity: locked ? .55 : 1 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: complete ? "#BEEAB0" : T.ivoryHi, minWidth: 0 }}>{ch.title}</span>
-        <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 7px", flexShrink: 0 }}><CoinIcon size={11} /> {ch.reward || 100}</span>
+        <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 7px", flexShrink: 0 }}><CoinIcon size={15} /> {ch.reward || 100}</span>
         <span style={{ marginLeft: "auto", flexShrink: 0 }}>
           {locked ? <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}><Lock size={12} /> 잠김</span>
             : claimed ? <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>완료</span>
@@ -12180,7 +12658,7 @@ function QuestChapterEditor({ chKey, bumpContent, onClose }) {
         <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 11, color: T.inkSoft }}>클리어 보상</span>
           <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
-          <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={13} /> OC 나이트 코인</span>
+          <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={17} /> OC 나이트 코인</span>
         </div>
         <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>문항 {draft.items.length}개</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -12561,7 +13039,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             {numSuggestions.map((p) => (
               <button key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setActive(p); setNumInput(""); setNumMsg(""); }} className="press flex items-center gap-2" style={{ width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", textAlign: "left" }}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
-                <span style={{ fontSize: 12, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
+                <span style={{ fontSize: 12, color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
               </button>
             ))}
           </div>
@@ -13692,6 +14170,22 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.3.0", date: "2026.8.9", dev: ["openchesskr"], items: [
+      "오프닝을 배울 때 실제 유명 변형 233개(예: 루이 로페즈 마셜, 시칠리안 나이도르프 6.Bg5, 킹스 인디언 사미시 등)를 정식 이론 수로 인식하고 이름을 보여줘요.",
+      "집중학습의 \"마스터 대국\" 목록에 실제 GM 대국 데이터 수천 판이 추가로 반영됐어요 — 기존 Lichess 마스터 DB와 함께 구분 없이 보여드려요.",
+      "체스보드에서 이제 모바일 터치로도 기물을 드래그해서 옮길 수 있어요 — 손가락으로 기물을 쥐고 원하는 칸으로 끌어다 놓으면 돼요.",
+      "코치가 \"수비자 제거\" 전술을 새로 짚어줘요 — 상대 기물을 잡으면서 그 기물이 지키던 다른 기물까지 공짜로 잡히게 만드는 수를 알려주고, 눌러보면 화살표 애니메이션으로 보여줘요.",
+      "퍼즐이 상대의 진짜 최선 수 대신 엉뚱한 수만 남던 문제를 고쳤어요.",
+      "퍼즐이 체크메이트까지 포함해서 딱 필요한 만큼만 정확히 끝나도록 종료 조건을 다듬었어요.",
+      "퍼즐 생성 속도를 높였어요.",
+      "게임 리뷰가 전체 분석이 끝날 때까지 기다리지 않고, 수가 하나씩 채점되는 대로 바로바로 보여드려요.",
+      "학습 탭에서 엔진이 더 깊이 분석하며 순위가 바뀌면, 수 블록들이 뚝뚝 끊기지 않고 부드럽게 자리를 옮겨요 — 이론 수 블록도 마찬가지예요.",
+      "학습 탭 \"수 설명\"이 해설 박스 안으로 합쳐졌어요 — 세로로 천천히 자동으로 넘어가고, 직접 스크롤도 할 수 있어요.",
+      "OC 나이트 코인·리뷰 티켓 아이콘을 더 크고 잘 보이게 키웠어요.",
+      "본문 글자색을 더 읽기 편한 갈색 톤으로, 조금 더 굵게 바꿨어요.",
+    ]
+  },
+  {
     version: "0.2.9", date: "2026.8.4", dev: ["openchesskr"], items: [
       "게임 리뷰 화면의 평가치 막대가 실시간 엔진 분석과 함께 계속 움직여요 — 이전엔 실제로 둔 수를 볼 때는 미리 계산해 둔 값에 멈춰 있었는데, 이제 엔진이 더 깊이 볼수록 막대도 그만큼 계속 반응해요.",
       "일일 퀘스트를 모두 클리어하면 이제 눈에 띄는 팝업으로 알려드려요. 사이트에 접속하지 않은 사이(예: chess.com에서만 대국을 둬서) 클리어됐어도, 다음에 접속하면 그때 바로 알려드려요.",
@@ -14093,7 +14587,7 @@ function AnnouncementModal({ onClose }) {
                 {i === 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: T.brass, borderRadius: 999, padding: "1px 7px" }}>최신</span>}
               </div>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {v.items.map((t, j) => <li key={j} style={{ fontSize: 12, color: T.ink, lineHeight: 1.6, marginBottom: 4 }}>{t}</li>)}
+                {v.items.map((t, j) => <li key={j} style={{ fontSize: 12, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 4 }}>{t}</li>)}
               </ul>
               {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>개발: {v.dev.join(", ")}</div>}
             </div>
@@ -14296,9 +14790,9 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
               숫자는 0에서 목표치까지 빠르게 카운트업된다 — 둘 다 게임 보상 화면에서 흔히 보이는 연출. */}
           <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 16 }}>
             <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".25s", animationFillMode: "backwards" }}><Star size={12} fill={T.brassHi} style={{ color: T.brassHi }} />+<AnimatedCountUp to={20} /> XP</span>
-            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".38s", animationFillMode: "backwards" }}><CoinIcon size={14} />+<AnimatedCountUp to={50} /></span>
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".38s", animationFillMode: "backwards" }}><CoinIcon size={18} />+<AnimatedCountUp to={50} /></span>
             {/* (v0.2.9 기능) 전체 클리어 추가 보상 — 리뷰 티켓 2개(개별 클리어분 5개는 각 항목 클리어 순간의 questClear 토스트에서 이미 받았다). */}
-            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".5s", animationFillMode: "backwards" }}><TicketIcon size={18} />+<AnimatedCountUp to={2} /></span>
+            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".5s", animationFillMode: "backwards" }}><TicketIcon size={22} />+<AnimatedCountUp to={2} /></span>
           </div>
           {rows.length > 0 && (
             <>
@@ -14388,7 +14882,7 @@ function NoReviewTicketsModal({ reviewTickets, onClose }) {
         transition={{ type: "spring", stiffness: 340, damping: 26 }}
         style={{ position: "relative", width: "100%", maxWidth: 320, margin: "auto", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 20, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", textAlign: "center" }}>
         <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
-        <div style={{ margin: "4px auto 10px", width: 68, height: 68, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}><TicketIcon size={40} /></div>
+        <div style={{ margin: "4px auto 10px", width: 68, height: 68, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}><TicketIcon size={46} /></div>
         <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>리뷰 티켓이 부족해요</div>
         <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>보유 중인 리뷰 티켓 <b style={{ color: T.brassHi }}>{fmtFull(reviewTickets)}개</b> — 대국을 하나 리뷰할 때마다 1개가 필요해요. 한 번 리뷰한 대국은 이후 티켓 없이 계속 다시 볼 수 있어요.</p>
         <div style={{ textAlign: "left", fontSize: 11.5, color: T.inkSoft, background: "rgba(196,154,80,.08)", border: "1px solid " + T.brass, borderRadius: 10, padding: "10px 12px", marginBottom: 16, lineHeight: 1.7 }}>
@@ -14492,15 +14986,15 @@ function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, reviewTick
     <div style={card}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 재화·티어·경험치 설정</div>
       <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>
-        지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={12} /> {fmtFull(ocCoins)} · <TicketIcon size={15} /> {fmtFull(reviewTickets)}
+        지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={16} /> {fmtFull(ocCoins)} · <TicketIcon size={18} /> {fmtFull(reviewTickets)}
       </div>
       <div className="flex items-center gap-2" style={rowStyle}>
-        <CoinIcon size={16} />
+        <CoinIcon size={20} />
         <input type="number" value={coinInput} onChange={(e) => setCoinInput(e.target.value)} placeholder="OC 코인 수치" style={inputStyle} />
         <button onClick={() => setOcCoins(Math.max(0, parseInt(coinInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
       </div>
       <div className="flex items-center gap-2" style={rowStyle}>
-        <TicketIcon size={20} />
+        <TicketIcon size={24} />
         <input type="number" value={ticketInput} onChange={(e) => setTicketInput(e.target.value)} placeholder="리뷰 티켓 수치" style={inputStyle} />
         <button onClick={() => setReviewTickets(Math.max(0, parseInt(ticketInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
       </div>
@@ -14643,7 +15137,10 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
   // 항상 검증된 pending.username을 신뢰하고, cc.trim()은 pending이 비어 있는 이론상의 경우에만 대체값으로 쓴다.
   // (20차 UX3) 연동/재연동 시점을 기록해 30일 쿨다운의 기준으로 삼는다.
   const confirmLink = () => { setProfile({ ...profile, chesscom: (pending && pending.username) || cc.trim(), chesscomChangedAt: Date.now() }); setPending(null); };
-  const chesscomChangeBypass = isDev && devOn;
+  // (버그 수정) 공동 개발자 모드에서도 "공동 개발자 임명" 권한만 빼고 개발자와 동일한 모든 권한을
+  // 쓸 수 있어야 하는데, 이 bypass는 isDev && devOn으로만 걸려 있어 공동 개발자는 chess.com 계정
+  // 변경 30일 쿨다운을 그대로 적용받고 있었다 — 공동 개발자 모드에서도 우회하도록 조건을 넓힌다.
+  const chesscomChangeBypass = (isDev && devOn) || (isCodev && codevOn);
   const chesscomDaysLeft = chesscomChangeBypass ? 0 : chesscomChangeDaysLeft(profile.chesscomChangedAt);
   const changeChesscom = () => { if (chesscomDaysLeft > 0) return; setProfile({ ...profile, chesscom: "" }); setCc(""); setCcState("idle"); };
   const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8", marginTop: 14 };
@@ -14689,7 +15186,9 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
 
       {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
           않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
-      {isDev && devOn && <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={card} />}
+      {/* (버그 수정) 공동 개발자도 임명 권한 외에는 개발자와 동일한 권한을 써야 하므로, 자원 조정
+          패널도 공동 개발자 모드에서 함께 보여준다. */}
+      {((isDev && devOn) || (isCodev && codevOn)) && <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={card} />}
       {canEdit && <DailyPuzzleDevPanel card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
@@ -14795,7 +15294,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
                   <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 16 }}>
-                  {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
+                  {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
                 </ul>
                 {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>개발: {v.dev.join(", ")}</div>}
               </div>
@@ -14829,7 +15328,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
                 <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{v != null ? v : "—"}</div></div>
               ))}
             </div>
-            <p style={{ fontSize: 12.5, color: T.ink, marginBottom: 14 }}>이 계정이 맞나요?</p>
+            <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 14 }}>이 계정이 맞나요?</p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setPending(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>아니요</button>
               <button onClick={confirmLink} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>이 계정으로 연동</button>
@@ -14920,7 +15419,7 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
         <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
           {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tierLabel.label} 티어 전용 · 코인으로 구매 불가</span>
             : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>무료 · 기본 제공</span>
-              : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={13} /> {sk.price}</span>}
+              : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={17} /> {sk.price}</span>}
         </div>
         {equipped ? (
           <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>✓ 장착됨</button>
@@ -14945,11 +15444,11 @@ function StoreTab({ coins, reviewTickets, ownedSkins, boardSkin, pieceSkin, onBu
         <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
         <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
           <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
-            <CoinIcon size={18} />
+            <CoinIcon size={26} />
             <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(coins || 0)}</span>
           </div>
           <div className="flex items-center gap-1" title="보유 중인 리뷰 티켓 — 게임 리뷰를 하나 열 때마다 1개 소비, 한 번 연 대국은 이후 무료" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
-            <TicketIcon size={22} />
+            <TicketIcon size={30} />
             <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(reviewTickets || 0)}</span>
           </div>
         </div>
@@ -15274,7 +15773,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
                 <FadeIn key={n.id} index={i} y={6} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderBottom: "1px solid #EFE3C8" }}>
                   <span style={{ marginTop: 1 }}>{notifIcon(n.kind)}</span>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12, color: T.ink, lineHeight: 1.4 }}>{notifText(n)}</div>
+                    <div style={{ fontSize: 12, color: T.ink, fontWeight: 600, lineHeight: 1.4 }}>{notifText(n)}</div>
                     <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 2 }}>{relTime(n.created_at)}</div>
                     {n.kind === "friend_request" && (result ? (
                       <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: result === "accepted" ? T.best : T.inkSoft }}>{result === "accepted" ? "수락함" : "거절함"}</div>
@@ -15784,7 +16283,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
           <div style={{ marginBottom: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass }}>
             <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>사용 가능한 명령어</div>
             {CHAT_COMMANDS.map((c) => (
-              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, marginTop: 1 }}><b style={{ fontFamily: "ui-monospace,monospace" }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: "ui-monospace,monospace" }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
             ))}
           </div>
         )}
@@ -16587,11 +17086,11 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
         {(reward > 0 || ticketReward > 0) && (
           <div className="flex items-center justify-center flex-wrap" style={{ gap: 8, marginTop: 12 }}>
             {reward > 0 && (
-              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={15} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
+              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={19} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
             )}
             {/* (v0.2.9 기능) 티어 승급 보상에 리뷰 티켓 10개를 추가 — 코인 배지와 같은 자리에 나란히. */}
             {ticketReward > 0 && (
-              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".68s", animationFillMode: "backwards" }}><TicketIcon size={19} />+<AnimatedCountUp to={ticketReward} /> 리뷰 티켓</span>
+              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".68s", animationFillMode: "backwards" }}><TicketIcon size={23} />+<AnimatedCountUp to={ticketReward} /> 리뷰 티켓</span>
             )}
           </div>
         )}
@@ -16986,7 +17485,7 @@ function AuthModal({ onClose, onAuth, initialMode }) {
         </div>
         {mode === "reset" ? (sent ? (
           <>
-            <p style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, marginBottom: 14 }}>입력하신 계정이 존재하면 연동된 이메일로 비밀번호 재설정 링크를 보냈습니다. 메일함(스팸함 포함)을 확인해 주세요.</p>
+            <p style={{ fontSize: 13, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 14 }}>입력하신 계정이 존재하면 연동된 이메일로 비밀번호 재설정 링크를 보냈습니다. 메일함(스팸함 포함)을 확인해 주세요.</p>
             <button onClick={() => { setMode("login"); setSent(false); setErr(""); setPw(""); }} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>로그인으로 돌아가기</button>
           </>
         ) : (
@@ -17842,7 +18341,9 @@ export default function App() {
   const [ticketBlockedOpen, setTicketBlockedOpen] = useState(false);
   const openReview = useCallback((game) => {
     if (!game || !game.sans || !game.sans.length) return;
-    const bypass = isDev && devOn;
+    // (버그 수정) devUnlockAll과 같은 결로 공동 개발자 모드도 포함하도록 — 임명 권한만 빼고
+    // 개발자와 동일하게 리뷰 티켓 시스템을 건너뛴다.
+    const bypass = devUnlockAll;
     if (!bypass) {
       const key = reviewGameKey(game);
       if (key && !reviewUnlocked.has(key)) {
@@ -17857,7 +18358,7 @@ export default function App() {
     // 닫으면(뒤로가기) 곧장 그 경로로 되돌아간다.
     setReviewGame(game);
     try { if (window.location.pathname !== "/review") window.history.pushState({ review: true }, "", "/review"); } catch { }
-  }, [isDev, devOn, reviewUnlocked, reviewTickets]);
+  }, [devUnlockAll, reviewUnlocked, reviewTickets]);
   const closeReview = useCallback(() => {
     setReviewGame(null);
     try { if (window.location.pathname === "/review") window.history.back(); } catch { }
@@ -18015,7 +18516,7 @@ export default function App() {
       {toast && toast.type === "coins" && (
         <div style={{ position: "fixed", inset: 0, zIndex: 65, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
           <div style={{ animation: "xpStarPop 1.1s ease forwards", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <CoinIcon size={52} />
+            <CoinIcon size={58} />
             <div style={{ fontSize: 16, fontWeight: 800, color: T.brass, letterSpacing: "-.01em" }}>+{toast.amount} OC 나이트 코인</div>
           </div>
         </div>
@@ -18040,8 +18541,8 @@ export default function App() {
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.label}</div>
               </div>
               <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={16} /></span>
-                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+1<TicketIcon size={20} /></span>
+                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={20} /></span>
+                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+1<TicketIcon size={24} /></span>
               </div>
             </div>
           ) : (
