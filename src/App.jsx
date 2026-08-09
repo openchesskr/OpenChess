@@ -6402,8 +6402,11 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   // 없으므로 클래스별로 나눠서 비교). chess.com API가 대국별 레이팅을 주므로 별도 요청 없이 계산 가능.
   const ratingChanges = useMemo(() => (chesscom && chesscom.status === "ready" ? computeRatingChanges(chesscom.games) : new Map()), [chesscom && chesscom.games, chesscom && chesscom.status]);
   const fmtGameDate = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
-  // (버그 보충) 마스터 대국 정렬(최신순/레이팅순) + 페이지네이션.
-  const MASTER_PAGE_SIZE = 5;
+  // (버그 보충) 마스터 대국 정렬(최신순/레이팅순) + 페이지네이션. 처음 20개를 보여주고, 페이지를
+  // 넘기면 나머지 매칭 대국을 계속 보여준다 — masterGames는 이미 fetchAllMasterGames가 전부
+  // 불러와 둔 배열이라(build-master-games.mjs가 더 이상 노드당 상한을 두지 않음) 페이지를 넘길 때
+  // 추가 네트워크 요청 없이 그대로 슬라이스만 바뀐다.
+  const MASTER_PAGE_SIZE = 20;
   const [masterSort, setMasterSort] = useState("default"); // default(원래 채택률순) | recent(최신순) | rating(레이팅순)
   const [masterPage, setMasterPage] = useState(0);
   useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort]);

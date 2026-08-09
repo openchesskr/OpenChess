@@ -9,24 +9,30 @@
  * 원본을 통째로 쓰지 않는 이유: 480만 게임 전체를 포지션별로 나누면(임의의 수순 접두사
  * 기준) 사실상 거의 모든 접두사가 유일해서(전술집·이벤트 게임 등은 "이론"과 무관하게
  * 갈라짐) 축소가 안 되고 오히려 커진다. 대신 refresh-data.mjs가 이미 만들어 둔, 실제로
- * 자주 채택돼 이름이 붙은 오프닝 트리의 노드(4천여 개)에만 게임을 매칭시켜, 결과 크기를
- * "포지션 수 × 포지션당 보관 개수"로 확실히 제한한다.
+ * 자주 채택돼 이름이 붙은 오프닝 트리의 노드(4천여 개)에만 게임을 매칭시킨다.
  *
  * 출력 형식(정규화): { games: [{white,black,whiteElo,blackElo,event,date,result,eco,moves}],
  * index: { "e4 e5": [게임 인덱스, ...] } }. 인덱스 배열에 게임 전체를 복사하지 않고
  * games 배열의 인덱스만 담는 이유 — 같은 고레이팅 게임(예: 유명 GM 대국)이 자기 자신의
- * 수순을 따라가는 여러 포지션(노드)에서 동시에 상위 K에 들 수 있어, 복사해 넣으면(특히
- * moves 필드까지 포함하면) 같은 큰 문자열이 수십 번 중복 저장돼 용량이 크게 부풀었다.
+ * 수순을 따라가는 여러 포지션(노드)에서 동시에 매칭될 수 있어, 복사해 넣으면(특히 moves
+ * 필드까지 포함하면) 같은 큰 문자열이 수십 번 중복 저장돼 용량이 크게 부풀었다.
+ *
+ * (v0.3.1 변경) 예전엔 포지션당 대표 게임을 TOP_K개(기본 5, 이후 20)로만 잘라 저장했는데,
+ * Lichess 마스터 DB가 얕은 오프닝 수순 밖에서는 게임을 거의 안 내려주는 탓에 깊은
+ * 포지션(오프닝 트리 노드의 92%)에서는 이 정적 데이터가 사실상 유일한 소스가 되고, 그
+ * 결과 실제 매칭 대국 수와 무관하게 화면엔 항상 그 상한만큼만 표시됐다. 지금은 기본적으로
+ * 상한 없이 각 노드에 매칭되는 게임을 전부 저장한다(화면 쪽은 처음 20개만 보여주고 페이지를
+ * 넘기며 나머지를 계속 불러오는데, 이미 다운로드된 로컬 데이터라 추가 네트워크 요청 없이
+ * 그대로 넘어간다 — `src/App.jsx`의 `MASTER_PAGE_SIZE`/`ListPager` 참고). 단, 이 상한이
+ * 없다 보니 "e4"처럼 아주 얕은(대중적인) 노드는 매칭 대국이 수십만 건에 달할 수 있어 그런
+ * 노드의 용량이 크게 늘어난다 — 필요하면 MAX_PER_NODE 환경변수로 다시 상한을 둘 수 있다.
  *
  * 사용법:
  *   node scripts/build-master-games.mjs pgnmentor-games.ndjson [출력.json]
  *
  * 옵션(환경변수):
- *   TOP_K=20   포지션(오프닝 트리 노드)당 남길 대표 게임 수(기본값) — 레이팅 합 기준 상위 K개.
- *              Lichess 마스터 DB가 얕은 오프닝 수순 밖에서는 게임을 거의 안 내려주기 때문에,
- *              깊은 포지션일수록 이 정적 데이터가 "마스터 대국" 목록의 사실상 유일한 소스가
- *              된다 — 이전 기본값(5)에서는 그런 포지션 전체(오프닝 트리 노드의 92%)가 항상
- *              정확히 5판만 표시되는 문제로 이어졌다(v0.3.1에서 20으로 상향).
+ *   MAX_PER_NODE=0   포지션(오프닝 트리 노드)당 저장할 게임 수 상한 — 레이팅 합 기준 상위
+ *                    N개만 남긴다. 0(기본값)이면 상한 없이 매칭되는 게임을 전부 저장한다.
  */
 import { createReadStream, writeFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -38,7 +44,7 @@ if (!inPath) {
   process.exit(1);
 }
 
-const TOP_K = +(process.env.TOP_K || 20);
+const MAX_PER_NODE = +(process.env.MAX_PER_NODE || 0); // 0 = 무제한
 
 const openings = JSON.parse(readFileSync("src/data/openings.json", "utf8"));
 const knownKeys = new Set(Object.keys(openings.tree).filter(Boolean)); // ""(시작 포지션)는 제외
@@ -54,15 +60,20 @@ function fnv1a(str) {
 
 const seen = new Set();       // 중복 게임 지문
 const games = [];             // 유니크 게임 원본(전체, moves 포함) — 인덱스가 곧 id
-const buckets = new Map();    // key -> [{gi, rating}] (rating 내림차순, 최대 TOP_K)
+const buckets = new Map();    // key -> [{gi, rating}, ...] — MAX_PER_NODE가 0이면 전부, 아니면 상위 N개(레이팅순)
 let total = 0, kept = 0, dup = 0;
 
+// (성능) MAX_PER_NODE=0(무제한)일 땐 정렬 없이 그냥 밀어 넣기만 한다 — "e4"처럼 매칭이
+// 수십만 건인 노드에서 매번 정렬하면(예전 방식) 감당이 안 된다. 정렬은 맨 마지막에 노드당
+// 한 번씩만(rl.on("close"))으로 미룬다.
 function insert(key, gi, rating) {
   let bucket = buckets.get(key);
   if (!bucket) { bucket = []; buckets.set(key, bucket); }
   bucket.push({ gi, rating });
-  bucket.sort((a, b) => b.rating - a.rating);
-  if (bucket.length > TOP_K) bucket.length = TOP_K;
+  if (MAX_PER_NODE > 0) {
+    bucket.sort((a, b) => b.rating - a.rating);
+    if (bucket.length > MAX_PER_NODE) bucket.length = MAX_PER_NODE;
+  }
 }
 
 const rl = createInterface({ input: createReadStream(inPath, "utf8"), crlfDelay: Infinity });
@@ -102,9 +113,10 @@ rl.on("line", (line) => {
     const key = moves.slice(0, ply).join(" ");
     if (!knownKeys.has(key)) continue;
     const bucket = buckets.get(key);
-    // 이미 TOP_K가 채워져 있고 이 게임 레이팅이 최하위보다도 낮으면, games 배열 등록조차
-    // 필요 없다(스캔 대상 노드가 매우 많아 이 체크가 성능에 크게 기여한다).
-    if (bucket && bucket.length >= TOP_K && rating <= bucket[bucket.length - 1].rating) continue;
+    // MAX_PER_NODE로 상한을 둔 경우, 이미 다 채워져 있고 이 게임 레이팅이 최하위보다도
+    // 낮으면 games 배열 등록조차 필요 없다(스캔 대상 노드가 매우 많아 이 체크가 성능에
+    // 크게 기여한다). 무제한(MAX_PER_NODE=0)일 땐 항상 등록한다.
+    if (MAX_PER_NODE > 0 && bucket && bucket.length >= MAX_PER_NODE && rating <= bucket[bucket.length - 1].rating) continue;
     if (gi === -1) {
       gi = games.length;
       games.push({ white: g.white, black: g.black, whiteElo: g.whiteElo, blackElo: g.blackElo, event: g.event, date: g.date, result: g.result, eco: g.eco, moves: g.moves });
@@ -118,8 +130,15 @@ rl.on("line", (line) => {
 });
 
 rl.on("close", () => {
-  // 마지막에 top-K 밀려나 어떤 버킷에도 안 남은 게임이 있을 수 있어(뒤에 더 레이팅 높은
-  // 게임이 그 자리를 밀어낸 경우), 실제로 참조되는 게임만 남기고 인덱스를 재배치한다.
+  // MAX_PER_NODE=0(무제한)일 땐 insert()가 정렬을 미뤘으므로 여기서 노드당 한 번씩만
+  // 레이팅 내림차순으로 정렬한다 — 화면 기본 정렬("채택률순" 자리에 레이팅 높은 게임 먼저)이
+  // 예전 상한 방식과 동일하게 유지되도록.
+  if (MAX_PER_NODE === 0) {
+    for (const bucket of buckets.values()) bucket.sort((a, b) => b.rating - a.rating);
+  }
+  // 상한을 둔 경우 마지막에 밀려나 어떤 버킷에도 안 남은 게임이 있을 수 있어(뒤에 더
+  // 레이팅 높은 게임이 그 자리를 밀어낸 경우), 실제로 참조되는 게임만 남기고 인덱스를
+  // 재배치한다.
   const used = new Set();
   for (const bucket of buckets.values()) for (const { gi } of bucket) used.add(gi);
   const remap = new Map();
