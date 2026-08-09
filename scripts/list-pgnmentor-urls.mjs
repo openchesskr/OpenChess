@@ -9,19 +9,26 @@
  *   node scripts/list-pgnmentor-urls.mjs [출력.json]
  *
  * 옵션(환경변수):
- *   PGNMENTOR_COOKIE=""   files.html 등 색인 페이지 접근에 로그인 세션이 필요하면 지정
+ *   PGNMENTOR_COOKIE=""   색인 페이지 접근에 로그인 세션이 필요하면 지정
  *                         (fetch-pgnmentor.mjs와 동일한 값 재사용 가능)
+ *   PGNMENTOR_PAGES=""    색인 페이지 경로를 쉼표로 직접 지정(추측이 틀렸을 때 덮어쓰기용).
+ *                         예: PGNMENTOR_PAGES="files.html"
+ *
+ * (주의) 이 샌드박스는 pgnmentor.com 접속이 막혀 있어 실제 색인 페이지 경로를 코드 작성
+ * 시점에 직접 확인하지 못했다 — 아래 기본 경로는 추측이라 404가 날 수 있다. 그런 경우
+ * 404 난 페이지는 건너뛰고 계속 진행하며, PGNMENTOR_PAGES로 실제 경로를 알려주면 된다.
  */
 const outPath = process.argv[2] || "pgnmentor-urls.json";
 const COOKIE = process.env.PGNMENTOR_COOKIE || "";
 const BASE = "https://www.pgnmentor.com/";
-// 이 세 색인 페이지에 선수·이벤트·오프닝별 다운로드 링크(대부분 .zip, 일부 .pgn)가 나열돼 있다.
-const INDEX_PAGES = ["players.html", "events.html", "openings.html"];
+const INDEX_PAGES = process.env.PGNMENTOR_PAGES
+  ? process.env.PGNMENTOR_PAGES.split(",").map((s) => s.trim()).filter(Boolean)
+  : ["files.html", "players.html", "events.html", "openings.html", "index.html"];
 
 async function fetchText(path) {
   const headers = COOKIE ? { Cookie: COOKIE } : {};
   const res = await fetch(BASE + path, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status} (${path})`);
+  if (!res.ok) { console.warn(`  건너뜀: HTTP ${res.status} (${path})`); return null; }
   return res.text();
 }
 
@@ -37,7 +44,9 @@ function extractLinks(html) {
 const urls = new Set();
 for (const page of INDEX_PAGES) {
   console.log(`색인 페이지 조회: ${page}`);
-  const html = await fetchText(page);
+  let html;
+  try { html = await fetchText(page); } catch (e) { console.warn(`  건너뜀: ${e.message}`); continue; }
+  if (html == null) continue;
   const links = extractLinks(html);
   for (const link of links) {
     const abs = /^https?:\/\//i.test(link) ? link : BASE + link.replace(/^\//, "");
@@ -47,7 +56,12 @@ for (const page of INDEX_PAGES) {
 }
 
 if (urls.size === 0) {
-  console.error("링크를 하나도 못 찾음 — pgnmentor.com이 색인 페이지 구조를 바꿨을 수 있음. HTML을 직접 확인해 보세요.");
+  console.error(
+    "링크를 하나도 못 찾음 — 기본 색인 페이지 경로(files.html/players.html/events.html/openings.html/index.html)가 " +
+    "전부 404였을 가능성이 큼. 브라우저로 https://www.pgnmentor.com/ 을 열어 실제 목록 페이지 경로를 확인한 뒤, " +
+    "PGNMENTOR_PAGES 환경변수로 지정해서 다시 실행하세요. 예:\n" +
+    '  $env:PGNMENTOR_PAGES="실제경로.html"; node scripts/list-pgnmentor-urls.mjs pgnmentor-urls.json'
+  );
   process.exit(1);
 }
 
