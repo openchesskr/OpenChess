@@ -12782,33 +12782,32 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
 }
 // (v0.2.7) 오늘의 퍼즐 카드 폭 — 스크롤 스냅 계산을 단순하게 유지하기 위해 활성/비활성 여부와
 // 무관하게 "칸(slot)" 자체는 고정폭으로 두고, 안쪽 콘텐츠만 transform:scale로 커지고 작아진다.
-// (버그 보충) 카드 자체(활성 상태 최대 206px)가 슬롯보다 넓어 옆 카드와 겹치는 건 의도된
-// 효과였지만, 겹침이 너무 심해 보인다는 지적을 두 차례 받았다 — 96 → 112px로도 부족해, 활성
-// 카드(206px)와 바로 옆 카드(distance 1, 0.8배 스케일 ≈ 165px)의 절반 폭을 더해도(103+82.5
-// ≈ 185.5px) 슬롯 간격이 그보다 확실히 커야 카드끼리 안 겹치고 그 사이에 여백이 남는다 —
-// 220으로 늘려 두 카드 사이에 약 30px 여백이 생기게 했다. 스크롤 스냅·인덱스 계산이 전부 이
-// 상수 하나에서 파생되므로 여기만 바꾸면 간격이 전체적으로 조정된다.
-const DAILY_SLOT_W = 220;
-// (버그 수정 재개편) 활성 카드만 넓은 카드, 비활성은 텅 빈 작은 박스로 서로 다른 모양을 쓰던
-// 전 버전은 스크롤하며 넘어갈 때 카드 모양 자체가 바뀌는 게 "이상하다"는 지적을 받았다. 이제는
-// 모든 카드가 동일한 넓은 카드(보드+"일일 퍼즐"+오프닝명+풀이수)를 쓰고, 활성이 아닌 카드는 예전
-// 방식 그대로 `transform: scale()`로 작고 흐리게 줄어들 뿐이다 — 카드 구조 자체는 항상 같아서
-// 스크롤 중에도 자연스럽게 커지고 작아지는 느낌만 남는다. 모든 카드를 position:absolute로 슬롯
-// 중앙에 띄워, 스크롤 스냅이 의존하는 고정폭 슬롯(DAILY_SLOT_W)의 너비 계산에는 영향을 주지 않으면서
-// 카드 자체는 슬롯보다 넓게 그려지고 옆 슬롯과 살짝 겹쳐 보이게 한다(의도된 카드형 캐러셀 효과).
+// (버그 보충) 원래는 활성 카드만 scale(1)로 키우고 옆 카드는 0.8/0.68로 줄여, 카드 폭 자체가
+// 거리별로 다 달랐다 — 슬롯 간격(DAILY_SLOT_W)은 하나로 고정돼 있는데 카드 폭이 제각각이니
+// 카드 사이 "보이는 여백"도 쌍마다 다 달라질 수밖에 없었다(활성-이웃 간 여백 ≠ 이웃-이웃 간
+// 여백). 여러 차례 조정해도 근본적으로 안 맞을 수밖에 없는 구조라, 폭 자체를 아예 고정하고
+// (DailyPuzzleCarouselItem의 scale을 항상 1로) "활성" 표시는 밝기·테두리·그림자만으로 하도록
+// 바꿨다 — 이제 모든 카드가 같은 폭이라 슬롯 간격이 곧 카드 사이 여백이 되고, 어느 쌍이든
+// 정확히 같다.
+const DAILY_CARD_W = 206; // DAILY_BOARD_SIZE(아래) + 좌우 padding 16
+const DAILY_SLOT_W = DAILY_CARD_W + 28; // 카드 폭 + 여백 28px = 카드 사이 여백이 항상 28px로 동일
+// 모든 카드가 항상 같은 폭·모양의 카드(보드+"일일 퍼즐"+오프닝명+풀이수)를 쓰고, 활성이 아닌
+// 카드는 밝기(opacity)만 낮아진다 — 크기가 안 바뀌니 스크롤 중 카드 모양이 바뀌거나 카드끼리
+// 겹치는 일 없이, 슬롯(DAILY_SLOT_W) 간격이 곧 카드 사이 여백이 된다.
 // (기능) 사용자 요청 — 오프닝명·"일일 퍼즐" 라벨 등 텍스트를 다 빼고, 정사각형 블록 안에 체스보드만
 // 기존(68px)보다 약 3배 크게 보여준 뒤, 그 아래에 작게 "N명이 풀었습니다"만 표시한다.
 const DAILY_BOARD_SIZE = 190;
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? " · 오늘" : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
-  const scale = isActive ? 1 : distance === 1 ? 0.8 : 0.68;
-  const opacity = isActive ? 1 : distance === 1 ? 0.78 : 0.58;
+  // (버그 보충) 모든 카드가 이제 항상 같은 폭(DAILY_CARD_W)이라 여백이 균등해진다 — "활성" 표시는
+  // 더 이상 크기가 아니라 밝기·테두리·그림자 차이만으로 한다.
+  const opacity = isActive ? 1 : distance === 1 ? 0.72 : 0.5;
   return (
     <div style={{ position: "relative", flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", height: 250 }}>
-      <button onClick={onOpen} aria-label={label} className="press" style={{ position: "absolute", left: "50%", top: 0, transform: "translateX(-50%) scale(" + scale + ")", transformOrigin: "top center", opacity, transition: "transform .22s ease, opacity .22s ease", zIndex: isActive ? 3 : 1, background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+      <button onClick={onOpen} aria-label={label} className="press" style={{ position: "absolute", left: "50%", top: 0, transform: "translateX(-50%)", opacity, transition: "opacity .22s ease", zIndex: isActive ? 3 : 1, background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: isActive ? T.brassHi : "#C9B58C", whiteSpace: "nowrap" }}>{label}</div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_BOARD_SIZE + 16, padding: 8, borderRadius: 14, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + (isActive ? T.brass : "rgba(196,154,80,.45)"), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.55)" : "none" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_CARD_W, padding: 8, borderRadius: 14, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + (isActive ? T.brass : "rgba(196,154,80,.45)"), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.55)" : "none" }}>
           <div style={{ width: DAILY_BOARD_SIZE, height: DAILY_BOARD_SIZE, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#1C1006", border: "1px solid " + (isSolved ? "#A9C589" : "rgba(196,154,80,.5)"), position: "relative" }}>
             {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div style={{ width: 100, height: 100, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
             {isSolved && <Check size={16} strokeWidth={3.5} style={{ position: "absolute", top: -6, right: -6, color: "#fff", background: T.best, borderRadius: 999, padding: 3, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
