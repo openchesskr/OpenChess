@@ -6553,8 +6553,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           <div style={{ fontFamily: SEQ_FONT, fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
           <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
             {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, lineHeight: 1.25 }}>{title}</div>}
-            <div style={{ fontSize: 15, fontWeight: 800, color: "color-mix(in srgb, " + QCOLOR[kind] + " 78%, black)" }}>{evTxt || (kind === "book" ? "이론" : "—")}</div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "color-mix(in srgb, " + QCOLOR[kind] + " 78%, black)" }}>{QLABEL[kind]}</div>
+            {/* (사용자 요청) 어두운 배경 위에서 색을 더 짙게(color-mix로 검정을 섞음) 했더니 오히려
+                더 안 보였다 — 반대로 배경과 대비가 가장 뚜렷한 크림색(T.ivoryHi)으로 통일한다. */}
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{evTxt || (kind === "book" ? "이론" : "—")}</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>{QLABEL[kind]}</div>
           </div>
         </div>
         {expectedPuzzleId && onOpenPuzzle && (
@@ -11161,21 +11163,26 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   // 버튼이 수 라벨·평가치 위에 그대로 겹쳐 가려 보이는 경우가 있었다(특히 화면이 좁아 이 겹침이
   // 더 눈에 띄는 모바일). 버튼 높이(22)+여백만큼 위쪽을 유효 뷰포트에서 제외한다.
   const topInset = 34;
-  // (버그 수정, 도감 모식도와 동일) 퍼즐을 풀어 새 갈래가 고스트에서 실제 노드로 바뀔 때마다 y좌표를
-  // 커서 0부터 다시 매기면, 그 뒤에 있던 이미 그려진 노드들이 한꺼번에 밀려나 흔들려 보인다 — 한 번
-  // 배정된 y는 계속 캐싱해 절대 안 바뀌게 하고, 고스트가 실제 내부 노드로 바뀌어 더 이상 그 번호가
-  // 필요 없어지면(자식 위치의 평균으로 재계산되므로) 번호를 반납해 다음 새 리프/고스트가 재사용하게 한다.
+  // (v0.3.1 버그 수정, 근본 원인) 블록이 서로 겹쳐 보이던 문제 — 예전엔 리프/고스트가 실제 내부
+  // 노드로 바뀌면 그 자리 번호를 freeList로 "반납"해 다음 새 리프가 재사용하게 했다. 문제는 이
+  // 반납·재활용이 같은 렌더의 같은 DFS 패스 안에서 일어난다는 것 — 어떤 가지를 방문하다 한 노드가
+  // 막 반납한 번호를, 같은 패스에서 아직 화면에 남아 있어야 할 다른 형제 가지의 새 리프가 곧바로
+  // 이어받아 버리면, 둘 다 같은 y에 놓여 블록이 겹쳤다(반납 시점과 재사용 시점이 사람 눈에는
+  // 무작위로 보여 "가끔 이상하게 겹친다"는 신고로 나타났다). 오프닝 모식도(OpeningSchematic)는
+  // 애초에 이런 반납·재활용 자체가 없다 — 한 번 배정된 자리 번호는 그 키에게 영원히 고정되고,
+  // 절대 다른 노드로 넘어가지 않는다. 퍼즐 모식도도 똑같은 규칙으로 맞춘다: 자리 번호는 절대
+  // 반납하지 않고(freeList 삭제), 리프였다가 내부 노드가 된 키는 리프였을 때 쓰던 자리를 그대로
+  // 물려받아 쓴다(자식 평균으로 다시 계산하지 않으므로 위치가 튀지도 않는다) — 처음부터 내부
+  // 노드로 나타난 키만 이번에 자식 평균을 계산해 그 키에 영구히 고정한다.
   const posCacheRef = useRef(new Map());
   const nextPosRef = useRef(0);
-  const freeListRef = useRef([]);
   const { items, edges, width, height, curItem, pxItems } = useMemo(() => {
     const getPos = (key) => {
       if (posCacheRef.current.has(key)) return posCacheRef.current.get(key);
-      const p = freeListRef.current.length ? freeListRef.current.pop() : nextPosRef.current++;
+      const p = nextPosRef.current++;
       posCacheRef.current.set(key, p);
       return p;
     };
-    const reclaimPos = (key) => { if (posCacheRef.current.has(key)) { freeListRef.current.push(posCacheRef.current.get(key)); posCacheRef.current.delete(key); } };
     // (20차 기능3) 개발자(canEdit)는 편집을 위해 트리 전체를 항상 볼 수 있어야 한다 — 그렇지 않으면
     // 라인을 삭제/추가한 직후 자기가 방금 만든 결과(미완성 상태 포함)조차 안 보여 계속 편집할 수 없다.
     // 일반 유저에게만 "아직 두지 않은 수는 고스트로 가린다" 원칙을 적용한다.
@@ -11201,9 +11208,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       it.isLeaf = rawKids.length === 0;   // 실제 데이터 기준 리프(고스트로 가려진 자식이 있으면 리프가 아님)
       if (!kids.length) it.y = getPos(key);
       else {
-        reclaimPos(key);
-        it.y = (kids[0].y + kids[kids.length - 1].y) / 2;
         kids.forEach((c) => edges.push([it, c]));
+        if (posCacheRef.current.has(key)) it.y = posCacheRef.current.get(key);   // 리프였을 때의 자리를 그대로 재사용(점프 없음)
+        else { it.y = (kids[0].y + kids[kids.length - 1].y) / 2; posCacheRef.current.set(key, it.y); }   // 처음부터 내부 노드 — 이번에만 계산해 영구 고정
       }
       items.push(it);
       return it;
@@ -18295,13 +18302,22 @@ export default function App() {
     if (puzzleGenInFlightRef.current.has(id)) return;
     puzzleGenInFlightRef.current.add(id);
     setPuzzleGenProgress((prev) => ({ ...prev, [id]: { p: 0, path: null } }));
-    run((p, path) => setPuzzleGenProgress((prev) => (id in prev ? { ...prev, [id]: { p, path: path || prev[id].path } } : prev)))
-      .then((pz) => { if (pz) onSavePuzzle(pz); })
-      .catch((e) => console.warn("퍼즐 생성 실패:", id, e))
-      .finally(() => {
-        puzzleGenInFlightRef.current.delete(id);
-        setPuzzleGenProgress((prev) => { if (!(id in prev)) return prev; const n = { ...prev }; delete n[id]; return n; });
-      });
+    const finish = () => {
+      puzzleGenInFlightRef.current.delete(id);
+      setPuzzleGenProgress((prev) => { if (!(id in prev)) return prev; const n = { ...prev }; delete n[id]; return n; });
+    };
+    // (v0.3.1 성능) 이 id(포지션+수)로 만들어지는 퍼즐 트리는 완전히 결정적이라, 이미 다른 유저가(또는
+    // 내가 예전 세션에) 같은 위치의 퍼즐을 먼저 만들어 서버(puzzles 테이블, onSavePuzzle→puzzleShare가
+    // 이미 모든 생성 퍼즐을 그리로 올려 두고 있었다)에 공유해 뒀다면, 로컬 엔진으로 처음부터 다시
+    // genPuzzleTree를 돌릴 필요가 없다 — run()을 부르기 전에 먼저 서버에 이미 있는지 확인하고, 있으면
+    // 그 결과를 그대로 쓴다(일일 퍼즐 캐러셀에 적용한 것과 같은 크라우드소싱 캐시 재사용).
+    puzzleFetch(puzzleNo(id)).catch(() => null).then((cached) => {
+      if (cached && cached.tree) { onSavePuzzle(cached); finish(); return; }
+      run((p, path) => setPuzzleGenProgress((prev) => (id in prev ? { ...prev, [id]: { p, path: path || prev[id].path } } : prev)))
+        .then((pz) => { if (pz) onSavePuzzle(pz); })
+        .catch((e) => console.warn("퍼즐 생성 실패:", id, e))
+        .finally(finish);
+    });
   }, [onSavePuzzle]);
   const onDeletePuzzle = useCallback((id) => {
     setPuzzles((prev) => {

@@ -809,6 +809,12 @@ as $$
   limit least(coalesce(p_limit, 8), 20);
 $$;
 grant execute on function public.search_puzzles_prefix(text, int) to anon, authenticated;
+-- (v0.3.1 성능) 위 no::text like 'prefix%' 조건에 맞는 인덱스가 없어, puzzles 테이블이 계속
+-- 쌓이는 구조(대국을 둘 때마다·집중 학습에서 실수를 만날 때마다 새 퍼즐이 자동 생성·공유됨)라
+-- 검색창에 숫자를 입력할 때마다 매번 테이블 전체를 훑는 순차 스캔이 됐다 — "퍼즐 검색으로 퍼즐을
+-- 불러오는 시간이 길다"는 원인. text_pattern_ops 표현식 인덱스를 추가하면 이런 접두어(prefix)
+-- LIKE 검색에 인덱스를 태울 수 있다.
+create index if not exists idx_puzzles_no_text_pattern on public.puzzles ((no::text) text_pattern_ops);
 
 -- ============================================================================
 -- 17) daily_puzzle_cache — 오늘의 퍼즐 캐러셀 계산 결과 캐시 (v0.3.1)
