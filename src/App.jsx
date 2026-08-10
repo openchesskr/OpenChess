@@ -12956,6 +12956,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
   const [numFocus, setNumFocus] = useState(false);
+  // (기능) 번호 검색 추천을 모바일에선 입력창 아래 드롭다운 목록(기존 방식)으로, 데스크톱에선
+  // 그 자리에 실제 퍼즐 카드 블록으로 계속 갱신해 보여준다(포커스 여부와 무관하게 늘 보임).
+  const narrowPuzzleSearch = useNarrow(768);
   // (16차) 이 퍼즐을 푼 사람 중 내 친구의 이름 목록(최대 무제한 수집 — 표기 시 앞 2명만 사용)
   // (18차 UI7) 풀이수에 나 자신도 포함 — 내가 최초 해결자라면 "1명이 풀었습니다!"가 보이도록,
   // 서버 집계가 아직 반영되지 않았어도 내가 푼 퍼즐은 최소 1로 보정한다.
@@ -13048,15 +13051,34 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // Hooks 위반으로, React가 "Rendered more hooks than during the previous render"를 던지며 이
   // 컴포넌트 트리 전체가 깨진다. 이 앱에는 ErrorBoundary가 없어 그 에러가 화면 전체를 먹통으로
   // 만들었다 — 퍼즐 창의 X 버튼을 누르면 사이트가 통째로 멈추는 것처럼 보인 원인이 바로 이것이었다.
-  // 모든 훅은 조건 없이 항상 같은 순서로 호출돼야 하므로, 조기 반환보다 앞으로 옮긴다. (isDateInput은
-  // 아래쪽 solveByInput 근처에서만 쓰이던 순수 파생값이라 여기서는 같은 식을 그대로 다시 계산한다.)
+  // 모든 훅은 조건 없이 항상 같은 순서로 호출돼야 하므로, 조기 반환보다 앞으로 옮긴다.
+  // (기능) 퍼즐 번호는 항상 6자리(puzzleNo), 날짜는 YYYYMMDD 8자리라 자릿수만으로 구분된다 —
+  // "/" 구분자 없이 그냥 8자리 숫자를 입력하면 날짜로, 그 밖엔 번호로 취급한다.
+  const isDateInput = /^\d{8}$/.test(numInput);
+  // (버그 수정) 예전엔 입력 중인 번호로 시작하는 퍼즐을 로컬 puzzles/archivedPuzzles(둘 다 그
+  // 계정에서 한 번이라도 열어본 퍼즐만 누적됨)에서만 찾아, 한 번도 안 열어본 퍼즐은 번호를 다
+  // 알고 입력해도 추천에 뜨지 않았다. Supabase가 켜져 있으면 search_puzzles_prefix RPC로 서버
+  // 전체 퍼즐에서 직접 찾아온다(입력마다 매번 요청하지 않도록 250ms 디바운스). 백엔드가 없을
+  // 때만 예전처럼 로컬 목록으로 되돌아간다.
+  const [remoteNumSuggestions, setRemoteNumSuggestions] = useState([]);
+  useEffect(() => {
+    if (!SB_ON || isDateInput || !numInput) { setRemoteNumSuggestions([]); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      sbRpc("search_puzzles_prefix", { p_prefix: numInput, p_limit: 8 })
+        .then((rows) => { if (!cancelled) setRemoteNumSuggestions((rows || []).map((r) => r.data).filter(Boolean)); })
+        .catch(() => { if (!cancelled) setRemoteNumSuggestions([]); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [numInput, isDateInput]);
   const numSuggestions = useMemo(() => {
-    if (numInput.includes("/") || !numInput) return [];
+    if (isDateInput || !numInput) return [];
+    if (SB_ON) return remoteNumSuggestions.slice(0, 8);
     const byId = new Map();
     for (const p of puzzles) byId.set(p.id, p);
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
     return [...byId.values()].filter((p) => String(puzzleNo(p.id)).startsWith(numInput)).slice(0, 6);
-  }, [numInput, puzzles, archivedPuzzles]);
+  }, [numInput, isDateInput, remoteNumSuggestions, puzzles, archivedPuzzles]);
   if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
@@ -13079,15 +13101,16 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
   const count = (k) => (k === "all" ? playablePuzzles.length : playablePuzzles.filter((p) => themesOf(p).includes(k)).length);
-  // (기능) 캐러셀 스와이프 범위가 최근 7일로 제한된 대신, "번호로 풀기" 입력창에 YYYY/MM/DD
+  // (기능) 캐러셀 스와이프 범위가 최근 7일로 제한된 대신, "번호로 풀기" 입력창에 YYYYMMDD
   // 형식으로 날짜를 입력하면 그 날짜의 일일 퍼즐을 직접 찾아 연다 — 캐러셀과 똑같이
   // resolveDailyPuzzleCached(dateStr, engine)를 재사용하므로 계산 결과도 항상 일치한다.
-  const isDateInput = numInput.includes("/");
+  // (isDateInput은 위 numSuggestions 근처에서 이미 계산해 둔 값을 그대로 재사용한다.)
   const solveByInput = async () => {
     if (isDateInput) {
-      const m = numInput.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-      if (!m) { setNumMsg("날짜는 YYYY/MM/DD 형식으로 입력하세요."); return; }
-      const dateStr = m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0");
+      const m = numInput.match(/^(\d{4})(\d{2})(\d{2})$/);
+      const mm = m ? +m[2] : 0, dd = m ? +m[3] : 0;
+      if (!m || mm < 1 || mm > 12 || dd < 1 || dd > 31) { setNumMsg("날짜는 YYYYMMDD 형식으로 입력하세요(예: 20260729)."); return; }
+      const dateStr = m[1] + "-" + m[2] + "-" + m[3];
       if (dateStr > todayStr()) { setNumMsg("아직 오지 않은 날짜예요."); return; }
       if (!engine || engine.status !== "ready") { setNumMsg("엔진이 아직 준비되지 않았어요."); return; }
       setNumMsg("불러오는 중…");
@@ -13113,20 +13136,31 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div className="flex items-center gap-2">
-          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9/]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="text" placeholder="번호 또는 날짜로 풀기 (예: 123456 / 2026/07/29)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
+          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="numeric" placeholder="번호 또는 날짜로 풀기 (예: 123456 · 20260729)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
           <button onClick={solveByInput} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
         </div>
-        {/* (기능) 입력 중인 번호로 시작하는 퍼즐을 번호·이름과 함께 추천 — onMouseDown에서
-            preventDefault해 클릭 전에 input의 onBlur가 목록을 먼저 숨겨버리지 않게 한다. */}
-        {numFocus && numSuggestions.length > 0 && (
-          <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)" }}>
-            {numSuggestions.map((p) => (
-              <button key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setActive(p); setNumInput(""); setNumMsg(""); }} className="press flex items-center gap-2" style={{ width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", textAlign: "left" }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
-                <span style={{ fontSize: 12, color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
-              </button>
-            ))}
-          </div>
+        {/* (기능) 입력 중인 번호로 시작하는 퍼즐을 추천 — 모바일은 입력창 바로 아래 작은 드롭다운
+            목록(포커스 중일 때만), 데스크톱은 그 자리에 실제 퍼즐 카드 블록으로 계속 갱신해서
+            보여준다(포커스 여부와 무관, 넓은 화면이라 카드 그리드를 놓을 자리가 충분함).
+            onMouseDown에서 preventDefault해 클릭 전에 input의 onBlur가 목록을 먼저 숨겨버리지
+            않게 한다. */}
+        {narrowPuzzleSearch ? (
+          numFocus && numSuggestions.length > 0 && (
+            <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)" }}>
+              {numSuggestions.map((p) => (
+                <button key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setActive(p); setNumInput(""); setNumMsg(""); }} className="press flex items-center gap-2" style={{ width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
+                  <span style={{ fontSize: 12, color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
+                </button>
+              ))}
+            </div>
+          )
+        ) : (
+          numSuggestions.length > 0 && (
+            <div className="grid gap-3" style={{ marginTop: 10, gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
+              {numSuggestions.map((p) => <PuzzleCard key={p.id} p={p} isSolved={solved.has(p.id)} onClick={() => { setActive(p); setNumInput(""); setNumMsg(""); }} {...puzzleCardProps(p)} />)}
+            </div>
+          )
         )}
       </div>
       {numMsg && <p style={{ fontSize: 11.5, color: T.blunder, margin: "-4px 0 10px" }}>{numMsg}</p>}

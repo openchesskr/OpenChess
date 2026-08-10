@@ -788,3 +788,25 @@ grant select on public.move_notes to anon, authenticated;
 grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
 
+-- ============================================================================
+-- 16) search_puzzles_prefix — 퍼즐 탭 "번호로 풀기" 검색 추천어용 (v0.3.2)
+-- ============================================================================
+-- 예전엔 입력 중인 번호로 시작하는 퍼즐을 클라이언트가 이미 들고 있는 puzzles(로컬 계정에서
+-- 한 번이라도 열어본 퍼즐만 누적되는 배열)에서만 골라 추천했다 — 그래서 한 번도 안 열어본
+-- 퍼즐은 번호를 다 알고 있어도 추천 목록에 뜨지 않았다. puzzles.no는 bigint라 PostgREST
+-- 필터로는 "숫자로 시작하는지"를 직접 표현할 수 없어(문자열 like 연산자는 text 컬럼에만
+-- 적용됨) 이 RPC로 no::text like 검사를 서버에서 대신 해 준다 — 테이블 자체가 이미
+-- select using(true)로 전체 공개라 이 함수도 딱히 더 열어주는 권한은 없다(SECURITY DEFINER가
+-- 아닌 일반 함수).
+create or replace function public.search_puzzles_prefix(p_prefix text, p_limit int default 8)
+returns table(no bigint, data jsonb)
+language sql stable
+as $$
+  select no, data
+  from public.puzzles
+  where p_prefix is not null and p_prefix <> '' and no::text like p_prefix || '%'
+  order by no
+  limit least(coalesce(p_limit, 8), 20);
+$$;
+grant execute on function public.search_puzzles_prefix(text, int) to anon, authenticated;
+
