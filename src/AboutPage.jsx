@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star, Filter,
+  Send, Compass, Rocket, Star,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -708,18 +708,33 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.3.1", date: "2026.8.10",
-    summary: "집중학습 마스터 대국 목록이 항상 5판만 뜨던 문제를 고쳤어요 — 이제 실제로 있는 만큼(최대 50판) 보여드려요. chess.com 통계에서는 리뷰해 본 대국만 따로 모아 볼 수 있어요.",
+    summary: "마스터 통계 검색·정렬을 다듬고, 퍼즐 검색·생성·일일 퍼즐 캐러셀 속도를 크게 높였어요. 집중 학습 화면과 일일 퍼즐 알림 팝업도 더 보기 좋게 새 단장했어요.",
     mascot: {
-      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "마스터 대국이 5판밖에 안 보였다고요? 이제 훨씬 더 많이 보여드려요!" },
-      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "리뷰했던 대국만 따로 모아 보고 싶었죠? 이제 체크박스 하나면 돼요." },
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "마스터 대국 검색·정렬 버튼이 이제 훨씬 잘 눌려요, 이름 검색도 새로 생겼어요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "퍼즐을 만들고 찾는 속도가 훨씬 빨라졌어요 — 이제 기다리는 시간이 줄었어요!" },
     },
-    highlight: { kind: "icon", Icon: Filter, color: T.brassHi, label: "리뷰한 대국만 모아 보기" },
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: "퍼즐 생성·검색 속도 대폭 개선" },
     sections: [
       { cat: "feature", items: [
+        "마스터 통계에 선수 이름 검색을 추가했어요 — 입력하면 자동완성으로 선수 이름을 보여주고, 같은 선수의 다른 표기(예: \"Carlsen, Magnus\"와 \"Carlsen,M.\")는 하나로 묶어서 보여드려요.",
         "chess.com 통계에서 이제 리뷰(분석)해 본 대국만 따로 모아 볼 수 있는 체크박스가 생겼어요 — 켜면 최근 대국 목록은 물론 전적·가장 많이 둔 오프닝·오프닝별 승률까지 전부 그 대국들만으로 다시 보여드려요.",
+        "퍼즐을 번호나 날짜로 검색하면 한 번도 안 열어본 퍼즐도 추천에 떠요. 날짜는 슬래시 없이 20260729처럼 숫자 8자리만 입력하면 돼요. 데스크톱에서는 검색창 아래에 실제 퍼즐 카드가 계속 갱신되며 나타나요.",
       ] },
       { cat: "fix", items: [
-        "집중학습의 \"마스터 대국\" 목록이 어떤 포지션이든 딱 5판만 뜨던 문제를 고쳤어요 — 이제 실제로 매칭되는 대국 수만큼(최대 50판) 보여드리고, 처음 20개를 보여준 뒤 페이지를 넘기면 나머지를 계속 볼 수 있어요.",
+        "집중학습의 \"마스터 대국\"(이제 \"마스터 통계\") 목록이 어떤 포지션이든 딱 5판만 뜨던 문제를 고쳤어요 — 이제 실제로 매칭되는 대국 수만큼 보여드려요.",
+        "마스터 통계에서 정렬·페이지 버튼이 가끔 눌러도 반응 없던 문제를 고쳤어요.",
+        "퍼즐 풀이 화면의 모식도에서 블록이 가끔 겹쳐 보이던 문제를 고쳤어요.",
+      ] },
+      { cat: "perf", items: [
+        "마스터 대국이 얕은 오프닝일수록 더 다양하게, 깊이 들어갈수록 더 적게 보이도록 데이터를 다시 정리했어요(총 128,598판).",
+        "일일 퍼즐 캐러셀 로딩 속도를 크게 높였어요.",
+        "퍼즐 생성·검색 속도를 추가로 높였어요.",
+      ] },
+      { cat: "ui", items: [
+        "\"이 수가 두어진 마스터 대국\"을 \"마스터 통계\"로 이름을 바꾸고 목록 위 여백을 넓혔어요.",
+        "일일 퍼즐 캐러셀 카드 사이 간격이 이제 항상 똑같아요.",
+        "일일 퍼즐 알림 팝업을 모바일·데스크톱 모두 더 크고 보기 좋게 다듬었어요 — 모바일은 체스보드가 위쪽을 꽉 채우고, 데스크톱은 기보와 코치의 한마디를 퍼즐 이름과 풀기 버튼 사이에서 볼 수 있어요.",
+        "집중 학습 화면에서 평가치·등급을 더 잘 보이는 크림색으로, 수 이름 바로 옆에 보여드려요. 퍼즐 풀기 버튼은 그 옆자리로 옮겼어요.",
       ] },
     ],
   },

@@ -789,7 +789,7 @@ grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
 
 -- ============================================================================
--- 16) search_puzzles_prefix — 퍼즐 탭 "번호로 풀기" 검색 추천어용 (v0.3.2)
+-- 16) search_puzzles_prefix — 퍼즐 탭 "번호로 풀기" 검색 추천어용 (v0.3.1)
 -- ============================================================================
 -- 예전엔 입력 중인 번호로 시작하는 퍼즐을 클라이언트가 이미 들고 있는 puzzles(로컬 계정에서
 -- 한 번이라도 열어본 퍼즐만 누적되는 배열)에서만 골라 추천했다 — 그래서 한 번도 안 열어본
