@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * build-master-games.mjs — fetch-pgnmentor.mjs가 만든 거대한 NDJSON(수백만 게임)을
+ * build-master-games.mjs — fetch-external-games.mjs가 만든 거대한 NDJSON(수백만 게임)을
  * 스트리밍으로 읽어, src/data/openings.json 에 이미 있는 오프닝 포지션(수순 접두사)에
  * 맞춰 대표 게임 몇 개만 골라 작은 인덱스로 압축한다. src/App.jsx의 "마스터 대국"
  * 목록(fetchAllMasterGames)에 Lichess 마스터 DB·개발자 추가분과 함께 구분 없이
@@ -22,7 +22,7 @@
  * 포지션(오프닝 트리 노드의 92%)에서는 이 정적 데이터가 사실상 유일한 소스가 되고, 그
  * 결과 실제 매칭 대국 수와 무관하게 화면엔 항상 그 상한만큼만 표시됐다.
  *
- * 처음엔 상한을 아예 없애 봤는데(MAX_PER_NODE=0), 실제 pgnmentor.com 전체 데이터(480만
+ * 처음엔 상한을 아예 없애 봤는데(MAX_PER_NODE=0), 실제 외부 대국 데이터베이스 전체(480만
  * 게임)로 돌려보니 "e4"·"d4"처럼 아주 얕은 노드가 유효 게임의 대부분(수백만 건)을 그대로
  * 흡수해 버려 `games` 배열이 감당 안 되는 크기로 불어났고, 결국 `JSON.stringify`가
  * `RangeError: Invalid string length`(V8 문자열 최대 길이 초과)로 터졌다 — "노드 수 ×
@@ -35,7 +35,7 @@
  * 아예 없을 때"만 났던 것이고, 상한이 있으면 그 값이 몇이든 그 이상으로는 절대 안 커진다.
  *
  * 사용법:
- *   node scripts/build-master-games.mjs pgnmentor-games.ndjson [출력.json]
+ *   node scripts/build-master-games.mjs external-games.ndjson [출력.json]
  *
  * 옵션(환경변수) — 포지션(오프닝 트리 노드)당 저장할 게임 수 상한, 레이팅 합 기준 상위 N개만 남김:
  *   CAP_SHALLOW=500    수순 길이(ply) 4 이하(예: "e4", "e4 e5", "d4 d5 c4") — 후보가 가장 많은 구간

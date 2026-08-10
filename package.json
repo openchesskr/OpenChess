@@ -9,8 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "refresh": "node scripts/refresh-data.mjs",
-    "list-pgnmentor-urls": "node scripts/list-pgnmentor-urls.mjs",
-    "fetch-pgnmentor": "node scripts/fetch-pgnmentor.mjs",
+    "list-external-game-urls": "node scripts/list-external-game-urls.mjs",
+    "fetch-external-games": "node scripts/fetch-external-games.mjs",
     "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs"
   },
   "dependencies": {

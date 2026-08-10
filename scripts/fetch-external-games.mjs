@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * fetch-pgnmentor.mjs — pgnmentor.com에서 받은 다운로드 URL 목록(json)을 읽어
- * 전부 내려받고(zip은 압축 해제, pgn은 그대로), 게임 단위로 파싱해서
- * NDJSON(한 줄에 게임 하나)으로 흘려쓴다. 이 환경(샌드박스)은 pgnmentor.com 접속이
+ * fetch-external-games.mjs — 외부 대국 데이터베이스 사이트에서 받은 다운로드 URL 목록(json)을
+ * 읽어 전부 내려받고(zip은 압축 해제, pgn은 그대로), 게임 단위로 파싱해서
+ * NDJSON(한 줄에 게임 하나)으로 흘려쓴다. 이 환경(샌드박스)은 그 사이트 접속이
  * 네트워크 정책으로 막혀 있어서, 이 스크립트는 사용자가 로컬 PC에서 직접 실행해야 한다.
  *
  * (메모리 이슈 수정) 실제 데이터량이 수십만 게임 규모라, 전체를 배열에 모았다가
@@ -12,18 +12,18 @@
  *
  * 사용법:
  *   npm install                     # adm-zip 등 devDependencies 설치
- *   node scripts/fetch-pgnmentor.mjs pgnmentor-urls.json [출력파일.ndjson]
+ *   node scripts/fetch-external-games.mjs source-urls.json [출력파일.ndjson]
  *
  * 옵션(환경변수):
  *   CONCURRENCY=4        동시 다운로드 개수
  *   DELAY_MS=300          워커 하나가 파일 하나 처리할 때마다 주는 딜레이(서버 예의)
- *   PGNMENTOR_COOKIE=""   다운로드가 로그인(유료 회원) 세션을 요구할 경우, 브라우저
+ *   SOURCE_COOKIE=""      다운로드가 로그인(유료 회원) 세션을 요구할 경우, 브라우저
  *                         개발자도구 Network 탭에서 zip 요청의 Cookie 헤더 값을 복사해 지정
  *
  * 출력 형식: NDJSON — 한 줄에 게임 객체 하나(JSON.parse per line). 큰 배열 하나로
  * 만들지 않는 이유도 위와 같다(읽는 쪽도 통째로 파싱하면 다시 터진다).
  *
- * 재실행 시 .pgnmentor-cache/ 에 이미 받아둔 원본 파일은 다시 받지 않는다 — 중간에
+ * 재실행 시 .external-games-cache/ 에 이미 받아둔 원본 파일은 다시 받지 않는다 — 중간에
  * 실패해도 CONCURRENCY·네트워크 문제로 처음부터 다시 받을 필요가 없다.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, createWriteStream } from "node:fs";
@@ -31,18 +31,18 @@ import { join } from "node:path";
 import AdmZip from "adm-zip";
 
 const urlsPath = process.argv[2];
-const outPath = process.argv[3] || "pgnmentor-games.ndjson";
+const outPath = process.argv[3] || "external-games.ndjson";
 if (!urlsPath) {
-  console.error("사용법: node scripts/fetch-pgnmentor.mjs <urls.json> [출력.ndjson]");
+  console.error("사용법: node scripts/fetch-external-games.mjs <urls.json> [출력.ndjson]");
   process.exit(1);
 }
 
 const urls = JSON.parse(readFileSync(urlsPath, "utf8"));
 const CONCURRENCY = +(process.env.CONCURRENCY || 4);
 const DELAY_MS = +(process.env.DELAY_MS || 300);
-const COOKIE = process.env.PGNMENTOR_COOKIE || "";
+const COOKIE = process.env.SOURCE_COOKIE || "";
 
-const CACHE_DIR = ".pgnmentor-cache";
+const CACHE_DIR = ".external-games-cache";
 if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -181,8 +181,8 @@ async function main() {
 
   console.log(`완료: 게임 ${gameCount}개 → ${outPath} (NDJSON, 한 줄에 게임 하나씩)`);
   if (failed.length) {
-    writeFileSync("pgnmentor-failed.json", JSON.stringify(failed, null, 2));
-    console.log(`실패 ${failed.length}개 → pgnmentor-failed.json (원인 확인 후 그 목록만 다시 돌리면 됨)`);
+    writeFileSync("fetch-failed.json", JSON.stringify(failed, null, 2));
+    console.log(`실패 ${failed.length}개 → fetch-failed.json (원인 확인 후 그 목록만 다시 돌리면 됨)`);
   }
 }
 

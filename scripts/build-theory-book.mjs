@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * build-theory-book.mjs — pgnmentor.com "Openings" 카테고리(파일명 자체가 세부 변형
- * 이름인 zip들, 예: RuyLopezMarshall.zip, SicilianNajdorf6Bg5.zip)를 이용해
+ * build-theory-book.mjs — 외부 대국 데이터베이스 사이트의 "Openings" 카테고리(파일명 자체가
+ * 세부 변형 이름인 zip들, 예: RuyLopezMarshall.zip, SicilianNajdorf6Bg5.zip)를 이용해
  * src/App.jsx의 "이론 수 체계"(CONTENT.treeAdds/names, seedContent() 함수)를 채울
- * 데이터를 뽑아낸다. fetch-pgnmentor.mjs를 먼저 돌려 .pgnmentor-cache/ 에 원본을
+ * 데이터를 뽑아낸다. fetch-external-games.mjs를 먼저 돌려 .external-games-cache/ 에 원본을
  * 받아둔 상태여야 한다(다시 다운로드하지 않고 캐시를 그대로 읽는다).
  *
  * 파일 하나 = 그 이름의 변형을 향한 실제 대국들. 대국들이 공통으로 따라가는 수순을
@@ -12,7 +12,7 @@
  * (그 이상은 이 파일이 대표하는 하나의 변형이 아니라 여러 갈래로 갈라진다는 뜻이므로).
  *
  * 사용법:
- *   node scripts/build-theory-book.mjs pgnmentor-urls_1.json theory-book.json
+ *   node scripts/build-theory-book.mjs source-urls.json theory-book.json
  *
  * 옵션(환경변수):
  *   MAX_PLY=24      대표 라인 최대 길이(수)
@@ -31,13 +31,13 @@ if (!urlsPath) {
 
 const MAX_PLY = +(process.env.MAX_PLY || 24);
 const MIN_ACTIVE = +(process.env.MIN_ACTIVE || 3);
-const CACHE_DIR = ".pgnmentor-cache";
+const CACHE_DIR = ".external-games-cache";
 
 function safeName(url) {
   return url.replace(/^https?:\/\//, "").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-// fetch-pgnmentor.mjs의 parsePgnSans/splitGames와 동일한 규칙.
+// fetch-external-games.mjs의 parsePgnSans/splitGames와 동일한 규칙.
 function parsePgnSans(pgn) {
   const body = pgn.replace(/\[[^\]]*\]/g, " ").replace(/\{[^}]*\}/g, " ").replace(/\$\d+/g, " ");
   const toks = body.split(/\s+/);
