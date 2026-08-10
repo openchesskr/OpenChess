@@ -810,3 +810,26 @@ as $$
 $$;
 grant execute on function public.search_puzzles_prefix(text, int) to anon, authenticated;
 
+-- ============================================================================
+-- 17) daily_puzzle_cache — 오늘의 퍼즐 캐러셀 계산 결과 캐시 (v0.3.1)
+-- ============================================================================
+-- 오늘의 퍼즐(resolveDailyPuzzle)은 날짜를 시드로 결정적으로 계산되므로 항상 모든 유저에게 완전히
+-- 같은 결과가 나온다. 그런데 이 계산은 로컬 체스 엔진으로 genPuzzleTree를 실제로 돌리는(수백 ms~
+-- 수 초) 무거운 작업인데, 예전엔 이걸 매번 각자의 브라우저에서 처음부터 새로 돌렸다 — 캐러셀에
+-- 최근 7일치가 한꺼번에 나열되다 보니 캐러셀을 열 때마다 며칠치 계산이 한꺼번에 밀려 느리게
+-- 느껴졌다. date를 키로 계산 결과를 여기 캐시해 두면, 이미 누군가(대개 그 날짜가 시작된 직후
+-- 가장 먼저 연 사람) 계산해 올려 둔 날짜는 이후 모든 유저가 로컬 엔진을 아예 돌리지 않고 이
+-- 테이블에서 완성된 결과만 읽어 온다(puzzles 테이블과 같은 크라우드소싱 패턴 — 같은 날짜는
+-- 항상 같은 내용으로 귀결되므로 누가 먼저 계산해 올리든 안전하다).
+create table if not exists public.daily_puzzle_cache (
+  date date primary key,
+  data jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.daily_puzzle_cache enable row level security;
+drop policy if exists "daily puzzle cache read"   on public.daily_puzzle_cache;
+drop policy if exists "daily puzzle cache insert" on public.daily_puzzle_cache;
+create policy "daily puzzle cache read"   on public.daily_puzzle_cache for select using (true);
+create policy "daily puzzle cache insert" on public.daily_puzzle_cache for insert with check (true);
+grant select, insert on public.daily_puzzle_cache to anon, authenticated;
+

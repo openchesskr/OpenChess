@@ -10765,20 +10765,47 @@ async function resolveDailyPuzzle(dateStr, engine) {
   const name = puzzleName("punish", setupSans, mistakeSan);
   return { id, themes: ["punish"], name, opening, setupSans, mistakeSan, solution: gen.lines[lineIdx].solution, lines: gen.lines, tree: gen.tree, steps: [], isDaily: true, date: dateStr };
 }
-// (v0.2.7) resolveDailyPuzzle은 비동기(엔진·네트워크 필요)인 데다 이제 캐러셀에서 여러 날짜를 동시에
-// 다뤄야 하므로, 날짜별 계산 결과를 모듈 캐시에 담아 재사용한다(같은 날짜를 다시 열어도 엔진을 다시
-// 돌리지 않음). 엔진이 아직 준비되지 않아 계산을 시도조차 못 한 경우는 캐시하지 않고 다음 요청 때
-// 다시 시도한다(엔진이 늦게 준비되는 것과 "그 날짜엔 정말 데이터가 없는 것"을 구분하기 위함).
+// (v0.3.1 성능) 캐러셀이 느렸던 원인 — resolveDailyPuzzle은 로컬 체스 엔진으로 genPuzzleTree를
+// 실제로 돌리는(수백 ms~수 초) 무거운 계산인데, 날짜별 결과는 시드가 고정돼 있어 전 세계 모든
+// 유저에게 항상 완전히 같은 결과가 나온다 — 그런데도 예전엔 이 계산을 매번 "각자의" 브라우저에서
+// 처음부터 다시 돌렸다. 캐러셀엔 최근 7일치가 한꺼번에 나열되므로, 하루 지나 새 날짜가 하나
+// 추가될 때마다 그 앱을 여는 사람마다 전부 이 무거운 계산을 새로 겪어야 했던 셈. 이제 계산이
+// 끝나면 daily_puzzle_cache 테이블에 date를 키로 결과를 올려 두고, 계산 전에 먼저 그 테이블을
+// 확인한다 — 이미 누군가(대개 그 날짜가 시작된 직후 가장 먼저 연 사람) 계산해 올려 뒀다면, 이후
+// 모든 유저는 로컬 엔진을 아예 돌리지 않고 서버에서 완성된 결과만 받아 온다(단순 REST select라
+// 엔진 계산보다 훨씬 빠르다).
+async function fetchDailyPuzzleCache(dateStr) {
+  if (!SB_ON) return null;
+  try {
+    const rows = await sbSelect("daily_puzzle_cache?date=eq." + dateStr + "&select=data&limit=1");
+    return rows && rows[0] ? rows[0].data : null;
+  } catch { return null; }
+}
+async function saveDailyPuzzleCache(dateStr, pz) {
+  if (!SB_ON || !pz) return;
+  try { await sbInsert("daily_puzzle_cache", { date: dateStr, data: pz }); } catch { /* 이미 누군가 먼저 올려 둔 경우(PK 충돌) 등은 무해하게 무시 */ }
+}
+// (v0.2.7) resolveDailyPuzzle(과 위 서버 캐시 조회)은 비동기인 데다 이제 캐러셀에서 여러 날짜를
+// 동시에 다뤄야 하므로, 날짜별 결과를 모듈 캐시에 담아 재사용한다(같은 날짜를 다시 열어도 서버
+// 조회·엔진 계산을 다시 하지 않음). 서버에도 없고 엔진도 아직 준비되지 않아 계산을 시도조차 못 한
+// 경우는 캐시하지 않고 다음 요청 때 다시 시도한다(엔진이 늦게 준비되는 것과 "그 날짜엔 정말 데이터가
+// 없는 것"을 구분하기 위함).
 const dailyPuzzleResolveCache = new Map(); // dateStr -> Promise<puzzle|null>
 function resolveDailyPuzzleCached(dateStr, engine) {
   if (dailyPuzzleResolveCache.has(dateStr)) return dailyPuzzleResolveCache.get(dateStr);
-  if (!engine || engine.status !== "ready") return Promise.resolve(null);
-  // (v0.2.7 기능) 일반 퍼즐이 onSavePuzzle에서 처음 만들어질 때 puzzleShare로 puzzles 테이블에
-  // 업로드되는 것과 똑같이, 오늘의 퍼즐도 계산되는 즉시 같은 puzzleNo(id) 번호로 업로드해 둔다 —
-  // 그래야 채팅 "/puzzle 000000" 공유, 퍼즐 탭 "번호로 풀기" 등 다른 퍼즐과 동일한 경로로 오늘의
-  // 퍼즐도 찾을 수 있다(같은 날짜는 모든 유저에게 항상 같은 id로 결정적으로 계산되므로, 이미
-  // 누군가 올려 둔 데이터를 덮어써도 내용은 동일하다 — puzzleShare의 upsert가 이를 그대로 처리).
-  const p = resolveDailyPuzzle(dateStr, engine).then((pz) => { if (pz) puzzleShare(pz); return pz; });
+  const p = fetchDailyPuzzleCache(dateStr).then((cached) => {
+    if (cached) { puzzleShare(cached); return cached; }
+    if (!engine || engine.status !== "ready") { dailyPuzzleResolveCache.delete(dateStr); return null; }
+    // (v0.2.7 기능) 일반 퍼즐이 onSavePuzzle에서 처음 만들어질 때 puzzleShare로 puzzles 테이블에
+    // 업로드되는 것과 똑같이, 오늘의 퍼즐도 계산되는 즉시 같은 puzzleNo(id) 번호로 업로드해 둔다 —
+    // 그래야 채팅 "/puzzle 000000" 공유, 퍼즐 탭 "번호로 풀기" 등 다른 퍼즐과 동일한 경로로 오늘의
+    // 퍼즐도 찾을 수 있다(같은 날짜는 모든 유저에게 항상 같은 id로 결정적으로 계산되므로, 이미
+    // 누군가 올려 둔 데이터를 덮어써도 내용은 동일하다 — puzzleShare의 upsert가 이를 그대로 처리).
+    return resolveDailyPuzzle(dateStr, engine).then((pz) => {
+      if (pz) { puzzleShare(pz); saveDailyPuzzleCache(dateStr, pz); }
+      return pz;
+    });
+  });
   dailyPuzzleResolveCache.set(dateStr, p);
   return p;
 }
