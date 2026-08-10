@@ -787,3 +787,55 @@ create policy "move notes delete" on public.move_notes for delete using (public.
 grant select on public.move_notes to anon, authenticated;
 grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
+
+-- ============================================================================
+-- 16) search_puzzles_prefix — 퍼즐 탭 "번호로 풀기" 검색 추천어용 (v0.3.1)
+-- ============================================================================
+-- 예전엔 입력 중인 번호로 시작하는 퍼즐을 클라이언트가 이미 들고 있는 puzzles(로컬 계정에서
+-- 한 번이라도 열어본 퍼즐만 누적되는 배열)에서만 골라 추천했다 — 그래서 한 번도 안 열어본
+-- 퍼즐은 번호를 다 알고 있어도 추천 목록에 뜨지 않았다. puzzles.no는 bigint라 PostgREST
+-- 필터로는 "숫자로 시작하는지"를 직접 표현할 수 없어(문자열 like 연산자는 text 컬럼에만
+-- 적용됨) 이 RPC로 no::text like 검사를 서버에서 대신 해 준다 — 테이블 자체가 이미
+-- select using(true)로 전체 공개라 이 함수도 딱히 더 열어주는 권한은 없다(SECURITY DEFINER가
+-- 아닌 일반 함수).
+create or replace function public.search_puzzles_prefix(p_prefix text, p_limit int default 8)
+returns table(no bigint, data jsonb)
+language sql stable
+as $$
+  select no, data
+  from public.puzzles
+  where p_prefix is not null and p_prefix <> '' and no::text like p_prefix || '%'
+  order by no
+  limit least(coalesce(p_limit, 8), 20);
+$$;
+grant execute on function public.search_puzzles_prefix(text, int) to anon, authenticated;
+-- (v0.3.1 성능) 위 no::text like 'prefix%' 조건에 맞는 인덱스가 없어, puzzles 테이블이 계속
+-- 쌓이는 구조(대국을 둘 때마다·집중 학습에서 실수를 만날 때마다 새 퍼즐이 자동 생성·공유됨)라
+-- 검색창에 숫자를 입력할 때마다 매번 테이블 전체를 훑는 순차 스캔이 됐다 — "퍼즐 검색으로 퍼즐을
+-- 불러오는 시간이 길다"는 원인. text_pattern_ops 표현식 인덱스를 추가하면 이런 접두어(prefix)
+-- LIKE 검색에 인덱스를 태울 수 있다.
+create index if not exists idx_puzzles_no_text_pattern on public.puzzles ((no::text) text_pattern_ops);
+
+-- ============================================================================
+-- 17) daily_puzzle_cache — 오늘의 퍼즐 캐러셀 계산 결과 캐시 (v0.3.1)
+-- ============================================================================
+-- 오늘의 퍼즐(resolveDailyPuzzle)은 날짜를 시드로 결정적으로 계산되므로 항상 모든 유저에게 완전히
+-- 같은 결과가 나온다. 그런데 이 계산은 로컬 체스 엔진으로 genPuzzleTree를 실제로 돌리는(수백 ms~
+-- 수 초) 무거운 작업인데, 예전엔 이걸 매번 각자의 브라우저에서 처음부터 새로 돌렸다 — 캐러셀에
+-- 최근 7일치가 한꺼번에 나열되다 보니 캐러셀을 열 때마다 며칠치 계산이 한꺼번에 밀려 느리게
+-- 느껴졌다. date를 키로 계산 결과를 여기 캐시해 두면, 이미 누군가(대개 그 날짜가 시작된 직후
+-- 가장 먼저 연 사람) 계산해 올려 둔 날짜는 이후 모든 유저가 로컬 엔진을 아예 돌리지 않고 이
+-- 테이블에서 완성된 결과만 읽어 온다(puzzles 테이블과 같은 크라우드소싱 패턴 — 같은 날짜는
+-- 항상 같은 내용으로 귀결되므로 누가 먼저 계산해 올리든 안전하다).
+create table if not exists public.daily_puzzle_cache (
+  date date primary key,
+  data jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.daily_puzzle_cache enable row level security;
+drop policy if exists "daily puzzle cache read"   on public.daily_puzzle_cache;
+drop policy if exists "daily puzzle cache insert" on public.daily_puzzle_cache;
+create policy "daily puzzle cache read"   on public.daily_puzzle_cache for select using (true);
+create policy "daily puzzle cache insert" on public.daily_puzzle_cache for insert with check (true);
+grant select, insert on public.daily_puzzle_cache to anon, authenticated;
+
