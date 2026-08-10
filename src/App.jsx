@@ -14801,23 +14801,34 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose }) {
               {playBtn}
             </>
           ) : (
-            /* 데스크톱 — 기존 "펼친 다이어리 두 페이지"(좌: 날짜+보드, 우: 점선 구분선+텍스트+버튼) 구조는
-               그대로 두되, 텍스트·버튼(우측 칼럼)을 작게 줄여 그만큼 확보한 자리를 보드(좌측 칼럼)에
-               몰아준다. */
-            <div className="flex items-start" style={{ gap: 20, paddingRight: 14 }}>
-              <div style={{ flexShrink: 0, width: 300 }}>
-                {dateRow}
-                <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, border: "1.5px solid " + T.brass, background: "linear-gradient(135deg,#3A2516,#241509)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={296} loopMs={2400} flip={flip} />
+            /* 데스크톱 — 기존 "펼친 다이어리 두 페이지"(좌: 날짜+보드, 우: 점선 구분선+텍스트) 구조는
+               그대로 두되, 텍스트(우측 칼럼)를 작게 줄여 그만큼 확보한 자리를 보드(좌측 칼럼)에
+               몰아준다. "풀기" 버튼은 우측 칼럼에서 빼내 카드 맨 아래로, 그 사이 정중앙에는 기보
+               (한 줄 스크롤, SequenceBar 재사용)와 코치 말풍선(MascotBubble 재사용)을 넣는다. */
+            <>
+              <div className="flex items-start" style={{ gap: 20, paddingRight: 14 }}>
+                <div style={{ flexShrink: 0, width: 300 }}>
+                  {dateRow}
+                  <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, border: "1.5px solid " + T.brass, background: "linear-gradient(135deg,#3A2516,#241509)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={296} loopMs={2400} flip={flip} />
+                  </div>
+                </div>
+                <div style={{ minWidth: 0, flex: 1, paddingTop: 2, borderLeft: "1px dashed #DCCBA8", paddingLeft: 16 }}>
+                  {labelRow}
+                  {titleRow}
+                  {solveRow}
                 </div>
               </div>
-              <div style={{ minWidth: 0, flex: 1, paddingTop: 2, borderLeft: "1px dashed #DCCBA8", paddingLeft: 16 }}>
-                {labelRow}
-                {titleRow}
-                {solveRow}
-                {playBtn}
+              {/* 기보 — 시작 위치부터 이 포지션까지의 수순을 한 줄로, 길면 드래그해 스크롤(onJump을
+                  안 넘겨 SequenceBar가 읽기 전용 텍스트로만 렌더링됨). */}
+              <div style={{ marginTop: 18, padding: "10px 14px", borderRadius: 10, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
+                <SequenceBar sans={(puzzle.setupSans || []).concat(puzzle.mistakeSan ? [puzzle.mistakeSan] : [])} />
               </div>
-            </div>
+              <div style={{ marginTop: 12 }}>
+                <MascotBubble text={(puzzle.name || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" />
+              </div>
+              <div style={{ marginTop: 16 }}>{playBtn}</div>
+            </>
           )}
           <label className="flex items-center gap-2" style={{ fontSize: narrow ? 12 : 15, color: T.inkSoft, cursor: "pointer", marginTop: narrow ? 14 : 20 }}>
             <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
