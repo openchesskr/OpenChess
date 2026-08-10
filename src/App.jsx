@@ -14741,7 +14741,7 @@ function AnnouncementModal({ onClose }) {
 // 레이아웃 대신 체스보드를 상단에 별도로 크게 배치해 위아래로 늘리고(좁은 화면에서 104px짜리
 // 보드는 너무 작았다), 데스크톱은 레이아웃 구조(좌: 날짜+보드, 우: 점선 구분선+텍스트+버튼)는
 // 그대로 두고 크기 비율만 전체적으로 키운다.
-function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }) {
+function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose }) {
   const [hide, setHide] = useState(false);
   const close = () => onClose(hide);
   const t = todayStr();
@@ -14769,16 +14769,18 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
     return () => ro.disconnect();
   }, [narrow]);
   const dateRow = <div style={{ fontSize: narrow ? 14.5 : 20, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: "ui-monospace,monospace" }}>{dateLabel}</div>;
+  // (사용자 요청) 데스크톱은 텍스트·버튼 크기를 많이 줄여 오른쪽 칼럼 폭을 좁히고, 그렇게 확보한
+  // 자리를 왼쪽 보드 칼럼에 몰아줘 보드를 훨씬 크게 그린다.
   const labelRow = (
     <div className="flex items-center gap-1" style={{ marginBottom: 4 }}>
-      <Bell size={narrow ? 12 : 17} style={{ color: T.brass, flexShrink: 0 }} />
-      <span style={{ fontSize: narrow ? 10.5 : 14.5, fontWeight: 800, color: T.brass }}>일일 퍼즐</span>
+      <Bell size={narrow ? 12 : 11} style={{ color: T.brass, flexShrink: 0 }} />
+      <span style={{ fontSize: narrow ? 10.5 : 10, fontWeight: 800, color: T.brass }}>일일 퍼즐</span>
     </div>
   );
-  const titleRow = <div style={{ fontSize: narrow ? 14.5 : 22, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: narrow ? 6 : 10 }}>{puzzle.name || puzzle.opening}</div>;
-  const solveRow = solveCountText(solveCount, null) && <div style={{ fontSize: narrow ? 11 : 15, color: "#2E6E2E", fontWeight: 700, marginBottom: narrow ? 10 : 15 }}>{solveCountText(solveCount, null)}</div>;
+  const titleRow = <div style={{ fontSize: narrow ? 14.5 : 13, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: narrow ? 6 : 5 }}>{puzzle.name || puzzle.opening}</div>;
+  const solveRow = solveCountText(solveCount, null) && <div style={{ fontSize: narrow ? 11 : 10, color: "#2E6E2E", fontWeight: 700, marginBottom: narrow ? 10 : 7 }}>{solveCountText(solveCount, null)}</div>;
   // (사용자 요청) 풀기 버튼은 기존 금색 그라데이션을 그대로 유지한다.
-  const playBtn = <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: narrow ? "9px 0" : "15px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: narrow ? 13 : 18.5, border: "none", cursor: "pointer" }}><Play size={narrow ? 13 : 18} fill="#241509" />풀기</button>;
+  const playBtn = <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: narrow ? "9px 0" : "7px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: narrow ? 13 : 11.5, border: "none", cursor: "pointer" }}><Play size={narrow ? 13 : 11} fill="#241509" />풀기</button>;
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: narrow ? 380 : 620, margin: "auto" }}>
@@ -14799,16 +14801,17 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
               {playBtn}
             </>
           ) : (
-            /* 데스크톱 — 기존 "펼친 다이어리 두 페이지"(좌: 날짜+보드, 우: 점선 구분선+텍스트+버튼) 구조를
-               그대로 두고 치수만 키운다. */
-            <div className="flex items-start" style={{ gap: 26, paddingRight: 32 }}>
-              <div style={{ flexShrink: 0, width: 170 }}>
+            /* 데스크톱 — 기존 "펼친 다이어리 두 페이지"(좌: 날짜+보드, 우: 점선 구분선+텍스트+버튼) 구조는
+               그대로 두되, 텍스트·버튼(우측 칼럼)을 작게 줄여 그만큼 확보한 자리를 보드(좌측 칼럼)에
+               몰아준다. */
+            <div className="flex items-start" style={{ gap: 20, paddingRight: 14 }}>
+              <div style={{ flexShrink: 0, width: 300 }}>
                 {dateRow}
                 <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, border: "1.5px solid " + T.brass, background: "linear-gradient(135deg,#3A2516,#241509)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={172} loopMs={2400} flip={flip} />
+                  <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={296} loopMs={2400} flip={flip} />
                 </div>
               </div>
-              <div style={{ minWidth: 0, flex: 1, paddingTop: 2, borderLeft: "1px dashed #DCCBA8", paddingLeft: 22 }}>
+              <div style={{ minWidth: 0, flex: 1, paddingTop: 2, borderLeft: "1px dashed #DCCBA8", paddingLeft: 16 }}>
                 {labelRow}
                 {titleRow}
                 {solveRow}
@@ -14816,8 +14819,7 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
               </div>
             </div>
           )}
-          <p style={{ fontSize: narrow ? 11.5 : 15.5, color: T.inkSoft, margin: narrow ? "14px 0 10px" : "22px 0 16px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 일일 퍼즐도 풀어보세요." : "아직 일일 퀘스트를 다 마치지 못했어요 — 일일 퍼즐도 잊지 말고 풀어보세요!"}</p>
-          <label className="flex items-center gap-2" style={{ fontSize: narrow ? 12 : 15, color: T.inkSoft, cursor: "pointer" }}>
+          <label className="flex items-center gap-2" style={{ fontSize: narrow ? 12 : 15, color: T.inkSoft, cursor: "pointer", marginTop: narrow ? 14 : 20 }}>
             <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
             오늘 하루 다시 보지 않기
           </label>
@@ -18656,7 +18658,7 @@ export default function App() {
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
-      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} cleared={dailyQuestCleared} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
+      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       <AnimatePresence>{ticketBlockedOpen && <NoReviewTicketsModal key="noTicketsModal" reviewTickets={reviewTickets} onClose={() => setTicketBlockedOpen(false)} />}</AnimatePresence>
