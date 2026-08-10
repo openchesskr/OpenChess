@@ -4013,8 +4013,21 @@ function Mascot({ name = "milku", emotion = "great", size = 44, style }) {
   if (src) return <img src={src} alt="" style={{ width: size, height: size, objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 2px 3px rgba(0,0,0,.35))", ...style }} />;
   return <MascotAvatar size={Math.round(size * 0.92)} name={name} />;
 }
-function MascotBubble({ text, ply, mascot = "milku", emotion = "great" }) {
+function MascotBubble({ text, ply, mascot = "milku", emotion = "great", stacked = false }) {
   const label = mascot === "kokoa" ? "KOKOA" : "MILKU";
+  // (사용자 요청) stacked — 설명이 길어질 걸 대비해, 마스코트를 작게 줄여 좌상단에 라벨과 나란히
+  // 붙이고 본문은 그 아래 다음 줄부터 전체 폭으로 펼친다(가로로 긴 기존 레이아웃 대신).
+  if (stacked) {
+    return (
+      <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "10px 13px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+          <Mascot name={mascot} emotion={emotion} size={40} />
+          <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800 }}>{ply > 0 ? moveNumber(ply - 1) + " 진행 · " + label : label + " 코치"}</div>
+        </div>
+        <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.5 }}>{text}</p>
+      </div>
+    );
+  }
   return (
     <div className="flex items-start gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "11px 13px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
       <Mascot name={mascot} emotion={emotion} size={88} />
@@ -14820,8 +14833,8 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose }) {
                 <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 9, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
                   <SequenceBar sans={(puzzle.setupSans || []).concat(puzzle.mistakeSan ? [puzzle.mistakeSan] : [])} />
                 </div>
-                <div style={{ marginBottom: 12 }}>
-                  <MascotBubble text={(puzzle.name || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" />
+                <div style={{ marginBottom: 20 }}>
+                  <MascotBubble text={(puzzle.name || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" stacked />
                 </div>
                 {playBtn}
               </div>
