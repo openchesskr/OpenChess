@@ -787,3 +787,4 @@ create policy "move notes delete" on public.move_notes for delete using (public.
 grant select on public.move_notes to anon, authenticated;
 grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
+

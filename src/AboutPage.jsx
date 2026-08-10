@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star,
+  Send, Compass, Rocket, Star, Filter,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -706,6 +706,23 @@ const CAT = {
   security: { label: "보안", Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.3.1", date: "2026.8.10",
+    summary: "집중학습 마스터 대국 목록이 항상 5판만 뜨던 문제를 고쳤어요 — 이제 실제로 있는 만큼(최대 50판) 보여드려요. chess.com 통계에서는 리뷰해 본 대국만 따로 모아 볼 수 있어요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "마스터 대국이 5판밖에 안 보였다고요? 이제 훨씬 더 많이 보여드려요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "리뷰했던 대국만 따로 모아 보고 싶었죠? 이제 체크박스 하나면 돼요." },
+    },
+    highlight: { kind: "icon", Icon: Filter, color: T.brassHi, label: "리뷰한 대국만 모아 보기" },
+    sections: [
+      { cat: "feature", items: [
+        "chess.com 통계에서 이제 리뷰(분석)해 본 대국만 따로 모아 볼 수 있는 체크박스가 생겼어요 — 켜면 최근 대국 목록은 물론 전적·가장 많이 둔 오프닝·오프닝별 승률까지 전부 그 대국들만으로 다시 보여드려요.",
+      ] },
+      { cat: "fix", items: [
+        "집중학습의 \"마스터 대국\" 목록이 어떤 포지션이든 딱 5판만 뜨던 문제를 고쳤어요 — 이제 실제로 매칭되는 대국 수만큼(최대 50판) 보여드리고, 처음 20개를 보여준 뒤 페이지를 넘기면 나머지를 계속 볼 수 있어요.",
+      ] },
+    ],
+  },
   {
     version: "0.3.0", date: "2026.8.9",
     summary: "체스보드에서 손가락으로 기물을 끌어 옮길 수 있게 됐고, 코치가 '수비자 제거' 전술도 새로 짚어드려요. 실제 GM 대국 데이터가 마스터 대국 목록과 이론 수 체계에 대거 추가됐어요.",
