@@ -6145,7 +6145,12 @@ function FocusBoxPager({ pages }) {
   }, [pages, n]);
   if (n <= 1) return pages[0] || null;
   const goTo = (i) => setIdx(Math.max(0, Math.min(n - 1, i)));
+  // (버그 수정) 정렬·검색·페이지 이동 버튼이 이 드래그 캐러셀 안에 있으면 눌러도 반응하지 않던
+  // 문제 — onPointerDown이 어디를 눌렀든 무조건 setPointerCapture를 걸어, 뒤이어 발생하는 클릭
+  // 이벤트의 타깃이 실제로 누른 버튼이 아니라 이 캡처한 바깥 div로 리다이렉트됐다. 버튼·링크·
+  // 입력창 등 상호작용 요소 위에서 시작한 포인터는 애초에 드래그로 잡지 않도록 건너뛴다.
   const onPointerDown = (e) => {
+    if (e.target.closest && e.target.closest('button, a, input, select, textarea, [role="button"]')) return;
     dragRef.current = { x: e.clientX };
     setDragging(true);
     if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
@@ -6409,14 +6414,39 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   const MASTER_PAGE_SIZE = 20;
   const [masterSort, setMasterSort] = useState("default"); // default(원래 채택률순) | recent(최신순) | rating(레이팅순)
   const [masterPage, setMasterPage] = useState(0);
-  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort]);
+  // (기능) 마스터 이름 검색 — 백/흑 어느 쪽이든 이름에 검색어가 포함된 대국만 남긴다.
+  // 입력창에 포커스가 있는 동안엔 실시간으로 일치하는 선수 이름을 추천해 보여준다.
+  const [masterSearch, setMasterSearch] = useState("");
+  const [masterSearchFocused, setMasterSearchFocused] = useState(false);
+  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort, masterSearch]);
   const sortedMasterGames = useMemo(() => {
     if (masterSort === "recent") return [...masterGames].sort((a, b) => (b.year || 0) - (a.year || 0));
     if (masterSort === "rating") return [...masterGames].sort((a, b) => Math.max((b.white && b.white.rating) || 0, (b.black && b.black.rating) || 0) - Math.max((a.white && a.white.rating) || 0, (a.black && a.black.rating) || 0));
     return masterGames;
   }, [masterGames, masterSort]);
-  const masterPageCount = Math.max(1, Math.ceil(sortedMasterGames.length / MASTER_PAGE_SIZE));
-  const masterPageItems = sortedMasterGames.slice(masterPage * MASTER_PAGE_SIZE, masterPage * MASTER_PAGE_SIZE + MASTER_PAGE_SIZE);
+  // 검색창 추천어(자동완성)용 — 지금까지 불러온 마스터 대국에 등장하는 선수 이름 전체를 한 번만 모아 둔다.
+  const masterPlayerNames = useMemo(() => {
+    const set = new Set();
+    for (const g of masterGames) {
+      if (g.white && g.white.name) set.add(g.white.name);
+      if (g.black && g.black.name) set.add(g.black.name);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [masterGames]);
+  const masterSearchQuery = masterSearch.trim().toLowerCase();
+  const filteredMasterGames = useMemo(() => {
+    if (!masterSearchQuery) return sortedMasterGames;
+    return sortedMasterGames.filter((g) =>
+      ((g.white && g.white.name) || "").toLowerCase().includes(masterSearchQuery) ||
+      ((g.black && g.black.name) || "").toLowerCase().includes(masterSearchQuery)
+    );
+  }, [sortedMasterGames, masterSearchQuery]);
+  const masterSuggestions = useMemo(() => {
+    if (!masterSearchQuery) return [];
+    return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 8);
+  }, [masterPlayerNames, masterSearchQuery]);
+  const masterPageCount = Math.max(1, Math.ceil(filteredMasterGames.length / MASTER_PAGE_SIZE));
+  const masterPageItems = filteredMasterGames.slice(masterPage * MASTER_PAGE_SIZE, masterPage * MASTER_PAGE_SIZE + MASTER_PAGE_SIZE);
   const handleOpenGame = async (id) => {
     if (!onOpenMasterGame || openingGameId) return;
     setOpeningGameId(id); setGameOpenError(false);
@@ -6635,10 +6665,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                 </div>
                 )}
       </div>
-      {/* 이 수가 두어진 마스터 대국 — 클릭하면 집중학습을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
+      {/* 마스터 통계 — 클릭하면 집중학습을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
       <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>이 수가 두어진 마스터 대국</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{masterGames.length}판</span>}
+          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>마스터 통계</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{filteredMasterGames.length}판</span>}
             {/* (v0.2.3 기능) 개발자 전용 — Lichess 마스터 DB에 없는 유명 대국을 직접 등록 */}
             {canAdd && <button onClick={() => setAddGameOpen(true)} className="press" title="마스터 대국 추가" aria-label="마스터 대국 추가" style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>}
           </div>
@@ -6651,11 +6681,30 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
             </div>
           )}
         </div>
+        {/* (기능) 마스터 이름 검색 — 백/흑 어느 쪽 이름에든 검색어가 포함된 대국만 남긴다.
+            포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. */}
+        {masterGames.length > 1 && (
+          <div style={{ position: "relative", marginTop: 10, marginBottom: 10 }}>
+            <input value={masterSearch} onChange={(e) => setMasterSearch(e.target.value)}
+              onFocus={() => setMasterSearchFocused(true)} onBlur={() => setMasterSearchFocused(false)}
+              placeholder="선수 이름으로 검색…" style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12 }} />
+            {masterSearchFocused && masterSuggestions.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: T.paper, border: "1px solid #C9B58C", borderRadius: 8, boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)", zIndex: 5, overflow: "hidden" }}>
+                {masterSuggestions.map((nm) => (
+                  // onMouseDown(포커스 잃기 전에 먼저 발생)으로 골라야, input의 onBlur가 먼저 실행돼
+                  // 추천 목록이 사라지면서 클릭이 무산되는 걸 막을 수 있다.
+                  <div key={nm} onMouseDown={(e) => { e.preventDefault(); setMasterSearch(nm); }} className="press" style={{ padding: "7px 10px", fontSize: 12, color: T.ink, cursor: "pointer" }}>{nm}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 기록 탐색 중…</p>
           : masterGamesError ? (
             <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 정보를 불러오지 못했습니다. <button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>다시 시도</button></p>
           )
           : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
+          : filteredMasterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>"{masterSearch.trim()}"과 일치하는 선수의 대국이 없습니다.</p>
             : (<>
             {masterPageItems.map((g) => (
               <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
