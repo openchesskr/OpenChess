@@ -13859,7 +13859,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
     </div>
   );
 }
-function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze }) {
+function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -13873,12 +13873,16 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   const [timeFilter, setTimeFilter] = useState("all");
   // (v0.2.6 기능) 타임 컨트롤에 더해 흑/백으로도 나눠 볼 수 있도록 색 필터를 추가.
   const [colorFilter, setColorFilter] = useState("all");
+  // (v0.3.1 기능) 리뷰 티켓으로 한 번이라도 열어 본 대국만 따로 모아 보는 체크박스 — reviewUnlocked가
+  // 넘어오지 않는 화면(예: 다른 사람 프로필)에서는 체크박스 자체를 숨긴다(내 리뷰 기록이 아니므로).
+  const [onlyReviewed, setOnlyReviewed] = useState(false);
   const games = useMemo(() => {
     const base = (ready ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess");
     let out = timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter);
     if (colorFilter !== "all") out = out.filter((g) => g.color === colorFilter);
+    if (onlyReviewed && reviewUnlocked) out = out.filter((g) => reviewUnlocked.has(reviewGameKey(g)));
     return out;
-  }, [ready, chesscom && chesscom.games, timeFilter, colorFilter]);
+  }, [ready, chesscom && chesscom.games, timeFilter, colorFilter, onlyReviewed, reviewUnlocked]);
   // (v0.2.6 버그 수정) 레이팅은 어느 색으로 뒀든 하나로 합산 적용되므로, 흑/백 필터와는 무관하게
   // 항상 같은 값이어야 한다 — 레이팅 그래프에는 색 필터를 뺀(시간 규정만 적용된) 목록을 따로 넘긴다.
   const gamesForRating = useMemo(() => {
@@ -13988,9 +13992,16 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
             <button key={k} onClick={() => setColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: colorFilter === k ? T.ebony2 : "transparent", color: colorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
           ))}
         </div>
+        {/* (v0.3.1 기능) 리뷰(분석)해 본 대국만 모아 보기 */}
+        {reviewUnlocked && (
+          <label className="flex items-center press" style={{ gap: 5, cursor: "pointer", padding: "5px 9px", borderRadius: 9, background: onlyReviewed ? T.ebony2 : "rgba(0,0,0,.06)" }}>
+            <input type="checkbox" checked={onlyReviewed} onChange={(e) => setOnlyReviewed(e.target.checked)} style={{ margin: 0, accentColor: T.brass }} />
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: onlyReviewed ? T.brassHi : T.inkSoft }}>리뷰한 대국만</span>
+          </label>
+        )}
       </div>
       {/* 전적 */}
-      {!overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>이 시간 규정의 대국이 없어요.</p>}
+      {!overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "이 조건에서 리뷰한 대국이 없어요." : "이 시간 규정의 대국이 없어요."}</p>}
       {overall && (
         <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -14071,7 +14082,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
-function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle }) {
+function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked }) {
   const [editOpen, setEditOpen] = useState(false);
   const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft } = chesscomUi;
@@ -14128,7 +14139,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
       {linked && (
         <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px dashed #C9B58C" }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><ChesscomLogo height={19} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>통계</span></div>
-          <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+          <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} reviewUnlocked={reviewUnlocked} />
         </div>
       )}
       {editOpen && (
@@ -14154,7 +14165,7 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
                   <button onClick={verifyChesscom} disabled={ccState === "checking"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: ccState === "failed" ? T.blunder : "linear-gradient(180deg,#3A2516,#241509)", color: ccState === "failed" ? "#fff" : T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{ccState === "checking" ? "확인 중…" : ccState === "failed" ? "연동 실패" : "연동하기"}</button>
                 </div>
               )}
-              {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+              {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} reviewUnlocked={reviewUnlocked} />}
             </div>
           </div>
         </div>
@@ -15115,7 +15126,7 @@ function DailyPuzzleDevPanel({ card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -15197,7 +15208,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
-        mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle}
+        mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
 
       {/* (v0.2.4 개편) 분석 엔진 선택 — 학습/퍼즐 탭 및 사이트 전반의 분석에 쓰인다(게임 리뷰는 별도로
@@ -18576,7 +18587,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
