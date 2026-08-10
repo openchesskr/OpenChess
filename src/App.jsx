@@ -1057,18 +1057,24 @@ function puzzlePvEvToWhite(pv, moverWhite) {
   if (pv.mate != null) return { mate: pv.mate * (moverWhite ? 1 : -1), win: (pv.mate > 0) === moverWhite ? "w" : "b", plies: Math.max(0, matePliesOf(pv.mate) - 1) };
   return pv.cp != null ? { cp: pv.cp * (moverWhite ? 1 : -1) } : null;
 }
+// (v0.3.1 성능) cur 위치를 REVIEW_DEPTH·REVIEW_MOVETIME_MS로 멀티PV 평가하는 원본 호출만 따로 뗀
+// 헬퍼 — genPuzzleTree의 expand()가 "이 위치의 평가"(종료 판정용)와 "이 위치의 후보 수 목록"(다음
+// 분기용)에 같은 위치를 두 번 엔진에 묻던 중복 호출을 하나로 합치기 위해 puzzleCandidatesAt에서
+// 분리했다(아래 puzzleCandidatesAt이 이미 계산해 둔 결과를 pvsIn으로 받으면 재호출하지 않는다).
+async function evalPositionMulti(engine, cur) {
+  try { return await engine.evaluateMulti(sansToFen(cur), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS); } catch { return null; }
+}
 // (20차 기능1) cur 위치의 후보 수들을 등급·채택률·평가치와 함께 수집 — genPuzzleTree와 개발자의
 // "한 수 추가" 기능(extendPuzzleLeaf)이 함께 쓰는 공용 헬퍼.
-async function puzzleCandidatesAt(engine, cur) {
+async function puzzleCandidatesAt(engine, cur, pvsIn) {
   const brd = boardFromSans(cur);
   const moverWhite = cur.length % 2 === 0;
   const color = moverWhite ? "w" : "b";
-  let pvs = null;
   // (v0.2.6 버그 수정) 예전엔 여기서 얕은 depth(11)로 평가해 저장한 등급·평가치가, 나중에 게임
   // 리뷰와 같은 더 깊은 depth로 다시 매겨지면 서로 달라져(예: 최선의 수인데 평가치가 미묘하게
   // 바뀜) 보였다 — 게임 리뷰와 동일한 REVIEW_DEPTH·REVIEW_MOVETIME_MS로 평가해 한 번 저장해 두면
   // 이후 어디서 다시 봐도 항상 같은 값이 나온다.
-  try { pvs = await engine.evaluateMulti(sansToFen(cur), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS); } catch { pvs = null; }
+  const pvs = pvsIn || await evalPositionMulti(engine, cur);
   if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
   const bestCp = cpOfLine(pvs[0]);
   // (버그 수정) 이미 승부가 기운 위치(예: -600cp)에서 어차피 지는 형세를 못 바꾸는 희생 수까지
@@ -1130,8 +1136,14 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   // 못한 채 maxPlies·maxNodes 상한에 먼저 걸려 라인이 뚝 끊겼다. 퍼즐 시작 포지션의 평가치를
   // 미리 한 번 재서(startCp), 이후로는 "시작 대비 실제로 얻어낸 cp 이득"을 기준으로 삼는다.
   let startCp = 0;
+  // (v0.3.1 성능) startCp(시작 포지션 평가)와 그 포지션의 후보 수 목록(맨 처음 expand() 호출이
+  // 곧바로 필요로 하는 것)은 결국 같은 포지션을 같은 depth·movetime으로 두 번 묻는 셈이었다 —
+  // evaluateMulti 한 번으로 합쳐 아래 expand()에 그대로 넘긴다(firstSan 분기는 다른 포지션에서
+  // 시작하므로 이 결과를 쓰지 않는다).
+  let rootPvs = null;
   try {
-    const se = await nextWorker().evaluate(sansToFen(preSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+    rootPvs = await nextWorker().evaluateMulti(sansToFen(preSans), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS);
+    const se = rootPvs && rootPvs[0];
     if (se) startCp = se.mate != null ? (se.mate > 0 ? 100000 : -100000) : (se.cp || 0);
   } catch { }
   // (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — 진행률 숫자만 보내던
@@ -1145,10 +1157,10 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   // 한 번 true가 되면 자손 노드에도 그대로 물려줘, 실제 체크메이트(#)가 나올 때까지는 maxPlies
   // 상한을 무시하고 계속 확장한다(요청: "메이트 수순에 돌입하면 반드시 그 가지가 체크메이트까지
   // 이어지도록"). maxNodes(전체 노드 예산)는 폭주 방지용 안전망으로 그대로 유지한다.
-  async function expand(cur, depth, sawUserCapture, forceMate) {
+  async function expand(cur, depth, sawUserCapture, forceMate, pvsIn) {
     if ((depth >= maxPlies && !forceMate) || nodeCount >= maxNodes) return [];
     const isUserTurn = depth % 2 === 0;
-    let cands = await puzzleCandidatesAt(nextWorker(), cur);
+    let cands = await puzzleCandidatesAt(nextWorker(), cur, pvsIn);
     if (!cands || !cands.length) return [];
     // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음).
     // (v0.3.0 버그 수정) 이 필터가 상대 응수(!isUserTurn)에도 그대로 걸려 있었다 — 트레이니의
@@ -1196,8 +1208,15 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
         let childForceMate = forceMate;
+        let pvs2 = null;
         if (!terminal) {
-          const ev2 = await nextWorker().evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+          // (v0.3.1 성능) 예전엔 여기서 cur2 위치를 단일PV로 한 번 평가해(종료 판정용) 두고, 곧이어
+          // (!terminal이면) expand(cur2,...)가 puzzleCandidatesAt으로 같은 cur2 위치를 멀티PV로 또
+          // 평가했다 — 같은 포지션을 같은 depth·movetime으로 두 번 묻는 중복 호출이었다. 멀티PV로
+          // 한 번만 묻고 1순위 줄(pvs2[0])을 종료 판정에 쓰고, 그대로 아래 expand()에 넘겨 다시
+          // 묻지 않게 한다.
+          pvs2 = await evalPositionMulti(nextWorker(), cur2);
+          const ev2 = pvs2 && pvs2[0];
           if (ev2) {
             const evw = posEvalToWhite(ev2, cur2); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
             if (ev2.mate != null && ev2.mate < 0) {
@@ -1222,7 +1241,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
             }
           }
         }
-        if (!terminal) node.children = await expand(cur2, depth + 1, captured, childForceMate);
+        if (!terminal) node.children = await expand(cur2, depth + 1, captured, childForceMate, pvs2);
         // 상대 응수가 만들어지지 않아도(깊이 상한 등) 사용자 수로 끝나는 리프이므로 그대로 둔다
         return node;
       } else {
@@ -1251,7 +1270,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
     if (!/#$/.test(firstSan)) node.children = await expand(cur2, 1, firstSan.includes("x"));
     children = [node];
   } else {
-    children = await expand(preSans, 0, false);
+    children = await expand(preSans, 0, false, undefined, rootPvs);
   }
   if (!children || !children.some((n) => n.pass !== false)) return null;
   const tree = { children };
@@ -6509,21 +6528,6 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {(canEdit || canAdd) && !isTheory && <button onClick={addAsTheory} className="press" title="이론 수로 추가" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Book size={14} /> 이론 수로 추가</button>}
           {/* (18차 UX8) 이 수가 이론 수라면 개발자 모드에서 삭제(비이론화) 가능 — 추가 버튼과 동일 레이아웃 */}
           {canEdit && isTheory && <button onClick={toggleUnbook} className="press" title="이론 수에서 삭제" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: "#F4A8A8", fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Trash2 size={14} /> 이론 수에서 삭제</button>}
-          {/* (버그 수정) 퍼즐 생성이 끝나기 전에는 눌러도 아무 일도 안 벌어지던 "퍼즐 풀기" 버튼 대신,
-              지금 생성 중이라는 문구와 진행 게이지를 보여준다 — 탭을 옮겨도(App 레벨 큐 덕에) 생성은
-              계속 진행되므로, 다시 돌아오면 게이지가 이어서 채워지다 완료되면 정상 버튼으로 바뀐다. */}
-          {expectedPuzzleId && onOpenPuzzle && (
-            existingPuzzle && existingPuzzle.tree ? (
-              <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22" }}><Play size={14} /> 퍼즐 풀기</button>
-            ) : (
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 13px", borderRadius: 10, background: T.ebony2, border: "1px solid #000" }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: T.brassHi, whiteSpace: "nowrap" }}>퍼즐을 생성하는 중입니다…</span>
-                <div style={{ width: 56, height: 6, borderRadius: 999, background: "rgba(255,255,255,.18)", overflow: "hidden", flexShrink: 0 }}>
-                  <div style={{ width: Math.round(((puzzleGenProgress && puzzleGenProgress.p) || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
-                </div>
-              </div>
-            )
-          )}
         </div>
       </div>
       {/* (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — genPuzzleTree가
@@ -6538,17 +6542,33 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           </motion.div>
         )}
       </AnimatePresence>
-      {/* 헤더: 아이콘 · 수/이름(크게) · 평가치 */}
+      {/* 헤더: 아이콘 · 수/이름(크게) · 평가치·등급(수 이름 바로 옆) · 퍼즐 풀기 버튼(우측) */}
+      {/* (사용자 요청) 평가치·등급 텍스트를 우측 끝(별도 칼럼)이 아니라 수 이름 바로 옆으로 옮기고,
+          둘 다 같은 진한 색(QCOLOR를 검정과 섞어 더 짙게)·같은 폰트(사이트 기본 IBM Plex Sans KR,
+          예전엔 평가치만 monospace라 서로 다른 폰트로 보였다)로 통일했다. 그렇게 비게 된 우측 자리엔
+          위 툴바에 있던 "퍼즐 풀기" 버튼(생성 중이면 진행 게이지)을 옮겨 왔다. */}
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         <CircleBadge kind={kind} big descOnClick />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: SEQ_FONT, fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
-          {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, marginTop: 4, lineHeight: 1.25 }}>{title}</div>}
+          <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
+            {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, lineHeight: 1.25 }}>{title}</div>}
+            <div style={{ fontSize: 15, fontWeight: 800, color: "color-mix(in srgb, " + QCOLOR[kind] + " 78%, black)" }}>{evTxt || (kind === "book" ? "이론" : "—")}</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "color-mix(in srgb, " + QCOLOR[kind] + " 78%, black)" }}>{QLABEL[kind]}</div>
+          </div>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 20, fontWeight: 800, color: QCOLOR[kind] }}>{evTxt || (kind === "book" ? "이론" : "—")}</div>
-          <div style={{ fontSize: 11, color: QCOLOR[kind], fontWeight: 700 }}>{QLABEL[kind]}</div>
-        </div>
+        {expectedPuzzleId && onOpenPuzzle && (
+          existingPuzzle && existingPuzzle.tree ? (
+            <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22", flexShrink: 0 }}><Play size={14} /> 퍼즐 풀기</button>
+          ) : (
+            <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 5, padding: "8px 13px", borderRadius: 10, background: T.ebony2, border: "1px solid #000", flexShrink: 0 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: T.brassHi, whiteSpace: "nowrap" }}>퍼즐 생성 중…</span>
+              <div style={{ width: 56, height: 6, borderRadius: 999, background: "rgba(255,255,255,.18)", overflow: "hidden", flexShrink: 0 }}>
+                <div style={{ width: Math.round(((puzzleGenProgress && puzzleGenProgress.p) || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
+              </div>
+            </div>
+          )
+        )}
       </div>
       {/* 미니보드(좌) + 해설(우) */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
