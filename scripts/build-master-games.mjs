@@ -27,20 +27,25 @@
  * 흡수해 버려 `games` 배열이 감당 안 되는 크기로 불어났고, 결국 `JSON.stringify`가
  * `RangeError: Invalid string length`(V8 문자열 최대 길이 초과)로 터졌다 — "노드 수 ×
  * 노드당 개수"로 크기를 제한한다는 이 스크립트의 원래 설계 전제 자체가 무제한에서는
- * 깨진다. 그래서 기본값을 다시 상한이 있는 방식(MAX_PER_NODE=50)으로 되돌렸다 — 5보다
- * 훨씬 넉넉해 "항상 5판" 문제는 해결되면서도, 전체 실행이 실패하지 않을 만큼은 작다. 화면
- * 쪽은 처음 20개만 보여주고 페이지를 넘기며 나머지를 계속 불러오는데(`src/App.jsx`의
- * `MASTER_PAGE_SIZE`/`ListPager`), 이미 다운로드된 로컬 데이터라 추가 네트워크 요청은
- * 없다.
+ * 깨진다. 그다음엔 전체를 MAX_PER_NODE=50으로 균일하게 눌러 뒀는데, 이번엔 반대로 깊은
+ * (=드문) 포지션까지도 딱 50~65판(+Lichess 최대 15판)에서 멈춰, "집중학습에서 실제로
+ * 자주 보는" 그런 위치일수록 있는 데이터를 다 못 보여주는 문제가 새로 생겼다.
+ *
+ * 그래서 상한을 깊이(ply)에 따라 3단계로 나눴다 — "e4" 같은 얕은 노드(수 개수 ≤4)만 예전
+ * 수준으로 촘촘히 제한하고, 그보다 깊어질수록(실제 매칭 게임 수 자체가 자연히 줄어드는
+ * 구간) 상한을 크게 늘린다. 깊은 구간의 상한(기본 3000)도 진짜 "무제한"은 아니고 여전히
+ * 안전판 역할 — 어떤 노드든 이 이상으로 불어나면 RangeError를 다시 겪을 수 있어, 완전
+ * 무제한 대신 넉넉한 유한값으로 못박아 둔다. 화면 쪽은 처음 20개만 보여주고 페이지를
+ * 넘기며 나머지를 계속 불러오는데(`src/App.jsx`의 `MASTER_PAGE_SIZE`/`ListPager`), 이미
+ * 다운로드된 로컬 데이터라 추가 네트워크 요청은 없다.
  *
  * 사용법:
  *   node scripts/build-master-games.mjs pgnmentor-games.ndjson [출력.json]
  *
- * 옵션(환경변수):
- *   MAX_PER_NODE=50   포지션(오프닝 트리 노드)당 저장할 게임 수 상한(기본값) — 레이팅 합
- *                     기준 상위 N개만 남긴다. 0으로 주면 상한 없이 전부 저장하려 시도하는데,
- *                     위에 적은 이유로 전체 pgnmentor 데이터셋에서는 십중팔구 메모리 부족·
- *                     RangeError로 실패한다 — 데이터 일부만 받아 테스트할 때가 아니면 쓰지 말 것.
+ * 옵션(환경변수) — 포지션(오프닝 트리 노드)당 저장할 게임 수 상한, 레이팅 합 기준 상위 N개만 남김:
+ *   CAP_SHALLOW=50     수순 길이(ply) 4 이하(예: "e4", "e4 e5", "d4 d5 c4")
+ *   CAP_MID=300        ply 5~8
+ *   CAP_DEEP=3000      ply 9 이상 — 이 정도 깊이는 매칭 게임 수 자체가 자연히 작아 사실상 전부 저장됨
  */
 import { createReadStream, writeFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -52,7 +57,14 @@ if (!inPath) {
   process.exit(1);
 }
 
-const MAX_PER_NODE = +(process.env.MAX_PER_NODE || 50); // 0 = 무제한(위 헤더 주석 참고 — 전체 데이터셋에서는 비권장)
+const CAP_SHALLOW = +(process.env.CAP_SHALLOW || 50);
+const CAP_MID = +(process.env.CAP_MID || 300);
+const CAP_DEEP = +(process.env.CAP_DEEP || 3000);
+function capForPly(ply) {
+  if (ply <= 4) return CAP_SHALLOW;
+  if (ply <= 8) return CAP_MID;
+  return CAP_DEEP;
+}
 
 const openings = JSON.parse(readFileSync("src/data/openings.json", "utf8"));
 const knownKeys = new Set(Object.keys(openings.tree).filter(Boolean)); // ""(시작 포지션)는 제외
@@ -68,20 +80,15 @@ function fnv1a(str) {
 
 const seen = new Set();       // 중복 게임 지문
 const games = [];             // 유니크 게임 원본(전체, moves 포함) — 인덱스가 곧 id
-const buckets = new Map();    // key -> [{gi, rating}, ...] — MAX_PER_NODE가 0이면 전부, 아니면 상위 N개(레이팅순)
+const buckets = new Map();    // key -> [{gi, rating}, ...], 상위 capForPly(ply)개(레이팅순)로 유지
 let total = 0, kept = 0, dup = 0;
 
-// (성능) MAX_PER_NODE=0(무제한)일 땐 정렬 없이 그냥 밀어 넣기만 한다 — "e4"처럼 매칭이
-// 수십만 건인 노드에서 매번 정렬하면(예전 방식) 감당이 안 된다. 정렬은 맨 마지막에 노드당
-// 한 번씩만(rl.on("close"))으로 미룬다.
-function insert(key, gi, rating) {
+function insert(key, gi, rating, cap) {
   let bucket = buckets.get(key);
   if (!bucket) { bucket = []; buckets.set(key, bucket); }
   bucket.push({ gi, rating });
-  if (MAX_PER_NODE > 0) {
-    bucket.sort((a, b) => b.rating - a.rating);
-    if (bucket.length > MAX_PER_NODE) bucket.length = MAX_PER_NODE;
-  }
+  bucket.sort((a, b) => b.rating - a.rating);
+  if (bucket.length > cap) bucket.length = cap;
 }
 
 const rl = createInterface({ input: createReadStream(inPath, "utf8"), crlfDelay: Infinity });
@@ -120,16 +127,16 @@ rl.on("line", (line) => {
   for (let ply = 1; ply <= maxLen; ply++) {
     const key = moves.slice(0, ply).join(" ");
     if (!knownKeys.has(key)) continue;
+    const cap = capForPly(ply);
     const bucket = buckets.get(key);
-    // MAX_PER_NODE로 상한을 둔 경우, 이미 다 채워져 있고 이 게임 레이팅이 최하위보다도
-    // 낮으면 games 배열 등록조차 필요 없다(스캔 대상 노드가 매우 많아 이 체크가 성능에
-    // 크게 기여한다). 무제한(MAX_PER_NODE=0)일 땐 항상 등록한다.
-    if (MAX_PER_NODE > 0 && bucket && bucket.length >= MAX_PER_NODE && rating <= bucket[bucket.length - 1].rating) continue;
+    // 이미 그 노드의 상한만큼 채워져 있고 이 게임 레이팅이 최하위보다도 낮으면 games 배열
+    // 등록조차 필요 없다(스캔 대상 노드가 매우 많아 이 체크가 성능에 크게 기여한다).
+    if (bucket && bucket.length >= cap && rating <= bucket[bucket.length - 1].rating) continue;
     if (gi === -1) {
       gi = games.length;
       games.push({ white: g.white, black: g.black, whiteElo: g.whiteElo, blackElo: g.blackElo, event: g.event, date: g.date, result: g.result, eco: g.eco, moves: g.moves });
     }
-    insert(key, gi, rating);
+    insert(key, gi, rating, cap);
   }
 
   if (total % 300000 === 0) {
@@ -138,15 +145,8 @@ rl.on("line", (line) => {
 });
 
 rl.on("close", () => {
-  // MAX_PER_NODE=0(무제한)일 땐 insert()가 정렬을 미뤘으므로 여기서 노드당 한 번씩만
-  // 레이팅 내림차순으로 정렬한다 — 화면 기본 정렬("채택률순" 자리에 레이팅 높은 게임 먼저)이
-  // 예전 상한 방식과 동일하게 유지되도록.
-  if (MAX_PER_NODE === 0) {
-    for (const bucket of buckets.values()) bucket.sort((a, b) => b.rating - a.rating);
-  }
-  // 상한을 둔 경우 마지막에 밀려나 어떤 버킷에도 안 남은 게임이 있을 수 있어(뒤에 더
-  // 레이팅 높은 게임이 그 자리를 밀어낸 경우), 실제로 참조되는 게임만 남기고 인덱스를
-  // 재배치한다.
+  // 상한에 밀려나 어떤 버킷에도 안 남은 게임이 있을 수 있어(뒤에 더 레이팅 높은 게임이 그
+  // 자리를 밀어낸 경우), 실제로 참조되는 게임만 남기고 인덱스를 재배치한다.
   const used = new Set();
   for (const bucket of buckets.values()) for (const { gi } of bucket) used.add(gi);
   const remap = new Map();

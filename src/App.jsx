@@ -6370,6 +6370,19 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
     </div>
   );
 }
+// (버그 수정) 마스터 대국이 Lichess 마스터 DB·개발자 추가분·PGN Mentor 세 소스를 출처 구분 없이
+// 합친 것이다 보니, 같은 선수라도 소스마다 표기가 달라("Carlsen, M.", "Carlsen, Magnus",
+// "Carlsen,M") 검색창 추천 목록에 사실상 같은 이름이 중복으로 여러 줄 뜨는 문제가 있었다.
+// "성, 이름 이니셜"까지만 뽑아 정규화한 키로 묶어(성과 이름 첫 글자가 같으면 동일인으로 간주),
+// 실제 필터링(부분 문자열 매칭)은 그대로 두고 추천 목록만 대표 이름 하나로 압축한다.
+function normalizePlayerKey(name) {
+  const s = (name || "").toLowerCase().replace(/\./g, "").trim();
+  const comma = s.indexOf(",");
+  if (comma === -1) return s;
+  const last = s.slice(0, comma).trim();
+  const first = s.slice(comma + 1).trim();
+  return last + "|" + (first ? first[0] : "");
+}
 function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username }) {
   if (!fa.active) return null;
   const {
@@ -6424,23 +6437,37 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
     if (masterSort === "rating") return [...masterGames].sort((a, b) => Math.max((b.white && b.white.rating) || 0, (b.black && b.black.rating) || 0) - Math.max((a.white && a.white.rating) || 0, (a.black && a.black.rating) || 0));
     return masterGames;
   }, [masterGames, masterSort]);
-  // 검색창 추천어(자동완성)용 — 지금까지 불러온 마스터 대국에 등장하는 선수 이름 전체를 한 번만 모아 둔다.
+  // 검색창 추천어(자동완성)용 — 지금까지 불러온 마스터 대국에 등장하는 선수 이름을 모으되,
+  // normalizePlayerKey로 같은 사람의 표기 차이(정식 이름/이니셜 등)를 하나로 묶고 그중 가장
+  // 정보가 많은(긴) 표기 하나만 대표로 남긴다.
   const masterPlayerNames = useMemo(() => {
-    const set = new Set();
+    const byKey = new Map();
+    const consider = (name) => {
+      if (!name) return;
+      const key = normalizePlayerKey(name);
+      const cur = byKey.get(key);
+      if (!cur || name.length > cur.length) byKey.set(key, name);
+    };
     for (const g of masterGames) {
-      if (g.white && g.white.name) set.add(g.white.name);
-      if (g.black && g.black.name) set.add(g.black.name);
+      if (g.white) consider(g.white.name);
+      if (g.black) consider(g.black.name);
     }
-    return [...set].sort((a, b) => a.localeCompare(b));
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
   }, [masterGames]);
   const masterSearchQuery = masterSearch.trim().toLowerCase();
+  // 추천 목록에서 대표 이름 하나를 골라 클릭하면(예: "Carlsen, Magnus") 검색어와 표기가 다른
+  // 같은 선수의 대국("Carlsen,M")은 부분 문자열로는 안 걸린다 — normalizePlayerKey가 같으면
+  // (성 + 이름 이니셜 일치) 동일인으로 보고 함께 포함시킨다.
+  const masterSearchKey = masterSearchQuery ? normalizePlayerKey(masterSearch) : "";
   const filteredMasterGames = useMemo(() => {
     if (!masterSearchQuery) return sortedMasterGames;
-    return sortedMasterGames.filter((g) =>
-      ((g.white && g.white.name) || "").toLowerCase().includes(masterSearchQuery) ||
-      ((g.black && g.black.name) || "").toLowerCase().includes(masterSearchQuery)
-    );
-  }, [sortedMasterGames, masterSearchQuery]);
+    return sortedMasterGames.filter((g) => {
+      const wName = (g.white && g.white.name) || "";
+      const bName = (g.black && g.black.name) || "";
+      if (wName.toLowerCase().includes(masterSearchQuery) || bName.toLowerCase().includes(masterSearchQuery)) return true;
+      return masterSearchKey && (normalizePlayerKey(wName) === masterSearchKey || normalizePlayerKey(bName) === masterSearchKey);
+    });
+  }, [sortedMasterGames, masterSearchQuery, masterSearchKey]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
     return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 8);
