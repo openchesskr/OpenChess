@@ -27,25 +27,27 @@
  * 흡수해 버려 `games` 배열이 감당 안 되는 크기로 불어났고, 결국 `JSON.stringify`가
  * `RangeError: Invalid string length`(V8 문자열 최대 길이 초과)로 터졌다 — "노드 수 ×
  * 노드당 개수"로 크기를 제한한다는 이 스크립트의 원래 설계 전제 자체가 무제한에서는
- * 깨진다. 그다음엔 전체를 MAX_PER_NODE=50으로 균일하게 눌러 뒀는데, 이번엔 반대로 깊은
- * (=드문) 포지션까지도 딱 50~65판(+Lichess 최대 15판)에서 멈춰, "집중학습에서 실제로
- * 자주 보는" 그런 위치일수록 있는 데이터를 다 못 보여주는 문제가 새로 생겼다.
+ * 깨진다. 그다음엔 깊이(ply)가 깊을수록 상한을 크게 주는 3단계(50/300/3000)를 시도했는데,
+ * 이건 방향이 거꾸로였다 — 얕은 포지션("e4" 등)일수록 애초에 후보가 훨씬 많아 다양한
+ * 갈래를 보여줄 가치가 크고, 깊은(=드문) 포지션은 매칭 게임 수 자체가 자연히 적어 작은
+ * 상한으로도 사실상 전부 담긴다. 그래서 방향을 뒤집었다 — 얕을수록 상한을 크게, 깊을수록
+ * 작게. 상한은 여전히 유한값(무제한 아님)이라 RangeError 위험은 없다 — 크래시는 "상한이
+ * 아예 없을 때"만 났던 것이고, 상한이 있으면 그 값이 몇이든 그 이상으로는 절대 안 커진다.
  *
- * 그래서 상한을 깊이(ply)에 따라 3단계로 나눴다 — "e4" 같은 얕은 노드(수 개수 ≤4)만 예전
- * 수준으로 촘촘히 제한하고, 그보다 깊어질수록(실제 매칭 게임 수 자체가 자연히 줄어드는
- * 구간) 상한을 크게 늘린다. 깊은 구간의 상한(기본 3000)도 진짜 "무제한"은 아니고 여전히
- * 안전판 역할 — 어떤 노드든 이 이상으로 불어나면 RangeError를 다시 겪을 수 있어, 완전
- * 무제한 대신 넉넉한 유한값으로 못박아 둔다. 화면 쪽은 처음 20개만 보여주고 페이지를
- * 넘기며 나머지를 계속 불러오는데(`src/App.jsx`의 `MASTER_PAGE_SIZE`/`ListPager`), 이미
- * 다운로드된 로컬 데이터라 추가 네트워크 요청은 없다.
+ * (v0.3.2 추가) 그래도 정적 인덱스는 빌드 시점 스냅샷이라 한계가 뚜렷하다 — 사용자가 검색한
+ * 특정 마스터의 대국이 이 상한 밖에 있으면 영영 안 뜬다. 그래서 원본 480만 게임 전체를
+ * Supabase master_games_full 테이블에 적재해 두고(scripts/import-master-games-full.mjs),
+ * 화면에서 "더 불러오기"를 누르면 이 정적 파일과 무관하게 실시간으로 서버에 질의해 계속
+ * 가져올 수 있게 했다 — 이 파일은 그 실시간 소스가 채워지기 전 첫 화면을 빠르게 보여주는
+ * "시드" 역할로 남는다.
  *
  * 사용법:
  *   node scripts/build-master-games.mjs pgnmentor-games.ndjson [출력.json]
  *
  * 옵션(환경변수) — 포지션(오프닝 트리 노드)당 저장할 게임 수 상한, 레이팅 합 기준 상위 N개만 남김:
- *   CAP_SHALLOW=50     수순 길이(ply) 4 이하(예: "e4", "e4 e5", "d4 d5 c4")
- *   CAP_MID=300        ply 5~8
- *   CAP_DEEP=3000      ply 9 이상 — 이 정도 깊이는 매칭 게임 수 자체가 자연히 작아 사실상 전부 저장됨
+ *   CAP_SHALLOW=500    수순 길이(ply) 4 이하(예: "e4", "e4 e5", "d4 d5 c4") — 후보가 가장 많은 구간
+ *   CAP_MID=150        ply 5~8
+ *   CAP_DEEP=50        ply 9 이상 — 이 정도 깊이는 매칭 게임 수 자체가 자연히 적음
  */
 import { createReadStream, writeFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -57,9 +59,9 @@ if (!inPath) {
   process.exit(1);
 }
 
-const CAP_SHALLOW = +(process.env.CAP_SHALLOW || 50);
-const CAP_MID = +(process.env.CAP_MID || 300);
-const CAP_DEEP = +(process.env.CAP_DEEP || 3000);
+const CAP_SHALLOW = +(process.env.CAP_SHALLOW || 500);
+const CAP_MID = +(process.env.CAP_MID || 150);
+const CAP_DEEP = +(process.env.CAP_DEEP || 50);
 function capForPly(ply) {
   if (ply <= 4) return CAP_SHALLOW;
   if (ply <= 8) return CAP_MID;

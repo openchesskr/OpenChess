@@ -787,3 +787,70 @@ create policy "move notes delete" on public.move_notes for delete using (public.
 grant select on public.move_notes to anon, authenticated;
 grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
+
+-- ============================================================================
+-- 16) master_games_full — PGN Mentor 원본 480만 게임 전체 실시간 검색용 (v0.3.2)
+-- ============================================================================
+-- public/master-games.json(scripts/build-master-games.mjs)은 빌드 시점 스냅샷이라 포지션당
+-- 상한(예: 얕은 포지션 500판)을 넘는 대국이나, 특정 마스터의 이름으로 검색했을 때 그 상한
+-- 밖에 있는 대국은 영영 안 뜨는 근본 한계가 있다. 이 테이블은 그 정적 파일과 별개로, 원본
+-- 전체를 그대로 담아 둬서 "더 불러오기"를 누를 때마다 서버에 실시간으로 질의할 수 있게 한다.
+-- 데이터는 scripts/import-master-games-full.mjs가 로컬에서 pgnmentor-games.ndjson을 읽어
+-- SERVICE ROLE 키로 채운다(RLS가 막고 있어 anon/authenticated 키로는 쓸 수 없음 — 수백만
+-- 행을 클라이언트 권한으로 밀어넣게 두면 남용 위험이 큼). 읽기는 search_master_games_full
+-- RPC를 통해서만 하고(테이블 직접 select는 막아 둠), moves는 build-master-games.mjs와 동일하게
+-- SAN을 공백으로 이어붙인 문자열이라 "정확히 이 접두사로 시작하는 대국"을 LIKE 접두사 검색으로
+-- 찾을 수 있다 — 다만 "Nf3"가 "Nf3xd4" 같은 다른 수의 앞부분과 우연히 겹치지 않도록, 접두사
+-- 뒤에 반드시 공백이 오거나(다음 수로 이어짐) 문자열이 거기서 끝나야만(그 수가 마지막) 일치로
+-- 본다(moves = p_prefix or moves like p_prefix || ' %').
+create table if not exists public.master_games_full (
+  id bigint generated always as identity primary key,
+  white text not null,
+  black text not null,
+  white_elo int,
+  black_elo int,
+  event text,
+  year int,
+  result text,
+  eco text,
+  moves text not null,
+  fp bigint not null   -- build-master-games.mjs와 같은 fnv1a 지문 — 재적재 시 중복 삽입 방지(idempotent)
+);
+alter table public.master_games_full enable row level security;
+
+-- 접두사 검색(moves text_pattern_ops)·선수 이름 검색(lower(white)/lower(black))·재적재 시
+-- 중복 판정(fp, unique)에 각각 쓰인다. text_pattern_ops는 로케일과 무관하게 LIKE 'prefix%'
+-- 패턴이 인덱스를 타게 해 준다(기본 옵클래스는 로케일에 따라 인덱스를 못 탈 수 있음).
+create unique index if not exists master_games_full_fp_idx on public.master_games_full (fp);
+create index if not exists master_games_full_moves_prefix_idx on public.master_games_full (moves text_pattern_ops);
+create index if not exists master_games_full_white_idx on public.master_games_full (lower(white));
+create index if not exists master_games_full_black_idx on public.master_games_full (lower(black));
+
+-- 클라이언트는 테이블을 직접 select하지 않고(수백만 행을 한 번에 긁어갈 수 있으므로) 이
+-- RPC만 호출한다 — 포지션 접두사(p_prefix, 필수)와 선수 이름(p_player, 선택)으로 좁힌 뒤
+-- 레이팅 합 기준 상위 p_limit개를 p_offset부터 반환한다("더 불러오기"는 offset을 늘려 재호출).
+create or replace function public.search_master_games_full(
+  p_prefix text,
+  p_player text default null,
+  p_limit int default 20,
+  p_offset int default 0
+)
+returns setof public.master_games_full
+-- security definer로 테이블 소유자(이 SQL을 실행한 역할, RLS를 우회함) 권한으로 실행 — anon/
+-- authenticated에게는 테이블 자체 select/RLS 정책을 전혀 안 주고 이 함수만 통과시키기 위함.
+language sql stable security definer set search_path = public
+as $$
+  select *
+  from public.master_games_full
+  where (moves = p_prefix or moves like p_prefix || ' %')
+    and (
+      p_player is null or btrim(p_player) = '' or
+      white ilike '%' || p_player || '%' or
+      black ilike '%' || p_player || '%'
+    )
+  order by greatest(coalesce(white_elo, 0), coalesce(black_elo, 0)) desc, id
+  limit least(coalesce(p_limit, 20), 100)
+  offset greatest(coalesce(p_offset, 0), 0);
+$$;
+grant execute on function public.search_master_games_full(text, text, int, int) to anon, authenticated;
+-- (의도적으로 select 권한은 anon/authenticated에게 주지 않는다 — RPC를 통한 조회만 허용)

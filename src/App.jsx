@@ -1396,6 +1396,30 @@ async function fetchAllMasterGames(sans, count = 15) {
   const pgnMentor = pgnMentorGamesFor(sans, pgnMentorData);
   return [...dev, ...pgnMentor, ...lichess];
 }
+// (기능) "마스터 통계"의 "더 불러오기" — public/master-games.json은 빌드 시점 스냅샷이라 노드당
+// 상한(build-master-games.mjs) 밖의 대국이나 특정 마스터의 대국은 거기 없을 수 있다. 이 함수는
+// 그 정적 데이터와 별개로, pgnmentor.com 원본 전체가 통째로 들어 있는 Supabase master_games_full
+// 테이블에 search_master_games_full RPC로 실시간 질의한다(supabase-setup.sql 16번 섹션·
+// scripts/import-master-games-full.mjs 참고) — 사용자가 "더 불러오기"를 누를 때마다 offset을
+// 늘려 다시 불러 계속 이어붙일 수 있다. moves는 이미 응답에 통째로 들어 있으니(다시 PGN을
+// 조회할 필요 없이) id별로 캐시해 뒀다가 fetchAnyMasterGamePgn이 그대로 꺼내 쓰게 한다.
+const fullMasterGameCache = new Map(); // "full_"+id -> sans 배열
+async function fetchFullMasterGames(sans, { player, limit = 20, offset = 0 } = {}) {
+  if (!SB_ON) return [];
+  const prefix = sans.join(" ");
+  const rows = await sbRpc("search_master_games_full", { p_prefix: prefix, p_player: (player || "").trim() || null, p_limit: limit, p_offset: offset });
+  return (rows || []).map((r) => {
+    const id = "full_" + r.id;
+    fullMasterGameCache.set(id, (r.moves || "").split(" ").filter(Boolean));
+    return {
+      id,
+      winner: r.result === "1-0" ? "white" : r.result === "0-1" ? "black" : null,
+      white: { name: r.white, rating: r.white_elo },
+      black: { name: r.black, rating: r.black_elo },
+      year: r.year,
+    };
+  });
+}
 // PGN 안에 명시된 결과 토큰("1-0"/"0-1"/"1/2-1/2"/"*")을 찾는다(없으면 null).
 function pgnResultToken(pgn) {
   const m = (pgn || "").match(/(1-0|0-1|1\/2-1\/2|\*)\s*(?:\r?\n|$)/);
@@ -1490,6 +1514,11 @@ async function fetchAnyMasterGamePgn(id) {
     const g = data && data.games[+id.slice(5)];
     if (!g) throw new Error("not-found");
     return g.moves.split(" ");
+  }
+  if (typeof id === "string" && id.startsWith("full_")) {
+    const cached = fullMasterGameCache.get(id);
+    if (!cached) throw new Error("not-found"); // "더 불러오기"로 받은 목록이 아직 메모리에 있을 때만 열람 가능(새로고침 등으로 캐시가 비면 재검색 필요)
+    return cached;
   }
   return fetchMasterGamePgn(id);
 }
@@ -6431,12 +6460,45 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   // 입력창에 포커스가 있는 동안엔 실시간으로 일치하는 선수 이름을 추천해 보여준다.
   const [masterSearch, setMasterSearch] = useState("");
   const [masterSearchFocused, setMasterSearchFocused] = useState(false);
+  // (기능) "더 불러오기" — public/master-games.json은 빌드 시점 스냅샷이라 노드당 상한 밖의
+  // 대국은 애초에 안 담겨 있다. 이 버튼을 누르면 그 상한과 무관하게 Supabase의 원본 전체
+  // (master_games_full)에 실시간으로 질의해 계속 이어붙인다(fetchFullMasterGames). 정적
+  // 소스와 겹치는 대국이 나올 수 있어 표시 직전에 (백,흑,연도,결과) 기준으로 중복을 거른다.
+  const [extraMasterGames, setExtraMasterGames] = useState([]);
+  const [extraMasterOffset, setExtraMasterOffset] = useState(0);
+  const [loadingMoreMaster, setLoadingMoreMaster] = useState(false);
+  const [moreMasterError, setMoreMasterError] = useState(false);
+  const [moreMasterExhausted, setMoreMasterExhausted] = useState(false);
+  useEffect(() => {
+    setExtraMasterGames([]); setExtraMasterOffset(0); setMoreMasterError(false); setMoreMasterExhausted(false);
+  }, [sans.join(","), san, masterSearch]);
+  const handleLoadMoreMaster = async () => {
+    if (loadingMoreMaster) return;
+    setLoadingMoreMaster(true); setMoreMasterError(false);
+    try {
+      const MORE_PAGE = 20;
+      const more = await fetchFullMasterGames([...sans, san], { player: masterSearch, limit: MORE_PAGE, offset: extraMasterOffset });
+      if (more.length < MORE_PAGE) setMoreMasterExhausted(true);
+      setExtraMasterGames((prev) => [...prev, ...more]);
+      setExtraMasterOffset((o) => o + more.length);
+    } catch (e) {
+      setMoreMasterError(true);
+    } finally {
+      setLoadingMoreMaster(false);
+    }
+  };
+  const dedupKey = (g) => ((g.white && g.white.name) || "") + "|" + ((g.black && g.black.name) || "") + "|" + (g.year || "") + "|" + (g.winner || "");
+  const combinedMasterGames = useMemo(() => {
+    const seen = new Set(masterGames.map(dedupKey));
+    const extra = extraMasterGames.filter((g) => { const k = dedupKey(g); if (seen.has(k)) return false; seen.add(k); return true; });
+    return [...masterGames, ...extra];
+  }, [masterGames, extraMasterGames]);
   useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort, masterSearch]);
   const sortedMasterGames = useMemo(() => {
-    if (masterSort === "recent") return [...masterGames].sort((a, b) => (b.year || 0) - (a.year || 0));
-    if (masterSort === "rating") return [...masterGames].sort((a, b) => Math.max((b.white && b.white.rating) || 0, (b.black && b.black.rating) || 0) - Math.max((a.white && a.white.rating) || 0, (a.black && a.black.rating) || 0));
-    return masterGames;
-  }, [masterGames, masterSort]);
+    if (masterSort === "recent") return [...combinedMasterGames].sort((a, b) => (b.year || 0) - (a.year || 0));
+    if (masterSort === "rating") return [...combinedMasterGames].sort((a, b) => Math.max((b.white && b.white.rating) || 0, (b.black && b.black.rating) || 0) - Math.max((a.white && a.white.rating) || 0, (a.black && a.black.rating) || 0));
+    return combinedMasterGames;
+  }, [combinedMasterGames, masterSort]);
   // 검색창 추천어(자동완성)용 — 지금까지 불러온 마스터 대국에 등장하는 선수 이름을 모으되,
   // normalizePlayerKey로 같은 사람의 표기 차이(정식 이름/이니셜 등)를 하나로 묶고 그중 가장
   // 정보가 많은(긴) 표기 하나만 대표로 남긴다.
@@ -6448,12 +6510,12 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
       const cur = byKey.get(key);
       if (!cur || name.length > cur.length) byKey.set(key, name);
     };
-    for (const g of masterGames) {
+    for (const g of combinedMasterGames) {
       if (g.white) consider(g.white.name);
       if (g.black) consider(g.black.name);
     }
     return [...byKey.values()].sort((a, b) => a.localeCompare(b));
-  }, [masterGames]);
+  }, [combinedMasterGames]);
   const masterSearchQuery = masterSearch.trim().toLowerCase();
   // 추천 목록에서 대표 이름 하나를 골라 클릭하면(예: "Carlsen, Magnus") 검색어와 표기가 다른
   // 같은 선수의 대국("Carlsen,M")은 부분 문자열로는 안 걸린다 — normalizePlayerKey가 같으면
@@ -6695,12 +6757,12 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
       {/* 마스터 통계 — 클릭하면 집중학습을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
       <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>마스터 통계</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{filteredMasterGames.length}판</span>}
+          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>마스터 통계</span>{combinedMasterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{filteredMasterGames.length}판</span>}
             {/* (v0.2.3 기능) 개발자 전용 — Lichess 마스터 DB에 없는 유명 대국을 직접 등록 */}
             {canAdd && <button onClick={() => setAddGameOpen(true)} className="press" title="마스터 대국 추가" aria-label="마스터 대국 추가" style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>}
           </div>
           {/* (버그 보충) 정렬 — 기본(채택률 순, API 원래 순서) / 최신순(연도) / 레이팅순(더 높은 쪽 레이팅) */}
-          {masterGames.length > 1 && (
+          {combinedMasterGames.length > 1 && (
             <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
               {[["default", "기본"], ["recent", "최신순"], ["rating", "레이팅순"]].map(([k, label]) => (
                 <button key={k} onClick={() => setMasterSort(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: masterSort === k ? T.brass : "transparent", color: masterSort === k ? "#241509" : T.inkSoft }}>{label}</button>
@@ -6709,8 +6771,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           )}
         </div>
         {/* (기능) 마스터 이름 검색 — 백/흑 어느 쪽 이름에든 검색어가 포함된 대국만 남긴다.
-            포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. */}
-        {masterGames.length > 1 && (
+            포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. Supabase가
+            켜져 있으면(SB_ON) 정적 목록이 비어 있어도 검색창을 띄운다 — "더 불러오기"로 그 선수의
+            대국을 실시간으로 찾아올 수 있으므로. */}
+        {(combinedMasterGames.length > 1 || SB_ON) && (
           <div style={{ position: "relative", marginTop: 10, marginBottom: 10 }}>
             <input value={masterSearch} onChange={(e) => setMasterSearch(e.target.value)}
               onFocus={() => setMasterSearchFocused(true)} onBlur={() => setMasterSearchFocused(false)}
@@ -6730,7 +6794,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           : masterGamesError ? (
             <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 정보를 불러오지 못했습니다. <button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>다시 시도</button></p>
           )
-          : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
+          : combinedMasterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
           : filteredMasterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>"{masterSearch.trim()}"과 일치하는 선수의 대국이 없습니다.</p>
             : (<>
             {masterPageItems.map((g) => (
@@ -6753,6 +6817,17 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
             ))}
             <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} />
             </>)}
+        {/* (기능) 정적 인덱스(위 결과)와 별개로, Supabase에 통째로 적재해 둔 pgnmentor.com 원본
+            전체(master_games_full)에서 이 포지션(+검색 중이면 그 선수)의 대국을 더 찾아온다.
+            상한 없이 계속 누를 수 있고, 더 없으면(응답이 요청한 개수보다 적으면) 버튼이 사라진다. */}
+        {SB_ON && !loadingMasterGames && !moreMasterExhausted && (
+          <div style={{ textAlign: "center", marginTop: 10 }}>
+            <button onClick={handleLoadMoreMaster} disabled={loadingMoreMaster} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 14px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: loadingMoreMaster ? "default" : "pointer", opacity: loadingMoreMaster ? 0.6 : 1 }}>
+              {loadingMoreMaster ? "불러오는 중…" : "마스터 데이터베이스에서 더 불러오기"}
+            </button>
+            {moreMasterError && <p style={{ fontSize: 11, color: T.blunder, marginTop: 4 }}>불러오지 못했습니다. 다시 시도해 주세요.</p>}
+          </div>
+        )}
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
         {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 리뷰를 여는 데 실패했습니다. 잠시 후 다시 시도해 주세요.</p>}
       </div>
