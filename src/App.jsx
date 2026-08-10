@@ -14751,29 +14751,46 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
   // 그대로 반영한다.
   const flip = ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0;
   const narrow = useNarrow(640);
-  const dateRow = <div style={{ fontSize: narrow ? 14.5 : 18, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: "ui-monospace,monospace" }}>{dateLabel}</div>;
+  // (버그 수정) 모바일 보드 상자를 width:100%로 키워도 AnimatedMove의 size는 고정 220px이라 상자
+  // 안에 실제 보드보다 훨씬 큰 빈 여백이 남았다(화면 폭에 따라 폭 차이가 커서 고정값 하나로는
+  // 맞출 수 없음) — ResizeObserver로 상자의 실제 렌더 폭을 재서 그 값을 그대로 size로 넘겨,
+  // 화면 폭이 얼마든 보드가 상자를 정확히 꽉 채우게 한다.
+  const boardWrapRef = useRef(null);
+  const [boardW, setBoardW] = useState(280);
+  useLayoutEffect(() => {
+    if (!narrow) return;
+    const el = boardWrapRef.current;
+    if (!el) return;
+    const measure = () => setBoardW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [narrow]);
+  const dateRow = <div style={{ fontSize: narrow ? 14.5 : 20, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: "ui-monospace,monospace" }}>{dateLabel}</div>;
   const labelRow = (
     <div className="flex items-center gap-1" style={{ marginBottom: 4 }}>
-      <Bell size={narrow ? 12 : 15} style={{ color: T.brass, flexShrink: 0 }} />
-      <span style={{ fontSize: narrow ? 10.5 : 13, fontWeight: 800, color: T.brass }}>일일 퍼즐</span>
+      <Bell size={narrow ? 12 : 17} style={{ color: T.brass, flexShrink: 0 }} />
+      <span style={{ fontSize: narrow ? 10.5 : 14.5, fontWeight: 800, color: T.brass }}>일일 퍼즐</span>
     </div>
   );
-  const titleRow = <div style={{ fontSize: narrow ? 14.5 : 19, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: narrow ? 6 : 9 }}>{puzzle.name || puzzle.opening}</div>;
-  const solveRow = solveCountText(solveCount, null) && <div style={{ fontSize: narrow ? 11 : 13.5, color: "#2E6E2E", fontWeight: 700, marginBottom: narrow ? 10 : 13 }}>{solveCountText(solveCount, null)}</div>;
+  const titleRow = <div style={{ fontSize: narrow ? 14.5 : 22, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: narrow ? 6 : 10 }}>{puzzle.name || puzzle.opening}</div>;
+  const solveRow = solveCountText(solveCount, null) && <div style={{ fontSize: narrow ? 11 : 15, color: "#2E6E2E", fontWeight: 700, marginBottom: narrow ? 10 : 15 }}>{solveCountText(solveCount, null)}</div>;
   // (사용자 요청) 풀기 버튼은 기존 금색 그라데이션을 그대로 유지한다.
-  const playBtn = <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: narrow ? "9px 0" : "13px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: narrow ? 13 : 16.5, border: "none", cursor: "pointer" }}><Play size={narrow ? 13 : 16} fill="#241509" />풀기</button>;
+  const playBtn = <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: narrow ? "9px 0" : "15px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: narrow ? 13 : 18.5, border: "none", cursor: "pointer" }}><Play size={narrow ? 13 : 18} fill="#241509" />풀기</button>;
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: narrow ? 380 : 540, margin: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: narrow ? 380 : 620, margin: "auto" }}>
         {/* (스케치) 다이어리 위에서 내려다보는 마스코트 — 카드 위 왼쪽에 살짝 겹쳐 뜬다. */}
-        <div style={{ position: "absolute", top: narrow ? -38 : -48, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={narrow ? 62 : 84} /></div>
-        <div style={{ position: "relative", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: narrow ? "20px 18px 16px" : "34px 30px 28px" }}>
+        <div style={{ position: "absolute", top: narrow ? -38 : -54, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={narrow ? 62 : 96} /></div>
+        <div style={{ position: "relative", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: narrow ? "20px 18px 16px" : "40px 36px 32px" }}>
           <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
           {narrow ? (
             /* 모바일 — 보드를 상단에 별도의 큰 정사각형 구획으로 두고, 그 아래로 텍스트·버튼이 이어진다. */
             <>
-              <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 12, border: "2px solid " + T.brass, background: "linear-gradient(135deg,#3A2516,#241509)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-                <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={220} loopMs={2400} flip={flip} />
+              <div ref={boardWrapRef} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 12, border: "2px solid " + T.brass, background: "linear-gradient(135deg,#3A2516,#241509)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+                <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={boardW} loopMs={2400} flip={flip} />
               </div>
               {dateRow}
               {labelRow}
@@ -14784,14 +14801,14 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
           ) : (
             /* 데스크톱 — 기존 "펼친 다이어리 두 페이지"(좌: 날짜+보드, 우: 점선 구분선+텍스트+버튼) 구조를
                그대로 두고 치수만 키운다. */
-            <div className="flex items-start" style={{ gap: 22, paddingRight: 28 }}>
-              <div style={{ flexShrink: 0, width: 150 }}>
+            <div className="flex items-start" style={{ gap: 26, paddingRight: 32 }}>
+              <div style={{ flexShrink: 0, width: 170 }}>
                 {dateRow}
                 <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, border: "1.5px solid " + T.brass, background: "linear-gradient(135deg,#3A2516,#241509)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={148} loopMs={2400} flip={flip} />
+                  <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={172} loopMs={2400} flip={flip} />
                 </div>
               </div>
-              <div style={{ minWidth: 0, flex: 1, paddingTop: 2, borderLeft: "1px dashed #DCCBA8", paddingLeft: 20 }}>
+              <div style={{ minWidth: 0, flex: 1, paddingTop: 2, borderLeft: "1px dashed #DCCBA8", paddingLeft: 22 }}>
                 {labelRow}
                 {titleRow}
                 {solveRow}
@@ -14799,8 +14816,8 @@ function DailyPuzzleNoticeModal({ puzzle, cleared, solveCount, onOpen, onClose }
               </div>
             </div>
           )}
-          <p style={{ fontSize: narrow ? 11.5 : 14, color: T.inkSoft, margin: narrow ? "14px 0 10px" : "20px 0 14px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 일일 퍼즐도 풀어보세요." : "아직 일일 퀘스트를 다 마치지 못했어요 — 일일 퍼즐도 잊지 말고 풀어보세요!"}</p>
-          <label className="flex items-center gap-2" style={{ fontSize: narrow ? 12 : 14, color: T.inkSoft, cursor: "pointer" }}>
+          <p style={{ fontSize: narrow ? 11.5 : 15.5, color: T.inkSoft, margin: narrow ? "14px 0 10px" : "22px 0 16px" }}>{cleared ? "이미 오늘 퀘스트를 다 클리어했지만, 새로 갱신된 일일 퍼즐도 풀어보세요." : "아직 일일 퀘스트를 다 마치지 못했어요 — 일일 퍼즐도 잊지 말고 풀어보세요!"}</p>
+          <label className="flex items-center gap-2" style={{ fontSize: narrow ? 12 : 15, color: T.inkSoft, cursor: "pointer" }}>
             <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
             오늘 하루 다시 보지 않기
           </label>
