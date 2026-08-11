@@ -9417,22 +9417,25 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         requiredWidthOf.set(it.key, Math.max(minSpanAtDepth(it.depth), s));
       }
     }
-    // (v0.3.2 개편) "같은 깊이는 항상 같은 거리"라는 제약을 버리고 아르키메데스 나선(반지름이
-    // 그리는 순서에 비례해 계속 늘어나는 나선)처럼 만든다 — 부모마다 로컬 형제 인덱스로
-    // radiusBoost를 주는 방식을 먼저 시도했는데, 서로 무관한 두 갈래가 매 단계 우연히 같은
-    // 인덱스(예: 둘 다 계속 "첫째 자식")를 골라 내려가면 누적된 radiusBoost가 여전히 거의
-    // 같아져 버리는 사례가 남았다(실측: 24쌍→4쌍으로 줄었지만 완전히 없어지진 않음). 로컬
-    // 인덱스 대신 트리 전체(한 팔 기준)를 훑는 단 하나의 전역 카운터(spiralCounter)를 두고,
-    // 화면에 새 블록을 하나 배치할 때마다(DFS로 트리를 훑는 순서 그대로) 그 카운터를 소비해
-    // radiusBoost로 쓴다 — 서로 다른 두 노드가 정확히 같은 카운터 값을 받는 일은 애초에
-    // 불가능하므로(정수 카운터라 겹칠 수 없음), 각도가 부동소수점 정밀도 한계까지 가까워지는
-    // 극단적인 경우에도 반지름이 항상 달라 구조적으로 겹침이 막힌다. 부모·자식을 잇는 선도
-    // 이제 각도뿐 아니라 반지름도 서로 달라, 서로 무관한 갈래끼리 선이 같은 자리에서 겹쳐
-    // 보이는 일도 함께 줄어든다.
-    const SPIRAL_STEP = 3;
+    // (v0.3.2 개편) "같은 깊이는 항상 같은 거리"라는 제약을 버리고 아르키메데스 나선처럼 만든다.
+    // 처음엔 트리 전체(한 팔 기준)를 훑는 단 하나의 전역 순서 카운터로 반지름 가중치를 줬는데,
+    // 이 카운터는 각도와 무관하게 그냥 "그려진 순서"라서 1수(정확히 동서남북 십자) 바로 다음
+    // 단계부터도 형제마다 반지름이 들쭉날쭉 벌어져, 정작 중요한 "네 방향이 뚜렷이 구분되는"
+    // 모양이 중심부에서부터 선이 사방으로 어지럽게 겹쳐 보이는 문제로 이어졌다("중심부에서부터
+    // 선이 겹치는 게 보인다"는 피드백). 나선을 팔과 무관한 전역 순서가 아니라, "그 팔 축(角)에서
+    // 얼마나 벗어났는지"에 비례하게 바꾼다 — 즉 나선 하나를 통째로 쓰는 게 아니라, 나침반 네
+    // 부채꼴 각각에 그 부채꼴만큼만 잘라 쓴 나선을 얹는다. 그 팔의 축 각도(DIR_ANGLE)와 정확히
+    // 일치하는 자리(각도 편차 0)는 반지름 보정이 전혀 없어 1수 자신은 항상 정확히 십자 위에
+    // 그대로 남고, 그 팔 안에서 각도가 벌어질수록(형제가 부채꼴 가장자리로 갈수록)만 반지름도
+    // 함께 늘어난다 — 그래서 중심부(정확히 축 위)는 늘 깔끔하고, 부채꼴이 넓어지는 바깥쪽에서만
+    // 나선 모양이 드러난다. 각도가 부동소수점 정밀도 한계까지 우연히 같아지는 극히 드문 경우에
+    // 대비해, 이 각도 기반 항 위에 아주 작은 전역 순서 항(SPIRAL_TIEBREAK)을 얹어 완전히 같은
+    // 반지름이 나오는 일 자체를 막는다.
+    const SPIRAL_ANGLE_COEF = 600, SPIRAL_TIEBREAK = 1;
     let spiralCounter = 0;
     const assignRange = (node, lo, hi) => {
       node.angle = (lo + hi) / 2;
+      node.radiusBoost = SPIRAL_ANGLE_COEF * Math.abs(node.angle - DIR_ANGLE[node.dir]) + SPIRAL_TIEBREAK * (spiralCounter++);
       const kids = childrenOf.get(node.key);
       if (!kids || !kids.length) return;
       // 안정적으로 캐싱된 pos(형제 순서, centerOrderByAdopt로 인기 라인이 가운데 오도록 이미
@@ -9448,12 +9451,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       for (const k of ordered) {
         const req = requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth);
         const w = (req / totalReq) * useWidth;
-        k.radiusBoost = SPIRAL_STEP * (spiralCounter++);
         assignRange(k, cur, cur + w);
         cur += w;
       }
     };
-    for (const it of visible) if (it.depth === 1) { it.radiusBoost = 0; assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF); }
+    for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF);
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
       // 반지름은 깊이 기준 값(radiusOfDepth)에 나선형 가중치(radiusBoost)를 더해 정한다.
