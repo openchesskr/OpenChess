@@ -9121,7 +9121,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 반지름은 오직 깊이만의 함수(RADIUS_OF_DEPTH)라 "같은 단계는 항상 같은 거리" 조건을 그대로
   // 만족하고, 매 단계 늘어나는 폭(RADIAL_STEP)에 더해 깊이의 제곱에 비례하는 여유(RADIAL_QUAD)를
   // 얹어 깊을수록(보통 갈래도 함께 늘어나므로) 원둘레 자체가 더 넉넉히 넓어지도록 한다.
-  const ROOT_GAP = 300, RADIAL_STEP = 260, RADIAL_QUAD = 34;
+  const ROOT_GAP = 300, RADIAL_STEP = 440, RADIAL_QUAD = 58;
   const radiusOfDepth = (depth) => ROOT_GAP + RADIAL_STEP * (depth - 1) + RADIAL_QUAD * (depth - 1) * (depth - 1);
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
   // 절대 맞닿지 않는 여백을 남긴다. (아래 assignAngle이 각 부모의 직계 자식들에게 이 부채꼴의
@@ -9341,31 +9341,47 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 각도를 전역이 아니라 항상 "그 부모 밑에서만" 다시 정규화하면, 그 부모가 트리 전체에서
     // 얼마나 중심에서 멀리 있든 상관없이 직계 형제들은 항상 이 부모 몫으로 배정된 부채꼴
     // (CHILD_SECTOR)을 고르게 나눠 쓴다.
-    const CHILD_SECTOR = SECTOR_HALF * 0.5;
+    // (v0.3.2 버그 수정) "부모 각도 + 로컬 오프셋"(CHILD_SECTOR 고정폭) 방식은 형제끼리는 안
+    // 겹쳐도, 서로 다른 갈래(사촌 서브트리)에 배정된 각도 구간이 겹칠 수 있어 그 두 갈래의
+    // 연결선이 서로를 가로질러 교차하거나 블록이 겹쳐 보이는 문제가 여전히 남아 있었다("선끼리
+    // 겹치지 않도록"이라는 피드백). 제대로 겹치지 않게 하려면 각도를 "구간(interval)"으로
+    // 다뤄야 한다 — 각 노드는 자기 부모에게서 물려받은 각도 구간 [lo,hi] 하나를 통째로 배정받고,
+    // 그 구간을 자기 자식들에게 서로 겹치지 않게 다시 쪼개 나눠준다(선버스트/방사형 아이시클
+    // 차트와 같은 표준 기법) — 이러면 서로 다른 서브트리는 애초에 배정받은 구간 자체가 겹치지
+    // 않으므로, 그 자손이 아무리 많아져도 다른 갈래의 구간을 침범할 수 없고 연결선도 교차하지
+    // 않는다. 구간은 자식 서브트리에 딸린 잎(leaf) 수에 비례해 나눠, 갈래가 많은 인기 라인일수록
+    // 더 넓은 구간(따라서 더 촘촘하지 않은 배치)을 받는다.
     const childrenOf = new Map();
     for (const [p, c] of edges) {
       if (p.depth < 1) continue;
       if (!childrenOf.has(p.key)) childrenOf.set(p.key, []);
       childrenOf.get(p.key).push(c);
     }
-    const assignAngle = (node, angle) => {
-      node.angle = angle;
+    // items는 후위 순회(자식이 부모보다 먼저 옴) 순서라, 한 번만 훑어도 각 노드의 잎 수를
+    // "이미 계산된 자식들의 합"으로 바로 구할 수 있다.
+    const leafCountOf = new Map();
+    for (const it of items) {
+      const kids = childrenOf.get(it.key);
+      if (!kids || !kids.length) leafCountOf.set(it.key, 1);
+      else { let s = 0; for (const k of kids) s += leafCountOf.get(k.key) || 1; leafCountOf.set(it.key, s); }
+    }
+    const assignRange = (node, lo, hi) => {
+      node.angle = (lo + hi) / 2;
       const kids = childrenOf.get(node.key);
       if (!kids || !kids.length) return;
-      let lo = Infinity, hi = -Infinity;
-      for (const k of kids) { if (k.pos < lo) lo = k.pos; if (k.pos > hi) hi = k.pos; }
-      const mid = (lo + hi) / 2, half = Math.max(hi - mid, 1);
-      for (const k of kids) {
-        const frac = (k.pos - mid) / half;
-        // (안전장치) 형제가 아주 많거나 라인이 아주 깊게(그리고 한쪽으로 치우쳐) 이어지면 이론상
-        // 이 팔의 전체 부채꼴(SECTOR_HALF)을 넘어설 수 있다 — 이웃 팔을 절대 침범하지 않도록
-        // 최종 각도를 그 팔의 전체 범위 안으로 한 번 더 clamp한다.
-        const raw = angle + CHILD_SECTOR * frac;
-        const kidAngle = Math.max(DIR_ANGLE[node.dir] - SECTOR_HALF, Math.min(DIR_ANGLE[node.dir] + SECTOR_HALF, raw));
-        assignAngle(k, kidAngle);
+      // 안정적으로 캐싱된 pos(형제 순서, centerOrderByAdopt로 인기 라인이 가운데 오도록 이미
+      // 정렬됨) 순서를 그대로 구간 배치 순서로 쓴다 — 그래야 화면상 좌우 배치가 갑자기 뒤집히지
+      // 않는다.
+      const ordered = kids.slice().sort((a, b) => a.pos - b.pos);
+      const total = ordered.reduce((s, k) => s + (leafCountOf.get(k.key) || 1), 0) || 1;
+      let cur = lo;
+      for (const k of ordered) {
+        const span = (hi - lo) * ((leafCountOf.get(k.key) || 1) / total);
+        assignRange(k, cur, cur + span);
+        cur += span;
       }
     };
-    for (const it of visible) if (it.depth === 1) assignAngle(it, DIR_ANGLE[it.dir]);
+    for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF);
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
       // 반지름은 깊이만으로 정해지므로(같은 단계는 항상 같은 거리) 여기선 위 assignAngle이 이미
