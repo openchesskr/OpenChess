@@ -9480,7 +9480,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 배율이 곱해지기 전의 "논리" 좌표라, 여기서 70을 그대로 쓰면 기본 화면 배율
     // (SCHEMATIC_ZOOM_LABEL_BASE=0.75)이 곱해진 뒤 실제 화면에는 52.5px로 보인다 — 사용자가
     // 눈으로 보는 화면 픽셀 기준 70px을 보장하려면 그 배율만큼 미리 나눠(=키워) 둬야 한다.
+    // (사용자 요청) "이름이 표시되는 백의 2번째 수는 부모·자녀 거리를 늘려 SAFE_GAP을 120까지" —
+    // 아래 EARLY_NAME_DEPTH(오프닝 이름을 전부 붙이는 구간)까지는 긴 풀네임 라벨이 옆·아래로도
+    // 자리를 차지하므로 그 구간만 더 넉넉한 값을 쓴다.
+    const EARLY_NAME_DEPTH = 3;
     const SAFE_GAP = 70 / SCHEMATIC_ZOOM_LABEL_BASE;
+    const EARLY_SAFE_GAP = 120 / SCHEMATIC_ZOOM_LABEL_BASE;
     const MIN_RADIAL_STEP = SAFE_GAP;
     const MAX_RADIAL_STEP = MIN_RADIAL_STEP * 80;
     // (버그 수정) depth===1(e4/d4 자신)은 위 byArmDepth 루프가 depth>=2만 다뤄 angle이 전혀
@@ -9509,7 +9514,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         for (const it of list) if (it.slotWidth < minW) minW = it.slotWidth;
       }
       if (!any) break;
-      const need = SAFE_GAP / minW;
+      const gapHere = d <= EARLY_NAME_DEPTH ? EARLY_SAFE_GAP : SAFE_GAP;
+      const need = gapHere / minW;
       const step = Math.min(Math.max(need - prevR, prevStep, MIN_RADIAL_STEP), MAX_RADIAL_STEP);
       const r = Math.max(prevR + step, ROOT_GAP);
       prevStep = step;
@@ -9550,11 +9556,32 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 2.Nf3)에서는 그 대표 목록에 없는 이름이라도 전부 보여준다. 이 수 자신에게 ECO 이름이 없으면
     // (책 이름은 매 수마다 새로 붙는 게 아니라 마지막 이름 붙은 조상에서 그대로 이어지는 성격이라
     // 흔한 일이다) 그 이름을 이어받도록 openingNameOf(조상 탐색)로 보완한다.
-    const EARLY_NAME_DEPTH = 3;
     for (const it of visible) {
       if (it.depth > EARLY_NAME_DEPTH || labeledKeys.has(it.key)) continue;
       const nm = nameOverride(it.path.slice(0, -1).join(" "), it.san) ?? it.name ?? openingNameOf(it.path);
       if (nm) { groups.push({ key: it.key, name: nm, x: it.x, y: it.y }); labeledKeys.add(it.key); }
+    }
+    // (사용자 요청) "블록과 겹치면 위가 아니라 아래에, 풀네임 전부, 다른 이름과도 안 겹치게 y좌표를
+    // 조절" — 라벨을 실제로 그리기 전에, 그 라벨이 차지할 대략적인 사각형(글자 수 기반 폭 추정)을
+    // 먼저 계산해 (1) 블록들과 겹치면 위쪽 대신 아래쪽에 놓고, (2) 그래도 이미 배치된 다른 라벨과
+    // 겹치면 세로로 한 줄씩 밀어 겹치지 않는 첫 자리를 찾는다. 최종 절대 좌표(left/top)를 여기서
+    // 직접 확정해 두고, 렌더링 쪽은 이 값을 그대로 쓰기만 한다.
+    const LABEL_H = 20, LABEL_GAP = 4;
+    const estLabelW = (name) => (name.length + 4) * 7.3 + 34; // "✦ "+이름+" ✦"(약 7.3px/글자) + 화살표 아이콘·여백
+    const boxOverlaps = (l1, t1, w1, h1, l2, t2, w2, h2) => !(l1 + w1 < l2 || l1 > l2 + w2 || t1 + h1 < t2 || t1 > t2 + h2);
+    const placed = [];
+    for (const g of groups) {
+      const w = estLabelW(g.name);
+      let left = g.x - 6;
+      let top = g.y - 30; // 기본: 블록 위
+      const hitsBlock = visible.some((it) => boxOverlaps(left, top, w, LABEL_H, it.x, it.y, boxW, boxH));
+      if (hitsBlock) top = g.y + boxH + 6; // 블록과 겹치면 위 대신 아래
+      let guard = 0;
+      while (guard++ < 60 && placed.some((b) => boxOverlaps(left, top, w, LABEL_H, b.left, b.top, b.w, LABEL_H))) {
+        top += LABEL_H + LABEL_GAP;
+      }
+      placed.push({ left, top, w });
+      g.left = left; g.top = top; g.w = w;
     }
     const bounds = { minX: minX + centerX, maxX: maxX + centerX, minY: minY + centerY, maxY: maxY + centerY };
     return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups, bounds };
@@ -10015,8 +10042,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         {/* (v0.3.2 개편) 칭호(이름)가 붙은 오프닝을 점선 테두리로 묶어 보여주던 것을 없애고, 이름
             라벨만 그 오프닝에 진입하는 첫 수(그룹 뿌리) 블록 바로 위쪽에 남겨 둔다. */}
         {groups.map((g) => (
-          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.x - 6, top: g.y - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
-            <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200, background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.left, top: g.top, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
+            {/* (사용자 요청) 이름을 자르지 않고 풀네임을 그대로 다 보여준다 — maxWidth·ellipsis 제거. */}
+            <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
               ✦ {g.name} ✦
             </span>
             <ChevronRight size={13} strokeWidth={2.5} style={{ color: T.brass, transform: "rotate(45deg)", flexShrink: 0, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.3))" }} />
