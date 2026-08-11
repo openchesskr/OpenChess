@@ -9490,7 +9490,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // (성능) 같은 depth의 모든 노드는 항상 반지름이 똑같으므로(위에서 사촌까지 통틀어 균등 분할),
     // 매 depth마다 visible 전체를 다시 훑어 이전 depth의 반지름을 찾을 필요 없이 스칼라 하나만
     // 이어서 누적하면 된다.
+    // (버그 수정) "ply가 늘어날수록 부모·자녀 거리가 더 줄어든다" — 책 이론은 얕은 단계일수록
+    // 오히려 갈래가 무성하고(형제가 많아 각도 몫이 좁아 need가 큼), 깊은 단계로 갈수록 더 좁혀지는
+    // (형제가 적어 need가 작아지는) 경우가 흔하다. step을 매 depth마다 그 depth 자신의 need만 보고
+    // 새로 정하면, 얕은 단계에서 붐벼서 커졌던 step이 깊은 단계에서 한산해지는 순간 다시 바닥값
+    // (MIN_RADIAL_STEP)으로 뚝 떨어져 버렸다 — 그 결과 화면상으로는 오히려 더 깊이 갈수록 링
+    // 간격이 좁아지는 것처럼 보였다. "이전 거리보다 같거나 더 늘어나게" 요청대로, step이 한 번
+    // 커지면 그 뒤로는 절대 작아지지 않도록(직전 step과 비교해 큰 쪽을 쓰도록) 못박는다 — 그러면
+    // 사촌·형제 간격도 depth가 깊어질수록 계속 그대로 유지되거나 더 넓어진다.
     let prevR = ROOT_GAP;
+    let prevStep = MIN_RADIAL_STEP;
     for (let d = 2; ; d++) {
       let any = false, minW = Infinity;
       for (const dir of ["N", "S"]) {
@@ -9501,8 +9510,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       }
       if (!any) break;
       const need = SAFE_GAP / minW;
-      const step = Math.min(Math.max(need - prevR, MIN_RADIAL_STEP), MAX_RADIAL_STEP);
+      const step = Math.min(Math.max(need - prevR, prevStep, MIN_RADIAL_STEP), MAX_RADIAL_STEP);
       const r = Math.max(prevR + step, ROOT_GAP);
+      prevStep = step;
       for (const dir of ["N", "S"]) {
         const list = byArmDepth.get(dir + ":" + d);
         if (list) for (const it of list) it.r = r;
