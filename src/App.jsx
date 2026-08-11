@@ -9152,7 +9152,22 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 반지름 자체가 그리는 순서에 따른 정수 배수라 실수 각도가 아무리 가까워도 서로 다른 자리에
   // 놓이는 것이 구조적으로 보장된다.
   const ROOT_GAP = 260, RADIAL_STEP = 420, RADIAL_GROWTH = 1.22;
-  const radiusOfDepth = (depth) => depth <= 1 ? ROOT_GAP : ROOT_GAP + RADIAL_STEP * (Math.pow(RADIAL_GROWTH, depth - 1) - 1) / (RADIAL_GROWTH - 1);
+  // (버그 수정) 백의 3번째 수(depth=5, 1=백1·2=흑1·3=백2·4=흑2·5=백3)부터는 형제·사촌 사이 간격을
+  // 더 넓히기 위해, 그 지점부터 반지름이 늘어나는 비율 자체를 더 키운다(2단계 등비수열 — 경계
+  // 지점까지는 기존 증가율 그대로 이어오다가, 그 이후로는 더 가파른 증가율로 갈아탄다. 경계에서
+  // 값이 끊기지 않도록 그 시점의 "다음 한 걸음" 크기를 이어받아 시작한다).
+  const PHASE2_DEPTH = 5, RADIAL_GROWTH2 = 1.4;
+  const radiusOfDepth = (depth) => {
+    if (depth <= 1) return ROOT_GAP;
+    const d1 = Math.min(depth, PHASE2_DEPTH) - 1;
+    let r = ROOT_GAP + RADIAL_STEP * (Math.pow(RADIAL_GROWTH, d1) - 1) / (RADIAL_GROWTH - 1);
+    if (depth > PHASE2_DEPTH) {
+      const stepAtBoundary = RADIAL_STEP * Math.pow(RADIAL_GROWTH, PHASE2_DEPTH - 1);
+      const d2 = depth - PHASE2_DEPTH;
+      r += stepAtBoundary * (Math.pow(RADIAL_GROWTH2, d2) - 1) / (RADIAL_GROWTH2 - 1);
+    }
+    return r;
+  };
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
   // 절대 맞닿지 않는 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게
   // 서로 겹치지 않게 재귀적으로 나눠 준다.)
