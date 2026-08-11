@@ -9427,73 +9427,88 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 부모 밑 형제·사촌은 서로 겹치지 않는 각도 구간을 배정받고(선버스트 표준 기법), 바로 이웃한
     // 두 블록 사이의 최소 거리만 보장하면 그보다 더 떨어진 쌍은 구간 분할 자체가 겹치지 않으므로
     // 자동으로 더 안전하다.
-    const SAFE_GAP = Math.hypot(boxW, boxH) + 30;
-    // (기능) "사촌 블록 간 여유를 형제 블록 간격에" 요청 대응 — 리프 개수 비율로만 부모 구간을
-    // 나누면 그 자체로는 형제 사이에 남는 여유가 전혀 없다(정확히 남김없이 나눠 씀). 각 부모
-    // 구간에서 일정 비율을 먼저 형제 사이 간격(자식이 n개면 n-1개의 틈)으로 떼어 놓고, 나머지
-    // (coreWidth)만 리프 비율로 나누면 — 사촌 경계(서로 다른 부모의 서브트리 사이)에 있던 여유가
-    // 상대적으로 형제 간격 쪽으로 옮겨진 것과 같은 효과를 낸다. 이 때문에 좁아진 자식 몫은 아래
-    // 반지름 역산이 그만큼 자동으로 보상하므로 안전하게(겹침 없이) 더 뗄 수 있다.
-    const SIBLING_GAP_FRAC = 0.1;
-    // 리프 개수 기반 가중치 — 부모 구간을 자식들에게 그 비율만큼 배분한다.
-    const leafCount = new Map();
-    for (const it of items) {
-      const kids = childrenOf.get(it.key);
-      if (!kids || !kids.length) leafCount.set(it.key, 1);
-      else leafCount.set(it.key, kids.reduce((s, k) => s + (leafCount.get(k.key) || 1), 0));
+    // (버그 수정) "사촌 수 간의 여백을 없애고 형제 수들 간의 간격을 벌려라" — 부모 구간을 재귀로
+    // 쪼개는 방식(리프 개수 비율)은 서로 다른 부모의 서브트리끼리(=사촌) 실제 필요보다 더 벌어지거나
+    // 덜 벌어지는 시각적 "빈틈"이 불균등하게 생겼다. 대신 같은 depth(ply)에 있는 모든 노드를
+    // "사촌까지 통틀어" 한 번에 세어, 그 개수로 180°(SECTOR_HALF*2)를 균등 분할한다 — 사촌 사이
+    // 여백이 구조적으로 사라진다(모두 같은 폭을 갖고 딱 붙어 있음). 그 대신 같은 부모의 형제끼리
+    // 인접한 자리에는 별도로 간격(SIBLING_GAP_FRAC)을 끼워 넣어, 절약된 만큼을 형제 구분에 쓴다.
+    const SIBLING_GAP_FRAC = 0.5;
+    const parentOf = new Map();
+    for (const [p, kids] of childrenOf) for (const k of kids) parentOf.set(k.key, p);
+    // depth별로 이 팔(arm)에 속한 노드를 모아, 안정적인 pos(형제 순서 그대로 좌우 배치) 기준으로
+    // 정렬한다 — 부모의 자식들은 pos상 항상 서로 붙어 있으므로, 이 순서를 그대로 훑으면 "형제
+    // 경계"(직전 노드와 부모가 같음)만으로 사촌/형제 구분이 가능하다.
+    const byArmDepth = new Map(); // "dir:depth" -> [items...]
+    for (const it of visible) {
+      if (it.depth < 2) continue;
+      const k = it.dir + ":" + it.depth;
+      if (!byArmDepth.has(k)) byArmDepth.set(k, []);
+      byArmDepth.get(k).push(it);
     }
-    const assignRange = (node, lo, hi) => {
-      node.angle = (lo + hi) / 2;
-      node.slotWidth = Math.max(hi - lo, 1e-9);
-      const kids = childrenOf.get(node.key);
-      if (!kids || !kids.length) return;
-      // 안정적으로 캐싱된 pos(형제 순서, centerOrderByAdopt로 인기 라인이 가운데 오도록 이미
-      // 정렬됨) 순서를 그대로 구간 배치 순서로 쓴다 — 그래야 화면상 좌우 배치가 갑자기 뒤집히지
-      // 않는다.
-      const ordered = kids.slice().sort((a, b) => a.pos - b.pos);
-      const totalLeaf = ordered.reduce((s, k) => s + (leafCount.get(k.key) || 1), 0) || 1;
-      const useWidth = hi - lo;
-      const n = ordered.length;
-      const gapTotal = n > 1 ? useWidth * SIBLING_GAP_FRAC : 0;
-      const gapEach = n > 1 ? gapTotal / (n - 1) : 0;
-      const coreWidth = useWidth - gapTotal;
-      let cur = lo;
-      for (let idx = 0; idx < ordered.length; idx++) {
-        const k = ordered[idx];
-        const share = (leafCount.get(k.key) || 1) / totalLeaf;
-        const w = share * coreWidth;
-        assignRange(k, cur, cur + w);
-        cur += w + (idx < ordered.length - 1 ? gapEach : 0);
+    for (const [k, list] of byArmDepth) {
+      const dir = k.split(":")[0];
+      list.sort((a, b) => a.pos - b.pos);
+      const n = list.length;
+      const total = SECTOR_HALF * 2;
+      // 형제 경계(직전 노드와 부모가 같은 경우)의 개수만큼만 간격을 예약 — 사촌 경계는 0.
+      let siblingBoundaries = 0;
+      for (let i = 1; i < n; i++) if (parentOf.get(list[i].key) === parentOf.get(list[i - 1].key)) siblingBoundaries++;
+      const eachW0 = total / n;
+      const gapEach = siblingBoundaries > 0 ? Math.min(eachW0 * SIBLING_GAP_FRAC, total * 0.5 / siblingBoundaries) : 0;
+      const gapTotal = gapEach * siblingBoundaries;
+      const coreWidth = total - gapTotal;
+      const eachW = coreWidth / n;
+      let cur = DIR_ANGLE[dir] - SECTOR_HALF;
+      for (let i = 0; i < n; i++) {
+        const it = list[i];
+        it.angle = cur + eachW / 2;
+        it.slotWidth = eachW;
+        cur += eachW;
+        if (i < n - 1 && parentOf.get(list[i + 1].key) === parentOf.get(it.key)) cur += gapEach;
       }
-    };
-    for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF);
+    }
     // (버그 수정) "부모·자녀 간격이 너무 멀어졌고, 블록 간격도 과하고, e4 갈래가 남쪽까지 번져
-    // 보인다" — 세 증상 모두 원인이 하나였다. 엄격한 구간 중첩(각 서브트리는 절대 부모가 준 각도
-    // 구간을 못 벗어남) 방식에서는, 형제 수가 2개 이상인 단계를 여러 번 거칠수록 리프 하나의 각도
-    // 몫이 매 단계 비율로 계속 곱해져 줄어든다 — 책 이론이 10수 넘게 여러 갈래로 계속 갈라지는
-    // 라인(흔하다)에서는 이게 기하급수적으로 작아져, 그 각도만으로 SAFE_GAP을 만족하려면 반지름을
-    // 수십만 px까지 키워야 했다(직접 실측: 최솟값이 -360만까지 감). 이러면 (1) 부모·자녀 간격 자체가
-    // 그만큼 벌어지고, (2) 그 폭발한 반지름에서는 각 팔에 남겨둔 부채꼴 각도(SECTOR_HALF)만으로도
-    // 절대 거리(호 길이)가 화면 전체를 뒤덮을 만큼 커져, 마치 e4(북쪽) 자손이 남쪽까지 번진 것처럼
-    // 보였다(실제로 방향이 뒤집힌 게 아니라 부채꼴이 지나치게 벌어져 다른 팔의 화면 영역까지
-    // 침범한 것). 각도 구간만으로 완전한 무겹침을 수학적으로 보장하려는 시도는 깊고 갈라짐이 많은
-    // 트리에서 근본적으로 반지름의 기하급수적 폭발을 요구한다는 뜻이므로, 한 단계당 반지름 증가폭
-    // 자체에 상한(MAX_RADIAL_STEP)을 둬 폭발을 막는다 — 그 대신 극단적으로 붐비는 아주 드문 자리는
-    // 약간의 촘촘함을 다시 감수한다(사용자가 우선순위로 요청한 "합리적인 간격"을 "완벽한 무겹침"보다
-    // 우선한다).
+    // 보인다" — 예전엔 엄격한 구간 중첩(각 서브트리는 절대 부모가 준 각도 구간을 못 벗어남) 방식이라,
+    // 형제 수가 2개 이상인 단계를 여러 번 거칠수록 리프 하나의 각도 몫이 매 단계 비율로 계속
+    // 곱해져 줄어들어 기하급수적으로 작아졌다 — 그 각도만으로 최소 거리를 만족하려면 반지름을
+    // 수십만 px까지 키워야 했다(실측: 최솟값이 -360만까지 감). 이제는 위처럼 depth마다 사촌까지
+    // 통틀어 균등 분할하므로 폭이 depth에 따라 branching factor만큼만 줄어들고(기하급수적이지만
+    // 훨씬 완만함), 반지름도 훨씬 안정적으로 늘어난다. 그래도 안전하게, 한 단계당 반지름 증가폭에
+    // 상한(MAX_RADIAL_STEP)을 둬 어떤 극단적인 경우에도 폭발하지 않도록 한다.
+    // (버그 수정) "최소 거리는 최소 50px 이상" — 이 좌표계는 아직 확대·축소(zoom) 배율이 곱해지기
+    // 전의 "논리" 좌표라, 여기서 50을 그대로 쓰면 기본 화면 배율(SCHEMATIC_ZOOM_LABEL_BASE=0.75)이
+    // 곱해진 뒤 실제 화면에는 37.5px로 보인다 — 사용자가 눈으로 보는 화면 픽셀 기준 50px을
+    // 보장하려면 그 배율만큼 미리 나눠(=키워) 둬야 한다.
+    const SAFE_GAP = 50 / SCHEMATIC_ZOOM_LABEL_BASE;
     const MIN_RADIAL_STEP = SAFE_GAP;
-    const MAX_RADIAL_STEP = MIN_RADIAL_STEP * 20;
-    const assignRadius = (node) => {
-      const kids = childrenOf.get(node.key);
-      if (!kids || !kids.length) return;
-      let minW = Infinity;
-      for (const k of kids) if (k.slotWidth < minW) minW = k.slotWidth;
+    const MAX_RADIAL_STEP = MIN_RADIAL_STEP * 80;
+    // (버그 수정) depth===1(e4/d4 자신)은 위 byArmDepth 루프가 depth>=2만 다뤄 angle이 전혀
+    // 안 채워졌다 — 두 뿌리 모두 좌표가 NaN이 되어 같은 자리(사실상 0,0 근처)로 겹쳐 보였다.
+    // 정확히 십자(여기선 세로선) 축 위, 고정 거리(ROOT_GAP)에 두도록 명시적으로 채운다.
+    for (const it of visible) if (it.depth === 1) { it.r = ROOT_GAP; it.angle = DIR_ANGLE[it.dir]; }
+    // (성능) 같은 depth의 모든 노드는 항상 반지름이 똑같으므로(위에서 사촌까지 통틀어 균등 분할),
+    // 매 depth마다 visible 전체를 다시 훑어 이전 depth의 반지름을 찾을 필요 없이 스칼라 하나만
+    // 이어서 누적하면 된다.
+    let prevR = ROOT_GAP;
+    for (let d = 2; ; d++) {
+      let any = false, minW = Infinity;
+      for (const dir of ["N", "S"]) {
+        const list = byArmDepth.get(dir + ":" + d);
+        if (!list || !list.length) continue;
+        any = true;
+        for (const it of list) if (it.slotWidth < minW) minW = it.slotWidth;
+      }
+      if (!any) break;
       const need = SAFE_GAP / minW;
-      const step = Math.min(Math.max(need - node.r, MIN_RADIAL_STEP), MAX_RADIAL_STEP);
-      const r = Math.max(node.r + step, ROOT_GAP);
-      for (const k of kids) { k.r = r; assignRadius(k); }
-    };
-    for (const it of visible) if (it.depth === 1) { it.r = ROOT_GAP; assignRadius(it); }
+      const step = Math.min(Math.max(need - prevR, MIN_RADIAL_STEP), MAX_RADIAL_STEP);
+      const r = Math.max(prevR + step, ROOT_GAP);
+      for (const dir of ["N", "S"]) {
+        const list = byArmDepth.get(dir + ":" + d);
+        if (list) for (const it of list) it.r = r;
+      }
+      prevR = r;
+    }
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
       const r = it.r;
