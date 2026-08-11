@@ -9439,11 +9439,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 이러면 각 팔은 영원히 자기 부채꼴 안에만 머문다. 대신 이 구간 안에서는 여전히 필요 폭
     // 비율대로 나눠(균등 분할보다 낫다) 최대한 고르게 펼치고, 그래도 남는 촘촘함은 아래 반지름
     // 나선(radiusBoost)이 보완한다.
-    const SPIRAL_ANGLE_COEF = 600, SPIRAL_TIEBREAK = 100;
+    // (버그 수정) spiralCounter는 그 팔 전체를 훑는 단 하나의 전역 카운터라, 얕은 depth-2 노드도
+    // DFS 방문 순서상 늦게(예: 형(다른 depth-2 형제)의 방대한 서브트리 전체가 먼저 다 훑인 뒤에)
+    // 걸리면 카운터 값이 수천까지 커져, SPIRAL_TIEBREAK를 곱한 보정치가 그 노드 자신의 깊이별
+    // 반지름(radiusOfDepth)보다 수백 배 커지는 일이 실제로 있었다 — 그 결과 "1수 중 하나만 보인다",
+    // "수들이 아무 데나 가 있다"는 피드백대로 얕은 노드가 실제로는 훨씬 깊은 반지름까지 튕겨
+    // 나가 트리 구조 자체가 무너져 보였다. 보정치를 그 노드 "자기 깊이" 기준 반지름의 일정
+    // 비율(RADIUS_BOOST_CAP_FRAC)로 상한을 두면, 얕은 노드는 상한 자체가 작아 자기 링 근처에서만
+    // 미세하게 움직이고, 깊은 노드는 상한도 커서 그만큼 더 넉넉하게 퍼질 여지를 얻는다 — 겹침을
+    // 줄이는 효과는 유지하면서 "같은 깊이는 대략 비슷한 거리"라는 트리의 기본 골격은 지킨다.
+    const SPIRAL_ANGLE_COEF = 600, SPIRAL_TIEBREAK = 60, RADIUS_BOOST_CAP_FRAC = 2;
     let spiralCounter = 0;
     const assignRange = (node, lo, hi) => {
       node.angle = (lo + hi) / 2;
-      node.radiusBoost = SPIRAL_ANGLE_COEF * Math.abs(node.angle - DIR_ANGLE[node.dir]) + SPIRAL_TIEBREAK * (spiralCounter++);
+      const rawBoost = SPIRAL_ANGLE_COEF * Math.abs(node.angle - DIR_ANGLE[node.dir]) + SPIRAL_TIEBREAK * (spiralCounter++);
+      node.radiusBoost = Math.min(rawBoost, radiusOfDepth(node.depth) * RADIUS_BOOST_CAP_FRAC);
       const kids = childrenOf.get(node.key);
       if (!kids || !kids.length) return;
       // 안정적으로 캐싱된 pos(형제 순서, centerOrderByAdopt로 인기 라인이 가운데 오도록 이미
