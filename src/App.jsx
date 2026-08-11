@@ -9385,20 +9385,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       if (!childrenOf.has(p.key)) childrenOf.set(p.key, []);
       childrenOf.get(p.key).push(c);
     }
-    // (버그 수정) 잎(leaf) "개수" 비율로만 구간을 나누면, 부모 구간 자체가 이미 극도로 좁아진
-    // 상태에서는(이론이 넓고 깊게 뻗은 인기 라인일수록 그렇다) 아무리 비율을 조정해도 결과 폭이
-    // 0에 수렴해 형제 블록이 완전히 겹쳐 보였다("간격을 넓혀도 뭉쳐 있다"는 실측 피드백). 매
-    // 형제 그룹마다 그때그때 최소 폭을 끼워 맞추는 방식(로컬 보정)도 시도했지만, 그 보정이 부모
-    // 구간을 넘어 확장될 때 이웃한 사촌 갈래의 확장과 서로 부딪혀 다른 곳에서 또 겹침이 생겼다.
-    // 근본적으로 풀려면 "이 서브트리 전체가 겹치지 않고 그려지려면 최소한 몇 라디안이 필요한가"를
-    // 잎에서부터 뿌리 방향으로(자식 → 부모) 먼저 계산해 둬야 한다 — items가 후위 순회 순서라
-    // 한 번만 훑어도 가능하다: 잎은 자기 깊이(반지름)에서 정해지는 최소 호 길이(MIN_ARC_PX)만큼의
-    // 각도가 필요하고, 내부 노드는 자식들이 필요로 하는 폭의 합만큼 필요하다. 이렇게 구한
-    // requiredWidthOf를 뿌리→잎 방향으로 내려가며 "부모 구간이 그 필요 폭보다 넓으면 여유를 그대로
-    // 쓰고, 부족하면 필요한 만큼만 넘어서서 확장"하는 방식으로 나누면, 수학적 귀납으로 모든 잎이
-    // 항상 자기 깊이의 최소 호 길이 이상을 확보한다(자식 필요 폭의 합을 부모가 그대로 물려받으므로
-    // 로컬 보정처럼 이웃 서브트리의 확장과 부딪힐 여지가 없다 — 애초에 필요한 만큼만 미리 계산해
-    // 배정하기 때문).
+    // (버그 수정) 잎(leaf) "개수" 비율로만 구간을 나누면 부모 구간이 이미 좁아진 곳에서 결과
+    // 폭이 0에 가까워져 형제가 겹쳤다("간격을 넓혀도 뭉쳐 있다"는 실측 피드백). 필요 폭이 부모
+    // 구간보다 크면 그 구간을 "넘어서" 확장하는 방식도 시도했지만, 그러면 그 팔(예: 1.e4)의
+    // 자손이 자기 몫의 부채꼴을 몇 배씩 넘어 이웃 팔(심지어 정반대 방향)의 영역까지 뻗어나가는
+    // 훨씬 더 심각한 문제로 이어졌다("자식 선이 남쪽으로 이어진다", "다른 첫 수가 안 보인다"는
+    // 피드백으로 확인). 지금은 구간을 절대 넘지 않되(아래 assignRange의 useWidth=hi-lo 고정),
+    // 그 구간 안에서 "이 서브트리가 실제로 얼마나 필요한가"(requiredWidthOf, 잎에서 뿌리
+    // 방향으로 한 번만 훑어 계산 — 잎은 자기 깊이의 최소 호 길이만큼, 내부 노드는 자식들 필요
+    // 폭의 합) 비율로 나눠 — 단순 개수 비율보다 실제 필요에 더 가깝게, 하지만 부모가 준 한도
+    // 안에서만 분배한다. 그래도 극단적으로 붐비는 자리는 다소 촘촘할 수 있는데, 그 나머지는
+    // 아래 반지름 나선(radiusBoost)이 보완한다.
     const MIN_ARC_PX = 130;
     const minSpanAtDepth = (depth) => { const r = radiusOfDepth(depth); return r > 0 ? MIN_ARC_PX / r : 0.08; };
     const requiredWidthOf = new Map();
@@ -9431,6 +9428,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 나선 모양이 드러난다. 각도가 부동소수점 정밀도 한계까지 우연히 같아지는 극히 드문 경우에
     // 대비해, 이 각도 기반 항 위에 아주 작은 전역 순서 항(SPIRAL_TIEBREAK)을 얹어 완전히 같은
     // 반지름이 나오는 일 자체를 막는다.
+    // (버그 수정) "부모가 준 구간보다 필요 폭이 크면 그만큼 구간을 넘어 확장한다"는 규칙이 진짜
+    // 문제였다 — 이론이 아주 넓고 깊은 팔(예: 1.e4)은 그 서브트리 전체의 필요 폭 합이 자기 몫인
+    // 부채꼴(~77°)을 몇 배씩 넘어서 버려서, 그 자식들이 원래 배정된 십자 방향을 완전히 벗어나
+    // 이웃 팔(심지어 정반대 방향)의 영역까지 뻗어나갔다("1.e4 자식들 선이 남쪽으로 이어진다",
+    // "다른 첫 수가 안 보인다"는 피드백으로 확인 — 스크롤이 이상해진 것도 좌표 범위가 감당 못 할
+    // 만큼 커졌기 때문). 구간은 다시 절대 넘지 않도록(useWidth를 항상 hi-lo로 고정) 못박는다 —
+    // 이러면 각 팔은 영원히 자기 부채꼴 안에만 머문다. 대신 이 구간 안에서는 여전히 필요 폭
+    // 비율대로 나눠(균등 분할보다 낫다) 최대한 고르게 펼치고, 그래도 남는 촘촘함은 아래 반지름
+    // 나선(radiusBoost)이 보완한다.
     const SPIRAL_ANGLE_COEF = 600, SPIRAL_TIEBREAK = 1;
     let spiralCounter = 0;
     const assignRange = (node, lo, hi) => {
@@ -9443,11 +9449,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // 않는다.
       const ordered = kids.slice().sort((a, b) => a.pos - b.pos);
       const totalReq = ordered.reduce((s, k) => s + (requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth)), 0) || 1;
-      // 부모가 물려준 폭이 자식들의 실제 필요 폭 합보다 넓으면 그 여유를 그대로 쓰고, 부족하면
-      // (=이 서브트리가 원래 몫보다 넓어야만 안 겹치면) 필요한 만큼 확장한다.
-      const useWidth = Math.max(hi - lo, totalReq);
-      const mid = (lo + hi) / 2;
-      let cur = mid - useWidth / 2;
+      const useWidth = hi - lo;
+      let cur = lo;
       for (const k of ordered) {
         const req = requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth);
         const w = (req / totalReq) * useWidth;
