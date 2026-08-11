@@ -9427,11 +9427,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // (coreWidth)만 리프 비율로 나누면 — 사촌 경계(서로 다른 부모의 서브트리 사이)에 있던 여유가
     // 상대적으로 형제 간격 쪽으로 옮겨진 것과 같은 효과를 낸다. 이 때문에 좁아진 자식 몫은 아래
     // 반지름 역산이 그만큼 자동으로 보상하므로 안전하게(겹침 없이) 더 뗄 수 있다.
-    const SIBLING_GAP_FRAC = 0.16;
-    // 리프 개수 기반 가중치 — 부모 구간을 자식들에게 "정확히" 그 총합만큼만 비례 배분한다. 예전
-    // 방식(최소 폭 하한 + useWidth 하드컷)은 예산이 부족하면 그 하한 약속 자체가 깨졌지만, 이번엔
-    // 애초에 폭에 대한 하한 약속을 하지 않고(폭은 그냥 리프 개수 비율) 그 대신 반지름 쪽에서
-    // 필요한 만큼 얼마든지 벌려 안전을 보장하므로 이런 깨짐이 구조적으로 있을 수 없다.
+    const SIBLING_GAP_FRAC = 0.1;
+    // 리프 개수 기반 가중치 — 부모 구간을 자식들에게 그 비율만큼 배분한다.
     const leafCount = new Map();
     for (const it of items) {
       const kids = childrenOf.get(it.key);
@@ -9463,34 +9460,30 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       }
     };
     for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF);
-    // (기능) "부모·자녀 간 거리는 위 조건을 만족시키는 최솟값으로 가장 나중에 결정" 요청 대응 —
-    // 각도 구간이 다 정해진 뒤에야(가장 나중에) 그 구간에서 SAFE_GAP을 만족하는 최소 반지름을
-    // 역산한다. 부모의 최종 반지름을 자식이 그대로 참조해야 하므로(자식은 부모보다 항상 더 멀리),
-    // items(후위 순서)가 아니라 이 팔의 뿌리에서부터 위→아래로 따로 훑는다. MIN_RADIAL_STEP은
-    // 연결선이 항상 뚜렷한 길이·방향을 갖도록 하는 최소한의 바닥값일 뿐, SAFE_GAP 요구가 더 크면
-    // 그쪽이 항상 이긴다(진짜 "최솟값" 결정).
-    // (버그 수정) 처음엔 각 노드가 "자기 자신의" 구간 폭만 보고 자기 반지름을 독립적으로 역산했는데
-    // (need = SAFE_GAP/node.slotWidth), 실측해보니 오히려 최소 거리가 더 나빠졌다(52px까지) — 두
-    // 인접 형제의 구간 폭이 서로 크게 다르면(한쪽은 거대한 서브트리라 넓고, 바로 옆은 자손이
-    // 거의 없어 아주 좁은 경우가 흔하다), 좁은 쪽만 자기 폭 기준으로 반지름을 키워도 그 반지름에서
-    // 실제 이웃과의 각도 차이(Δθ)는 두 폭의 "평균"에 가까워 자기 폭의 절반 수준만 보장되는 셈이라
-    // SAFE_GAP의 절반 정도만 지켜졌다. 부모 하나의 모든 직계 자식은 반지름을 공유하게 하고, 그
-    // 반지름을 "가장 좁은 자식의 폭" 기준으로 정하면, 임의의 두 인접 형제 사이 각도차는 항상 그
-    // 최솟값 이상이 되어(각자 폭이 최솟값보다 크거나 같으므로) 같은 반지름에서 호 길이가 반드시
-    // SAFE_GAP 이상이 되는 것이 수학적으로 보장된다.
-    // (버그 수정) 실측해보니 가장 가까운 쌍이 형제가 아니라 부모-자식(예: "4.e3"↔"4...Nf6")이었다 —
-    // 갈라지지 않고 한 줄로 죽 이어지는 강제 변화(형제가 하나뿐인 구간)는 자식의 각도가 부모와
-    // 거의 같아(Δθ≈0), 그 경우 실제 거리는 거의 전적으로 반지름 차이(MIN_RADIAL_STEP)만으로
-    // 결정된다. 70처럼 SAFE_GAP보다 훨씬 작은 값을 바닥으로 쓰면 그 구간에서 부모·자식 블록이
-    // 거의 포개졌다 — 바닥값 자체를 SAFE_GAP과 같게 둬서, 각도가 전혀 안 벌어지는 최악의 경우에도
-    // 항상 SAFE_GAP 이상 떨어지도록 한다.
+    // (버그 수정) "부모·자녀 간격이 너무 멀어졌고, 블록 간격도 과하고, e4 갈래가 남쪽까지 번져
+    // 보인다" — 세 증상 모두 원인이 하나였다. 엄격한 구간 중첩(각 서브트리는 절대 부모가 준 각도
+    // 구간을 못 벗어남) 방식에서는, 형제 수가 2개 이상인 단계를 여러 번 거칠수록 리프 하나의 각도
+    // 몫이 매 단계 비율로 계속 곱해져 줄어든다 — 책 이론이 10수 넘게 여러 갈래로 계속 갈라지는
+    // 라인(흔하다)에서는 이게 기하급수적으로 작아져, 그 각도만으로 SAFE_GAP을 만족하려면 반지름을
+    // 수십만 px까지 키워야 했다(직접 실측: 최솟값이 -360만까지 감). 이러면 (1) 부모·자녀 간격 자체가
+    // 그만큼 벌어지고, (2) 그 폭발한 반지름에서는 각 팔에 남겨둔 부채꼴 각도(SECTOR_HALF)만으로도
+    // 절대 거리(호 길이)가 화면 전체를 뒤덮을 만큼 커져, 마치 e4(북쪽) 자손이 남쪽까지 번진 것처럼
+    // 보였다(실제로 방향이 뒤집힌 게 아니라 부채꼴이 지나치게 벌어져 다른 팔의 화면 영역까지
+    // 침범한 것). 각도 구간만으로 완전한 무겹침을 수학적으로 보장하려는 시도는 깊고 갈라짐이 많은
+    // 트리에서 근본적으로 반지름의 기하급수적 폭발을 요구한다는 뜻이므로, 한 단계당 반지름 증가폭
+    // 자체에 상한(MAX_RADIAL_STEP)을 둬 폭발을 막는다 — 그 대신 극단적으로 붐비는 아주 드문 자리는
+    // 약간의 촘촘함을 다시 감수한다(사용자가 우선순위로 요청한 "합리적인 간격"을 "완벽한 무겹침"보다
+    // 우선한다).
     const MIN_RADIAL_STEP = SAFE_GAP;
+    const MAX_RADIAL_STEP = MIN_RADIAL_STEP * 20;
     const assignRadius = (node) => {
       const kids = childrenOf.get(node.key);
       if (!kids || !kids.length) return;
       let minW = Infinity;
       for (const k of kids) if (k.slotWidth < minW) minW = k.slotWidth;
-      const r = Math.max(SAFE_GAP / minW, node.r + MIN_RADIAL_STEP, ROOT_GAP);
+      const need = SAFE_GAP / minW;
+      const step = Math.min(Math.max(need - node.r, MIN_RADIAL_STEP), MAX_RADIAL_STEP);
+      const r = Math.max(node.r + step, ROOT_GAP);
       for (const k of kids) { k.r = r; assignRadius(k); }
     };
     for (const it of visible) if (it.depth === 1) { it.r = ROOT_GAP; assignRadius(it); }
