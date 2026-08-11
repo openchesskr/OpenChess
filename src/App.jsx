@@ -9059,8 +9059,24 @@ function schematicItemVisible(pan, zoom, viewportW, viewportH, it, boxW, boxH, i
 }
 // (v0.1.2 기능) insetTop — 검색창 등 캔버스 위에 떠 있는 UI가 뷰포트 상단을 가리는 만큼, 스냅 대상
 // 블록이 그 뒤에 숨어버리지 않도록 "화면에 보인다"고 칠 유효 영역의 위쪽을 그만큼 안으로 줄인다.
+// (버그 수정) 나침반형(방사형) 오프닝 트리는 네 팔(N/S/E/W) 사이 부채꼴 틈이 화면 규모에 비해
+// 아주 넓다 — 기존엔 "지금 화면에 블록이 하나라도 걸쳐 있는지"를 매 프레임 다시 훑어, 하나도 안
+// 걸치면 곧장 가장 가까운 블록으로 좌표를 스냅했다. 그런데 대각선으로 드래그하면 그 팔 사이 빈
+// 부채꼴을 순간적으로 지나가는 프레임이 흔했고, 그때마다 이 판정이 "빈 공간까지 나갔다"고 오판해
+// 드래그 도중 갑자기 엉뚱한 좌표로 튀는 것처럼 보였다(사용자 표현: "드래그가 잘 되지 않다가 갑자기
+// 다른 좌표로 순간이동"). 격자형(퍼즐) 레이아웃은 빈틈이 좁아 이 방식이 잘 맞지만, 방사형 레이아웃엔
+// 안 맞는다 — items 배열 대신 전체 콘텐츠의 사각 바운딩 박스({minX,maxX,minY,maxY})를 넘기면,
+// 그 박스 테두리에서만 부드럽게(연속적으로) 멈추고 중간에 스냅이 끼어들지 않는다.
 function clampSchematicPan(pan, zoom, viewportW, viewportH, items, boxW, boxH, insetTop = 0) {
-  if (!items || !items.length) return pan;
+  if (!items) return pan;
+  if (!Array.isArray(items)) {
+    const { minX, maxX, minY, maxY } = items;
+    return {
+      x: clampPanAxis(pan.x, viewportW, minX * zoom, (maxX + boxW) * zoom, boxW * zoom),
+      y: clampPanAxis(pan.y - insetTop, viewportH - insetTop, minY * zoom, (maxY + boxH) * zoom, boxH * zoom) + insetTop,
+    };
+  }
+  if (!items.length) return pan;
   for (const it of items) { if (schematicItemVisible(pan, zoom, viewportW, viewportH, it, boxW, boxH, insetTop)) return pan; }
   // 화면 중심(가려진 영역을 뺀 실제 유효 뷰포트 기준)이 콘텐츠 좌표계에서 지금 가리키는 지점에
   // 가장 가까운 블록을 찾는다.
@@ -9151,12 +9167,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // assignRange 참고)를 더해 "같은 깊이는 항상 같은 거리"라는 제약을 의도적으로 버렸다 —
   // 반지름 자체가 그리는 순서에 따른 정수 배수라 실수 각도가 아무리 가까워도 서로 다른 자리에
   // 놓이는 것이 구조적으로 보장된다.
-  const ROOT_GAP = 260, RADIAL_STEP = 420, RADIAL_GROWTH = 1.22;
+  // (버그 수정) "링 간격은 부모·자녀 블록 간의 거리를 늘려서 해결" — 같은 ply(형제·사촌) 간
+  // 중심으로부터의 거리 편차를 줄이는 여유를 나선 가중치(radiusBoost, 아래) 쪽에서 억지로
+  // 짜내는 대신, 애초에 각 depth 링 자체를 더 멀리 떨어뜨려 링 사이 여유 공간을 늘린다 —
+  // 그래야 radiusBoost의 상한(RADIUS_BOOST_CAP_FRAC)을 낮춰도(=링을 더 가지런하게 유지해도)
+  // 겹침을 피할 각도·반지름 여유가 그대로 충분하다.
+  const ROOT_GAP = 260, RADIAL_STEP = 600, RADIAL_GROWTH = 1.22;
   // (버그 수정) 백의 3번째 수(depth=5, 1=백1·2=흑1·3=백2·4=흑2·5=백3)부터는 형제·사촌 사이 간격을
   // 더 넓히기 위해, 그 지점부터 반지름이 늘어나는 비율 자체를 더 키운다(2단계 등비수열 — 경계
   // 지점까지는 기존 증가율 그대로 이어오다가, 그 이후로는 더 가파른 증가율로 갈아탄다. 경계에서
   // 값이 끊기지 않도록 그 시점의 "다음 한 걸음" 크기를 이어받아 시작한다).
-  const PHASE2_DEPTH = 5, RADIAL_GROWTH2 = 1.4;
+  const PHASE2_DEPTH = 5, RADIAL_GROWTH2 = 1.55;
   const radiusOfDepth = (depth) => {
     if (depth <= 1) return ROOT_GAP;
     const d1 = Math.min(depth, PHASE2_DEPTH) - 1;
@@ -9217,7 +9238,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 않는다 — 이후 더 뻗어나가는 블록은 (필요하면) 캔버스의 처음 예상 못 한 여백 밖으로도 그냥
   // 그려지고(SVG는 overflow:visible, 블록 div들도 잘리지 않음), 사용자가 팬해서 보면 된다.
   const centerFrozenRef = useRef(null);
-  const { items, edges, width, height, centerX, centerY, groups } = useMemo(() => {
+  const { items, edges, width, height, centerX, centerY, groups, bounds } = useMemo(() => {
     const items = []; const edges = [];
     const leafList = { N: [], S: [], E: [], W: [] };
     // 트리 구조(부모-자식, 방향)만 먼저 만들고, leaf 좌표는 아래에서 보간으로 채운다.
@@ -9463,7 +9484,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 비율(RADIUS_BOOST_CAP_FRAC)로 상한을 두면, 얕은 노드는 상한 자체가 작아 자기 링 근처에서만
     // 미세하게 움직이고, 깊은 노드는 상한도 커서 그만큼 더 넉넉하게 퍼질 여지를 얻는다 — 겹침을
     // 줄이는 효과는 유지하면서 "같은 깊이는 대략 비슷한 거리"라는 트리의 기본 골격은 지킨다.
-    const SPIRAL_ANGLE_COEF = 550, SPIRAL_TIEBREAK = 200, RADIUS_BOOST_CAP_FRAC = 4.2;
+    // (버그 수정) "거리 일관성은 더 늘리되, 링 간격(부모·자녀 거리)을 늘려서 해결" — 위
+    // radiusOfDepth가 이제 링 사이 여유를 훨씬 더 크게 벌려주므로(RADIAL_STEP·RADIAL_GROWTH2 확대),
+    // 겹침을 피하기 위해 radiusBoost 상한을 예전만큼 크게 둘 필요가 없어졌다. 상한을 낮춰
+    // "같은 ply는 중심에서 거의 같은 거리"에 더 가깝게 유지한다.
+    const SPIRAL_ANGLE_COEF = 550, SPIRAL_TIEBREAK = 200, RADIUS_BOOST_CAP_FRAC = 3.8;
     // (버그 수정) spiralCounter를 네 팔이 공유하면, 먼저 처리된 팔(예: 1.e4)의 서브트리 전체를
     // 다 훑고 나서야 다음 팔(1.d4)의 차례가 오는데, 그때 카운터가 이미 e4의 노드 수만큼(수백~
     // 수천) 커져 있어 1.d4 자신(정작 각도 편차는 0인데도)이 그 값을 그대로 물려받아 반지름
@@ -9530,7 +9555,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (const it of visible) {
       if (it.groupKey === it.key && it.groupFamLabel) groups.push({ key: it.key, name: it.groupFamLabel, x: it.x, y: it.y });
     }
-    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups };
+    const bounds = { minX: minX + centerX, maxX: maxX + centerX, minY: minY + centerY, maxY: maxY + centerY };
+    return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups, bounds };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
   // (버그 수정) 검색해서 오프닝을 고르면 그 갈래만 남기고 나머지를 다 숨기던 방식이 오히려 트리
   // 전체 맥락을 잃게 해 불편하다는 피드백 — 이제 트리는 항상 전체를 보여주고, 대신 고른 오프닝으로
@@ -9580,6 +9606,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const selectionLockRef = useRef(false);
   const itemsRef = useRef(items);
   useEffect(() => { itemsRef.current = items; }, [items]);
+  const boundsRef = useRef(bounds);
+  useEffect(() => { boundsRef.current = bounds; }, [bounds]);
   const selectedPathRef = useRef(selectedPath);
   useEffect(() => { selectedPathRef.current = selectedPath; }, [selectedPath]);
   const panRef = useRef(pan);
@@ -9618,7 +9646,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
     const z = zoomRef.current, nz = clampZoom(z + delta);
     if (nz === z) return;
-    const nextPan = clampSchematicPan(anchoredZoomPan(panRef.current, z, nz, rect.width / 2, rect.height / 2), nz, rect.width, rect.height, items, boxW, boxH, SCHEMATIC_TOP_INSET);
+    const nextPan = clampSchematicPan(anchoredZoomPan(panRef.current, z, nz, rect.width / 2, rect.height / 2), nz, rect.width, rect.height, bounds, boxW, boxH, SCHEMATIC_TOP_INSET);
     setPan(nextPan);
     setZoom(nz);
     checkSelectionDrift(nextPan, nz);
@@ -9670,7 +9698,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const raw = { x: dragRef.current.px + (e.clientX - dragRef.current.sx) * DRAG_SCROLL_MULT, y: dragRef.current.py + (e.clientY - dragRef.current.sy) * DRAG_SCROLL_MULT };
     // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 드래그해 갈 수 없도록 화면 크기 기준으로 한계를 둔다.
     const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-    const next = clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, items, boxW, boxH, SCHEMATIC_TOP_INSET);
+    const next = clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, bounds, boxW, boxH, SCHEMATIC_TOP_INSET);
     setPan(next);
     // (버그 수정) 여기 있던 zoom은 이 핸들러가 만들어진 렌더 시점에 클로저로 붙잡힌 값이라, 비행
     // 애니메이션이 매 프레임 zoom을 바꾸는 동안에는 금방 낡은 값이 된다 — 항상 최신 값을 담는
@@ -9695,7 +9723,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         const raw = { x: p.x - e.deltaX, y: p.y - e.deltaY };
         // (v0.1.2 기능) 블록이 하나도 없는 빈 공간까지 휠로 팬해 갈 수 없도록 한계를 둔다.
         const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-        const next = clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, itemsRef.current, boxW, boxH, SCHEMATIC_TOP_INSET);
+        const next = clampSchematicPan(raw, zoomRef.current, rect.width, rect.height, boundsRef.current, boxW, boxH, SCHEMATIC_TOP_INSET);
         checkSelectionDrift(next, zoomRef.current);
         return next;
       });
