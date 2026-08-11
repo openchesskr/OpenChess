@@ -9145,11 +9145,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 각 팔이 곧게 뻗는 격자가 아니라, 같은 깊이(수 순서)의 블록은 항상 중심에서 같은 거리(반지름)에
   // 놓이고 형제 사이의 "퍼짐" 값(spread, 기존 leaf 보간 캐시를 그대로 재사용)이 각도로 변환되는
   // 진짜 방사형(radial) 트리로 뻗어나간다.
-  // 반지름은 오직 깊이만의 함수(RADIUS_OF_DEPTH)라 "같은 단계는 항상 같은 거리" 조건을 그대로
-  // 만족하고, 매 단계 늘어나는 폭(RADIAL_STEP)에 더해 깊이의 제곱에 비례하는 여유(RADIAL_QUAD)를
-  // 얹어 깊을수록(보통 갈래도 함께 늘어나므로) 원둘레 자체가 더 넉넉히 넓어지도록 한다.
-  const ROOT_GAP = 300, RADIAL_STEP = 1100, RADIAL_QUAD = 145;
-  const radiusOfDepth = (depth) => ROOT_GAP + RADIAL_STEP * (depth - 1) + RADIAL_QUAD * (depth - 1) * (depth - 1);
+  // 반지름은 오직 깊이만의 함수(radiusOfDepth)라 "같은 단계는 항상 같은 거리" 조건을 그대로
+  // 만족한다. (버그 수정) 형제 각도 구간은 그 팔 전체(수백 개에 이르는 모든 잎)의 몫을 나눠 갖는
+  // assignRange 방식이라, 깊은 곳으로 갈수록(자손이 누적될수록) 개별 구간 자체가 점점 좁아진다 —
+  // 예전엔 반지름을 깊이의 2차식(depth²)으로만 늘렸는데, 그 정도 증가로는 좁아지는 구간 폭을 따라
+  // 잡지 못해 결국 화면 둘레(호의 길이 = 반지름×각도)가 다시 줄어들며 깊은 곳에서 재차 겹쳐
+  // 보였다. 반지름을 깊이마다 일정 비율(RADIAL_GROWTH)씩 커지는 등비수열 합으로 늘려(사실상
+  // 지수적으로) 증가폭 자체가 매 단계 더 커지게 해, 좁아지는 구간을 항상 웃도는 여유를 확보한다.
+  const ROOT_GAP = 300, RADIAL_STEP = 1100, RADIAL_GROWTH = 1.35;
+  const radiusOfDepth = (depth) => depth <= 1 ? ROOT_GAP : ROOT_GAP + RADIAL_STEP * (Math.pow(RADIAL_GROWTH, depth - 1) - 1) / (RADIAL_GROWTH - 1);
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
   // 절대 맞닿지 않는 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게
   // 서로 겹치지 않게 재귀적으로 나눠 준다.)
@@ -9631,18 +9635,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const chain = [];
     let cur = target;
     while (cur) { chain.unshift(cur); const p = parentOf.get(cur.key); cur = p && p.depth >= 1 ? p : null; }
-    const ccx = centerX + boxW / 2, ccy = centerY + boxH / 2, half = CHIP_SIZE / 2;
-    const pts = [[ccx, ccy]];
+    // (v0.3.2 버그 수정) 방사형 좌표계에서 centerX/centerY는 이미 그 자체로 칩의 중심(반지름 0인
+    // 지점)이다 — 예전 격자형 레이아웃 때 쓰던 +boxW/2,+boxH/2 보정을 그대로 남겨 두면 칩의 실제
+    // 렌더 위치(아래 CHIP_SIZE 배치와도 어긋남)와 이 좌표가 서로 달라져, 동서남북 팔의 시작점이
+    // 칩 중심에서 boxW·boxH만큼씩 어긋나 보이는 비대칭이 생겼다.
+    const pts = [[centerX, centerY]];
     let prev = null;
     for (const node of chain) {
       if (prev) pts.push(...schematicElbow(prev, node));
-      else {
-        const nc = coord(node);
-        if (node.dir === "N") pts.push([ccx, ccy - half], [ccx, nc.y + boxH]);
-        else if (node.dir === "S") pts.push([ccx, ccy + half], [ccx, nc.y]);
-        else if (node.dir === "E") pts.push([ccx + half, ccy], [nc.x, ccy]);
-        else pts.push([ccx - half, ccy], [nc.x + boxW, ccy]);
-      }
+      else { const nc = coord(node); pts.push([nc.x + boxW / 2, nc.y + boxH / 2]); }
       prev = node;
     }
     const tc = coord(target);
@@ -9906,12 +9907,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
               짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
           {(() => {
-            const ccx = centerX + boxW / 2, ccy = centerY + boxH / 2, half = CHIP_SIZE / 2;
+            // (v0.3.2 버그 수정) centerX/centerY는 방사형 좌표계의 진짜 중심(반지름 0)이라, 예전
+            // 격자형 레이아웃 때처럼 +boxW/2,+boxH/2를 더할 필요가 없다 — 이 보정이 남아 있으면
+            // 칩과 팔 사이 트레이스 선이 팔마다 boxW·boxH만큼씩 다르게 어긋나 십자가 비대칭으로
+            // 보였다.
+            const ccx = centerX, ccy = centerY, half = CHIP_SIZE / 2;
             const traces = {
-              N: [ccx, ccy - half, ccx, centerY - ROOT_GAP + boxH],
-              S: [ccx, ccy + half, ccx, centerY + ROOT_GAP],
-              E: [ccx + half, ccy, centerX + ROOT_GAP, ccy],
-              W: [ccx - half, ccy, centerX - ROOT_GAP + boxW, ccy],
+              N: [ccx, ccy - half, ccx, centerY - ROOT_GAP + boxH / 2],
+              S: [ccx, ccy + half, ccx, centerY + ROOT_GAP - boxH / 2],
+              E: [ccx + half, ccy, centerX + ROOT_GAP - boxW / 2, ccy],
+              W: [ccx - half, ccy, centerX - ROOT_GAP + boxW / 2, ccy],
             };
             return Object.entries(traces).map(([dir, [x1, y1, x2, y2]]) => (
               <line key={"chip-trace-" + dir} className={electric ? "dex-surge-line" : undefined} x1={x1} y1={y1} x2={x2} y2={y2} stroke={electric ? SCHEMATIC_ELECTRIC : T.brass} strokeWidth={electric ? 3 : 2} opacity={electric ? 1 : 0.5} strokeLinecap="round" style={electric ? { strokeDasharray: "7 5" } : undefined} />
@@ -9921,7 +9926,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
-        <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title="회로에 전류 흘리기" style={{ position: "absolute", left: centerX + boxW / 2 - CHIP_SIZE / 2, top: centerY + boxH / 2 - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, cursor: "pointer", zIndex: 2 }}>
+        <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title="회로에 전류 흘리기" style={{ position: "absolute", left: centerX - CHIP_SIZE / 2, top: centerY - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, cursor: "pointer", zIndex: 2 }}>
           <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + (electric ? SCHEMATIC_ELECTRIC : T.brass), boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
           {[0, 1, 2].map((i) => (
             <React.Fragment key={i}>
