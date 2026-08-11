@@ -6574,9 +6574,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
             {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, lineHeight: 1.25 }}>{title}</div>}
             {/* (사용자 요청) 어두운 배경 위에서 색을 더 짙게(color-mix로 검정을 섞음) 했더니 오히려
-                더 안 보였다 — 반대로 배경과 대비가 가장 뚜렷한 크림색(T.ivoryHi)으로 통일한다. */}
-            <div style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{evTxt || (kind === "book" ? "이론" : "—")}</div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>{QLABEL[kind]}</div>
+                더 안 보였다 — 반대로 배경과 대비가 가장 뚜렷한 크림색으로 통일한다. (재조정) T.ivoryHi
+                (#FAF2E2)는 흰색에 너무 가까워 보인다는 피드백으로, 더 진한 크림색인 T.ivory(#EBDDC4)로 낮춘다. */}
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ivory }}>{evTxt || (kind === "book" ? "이론" : "—")}</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: T.ivory }}>{QLABEL[kind]}</div>
           </div>
         </div>
         {expectedPuzzleId && onOpenPuzzle && (
@@ -11712,51 +11713,26 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const done = pathNodes.length > 0 && pathNodes.length % 2 === 1 && passKids.length === 0;   // 리프(사용자 수)에 도달
   const doneTag = done ? (curNode.tag || pathNodes.map((n) => stripSuffix(n.san)).join(" ")) : null;
   const userToMove = !done && isUserPly && !wrong && !reply && !intro && allLines.length > 0;
-  // (v0.2.7 기능) 퍼즐 창을 열자마자 평가치 막대가 실제로 살아 움직이는 걸 보여준다 — 최종적으로
-  // 화면에 남는 숫자는 여전히 생성 시 미리 계산해 둔 curNode.ev(모든 유저에게 항상 같은 값, 아래
-  // EvalBar의 기본 cp)를 그대로 쓰지만, 그 자리에 멈춰 있기 전까지는 지금 포지션을 실제 엔진으로
-  // 짧게 다시 돌려(ReviewPage 엔진 라인과 같은 단일PV 진행 콜백 방식) depth가 깊어지는 과정을 그대로
-  // 보여준다. 검색이 끝나면(또는 다음 포지션으로 넘어가면) 다시 조용히 정적인 curNode.ev로 돌아간다
-  // — v0.2.6에서 "매번 다시 평가해 값이 미묘하게 흔들리는" 문제를 없애려 정적 표시로 바꿨던 결정은
-  // 유지하되, 이 짧은 탐색 애니메이션 동안만 예외적으로 실시간 값을 보여준다.
-  const [liveEval, setLiveEval] = useState(null);
-  const [liveDepth, setLiveDepth] = useState(null);
-  // (버그 수정) 탐색이 끝나면(searchDone) liveEval을 곧장 null로 비우고 정적인 curNode.ev로
-  // 돌아갔는데, curNode.ev는 트리 루트나 개발자가 손으로 만든/구버전 노드에서 애초에 없는 경우가
-  // 흔했다(아래 meta 보강 effect가 이런 누락을 채우지만 모식도 전용으로만 쓰이고 있었음) — 그러면
-  // 막대가 "실제 엔진 값이 잠깐 보였다가 0.00에 멈추는" 것처럼 보였다(사용자 제보 영상과 일치).
-  // 이 포지션에서 마지막으로 실제 계산된 값을 settledEval에 별도로 남겨 두고, curNode.ev가 없을
-  // 때의 최종 폴백으로 쓴다 — curNode.ev가 있으면(대부분의 정식 생성 퍼즐) 여전히 그 정적값을
-  // 우선하므로 v0.2.6에서 고친 "값이 미묘하게 흔들리는" 문제는 재발하지 않는다.
+  // (v0.2.7에서 도입했던 "평가치 막대가 depth가 깊어지며 실시간으로 움직이는" 연출을 되돌린다 —
+  // 정확한 수를 두어도 막대 숫자가 한동안 계속 바뀌는 것처럼 보여 오히려 "내가 둔 수가 계속
+  // 재평가되고 있다"는 불안한 인상을 준다는 피드백을 받았다. ReviewPage(analyzeGame)가 게임 전체를
+  // 한 번만 평가해 두고 그 정적값(evalDisp)을 그대로 쓰는 것과 같은 방식으로 맞춘다: curNode.ev
+  // (생성 시 미리 계산해 둔, 모든 유저에게 항상 같은 값)가 있으면 그 값을 즉시·고정적으로 쓰고,
+  // 트리 루트나 구버전 노드처럼 curNode.ev가 아예 없을 때만 REVIEW_DEPTH·REVIEW_MOVETIME_MS로
+  // 딱 한 번 평가해 그 결과를 settledEval에 고정한다(중간 depth 값을 순차로 보여주지 않는다).
   const [settledEval, setSettledEval] = useState(null);
   useEffect(() => {
-    setLiveEval(null); setLiveDepth(null); setSettledEval(null);
+    setSettledEval(null);
+    if (curNode.ev != null) return; // 이미 정적으로 기록된 값이 있으면 다시 평가하지 않는다
     if (!engine || engine.status !== "ready") return;
     let cancelled = false;
-    const STEP_MS = 55;
-    const pending = [];
-    let playing = false, searchDone = false;
-    const playNext = () => {
-      if (cancelled) return;
-      if (!pending.length) { playing = false; if (searchDone) { setLiveEval(null); setLiveDepth(null); } return; }
-      playing = true;
-      const next = pending.shift();
-      setLiveEval(next.ev); setLiveDepth(next.depth); setSettledEval(next.ev);
-      setTimeout(playNext, STEP_MS);
-    };
-    engine.evaluate(sansToFen(curSans), 18, (partial) => {
-      if (cancelled) return;
-      const w = posEvalToWhite(partial, curSans);
-      if (!w) return;
-      pending.push({ ev: w, depth: partial.depth });
-      if (!playing) playNext();
-    }, 900, "puzzle-eval").then(() => {
-      if (cancelled) return;
-      searchDone = true;
-      if (!playing) { setLiveEval(null); setLiveDepth(null); }
+    engine.evaluate(sansToFen(curSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS, "puzzle-eval").then((ev) => {
+      if (cancelled || !ev) return;
+      const w = posEvalToWhite(ev, curSans);
+      if (w) setSettledEval(w);
     });
     return () => { cancelled = true; };
-  }, [curSans.join(" "), engine && engine.status]);
+  }, [curSans.join(" "), engine && engine.status, curNode.ev]);
   const [boardSize, boardRef] = useBoardSize(380);
   // (20차 UX4) 화면이 짧아 스크롤을 맨 위로 올려도 보드 하단이 여전히 하단 탭 뒤에 걸치는 경우를
   // 대비해, 보드의 scrollMarginBottom(아래 style)만큼 여유를 두고 딱 필요한 만큼만 아래로 더 스크롤한다.
@@ -12261,14 +12237,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
-                평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. (v0.2.7) 다만 창을 연 직후처럼
-                실제 엔진이 이 포지션을 짧게 다시 훑는 동안(liveDepth)에는 그 진행 중인 값을 보여줘
-                막대가 살아 움직이는 것처럼 느껴지게 하고, 검색이 끝나면 다시 정적인 값으로 돌아간다.
-                (버그 수정) curNode.ev가 없는 노드(트리 루트, 개발자가 손으로 만든/구버전 노드)에서는
-                검색이 끝나는 순간 없는 정적값으로 돌아가며 0.00으로 고정돼 보였다 — settledEval(위,
-                이 포지션에서 실제로 계산된 마지막 값)을 curNode.ev 다음 폴백으로 써서, 정식 생성
-                퍼즐은 여전히 정적값을 그대로 쓰되 그 값이 없을 때만 방금 검색한 실제 값이 남아 있게 한다. */}
-            <div style={{ marginTop: 12 }}><EvalBar cp={liveDepth != null ? (liveEval || curNode.ev) : (curNode.ev ?? settledEval)} width={boardSize} depth={liveDepth} /></div>
+                평가할 때마다 값이 미묘하게 흔들려 보이는 일이 없다. (v0.2.7에서 여기에 depth가
+                깊어지는 과정을 그대로 보여주는 실시간 연출을 넣었었는데, 정확한 수를 두어도 막대
+                숫자가 계속 바뀌는 것처럼 보인다는 피드백으로 되돌렸다 — ReviewPage처럼 항상 고정값만
+                보여준다.) curNode.ev가 없는 노드(트리 루트, 개발자가 손으로 만든/구버전 노드)만
+                settledEval(위, REVIEW_DEPTH로 한 번만 계산해 고정해 둔 값)로 대신한다. */}
+            <div style={{ marginTop: 12 }}><EvalBar cp={curNode.ev ?? settledEval} width={boardSize} /></div>
             <div className="flex justify-center gap-2" style={{ marginTop: 12 }}>
               <button onClick={restart} className="press" style={{ padding: "6px 14px", borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{done ? "다시 풀기" : "처음부터"}</button>
               {/* (버그 수정) 힌트 버튼이 현재 단계(1~3)를 그대로 보여준다 — 3단계에 닿으면 꽉 채운
@@ -13277,11 +13251,23 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             </div>
           </div>
           {recommended.length > 0 ? (
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
-              <AnimatePresence mode="popLayout">
-                {recommended.map((p, i) => <FadeIn key={"rec-" + p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}
-              </AnimatePresence>
-            </div>
+            // (사용자 요청) 모바일에서는 그리드로 줄바꿈되는 대신, 미해결 목록의 오프닝별 카드
+            // (openByOpening, 위 참고)와 같은 형태로 — 점선 테두리 안에 한 줄 가로 스크롤로 보여준다.
+            narrowPuzzleSearch ? (
+              <div style={{ border: "1.5px dashed rgba(196,154,80,.45)", borderRadius: 14, padding: "8px 8px 10px" }}>
+                <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+                  <AnimatePresence mode="popLayout">
+                    {recommended.map((p, i) => <FadeIn key={"rec-" + p.id} index={i} style={{ width: 148, minWidth: 148, flexShrink: 0 }}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}
+                  </AnimatePresence>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
+                <AnimatePresence mode="popLayout">
+                  {recommended.map((p, i) => <FadeIn key={"rec-" + p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}
+                </AnimatePresence>
+              </div>
+            )
           ) : (
             <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: "14px 16px", color: T.inkSoft, fontSize: 12.5 }}>
               {rankMap[rankPeriod] ? "이 기간엔 아직 풀이 기록이 없어요 — 다른 기간을 눌러보세요." : "추천 목록을 불러오는 중…"}
@@ -14385,6 +14371,13 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.3.3", date: "2026.8.11", dev: ["openchesskr"], items: [
+      "집중 학습 화면의 평가치·등급 글자색을 좀 더 진한 크림색으로 바꿨어요 — 이전엔 흰색에 너무 가까웠어요.",
+      "모바일에서 추천 퍼즐을 한 줄 가로 스크롤로, 점선 테두리 안에 모아서 보여드려요.",
+      "퍼즐 풀이 화면의 평가치 막대가 정답을 둬도 한동안 계속 숫자가 바뀌는 것처럼 보이던 문제를 고쳤어요 — 이제 게임 리뷰처럼 항상 고정된 값만 보여드려요.",
+    ]
+  },
   {
     version: "0.3.2", date: "2026.8.11", dev: ["openchesskr"], items: [
       "내 기물이 아군 폰이 지켜주는 칸으로 갈 때, 결국 손해가 폰 한 개뿐인데도 가끔 \"탁월한 수\"로 잘못 표시되던 문제를 고쳤어요.",

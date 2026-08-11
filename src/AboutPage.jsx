@@ -707,6 +707,24 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.3.3", date: "2026.8.11",
+    summary: "퍼즐 풀이 화면의 평가치 막대가 정답을 둬도 계속 숫자가 바뀌던 문제를 고쳤어요. 모바일 추천 퍼즐은 한 줄 가로 스크롤로, 집중 학습 글자색은 더 진한 크림색으로 다듬었어요.",
+    mascot: {
+      intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "퍼즐 평가치 막대가 이제 정답을 두면 딱 멈춰요 — 더 이상 헷갈리지 않아요!" },
+      outro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "right", text: "모바일에서 추천 퍼즐도 한눈에 쓱 넘겨볼 수 있어요!" },
+    },
+    highlight: { kind: "icon", Icon: Wrench, color: "#E0995F", label: "퍼즐 평가치 막대 안정화" },
+    sections: [
+      { cat: "fix", items: [
+        "퍼즐 풀이 화면의 평가치 막대가 정답을 두어도 한동안 계속 숫자가 바뀌는 것처럼 보이던 문제를 고쳤어요 — 이제 게임 리뷰처럼 항상 고정된 값만 보여드려요.",
+      ] },
+      { cat: "ui", items: [
+        "집중 학습 화면의 평가치·등급 글자색을 좀 더 진한 크림색으로 바꿨어요.",
+        "모바일에서 추천 퍼즐을 점선 테두리 안 한 줄 가로 스크롤로 모아서 보여드려요.",
+      ] },
+    ],
+  },
+  {
     version: "0.3.2", date: "2026.8.11",
     summary: "내 기물이 아군 폰이 지켜주는 칸으로 갈 때, 결국 손해가 폰 한 개뿐인데도 가끔 \"탁월한 수\"로 잘못 표시되던 문제를 고쳤어요.",
     mascot: {
