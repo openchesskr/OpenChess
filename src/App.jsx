@@ -9411,7 +9411,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 폭의 합) 비율로 나눠 — 단순 개수 비율보다 실제 필요에 더 가깝게, 하지만 부모가 준 한도
     // 안에서만 분배한다. 그래도 극단적으로 붐비는 자리는 다소 촘촘할 수 있는데, 그 나머지는
     // 아래 반지름 나선(radiusBoost)이 보완한다.
-    const MIN_ARC_PX = 55;
+    const MIN_ARC_PX = 65;
     const minSpanAtDepth = (depth) => { const r = radiusOfDepth(depth); return r > 0 ? MIN_ARC_PX / r : 0.08; };
     const requiredWidthOf = new Map();
     for (const it of items) {
@@ -9463,7 +9463,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 비율(RADIUS_BOOST_CAP_FRAC)로 상한을 두면, 얕은 노드는 상한 자체가 작아 자기 링 근처에서만
     // 미세하게 움직이고, 깊은 노드는 상한도 커서 그만큼 더 넉넉하게 퍼질 여지를 얻는다 — 겹침을
     // 줄이는 효과는 유지하면서 "같은 깊이는 대략 비슷한 거리"라는 트리의 기본 골격은 지킨다.
-    const SPIRAL_ANGLE_COEF = 400, SPIRAL_TIEBREAK = 130, RADIUS_BOOST_CAP_FRAC = 6.5;
+    const SPIRAL_ANGLE_COEF = 550, SPIRAL_TIEBREAK = 200, RADIUS_BOOST_CAP_FRAC = 4.2;
     // (버그 수정) spiralCounter를 네 팔이 공유하면, 먼저 처리된 팔(예: 1.e4)의 서브트리 전체를
     // 다 훑고 나서야 다음 팔(1.d4)의 차례가 오는데, 그때 카운터가 이미 e4의 노드 수만큼(수백~
     // 수천) 커져 있어 1.d4 자신(정작 각도 편차는 0인데도)이 그 값을 그대로 물려받아 반지름
@@ -9472,8 +9472,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 다른 팔에서 몇 개를 훑었는지가 이 팔의 배치에 전혀 영향을 주지 않게 한다.
     const assignRange = (node, lo, hi, spiralCounterRef) => {
       node.angle = (lo + hi) / 2;
+      // (버그 수정) counter를 로그로 먼저 눌러봤는데, 정작 겹치는 쌍 다수가 "counter 값 자체는
+      // 이미 큰데 두 값의 차이는 작은" 경우라 로그 압축이 그 차이(delta)까지 함께 짓눌러버려
+      // 오히려 역효과였다(실측: 겹침이 더 늘었음). 그대로 선형 counter를 쓰고, 상한(cap)만
+      // tanh로 완만하게 씌운다.
       const rawBoost = SPIRAL_ANGLE_COEF * Math.abs(node.angle - DIR_ANGLE[node.dir]) + SPIRAL_TIEBREAK * (spiralCounterRef.n++);
-      node.radiusBoost = Math.min(rawBoost, radiusOfDepth(node.depth) * RADIUS_BOOST_CAP_FRAC);
+      const cap = radiusOfDepth(node.depth) * RADIUS_BOOST_CAP_FRAC;
+      node.radiusBoost = cap * Math.tanh(rawBoost / cap);
       const kids = childrenOf.get(node.key);
       if (!kids || !kids.length) return;
       // 안정적으로 캐싱된 pos(형제 순서, centerOrderByAdopt로 인기 라인이 가운데 오도록 이미
