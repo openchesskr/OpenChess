@@ -8854,9 +8854,26 @@ function useOpeningTreeAuto(priorityRef) {
     setVersion((v) => v + 1);
     // (버그 수정) 이론 수는 깊이 제한 없이 계속 펼치게 되면서 노드 수가 예전보다 늘 수 있어, 이론
     // 트리가 잘리지 않도록 상한을 여유 있게 올린다(이론 자체는 개발자가 큐레이션한 유한한 집합).
-    const MAX_CONCURRENT = 5, MAX_NODES = 4000;
+    // (v0.3.2 성능) 트리가 깊어지는 속도(구조 확장)는 더 이상 채택률 조회(리체스 fetch, 아래
+    // enqueueFetch 참고)를 기다리지 않으므로, 동시에 펼칠 수 있는 노드 수(MAX_CONCURRENT)를
+    // 늘려도 리체스 쪽에는 부담이 안 간다.
+    const MAX_CONCURRENT = 12, MAX_NODES = 4000;
     let active = 0, started = 0;
     const queue = [{ path: [], depth: 0 }];
+    // (v0.3.2 성능) 채택률(리체스 익스플로러) 조회는 트리 구조 확장과 분리된 별도의 동시성 한도로
+    // 처리한다 — API에 한꺼번에 너무 많은 요청을 보내지 않으면서도, 구조 확장 자체는 네트워크
+    // 응답을 전혀 기다리지 않고 계속 진행된다.
+    const MAX_FETCH_CONCURRENT = 8;
+    let fetchActive = 0;
+    const fetchQueue = [];
+    const runFetchQueue = () => {
+      while (fetchActive < MAX_FETCH_CONCURRENT && fetchQueue.length) {
+        const job = fetchQueue.shift();
+        fetchActive++;
+        job().finally(() => { fetchActive--; runFetchQueue(); });
+      }
+    };
+    const enqueueFetch = (job) => { fetchQueue.push(job); runFetchQueue(); };
     const scoreOf = (path) => {
       const p = priorityRef && priorityRef.current;
       if (!p) return 0;
@@ -8877,26 +8894,36 @@ function useOpeningTreeAuto(priorityRef) {
         run(job).finally(() => { active--; runNext(); });
       }
     };
-    async function run({ path, depth }) {
+    // (v0.3.2 성능) 이론(book) 여부는 SNAP 스냅샷·CONTENT만으로 네트워크 없이 즉시 판정할 수
+    // 있다 — 예전엔 채택률을 주는 리체스 fetch가 끝나야만(await) 자식을 큐에 넣었는데, 정작 그
+    // 결과(adopt/games/wdl)는 다음 자식을 펼칠지 말지에는 전혀 쓰이지 않는 부가 정보였다. 이제
+    // rawMoves를 받는 즉시(네트워크 왕복 전에) 자식을 큐에 넣고 다음 노드로 넘어가며, 채택률
+    // 병합은 별도의 동시성 한도(enqueueFetch)로 백그라운드에서 진행해 트리 구조가 훨씬 빨리
+    // 깊어진다 — 화면엔 먼저 수 이름만 뜨고, 채택률·전적은 뒤이어 채워진다.
+    function run({ path, depth }) {
       const key = path.join(" ");
       const node = snapNode(path);
       const rawMoves = node ? node.moves.slice() : (path.length === 0 && SNAP.tree[""] ? SNAP.tree[""].moves.slice() : []);
       addsFor(key).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
-      if (!rawMoves.length) { mapRef.current.set(key, []); if (!cancelled) bumpVersion(); return; }
-      let lcMoves = [];
-      try { const lc = await fetchLichess(path); lcMoves = (lc && lc.moves) || []; } catch { }
-      if (cancelled) return;
-      const merged = rawMoves.map((m) => {
-        const hit = lcMoves.find((x) => x.san === m.san);
-        return { ...m, adopt: hit ? hit.adopt : 0, games: hit ? hit.games : 0, wdl: hit ? hit.wdl : null, name: m.name || (hit && hit.name) || null };
-      });
-      mapRef.current.set(key, merged);
+      if (!rawMoves.length) { mapRef.current.set(key, []); if (!cancelled) bumpVersion(); return Promise.resolve(); }
+      mapRef.current.set(key, rawMoves.map((m) => ({ ...m, adopt: 0, games: 0, wdl: null })));
       bumpVersion();
       // (v0.3.2 개편) 도감 오프닝 트리는 이제 이론 수(book)만 보여준다 — 채택률이 높다는 이유만으로
       // 딸려 오던 비이론 수는 더 이상 트리에 펼치지 않는다(이론 수는 개발자가 큐레이션한 유한한
       // 집합이라 전부 펼쳐도 안전하다).
-      for (const m of merged) { if (isBookMoveAt(key, m.san)) queue.push({ path: [...path, m.san], depth: depth + 1 }); }
-      runNext();
+      for (const m of rawMoves) { if (isBookMoveAt(key, m.san)) queue.push({ path: [...path, m.san], depth: depth + 1 }); }
+      enqueueFetch(async () => {
+        let lcMoves = [];
+        try { const lc = await fetchLichess(path); lcMoves = (lc && lc.moves) || []; } catch { }
+        if (cancelled) return;
+        const merged = rawMoves.map((m) => {
+          const hit = lcMoves.find((x) => x.san === m.san);
+          return { ...m, adopt: hit ? hit.adopt : 0, games: hit ? hit.games : 0, wdl: hit ? hit.wdl : null, name: m.name || (hit && hit.name) || null };
+        });
+        mapRef.current.set(key, merged);
+        bumpVersion();
+      });
+      return Promise.resolve();
     }
     runNext();
     return () => { cancelled = true; if (bumpTimer) clearTimeout(bumpTimer); };
@@ -9124,10 +9151,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const ROOT_GAP = 300, RADIAL_STEP = 440, RADIAL_QUAD = 58;
   const radiusOfDepth = (depth) => ROOT_GAP + RADIAL_STEP * (depth - 1) + RADIAL_QUAD * (depth - 1) * (depth - 1);
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
-  // 절대 맞닿지 않는 여백을 남긴다. (아래 assignAngle이 각 부모의 직계 자식들에게 이 부채꼴의
-  // 몫(CHILD_SECTOR)을 재귀적으로 나눠 준다 — 형제 사이 각도 간격을 그 팔 전체의 spread가 아니라
-  // 항상 "직계 부모 기준 로컬"로 정하므로, 트리 어디서든 형제끼리 고르게 퍼진다.)
+  // 절대 맞닿지 않는 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게
+  // 서로 겹치지 않게 재귀적으로 나눠 준다.)
   const SECTOR_HALF = (Math.PI / 4) * 0.86;
+  // (버그 수정) 형제 블록 사이가 더 넓어 보이도록, 구간을 잎 수 비율대로 나누기 전에 형제 경계마다
+  // 이 만큼의 각도를 고정 여백으로 미리 떼어 둔다(assignRange 참고).
+  const SIBLING_GAP = 0.05;
   const DIR_ANGLE = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
@@ -9374,11 +9403,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // 않는다.
       const ordered = kids.slice().sort((a, b) => a.pos - b.pos);
       const total = ordered.reduce((s, k) => s + (leafCountOf.get(k.key) || 1), 0) || 1;
+      // (버그 수정) 형제 사이 간격이 더 넓어 보이도록, 형제 수만큼 생기는 경계(ordered.length-1개)
+      // 각각에 고정 여백(SIBLING_GAP)을 미리 떼어 놓고, 남은 폭만 잎 수 비율대로 나눈다 — 잎이
+      // 하나뿐이라 자기 몫이 아주 작은 형제도 옆 형제와 최소한 이 여백만큼은 떨어져 보인다.
+      const gapTotal = Math.min((hi - lo) * 0.6, SIBLING_GAP * Math.max(0, ordered.length - 1));
+      const usable = (hi - lo) - gapTotal;
+      const gap = ordered.length > 1 ? gapTotal / (ordered.length - 1) : 0;
       let cur = lo;
       for (const k of ordered) {
-        const span = (hi - lo) * ((leafCountOf.get(k.key) || 1) / total);
+        const span = usable * ((leafCountOf.get(k.key) || 1) / total);
         assignRange(k, cur, cur + span);
-        cur += span;
+        cur += span + gap;
       }
     };
     for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF);
@@ -9403,46 +9438,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     if (!centerFrozenRef.current) centerFrozenRef.current = { x: -minX + PAD, y: -minY + PAD };
     const centerX = centerFrozenRef.current.x, centerY = centerFrozenRef.current.y;
     for (const it of visible) { it.x += centerX; it.y += centerY; }
-    // (기능) 칭호가 있는 오프닝만 하나의 단위로 묶어 점선 영역으로 표시 — groupKey별로 그 그룹에
-    // 속한 모든 노드(뿌리 + 자손)의 바운딩 박스를 구한다.
-    const groupMembers = new Map();
-    for (const it of visible) {
-      if (!it.groupKey) continue;
-      if (!groupMembers.has(it.groupKey)) groupMembers.set(it.groupKey, []);
-      groupMembers.get(it.groupKey).push(it);
-    }
-    const GROUP_PAD = 26;
-    // (버그 수정) 예전엔 영역이 너무 커지면(MAX_GROUP_SPAN) 아예 그리지 않고 건너뛰었는데, 칭호
-    // 탭 13개는 원래도 이 필터가 막으려던 "아무 상관 없는 광범위한 영역"이 아니라 사용자가 정확히
-    // 보고 싶어하는 오프닝 하나의 진짜 경계다 — 배경 로딩이 계속되며 자손이 늘어 영역이 커질수록
-    // 오히려 점점 사라졌다가 다시 나타나길 반복하는 것처럼 보였다(트리가 전개될수록 점선이
-    // 사라지는 문제). 크기 제한 없이 항상 그린다.
-    let groupBoxes = [];
-    for (const [gk, members] of groupMembers) {
-      const root = members.find((m) => m.key === gk);
-      if (!root || !root.groupFamLabel) continue;
-      let gminX = Infinity, gminY = Infinity, gmaxX = -Infinity, gmaxY = -Infinity;
-      for (const m of members) {
-        if (m.x < gminX) gminX = m.x; if (m.y < gminY) gminY = m.y;
-        if (m.x + boxW > gmaxX) gmaxX = m.x + boxW; if (m.y + boxH > gmaxY) gmaxY = m.y + boxH;
-      }
-      const gx = gminX - GROUP_PAD, gy = gminY - GROUP_PAD, gw = gmaxX - gminX + GROUP_PAD * 2, gh = gmaxY - gminY + GROUP_PAD * 2;
-      groupBoxes.push({ key: gk, name: root.groupFamLabel, dir: root.dir, x: gx, y: gy, w: gw, h: gh, rootX: root.x, rootY: root.y });
-    }
-    // (버그 수정) 서로 다른 갈래끼리 영역이 일부만 겹치면 지저분해 보인다 — 더 큰 쪽만 남긴다
-    // (13개 오프닝은 서로 중첩되지 않으므로 진짜 포함 관계가 생길 일은 없지만, 레이아웃이 우연히
-    // 겹치는 경우에 대비한 안전장치로 남겨둔다).
-    const gContains = (a, b) => a.x <= b.x && a.y <= b.y && a.x + a.w >= b.x + b.w && a.y + a.h >= b.y + b.h;
-    const gOverlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-    groupBoxes.sort((a, b) => b.w * b.h - a.w * a.h);
+    // (v0.3.2 개편) 오프닝 영역을 점선 테두리로 묶어 보여주던 것을 없앴다 — 이름 라벨만 그 오프닝에
+    // 진입하는 첫 수(그룹의 뿌리 노드) 블록 바로 옆에 남겨 둔다.
     const groups = [];
-    for (const g of groupBoxes) {
-      let ok = true;
-      for (const p of groups) {
-        if (gContains(g, p) || gContains(p, g)) continue;
-        if (gOverlaps(g, p)) { ok = false; break; }
-      }
-      if (ok) groups.push(g);
+    for (const it of visible) {
+      if (it.groupKey === it.key && it.groupFamLabel) groups.push({ key: it.key, name: it.groupFamLabel, x: it.x, y: it.y });
     }
     return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups };
   }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
@@ -9887,13 +9887,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
-        {/* (기능) 칭호(이름)가 붙은 오프닝만 점선 테두리로 한 단위로 묶어 표시한다. */}
-        {groups.map((g) => (
-          <div key={"group-" + g.key} style={{ position: "absolute", left: g.x, top: g.y, width: g.w, height: g.h, border: "1.5px dashed rgba(138,90,43,.5)", borderRadius: 14, pointerEvents: "none", zIndex: 0 }} />
-        ))}
-        {/* (기능) 이름 라벨은 점선 영역 왼쪽 위 바깥의 빈 여백에 항상 고정해 둔다(박스 안에 넣으면
-            자손 블록들과 겹치므로, 늘 비어 있는 바깥 여백에 둔다) — 라벨을 옮기는 대신, 그 오프닝의
-            최상위 수(root) 쪽을 이 모서리에 가깝게 배치한다(위 pos 계산의 v0.1.1 주석 참고). */}
+        {/* (v0.3.2 개편) 칭호(이름)가 붙은 오프닝을 점선 테두리로 묶어 보여주던 것을 없애고, 이름
+            라벨만 그 오프닝에 진입하는 첫 수(그룹 뿌리) 블록 바로 위쪽에 남겨 둔다. */}
         {groups.map((g) => (
           <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.x - 6, top: g.y - 30, maxWidth: 220, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
             <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200, background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
