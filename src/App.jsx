@@ -9530,9 +9530,67 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       }
       prevR = r;
     }
+    // (사용자 요청) "이름끼리 겹치거나 이름과 블록이 겹치는 경우, 주변 사촌·형제 블록끼리도 부모
+    // 블록과의 거리를 조금씩 다르게 해서 겹치지 않게" — 어떤 노드가 이름 라벨을 갖는지는 좌표 없이
+    // 이름 텍스트만으로 정해지므로, 아래 it.x/it.y 계산보다 먼저 구조적으로 확정해 둔다(반지름
+    // 지터에도, 뒤의 라벨 배열 구성에도 그대로 재사용).
+    const labelNameMap = new Map(); // key -> 표시할 이름
+    for (const it of visible) {
+      if (it.groupKey === it.key && it.groupFamLabel) labelNameMap.set(it.key, it.groupFamLabel);
+    }
+    // (사용자 요청) "간격도 넉넉해 보이는데 그냥 트리의 모든 수에 오프닝 명칭을 표시하자" — 위
+    // 그룹 라벨은 13개 대표 오프닝(TITLE_OPENINGS)에 진입하는 뿌리 노드에만 붙는데, 깊이 제한 없이
+    // 트리 전체 모든 노드에 대해 그 대표 목록에 없는 이름이라도 전부 보여준다. 이 수 자신에게 ECO
+    // 이름이 없으면(책 이름은 매 수마다 새로 붙는 게 아니라 마지막 이름 붙은 조상에서 그대로
+    // 이어지는 성격이라 흔한 일이다) 그 이름을 이어받도록 openingNameOf(조상 탐색)로 보완한다.
+    // (성능/버그 수정) "모든 수"를 문자 그대로 적용해 3300여 개 노드 전부에 라벨을 붙여봤더니,
+    // 어차피 이름이 안 바뀌고 그대로 이어지는 긴 구간 내내 똑같은 이름표가 매 노드마다 반복돼
+    // 라벨 수천 개가 생겼다. 부모의 이름을 effectiveNameOf로 재귀 메모이즈해 조상까지 한 번에
+    // 알아내고, 그 값이 부모와 "달라지는"(=새 오프닝/바리에이션으로 갈라지는) 지점에서만 라벨을
+    // 새로 붙인다.
+    const effNameCache = new Map();
+    const effectiveNameOf = (it) => {
+      if (effNameCache.has(it.key)) return effNameCache.get(it.key);
+      // (버그 수정) "이름 없는 수가 몇 개 보인다" — it.name은 배경 로딩 중인 리체스 비동기 데이터에
+      // 의존해, 그 fetch가 아직 안 끝난(또는 애초에 리체스엔 없는) 노드는 일시적으로 비어 있었다.
+      // openingNameOf는 로컬 정적 스냅샷(SNAP)을 즉시 조회하므로 그 공백을 추가로 메워준다.
+      const own = nameOverride(it.path.slice(0, -1).join(" "), it.san) ?? it.name ?? openingNameOf(it.path) ?? null;
+      let result = own;
+      if (!result) { const parent = parentOf.get(it.key); result = parent ? effectiveNameOf(parent) : null; }
+      effNameCache.set(it.key, result);
+      return result;
+    };
+    for (const it of visible) {
+      if (labelNameMap.has(it.key)) continue;
+      const nm = effectiveNameOf(it);
+      if (!nm) continue;
+      const parent = parentOf.get(it.key);
+      const parentNm = parent ? effectiveNameOf(parent) : null;
+      if (nm === parentNm) continue; // 부모와 이름이 같으면(그대로 이어지는 중) 중복 라벨 생략
+      labelNameMap.set(it.key, nm);
+    }
+    // (사용자 요청) 라벨이 붙는 노드가 같은 depth·같은 팔(arm) 안에서 다른 라벨 붙은 노드와 바로
+    // 인접하면(=서로 라벨이 부딪힐 가능성이 큰 자리) 반지름을 아주 살짝(최대 ±100px, 화면 배율
+    // 보정) 어긋나게 한다 — 각도(assignRange가 이미 정한 값)와 SAFE_GAP(반지름 최소 증가폭 계산)은
+    // 전혀 건드리지 않고, 이 값 자체는 오직 it.x/it.y 최종 좌표에만 더해지는 "시각적 지터"다.
+    const RADIUS_JITTER_MAX = 100 / SCHEMATIC_ZOOM_LABEL_BASE;
+    const RADIUS_JITTER_STEP = RADIUS_JITTER_MAX / 2;
+    for (const [, list] of byArmDepth) {
+      let seq = 0;
+      for (let i = 0; i < list.length; i++) {
+        const it = list[i];
+        if (!labelNameMap.has(it.key)) continue;
+        const prevLabeled = i > 0 && labelNameMap.has(list[i - 1].key);
+        const nextLabeled = i < list.length - 1 && labelNameMap.has(list[i + 1].key);
+        if (!prevLabeled && !nextLabeled) continue;
+        seq++;
+        const mag = Math.min(RADIUS_JITTER_MAX, RADIUS_JITTER_STEP * seq);
+        it.rJitter = (seq % 2 === 1 ? 1 : -1) * mag;
+      }
+    }
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
-      const r = it.r;
+      const r = it.r + (it.rJitter || 0);
       it.x = r * Math.cos(it.angle) - boxW / 2;
       it.y = r * Math.sin(it.angle) - boxH / 2;
     }
@@ -9550,45 +9608,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const centerX = centerFrozenRef.current.x, centerY = centerFrozenRef.current.y;
     for (const it of visible) { it.x += centerX; it.y += centerY; }
     // (v0.3.2 개편) 오프닝 영역을 점선 테두리로 묶어 보여주던 것을 없앴다 — 이름 라벨만 그 오프닝에
-    // 진입하는 첫 수(그룹의 뿌리 노드) 블록 바로 옆에 남겨 둔다.
+    // 진입하는 첫 수(그룹의 뿌리 노드) 블록 바로 옆에 남겨 둔다. 어떤 노드가 라벨을 갖는지는 이미
+    // 위(labelNameMap, 반지름 지터보다 먼저 구조적으로 확정)에서 다 정해 뒀으므로 여기서는 최종
+    // 좌표(it.x/it.y — 지터·중심 이동까지 다 반영된 값)만 붙여 배열로 만든다.
     const groups = [];
-    const labeledKeys = new Set();
     for (const it of visible) {
-      if (it.groupKey === it.key && it.groupFamLabel) { groups.push({ key: it.key, name: it.groupFamLabel, x: it.x, y: it.y }); labeledKeys.add(it.key); }
-    }
-    // (사용자 요청) "간격도 넉넉해 보이는데 그냥 트리의 모든 수에 오프닝 명칭을 표시하자" — 위
-    // 그룹 라벨은 13개 대표 오프닝(TITLE_OPENINGS)에 진입하는 뿌리 노드에만 붙는데, 깊이 제한 없이
-    // 트리 전체 모든 노드에 대해 그 대표 목록에 없는 이름이라도 전부 보여준다. 이 수 자신에게 ECO
-    // 이름이 없으면(책 이름은 매 수마다 새로 붙는 게 아니라 마지막 이름 붙은 조상에서 그대로
-    // 이어지는 성격이라 흔한 일이다) 그 이름을 이어받도록 openingNameOf(조상 탐색)로 보완한다.
-    // (성능/버그 수정) "모든 수"를 문자 그대로 적용해 3300여 개 노드 전부에 라벨을 붙여봤더니,
-    // 어차피 이름이 안 바뀌고 그대로 이어지는 긴 구간(예: 시실리안 방어가 20수 넘게 이어지는 라인)
-    // 내내 똑같은 이름표가 매 노드마다 반복돼(시각적으로도 의미 없이 중복) 라벨 수천 개가 생겼고,
-    // 그 각각을 서로 겹치지 않게 배치하는 아래 충돌 회피 루프가 O(라벨 수²)라 실측 클릭 반응이
-    // 7초 넘게 걸릴 만큼 느려졌다. 부모의 이름을 effectiveNameOf로 재귀 메모이즈해 조상까지 한 번에
-    // 알아내고, 그 값이 부모와 "달라지는"(=새 오프닝/바리에이션으로 갈라지는) 지점에서만 라벨을
-    // 새로 붙인다 — 트리 구조상 실제로 의미 있는 전환점만 남아 라벨 수가 크게 줄고, 배치도 다시
-    // 빨라진다.
-    const effNameCache = new Map();
-    const effectiveNameOf = (it) => {
-      if (effNameCache.has(it.key)) return effNameCache.get(it.key);
-      // (버그 수정) "이름 없는 수가 몇 개 보인다" — it.name은 배경 로딩 중인 리체스 비동기 데이터에
-      // 의존해, 그 fetch가 아직 안 끝난(또는 애초에 리체스엔 없는) 노드는 일시적으로 비어 있었다.
-      // openingNameOf는 로컬 정적 스냅샷(SNAP)을 즉시 조회하므로 그 공백을 추가로 메워준다.
-      const own = nameOverride(it.path.slice(0, -1).join(" "), it.san) ?? it.name ?? openingNameOf(it.path) ?? null;
-      let result = own;
-      if (!result) { const parent = parentOf.get(it.key); result = parent ? effectiveNameOf(parent) : null; }
-      effNameCache.set(it.key, result);
-      return result;
-    };
-    for (const it of visible) {
-      if (labeledKeys.has(it.key)) continue;
-      const nm = effectiveNameOf(it);
-      if (!nm) continue;
-      const parent = parentOf.get(it.key);
-      const parentNm = parent ? effectiveNameOf(parent) : null;
-      if (nm === parentNm) continue; // 부모와 이름이 같으면(그대로 이어지는 중) 중복 라벨 생략
-      groups.push({ key: it.key, name: nm, x: it.x, y: it.y }); labeledKeys.add(it.key);
+      const nm = labelNameMap.get(it.key);
+      if (nm) groups.push({ key: it.key, name: nm, x: it.x, y: it.y });
     }
     // (사용자 요청) "블록과 겹치면 위가 아니라 아래에, 풀네임 전부, 다른 이름과도 안 겹치게 y좌표를
     // 조절" — 라벨을 실제로 그리기 전에, 그 라벨이 차지할 대략적인 사각형(글자 수 기반 폭 추정)을
