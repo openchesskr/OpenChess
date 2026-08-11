@@ -5,7 +5,7 @@ import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX,
+  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -3925,10 +3925,22 @@ function safeAreaDx(anchorRect, popupW, align, margin = 10) {
   if (naturalLeft + popupW > vw - margin) return (vw - margin) - (naturalLeft + popupW);
   return 0;
 }
+// (사용자 요청) 클릭·롱프레스로 여는 말풍선이 모바일에서 화면 밖으로 잘리는 문제를 근본적으로
+// 없앤다 — 가로는 위 safeAreaDx로 좌우 오프셋을 계산하고, 세로는 기준 요소가 화면 위쪽/아래쪽 중
+// 어디에 있는지에 따라 화면 중앙을 향하는 방향으로 여는 쪽(openDown)을 함께 정한다. 기준 요소가
+// 화면 위쪽 절반에 있으면(화면 중앙이 아래쪽) 아래로 열고, 아래쪽 절반에 있으면(화면 중앙이
+// 위쪽) 위로 연다 — 말풍선이 항상 화면 중앙 쪽을 향해 펼쳐지므로 위아래로 잘릴 일이 없다.
+function safeBubbleAnchor(anchorRect, popupW, align, margin = 10) {
+  if (!anchorRect || typeof window === "undefined") return { dx: 0, openDown: true };
+  return { dx: safeAreaDx(anchorRect, popupW, align, margin), openDown: anchorRect.top < window.innerHeight / 2 };
+}
 const CIRCLE_BADGE_DESC_W = 220;
 function CircleBadge({ kind, big, descOnClick }) {
   const [descOpen, setDescOpen] = useState(false);
   const [descDx, setDescDx] = useState(0);
+  // (사용자 요청) 화면 위쪽 절반의 아이콘이면 말풍선을 아래로, 아래쪽 절반이면 위로 열어 항상 화면
+  // 중앙 쪽을 향하게 한다 — 세로로 잘리지 않도록.
+  const [descOpenDown, setDescOpenDown] = useState(false);
   const anchorRef = useRef(null);
   const sz = big ? 36 : 26;
   // (v0.2.1) descOnClick — 아이콘을 클릭하면 등급 이름 + 조건/설명을 담은 말풍선을 토글한다.
@@ -3938,7 +3950,10 @@ function CircleBadge({ kind, big, descOnClick }) {
     e.stopPropagation();
     setDescOpen((v) => {
       const next = !v;
-      if (next && anchorRef.current) setDescDx(safeAreaDx(anchorRef.current.getBoundingClientRect(), CIRCLE_BADGE_DESC_W, "center"));
+      if (next && anchorRef.current) {
+        const { dx, openDown } = safeBubbleAnchor(anchorRef.current.getBoundingClientRect(), CIRCLE_BADGE_DESC_W, "center");
+        setDescDx(dx); setDescOpenDown(openDown);
+      }
       return next;
     });
   };
@@ -3948,14 +3963,15 @@ function CircleBadge({ kind, big, descOnClick }) {
       {descOpen && descOnClick && (
         <>
           <span onClick={(e) => { e.stopPropagation(); setDescOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <span style={{ position: "absolute", bottom: sz + 9, left: "50%", transform: "translateX(calc(-50% + " + descDx + "px))", width: CIRCLE_BADGE_DESC_W, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+          <span style={{ position: "absolute", ...(descOpenDown ? { top: sz + 9 } : { bottom: sz + 9 }), left: "50%", transform: "translateX(calc(-50% + " + descDx + "px))", width: CIRCLE_BADGE_DESC_W, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ width: 22, height: 22, borderRadius: "50%", background: QCOLOR[kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{badgeIcon(kind, 18)}</span>
               <span style={{ fontSize: 13, fontWeight: 800, color: QCOLOR[kind] }}>{QLABEL[kind]}</span>
             </span>
             <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink, lineHeight: 1.5, whiteSpace: "normal" }}>{QDESC[kind]}</span>
-            {/* 말풍선 꼬리는 팝업이 dx만큼 밀렸어도 항상 기준 아이콘을 가리키도록 반대로 보정한다. */}
-            <span style={{ position: "absolute", bottom: -7, left: "calc(50% - " + descDx + "px)", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }} />
+            {/* 말풍선 꼬리는 팝업이 dx만큼 밀렸어도 항상 기준 아이콘을 가리키도록 반대로 보정하고,
+                openDown 여부에 따라 위/아래 중 실제로 열린 방향의 반대쪽(기준 아이콘과 맞닿는 쪽)에 그린다. */}
+            <span style={{ position: "absolute", ...(descOpenDown ? { top: -7 } : { bottom: -7 }), left: "calc(50% - " + descDx + "px)", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, ...(descOpenDown ? { borderLeft: "1px solid " + QCOLOR[kind], borderTop: "1px solid " + QCOLOR[kind] } : { borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }) }} />
           </span>
         </>
       )}
@@ -11616,6 +11632,13 @@ function summarizePosition(board, userColor) {
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
 function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, engine, liveOn, canEdit, bumpContent }) {
   const theme = primaryTheme(puzzle);
+  // (사용자 요청) 좌상단 "일일 퍼즐로 선정된 기록" 배지 — 클릭하면 선정된 날짜를 말풍선으로 보여준다.
+  // 배지 자체가 카드 맨 위(top:12)에 고정돼 있어 그 위로 열 공간이 없으므로, 항상 아래로 열되
+  // (safeAreaDx로) 가로로만 화면 밖으로 잘리지 않게 보정한다.
+  const [dailyBubbleOpen, setDailyBubbleOpen] = useState(false);
+  const [dailyBubbleDx, setDailyBubbleDx] = useState(0);
+  const dailyBadgeRef = useRef(null);
+  useEffect(() => { setDailyBubbleOpen(false); }, [puzzle.id]);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
   // 분기 트리: 개발자 길이 재조정(CONTENT.puzzleOverrides — 모든 유저 공통) > 저장된 tree > 구버전 lines/solution
@@ -12157,6 +12180,33 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   return (
     <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
+      {/* (사용자 요청) 이 퍼즐이 과거 어느 날짜의 일일 퍼즐로 선정된 기록이 있으면(puzzleShare가
+          resolveDailyPuzzle의 isDaily/date를 그대로 서버에 보존해 두므로, 같은 id로 다시 열 때마다
+          이 값이 남아 있다) 좌상단에 책갈피 + "D" 배지를 띄운다. 클릭하면 그 날짜를 말풍선으로 보여준다. */}
+      {puzzle.isDaily && puzzle.date && (
+        <>
+          <button ref={dailyBadgeRef} onClick={(e) => {
+            e.stopPropagation();
+            setDailyBubbleOpen((v) => {
+              const next = !v;
+              if (next && dailyBadgeRef.current) setDailyBubbleDx(safeAreaDx(dailyBadgeRef.current.getBoundingClientRect(), 180, "left"));
+              return next;
+            });
+          }} aria-label="일일 퍼즐로 선정된 기록" title="일일 퍼즐로 선정된 기록" className="press" style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px 4px 6px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer" }}>
+            <Bookmark size={12} fill={T.brassHi} />
+            <span style={{ fontFamily: "'Black Ops One', cursive", fontSize: 11, lineHeight: 1 }}>D</span>
+          </button>
+          {dailyBubbleOpen && (
+            <>
+              <span onClick={(e) => { e.stopPropagation(); setDailyBubbleOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+              <span style={{ position: "absolute", top: 44, left: "calc(12px + " + dailyBubbleDx + "px)", width: 180, padding: "8px 11px", borderRadius: 9, background: T.ivoryHi, border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, fontSize: 11.5, fontWeight: 700, color: T.ink, textAlign: "center" }}>
+                {puzzle.date.replace(/-/g, "/")} 일일 퍼즐
+                <span style={{ position: "absolute", top: -7, left: "calc(28px - " + dailyBubbleDx + "px)", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderLeft: "1px solid " + T.brass, borderTop: "1px solid " + T.brass }} />
+              </span>
+            </>
+          )}
+        </>
+      )}
       <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
@@ -12868,12 +12918,14 @@ function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance,
     <div style={{ position: "relative", flex: "0 0 auto", width: DAILY_SLOT_W, scrollSnapAlign: "center", height: 250 }}>
       <button onClick={onOpen} aria-label={label} className="press" style={{ position: "absolute", left: "50%", top: 0, transform: "translateX(-50%)", opacity, transition: "opacity .22s ease", zIndex: isActive ? 3 : 1, background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: isActive ? T.brassHi : "#C9B58C", whiteSpace: "nowrap" }}>{label}</div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_CARD_W, padding: 8, borderRadius: 14, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + (isActive ? T.brass : "rgba(196,154,80,.45)"), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.55)" : "none" }}>
-          <div style={{ width: DAILY_BOARD_SIZE, height: DAILY_BOARD_SIZE, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#1C1006", border: "1px solid " + (isSolved ? "#A9C589" : "rgba(196,154,80,.5)"), position: "relative" }}>
-            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div style={{ width: 100, height: 100, borderRadius: 8, background: "rgba(255,255,255,.15)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
+        {/* (사용자 요청) 다른 퍼즐 블록(PuzzleCard)과 같은 크림색 카드 디자인으로 통일 — 어두운 ebony
+            그라데이션 대신 T.ivoryHi 크림 그라데이션, 해결 시엔 같은 연두색 그라데이션을 그대로 쓴다. */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_CARD_W, padding: 8, borderRadius: 14, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", border: "1px solid " + (isSolved ? "#A9C589" : (isActive ? T.brass : "#CDB98E")), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.4)" : "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E") }}>
+          <div style={{ width: DAILY_BOARD_SIZE, height: DAILY_BOARD_SIZE, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#FBF5E8", border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), position: "relative" }}>
+            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div style={{ width: 100, height: 100, borderRadius: 8, background: "rgba(0,0,0,.08)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
             {isSolved && <Check size={16} strokeWidth={3.5} style={{ position: "absolute", top: -6, right: -6, color: "#fff", background: T.best, borderRadius: 999, padding: 3, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
           </div>
-          {solveCountText(solveCount, null) && <div style={{ fontSize: 10.5, color: "#C9B58C", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
+          {solveCountText(solveCount, null) && <div style={{ fontSize: 10.5, color: "#2E6E2E", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
         </div>
       </button>
     </div>
@@ -14380,6 +14432,9 @@ const CHANGELOG = [
       "채팅·프로필·검색 창을 모바일에서 전체 화면으로 크게 볼 수 있어요.",
       "채팅에서 @아이디를 탭해 연 프로필 창을 닫으면, 저절로 다시 열리던 문제를 고쳤어요.",
       "채팅창에서 상대 프로필 사진이 안 보이던 경우를 고쳤어요.",
+      "일일 퍼즐 캐러셀도 다른 퍼즐 카드처럼 크림색 디자인으로 통일했어요.",
+      "퍼즐 풀이 화면에서 예전에 일일 퍼즐로 선정된 적 있는 퍼즐이면 좌상단에 책갈피 배지가 떠요 — 눌러보면 선정된 날짜를 알려드려요.",
+      "클릭·꾹 누르면 뜨는 말풍선(채팅 메시지 메뉴 포함)이 화면 위쪽/아래쪽 가장자리에서 잘리지 않도록, 항상 화면 중앙 쪽을 향해 열리게 했어요.",
     ]
   },
   {
@@ -16250,6 +16305,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const [menuFor, setMenuFor] = useState(null);
   // (v0.2.6 버그 수정) 메뉴가 화면 가장자리 근처의 메시지에서 열리면 잘리던 문제 — 열 때 계산해 둔 안전한 가로 오프셋.
   const [menuDx, setMenuDx] = useState(0);
+  // (사용자 요청) 메시지가 화면 위쪽 절반에 있으면 메뉴를 아래로, 아래쪽 절반이면 위로 열어 항상
+  // 화면 중앙 쪽을 향하게 한다 — 세로로 잘리지 않도록.
+  const [menuOpenDown, setMenuOpenDown] = useState(false);
   // (v0.1.4 기능) 퍼즐 카드의 "전달" 버튼으로 다른 친구에게 다시 공유할 때 띄우는 시트의 대상 퍼즐.
   const [forwardTarget, setForwardTarget] = useState(null);
   // (v0.2.6 기능) 프로필 사진·멘션을 눌렀을 때 보여줄 프로필 모달 대상 아이디.
@@ -16417,7 +16475,8 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
               const anchorEl = e.currentTarget;
               longPressTimerRef.current = setTimeout(() => {
                 setMenuFor(m.id);
-                setMenuDx(safeAreaDx(anchorEl.getBoundingClientRect(), 92, mine ? "right" : "left"));
+                const { dx, openDown } = safeBubbleAnchor(anchorEl.getBoundingClientRect(), 92, mine ? "right" : "left");
+                setMenuDx(dx); setMenuOpenDown(openDown);
                 dragRef.current = null; setDrag(null);
               }, 480);
             };
@@ -16446,7 +16505,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {menuFor === m.id && (
-                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, ...(menuOpenDown ? { top: "calc(100% + 4px)" } : { bottom: "calc(100% + 4px)" }), transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                       <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Send size={10} />전달</button>
                       {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>}
                     </div>
@@ -16484,7 +16543,8 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
               const anchorEl = e.currentTarget;
               longPressTimerRef.current = setTimeout(() => {
                 setMenuFor(m.id);
-                setMenuDx(safeAreaDx(anchorEl.getBoundingClientRect(), 92, "right"));
+                const { dx, openDown } = safeBubbleAnchor(anchorEl.getBoundingClientRect(), 92, "right");
+                setMenuDx(dx); setMenuOpenDown(openDown);
                 dragRef.current = null; setDrag(null);
               }, 480);
             }
@@ -16538,7 +16598,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                 <span style={{ display: "inline-block", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
                   {/* (v0.1.4 기능) 꾹 눌러 연 수정/삭제 메뉴 — 이모티콘 메시지는 수정 대상이 아니므로 본문(body)이 있을 때만 수정 버튼을 보여준다. */}
                   {menuFor === m.id && (
-                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, bottom: "calc(100% + 4px)", transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, ...(menuOpenDown ? { top: "calc(100% + 4px)" } : { bottom: "calc(100% + 4px)" }), transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                       {m.body != null && <button onClick={() => startEdit(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>수정</button>}
                       <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
                     </div>

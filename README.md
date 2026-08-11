@@ -49,6 +49,15 @@ v0.3.1에서 "배경과 대비가 가장 뚜렷하다"는 이유로 이 텍스�
 **버그 수정 — 채팅창에서 상대 프로필 사진이 표시되지 않던 문제**
 `ChatPanel`은 상대 아바타를 보여줄 `otherPhoto` prop을 받지만, `FriendsModal`에서 채팅을 시작하는 두 진입점(친구 프로필 서브뷰의 채팅 버튼, 친구 목록 줄의 채팅 아이콘) 모두 `setChatWith({ uid, username })`만 호출하고 `photo`를 전혀 넘기지 않았다 — 그 결과 `FriendsModal`을 거쳐 시작한 채팅은 항상 이니셜 아바타로만 보였다(반면 `ChatsModal`에서 시작한 채팅은 `chatWith.photo`를 제대로 넘겨 정상 표시됐다). 두 진입점 모두 이미 화면에 갖고 있던 프로필 정보(`p.photo`, `profiles[u].pub.photo`)를 `setChatWith` 호출에 함께 담고, `FriendsModal`의 `<ChatPanel>` 렌더에도 빠져 있던 `otherPhoto={chatWith.photo}`를 추가했다.
 
+**UI — 일일 퍼즐 캐러셀을 다른 퍼즐 카드와 같은 크림색 디자인으로**
+`DailyPuzzleCarouselItem`은 다른 퍼즐 카드(`PuzzleCard`)와 달리 어두운 ebony 그라데이션(`linear-gradient(180deg,#3A2516,#241509)`) 배경을 쓰고 있어 사이트 전체의 퍼즐 카드 톤과 겉돌았다. 카드 배경·보드 프레임 배경·텍스트 색을 전부 `PuzzleCard`가 쓰는 크림 팔레트(`T.ivoryHi`→`#E2D2B2` 그라데이션, 해결 시 연두색 그라데이션, 테두리 `#CDB98E`/`#A9C589`, 그림자 `0 3px 0 ...`)로 맞췄다.
+
+**기능 — 퍼즐 풀이 화면에 "일일 퍼즐로 선정된 기록" 배지**
+`resolveDailyPuzzle`이 만드는 일일 퍼즐 객체는 원래부터 `isDaily: true`·`date: "YYYY-MM-DD"` 필드를 갖고 있고, `puzzleShare`가 이 객체를 통째로(다른 일반 퍼즐과 마찬가지로) `puzzles` 테이블의 `data` JSONB 컬럼에 그대로 저장한다 — 즉 같은 id로 이 퍼즐을 다시 열면(검색·공유 링크·기록 등 어떤 경로로든) `puzzle.isDaily`/`puzzle.date`가 항상 그대로 남아 있다. `PuzzleSolver` 헤더 좌상단에 `puzzle.isDaily && puzzle.date`일 때만 책갈피 아이콘 + "D"(Black Ops One 폰트) 배지를 새로 추가하고, 누르면 "YYYY/MM/DD 일일 퍼즐" 말풍선을 보여준다.
+
+**UI — 클릭·롱프레스로 여는 말풍선이 화면 가장자리에서 잘리지 않도록 방향 보정**
+기존 `safeAreaDx`(수 체계 설명 말풍선·채팅 롱프레스 메뉴·알림 카드 공용)는 가로 오프셋만 보정하고, 세로 방향(위/아래 중 어느 쪽으로 열지)은 항상 고정이었다 — 화면 위쪽 가까이의 기준 요소에서 열리는 말풍선이 여전히 위쪽으로 잘릴 수 있었다. 새 `safeBubbleAnchor(anchorRect, popupW, align, margin)`가 가로 오프셋(`safeAreaDx` 재사용)과 함께, 기준 요소가 화면 위쪽 절반에 있으면 아래로(`openDown:true`), 아래쪽 절반에 있으면 위로 여는 방향을 함께 계산해 — 말풍선이 항상 화면 중앙 쪽을 향해 펼쳐지도록 했다. `CircleBadge`(수 체계 설명)와 채팅 롱프레스 메뉴 두 곳에 적용했고(말풍선 꼬리도 열린 방향에 맞춰 반대쪽 모서리로 이동), 새로 추가한 일일 퍼즐 배지 말풍선도 처음부터 이 방식으로 만들었다(다만 배지 자체가 카드 맨 위에 고정돼 위로 열 공간이 없어 가로 보정만 적용).
+
 ### OpenChess v0.3.1 — 2026/8/10
 
 **버그 수정 — 마스터 대국이 항상 정확히 5판만 표시되던 문제**
