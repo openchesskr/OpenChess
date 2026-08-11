@@ -9003,8 +9003,14 @@ function centerOrderByAdopt(kids) {
 // 괴랄해 보인다는 피드백 — 주요 첫 수 4개(1.e4/1.d4/1.c4/1.Nf3)만 정중앙에 모아 두고, 그
 // 아래 갈래를 각각 동서남북 한 방향으로 뻗어나가게 한다. 나머지 덜 주요한(SIDESTEPPING) 첫 수
 // (1.Nc3/1.b4/1.f4/1.g3)는 이 나침반형 모식도에서는 아예 다루지 않는다.
-const ROOT_ORDER = ["e4", "d4", "c4", "Nf3"];
-const DIR_OF_ROOT = { e4: "N", d4: "E", c4: "S", Nf3: "W" };
+// (버그 수정) "부모·자녀 거리는 좋은데 겹침이 너무 많다" — 네 첫 수가 각자 ~90°(엄밀히는 그보다
+// 좁은 SECTOR_HALF)씩 나눠 쓰던 각도 예산을 특단으로 늘린다. 대표 두 수(e4/d4)만 남기고 각각
+// 화면의 위쪽 절반·아래쪽 절반(180°)을 통째로 쓰게 하면, 같은 부모·자녀 반지름 간격을 유지한
+// 채로도 각 팔의 형제·리프가 나눠 쓸 각도 예산이 이전의 2배 이상(4개가 나누던 ~90°×0.94 대비
+// 2개가 나누는 180°×0.94)으로 늘어나, 깊은 단계에서 각도 몫이 기하급수적으로 줄어드는 근본
+// 문제(반지름 폭증의 원인이자 겹침의 원인)가 그만큼 완화된다.
+const ROOT_ORDER = ["e4", "d4"];
+const DIR_OF_ROOT = { e4: "N", d4: "S" };
 const SCHEMATIC_BOX_W = 98, SCHEMATIC_BOX_H = 44;
 // (v0.0.6) 예전엔 실제 CSS 배율 1.0을 "100%"라고 표시했는데, 다들 첫 화면에서 곧장 75%로 축소해야
 // 편하게 보인다는 피드백이 이어졌다 — 그 "75%"를 새 기준(100%)으로 다시 정의한다. zoom 상태 값
@@ -9167,11 +9173,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 정확히 십자 위 이 거리에 고정)만 여기 남고, 나머지 반지름 로직은 전부 아래 useMemo 안(SAFE_GAP
   // 기반 assignRadius)으로 옮겼다.
   const ROOT_GAP = 260;
-  // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
-  // 절대 맞닿지 않는 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게
-  // 서로 겹치지 않게 재귀적으로 나눠 준다.)
-  const SECTOR_HALF = (Math.PI / 4) * 0.94;
-  const DIR_ANGLE = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
+  // 팔 하나가 차지하는 부채꼴의 절반 각도 — 이제 팔이 e4(북쪽 절반)·d4(남쪽 절반) 둘뿐이라 각각
+  // 180°(PI)를 통째로 쓸 수 있다. 정확히 180°면 반대쪽 팔과 맞닿으므로(0°/180° 경계) 살짝 좁게
+  // (0.94배) 잡아 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게 서로
+  // 겹치지 않게 재귀적으로 나눠 준다.)
+  const SECTOR_HALF = (Math.PI / 2) * 0.94;
+  const DIR_ANGLE = { N: -Math.PI / 2, S: Math.PI / 2 };
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
   // (버그 수정) 세 가지 방식을 각각 시도했지만 모두 문제가 있었다.
@@ -9199,7 +9206,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 순서를 한 번 정하면 캐시에 고정하고, 새 형제는 그 뒤에 그냥 덧붙이기만 한다(있던 형제의
   // 순서·좌우 배치는 절대 다시 안 건드림).
   const orderCacheRef = useRef(new Map());
-  const posCacheRef = useRef({ N: new Map(), S: new Map(), E: new Map(), W: new Map() });
+  const posCacheRef = useRef({ N: new Map(), S: new Map() });
   // (v0.3.2 개편) 예전엔 네 방향의 루트(e4/d4/c4/Nf3 자신)가 internal 노드라 "자식들 pos의
   // 가운데"로 매번 다시 계산돼, 그 값이 살짝만 바뀌어도 spread(= it.pos - rootPos)를 통해 그
   // 방향 전체(수천 개 블록)가 통째로 밀리는 문제가 있어 rootPos를 한 번 고정된 기준점으로 얼려
@@ -9218,7 +9225,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const centerFrozenRef = useRef(null);
   const { items, edges, width, height, centerX, centerY, groups, bounds } = useMemo(() => {
     const items = []; const edges = [];
-    const leafList = { N: [], S: [], E: [], W: [] };
+    const leafList = { N: [], S: [] };
     // 트리 구조(부모-자식, 방향)만 먼저 만들고, leaf 좌표는 아래에서 보간으로 채운다.
     // (성능) board는 그 노드의 자식 채택 등급(assignTiers)을 매길 때만 필요한데, 예전엔 매
     // 내부 노드마다 boardFromSans(path)로 루트부터 그 깊이만큼 수순을 처음부터 다시 재생했다 —
@@ -9325,7 +9332,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 상한 안에서) 최소한으로 미는 아래 방식을 그대로 유지한다.
     const LEAF_RESERVE = DEX_MAX_CHILDREN * 3;
     const MIN_GAP = 1;
-    for (const dir of ["N", "S", "E", "W"]) {
+    for (const dir of ["N", "S"]) {
       const cache = posCacheRef.current[dir];
       const order = leafList[dir];
       let i = 0;
@@ -9982,9 +9989,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           {/* (기능) 검색으로 오프닝을 선택했을 때, 그 수까지 이어지는 트리 선(모식도 ㄱ자 커넥터)을
               그대로 따라가는 안내선 — flyAlongPath가 애니메이션 도중에만 채워 두고 도착하면 지운다. */}
           {flightPath && <polyline points={flightPath.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke="#3E7CC4" strokeWidth={3} opacity={0.85} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 10" />}
-          {/* (기능) 네 팔이 갈라지는 나침반 정중앙에 회로 칩 모양 장식을 두어, 이 자리가 트리의
-              "발신지"임을 시각적으로 강조한다 — 칩 각 변에서 첫 수(e4/d4/c4/Nf3) 박스의 안쪽 변까지
-              짧은 회로 트레이스를 이어, 네 갈래가 실제로 이 칩에서 뻗어나가는 것처럼 보이게 한다. */}
+          {/* (기능) 두 팔(e4=위쪽 절반, d4=아래쪽 절반)이 갈라지는 나침반 정중앙에 회로 칩 모양
+              장식을 두어, 이 자리가 트리의 "발신지"임을 시각적으로 강조한다 — 칩 위·아래 변에서
+              첫 수(e4/d4) 박스의 안쪽 변까지 짧은 회로 트레이스를 이어, 두 갈래가 실제로 이 칩에서
+              뻗어나가는 것처럼 보이게 한다. */}
           {(() => {
             // (v0.3.2 버그 수정) centerX/centerY는 방사형 좌표계의 진짜 중심(반지름 0)이라, 예전
             // 격자형 레이아웃 때처럼 +boxW/2,+boxH/2를 더할 필요가 없다 — 이 보정이 남아 있으면
@@ -9994,8 +10002,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const traces = {
               N: [ccx, ccy - half, ccx, centerY - ROOT_GAP + boxH / 2],
               S: [ccx, ccy + half, ccx, centerY + ROOT_GAP - boxH / 2],
-              E: [ccx + half, ccy, centerX + ROOT_GAP - boxW / 2, ccy],
-              W: [ccx - half, ccy, centerX - ROOT_GAP + boxW / 2, ccy],
             };
             return Object.entries(traces).map(([dir, [x1, y1, x2, y2]]) => (
               <line key={"chip-trace-" + dir} className={electric ? "dex-surge-line" : undefined} x1={x1} y1={y1} x2={x2} y2={y2} stroke={electric ? SCHEMATIC_ELECTRIC : T.brass} strokeWidth={electric ? 3 : 2} opacity={electric ? 1 : 0.5} strokeLinecap="round" style={electric ? { strokeDasharray: "7 5" } : undefined} />
