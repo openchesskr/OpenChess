@@ -9752,11 +9752,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   };
   // (기능) 트리가 훨씬 더 큰 반지름까지 뻗어나가게 되면서(간격 겹침 제거 요청 대응), 화면 하나로
   // 훑기엔 캔버스가 훨씬 넓어졌다 — 기본 스크롤 감도를 1.5배, 지금 화면에 블록이 하나도 없는
-  // 빈 공간에서는(더 빨리 콘텐츠로 돌아올 수 있도록) 3배로 올린다.
+  // 빈 공간에서는(더 빨리 콘텐츠로 돌아올 수 있도록) 더 올린다.
+  // (버그 수정) 빈 공간 배율을 3배로 뒀더니 블록이 있다/없다 경계를 넘나들 때 스크롤 속도가
+  // 1.5배→3배로 두 배씩 튀어 급격하게 느껴졌다 — 기본(1.5배)은 그대로 두고 빈 공간 쪽만 2배로
+  // 낮춰, 경계를 넘어도 변화 폭이 완만하게(1.5배↔2배) 느껴지도록 한다.
   const SCHEMATIC_DRAG_MULT = DRAG_SCROLL_MULT * 1.5;
-  const SCHEMATIC_DRAG_MULT_EMPTY = DRAG_SCROLL_MULT * 3;
+  const SCHEMATIC_DRAG_MULT_EMPTY = DRAG_SCROLL_MULT * 2;
   const SCHEMATIC_WHEEL_MULT = 1.5;
-  const SCHEMATIC_WHEEL_MULT_EMPTY = 3;
+  const SCHEMATIC_WHEEL_MULT_EMPTY = 2;
   const anyItemVisible = (pan, zoom, rect) => items.some((it) => schematicItemVisible(pan, zoom, rect.width, rect.height, it, boxW, boxH, SCHEMATIC_TOP_INSET));
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
