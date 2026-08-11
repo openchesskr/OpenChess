@@ -4562,7 +4562,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
 }
 
 /* ============================================================ 집중 학습 모드 ============================================================ */
-function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, flip = false, badge = null }) {
+function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, flip = false, badge = null, frameless = false }) {
   const skCtx = useContext(SkinContext);
   const sk = BOARD_SKINS[skCtx.boardSkin] || BOARD_SKINS.classic;
   const cell = Math.floor(size / 8);
@@ -4631,6 +4631,35 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
     const off = centered * OFFSET_STEP;
     return { ...a, x1: x1 + px * off, y1: y1 + py * off, x2: x2 + px * off, y2: y2 + py * off };
   });
+  const grid = (
+    <div style={{ position: "relative", borderRadius: frameless ? 12 : 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: frameless ? "100%" : inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+      {rows.map((row, vr) => row.map((p, vc) => {
+        const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0;
+        const hideFrom = (r === fr[0] && c === fr[1]) || (isCastle && r === rookFr[0] && c === rookFr[1]);
+        const isTo = r === to[0] && c === to[1];
+        return (
+          <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
+            {p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}
+          </div>
+        );
+      }))}
+      {mp && <div key={cyc} style={{ position: "absolute", top: (dfr0 / 8 * 100) + "%", left: (dfr1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dxPct + "%," + dyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
+      {/* (버그 수정) 캐슬링일 때 룩도 킹과 똑같은 방식으로 슬라이드시킨다 */}
+      {isCastle && rp && <div key={"rook" + cyc} style={{ position: "absolute", top: (drf0 / 8 * 100) + "%", left: (drf1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + rookDxPct + "%," + rookDyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={rp.t} color={rp.c} size={cell * 0.72} /></div>}
+      {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
+      {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: ((dto0 - 0.16) / 8 * 100) + "%", left: ((dto1 + 0.7) / 8 * 100) + "%", width: "5.25%", height: "5.25%", borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.34)}</div>}
+      <svg viewBox="0 0 8 8" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
+        {/* (v0.2.2 기능) "내 기물이 공격받는다" 경고 화살표(danger) 색을 T.blunder(벽돌빛 갈색)에서
+            확실한 붉은색(T.danger)으로 교체 — 리뷰 페이지의 같은 화살표와 색을 통일한다. */}
+        <defs><marker id="dgr" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.danger} /></marker><marker id="idea" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.brass} /></marker></defs>
+        {offsetArrows.map((a, i) => <line key={i} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke={a.kind === "danger" ? T.danger : T.brass} strokeWidth={0.1} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />)}
+      </svg>
+    </div>
+  );
+  // (사용자 요청) 퍼즐 카드에서는 이 보드 둘레의 어두운 갈색 프레임(패딩)을 없애고, 보드 자체가
+  // 카드 안을 꽉 채우며 라운딩만 갖도록 한다(frameless) — 인터랙티브 Board와 프레임을 맞춰야 하는
+  // 퍼즐 풀이 화면 등 다른 모든 호출부는 기존 프레임을 그대로 유지한다(frameless 기본값 false).
+  if (frameless) return grid;
   return (
     <div>
       {/* (UI4) Board와 정확히 같은 padding/width 공식을 써서 퍼즐에서 애니메이션↔인터랙티브 보드 전환 시
@@ -4639,29 +4668,7 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
           이동 기물·배지·화살표도 그리드 전체 대비 퍼센트/논리 좌표(0~8)로 옮겨, 컨테이너가 좁아져도
           (집중학습·퍼즐 화면 등) 칸이 정사각형을 벗어나거나 좌표·화살표가 어긋나지 않게 한다. */}
       <div style={{ width: inner + 20, maxWidth: "100%", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid #000", margin: "0 auto", boxSizing: "border-box" }}>
-        <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
-          {rows.map((row, vr) => row.map((p, vc) => {
-            const [r, c] = tx(vr, vc); const light = (r + c) % 2 === 0;
-            const hideFrom = (r === fr[0] && c === fr[1]) || (isCastle && r === rookFr[0] && c === rookFr[1]);
-            const isTo = r === to[0] && c === to[1];
-            return (
-              <div key={vr + "_" + vc} style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), boxShadow: (hideFrom || isTo) ? "inset 0 0 0 2px rgba(62,124,196,.6)" : "none" }}>
-                {p && !hideFrom && <PieceGlyph key={"cap" + cyc} type={p.t} color={p.c} size={cell * 0.72} style={{ opacity: isTo && slid ? 0 : 1, transform: isTo && slid ? "scale(.2) rotate(8deg)" : "scale(1)", transition: isTo ? "opacity .22s ease .44s, transform .22s ease .44s" : "none" }} />}
-              </div>
-            );
-          }))}
-          {mp && <div key={cyc} style={{ position: "absolute", top: (dfr0 / 8 * 100) + "%", left: (dfr1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + dxPct + "%," + dyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={mp.t} color={mp.c} size={cell * 0.72} /></div>}
-          {/* (버그 수정) 캐슬링일 때 룩도 킹과 똑같은 방식으로 슬라이드시킨다 */}
-          {isCastle && rp && <div key={"rook" + cyc} style={{ position: "absolute", top: (drf0 / 8 * 100) + "%", left: (drf1 / 8 * 100) + "%", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", transform: slid ? "translate(" + rookDxPct + "%," + rookDyPct + "%)" : "translate(0,0)", transition: slid ? "transform .6s cubic-bezier(.4,1.1,.5,1)" : "none", zIndex: 5 }}><PieceGlyph type={rp.t} color={rp.c} size={cell * 0.72} /></div>}
-          {/* (18차 UX10) 컴퓨터가 두는 첫 수에도 수 체계 아이콘을 표기 */}
-          {badge && QCOLOR[badge] && <div style={{ position: "absolute", top: ((dto0 - 0.16) / 8 * 100) + "%", left: ((dto1 + 0.7) / 8 * 100) + "%", width: "5.25%", height: "5.25%", borderRadius: "50%", background: QCOLOR[badge], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6, opacity: slid ? 1 : 0, transition: "opacity .25s ease .5s" }}>{badgeIcon(badge, cell * 0.34)}</div>}
-          <svg viewBox="0 0 8 8" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: slid ? 1 : 0, transition: "opacity .3s .5s" }}>
-            {/* (v0.2.2 기능) "내 기물이 공격받는다" 경고 화살표(danger) 색을 T.blunder(벽돌빛 갈색)에서
-                확실한 붉은색(T.danger)으로 교체 — 리뷰 페이지의 같은 화살표와 색을 통일한다. */}
-            <defs><marker id="dgr" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.danger} /></marker><marker id="idea" markerUnits="strokeWidth" markerWidth="3" markerHeight="3" refX="2.83" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill={T.brass} /></marker></defs>
-            {offsetArrows.map((a, i) => <line key={i} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke={a.kind === "danger" ? T.danger : T.brass} strokeWidth={0.1} strokeLinecap="round" markerEnd={"url(#" + (a.kind === "danger" ? "dgr" : "idea") + ")"} />)}
-          </svg>
-        </div>
+        {grid}
       </div>
     </div>
   );
@@ -11827,13 +11834,6 @@ function summarizePosition(board, userColor) {
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
 function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, engine, liveOn, canEdit, bumpContent }) {
   const theme = primaryTheme(puzzle);
-  // (사용자 요청) 좌상단 "일일 퍼즐로 선정된 기록" 배지 — 클릭하면 선정된 날짜를 말풍선으로 보여준다.
-  // 배지 자체가 카드 맨 위(top:12)에 고정돼 있어 그 위로 열 공간이 없으므로, 항상 아래로 열되
-  // (safeAreaDx로) 가로로만 화면 밖으로 잘리지 않게 보정한다.
-  const [dailyBubbleOpen, setDailyBubbleOpen] = useState(false);
-  const [dailyBubbleDx, setDailyBubbleDx] = useState(0);
-  const dailyBadgeRef = useRef(null);
-  useEffect(() => { setDailyBubbleOpen(false); }, [puzzle.id]);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
   // 분기 트리: 개발자 길이 재조정(CONTENT.puzzleOverrides — 모든 유저 공통) > 저장된 tree > 구버전 lines/solution
@@ -12373,35 +12373,19 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     </div>
   );
   return (
-    <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
-      <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
+    <div style={{ maxWidth: 460, margin: "0 auto" }}>
       {/* (사용자 요청) 이 퍼즐이 과거 어느 날짜의 일일 퍼즐로 선정된 기록이 있으면(puzzleShare가
           resolveDailyPuzzle의 isDaily/date를 그대로 서버에 보존해 두므로, 같은 id로 다시 열 때마다
-          이 값이 남아 있다) 좌상단에 책갈피 + "D" 배지를 띄운다. 클릭하면 그 날짜를 말풍선으로 보여준다. */}
+          이 값이 남아 있다) 클릭해야 여는 배지+말풍선 대신, 카드 위에 늘 보이는 띠 하나로 그 날짜를
+          바로 보여준다. */}
       {puzzle.isDaily && puzzle.date && (
-        <>
-          <button ref={dailyBadgeRef} onClick={(e) => {
-            e.stopPropagation();
-            setDailyBubbleOpen((v) => {
-              const next = !v;
-              if (next && dailyBadgeRef.current) setDailyBubbleDx(safeAreaDx(dailyBadgeRef.current.getBoundingClientRect(), 180, "left"));
-              return next;
-            });
-          }} aria-label="일일 퍼즐로 선정된 기록" title="일일 퍼즐로 선정된 기록" className="press" style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px 4px 6px", borderRadius: 999, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer" }}>
-            <Bookmark size={12} fill={T.brassHi} />
-            <span style={{ fontFamily: "'Black Ops One', cursive", fontSize: 11, lineHeight: 1 }}>D</span>
-          </button>
-          {dailyBubbleOpen && (
-            <>
-              <span onClick={(e) => { e.stopPropagation(); setDailyBubbleOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-              <span style={{ position: "absolute", top: 44, left: "calc(12px + " + dailyBubbleDx + "px)", width: 180, padding: "8px 11px", borderRadius: 9, background: T.ivoryHi, border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, fontSize: 11.5, fontWeight: 700, color: T.ink, textAlign: "center" }}>
-                {puzzle.date.replace(/-/g, "/")} 일일 퍼즐
-                <span style={{ position: "absolute", top: -7, left: "calc(28px - " + dailyBubbleDx + "px)", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, borderLeft: "1px solid " + T.brass, borderTop: "1px solid " + T.brass }} />
-              </span>
-            </>
-          )}
-        </>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "7px 12px", marginBottom: 8, borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 12, fontWeight: 700 }}>
+          <Bookmark size={13} fill={T.brassHi} />
+          {puzzle.date.replace(/-/g, "/")} 일일 퍼즐
+        </div>
       )}
+      <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+      <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
       <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
@@ -12558,6 +12542,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         <button onClick={() => setPage(0)} aria-label="보드 페이지" className="press" style={{ width: page === 0 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 0 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
         <button onClick={() => setPage(1)} aria-label="모식도 페이지" className="press" style={{ width: page === 1 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 1 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
       </div>
+      </div>
     </div>
   );
 }
@@ -12672,13 +12657,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
     /* (18차 UI7) 카드 크기 축소 + 도감 탭처럼 정사각형 비율 — 한 화면에 더 많은 퍼즐이 보이도록.
        (18차 UI4) overflow hidden + aspectRatio 고정으로 카드끼리 겹치던 문제도 함께 해결. */
     /* (19차 UI2) 정사각 고정을 풀고(오프닝 이름·"n명이 풀었습니다"가 잘리지 않도록) 내용 높이에 맞춰 늘어나게 한다. */
-    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    /* (사용자 요청) 보드 둘레의 어두운 갈색 여백을 없애고 보드 자체가 카드를 꽉 채우도록, 카드
+       자신의 padding을 없애고 대신 보드 아래 텍스트 영역에만 패딩을 준다(보드는 카드 맨 위에
+       테두리 없이 가장자리까지 꽉 차게, 텍스트만 안쪽 여백을 유지). */
+    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ position: "absolute", top: -1, left: -1, right: -1, height: 3, borderRadius: "12px 12px 0 0", background: themeAccentBg(themes), zIndex: 2 }} />
       <PuzzleThemePattern themes={themes} opacity={isSolved ? 0.05 : 0.11} />
       {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
-      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        {/* (사용자 요청) 일일 퍼즐 캐러셀 카드의 체스보드(DAILY_BOARD_SIZE=190)와 크기를 맞춘다. */}
-        {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={190} loopMs={2400} flip={flip} /></div>}
+      {/* (사용자 요청) 보드 자체에 라운딩을 주고(위쪽 모서리만, 카드 라운딩과 맞춤) 가장자리까지
+          꽉 채운다 — 어두운 갈색 프레임 없이(frameless), 카드 폭 전체(230)로 키운다. */}
+      {hasPreview && <div style={{ position: "relative", zIndex: 1, borderRadius: "11px 11px 0 0", overflow: "hidden" }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={230} loopMs={2400} flip={flip} frameless /></div>}
+      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, padding: "8px 10px 10px" }}>
         <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
           {/* (버그 수정) 이 라벨은 세부 갈래까지 다 붙은 p.opening(예: "Ruy Lopez, Berlin Defense,
               Rio de Janeiro Variation") 대신, 최상위 갈래 이름(firstNamedOpening)만 짧게 보여준다
