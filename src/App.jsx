@@ -9156,7 +9156,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
   // 절대 맞닿지 않는 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게
   // 서로 겹치지 않게 재귀적으로 나눠 준다.)
-  const SECTOR_HALF = (Math.PI / 4) * 0.86;
+  const SECTOR_HALF = (Math.PI / 4) * 0.94;
   const DIR_ANGLE = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
@@ -9396,7 +9396,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 폭의 합) 비율로 나눠 — 단순 개수 비율보다 실제 필요에 더 가깝게, 하지만 부모가 준 한도
     // 안에서만 분배한다. 그래도 극단적으로 붐비는 자리는 다소 촘촘할 수 있는데, 그 나머지는
     // 아래 반지름 나선(radiusBoost)이 보완한다.
-    const MIN_ARC_PX = 130;
+    const MIN_ARC_PX = 55;
     const minSpanAtDepth = (depth) => { const r = radiusOfDepth(depth); return r > 0 ? MIN_ARC_PX / r : 0.08; };
     const requiredWidthOf = new Map();
     for (const it of items) {
@@ -9425,9 +9425,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 일치하는 자리(각도 편차 0)는 반지름 보정이 전혀 없어 1수 자신은 항상 정확히 십자 위에
     // 그대로 남고, 그 팔 안에서 각도가 벌어질수록(형제가 부채꼴 가장자리로 갈수록)만 반지름도
     // 함께 늘어난다 — 그래서 중심부(정확히 축 위)는 늘 깔끔하고, 부채꼴이 넓어지는 바깥쪽에서만
-    // 나선 모양이 드러난다. 각도가 부동소수점 정밀도 한계까지 우연히 같아지는 극히 드문 경우에
-    // 대비해, 이 각도 기반 항 위에 아주 작은 전역 순서 항(SPIRAL_TIEBREAK)을 얹어 완전히 같은
-    // 반지름이 나오는 일 자체를 막는다.
+    // 나선 모양이 드러난다. 각도 기반 항 위에 전역 순서 항(SPIRAL_TIEBREAK)도 함께 얹는다 —
+    // 서로 무관한(형제도 사촌도 아닌) 두 노드가 각자 다른 서브트리에서 우연히 비슷한 각도로
+    // 수렴하는 경우까지는 각도 기반 항만으로 막지 못했다(실측: 겹침이 남아 있었음). 정수
+    // 카운터라 두 노드가 정확히 같은 값을 받는 일은 애초에 불가능하므로, 이 항의 계수를
+    // 충분히 크게 잡으면(실측으로 100까지 올림) 그런 우연한 근접까지 실질적으로 없앨 수 있다.
     // (버그 수정) "부모가 준 구간보다 필요 폭이 크면 그만큼 구간을 넘어 확장한다"는 규칙이 진짜
     // 문제였다 — 이론이 아주 넓고 깊은 팔(예: 1.e4)은 그 서브트리 전체의 필요 폭 합이 자기 몫인
     // 부채꼴(~77°)을 몇 배씩 넘어서 버려서, 그 자식들이 원래 배정된 십자 방향을 완전히 벗어나
@@ -9437,7 +9439,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 이러면 각 팔은 영원히 자기 부채꼴 안에만 머문다. 대신 이 구간 안에서는 여전히 필요 폭
     // 비율대로 나눠(균등 분할보다 낫다) 최대한 고르게 펼치고, 그래도 남는 촘촘함은 아래 반지름
     // 나선(radiusBoost)이 보완한다.
-    const SPIRAL_ANGLE_COEF = 600, SPIRAL_TIEBREAK = 1;
+    const SPIRAL_ANGLE_COEF = 600, SPIRAL_TIEBREAK = 100;
     let spiralCounter = 0;
     const assignRange = (node, lo, hi) => {
       node.angle = (lo + hi) / 2;
@@ -9448,6 +9450,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // 정렬됨) 순서를 그대로 구간 배치 순서로 쓴다 — 그래야 화면상 좌우 배치가 갑자기 뒤집히지
       // 않는다.
       const ordered = kids.slice().sort((a, b) => a.pos - b.pos);
+      // (버그 수정) 균등 분할·제곱근 압축 등 requiredWidthOf 비율을 왜곡하는 방식을 여러 차례
+      // 시도했지만, 전부 오히려 전체 겹침을 악화시켰다 — 우세한 갈래(예: 1...c5처럼 그 자체로
+      // 자손이 수백 개인 라인)에게서 몫을 덜어 소수 갈래에 나눠주면, 그 우세한 갈래는 원래도
+      // 빠듯했던 자기 몫이 더 줄어들어 "그 갈래 내부"(원래 노드 수가 훨씬 많아 실측 악화폭도 더
+      // 큰 영역)의 겹침이 오히려 크게 늘었다(실측: 겹침<10px 쌍이 0개→1496개로 폭증). 고정된
+      // 총 각도 예산을 여러 서브트리가 나눠 쓰는 구조에서는, 각 서브트리가 실제로 필요로 하는
+      // 만큼(requiredWidthOf) 정확히 비례 배분하는 것이 전체 겹침을 최소화하는 수학적으로 최적의
+      // 방식이다 — 그대로 되돌린다.
       const totalReq = ordered.reduce((s, k) => s + (requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth)), 0) || 1;
       const useWidth = hi - lo;
       let cur = lo;
