@@ -707,6 +707,20 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.3.2", date: "2026.8.11",
+    summary: "내 기물이 아군 폰이 지켜주는 칸으로 갈 때, 결국 손해가 폰 한 개뿐인데도 가끔 \"탁월한 수\"로 잘못 표시되던 문제를 고쳤어요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "think", name: "KOKOA 코치", align: "left", text: "폰이 지켜주는 칸으로 가는 수를 이제 더 정확하게 채점해요!" },
+      outro: { char: "milku", expr: "great", name: "MILKU 코치", align: "right", text: "진짜 기물을 희생할 때만 \"탁월한 수\"라고 불러드릴게요." },
+    },
+    highlight: { kind: "icon", Icon: Wrench, color: "#E0995F", label: "탁월한 수 판정 정확도 개선" },
+    sections: [
+      { cat: "fix", items: [
+        "내 기물이 아군 폰이 지켜주는 칸으로 이동할 때, 상대가 잡아도 결국 폰 하나만 내주고 끝나는 수인데도 \"탁월한 수\"로 잘못 표시되던 문제를 고쳤어요 — 진짜로 기물 단위 손해를 감수하는 수만 탁월한 수로 표시돼요.",
+      ] },
+    ],
+  },
+  {
     version: "0.3.1", date: "2026.8.10",
     summary: "마스터 통계 검색·정렬을 다듬고, 퍼즐 검색·생성·일일 퍼즐 캐러셀 속도를 크게 높였어요. 집중 학습 화면과 일일 퍼즐 알림 팝업도 더 보기 좋게 새 단장했어요.",
     mascot: {

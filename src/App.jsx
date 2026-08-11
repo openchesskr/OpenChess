@@ -1575,6 +1575,20 @@ function seeSquare(board, tr, tc, side) {
   const gain = VAL[occ.t] - seeSquare(b, tr, tc, side === "w" ? "b" : "w");
   return Math.max(0, gain);                              // 손해면 잡지 않음(=0)
 }
+// (기능) 도착 칸을 아군 폰이 지키고 있는지 — seeSquare의 되잡기 순서상 폰은 항상 가장 싼(=최우선)
+// 방어자라, 이 칸에 폰의 보호가 있다면 그 되잡기는 이미 seeSquare 계산에 실제로 반영돼 있다. 이
+// 함수는 그 보호 여부 자체를 따로 확인해, "동가 이상 상대에게 잡혀도 결국 폰으로 되잡는" 자리인지
+// isSacrifice가 판단하는 데 쓴다(핀에 걸려 실제로는 되잡을 수 없는 폰은 제외).
+function pawnDefendsSquare(board, r, c, color) {
+  const dir = color === "w" ? -1 : 1;
+  for (let cc = c - 1; cc <= c + 1; cc += 2) {
+    if (cc < 0 || cc > 7) continue;
+    const rr = r - dir; if (rr < 0 || rr > 7) continue;
+    const p = board[rr][cc];
+    if (p && p.c === color && p.t === "P" && !exposesKing(board, rr, cc, r, c, color, null)) return true;
+  }
+  return false;
+}
 /* 진짜 '희생'인가: 폰 제외, 이 수로 인해 정적 교환상 실질 손실(≥1점)이 발생하는 경우만.
    (예: ...Bb4+ 차단용 Nbd2/Nc3/Bd2 는 동가치 교환이라 SEE 손실 0 → 희생 아님)
    (기능4) 임계값을 -2에서 -1로 완화: 예를 들어 "비숍을 폰 두 개와 교환"하는 유명한
@@ -1732,6 +1746,12 @@ function isSacrifice(board, sanRaw, color) {
     // 이는 몰려서 어쩔 수 없이 둔 게 아니라 스스로 위험해 보이는 자리로 걸어 들어간 것이므로, 정말
     // 안전한 대안이 하나도 없었을 때만(포크 등으로 진짜 궁지에 몰린 경우) 희생 판정에서 제외한다.
     if (movedThreatLoss >= 1 && net >= -movedThreatLoss && !givesCheck && !hasSaferSquare(board, fr, fc, info.piece, color)) return false;
+    // (신규) 도착 칸이 아군 폰에게 보호받고 있어 net이 정확히 -1로만 떨어지는 경우 — 이는 seeSquare가
+    // 이미 그 폰의 되잡기까지 반영해 계산한 결과이므로, 실제로 벌어지는 일은 "동가 이상 상대 기물과
+    // 맞바꾼 뒤(순손익 0), 그 되잡은 폰마저 결국 내주는" 흐름뿐이다. 최종적으로 잡히는 내 기물이
+    // 폰 하나뿐이라 기존 탁월한 수 규칙이 요구하는 실질적인 기물 손해(net<=-2)에 못 미치므로,
+    // 탁월한 수로 치지 않는다. (net<=-2로 더 크게 손해라면 폰 이상의 진짜 희생이므로 그대로 인정.)
+    if (net === -1 && pawnDefendsSquare(board, tr, tc, color)) return false;
     return true;
   }
   // (16차) 이 수 자체가 기물을 잡히는 칸으로 옮기지 않아도, 상대가 이미 걸고 있던 기물 잡는 위협을
@@ -14365,6 +14385,11 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.3.2", date: "2026.8.11", dev: ["openchesskr"], items: [
+      "내 기물이 아군 폰이 지켜주는 칸으로 갈 때, 결국 손해가 폰 한 개뿐인데도 가끔 \"탁월한 수\"로 잘못 표시되던 문제를 고쳤어요.",
+    ]
+  },
   {
     version: "0.3.1", date: "2026.8.10", dev: ["openchesskr", "g13sus4"], items: [
       "집중학습의 \"마스터 대국\" 목록이 어떤 포지션이든 딱 5판만 뜨던 문제를 고쳤어요 — 이제 실제로 매칭되는 대국 수만큼(오프닝 초반은 최대 500판, 깊이 들어갈수록 그보다 적게) 보여드리고, 처음 20개를 보여준 뒤 페이지를 넘기면 나머지를 계속 볼 수 있어요.",
