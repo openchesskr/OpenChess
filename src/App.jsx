@@ -8852,11 +8852,6 @@ function useOpeningTreeAuto(priorityRef) {
       bumpTimer = setTimeout(() => { bumpTimer = null; setVersion((v) => v + 1); }, 220);
     };
     setVersion((v) => v + 1);
-    // (버그) 트리가 너무 금방 끊겨 보인다는 피드백 — 최소 깊이(모든 갈래가 무조건 펼쳐지는 수)를
-    // 3수에서 4수로, 그 이후 계속 펼쳐지는 채택률 기준도 20%에서 15%로 낮춰 조금 더 길게 이어지게 한다.
-    // (버그 수정) 그래도 하위 라인이 금방 끊긴다는 피드백 — 깊이를 5수까지 무조건 펼치고, 채택률
-    // 기준도 10%까지 낮추고, 최대 노드 수도 두 배로 늘려 하위 라인이 계속 이어지게 한다.
-    const MIN_DEPTH = DEX_MIN_DEPTH, ADOPT_CUTOFF = DEX_ADOPT_CUTOFF;
     // (버그 수정) 이론 수는 깊이 제한 없이 계속 펼치게 되면서 노드 수가 예전보다 늘 수 있어, 이론
     // 트리가 잘리지 않도록 상한을 여유 있게 올린다(이론 자체는 개발자가 큐레이션한 유한한 집합).
     const MAX_CONCURRENT = 5, MAX_NODES = 4000;
@@ -8897,11 +8892,10 @@ function useOpeningTreeAuto(priorityRef) {
       });
       mapRef.current.set(key, merged);
       bumpVersion();
-      // (버그 수정) 이론 수(book)는 채택률/깊이 상한(MIN_DEPTH·ADOPT_CUTOFF)과 무관하게 항상 계속
-      // 펼친다 — 이론 수는 개발자가 큐레이션한 유한한 집합이라(엔진/커뮤니티 수와 달리 무한히
-      // 늘어나지 않음) 모든 이론 수가 트리에 나올 때까지 이어가도 안전하다. 채택률 낮은 비이론
-      // 수까지 무한정 펼치는 걸 막기 위해, 이론이 아닌 수는 기존 MIN_DEPTH/ADOPT_CUTOFF 기준을 그대로 쓴다.
-      for (const m of merged) { if (depth < MIN_DEPTH || m.adopt >= ADOPT_CUTOFF || isBookMoveAt(key, m.san)) queue.push({ path: [...path, m.san], depth: depth + 1 }); }
+      // (v0.3.2 개편) 도감 오프닝 트리는 이제 이론 수(book)만 보여준다 — 채택률이 높다는 이유만으로
+      // 딸려 오던 비이론 수는 더 이상 트리에 펼치지 않는다(이론 수는 개발자가 큐레이션한 유한한
+      // 집합이라 전부 펼쳐도 안전하다).
+      for (const m of merged) { if (isBookMoveAt(key, m.san)) queue.push({ path: [...path, m.san], depth: depth + 1 }); }
       runNext();
     }
     runNext();
@@ -9211,10 +9205,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         // 그다음 이미 캐시된(다른 갈래) 이웃 사이의 "남은" 좁은 틈에 또 보간해 끼워 넣다 보니 그
         // 틈이 매번 절반씩 계속 줄어들어(2~3번만 반복돼도 겨우 몇 px까지) 서로 다른 갈래의 블록들이
         // 거의 붙어버리는 심각한 겹침이 생겼다. 실제로 이 부모가 자식을 큐에 넣을지 말지 판정하는
-        // 조건(useOpeningTreeAuto의 MIN_DEPTH/ADOPT_CUTOFF/isBookMoveAt)은 자식 자신의 fetch 없이
-        // 부모 데이터만으로 이미 다 계산 가능하다 — 그 조건을 여기서도 그대로 써서, 부모가 로드되는
-        // 순간 그 형제 전체가 한 번에(보간도 한 번의 배치로만) 나타나게 한다.
-        let filtered = rawMoves.filter((m) => depth < DEX_MIN_DEPTH || (m.adopt || 0) >= DEX_ADOPT_CUTOFF || isBookMoveAt(key, m.san));
+        // 조건(useOpeningTreeAuto의 isBookMoveAt)은 자식 자신의 fetch 없이 부모 데이터만으로 이미
+        // 다 계산 가능하다 — 그 조건을 여기서도 그대로 써서, 부모가 로드되는 순간 그 형제 전체가
+        // 한 번에(보간도 한 번의 배치로만) 나타나게 한다.
+        // (v0.3.2 개편) 이제 이론 수(book)만 트리에 남긴다 — 채택률이 높아도 비이론 수는 표시하지 않는다.
+        let filtered = rawMoves.filter((m) => isBookMoveAt(key, m.san));
         // 루트(첫 수) 단계는 주요 4개(e4/d4/c4/Nf3)만 — 각각 북/동/남/서 방향의 팔이 된다.
         if (path.length === 0) filtered = ROOT_ORDER.map((s) => filtered.find((m) => stripSuffix(m.san) === s)).filter(Boolean);
         let ordered;
@@ -11193,7 +11188,9 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag }) {
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
-  const boxW = canEdit ? 210 : 104, colW = canEdit ? 224 : 118, rowH = 56, boxH = 46;
+  // (v0.3.2 UI) 요청에 따라 블록 크기를 기존 대비 약 50% 키움(104→156, 118→177, 56→84, 46→69 등,
+  // 개발자 모드 편집 버튼 폭까지 포함한 canEdit 쪽도 동일 비율로 확대).
+  const boxW = canEdit ? 315 : 156, colW = canEdit ? 336 : 177, rowH = 84, boxH = 69;
   // (v0.1.3 버그 수정) 도감 오프닝 트리는 캔버스 위에 뜨는 검색창을 가리려고 SCHEMATIC_TOP_INSET을
   // 팬 한계·자동 중앙 정렬 계산에 넘기는데, 이 모식도는 우상단에 뜨는 확대/축소 버튼에 대해 같은
   // 처리가 빠져 있었다 — 그 결과 자동 중앙 정렬이나 팬이 그 버튼 바로 밑까지 블록을 밀어 넣어,
@@ -11452,9 +11449,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {edges.map(([p, c], i) => {
               const x1 = p.depth * colW + boxW, y1 = p.y * rowH + boxH / 2, x2 = c.depth * colW, y2 = c.y * rowH + boxH / 2;
-              if (c.ghost) return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#C9B58C" strokeWidth={1.3} opacity={0.4} strokeDasharray="3 3" strokeLinecap="round" />;
+              if (c.ghost) return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#C9B58C" strokeWidth={1.9} opacity={0.4} strokeDasharray="4 4" strokeLinecap="round" />;
               const adopt = c.node.adopt != null ? c.node.adopt : (meta[c.key] && meta[c.key].adopt);
-              const wStroke = adopt == null ? 1.6 : 1.2 + Math.min(4.4, adopt / 9);   // 채택률에 따라 선 두께
+              const wStroke = adopt == null ? 2.4 : 1.8 + Math.min(6.6, adopt / 6);   // 채택률에 따라 선 두께(v0.3.2 블록 확대에 맞춰 비례 확대)
               const stroke = c.solved ? T.best : c.onCur ? T.brass : "#C9B58C";
               const op = c.solved ? 0.95 : c.onCur ? 1 : 0.6;
               return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={wStroke} opacity={op} strokeLinecap="round" />;
@@ -11467,11 +11464,11 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
               return (
                 <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW }}>
                   <button onClick={() => onPick && onPick(it)} title="아직 두지 않은 갈래예요 — 두어 보면 드러나요" className="press"
-                    style={{ width: "100%", minHeight: boxH, borderRadius: 8, border: "1.5px dashed #C9B58C",
+                    style={{ width: "100%", minHeight: boxH, borderRadius: 12, border: "1.5px dashed #C9B58C",
                       background: "repeating-linear-gradient(135deg, rgba(0,0,0,.035) 0 6px, rgba(0,0,0,.07) 6px 12px)",
                       color: T.inkSoft, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
                       animation: it.shake ? "lineShake .55s ease 3" : "none" }}>
-                    <span style={{ fontSize: 16, fontWeight: 800, opacity: 0.55 }}>?</span>
+                    <span style={{ fontSize: 24, fontWeight: 800, opacity: 0.55 }}>?</span>
                   </button>
                 </div>
               );
@@ -11503,40 +11500,40 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
               // max-content로 바꾸고, 버튼은 boxW를 최소 폭으로만 보장(flex:1 제거)해 배지가 버튼을
               // 짓누르지 않고 옆으로 자연스럽게 이어지도록 한다.
               <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: "max-content", minWidth: boxW, animation: it.celebrate ? "questclear 1s ease" : "none" }}>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
                   <button onClick={() => !isRoot && onPick && onPick(it)} disabled={isRoot}
                     className={isRoot ? "" : "press"}
-                    style={{ flexShrink: 0, minWidth: boxW, textAlign: "left", padding: "4px 7px", borderRadius: 8, minHeight: boxH,
-                      border: (it.isCur ? "2px" : "1px") + " solid " + (it.isCur ? T.brassHi : incomplete ? "#D79A2F" : it.solved ? T.best : "#C9B58C"),
+                    style={{ flexShrink: 0, minWidth: boxW, textAlign: "left", padding: "6px 11px", borderRadius: 12, minHeight: boxH,
+                      border: (it.isCur ? "3px" : "1.5px") + " solid " + (it.isCur ? T.brassHi : incomplete ? "#D79A2F" : it.solved ? T.best : "#C9B58C"),
                       background: isRoot ? "linear-gradient(180deg,#3A2516,#241509)" : it.solved ? "#EAF3E0" : "#fff",
                       cursor: isRoot ? "default" : "pointer",
-                      boxShadow: it.isCur ? "0 0 0 3px rgba(196,154,80,.25)" : "none" }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                      {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 11)}</span>}
-                      <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                      boxShadow: it.isCur ? "0 0 0 4px rgba(196,154,80,.25)" : "none" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 21, height: 21, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 17)}</span>}
+                      <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 17, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
                     </span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3, fontSize: 14, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
                       <span>{isRoot ? "시작 위치" : (evTxt || "–")}</span>
                       {!isRoot && <span style={{ marginLeft: "auto" }}>{adopt != null ? Math.round(adopt) + "%" : "–%"}</span>}
                     </span>
-                    {incomplete && <div style={{ fontSize: 8.5, fontWeight: 800, color: "#9A6A18", marginTop: 1 }}>미완성 — 다음 수 필요</div>}
+                    {incomplete && <div style={{ fontSize: 13, fontWeight: 800, color: "#9A6A18", marginTop: 2 }}>미완성 — 다음 수 필요</div>}
                   </button>
                   {/* (v0.2.6 버그 수정) "라인 n" 표기를 마지막 수 블록 우측으로 옮기고, 해결 완료
                       체크 표시도 SAN 옆(블록 내부) 대신 여기서 라인 n과 함께 보여준다. */}
                   {it.isLeaf && !isRoot && it.node.tag && (
-                    <span className="flex items-center" style={{ gap: 3, flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: it.solvedLeaf ? T.best : T.inkSoft, whiteSpace: "nowrap" }}>
-                      {it.solvedLeaf && <span style={{ width: 14, height: 14, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Check size={10} strokeWidth={3.5} /></span>}
+                    <span className="flex items-center" style={{ gap: 4, flexShrink: 0, fontSize: 14, fontWeight: 800, color: it.solvedLeaf ? T.best : T.inkSoft, whiteSpace: "nowrap" }}>
+                      {it.solvedLeaf && <span style={{ width: 21, height: 21, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Check size={15} strokeWidth={3.5} /></span>}
                       라인 {allLines.findIndex((l) => l.tag === it.node.tag) + 1}
                     </span>
                   )}
                   {/* (20차 기능1) 개발자 전용 — 이 라인 끝에 수를 하나 직접 추가(전체 재생성 없이 라인별 1수 연장) */}
-                  {canAddHere && <button onClick={() => openAdd(it.path)} className="press no-pan" title="이 라인에 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
+                  {canAddHere && <button onClick={() => openAdd(it.path)} className="press no-pan" title="이 라인에 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 22, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
                   {/* (20차 기능3) 개발자 전용 — 이 라인의 마지막 수를 하나 삭제(라인 길이 단축, 한 번에 한 수씩) */}
-                  {canDeleteHere && <button onClick={() => submitDelete(it)} disabled={delBusyKey === it.key} className="press no-pan" title="이 라인의 마지막 수 삭제" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={13} /></button>}
+                  {canDeleteHere && <button onClick={() => submitDelete(it)} disabled={delBusyKey === it.key} className="press no-pan" title="이 라인의 마지막 수 삭제" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 10, border: "1px dashed " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={20} /></button>}
                   {/* (v0.3.0 기능) 개발자 전용 — 이 수 다음에 올 상대 응수의 형제 갈래(다른 응수 선택지) 추가 */}
-                  {canAddSiblingHere && <button onClick={() => openSibling(it.path)} className="press no-pan" title="상대 응수의 형제 갈래 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.only, background: "transparent", color: T.only, fontSize: 13, fontWeight: 800, cursor: "pointer", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>⑂</button>}
+                  {canAddSiblingHere && <button onClick={() => openSibling(it.path)} className="press no-pan" title="상대 응수의 형제 갈래 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 10, border: "1px dashed " + T.only, background: "transparent", color: T.only, fontSize: 20, fontWeight: 800, cursor: "pointer", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>⑂</button>}
                 </div>
-                {delErrKey && delErrKey.key === it.key && <div className="no-pan" style={{ fontSize: 9.5, color: T.blunder, marginTop: 3, background: "#fff", borderRadius: 6, padding: "2px 6px", border: "1px solid " + T.blunder }}>{delErrKey.msg}</div>}
+                {delErrKey && delErrKey.key === it.key && <div className="no-pan" style={{ fontSize: 13, color: T.blunder, marginTop: 4, background: "#fff", borderRadius: 6, padding: "3px 8px", border: "1px solid " + T.blunder }}>{delErrKey.msg}</div>}
               </div>
             );
           })}
