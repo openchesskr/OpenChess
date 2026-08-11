@@ -9100,6 +9100,16 @@ function clampSchematicPan(pan, zoom, viewportW, viewportH, items, boxW, boxH, i
   };
 }
 const SCHEMATIC_ELECTRIC = "#22D3F0";
+// (사용자 요청) "한번에 변하지 말고 전기가 흐르는 것처럼 거리 비례로 약 0.3~1초 정도 동안 중심부부터
+// 천천히 파란색으로 변해가도록" — 선택 경로는 클릭한 노드까지의 거리(targetR)를 이 속도로 나눠
+// 총 애니메이션 길이를 정하고(0.3~1초 사이로 clamp), 경로 위 각 지점은 그 지점까지의 거리 비율만큼
+// 지연시켜(가까운 지점부터 먼저) 중심에서 바깥으로 흘러나가는 것처럼 보이게 한다.
+const DEX_SELECT_FLOW_SPEED = 9000; // 논리 좌표 px/s 기준
+// (사용자 요청) "중심부 회로를 눌렀을 때도 모든 방향으로 같은 속도로 서서히 중심부부터 파란색으로
+// 변하도록" — 기존엔 depth(정수 단계 수)에 비례한 지연을 썼는데, 깊이별 반지름 증가폭이 서로 달라
+// 실제로는 방향마다 체감 속도가 달랐다. 노드의 실제 반지름(r)을 이 고정 속도로 나눠, 어느 방향이든
+// 물리적으로 똑같은 속도(px/s)로 퍼져나가도록 한다.
+const DEX_ELECTRIC_FLOW_SPEED = 9000;
 const schematicCoord = (it) => ({ x: it.x, y: it.y });
 // (기능) 부모→자식 연결선의 ㄱ자(elbow) 꺾임 좌표 — 트리 선(edges) 렌더링과, 검색으로 오프닝을
 // 골랐을 때 그 선을 그대로 따라가는 이동 애니메이션(OpeningSchematic의 buildFlightWaypoints)이
@@ -9118,23 +9128,28 @@ function schematicElbow(p, c) {
 // 수십 번) React가 노드 수천 개의 스타일 객체를 처음부터 다시 계산했다 — 이게 트리가 클 때 드래그가
 // 버벅이던 핵심 원인. 별도 memo 컴포넌트로 떼어내, items/edges(둘 다 pan/zoom과 무관하게 트리
 // 구조가 실제로 바뀔 때만 새로 생성됨) 참조가 그대로인 동안은 다시 그리지 않게 한다.
-const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet, electric }) {
+const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet, electric, selectedTargetR }) {
+  // (사용자 요청) 선택 경로가 중심에서부터 거리 비례로(0.3~1초) 서서히 파란색으로 흘러가도록 —
+  // 목표 노드까지의 거리(selectedTargetR)를 속도로 나눠 총 애니메이션 길이를 정한다.
+  const selDuration = selectedTargetR ? Math.min(1, Math.max(0.3, selectedTargetR / DEX_SELECT_FLOW_SPEED)) : 0;
   return edges.map(([p, c]) => {
     if (p.depth === 0) return null;
     const pts = schematicElbow(p, c);
     const isSel = selectedKeySet && selectedKeySet.has(c.key);
     // (v0.2.2 UX#2) 회로 칩을 누르면 전류가 중앙에서 바깥으로 퍼져나가는 느낌을 주기 위해, 모든 선에
-    // depth에 비례한 delay로 전기 서지 애니메이션을 얹는다(선택된 선은 평소대로 흐름 유지).
+    // 거리에 비례한 delay로 전기 서지 애니메이션을 얹는다(선택된 선은 평소대로 흐름 유지).
     const surge = electric && !isSel;
     const wStroke = (isSel || surge) ? 3 : 2;
     const eStroke = (isSel || surge) ? SCHEMATIC_ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
-    const depth = c.depth != null ? c.depth : (c.path ? c.path.length : 1);
+    const selDelay = isSel && selectedTargetR ? (c.r / selectedTargetR) * selDuration : 0;
+    const surgeDelay = surge ? c.r / DEX_ELECTRIC_FLOW_SPEED : 0;
     return <polyline key={p.key + "→" + c.key} className={surge ? "dex-surge-line" : (isSel ? "dex-current-line" : undefined)} points={pts.map((q) => q[0] + "," + q[1]).join(" ")} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={(isSel || surge) ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
-      style={(isSel || surge) ? { strokeDasharray: "7 5", animationDelay: surge ? (depth * 0.09) + "s" : undefined } : undefined} />;
+      style={(isSel || surge) ? { strokeDasharray: "7 5", transition: isSel ? "stroke .25s ease " + selDelay + "s, opacity .25s ease " + selDelay + "s" : undefined, animationDelay: surge ? surgeDelay + "s" : undefined } : undefined} />;
   });
 });
-const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, selectedKeySet, onSelect, electric }) {
+const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, selectedKeySet, onSelect, electric, selectedTargetR }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
+  const selDuration = selectedTargetR ? Math.min(1, Math.max(0.3, selectedTargetR / DEX_SELECT_FLOW_SPEED)) : 0;
   return items.map((it) => {
     const { x, y } = schematicCoord(it);
     const isOpen = openKey === it.key;
@@ -9144,10 +9159,12 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     const isBook = kind === "book";
     const sub = isOpen ? "#241509" : it.unlocked ? QCOLOR[kind] : "#8A7458";
     const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
+    const selDelay = isSel && selectedTargetR ? (it.r / selectedTargetR) * selDuration : 0;
+    const surgeDelay = electric ? (it.r || 0) / DEX_ELECTRIC_FLOW_SPEED : 0;
     return (
       <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
         <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
-        <button onClick={() => onSelect(it.key)} className={"press" + (electric ? " dex-surge-node" : "")} style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box", animationDelay: electric ? ((it.depth != null ? it.depth : it.path.length) * 0.09) + "s" : undefined }}>
+        <button onClick={() => onSelect(it.key)} className={"press" + (electric ? " dex-surge-node" : "")} style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box", transition: isSel ? "border-color .25s ease " + selDelay + "s, box-shadow .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
             {!it.unlocked && <Lock size={10} />}
             {moveNumber(it.path.length - 1)}{it.san}
@@ -9573,9 +9590,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 인접하면(=서로 라벨이 부딪힐 가능성이 큰 자리) 반지름을 아주 살짝(최대 ±100px, 화면 배율
     // 보정) 어긋나게 한다 — 각도(assignRange가 이미 정한 값)와 SAFE_GAP(반지름 최소 증가폭 계산)은
     // 전혀 건드리지 않고, 이 값 자체는 오직 it.x/it.y 최종 좌표에만 더해지는 "시각적 지터"다.
+    // (사용자 요청) "방금 만든 규칙을 depth 1~2에는 적용하지 말아줄래?" — 백/흑의 첫 응수까지는
+    // 지터 없이 원래 계산된 반지름 그대로 정확히 두고, depth 3부터만 라벨 충돌 회피용 지터를 적용한다.
+    const RADIUS_JITTER_MIN_DEPTH = 3;
     const RADIUS_JITTER_MAX = 100 / SCHEMATIC_ZOOM_LABEL_BASE;
     const RADIUS_JITTER_STEP = RADIUS_JITTER_MAX / 2;
-    for (const [, list] of byArmDepth) {
+    for (const [k, list] of byArmDepth) {
+      const depthOfList = Number(k.split(":")[1]);
+      if (depthOfList < RADIUS_JITTER_MIN_DEPTH) continue;
       let seq = 0;
       for (let i = 0; i < list.length; i++) {
         const it = list[i];
@@ -9666,6 +9688,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     for (let i = 1; i <= selectedPath.length; i++) s.add(selectedPath.slice(0, i).join(" "));
     return s;
   }, [selectedPath]);
+  // (사용자 요청) 선택 경로 흐름 애니메이션의 총 길이를 정하기 위한 목표 지점까지의 거리.
+  const selectedTargetR = useMemo(() => {
+    if (!selectedPath || !selectedPath.length) return 0;
+    const key = selectedPath.join(" ");
+    const node = items.find((it) => it.key === key);
+    return node ? node.r : 0;
+  }, [selectedPath, items]);
   const coord = schematicCoord;
   // (버그 수정) 트리가 열리자마자 아주 짧은 순간(0~2초 안팎) 동안은, 정적 스냅샷/캐시에서 한꺼번에
   // 쏟아져 들어오는 여러 노드가 같은 렌더에서 동시에 leaf→internal로 바뀌며 그 조상들의 "자식 평균"
@@ -10126,11 +10155,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               N: [ccx, ccy - half, ccx, centerY - ROOT_GAP + boxH / 2],
               S: [ccx, ccy + half, ccx, centerY + ROOT_GAP - boxH / 2],
             };
-            return Object.entries(traces).map(([dir, [x1, y1, x2, y2]]) => (
-              <line key={"chip-trace-" + dir} className={electric ? "dex-surge-line" : undefined} x1={x1} y1={y1} x2={x2} y2={y2} stroke={electric ? SCHEMATIC_ELECTRIC : T.brass} strokeWidth={electric ? 3 : 2} opacity={electric ? 1 : 0.5} strokeLinecap="round" style={electric ? { strokeDasharray: "7 5" } : undefined} />
-            ));
+            // (사용자 요청) "회로와 e4, d4 사이에도(선택 시 파란색 선이) 적용되도록" — 지금까지는
+            // electric(전체 서지)에만 반응했지 특정 수를 클릭해 선택했을 때는 칩→루트 구간이 전혀
+            // 반응하지 않았다. 선택된 경로의 첫 수(e4 또는 d4)가 속한 방향이면 이 트레이스도 함께
+            // 파란색으로, 같은 거리 비례 지연 규칙으로 켜지게 한다.
+            const selDuration = selectedTargetR ? Math.min(1, Math.max(0.3, selectedTargetR / DEX_SELECT_FLOW_SPEED)) : 0;
+            return Object.entries(traces).map(([dir, [x1, y1, x2, y2]]) => {
+              const isSelArm = !!(selectedPath && selectedPath.length && DIR_OF_ROOT[stripSuffix(selectedPath[0])] === dir);
+              const active = electric || isSelArm;
+              const selDelay = isSelArm && selectedTargetR ? (ROOT_GAP / selectedTargetR) * selDuration : 0;
+              const surgeDelay = electric ? ROOT_GAP / DEX_ELECTRIC_FLOW_SPEED : 0;
+              return <line key={"chip-trace-" + dir} className={electric ? "dex-surge-line" : undefined} x1={x1} y1={y1} x2={x2} y2={y2} stroke={active ? SCHEMATIC_ELECTRIC : T.brass} strokeWidth={active ? 3 : 2} opacity={active ? 1 : 0.5} strokeLinecap="round"
+                style={active ? { strokeDasharray: "7 5", transition: isSelArm ? "stroke .25s ease " + selDelay + "s, opacity .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined } : undefined} />;
+            });
           })()}
-          <DexEdgesLayer edges={edges} selectedKeySet={selectedKeySet} electric={electric} />
+          <DexEdgesLayer edges={edges} selectedKeySet={selectedKeySet} electric={electric} selectedTargetR={selectedTargetR} />
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
@@ -10148,7 +10187,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             <Cpu size={26} strokeWidth={1.6} />
           </div>
         </div>
-        <DexNodesLayer items={items} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} electric={electric} />
+        <DexNodesLayer items={items} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} electric={electric} selectedTargetR={selectedTargetR} />
       </div>
       {/* (버그 수정) 수 설명 카드가 팬/줌 트랜스폼이 걸린(scale(zoom)) 안쪽에 있으면 카드 자신도
           모식도 확대/축소를 그대로 따라가 축소 시엔 잘리고 확대 시엔 지나치게 커졌다 — 트랜스폼
