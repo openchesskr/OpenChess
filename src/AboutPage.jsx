@@ -707,6 +707,24 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.3.4", date: "2026.8.11",
+    summary: "채팅·프로필·검색 창을 모바일에서 전체 화면으로 크게 볼 수 있어요. 채팅 프로필 창이 저절로 다시 열리던 문제와, 상대 프로필 사진이 안 보이던 문제도 고쳤어요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "채팅·프로필·검색 창이 모바일에서 훨씬 넓고 시원하게 보여요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "채팅창 프로필 사진도, 프로필 창이 자꾸 열리던 것도 이제 다 고쳤어요." },
+    },
+    highlight: { kind: "icon", Icon: Wrench, color: "#E0995F", label: "채팅·프로필·검색 모바일 전체 화면" },
+    sections: [
+      { cat: "ui", items: [
+        "채팅·프로필·검색 창을 모바일에서는 작은 카드 대신 전체 화면으로 크게 보여드려요.",
+      ] },
+      { cat: "fix", items: [
+        "채팅에서 @아이디를 탭해 연 프로필 창을 닫으면 저절로 다시 열리던 문제를 고쳤어요.",
+        "채팅창에서 상대 프로필 사진이 표시되지 않던 경우(친구 목록에서 채팅을 시작했을 때)를 고쳤어요.",
+      ] },
+    ],
+  },
+  {
     version: "0.3.3", date: "2026.8.11",
     summary: "퍼즐 풀이 화면의 평가치 막대가 정답을 둬도 계속 숫자가 바뀌던 문제를 고쳤어요. 모바일 추천 퍼즐은 한 줄 가로 스크롤로, 집중 학습 글자색은 더 진한 크림색으로 다듬었어요.",
     mascot: {

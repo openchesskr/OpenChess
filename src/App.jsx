@@ -14372,6 +14372,13 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.3.4", date: "2026.8.11", dev: ["openchesskr"], items: [
+      "채팅·프로필·검색 창을 모바일에서 전체 화면으로 크게 볼 수 있어요.",
+      "채팅에서 @아이디를 탭해 연 프로필 창을 닫으면, 저절로 다시 열리던 문제를 고쳤어요.",
+      "채팅창에서 상대 프로필 사진이 안 보이던 경우를 고쳤어요.",
+    ]
+  },
+  {
     version: "0.3.3", date: "2026.8.11", dev: ["openchesskr"], items: [
       "집중 학습 화면의 평가치·등급 글자색을 좀 더 진한 크림색으로 바꿨어요 — 이전엔 흰색에 너무 가까웠어요.",
       "모바일에서 추천 퍼즐을 한 줄 가로 스크롤로, 점선 테두리 안에 모아서 보여드려요.",
@@ -16197,14 +16204,16 @@ function renderMentionText(body) {
 // UserSearchModal의 프로필 상세 화면과 같은 구성(PublicProfileStats 재사용)을 아이디 하나만으로 연다.
 function ChatUserProfileModal({ username, onClose }) {
   const [pub, setPub] = useState(null);
+  // (사용자 요청) 모바일에서는 이 프로필 창을 카드가 아니라 전체 화면으로 띄운다.
+  const narrow = useNarrow(640);
   useEffect(() => {
     let cc = false;
     userProfile(username).then((r) => { if (!cc) setPub(r ? { ...(r.pub || {}), username: r.username || username } : { username }); });
     return () => { cc = true; };
   }, [username]);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>프로필</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
@@ -16229,7 +16238,12 @@ function ChatUserProfileModal({ username, onClose }) {
     </div>
   );
 }
-function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle }) {
+function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, fillNarrow }) {
+  // (사용자 요청) 모바일 전체 화면 모드(ChatsModal이 narrow일 때만 fillNarrow=true로 넘겨준다)에서는
+  // 메시지 목록이 고정 320px가 아니라 남은 세로 공간을 채우도록(flex:1) 바꾼다 — 이 루트가 height:100%로
+  // 늘어나려면 부모도 그만큼의 높이를 flex로 마련해 둬야 하므로, 그런 부모를 보장하지 않는 다른
+  // 호출부(FriendsModal의 미니 채팅 뷰 등)는 이 prop을 넘기지 않아 기존 고정 높이 레이아웃을 그대로 쓴다.
+  const narrow = fillNarrow;
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -16372,12 +16386,12 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     if (!ok) load();
   };
   return (
-    <div style={{ padding: 18 }}>
-      <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+    <div style={{ padding: 18, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, height: narrow ? "100%" : undefined, boxSizing: "border-box" }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 12, flexShrink: 0 }}>
         <button onClick={onBack} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={15} /></button>
         <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{otherUsername}님과의 채팅</span>
       </div>
-      <div ref={listRef} style={{ height: 320, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+      <div ref={listRef} style={{ height: narrow ? undefined : 320, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
         {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>아직 대화가 없어요. 첫 메시지를 보내보세요!</div>}
         {msgs.map((m, i) => {
           const mine = m.from_uid === myUid;
@@ -16496,7 +16510,14 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
           };
           // (v0.2.6 기능) 손을 뗐을 때 드래그도 아니고(제자리 탭) 롱프레스 메뉴도 안 열렸다면, 본문에
           // 담긴 "@아이디" 멘션의 프로필로 리디렉션한다.
-          const onUp = () => {
+          // (버그 수정) 이 요소는 onTouchEnd와 onMouseUp을 동시에 처리한다 — 모바일에서 touchend를
+          // preventDefault하지 않으면 브라우저가 같은 지점에 합성(ghost) mouseup·click 이벤트를 뒤이어
+          // (최대 수백ms 지연) 한 번 더 발생시킨다. 멘션을 탭해 프로필 창을 연 뒤 곧바로(그 지연 시간
+          // 안에) 창을 닫으면, 이 메시지 요소에 남아 있던 그 합성 mouseup이 뒤늦게 도착해 onUp이 다시
+          // 실행되며 wasTap이 그대로 참이 돼 프로필 창이 자동으로 다시 열리는 문제가 있었다. 실제
+          // touchend에서 preventDefault를 호출해 뒤이은 합성 마우스 이벤트 자체가 생성되지 않게 한다.
+          const onUp = (e) => {
+            if (e && e.type === "touchend" && e.cancelable) e.preventDefault();
             clearTimeout(longPressTimerRef.current);
             const wasTap = Math.abs(dx) < 6 && menuFor !== m.id;
             dragRef.current = null; setDrag(null);
@@ -16553,7 +16574,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
         )}
         </AnimatePresence>
       </div>
-      <div style={{ position: "relative" }}>
+      <div style={{ position: "relative", flexShrink: 0 }}>
         {pickerOpen && <EmojiPicker onPick={(code) => send(null, code)} onClose={() => setPickerOpen(false)} />}
         {editingId != null && (
           <div className="flex items-center justify-between" style={{ marginBottom: 6, padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}>
@@ -16827,12 +16848,14 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
     }
   };
   const pub = sel || {};
+  // (사용자 요청) 모바일에서는 이 검색 창을 카드가 아니라 전체 화면으로 띄운다.
+  const narrow = useNarrow(640);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
       {/* (버그 수정) 모달 카드에 높이 제한·스크롤이 없어, 프로필 내용이 화면보다 길면 카드가 뷰포트
           밖으로 그냥 넘쳐 하단 내용을 볼 수 없었고, 스크롤하면 카드 뒤의 탭 본문이 대신 스크롤됐다 —
           카드 자체에 최대 높이와 세로 스크롤을 줘서 모달 안에서 스크롤이 끝나도록 한다. */}
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         {/* (19차 UX3) 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리한다. */}
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
           <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
@@ -16925,6 +16948,8 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
   const [rows, setRows] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [chatWith, setChatWith] = useState(null);
+  // (사용자 요청) 모바일에서는 이 채팅 창을 카드가 아니라 전체 화면으로 띄운다.
+  const narrow = useNarrow(640);
   useEffect(() => {
     let cc = false;
     (async () => {
@@ -16940,17 +16965,19 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
     return () => { cc = true; };
   }, [myUid]);
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
+      <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>채팅</span>
           {/* (19차 UX3) 뒤로가기는 ChatPanel 좌상단 ←로 통일. 래퍼 헤더는 닫기(X)만 우상단에 둔다. */}
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         {chatWith ? (
-          <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
+          <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
+            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} />
+          </div>
         ) : (
-          <div style={{ padding: 12, minHeight: 140, maxHeight: 440, overflowY: "auto" }}>
+          <div style={{ padding: 12, minHeight: 140, maxHeight: narrow ? undefined : 440, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
             {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
               : rows.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 채팅이 없어요. 친구 목록에서 채팅을 시작해 보세요.</div>
               : rows.map(({ uid, m, unread }, i) => {
@@ -17476,7 +17503,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
         )}
 
         {chatWith ? (
-          <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
+          <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
         ) : sel ? (() => {
           const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
           // (v0.2.2 UI#6#1) 채팅 버튼은 아래 actions가 아니라 닉네임/아이디와 같은 줄 우측(헤더)에 둔다.
@@ -17500,7 +17527,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                   <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
                   <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</div>
                 </div>
-                {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 10, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={17} /></button>}
+                {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 10, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={17} /></button>}
               </div>
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
               {/* (버그 수정) 채팅/친구 요청·수락·거절 버튼을 카드 맨 아래 대신 티어와 메인 퀘스트
@@ -17523,7 +17550,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                     : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{friends.map((u, i) => (
                         // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
                         // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
-                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u) })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
+                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
                       ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
                   incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>

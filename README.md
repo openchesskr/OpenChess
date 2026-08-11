@@ -26,6 +26,17 @@
 
 ## 버전 기록
 
+### OpenChess v0.3.4 — 2026/8/11
+
+**UI — 채팅·프로필·검색 창을 모바일에서 전체 화면으로**
+`ChatsModal`(채팅)·`ChatUserProfileModal`(프로필)·`UserSearchModal`(검색) 세 모달이 항상 `padding:"60px 16px"` 오버레이 안에 `maxWidth:420`짜리 카드로 떠, 모바일에서도 화면 대부분이 어두운 배경으로 남고 실제 콘텐츠는 좁은 카드 안에 갇혀 있었다. 세 컴포넌트 모두 `useNarrow(640)`으로 좁은 화면을 감지해, 그럴 때는 오버레이 padding을 0으로, 카드는 `width/height:100%`·`borderRadius:0`·테두리 없음으로 바꿔 뷰포트를 꽉 채우는 전체 화면으로 전환한다. 데스크톱은 기존 카드 레이아웃 그대로. `ChatPanel`(채팅 내용)도 새 `fillNarrow` prop을 받으면 메시지 목록을 고정 320px 대신 `flex:1`로 늘려 남은 세로 공간을 전부 채운다 — `ChatsModal`은 narrow일 때 이 prop을 넘기지만, `FriendsModal`에 임베드된 미니 채팅 뷰는 그 카드 자체가 전체 화면이 아니라서 prop을 넘기지 않고 기존 고정 높이를 그대로 쓴다(전체 화면 모드로 전환하려면 부모도 flex 높이 체인을 갖춰야 하므로, 그렇지 않은 호출부까지 임의로 늘리면 오히려 0 높이로 찌그러질 수 있다).
+
+**버그 수정 — @멘션으로 연 프로필 창이 닫아도 자동으로 다시 열리던 문제**
+채팅 메시지 말풍선은 커스텀 드래그(당겨서 시각 확인)·롱프레스(수정/삭제 메뉴)를 구현하려고 `onTouchStart/onTouchMove/onTouchEnd`와 `onMouseDown/onMouseMove/onMouseUp`을 같은 요소에 함께 바인딩하고 있었다. 모바일에서 `touchend`를 `preventDefault()`하지 않으면, 브라우저가 호환성을 위해 같은 지점에 합성(ghost) `mouseup`·`click` 이벤트를 최대 수백ms 뒤에 한 번 더 발생시킨다 — `@아이디` 멘션이 담긴 메시지를 탭해 프로필 창을 연 뒤 그 지연 시간 안에 창을 닫으면, 방금 탭했던 메시지 요소에 남아 있던 그 합성 `mouseup`이 뒤늦게 도착해 `onUp`이 다시 실행되고, `wasTap`이 그대로 참이 되어 `setViewProfile(mention)`이 다시 호출되며 프로필 창이 저절로 재오픈됐다. 실제 `touchend` 핸들러에서 `e.cancelable`일 때 `e.preventDefault()`를 호출해, 뒤이은 합성 마우스 이벤트 자체가 만들어지지 않게 했다.
+
+**버그 수정 — 채팅창에서 상대 프로필 사진이 표시되지 않던 문제**
+`ChatPanel`은 상대 아바타를 보여줄 `otherPhoto` prop을 받지만, `FriendsModal`에서 채팅을 시작하는 두 진입점(친구 프로필 서브뷰의 채팅 버튼, 친구 목록 줄의 채팅 아이콘) 모두 `setChatWith({ uid, username })`만 호출하고 `photo`를 전혀 넘기지 않았다 — 그 결과 `FriendsModal`을 거쳐 시작한 채팅은 항상 이니셜 아바타로만 보였다(반면 `ChatsModal`에서 시작한 채팅은 `chatWith.photo`를 제대로 넘겨 정상 표시됐다). 두 진입점 모두 이미 화면에 갖고 있던 프로필 정보(`p.photo`, `profiles[u].pub.photo`)를 `setChatWith` 호출에 함께 담고, `FriendsModal`의 `<ChatPanel>` 렌더에도 빠져 있던 `otherPhoto={chatWith.photo}`를 추가했다.
+
 ### OpenChess v0.3.3 — 2026/8/11
 
 **UI — 집중 학습 화면 평가치·등급 글자색을 더 진한 크림색으로**
