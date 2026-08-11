@@ -9121,22 +9121,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 반지름은 오직 깊이만의 함수(RADIUS_OF_DEPTH)라 "같은 단계는 항상 같은 거리" 조건을 그대로
   // 만족하고, 매 단계 늘어나는 폭(RADIAL_STEP)에 더해 깊이의 제곱에 비례하는 여유(RADIAL_QUAD)를
   // 얹어 깊을수록(보통 갈래도 함께 늘어나므로) 원둘레 자체가 더 넉넉히 넓어지도록 한다.
-  const ROOT_GAP = 300, RADIAL_STEP = 190, RADIAL_QUAD = 24;
+  const ROOT_GAP = 300, RADIAL_STEP = 260, RADIAL_QUAD = 34;
   const radiusOfDepth = (depth) => ROOT_GAP + RADIAL_STEP * (depth - 1) + RADIAL_QUAD * (depth - 1) * (depth - 1);
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
-  // 절대 맞닿지 않는 여백을 남긴다. spread→각도 변환은 tanh로 완만하게 눌러(위 SECTOR_HALF를
-  // 절대 넘지 않도록) 아무리 형제·자손이 많이 쌓여도 이웃 팔 영역을 침범해 선이 서로 다른 오프닝을
-  // 가로질러 겹쳐 보이는 일은 생기지 않는다 — 다만 한 팔 안에 극단적으로 많은 형제가 쌓이는
-  // 드문 경우엔(완전한 보장은 아니고) 부채꼴 가장자리 쪽 블록끼리 다소 촘촘해질 수 있다.
+  // 절대 맞닿지 않는 여백을 남긴다. (아래 assignAngle이 각 부모의 직계 자식들에게 이 부채꼴의
+  // 몫(CHILD_SECTOR)을 재귀적으로 나눠 준다 — 형제 사이 각도 간격을 그 팔 전체의 spread가 아니라
+  // 항상 "직계 부모 기준 로컬"로 정하므로, 트리 어디서든 형제끼리 고르게 퍼진다.)
   const SECTOR_HALF = (Math.PI / 4) * 0.86;
-  // (버그 수정) 실측해 보니 spread(형제 사이 퍼짐) 값은 leaf 보간용 예약 간격(LEAF_RESERVE) 누적
-  // 때문에 팔 하나 안에서 수천 단위까지도 흔히 벌어진다(이론 수만 3000개가 넘는 트리 전체 기준) —
-  // 그 큰 범위를 곧바로 tanh 하나로 누르면 사실상 거의 모든 형제가 순식간에 같은 포화 각도로
-  // 뭉개져(서로 다른 오프닝인데도 화면에 완전히 같은 좌표로 겹쳐 보임) 트리가 망가졌다. spread를
-  // 로그로 한 번 눌러 스케일 차이(가까운 형제 몇 십 단위 ~ 먼 사촌 몇 천 단위)를 완만하게 만든
-  // 뒤에야 tanh로 부채꼴 안에 가둔다 — 가까운 형제는 각도 차이가 뚜렷하고, 아주 멀리 있는 극단적인
-  // 경우만 부채꼴 가장자리로 완만히 수렴한다.
-  const ANGLE_LOG_SCALE = 12, ANGLE_K = 3.4;
   const DIR_ANGLE = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
@@ -9166,15 +9157,13 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 순서·좌우 배치는 절대 다시 안 건드림).
   const orderCacheRef = useRef(new Map());
   const posCacheRef = useRef({ N: new Map(), S: new Map(), E: new Map(), W: new Map() });
-  // (버그 수정) 네 방향의 루트(e4/d4/c4/Nf3 자신)는 internal 노드라 "자식들 pos의 가운데"로 매번
-  // 다시 계산되는데, 그 밑에서 자식이 하나라도 새로 생기거나(특히 맨 처음/맨 끝 자식이 바뀌면) 이
-  // 가운데 값 자체가 살짝만 바뀌어도, spread(= it.pos - rootPos)를 통해 그 방향 전체(수천 개
-  // 블록)가 정확히 같은 양만큼 통째로 밀리는 좌표계 전체 이동이 생겼다 — 자기 자신은 안 겹치고
-  // 안정적인데도, 그저 "기준점이 흔들려서" 방향 전체가 흔들리는 것처럼 보였다(실제로 서로 다른
-  // 갈래의 블록 여러 개가 완전히 똑같은 드리프트 값을 보인 게 이 증거). 기준점은 한 번 정해지면
-  // (그 방향의 첫 렌더에서) 영원히 고정한다 — 루트 자신의 평균이 그 뒤로 계속 흔들려도 다른
-  // 블록들의 좌표계 원점은 더 이상 따라 흔들리지 않는다.
-  const rootPosRef = useRef({});
+  // (v0.3.2 개편) 예전엔 네 방향의 루트(e4/d4/c4/Nf3 자신)가 internal 노드라 "자식들 pos의
+  // 가운데"로 매번 다시 계산돼, 그 값이 살짝만 바뀌어도 spread(= it.pos - rootPos)를 통해 그
+  // 방향 전체(수천 개 블록)가 통째로 밀리는 문제가 있어 rootPos를 한 번 고정된 기준점으로 얼려
+  // 썼다. 지금은 각도를 "부모 자신의 각도 + 그 부모의 직계 자식들 사이에서만의 상대 위치"로
+  // 부모→자식 방향 재귀로 매기므로(아래 assignAngle), 애초에 트리 전체를 관통하는 전역 기준점이
+  // 필요 없다 — 한 부모 밑에서 자식이 하나 늘어도 그 부모의 다른 자식들만 국소적으로 재배치될
+  // 뿐, 수천 개 자손 전체가 함께 밀리는 일이 없다.
   // (버그 수정) 나침반 네 팔의 "안쪽" 상대 좌표는 rootPosRef로 안정시켰지만, 트리 전체를 캔버스
   // 안에 담기 위한 이동량(centerX/centerY, "그리는 원점")은 매 렌더 현재 bounding box(minX/minY)
   // 로부터 매번 새로 계산돼, 어느 방향으로든 트리가 조금만 더 뻗어도(흔한 일 — 20초 가까이 계속
@@ -9342,30 +9331,48 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       }
     }
     const visible = items.filter((it) => it.depth > 0);
-    // 각 방향의 루트(깊이 1) 퍼짐을 0으로 맞춰, 네 팔이 정확히 나침반 중심에서 뻗어나가게 한다.
-    // (위 rootPosRef 주석 참고) 이 기준점은 그 방향에서 처음 확정될 때 한 번만 기록하고 그 뒤로는
-    // 절대 다시 갱신하지 않는다 — 루트 자신의 평균이 흔들려도 다른 블록들의 좌표계는 안 흔들린다.
-    const rootPos = rootPosRef.current;
-    for (const it of visible) if (it.depth === 1 && rootPos[it.dir] === undefined) rootPos[it.dir] = it.pos;
-    // (버그 수정) 위에서 기준점(rootPos)은 고정했지만, 정작 루트 자신(e4/d4/c4/Nf3)의 화면 위치는
-    // "그 순간의 자기 자신 pos(자식 평균, 매 렌더 다시 계산됨) - 고정된 기준점"으로 계산되고 있었다
-    // — 자기 자신의 평균은 트리가 자라며 계속 바뀌는데 기준점만 고정돼 있으니, 시간이 지날수록 루트
-    // 블록 자신이 "퍼짐 0"(칩 바로 옆) 자리에서 점점 벗어나 버렸다(정작 그 칩과 이어지는 회로
-    // 트레이스는 고정된 자리를 가리키므로, 결국 "정중앙에 첫 수가 없는" 것처럼 보였다). 루트는
-    // 정의상 항상 퍼짐 0이어야 하므로, 자기 자신의 평균과 무관하게 못박는다.
+    // (v0.3.2 개편) 각도는 전역 spread를 하나의 압축 함수로 누르는 대신, 부모→자식 트리 구조를
+    // 따라 위에서 아래로 재귀적으로 매긴다 — 각 노드는 자기 부모의 각도에서, "그 부모의 직계
+    // 형제들 사이에서만" 상대적으로 위치를 잡은 만큼만 벗어난다. 처음엔 그 팔 전체의 spread를
+    // 로그/arcsinh 같은 압축 함수 하나로 각도에 매핑해봤는데, leaf 보간 캐시가 팔 하나 안에서도
+    // 수천 단위까지 벌어지다 보니(위 주석 참고) 그 팔 중심에서 멀리 있는 형제 그룹은 압축 함수의
+    // 기울기가 이미 거의 0이 되어, 정작 그 그룹 안의 진짜 형제끼리도 화면에서 거의 같은 좌표로
+    // 뭉개져 겹치는 문제가 실측으로 확인됐다("블록들이 더 넓게 퍼져야 한다"는 피드백의 원인).
+    // 각도를 전역이 아니라 항상 "그 부모 밑에서만" 다시 정규화하면, 그 부모가 트리 전체에서
+    // 얼마나 중심에서 멀리 있든 상관없이 직계 형제들은 항상 이 부모 몫으로 배정된 부채꼴
+    // (CHILD_SECTOR)을 고르게 나눠 쓴다.
+    const CHILD_SECTOR = SECTOR_HALF * 0.5;
+    const childrenOf = new Map();
+    for (const [p, c] of edges) {
+      if (p.depth < 1) continue;
+      if (!childrenOf.has(p.key)) childrenOf.set(p.key, []);
+      childrenOf.get(p.key).push(c);
+    }
+    const assignAngle = (node, angle) => {
+      node.angle = angle;
+      const kids = childrenOf.get(node.key);
+      if (!kids || !kids.length) return;
+      let lo = Infinity, hi = -Infinity;
+      for (const k of kids) { if (k.pos < lo) lo = k.pos; if (k.pos > hi) hi = k.pos; }
+      const mid = (lo + hi) / 2, half = Math.max(hi - mid, 1);
+      for (const k of kids) {
+        const frac = (k.pos - mid) / half;
+        // (안전장치) 형제가 아주 많거나 라인이 아주 깊게(그리고 한쪽으로 치우쳐) 이어지면 이론상
+        // 이 팔의 전체 부채꼴(SECTOR_HALF)을 넘어설 수 있다 — 이웃 팔을 절대 침범하지 않도록
+        // 최종 각도를 그 팔의 전체 범위 안으로 한 번 더 clamp한다.
+        const raw = angle + CHILD_SECTOR * frac;
+        const kidAngle = Math.max(DIR_ANGLE[node.dir] - SECTOR_HALF, Math.min(DIR_ANGLE[node.dir] + SECTOR_HALF, raw));
+        assignAngle(k, kidAngle);
+      }
+    };
+    for (const it of visible) if (it.depth === 1) assignAngle(it, DIR_ANGLE[it.dir]);
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
-      const spread = it.depth === 1 ? 0 : it.pos - (rootPos[it.dir] || 0);
-      // (v0.3.2 개편) 1수(depth===1)는 기존 그대로 정확히 그 방향의 각도·ROOT_GAP 거리에 고정해
-      // 십자 구조를 유지한다. 그 아래부터는 반지름이 깊이만으로 정해지고(같은 깊이는 항상 같은
-      // 거리), 형제 사이의 퍼짐(spread)은 tanh로 부채꼴 절반각(SECTOR_HALF) 안쪽으로 눌러 각도로
-      // 바꾼다 — spread가 0에 가까우면 거의 선형으로, 아주 커지면 부채꼴 경계에 점근해 이웃 팔을
-      // 절대 침범하지 않는다.
+      // 반지름은 깊이만으로 정해지므로(같은 단계는 항상 같은 거리) 여기선 위 assignAngle이 이미
+      // 매겨 둔 각도만 그대로 극좌표→화면좌표로 바꾼다.
       const r = radiusOfDepth(it.depth);
-      const logSpread = Math.sign(spread) * Math.log1p(Math.abs(spread) / ANGLE_LOG_SCALE);
-      const angle = it.depth === 1 ? DIR_ANGLE[it.dir] : DIR_ANGLE[it.dir] + SECTOR_HALF * Math.tanh(logSpread / ANGLE_K);
-      it.x = r * Math.cos(angle) - boxW / 2;
-      it.y = r * Math.sin(angle) - boxH / 2;
+      it.x = r * Math.cos(it.angle) - boxW / 2;
+      it.y = r * Math.sin(it.angle) - boxH / 2;
     }
     // (버그 수정) 겹침을 매번 다시 계산해 밀어내는 방식(격자 기반 충돌 해소)을 몇 차례 시도했지만,
     // 그때그때 새로 발견되는 충돌 쌍·필요한 이동량이 매번 달라져 오히려 안정성을 해쳤다(심하면
