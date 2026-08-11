@@ -9476,11 +9476,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 통틀어 균등 분할하므로 폭이 depth에 따라 branching factor만큼만 줄어들고(기하급수적이지만
     // 훨씬 완만함), 반지름도 훨씬 안정적으로 늘어난다. 그래도 안전하게, 한 단계당 반지름 증가폭에
     // 상한(MAX_RADIAL_STEP)을 둬 어떤 극단적인 경우에도 폭발하지 않도록 한다.
-    // (버그 수정) "최소 거리는 최소 50px 이상" — 이 좌표계는 아직 확대·축소(zoom) 배율이 곱해지기
-    // 전의 "논리" 좌표라, 여기서 50을 그대로 쓰면 기본 화면 배율(SCHEMATIC_ZOOM_LABEL_BASE=0.75)이
-    // 곱해진 뒤 실제 화면에는 37.5px로 보인다 — 사용자가 눈으로 보는 화면 픽셀 기준 50px을
-    // 보장하려면 그 배율만큼 미리 나눠(=키워) 둬야 한다.
-    const SAFE_GAP = 50 / SCHEMATIC_ZOOM_LABEL_BASE;
+    // (버그 수정) "앞쪽 수들이 겹친다 — 최소 거리를 70px로" — 이 좌표계는 아직 확대·축소(zoom)
+    // 배율이 곱해지기 전의 "논리" 좌표라, 여기서 70을 그대로 쓰면 기본 화면 배율
+    // (SCHEMATIC_ZOOM_LABEL_BASE=0.75)이 곱해진 뒤 실제 화면에는 52.5px로 보인다 — 사용자가
+    // 눈으로 보는 화면 픽셀 기준 70px을 보장하려면 그 배율만큼 미리 나눠(=키워) 둬야 한다.
+    const SAFE_GAP = 70 / SCHEMATIC_ZOOM_LABEL_BASE;
     const MIN_RADIAL_STEP = SAFE_GAP;
     const MAX_RADIAL_STEP = MIN_RADIAL_STEP * 80;
     // (버그 수정) depth===1(e4/d4 자신)은 위 byArmDepth 루프가 depth>=2만 다뤄 angle이 전혀
@@ -9541,8 +9541,20 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // (v0.3.2 개편) 오프닝 영역을 점선 테두리로 묶어 보여주던 것을 없앴다 — 이름 라벨만 그 오프닝에
     // 진입하는 첫 수(그룹의 뿌리 노드) 블록 바로 옆에 남겨 둔다.
     const groups = [];
+    const labeledKeys = new Set();
     for (const it of visible) {
-      if (it.groupKey === it.key && it.groupFamLabel) groups.push({ key: it.key, name: it.groupFamLabel, x: it.x, y: it.y });
+      if (it.groupKey === it.key && it.groupFamLabel) { groups.push({ key: it.key, name: it.groupFamLabel, x: it.x, y: it.y }); labeledKeys.add(it.key); }
+    }
+    // (사용자 요청) "백의 2번째 수까지는 모두 오프닝 이름을 표시" — 위 그룹 라벨은 13개 대표
+    // 오프닝(TITLE_OPENINGS)에 진입하는 뿌리 노드에만 붙는데, 이 이른 구간(depth<=3, 1.e4 e5
+    // 2.Nf3)에서는 그 대표 목록에 없는 이름이라도 전부 보여준다. 이 수 자신에게 ECO 이름이 없으면
+    // (책 이름은 매 수마다 새로 붙는 게 아니라 마지막 이름 붙은 조상에서 그대로 이어지는 성격이라
+    // 흔한 일이다) 그 이름을 이어받도록 openingNameOf(조상 탐색)로 보완한다.
+    const EARLY_NAME_DEPTH = 3;
+    for (const it of visible) {
+      if (it.depth > EARLY_NAME_DEPTH || labeledKeys.has(it.key)) continue;
+      const nm = nameOverride(it.path.slice(0, -1).join(" "), it.san) ?? it.name ?? openingNameOf(it.path);
+      if (nm) { groups.push({ key: it.key, name: nm, x: it.x, y: it.y }); labeledKeys.add(it.key); }
     }
     const bounds = { minX: minX + centerX, maxX: maxX + centerX, minY: minY + centerY, maxY: maxY + centerY };
     return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups, bounds };
