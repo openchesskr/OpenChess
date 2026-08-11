@@ -9158,10 +9158,6 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 절대 맞닿지 않는 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게
   // 서로 겹치지 않게 재귀적으로 나눠 준다.)
   const SECTOR_HALF = (Math.PI / 4) * 0.86;
-  // (버그 수정) 형제 블록 사이가 더 넓어 보이도록, 구간을 잎 수 비율대로 나누기 전에 형제 경계마다
-  // 이 만큼의 각도를 고정 여백으로 미리 떼어 둔다(assignRange 참고). 너무 넓으면 나중에 줄이면
-  // 되므로 우선 훨씬 크게 잡는다.
-  const SIBLING_GAP = 0.32;
   const DIR_ANGLE = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
@@ -9383,21 +9379,44 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 그 구간을 자기 자식들에게 서로 겹치지 않게 다시 쪼개 나눠준다(선버스트/방사형 아이시클
     // 차트와 같은 표준 기법) — 이러면 서로 다른 서브트리는 애초에 배정받은 구간 자체가 겹치지
     // 않으므로, 그 자손이 아무리 많아져도 다른 갈래의 구간을 침범할 수 없고 연결선도 교차하지
-    // 않는다. 구간은 자식 서브트리에 딸린 잎(leaf) 수에 비례해 나눠, 갈래가 많은 인기 라인일수록
-    // 더 넓은 구간(따라서 더 촘촘하지 않은 배치)을 받는다.
+    // 않는다.
     const childrenOf = new Map();
     for (const [p, c] of edges) {
       if (p.depth < 1) continue;
       if (!childrenOf.has(p.key)) childrenOf.set(p.key, []);
       childrenOf.get(p.key).push(c);
     }
-    // items는 후위 순회(자식이 부모보다 먼저 옴) 순서라, 한 번만 훑어도 각 노드의 잎 수를
-    // "이미 계산된 자식들의 합"으로 바로 구할 수 있다.
-    const leafCountOf = new Map();
+    // (버그 수정) 잎(leaf) "개수" 비율로만 구간을 나누면, 부모 구간 자체가 이미 극도로 좁아진
+    // 상태에서는(이론이 넓고 깊게 뻗은 인기 라인일수록 그렇다) 아무리 비율을 조정해도 결과 폭이
+    // 0에 수렴해 형제 블록이 완전히 겹쳐 보였다("간격을 넓혀도 뭉쳐 있다"는 실측 피드백). 매
+    // 형제 그룹마다 그때그때 최소 폭을 끼워 맞추는 방식(로컬 보정)도 시도했지만, 그 보정이 부모
+    // 구간을 넘어 확장될 때 이웃한 사촌 갈래의 확장과 서로 부딪혀 다른 곳에서 또 겹침이 생겼다.
+    // 근본적으로 풀려면 "이 서브트리 전체가 겹치지 않고 그려지려면 최소한 몇 라디안이 필요한가"를
+    // 잎에서부터 뿌리 방향으로(자식 → 부모) 먼저 계산해 둬야 한다 — items가 후위 순회 순서라
+    // 한 번만 훑어도 가능하다: 잎은 자기 깊이(반지름)에서 정해지는 최소 호 길이(MIN_ARC_PX)만큼의
+    // 각도가 필요하고, 내부 노드는 자식들이 필요로 하는 폭의 합만큼 필요하다. 이렇게 구한
+    // requiredWidthOf를 뿌리→잎 방향으로 내려가며 "부모 구간이 그 필요 폭보다 넓으면 여유를 그대로
+    // 쓰고, 부족하면 필요한 만큼만 넘어서서 확장"하는 방식으로 나누면, 수학적 귀납으로 모든 잎이
+    // 항상 자기 깊이의 최소 호 길이 이상을 확보한다(자식 필요 폭의 합을 부모가 그대로 물려받으므로
+    // 로컬 보정처럼 이웃 서브트리의 확장과 부딪힐 여지가 없다 — 애초에 필요한 만큼만 미리 계산해
+    // 배정하기 때문).
+    const MIN_ARC_PX = 130;
+    const minSpanAtDepth = (depth) => { const r = radiusOfDepth(depth); return r > 0 ? MIN_ARC_PX / r : 0.08; };
+    const requiredWidthOf = new Map();
     for (const it of items) {
       const kids = childrenOf.get(it.key);
-      if (!kids || !kids.length) leafCountOf.set(it.key, 1);
-      else { let s = 0; for (const k of kids) s += leafCountOf.get(k.key) || 1; leafCountOf.set(it.key, s); }
+      if (!kids || !kids.length) requiredWidthOf.set(it.key, minSpanAtDepth(it.depth));
+      else {
+        let s = 0;
+        for (const k of kids) s += requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth);
+        // (버그 수정) 내부 노드의 필요 폭을 자식들 합으로만 정하면, 자식이 하나뿐이거나 깊이
+        // 들어갈수록(반지름이 커져 minSpan이 작아짐) 자손 요구 폭의 합이 오히려 이 노드 자신의
+        // 깊이에서 필요한 최소 폭보다 작아질 수 있다 — 그러면 이 노드 자신은 정작 자기 형제들과
+        // 충분히 떨어지지 못한 채 배정됐다(실측: "3...cxd4"·"3...b6"처럼 서로 다른 내부 노드가
+        // 0.67px까지 붙어 보인 원인). 내부 노드도 최소한 "자기 깊이에서 필요한 최소 폭"은 항상
+        // 확보하도록 자식 합과 최솟값 중 큰 쪽을 쓴다.
+        requiredWidthOf.set(it.key, Math.max(minSpanAtDepth(it.depth), s));
+      }
     }
     const assignRange = (node, lo, hi) => {
       node.angle = (lo + hi) / 2;
@@ -9407,18 +9426,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // 정렬됨) 순서를 그대로 구간 배치 순서로 쓴다 — 그래야 화면상 좌우 배치가 갑자기 뒤집히지
       // 않는다.
       const ordered = kids.slice().sort((a, b) => a.pos - b.pos);
-      const total = ordered.reduce((s, k) => s + (leafCountOf.get(k.key) || 1), 0) || 1;
-      // (버그 수정) 형제 사이 간격이 더 넓어 보이도록, 형제 수만큼 생기는 경계(ordered.length-1개)
-      // 각각에 고정 여백(SIBLING_GAP)을 미리 떼어 놓고, 남은 폭만 잎 수 비율대로 나눈다 — 잎이
-      // 하나뿐이라 자기 몫이 아주 작은 형제도 옆 형제와 최소한 이 여백만큼은 떨어져 보인다.
-      const gapTotal = Math.min((hi - lo) * 0.8, SIBLING_GAP * Math.max(0, ordered.length - 1));
-      const usable = (hi - lo) - gapTotal;
-      const gap = ordered.length > 1 ? gapTotal / (ordered.length - 1) : 0;
-      let cur = lo;
+      const totalReq = ordered.reduce((s, k) => s + (requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth)), 0) || 1;
+      // 부모가 물려준 폭이 자식들의 실제 필요 폭 합보다 넓으면 그 여유를 그대로 쓰고, 부족하면
+      // (=이 서브트리가 원래 몫보다 넓어야만 안 겹치면) 필요한 만큼 확장한다.
+      const useWidth = Math.max(hi - lo, totalReq);
+      const mid = (lo + hi) / 2;
+      let cur = mid - useWidth / 2;
       for (const k of ordered) {
-        const span = usable * ((leafCountOf.get(k.key) || 1) / total);
-        assignRange(k, cur, cur + span);
-        cur += span + gap;
+        const req = requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth);
+        const w = (req / totalReq) * useWidth;
+        assignRange(k, cur, cur + w);
+        cur += w;
       }
     };
     for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF);
