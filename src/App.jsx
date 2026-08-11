@@ -9057,10 +9057,11 @@ const schematicCoord = (it) => ({ x: it.x, y: it.y });
 function schematicElbow(p, c) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   const pc = schematicCoord(p), cc2 = schematicCoord(c);
-  if (c.dir === "E") { const x1 = pc.x + boxW, y1 = pc.y + boxH / 2, x2 = cc2.x, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; return [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
-  if (c.dir === "W") { const x1 = pc.x, y1 = pc.y + boxH / 2, x2 = cc2.x + boxW, y2 = cc2.y + boxH / 2, mx = (x1 + x2) / 2; return [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; }
-  if (c.dir === "N") { const x1 = pc.x + boxW / 2, y1 = pc.y, x2 = cc2.x + boxW / 2, y2 = cc2.y + boxH, my = (y1 + y2) / 2; return [[x1, y1], [x1, my], [x2, my], [x2, y2]]; }
-  const x1 = pc.x + boxW / 2, y1 = pc.y + boxH, x2 = cc2.x + boxW / 2, y2 = cc2.y, my = (y1 + y2) / 2; return [[x1, y1], [x1, my], [x2, my], [x2, y2]];
+  // (v0.3.2 개편) 나침반 네 팔이 방사형(radial)으로 바뀌면서, 축 정렬을 전제하던 기존 ㄱ자(elbow)
+  // 꺾임 연결선은 더 이상 부모·자식의 실제 위치 관계와 맞지 않는다 — 중심 회로 칩을 기준으로 사방
+  // 어느 각도로도 뻗어나갈 수 있으므로, 부모 중심에서 자식 중심으로 곧은 직선을 긋는다(검색 이동
+  // 애니메이션도 이 좌표를 그대로 따라가므로 함께 자연스러운 방사형 경로가 된다).
+  return [[pc.x + boxW / 2, pc.y + boxH / 2], [cc2.x + boxW / 2, cc2.y + boxH / 2]];
 }
 // (v0.0.6 성능) 팬/드래그는 pan/zoom 상태만 바꾸고 items/edges 자체는 그대로인데도, 이 두 배열을
 // 그리는 코드가 OpeningSchematic 함수 본문 안에 있으면 pan/zoom이 바뀔 때마다(드래그 중 초당
@@ -9112,19 +9113,31 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
   // kind/evalCp를 한 번에 계산해 넘겨준다(이미 불러온 rawMoves를 재사용하므로 추가 요청은 없음).
-  // (기능) 나침반형 레이아웃 — 남/북(세로) 방향으로 뻗는 서브트리는 깊이축이 세로라 라벨이 다음
-  // 깊이의 블록과 겹치지 않도록 깊이 간격(VROW)을 넉넉히 주고, 형제 퍼짐(가로)은 좀 더 촘촘히
-  // (VCOL). 동/서(가로) 방향은 반대로 깊이 간격(HCOL)은 촘촘히, 형제 퍼짐(세로, HROW)에 라벨이
-  // 겹치지 않을 정도의 여유를 준다.
-  const VCOL = 108, VROW = 86, HCOL = 158, HROW = 68;
-  // (버그 수정) 남/북 팔은 "가로로 퍼진(spread) x"가, 동/서 팔은 "깊이로 뻗은(depth) x"가 같은
-  // 화면 x축을 공유한다(y축도 마찬가지, 역할만 바뀜) — 즉 네 팔은 서로 독립적으로 얼마든지
-  // 넓어지거나 깊어질 수 있는데, 트리가 아주 커지면(수천 개) 한 팔이 충분히 넓어지고 이웃 팔이
-  // 충분히 깊어져 우연히 같은 좌표에서 서로 다른 갈래의 블록이 겹치는 경우가 생겼다(연결선이
-  // 서로 다른 오프닝을 가로질러 어지럽게 겹쳐 보이는 원인). 각 팔이 중심에서 시작하는 최소 거리를
-  // 넉넉히 늘려, 실제 사용 범위에서는 이런 교차 충돌이 일어나기 전에 트리 로딩이 끝나거나 사용자가
-  // 이미 다른 곳을 보고 있을 만큼 여유를 둔다(완전한 보장은 아니지만, 실사용에서 충분히 드물게 만든다).
-  const ROOT_GAP = 260;
+  // (v0.3.2 개편) 나침반형 레이아웃 — 1수(백의 첫 수 e4/d4/c4/Nf3)까지는 기존과 똑같이 정중앙
+  // 회로 칩에서 북/동/남/서 정확히 네 방향(십자)으로 고정한다. 그 아래(흑의 첫 응수부터)는 더는
+  // 각 팔이 곧게 뻗는 격자가 아니라, 같은 깊이(수 순서)의 블록은 항상 중심에서 같은 거리(반지름)에
+  // 놓이고 형제 사이의 "퍼짐" 값(spread, 기존 leaf 보간 캐시를 그대로 재사용)이 각도로 변환되는
+  // 진짜 방사형(radial) 트리로 뻗어나간다.
+  // 반지름은 오직 깊이만의 함수(RADIUS_OF_DEPTH)라 "같은 단계는 항상 같은 거리" 조건을 그대로
+  // 만족하고, 매 단계 늘어나는 폭(RADIAL_STEP)에 더해 깊이의 제곱에 비례하는 여유(RADIAL_QUAD)를
+  // 얹어 깊을수록(보통 갈래도 함께 늘어나므로) 원둘레 자체가 더 넉넉히 넓어지도록 한다.
+  const ROOT_GAP = 300, RADIAL_STEP = 190, RADIAL_QUAD = 24;
+  const radiusOfDepth = (depth) => ROOT_GAP + RADIAL_STEP * (depth - 1) + RADIAL_QUAD * (depth - 1) * (depth - 1);
+  // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
+  // 절대 맞닿지 않는 여백을 남긴다. spread→각도 변환은 tanh로 완만하게 눌러(위 SECTOR_HALF를
+  // 절대 넘지 않도록) 아무리 형제·자손이 많이 쌓여도 이웃 팔 영역을 침범해 선이 서로 다른 오프닝을
+  // 가로질러 겹쳐 보이는 일은 생기지 않는다 — 다만 한 팔 안에 극단적으로 많은 형제가 쌓이는
+  // 드문 경우엔(완전한 보장은 아니고) 부채꼴 가장자리 쪽 블록끼리 다소 촘촘해질 수 있다.
+  const SECTOR_HALF = (Math.PI / 4) * 0.86;
+  // (버그 수정) 실측해 보니 spread(형제 사이 퍼짐) 값은 leaf 보간용 예약 간격(LEAF_RESERVE) 누적
+  // 때문에 팔 하나 안에서 수천 단위까지도 흔히 벌어진다(이론 수만 3000개가 넘는 트리 전체 기준) —
+  // 그 큰 범위를 곧바로 tanh 하나로 누르면 사실상 거의 모든 형제가 순식간에 같은 포화 각도로
+  // 뭉개져(서로 다른 오프닝인데도 화면에 완전히 같은 좌표로 겹쳐 보임) 트리가 망가졌다. spread를
+  // 로그로 한 번 눌러 스케일 차이(가까운 형제 몇 십 단위 ~ 먼 사촌 몇 천 단위)를 완만하게 만든
+  // 뒤에야 tanh로 부채꼴 안에 가둔다 — 가까운 형제는 각도 차이가 뚜렷하고, 아주 멀리 있는 극단적인
+  // 경우만 부채꼴 가장자리로 완만히 수렴한다.
+  const ANGLE_LOG_SCALE = 12, ANGLE_K = 3.4;
+  const DIR_ANGLE = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
   // (버그 수정) 세 가지 방식을 각각 시도했지만 모두 문제가 있었다.
@@ -9343,11 +9356,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
       const spread = it.depth === 1 ? 0 : it.pos - (rootPos[it.dir] || 0);
-      const ld = it.depth - 1;
-      if (it.dir === "N") { it.x = spread * VCOL; it.y = -(ROOT_GAP + ld * VROW); }
-      else if (it.dir === "S") { it.x = spread * VCOL; it.y = ROOT_GAP + ld * VROW; }
-      else if (it.dir === "E") { it.x = ROOT_GAP + ld * HCOL; it.y = spread * HROW; }
-      else { it.x = -(ROOT_GAP + ld * HCOL); it.y = spread * HROW; }
+      // (v0.3.2 개편) 1수(depth===1)는 기존 그대로 정확히 그 방향의 각도·ROOT_GAP 거리에 고정해
+      // 십자 구조를 유지한다. 그 아래부터는 반지름이 깊이만으로 정해지고(같은 깊이는 항상 같은
+      // 거리), 형제 사이의 퍼짐(spread)은 tanh로 부채꼴 절반각(SECTOR_HALF) 안쪽으로 눌러 각도로
+      // 바꾼다 — spread가 0에 가까우면 거의 선형으로, 아주 커지면 부채꼴 경계에 점근해 이웃 팔을
+      // 절대 침범하지 않는다.
+      const r = radiusOfDepth(it.depth);
+      const logSpread = Math.sign(spread) * Math.log1p(Math.abs(spread) / ANGLE_LOG_SCALE);
+      const angle = it.depth === 1 ? DIR_ANGLE[it.dir] : DIR_ANGLE[it.dir] + SECTOR_HALF * Math.tanh(logSpread / ANGLE_K);
+      it.x = r * Math.cos(angle) - boxW / 2;
+      it.y = r * Math.sin(angle) - boxH / 2;
     }
     // (버그 수정) 겹침을 매번 다시 계산해 밀어내는 방식(격자 기반 충돌 해소)을 몇 차례 시도했지만,
     // 그때그때 새로 발견되는 충돌 쌍·필요한 이동량이 매번 달라져 오히려 안정성을 해쳤다(심하면
@@ -9917,14 +9935,20 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         const nodeCX = nodeScreenX + nodeScreenW / 2, nodeCY = nodeScreenY + nodeScreenH / 2;
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
         let left, top, tailPos;
+        // (v0.3.2 버그 수정) 두 축 중 한쪽(퍼짐 방향)만 clamp하고, 블록에서 카드가 뻗어나가는
+        // 축(세로 모식도의 top, 가로 모식도의 left)은 clamp가 없어 블록이 뷰포트 아래/오른쪽 끝에
+        // 가까우면 카드가 모식도 영역 밖으로 빠져나가 잘리거나 아예 안 보였다 — 이 축도 뷰포트
+        // 안에 들어오도록 clamp한다(카드 높이는 실측 대신 기존에 쓰던 추정치 CARD_H_EST를 그대로
+        // 재사용). 블록과 아주 가까운 가장자리에서는 카드가 clamp로 인해 블록과 다소 겹칠 수
+        // 있지만, 화면 밖으로 사라지는 것보다는 낫다.
         if (vertical) {
           // 블록 아래에 두고, 꼬리는 위로 — 블록을 가리지 않는다.
           left = clamp(nodeCX - CARD_W / 2, 4, Math.max(4, rect.width - CARD_W - 4));
-          top = nodeScreenY + nodeScreenH + 11;
+          top = clamp(nodeScreenY + nodeScreenH + 11, 4, Math.max(4, rect.height - CARD_H_EST * cardScale - 4));
           tailPos = clamp(nodeCX - left, 20, CARD_W - 20);
         } else {
           // 블록 오른쪽에 두고, 꼬리는 왼쪽으로.
-          left = nodeScreenX + nodeScreenW + 11;
+          left = clamp(nodeScreenX + nodeScreenW + 11, 4, Math.max(4, rect.width - CARD_W - 4));
           top = clamp(nodeCY - CARD_H_EST / 2, 4, Math.max(4, rect.height - CARD_H_EST - 4));
           tailPos = clamp(nodeCY - top, 20, CARD_H_EST - 20);
         }
