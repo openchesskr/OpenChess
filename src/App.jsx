@@ -9151,7 +9151,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // assignRange 참고)를 더해 "같은 깊이는 항상 같은 거리"라는 제약을 의도적으로 버렸다 —
   // 반지름 자체가 그리는 순서에 따른 정수 배수라 실수 각도가 아무리 가까워도 서로 다른 자리에
   // 놓이는 것이 구조적으로 보장된다.
-  const ROOT_GAP = 300, RADIAL_STEP = 1100, RADIAL_GROWTH = 1.35;
+  const ROOT_GAP = 260, RADIAL_STEP = 420, RADIAL_GROWTH = 1.22;
   const radiusOfDepth = (depth) => depth <= 1 ? ROOT_GAP : ROOT_GAP + RADIAL_STEP * (Math.pow(RADIAL_GROWTH, depth - 1) - 1) / (RADIAL_GROWTH - 1);
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
   // 절대 맞닿지 않는 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게
@@ -9448,11 +9448,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 비율(RADIUS_BOOST_CAP_FRAC)로 상한을 두면, 얕은 노드는 상한 자체가 작아 자기 링 근처에서만
     // 미세하게 움직이고, 깊은 노드는 상한도 커서 그만큼 더 넉넉하게 퍼질 여지를 얻는다 — 겹침을
     // 줄이는 효과는 유지하면서 "같은 깊이는 대략 비슷한 거리"라는 트리의 기본 골격은 지킨다.
-    const SPIRAL_ANGLE_COEF = 600, SPIRAL_TIEBREAK = 60, RADIUS_BOOST_CAP_FRAC = 2;
-    let spiralCounter = 0;
-    const assignRange = (node, lo, hi) => {
+    const SPIRAL_ANGLE_COEF = 400, SPIRAL_TIEBREAK = 130, RADIUS_BOOST_CAP_FRAC = 6.5;
+    // (버그 수정) spiralCounter를 네 팔이 공유하면, 먼저 처리된 팔(예: 1.e4)의 서브트리 전체를
+    // 다 훑고 나서야 다음 팔(1.d4)의 차례가 오는데, 그때 카운터가 이미 e4의 노드 수만큼(수백~
+    // 수천) 커져 있어 1.d4 자신(정작 각도 편차는 0인데도)이 그 값을 그대로 물려받아 반지름
+    // 상한(RADIUS_BOOST_CAP_FRAC)까지 튕겨 나가 버렸다 — "1.e4만 십자 위에 있고 나머지 세 첫 수는
+    // 십자에서 멀리 떨어져 있다"는 피드백의 정확한 원인이었다. 팔마다 카운터를 0부터 새로 시작해,
+    // 다른 팔에서 몇 개를 훑었는지가 이 팔의 배치에 전혀 영향을 주지 않게 한다.
+    const assignRange = (node, lo, hi, spiralCounterRef) => {
       node.angle = (lo + hi) / 2;
-      const rawBoost = SPIRAL_ANGLE_COEF * Math.abs(node.angle - DIR_ANGLE[node.dir]) + SPIRAL_TIEBREAK * (spiralCounter++);
+      const rawBoost = SPIRAL_ANGLE_COEF * Math.abs(node.angle - DIR_ANGLE[node.dir]) + SPIRAL_TIEBREAK * (spiralCounterRef.n++);
       node.radiusBoost = Math.min(rawBoost, radiusOfDepth(node.depth) * RADIUS_BOOST_CAP_FRAC);
       const kids = childrenOf.get(node.key);
       if (!kids || !kids.length) return;
@@ -9474,11 +9479,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       for (const k of ordered) {
         const req = requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth);
         const w = (req / totalReq) * useWidth;
-        assignRange(k, cur, cur + w);
+        assignRange(k, cur, cur + w, spiralCounterRef);
         cur += w;
       }
     };
-    for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF);
+    for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF, { n: 0 });
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
       // 반지름은 깊이 기준 값(radiusOfDepth)에 나선형 가중치(radiusBoost)를 더해 정한다.
