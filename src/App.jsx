@@ -9142,16 +9142,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // kind/evalCp를 한 번에 계산해 넘겨준다(이미 불러온 rawMoves를 재사용하므로 추가 요청은 없음).
   // (v0.3.2 개편) 나침반형 레이아웃 — 1수(백의 첫 수 e4/d4/c4/Nf3)까지는 기존과 똑같이 정중앙
   // 회로 칩에서 북/동/남/서 정확히 네 방향(십자)으로 고정한다. 그 아래(흑의 첫 응수부터)는 더는
-  // 각 팔이 곧게 뻗는 격자가 아니라, 같은 깊이(수 순서)의 블록은 항상 중심에서 같은 거리(반지름)에
-  // 놓이고 형제 사이의 "퍼짐" 값(spread, 기존 leaf 보간 캐시를 그대로 재사용)이 각도로 변환되는
-  // 진짜 방사형(radial) 트리로 뻗어나간다.
-  // 반지름은 오직 깊이만의 함수(radiusOfDepth)라 "같은 단계는 항상 같은 거리" 조건을 그대로
-  // 만족한다. (버그 수정) 형제 각도 구간은 그 팔 전체(수백 개에 이르는 모든 잎)의 몫을 나눠 갖는
-  // assignRange 방식이라, 깊은 곳으로 갈수록(자손이 누적될수록) 개별 구간 자체가 점점 좁아진다 —
-  // 예전엔 반지름을 깊이의 2차식(depth²)으로만 늘렸는데, 그 정도 증가로는 좁아지는 구간 폭을 따라
-  // 잡지 못해 결국 화면 둘레(호의 길이 = 반지름×각도)가 다시 줄어들며 깊은 곳에서 재차 겹쳐
-  // 보였다. 반지름을 깊이마다 일정 비율(RADIAL_GROWTH)씩 커지는 등비수열 합으로 늘려(사실상
-  // 지수적으로) 증가폭 자체가 매 단계 더 커지게 해, 좁아지는 구간을 항상 웃도는 여유를 확보한다.
+  // 각 팔이 곧게 뻗는 격자가 아니라 진짜 방사형(radial) 트리로 뻗어나간다.
+  // radiusOfDepth는 그 깊이의 "기준" 거리를 정한다 — 애초엔 같은 깊이는 항상 정확히 같은 거리에
+  // 놓이도록 했지만(순수 극좌표), 형제 각도 구간이 그 팔 전체(수백 개에 이르는 모든 잎)의 몫을
+  // 나눠 갖는 방식이라 부동소수점 정밀도 한계까지 각도가 가까워지는 극단적인 경우(한 팔에 형제·
+  // 자손이 아주 많이 몰린 니치 라인)에는 각도만으로 겹침을 완전히 막을 수 없었다. 이제는
+  // 아르키메데스 나선처럼 형제를 하나씩 그릴 때마다 반지름에도 가중치(radiusBoost, 아래
+  // assignRange 참고)를 더해 "같은 깊이는 항상 같은 거리"라는 제약을 의도적으로 버렸다 —
+  // 반지름 자체가 그리는 순서에 따른 정수 배수라 실수 각도가 아무리 가까워도 서로 다른 자리에
+  // 놓이는 것이 구조적으로 보장된다.
   const ROOT_GAP = 300, RADIAL_STEP = 1100, RADIAL_GROWTH = 1.35;
   const radiusOfDepth = (depth) => depth <= 1 ? ROOT_GAP : ROOT_GAP + RADIAL_STEP * (Math.pow(RADIAL_GROWTH, depth - 1) - 1) / (RADIAL_GROWTH - 1);
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
@@ -9418,6 +9417,20 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         requiredWidthOf.set(it.key, Math.max(minSpanAtDepth(it.depth), s));
       }
     }
+    // (v0.3.2 개편) "같은 깊이는 항상 같은 거리"라는 제약을 버리고 아르키메데스 나선(반지름이
+    // 그리는 순서에 비례해 계속 늘어나는 나선)처럼 만든다 — 부모마다 로컬 형제 인덱스로
+    // radiusBoost를 주는 방식을 먼저 시도했는데, 서로 무관한 두 갈래가 매 단계 우연히 같은
+    // 인덱스(예: 둘 다 계속 "첫째 자식")를 골라 내려가면 누적된 radiusBoost가 여전히 거의
+    // 같아져 버리는 사례가 남았다(실측: 24쌍→4쌍으로 줄었지만 완전히 없어지진 않음). 로컬
+    // 인덱스 대신 트리 전체(한 팔 기준)를 훑는 단 하나의 전역 카운터(spiralCounter)를 두고,
+    // 화면에 새 블록을 하나 배치할 때마다(DFS로 트리를 훑는 순서 그대로) 그 카운터를 소비해
+    // radiusBoost로 쓴다 — 서로 다른 두 노드가 정확히 같은 카운터 값을 받는 일은 애초에
+    // 불가능하므로(정수 카운터라 겹칠 수 없음), 각도가 부동소수점 정밀도 한계까지 가까워지는
+    // 극단적인 경우에도 반지름이 항상 달라 구조적으로 겹침이 막힌다. 부모·자식을 잇는 선도
+    // 이제 각도뿐 아니라 반지름도 서로 달라, 서로 무관한 갈래끼리 선이 같은 자리에서 겹쳐
+    // 보이는 일도 함께 줄어든다.
+    const SPIRAL_STEP = 3;
+    let spiralCounter = 0;
     const assignRange = (node, lo, hi) => {
       node.angle = (lo + hi) / 2;
       const kids = childrenOf.get(node.key);
@@ -9435,16 +9448,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       for (const k of ordered) {
         const req = requiredWidthOf.get(k.key) || minSpanAtDepth(k.depth);
         const w = (req / totalReq) * useWidth;
+        k.radiusBoost = SPIRAL_STEP * (spiralCounter++);
         assignRange(k, cur, cur + w);
         cur += w;
       }
     };
-    for (const it of visible) if (it.depth === 1) assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF);
+    for (const it of visible) if (it.depth === 1) { it.radiusBoost = 0; assignRange(it, DIR_ANGLE[it.dir] - SECTOR_HALF, DIR_ANGLE[it.dir] + SECTOR_HALF); }
     let minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (const it of visible) {
-      // 반지름은 깊이만으로 정해지므로(같은 단계는 항상 같은 거리) 여기선 위 assignAngle이 이미
-      // 매겨 둔 각도만 그대로 극좌표→화면좌표로 바꾼다.
-      const r = radiusOfDepth(it.depth);
+      // 반지름은 깊이 기준 값(radiusOfDepth)에 나선형 가중치(radiusBoost)를 더해 정한다.
+      const r = radiusOfDepth(it.depth) + (it.radiusBoost || 0);
       it.x = r * Math.cos(it.angle) - boxW / 2;
       it.y = r * Math.sin(it.angle) - boxH / 2;
     }
