@@ -9148,15 +9148,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 반지름은 오직 깊이만의 함수(RADIUS_OF_DEPTH)라 "같은 단계는 항상 같은 거리" 조건을 그대로
   // 만족하고, 매 단계 늘어나는 폭(RADIAL_STEP)에 더해 깊이의 제곱에 비례하는 여유(RADIAL_QUAD)를
   // 얹어 깊을수록(보통 갈래도 함께 늘어나므로) 원둘레 자체가 더 넉넉히 넓어지도록 한다.
-  const ROOT_GAP = 300, RADIAL_STEP = 440, RADIAL_QUAD = 58;
+  const ROOT_GAP = 300, RADIAL_STEP = 1100, RADIAL_QUAD = 145;
   const radiusOfDepth = (depth) => ROOT_GAP + RADIAL_STEP * (depth - 1) + RADIAL_QUAD * (depth - 1) * (depth - 1);
   // 팔 하나가 차지하는 부채꼴의 절반 각도 — 90°(PI/2 /2 = PI/4)보다 살짝 좁게 잡아 이웃 팔과
   // 절대 맞닿지 않는 여백을 남긴다. (아래 assignRange가 각 부모의 각도 구간을 직계 자식들에게
   // 서로 겹치지 않게 재귀적으로 나눠 준다.)
   const SECTOR_HALF = (Math.PI / 4) * 0.86;
   // (버그 수정) 형제 블록 사이가 더 넓어 보이도록, 구간을 잎 수 비율대로 나누기 전에 형제 경계마다
-  // 이 만큼의 각도를 고정 여백으로 미리 떼어 둔다(assignRange 참고).
-  const SIBLING_GAP = 0.05;
+  // 이 만큼의 각도를 고정 여백으로 미리 떼어 둔다(assignRange 참고). 너무 넓으면 나중에 줄이면
+  // 되므로 우선 훨씬 크게 잡는다.
+  const SIBLING_GAP = 0.32;
   const DIR_ANGLE = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
   // (기능) 나침반 정중앙에 두는 회로 칩 장식의 한 변 길이.
   const CHIP_SIZE = 60;
@@ -9406,7 +9407,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // (버그 수정) 형제 사이 간격이 더 넓어 보이도록, 형제 수만큼 생기는 경계(ordered.length-1개)
       // 각각에 고정 여백(SIBLING_GAP)을 미리 떼어 놓고, 남은 폭만 잎 수 비율대로 나눈다 — 잎이
       // 하나뿐이라 자기 몫이 아주 작은 형제도 옆 형제와 최소한 이 여백만큼은 떨어져 보인다.
-      const gapTotal = Math.min((hi - lo) * 0.6, SIBLING_GAP * Math.max(0, ordered.length - 1));
+      const gapTotal = Math.min((hi - lo) * 0.8, SIBLING_GAP * Math.max(0, ordered.length - 1));
       const usable = (hi - lo) - gapTotal;
       const gap = ordered.length > 1 ? gapTotal / (ordered.length - 1) : 0;
       let cur = lo;
