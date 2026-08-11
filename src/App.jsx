@@ -9572,7 +9572,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const effNameCache = new Map();
     const effectiveNameOf = (it) => {
       if (effNameCache.has(it.key)) return effNameCache.get(it.key);
-      const own = nameOverride(it.path.slice(0, -1).join(" "), it.san) ?? it.name ?? null;
+      // (버그 수정) "이름 없는 수가 몇 개 보인다" — it.name은 배경 로딩 중인 리체스 비동기 데이터에
+      // 의존해, 그 fetch가 아직 안 끝난(또는 애초에 리체스엔 없는) 노드는 일시적으로 비어 있었다.
+      // openingNameOf는 로컬 정적 스냅샷(SNAP)을 즉시 조회하므로 그 공백을 추가로 메워준다.
+      const own = nameOverride(it.path.slice(0, -1).join(" "), it.san) ?? it.name ?? openingNameOf(it.path) ?? null;
       let result = own;
       if (!result) { const parent = parentOf.get(it.key); result = parent ? effectiveNameOf(parent) : null; }
       effNameCache.set(it.key, result);
