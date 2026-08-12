@@ -3621,16 +3621,30 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           비율이 달라진 상자에 맞춰 늘어나며 왜곡됐다(바다 스킨처럼 이어진 이미지 텍스처에서 특히 눈에
           띔). aspectRatio:"1/1"인 CSS 그리드로 바꾸면 실제 렌더링 폭이 얼마로 계산되든 높이가 항상
           똑같이 따라가 칸이 항상 정사각형으로 유지된다. */}
-      <div ref={gridRef} style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)" }}>
+      <div ref={gridRef} style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)",
+        // (사용자 요청) 보드 위(또는 그 언저리)에서 손가락을 움직이면 항상 기물 드래그만 되고 페이지
+        // 상하 스크롤로는 새지 않도록, 칸 하나하나가 아니라 보드 전체에 touch-action:none을 건다 —
+        // 예전엔 기물 도형 크기(cell*0.74)만큼만 이 속성이 걸려 있어, 손가락이 기물을 살짝 벗어난
+        // 지점(같은 칸 안이라도)에서 시작하면 그 즉시 브라우저가 스크롤로 먼저 채가 버렸다.
+        touchAction: interactive && onPieceDrag ? "none" : undefined }}>
         {isGmBoard && <div className="gm-board-shine" aria-hidden="true" />}
         {rows.map((row, ri) => row.map((p, ci) => {
           const [r, c] = tx(ri, ci); const light = (r + c) % 2 === 0;
           const isSel = selected && selected[0] === r && selected[1] === c;
           const isTarget = targetSet.has(r + "," + c);
           const coordCol = sk.image ? "rgba(255,255,255,.9)" : (light ? sk.dark : sk.light);
+          // (사용자 요청, 버그 수정) 드래그 시작 판정을 기물 도형 크기의 작은 하위 div가 아니라 칸
+          // 전체로 넓힌다 — 예전엔 손가락이 기물 그림을 정확히 짚어야만 드래그가 시작돼, 빠르게
+          // 잡거나 살짝 벗어나 짚으면(특히 좁은 모바일 화면·작은 폰 기물에서 흔함) "드래그가 잘 안
+          // 된다"는 문제로 이어졌다.
+          const draggable = interactive && !!onPieceDrag && !!p;
           return (
             <div key={ri + "_" + ci}
               onClick={interactive && onSquareClick ? () => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } onSquareClick([r, c]); } : undefined}
+              onPointerDown={draggable ? (e) => onPiecePointerDown(e, r, c) : undefined}
+              onPointerMove={draggable ? onPiecePointerMove : undefined}
+              onPointerUp={draggable ? onPiecePointerUp : undefined}
+              onPointerCancel={draggable ? onPiecePointerCancel : undefined}
               // (버그 수정) 기물을 하단(받침 기준) 정렬했더니, 폰처럼 짧은 기물은 칸 위쪽에 큰 빈
               // 공간이 남아 정중앙이 아니라 아래로 치우쳐 보였다(특히 바다 스킨처럼 기물 높이 편차가
               // 큰 스킨에서 두드러짐) — 모든 기물을 칸의 실제 정중앙에 오도록 되돌린다.
@@ -3676,20 +3690,11 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
               {/* (버그 수정) 움직여야 할 기물이 옆으로 미끄러지듯(translateX) 흔들려 부자연스러웠다 —
                   마치 기물 윗부분을 손으로 잡고 흔드는 것처럼, 아래쪽(받침)을 축으로 각도만 조금씩
                   바뀌며 흔들리도록 lineShake(좌우 이동) 대신 새 hintPieceWobble(회전)로 바꿨다. */}
-              {/* (v0.3.0 기능) 네이티브 draggable 대신 이 래핑 div에 Pointer Events를 달아 마우스·터치
-                  모두에서 드래그가 동작하게 한다 — touchAction:"none"이 없으면 터치에서 손가락을
-                  움직이는 순간 브라우저가 페이지 스크롤로 먼저 채가서 드래그 제스처가 아예 시작되지
-                  않는다. 드래그 중인 기물은 살짝 옅게 만들고, 실제 기물은 아래 고스트로 대신 보여준다. */}
-              {p && (
-                <div
-                  onPointerDown={interactive && onPieceDrag ? (e) => onPiecePointerDown(e, r, c) : undefined}
-                  onPointerMove={interactive && onPieceDrag ? onPiecePointerMove : undefined}
-                  onPointerUp={interactive && onPieceDrag ? onPiecePointerUp : undefined}
-                  onPointerCancel={interactive && onPieceDrag ? onPiecePointerCancel : undefined}
-                  style={{ display: "flex", touchAction: interactive && onPieceDrag ? "none" : undefined }}>
-                  <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} style={{ cursor: interactive && onPieceDrag ? "grab" : "default", transformOrigin: "50% 90%", opacity: ptrDrag && ptrDrag.r === r && ptrDrag.c === c ? 0.25 : 1, animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />
-                </div>
-              )}
+              {/* (v0.3.0 기능) 네이티브 draggable 대신 칸(위 div)에 Pointer Events를 달아 마우스·터치
+                  모두에서 드래그가 동작하게 한다(사용자 요청으로 이제 기물 도형이 아니라 칸 전체가
+                  드래그 시작점 — 위 draggable/touchAction 참고). 드래그 중인 기물은 살짝 옅게 만들고,
+                  실제 기물은 아래 고스트로 대신 보여준다. */}
+              {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} style={{ cursor: draggable ? "grab" : "default", transformOrigin: "50% 90%", opacity: ptrDrag && ptrDrag.r === r && ptrDrag.c === c ? 0.25 : 1, animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />}
             </div>
           );
         }))}
@@ -9215,7 +9220,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     );
   });
 });
-function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, priorityRef }) {
+function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, priorityRef, onUnlockStats, contentVer }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
@@ -9292,7 +9297,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 그대로 물려받아 이번 수 하나만 한 번 더 적용하도록(O(노드 수)) 바꾼다.
     const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey, board) => {
       const key = path.join(" ");
-      const rawMoves = treeData.get(key);
+      // (사용자 요청, 버그 수정) 개발자가 SchematicEditor로 추가한 이론 수(CONTENT.treeAdds, addsFor)는
+      // 리체스 탐색기 데이터(treeData)에 당연히 없어, 이 트리 순회가 treeData만 훑는 한 모식도에
+      // 노드로 아예 나타나지 않았다 — DexMoveBlock·useMergedMoves 등 다른 화면들처럼 병합한다.
+      let rawMoves = treeData.get(key);
+      const adds = addsFor(key);
+      if (adds.length) {
+        rawMoves = rawMoves ? rawMoves.slice() : [];
+        for (const a of adds) { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, name: a.name, book: !!a.theory, adopt: null, games: null, dev: true }); }
+      }
       // (버그 수정) 처음엔 이름 붙은 노드마다(하위 바리에이션 포함) 전부 그룹을 새로 만들었는데,
       // 실제로 원한 건 칭호 탭에 있는 13개 대표 오프닝(TITLE_OPENINGS)만 하나의 영역으로 묶는
       // 것이었다 — 이미 그 13개 중 하나의 영역 안에 들어와 있으면(parentGroupKey가 있으면) 그
@@ -9702,7 +9715,17 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     }
     const bounds = { minX: minX + centerX, maxX: maxX + centerX, minY: minY + centerY, maxY: maxY + centerY };
     return { items: visible, edges, width: maxX - minX + boxW + PAD * 2, height: maxY - minY + boxH + PAD * 2, centerX, centerY, groups, bounds };
-  }, [treeData, treeVersion, chesscom, ccReady, unlockAll]);
+    // (버그 수정) contentVer를 의존성에 넣어, 개발자가 SchematicEditor로 이론 수를 추가/수정한
+    // 직후(bumpContent) 이 레이아웃이 다시 계산돼 addsFor 병합 결과가 곧바로 반영되게 한다.
+  }, [treeData, treeVersion, chesscom, ccReady, unlockAll, contentVer]);
+  // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 "도감 해금률" — 지금까지 펼쳐진 노드(items) 중
+  // 해금된 것의 비율을 트리가 자랄 때마다(items가 바뀔 때마다) 부모(CollectionTab)로 올려보낸다.
+  useEffect(() => {
+    if (!onUnlockStats) return;
+    let unlocked = 0;
+    for (const it of items) if (it.unlocked) unlocked++;
+    onUnlockStats({ unlocked, total: items.length });
+  }, [items, onUnlockStats]);
   // (버그 수정) 검색해서 오프닝을 고르면 그 갈래만 남기고 나머지를 다 숨기던 방식이 오히려 트리
   // 전체 맥락을 잃게 해 불편하다는 피드백 — 이제 트리는 항상 전체를 보여주고, 대신 고른 오프닝으로
   // 가는 수순(selectedPath)만 전선에 전류가 흐르듯 색이 강조되도록 한다.
@@ -9775,7 +9798,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 팬/줌이 바뀔 때마다 매번 다시 걸러내면(=CSS transform만으로 부드럽게 팬하던 기존 최적화가
   // 무력화돼) 오히려 매 프레임 필터링·재조정 비용이 든다 — 대신 그릴 범위를 벗어날 만큼
   // (CULL_REFRESH_DRIFT) 실제로 멀리 움직였을 때만, 또는 트리 구조 자체가 자랄 때만 다시 계산한다.
-  const CULL_REFRESH_PAD = 1.4;   // 뷰포트 크기의 배수 — 이만큼 여유 있게 미리 그려 둔다.
+  // (사용자 요청) 빠르게 스크롤(드래그)할 때 그릴 범위 경계가 화면에 보이기 전에 새 블록이 걸러져
+  // 나타나는 게 눈에 띄어, 여유를 1.4배 → 2배로 늘려 더 빠른 스크롤에서도 안정적으로 미리 그려 둔다.
+  const CULL_REFRESH_PAD = 2;   // 뷰포트 크기의 배수 — 이만큼 여유 있게 미리 그려 둔다.
   const CULL_REFRESH_DRIFT = 0.5; // 뷰포트 크기의 배수만큼 벗어나야 다시 계산한다.
   const cullWindowRef = useRef(null);
   const [cullVersion, setCullVersion] = useState(0);
@@ -10273,42 +10298,48 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       {/* (버그 수정) 수 설명 카드가 팬/줌 트랜스폼이 걸린(scale(zoom)) 안쪽에 있으면 카드 자신도
           모식도 확대/축소를 그대로 따라가 축소 시엔 잘리고 확대 시엔 지나치게 커졌다 — 트랜스폼
           바깥(화면 좌표계)으로 꺼내, 앵커(그 수 블록)의 화면상 위치만 pan/zoom으로 계산해 따라가되
-          카드 자신의 크기는 항상 창(boxRef) 크기에 비례한 고정 비율로 유지한다. */}
+          카드 자신의 크기는 항상 창(boxRef) 크기에 비례한 고정 비율로 유지한다.
+          (사용자 요청, 버그 수정) v0.3.2에서 카드를 모식도 박스(boxRef, overflow:hidden) 안쪽
+          좌표계에 clamp했는데도, 실기기(모바일)에서 카드가 박스 밖 — 특히 화면 하단 고정
+          내비게이션 위로 — 삐져나와 보이는 현상이 계속 나왔다(스크린 녹화로 재현 확인). 카드를
+          박스의 로컬 좌표(position:absolute) 대신 뷰포트 기준 고정 좌표(position:fixed)로 바꾸고,
+          clamp 기준도 박스 자신의 크기가 아니라 실제 화면 크기(window.innerWidth/innerHeight,
+          하단 고정 내비게이션 높이만큼 여유를 뺀 값)로 잡는다 — 박스가 실제로 화면에 얼마나
+          보이는지와 무관하게, 카드는 항상 화면(뷰포트) 안에만 그려진다. */}
       {openItem && openParentM && (() => {
-        const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+        const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, left: 0, top: 0 };
         const oc = coord(openItem);
-        const nodeScreenX = pan.x + zoom * oc.x, nodeScreenY = pan.y + zoom * oc.y;
-        const nodeScreenW = boxW * zoom, nodeScreenH = boxH * zoom;
+        // 박스 로컬 좌표(pan/zoom 기준)를 뷰포트 좌표로 변환 — rect.left/top이 박스의 화면상 위치.
+        const nodeX = rect.left + pan.x + zoom * oc.x, nodeY = rect.top + pan.y + zoom * oc.y;
+        const nodeW = boxW * zoom, nodeH = boxH * zoom;
         // (v0.2.2 UI#2) 모바일(세로 모식도)에서는 설명 카드를 65% 크기로 줄인다 — transformOrigin을
         // 꼬리(블록에 맞닿는 지점)에 두어, 축소해도 꼬리는 블록에 그대로 붙어 있게 한다.
         const cardScale = vertical ? 0.65 : 1;
-        const CARD_W = Math.max(240, Math.min(300, rect.width - 32));
-        const CARD_H_EST = 460;
-        const nodeCX = nodeScreenX + nodeScreenW / 2, nodeCY = nodeScreenY + nodeScreenH / 2;
+        const vw = typeof window !== "undefined" ? window.innerWidth : 480;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        const CARD_W = Math.max(240, Math.min(300, vw - 32));
+        const cardH = 460 * cardScale;
+        // 하단 고정 내비게이션(66px + 안전 영역)에 가리지 않도록 넉넉히 여유를 둔다.
+        const BOTTOM_SAFE = 66 + 40;
+        const nodeCX = nodeX + nodeW / 2, nodeCY = nodeY + nodeH / 2;
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
         let left, top, tailPos;
-        // (v0.3.2 버그 수정) 두 축 중 한쪽(퍼짐 방향)만 clamp하고, 블록에서 카드가 뻗어나가는
-        // 축(세로 모식도의 top, 가로 모식도의 left)은 clamp가 없어 블록이 뷰포트 아래/오른쪽 끝에
-        // 가까우면 카드가 모식도 영역 밖으로 빠져나가 잘리거나 아예 안 보였다 — 이 축도 뷰포트
-        // 안에 들어오도록 clamp한다(카드 높이는 실측 대신 기존에 쓰던 추정치 CARD_H_EST를 그대로
-        // 재사용). 블록과 아주 가까운 가장자리에서는 카드가 clamp로 인해 블록과 다소 겹칠 수
-        // 있지만, 화면 밖으로 사라지는 것보다는 낫다.
         if (vertical) {
           // 블록 아래에 두고, 꼬리는 위로 — 블록을 가리지 않는다.
-          left = clamp(nodeCX - CARD_W / 2, 4, Math.max(4, rect.width - CARD_W - 4));
-          top = clamp(nodeScreenY + nodeScreenH + 11, 4, Math.max(4, rect.height - CARD_H_EST * cardScale - 4));
+          left = clamp(nodeCX - CARD_W / 2, 8, Math.max(8, vw - CARD_W - 8));
+          top = clamp(nodeY + nodeH + 11, 8, Math.max(8, vh - BOTTOM_SAFE - cardH));
           tailPos = clamp(nodeCX - left, 20, CARD_W - 20);
         } else {
           // 블록 오른쪽에 두고, 꼬리는 왼쪽으로.
-          left = clamp(nodeScreenX + nodeScreenW + 11, 4, Math.max(4, rect.width - CARD_W - 4));
-          top = clamp(nodeCY - CARD_H_EST / 2, 4, Math.max(4, rect.height - CARD_H_EST - 4));
-          tailPos = clamp(nodeCY - top, 20, CARD_H_EST - 20);
+          left = clamp(nodeX + nodeW + 11, 8, Math.max(8, vw - CARD_W - 8));
+          top = clamp(nodeCY - cardH / 2, 8, Math.max(8, vh - BOTTOM_SAFE - cardH));
+          tailPos = clamp(nodeCY - top, 20, cardH - 20);
         }
         return (
           <DexMoveBlock path={openItem.path.slice(0, -1)} m={openParentM} isUnlocked={openItem.unlocked}
             cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)} onOpenOpening={onOpenOpening}
             vertical={vertical} scale={cardScale} tailPos={tailPos}
-            style={{ left, top, width: CARD_W }} />
+            style={{ position: "fixed", left, top, width: CARD_W }} />
         );
       })()}
     </div>
@@ -10327,6 +10358,8 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
+  // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 도감 해금률 — { unlocked, total }.
+  const [unlockStats, setUnlockStats] = useState(null);
   // (2차 개편) 설정 탭에 있던 "이론 수 체계 추가"를 여기로 옮겨왔다 — 기본은 접혀 있고 개발자가 필요할 때만 연다.
   const [showEditor, setShowEditor] = useState(false);
   return (
@@ -10386,11 +10419,14 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
           </div>
         </div>
       ) : (<>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 10px" }}>
-        {ccReady ? "내 chess.com 대국에 실제로 나온 수만 해금돼요. 마디를 클릭하면 상세 정보가 그 자리에 열립니다. 굵은 줄기일수록 채택률이 높은 핵심 라인이에요."
-          : "설정 탭에서 chess.com 계정을 연동하면, 실제로 둔 적 있는 수만큼 해금돼 보여요."}
-      </p>
-      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} priorityRef={genPriorityRef} />
+      {/* (사용자 요청) 모식도 위 안내 문구를 지우고, 그 자리에 도감 해금률(소수점 둘째 자리까지)을
+          표시한다 — OpeningSchematic이 매 레이아웃 계산 때마다(트리가 자라는 동안 계속) 지금까지
+          펼쳐진 노드 중 몇 개가 해금됐는지를 onUnlockStats로 올려보내 준다. */}
+      <div style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 10px", fontWeight: 700 }}>
+        도감 해금률 {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}%
+        <span style={{ marginLeft: 6, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>
+      </div>
+      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} />
       {/* (2차 개편) 이론 수 체계 편집 — 설정 탭에 있던 개발자 전용 기능을 도감(오프닝)으로 옮겨 통합. */}
       {canAdd && (
         <div style={{ marginTop: 16 }}>
@@ -11163,11 +11199,34 @@ function questOpeningMovesText(name) {
   return path && path.length ? sansToPgnText(path) : null;
 }
 // (18차 보충 UX2) 오프닝 플레이 외의 chess.com 활동 퀘스트 — 오프닝 무관.
+// (사용자 요청) 오프닝 퀘스트 문구에 그 오프닝을 결정하는 진영(조건 PGN 수순의 마지막 수 — 백이 마지막에
+// 뒀으면 백, 흑이 마지막에 뒀으면 흑)을 함께 표시한다. 예: "1.d4 d5 2.c4 c6"(슬라브 디펜스)은 마지막 수가
+// 흑의 c6이므로 "흑으로".
+function questOpeningSide(name) {
+  const text = questOpeningMovesText(name);
+  if (!text) return null;
+  const tokens = parsePgnMoves(text);
+  if (!tokens.length) return null;
+  return tokens.length % 2 === 1 ? "백" : "흑";
+}
 function questLabel(q) {
   if (!q) return "";
   if (q.type === "play5") return "chess.com에서 게임 5회 플레이";
   if (q.type === "win3") return "chess.com에서 게임 3회 승리";
-  return (q.opening || "오프닝") + "로 chess.com에서 게임 1회 플레이하기";
+  const side = questOpeningSide(q.opening);
+  return "chess.com에서 " + (side ? side + "으로 " : "") + (q.opening || "오프닝") + " 1회 플레이하기";
+}
+// (사용자 요청) 퀘스트 문구 속 "chess.com"에 밑줄 + 실제 chess.com 하이퍼링크를 건다 — 일반 https
+// 링크라 모바일에 chess.com 앱이 설치돼 있으면 OS가 알아서 앱으로 열어준다(유니버설/앱 링크, 별도
+// 커스텀 스킴 불필요). 퀘스트 행 전체가 클릭되면 오프닝 집중 학습으로 이동하므로, 이 링크 클릭은
+// stopPropagation으로 그 상위 클릭을 막아 실수로 딴 곳으로 이동하지 않게 한다.
+function ChesscomTextLink({ children }) {
+  return <a href="https://www.chess.com" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
+}
+function questLabelNode(q) {
+  const text = questLabel(q);
+  if (!text.startsWith("chess.com")) return text;
+  return <>{<ChesscomTextLink>chess.com</ChesscomTextLink>}{text.slice("chess.com".length)}</>;
 }
 // (v0.2.9 기능) 일일 퀘스트 클리어 팝업(DailyQuestClearedModal)에서 "이 퀘스트를 실제로 클리어한
 // 대국"을 보여주기 위해, 오늘의 판정 effect(dailyQuest.done 갱신 로직)와 정확히 같은 기준으로 오늘
@@ -13123,7 +13182,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
           const canReroll = !((dq.rerolled || {})[i]) && !dq.claimed["cc_" + i];
           return (
             <div key={i} onClick={() => isOpening && onOpenOpening && onOpenOpening(q.opening)} className={isOpening ? "press" : undefined} style={{ cursor: isOpening ? "pointer" : "default" }}>
-              {row("cc_" + i, questLabel(q), !hasChesscom ? "설정에서 chess.com 계정을 연동해야 확인할 수 있어요" : (isOpening ? openingMovesTexts[i] : null),
+              {row("cc_" + i, questLabelNode(q), !hasChesscom ? "설정에서 chess.com 계정을 연동해야 확인할 수 있어요" : (isOpening ? openingMovesTexts[i] : null),
                 /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
                 canReroll ? (
                   <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title="이 퀘스트만 교체(퀘스트당 1회)"
@@ -14986,6 +15045,10 @@ const CHANGELOG = [
       "퀘스트 클리어·칭호 획득·티어 승급 팝업 제목의 글꼴을 새 폰트로 바꿨어요.",
       "유산 만들기에서 'chess.com 대국에서 선택'을 누르면 이제 창이 한 번 더 뜨지 않고, 바로 아래에 프로필에서 보던 것과 같은 chess.com 통계·최근 대국 목록이 펼쳐져요 — 원하는 대국의 '선택' 버튼만 누르면 돼요.",
       "도감 탭에서 수 카드의 오프닝 이름을 눌러 집중 학습으로 이동한 뒤 다시 닫으면, 이제 도감 탭으로 돌아오고 떠나기 전 보던 모식도 위치·펼쳐 둔 카드가 그대로 남아 있어요.",
+      "도감 오프닝 트리에서 수 카드가 화면 밖(하단 메뉴 위)으로 삐져나와 보이던 문제를 고쳤어요. 빠르게 스크롤할 때도 더 안정적으로 미리 그려 두도록 했어요.",
+      "체스보드에서 기물 드래그가 잘 안 되던 문제를 고쳤어요 — 이제 기물이 있는 칸 어디를 짚어도 드래그가 바로 시작되고, 보드 위에서는 화면이 스크롤로 새지 않고 드래그만 되도록 했어요.",
+      "일일 퀘스트의 오프닝 플레이 문구에 백/흑 진영이 함께 표시돼요(예: '흑으로 시칠리안 디펜스'). 문구 속 'chess.com'을 누르면 실제 chess.com으로 이동해요(모바일에서 앱이 깔려 있으면 앱으로 열려요).",
+      "도감 탭 모식도 위 안내 문구를 지우고, 그 자리에 도감 해금률을 표시했어요. 개발자가 새로 추가한 이론 수가 모식도에 제대로 안 나타나던 문제도 고쳤어요.",
     ]
   },
   {
@@ -15652,7 +15715,7 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
       { key: "dailypuzzle", label: questSlotLabel("dailypuzzle", dq), moveText: null, games: [] },
     ];
     (dq.quests || []).forEach((q, i) => {
-      list.push({ key: "cc_" + i, label: questLabel(q), moveText: q.type === "opening" ? questOpeningMovesText(q.opening) : null, games: questMatchingGames(q, chesscom) });
+      list.push({ key: "cc_" + i, label: questLabelNode(q), moveText: q.type === "opening" ? questOpeningMovesText(q.opening) : null, games: questMatchingGames(q, chesscom) });
     });
     return list;
   }, [dq, chesscom]);
