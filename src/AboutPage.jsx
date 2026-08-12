@@ -707,6 +707,20 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.3.3", date: "2026.8.12",
+    summary: "모바일에서 도감 탭 오프닝 트리를 열면 심하게 버벅이던 문제를 고쳤어요 — 화면에 실제로 보이는 부분만 그리도록 바꿔 훨씬 가벼워졌어요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "도감 오프닝 트리, 이제 휴대폰에서도 훨씬 부드럽게 움직여요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "화면 밖에 있는 수천 개는 안 그리고, 보이는 부분만 그려서 가벼워졌어요!" },
+    },
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: "모바일 오프닝 트리 성능 대폭 개선" },
+    sections: [
+      { cat: "perf", items: [
+        "도감 탭 오프닝 트리를 열 때 모바일에서 심하게 버벅이던 문제를 고쳤어요 — 화면에 실제로 보이는 부분(과 그 바로 주변)만 그리도록 바꿔, 트리가 아무리 커도 항상 가볍게 움직여요.",
+      ] },
+    ],
+  },
+  {
     version: "0.3.2", date: "2026.8.12",
     summary: "도감 탭 오프닝 트리를 겹침 없는 새 레이아웃으로 완전히 새로 디자인하고, 모든 수에 오프닝 이름을 붙였어요. 채팅·프로필·검색 창을 모바일에서 전체 화면으로 볼 수 있고, \"탁월한 수\" 오판정을 비롯한 여러 자잘한 문제도 함께 고쳤어요.",
     mascot: {

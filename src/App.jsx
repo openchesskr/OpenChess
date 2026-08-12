@@ -9726,6 +9726,41 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => { panRef.current = pan; }, [pan]);
   const zoomRef = useRef(zoom);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  // (성능) 트리는 최대 4000개 노드·엣지·1500개 라벨까지 자라는데, 컬링 없이 전부 항상 DOM에
+  // 그리면 로딩 중(최대 20초, 220ms마다 새로 자람) 매번 그 전체가 다시 그려지고, 다 자란 뒤에도
+  // 방대한 레이어(박스섀도우·그라디언트·텍스트 그라디언트 라벨 수천 개) 자체가 계속 화면에
+  // 떠 있어 특히 모바일에서 트리를 열 때마다 심하게 버벅였다 — 실제 방사형 배치(items/edges/groups)는
+  // 형제·사촌 간 전역 각도·반지름 계산 때문에 트리 전체를 대상으로 그대로 두되(useMemo 위), 화면
+  // (뷰포트)보다 넉넉하게(CULL_REFRESH_PAD) 잡은 "그릴 범위" 안의 것만 실제 DOM으로 그린다.
+  // 팬/줌이 바뀔 때마다 매번 다시 걸러내면(=CSS transform만으로 부드럽게 팬하던 기존 최적화가
+  // 무력화돼) 오히려 매 프레임 필터링·재조정 비용이 든다 — 대신 그릴 범위를 벗어날 만큼
+  // (CULL_REFRESH_DRIFT) 실제로 멀리 움직였을 때만, 또는 트리 구조 자체가 자랄 때만 다시 계산한다.
+  const CULL_REFRESH_PAD = 1.4;   // 뷰포트 크기의 배수 — 이만큼 여유 있게 미리 그려 둔다.
+  const CULL_REFRESH_DRIFT = 0.5; // 뷰포트 크기의 배수만큼 벗어나야 다시 계산한다.
+  const cullWindowRef = useRef(null);
+  const [cullVersion, setCullVersion] = useState(0);
+  const refreshCullWindow = useCallback((force) => {
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+    const p = panRef.current, z = zoomRef.current;
+    const cx = (rect.width / 2 - p.x) / z, cy = (rect.height / 2 - p.y) / z;
+    const prev = cullWindowRef.current;
+    if (!force && prev) {
+      const driftX = (rect.width * CULL_REFRESH_DRIFT) / z, driftY = (rect.height * CULL_REFRESH_DRIFT) / z;
+      if (Math.abs(cx - prev.cx) < driftX && Math.abs(cy - prev.cy) < driftY) return;
+    }
+    const padX = (rect.width * CULL_REFRESH_PAD) / z, padY = (rect.height * CULL_REFRESH_PAD) / z;
+    cullWindowRef.current = { cx, cy, minX: cx - padX, maxX: cx + padX, minY: cy - padY, maxY: cy + padY };
+    setCullVersion((v) => v + 1);
+  }, []);
+  // 트리 구조가 자랄 때(로딩 중 계속 발생)마다 강제로 다시 계산해, 새로 나타난 노드가 지금 보이는
+  // 범위 안에 있으면 곧바로 그려지게 한다.
+  useEffect(() => { refreshCullWindow(true); }, [items, refreshCullWindow]);
+  // 그 사이(팬/줌/확대버튼/검색 이동 애니메이션 등 팬을 바꾸는 모든 경로)는 여기 한 곳에서 주기적으로
+  // 드리프트만 저렴하게 확인한다 — 매 지점마다 일일이 훅을 걸 필요가 없다.
+  useEffect(() => {
+    const id = setInterval(() => refreshCullWindow(), 150);
+    return () => clearInterval(id);
+  }, [refreshCullWindow]);
   // (기능) 나침반형 레이아웃에서는 e4/d4/c4/Nf3 네 수가 모두 정중앙 부근에 모여 있으므로, 처음
   // 보여줄 기본 화면은 그 중심(centerX, centerY)을 뷰포트 가운데에 맞춘다. 사용자가 직접 팬하기
   // 전까지는 계속 다시 맞춘다.
@@ -10079,6 +10114,21 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       return Math.hypot(sx - rect.width / 2, sy - rect.height / 2);
     };
   }, [items, priorityRef]);
+  // (성능) 위 refreshCullWindow가 관리하는 "그릴 범위"(cullWindowRef, cullVersion이 바뀔 때만
+  // 갱신됨)로 실제 DOM에 그릴 부분집합만 골라낸다 — items/edges/groups(트리 전체 배치)는 검색·
+  // 키보드 이동·비행 애니메이션·우선순위 계산 등 다른 로직이 여전히 전체를 봐야 하므로 그대로
+  // 두고, 렌더링(DexNodesLayer/DexEdgesLayer/라벨)에 넘기는 값만 이걸로 바꾼다. 엣지는 두 끝
+  // 중 하나라도 화면에 그려지는 노드면 남겨(잘린 선이라도 화면 안쪽 절반은 보이게) 부모가
+  // 범위 밖으로 살짝 벗어나도 자식 쪽 연결선이 뚝 끊겨 보이지 않게 한다.
+  const { culledItems, culledEdges, culledGroups } = useMemo(() => {
+    const w = cullWindowRef.current;
+    if (!w) return { culledItems: items, culledEdges: edges, culledGroups: groups };
+    const ci = items.filter((it) => it.x + boxW > w.minX && it.x < w.maxX && it.y + boxH > w.minY && it.y < w.maxY);
+    const keySet = new Set(ci.map((it) => it.key));
+    const ce = edges.filter(([p, c]) => p.depth === 0 || keySet.has(p.key) || keySet.has(c.key));
+    const cg = groups.filter((g) => g.left + g.w > w.minX && g.left < w.maxX && g.top + 20 > w.minY && g.top < w.maxY);
+    return { culledItems: ci, culledEdges: ce, culledGroups: cg };
+  }, [items, edges, groups, cullVersion]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
   return (
@@ -10128,7 +10178,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
         {/* (v0.3.2 개편) 칭호(이름)가 붙은 오프닝을 점선 테두리로 묶어 보여주던 것을 없애고, 이름
             라벨만 그 오프닝에 진입하는 첫 수(그룹 뿌리) 블록 바로 위쪽에 남겨 둔다. */}
-        {groups.map((g) => (
+        {culledGroups.map((g) => (
           <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.left, top: g.top, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
             {/* (사용자 요청) 이름을 자르지 않고 풀네임을 그대로 다 보여준다 — maxWidth·ellipsis 제거. */}
             <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
@@ -10169,7 +10219,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
                 style={active ? { strokeDasharray: "7 5", transition: isSelArm ? "stroke .25s ease " + selDelay + "s, opacity .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined } : undefined} />;
             });
           })()}
-          <DexEdgesLayer edges={edges} selectedKeySet={selectedKeySet} electric={electric} selectedTargetR={selectedTargetR} />
+          <DexEdgesLayer edges={culledEdges} selectedKeySet={selectedKeySet} electric={electric} selectedTargetR={selectedTargetR} />
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
@@ -10187,7 +10237,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             <Cpu size={26} strokeWidth={1.6} />
           </div>
         </div>
-        <DexNodesLayer items={items} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} electric={electric} selectedTargetR={selectedTargetR} />
+        <DexNodesLayer items={culledItems} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} electric={electric} selectedTargetR={selectedTargetR} />
       </div>
       {/* (버그 수정) 수 설명 카드가 팬/줌 트랜스폼이 걸린(scale(zoom)) 안쪽에 있으면 카드 자신도
           모식도 확대/축소를 그대로 따라가 축소 시엔 잘리고 확대 시엔 지나치게 커졌다 — 트랜스폼
@@ -14693,6 +14743,11 @@ function MyProfileCard({ card, profile, user, currentTitle, totalXp, solvedCount
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.3.3", date: "2026.8.12", dev: ["openchesskr"], items: [
+      "모바일에서 도감 탭 오프닝 트리를 열면 심하게 버벅이던 문제를 고쳤어요 — 화면에 실제로 보이는 부분만 그리도록 바꿔 훨씬 가벼워졌어요.",
+    ]
+  },
   {
     version: "0.3.2", date: "2026.8.12", dev: ["openchesskr"], items: [
       "내 기물이 아군 폰이 지켜주는 칸으로 갈 때, 결국 손해가 폰 한 개뿐인데도 가끔 \"탁월한 수\"로 잘못 표시되던 문제를 고쳤어요.",
