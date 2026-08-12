@@ -601,6 +601,54 @@ function fenToBoard(fen) {
   return board;
 }
 function looksLikeFen(s) { return /^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}\b/.test((s || "").trim()); }
+// (사용자 요청) 학습 탭 메인 보드의 "FEN 모드" — 붙여넣은 FEN의 기물 배치뿐 아니라 차례·캐슬링
+// 권리·앙파상까지 전부 읽어 그 위치에서부터 실제로 이어서 둘 수 있게 한다. 표준 시작 위치를 가정하는
+// 공용 replaySans/boardFromSans(모듈 전역 캐시, 앱 전체가 표준 시작 위치를 전제로 공유)는 건드리지
+// 않고, FEN 모드 전용으로 이 위치를 시드로 같은 저수준 함수(sanSrc/applySan/updateCastleRights/
+// epTargetFromMoveInfo)를 재사용해 로컬로 재생한다.
+function parseFenFull(fen) {
+  const board = fenToBoard(fen);
+  if (!board) return null;
+  const parts = (fen || "").trim().split(/\s+/);
+  const turn = parts[1] === "b" ? "b" : "w";
+  const castleField = parts[2] || "-";
+  const rights = { K: castleField.includes("K"), Q: castleField.includes("Q"), k: castleField.includes("k"), q: castleField.includes("q") };
+  const epField = parts[3];
+  let ep = null;
+  if (epField && /^[a-h][1-8]$/.test(epField)) ep = [8 - parseInt(epField[1], 10), FILES.indexOf(epField[0])];
+  return { board, turn, rights, ep };
+}
+// fenRoot에서 sans(그 위치부터 둔 수순)만큼 재생한 {board, rights, ep}를 돌려준다.
+function replayFromFen(fenRoot, sans) {
+  let board = fenRoot.board, rights = fenRoot.rights, ep = fenRoot.ep;
+  for (let i = 0; i < sans.length; i++) {
+    const color = plyIsWhite(i, fenRoot.turn) ? "w" : "b";
+    const info = sanSrc(board, sans[i], color);
+    if (!info) break;
+    rights = updateCastleRights(rights, info, color);
+    ep = epTargetFromMoveInfo(info);
+    board = applySan(board, sans[i], color);
+  }
+  return { board, rights, ep };
+}
+// legalDests의 캐슬링 판정은 지금 기물 배치(킹/룩이 원위치인지)만 볼 뿐 "캐슬링 권리를 실제로
+// 아직 갖고 있는지"는 전혀 확인하지 않는다(앱이 항상 표준 시작 위치에서만 재생돼 왔으므로 이제껏
+// 문제가 되지 않았다) — FEN 모드는 애초에 캐슬링 권리가 없는 위치로 시작할 수도 있으므로, 이 함수가
+// FEN에서 유래한 rights로 한 번 더 걸러낸다.
+function fenLegalDests(fr, fc, color, board, rights, ep) {
+  let dests = legalDests(board, fr, fc, color, ep);
+  const p = board[fr][fc];
+  if (p && p.t === "K" && fc === 4) {
+    const rank = color === "w" ? 7 : 0;
+    dests = dests.filter(([tr, tc]) => {
+      if (tr !== rank) return true;
+      if (tc === 6) return color === "w" ? rights.K : rights.k;
+      if (tc === 2) return color === "w" ? rights.Q : rights.q;
+      return true;
+    });
+  }
+  return dests;
+}
 function clearPath(b, r, c, dr, dc) {
   const sr = Math.sign(dr - r), sc = Math.sign(dc - c); let rr = r + sr, cc = c + sc;
   while (rr !== dr || cc !== dc) { if (b[rr][cc]) return false; rr += sr; cc += sc; } return true;
@@ -3015,7 +3063,13 @@ function deriveKeywords(m) {
   if (!ks.length) ks.push("NORMAL");
   return ks.slice(0, 3);
 }
-function moveNumber(ply) { return Math.floor(ply / 2) + 1 + (ply % 2 === 0 ? "." : "..."); }
+// (사용자 요청, FEN 모드) startColor — 기본은 "w"(표준 시작 위치, 0번 수부터 백)라 기존 모든 호출부는
+// 그대로 동작한다. FEN으로 시작한 위치가 흑 차례라면 startColor="b"를 넘겨, 그 위치에서 처음 두는
+// 수(ply 0)부터 "1..."으로, 그다음 백의 응수를 "2."으로 표기한다(흑이 먼저 두면 백 차례에서 수
+// 번호가 올라가는 표준 PGN 관례와 동일).
+function plyIsWhite(ply, startColor) { return (startColor === "b") ? (ply % 2 === 1) : (ply % 2 === 0); }
+function plyMoveNum(ply, startColor) { return Math.floor((ply + (startColor === "b" ? 1 : 0)) / 2) + 1; }
+function moveNumber(ply, startColor) { return plyMoveNum(ply, startColor) + (plyIsWhite(ply, startColor) ? "." : "..."); }
 // (v0.1.3 기능) 엔진 라인은 이미 둔 수(sans)는 빼고 "지금 위치에서의 다음 수"부터만 보여준다 —
 // pvUciToSans로 얻은 이어지는 수(contSans)만 받아, 그 첫 수의 실제 수 번호(startPly)부터 표기한다.
 // contSans 각 요소는 pvUciToSans가 buildSan으로 만들어 이미 +/# 기호가 붙어 있으므로 decorateLine이
@@ -3758,10 +3812,15 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
 
 /* 기보: "기보" 라벨 없이 굵은 흰색 텍스트만 */
 // (UI4) 기보의 각 수를 누르면 그 포지션으로 바로 이동한다(onJump). onJump가 없으면 예전처럼 순수 텍스트로 표시.
-function sansToPgnText(sans) {
+function sansToPgnText(sans, startColor) {
   // (20차) 표기 직전에 체크/체크메이트 기호를 보정 — 퍼즐 창 기보 등 어떤 출처의 수순이든 +/#가 올바르게 표시된다.
   const deco = decorateLine(sans);
-  const parts = []; deco.forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
+  const parts = [];
+  deco.forEach((san, i) => {
+    if (plyIsWhite(i, startColor)) parts.push(plyMoveNum(i, startColor) + "." + san);
+    else if (parts.length) parts[parts.length - 1] += " " + san;
+    else parts.push(plyMoveNum(i, startColor) + "..." + san); // (FEN 모드) 흑이 먼저 두는 경우 첫 조각
+  });
   return parts.join(" ");
 }
 // (18차 UI6) 기보는 Playfair Display 폰트로 표기한다.
@@ -3799,7 +3858,7 @@ function PuzzlePgnBox({ text }) {
 // 흐리게 계속 표시되며, 현재 수만 볼드로 강조된다. future 수를 클릭하면 그 수까지 다시 진행한다.
 // (v0.1.3 버그 수정) 기보가 길어지면 flex-wrap으로 줄바꿈돼 이 바의 높이가 계속 늘어나며 아래
 // 보드를 밀어냈다 — 한 줄로 고정하고(flexWrap:nowrap) 넘치는 만큼은 좌우 스크롤로 보게 한다.
-function SequenceBar({ sans, future = [], onJump, drawn }) {
+function SequenceBar({ sans, future = [], onJump, drawn, startColor }) {
   // (20차) 보드 상단 기보에 체크(+)/체크메이트(#) 기호가 항상 표시되도록 표기 직전에 보정한다.
   const all = useMemo(() => decorateLine([...sans, ...(future || [])]), [sans.join(" "), (future || []).join(" ")]);
   // (v0.1.3 기능) 기보가 길어져 화면에 다 안 담기면, 수를 둘 때마다 자동으로 오른쪽(최신 수)으로
@@ -3841,7 +3900,7 @@ function SequenceBar({ sans, future = [], onJump, drawn }) {
   const dragHandlers = { onPointerDown, onPointerMove, onPointerCancel: () => { dragRef.current = null; }, onClickCapture };
   if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
   if (!onJump) {
-    const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (i % 2 === 0) parts.push((i / 2 + 1) + "." + san); else parts[parts.length - 1] += " " + san; });
+    const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (plyIsWhite(i, startColor)) parts.push(plyMoveNum(i, startColor) + "." + san); else if (parts.length) parts[parts.length - 1] += " " + san; else parts.push(plyMoveNum(i, startColor) + "..." + san); });
     // (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
     // 끝에 결과 기호(½-½)만 덧붙인다.
     if (drawn) parts.push("½-½");
@@ -3855,9 +3914,9 @@ function SequenceBar({ sans, future = [], onJump, drawn }) {
         const isFuture = i > cur;
         return (
           <span key={i} ref={isCur ? curSpanRef : undefined} style={{ whiteSpace: "nowrap", opacity: isFuture ? 0.45 : 1 }}>
-            {i % 2 === 0 && <span style={{ fontWeight: isCur ? 800 : 500 }}>{(i / 2 + 1) + "."}</span>}
+            {(i === 0 || plyIsWhite(i, startColor)) && <span style={{ fontWeight: isCur ? 800 : 500 }}>{plyMoveNum(i, startColor) + (plyIsWhite(i, startColor) ? "." : "...")}</span>}
             <span onClick={() => onJump(i + 1)} className="press" style={{ cursor: "pointer", padding: "1px 3px", borderRadius: 4, fontWeight: isCur ? 800 : 500, color: isCur ? T.brassHi : T.ivoryHi, background: isCur ? "rgba(196,154,80,.18)" : "transparent" }}>{san}</span>
-            {i < all.length - 1 ? (i % 2 === 0 ? " " : "  ") : ""}
+            {i < all.length - 1 ? (plyIsWhite(i, startColor) ? " " : "  ") : ""}
           </span>
         );
       })}
@@ -3867,26 +3926,27 @@ function SequenceBar({ sans, future = [], onJump, drawn }) {
     </div>
   );
 }
-// (UI2) 현재 기보 복사 + FEN/PGN 붙여넣기. PGN은 검증 후 학습 탭에 그대로 이어서 둘 수 있는 수순으로 불러오고,
-// FEN은 이 앱이 시작 위치부터의 수순만 다루는 구조라 미리보기(읽기 전용)로만 보여준다.
-function NotationTools({ sans, onLoadPgn }) {
+// (UI2) 현재 기보 복사 + FEN/PGN 붙여넣기. PGN은 검증 후 학습 탭에 그대로 이어서 둘 수 있는 수순으로
+// 불러오고, FEN은(사용자 요청, v0.3.3) 더 이상 읽기 전용 미리보기로만 보여주지 않는다 — onLoadFen으로
+// 학습 탭을 아예 "FEN 모드"로 전환해, 그 위치(차례·캐슬링 권리·앙파상까지)에서부터 실제로 이어서 둘
+// 수 있게 한다. 예전의 읽기 전용 FEN 미리보기 모달 코드는 폐기했다.
+function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [err, setErr] = useState("");
-  const [fenPreview, setFenPreview] = useState(null);
   const [copied, setCopied] = useState(false);
   const iconBtn = { width: 26, height: 26, borderRadius: 7, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 };
   const copy = async () => {
-    const out = sansToPgnText(sans) || "(시작 위치)";
+    const out = sansToPgnText(sans, startColor) || "(시작 위치)";
     try { await navigator.clipboard.writeText(out); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { }
   };
   const submit = () => {
     const raw = text.trim();
     if (!raw) { setErr("붙여넣을 내용을 입력하세요."); return; }
     if (looksLikeFen(raw)) {
-      const b = fenToBoard(raw);
-      if (!b) { setErr("올바른 FEN 형식이 아닙니다."); return; }
-      setFenPreview(b); setOpen(false); setText(""); setErr("");
+      const fenRoot = parseFenFull(raw);
+      if (!fenRoot) { setErr("올바른 FEN 형식이 아닙니다."); return; }
+      onLoadFen(fenRoot); setOpen(false); setText(""); setErr("");
       return;
     }
     const moves = parsePgnMoves(raw);
@@ -3917,16 +3977,7 @@ function NotationTools({ sans, onLoadPgn }) {
               <button onClick={submit} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>불러오기</button>
               <button onClick={() => setOpen(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12.5 }}>취소</button>
             </div>
-            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.5 }}>PGN 기보는 검증 후 그 수순 그대로 학습 탭에서 이어서 둘 수 있습니다. 이 앱은 시작 위치부터의 수순으로 오프닝을 다루는 구조라, FEN으로 붙여넣은 임의의 포지션은 미리보기로만 표시되고 계속 두는 용도로는 지원되지 않습니다.</p>
-          </div>
-        </div>
-      )}
-      {fenPreview && (
-        <div onClick={() => setFenPreview(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
-            <button onClick={() => setFenPreview(null)} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", zIndex: 5 }}>✕</button>
-            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>FEN 미리보기(읽기 전용)</div>
-            <Board board={fenPreview} size={320} showEval={false} interactive={false} />
+            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.5 }}>PGN 기보는 검증 후 그 수순 그대로 학습 탭에서 이어서 둘 수 있습니다. FEN을 붙여넣으면 그 포지션(차례·캐슬링 권리·앙파상까지)부터 이어서 둘 수 있는 "FEN 모드"로 전환됩니다 — 이 위치에서 처음 두는 수부터 새로 1수로 표기돼요.</p>
           </div>
         </div>
       )}
@@ -3974,22 +4025,33 @@ function safeBubbleAnchor(anchorRect, popupW, align, margin = 10, bounds, popupH
 const CIRCLE_BADGE_DESC_W = 220;
 function CircleBadge({ kind, big, descOnClick }) {
   const [descOpen, setDescOpen] = useState(false);
-  const [descDx, setDescDx] = useState(0);
-  // (사용자 요청) 화면 위쪽 절반의 아이콘이면 말풍선을 아래로, 아래쪽 절반이면 위로 열어 항상 화면
-  // 중앙 쪽을 향하게 한다 — 세로로 잘리지 않도록.
-  const [descOpenDown, setDescOpenDown] = useState(false);
+  // (사용자 요청, 버그 수정) 예전엔 position:absolute + safeAreaDx 가로 보정만 썼는데, 이 아이콘이
+  // overflow:hidden인 조상(가로 스크롤 카드 등) 안에 있으면 보정 계산이 맞아도 말풍선 자체가 그
+  // 조상 경계에서 잘렸다(도감 수 카드·알림 카드와 같은 근본 원인) — position:fixed로 바꿔 뷰포트
+  // 좌표를 직접 계산하면 어떤 조상의 overflow와도 무관하게 항상 화면 안에 온전히 그려진다.
+  const [descPos, setDescPos] = useState(null); // { left, top, bottom, tailX, openDown }
   const anchorRef = useRef(null);
   const sz = big ? 36 : 26;
   // (v0.2.1) descOnClick — 아이콘을 클릭하면 등급 이름 + 조건/설명을 담은 말풍선을 토글한다.
-  // (v0.2.6 버그 수정) 열 때마다 기준 아이콘의 실제 화면 위치를 재서 화면 밖으로 잘리지 않을
-  // 안전한 가로 오프셋을 함께 계산해 둔다.
   const toggleDesc = (e) => {
     e.stopPropagation();
     setDescOpen((v) => {
       const next = !v;
       if (next && anchorRef.current) {
-        const { dx, openDown } = safeBubbleAnchor(anchorRef.current.getBoundingClientRect(), CIRCLE_BADGE_DESC_W, "center");
-        setDescDx(dx); setDescOpenDown(openDown);
+        const rect = anchorRef.current.getBoundingClientRect();
+        const margin = 10;
+        const cx = rect.left + rect.width / 2;
+        const left = Math.max(margin, Math.min(cx - CIRCLE_BADGE_DESC_W / 2, window.innerWidth - CIRCLE_BADGE_DESC_W - margin));
+        // 화면 위쪽 절반의 아이콘이면 말풍선을 아래로, 아래쪽 절반이면 위로 열어 항상 화면 중앙
+        // 쪽을 향하게 한다(세로로 잘리지 않도록).
+        const openDown = rect.top < window.innerHeight / 2;
+        setDescPos({
+          left,
+          top: openDown ? rect.bottom + 9 : undefined,
+          bottom: openDown ? undefined : window.innerHeight - rect.top + 9,
+          tailX: cx - left,
+          openDown,
+        });
       }
       return next;
     });
@@ -3997,18 +4059,18 @@ function CircleBadge({ kind, big, descOnClick }) {
   return (
     <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }}>
       <span ref={anchorRef} onClick={descOnClick ? toggleDesc : undefined} style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)", cursor: descOnClick ? "pointer" : "default" }}>{badgeIcon(kind, sz - 4)}</span>
-      {descOpen && descOnClick && (
+      {descOpen && descOnClick && descPos && (
         <>
           <span onClick={(e) => { e.stopPropagation(); setDescOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <span style={{ position: "absolute", ...(descOpenDown ? { top: sz + 9 } : { bottom: sz + 9 }), left: "50%", transform: "translateX(calc(-50% + " + descDx + "px))", width: CIRCLE_BADGE_DESC_W, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+          <span style={{ position: "fixed", left: descPos.left, top: descPos.top, bottom: descPos.bottom, width: CIRCLE_BADGE_DESC_W, padding: "10px 12px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + QCOLOR[kind], boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ width: 22, height: 22, borderRadius: "50%", background: QCOLOR[kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{badgeIcon(kind, 18)}</span>
               <span style={{ fontSize: 13, fontWeight: 800, color: QCOLOR[kind] }}>{QLABEL[kind]}</span>
             </span>
             <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink, lineHeight: 1.5, whiteSpace: "normal" }}>{QDESC[kind]}</span>
-            {/* 말풍선 꼬리는 팝업이 dx만큼 밀렸어도 항상 기준 아이콘을 가리키도록 반대로 보정하고,
-                openDown 여부에 따라 위/아래 중 실제로 열린 방향의 반대쪽(기준 아이콘과 맞닿는 쪽)에 그린다. */}
-            <span style={{ position: "absolute", ...(descOpenDown ? { top: -7 } : { bottom: -7 }), left: "calc(50% - " + descDx + "px)", transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, ...(descOpenDown ? { borderLeft: "1px solid " + QCOLOR[kind], borderTop: "1px solid " + QCOLOR[kind] } : { borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }) }} />
+            {/* 말풍선 꼬리 — tailX(뷰포트 기준 팝업 left로부터 기준 아이콘 중심까지 거리)를 그대로
+                써서, 팝업이 화면 가장자리에서 얼마나 밀렸든 항상 기준 아이콘을 가리킨다. */}
+            <span style={{ position: "absolute", ...(descPos.openDown ? { top: -7 } : { bottom: -7 }), left: descPos.tailX, transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: T.ivoryHi, ...(descPos.openDown ? { borderLeft: "1px solid " + QCOLOR[kind], borderTop: "1px solid " + QCOLOR[kind] } : { borderRight: "1px solid " + QCOLOR[kind], borderBottom: "1px solid " + QCOLOR[kind] }) }} />
           </span>
         </>
       )}
@@ -8243,21 +8305,44 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 현재 수 블록은 그 값을 그대로 재사용한다.
   const pinnedKwRef = useRef({});
   const [showAllNb, setShowAllNb] = useState(false);   // (UX1) 비이론 수 더보기(전체)
+  // (사용자 요청) FEN 모드 — 학습 탭 메인 보드에 FEN을 붙여넣으면 표준 시작 위치 대신 그 포지션(차례·
+  // 캐슬링 권리·앙파상까지)에서부터 이어서 둘 수 있다. fenRoot가 있는 동안 sans는 "표준 시작 위치부터의
+  // 수순"이 아니라 "이 FEN부터 둔 수순"을 의미하도록 재해석된다 — 표준 시작을 가정하는 공용
+  // replaySans/boardFromSans(모듈 전역 캐시)는 건드리지 않고, 이 컴포넌트 안에서만 로컬로 재생한다.
+  const [fenRoot, setFenRoot] = useState(null);
   const key = sans.join(" ");
-  const board = useMemo(() => boardFromSans(sans), [key]);
-  const color = sans.length % 2 === 0 ? "w" : "b";
+  const stdBoard = useMemo(() => boardFromSans(sans), [key]);
+  const fenReplay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, sans) : null), [key, fenRoot]);
+  const board = fenRoot ? fenReplay.board : stdBoard;
+  const color = fenRoot ? (plyIsWhite(sans.length, fenRoot.turn) ? "w" : "b") : (sans.length % 2 === 0 ? "w" : "b");
   const ply = sans.length;
-  const ep = useMemo(() => epTarget(sans), [key]);
+  const stdEp = useMemo(() => epTarget(sans), [key]);
+  const ep = fenRoot ? fenReplay.ep : stdEp;
+  const onLoadFen = (root) => { setFocus(null); setFenRoot(root); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
+  const exitFenMode = () => { setFenRoot(null); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
   // (v0.2.3 기능) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히 더 이상의
   // 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수 있는" 수가
   // 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더 이상 수를
-  // 둘 수 없게 하고 보드 하단에 무승부를 표시한다.
+  // 둘 수 없게 하고 보드 하단에 무승부를 표시한다. (FEN 모드는 표준 시작 위치 가정을 쓰는 이 판정
+  // 대상이 아니므로 항상 false — 별도의 무승부 판정은 이번 범위 밖.)
   const drawState = useMemo(() => gameEndState(sans), [key]);
-  const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
+  const gameDrawn = !fenRoot && (drawState.end === "stalemate" || drawState.end === "threefold");
   const [mode, setMode] = useState("normal");
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
-  const { moves, posGames, engineNote, posEval, engineLines, linesPending, curDepth } = useMergedMoves(sans, engine, liveOn, extra[key], contentVer, mode, sortBy);
+  // (사용자 요청) FEN 모드에서는 sans가 표준 시작 위치 기준이 아니므로, 이 훅이 내부적으로 만드는 FEN·
+  // 후보 수 조회가 전부 엉뚱한 포지션을 가리킨다 — liveOn을 꺼서 실시간 엔진 평가(와 그 계산 비용)만
+  // 막는다(book 조회 자체는 애초에 이 위치가 스냅샷에 없어 자연히 빈 배열을 돌려준다).
+  // (사용자 요청, 버그 수정) useMergedMoves는 sans 배열의 내용만으로 정적 스냅샷(snapNode)을 조회한다
+  // — FEN 모드에서도 sans는 "이 FEN부터 둔 수순"일 뿐 그 배열 자체는(특히 아직 한 수도 안 뒀을 때는
+  // 완전히 같은 []) 표준 시작 위치의 책 데이터와 구분되지 않아, 전혀 무관한 위치의 이론 추천·엔진
+  // 평가·엔진 라인이 그대로 노출됐다(실제로 붙여넣은 엔드게임 FEN에 "1.e4 King's Pawn Game" 추천이
+  // 뜨는 것으로 확인). liveOn만 꺼서는 이 정적 스냅샷 자체를 막지 못하므로, FEN 모드에서는 결과를
+  // 아예 중립값으로 덮어써 이 위치와 무관한 데이터가 화면에 노출되지 않게 한다.
+  const mergedMoves = useMergedMoves(sans, engine, liveOn && !fenRoot, extra[key], contentVer, mode, sortBy);
+  const { moves, posGames, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
+    ? { moves: [], posGames: null, engineNote: null, posEval: null, engineLines: [], linesPending: false, curDepth: null }
+    : mergedMoves;
   // (v0.2.2) 후보 블록에 지금 떠 있는 각 수의 확정 등급(pending 제외)을 pin — 아래 마지막 수 재평가
   // effect가 이 값을 그대로 재사용해 블록과 보드·현재 수 블록의 수 체계 아이콘을 일치시킨다. 등급은
   // 엔진 depth가 깊어지며 갱신되므로, 매 변경마다 최신값으로 덮어써 두면 그 수를 두는 시점의 표시가
@@ -8311,7 +8396,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       return { from: info.from, to: info.to, weight };
     }).filter(Boolean);
   }, [moves, board, color, sortBy, ply, liveOn, engine && engine.status]);
-  const legalTargets = useMemo(() => sel ? legalDests(board, sel[0], sel[1], color, ep) : [], [sel, board, color, ep]);
+  // (사용자 요청) FEN 모드에서는 legalDests의 캐슬링 판정(기물 배치만 봄)을 그대로 쓰지 않고,
+  // FEN에서 유래한 캐슬링 권리로 한 번 더 걸러낸다(fenLegalDests).
+  const legalTargets = useMemo(() => {
+    if (!sel) return [];
+    return fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep);
+  }, [sel, board, color, ep, fenRoot, fenReplay]);
 
   // 수를 두면 항상 도착 칸에 수 체계 아이콘을 띄운다(블록에 없거나 아직 미평가면 우선 '분석 중', 엔진으로 갱신)
   // (UX2) onKind가 주어지면 "이 수 이후" 평가가 depth를 높여가며 갱신될 때마다 그 시점 기준의 등급을
@@ -8375,6 +8465,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 되돌리기/앞으로 등 어떤 방식으로 도달하든 보드 도착칸 아이콘과 헤더 수 체계가 정확히 표시되도록 엔진으로 티어를 다시 평가한다.
   useEffect(() => {
     if (!sans.length) { setLastQ(null); return; }
+    // (버그 수정) FEN 모드는 표준 시작 위치를 가정하는 이론/등급 판정 대상이 아니다 — goFen이 이미
+    // lastQ를 건드리지 않으므로 여기서도 그대로 null(뱃지 없음)로 둔다. boardFromSans(prev)로 잘못된
+    // 표준 시작 위치를 재생해 우연히 같은 좌표에서 다른 기물을 잘못 매칭시키는 것도 방지한다.
+    if (fenRoot) { setLastQ(null); return; }
     const prev = sans.slice(0, -1);
     const lastSan = sans[sans.length - 1];
     const brd = boardFromSans(prev);
@@ -8420,20 +8514,32 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     setSel(null); setDrag(null);
     setLastMascot(mascotFor(sans, san));
   }, [sans, key, moves, board, color, stampQ, future, gameDrawn]);
+  // (사용자 요청) FEN 모드 전용 — 이론 후보(moves)·수 체계 평가(stampQ/evalMoveKind)·퀘스트 추적 없이
+  // 그냥 그 수를 둔다. 이 값들은 전부 "표준 시작 위치에서의 이 sans"를 전제하므로, FEN 모드의 sans에
+  // 그대로 적용하면 완전히 엉뚱한 포지션을 기준으로 평가해 버린다.
+  const goFen = useCallback((san) => {
+    playMoveSfx(san);
+    setSans([...sans, san]);
+    setFuture((future.length && stripSuffix(future[0]) === stripSuffix(san)) ? future.slice(1) : []);
+    setSel(null); setDrag(null);
+  }, [sans, future]);
 
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
-    if (!legalDests(board, from[0], from[1], color, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
+    const dests = fenRoot ? fenLegalDests(from[0], from[1], color, board, fenReplay.rights, ep) : legalDests(board, from[0], from[1], color, ep);
+    if (!dests.some(([r, c]) => r === to[0] && c === to[1])) return false;
     const pc = board[from[0]][from[1]];
     if (pc && pc.t === "P" && ((color === "w" && to[0] === 0) || (color === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }   // (기능5) 프로모션 선택
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep);
     if (!san) return false;
+    if (fenRoot) { goFen(san); return true; }
     const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(san));
     if (mm) go(mm.san, false); else go(san, true);   // 블록에 있으면 표준 SAN으로, 없으면 사용자 수 블록 생성
     return true;
-  }, [board, color, go, moves, ep]);
+  }, [board, color, go, goFen, moves, ep, fenRoot, fenReplay]);
   // (v0.1.3 기능) 엔진 라인을 클릭하면 그 라인의 첫 수(지금 위치에서 바로 다음 수)를 둔다 —
   // tryMove와 같은 규칙으로, 후보 수 블록에 이미 있으면 그 표준 SAN으로, 없으면 사용자 수로 둔다.
+  // (FEN 모드에는 애초에 후보 수 패널이 없어 이 경로로 호출될 일이 없다.)
   const playEngineMove = useCallback((san) => {
     if (focus) return;
     const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(san));
@@ -8444,9 +8550,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     const { from, to } = promoPrompt; setPromoPrompt(null); setSel(null); setDrag(null);
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep, piece);
     if (!san) return;
+    if (fenRoot) { goFen(san); return; }
     const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(san));
     if (mm) go(mm.san, false); else go(san, true);
-  }, [promoPrompt, board, color, ep, moves, go]);
+  }, [promoPrompt, board, color, ep, moves, go, goFen, fenRoot]);
 
   const onSquareClick = useCallback((sq) => {
     const p = board[sq[0]][sq[1]];
@@ -8484,6 +8591,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const back = () => jumpTo(sans.length - 1);
   const fwd = () => {
     if (!future.length) return; const h = future[0];
+    if (fenRoot) { setSans([...sans, h]); setFuture(future.slice(1)); setSel(null); return; }
     const mm = moves.find((x) => stripSuffix(x.san) === stripSuffix(h));
     stampQ(sans, board, color, h, mm);
     setSans([...sans, h]); setFuture(future.slice(1)); setSel(null);
@@ -8559,17 +8667,20 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 자동으로 열었는데, 이제 결과·상대·타임클래스 같은 대국 메타데이터까지 갖춘 전용 /review
   // 페이지로 완전히 넘긴다(학습 보드 상태는 건드리지 않는다).
   const onOpenMyGameAnalyze = (g) => { onOpenReview && onOpenReview({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black }); };
-  // (UI2) PGN 붙여넣기로 검증된 수순을 그대로 이어서 두도록 불러온다
-  const onLoadPgn = (movesList) => { setFocus(null); setSans(movesList); setFuture([]); setSel(null); setLastQ(null); };
+  // (UI2) PGN 붙여넣기로 검증된 수순을 그대로 이어서 두도록 불러온다(FEN 모드였다면 표준 시작
+  // 위치로 돌아가는 것이므로 함께 해제한다).
+  const onLoadPgn = (movesList) => { setFocus(null); setFenRoot(null); setSans(movesList); setFuture([]); setSel(null); setLastQ(null); };
 
-  const node = snapNode(sans);
+  // (버그 수정) FEN 모드에서는 sans가 표준 시작 위치 기준 스냅샷과 무관하므로 조회하지 않는다 — 특히
+  // sans=[]는 실제 표준 시작 위치와 구분되지 않아, 조회하면 이 위치와 무관한 이론 정보가 섞여 든다.
+  const node = fenRoot ? null : snapNode(sans);
   const openingName = node && node.opening ? node.opening.name : null;
   const stageTitle = ply === 0 ? "1수 · 백의 첫 수" : (openingName || moveNumber(ply) + " 차례");
 
   // (UI5) 헤더 블록에 현재 수(직전에 두어진 수) 정보 표기
   const lastSan = sans.length ? sans[sans.length - 1] : null;
   const parentKey = sans.length ? sans.slice(0, -1).join(" ") : "";
-  const parentNode = sans.length ? snapNode(sans.slice(0, -1)) : null;
+  const parentNode = (!fenRoot && sans.length) ? snapNode(sans.slice(0, -1)) : null;
   const curMove = (parentNode && lastSan) ? parentNode.moves.find((mm) => stripSuffix(mm.san) === stripSuffix(lastSan)) : null;
   const curName = (nameOverride(parentKey, lastSan) ?? (curMove ? curMove.name : null));
   const curKind = (lastQ && lastQ.kind && lastQ.kind !== "pending") ? lastQ.kind : (curMove ? (curMove.book ? "book" : "good") : null);
@@ -8658,13 +8769,22 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           최소 폭(min-content)만큼 억지로 넓어져 모바일에서 보드가 화면 밖으로 밀려나는 원인이었다. */}
       <div style={{ minWidth: 0 }}>
         <div style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
+          {/* (사용자 요청) FEN 모드 안내 — 표준 시작 위치 기반 기능(분석·이론 후보·집중 학습 등)은
+              이 위치와 무관하므로, 눈에 띄는 배지 + 종료 버튼만 간단히 둔다. */}
+          {fenRoot && (
+            <div className="flex items-center justify-between" style={{ marginBottom: 10, padding: "7px 11px", borderRadius: 9, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass }}>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi }}>FEN 모드 — 붙여넣은 포지션부터 자유롭게 두는 중이에요</span>
+              <button onClick={exitFenMode} className="press" style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>종료</button>
+            </div>
+          )}
           <div className="mb-3 flex items-center justify-between gap-2">
-            <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} drawn={gameDrawn} />
+            <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} drawn={gameDrawn} startColor={fenRoot ? fenRoot.turn : undefined} />
             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
               {/* (v0.2.0 기능) 기보 위 분석 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
-                  띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다. */}
-              <button onClick={() => onOpenReview && onOpenReview({ sans: [...sans, ...future] })} disabled={([...sans, ...future].length < 1) || engine.status !== "ready"} title="기보 분석" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: ([...sans, ...future].length < 1 || engine.status !== "ready") ? "default" : "pointer", opacity: ([...sans, ...future].length < 1 || engine.status !== "ready") ? 0.45 : 1 }}><BarChart3 size={13} /> 분석</button>
-              <NotationTools sans={sans} onLoadPgn={onLoadPgn} />
+                  띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
+                  (FEN 모드는 표준 시작 위치를 가정하는 분석 페이지 대상이 아니라 비활성화한다.) */}
+              <button onClick={() => onOpenReview && onOpenReview({ sans: [...sans, ...future] })} disabled={!!fenRoot || ([...sans, ...future].length < 1) || engine.status !== "ready"} title={fenRoot ? "FEN 모드에서는 사용할 수 없어요" : "기보 분석"} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: (fenRoot || [...sans, ...future].length < 1 || engine.status !== "ready") ? "default" : "pointer", opacity: (fenRoot || [...sans, ...future].length < 1 || engine.status !== "ready") ? 0.45 : 1 }}><BarChart3 size={13} /> 분석</button>
+              <NotationTools sans={sans} startColor={fenRoot ? fenRoot.turn : undefined} onLoadPgn={onLoadPgn} onLoadFen={onLoadFen} />
               {/* (18차 UI5) 와이파이 아이콘 + "라이브" 상태 텍스트 삭제 */}
             </div>
           </div>
@@ -8756,9 +8876,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                   <div>
                     <div className="flex items-center flex-wrap" style={{ gap: 13 }}>
                       {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
-                      <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1)}{lastSan}</span>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, fenRoot ? fenRoot.turn : undefined)}{lastSan}</span>
                       {curName && <span style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, wordBreak: "keep-all" }}>{curName}</span>}
-                      <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}><Play size={11} /> 학습</button>
+                      {/* (사용자 요청) 집중 학습은 표준 시작 위치의 오프닝 이론을 전제로 하므로 FEN 모드에서는 숨긴다. */}
+                      {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}><Play size={11} /> 학습</button>}
                     </div>
                     <div className="flex items-center flex-wrap" style={{ gap: 16, marginTop: 12 }}>
                       {curKind && <span style={{ fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</span>}
@@ -11054,6 +11175,19 @@ function tierGradientCss(tierKey) {
   if (!c) return "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)";
   return c.stops ? "linear-gradient(135deg," + c.stops.join(",") + ")" : "linear-gradient(180deg," + c.hi + "," + c.lo + ")";
 }
+// (사용자 요청) 그랜드마스터 프로필 사진에 두르는 무지개 그라데이션 테두리 — TIER_COLORS.grandmaster의
+// 기존 홀로그램 색(보라·민트·핑크)을 그대로 재사용한다. border-box에는 그라데이션을, content-box에는
+// 투명을 깔아(배경 두 겹 클리핑) <img>의 실제 사진이 안쪽을 그대로 덮게 하면서 테두리 링만 보이게 한다.
+function gmPhotoRingStyle(isGM, borderWidth = 2.5) {
+  if (!isGM) return null;
+  return {
+    border: borderWidth + "px solid transparent",
+    backgroundImage: "linear-gradient(#0000,#0000)," + tierGradientCss("grandmaster"),
+    backgroundOrigin: "border-box",
+    backgroundClip: "content-box, border-box",
+    boxShadow: "0 0 9px rgba(185,131,255,.55)",
+  };
+}
 // 티어[0..5](아이언..마스터)를 깨는 데 필요한 XP — 한 곳에서만 관리하는 튜닝 가능한 상수. 누적
 // 500/2,000/10,000/50,000/100,000 XP에 브론즈/실버/골드/다이아몬드/마스터에 도달하고, 그
 // 두 배(누적 200,000)에 그랜드마스터에 도달한다.
@@ -11218,10 +11352,12 @@ function questLabel(q) {
 }
 // (사용자 요청) 퀘스트 문구 속 "chess.com"에 밑줄 + 실제 chess.com 하이퍼링크를 건다 — 일반 https
 // 링크라 모바일에 chess.com 앱이 설치돼 있으면 OS가 알아서 앱으로 열어준다(유니버설/앱 링크, 별도
-// 커스텀 스킴 불필요). 퀘스트 행 전체가 클릭되면 오프닝 집중 학습으로 이동하므로, 이 링크 클릭은
+// 커스텀 스킴 불필요). 단, target="_blank"(새 창/탭)으로 열면 대부분의 모바일 브라우저가 유니버설
+// 링크 가로채기를 건너뛰고 항상 웹사이트로 열어버리므로, 같은 탭에서 이동시켜야 앱 설치 시 OS가
+// 앱으로 가로챌 수 있다. 퀘스트 행 전체가 클릭되면 오프닝 집중 학습으로 이동하므로, 이 링크 클릭은
 // stopPropagation으로 그 상위 클릭을 막아 실수로 딴 곳으로 이동하지 않게 한다.
 function ChesscomTextLink({ children }) {
-  return <a href="https://www.chess.com" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
+  return <a href="https://www.chess.com" onClick={(e) => e.stopPropagation()} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
 }
 function questLabelNode(q) {
   const text = questLabel(q);
@@ -11664,14 +11800,22 @@ function TierBadge({ totalXp, compact, onClick }) {
 // 고정해야 하는 곳에서 쓴다.
 function TierStatPill({ totalXp, size = 40, gaugeWidth = 92, gauge = true }) {
   const info = tierFromXp(totalXp);
-  const { tier, xpInDivision, xpForNextDivision, division } = info;
+  const { tier, xpInDivision, xpForNextDivision, division, maxed, gmStars } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
+  // (사용자 요청) 그랜드마스터 티어는 게이지 바도 배지와 같은 무지개 그라데이션으로, 옆에 획득한
+  // 프레스티지 별(★N)도 같은 그라데이션 글자로 표시한다.
+  const isGM = tier.key === "grandmaster";
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }} title={fmtFull(xpInDivision) + "/" + fmtFull(xpForNextDivision) + " XP"}>
       <TierLogoDisc tierKey={tier.key} division={division} size={size} discSize={size + 2} />
       {gauge && (
-        <span style={{ display: "inline-block", width: gaugeWidth, maxWidth: "38vw", height: 8, borderRadius: 999, background: "rgba(0,0,0,.12)", border: "1px solid #DCCBA8", overflow: "hidden", flexShrink: 0 }}>
-          <span style={{ display: "block", width: pct + "%", height: "100%", background: "linear-gradient(90deg,#A87715,#F3D57A 55%," + T.brass + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.4)", transition: "width .6s ease" }} />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <span style={{ display: "inline-block", width: gaugeWidth, maxWidth: "38vw", height: 8, borderRadius: 999, background: "rgba(0,0,0,.12)", border: "1px solid #DCCBA8", overflow: "hidden", flexShrink: 0 }}>
+            <span style={{ display: "block", width: pct + "%", height: "100%", background: isGM ? tierGradientCss("grandmaster") : "linear-gradient(90deg,#A87715,#F3D57A 55%," + T.brass + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.4)", transition: "width .6s ease" }} />
+          </span>
+          {isGM && maxed && gmStars > 0 && (
+            <span style={{ fontSize: size >= 40 ? 12.5 : 10.5, fontWeight: 900, flexShrink: 0, whiteSpace: "nowrap", background: tierGradientCss("grandmaster"), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>★{gmStars}</span>
+          )}
         </span>
       )}
     </span>
@@ -11684,16 +11828,22 @@ function TierStatPill({ totalXp, size = 40, gaugeWidth = 92, gauge = true }) {
 // (v0.1.2) 다음 구간을 미리 보여주던 작은 배지들을 없앴다 — 여정 지도에서 이미 볼 수 있어 중복.
 function TierProgressStrip({ totalXp, onOpen }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  const { tier, xpInDivision, xpForNextDivision, division } = info;
+  const { tier, xpInDivision, xpForNextDivision, division, maxed, gmStars } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
+  const isGM = tier.key === "grandmaster";
   return (
     // (v0.1.2) 퍼즐 탭 티어 스트립 크기 축소(특히 높이) — 패딩·로고·글자·진행바를 모두 한 단계씩 줄임.
     <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "6px 14px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={46} discSize={49} />
       <div style={{ minWidth: 96, marginLeft: 9, marginRight: 4 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
+        <div className="flex items-center" style={{ gap: 5 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</span>
+          {isGM && maxed && gmStars > 0 && (
+            <span style={{ fontSize: 11, fontWeight: 900, whiteSpace: "nowrap", background: tierGradientCss("grandmaster"), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>★{gmStars}</span>
+          )}
+        </div>
         <div style={{ width: "100%", height: 5, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 3 }}>
-          <div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
+          <div style={{ width: pct + "%", height: "100%", background: isGM ? tierGradientCss("grandmaster") : T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
         <div style={{ fontSize: 9.5, color: T.brassHi, opacity: .75, marginTop: 1 }}>{xpInDivision}/{xpForNextDivision} XP</div>
       </div>
@@ -13631,8 +13781,8 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <div className="flex items-center gap-1" style={{ marginBottom: 6, paddingLeft: 2 }}>
-        <Sparkles size={13} style={{ color: T.brassHi }} />
-        <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi }}>일일 퍼즐</span>
+        <span style={{ fontSize: 13, lineHeight: 1 }}>📅</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>일일 퍼즐</span>
       </div>
       {/* (v0.2.7 버그 수정) touchAction을 "pan-y"(수직만 브라우저가 처리)로 막아 두고 커스텀 드래그가
           가로를 대신 처리하게 했었는데, 그 커스텀 드래그를 마우스 전용으로 좁히면서 터치에서는 아무도
@@ -14018,7 +14168,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
       {/* (17차 후속) 카드 상단의 계정 요약 줄(아바타+아이디+"진도가 서버에 저장됩니다")은 프로필 편집 정보와 중복이라 제거 */}
       <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>프로필 편집</div>
       <div className="flex items-center gap-3" style={{ margin: "12px 0" }}>
-        {profile.photo ? <img src={profile.photo} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C" }} />
+        {profile.photo ? <img src={profile.photo} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(totalXp || 0).tier.key === "grandmaster") || {}) }} />
           : <span style={{ width: 56, height: 56, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 24 }}>{(profile.nickname || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
           {/* (UI2) 설정 탭에서는 칭호를 고를 수 없고, 장착된 칭호만 닉네임 위에 작게 표시 */}
@@ -14930,7 +15080,7 @@ function MyProfileCard({ card, profile, setProfile, user, currentTitle, totalXp,
         <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>프로필 편집</button>
       </div>
       <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-        {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+        {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
           : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(myPub.nickname || user || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
           {/* (디자인) 칭호는 이름 위에 표시 */}
@@ -15049,6 +15199,12 @@ const CHANGELOG = [
       "체스보드에서 기물 드래그가 잘 안 되던 문제를 고쳤어요 — 이제 기물이 있는 칸 어디를 짚어도 드래그가 바로 시작되고, 보드 위에서는 화면이 스크롤로 새지 않고 드래그만 되도록 했어요.",
       "일일 퀘스트의 오프닝 플레이 문구에 백/흑 진영이 함께 표시돼요(예: '흑으로 시칠리안 디펜스'). 문구 속 'chess.com'을 누르면 실제 chess.com으로 이동해요(모바일에서 앱이 깔려 있으면 앱으로 열려요).",
       "도감 탭 모식도 위 안내 문구를 지우고, 그 자리에 도감 해금률을 표시했어요. 개발자가 새로 추가한 이론 수가 모식도에 제대로 안 나타나던 문제도 고쳤어요.",
+      "모바일에 chess.com 앱이 설치돼 있는데도 링크를 누르면 항상 웹사이트로만 열리던 문제를 고쳤어요 — 이제 앱이 있으면 앱으로 바로 열려요.",
+      "유산이 하나만 등록돼 있어도 블록 크기가 커지지 않도록 고쳤어요. 등급 아이콘은 블록 우상단에 더 크게, 살짝 튀어나오게 배치하고 뒤에 있던 원형 배경은 없앴어요. 수정 버튼은 우하단으로 옮겼어요.",
+      "알림 카드와 수 아이콘 설명 말풍선이 모바일에서 화면 밖으로 잘려 보이던 문제를 완전히 고쳤어요.",
+      "학습 탭 체스보드에 FEN을 붙여넣으면 이제 그 포지션부터 자유롭게 이어서 둘 수 있어요('FEN 모드') — 그 포지션에서 처음 두는 수부터 수 번호가 새로 1.으로 시작하고, 캐슬링 같은 규칙도 그 FEN의 정보에 맞게 정확히 판정돼요. 예전의 읽기 전용 미리보기는 없앴어요.",
+      "퍼즐 탭의 '일일 퍼즐' 글자 크기를 '추천 퍼즐'과 맞추고, 앞의 아이콘을 달력 이모티콘으로 바꿨어요.",
+      "그랜드마스터 티어에 도달하면 프로필 사진에 무지개 그라데이션 테두리가 둘리고, XP 게이지 바도 같은 색으로 빛나며 옆에 획득한 별 개수가 표시돼요. 채팅에서 그랜드마스터가 보낸 메시지는 상대방 화면에도 같은 무지개 그라데이션 말풍선으로 보여요.",
     ]
   },
   {
@@ -16696,12 +16852,23 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
   // 여전히 이전 상태인데 화면(과 새로고침 전까지의 localRead/localResult 오버레이)은 계속 성공한
   // 것처럼 보였다 — 성공 여부를 확인해 실패하면 해당 항목의 로컬 오버레이를 지우고 refresh()로
   // 서버의 실제 상태와 다시 맞춘다.
-  const [notifDx, setNotifDx] = useState(0);
+  // (사용자 요청, 버그 수정) position:absolute + translateX 보정만으로는, 이 벨이 overflow:hidden인
+  // 조상(헤더 등) 안에 있으면 dx 계산이 맞아도 카드 자체가 그 조상 경계에서 잘렸다 — 도감 수 카드와
+  // 똑같은 근본 원인. position:fixed로 바꿔 뷰포트 좌표로 직접 계산하면 어떤 조상의 overflow와도
+  // 무관하게 항상 화면 안에 온전히 그려진다.
+  const [notifRect, setNotifRect] = useState(null); // { left, top, width, maxHeight }
   const toggle = () => {
     const next = !open; setOpen(next);
-    // (v0.2.6 버그 수정) 알림 벨이 화면 왼쪽에 가까이 있으면 오른쪽 끝에 맞춰 뜨는 320px 카드가
-    // 화면 밖으로 잘렸다 — 열 때마다 벨의 실제 위치를 재서 안전한 가로 오프셋을 계산해 둔다.
-    if (next && wrapRef.current) setNotifDx(safeAreaDx(wrapRef.current.getBoundingClientRect(), 320, "right"));
+    if (next && wrapRef.current) {
+      const anchor = wrapRef.current.getBoundingClientRect();
+      const margin = 8;
+      const width = Math.min(320, window.innerWidth - margin * 2);
+      const left = Math.max(margin, Math.min(anchor.right - width, window.innerWidth - width - margin));
+      const top = anchor.bottom + 6;
+      const BOTTOM_SAFE = 66 + 24; // 하단 고정 내비게이션(66px) + 여유
+      const maxHeight = Math.max(160, Math.min(420, window.innerHeight - top - BOTTOM_SAFE));
+      setNotifRect({ left, top, width, maxHeight });
+    }
     // (18차 UX4→보충) 최초 확인 시 서버에 PATCH로 read=true를 확실히 반영 — 새로고침 후에도 배지가 되살아나지 않는다.
     if (next && unread) {
       const stale = items.filter((n) => !n.read);
@@ -16734,7 +16901,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
       <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0, y: -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.97 }} transition={{ duration: 0.18, ease: MOTION_EASE }}
-          onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 40, right: 0, transform: notifDx ? "translateX(" + notifDx + "px)" : undefined, width: 320, maxWidth: "90vw", maxHeight: 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
+          onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: (notifRect && notifRect.top) || 40, left: (notifRect && notifRect.left) || 0, width: (notifRect && notifRect.width) || 320, maxHeight: (notifRect && notifRect.maxHeight) || 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
           <div className="flex items-center justify-between" style={{ padding: "10px 14px", borderBottom: "1px solid #E4D5B6" }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>알림</span>
             {items.length > 0 && <button onClick={clearAll} className="press" style={{ padding: "3px 8px", borderRadius: 6, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, border: "1px solid #C9B58C", cursor: "pointer" }}>전체 삭제</button>}
@@ -16794,7 +16961,7 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
       <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, padding: compact ? "3px 5px" : "4px 10px 4px 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
-        {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, objectFit: "cover", flexShrink: 0 }} />
+        {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster", 2) || {}) }} />
           : <span style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: compact ? 10.5 : 12, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initial}</span>}
         {!compact && <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
         <ChevronDown size={compact ? 12 : 14} style={{ color: T.brassHi, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
@@ -16802,7 +16969,7 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
       {open && (
         <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: 300, maxWidth: "90vw", maxHeight: 460, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90, padding: 14 }}>
           <div className="flex items-center gap-3 press" onClick={goToProfile} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") goToProfile(); }} style={{ marginBottom: 12, cursor: "pointer" }}>
-            {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
+            {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
               : <span style={{ width: 52, height: 52, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 21, flexShrink: 0 }}>{initial}</span>}
             <div style={{ minWidth: 0 }}>
               {myPub.title && <div style={{ maxWidth: 180, marginBottom: 3 }}><TitleBadge id={myPub.title} earned compact /></div>}
@@ -16905,7 +17072,7 @@ function ChatUserProfileModal({ username, onClose }) {
           {!pub ? <p style={{ fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</p> : (
             <>
               <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-                {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
                 <div style={{ minWidth: 0 }}>
                   <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</span>
@@ -16927,6 +17094,20 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   // 늘어나려면 부모도 그만큼의 높이를 flex로 마련해 둬야 하므로, 그런 부모를 보장하지 않는 다른
   // 호출부(FriendsModal의 미니 채팅 뷰 등)는 이 prop을 넘기지 않아 기존 고정 높이 레이아웃을 그대로 쓴다.
   const narrow = fillNarrow;
+  // (사용자 요청) 그랜드마스터가 보낸 메시지는 상대에게도 무지개 그라데이션 말풍선으로 보인다 —
+  // uid 기준으로 나·상대 두 사람의 xp를 한 번에 조회해 각자의 티어를 판정한다.
+  const [gmSenders, setGmSenders] = useState({});
+  useEffect(() => {
+    let cc = false;
+    usersProfiles([myUid, otherUid]).then((pm) => {
+      if (cc || !pm) return;
+      const next = {};
+      if (pm[myUid]) next[myUid] = tierFromXp((pm[myUid].pub && pm[myUid].pub.xp) || 0).tier.key === "grandmaster";
+      if (pm[otherUid]) next[otherUid] = tierFromXp((pm[otherUid].pub && pm[otherUid].pub.xp) || 0).tier.key === "grandmaster";
+      setGmSenders(next);
+    });
+    return () => { cc = true; };
+  }, [myUid, otherUid]);
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -17255,7 +17436,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                     </div>
                   )}
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
-                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{renderMentionText(m.body)}</span>}
+                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: gmSenders[m.from_uid] ? tierGradientCss("grandmaster") : (mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff"), color: (mine || gmSenders[m.from_uid]) ? "#241509" : T.ink, border: (mine || gmSenders[m.from_uid]) ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{renderMentionText(m.body)}</span>}
                 </span>
               </div>
               </div>
@@ -17476,20 +17657,26 @@ function LegacyBlockDecor() {
     </>
   );
 }
+// (사용자 요청) 채워진 칸이 하나뿐이어도(남의 프로필처럼 빈 칸을 아예 안 그리는 화면에서) flex:1이
+// 남은 공간을 혼자 다 차지해 유난히 커 보이던 문제 — 항상 "3칸 중 1칸" 몫의 고정 너비만 쓰도록,
+// 형제가 몇 개든 커지지 않는 flex-basis를 준다(행의 gap:8 기준, 3칸-2간격).
+const LEGACY_TILE_FLEX = "0 0 calc((100% - 16px) / 3)";
 // 유산 블록 — 이미지 자산 없이, 사이트 전반에서 쓰는 어보니(진갈색)·브래스(금색) 팔레트만으로
 // 만든 라운딩 사각 블록. 이미 저장된 유산을 보여주며, 누르면 LegacyRevealScreen이 열린다.
-// (사용자 요청) 등급 라벨 텍스트 대신, 그 등급에 해당하는 수 체계 아이콘을 블록 우하단에 띄운다.
+// (사용자 요청) 등급 라벨 텍스트 대신, 그 등급에 해당하는 수 체계 아이콘을 블록 우상단에 — 같은
+// 색 원형 배경 없이, 블록 밖으로 살짝 삐져나올 만큼 크게 — 띄운다. 편집 버튼은 우하단으로.
 function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit }) {
   const color = QCOLOR[typeInfo.kind];
   return (
-    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+    <div style={{ position: "relative", flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
       <button onClick={onOpen} className="press" title={typeInfo.label + " — 눌러서 재생"} style={LEGACY_BLOCK_BTN_STYLE}>
         <LegacyBlockDecor />
         <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 15, lineHeight: 1.15, color, textAlign: "center", wordBreak: "keep-all",
           textShadow: "0 1px 0 rgba(0,0,0,.9), 0 -1px 0 rgba(255,255,255,.06), 0 0 9px " + color + "88" }}>{legacyMoveLabel(entry)}</span>
-        <span aria-hidden="true" style={{ position: "absolute", bottom: 5, right: 5, width: 18, height: 18, borderRadius: "50%", background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.5), 0 0 0 1.5px rgba(0,0,0,.5)" }}>{badgeIcon(typeInfo.kind, 12)}</span>
       </button>
-      {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label="유산 편집" title="편집" className="press" style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
+      {/* 버튼(overflow:hidden) 바깥의 형제로 둬야 살짝 삐져나오는 효과가 실제로 잘리지 않는다. */}
+      <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{badgeIcon(typeInfo.kind, 26)}</span>
+      {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label="유산 편집" title="편집" className="press" style={{ position: "absolute", bottom: 4, right: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
     </div>
   );
 }
@@ -17497,7 +17684,7 @@ function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit }) {
 // 다르게 보여준다 — 추가 전후로 블록 크기·재질이 달라 보이지 않게 한다.
 function LegacyEmptySlot({ typeInfo, onClick }) {
   return (
-    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+    <div style={{ position: "relative", flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
       <button onClick={onClick} className="press" title={typeInfo.label + " 추가"} style={LEGACY_BLOCK_BTN_STYLE}>
         <LegacyBlockDecor />
         <span aria-hidden="true" style={{ position: "relative", fontSize: 26, fontWeight: 300, lineHeight: 1, color: T.brassHi, opacity: 0.85 }}>+</span>
@@ -17886,7 +18073,7 @@ function userSearchRow(r, onClick, right, opts) {
             : <span style={{ fontSize: 14, fontWeight: 900, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{rank}</span>}
         </span>
       )}
-      {p.photo ? <img src={p.photo} alt="" style={{ width: avatar, height: avatar, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: avatar, height: avatar, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
+      {p.photo ? <img src={p.photo} alt="" style={{ width: avatar, height: avatar, borderRadius: 9, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(isGM, 2) || {}) }} /> : <span style={{ width: avatar, height: avatar, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
         <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>나</span>}{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
@@ -17956,7 +18143,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
         {sel ? (
           <div style={{ padding: 18, overflowY: "auto" }}>
             <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-              {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+              {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
                 : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
               <div style={{ minWidth: 0 }}>
                 <div className="flex items-center gap-2">
@@ -18021,7 +18208,7 @@ function FriendRow({ id, pub, right, onClick }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, borderRadius: 10, border: isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: "#FBF5E8", boxShadow: isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none" }}>
       <button onClick={onClick} className="press" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: onClick ? "pointer" : "default", textAlign: "left", padding: 0 }}>
-        {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
+        {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(isGM, 2) || {}) }} />
           : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || id || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
           <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || id}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
@@ -18622,7 +18809,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
             // 최대 높이 + 세로 스크롤을 준다.
             <div style={{ padding: 18, maxHeight: narrow ? undefined : "60vh", flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
