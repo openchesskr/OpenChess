@@ -14975,7 +14975,7 @@ const CHANGELOG = [
       "프로필에 '유산'을 추가했어요 — 내가 자랑스러운 대국의 한 수를 골라 암석판에 룬 문자처럼 새겨 전시할 수 있어요. 최선의 유산·유일한 유산·탁월한 유산 세 종류가 있고, 각각 그 등급에 맞는 수만 지정할 수 있어요. 누르면 암석이 빛나다가 빛으로 이루어진 체스보드가 나타나 그 수부터 이어지는 기보를 재생해줘요.",
       "유저 검색의 티어 리더보드에서 이제 경험치를 아직 하나도 못 얻은 계정도 순위에 나오고, 최대 100위까지 볼 수 있어요.",
       "도감 오프닝 트리에서 화면에 아무것도 안 보이는 빈 공간으로 갈 때 스크롤이 갑자기 더 빨라지던 것을 없애고, 항상 일정한 속도로 움직이도록 했어요.",
-      "유산 암석판을 실제 돌 질감 이미지로 바꾸고, 새겨지는 수의 글씨체도 새 폰트로 바꿨어요.",
+      "유산 블록을 사이트에서 쓰는 금색·갈색을 조합한 라운딩 사각형 디자인으로 바꾸고, 새겨지는 수의 글씨체도 새 폰트로 바꿨어요.",
       "유산을 재생할 때 각 수마다 수 체계 아이콘이 함께 표시되고, 빛의 체스보드에도 밝은 칸·어두운 칸이 밝기 차이로 구분돼요. 느린 재생이 시작되기 전에 전체 기보를 빠르게 훑어보는 예고편도 먼저 재생돼요.",
       "퀘스트 클리어·칭호 획득·티어 승급 팝업 제목의 글꼴을 새 폰트로 바꿨어요.",
     ]
@@ -17385,19 +17385,21 @@ function legacyMoveLabel(entry) {
   if (!entry || !entry.sans || entry.sans[entry.moveIndex] == null) return "";
   return moveNumber(entry.moveIndex) + entry.sans[entry.moveIndex];
 }
-// 암석판에 룬 문자처럼 새겨진 수 하나 — 이미 저장된 유산을 보여주는 타일. 누르면 LegacyRevealScreen이 열린다.
+// 유산 블록 — 이미지 자산 없이, 사이트 전반에서 쓰는 어보니(진갈색)·브래스(금색) 팔레트만으로
+// 만든 라운딩 사각 블록. 이미 저장된 유산을 보여주며, 누르면 LegacyRevealScreen이 열린다.
 function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit }) {
   const color = QCOLOR[typeInfo.kind];
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
       <button onClick={onOpen} className="press" title={typeInfo.label + " — 눌러서 재생"} style={{
-        width: "100%", aspectRatio: "1 / 1", borderRadius: 12, position: "relative", overflow: "hidden",
-        background: "radial-gradient(120% 130% at 50% -15%, #4E453C 0%, #241E17 62%, #120E0A 100%)",
-        border: "1px solid #000", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.06), inset 0 -10px 18px -12px rgba(0,0,0,.7), 0 4px 10px -4px rgba(0,0,0,.65)",
+        width: "100%", aspectRatio: "1 / 1", borderRadius: 14, position: "relative", overflow: "hidden",
+        background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
+        border: "1.5px solid " + T.brass,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), inset 0 -12px 20px -14px rgba(0,0,0,.8), 0 4px 10px -4px rgba(0,0,0,.65)",
         cursor: "pointer", padding: "8px 4px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5 }}>
-        {/* (사용자 요청) 순수 CSS 균열 결 대신 실제 석판 이미지 자산을 배경으로 깐다. */}
-        <img aria-hidden="true" src="/legacy-stone.png" alt="" style={{ position: "absolute", inset: "-6%", width: "112%", height: "112%", objectFit: "cover", opacity: 0.92 }} />
-        <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(120% 130% at 50% -15%, rgba(78,69,60,0) 0%, rgba(18,14,10,.35) 75%, rgba(18,14,10,.6) 100%)" }} />
+        {/* 금빛 광택 하이라이트(좌상단 사선) + 코너 글로우(순수 CSS, 이미지 자산 없음) */}
+        <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.16) 0%, rgba(236,203,134,0) 40%)" }} />
+        <span aria-hidden="true" style={{ position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)", width: "150%", height: 44, background: "radial-gradient(closest-side, " + T.brass + "33, transparent)" }} />
         <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 15, lineHeight: 1.15, color, textAlign: "center", wordBreak: "keep-all",
           textShadow: "0 1px 0 rgba(0,0,0,.9), 0 -1px 0 rgba(255,255,255,.06), 0 0 9px " + color + "88" }}>{legacyMoveLabel(entry)}</span>
         <span style={{ position: "relative", fontSize: 8.5, fontWeight: 800, color: T.brassHi, opacity: 0.85, letterSpacing: ".02em" }}>{typeInfo.label}</span>
@@ -17488,12 +17490,11 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 16, right: 16, zIndex: 5, width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.2)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={17} /></button>
       {phase === "charge" ? (
         <motion.div initial={{ scale: 1, opacity: 0 }} animate={{ scale: [1, 1.14, 1.08], opacity: 1 }} transition={{ duration: 0.9, ease: "easeOut" }}
-          style={{ width: 150, height: 150, borderRadius: 18, position: "relative", overflow: "hidden",
-            background: "radial-gradient(120% 130% at 50% -15%,#4E453C 0%,#241E17 62%,#120E0A 100%)",
-            border: "1px solid #000", boxShadow: "0 0 60px 4px " + color + "55, inset 0 0 0 1px rgba(255,255,255,.08)",
+          style={{ width: 150, height: 150, borderRadius: 20, position: "relative", overflow: "hidden",
+            background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
+            border: "1.5px solid " + T.brass, boxShadow: "0 0 60px 4px " + color + "55, inset 0 1px 0 rgba(255,255,255,.08)",
             display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <img aria-hidden="true" src="/legacy-stone.png" alt="" style={{ position: "absolute", inset: "-6%", width: "112%", height: "112%", objectFit: "cover", opacity: 0.92 }} />
-          <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(120% 130% at 50% -15%, rgba(78,69,60,0) 0%, rgba(18,14,10,.35) 75%, rgba(18,14,10,.6) 100%)" }} />
+          <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.16) 0%, rgba(236,203,134,0) 40%)" }} />
           <motion.span animate={{ opacity: [0.5, 1, 0.6, 1], textShadow: ["0 0 6px " + color, "0 0 26px " + color, "0 0 10px " + color, "0 0 26px " + color] }} transition={{ duration: 0.9, times: [0, 0.4, 0.7, 1] }}
             style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 20, color, textAlign: "center", padding: "0 10px" }}>
             {legacyMoveLabel(entry)}
