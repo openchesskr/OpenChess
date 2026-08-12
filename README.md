@@ -65,6 +65,15 @@ v0.3.2에서 채팅·프로필·검색 창(`ChatsModal`·`ChatUserProfileModal`�
 
 표시 위치는 요청대로 세 곳 — 퍼즐 카드(`PuzzleCard`) 좌하단(정적 기본 레이팅만, 네트워크 없이 카드당 즉시 계산), 퍼즐 풀이 카드(`PuzzleSolver`) 우측 여백(닫기 버튼 바로 아래), 그리고 모식도의 "라인 N" 라벨 바로 옆(고스트 리프 포함). 목록에 카드가 아무리 많아도 카드마다 서버 왕복 없이 즉시 계산되도록, 목록/카드 뷰는 정적 기본 레이팅만 쓰고 실제 풀이 시간 가감은 퍼즐 하나만 상세히 보는 `PuzzleSolver`에서만 반영한다.
 
+**기능 — 프로필 유산(Legacy)**
+프로필에 "가장 자랑스러운 한 수"를 전시하는 기능을 추가했다. 딱 세 종류만 둔다 — 최선의 유산·유일한 유산·탁월한 유산(`LEGACY_TYPES`, 기존 `QLABEL`의 `best`/`only`/`brilliant` 등급과 정확히 대응). 저장 형태는 `profile.legacies = { best, only, brilliant }`(각각 `{ sans, moveIndex, playCount, savedAt }` | `null`)이고, 기존 `pub` 확장 패턴을 그대로 따라 `publishProfile`이 호출되는 5곳(발행 effect+의존성 배열, `loadAccount` 병합, OAuth 최초 로그인, 로그아웃 초기화, 두 곳의 `myPub` 로컬 구성)에 함께 반영해 다른 유저의 공개 프로필에서도 보이게 했다.
+
+만들기 흐름(`LegacyManageModal`) — PGN 직접 입력(`parsePgnMoves` + `NotationTools`와 동일한 방식의 합법성 재생 검증) 또는 chess.com 대국에서 선택(`useChessCom`이 이미 불러와 둔 `games` 재사용, 새 fetch 없음) 중 하나로 대국을 고르면, `analyzeGame`(`ReviewPage`가 쓰는 것과 동일한 함수)으로 대국 전체를 채점한다. 그 유산이 요구하는 등급(`kind`)으로 채점된 수만 목록에서 고를 수 있게 해, 아무 수나 우겨 넣을 수 없도록 서버가 아니라 실제 엔진 분석으로 검증한다. 마지막으로 그 수부터 몇 수까지 재생할지(`playCount`, 남은 수만큼 상한)를 입력받아 저장한다.
+
+디자인은 전체 PGN에서 고른 그 한 수를 "암석판에 룬 문자를 새긴" 모습으로 보여준다(`LegacyStoneTile`) — 이미지 자산 없이 방사형 그라디언트(돌 표면)와 반복 그라디언트(균열 결) 레이어, 그리고 등급 색(`QCOLOR`)으로 발광하는 `text-shadow`만으로 구현했다. 프로필의 "푼 퍼즐" 바로 위(`PublicProfileStats`)에 최대 3칸을 나열하고, 내 프로필에서는 빈 칸에 추가 버튼·채워진 칸에 편집 버튼이 함께 뜬다.
+
+누르면 `LegacyRevealScreen`이 뜬다 — 먼저 그 암석판이 확대되며 룬 문자가 밝기·`text-shadow` 강도를 오가며 빛나고(`charge` 단계, ~0.95초), 이어서 전체 화면 "빛의 체스보드"로 전환한다(`board` 단계). 이 보드는 기존 나무 질감 `Board` 대신 새로 만든 `LegacyLightBoard`로, 반투명 격자선과 `PieceGlyph`에 `drop-shadow` 발광 필터를 씌운 기물로 "허공에 뜬 빛"을 표현하고, 방금 둔 수의 도착 칸에는 원형 발광 하이라이트(`sanSrc`로 계산)를 씌운다. 지정된 수부터 시작해 1.15초 간격으로 한 수씩(`setTimeout` 재귀 스케줄링, 반복 `setInterval` 아님) `playCount`만큼 자동 재생하고, 끝나면 "다시 보기" 버튼이 뜬다.
+
 ### OpenChess v0.3.2 — 2026/8/12
 
 **버그 수정 — 아군 폰이 지키는 칸으로 가는 수가 잘못 "탁월한 수"로 판정되던 문제**

@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star,
+  Send, Compass, Rocket, Star, Gem,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -708,14 +708,15 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.3.3", date: "2026.8.12",
-    summary: "퍼즐과 라인마다 난이도 레이팅이 생겼고, 퍼즐 모식도가 더 보기 편해졌어요. 모바일 오프닝 트리 렉을 고치고, 체스보드 드래그·친구 창·채팅 화면도 두루 다듬었어요.",
+    summary: "프로필에 자랑스러운 한 수를 룬처럼 새겨 전시하는 '유산'이 생겼어요. 퍼즐과 라인마다 난이도 레이팅이 생겼고, 퍼즐 모식도가 더 보기 편해졌어요. 모바일 오프닝 트리 렉을 고치고, 체스보드 드래그·친구 창·채팅 화면도 두루 다듬었어요.",
     mascot: {
-      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "퍼즐마다 난이도 레이팅이 생겼어요 — 몇 번이나 어려운지 숫자로 바로 알 수 있어요!" },
-      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "모식도도, 체스보드 드래그도, 친구·채팅 창도 다 더 편해졌어요!" },
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "프로필에 '유산'이 생겼어요 — 가장 자랑스러운 한 수를 암석판에 룬 문자처럼 새겨 전시할 수 있어요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "퍼즐 레이팅도, 모식도도, 체스보드 드래그도 다 더 편해졌어요!" },
     },
-    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: "퍼즐 레이팅 시스템 도입" },
+    highlight: { kind: "icon", Icon: Gem, color: T.brassHi, label: "프로필 유산(Legacy) 도입" },
     sections: [
       { cat: "feature", items: [
+        "프로필에 '유산'을 추가했어요 — 내가 자랑스러운 대국의 한 수를 골라 암석판에 룬 문자처럼 새겨 전시할 수 있어요. 최선의 유산·유일한 유산·탁월한 유산 세 종류가 있고, PGN을 직접 입력하거나 chess.com 대국에서 골라 그 등급에 맞는 수만 지정할 수 있어요. 프로필의 '푼 퍼즐' 바로 위에 표시되고, 누르면 암석이 확대되며 룬이 빛나다가 빛으로 이루어진 체스보드가 나타나 그 수부터 이어지는 기보를 자동으로 재생해줘요.",
         "퍼즐과 그 안의 각 라인마다 난이도 레이팅(100~3000)이 생겼어요 — 수순 길이·얽힌 기물 수·유일한 수/탁월한 수 개수 등으로 먼저 정하고, 실제로 사람들이 푸는 데 걸린 시간에 따라 점점 더 정확해져요. 퍼즐 카드 좌하단, 풀이 화면 우측, 모식도의 라인 번호 옆에서 볼 수 있어요.",
         "퍼즐 풀이 화면에 라인을 번호로 바로 골라 풀 수 있는 동그란 버튼을 추가했어요(힌트 버튼 아래) — 이미 푼 라인도 다시 도전할 수 있어요.",
         "퍼즐 모식도에서 아직 풀지 않은 라인도 끝까지 어떤 모양인지(몇 수짜리인지, 라인 번호가 몇 번인지)는 미리 볼 수 있어요.",
