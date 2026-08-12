@@ -14976,7 +14976,7 @@ const CHANGELOG = [
       "유저 검색의 티어 리더보드에서 이제 경험치를 아직 하나도 못 얻은 계정도 순위에 나오고, 최대 100위까지 볼 수 있어요.",
       "도감 오프닝 트리에서 화면에 아무것도 안 보이는 빈 공간으로 갈 때 스크롤이 갑자기 더 빨라지던 것을 없애고, 항상 일정한 속도로 움직이도록 했어요.",
       "유산 블록을 사이트에서 쓰는 금색·갈색을 조합한 라운딩 사각형 디자인으로 바꾸고, 새겨지는 수의 글씨체도 새 폰트로 바꿨어요.",
-      "유산을 재생할 때 각 수마다 수 체계 아이콘이 함께 표시되고, 빛의 체스보드에도 밝은 칸·어두운 칸이 밝기 차이로 구분돼요. 느린 재생이 시작되기 전에 전체 기보를 빠르게 훑어보는 예고편도 먼저 재생돼요.",
+      "유산을 재생하면 이제 체스보드가 뜨기 전에 PGN 기보가 먼저 빠르게 타이핑되듯 펼쳐져요. 이어서 빛의 체스보드가 등장하고, 그 아래 유산 블록에서 금빛 광선이 뿜어져 나오는 영사기 연출과 함께 재생돼요 — 각 수마다 수 체계 아이콘도 함께 표시되고, 밝은 칸·어두운 칸도 밝기 차이로 구분돼요.",
       "퀘스트 클리어·칭호 획득·티어 승급 팝업 제목의 글꼴을 새 폰트로 바꿨어요.",
     ]
   },
@@ -17420,54 +17420,79 @@ function LegacyEmptySlot({ typeInfo, onClick }) {
   );
 }
 // 빛으로 만든 체스보드 — 나무 질감의 실제 Board 대신, 반투명 격자선 + 발광하는 기물로 "허공에 뜬
-// 빛의 보드"를 표현한다. halo는 방금 둔 수의 도착 칸([r,c])에 원형 발광 하이라이트를 씌우고, kind가
-// 있으면(=방금 둔 수의 등급) 그 칸 위에 다른 곳과 동일한 수 체계 아이콘을 함께 띄운다.
-// (사용자 요청, v0.3.3) 밝은/어두운 칸을 색이 아니라 "빛의 밝기 차이"로 표현 — (r+c) 홀짝으로 칸
-// 배경의 불투명도를 다르게 줘, 체스보드 특유의 격자 패턴을 빛으로만 재현한다.
+// 빛의 보드"를 표현한다. (사용자 요청) 전체 빛깔을 사이트 전반의 금색·갈색(브래스) 톤으로 맞춰,
+// 보드 아래 놓인 유산 블록(LegacyProjectorBlock)에서 빛이 뿜어져 올라오는 것처럼 보이게 한다.
+// halo는 방금 둔 수의 도착 칸([r,c])에 그 수의 등급 색으로 발광 하이라이트를 씌우고, haloKind가
+// 있으면 실제 체스보드(Board, 3656줄 부근)와 똑같은 위치·크기·흰 테두리로 수 체계 아이콘을 띄운다.
+// 밝은/어두운 칸은 색이 아니라 (r+c) 홀짝에 따른 배경 불투명도 차이(=빛의 밝기 차이)로 구분한다.
 function LegacyLightBoard({ board, size = 320, glowColor, halo, haloKind }) {
   const cell = Math.max(1, Math.floor(size / 8));
   return (
-    <div style={{ position: "relative", width: cell * 8, height: cell * 8, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", filter: "drop-shadow(0 0 22px rgba(140,180,255,.18))" }}>
+    <div style={{ position: "relative", width: cell * 8, height: cell * 8, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", filter: "drop-shadow(0 0 26px rgba(196,154,80,.28))" }}>
       {board.map((row, r) => row.map((p, c) => {
         const isHalo = halo && halo[0] === r && halo[1] === c;
         const isLight = (r + c) % 2 === 0;
         return (
-          <div key={r + "_" + c} style={{ position: "relative", boxSizing: "border-box", border: "1px solid rgba(150,190,255,.16)",
-            background: isLight ? "rgba(170,205,255,.13)" : "rgba(40,55,85,.16)",
+          <div key={r + "_" + c} style={{ position: "relative", boxSizing: "border-box", border: "1px solid rgba(196,154,80,.22)",
+            background: isLight ? "rgba(236,203,134,.16)" : "rgba(61,38,22,.42)",
             display: "flex", alignItems: "center", justifyContent: "center" }}>
             {isHalo && <span aria-hidden="true" style={{ position: "absolute", inset: cell * 0.06, borderRadius: 6, border: "1.5px solid " + glowColor, boxShadow: "0 0 14px 2px " + glowColor + ", inset 0 0 12px " + glowColor + "55", background: glowColor + "22" }} />}
             {isHalo && haloKind && (
-              <span aria-hidden="true" style={{ position: "absolute", top: -cell * 0.14, right: -cell * 0.14, width: cell * 0.42, height: cell * 0.42, borderRadius: "50%", background: QCOLOR[haloKind], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 8px 1px " + QCOLOR[haloKind] + ", 0 1px 3px rgba(0,0,0,.5)", zIndex: 2 }}>
-                {badgeIcon(haloKind, Math.max(9, cell * 0.26))}
-              </span>
+              // (사용자 요청) 실제 체스보드가 칸 우상단에 띄우는 수 체계 배지와 동일한 위치·크기·스타일(3656줄).
+              <div aria-hidden="true" style={{ position: "absolute", top: -cell * 0.18, right: -cell * 0.18, width: cell * 0.44, height: cell * 0.44, borderRadius: "50%", background: QCOLOR[haloKind], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6 }}>
+                {badgeIcon(haloKind, cell * 0.38)}
+              </div>
             )}
             {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} pieceSkin="classic" style={{
-              filter: "drop-shadow(0 0 3px " + (p.c === "w" ? "#EAF4FF" : "#BFD8FF") + ") drop-shadow(0 0 10px " + (p.c === "w" ? "#8FC4FF" : "#6E9EE8") + "cc)" }} />}
+              filter: "drop-shadow(0 0 3px " + (p.c === "w" ? "#FFF6DE" : "#E9C98A") + ") drop-shadow(0 0 10px " + (p.c === "w" ? T.brassHi : "#8A6A2F") + "cc)" }} />}
           </div>
         );
       }))}
     </div>
   );
 }
+// 유산 재생 화면 하단의 "영사기" 블록 — 프로필의 유산 타일과 같은 재질(어보니+브래스)로 만든 작은
+// 사각 블록. 스스로 은은하게 금빛으로 발광해(box-shadow), 위에 뜬 빛의 체스보드가 이 블록에서
+// 뿜어져 나오는 빛으로 만들어진 것처럼 보이도록 하는 광원 역할을 한다.
+function LegacyProjectorBlock({ entry, size = 76 }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: size * 0.18, position: "relative", overflow: "hidden", flexShrink: 0,
+      background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
+      border: "1.5px solid " + T.brass,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), 0 0 26px 6px rgba(196,154,80,.5), 0 6px 14px -6px rgba(0,0,0,.7)",
+      display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.2) 0%, rgba(236,203,134,0) 45%)" }} />
+      <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: size * 0.15, lineHeight: 1.1, color: T.brassHi, textAlign: "center", padding: "0 4px" }}>
+        {legacyMoveLabel(entry)}
+      </span>
+    </div>
+  );
+}
 // 유산 확대 연출 — 클릭하면 먼저 암석판이 확대되며 룬 문자가 빛나고(charge, ~0.9s), 이어서(사용자
-// 요청) 전체 기보를 빠르게 처음부터 끝까지 훑는 예고편(preview, 한 수당 45ms)을 보여준 뒤, 지정한
-// 수로 되돌아가 원래의 느린 속도(board, 한 수당 1.15s)로 playCount만큼을 자동 재생한다.
+// 요청) 실제로 수를 두지 않고 PGN 텍스트만 화면에 한 수씩 빠르게 타이핑되며 나타나고(typing, 한
+// 수당 45ms), 다 나타나면 빛의 체스보드가 등장해(board) 지정된 수부터 원래 속도(1.15초/수)로
+// playCount만큼 자동 재생한다. board 단계에서는 보드 아래 유산 블록(LegacyProjectorBlock)을 놓고,
+// 그 블록에서 보드로 금빛 광선이 뻗어 올라가는 영사기 연출을 함께 보여준다.
 function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const { sans, moveIndex, playCount, kinds } = entry;
-  const [phase, setPhase] = useState("charge"); // "charge" | "preview" | "board"
+  const [phase, setPhase] = useState("charge"); // "charge" | "typing" | "board"
   const startCount = moveIndex; // 이 개수만큼 이미 둔 상태(=지정한 수를 두기 직전 포지션)에서 시작
   const endCount = Math.min(sans.length, moveIndex + Math.max(1, playCount));
-  const [appliedCount, setAppliedCount] = useState(0);
-  useEffect(() => { const t = setTimeout(() => setPhase("preview"), 950); return () => clearTimeout(t); }, []);
+  const [appliedCount, setAppliedCount] = useState(startCount);
+  const pgnTokens = useMemo(() => sans.map((s, i) => moveNumber(i) + s), [sans]);
+  const [typedCount, setTypedCount] = useState(0);
+  const typingRef = useRef(null);
+  useEffect(() => { const t = setTimeout(() => setPhase("typing"), 950); return () => clearTimeout(t); }, []);
   useEffect(() => {
-    if (phase !== "preview") return;
-    if (appliedCount >= sans.length) {
-      const t = setTimeout(() => { setAppliedCount(startCount); setPhase("board"); }, 260);
+    if (phase !== "typing") return;
+    if (typedCount >= pgnTokens.length) {
+      const t = setTimeout(() => setPhase("board"), 320);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => setAppliedCount((n) => Math.min(sans.length, n + 1)), 45);
+    const t = setTimeout(() => setTypedCount((n) => Math.min(pgnTokens.length, n + 1)), 45);
     return () => clearTimeout(t);
-  }, [phase, appliedCount, sans.length, startCount]);
+  }, [phase, typedCount, pgnTokens.length]);
+  useEffect(() => { if (typingRef.current) typingRef.current.scrollTop = typingRef.current.scrollHeight; }, [typedCount]);
   useEffect(() => {
     if (phase !== "board" || appliedCount >= endCount) return;
     const t = setTimeout(() => setAppliedCount((n) => Math.min(endCount, n + 1)), 1150);
@@ -17482,6 +17507,9 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const color = QCOLOR[typeInfo.kind];
   const done = phase === "board" && appliedCount >= endCount;
   const [lightBoardSize, boardWrapRef] = useBoardSize(360);
+  const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
+  const beamHeight = Math.max(36, Math.round(lightBoardSize * 0.16));
+  const beamNarrow = Math.min(46, (blockSize / Math.max(1, lightBoardSize)) * 50);
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
       style={{ position: "fixed", inset: 0, zIndex: 210, background: "radial-gradient(120% 100% at 50% 30%,#0B1220 0%,#030407 75%)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 20, boxSizing: "border-box" }}>
@@ -17500,13 +17528,35 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
             {legacyMoveLabel(entry)}
           </motion.span>
         </motion.div>
+      ) : phase === "typing" ? (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}
+          style={{ position: "relative", zIndex: 2, width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color, letterSpacing: ".04em" }}>대국 훑어보기…</div>
+          <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px", borderRadius: 14,
+            background: "linear-gradient(155deg," + T.ebony3 + " 0%," + T.ebony2 + " 60%," + T.ebony + " 100%)", border: "1px solid " + T.brass + "66",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 10px 30px -14px rgba(0,0,0,.7)" }}>
+            <span style={{ fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, color: T.ivoryHi, wordBreak: "break-word" }}>
+              {pgnTokens.slice(0, typedCount).join(" ")}
+              <motion.span aria-hidden="true" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ color: T.brassHi }}>▍</motion.span>
+            </span>
+          </div>
+        </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color, letterSpacing: ".04em" }}>{phase === "preview" ? "대국 훑어보기…" : typeInfo.label}</div>
-          <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 360, display: "flex", justifyContent: "center" }}>
-            <LegacyLightBoard board={board} size={lightBoardSize} glowColor={color} halo={haloInfo ? haloInfo.to : null} haloKind={phase === "board" ? haloKind : null} />
+          <div style={{ fontSize: 12, fontWeight: 800, color, letterSpacing: ".04em" }}>{typeInfo.label}</div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 360, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
+              <LegacyLightBoard board={board} size={lightBoardSize} glowColor={color} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} />
+            </div>
+            {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
+            <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+              style={{ width: lightBoardSize, height: beamHeight,
+                clipPath: "polygon(0% 0%, 100% 0%, " + (50 + beamNarrow) + "% 100%, " + (50 - beamNarrow) + "% 100%)",
+                background: "linear-gradient(180deg, rgba(196,154,80,.04) 0%, rgba(196,154,80,.3) 55%, rgba(236,203,134,.75) 100%)",
+                filter: "blur(1.5px)", marginTop: -4, marginBottom: -4, pointerEvents: "none" }} />
+            <LegacyProjectorBlock entry={entry} size={blockSize} />
           </div>
-          <div style={{ minHeight: 22, fontFamily: "ui-monospace,monospace", fontSize: 16, fontWeight: 800, color: "#fff", textShadow: "0 0 10px " + color, opacity: phase === "preview" ? 0.55 : 1 }}>
+          <div style={{ minHeight: 22, fontFamily: "ui-monospace,monospace", fontSize: 16, fontWeight: 800, color: "#fff", textShadow: "0 0 10px " + color }}>
             {lastSan ? moveNumber(appliedCount - 1) + lastSan : ""}
           </div>
           {done && <button onClick={() => setAppliedCount(startCount)} className="press" style={{ padding: "8px 18px", borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>다시 보기</button>}
