@@ -14975,7 +14975,7 @@ const CHANGELOG = [
       "프로필에 '유산'을 추가했어요 — 내가 자랑스러운 대국의 한 수를 골라 암석판에 룬 문자처럼 새겨 전시할 수 있어요. 최선의 유산·유일한 유산·탁월한 유산 세 종류가 있고, 각각 그 등급에 맞는 수만 지정할 수 있어요. 누르면 암석이 빛나다가 빛으로 이루어진 체스보드가 나타나 그 수부터 이어지는 기보를 재생해줘요.",
       "유저 검색의 티어 리더보드에서 이제 경험치를 아직 하나도 못 얻은 계정도 순위에 나오고, 최대 100위까지 볼 수 있어요.",
       "도감 오프닝 트리에서 화면에 아무것도 안 보이는 빈 공간으로 갈 때 스크롤이 갑자기 더 빨라지던 것을 없애고, 항상 일정한 속도로 움직이도록 했어요.",
-      "유산 블록을 사이트에서 쓰는 금색·갈색을 조합한 라운딩 사각형 디자인으로 바꾸고, 새겨지는 수의 글씨체도 새 폰트로 바꿨어요.",
+      "유산 블록을 사이트에서 쓰는 금색·갈색을 조합한 라운딩 사각형 디자인으로 바꾸고, 새겨지는 수의 글씨체도 새 폰트로 바꿨어요. 아직 채우지 않은 칸도 같은 디자인에 가운데 '+'만 다르게 보여줘서, 채우기 전후로 블록 크기가 달라 보이지 않아요. 등급은 이제 블록 우하단의 작은 수 체계 아이콘으로만 표시돼요.",
       "유산을 재생하면 이제 체스보드가 뜨기 전에 PGN 기보가 먼저 빠르게 타이핑되듯 펼쳐져요. 이어서 빛의 체스보드가 등장하고, 그 아래 유산 블록에서 금빛 광선이 뿜어져 나오는 영사기 연출과 함께 재생돼요 — 각 수마다 수 체계 아이콘도 함께 표시되고, 밝은 칸·어두운 칸도 밝기 차이로 구분돼요.",
       "퀘스트 클리어·칭호 획득·티어 승급 팝업 제목의 글꼴을 새 폰트로 바꿨어요.",
     ]
@@ -17385,38 +17385,52 @@ function legacyMoveLabel(entry) {
   if (!entry || !entry.sans || entry.sans[entry.moveIndex] == null) return "";
   return moveNumber(entry.moveIndex) + entry.sans[entry.moveIndex];
 }
+// 유산 블록 공통 스타일 — 채워진 칸(LegacyStoneTile)과 빈 칸(LegacyEmptySlot)이 완전히 같은 크기·
+// 재질(어보니+브래스)을 쓰도록 버튼 자체의 스타일을 하나로 공유한다(사용자 요청: 추가 전후로 블록
+// 크기가 달라 보이던 문제).
+const LEGACY_BLOCK_BTN_STYLE = {
+  width: "100%", aspectRatio: "1 / 1", borderRadius: 14, position: "relative", overflow: "hidden",
+  background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
+  border: "1.5px solid " + T.brass,
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), inset 0 -12px 20px -14px rgba(0,0,0,.8), 0 4px 10px -4px rgba(0,0,0,.65)",
+  cursor: "pointer", padding: "8px 4px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5,
+};
+// 금빛 광택 하이라이트(좌상단 사선) + 코너 글로우(순수 CSS, 이미지 자산 없음) — 두 블록이 함께 쓴다.
+function LegacyBlockDecor() {
+  return (
+    <>
+      <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.16) 0%, rgba(236,203,134,0) 40%)" }} />
+      <span aria-hidden="true" style={{ position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)", width: "150%", height: 44, background: "radial-gradient(closest-side, " + T.brass + "33, transparent)" }} />
+    </>
+  );
+}
 // 유산 블록 — 이미지 자산 없이, 사이트 전반에서 쓰는 어보니(진갈색)·브래스(금색) 팔레트만으로
 // 만든 라운딩 사각 블록. 이미 저장된 유산을 보여주며, 누르면 LegacyRevealScreen이 열린다.
+// (사용자 요청) 등급 라벨 텍스트 대신, 그 등급에 해당하는 수 체계 아이콘을 블록 우하단에 띄운다.
 function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit }) {
   const color = QCOLOR[typeInfo.kind];
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-      <button onClick={onOpen} className="press" title={typeInfo.label + " — 눌러서 재생"} style={{
-        width: "100%", aspectRatio: "1 / 1", borderRadius: 14, position: "relative", overflow: "hidden",
-        background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
-        border: "1.5px solid " + T.brass,
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), inset 0 -12px 20px -14px rgba(0,0,0,.8), 0 4px 10px -4px rgba(0,0,0,.65)",
-        cursor: "pointer", padding: "8px 4px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5 }}>
-        {/* 금빛 광택 하이라이트(좌상단 사선) + 코너 글로우(순수 CSS, 이미지 자산 없음) */}
-        <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.16) 0%, rgba(236,203,134,0) 40%)" }} />
-        <span aria-hidden="true" style={{ position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)", width: "150%", height: 44, background: "radial-gradient(closest-side, " + T.brass + "33, transparent)" }} />
+      <button onClick={onOpen} className="press" title={typeInfo.label + " — 눌러서 재생"} style={LEGACY_BLOCK_BTN_STYLE}>
+        <LegacyBlockDecor />
         <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 15, lineHeight: 1.15, color, textAlign: "center", wordBreak: "keep-all",
           textShadow: "0 1px 0 rgba(0,0,0,.9), 0 -1px 0 rgba(255,255,255,.06), 0 0 9px " + color + "88" }}>{legacyMoveLabel(entry)}</span>
-        <span style={{ position: "relative", fontSize: 8.5, fontWeight: 800, color: T.brassHi, opacity: 0.85, letterSpacing: ".02em" }}>{typeInfo.label}</span>
+        <span aria-hidden="true" style={{ position: "absolute", bottom: 5, right: 5, width: 18, height: 18, borderRadius: "50%", background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.5), 0 0 0 1.5px rgba(0,0,0,.5)" }}>{badgeIcon(typeInfo.kind, 12)}</span>
       </button>
       {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label="유산 편집" title="편집" className="press" style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
     </div>
   );
 }
+// (사용자 요청) 빈 유산 칸도 채워진 칸과 같은 금색·갈색 블록 디자인을 그대로 쓰고, 가운데에 "+"만
+// 다르게 보여준다 — 추가 전후로 블록 크기·재질이 달라 보이지 않게 한다.
 function LegacyEmptySlot({ typeInfo, onClick }) {
-  const color = QCOLOR[typeInfo.kind];
   return (
-    <button onClick={onClick} className="press" title={typeInfo.label + " 추가"} style={{
-      flex: 1, minWidth: 0, aspectRatio: "1 / 1", borderRadius: 12, border: "1.5px dashed " + color + "77",
-      background: "rgba(0,0,0,.15)", color: T.inkSoft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: "8px 4px" }}>
-      <Gem size={17} style={{ color: color + "aa" }} />
-      <span style={{ fontSize: 8.5, fontWeight: 800, textAlign: "center", lineHeight: 1.3 }}>{typeInfo.label}<br />추가</span>
-    </button>
+    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+      <button onClick={onClick} className="press" title={typeInfo.label + " 추가"} style={LEGACY_BLOCK_BTN_STYLE}>
+        <LegacyBlockDecor />
+        <span aria-hidden="true" style={{ position: "relative", fontSize: 26, fontWeight: 300, lineHeight: 1, color: T.brassHi, opacity: 0.85 }}>+</span>
+      </button>
+    </div>
   );
 }
 // 빛으로 만든 체스보드 — 나무 질감의 실제 Board 대신, 반투명 격자선 + 발광하는 기물로 "허공에 뜬
