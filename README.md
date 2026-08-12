@@ -91,6 +91,12 @@ v0.3.2에서 트리 반지름이 커진 만큼 화면에 블록이 하나도 안
 **디자인 — 팝업 제목 글꼴을 Bagel Fat One으로**
 "굵고 각진 한글 디스플레이 폰트"로 쓰던 `GAME_FONT` 상수는 퀘스트 클리어·칭호 획득·티어 승급 팝업의 큰 제목(정확히 이 3곳에만 쓰여 그 자체로 "팝업 Title 텍스트"의 전체 목록이었다) 세 곳에서만 쓰이고 있었다. 이 상수의 폰트만 `'Gasoek One'`에서 `'Bagel Fat One'`로 교체했다(`index.html`의 Google Fonts `<link>`에 `Bagel+Fat+One` 추가) — 사용하는 3곳 모두 코드 변경 없이 자동으로 새 폰트를 받는다.
 
+**UX — 유산 만들기에서 chess.com 대국 선택을 별도 화면 없이 인라인으로**
+`LegacyManageModal`이 "chess.com 대국에서 선택"을 누르면 자체적으로 만든 단순 목록(상대·결과만 보이는 버튼 목록)으로 전체 화면을 바꿔치기하던 것을, 프로필 카드가 이미 쓰던 `AccountChessStats`(레이팅·필터·전적·최근 대국·오프닝별 승률까지 갖춘 완전한 컴포넌트)를 그 버튼 바로 아래에 그대로 펼치는 방식으로 바꿨다. `AccountChessStats`에 `onSelectGame` prop을 새로 받게 해, 이 prop이 있을 때만 "최근 대국" 각 줄의 검색(🔍)·리뷰 버튼 두 개 자리에 "선택" 버튼 하나만 렌더링하도록 분기했다(넘기지 않으면 기존 프로필·유저 검색 화면은 완전히 그대로). `LegacyManageModal`은 이제 `chesscomGames` 배열 대신 `chesscom` 훅 객체 전체와 `username`을 받아 그대로 넘겨준다. 이 김에 모달 제목도 "최선의 유산" 같은 문장형 대신 사용자가 요청한 "유산 • 최선" 형식으로 바꿨다(`LEGACY_TYPES`에 `short` 필드 추가).
+
+**UX — 집중 학습을 도감 탭에서 열면, 닫을 때 도감 탭의 모식도 위치를 그대로 보존**
+도감 탭(`CollectionTab`)은 `{tab === "dex" && <CollectionTab .../>}`처럼 조건부로만 마운트돼 있어, 그 안의 `OpeningSchematic`이 들고 있는 팬·줌·펼쳐 둔 수 카드(`openKey`) 같은 화면 상태는 전부 컴포넌트 로컬 상태였다 — 도감 탭 모식도의 수 카드에서 "오프닝 이름"을 눌러 집중 학습으로 이동하면(`onOpenOpening`이 `setTab("learn")`을 부름) `CollectionTab`이 통째로 언마운트되어 이 상태가 모두 사라지고, 집중 학습을 닫아도 도감 탭으로 돌아가지조차 않았다(학습 탭에 그대로 남음). 새 상태 `focusReturnTab`을 추가해 `onOpenOpening`이 도감 탭에서 불렸을 때만 `"dex"`로 표시해 두고, 이 값이 있는 동안은 도감 탭 렌더 조건을 `(tab === "dex" || focusReturnTab === "dex")`로 넓혀 `CollectionTab`을 계속 마운트한 채 `display:none`으로 화면에서만 숨긴다(트리 자체 데이터 `useOpeningTreeAuto`는 이미 v0.3.x에서 App로 끌어올려져 있었지만, 화면 상태는 그대로 CollectionTab 로컬이었다). 집중 학습이 닫히는(`learnFocus`가 null이 되는) 순간을 지켜보는 effect가 `focusReturnTab === "dex"`이면 (navNonce는 건드리지 않고) 탭만 `"dex"`로 되돌린다 — `navNonce`를 올리는 기존 `switchTab`(수동 탭 전환, 이 예약을 취소한다)을 거치면 `CollectionTab`의 `key`가 바뀌어 애써 숨겨 둔 인스턴스가 다시 마운트되므로 반드시 피해야 한다. 실제로 도감 탭에서 "1.e4 → King's Pawn Game" 카드를 열고 트리를 드래그해 옮긴 뒤 집중 학습에 들어갔다 닫아 보면, 팬 위치는 물론 열려 있던 수 카드까지 떠나기 전 그대로 남아 있다(로딩 지연 없이 즉시).
+
 ### OpenChess v0.3.2 — 2026/8/12
 
 **버그 수정 — 아군 폰이 지키는 칸으로 가는 수가 잘못 "탁월한 수"로 판정되던 문제**

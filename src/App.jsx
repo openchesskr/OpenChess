@@ -14623,7 +14623,10 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
     </div>
   );
 }
-function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked }) {
+// (사용자 요청) onSelectGame — 유산(Legacy) 관리 화면이 이 컴포넌트를 그대로 재사용하면서, "최근 대국"
+// 각 줄의 검색·리뷰 버튼 자리에 그 대신 "선택" 버튼 하나만 두기 위한 선택적 콜백. 넘기지 않으면(기존
+// 프로필·유저 검색 등) 지금까지와 완전히 동일하게 동작한다.
+function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -14815,7 +14818,9 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                   {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
                   {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                 </div>
-                {onOpenGame && (
+                {onSelectGame ? (
+                  <button onClick={() => onSelectGame(g)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800 }}>선택</button>
+                ) : onOpenGame && (
                   <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                     <button onClick={() => onOpenGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
                     {onOpenGameAnalyze && <BestMoveJumpButton onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username, white: g.white, black: g.black })} />}
@@ -14885,7 +14890,8 @@ function MyProfileCard({ card, profile, setProfile, user, currentTitle, totalXp,
         <LegacyManageModal
           typeInfo={LEGACY_TYPES.find((t) => t.key === managingLegacy)}
           existingEntry={profile.legacies && profile.legacies[managingLegacy]}
-          chesscomGames={chesscom && chesscom.games}
+          chesscom={chesscom}
+          username={profile.chesscom}
           onClose={() => setManagingLegacy(null)}
           onSave={(key, entry) => { setProfile((p) => ({ ...p, legacies: { ...(p.legacies || {}), [key]: entry } })); setManagingLegacy(null); }}
           onDelete={() => { setProfile((p) => ({ ...p, legacies: { ...(p.legacies || {}), [managingLegacy]: null } })); setManagingLegacy(null); }}
@@ -14978,6 +14984,8 @@ const CHANGELOG = [
       "유산 블록을 사이트에서 쓰는 금색·갈색을 조합한 라운딩 사각형 디자인으로 바꾸고, 새겨지는 수의 글씨체도 새 폰트로 바꿨어요. 아직 채우지 않은 칸도 같은 디자인에 가운데 '+'만 다르게 보여줘서, 채우기 전후로 블록 크기가 달라 보이지 않아요. 등급은 이제 블록 우하단의 작은 수 체계 아이콘으로만 표시돼요.",
       "유산을 재생하면 이제 체스보드가 뜨기 전에 PGN 기보가 먼저 빠르게 타이핑되듯 펼쳐져요. 이어서 빛의 체스보드가 등장하고, 그 아래 유산 블록에서 금빛 광선이 뿜어져 나오는 영사기 연출과 함께 재생돼요 — 각 수마다 수 체계 아이콘도 함께 표시되고, 밝은 칸·어두운 칸도 밝기 차이로 구분돼요.",
       "퀘스트 클리어·칭호 획득·티어 승급 팝업 제목의 글꼴을 새 폰트로 바꿨어요.",
+      "유산 만들기에서 'chess.com 대국에서 선택'을 누르면 이제 창이 한 번 더 뜨지 않고, 바로 아래에 프로필에서 보던 것과 같은 chess.com 통계·최근 대국 목록이 펼쳐져요 — 원하는 대국의 '선택' 버튼만 누르면 돼요.",
+      "도감 탭에서 수 카드의 오프닝 이름을 눌러 집중 학습으로 이동한 뒤 다시 닫으면, 이제 도감 탭으로 돌아오고 떠나기 전 보던 모식도 위치·펼쳐 둔 카드가 그대로 남아 있어요.",
     ]
   },
   {
@@ -17376,10 +17384,11 @@ function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle, mySolved, myLineSolves }
 //                   analyzeGame 결과에서 그대로 떼어와 재생 시 수 체계 아이콘을 다시 계산하지 않고
 //                   보여준다. 구버전에 저장된 항목은 없을 수 있어 null 허용), savedAt: number }
 // ============================================================================
+// (사용자 요청) short — 유산 추가/편집 카드(LegacyManageModal) 제목에 "유산 • 최선"처럼 표시할 때 쓴다.
 const LEGACY_TYPES = [
-  { key: "best", kind: "best", label: "최선의 유산" },
-  { key: "only", kind: "only", label: "유일한 유산" },
-  { key: "brilliant", kind: "brilliant", label: "탁월한 유산" },
+  { key: "best", kind: "best", label: "최선의 유산", short: "최선" },
+  { key: "only", kind: "only", label: "유일한 유산", short: "유일" },
+  { key: "brilliant", kind: "brilliant", label: "탁월한 유산", short: "탁월" },
 ];
 function legacyMoveLabel(entry) {
   if (!entry || !entry.sans || entry.sans[entry.moveIndex] == null) return "";
@@ -17606,9 +17615,13 @@ function LegacyStoneRow({ legacies, onManageLegacy }) {
 }
 // 유산 만들기/편집 — PGN 직접 입력 또는 chess.com 대국 선택 → analyzeGame으로 전체 채점 → 그
 // 유산이 요구하는 등급(typeInfo.kind)을 만족하는 수만 고를 수 있게 필터링 → 재생할 수 개수 입력 → 저장.
-function LegacyManageModal({ typeInfo, existingEntry, chesscomGames, onClose, onSave, onDelete }) {
+function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClose, onSave, onDelete }) {
   const engine = useReviewEngine();
-  const [step, setStep] = useState("source"); // source | paste | chesscom | analyzing | pick | count
+  const [step, setStep] = useState("source"); // source | paste | analyzing | pick | count
+  // (사용자 요청) "chess.com 대국에서 선택"을 눌러도 창을 한 번 더 띄우지 않고, 이 자리 바로 아래에
+  // 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI(AccountChessStats)를 펼친다.
+  const [showChesscomStats, setShowChesscomStats] = useState(false);
+  const chesscomReady = !!(chesscom && chesscom.status === "ready" && chesscom.games && chesscom.games.length);
   const [pgnText, setPgnText] = useState("");
   const [pgnErr, setPgnErr] = useState("");
   const [sans, setSans] = useState(null);
@@ -17661,7 +17674,7 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscomGames, onClose, on
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", padding: 18 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{typeInfo.label}</span></div>
+          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>유산 • {typeInfo.short}</span></div>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         {step === "source" && (
@@ -17669,8 +17682,15 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscomGames, onClose, on
             <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 12 }}>이 유산에 새길 대국을 골라 주세요 — {typeInfo.label}은(는) "{QLABEL[typeInfo.kind]}"로 채점된 수만 지정할 수 있어요.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <button onClick={() => setStep("paste")} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", textAlign: "left" }}>PGN 직접 입력</button>
-              <button onClick={() => setStep("chesscom")} disabled={!chesscomGames || !chesscomGames.length} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: (chesscomGames && chesscomGames.length) ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13, cursor: (chesscomGames && chesscomGames.length) ? "pointer" : "default", opacity: (chesscomGames && chesscomGames.length) ? 1 : 0.5, textAlign: "left" }}>chess.com 대국에서 선택{(!chesscomGames || !chesscomGames.length) ? " (설정에서 chess.com 계정을 연동하면 이용할 수 있어요)" : ""}</button>
+              <button onClick={() => setShowChesscomStats((v) => !v)} disabled={!chesscomReady} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: showChesscomStats ? "rgba(196,154,80,.14)" : "transparent", color: chesscomReady ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13, cursor: chesscomReady ? "pointer" : "default", opacity: chesscomReady ? 1 : 0.5, textAlign: "left" }}>chess.com 대국에서 선택{!chesscomReady ? " (설정에서 chess.com 계정을 연동하면 이용할 수 있어요)" : ""}</button>
             </div>
+            {/* (사용자 요청) 별도 창 대신, 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI를 바로 아래에
+                펼친다 — 각 대국 줄의 검색·리뷰 버튼 자리에는 onSelectGame으로 "선택" 버튼만 놓인다. */}
+            {showChesscomStats && chesscomReady && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
+                <AccountChessStats chesscom={chesscom} username={username} onSelectGame={(g) => { setSans(g.moves); setStep("analyzing"); }} />
+              </div>
+            )}
             {existingEntry && <button onClick={onDelete} className="press" style={{ marginTop: 14, padding: "8px 0", width: "100%", borderRadius: 9, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>이 유산 삭제</button>}
           </div>
         )}
@@ -17682,19 +17702,6 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscomGames, onClose, on
               <button onClick={() => setStep("source")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>뒤로</button>
               <button onClick={loadPgnText} className="press" style={{ flex: 1, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, border: "none", cursor: "pointer" }}>불러오기</button>
             </div>
-          </div>
-        )}
-        {step === "chesscom" && (
-          <div>
-            <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
-              {(chesscomGames || []).slice(0, 40).map((g, i) => (
-                <button key={i} onClick={() => { setSans(g.moves); setStep("analyzing"); }} className="press" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", borderRadius: 9, border: "1px solid #DCCBA8", background: "#fff", cursor: "pointer", textAlign: "left" }}>
-                  <span style={{ minWidth: 0, fontSize: 12, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(g.white && g.white.username) || "?"} vs {(g.black && g.black.username) || "?"}</span>
-                  <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, color: g.result === "win" ? T.best : g.result === "loss" ? T.blunder : T.inkSoft }}>{g.result === "win" ? "승" : g.result === "loss" ? "패" : "무"}</span>
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setStep("source")} className="press" style={{ marginTop: 10, padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>뒤로</button>
           </div>
         )}
         {step === "analyzing" && (
@@ -18936,6 +18943,13 @@ export default function App() {
   // (v0.2.9 기능) 일일 퀘스트 전체 클리어 축하 팝업 — 아래 dailyQuest.clearAnnounced effect가 연다.
   const [questClearOpen, setQuestClearOpen] = useState(false);
   const [learnFocus, setLearnFocus] = useState(null);   // (UX4) 탭 이동에도 집중 학습 유지
+  // (사용자 요청) 도감 탭 오프닝 트리의 수 카드에서 "오프닝 이름"을 눌러 집중 학습으로 이동했을 때,
+  // 집중 학습을 닫으면 도감 탭으로(그것도 떠나기 전 모식도 팬/줌/열린 카드가 그대로 남은 상태로)
+  // 돌아가도록 하기 위한 "돌아갈 탭" 표시 — onOpenOpening이 도감 탭에서 불렸을 때만 "dex"로 채워지고,
+  // 그 값이 있는 동안은 CollectionTab을 언마운트하지 않고 화면에서만 숨겨(display:none) 내부 상태
+  // (팬·줌·펼친 카드·트리 레이아웃 캐시)를 그대로 보존한다. 사용자가 직접 다른 탭을 눌러 이동하면
+  // (switchTab) 이 예약은 취소된다 — 도감으로 "자동으로" 돌아가는 건 이 흐름 하나뿐이어야 하므로.
+  const [focusReturnTab, setFocusReturnTab] = useState(null);
   const [puzzleActive, setPuzzleActive] = useState(null);   // (UX4) 탭 이동에도 퍼즐 창 유지
   // (v0.1.0) 채팅으로 공유받은 퍼즐을 "풀러 가기"로 열었을 때의 공유 출처 — { msgId, no, fromUid(공유자) }.
   // 지금 열려 있는 puzzleActive가 이 no와 일치하는 동안 라인을 풀면 공유자에게 XP 10%를 돌려준다.
@@ -19642,7 +19656,23 @@ export default function App() {
     setTab(k);
     urlTabRef.current = k;
     try { const p = TAB_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState(null, "", p); } catch { }
+    // 사용자가 직접 다른 탭을 골랐으니, 집중 학습을 닫을 때 도감으로 자동으로 되돌아가는 예약은 취소한다.
+    setFocusReturnTab(null);
   };
+  // (사용자 요청) 집중 학습이 도감 탭에서 시작됐다면(focusReturnTab === "dex"), 학습이 닫히는(learnFocus가
+  // null로 바뀌는) 순간 도감 탭으로 돌아간다 — switchTab을 쓰면 navNonce가 올라 CollectionTab이 강제로
+  // 새로 마운트돼(아래 render의 "숨겨 두기"가 무의미해짐) 애써 보존한 팬/줌/카드 상태가 사라지므로,
+  // navNonce는 건드리지 않고 tab만 직접 되돌린다.
+  const prevLearnFocusRef = useRef(learnFocus);
+  useEffect(() => {
+    if (prevLearnFocusRef.current && !learnFocus && focusReturnTab === "dex") {
+      setTab("dex");
+      urlTabRef.current = "dex";
+      try { const p = TAB_PATH.dex; if (p && window.location.pathname !== p) window.history.pushState(null, "", p); } catch { }
+      setFocusReturnTab(null);
+    }
+    prevLearnFocusRef.current = learnFocus;
+  }, [learnFocus, focusReturnTab]);
   // (v0.2.0 기능) /review는 세션 안에서 리뷰할 대국 데이터(reviewGame)가 있어야만 의미가 있는
   // 화면이라 URL만으로 복원할 방법이 없다 — 이 주소로 직접 들어오거나 새로고침하면 조용히
   // 학습 탭으로 되돌린다(빈 화면·깨진 화면 대신).
@@ -19662,6 +19692,10 @@ export default function App() {
   }, []);
   const onOpenOpening = useCallback((name) => {
     const path = findOpeningPathByName(name);
+    // (사용자 요청) 도감 탭에서 부른 경우에만, 집중 학습을 닫을 때 도감 탭으로(모식도 위치를 그대로
+    // 보존한 채) 자동으로 돌아가도록 예약해 둔다 — 다른 곳(일일 퀘스트, 프로필 등)에서 불렀을 때는
+    // 기존과 동일하게 학습 탭에 그대로 남는다.
+    setFocusReturnTab(tab === "dex" ? "dex" : null);
     setTab("learn");
     if (!path || !path.length) return;
     const tSans = path.slice(0, -1); const tSan = path[path.length - 1];
@@ -19671,12 +19705,15 @@ export default function App() {
     setLearnFocus({ sans: tSans, san: tSan, m: mm || { san: tSan }, ply: tSans.length, isNew: false, name: nm });
     // (17차) 집중 학습에 들어간 오프닝도 "최근 오프닝" 풀에 추가 — 일일 퀘스트 후보로 사용됨.
     if (nm) setRecentOpenings((prev) => [nm, ...prev.filter((x) => x !== nm)].slice(0, 10));
-  }, []);
+  }, [tab]);
   // (프로필) chess.com 최근 대국의 "보기" — 그 대국 기보를 학습 보드로 불러온다(끝 포지션에서 뒤로 넘겨보기 가능).
   const onOpenGame = useCallback((moves) => {
     if (!moves || !moves.length) return;
     setSearchOpen(false); setFriendsOpen(false); // 타 유저 프로필 모달에서 열었을 때 모달을 닫고 보드로 이동
     setTab("learn"); setLearnFocus(null); setLearnSans(moves); setLearnFuture([]);
+    // 이 경로도 학습 탭에 남는 게 목적이므로, 혹시 남아 있을 도감 자동 복귀 예약은 취소한다
+    // (그대로 두면 방금 부른 learnFocus(null)이 도감으로 되돌아가는 신호로 잘못 해석될 수 있다).
+    setFocusReturnTab(null);
   }, []);
   // (v0.2.0 기능) "게임 리뷰" — 전용 /review 페이지를 별도 히스토리 항목(pushState)으로 띄운다.
   // 예전엔 학습 탭으로 이동시킨 뒤 그 안에서 AnalysisModal을 자동으로 열었지만, 결과·상대·
@@ -19919,7 +19956,15 @@ export default function App() {
             양보한다 — "분석 모달이 열려 있는 동안 학습 탭 실시간 평가를 멈춘다"던 예전 주석이 가리키던
             의도가 ReviewPage로 교체되며 실제로는 빠져 있었다. */}
         {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} uid={uid} user={user} />}
-        {tab === "dex" && <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />}
+        {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 학습으로 이동한 경우(focusReturnTab === "dex"),
+            집중 학습이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
+            학습을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다
+            재마운트하면 이 상태가 전부 초기화되고, 트리 로딩 연출도 처음부터 다시 재생된다). */}
+        {(tab === "dex" || focusReturnTab === "dex") && (
+          <div style={tab === "dex" ? undefined : { display: "none" }}>
+            <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
+          </div>
+        )}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
