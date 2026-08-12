@@ -3558,14 +3558,24 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const dragStartRef = useRef(null);       // { r, c, x, y } — pointerdown 시점
   const suppressClickRef = useRef(false);  // 드래그가 실제로 일어났으면 뒤이어 오는 합성 click을 무시
   const [ptrDrag, setPtrDrag] = useState(null); // { r, c, x, y } — 드래그 임계값을 넘겼을 때만 채워짐(고스트 표시용)
-  const DRAG_THRESHOLD = 5;
+  // (사용자 요청) 드래그 인식을 조금 더 빠르게(더 적은 이동만으로 탭과 구분) 하기 위해 5px→4px로
+  // 살짝 낮췄다 — 단순 탭(거의 0px 이동)과는 여전히 뚜렷이 구분되면서, 드래그 의도를 더 일찍 반응한다.
+  const DRAG_THRESHOLD = 4;
+  // (사용자 요청) "빠르고 부정확하게 드래그해도 인식되도록" — 예전엔 손을 뗀 지점이 보드 칸 안에
+  // 정확히 들어와야만 그 칸으로 인식하고, 조금이라도 벗어나면(빠른 드래그일수록 흔함 — 손가락이
+  // 목표 칸을 살짝 지나치거나, pointermove 샘플링 간격 때문에 마지막 좌표가 칸 경계 바로 밖에서
+  // 잡힘) 제자리로 취소됐다. 보드 가장자리 바깥으로 칸 하나의 40%만큼은 허용 오차로 두고, 그 안에서
+  // 벗어난 지점은 가장 가까운 칸으로 스냅한다 — 그보다 훨씬 많이 벗어나면(보드 밖 다른 UI를 누른
+  // 경우) 여전히 취소로 처리한다.
+  const DROP_TOLERANCE = 0.4 / 8;
   const squareFromClient = (clientX, clientY) => {
     const el = gridRef.current; if (!el) return null;
     const rect = el.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     const relX = (clientX - rect.left) / rect.width, relY = (clientY - rect.top) / rect.height;
-    if (relX < 0 || relX >= 1 || relY < 0 || relY >= 1) return null;
-    const vc = Math.min(7, Math.max(0, Math.floor(relX * 8))), vr = Math.min(7, Math.max(0, Math.floor(relY * 8)));
+    if (relX < -DROP_TOLERANCE || relX >= 1 + DROP_TOLERANCE || relY < -DROP_TOLERANCE || relY >= 1 + DROP_TOLERANCE) return null;
+    const clampedX = Math.min(1 - 1e-6, Math.max(0, relX)), clampedY = Math.min(1 - 1e-6, Math.max(0, relY));
+    const vc = Math.min(7, Math.max(0, Math.floor(clampedX * 8))), vr = Math.min(7, Math.max(0, Math.floor(clampedY * 8)));
     return flip ? [7 - vr, 7 - vc] : [vr, vc];
   };
   const onPiecePointerDown = (e, r, c) => {
@@ -3923,12 +3933,16 @@ function NotationTools({ sans, onLoadPgn }) {
 // 따라 중앙/오른쪽 끝/왼쪽 끝 맞춤) 뜬다고 가정했을 때의 좌우 경계가 화면 정중앙 기준 안전 영역
 // (margin)을 벗어나는 만큼만 반대 방향으로 밀어내는 오프셋(px)을 계산한다 — 세 곳(CircleBadge
 // 설명 말풍선, 채팅 롱프레스 메뉴, 알림 카드) 공용.
-function safeAreaDx(anchorRect, popupW, align, margin = 10) {
+// (v0.3.3 기능) bounds — 기본은 화면 전체(window)지만, 채팅 메시지 목록처럼 그 안(스크롤 컨테이너)
+// 에서만 잘리지 않으면 되는 경우 실제로 잘리는 경계인 컨테이너의 getBoundingClientRect()를 넘기면
+// 그 범위를 기준으로 안전 오프셋을 계산한다 — window 기준으로는 "화면 위쪽 절반"이라 문제없어
+// 보여도, 정작 그 좁은 컨테이너 안에서는 가장자리에 붙어 있어 여전히 컨테이너 밖으로 잘릴 수 있다.
+function safeAreaDx(anchorRect, popupW, align, margin = 10, bounds) {
   if (!anchorRect || typeof window === "undefined") return 0;
-  const vw = window.innerWidth;
+  const left = bounds ? bounds.left : 0, right = bounds ? bounds.right : window.innerWidth;
   const naturalLeft = align === "right" ? anchorRect.right - popupW : align === "left" ? anchorRect.left : anchorRect.left + anchorRect.width / 2 - popupW / 2;
-  if (naturalLeft < margin) return margin - naturalLeft;
-  if (naturalLeft + popupW > vw - margin) return (vw - margin) - (naturalLeft + popupW);
+  if (naturalLeft < left + margin) return (left + margin) - naturalLeft;
+  if (naturalLeft + popupW > right - margin) return (right - margin) - (naturalLeft + popupW);
   return 0;
 }
 // (사용자 요청) 클릭·롱프레스로 여는 말풍선이 모바일에서 화면 밖으로 잘리는 문제를 근본적으로
@@ -3936,9 +3950,19 @@ function safeAreaDx(anchorRect, popupW, align, margin = 10) {
 // 어디에 있는지에 따라 화면 중앙을 향하는 방향으로 여는 쪽(openDown)을 함께 정한다. 기준 요소가
 // 화면 위쪽 절반에 있으면(화면 중앙이 아래쪽) 아래로 열고, 아래쪽 절반에 있으면(화면 중앙이
 // 위쪽) 위로 연다 — 말풍선이 항상 화면 중앙 쪽을 향해 펼쳐지므로 위아래로 잘릴 일이 없다.
-function safeBubbleAnchor(anchorRect, popupW, align, margin = 10) {
-  if (!anchorRect || typeof window === "undefined") return { dx: 0, openDown: true };
-  return { dx: safeAreaDx(anchorRect, popupW, align, margin), openDown: anchorRect.top < window.innerHeight / 2 };
+// (v0.3.3 기능) bounds — safeAreaDx와 동일하게, 위/아래 판정도 window 대신 실제로 잘리는 컨테이너
+// 기준으로 할 수 있다(전달 안 하면 기존처럼 window 기준). popupH를 함께 주면, 열리는 방향으로
+// 실제 남는 여유(컨테이너 경계까지 거리)를 계산해 그 안에서만(최대 BUBBLE_CENTER_BIAS) 대화 창
+// 중앙 쪽으로 조금 더 띄우는 dy도 함께 반환한다 — 메시지끼리 간격이 좁아(6px) 팝업이 곧바로
+// 이웃 말풍선과 겹치던 것을, 컨테이너를 벗어나지 않는 한도 안에서 더 띄워 떨어뜨린다.
+const BUBBLE_CENTER_BIAS = 14;
+function safeBubbleAnchor(anchorRect, popupW, align, margin = 10, bounds, popupH = 0) {
+  if (!anchorRect || typeof window === "undefined") return { dx: 0, openDown: true, dy: 0 };
+  const top = bounds ? bounds.top : 0, bottom = bounds ? bounds.bottom : window.innerHeight;
+  const openDown = anchorRect.top - top < (bottom - top) / 2;
+  const room = openDown ? Math.max(0, bottom - anchorRect.bottom) : Math.max(0, anchorRect.top - top);
+  const dy = Math.max(0, Math.min(BUBBLE_CENTER_BIAS, room - popupH - margin));
+  return { dx: safeAreaDx(anchorRect, popupW, align, margin, bounds), openDown, dy };
 }
 const CIRCLE_BADGE_DESC_W = 220;
 function CircleBadge({ kind, big, descOnClick }) {
@@ -14740,6 +14764,10 @@ const CHANGELOG = [
     version: "0.3.3", date: "2026.8.12", dev: ["openchesskr"], items: [
       "모바일에서 도감 탭 오프닝 트리를 열면 심하게 버벅이던 문제를 고쳤어요 — 화면에 실제로 보이는 부분만 그리도록 바꿔 훨씬 가벼워졌어요.",
       "추천 퍼즐을 이제 데스크톱에서도 모바일처럼 한 줄 가로 스크롤로 볼 수 있어요.",
+      "체스보드에서 기물을 드래그로 옮길 때 더 빠르고 조금 부정확하게 옮겨도 잘 인식되도록 했어요(단순히 누르기만 하는 동작과는 여전히 구분돼요).",
+      "친구 창도 이제 모바일에서 전체 화면으로 크게 볼 수 있어요.",
+      "채팅에서 대화를 선택해 들어가면 상단이 뒤로가기·상대방 프로필 사진·아이디만 남도록 더 깔끔해졌어요.",
+      "채팅 메시지의 수정/삭제 메뉴가 화면에 가려 안 보이거나 다른 메시지와 겹쳐 보이던 문제를 고쳤어요.",
     ]
   },
   {
@@ -16635,6 +16663,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   // (사용자 요청) 메시지가 화면 위쪽 절반에 있으면 메뉴를 아래로, 아래쪽 절반이면 위로 열어 항상
   // 화면 중앙 쪽을 향하게 한다 — 세로로 잘리지 않도록.
   const [menuOpenDown, setMenuOpenDown] = useState(false);
+  // (v0.3.3 기능) 메시지끼리 간격이 좁아(6px) 메뉴가 곧바로 이웃 말풍선과 겹치던 문제 — 열리는
+  // 방향으로 남는 여유 안에서 대화 창 중앙 쪽으로 조금 더 띄우는 추가 오프셋(safeBubbleAnchor 계산).
+  const [menuDy, setMenuDy] = useState(0);
   // (v0.1.4 기능) 퍼즐 카드의 "전달" 버튼으로 다른 친구에게 다시 공유할 때 띄우는 시트의 대상 퍼즐.
   const [forwardTarget, setForwardTarget] = useState(null);
   // (v0.2.6 기능) 프로필 사진·멘션을 눌렀을 때 보여줄 프로필 모달 대상 아이디.
@@ -16762,11 +16793,27 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     const ok = await chatDeleteMessage(m.id);
     if (!ok) load();
   };
+  // (v0.3.3 버그 수정) 수정/삭제 메뉴의 위/아래·좌우 오프셋을 window가 아니라 실제로 잘리는 경계인
+  // 메시지 목록 컨테이너(listRef) 기준으로 계산한다 — 데스크톱은 이 목록이 320px짜리 작은 박스라,
+  // window 기준으로는 "화면 위쪽 절반"이라 위로 열어도 될 것 같지만 정작 이 박스 맨 위에 있는
+  // 메시지는 위로 열면 곧장 박스 밖(채팅창 자체)에 가려졌다 — 이 문제의 근본 원인.
+  const MSG_MENU_H = 34;
+  const openMsgMenu = (id, anchorEl, align) => {
+    setMenuFor(id);
+    const bounds = listRef.current ? listRef.current.getBoundingClientRect() : undefined;
+    const { dx, openDown, dy } = safeBubbleAnchor(anchorEl.getBoundingClientRect(), 92, align, 10, bounds, MSG_MENU_H);
+    setMenuDx(dx); setMenuOpenDown(openDown); setMenuDy(dy);
+  };
   return (
     <div style={{ padding: 18, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, height: narrow ? "100%" : undefined, boxSizing: "border-box" }}>
+      {/* (v0.3.3 UI) 채팅창 자체가 "채팅"+닫기(X) 헤더를 따로 갖는 곳(ChatsModal)에서는 대화를
+          선택하면 그 헤더를 숨기므로, 이 헤더 하나가 뒤로가기(←)·닫기 역할을 모두 겸한다 —
+          ←·상대 프로필 사진·아이디를 좌상단에 순서대로 배치한다. */}
       <div className="flex items-center gap-2" style={{ marginBottom: 12, flexShrink: 0 }}>
-        <button onClick={onBack} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={15} /></button>
-        <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{otherUsername}님과의 채팅</span>
+        <button onClick={onBack} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 28, height: 28, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
+          : <span style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+        <span style={{ fontSize: 14, fontWeight: 800, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{otherUsername}</span>
       </div>
       <div ref={listRef} style={{ height: narrow ? undefined : 320, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
         {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>아직 대화가 없어요. 첫 메시지를 보내보세요!</div>}
@@ -16801,9 +16848,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
               clearTimeout(longPressTimerRef.current);
               const anchorEl = e.currentTarget;
               longPressTimerRef.current = setTimeout(() => {
-                setMenuFor(m.id);
-                const { dx, openDown } = safeBubbleAnchor(anchorEl.getBoundingClientRect(), 92, mine ? "right" : "left");
-                setMenuDx(dx); setMenuOpenDown(openDown);
+                openMsgMenu(m.id, anchorEl, mine ? "right" : "left");
                 dragRef.current = null; setDrag(null);
               }, 480);
             };
@@ -16832,7 +16877,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {menuFor === m.id && (
-                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, ...(menuOpenDown ? { top: "calc(100% + 4px)" } : { bottom: "calc(100% + 4px)" }), transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, ...(menuOpenDown ? { top: "calc(100% + " + (4 + menuDy) + "px)" } : { bottom: "calc(100% + " + (4 + menuDy) + "px)" }), transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                       <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Send size={10} />전달</button>
                       {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>}
                     </div>
@@ -16869,9 +16914,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
               clearTimeout(longPressTimerRef.current);
               const anchorEl = e.currentTarget;
               longPressTimerRef.current = setTimeout(() => {
-                setMenuFor(m.id);
-                const { dx, openDown } = safeBubbleAnchor(anchorEl.getBoundingClientRect(), 92, "right");
-                setMenuDx(dx); setMenuOpenDown(openDown);
+                openMsgMenu(m.id, anchorEl, "right");
                 dragRef.current = null; setDrag(null);
               }, 480);
             }
@@ -16925,7 +16968,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                 <span style={{ display: "inline-block", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
                   {/* (v0.1.4 기능) 꾹 눌러 연 수정/삭제 메뉴 — 이모티콘 메시지는 수정 대상이 아니므로 본문(body)이 있을 때만 수정 버튼을 보여준다. */}
                   {menuFor === m.id && (
-                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, ...(menuOpenDown ? { top: "calc(100% + 4px)" } : { bottom: "calc(100% + 4px)" }), transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: 0, ...(menuOpenDown ? { top: "calc(100% + " + (4 + menuDy) + "px)" } : { bottom: "calc(100% + " + (4 + menuDy) + "px)" }), transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                       {m.body != null && <button onClick={() => startEdit(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>수정</button>}
                       <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
                     </div>
@@ -17347,11 +17390,17 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
       <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>채팅</span>
-          {/* (19차 UX3) 뒤로가기는 ChatPanel 좌상단 ←로 통일. 래퍼 헤더는 닫기(X)만 우상단에 둔다. */}
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-        </div>
+        {/* (19차 UX3) 뒤로가기는 ChatPanel 좌상단 ←로 통일. 래퍼 헤더는 닫기(X)만 우상단에 둔다.
+            (v0.3.3 UI) 특정 대화를 선택해 들어가면 이 "채팅"+닫기 헤더는 아예 감춘다 — 그 안의
+            ChatPanel이 이미 자기 헤더(←·상대 프로필 사진·아이디)를 갖고 있어, 두 헤더가 겹겹이
+            쌓여 보이던 것을 없앤다. 대화 목록으로 돌아오면(← 버튼) 이 헤더가 다시 나타나고, 모달
+            전체를 닫으려면(X) 먼저 그 ←로 목록에 돌아와야 한다. */}
+        {!chatWith && (
+          <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>채팅</span>
+            <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+          </div>
+        )}
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
             <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} />
@@ -17802,6 +17851,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   const [chatWith, setChatWith] = useState(null); // (17차) 채팅 상대: { uid, username }
   // (버그 수정) 친구 삭제 버튼을 누르면 곧장 삭제되던 것 — 확인 다이얼로그를 띄운 뒤 확정해야 지워지게 한다.
   const [confirmRemove, setConfirmRemove] = useState(null); // 삭제 확인 대상: sel과 같은 { uid, username, pub }
+  // (v0.3.3 UI) 채팅·프로필·검색 창(v0.3.2)과 마찬가지로, 모바일에서는 이 친구 창도 카드가 아니라
+  // 전체 화면으로 띄운다.
+  const narrow = useNarrow(640);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -17863,10 +17915,10 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
   return (
     <>
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 82, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 82, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 440, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         {!chatWith && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
             {/* (19차 UX3) 프로필 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리 */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink, minWidth: 0 }}>
               {sel ? <button onClick={() => setSel(null)} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
@@ -17883,7 +17935,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
         )}
 
         {chatWith ? (
-          <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} />
+          <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
+            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} />
+          </div>
         ) : sel ? (() => {
           const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
           // (v0.2.2 UI#6#1) 채팅 버튼은 아래 actions가 아니라 닉네임/아이디와 같은 줄 우측(헤더)에 둔다.
@@ -17899,7 +17953,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
             // (버그 수정) 이 서브뷰만 높이 제한 없이 카드가 뷰포트 밖으로 그냥 넘쳐, 스크롤해도 카드 뒤
             // 배경(탭 콘텐츠)이 대신 스크롤됐다 — UserSearchModal의 프로필 서브뷰와 동일하게 자체
             // 최대 높이 + 세로 스크롤을 준다.
-            <div style={{ padding: 18, maxHeight: "60vh", overflowY: "auto" }}>
+            <div style={{ padding: 18, maxHeight: narrow ? undefined : "60vh", flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
                 {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
@@ -17917,12 +17971,12 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
           );
         })() : (
           <>
-            <div style={{ display: "flex", gap: 4, padding: "10px 12px 0" }}>
+            <div style={{ display: "flex", gap: 4, padding: "10px 12px 0", flexShrink: 0 }}>
               {tabBtn("friends", "친구")}
               {tabBtn("requests", "요청", incoming.length)}
               {tabBtn("add", "추가")}
             </div>
-            <div style={{ padding: 14, minHeight: 180, maxHeight: 420, overflowY: "auto" }}>
+            <div style={{ padding: 14, minHeight: 180, maxHeight: narrow ? undefined : 420, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
               {!SB_ON ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>친구 기능은 서버 연결이 필요합니다. (현재 오프라인 모드)</div>
                 : loading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
                 : tab === "friends" ? (
