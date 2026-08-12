@@ -9051,6 +9051,20 @@ function snapSchematicZoom(z) {
   const clamped = Math.min(SCHEMATIC_ZOOM_MAX, Math.max(SCHEMATIC_ZOOM_MIN, z));
   return Math.round(clamped / SCHEMATIC_ZOOM_STEP) * SCHEMATIC_ZOOM_STEP;
 }
+// (사용자 요청) 퍼즐 모식도(PuzzleSchematic)는 v0.3.2에서 블록 크기를 약 50% 키웠는데(104→156 등),
+// 위 SCHEMATIC_ZOOM_LABEL_BASE(도감 오프닝 트리와 공유하는 기준)는 그대로라 다들 기본 배율(100%)이
+// 너무 확대돼 보여 매번 50%까지 직접 축소해야 편하게 봤다 — 그 "50%"를 퍼즐 모식도만의 새 기준
+// (100%)으로 재정의한다. 오프닝 트리·개발자 트리 에디터가 공유하는 SCHEMATIC_* 상수는 그대로 두고
+// (건드리면 그 둘의 배율까지 함께 바뀐다), 퍼즐 모식도 전용 상수를 따로 둔다 — raw CSS scale 값은
+// 정확히 SCHEMATIC_ZOOM_LABEL_BASE의 절반(0.375)이라, PuzzleSchematic 입장에서는 "예전에 50%라고
+// 부르던 배율 그대로"가 이제 "100%"라고 표시될 뿐, 좌표 계산 코드는 손댈 필요가 없다.
+const PUZZLE_ZOOM_LABEL_BASE = SCHEMATIC_ZOOM_LABEL_BASE / 2;
+function puzzleZoomLabel(z) { return Math.round((z / PUZZLE_ZOOM_LABEL_BASE) * 100) + "%"; }
+const PUZZLE_ZOOM_STEP = 0.25 * PUZZLE_ZOOM_LABEL_BASE, PUZZLE_ZOOM_MIN = PUZZLE_ZOOM_STEP, PUZZLE_ZOOM_MAX = 2 * PUZZLE_ZOOM_LABEL_BASE;
+function snapPuzzleZoom(z) {
+  const clamped = Math.min(PUZZLE_ZOOM_MAX, Math.max(PUZZLE_ZOOM_MIN, z));
+  return Math.round(clamped / PUZZLE_ZOOM_STEP) * PUZZLE_ZOOM_STEP;
+}
 // (버그 수정) 확대/축소 버튼·휠·핀치가 pan은 그대로 두고 zoom만 바꾸다 보니, 화면 좌상단(콘텐츠
 // 원점)을 기준으로 확대/축소가 일어났다 — 원점에서 멀리 떨어진 곳(팬으로 옮겨온 화면 중앙, 또는
 // 핀치 중심)을 보고 있을 때는 그 지점이 배율만큼 훌쩍 밀려나 트리 전체가 화면 밖으로 사라진
@@ -10647,6 +10661,91 @@ function treeLinesOf(tree) {
   walk(tree, []);
   return out;
 }
+// (기능) 퍼즐 레이팅 — 100(가장 쉬움)~3000(가장 어려움) 범위로 라인 하나의 난이도를 점수화한다.
+// 정적 요소(이 함수들)만으로 계산되는 "기본 레이팅"과, 실제 사용자들이 그 라인을 푸는 데 걸린 시간을
+// 반영해 가감하는 "보정"(applySolveTimeAdjustment, 아래)을 분리해 뒀다 — 서버(Supabase)가 연결되지
+// 않았거나 아직 풀이 기록이 쌓이지 않은 라인도 기본 레이팅만으로 항상 값을 낼 수 있게 하기 위함.
+// 기본 레이팅 반영 요소:
+//  · 길이 — 사용자가 직접 둬야 하는 수(짝수 인덱스, 사용자 차례)가 많을수록 어렵다.
+//  · 긴장(tension) — 각 사용자 차례 시작 시점에 tensionFacts로 센, 서로 잡고 잡힐 수 있는(=계산해야
+//    할) 기물 수의 평균. 얽힌 기물이 많을수록 수를 정확히 계산하기 어렵다.
+//  · 유일한 수/탁월한 수 개수 — 그 라인에 포함된 kind==="only"|"brilliant" 수의 개수. 정의상
+//    찾기 어려운 수이므로 많을수록 라인 전체 난이도가 올라간다.
+//  · 평가치 표준편차 — 라인을 따라가며 각 노드의 백 관점 평가치(evToNumericCp)가 얼마나 요동치는지.
+//    (genPuzzleTree가 만드는 트리에는 채택되지 않은 후보 수들의 평가치가 남지 않아 "최선 수와 다른
+//    후보 수들의 평가치 차이"를 문자 그대로 계산할 원자료가 없다 — 대신 그 라인 자체의 평가치
+//    궤적이 크게 출렁일수록 매 수 정확한 판단이 필요한 날카로운 포지션이라고 보고 대리 지표로 쓴다.)
+function evToNumericCp(ev) {
+  if (!ev) return 0;
+  if (ev.mate != null) return ev.mate > 0 ? 100000 : -100000;
+  return ev.cp || 0;
+}
+function stdDevOf(nums) {
+  if (!nums || !nums.length) return 0;
+  const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+  const variance = nums.reduce((a, b) => a + (b - mean) * (b - mean), 0) / nums.length;
+  return Math.sqrt(variance);
+}
+// 트리에서 특정 라인(san 배열)을 그대로 따라가며 실제 노드 객체(kind/ev 등을 담은)들을 모은다.
+function nodesAlongLine(tree, sans) {
+  const nodes = [];
+  let cur = tree;
+  for (const san of sans || []) {
+    const kids = (cur.children || []).filter((k) => k && k.pass !== false);
+    const next = kids.find((k) => k.san === san);
+    if (!next) break;
+    nodes.push(next);
+    cur = next;
+  }
+  return nodes;
+}
+function puzzleLineBaseRating(setupSans, tree, line) {
+  const sans = (line && line.sans) || [];
+  if (!sans.length) return 100;
+  const userMoves = Math.ceil(sans.length / 2);   // sans는 항상 사용자 수로 끝나는 홀수 길이
+  let tensionTotal = 0, tensionPlies = 0;
+  for (let i = 0; i < sans.length; i += 2) {   // 짝수 인덱스 = 사용자가 실제로 찾아야 하는 차례
+    const board = boardFromSans([...(setupSans || []), ...sans.slice(0, i)]);
+    const moverColor = ((setupSans || []).length + i) % 2 === 0 ? "w" : "b";
+    const t = tensionFacts(board, moverColor);
+    tensionTotal += t.mine.length + t.theirs.length;
+    tensionPlies++;
+  }
+  const nodes = nodesAlongLine(tree, sans);
+  const evs = nodes.filter((n) => n.ev).map((n) => evToNumericCp(n.ev));
+  const onlyBrilliant = nodes.filter((n) => n.kind === "only" || n.kind === "brilliant").length;
+  const avgTension = tensionPlies ? tensionTotal / tensionPlies : 0;
+  const swing = stdDevOf(evs);
+  const lengthPoints = Math.min(600, Math.max(0, userMoves - 1) * 150);
+  const tensionPoints = Math.min(700, avgTension * 140);
+  const qualityPoints = Math.min(900, onlyBrilliant * 300);
+  const swingPoints = Math.min(700, (swing / 40) * 100);
+  const raw = 100 + lengthPoints + tensionPoints + qualityPoints + swingPoints;
+  return Math.max(100, Math.min(3000, Math.round(raw)));
+}
+// (기능) 라인 하나의 평균 실제 풀이 시간(ms, 이상치 제외 후 서버가 집계 — puzzle_line_avg_solve_ms
+// RPC)을 정적 기본 레이팅에 가감한다. "이 레이팅대에서 보통 이 정도 걸린다"는 기대 시간
+// (expectedSolveMsFromRating) 대비 실제 평균이 얼마나 벗어났는지를 로그 스케일로 반영해(2배 오래
+// 걸리면 +300점, 2배 빨리 풀면 -300점, 최대 ±400점) 튀지 않게 완만히 조정한다. 표본이 너무
+// 적으면(< RATING_MIN_SAMPLES) 아직 신뢰할 수 없다고 보고 기본 레이팅을 그대로 쓴다.
+const RATING_MIN_SAMPLES = 5;
+function expectedSolveMsFromRating(rating) {
+  // 100점대는 8초, 3000점대는 120초 정도 걸릴 거라고 보는 선형 기준선(둘 다 대략적인 경험적 값).
+  const sec = 8 + ((rating - 100) / 2900) * 112;
+  return sec * 1000;
+}
+function applySolveTimeAdjustment(baseRating, avgMs, sampleCount) {
+  if (!avgMs || !sampleCount || sampleCount < RATING_MIN_SAMPLES) return baseRating;
+  const expected = expectedSolveMsFromRating(baseRating);
+  const ratio = avgMs / Math.max(1000, expected);
+  const adj = Math.max(-400, Math.min(400, 300 * Math.log2(ratio)));
+  return Math.max(100, Math.min(3000, Math.round(baseRating + adj)));
+}
+// 퍼즐 전체 레이팅 = 모든 라인 레이팅의 평균(라인 레이팅 합 ÷ 라인 수).
+function puzzleAverageRating(lineRatings) {
+  if (!lineRatings || !lineRatings.length) return 100;
+  return Math.round(lineRatings.reduce((a, b) => a + b, 0) / lineRatings.length);
+}
 // (버그 수정) genPuzzleTree가 결국 실패해 트리를 못 만들었는데도(과거 로직 결함·중간에 취소된
 // 생성 등) 그 실패한 결과가 그대로 저장돼, 실제로는 통과 가능한 라인이 0개인 "빈 퍼즐"이 목록에
 // 남아 있었다. PuzzleCard가 실제 라인 수 대신 Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시해
@@ -10868,6 +10967,21 @@ function solveCountText(count, friendNames) {
 // RPC 'puzzle_rank'로 서버에서 수행한다. 테이블/RPC 미생성 시 무해하게 비활성(추천 목록이 그냥 비어있음).
 async function puzzleSolveEventAdd(no, uid) { if (!SB_ON) return; try { await sbInsert("puzzle_solve_events", { no, uid: uid || null }); } catch { } }
 async function puzzleRank(period, limit) { if (!SB_ON) return []; try { const r = await sbRpc("puzzle_rank", { p_period: period, p_limit: limit || 12 }); return Array.isArray(r) ? r : []; } catch { return []; } }
+// (기능) 퍼즐 레이팅 — 라인 하나를 실제로 푸는 데 걸린 시간(ms)을 puzzle_solve_events와 동일한
+// append-only 패턴으로 기록한다. 개별 기록 자체는 클라이언트가 그냥 쌓기만 하고, "이상치를 제외한
+// 평균"은 puzzle_line_avg_solve_ms RPC가 서버에서 계산한다(상하위 10%를 잘라내는 절사평균 —
+// supabase-setup.sql 참고). 표본이 아직 없거나(RATING_MIN_SAMPLES 미만) Supabase 미연결이면 null을
+// 돌려주고, 호출부(applySolveTimeAdjustment)는 그때 정적 기본 레이팅을 그대로 쓴다.
+async function puzzleLineSolveTimeAdd(no, tag, uid, ms) { if (!SB_ON || !ms || ms <= 0) return; try { await sbInsert("puzzle_line_solve_times", { no, tag, uid: uid || null, ms: Math.round(ms) }); } catch { } }
+async function puzzleLineAvgSolveMs(no, tag) {
+  if (!SB_ON) return null;
+  try {
+    const r = await sbRpc("puzzle_line_avg_solve_ms", { p_no: no, p_tag: tag });
+    const row = Array.isArray(r) ? r[0] : r;
+    if (!row) return null;
+    return { avgMs: row.avg_ms != null ? Number(row.avg_ms) : null, sampleCount: row.sample_count != null ? Number(row.sample_count) : 0 };
+  } catch { return null; }
+}
 
 // (v0.0.6 개편) 예전 레벨/XP 시스템은 피보나치 곡선이 너무 가팔라(레벨 10에 누적 23,100 XP, 레벨
 // 20엔 286만 XP) 사실상 아무도 레벨 10~13을 넘기지 못했다 — chess.com 퍼즐 티어처럼, 랭크 게임의
@@ -11554,7 +11668,15 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupLen, onPick, canEdit, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag }) {
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupSans, setupLen, onPick, canEdit, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag }) {
+  // (기능) 라인 레이팅 — 각 라인 끝(리프)의 "라인 N" 옆에 그 라인의 기본 레이팅을 함께 보여준다.
+  // 트리 구조가 실제로 바뀔 때만 다시 계산하면 되므로(정적 요소만 쓰는 puzzleLineBaseRating), tree·
+  // allLines·setupSans가 바뀔 때만 새로 계산한다.
+  const lineRatings = useMemo(() => {
+    const m = new Map();
+    for (const l of allLines) m.set(l.tag, puzzleLineBaseRating(setupSans, tree, l));
+    return m;
+  }, [allLines, tree, setupSans]);
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   // (v0.3.2 UI) 요청에 따라 블록 크기를 기존 대비 약 50% 키움(104→156, 118→177, 56→84, 46→69 등,
@@ -11592,11 +11714,16 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys, exploredKeys);
     const items = []; const edges = [];
     const curKeyStr = curKeys.join(" ");
-    // 실제로 둔 수(revealed)는 그대로 펼쳐 보이고, 아직 두지 않은 자식은 "고스트"(내용은 가리되 갈래가
-    // 있다는 사실만 보여주는 자리표시자)로 만든다 — 라인이 하나뿐인 것처럼 보이지 않도록.
-    const visit = (node, path, depth) => {
+    // 실제로 둔 수(revealed)는 그대로 펼쳐 보이고, 아직 두지 않은 갈래는 "고스트"(내용은 가리되
+    // 갈래가 있다는 사실만 보여주는 자리표시자)로 만든다 — 라인이 하나뿐인 것처럼 보이지 않도록.
+    // (사용자 요청) 예전엔 아직 안 보이는 첫 갈림길에서만 고스트 하나를 만들고 그 밑은 아예 방문하지
+    // 않아, 미해금 라인이 몇 수짜리인지·그 끝(라인 N)이 어디인지 전혀 알 수 없었다 — 이제 revealed
+    // 여부와 무관하게 트리 전체를 끝(리프)까지 방문하되, 한 번 안 보이는 지점을 지나면 그 아래
+    // 자손 전부를 ghost로 표시(hidden 플래그를 자식에게 전파)해 형태(노드·선·"라인 N")는 라인 끝까지
+    // 그대로 드러내고 내용(수·평가치·등급)만 렌더링 단계에서 가린다.
+    const visit = (node, path, depth, hidden) => {
       const key = path.map((s) => stripSuffix(s)).join(" ");
-      const it = { node, path, depth, key };
+      const it = { node, path, depth, key, ghost: !!hidden };
       // (버그 수정) pass:false(유혹 수 — 통과 불가) 자식은 어차피 어디로도 이어지지 않는 막다른
       // 리프라 모식도에 "풀 수 없는 라인"으로만 보였다 — 지금은 아예 생성하지 않지만(genPuzzleTree),
       // 예전에 만들어져 이미 저장된 퍼즐에도 그대로 적용되도록 렌더링 단계에서도 완전히 건너뛴다.
@@ -11605,10 +11732,10 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       for (const k of rawKids) {
         const kpath = [...path, k.san];
         const kkey = kpath.map((s) => stripSuffix(s)).join(" ");
-        if (!revealed || revealed.has(kkey)) kids.push(visit(k, kpath, depth + 1));
-        else { const ghost = { node: null, path: kpath, depth: depth + 1, key: kkey, ghost: true, y: getPos(kkey) }; items.push(ghost); kids.push(ghost); }
+        const childHidden = hidden || (!!revealed && !revealed.has(kkey));
+        kids.push(visit(k, kpath, depth + 1, childHidden));
       }
-      it.isLeaf = rawKids.length === 0;   // 실제 데이터 기준 리프(고스트로 가려진 자식이 있으면 리프가 아님)
+      it.isLeaf = rawKids.length === 0;
       if (!kids.length) it.y = getPos(key);
       else {
         kids.forEach((c) => edges.push([it, c]));
@@ -11618,7 +11745,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       items.push(it);
       return it;
     };
-    visit({ san: null, children: tree.children || [] }, [], 0);
+    visit({ san: null, children: tree.children || [] }, [], 0, false);
     // 해결한 라인의 경로 키 집합(선·노드를 초록으로 표시)
     const solvedKeys = new Set(); const solvedLeafKeys = new Set();
     for (const l of allLines) {
@@ -11661,8 +11788,10 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     return { items, edges, width, height, curItem, pxItems };
   }, [tree, allLines, solvedNow, curKeys.join(" "), exploredKeys, celebrateTag, shakeTag]);
   const [pan, setPan] = useState({ x: 8, y: 8 });
-  // (v0.0.6) 도감 오프닝 트리와 동일하게, 다들 편하게 보던 75% 배율을 새 기준(100%)으로 재정의한다.
-  const [zoom, setZoom] = useState(SCHEMATIC_ZOOM_LABEL_BASE);
+  // (사용자 요청) 도감 오프닝 트리·개발자 트리 에디터와는 별개로, 퍼즐 모식도는 블록 크기가
+  // v0.3.2에서 커진 뒤로 다들 기본 배율(당시 기준 100%)이 과해 매번 50%까지 축소해서 봤다 — 그
+  // "50%"를 퍼즐 모식도 전용 새 기준(100%)으로 재정의한다(PUZZLE_ZOOM_LABEL_BASE 참고).
+  const [zoom, setZoom] = useState(PUZZLE_ZOOM_LABEL_BASE);
   const dragRef = useRef(null);
   const boxRef = useRef(null);
   const pointersRef = useRef(new Map());   // pointerId -> {x,y} — 두 손가락이면 핀치 확대/축소
@@ -11672,7 +11801,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   const pxItemsRef = useRef(pxItems);
   useEffect(() => { pxItemsRef.current = pxItems; }, [pxItems]);
-  const clampZoom = snapSchematicZoom;
+  const clampZoom = snapPuzzleZoom;
   // (버그 수정, 도감 모식도와 동일) 확대/축소 버튼·핀치가 pan은 그대로 두고 zoom만 바꿔서, 화면
   // 좌상단(콘텐츠 원점)을 기준으로 확대/축소가 일어나 팬으로 멀리 옮겨온 화면에서는 트리 전체가
   // 화면 밖으로 사라진 것처럼 보였다 — 배율이 바뀐 뒤에도 화면 위 같은 지점(anchorX/Y)에 그 콘텐츠
@@ -11810,9 +11939,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
       <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
         <div className="no-pan flex" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
-          <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-          <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoom)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{schematicZoomLabel(zoom)}</button>
-          <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+          <button onClick={() => zoomBy(-PUZZLE_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+          <button onClick={() => zoomBy(PUZZLE_ZOOM_LABEL_BASE - zoom)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{puzzleZoomLabel(zoom)}</button>
+          <button onClick={() => zoomBy(PUZZLE_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
@@ -11829,25 +11958,35 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
           {items.map((it, i) => {
             // (20차 기능2) 고스트 — 아직 두지 않은 갈래가 존재한다는 사실만 보여주고 수 정보는 가린다.
             // 트랩(통과 불가) 수는 실제 플레이로만 드러나므로 이 자리표시자와 구별 없이 함께 뭉뚱그려진다.
-            if (it.ghost) {
-              return (
-                <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: boxW }}>
-                  <button onClick={() => onPick && onPick(it)} title="아직 두지 않은 갈래예요 — 두어 보면 드러나요" className="press"
-                    style={{ width: "100%", minHeight: boxH, borderRadius: 12, border: "1.5px dashed #C9B58C",
-                      background: "repeating-linear-gradient(135deg, rgba(0,0,0,.035) 0 6px, rgba(0,0,0,.07) 6px 12px)",
-                      color: T.inkSoft, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                      animation: it.shake ? "lineShake .55s ease 3" : "none" }}>
-                    <span style={{ fontSize: 24, fontWeight: 800, opacity: 0.55 }}>?</span>
-                  </button>
+            // (사용자 요청) 고스트가 이제 라인 끝까지 이어지므로, 고스트 리프에도 실제 리프와 동일하게
+            // "라인 N"과 그 라인의 레이팅을 보여준다 — 수·평가치·등급 같은 내용만 가려질 뿐, 몇 번째
+            // 라인이고 몇 수짜리인지는 미리 알 수 있어야 어떤 라인을 도전할지 고를 수 있다.
+            {
+              const isGhostLeaf = it.isLeaf && it.node && it.node.tag;
+              if (it.ghost) return (
+                <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: "max-content", minWidth: boxW }}>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => onPick && onPick(it)} title="아직 두지 않은 갈래예요 — 두어 보면 드러나요" className="press"
+                      style={{ flexShrink: 0, minWidth: boxW, minHeight: boxH, borderRadius: 12, border: "1.5px dashed #C9B58C",
+                        background: "repeating-linear-gradient(135deg, rgba(0,0,0,.035) 0 6px, rgba(0,0,0,.07) 6px 12px)",
+                        color: T.inkSoft, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                        animation: it.shake ? "lineShake .55s ease 3" : "none" }}>
+                      <span style={{ fontSize: 24, fontWeight: 800, opacity: 0.55 }}>?</span>
+                    </button>
+                    {isGhostLeaf && (
+                      <span className="flex items-center" style={{ gap: 4, flexShrink: 0, fontSize: 14, fontWeight: 800, color: T.inkSoft, whiteSpace: "nowrap" }}>
+                        라인 {allLines.findIndex((l) => l.tag === it.node.tag) + 1}
+                        <span style={{ fontSize: 11, fontWeight: 700, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{lineRatings.get(it.node.tag)}</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             }
             const isRoot = it.depth === 0;
             const m = meta[it.key] || {};
             const kind = it.node.kind || m.kind;
-            const ev = it.node.ev || m.ev;
             const adopt = it.node.adopt != null ? it.node.adopt : m.adopt;
-            const evTxt = ev ? fmtEvalCp(ev.cp, ev.mate, ev.plies) : null;
             // 수 번호(예: "3.Nxe5"/"3...fxe5") — setup에 이어지는 전체 수순에서의 위치로 계산
             const label = isRoot ? (rootLabel ? moveNumber(setupLen - 1) + rootLabel : "시작") : moveNumber(setupLen + it.depth - 1) + it.node.san;
             const canAddHere = canEdit && !isRoot && it.isLeaf;
@@ -11881,18 +12020,23 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                       {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 21, height: 21, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 17)}</span>}
                       <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 17, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
                     </span>
+                    {/* (사용자 요청) 각 수의 평가치(cp) 숫자 대신 수 체계 등급(QLABEL — "최고의 수"·
+                        "탁월한 수" 등)을 보여준다 — 이미 위 원형 배지가 등급을 색·아이콘으로 보여주고
+                        있었지만, 정확히 무슨 등급인지는 이름을 읽어야 알 수 있었다. */}
                     <span style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3, fontSize: 14, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
-                      <span>{isRoot ? "시작 위치" : (evTxt || "–")}</span>
+                      <span>{isRoot ? "시작 위치" : (QLABEL[kind] || "–")}</span>
                       {!isRoot && <span style={{ marginLeft: "auto" }}>{adopt != null ? Math.round(adopt) + "%" : "–%"}</span>}
                     </span>
                     {incomplete && <div style={{ fontSize: 13, fontWeight: 800, color: "#9A6A18", marginTop: 2 }}>미완성 — 다음 수 필요</div>}
                   </button>
                   {/* (v0.2.6 버그 수정) "라인 n" 표기를 마지막 수 블록 우측으로 옮기고, 해결 완료
-                      체크 표시도 SAN 옆(블록 내부) 대신 여기서 라인 n과 함께 보여준다. */}
+                      체크 표시도 SAN 옆(블록 내부) 대신 여기서 라인 n과 함께 보여준다.
+                      (사용자 요청) 그 옆에 이 라인의 레이팅(puzzleLineBaseRating)도 함께 보여준다. */}
                   {it.isLeaf && !isRoot && it.node.tag && (
                     <span className="flex items-center" style={{ gap: 4, flexShrink: 0, fontSize: 14, fontWeight: 800, color: it.solvedLeaf ? T.best : T.inkSoft, whiteSpace: "nowrap" }}>
                       {it.solvedLeaf && <span style={{ width: 21, height: 21, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Check size={15} strokeWidth={3.5} /></span>}
                       라인 {allLines.findIndex((l) => l.tag === it.node.tag) + 1}
+                      <span style={{ fontSize: 11, fontWeight: 700, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{lineRatings.get(it.node.tag)}</span>
                     </span>
                   )}
                   {/* (20차 기능1) 개발자 전용 — 이 라인 끝에 수를 하나 직접 추가(전체 재생성 없이 라인별 1수 연장) */}
@@ -11996,7 +12140,7 @@ function summarizePosition(board, userColor) {
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, engine, liveOn, canEdit, bumpContent }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, engine, liveOn, canEdit, bumpContent }) {
   const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
@@ -12009,12 +12153,19 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const tree = useMemo(() => overrideTree || puzzleTreeOf(puzzle), [puzzle.id, overrideTree]);
   const allLines = useMemo(() => treeLinesOf(tree), [tree]);
   const totalLines = Math.max(1, allLines.length);
+  // (기능) 퍼즐 레이팅 — 모든 라인의 기본 레이팅 평균(라인 레이팅 합 ÷ 라인 수). 카드 목록의
+  // 배지와 동일하게 정적 요소만 쓰는 값이라 네트워크 없이 즉시 계산된다.
+  const avgRating = useMemo(() => puzzleAverageRating(allLines.map((l) => puzzleLineBaseRating(setup, tree, l))), [allLines, tree, setup]);
   const solvedTagSet = useMemo(() => { const valid = new Set(allLines.map((l) => l.tag)); return new Set((solvedTags || []).filter((t) => valid.has(t))); }, [solvedTags, allLines]);
   const [sessionSolved, setSessionSolved] = useState(() => new Set());
   const solvedNow = useMemo(() => new Set([...solvedTagSet, ...sessionSolved]), [solvedTagSet, sessionSolved]);
   // 진행 상태: 트리를 따라 내려온 노드 경로(짝수 인덱스 = 사용자 수) + 지금 목표로 삼은 라인
   const [pathNodes, setPathNodes] = useState([]);
   const [targetTag, setTargetTag] = useState(null);
+  // (기능) 퍼즐 레이팅용 — 지금 시도 중인 라인을 언제부터 풀기 시작했는지(gotoLine이 호출되거나
+  // 퍼즐/트리가 바뀌어 새 라인으로 초기화될 때마다 지금 시각으로 다시 잡는다). done이 되는 순간
+  // 이 값과의 차이를 실제 풀이 시간(ms)으로 서버에 기록한다(puzzleLineSolveTimeAdd).
+  const solveStartRef = useRef(Date.now());
   const [intro, setIntro] = useState(true);   // (UX7) 진입/처음부터 시 직전 수를 1회 재생
   const [sel, setSel] = useState(null);
   const [wrong, setWrong] = useState(null);     // { board, at:[r,c], from:[r,c], san }
@@ -12063,6 +12214,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     setEverRevealed(new Set());
     setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0);
     setPage(0); setCelebrate(null);
+    solveStartRef.current = Date.now();
     const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
     setTargetTag(first ? first.tag : null);
   }, [puzzle.id, tree]);
@@ -12121,11 +12273,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   useEffect(() => { if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "auto" }); }, [puzzle.id]);
   useEffect(() => { if (!intro) return; const t = setTimeout(() => setIntro(false), 1400); return () => clearTimeout(t); }, [intro, puzzle.id]);
   // (16차) 추천 랭킹용 이벤트는 이미 푼 라인을 다시 풀어도(중복 풀이) 매번 기록한다 — XP/별 지급과는 별개.
+  // (기능) 퍼즐 레이팅용 풀이 시간도 마찬가지로 재도전마다 매번 기록한다 — 표본이 많아질수록
+  // puzzle_line_avg_solve_ms(서버 절사평균)가 더 안정된다.
   useEffect(() => {
     if (!done) return;
     if (onLineSolved) onLineSolved(puzzle.id, doneTag, totalLines);
     setSessionSolved((s) => (s.has(doneTag) ? s : new Set(s).add(doneTag)));
     if (onPuzzleSolveEvent) onPuzzleSolveEvent(puzzle.id);
+    puzzleLineSolveTimeAdd(puzzleNo(puzzle.id), doneTag, myUid, Date.now() - solveStartRef.current);
     // (20차 기능2) 보드에서 결과를 잠깐 보여준 뒤 모식도 페이지로 자동 전환 — 클리어 애니메이션 재생.
     const t = setTimeout(() => { setPage(1); setCelebrate({ tag: doneTag }); }, 900);
     return () => clearTimeout(t);
@@ -12235,7 +12390,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     })();
     return () => { cancelled = true; timers.forEach(clearTimeout); };
   }, [wrong]);
-  const gotoLine = (tag) => { setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); };
+  const gotoLine = (tag) => { solveStartRef.current = Date.now(); setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); };
   const restart = () => gotoLine(targetTag);
   // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
   // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
@@ -12550,6 +12705,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       )}
       <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
+      {/* (사용자 요청) 퍼즐 레이팅 — 풀이 카드 우측 여백(닫기 버튼 바로 아래)에 표시. */}
+      <div title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ position: "absolute", top: 48, right: 12, zIndex: 9, padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{avgRating}</div>
       <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
@@ -12643,6 +12800,30 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                   이제 3단계에서도 눌러(토글) 원래(0단계, 힌트 없음) 상태로 되돌릴 수 있다. */}
               {userToMove && <button onClick={requestHint} className="press" title={hintLevel >= 3 ? "눌러서 힌트 숨기기" : "힌트 보기"} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 9, background: hintLevel >= 3 ? "linear-gradient(180deg,#F3D57A," + T.brass + ")" : "transparent", color: hintLevel >= 3 ? "#241509" : "#8A6A18", border: "1px solid " + T.brass, fontWeight: 700, cursor: "pointer", fontSize: 12 }}><Lightbulb size={13} /> 힌트{hintLevel > 0 ? " " + hintLevel + "/3" : ""}</button>}
             </div>
+            {/* (사용자 요청) 힌트 버튼 아래에 라인 1~n을 숫자만 표시한 원형 버튼으로 나열 — 누르면
+                gotoLine으로 그 라인을 목표로 바로 처음부터 풀이를 시작한다(이미 푼 라인이어도 다시
+                고를 수 있다 — gotoLine 자체가 재도전을 막지 않고, 라인마다 XP는 최초 1회만 지급되지만
+                추천 랭킹용 풀이 이벤트는 재도전마다 매번 기록된다). 라인이 하나뿐인 퍼즐은 "처음부터"
+                버튼과 중복이라 굳이 보여주지 않는다. */}
+            {allLines.length > 1 && (
+              <div className="flex justify-center" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                {allLines.map((l, i) => {
+                  const lineIsSolved = solvedNow.has(l.tag);
+                  const isTarget = l.tag === targetTag;
+                  return (
+                    <button key={l.tag} onClick={() => gotoLine(l.tag)} className="press" title={"라인 " + (i + 1) + (lineIsSolved ? " (해결됨 — 다시 풀기)" : "")}
+                      style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                        border: "1.5px solid " + (isTarget ? T.brassHi : lineIsSolved ? T.best : "#C9B58C"),
+                        background: isTarget ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : lineIsSolved ? "#EAF3E0" : "#fff",
+                        color: isTarget ? "#241509" : lineIsSolved ? T.best : T.ink,
+                        fontWeight: 800, fontSize: 12, fontFamily: "ui-monospace,monospace", cursor: "pointer",
+                        display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                      {i + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div style={{ width: "50%", boxSizing: "border-box", paddingLeft: 3 }}>
             {/* (기능) 모식도 페이지에도 보드 페이지와 같은 크기·y좌표의 미니보드를 둔다. 모식도에서
@@ -12657,7 +12838,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
             </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupSans={setup} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
             {canEdit && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
@@ -12808,8 +12989,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   // (버그 수정) Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시했었다 — 트리가 실제로는 텅 비어
   // 하나도 풀 수 없는 손상된 퍼즐도 정상 퍼즐처럼 보이게 만든 원인이었다(starsOf는 totalLines가
   // 0이어도 안전하게 0점을 반환하므로 바닥값을 둘 이유가 없었다). 실제 라인 수를 그대로 쓴다.
-  const totalLines = useMemo(() => treeLinesOf(puzzleTreeOf(p)).length, [p.id]);
+  const puzzleTree = useMemo(() => puzzleTreeOf(p), [p.id]);
+  const allLinesFull = useMemo(() => treeLinesOf(puzzleTree), [puzzleTree]);
+  const totalLines = allLinesFull.length;
   const broken = totalLines === 0;
+  // (기능) 퍼즐 레이팅 — 모든 라인의 기본 레이팅 평균. 정적 요소만 쓰므로 네트워크 없이(그리드에
+  // 카드가 아무리 많아도 카드당 한 번만) 즉시 계산된다.
+  const avgRating = useMemo(() => {
+    if (broken) return null;
+    const setupForRating = [...(p.setupSans || []), p.mistakeSan].filter(Boolean);
+    return puzzleAverageRating(allLinesFull.map((l) => puzzleLineBaseRating(setupForRating, puzzleTree, l)));
+  }, [allLinesFull, puzzleTree, broken, p.id]);
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
   // 위쪽 얇은 띠·번호 색·옅은 배경 패턴만 테마색으로 물들인다.
@@ -12849,7 +13039,10 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
             줄에 두면 폭이 좁아 말줄임으로 잘렸다 — 버튼과 분리해 별도 줄에 잘리지 않고 전부 보여준다. */}
         {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9.5, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.35, marginTop: 4, wordBreak: "keep-all" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
-        <div className="flex items-center justify-end" style={{ marginTop: 4, gap: 7, flexShrink: 0 }}>
+        <div className="flex items-center justify-between" style={{ marginTop: 4, gap: 7, flexShrink: 0 }}>
+            {/* (사용자 요청) 퍼즐 레이팅 — 카드 좌하단에 표시. */}
+            {avgRating != null && <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>★{avgRating}</span>}
+            <div className="flex items-center" style={{ gap: 7, marginLeft: "auto" }}>
             {/* (v0.1.0) 리포스트·공유 — 좋아요와 같은 자리에, 풀이수/좋아요와 무관한 별개 참여 지표로 노출 */}
             {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
               <Repeat2 size={12} color={isReposted ? T.brilliant : T.inkSoft} />
@@ -12869,6 +13062,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 11px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
               <Send size={10} color={T.brass} />공유
             </button>}
+            </div>
         </div>
       </div>
     </div>
@@ -13536,7 +13730,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
     return [...byId.values()].filter((p) => String(puzzleNo(p.id)).startsWith(numInput)).slice(0, 6);
   }, [numInput, isDateInput, remoteNumSuggestions, puzzles, archivedPuzzles]);
-  if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
   // 없어요"를 띄웠다. 개발자(canEdit)는 이런 손상된 퍼즐을 찾아 삭제할 수 있어야 하므로 그대로
@@ -14768,6 +14962,11 @@ const CHANGELOG = [
       "친구 창도 이제 모바일에서 전체 화면으로 크게 볼 수 있어요.",
       "채팅에서 대화를 선택해 들어가면 상단이 뒤로가기·상대방 프로필 사진·아이디만 남도록 더 깔끔해졌어요.",
       "채팅 메시지의 수정/삭제 메뉴가 화면에 가려 안 보이거나 다른 메시지와 겹쳐 보이던 문제를 고쳤어요.",
+      "퍼즐 모식도를 더 편한 기본 배율로 새로 맞췄어요.",
+      "퍼즐 모식도에서 아직 풀지 않은 라인도 끝까지 어떤 모양인지(몇 수짜리인지, 라인 번호가 몇 번인지)는 미리 볼 수 있어요.",
+      "퍼즐 풀이 화면에 라인을 번호로 바로 골라 풀 수 있는 동그란 버튼을 추가했어요 — 이미 푼 라인도 다시 도전할 수 있어요.",
+      "퍼즐 모식도에서 각 수의 평가치 숫자 대신 등급 이름(최고의 수, 탁월한 수 등)을 보여줘요.",
+      "퍼즐마다, 그리고 라인마다 난이도 레이팅(100~3000)이 생겼어요 — 퍼즐 카드·풀이 화면·모식도에서 볼 수 있고, 실제로 사람들이 푸는 데 걸린 시간에 따라 점점 더 정확해져요.",
     ]
   },
   {

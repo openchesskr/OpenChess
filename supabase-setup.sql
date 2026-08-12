@@ -839,3 +839,55 @@ create policy "daily puzzle cache read"   on public.daily_puzzle_cache for selec
 create policy "daily puzzle cache insert" on public.daily_puzzle_cache for insert with check (true);
 grant select, insert on public.daily_puzzle_cache to anon, authenticated;
 
+-- ============================================================================
+-- 18) puzzle_line_solve_times — 퍼즐 레이팅용 라인별 실제 풀이 시간 기록 (v0.3.4)
+-- ============================================================================
+-- 퍼즐 레이팅(src/App.jsx의 puzzleLineBaseRating)은 길이·긴장·유일수/탁월수 개수·평가치 표준편차
+-- 같은 정적 요소로 먼저 기본값(100~3000)을 정하고, 실제 유저들이 그 라인을 푸는 데 걸린 시간으로
+-- 가감(applySolveTimeAdjustment)한다. puzzle_solve_events와 같은 append-only 로그 패턴 — 같은
+-- 사람이 같은 라인을 여러 번 풀어도(재도전) 매번 한 줄씩 쌓인다. 게스트(비로그인)는 uid 없이
+-- 기록 가능하지만, 로그인 상태라면 본인 uid로만 기록 가능(도용 방지, puzzle_solve_events와 동일).
+create table if not exists public.puzzle_line_solve_times (
+  id bigint generated always as identity primary key,
+  no bigint not null,
+  tag text not null,
+  uid uuid references auth.users(id) on delete set null,
+  ms bigint not null,
+  solved_at timestamptz not null default now()
+);
+create index if not exists idx_puzzle_line_solve_times_no_tag on public.puzzle_line_solve_times(no, tag);
+alter table public.puzzle_line_solve_times enable row level security;
+drop policy if exists "line solve times read"   on public.puzzle_line_solve_times;
+drop policy if exists "line solve times insert" on public.puzzle_line_solve_times;
+create policy "line solve times read"   on public.puzzle_line_solve_times for select using (true);
+create policy "line solve times insert" on public.puzzle_line_solve_times for insert with check (uid is null or uid = auth.uid());
+grant select, insert on public.puzzle_line_solve_times to anon, authenticated;
+
+-- 이상치를 제외한 평균 풀이 시간(ms)과 표본 수를 반환한다. 표본이 20개 이상 모이면 상하위 10%
+-- (percentile_cont 0.1/0.9 경계 밖)를 잘라낸 절사평균(trimmed mean)을 쓰고, 그보다 적으면 자를
+-- 만큼 표본이 충분치 않다고 보고 단순평균을 쓴다. 표본이 아예 없으면 avg_ms는 null — 클라이언트
+-- (applySolveTimeAdjustment)는 표본 수가 RATING_MIN_SAMPLES(현재 5) 미만이면 이 값 자체를 무시하고
+-- 정적 기본 레이팅을 그대로 쓰므로, 여기서는 표본 수를 항상 정확히 돌려주기만 하면 된다.
+drop function if exists public.puzzle_line_avg_solve_ms(bigint, text) cascade;
+create or replace function public.puzzle_line_avg_solve_ms(p_no bigint, p_tag text)
+returns table(avg_ms numeric, sample_count bigint) language sql stable as $$
+  with samples as (
+    select ms from public.puzzle_line_solve_times where no = p_no and tag = p_tag
+  ), bounds as (
+    select
+      count(*) as cnt,
+      percentile_cont(0.1) within group (order by ms) as lo,
+      percentile_cont(0.9) within group (order by ms) as hi
+    from samples
+  )
+  select
+    case
+      when b.cnt = 0 then null
+      when b.cnt >= 20 then (select avg(s.ms) from samples s where s.ms between b.lo and b.hi)
+      else (select avg(s.ms) from samples s)
+    end as avg_ms,
+    b.cnt as sample_count
+  from bounds b;
+$$;
+grant execute on function public.puzzle_line_avg_solve_ms(bigint, text) to anon, authenticated;
+
