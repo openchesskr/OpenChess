@@ -321,10 +321,24 @@ const TIER_DECAGON_PTS = (() => {
   }).join(" ");
 })();
 function TierLogoDisc({ tierKey, division, size, discSize, muted = false }) {
+  // (사용자 요청) 그랜드마스터는 로고를 감싸는 흰 십각형 테두리도 무지개 그라데이션으로 — 서로 다른
+  // <svg>끼리 id가 겹치지 않도록 useId로 인스턴스별 고유 id를 만든다(조건부 호출 금지, 항상 호출).
+  const gradId = "gmDecagon-" + useId().replace(/:/g, "");
+  const isGM = tierKey === "grandmaster";
+  const gmStops = TIER_COLORS.grandmaster.stops;
   return (
     <div style={{ position: "relative", width: discSize, height: discSize, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", opacity: muted ? 0.62 : 1, filter: "drop-shadow(0 2px 5px rgba(0,0,0,.35))" }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-        <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+        {isGM && (
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={gmStops[0]} />
+              <stop offset="50%" stopColor={gmStops[1]} />
+              <stop offset="100%" stopColor={gmStops[2]} />
+            </linearGradient>
+          </defs>
+        )}
+        <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke={isGM ? "url(#" + gradId + ")" : "#D8CFB8"} strokeWidth={isGM ? 3 : 2} />
       </svg>
       <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <TierPieceGlyph tierKey={tierKey} division={division} size={size} />
@@ -14940,9 +14954,14 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>;
   if (!ready) return null;
 
+  // (사용자 요청) 유산(Legacy) 관리 화면에서 재사용할 때(onSelectGame이 있을 때)는 프로필 헤더·전적·
+  // 레이팅 그래프·오프닝 통계 없이 "최근 대국" 목록 UI만 잘라서 보여준다 — 대국을 고르는 용도이지
+  // chess.com 통계 전체를 보여주는 화면이 아니므로.
+  const recentOnly = !!onSelectGame;
   return (
     <div style={{ marginTop: 12 }}>
       {/* 프로필 */}
+      {!recentOnly && (
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         {prof && prof.avatar ? <img src={prof.avatar} alt="" style={{ width: 48, height: 48, borderRadius: 12, border: "1px solid #C9B58C" }} />
           : <span style={{ width: 48, height: 48, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 22 }}>{username[0].toUpperCase()}</span>}
@@ -14955,6 +14974,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{prof ? ["래피드 " + (prof.rapid ?? "—"), "블리츠 " + (prof.blitz ?? "—"), "불릿 " + (prof.bullet ?? "—")].join(" · ") : "레이팅 불러오는 중…"}</div>
         </div>
       </div>
+      )}
       {/* (v0.2.2 UI#6#5) 시간 규정 필터 — 전체/래피드/블리츠/불릿. 일일·체스960은 집계에서 제외.
           (v0.2.6 기능) 타임 컨트롤 선택 박스를 조금 줄이고, 같은 줄 우측에 흑/백 색 필터를 추가했다. */}
       <div className="flex items-center" style={{ gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
@@ -14977,8 +14997,8 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         )}
       </div>
       {/* 전적 */}
-      {!overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "이 조건에서 리뷰한 대국이 없어요." : "이 시간 규정의 대국이 없어요."}</p>}
-      {overall && (
+      {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "이 조건에서 리뷰한 대국이 없어요." : "이 시간 규정의 대국이 없어요."}</p>}
+      {!recentOnly && overall && (
         <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>전체 기간 전적</span>
@@ -14994,8 +15014,9 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         </div>
       )}
+      {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "이 조건에서 리뷰한 대국이 없어요." : "이 시간 규정의 대국이 없어요."}</p>}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
-      <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />
+      {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 학습 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중학습의 "내 최근 대국" 목록과 통일. */}
       {(() => {
@@ -15041,20 +15062,24 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         );
       })()}
-      {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
-          애니메이션한다. 바로 아래에 흑 오프닝 레파토리도 같은 방식으로 보여준다. */}
-      <TopOpeningsPair games={games} label="가장 많이 둔 오프닝" />
-      {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
-          그 아래 하위 갈래들의 합산임을 보여준다. */}
-      {openingTree.length > 0 && (
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 2 }}>오프닝별 승률</div>
-          <div>
-            {openingTree.map((node) => <OpeningWinrateRow key={node.name} node={node} depth={0} onOpenOpening={onOpenOpening} />)}
-          </div>
-        </div>
+      {!recentOnly && (
+        <>
+          {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
+              애니메이션한다. 바로 아래에 흑 오프닝 레파토리도 같은 방식으로 보여준다. */}
+          <TopOpeningsPair games={games} label="가장 많이 둔 오프닝" />
+          {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
+              그 아래 하위 갈래들의 합산임을 보여준다. */}
+          {openingTree.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 2 }}>오프닝별 승률</div>
+              <div>
+                {openingTree.map((node) => <OpeningWinrateRow key={node.name} node={node} depth={0} onOpenOpening={onOpenOpening} />)}
+              </div>
+            </div>
+          )}
+          {mostUsed.length === 0 && <p style={{ fontSize: 12, color: T.inkSoft }}>수록된 오프닝과 일치하는 대국을 찾지 못했습니다.</p>}
+        </>
       )}
-      {mostUsed.length === 0 && <p style={{ fontSize: 12, color: T.inkSoft }}>수록된 오프닝과 일치하는 대국을 찾지 못했습니다.</p>}
     </div>
   );
 }
@@ -15199,12 +15224,13 @@ const CHANGELOG = [
       "체스보드에서 기물 드래그가 잘 안 되던 문제를 고쳤어요 — 이제 기물이 있는 칸 어디를 짚어도 드래그가 바로 시작되고, 보드 위에서는 화면이 스크롤로 새지 않고 드래그만 되도록 했어요.",
       "일일 퀘스트의 오프닝 플레이 문구에 백/흑 진영이 함께 표시돼요(예: '흑으로 시칠리안 디펜스'). 문구 속 'chess.com'을 누르면 실제 chess.com으로 이동해요(모바일에서 앱이 깔려 있으면 앱으로 열려요).",
       "도감 탭 모식도 위 안내 문구를 지우고, 그 자리에 도감 해금률을 표시했어요. 개발자가 새로 추가한 이론 수가 모식도에 제대로 안 나타나던 문제도 고쳤어요.",
-      "모바일에 chess.com 앱이 설치돼 있는데도 링크를 누르면 항상 웹사이트로만 열리던 문제를 고쳤어요 — 이제 앱이 있으면 앱으로 바로 열려요.",
+      "모바일에서 chess.com 링크를 눌렀을 때 새 탭 대신 항상 같은 화면에서 이동하도록 고쳤어요(앱 연결은 chess.com 쪽 설정에도 달려 있어 기기·브라우저에 따라 다를 수 있어요).",
       "유산이 하나만 등록돼 있어도 블록 크기가 커지지 않도록 고쳤어요. 등급 아이콘은 블록 우상단에 더 크게, 살짝 튀어나오게 배치하고 뒤에 있던 원형 배경은 없앴어요. 수정 버튼은 우하단으로 옮겼어요.",
       "알림 카드와 수 아이콘 설명 말풍선이 모바일에서 화면 밖으로 잘려 보이던 문제를 완전히 고쳤어요.",
       "학습 탭 체스보드에 FEN을 붙여넣으면 이제 그 포지션부터 자유롭게 이어서 둘 수 있어요('FEN 모드') — 그 포지션에서 처음 두는 수부터 수 번호가 새로 1.으로 시작하고, 캐슬링 같은 규칙도 그 FEN의 정보에 맞게 정확히 판정돼요. 예전의 읽기 전용 미리보기는 없앴어요.",
       "퍼즐 탭의 '일일 퍼즐' 글자 크기를 '추천 퍼즐'과 맞추고, 앞의 아이콘을 달력 이모티콘으로 바꿨어요.",
-      "그랜드마스터 티어에 도달하면 프로필 사진에 무지개 그라데이션 테두리가 둘리고, XP 게이지 바도 같은 색으로 빛나며 옆에 획득한 별 개수가 표시돼요. 채팅에서 그랜드마스터가 보낸 메시지는 상대방 화면에도 같은 무지개 그라데이션 말풍선으로 보여요.",
+      "그랜드마스터 티어에 도달하면 프로필 사진과 티어 로고 테두리에 무지개 그라데이션이 둘리고, XP 게이지 바도 같은 색으로 빛나며 옆에 획득한 별 개수가 표시돼요.",
+      "유산을 만들 때 'chess.com 대국에서 선택'을 누르면 이제 다른 통계 없이 '최근 대국' 목록만 간단히 보여줘요.",
     ]
   },
   {
@@ -17094,20 +17120,6 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   // 늘어나려면 부모도 그만큼의 높이를 flex로 마련해 둬야 하므로, 그런 부모를 보장하지 않는 다른
   // 호출부(FriendsModal의 미니 채팅 뷰 등)는 이 prop을 넘기지 않아 기존 고정 높이 레이아웃을 그대로 쓴다.
   const narrow = fillNarrow;
-  // (사용자 요청) 그랜드마스터가 보낸 메시지는 상대에게도 무지개 그라데이션 말풍선으로 보인다 —
-  // uid 기준으로 나·상대 두 사람의 xp를 한 번에 조회해 각자의 티어를 판정한다.
-  const [gmSenders, setGmSenders] = useState({});
-  useEffect(() => {
-    let cc = false;
-    usersProfiles([myUid, otherUid]).then((pm) => {
-      if (cc || !pm) return;
-      const next = {};
-      if (pm[myUid]) next[myUid] = tierFromXp((pm[myUid].pub && pm[myUid].pub.xp) || 0).tier.key === "grandmaster";
-      if (pm[otherUid]) next[otherUid] = tierFromXp((pm[otherUid].pub && pm[otherUid].pub.xp) || 0).tier.key === "grandmaster";
-      setGmSenders(next);
-    });
-    return () => { cc = true; };
-  }, [myUid, otherUid]);
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -17436,7 +17448,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                     </div>
                   )}
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
-                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: gmSenders[m.from_uid] ? tierGradientCss("grandmaster") : (mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff"), color: (mine || gmSenders[m.from_uid]) ? "#241509" : T.ink, border: (mine || gmSenders[m.from_uid]) ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{renderMentionText(m.body)}</span>}
+                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{renderMentionText(m.body)}</span>}
                 </span>
               </div>
               </div>
