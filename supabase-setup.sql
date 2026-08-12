@@ -626,13 +626,15 @@ grant execute on function public.friend_suggestions(int) to authenticated;
 -- (order=pub->>xp.desc)로는 "9000"이 "20000"보다 앞에 오는 등 자릿수가 다르면 숫자 크기와
 -- 다르게 정렬된다. 숫자로 캐스팅해 정렬하도록 서버 함수로 만든다. profiles는 이미 누구나
 -- 읽을 수 있어(위 1번 섹션 "profiles select all") SECURITY DEFINER가 필요 없다(puzzle_rank와 동일).
+-- (v0.3.3) 경험치를 아직 하나도 얻지 못한 계정(신규 가입 직후 등)도 순위에서 빠지지 않도록
+-- xp>0 필터를 없앤다 — 존재하는 모든 계정을 대상으로 순위를 매겨야 "0위 근처"의 유저도 검색 시
+-- 리더보드에서 자신의 위치를 확인할 수 있다.
 drop function if exists public.leaderboard_top(int) cascade;
 create or replace function public.leaderboard_top(p_limit int default 8)
 returns table(id uuid, username text, pub jsonb) language sql stable as $$
   select id, username, pub
   from public.profiles
-  where coalesce((pub->>'xp')::bigint, 0) > 0
-  order by coalesce((pub->>'xp')::bigint, 0) desc
+  order by coalesce((pub->>'xp')::bigint, 0) desc, username asc
   limit p_limit;
 $$;
 grant execute on function public.leaderboard_top(int) to anon, authenticated;

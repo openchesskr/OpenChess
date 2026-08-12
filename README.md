@@ -74,6 +74,21 @@ v0.3.2에서 채팅·프로필·검색 창(`ChatsModal`·`ChatUserProfileModal`�
 
 누르면 `LegacyRevealScreen`이 뜬다 — 먼저 그 암석판이 확대되며 룬 문자가 밝기·`text-shadow` 강도를 오가며 빛나고(`charge` 단계, ~0.95초), 이어서 전체 화면 "빛의 체스보드"로 전환한다(`board` 단계). 이 보드는 기존 나무 질감 `Board` 대신 새로 만든 `LegacyLightBoard`로, 반투명 격자선과 `PieceGlyph`에 `drop-shadow` 발광 필터를 씌운 기물로 "허공에 뜬 빛"을 표현하고, 방금 둔 수의 도착 칸에는 원형 발광 하이라이트(`sanSrc`로 계산)를 씌운다. 지정된 수부터 시작해 1.15초 간격으로 한 수씩(`setTimeout` 재귀 스케줄링, 반복 `setInterval` 아님) `playCount`만큼 자동 재생하고, 끝나면 "다시 보기" 버튼이 뜬다.
 
+**기능 — 유저 검색 리더보드에 모든 계정을 최대 100위까지**
+`leaderboard_top(p_limit)` SQL 함수가 `where coalesce((pub->>'xp')::bigint, 0) > 0` 조건으로 경험치가 0인 계정을 아예 순위 밖으로 걸러내고 있었다 — 신규 가입 직후처럼 아직 아무 활동이 없는 계정은 검색해도 리더보드에 전혀 보이지 않았다. 이 필터를 없애 `profiles` 테이블의 모든 계정이 XP 내림차순(동점이면 아이디 오름차순)으로 순위에 오르도록 고쳤다. 클라이언트 쪽 `UserSearchModal`의 기본 추천 화면이 부르는 `leaderboardTop(8)` 호출도 `leaderboardTop(100)`으로 올려, 검색 전 기본 화면에서 최대 100위까지 볼 수 있게 했다(1~3위는 기존처럼 메달 이미지, 4위부터는 숫자로 표시 — `userSearchRow`의 `rank` 분기는 이미 임의 순위를 지원해 추가 변경이 필요 없었다).
+
+**UX — 오프닝 트리 빈 공간 스크롤 가속 되돌리기**
+v0.3.2에서 트리 반지름이 커진 만큼 화면에 블록이 하나도 안 보이는 빈 공간에서는 드래그·휠 감도를 기본(1.5배)보다 더 올렸었는데(`SCHEMATIC_DRAG_MULT_EMPTY`/`SCHEMATIC_WHEEL_MULT_EMPTY`, `anyItemVisible` 판정으로 매 이동마다 전환), 막상 써 보니 블록이 있다/없다 경계를 넘나들 때 감도가 튀는 느낌이 오히려 어색하다는 피드백을 받았다. 빈 공간 전용 배율과 그 판정 로직을 완전히 제거하고, `onPointerMove`·휠 핸들러 모두 항상 기본 배율(`SCHEMATIC_DRAG_MULT`/`SCHEMATIC_WHEEL_MULT`, 1.5배)만 쓰도록 되돌렸다.
+
+**디자인 — 유산 암석판을 실제 이미지 자산으로, 새겨지는 수는 Merriweather 폰트로**
+`LegacyStoneTile`·`LegacyRevealScreen`의 `charge` 단계가 순수 CSS 그라디언트로 흉내 내던 돌 표면을 사용자가 제공한 원형 석판 텍스처 이미지(`public/legacy-stone.png`, 그린 스크린 배경을 PIL로 알파 채널만 남기고 잘라내 480×480으로 정리)로 교체했다. 이미지 위에 기존처럼 어두운 비네트(radial-gradient)를 얹어 글자 대비를 유지한다. 새겨지는 수 표기(`legacyMoveLabel`) 글꼴은 `ui-monospace`에서 새 상수 `LEGACY_FONT`("Merriweather")로 바꿨다 — `index.html`의 Google Fonts `<link>`에 `Merriweather:ital,wght@0,400;0,700;0,900;1,400`을 추가했다.
+
+**기능 — 유산 재생 애니메이션에 수 체계 아이콘·명암 격자·예고편 추가**
+세 가지를 함께 넣었다. (1) `LegacyEntry`에 `kinds`(전체 수순과 같은 길이의 등급 배열, `LegacyManageModal`이 저장 시 이미 갖고 있던 `analyzeGame` 결과에서 그대로 떼어옴 — 재생 시 엔진을 다시 돌리지 않는다) 필드를 추가하고, `LegacyLightBoard`에 `haloKind` prop을 새로 받아 방금 둔 수의 도착 칸 위에 다른 화면과 똑같은 `badgeIcon(kind)` 배지를 원형으로 띄운다. (2) 지금까지 모든 칸이 투명도만 같던 `LegacyLightBoard`를 `(r+c)%2`로 밝은/어두운 칸을 구분해, 각각 다른 배경 불투명도(`rgba(170,205,255,.13)` / `rgba(40,55,85,.16)`)를 줘 "빛의 밝기 차이"로 체스보드 격자 패턴을 표현한다. (3) `LegacyRevealScreen`에 `charge`와 `board` 사이에 새 `preview` 단계를 추가했다 — 전체 기보를 처음 수부터 마지막 수까지 45ms 간격으로 빠르게 훑어 보여준 뒤(느린 재생과 같은 컴포넌트를 재사용하되 아이콘 배지는 이 단계에서는 숨김), 지정된 시작 수로 되돌아가 기존 1.15초 간격의 느린 재생(`board` 단계)으로 이어진다.
+
+**디자인 — 팝업 제목 글꼴을 Bagel Fat One으로**
+"굵고 각진 한글 디스플레이 폰트"로 쓰던 `GAME_FONT` 상수는 퀘스트 클리어·칭호 획득·티어 승급 팝업의 큰 제목(정확히 이 3곳에만 쓰여 그 자체로 "팝업 Title 텍스트"의 전체 목록이었다) 세 곳에서만 쓰이고 있었다. 이 상수의 폰트만 `'Gasoek One'`에서 `'Bagel Fat One'`로 교체했다(`index.html`의 Google Fonts `<link>`에 `Bagel+Fat+One` 추가) — 사용하는 3곳 모두 코드 변경 없이 자동으로 새 폰트를 받는다.
+
 ### OpenChess v0.3.2 — 2026/8/12
 
 **버그 수정 — 아군 폰이 지키는 칸으로 가는 수가 잘못 "탁월한 수"로 판정되던 문제**
