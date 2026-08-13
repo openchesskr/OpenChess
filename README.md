@@ -154,6 +154,13 @@ v0.3.2에서 트리 반지름이 커진 만큼 화면에 블록이 하나도 안
 **기능 — 유산 재생 화면에 나온 모든 수의 등급 아이콘 표시, PGN 직접 입력 시 진영 선택**
 그동안 등급 아이콘은 방금 둔 마지막 한 수(`haloKind`)만 보여주고, 그다음 수로 넘어가면 사라졌다 — `playCount`가 1보다 크면 이전 수의 아이콘이 화면에서 없어지는 셈이었다. `LegacyRevealScreen`에 `kindAt(i)` 헬퍼를 두고 `startCount`부터 `appliedCount`까지 이미 재생된 모든 수의 등급을 매번 다시 모아(`playedKinds`, `useMemo`), 보드 아래에 순서대로 나란히 쌓이도록 바꿨다(각 아이콘은 자기 등급 색으로 은은하게 발광). 또한 `LegacyManageModal`의 "PGN 직접 입력" 경로는 대국 데이터에 진영 정보가 전혀 없어(chess.com 선택은 `g.color`로 자동 판단) 재생 화면에서 어느 쪽을 아래에 둘지 알 수 없었다 — 붙여넣기 단계에 백/흑 토글을 추가해 사용자가 직접 고르게 하고, 그 값을 `entry.side`로 저장한다. `LegacyLightBoard`가 실제 `Board` 컴포넌트와 같은 방식(행·열 모두 뒤집기 + halo 좌표 변환)으로 `flip` prop을 받도록 확장해, `side === "b"`면 재생 화면에서 항상 흑이 아래로 오도록 뒤집는다(구버전 항목은 `side`가 없어 기존처럼 백 기준 그대로 표시).
 
+**기능 — 유산 등록에 "지정한 수 이전 N수"도 함께 선택, 기보 타이핑에 지정한 수 강조 연출, 체스보드 등장을 빛으로 그리는 연출, Playfair Display 폰트 전면 교체**
+네 가지를 한 번에 손봤다.
+1) `LegacyManageModal`의 "count" 단계에 `beforeCount` 입력을 추가했다(0~`moveIndex`, 기본 0) — 기존 `playCount`(지정한 수부터 앞으로 몇 수)와 별개로, 지정한 수보다 몇 수 전부터 재생을 시작할지 고를 수 있다. `LegacyRevealScreen`의 `startCount`가 `moveIndex`에서 `Math.max(0, moveIndex - beforeCount)`로 바뀌었고, 등급 아이콘 트레일(`playedKinds`)도 이 확장된 범위를 그대로 반영한다.
+2) 기보 타이핑 애니메이션에서 유산으로 지정한 수(`moveIndex`)가 나타나기 직전·직후 각각 2초씩 크게 멈추고(기존 토큰 간격은 80ms 그대로), 그 순간 화면이 어두워지며(반투명 검은 오버레이) 타이핑 컨테이너 전체가 확대되고(scale 1→1.14), 지정한 수의 텍스트만 그 유산 등급 색(`QCOLOR[typeInfo.kind]`)으로 크고 진하게 등장하며(`legacyHeroPop` 키프레임), 그와 동시에 이미 나와 있던 다른 토큰들이 지정한 수로부터의 거리에 비례해 순차적으로 한 번 흔들린다(`legacyWaveShake` 키프레임, 파동처럼 퍼져나가는 느낌). 각 토큰을 하나의 문자열로 합쳐 그리던 것을 개별 `<span>`으로 바꿔야 토큰별 스타일·애니메이션이 가능해, 그렇게 구조를 바꿨다(흔들림은 `waveNonce`가 바뀔 때 그 시점까지의 토큰들만 다시 마운트시켜 키프레임을 정확히 한 번만 재생시키는 방식).
+3) `board` 단계로 전환될 때, 체스보드의 64칸이 한꺼번에 나타나지 않고 영사기 블록이 있는 하단 중앙에서 빛이 퍼져나가듯 칸마다 조금씩 늦게(칸-중심 거리 × 45ms) 나타나도록 `LegacyLightBoard`의 각 칸을 `motion.div`로 바꿨다 — `LegacyLightBoard`는 수가 진행돼도 다시 마운트되지 않으므로(칸 컴포넌트 자체는 유지되고 `board`/`halo` prop만 갱신됨) 이 등장 연출은 보드가 처음 나타날 때 딱 한 번만 재생된다.
+4) 기보·자주 두는 수 등 사이트 전반에서 써 온 `SEQ_FONT`(Playfair Display)를 유산 재생 화면의 기보에 쓰던 `LEGACY_FONT`(Merriweather)와 통일했다 — `SEQ_FONT`의 값 자체를 Merriweather로 바꿔, 참조하는 모든 화면(약 10곳)에 자동으로 반영되게 했다. 더 이상 쓰이지 않는 Playfair Display Google Fonts 임포트도 `index.html`에서 제거했다.
+
 ### OpenChess v0.3.2 — 2026/8/12
 
 **버그 수정 — 아군 폰이 지키는 칸으로 가는 수가 잘못 "탁월한 수"로 판정되던 문제**
