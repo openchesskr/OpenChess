@@ -9226,6 +9226,19 @@ function anchoredZoomPan(pan, zoom, nextZoom, anchorX, anchorY) {
 // (v0.1.2 기능) 도감 오프닝 트리 캔버스 좌상단에는 검색창이 떠 있어(대략 이 높이만큼), 팬 한계가
 // 스냅한 블록이 그 뒤에 가려지지 않도록 유효 뷰포트 상단을 이만큼 안으로 줄인다.
 const SCHEMATIC_TOP_INSET = 44;
+// (사용자 요청) 나침반 중심 회로 칩을 "박스 자신의 전체 높이 절반"이 아니라 "실제로 화면에 보이는
+// 범위의 절반"에 맞춘다 — 모바일처럼 박스(높이 640px 고정)가 화면 세로 폭보다 커서 아래쪽이 화면
+// 밖으로 넘어가면(헤더·탭 아래로 시작해 하단 고정 내비게이션 위까지가 실제 가시 영역), 박스 전체를
+// 기준으로 중앙을 잡을 때보다 칩이 훨씬 아래로 처져 보인다. 하단 고정 내비게이션(66px)에 가려지는
+// 몫도 뺀다.
+function visibleBoxCenter(rect) {
+  const navH = 66;
+  const vTop = Math.max(rect.top, 0), vBottom = Math.min(rect.bottom, window.innerHeight - navH);
+  const vLeft = Math.max(rect.left, 0), vRight = Math.min(rect.right, window.innerWidth);
+  const cy = vBottom > vTop ? (vTop + vBottom) / 2 - rect.top : rect.height / 2;
+  const cx = vRight > vLeft ? (vLeft + vRight) / 2 - rect.left : rect.width / 2;
+  return { x: cx, y: cy };
+}
 function clampPanAxis(p, viewportSize, min, max, minVisible) {
   const lo = minVisible - max, hi = (viewportSize - minVisible) - min;
   if (lo > hi) return (lo + hi) / 2;
@@ -9973,13 +9986,16 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   useEffect(() => {
     const id = setInterval(() => {
       if (userPannedRef.current) return;
-      const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
+      const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, top: 0, bottom: 640, left: 0, right: 640 };
       const z = zoomRef.current;
       // (사용자 요청으로 재확인해 수정) 나침반 중심 회로 칩은 local (centerX,centerY)에 자신의
       // 중심이 오도록 그려진다(`left: centerX - CHIP_SIZE/2`) — 블록(boxW×boxH) 좌상단 좌표가
       // 아니라 이미 그 자체로 중심점이므로, 다른 곳(노드 중앙 정렬)처럼 boxW/2·boxH/2를 더하면
       // 오히려 칩이 뷰포트 정중앙에서 반 칸 어긋나 보인다 — 더하지 않고 그대로 맞춘다.
-      setPan({ x: rect.width / 2 - centerRef.current.x * z, y: rect.height / 2 - centerRef.current.y * z });
+      // (사용자 요청) 모바일에서 박스가 화면 세로 폭보다 커서 더 멀어져 보이던 문제 — 박스 전체
+      // 높이가 아니라 실제로 화면에 보이는 범위를 기준으로 중앙을 잡는다(visibleBoxCenter).
+      const vc = visibleBoxCenter(rect);
+      setPan({ x: vc.x - centerRef.current.x * z, y: vc.y - centerRef.current.y * z });
     }, 150);
     return () => clearInterval(id);
   }, []);
@@ -10342,8 +10358,9 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             userPannedRef.current = false;
             selectionLockRef.current = false;
             setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
-            const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-            setPan({ x: rect.width / 2 - centerRef.current.x * SCHEMATIC_ZOOM_LABEL_BASE, y: rect.height / 2 - centerRef.current.y * SCHEMATIC_ZOOM_LABEL_BASE });
+            const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, top: 0, bottom: 640, left: 0, right: 640 };
+            const vc = visibleBoxCenter(rect);
+            setPan({ x: vc.x - centerRef.current.x * SCHEMATIC_ZOOM_LABEL_BASE, y: vc.y - centerRef.current.y * SCHEMATIC_ZOOM_LABEL_BASE });
           }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <RotateCcw size={13} />
           </button>
@@ -15236,7 +15253,7 @@ const CHANGELOG = [
       "그랜드마스터 티어에 도달하면 프로필 사진과 티어 로고 테두리에 무지개 그라데이션이 둘리고, XP 게이지 바도 같은 색으로 빛나며 옆에 획득한 별 개수가 표시돼요.",
       "유산을 만들 때 'chess.com 대국에서 선택'을 누르면 이제 다른 통계 없이 '최근 대국' 목록만 간단히 보여줘요.",
       "퍼즐 탭 티어 표시에서 그랜드마스터 별 개수가 티어 이름과 겹쳐 보이던 문제를 고쳤어요 — 게이지 바 오른쪽으로 옮겼어요.",
-      "도감 오프닝 트리를 처음 열었을 때 정중앙 회로 칩이 화면 한가운데에 정확히 오지 않던 문제를 고쳤어요.",
+      "도감 오프닝 트리를 처음 열었을 때 정중앙 회로 칩이 화면 한가운데에 정확히 오지 않던 문제를 고쳤어요 — 모바일처럼 화면이 좁아 트리 상자 아래쪽이 화면 밖으로 잘리는 경우에도 실제로 보이는 범위를 기준으로 중앙을 잡아요.",
       "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼, 기물 칸을 감싸던 색 테두리를 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시돼요(예전에 만든 유산도 지정한 수만큼은 확실히 표시돼요). 배경은 검은색으로, 기보 타이핑 속도는 조금 느리게 바꿨어요.",
     ]
   },
