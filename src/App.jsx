@@ -15144,7 +15144,8 @@ function MyProfileCard({ card, profile, setProfile, user, currentTitle, totalXp,
       <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom onManageLegacy={(key) => setManagingLegacy(key)} />
       {managingLegacy && (
         <LegacyManageModal
-          typeInfo={LEGACY_TYPES.find((t) => t.key === managingLegacy)}
+          typeInfo={LEGACY_TYPES.find((t) => t.key === legacyBaseKey(managingLegacy))}
+          slotKey={managingLegacy}
           existingEntry={profile.legacies && profile.legacies[managingLegacy]}
           chesscom={chesscom}
           username={profile.chesscom}
@@ -15258,6 +15259,9 @@ const CHANGELOG = [
       "유산 재생 화면에서 이제 마지막 한 수가 아니라, 이번에 재생된 모든 수의 등급 아이콘이 함께 보여요. PGN을 직접 입력해 유산을 만들 때는 어느 진영으로 뒀는지 고를 수 있고, 그 진영이 재생 화면에서 항상 아래쪽에 오도록 보드가 뒤집혀요.",
       "유산을 만들 때 지정한 수보다 몇 수 전부터 보여줄지도 고를 수 있어요. 기보 타이핑 애니메이션에서 유산으로 지정한 수가 나올 땐 화면이 어두워지며 확대되고, 그 등급 색으로 크게 등장하면서 주변 글자들이 파도처럼 한 번 흔들려요. 체스보드가 나타날 땐 영사기에서 나온 빛이 칸을 하나씩 그리듯 빠르게 채워져요.",
       "기보·자주 두는 수 등에 쓰던 서체를 유산 재생 화면의 기보 서체와 통일했어요.",
+      "유산 재생에서 체스보드에 지정한 수가 두어지는 순간에도 화면이 확대·어두워지고 모든 기물이 한 번 흔들려요. 등급 아이콘 목록에서 지정한 수의 아이콘은 항상 정중앙에 오고 금색 테두리로 구분돼요.",
+      "유산을 만들 때 지정한 수 앞뒤로 몇 수 보여줄지를 직접 입력하는 대신 1~7수 중에서 선택 박스로 고르도록 바꿨어요.",
+      "그랜드마스터 티어에 도달하면 유산 종류(최선·유일·탁월)마다 칸을 하나씩 더 만들 수 있어요.",
       "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼, 기물 칸을 감싸던 색 테두리를 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시돼요(예전에 만든 유산도 지정한 수만큼은 확실히 표시돼요). 배경은 검은색으로, 기보 타이핑 속도는 조금 느리게 바꿨어요.",
     ]
   },
@@ -17679,6 +17683,9 @@ const LEGACY_TYPES = [
   { key: "only", kind: "only", label: "유일한 유산", short: "유일" },
   { key: "brilliant", kind: "brilliant", label: "탁월한 유산", short: "탁월" },
 ];
+// (사용자 요청) 그랜드마스터 보너스 슬롯 키(예: "best2")에서 기반 종류 키("best")를 뽑아낸다 —
+// LEGACY_TYPES는 여전히 종류 3개뿐이라, 저장/조회 키와 등급 정보(kind/label/short) 조회 키를 분리한다.
+function legacyBaseKey(slotKey) { return slotKey && slotKey.endsWith("2") ? slotKey.slice(0, -1) : slotKey; }
 function legacyMoveLabel(entry) {
   if (!entry || !entry.sans || entry.sans[entry.moveIndex] == null) return "";
   return moveNumber(entry.moveIndex) + entry.sans[entry.moveIndex];
@@ -17727,10 +17734,10 @@ function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit }) {
 }
 // (사용자 요청) 빈 유산 칸도 채워진 칸과 같은 금색·갈색 블록 디자인을 그대로 쓰고, 가운데에 "+"만
 // 다르게 보여준다 — 추가 전후로 블록 크기·재질이 달라 보이지 않게 한다.
-function LegacyEmptySlot({ typeInfo, onClick }) {
+function LegacyEmptySlot({ typeInfo, onClick, bonus }) {
   return (
     <div style={{ position: "relative", flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
-      <button onClick={onClick} className="press" title={typeInfo.label + " 추가"} style={LEGACY_BLOCK_BTN_STYLE}>
+      <button onClick={onClick} className="press" title={typeInfo.label + (bonus ? " 추가(그랜드마스터 보너스 칸)" : " 추가")} style={LEGACY_BLOCK_BTN_STYLE}>
         <LegacyBlockDecor />
         <span aria-hidden="true" style={{ position: "relative", fontSize: 26, fontWeight: 300, lineHeight: 1, color: T.brassHi, opacity: 0.85 }}>+</span>
       </button>
@@ -17745,13 +17752,17 @@ function LegacyEmptySlot({ typeInfo, onClick }) {
 // 밝은/어두운 칸은 색이 아니라 (r+c) 홀짝에 따른 배경 불투명도 차이(=빛의 밝기 차이)로 구분한다.
 // (사용자 요청) flip — 사용자가 지정한 진영(entry.side)이 항상 아래에 오도록, 실제 Board 컴포넌트와
 // 같은 방식(행·열 모두 뒤집기)으로 반전한다.
-function LegacyLightBoard({ board, size = 320, halo, haloKind, flip }) {
+// (사용자 요청) heroNonce — 유산으로 지정한 수가 두어지는 순간 부모(LegacyRevealScreen)가 한 번만
+// 올려주는 값. 그 순간까지 이미 그려져 있던 기물들만 새로 마운트시켜, 방금 둔 칸(halo)에서부터
+// 퍼져나가는 흔들림(legacyWaveShake)을 정확히 한 번 재생한다.
+function LegacyLightBoard({ board, size = 320, halo, haloKind, flip, heroNonce = 0 }) {
   const cell = Math.max(1, Math.floor(size / 8));
   const rows = flip ? [...board].reverse().map((r) => [...r].reverse()) : board;
   // (사용자 요청) 보드가 처음 나타날 때, 아래(영사기 블록이 있는 하단 중앙)에서 나온 빛이 격자를
   // 한 칸씩 그리듯 빠르게 퍼져나가는 연출 — LegacyLightBoard 인스턴스는 수가 진행돼도 다시 마운트
   // 되지 않으므로(appliedCount는 board prop만 바꾼다) motion의 initial→animate는 이 최초 등장에만 재생된다.
   const originR = 7, originC = 3.5;
+  const haloDisplay = halo ? (flip ? [7 - halo[0], 7 - halo[1]] : halo) : null;
   return (
     <div style={{ position: "relative", width: cell * 8, height: cell * 8, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", filter: "drop-shadow(0 0 26px rgba(196,154,80,.28))" }}>
       {rows.map((row, r) => row.map((p, c) => {
@@ -17771,8 +17782,13 @@ function LegacyLightBoard({ board, size = 320, halo, haloKind, flip }) {
                 {badgeIcon(haloKind, cell * 0.38)}
               </div>
             )}
-            {p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} pieceSkin="classic" style={{
-              filter: "drop-shadow(0 0 3px " + (p.c === "w" ? "#FFF6DE" : "#E9C98A") + ") drop-shadow(0 0 10px " + (p.c === "w" ? T.brassHi : "#8A6A2F") + "cc)" }} />}
+            {p && (
+              <span key={"piece-" + heroNonce} style={{ display: "inline-flex", animationName: heroNonce > 0 ? "legacyWaveShake" : "none", animationDuration: "0.5s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
+                animationDelay: (haloDisplay ? Math.hypot(r - haloDisplay[0], c - haloDisplay[1]) : 0) * 0.03 + "s" }}>
+                <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} pieceSkin="classic" style={{
+                  filter: "drop-shadow(0 0 3px " + (p.c === "w" ? "#FFF6DE" : "#E9C98A") + ") drop-shadow(0 0 10px " + (p.c === "w" ? T.brassHi : "#8A6A2F") + "cc)" }} />
+              </span>
+            )}
           </motion.div>
         );
       }))}
@@ -17876,6 +17892,18 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
     return out;
   }, [kinds, moveIndex, typeInfo.kind, startCount, appliedCount]);
   const color = QCOLOR[typeInfo.kind];
+  // (사용자 요청) 체스보드에서도 유산으로 지정한 수가 두어지는 순간, 타이핑 단계와 같은 느낌으로
+  // 확대·어둡게·기물 흔들림 연출을 준다 — heroNonce는 그 순간에 한 번만 올라가(heroBoardShownRef로
+  // 중복 방지), LegacyLightBoard 안에서 기물 흔들림 키프레임을 정확히 한 번만 재생시키는 데 쓴다.
+  const boardHeroActive = phase === "board" && appliedCount - 1 === moveIndex;
+  const [heroNonce, setHeroNonce] = useState(0);
+  const heroBoardShownRef = useRef(false);
+  useEffect(() => {
+    if (boardHeroActive && !heroBoardShownRef.current) {
+      heroBoardShownRef.current = true;
+      setHeroNonce((n) => n + 1);
+    }
+  }, [boardHeroActive]);
   // (사용자 요청) 재생 화면의 체스보드를 더 크게(최대 360→440).
   const [lightBoardSize, boardWrapRef] = useBoardSize(440);
   const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
@@ -17925,18 +17953,35 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           </div>
         </motion.div>
       ) : (
-        <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: boardHeroActive ? 1.1 : 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
+          {/* (사용자 요청) 유산으로 지정한 수가 체스보드에 두어지는 순간에도 주변이 어두워진다. */}
+          <motion.div aria-hidden="true" animate={{ opacity: boardHeroActive ? 1 : 0 }} transition={{ duration: 0.4 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
+          <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
             {/* (사용자 요청) 재생 화면 체스보드를 더 크게 키우고(useBoardSize(440)), "탁월한 유산" 같은
                 유산 등급 라벨은 없앤다. */}
             <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
-              <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} flip={flip} />
+              <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} flip={flip} heroNonce={heroNonce} />
             </div>
-            {/* (사용자 요청) 최신 수 하나만이 아니라, 이번 재생에서 나온 모든 수의 등급 아이콘을 순서대로 보여준다. */}
-            <div style={{ minHeight: 30, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 6, margin: "6px 0 2px", maxWidth: lightBoardSize }}>
-              {playedKinds.map(({ i, k }) => (
-                <span key={i} style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>
-              ))}
+            {/* (사용자 요청) 최신 수 하나만이 아니라, 이번 재생에서 나온 모든 수의 등급 아이콘을 순서대로
+                보여준다 — 유산으로 지정한 수의 아이콘은 3열 그리드로 항상 정중앙에 고정하고, 금색
+                테두리로 다른 아이콘들과 구분한다. */}
+            <div style={{ minHeight: 30, display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 6, margin: "6px 0 2px", width: "100%", maxWidth: lightBoardSize }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: 6 }}>
+                {playedKinds.filter((x) => x.i < moveIndex).map(({ i, k }) => (
+                  <span key={i} style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>
+                ))}
+              </div>
+              <div>
+                {playedKinds.filter((x) => x.i === moveIndex).map(({ i, k }) => (
+                  <span key={i} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 3, borderRadius: "50%", border: "2px solid " + T.brassHi, boxShadow: "0 0 12px 2px rgba(236,203,134,.85), 0 0 4px " + QCOLOR[k], background: "rgba(236,203,134,.12)" }}>{badgeIcon(k, 26)}</span>
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-start", flexWrap: "wrap", gap: 6 }}>
+                {playedKinds.filter((x) => x.i > moveIndex).map(({ i, k }) => (
+                  <span key={i} style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>
+                ))}
+              </div>
             </div>
             {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
             <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
@@ -17952,34 +17997,43 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
     </motion.div>
   );
 }
-// 유산 세 칸(최선/유일/탁월) — 프로필의 "푼 퍼즐" 바로 위에 표시. onManageLegacy가 있으면(=내
-// 프로필) 빈 칸에 추가 버튼·채워진 칸에 편집 버튼이 뜨고, 없으면(=남의 프로필) 채워진 칸만
-// 읽기 전용으로 보여준다(유산이 하나도 없으면 섹션 자체를 감춘다).
-function LegacyStoneRow({ legacies, onManageLegacy }) {
+// 유산 칸 — 프로필의 "푼 퍼즐" 바로 위에 표시. onManageLegacy가 있으면(=내 프로필) 빈 칸에 추가
+// 버튼·채워진 칸에 편집 버튼이 뜨고, 없으면(=남의 프로필) 채워진 칸만 읽기 전용으로 보여준다
+// (유산이 하나도 없으면 섹션 자체를 감춘다).
+// (사용자 요청) 그랜드마스터 티어(isGM)면 종류(최선/유일/탁월)마다 칸을 하나씩 더(총 6칸) 쓸 수
+// 있다 — 기존 슬롯 키(best/only/brilliant)는 그대로 두고, 추가 슬롯은 "2"를 붙인 별도 키
+// (best2/only2/brilliant2)로 완전히 독립 저장해 기존 데이터 마이그레이션이 필요 없게 했다.
+function LegacyStoneRow({ legacies, onManageLegacy, isGM }) {
   const [openKey, setOpenKey] = useState(null);
-  const any = LEGACY_TYPES.some((t) => legacies && legacies[t.key]) || !!onManageLegacy;
+  const slots = useMemo(() => {
+    const out = [];
+    for (const t of LEGACY_TYPES) { out.push({ slotKey: t.key, typeInfo: t }); if (isGM) out.push({ slotKey: t.key + "2", typeInfo: t }); }
+    return out;
+  }, [isGM]);
+  const any = slots.some((s) => legacies && legacies[s.slotKey]) || !!onManageLegacy;
   if (!any) return null;
-  const openInfo = openKey ? LEGACY_TYPES.find((t) => t.key === openKey) : null;
-  const openEntry = openInfo && legacies ? legacies[openInfo.key] : null;
+  const openSlot = openKey ? slots.find((s) => s.slotKey === openKey) : null;
+  const openEntry = openSlot && legacies ? legacies[openSlot.slotKey] : null;
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>유산</div>
-      <div className="flex" style={{ gap: 8 }}>
-        {LEGACY_TYPES.map((t) => {
-          const entry = legacies && legacies[t.key];
-          if (entry) return <LegacyStoneTile key={t.key} typeInfo={t} entry={entry} onOpen={() => setOpenKey(t.key)} onEdit={onManageLegacy ? () => onManageLegacy(t.key) : null} />;
-          return onManageLegacy ? <LegacyEmptySlot key={t.key} typeInfo={t} onClick={() => onManageLegacy(t.key)} /> : null;
+      <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
+        {slots.map(({ slotKey, typeInfo: t }) => {
+          const bonus = slotKey.endsWith("2");
+          const entry = legacies && legacies[slotKey];
+          if (entry) return <LegacyStoneTile key={slotKey} typeInfo={t} entry={entry} onOpen={() => setOpenKey(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} />;
+          return onManageLegacy ? <LegacyEmptySlot key={slotKey} typeInfo={t} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /> : null;
         })}
       </div>
       <AnimatePresence>
-        {openInfo && openEntry && <LegacyRevealScreen typeInfo={openInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
+        {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
       </AnimatePresence>
     </div>
   );
 }
 // 유산 만들기/편집 — PGN 직접 입력 또는 chess.com 대국 선택 → analyzeGame으로 전체 채점 → 그
 // 유산이 요구하는 등급(typeInfo.kind)을 만족하는 수만 고를 수 있게 필터링 → 재생할 수 개수 입력 → 저장.
-function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClose, onSave, onDelete }) {
+function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, username, onClose, onSave, onDelete }) {
   const engine = useReviewEngine();
   const [step, setStep] = useState("source"); // source | paste | analyzing | pick | count
   // (사용자 요청) "chess.com 대국에서 선택"을 눌러도 창을 한 번 더 띄우지 않고, 이 자리 바로 아래에
@@ -18037,10 +18091,13 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClos
   const qualifying = result ? result.moves.filter((m) => m.kind === typeInfo.kind) : [];
   const maxPlayCount = sans && moveIndex != null ? Math.max(1, sans.length - moveIndex) : 20;
   const maxBeforeCount = moveIndex != null ? moveIndex : 0;
+  // (사용자 요청) 앞뒤 수는 1~7수 범위로만 고를 수 있다(직접 입력 대신 선택 박스).
+  const playOptions = useMemo(() => Array.from({ length: Math.max(1, Math.min(7, maxPlayCount)) }, (_, i) => i + 1), [maxPlayCount]);
+  const beforeOptions = useMemo(() => Array.from({ length: Math.max(0, Math.min(7, maxBeforeCount)) }, (_, i) => i + 1), [maxBeforeCount]);
   const save = () => {
     if (moveIndex == null || !sans) return;
     const kinds = result ? sans.map((_, i) => { const m = result.moves.find((mm) => mm.ply === i); return m ? m.kind : "pending"; }) : null;
-    onSave(typeInfo.key, { sans, moveIndex, playCount: Math.max(1, Math.min(playCount, maxPlayCount)), beforeCount: Math.max(0, Math.min(beforeCount, maxBeforeCount)), kinds, side, savedAt: Date.now() });
+    onSave(slotKey || typeInfo.key, { sans, moveIndex, playCount: Math.max(1, Math.min(playCount, maxPlayCount)), beforeCount: Math.max(0, Math.min(beforeCount, maxBeforeCount)), kinds, side, savedAt: Date.now() });
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
@@ -18108,7 +18165,7 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClos
                 <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8 }}>"{QLABEL[typeInfo.kind]}"로 채점된 수 중 하나를 골라 주세요.</p>
                 <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
                   {qualifying.map((m) => (
-                    <button key={m.ply} onClick={() => { setMoveIndex(m.ply); setPlayCount(Math.min(5, Math.max(1, sans.length - m.ply))); setBeforeCount(0); setStep("count"); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: "1px solid " + QCOLOR[m.kind], background: "#fff", cursor: "pointer", textAlign: "left" }}>
+                    <button key={m.ply} onClick={() => { setMoveIndex(m.ply); setPlayCount(Math.min(5, Math.max(1, sans.length - m.ply))); setBeforeCount(Math.min(3, m.ply)); setStep("count"); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: "1px solid " + QCOLOR[m.kind], background: "#fff", cursor: "pointer", textAlign: "left" }}>
                       <span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 14)}</span>
                       <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 13, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
                     </button>
@@ -18122,17 +18179,25 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClos
         {step === "count" && moveIndex != null && sans && (
           <div>
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 4 }}>{moveNumber(moveIndex)}{sans[moveIndex]}</div>
-            {/* (사용자 요청) 지정한 수 앞으로도 몇 수 함께 보여줄지(beforeCount) 고를 수 있게 추가 —
-                뒤(과거)에서부터 그만큼 앞당겨 시작해 지정한 수까지 이어지는 흐름을 먼저 보여준다. */}
+            {/* (사용자 요청) 지정한 수 앞뒤로 몇 수 함께 보여줄지를 직접 입력이 아니라 1~7수 범위의
+                선택 박스로 고른다. */}
             <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>이 수보다 몇 수 전부터 보여줄까요?</p>
-            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-              <input type="number" min={0} max={maxBeforeCount} value={beforeCount} onChange={(e) => setBeforeCount(Math.max(0, Math.min(maxBeforeCount, parseInt(e.target.value, 10) || 0)))} style={{ width: 90, padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
-              <span style={{ fontSize: 11.5, color: T.inkSoft }}>수 전부터 (최대 {maxBeforeCount})</span>
-            </div>
+            {beforeOptions.length > 0 ? (
+              <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+                <select value={beforeCount} onChange={(e) => setBeforeCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 13, background: "#fff" }}>
+                  {beforeOptions.map((n) => <option key={n} value={n}>{n}수</option>)}
+                </select>
+                <span style={{ fontSize: 11.5, color: T.inkSoft }}>전부터</span>
+              </div>
+            ) : (
+              <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 12 }}>이 수보다 앞선 수가 없어요.</p>
+            )}
             <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>이 수부터 몇 수까지 재생할까요?</p>
             <div className="flex items-center gap-2">
-              <input type="number" min={1} max={maxPlayCount} value={playCount} onChange={(e) => setPlayCount(Math.max(1, Math.min(maxPlayCount, parseInt(e.target.value, 10) || 1)))} style={{ width: 90, padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
-              <span style={{ fontSize: 11.5, color: T.inkSoft }}>수 (최대 {maxPlayCount})</span>
+              <select value={playCount} onChange={(e) => setPlayCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 13, background: "#fff" }}>
+                {playOptions.map((n) => <option key={n} value={n}>{n}수</option>)}
+              </select>
+              <span style={{ fontSize: 11.5, color: T.inkSoft }}>까지</span>
             </div>
             <div className="flex gap-2" style={{ marginTop: 14 }}>
               <button onClick={() => setStep("pick")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>뒤로</button>
@@ -18173,8 +18238,8 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
           </div>
         </div>
       )}
-      {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. */}
-      <LegacyStoneRow legacies={pub.legacies} onManageLegacy={onManageLegacy} />
+      {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
+      <LegacyStoneRow legacies={pub.legacies} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
