@@ -259,6 +259,12 @@ alter table public.chat_messages add column if not exists puzzle_no bigint;
 alter table public.chat_messages add column if not exists share_reward jsonb;
 -- (v0.1.4 기능) 채팅 메시지 수정 기능 — 발신자가 본인 텍스트 메시지를 고쳤는지 표시.
 alter table public.chat_messages add column if not exists edited boolean not null default false;
+-- (v0.3.3 기능) 유산 공유 카드 — puzzle_no와 같은 패턴. 설정돼 있으면 이 메시지는 유산 미리보기
+-- 카드로 렌더링된다. 값은 슬롯 키 그 자체(best/only/brilliant, 그랜드마스터 보너스 칸이면
+-- best2/only2/brilliant2) — 유산은 퍼즐과 달리 번호별 전역 저장소가 없으므로 데이터를 복제해
+-- 두지 않고, 받는 쪽 화면이 from_uid(=유산 주인)의 "지금" 공개 프로필(profiles.pub.legacies)에서
+-- 그 슬롯을 그대로 읽어와 보여준다(legacyShareSend).
+alter table public.chat_messages add column if not exists legacy_slot text;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -290,7 +296,10 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   update public.chat_messages
     set body = p_body, edited = true
-    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null;
+    -- (v0.3.3) 유산 공유 카드(legacy_slot)도 puzzle_no/share_reward와 마찬가지로 텍스트로 "수정"할
+    -- 수 없는 특수 메시지라 같이 제외한다(클라이언트도 이런 메시지엔 수정 버튼을 안 보여주지만,
+    -- 서버에서도 이중으로 막는다).
+    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null and legacy_slot is null;
 end; $$;
 grant execute on function public.chat_edit_message(bigint, text) to authenticated;
 

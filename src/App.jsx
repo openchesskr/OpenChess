@@ -15266,7 +15266,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.3.3", date: "2026.8.12", dev: ["openchesskr"], items: [
+    version: "0.3.3", date: "2026.8.12", dev: ["openchesskr", "g13sus4"], items: [
       "모바일에서 도감 탭 오프닝 트리를 열면 심하게 버벅이던 문제를 고쳤어요 — 화면에 실제로 보이는 부분만 그리도록 바꿔 훨씬 가벼워졌어요.",
       "추천 퍼즐을 이제 데스크톱에서도 모바일처럼 한 줄 가로 스크롤로 볼 수 있어요.",
       "체스보드에서 기물을 드래그로 옮길 때 더 빠르고 조금 부정확하게 옮겨도 잘 인식되도록 했어요(단순히 누르기만 하는 동작과는 여전히 구분돼요).",
