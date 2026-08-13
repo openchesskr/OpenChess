@@ -15266,6 +15266,11 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.3.4", date: "2026.8.13", dev: ["openchesskr"], items: [
+      "유산 만들기·공유·전체 보기 창을 이제 모바일에서도 채팅·친구 창처럼 화면을 꽉 채우는 전체 화면으로 크게 볼 수 있어요.",
+    ]
+  },
+  {
     version: "0.3.3", date: "2026.8.12", dev: ["openchesskr", "g13sus4"], items: [
       "모바일에서 도감 탭 오프닝 트리를 열면 심하게 버벅이던 문제를 고쳤어요 — 화면에 실제로 보이는 부분만 그리도록 바꿔 훨씬 가벼워졌어요.",
       "추천 퍼즐을 이제 데스크톱에서도 모바일처럼 한 줄 가로 스크롤로 볼 수 있어요.",
@@ -18318,30 +18323,35 @@ function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare
 function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onShare }) {
   const [openTarget, setOpenTarget] = useState(null); // { typeInfo, entry } | null
   const histItems = useMemo(() => (history || []).map((h, idx) => ({ ...h, idx, typeInfo: LEGACY_TYPES.find((t) => t.key === legacyBaseKey(h.slotKey)) })).filter((h) => h.typeInfo).reverse(), [history]);
+  // (v0.3.4 UI) 채팅·프로필·검색·친구 창(v0.3.2~v0.3.3)과 같은 모바일 전체 화면 패턴을 유산 관련
+  // 모달에도 맞춘다 — 이 창만 빠져 있었다.
+  const narrow = useNarrow(640);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", padding: 18 }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>유산 전체 보기</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate onShare={onShare} />
-        {histItems.length > 0 && (
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed #C9B58C" }}>
-            <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>지난 유산</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
-              {histItems.map((h) => (
-                <button key={h.idx} onClick={() => setOpenTarget({ typeInfo: h.typeInfo, entry: h.entry })} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
-                  <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: QCOLOR[h.typeInfo.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(h.typeInfo.kind, 16)}</span>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{legacyMoveLabel(h.entry)}</div>
-                    <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? " · " + new Date(h.replacedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }) + " 교체/삭제됨" : ""}</div>
-                  </div>
-                </button>
-              ))}
+        <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
+          <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate onShare={onShare} />
+          {histItems.length > 0 && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed #C9B58C" }}>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>지난 유산</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+                {histItems.map((h) => (
+                  <button key={h.idx} onClick={() => setOpenTarget({ typeInfo: h.typeInfo, entry: h.entry })} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
+                    <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: QCOLOR[h.typeInfo.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(h.typeInfo.kind, 16)}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{legacyMoveLabel(h.entry)}</div>
+                      <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? " · " + new Date(h.replacedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }) + " 교체/삭제됨" : ""}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
       <AnimatePresence>
         {openTarget && <LegacyRevealScreen typeInfo={openTarget.typeInfo} entry={openTarget.entry} onClose={() => setOpenTarget(null)} />}
@@ -18404,21 +18414,23 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
     else setSendErr("전달하지 못했어요. 잠시 후 다시 시도해 주세요.");
   };
   const color = QCOLOR[typeInfo.kind];
+  // (v0.3.4 UI) 채팅·프로필·검색·친구 창과 같은 모바일 전체 화면 패턴.
+  const narrow = useNarrow(640);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 380, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
           <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />유산 공유</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)" }}>
+        <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)", flexShrink: 0 }}>
           <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 20)}</span>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{legacyMoveLabel(entry)}</div>
             <div style={{ fontSize: 10.5, color: T.inkSoft }}>{typeInfo.label}</div>
           </div>
         </div>
-        <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
+        <div style={{ padding: 12, minHeight: 120, maxHeight: narrow ? undefined : 420, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
           {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
             : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
@@ -18512,13 +18524,17 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
     const kinds = result ? sans.map((_, i) => { const m = result.moves.find((mm) => mm.ply === i); return m ? m.kind : "pending"; }) : null;
     onSave(slotKey || typeInfo.key, { sans, moveIndex, playCount: Math.max(1, Math.min(playCount, maxPlayCount)), beforeCount: Math.max(0, Math.min(beforeCount, maxBeforeCount)), kinds, side, savedAt: Date.now() });
   };
+  // (v0.3.4 UI) 채팅·프로필·검색·친구 창과 같은 모바일 전체 화면 패턴 — 이 창은 chess.com 대국
+  // 선택 시 AccountChessStats(필터·대국 목록)까지 펼쳐지므로 좁은 화면에서 특히 필요했다.
+  const narrow = useNarrow(640);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", padding: 18 }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 460, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
           <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>유산 • {typeInfo.short}</span></div>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
+        <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
         {step === "source" && (
           <div>
             <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 12 }}>이 유산에 새길 대국을 골라 주세요 — {typeInfo.label}은(는) "{QLABEL[typeInfo.kind]}"로 채점된 수만 지정할 수 있어요.</p>
@@ -18618,6 +18634,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

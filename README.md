@@ -26,6 +26,14 @@
 
 ## 버전 기록
 
+### OpenChess v0.3.4 — 2026/8/13
+
+**UI — 유산 관련 모달 3종이 v0.3.2~v0.3.3의 모바일 전체 화면 패턴에서 빠져 있던 문제**
+`ChatsModal`·`ChatUserProfileModal`·`UserSearchModal`(v0.3.2), `FriendsModal`(v0.3.3)은 모바일(`useNarrow(640)`)에서 고정폭 카드 대신 화면을 꽉 채우는 전체 화면으로 전환되는데, 같은 v0.3.3에서 새로 추가된 `LegacyManageModal`(유산 만들기/편집)·`LegacyAllModal`(유산 전체 보기)·`LegacyShareSheet`(유산 공유)는 이 패턴이 빠진 채 `maxWidth: 380~460`의 고정폭 카드로 남아 있었다. 특히 `LegacyManageModal`은 "chess.com 대국에서 선택"을 누르면 필터·최근 대국 목록을 갖춘 `AccountChessStats`를 그 안에 그대로 펼치는데, 이 컴포넌트는 이미 `FriendsModal`·`UserSearchModal`의 전체 화면 프로필 서브뷰 안에서 검증된 채로 쓰이고 있어 좁은 고정폭 카드 안에 있을 이유가 없었다. 세 컴포넌트 모두 `useNarrow(640)`을 추가하고, 기존 전체 화면 모달들이 쓰는 패턴(모바일에서 `width/height: 100%`·`borderRadius: 0`·`border: none`, 헤더는 `flexShrink: 0`으로 고정하고 본문만 `flex: "1 1 auto"` + `overflowY: "auto"`로 스크롤)을 그대로 맞췄다. `LegacyManageModal`·`LegacyAllModal`은 원래 헤더와 본문이 한 덩어리 `padding` 블록이었던 것을, 이 패턴에 맞춰 제목 줄을 별도 `flexShrink: 0` 헤더로 분리했다.
+
+**시스템 — `package.json`의 `version` 필드가 실제 배포 버전과 어긋나 있던 것**
+`APP_VERSION`은 `src/App.jsx`의 `CHANGELOG[0].version`에서 파생되고 `AboutPage.jsx`의 `VERSION_HISTORY`도 매 버전 함께 갱신돼 왔지만, `package.json`의 `version`은 v0.3.0 이후로 방치되어 계속 `"0.3.0"`으로 남아 있었다(소스 어디서도 참조되지 않아 빌드·배포 동작에는 영향이 없었다). 실제 배포 버전과 맞춰 `"0.3.4"`로 동기화했다.
+
 ### OpenChess v0.3.3 — 2026/8/12
 
 **성능 — 모바일에서 도감 오프닝 트리를 열면 심하게 버벅이던 문제**

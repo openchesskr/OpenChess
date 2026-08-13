@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star, Gem,
+  Send, Compass, Rocket, Star, Gem, Smartphone,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -706,6 +706,20 @@ const CAT = {
   security: { label: "보안", Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.3.4", date: "2026.8.13",
+    summary: "유산 만들기·공유·전체 보기 창이 채팅·친구 창처럼 모바일에서 화면을 꽉 채우는 전체 화면으로 바뀌었어요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "유산 관련 창들도 이제 모바일에서 꽉 찬 화면으로 편하게 볼 수 있어요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "작은 화면에서도 유산을 더 넉넉하게 만들고 공유해 보세요!" },
+    },
+    highlight: { kind: "icon", Icon: Smartphone, color: T.brassHi, label: "유산 창 모바일 전체 화면 대응" },
+    sections: [
+      { cat: "ui", items: [
+        "유산 만들기·전체 보기·공유 창을 모바일에서는 채팅·친구 창과 같은 전체 화면으로 크게 볼 수 있도록 바꿨어요 — 특히 유산 만들기에서 chess.com 대국 목록을 펼칠 때 좁은 화면에서도 넉넉하게 보여요.",
+      ] },
+    ],
+  },
   {
     version: "0.3.3", date: "2026.8.12",
     summary: "프로필에 자랑스러운 한 수를 룬처럼 새겨 전시하는 '유산'이 생겼어요 — 종류별 열 정렬, 정중앙 확대 연출, 지워진 유산도 다시 보는 이력 기능은 물론 채팅으로 친구에게 공유하는 기능까지 갖췄어요. 퍼즐과 라인마다 난이도 레이팅이 생겼고, 퍼즐 모식도가 더 보기 편해졌어요. 모바일 오프닝 트리 렉을 고치고, 체스보드 드래그·친구 창·채팅 화면(오른쪽 클릭 메뉴 포함)도 두루 다듬었어요. 유저 검색 리더보드도 모든 계정이 100위까지 보이도록 넓혔어요.",
