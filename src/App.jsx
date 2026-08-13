@@ -15254,6 +15254,7 @@ const CHANGELOG = [
       "유산을 만들 때 'chess.com 대국에서 선택'을 누르면 이제 다른 통계 없이 '최근 대국' 목록만 간단히 보여줘요.",
       "퍼즐 탭 티어 표시에서 그랜드마스터 별 개수가 티어 이름과 겹쳐 보이던 문제를 고쳤어요 — 게이지 바 오른쪽으로 옮겼어요.",
       "도감 오프닝 트리를 처음 열었을 때 정중앙 회로 칩이 화면 한가운데에 정확히 오지 않던 문제를 고쳤어요 — 모바일처럼 화면이 좁아 트리 상자 아래쪽이 화면 밖으로 잘리는 경우에도 실제로 보이는 범위를 기준으로 중앙을 잡아요.",
+      "유산 재생 화면에서 이제 마지막 한 수가 아니라, 이번에 재생된 모든 수의 등급 아이콘이 함께 보여요. PGN을 직접 입력해 유산을 만들 때는 어느 진영으로 뒀는지 고를 수 있고, 그 진영이 재생 화면에서 항상 아래쪽에 오도록 보드가 뒤집혀요.",
       "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼, 기물 칸을 감싸던 색 테두리를 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시돼요(예전에 만든 유산도 지정한 수만큼은 확실히 표시돼요). 배경은 검은색으로, 기보 타이핑 속도는 조금 느리게 바꿨어요.",
     ]
   },
@@ -17662,7 +17663,10 @@ function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle, mySolved, myLineSolves }
 //   LegacyEntry = { sans: string[], moveIndex: number(0-based ply, analyzeGame의 ply와 동일 기준),
 //                   playCount: number, kinds: string[]|null(sans와 같은 길이, 각 수의 등급 —
 //                   analyzeGame 결과에서 그대로 떼어와 재생 시 수 체계 아이콘을 다시 계산하지 않고
-//                   보여준다. 구버전에 저장된 항목은 없을 수 있어 null 허용), savedAt: number }
+//                   보여준다. 구버전에 저장된 항목은 없을 수 있어 null 허용),
+//                   side: "w"|"b"(사용자가 플레이한 진영 — chess.com 대국은 g.color로 자동, PGN
+//                   직접 입력은 사용자가 선택. 재생 화면에서 이 진영이 항상 아래에 오도록 보드를
+//                   뒤집는다. 구버전엔 없을 수 있어 없으면 "w"로 취급), savedAt: number }
 // ============================================================================
 // (사용자 요청) short — 유산 추가/편집 카드(LegacyManageModal) 제목에 "유산 • 최선"처럼 표시할 때 쓴다.
 const LEGACY_TYPES = [
@@ -17734,12 +17738,16 @@ function LegacyEmptySlot({ typeInfo, onClick }) {
 // halo는 방금 둔 수의 도착 칸([r,c])에 그 수의 등급 색으로 발광 하이라이트를 씌우고, haloKind가
 // 있으면 실제 체스보드(Board, 3656줄 부근)와 똑같은 위치·크기·흰 테두리로 수 체계 아이콘을 띄운다.
 // 밝은/어두운 칸은 색이 아니라 (r+c) 홀짝에 따른 배경 불투명도 차이(=빛의 밝기 차이)로 구분한다.
-function LegacyLightBoard({ board, size = 320, halo, haloKind }) {
+// (사용자 요청) flip — 사용자가 지정한 진영(entry.side)이 항상 아래에 오도록, 실제 Board 컴포넌트와
+// 같은 방식(행·열 모두 뒤집기)으로 반전한다.
+function LegacyLightBoard({ board, size = 320, halo, haloKind, flip }) {
   const cell = Math.max(1, Math.floor(size / 8));
+  const rows = flip ? [...board].reverse().map((r) => [...r].reverse()) : board;
   return (
     <div style={{ position: "relative", width: cell * 8, height: cell * 8, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", filter: "drop-shadow(0 0 26px rgba(196,154,80,.28))" }}>
-      {board.map((row, r) => row.map((p, c) => {
-        const isHalo = halo && halo[0] === r && halo[1] === c;
+      {rows.map((row, r) => row.map((p, c) => {
+        const [br, bc] = flip ? [7 - r, 7 - c] : [r, c];
+        const isHalo = halo && halo[0] === br && halo[1] === bc;
         const isLight = (r + c) % 2 === 0;
         return (
           <div key={r + "_" + c} style={{ position: "relative", boxSizing: "border-box", border: "1px solid rgba(196,154,80,.22)",
@@ -17784,7 +17792,10 @@ function LegacyProjectorBlock({ entry, size = 76, onClick }) {
 // playCount만큼 자동 재생한다. board 단계에서는 보드 아래 유산 블록(LegacyProjectorBlock)을 놓고,
 // 그 블록에서 보드로 금빛 광선이 뻗어 올라가는 영사기 연출을 함께 보여준다.
 function LegacyRevealScreen({ typeInfo, entry, onClose }) {
-  const { sans, moveIndex, playCount, kinds } = entry;
+  const { sans, moveIndex, playCount, kinds, side } = entry;
+  // (사용자 요청) 사용자가 지정한 진영이 항상 아래에 오도록 보드를 뒤집는다(구버전 항목은 side가
+  // 없어 기본 백 기준으로 표시).
+  const flip = side === "b";
   const [phase, setPhase] = useState("charge"); // "charge" | "typing" | "board"
   const startCount = moveIndex; // 이 개수만큼 이미 둔 상태(=지정한 수를 두기 직전 포지션)에서 시작
   const endCount = Math.min(sans.length, moveIndex + Math.max(1, playCount));
@@ -17820,10 +17831,20 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   // 다만 유산을 저장할 때 "지정한 수(moveIndex)는 반드시 그 유산 등급(typeInfo.kind)으로 채점된
   // 수"라는 게 이미 검증돼 있으므로, kinds가 없거나 못 믿을 때도 지정한 수 차례에는 그 등급으로
   // 확실하게 표시할 수 있다(그 외의 수는 실제로 몰라 아이콘을 생략한다).
-  const rawKind = kinds && appliedCount > 0 ? kinds[appliedCount - 1] : null;
-  const haloKind = (rawKind && rawKind !== "pending") ? rawKind : (appliedCount - 1 === moveIndex ? typeInfo.kind : null);
+  // (사용자 요청) 이번 재생에서 실제로 나온 수마다 그 수의 등급 아이콘을 전부 보여준다 — 최신 한
+  // 수만 남기고 지워지지 않도록, startCount~appliedCount-1 범위 전체를 매번 다시 계산한다.
+  const kindAt = (i) => {
+    const k = kinds && kinds[i];
+    if (k && k !== "pending") return k;
+    return i === moveIndex ? typeInfo.kind : null;
+  };
+  const haloKind = appliedCount > 0 ? kindAt(appliedCount - 1) : null;
+  const playedKinds = useMemo(() => {
+    const out = [];
+    for (let i = startCount; i < appliedCount; i++) { const k = kindAt(i); if (k) out.push({ i, k }); }
+    return out;
+  }, [kinds, moveIndex, typeInfo.kind, startCount, appliedCount]);
   const color = QCOLOR[typeInfo.kind];
-  const bgColor = (haloKind && QCOLOR[haloKind]) || color;
   // (사용자 요청) 재생 화면의 체스보드를 더 크게(최대 360→440).
   const [lightBoardSize, boardWrapRef] = useBoardSize(440);
   const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
@@ -17864,11 +17885,13 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
             {/* (사용자 요청) 재생 화면 체스보드를 더 크게 키우고(useBoardSize(440)), "탁월한 유산" 같은
                 유산 등급 라벨은 없앤다. */}
             <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
-              <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} />
+              <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} flip={flip} />
             </div>
-            {/* (사용자 요청) 매 수의 수 체계 아이콘을 보드 바로 아래, 하단 SAN 텍스트가 있던 자리에 표시. */}
-            <div style={{ minHeight: 30, display: "flex", alignItems: "center", justifyContent: "center", margin: "6px 0 2px" }}>
-              {haloKind && <span style={{ filter: "drop-shadow(0 0 8px " + bgColor + ")" }}>{badgeIcon(haloKind, 28)}</span>}
+            {/* (사용자 요청) 최신 수 하나만이 아니라, 이번 재생에서 나온 모든 수의 등급 아이콘을 순서대로 보여준다. */}
+            <div style={{ minHeight: 30, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 6, margin: "6px 0 2px", maxWidth: lightBoardSize }}>
+              {playedKinds.map(({ i, k }) => (
+                <span key={i} style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>
+              ))}
             </div>
             {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
             <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
@@ -17926,6 +17949,10 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClos
   const [analyzeErr, setAnalyzeErr] = useState(false);
   const [moveIndex, setMoveIndex] = useState(null);
   const [playCount, setPlayCount] = useState(5);
+  // (사용자 요청) PGN 직접 입력은 대국 데이터에 진영 정보가 없어, 재생 화면에서 어느 쪽을 아래에 둘지
+  // 알 수 없었다 — 사용자가 직접 고른 진영을 저장해 항상 그 진영이 아래에 오도록 보드를 뒤집는다.
+  // chess.com 대국 선택은 g.color로 이미 알 수 있어 자동으로 채운다(onSelectGame에서 setSide).
+  const [side, setSide] = useState("w");
   const loadPgnText = () => {
     const raw = pgnText.trim();
     if (!raw) { setPgnErr("PGN을 입력해 주세요."); return; }
@@ -17964,7 +17991,7 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClos
   const save = () => {
     if (moveIndex == null || !sans) return;
     const kinds = result ? sans.map((_, i) => { const m = result.moves.find((mm) => mm.ply === i); return m ? m.kind : "pending"; }) : null;
-    onSave(typeInfo.key, { sans, moveIndex, playCount: Math.max(1, Math.min(playCount, maxPlayCount)), kinds, savedAt: Date.now() });
+    onSave(typeInfo.key, { sans, moveIndex, playCount: Math.max(1, Math.min(playCount, maxPlayCount)), kinds, side, savedAt: Date.now() });
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
@@ -17984,7 +18011,7 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClos
                 펼친다 — 각 대국 줄의 검색·리뷰 버튼 자리에는 onSelectGame으로 "선택" 버튼만 놓인다. */}
             {showChesscomStats && chesscomReady && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
-                <AccountChessStats chesscom={chesscom} username={username} onSelectGame={(g) => { setSans(g.moves); setStep("analyzing"); }} />
+                <AccountChessStats chesscom={chesscom} username={username} onSelectGame={(g) => { setSans(g.moves); setSide(g.color); setStep("analyzing"); }} />
               </div>
             )}
             {existingEntry && <button onClick={onDelete} className="press" style={{ marginTop: 14, padding: "8px 0", width: "100%", borderRadius: 9, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>이 유산 삭제</button>}
@@ -17994,6 +18021,15 @@ function LegacyManageModal({ typeInfo, existingEntry, chesscom, username, onClos
           <div>
             <textarea value={pgnText} onChange={(e) => setPgnText(e.target.value)} placeholder="PGN을 붙여넣으세요 (예: 1.e4 e5 2.Nf3 Nc6 ...)" rows={7} style={{ width: "100%", boxSizing: "border-box", padding: 10, borderRadius: 9, border: "1px solid " + (pgnErr ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5, resize: "vertical" }} />
             {pgnErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pgnErr}</div>}
+            {/* (사용자 요청) 어느 진영으로 플레이했는지 골라 두면, 재생 화면에서 항상 그 진영이 아래에 오도록 보드를 뒤집는다. */}
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 5 }}>어느 진영으로 플레이했나요?</div>
+              <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+                {[["w", "백"], ["b", "흑"]].map(([k, lab]) => (
+                  <button key={k} type="button" onClick={() => setSide(k)} className="press" style={{ padding: "6px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: side === k ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: side === k ? T.ivoryHi : T.inkSoft }}>{lab}</button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2" style={{ marginTop: 10 }}>
               <button onClick={() => setStep("source")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>뒤로</button>
               <button onClick={loadPgnText} className="press" style={{ flex: 1, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, border: "none", cursor: "pointer" }}>불러오기</button>
