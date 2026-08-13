@@ -15315,7 +15315,8 @@ const CHANGELOG = [
       "채팅 메시지의 수정/삭제(전달) 메뉴를 컴퓨터에서는 오른쪽 클릭으로도 열 수 있어요 — 꾹 누르기로 열 때와 똑같이 항상 화면 중앙 쪽으로, 다른 말풍선과 안 겹치게 떠요.",
       "채팅에서 퍼즐 '전달'이 실패했을 때 아무 표시가 없던 문제를 고쳐, 이제 실패하면 안내 문구가 떠요.",
       "유산을 이제 채팅으로 친구에게 공유할 수 있어요 — 유산 블록의 편집(✎) 아이콘은 좌하단으로 옮기고, 우하단에 새 공유 아이콘을 추가했어요. 누르면 친구를 골라 보낼 수 있고, 받은 친구는 채팅창의 유산 카드에서 '유산 보기'로 그대로 재생해 볼 수 있어요. 채팅창에 '/legacy 1'~'/legacy 6'을 입력해도 내 유산을 바로 보낼 수 있어요(1~3은 기본 칸, 4~6은 그랜드마스터 보너스 칸) — 등록되지 않은 칸이거나 그랜드마스터가 아닌데 보너스 칸을 입력하면 안내 문구가 떠요.",
-      "유산 재생 화면의 기보 타이핑 연출을 다시 짰어요 — 유산으로 지정한 수가 나올 차례가 되면 그 앞의 수들이 와르르 무너져 내리며 사라지고, 유산 수가 화면 정중앙에 크게 나타나 잠시 머물다가, 왼쪽 위 제자리로 옮겨간 뒤 그 옆에서부터 나머지 수들이 이어서 타이핑돼요.",
+      "유산 재생 화면의 기보 타이핑 연출을 다시 짰어요 — 유산으로 지정한 수가 나올 차례가 되면 그 수가 먼저 화면 정중앙에 크게 나타나고, 그 충격으로 앞의 수들이 와르르 무너져 내리며 사라져요. 잠시 후 유산 수가 왼쪽 위 제자리로 옮겨간 뒤, 그 옆에서부터 나머지 수들이 이어서 타이핑돼요.",
+      "유산 수 아이콘의 금테가 아이콘 중심과 미세하게 어긋나 보이던 문제를 진짜 원인을 찾아 고쳤어요 — 이제 테두리가 아이콘을 정확히 감싸요.",
     ]
   },
   {
@@ -18028,31 +18029,23 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const [typedCount, setTypedCount] = useState(0);
   const typingRef = useRef(null);
   useEffect(() => { const t = setTimeout(() => setPhase("typing"), 950); return () => clearTimeout(t); }, []);
-  // (사용자 요청) 기보 타이핑 연출을 4단계로 새로 짰다 — "before"(유산 수 이전 토큰이 한 수씩
-  // 타이핑됨) → "collapse"(그 토큰들이 와르르 무너져 내리며 사라짐) → "heroSolo"(유산 수가 화면
-  // 정중앙에 크게 등장해 잠시 머무름) → "after"(유산 수가 원래 자리인 왼쪽 위로 옮겨가고, 그 옆부터
-  // 나머지 토큰이 한 수씩 타이핑됨). "heroSolo"↔"after" 두 단계의 유산 수 스팬은 같은
-  // layoutId="legacyHeroToken"을 공유해, framer-motion이 정중앙 큰 글자에서 본문 흐름 속 제자리로
-  // 자동으로 매끄럽게 이동·축소(FLIP)해 준다.
-  const [typingStage, setTypingStage] = useState("before"); // "before" | "collapse" | "heroSolo" | "after"
+  // (사용자 요청) 기보 타이핑 연출을 3단계로 짰다 — "before"(유산 수 이전 토큰이 한 수씩 타이핑됨)
+  // → "heroSolo"(유산 수가 먼저 화면 정중앙에 크게 등장하고, 그 충격으로 주변(이전) 토큰들이
+  // 와르르 무너져 내리며 사라짐 — 등장과 붕괴가 인과관계로 보이도록 붕괴 시작에 짧은 지연을 둔다)
+  // → "after"(유산 수가 원래 자리인 왼쪽 위로 옮겨가고, 그 옆부터 나머지 토큰이 한 수씩 타이핑됨).
+  // "heroSolo"↔"after" 두 단계의 유산 수 스팬은 같은 layoutId="legacyHeroToken"을 공유해,
+  // framer-motion이 정중앙 큰 글자에서 본문 흐름 속 제자리로 자동으로 매끄럽게 이동·축소(FLIP)해 준다.
+  const [typingStage, setTypingStage] = useState("before"); // "before" | "heroSolo" | "after"
   const [afterTypedCount, setAfterTypedCount] = useState(0);
   const beforeTokens = useMemo(() => pgnTokens.slice(0, moveIndex), [pgnTokens, moveIndex]);
   const afterTokensArr = useMemo(() => pgnTokens.slice(moveIndex + 1), [pgnTokens, moveIndex]);
   const heroTok = pgnTokens[moveIndex];
   useEffect(() => {
     if (phase !== "typing" || typingStage !== "before") return;
-    if (typedCount >= moveIndex) { setTypingStage(moveIndex > 0 ? "collapse" : "heroSolo"); return; }
+    if (typedCount >= moveIndex) { setTypingStage("heroSolo"); return; }
     const t = setTimeout(() => setTypedCount((n) => Math.min(moveIndex, n + 1)), 80);
     return () => clearTimeout(t);
   }, [phase, typingStage, typedCount, moveIndex]);
-  // (사용자 요청) "무너져 내리는" 연출 — 토큰마다 살짝 다른 낙하 거리·회전으로 순차 지연을 줘,
-  // 벽이 부서지듯 흩어지게 한다. 지속 시간이 끝나면 유산 수 단독 등장 단계로 넘어간다.
-  const COLLAPSE_MS = 650;
-  useEffect(() => {
-    if (typingStage !== "collapse") return;
-    const t = setTimeout(() => setTypingStage("heroSolo"), COLLAPSE_MS);
-    return () => clearTimeout(t);
-  }, [typingStage]);
   const HERO_SOLO_MS = 1500;
   useEffect(() => {
     if (typingStage !== "heroSolo") return;
@@ -18079,8 +18072,9 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
     return () => clearTimeout(t);
   }, [phase, typingStage, afterTypedCount, afterTokensArr.length]);
   useEffect(() => { if (typingRef.current) typingRef.current.scrollTop = typingRef.current.scrollHeight; }, [typedCount, afterTypedCount, typingStage]);
-  // (사용자 요청) 무너지는 동안과 유산 수가 정중앙에 떠 있는 동안 화면이 어두워진다.
-  const heroActive = typingStage === "collapse" || typingStage === "heroSolo";
+  // (사용자 요청) 유산 수가 정중앙에 등장해 있는 동안(그 충격으로 주변 수가 무너지는 순간 포함)
+  // 화면이 어두워진다.
+  const heroActive = typingStage === "heroSolo";
   // (사용자 요청) 유산 수 차례가 되면 곧장 그 수를 두지 않고, 먼저 확대(HERO_PRE_MS만큼 대기)한
   // 뒤에야 그 수가 놓이도록 한다 — 아래 boardHeroActive/heroWindowOpen과 짝을 이룬다.
   const HERO_PRE_MS = 900;
@@ -18178,14 +18172,15 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
               있는 동안에는 주변이 어두워진다. */}
           <motion.div aria-hidden="true" animate={{ opacity: heroActive ? 1 : 0 }} transition={{ duration: 0.45 }}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
-          {/* (사용자 요청) 유산 수가 등장할 차례가 되면, 그 앞의 수들이 와르르 무너져 내리며 사라지고,
-              유산 수가 화면 정중앙에 크게 나타났다가, 원래 자리(왼쪽 위)로 옮겨간 뒤 그 옆에서부터
-              나머지 수들이 이어서 타이핑된다. */}
+          {/* (사용자 요청) 유산 수가 등장할 차례가 되면, 유산 수가 먼저 화면 정중앙에 크게 나타나고,
+              그 충격으로 앞의 수들이 와르르 무너져 내리며 사라진다(등장 직후 살짝 지연을 둬 "그
+              충격에" 무너지는 인과관계로 보이게 한다) — 이어서 유산 수가 원래 자리(왼쪽 위)로 옮겨간
+              뒤 그 옆에서부터 나머지 수들이 이어서 타이핑된다. */}
           <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px", display: "flex", flexWrap: "wrap", alignItems: "flex-start", fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
-            {(typingStage === "before" || typingStage === "collapse") && beforeTokens.slice(0, typedCount).map((tok, i) => (
+            {(typingStage === "before" || typingStage === "heroSolo") && beforeTokens.slice(0, typedCount).map((tok, i) => (
               <motion.span key={i} initial={false}
-                animate={typingStage === "collapse"
-                  ? { opacity: 0, y: 30 + (i % 3) * 14, rotate: (i % 2 ? 1 : -1) * (12 + (i % 4) * 6), transition: { duration: 0.5, delay: i * 0.02, ease: "easeIn" } }
+                animate={typingStage === "heroSolo"
+                  ? { opacity: 0, y: 30 + (i % 3) * 14, rotate: (i % 2 ? 1 : -1) * (12 + (i % 4) * 6), transition: { duration: 0.5, delay: 0.22 + i * 0.02, ease: "easeIn" } }
                   : { opacity: 1, y: 0, rotate: 0 }}
                 style={{ display: "inline-block", marginRight: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{tok}</motion.span>
             ))}
@@ -18246,13 +18241,20 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
                   // 두께만큼) flex 정렬이 흔들리던 문제 — 모든 칸에 항상 같은 두께의 테두리를 두되
                   // (기본은 투명), box-sizing:border-box로 테두리가 안쪽에 그려지게 해 바깥 크기(34×34)를
                   // 항상 동일하게 고정한다.
+                  // (버그 수정) 그런데도 금테가 아이콘 중심과 안 맞고 위로 치우쳐 보인다는 신고가
+                  // 있어 Playwright로 실제 DOM 좌표를 재본 결과, 아이콘을 감싸던 안쪽 <span>이 일반
+                  // inline 요소라 줄바꿈 기준선(baseline) 아래로 "보이지 않는 여백"이 비대칭으로 붙어
+                  // (이미지 하단 descender 여백), 부모의 justify/align-items:center가 그 여백까지
+                  // 포함해 중앙 정렬하면서 정작 눈에 보이는 아이콘만 위로 몇 px 치우쳐 보였다(실측:
+                  // 세로 2px 어긋남, 가로는 정확히 일치) — 이 안쪽 span도 inline-flex로 바꿔 그 보이지
+                  // 않는 기준선 여백 자체를 없앴다.
                   return (
                     <span key={i} style={{ width: 34, height: 34, boxSizing: "border-box", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
                       visibility: revealed && k ? "visible" : "hidden",
                       border: "2px solid " + ((isHero && revealed) ? T.brassHi : "transparent"),
                       boxShadow: (isHero && revealed) ? "0 0 12px 2px rgba(236,203,134,.85), 0 0 4px " + (k ? QCOLOR[k] : "transparent") : "none",
                       background: (isHero && revealed) ? "rgba(236,203,134,.12)" : "transparent" }}>
-                      {revealed && k && <span style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>}
+                      {revealed && k && <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>}
                     </span>
                   );
                 })}
