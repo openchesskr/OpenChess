@@ -259,6 +259,12 @@ alter table public.chat_messages add column if not exists puzzle_no bigint;
 alter table public.chat_messages add column if not exists share_reward jsonb;
 -- (v0.1.4 기능) 채팅 메시지 수정 기능 — 발신자가 본인 텍스트 메시지를 고쳤는지 표시.
 alter table public.chat_messages add column if not exists edited boolean not null default false;
+-- (v0.3.3 기능) 유산 공유 카드 — puzzle_no와 같은 패턴. 설정돼 있으면 이 메시지는 유산 미리보기
+-- 카드로 렌더링된다. 값은 슬롯 키 그 자체(best/only/brilliant, 그랜드마스터 보너스 칸이면
+-- best2/only2/brilliant2) — 유산은 퍼즐과 달리 번호별 전역 저장소가 없으므로 데이터를 복제해
+-- 두지 않고, 받는 쪽 화면이 from_uid(=유산 주인)의 "지금" 공개 프로필(profiles.pub.legacies)에서
+-- 그 슬롯을 그대로 읽어와 보여준다(legacyShareSend).
+alter table public.chat_messages add column if not exists legacy_slot text;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -290,7 +296,10 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   update public.chat_messages
     set body = p_body, edited = true
-    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null;
+    -- (v0.3.3) 유산 공유 카드(legacy_slot)도 puzzle_no/share_reward와 마찬가지로 텍스트로 "수정"할
+    -- 수 없는 특수 메시지라 같이 제외한다(클라이언트도 이런 메시지엔 수정 버튼을 안 보여주지만,
+    -- 서버에서도 이중으로 막는다).
+    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null and legacy_slot is null;
 end; $$;
 grant execute on function public.chat_edit_message(bigint, text) to authenticated;
 
@@ -626,13 +635,15 @@ grant execute on function public.friend_suggestions(int) to authenticated;
 -- (order=pub->>xp.desc)로는 "9000"이 "20000"보다 앞에 오는 등 자릿수가 다르면 숫자 크기와
 -- 다르게 정렬된다. 숫자로 캐스팅해 정렬하도록 서버 함수로 만든다. profiles는 이미 누구나
 -- 읽을 수 있어(위 1번 섹션 "profiles select all") SECURITY DEFINER가 필요 없다(puzzle_rank와 동일).
+-- (v0.3.3) 경험치를 아직 하나도 얻지 못한 계정(신규 가입 직후 등)도 순위에서 빠지지 않도록
+-- xp>0 필터를 없앤다 — 존재하는 모든 계정을 대상으로 순위를 매겨야 "0위 근처"의 유저도 검색 시
+-- 리더보드에서 자신의 위치를 확인할 수 있다.
 drop function if exists public.leaderboard_top(int) cascade;
 create or replace function public.leaderboard_top(p_limit int default 8)
 returns table(id uuid, username text, pub jsonb) language sql stable as $$
   select id, username, pub
   from public.profiles
-  where coalesce((pub->>'xp')::bigint, 0) > 0
-  order by coalesce((pub->>'xp')::bigint, 0) desc
+  order by coalesce((pub->>'xp')::bigint, 0) desc, username asc
   limit p_limit;
 $$;
 grant execute on function public.leaderboard_top(int) to anon, authenticated;
@@ -838,4 +849,56 @@ drop policy if exists "daily puzzle cache insert" on public.daily_puzzle_cache;
 create policy "daily puzzle cache read"   on public.daily_puzzle_cache for select using (true);
 create policy "daily puzzle cache insert" on public.daily_puzzle_cache for insert with check (true);
 grant select, insert on public.daily_puzzle_cache to anon, authenticated;
+
+-- ============================================================================
+-- 18) puzzle_line_solve_times — 퍼즐 레이팅용 라인별 실제 풀이 시간 기록 (v0.3.4)
+-- ============================================================================
+-- 퍼즐 레이팅(src/App.jsx의 puzzleLineBaseRating)은 길이·긴장·유일수/탁월수 개수·평가치 표준편차
+-- 같은 정적 요소로 먼저 기본값(100~3000)을 정하고, 실제 유저들이 그 라인을 푸는 데 걸린 시간으로
+-- 가감(applySolveTimeAdjustment)한다. puzzle_solve_events와 같은 append-only 로그 패턴 — 같은
+-- 사람이 같은 라인을 여러 번 풀어도(재도전) 매번 한 줄씩 쌓인다. 게스트(비로그인)는 uid 없이
+-- 기록 가능하지만, 로그인 상태라면 본인 uid로만 기록 가능(도용 방지, puzzle_solve_events와 동일).
+create table if not exists public.puzzle_line_solve_times (
+  id bigint generated always as identity primary key,
+  no bigint not null,
+  tag text not null,
+  uid uuid references auth.users(id) on delete set null,
+  ms bigint not null,
+  solved_at timestamptz not null default now()
+);
+create index if not exists idx_puzzle_line_solve_times_no_tag on public.puzzle_line_solve_times(no, tag);
+alter table public.puzzle_line_solve_times enable row level security;
+drop policy if exists "line solve times read"   on public.puzzle_line_solve_times;
+drop policy if exists "line solve times insert" on public.puzzle_line_solve_times;
+create policy "line solve times read"   on public.puzzle_line_solve_times for select using (true);
+create policy "line solve times insert" on public.puzzle_line_solve_times for insert with check (uid is null or uid = auth.uid());
+grant select, insert on public.puzzle_line_solve_times to anon, authenticated;
+
+-- 이상치를 제외한 평균 풀이 시간(ms)과 표본 수를 반환한다. 표본이 20개 이상 모이면 상하위 10%
+-- (percentile_cont 0.1/0.9 경계 밖)를 잘라낸 절사평균(trimmed mean)을 쓰고, 그보다 적으면 자를
+-- 만큼 표본이 충분치 않다고 보고 단순평균을 쓴다. 표본이 아예 없으면 avg_ms는 null — 클라이언트
+-- (applySolveTimeAdjustment)는 표본 수가 RATING_MIN_SAMPLES(현재 5) 미만이면 이 값 자체를 무시하고
+-- 정적 기본 레이팅을 그대로 쓰므로, 여기서는 표본 수를 항상 정확히 돌려주기만 하면 된다.
+drop function if exists public.puzzle_line_avg_solve_ms(bigint, text) cascade;
+create or replace function public.puzzle_line_avg_solve_ms(p_no bigint, p_tag text)
+returns table(avg_ms numeric, sample_count bigint) language sql stable as $$
+  with samples as (
+    select ms from public.puzzle_line_solve_times where no = p_no and tag = p_tag
+  ), bounds as (
+    select
+      count(*) as cnt,
+      percentile_cont(0.1) within group (order by ms) as lo,
+      percentile_cont(0.9) within group (order by ms) as hi
+    from samples
+  )
+  select
+    case
+      when b.cnt = 0 then null
+      when b.cnt >= 20 then (select avg(s.ms) from samples s where s.ms between b.lo and b.hi)
+      else (select avg(s.ms) from samples s)
+    end as avg_ms,
+    b.cnt as sample_count
+  from bounds b;
+$$;
+grant execute on function public.puzzle_line_avg_solve_ms(bigint, text) to anon, authenticated;
 
