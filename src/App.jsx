@@ -9975,9 +9975,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       if (userPannedRef.current) return;
       const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
       const z = zoomRef.current;
-      // 나침반 중심(네 루트 블록의 중심)은 origin(centerX,centerY)에서 블록 반 칸만큼 떨어져 있으므로
-      // 그만큼 더해 정확히 뷰포트 한가운데에 오게 한다.
-      setPan({ x: rect.width / 2 - (centerRef.current.x + boxW / 2) * z, y: rect.height / 2 - (centerRef.current.y + boxH / 2) * z });
+      // (사용자 요청으로 재확인해 수정) 나침반 중심 회로 칩은 local (centerX,centerY)에 자신의
+      // 중심이 오도록 그려진다(`left: centerX - CHIP_SIZE/2`) — 블록(boxW×boxH) 좌상단 좌표가
+      // 아니라 이미 그 자체로 중심점이므로, 다른 곳(노드 중앙 정렬)처럼 boxW/2·boxH/2를 더하면
+      // 오히려 칩이 뷰포트 정중앙에서 반 칸 어긋나 보인다 — 더하지 않고 그대로 맞춘다.
+      setPan({ x: rect.width / 2 - centerRef.current.x * z, y: rect.height / 2 - centerRef.current.y * z });
     }, 150);
     return () => clearInterval(id);
   }, []);
@@ -10341,7 +10343,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             selectionLockRef.current = false;
             setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
             const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640 };
-            setPan({ x: rect.width / 2 - (centerRef.current.x + boxW / 2) * SCHEMATIC_ZOOM_LABEL_BASE, y: rect.height / 2 - (centerRef.current.y + boxH / 2) * SCHEMATIC_ZOOM_LABEL_BASE });
+            setPan({ x: rect.width / 2 - centerRef.current.x * SCHEMATIC_ZOOM_LABEL_BASE, y: rect.height / 2 - centerRef.current.y * SCHEMATIC_ZOOM_LABEL_BASE });
           }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <RotateCcw size={13} />
           </button>
@@ -11850,14 +11852,16 @@ function TierProgressStrip({ totalXp, onOpen }) {
     <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "6px 14px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={46} discSize={49} />
       <div style={{ minWidth: 96, marginLeft: 9, marginRight: 4 }}>
-        <div className="flex items-center" style={{ gap: 5 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</span>
+        <div style={{ fontSize: 12.5, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
+        {/* (사용자 요청) 그랜드마스터 별 개수가 티어 명칭 글자와 겹쳐 보이던 문제 — 명칭 줄이 아니라
+            게이지 바와 같은 줄, 그 우측에 배치한다. */}
+        <div className="flex items-center" style={{ gap: 5, marginTop: 3 }}>
+          <div style={{ flex: 1, minWidth: 0, height: 5, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
+            <div style={{ width: pct + "%", height: "100%", background: isGM ? tierGradientCss("grandmaster") : T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
+          </div>
           {isGM && maxed && gmStars > 0 && (
-            <span style={{ fontSize: 11, fontWeight: 900, whiteSpace: "nowrap", background: tierGradientCss("grandmaster"), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>★{gmStars}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 900, whiteSpace: "nowrap", flexShrink: 0, background: tierGradientCss("grandmaster"), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>★{gmStars}</span>
           )}
-        </div>
-        <div style={{ width: "100%", height: 5, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden", marginTop: 3 }}>
-          <div style={{ width: pct + "%", height: "100%", background: isGM ? tierGradientCss("grandmaster") : T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
         </div>
         <div style={{ fontSize: 9.5, color: T.brassHi, opacity: .75, marginTop: 1 }}>{xpInDivision}/{xpForNextDivision} XP</div>
       </div>
@@ -15231,6 +15235,9 @@ const CHANGELOG = [
       "퍼즐 탭의 '일일 퍼즐' 글자 크기를 '추천 퍼즐'과 맞추고, 앞의 아이콘을 달력 이모티콘으로 바꿨어요.",
       "그랜드마스터 티어에 도달하면 프로필 사진과 티어 로고 테두리에 무지개 그라데이션이 둘리고, XP 게이지 바도 같은 색으로 빛나며 옆에 획득한 별 개수가 표시돼요.",
       "유산을 만들 때 'chess.com 대국에서 선택'을 누르면 이제 다른 통계 없이 '최근 대국' 목록만 간단히 보여줘요.",
+      "퍼즐 탭 티어 표시에서 그랜드마스터 별 개수가 티어 이름과 겹쳐 보이던 문제를 고쳤어요 — 게이지 바 오른쪽으로 옮겼어요.",
+      "도감 오프닝 트리를 처음 열었을 때 정중앙 회로 칩이 화면 한가운데에 정확히 오지 않던 문제를 고쳤어요.",
+      "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼을 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시되며, 수마다 배경 색도 은은하게 바뀌어요.",
     ]
   },
   {
@@ -17739,18 +17746,19 @@ function LegacyLightBoard({ board, size = 320, glowColor, halo, haloKind }) {
 // 유산 재생 화면 하단의 "영사기" 블록 — 프로필의 유산 타일과 같은 재질(어보니+브래스)로 만든 작은
 // 사각 블록. 스스로 은은하게 금빛으로 발광해(box-shadow), 위에 뜬 빛의 체스보드가 이 블록에서
 // 뿜어져 나오는 빛으로 만들어진 것처럼 보이도록 하는 광원 역할을 한다.
-function LegacyProjectorBlock({ entry, size = 76 }) {
+// (사용자 요청) "다시 보기" 버튼을 없애는 대신, 이 블록 자체를 눌러 언제든 처음부터 다시 재생한다.
+function LegacyProjectorBlock({ entry, size = 76, onClick }) {
   return (
-    <div style={{ width: size, height: size, borderRadius: size * 0.18, position: "relative", overflow: "hidden", flexShrink: 0,
+    <button onClick={onClick} title="다시 재생" className="press" style={{ width: size, height: size, borderRadius: size * 0.18, position: "relative", overflow: "hidden", flexShrink: 0,
       background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
-      border: "1.5px solid " + T.brass,
+      border: "1.5px solid " + T.brass, cursor: onClick ? "pointer" : "default",
       boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), 0 0 26px 6px rgba(196,154,80,.5), 0 6px 14px -6px rgba(0,0,0,.7)",
       display: "flex", alignItems: "center", justifyContent: "center" }}>
       <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.2) 0%, rgba(236,203,134,0) 45%)" }} />
       <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: size * 0.15, lineHeight: 1.1, color: T.brassHi, textAlign: "center", padding: "0 4px" }}>
         {legacyMoveLabel(entry)}
       </span>
-    </div>
+    </button>
   );
 }
 // 유산 확대 연출 — 클릭하면 먼저 암석판이 확대되며 룬 문자가 빛나고(charge, ~0.9s), 이어서(사용자
@@ -17780,7 +17788,8 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   useEffect(() => { if (typingRef.current) typingRef.current.scrollTop = typingRef.current.scrollHeight; }, [typedCount]);
   useEffect(() => {
     if (phase !== "board" || appliedCount >= endCount) return;
-    const t = setTimeout(() => setAppliedCount((n) => Math.min(endCount, n + 1)), 1150);
+    // (사용자 요청) 다음 수로 넘어가는 간격을 살짝 늘림(1150ms → 1450ms).
+    const t = setTimeout(() => setAppliedCount((n) => Math.min(endCount, n + 1)), 1450);
     return () => clearTimeout(t);
   }, [phase, appliedCount, endCount]);
   const board = useMemo(() => boardFromSans(sans.slice(0, appliedCount)), [sans, appliedCount]);
@@ -17790,14 +17799,17 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const haloInfo = lastSan ? sanSrc(prevBoard, stripSuffix(lastSan), lastMover) : null;
   const haloKind = kinds && appliedCount > 0 ? kinds[appliedCount - 1] : null;
   const color = QCOLOR[typeInfo.kind];
-  const done = phase === "board" && appliedCount >= endCount;
-  const [lightBoardSize, boardWrapRef] = useBoardSize(360);
+  // (사용자 요청) 뒷 배경이 현재 두어진 수의 수 체계 아이콘 색을 반영하도록 — 아직 수를 두기 전
+  // (charge·typing 단계)에는 유산 등급 색으로, 이후에는 매 수의 등급 색으로 부드럽게 전환된다.
+  const bgColor = (haloKind && QCOLOR[haloKind]) || color;
+  // (사용자 요청) 재생 화면의 체스보드를 더 크게(최대 360→440).
+  const [lightBoardSize, boardWrapRef] = useBoardSize(440);
   const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
   const beamHeight = Math.max(36, Math.round(lightBoardSize * 0.16));
   const beamNarrow = Math.min(46, (blockSize / Math.max(1, lightBoardSize)) * 50);
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
-      style={{ position: "fixed", inset: 0, zIndex: 210, background: "radial-gradient(120% 100% at 50% 30%,#0B1220 0%,#030407 75%)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 20, boxSizing: "border-box" }}>
+      style={{ position: "fixed", inset: 0, zIndex: 210, background: "radial-gradient(120% 100% at 50% 30%," + bgColor + "26 0%,#030407 70%)", transition: "background 900ms ease", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 20, boxSizing: "border-box" }}>
       {/* 배경 별 입자(순수 CSS 장식) */}
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, opacity: 0.55, backgroundImage: "radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent), radial-gradient(1px 1px at 70% 65%, #fff, transparent), radial-gradient(1.5px 1.5px at 85% 20%, #fff, transparent), radial-gradient(1px 1px at 40% 80%, #fff, transparent), radial-gradient(1.5px 1.5px at 55% 45%, #fff, transparent), radial-gradient(1px 1px at 12% 68%, #fff, transparent), radial-gradient(1.5px 1.5px at 92% 55%, #fff, transparent)" }} />
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 16, right: 16, zIndex: 5, width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.2)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={17} /></button>
@@ -17816,11 +17828,9 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
       ) : phase === "typing" ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}
           style={{ position: "relative", zIndex: 2, width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color, letterSpacing: ".04em" }}>대국 훑어보기…</div>
-          <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px", borderRadius: 14,
-            background: "linear-gradient(155deg," + T.ebony3 + " 0%," + T.ebony2 + " 60%," + T.ebony + " 100%)", border: "1px solid " + T.brass + "66",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 10px 30px -14px rgba(0,0,0,.7)" }}>
-            <span style={{ fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, color: T.ivoryHi, wordBreak: "break-word" }}>
+          {/* (사용자 요청) 갈색 카드 배경·"대국 훑어보기" 문구를 없애고, 기보 텍스트만 배경 위에 떠 보이게 한다. */}
+          <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px" }}>
+            <span style={{ fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, color: T.ivoryHi, wordBreak: "break-word", textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>
               {pgnTokens.slice(0, typedCount).join(" ")}
               <motion.span aria-hidden="true" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ color: T.brassHi }}>▍</motion.span>
             </span>
@@ -17828,10 +17838,15 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
         </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color, letterSpacing: ".04em" }}>{typeInfo.label}</div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 360, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
-              <LegacyLightBoard board={board} size={lightBoardSize} glowColor={color} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} />
+            {/* (사용자 요청) 재생 화면 체스보드를 더 크게 키우고(useBoardSize(440)), "탁월한 유산" 같은
+                유산 등급 라벨은 없앤다. */}
+            <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
+              <LegacyLightBoard board={board} size={lightBoardSize} glowColor={bgColor} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} />
+            </div>
+            {/* (사용자 요청) 매 수의 수 체계 아이콘을 보드 바로 아래, 하단 SAN 텍스트가 있던 자리에 표시. */}
+            <div style={{ minHeight: 30, display: "flex", alignItems: "center", justifyContent: "center", margin: "6px 0 2px" }}>
+              {haloKind && <span style={{ filter: "drop-shadow(0 0 8px " + bgColor + ")" }}>{badgeIcon(haloKind, 28)}</span>}
             </div>
             {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
             <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
@@ -17839,12 +17854,9 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
                 clipPath: "polygon(0% 0%, 100% 0%, " + (50 + beamNarrow) + "% 100%, " + (50 - beamNarrow) + "% 100%)",
                 background: "linear-gradient(180deg, rgba(196,154,80,.04) 0%, rgba(196,154,80,.3) 55%, rgba(236,203,134,.75) 100%)",
                 filter: "blur(1.5px)", marginTop: -4, marginBottom: -4, pointerEvents: "none" }} />
-            <LegacyProjectorBlock entry={entry} size={blockSize} />
+            {/* (사용자 요청) "다시 보기" 버튼 대신, 유산 블록을 클릭할 때마다 처음부터 다시 재생된다. */}
+            <LegacyProjectorBlock entry={entry} size={blockSize} onClick={() => setAppliedCount(startCount)} />
           </div>
-          <div style={{ minHeight: 22, fontFamily: "ui-monospace,monospace", fontSize: 16, fontWeight: 800, color: "#fff", textShadow: "0 0 10px " + color }}>
-            {lastSan ? moveNumber(appliedCount - 1) + lastSan : ""}
-          </div>
-          {done && <button onClick={() => setAppliedCount(startCount)} className="press" style={{ padding: "8px 18px", borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>다시 보기</button>}
         </motion.div>
       )}
     </motion.div>
