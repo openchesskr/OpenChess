@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star, Gem, Smartphone,
+  Send, Compass, Rocket, Star, Gem, Pin,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -708,15 +708,25 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.3.4", date: "2026.8.13",
-    summary: "유산 만들기·공유·전체 보기 창이 채팅·친구 창처럼 모바일에서 화면을 꽉 채우는 전체 화면으로 바뀌었어요.",
+    summary: "채팅 목록에서 대화를 고정하고 알림을 끄고 삭제할 수 있어요. 채팅 메시지 수정/삭제 메뉴 위치·오류를 고치고, 공유된 유산 카드를 프로필과 같은 디자인으로 통일했어요. 유산 재생은 이제 위에서 떨어져 부딪히는 낙하 충격 연출로 바뀌었고, 유산 창들도 모바일에서 전체 화면으로 크게 볼 수 있어요.",
     mascot: {
-      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "유산 관련 창들도 이제 모바일에서 꽉 찬 화면으로 편하게 볼 수 있어요!" },
-      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "작은 화면에서도 유산을 더 넉넉하게 만들고 공유해 보세요!" },
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "채팅 목록에 대화 고정·알림 끄기·삭제 기능이 생겼어요! 자주 하는 대화는 핀으로 꽂아 두세요." },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "유산 재생도 이제 위에서 쿵! 떨어지는 손맛 나는 연출로 바뀌었어요!" },
     },
-    highlight: { kind: "icon", Icon: Smartphone, color: T.brassHi, label: "유산 창 모바일 전체 화면 대응" },
+    highlight: { kind: "icon", Icon: Pin, color: T.brassHi, label: "채팅 목록 고정·알림 끄기·삭제" },
     sections: [
+      { cat: "feature", items: [
+        "채팅 버튼을 눌러 나오는 대화 목록에서, 대화를 꾹 누르거나(컴퓨터는 오른쪽 클릭) 고정/고정 해제·알림 받기/끄기·삭제를 고를 수 있어요. 고정한 대화는 이름 옆에 핀 아이콘이 붙고 항상 목록 맨 위에 보여요. 삭제하면 나에게서만 안 보이게 되고(상대방 화면엔 그대로 남아요), 상대방도 그 대화를 지운 적이 있다면 그 이전 대화 내용은 서버에서 영구적으로 삭제돼요.",
+      ] },
       { cat: "ui", items: [
         "유산 만들기·전체 보기·공유 창을 모바일에서는 채팅·친구 창과 같은 전체 화면으로 크게 볼 수 있도록 바꿨어요 — 특히 유산 만들기에서 chess.com 대국 목록을 펼칠 때 좁은 화면에서도 넉넉하게 보여요.",
+        "채팅 메시지를 꾹 눌러(또는 오른쪽 클릭해) 여는 수정/삭제 메뉴가 이제 말풍선 위/아래 대신 옆 여백에 떠서, 다른 메시지와 겹쳐 보이지 않아요.",
+        "채팅에 공유된 유산 카드를 프로필에서 보던 것과 완전히 같은 디자인(라운딩 사각 블록 + 등급 배지)으로 통일했어요.",
+        "유산 재생 애니메이션에서 유산 수가 위에서 떨어져 부딪히는 느낌으로 바뀌었어요 — 그 낙하 충격이 파동처럼 퍼지며 주변 수들이 튕겨나가듯 흩어져요.",
+      ] },
+      { cat: "fix", items: [
+        "채팅 메시지 수정/삭제가 실패했을 때 그냥 조용히 원상태로 돌아가거나 아무 반응이 없던 문제를 고쳐, 이제 실패하면 안내 문구가 떠요.",
+        "유산 재생에서 유산 수가 이어지는 수 타이핑 애니메이션으로 넘어갈 때 위치가 어긋나 보이던 문제를 고쳤어요.",
       ] },
     ],
   },

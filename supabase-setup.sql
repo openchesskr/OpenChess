@@ -902,3 +902,49 @@ returns table(avg_ms numeric, sample_count bigint) language sql stable as $$
 $$;
 grant execute on function public.puzzle_line_avg_solve_ms(bigint, text) to anon, authenticated;
 
+-- ============================================================================
+-- 19) chat_conv_prefs — 채팅 목록의 대화방별 설정(고정/알림 끄기)과 "나에게서만 삭제" 워터마크 (v0.3.4)
+-- ============================================================================
+-- 대화(conversation) 자체는 별도 테이블 없이 chat_messages를 클라이언트가 상대별로 묶어서 쓰는
+-- 구조라, 그 목록 화면에서만 의미 있는 "나만의" 설정(고정 여부·알림 끄기 여부·내가 지운 시점)을
+-- 담을 곳이 없었다. (uid, other_uid) 조합마다 딱 한 행 — pinned/muted는 uid 본인이 자유롭게
+-- 읽고 쓴다(일반 RLS, RPC 불필요). cleared_before(대화 삭제 워터마크)만은 상대방의 워터마크를
+-- 함께 봐야 영구 삭제 여부를 판단할 수 있어 아래 SECURITY DEFINER RPC로 처리한다.
+create table if not exists public.chat_conv_prefs (
+  uid uuid not null references auth.users(id) on delete cascade,
+  other_uid uuid not null references auth.users(id) on delete cascade,
+  pinned boolean not null default false,
+  muted boolean not null default false,
+  cleared_before timestamptz,
+  updated_at timestamptz not null default now(),
+  primary key (uid, other_uid)
+);
+alter table public.chat_conv_prefs enable row level security;
+drop policy if exists "conv prefs own" on public.chat_conv_prefs;
+create policy "conv prefs own" on public.chat_conv_prefs for all using (auth.uid() = uid) with check (auth.uid() = uid);
+grant select, insert, update, delete on public.chat_conv_prefs to authenticated;
+
+-- 대화 삭제("나에게서만 삭제") — 내 워터마크(cleared_before)를 지금 시각으로 올려 두면, 클라이언트는
+-- 이후 그 시각 이전 메시지를 더 이상 불러오지 않는다(나에게만 안 보임, 상대방 화면엔 그대로 남음).
+-- 상대방도 이미 자신의 워터마크를 기록해 두었다면(=상대도 그 대화를 지운 적이 있다면), 두 워터마크
+-- 중 더 이른 시점까지의 메시지는 이제 양쪽 어디에서도 다시 보일 일이 없으므로 서버에서 영구적으로
+-- 삭제한다 — chat_edit_message와 같은 이유(상대 소유 행까지 들여다봐야 함)로 SECURITY DEFINER.
+create or replace function public.chat_clear_conversation(p_other uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid();
+  v_now timestamptz := now();
+  v_other_cleared timestamptz;
+begin
+  insert into public.chat_conv_prefs(uid, other_uid, cleared_before, updated_at)
+    values (v_me, p_other, v_now, v_now)
+    on conflict (uid, other_uid) do update set cleared_before = v_now, updated_at = v_now;
+  select cleared_before into v_other_cleared from public.chat_conv_prefs where uid = p_other and other_uid = v_me;
+  if v_other_cleared is not null then
+    delete from public.chat_messages
+      where ((from_uid = v_me and to_uid = p_other) or (from_uid = p_other and to_uid = v_me))
+        and created_at <= least(v_now, v_other_cleared);
+  end if;
+end; $$;
+grant execute on function public.chat_clear_conversation(uuid) to authenticated;
+
