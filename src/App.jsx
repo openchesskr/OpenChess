@@ -2372,7 +2372,16 @@ function computeRatingChanges(games) {
 // localStorage에 저장해 둔다. 버전 번호를 키에 넣어 두면, 나중에 저장 구조가 바뀌어도 예전 캐시를
 // 안전하게 무시(재요청)하게 할 수 있다. 다른 localStorage 캐시들(occ_bgm_on 등)과 같은 접두어·
 // try/catch 관례를 따른다 — 캐시는 있으면 좋은 부가 기능일 뿐이라 실패해도 앱 동작에 지장이 없어야 한다.
-const CHESSCOM_CACHE_VERSION = 1;
+// (v0.3.4 버그 수정) "리뷰한 대국만" 필터(reviewGameKey → white.username+black.username+endTime
+// 조합)가, 분명 리뷰한 대국인데도 아무것도 안 뜨는 문제의 근본 원인 — game.white/black 객체는
+// 원래 상대 쪽 정보까지 담도록 나중에 추가된 필드인데(바로 아래 주석 참고), 이 캐시 버전은 그
+// 스키마 변경 때 함께 올라가지 않았다. 그 결과 아직 최신 달이 아니라서 다시 안 받아 온 옛 캐시
+// 항목은 white/black 키 자체가 아예 없는 구버전 형태로 localStorage에 계속 남아 있을 수 있었다 —
+// reviewGameKey(g)가 이런 게임에서는 null을 반환해, 리뷰를 열어도 reviewUnlocked에 전혀 기록되지
+// 않고(티켓도 소모 안 됨) "리뷰한 대국만" 필터에서도 영원히 걸러졌다(=리뷰 기록이 저장 자체가
+// 안 되는 것처럼 보인 원인). 버전을 올려 캐시 키를 바꾸면 옛 캐시가 자동으로 무시되고 모든 달을
+// 새 스키마로 한 번 다시 받아 오므로, 이후로는 모든 대국이 항상 white/black을 갖게 된다.
+const CHESSCOM_CACHE_VERSION = 2;
 function chesscomCacheKey(u) { return "occ_chesscom_v" + CHESSCOM_CACHE_VERSION + "_" + u; }
 function loadChesscomCache(u) {
   try {
@@ -12575,8 +12584,6 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     const t = setTimeout(() => { setPage(1); setCelebrate({ tag: doneTag }); }, 900);
     return () => clearTimeout(t);
   }, [done]);
-  // 클리어·흔들림 애니메이션은 잠깐만 재생하고 스스로 꺼진다(반복 재생 방지).
-  useEffect(() => { if (!celebrate) return; const t = setTimeout(() => setCelebrate(null), 2400); return () => clearTimeout(t); }, [celebrate]);
   // 이 가지 아래에 아직 해결하지 않은 리프가 남아 있는가.
   // (20차 기능3) 개발자가 수 추가/삭제 중 잠시 남기는 "미완성" 리프(상대 수로 끝남 = 짝수 길이)는
   // 정식 라인이 아니므로 여기서 "미해결"로 잘못 취급해 추천하지 않는다 — 그러지 않으면 상대 응수
@@ -12647,6 +12654,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 않고, 그 오답을 뒀을 때 상대가 어떻게 응징하는지 엔진 최선 응수를 한 번 보여준 뒤(가능한 경우만)
   // 응수→오답 순으로 슬라이드 애니메이션과 함께 두 단계로 되돌린다. 엔진을 못 쓰는 상황(liveOn 꺼짐 등)은
   // 예전처럼 오답만 바로 되돌린다.
+  // (v0.3.4 버그 수정) engine.status가 "ready"가 아니면 이 순간 조용히 포기해 응징 연출 없이 오답만
+  // 되돌아가던 문제 — 앱을 켜자마자(엔진이 아직 부팅 중일 때) 곧장 퍼즐부터 푸는 흔한 경로에서
+  // 특히 자주 재현됐다("응징이 안 뜬다"는 신고와 정확히 부합). liveOn이 켜져 있는데 아직 부팅
+  // 중일 뿐이라면 최대 ENGINE_WAIT_MS까지 짧은 간격으로 기다렸다가 계산한다 — liveOn 자체가
+  // 꺼져 있거나 정말로 그 시간 안에도 준비되지 않으면 예전처럼 포기하고 오답만 되돌린다.
   useEffect(() => {
     if (!wrong) { setWrongReply(null); setRevertStage(null); return; }
     let cancelled = false;
@@ -12656,13 +12668,21 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       await wait(1000);   // 오답을 잠시 보여준다
       if (cancelled) return;
       let replyMove = null;
-      if (liveOn && engine && engine.status === "ready") {
-        try {
-          const ev = await engine.evaluate(sansToFen([...curSans, wrong.san]), 12);
-          const bestSan = ev && ev.best ? uciToSan(wrong.board, ev.best, oppColor) : null;
-          const info = bestSan ? sanSrc(wrong.board, stripSuffix(bestSan), oppColor) : null;
-          if (info && info.from && info.to) replyMove = { san: bestSan, from: info.from, to: info.to };
-        } catch { }
+      if (liveOn && engine) {
+        const ENGINE_WAIT_MS = 4000, ENGINE_POLL_MS = 150;
+        let waited = 0;
+        while (engine.status !== "ready" && waited < ENGINE_WAIT_MS) {
+          await wait(ENGINE_POLL_MS); waited += ENGINE_POLL_MS;
+          if (cancelled) return;
+        }
+        if (engine.status === "ready") {
+          try {
+            const ev = await engine.evaluate(sansToFen([...curSans, wrong.san]), 12);
+            const bestSan = ev && ev.best ? uciToSan(wrong.board, ev.best, oppColor) : null;
+            const info = bestSan ? sanSrc(wrong.board, stripSuffix(bestSan), oppColor) : null;
+            if (info && info.from && info.to) replyMove = { san: bestSan, from: info.from, to: info.to };
+          } catch { }
+        }
       }
       if (cancelled) return;
       if (replyMove) {
@@ -12761,6 +12781,19 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     : "이 라인을 완료했어요! 모식도에서 다른 가지에 도전해 보세요.";
   const bubbleText = done ? doneBubble : idleBubble;
   const nextTag = (allLines.find((l) => !solvedNow.has(l.tag)) || {}).tag;
+  // (v0.3.4 기능·버그 수정) 클리어 애니메이션은 잠깐만 재생하고 스스로 꺼진다(반복 재생 방지) — 그
+  // 시점에 맞춰, 모든 라인을 다 푼 게 아니라면(사용자 요청) 자동으로 다음 미해결 라인으로 넘어간다.
+  // gotoLine 자체가 celebrate를 함께 초기화하므로 별도 처리는 필요 없다. 사용자가 그 사이 "다음
+  // 라인 풀기" 버튼이나 라인 번호 버튼을 직접 눌러 먼저 이동했다면 celebrate가 이미 null이 되어
+  // 있어(gotoLine이 그렇게 만듦) 이 타이머 자체가 예약되지 않으므로 중복 전환도 없다.
+  useEffect(() => {
+    if (!celebrate) return;
+    const t = setTimeout(() => {
+      if (!fullyComplete && nextTag != null) gotoLine(nextTag);
+      else setCelebrate(null);
+    }, 2400);
+    return () => clearTimeout(t);
+  }, [celebrate, fullyComplete, nextTag]);
   const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
   const lineLabel = targetLine ? (LINE_TAG_LABEL[targetLine.tag] || ("라인 " + (lineIdx + 1))) : "";
   // (18차 보충 UX10→20차) 퍼즐에서 두어지는 모든 수의 수 체계 아이콘 — 트리에 저장된 등급을 즉시 쓰고,
@@ -13094,7 +13127,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 gotoLine으로 그 라인을 목표로 바로 처음부터 풀이를 시작한다(이미 푼 라인이어도 다시
                 고를 수 있다 — gotoLine 자체가 재도전을 막지 않고, 라인마다 XP는 최초 1회만 지급되지만
                 추천 랭킹용 풀이 이벤트는 재도전마다 매번 기록된다). 라인이 하나뿐인 퍼즐은 "처음부터"
-                버튼과 중복이라 굳이 보여주지 않는다. */}
+                버튼과 중복이라 굳이 보여주지 않는다.
+                (v0.3.4 UI 버그 수정) 예전엔 "지금 풀고 있는 라인"(isTarget) 스타일이 채워진 금색
+                배경으로 다른 모든 상태를 덮어써, 이미 푼 라인을 다시 선택했을 때 그게 풀렸던
+                라인인지 시각적으로 알 수 없었다(둘 다 그냥 금색 원에 숫자). 해결 여부(초록 배경 +
+                체크 아이콘, 숫자 대신)와 지금 풀고 있는지(테두리만 금색)를 서로 독립된 신호로
+                분리해, 두 상태가 겹쳐도(이미 푼 라인을 지금 다시 풀고 있는 경우) 둘 다 한눈에 보인다. */}
             {allLines.length > 1 && (
               <div className="flex justify-center" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                 {allLines.map((l, i) => {
@@ -13103,12 +13141,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                   return (
                     <button key={l.tag} onClick={() => gotoLine(l.tag)} className="press" title={"라인 " + (i + 1) + (lineIsSolved ? " (해결됨 — 다시 풀기)" : "")}
                       style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
-                        border: "1.5px solid " + (isTarget ? T.brassHi : lineIsSolved ? T.best : "#C9B58C"),
-                        background: isTarget ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : lineIsSolved ? "#EAF3E0" : "#fff",
-                        color: isTarget ? "#241509" : lineIsSolved ? T.best : T.ink,
+                        border: "2px solid " + (isTarget ? T.brassHi : lineIsSolved ? T.best : "#C9B58C"),
+                        background: lineIsSolved ? "#EAF3E0" : "#fff",
+                        color: lineIsSolved ? T.best : T.ink,
                         fontWeight: 800, fontSize: 12, fontFamily: "ui-monospace,monospace", cursor: "pointer",
                         display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                      {i + 1}
+                      {lineIsSolved ? <Check size={14} /> : (i + 1)}
                     </button>
                   );
                 })}
@@ -15304,6 +15342,11 @@ const CHANGELOG = [
       "채팅에 공유된 유산 카드를 프로필에서 보던 것과 똑같은 디자인으로 바꿨어요.",
       "채팅 목록에서 대화를 꾹 누르거나(컴퓨터는 오른쪽 클릭) 고정·알림 끄기·삭제를 할 수 있어요. 고정한 대화는 이름 옆에 핀 아이콘이 뜨고 항상 맨 위에 보여요. 삭제하면 나에게서만 안 보이고, 상대방도 지운 적이 있다면 그 이전 대화는 영구적으로 지워져요.",
       "유산 재생 애니메이션에서 유산 수가 위에서 떨어져 부딪히는 느낌으로 바뀌었어요 — 그 충격이 파동처럼 퍼지며 주변 수들이 튕겨나가듯 흩어져요. 이어지는 수 타이핑에서 위치가 어긋나 보이던 문제도 고쳤어요.",
+      "일일 퀘스트의 chess.com 링크가 모바일에서 여전히 웹사이트로만 열리던 문제를 고쳤어요 — 앱으로 못 넘어가면 잠시 뒤 앱스토어/플레이스토어로 대신 이동해요.",
+      "예전에 분명히 리뷰했던 대국인데 '리뷰한 대국만' 필터에서 안 보이던 문제를 고쳤어요.",
+      "퍼즐에서 한 라인을 다 풀면 이제 자동으로 다음 라인으로 넘어가요.",
+      "퍼즐에서 오답을 뒀을 때 상대의 응징 수가 안 뜨고 그냥 되돌아가기만 하던 문제를 고쳤어요.",
+      "퍼즐 라인 버튼에서 이미 푼 라인은 숫자 대신 초록색 체크로, 지금 풀고 있는 라인은 금색 테두리로 표시해 더 알아보기 쉬워졌어요.",
     ]
   },
   {
