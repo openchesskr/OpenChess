@@ -24,6 +24,7 @@
     1. 알림·친구요청 배지·채팅창·안읽은 채팅 배지 폴링을 Supabase Realtime 구독으로 전환할 것 — 소켓이 조용히 끊기는 경우를 대비해 느슨한 안전망 폴링만 남길 것.
     ```
 - **용어: "국면"이 아니라 "포지션"을 쓴다.** 웹사이트에서 사용자에게 보이는 텍스트(테마 설명, 힌트 문구 등)에는 체스 위치를 가리킬 때 "국면" 대신 "포지션"이라는 용어를 쓴다. 새로 추가하는 화면 텍스트도 이 규칙을 따른다.
+- **Supabase SQL은 항상 `supabase-setup.sql` 하나의 통합본으로만 관리한다.** 이 세션은 실제 DB 접근 권한이 없어 사용자가 Supabase SQL Editor에 직접 붙여넣어 실행해야 한다. 새 테이블/컬럼/함수가 필요해지면 별도의 조각 파일이나 "이번 버전분만" 담은 부분 스니펫을 새로 만들지 말고, 반드시 `supabase-setup.sql` 안의 해당 섹션(번호 매겨진 구획, 컬럼 추가는 `alter table ... add column if not exists`, 함수는 `drop function if exists ... cascade` + `create or replace function`)에 맞는 자리에 직접 추가/수정해 그 파일 자체를 항상 최신 통합 상태로 유지한다. 사용자에게 SQL을 보여줄 때도 이번 버전에 새로 추가된 부분만 조각내어 주지 말고, `supabase-setup.sql` 파일 전체를 하나의 코드블록으로 그대로 보여준다 — 파일이 이미 몇 번을 실행해도 안전한 멱등적 패턴(`if not exists`/`create or replace`/`drop ... if exists`)으로 작성돼 있으므로 전체를 다시 실행해도 문제 없다.
 
 ## 버전 기록
 
