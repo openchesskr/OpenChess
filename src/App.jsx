@@ -15262,6 +15262,8 @@ const CHANGELOG = [
       "유산 재생에서 체스보드에 지정한 수가 두어지는 순간에도 화면이 확대·어두워지고 모든 기물이 한 번 흔들려요. 등급 아이콘 목록에서 지정한 수의 아이콘은 항상 정중앙에 오고 금색 테두리로 구분돼요.",
       "유산을 만들 때 지정한 수 앞뒤로 몇 수 보여줄지를 직접 입력하는 대신 1~7수 중에서 선택 박스로 고르도록 바꿨어요.",
       "그랜드마스터 티어에 도달하면 유산 종류(최선·유일·탁월)마다 칸을 하나씩 더 만들 수 있어요.",
+      "프로필 카드의 유산은 이제 같은 종류끼리 항상 같은 줄에 표시돼요. '유산' 옆에 '더보기' 버튼이 생겨, 누르면 등록된 모든 유산을 등록 날짜와 함께 크게 볼 수 있어요.",
+      "유산 재생에서 유산 수가 나온 뒤에 이어지는 수들이 잘못 흔들리던 문제를 고쳤어요. 유산 수를 둘 때 확대 배율을 더 키우고, 기물이 더 크게 흔들리도록 했어요. 하단 등급 아이콘 자리를 재생 시작 전부터 고정해 둬 더 이상 밀리지 않고, 줄바꿈이 일어나도 정렬이 흐트러지지 않아요.",
       "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼, 기물 칸을 감싸던 색 테두리를 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시돼요(예전에 만든 유산도 지정한 수만큼은 확실히 표시돼요). 배경은 검은색으로, 기보 타이핑 속도는 조금 느리게 바꿨어요.",
     ]
   },
@@ -17752,10 +17754,10 @@ function LegacyEmptySlot({ typeInfo, onClick, bonus }) {
 // 밝은/어두운 칸은 색이 아니라 (r+c) 홀짝에 따른 배경 불투명도 차이(=빛의 밝기 차이)로 구분한다.
 // (사용자 요청) flip — 사용자가 지정한 진영(entry.side)이 항상 아래에 오도록, 실제 Board 컴포넌트와
 // 같은 방식(행·열 모두 뒤집기)으로 반전한다.
-// (사용자 요청) heroNonce — 유산으로 지정한 수가 두어지는 순간 부모(LegacyRevealScreen)가 한 번만
-// 올려주는 값. 그 순간까지 이미 그려져 있던 기물들만 새로 마운트시켜, 방금 둔 칸(halo)에서부터
-// 퍼져나가는 흔들림(legacyWaveShake)을 정확히 한 번 재생한다.
-function LegacyLightBoard({ board, size = 320, halo, haloKind, flip, heroNonce = 0 }) {
+// (사용자 요청) heroActive — 유산으로 지정한 수가 두어지는 바로 그 순간(부모의 boardHeroActive)만
+// true인 값. animation-name을 "none"에서 실제 키프레임으로 바꾸는 것만으로 브라우저가 그 순간에
+// 애니메이션을 새로 시작하므로, 그 이전/이후 수에는 전혀 흔들림이 남지 않는다(별도 key remount 불필요).
+function LegacyLightBoard({ board, size = 320, halo, haloKind, flip, heroActive }) {
   const cell = Math.max(1, Math.floor(size / 8));
   const rows = flip ? [...board].reverse().map((r) => [...r].reverse()) : board;
   // (사용자 요청) 보드가 처음 나타날 때, 아래(영사기 블록이 있는 하단 중앙)에서 나온 빛이 격자를
@@ -17783,7 +17785,8 @@ function LegacyLightBoard({ board, size = 320, halo, haloKind, flip, heroNonce =
               </div>
             )}
             {p && (
-              <span key={"piece-" + heroNonce} style={{ display: "inline-flex", animationName: heroNonce > 0 ? "legacyWaveShake" : "none", animationDuration: "0.5s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
+              // (사용자 요청) 유산 수를 둔 순간엔 더 크게 흔들리는(legacyPieceShake) 전용 키프레임을 쓴다.
+              <span style={{ display: "inline-flex", animationName: heroActive ? "legacyPieceShake" : "none", animationDuration: "0.55s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
                 animationDelay: (haloDisplay ? Math.hypot(r - haloDisplay[0], c - haloDisplay[1]) : 0) * 0.03 + "s" }}>
                 <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} pieceSkin="classic" style={{
                   filter: "drop-shadow(0 0 3px " + (p.c === "w" ? "#FFF6DE" : "#E9C98A") + ") drop-shadow(0 0 10px " + (p.c === "w" ? T.brassHi : "#8A6A2F") + "cc)" }} />
@@ -17832,11 +17835,6 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const pgnTokens = useMemo(() => sans.map((s, i) => moveNumber(i) + s), [sans]);
   const [typedCount, setTypedCount] = useState(0);
   const typingRef = useRef(null);
-  // (사용자 요청) 유산으로 지정한 수(moveIndex)가 타이핑 중 나타나는 순간, 주변 텍스트가 파동처럼
-  // 한 번 흔들리는 연출 — waveNonce가 바뀔 때만 그 시점까지 이미 그려진 토큰들을 새로 마운트해
-  // legacyWaveShake 키프레임을 한 번 재생시킨다(heroShownRef로 중복 트리거 방지).
-  const [waveNonce, setWaveNonce] = useState(0);
-  const heroShownRef = useRef(false);
   useEffect(() => { const t = setTimeout(() => setPhase("typing"), 950); return () => clearTimeout(t); }, []);
   useEffect(() => {
     if (phase !== "typing") return;
@@ -17853,13 +17851,11 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
     const t = setTimeout(() => setTypedCount((n) => Math.min(pgnTokens.length, n + 1)), delay);
     return () => clearTimeout(t);
   }, [phase, typedCount, pgnTokens.length, moveIndex]);
-  useEffect(() => {
-    if (typedCount === moveIndex + 1 && !heroShownRef.current) {
-      heroShownRef.current = true;
-      setWaveNonce((n) => n + 1);
-    }
-  }, [typedCount, moveIndex]);
   useEffect(() => { if (typingRef.current) typingRef.current.scrollTop = typingRef.current.scrollHeight; }, [typedCount]);
+  // (사용자 요청) 유산 수가 등장한 이후에 나오는 수들은 흔들리지 않아야 한다 — "이미 유산 수가
+  // 나타난 뒤"라는 사실 자체를 typedCount > moveIndex로 판단하므로, 파동 흔들림 대상은 항상
+  // i < moveIndex(유산 수보다 먼저 나온 토큰)로만 한정한다(유산 수 자신·그 이후 토큰은 제외).
+  const heroTyped = typedCount > moveIndex;
   // (사용자 요청) 지정한 수가 나타나기 직전·직후엔 화면이 어두워지고 확대된다.
   const heroActive = phase === "typing" && (typedCount === moveIndex || typedCount === moveIndex + 1);
   useEffect(() => {
@@ -17878,32 +17874,22 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   // 다만 유산을 저장할 때 "지정한 수(moveIndex)는 반드시 그 유산 등급(typeInfo.kind)으로 채점된
   // 수"라는 게 이미 검증돼 있으므로, kinds가 없거나 못 믿을 때도 지정한 수 차례에는 그 등급으로
   // 확실하게 표시할 수 있다(그 외의 수는 실제로 몰라 아이콘을 생략한다).
-  // (사용자 요청) 이번 재생에서 실제로 나온 수마다 그 수의 등급 아이콘을 전부 보여준다 — 최신 한
-  // 수만 남기고 지워지지 않도록, startCount~appliedCount-1 범위 전체를 매번 다시 계산한다.
+  // (사용자 요청) 이번 재생에서 나올 모든 수의 등급 아이콘 자리를 처음부터 고정해 둔다 — 아직 두지
+  // 않은 수도 자리를 미리 차지해, 수가 진행될 때 아이콘이 하나씩 늘어나며 레이아웃이 밀리지 않는다.
   const kindAt = (i) => {
     const k = kinds && kinds[i];
     if (k && k !== "pending") return k;
     return i === moveIndex ? typeInfo.kind : null;
   };
   const haloKind = appliedCount > 0 ? kindAt(appliedCount - 1) : null;
-  const playedKinds = useMemo(() => {
-    const out = [];
-    for (let i = startCount; i < appliedCount; i++) { const k = kindAt(i); if (k) out.push({ i, k }); }
-    return out;
-  }, [kinds, moveIndex, typeInfo.kind, startCount, appliedCount]);
+  const allSlots = useMemo(() => Array.from({ length: Math.max(0, endCount - startCount) }, (_, idx) => startCount + idx), [startCount, endCount]);
   const color = QCOLOR[typeInfo.kind];
   // (사용자 요청) 체스보드에서도 유산으로 지정한 수가 두어지는 순간, 타이핑 단계와 같은 느낌으로
-  // 확대·어둡게·기물 흔들림 연출을 준다 — heroNonce는 그 순간에 한 번만 올라가(heroBoardShownRef로
-  // 중복 방지), LegacyLightBoard 안에서 기물 흔들림 키프레임을 정확히 한 번만 재생시키는 데 쓴다.
+  // 확대·어둡게·기물 흔들림 연출을 준다. heroActive(boardHeroActive) prop 값 자체가 CSS
+  // animation-name을 "none"↔실제 키프레임으로 바꿔주므로(별도 key remount 없이도 브라우저가
+  // 값이 바뀌는 시점에 애니메이션을 다시 재생한다) 이 순간에만, 그리고 정확히 한 번만 흔들리고
+  // 그 이후 수들에는 전혀 적용되지 않는다.
   const boardHeroActive = phase === "board" && appliedCount - 1 === moveIndex;
-  const [heroNonce, setHeroNonce] = useState(0);
-  const heroBoardShownRef = useRef(false);
-  useEffect(() => {
-    if (boardHeroActive && !heroBoardShownRef.current) {
-      heroBoardShownRef.current = true;
-      setHeroNonce((n) => n + 1);
-    }
-  }, [boardHeroActive]);
   // (사용자 요청) 재생 화면의 체스보드를 더 크게(최대 360→440).
   const [lightBoardSize, boardWrapRef] = useBoardSize(440);
   const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
@@ -17938,12 +17924,15 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
             <span style={{ fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
               {pgnTokens.slice(0, typedCount).map((tok, i) => {
                 const isHero = i === moveIndex;
-                const dist = Math.abs(i - moveIndex);
+                const dist = moveIndex - i;
+                // (사용자 요청) 유산 수가 등장한 이후에 나오는 수들은 흔들리지 않는다 — i < moveIndex
+                // (유산 수보다 먼저 나온 토큰)만, 그것도 유산 수가 실제로 등장한 뒤(heroTyped)에만 흔들린다.
+                const shouldShake = !isHero && i < moveIndex && heroTyped;
                 return (
-                  <span key={i + "-" + waveNonce} style={{ display: "inline-block", marginRight: 6,
+                  <span key={i} style={{ display: "inline-block", marginRight: 6,
                     color: isHero ? color : T.ivoryHi, fontWeight: isHero ? 900 : 400, fontSize: isHero ? 19 : 15,
                     textShadow: isHero ? ("0 0 16px " + color + ", 0 2px 10px rgba(0,0,0,.6)") : "0 2px 10px rgba(0,0,0,.6)",
-                    animationName: isHero ? "legacyHeroPop" : (waveNonce > 0 ? "legacyWaveShake" : "none"),
+                    animationName: isHero ? "legacyHeroPop" : (shouldShake ? "legacyWaveShake" : "none"),
                     animationDuration: "0.5s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
                     animationDelay: isHero ? "0s" : (dist * 0.025) + "s" }}>{tok}</span>
                 );
@@ -17953,7 +17942,7 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           </div>
         </motion.div>
       ) : (
-        <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: boardHeroActive ? 1.1 : 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
+        <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: boardHeroActive ? 1.4 : 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
           {/* (사용자 요청) 유산으로 지정한 수가 체스보드에 두어지는 순간에도 주변이 어두워진다. */}
           <motion.div aria-hidden="true" animate={{ opacity: boardHeroActive ? 1 : 0 }} transition={{ duration: 0.4 }}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
@@ -17961,27 +17950,28 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
             {/* (사용자 요청) 재생 화면 체스보드를 더 크게 키우고(useBoardSize(440)), "탁월한 유산" 같은
                 유산 등급 라벨은 없앤다. */}
             <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
-              <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} flip={flip} heroNonce={heroNonce} />
+              <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} flip={flip} heroActive={boardHeroActive} />
             </div>
-            {/* (사용자 요청) 최신 수 하나만이 아니라, 이번 재생에서 나온 모든 수의 등급 아이콘을 순서대로
-                보여준다 — 유산으로 지정한 수의 아이콘은 3열 그리드로 항상 정중앙에 고정하고, 금색
-                테두리로 다른 아이콘들과 구분한다. */}
-            <div style={{ minHeight: 30, display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 6, margin: "6px 0 2px", width: "100%", maxWidth: lightBoardSize }}>
-              <div style={{ display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: 6 }}>
-                {playedKinds.filter((x) => x.i < moveIndex).map(({ i, k }) => (
-                  <span key={i} style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>
-                ))}
-              </div>
-              <div>
-                {playedKinds.filter((x) => x.i === moveIndex).map(({ i, k }) => (
-                  <span key={i} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 3, borderRadius: "50%", border: "2px solid " + T.brassHi, boxShadow: "0 0 12px 2px rgba(236,203,134,.85), 0 0 4px " + QCOLOR[k], background: "rgba(236,203,134,.12)" }}>{badgeIcon(k, 26)}</span>
-                ))}
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-start", flexWrap: "wrap", gap: 6 }}>
-                {playedKinds.filter((x) => x.i > moveIndex).map(({ i, k }) => (
-                  <span key={i} style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>
-                ))}
-              </div>
+            {/* (사용자 요청) 아이콘 자리를 처음부터(재생 시작 전부터) 전부 고정해 둔다 — 매 수마다
+                새 아이콘이 추가되며 레이아웃이 밀리지 않도록, startCount~endCount 범위의 슬롯을 전부
+                미리 그려 두고 아직 두지 않은 수는 자리만 차지한 채 안 보이게(visibility:hidden) 한다.
+                한 줄 flex-wrap(justifyContent:center)이라 다음 줄로 넘어가도 정렬이 흐트러지지 않는다.
+                유산으로 지정한 수의 자리만 금색 테두리로 구분한다. */}
+            <div style={{ minHeight: 30, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, margin: "6px 0 2px", width: "100%", maxWidth: lightBoardSize }}>
+              {allSlots.map((i) => {
+                const revealed = i < appliedCount;
+                const k = kindAt(i);
+                const isHero = i === moveIndex;
+                return (
+                  <span key={i} style={{ width: 30, height: 30, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
+                    visibility: revealed && k ? "visible" : "hidden",
+                    border: (isHero && revealed) ? "2px solid " + T.brassHi : "none",
+                    boxShadow: (isHero && revealed) ? "0 0 12px 2px rgba(236,203,134,.85), 0 0 4px " + (k ? QCOLOR[k] : "transparent") : "none",
+                    background: (isHero && revealed) ? "rgba(236,203,134,.12)" : "transparent" }}>
+                    {revealed && k && <span style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>}
+                  </span>
+                );
+              })}
             </div>
             {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
             <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
@@ -18003,8 +17993,59 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
 // (사용자 요청) 그랜드마스터 티어(isGM)면 종류(최선/유일/탁월)마다 칸을 하나씩 더(총 6칸) 쓸 수
 // 있다 — 기존 슬롯 키(best/only/brilliant)는 그대로 두고, 추가 슬롯은 "2"를 붙인 별도 키
 // (best2/only2/brilliant2)로 완전히 독립 저장해 기존 데이터 마이그레이션이 필요 없게 했다.
+// (사용자 요청) 유산 타일을 종류(최선/유일/탁월)별로 한 행에 묶어 보여준다 — 그랜드마스터 보너스
+// 칸까지 있을 때, 자연스러운 flex-wrap 순서로는 같은 종류의 두 칸이 서로 다른 행으로 갈라지는
+// 문제가 있었다(예: best,best2,only | only2,brilliant,brilliant2). LegacyStoneRow(카드 인라인)와
+// LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
+function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {LEGACY_TYPES.map((t) => {
+        const rowSlots = slots.filter((s) => s.typeInfo.key === t.key);
+        if (!rowSlots.length) return null;
+        return (
+          <div key={t.key} className="flex" style={{ gap: 8 }}>
+            {rowSlots.map(({ slotKey, typeInfo }) => {
+              const bonus = slotKey.endsWith("2");
+              const entry = legacies && legacies[slotKey];
+              if (entry) return (
+                <div key={slotKey} style={{ flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
+                  <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} />
+                  {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{new Date(entry.savedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
+                </div>
+              );
+              return onManageLegacy ? <LegacyEmptySlot key={slotKey} typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /> : null;
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+// (사용자 요청) "더보기" — 프로필 카드 인라인 행과 별개로, 그 사용자가 등록해 둔 유산을 종류별로
+// 언제 등록했는지(savedAt)와 함께 더 크게 볼 수 있는 전체 화면.
+function LegacyAllModal({ slots, legacies, onManageLegacy, onClose }) {
+  const [openKey, setOpenKey] = useState(null);
+  const openSlot = openKey ? slots.find((s) => s.slotKey === openKey) : null;
+  const openEntry = openSlot && legacies ? legacies[openSlot.slotKey] : null;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", padding: 18 }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>유산 전체 보기</span>
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+        </div>
+        <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} showDate />
+      </div>
+      <AnimatePresence>
+        {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
+      </AnimatePresence>
+    </div>
+  );
+}
 function LegacyStoneRow({ legacies, onManageLegacy, isGM }) {
   const [openKey, setOpenKey] = useState(null);
+  const [showAll, setShowAll] = useState(false);
   const slots = useMemo(() => {
     const out = [];
     for (const t of LEGACY_TYPES) { out.push({ slotKey: t.key, typeInfo: t }); if (isGM) out.push({ slotKey: t.key + "2", typeInfo: t }); }
@@ -18016,18 +18057,16 @@ function LegacyStoneRow({ legacies, onManageLegacy, isGM }) {
   const openEntry = openSlot && legacies ? legacies[openSlot.slotKey] : null;
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>유산</div>
-      <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
-        {slots.map(({ slotKey, typeInfo: t }) => {
-          const bonus = slotKey.endsWith("2");
-          const entry = legacies && legacies[slotKey];
-          if (entry) return <LegacyStoneTile key={slotKey} typeInfo={t} entry={entry} onOpen={() => setOpenKey(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} />;
-          return onManageLegacy ? <LegacyEmptySlot key={slotKey} typeInfo={t} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /> : null;
-        })}
+      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>유산</span>
+        {/* (사용자 요청) "유산" 텍스트와 같은 줄에 더보기 버튼 — 눌러 등록된 모든 유산을 등록 시점과 함께 크게 본다. */}
+        <button onClick={() => setShowAll(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 1, background: "none", border: "none", cursor: "pointer", color: T.brass, fontSize: 11, fontWeight: 800 }}>더보기 <ChevronRight size={12} /></button>
       </div>
+      <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} />
       <AnimatePresence>
         {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
       </AnimatePresence>
+      {showAll && <LegacyAllModal slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} />}
     </div>
   );
 }
@@ -20249,7 +20288,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
