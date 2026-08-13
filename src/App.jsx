@@ -15111,7 +15111,7 @@ function MyProfileCard({ card, profile, setProfile, user, currentTitle, totalXp,
   const [editOpen, setEditOpen] = useState(false);
   // (사용자 요청) 유산(Legacy) 관리 — 어떤 종류(best/only/brilliant)를 편집 중인지 키만 들고 있는다.
   const [managingLegacy, setManagingLegacy] = useState(null);
-  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, legacies: profile.legacies };
+  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, legacies: profile.legacies, legacyHistory: profile.legacyHistory };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft } = chesscomUi;
   // (기능6) 프로필에서 메인 퀘스트 진척도·푼 퍼즐을 한눈에 볼 수 있게 표시.
   const mq = useMemo(() => mainQuestOverallProgress(mainQuest), [mainQuest]);
@@ -15150,8 +15150,11 @@ function MyProfileCard({ card, profile, setProfile, user, currentTitle, totalXp,
           chesscom={chesscom}
           username={profile.chesscom}
           onClose={() => setManagingLegacy(null)}
-          onSave={(key, entry) => { setProfile((p) => ({ ...p, legacies: { ...(p.legacies || {}), [key]: entry } })); setManagingLegacy(null); }}
-          onDelete={() => { setProfile((p) => ({ ...p, legacies: { ...(p.legacies || {}), [managingLegacy]: null } })); setManagingLegacy(null); }}
+          // (사용자 요청) 지워진 유산까지 다시 볼 수 있는 이력 기능 — 새로 저장(덮어쓰기)하거나
+          // 삭제해서 그 칸에서 밀려나는 기존 유산을 profile.legacyHistory에 보존해 둔다(그 칸 자체는
+          // 최신 것만 담으므로, 밀려나는 순간의 기존 값만 옮겨 적으면 된다).
+          onSave={(key, entry) => { setProfile((p) => { const prev = p.legacies && p.legacies[key]; const history = prev ? [...(p.legacyHistory || []), { slotKey: key, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [key]: entry }, legacyHistory: history }; }); setManagingLegacy(null); }}
+          onDelete={() => { setProfile((p) => { const prev = p.legacies && p.legacies[managingLegacy]; const history = prev ? [...(p.legacyHistory || []), { slotKey: managingLegacy, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [managingLegacy]: null }, legacyHistory: history }; }); setManagingLegacy(null); }}
         />
       )}
       {mq.totalChapters > 0 && (
@@ -15265,6 +15268,7 @@ const CHANGELOG = [
       "프로필 카드의 유산은 이제 같은 종류끼리 항상 같은 줄에 표시돼요. '유산' 옆에 '더보기' 버튼이 생겨, 누르면 등록된 모든 유산을 등록 날짜와 함께 크게 볼 수 있어요.",
       "유산 재생에서 유산 수가 나온 뒤에 이어지는 수들이 잘못 흔들리던 문제를 고쳤어요. 유산 수를 둘 때 확대 배율을 더 키우고, 기물이 더 크게 흔들리도록 했어요. 하단 등급 아이콘 자리를 재생 시작 전부터 고정해 둬 더 이상 밀리지 않고, 줄바꿈이 일어나도 정렬이 흐트러지지 않아요.",
       "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼, 기물 칸을 감싸던 색 테두리를 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시돼요(예전에 만든 유산도 지정한 수만큼은 확실히 표시돼요). 배경은 검은색으로, 기보 타이핑 속도는 조금 느리게 바꿨어요.",
+      "프로필의 유산 블록을 이제 종류별로 세로 열(3열)로 나눠 보여줘요. 기보 타이핑 화면에서 유산 수는 항상 화면 정중앙에 오도록 새로 설계했고, 체스보드에서 유산 수를 둘 때는 뷰포트를 벗어나지 않는 한도 안에서 최대한 확대되면서 보드가 잠시 화면 정중앙으로 옮겨졌다가 다시 원래 자리로 돌아와요. 유산 수 아이콘의 금색 테두리가 다른 아이콘과 크기가 달라 보이던 문제를 고쳤어요. 그리고 이제 지워지거나 새 유산으로 덮어써진 옛 유산도 '더보기' 화면 아래 '지난 유산' 목록에서 다시 볼 수 있어요.",
     ]
   },
   {
@@ -17016,7 +17020,7 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
   // (v0.1.3 기능) 설정 탭 "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐을 이 헤더 드롭다운에도
   // 보여준다 — PublicProfileStats는 이미 pub.mainQuestSummary/solvedNos가 있으면 그 두 블록을
   // 자동으로 그려주므로(다른 유저 공개 프로필과 동일한 컴포넌트), myPub에 그대로 채워 넣기만 하면 된다.
-  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, mainQuestSummary, solvedNos, legacies: profile.legacies };
+  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, mainQuestSummary, solvedNos, legacies: profile.legacies, legacyHistory: profile.legacyHistory };
   const goToProfile = () => { setOpen(false); onGoToProfile(); };
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
@@ -17895,6 +17899,21 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
   const beamHeight = Math.max(36, Math.round(lightBoardSize * 0.16));
   const beamNarrow = Math.min(46, (blockSize / Math.max(1, lightBoardSize)) * 50);
+  // (사용자 요청) 유산 수를 둘 때 체스보드가 뷰포트를 벗어나지 않는 선에서 최대로 확대되고, 그 동안
+  // 보드 자신을 뷰포트 정중앙으로 옮겼다가 끝나면 원래 자리로 되돌아온다 — boardHeroActive가 켜지는
+  // 순간 boardWrapRef의 현재 화면 좌표를 재서, 뷰포트 중심까지 필요한 이동량(dx,dy)과 뷰포트 안에
+  // 들어오는 한도 안에서의 최대 배율을 계산해 둔다(꺼지면 0,0,1로 그대로 복귀).
+  const [heroBoardXform, setHeroBoardXform] = useState({ x: 0, y: 0, scale: 1 });
+  useEffect(() => {
+    if (!boardHeroActive) { setHeroBoardXform({ x: 0, y: 0, scale: 1 }); return; }
+    const el = boardWrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    const dx = window.innerWidth / 2 - cx, dy = window.innerHeight / 2 - cy;
+    const maxScale = Math.max(1, Math.min((window.innerWidth * 0.94) / lightBoardSize, (window.innerHeight * 0.8) / lightBoardSize));
+    setHeroBoardXform({ x: dx, y: dy, scale: maxScale });
+  }, [boardHeroActive, lightBoardSize]);
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
       style={{ position: "fixed", inset: 0, zIndex: 210, background: "#000", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 20, boxSizing: "border-box" }}>
@@ -17920,52 +17939,66 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           {/* (사용자 요청) 유산으로 지정한 수가 나타나기 직전·직후에는 주변이 어두워진다. */}
           <motion.div aria-hidden="true" animate={{ opacity: heroActive ? 1 : 0 }} transition={{ duration: 0.45 }}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
-          <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px" }}>
-            <span style={{ fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
-              {pgnTokens.slice(0, typedCount).map((tok, i) => {
-                const isHero = i === moveIndex;
+          {/* (사용자 요청) 유산 수가 항상 화면 정중앙에 타이핑되도록, 유산 수보다 앞선 토큰은 오른쪽
+              정렬로 왼쪽 칸에, 뒤따르는 토큰은 왼쪽 정렬로 오른쪽 칸에 흘려보내고, 유산 수 자신은
+              가운데 고정 칸에 둔다 — 이 3분할 구조 자체가 "항상 중심부"를 보장하는 알고리즘이라,
+              앞뒤 토큰이 몇 개든(1~7수) 유산 수는 흔들리지 않고 컨테이너 확대(scale) 중심에 그대로 있다. */}
+          <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px", display: "flex", alignItems: "flex-start" }}>
+            <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexWrap: "wrap", justifyContent: "flex-end", fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
+              {pgnTokens.slice(0, Math.min(typedCount, moveIndex)).map((tok, i) => {
+                // (사용자 요청) 유산 수가 등장한 뒤(heroTyped)에만, 그보다 앞선 토큰만 흔들린다.
                 const dist = moveIndex - i;
-                // (사용자 요청) 유산 수가 등장한 이후에 나오는 수들은 흔들리지 않는다 — i < moveIndex
-                // (유산 수보다 먼저 나온 토큰)만, 그것도 유산 수가 실제로 등장한 뒤(heroTyped)에만 흔들린다.
-                const shouldShake = !isHero && i < moveIndex && heroTyped;
                 return (
-                  <span key={i} style={{ display: "inline-block", marginRight: 6,
-                    color: isHero ? color : T.ivoryHi, fontWeight: isHero ? 900 : 400, fontSize: isHero ? 19 : 15,
-                    textShadow: isHero ? ("0 0 16px " + color + ", 0 2px 10px rgba(0,0,0,.6)") : "0 2px 10px rgba(0,0,0,.6)",
-                    animationName: isHero ? "legacyHeroPop" : (shouldShake ? "legacyWaveShake" : "none"),
-                    animationDuration: "0.5s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
-                    animationDelay: isHero ? "0s" : (dist * 0.025) + "s" }}>{tok}</span>
+                  <span key={i} style={{ display: "inline-block", marginRight: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)",
+                    animationName: heroTyped ? "legacyWaveShake" : "none", animationDuration: "0.5s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
+                    animationDelay: (dist * 0.025) + "s" }}>{tok}</span>
                 );
               })}
-              <motion.span aria-hidden="true" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ color: T.brassHi }}>▍</motion.span>
-            </span>
+            </div>
+            <div style={{ flexShrink: 0, fontFamily: LEGACY_FONT, fontSize: 19, lineHeight: 1.8, textAlign: "center", minWidth: typedCount <= moveIndex ? 0 : undefined }}>
+              {typedCount > moveIndex && (
+                <span style={{ display: "inline-block", fontWeight: 900, color, textShadow: "0 0 16px " + color + ", 0 2px 10px rgba(0,0,0,.6)",
+                  animationName: "legacyHeroPop", animationDuration: "0.5s", animationTimingFunction: "ease-out", animationFillMode: "backwards" }}>{pgnTokens[moveIndex]}</span>
+              )}
+            </div>
+            <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexWrap: "wrap", justifyContent: "flex-start", fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
+              {typedCount > moveIndex + 1 && pgnTokens.slice(moveIndex + 1, typedCount).map((tok, idx) => (
+                <span key={moveIndex + 1 + idx} style={{ display: "inline-block", marginLeft: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{tok}</span>
+              ))}
+              <motion.span aria-hidden="true" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ color: T.brassHi, marginLeft: 6 }}>▍</motion.span>
+            </div>
           </div>
         </motion.div>
       ) : (
-        <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: boardHeroActive ? 1.4 : 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
+        <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
           {/* (사용자 요청) 유산으로 지정한 수가 체스보드에 두어지는 순간에도 주변이 어두워진다. */}
           <motion.div aria-hidden="true" animate={{ opacity: boardHeroActive ? 1 : 0 }} transition={{ duration: 0.4 }}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
           <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
             {/* (사용자 요청) 재생 화면 체스보드를 더 크게 키우고(useBoardSize(440)), "탁월한 유산" 같은
                 유산 등급 라벨은 없앤다. */}
-            <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
+            <motion.div ref={boardWrapRef} animate={{ x: heroBoardXform.x, y: heroBoardXform.y, scale: heroBoardXform.scale }} transition={{ duration: 0.5, ease: "easeInOut" }}
+              style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
               <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} flip={flip} heroActive={boardHeroActive} />
-            </div>
+            </motion.div>
             {/* (사용자 요청) 아이콘 자리를 처음부터(재생 시작 전부터) 전부 고정해 둔다 — 매 수마다
                 새 아이콘이 추가되며 레이아웃이 밀리지 않도록, startCount~endCount 범위의 슬롯을 전부
                 미리 그려 두고 아직 두지 않은 수는 자리만 차지한 채 안 보이게(visibility:hidden) 한다.
                 한 줄 flex-wrap(justifyContent:center)이라 다음 줄로 넘어가도 정렬이 흐트러지지 않는다.
                 유산으로 지정한 수의 자리만 금색 테두리로 구분한다. */}
-            <div style={{ minHeight: 30, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, margin: "6px 0 2px", width: "100%", maxWidth: lightBoardSize }}>
+            <div style={{ minHeight: 34, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, margin: "6px 0 2px", width: "100%", maxWidth: lightBoardSize }}>
               {allSlots.map((i) => {
                 const revealed = i < appliedCount;
                 const k = kindAt(i);
                 const isHero = i === moveIndex;
+                // (버그 수정) 금색 테두리가 있는 칸(hero)과 없는 칸의 실제 렌더 크기가 서로 달라(테두리
+                // 두께만큼) flex 정렬이 흔들리던 문제 — 모든 칸에 항상 같은 두께의 테두리를 두되
+                // (기본은 투명), box-sizing:border-box로 테두리가 안쪽에 그려지게 해 바깥 크기(34×34)를
+                // 항상 동일하게 고정한다.
                 return (
-                  <span key={i} style={{ width: 30, height: 30, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
+                  <span key={i} style={{ width: 34, height: 34, boxSizing: "border-box", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
                     visibility: revealed && k ? "visible" : "hidden",
-                    border: (isHero && revealed) ? "2px solid " + T.brassHi : "none",
+                    border: "2px solid " + ((isHero && revealed) ? T.brassHi : "transparent"),
                     boxShadow: (isHero && revealed) ? "0 0 12px 2px rgba(236,203,134,.85), 0 0 4px " + (k ? QCOLOR[k] : "transparent") : "none",
                     background: (isHero && revealed) ? "rgba(236,203,134,.12)" : "transparent" }}>
                     {revealed && k && <span style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>}
@@ -17993,28 +18026,30 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
 // (사용자 요청) 그랜드마스터 티어(isGM)면 종류(최선/유일/탁월)마다 칸을 하나씩 더(총 6칸) 쓸 수
 // 있다 — 기존 슬롯 키(best/only/brilliant)는 그대로 두고, 추가 슬롯은 "2"를 붙인 별도 키
 // (best2/only2/brilliant2)로 완전히 독립 저장해 기존 데이터 마이그레이션이 필요 없게 했다.
-// (사용자 요청) 유산 타일을 종류(최선/유일/탁월)별로 한 행에 묶어 보여준다 — 그랜드마스터 보너스
-// 칸까지 있을 때, 자연스러운 flex-wrap 순서로는 같은 종류의 두 칸이 서로 다른 행으로 갈라지는
-// 문제가 있었다(예: best,best2,only | only2,brilliant,brilliant2). LegacyStoneRow(카드 인라인)와
-// LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
+// (사용자 요청) 유산 타일을 종류(최선/유일/탁월)별로 세로 한 열에 묶어 보여준다 — 세 종류가
+// 나란히 열로 놓이고, 그랜드마스터 보너스 칸이 있으면 그 종류의 열 안에서 아래로 쌓인다.
+// LegacyStoneRow(카드 인라인)와 LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
 function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div className="flex" style={{ gap: 8 }}>
       {LEGACY_TYPES.map((t) => {
-        const rowSlots = slots.filter((s) => s.typeInfo.key === t.key);
-        if (!rowSlots.length) return null;
+        const colSlots = slots.filter((s) => s.typeInfo.key === t.key);
+        if (!colSlots.length) return null;
         return (
-          <div key={t.key} className="flex" style={{ gap: 8 }}>
-            {rowSlots.map(({ slotKey, typeInfo }) => {
+          <div key={t.key} style={{ display: "flex", flexDirection: "column", gap: 8, flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
+            {colSlots.map(({ slotKey, typeInfo }) => {
               const bonus = slotKey.endsWith("2");
               const entry = legacies && legacies[slotKey];
+              // (버그 방지) LegacyStoneTile/LegacyEmptySlot 자신의 루트에 flex:LEGACY_TILE_FLEX가
+              // 박혀 있어(가로 3칸 행 기준) 세로 열(flexDirection:column) 안에 그대로 두면 main axis가
+              // 세로로 바뀌어 오작동한다 — flex가 아닌 일반 블록 래퍼로 한 겹 감싸 무력화한다.
               if (entry) return (
-                <div key={slotKey} style={{ flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
+                <div key={slotKey}>
                   <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} />
                   {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{new Date(entry.savedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
                 </div>
               );
-              return onManageLegacy ? <LegacyEmptySlot key={slotKey} typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /> : null;
+              return onManageLegacy ? <div key={slotKey}><LegacyEmptySlot typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /></div> : null;
             })}
           </div>
         );
@@ -18023,11 +18058,12 @@ function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate }) {
   );
 }
 // (사용자 요청) "더보기" — 프로필 카드 인라인 행과 별개로, 그 사용자가 등록해 둔 유산을 종류별로
-// 언제 등록했는지(savedAt)와 함께 더 크게 볼 수 있는 전체 화면.
-function LegacyAllModal({ slots, legacies, onManageLegacy, onClose }) {
-  const [openKey, setOpenKey] = useState(null);
-  const openSlot = openKey ? slots.find((s) => s.slotKey === openKey) : null;
-  const openEntry = openSlot && legacies ? legacies[openSlot.slotKey] : null;
+// 언제 등록했는지(savedAt)와 함께 더 크게 볼 수 있는 전체 화면. (사용자 요청) 지워진 유산까지 다시
+// 볼 수 있는 이력(history) — 새로 저장하거나 삭제해서 그 칸에서 밀려난 옛 유산들을 "지난 유산"
+// 섹션에 최신순으로 나열한다(클릭하면 그대로 재생해 볼 수 있다. 편집·복원은 지원하지 않는다).
+function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose }) {
+  const [openTarget, setOpenTarget] = useState(null); // { typeInfo, entry } | null
+  const histItems = useMemo(() => (history || []).map((h, idx) => ({ ...h, idx, typeInfo: LEGACY_TYPES.find((t) => t.key === legacyBaseKey(h.slotKey)) })).filter((h) => h.typeInfo).reverse(), [history]);
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", padding: 18 }}>
@@ -18035,15 +18071,31 @@ function LegacyAllModal({ slots, legacies, onManageLegacy, onClose }) {
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>유산 전체 보기</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} showDate />
+        <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate />
+        {histItems.length > 0 && (
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed #C9B58C" }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>지난 유산</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+              {histItems.map((h) => (
+                <button key={h.idx} onClick={() => setOpenTarget({ typeInfo: h.typeInfo, entry: h.entry })} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: QCOLOR[h.typeInfo.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(h.typeInfo.kind, 16)}</span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{legacyMoveLabel(h.entry)}</div>
+                    <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? " · " + new Date(h.replacedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }) + " 교체/삭제됨" : ""}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       <AnimatePresence>
-        {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
+        {openTarget && <LegacyRevealScreen typeInfo={openTarget.typeInfo} entry={openTarget.entry} onClose={() => setOpenTarget(null)} />}
       </AnimatePresence>
     </div>
   );
 }
-function LegacyStoneRow({ legacies, onManageLegacy, isGM }) {
+function LegacyStoneRow({ legacies, history, onManageLegacy, isGM }) {
   const [openKey, setOpenKey] = useState(null);
   const [showAll, setShowAll] = useState(false);
   const slots = useMemo(() => {
@@ -18066,7 +18118,7 @@ function LegacyStoneRow({ legacies, onManageLegacy, isGM }) {
       <AnimatePresence>
         {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
       </AnimatePresence>
-      {showAll && <LegacyAllModal slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} />}
+      {showAll && <LegacyAllModal slots={slots} legacies={legacies} history={history} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} />}
     </div>
   );
 }
@@ -18278,7 +18330,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         </div>
       )}
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
-      <LegacyStoneRow legacies={pub.legacies} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} />
+      <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
@@ -19698,7 +19750,7 @@ export default function App() {
     // 되돌린다. 새로고침 타이밍이 나쁘면 방금 dev 패널로 바꾼 값이 한 번 되돌아 보일 수 있지만(진짜
     // 서버 저장 자체는 그대로 진행 중이므로 곧 다시 저장되어 정상화된다), 클라이언트가 서버 값을
     // 임의로 이기게 하는 것보다 이 쪽이 안전하다.
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewTickets != null) setReviewTickets(pr.reviewTickets); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewTickets != null) setReviewTickets(pr.reviewTickets); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
@@ -19752,7 +19804,7 @@ export default function App() {
   // 자체는 이미 공개돼 있으므로 no만 실어도 보는 쪽에서 PuzzleCard를 그대로 그릴 수 있음)과 메인
   // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
-  useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest), legacies: profile.legacies || null }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId, mainQuest, profile.legacies]);
+  useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest), legacies: profile.legacies || null, legacyHistory: profile.legacyHistory || null }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId, mainQuest, profile.legacies, profile.legacyHistory]);
   useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewTickets, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewTickets, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
   useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewTickets, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewTickets, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
@@ -19837,7 +19889,7 @@ export default function App() {
     // (버그 수정) 이전엔 각 필드를 "없으면 직전 상태(p) 값 유지"로 병합했다 — 새 계정에 닉네임/사진이
     // 아직 없으면 직전 계정(또는 게스트) 것이 화면에 그대로 남아 보이는, 훨씬 눈에 띄는 형태의 같은
     // 버그였다. 병합 대신 이 계정의 실제 값(없으면 빈 값)으로 완전히 교체한다.
-    const pub = acc.pub || {}; setProfile({ chesscom: pub.chesscom || "", nickname: pub.nickname || "", displayId: pub.displayId || "", photo: pub.photo || "", firstMoves: pub.firstMoves || null, legacies: pub.legacies || null }); setAuthOpen(false); }, []);
+    const pub = acc.pub || {}; setProfile({ chesscom: pub.chesscom || "", nickname: pub.nickname || "", displayId: pub.displayId || "", photo: pub.photo || "", firstMoves: pub.firstMoves || null, legacies: pub.legacies || null, legacyHistory: pub.legacyHistory || null }); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
