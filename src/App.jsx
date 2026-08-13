@@ -15315,6 +15315,7 @@ const CHANGELOG = [
       "채팅 메시지의 수정/삭제(전달) 메뉴를 컴퓨터에서는 오른쪽 클릭으로도 열 수 있어요 — 꾹 누르기로 열 때와 똑같이 항상 화면 중앙 쪽으로, 다른 말풍선과 안 겹치게 떠요.",
       "채팅에서 퍼즐 '전달'이 실패했을 때 아무 표시가 없던 문제를 고쳐, 이제 실패하면 안내 문구가 떠요.",
       "유산을 이제 채팅으로 친구에게 공유할 수 있어요 — 유산 블록의 편집(✎) 아이콘은 좌하단으로 옮기고, 우하단에 새 공유 아이콘을 추가했어요. 누르면 친구를 골라 보낼 수 있고, 받은 친구는 채팅창의 유산 카드에서 '유산 보기'로 그대로 재생해 볼 수 있어요. 채팅창에 '/legacy 1'~'/legacy 6'을 입력해도 내 유산을 바로 보낼 수 있어요(1~3은 기본 칸, 4~6은 그랜드마스터 보너스 칸) — 등록되지 않은 칸이거나 그랜드마스터가 아닌데 보너스 칸을 입력하면 안내 문구가 떠요.",
+      "유산 재생 화면의 기보 타이핑 연출을 다시 짰어요 — 유산으로 지정한 수가 나올 차례가 되면 그 앞의 수들이 와르르 무너져 내리며 사라지고, 유산 수가 화면 정중앙에 크게 나타나 잠시 머물다가, 왼쪽 위 제자리로 옮겨간 뒤 그 옆에서부터 나머지 수들이 이어서 타이핑돼요.",
     ]
   },
   {
@@ -18027,28 +18028,59 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const [typedCount, setTypedCount] = useState(0);
   const typingRef = useRef(null);
   useEffect(() => { const t = setTimeout(() => setPhase("typing"), 950); return () => clearTimeout(t); }, []);
+  // (사용자 요청) 기보 타이핑 연출을 4단계로 새로 짰다 — "before"(유산 수 이전 토큰이 한 수씩
+  // 타이핑됨) → "collapse"(그 토큰들이 와르르 무너져 내리며 사라짐) → "heroSolo"(유산 수가 화면
+  // 정중앙에 크게 등장해 잠시 머무름) → "after"(유산 수가 원래 자리인 왼쪽 위로 옮겨가고, 그 옆부터
+  // 나머지 토큰이 한 수씩 타이핑됨). "heroSolo"↔"after" 두 단계의 유산 수 스팬은 같은
+  // layoutId="legacyHeroToken"을 공유해, framer-motion이 정중앙 큰 글자에서 본문 흐름 속 제자리로
+  // 자동으로 매끄럽게 이동·축소(FLIP)해 준다.
+  const [typingStage, setTypingStage] = useState("before"); // "before" | "collapse" | "heroSolo" | "after"
+  const [afterTypedCount, setAfterTypedCount] = useState(0);
+  const beforeTokens = useMemo(() => pgnTokens.slice(0, moveIndex), [pgnTokens, moveIndex]);
+  const afterTokensArr = useMemo(() => pgnTokens.slice(moveIndex + 1), [pgnTokens, moveIndex]);
+  const heroTok = pgnTokens[moveIndex];
   useEffect(() => {
-    if (phase !== "typing") return;
-    if (typedCount >= pgnTokens.length) {
-      // (사용자 요청) 유산으로 지정한 수가 대국의 마지막 수라 방금 막 나타난 참이면, 다음 화면으로도 2초쯤 늦게 넘어간다.
-      const heroWasLast = typedCount - 1 === moveIndex;
-      const t = setTimeout(() => setPhase("board"), heroWasLast ? 2000 : 320);
+    if (phase !== "typing" || typingStage !== "before") return;
+    if (typedCount >= moveIndex) { setTypingStage(moveIndex > 0 ? "collapse" : "heroSolo"); return; }
+    const t = setTimeout(() => setTypedCount((n) => Math.min(moveIndex, n + 1)), 80);
+    return () => clearTimeout(t);
+  }, [phase, typingStage, typedCount, moveIndex]);
+  // (사용자 요청) "무너져 내리는" 연출 — 토큰마다 살짝 다른 낙하 거리·회전으로 순차 지연을 줘,
+  // 벽이 부서지듯 흩어지게 한다. 지속 시간이 끝나면 유산 수 단독 등장 단계로 넘어간다.
+  const COLLAPSE_MS = 650;
+  useEffect(() => {
+    if (typingStage !== "collapse") return;
+    const t = setTimeout(() => setTypingStage("heroSolo"), COLLAPSE_MS);
+    return () => clearTimeout(t);
+  }, [typingStage]);
+  const HERO_SOLO_MS = 1500;
+  useEffect(() => {
+    if (typingStage !== "heroSolo") return;
+    const t = setTimeout(() => setTypingStage("after"), HERO_SOLO_MS);
+    return () => clearTimeout(t);
+  }, [typingStage]);
+  // (버그 수정) 유산 수가 정중앙에서 왼쪽 위 제자리로 옮겨가는 layoutId FLIP 전환(아래 motion.span의
+  // transition, 0.6초)이 채 끝나기도 전에 다음 토큰이 곧장 타이핑되기 시작하면, 아직 이동 중인
+  // 유산 수 위에 다음 토큰이 겹쳐 보이는 문제가 있었다(실제로 Playwright 스크린샷으로 재현·확인) —
+  // 첫 "이후" 토큰만은 유산 수가 완전히 자리 잡을 시간(HERO_LAND_MS, FLIP 시간보다 살짝 여유를 둠)
+  // 만큼 기다렸다가 나타나도록 해, 유산 수가 제자리에 멈춘 뒤에야 그 옆에서부터 타이핑이 이어진다.
+  const HERO_LAND_MS = 650;
+  useEffect(() => {
+    if (phase !== "typing" || typingStage !== "after") return;
+    const afterLen = afterTokensArr.length;
+    if (afterTypedCount >= afterLen) {
+      // (사용자 요청) 유산으로 지정한 수가 대국의 마지막 수라 방금 막 나타난 참이면, 다음 화면으로도 조금 늦게 넘어간다.
+      const heroWasLast = afterLen === 0;
+      const t = setTimeout(() => setPhase("board"), heroWasLast ? 1200 : 320);
       return () => clearTimeout(t);
     }
-    // (사용자 요청) 유산으로 지정한 수가 나타나기 직전·직후에는 2초 정도 크게 멈춰 강조한다.
-    const aboutToRevealHero = typedCount === moveIndex;
-    const justRevealedHero = typedCount === moveIndex + 1;
-    const delay = (aboutToRevealHero || justRevealedHero) ? 2000 : 80;
-    const t = setTimeout(() => setTypedCount((n) => Math.min(pgnTokens.length, n + 1)), delay);
+    const delay = afterTypedCount === 0 ? HERO_LAND_MS : 80;
+    const t = setTimeout(() => setAfterTypedCount((n) => Math.min(afterLen, n + 1)), delay);
     return () => clearTimeout(t);
-  }, [phase, typedCount, pgnTokens.length, moveIndex]);
-  useEffect(() => { if (typingRef.current) typingRef.current.scrollTop = typingRef.current.scrollHeight; }, [typedCount]);
-  // (사용자 요청) 유산 수가 등장한 이후에 나오는 수들은 흔들리지 않아야 한다 — "이미 유산 수가
-  // 나타난 뒤"라는 사실 자체를 typedCount > moveIndex로 판단하므로, 파동 흔들림 대상은 항상
-  // i < moveIndex(유산 수보다 먼저 나온 토큰)로만 한정한다(유산 수 자신·그 이후 토큰은 제외).
-  const heroTyped = typedCount > moveIndex;
-  // (사용자 요청) 지정한 수가 나타나기 직전·직후엔 화면이 어두워지고 확대된다.
-  const heroActive = phase === "typing" && (typedCount === moveIndex || typedCount === moveIndex + 1);
+  }, [phase, typingStage, afterTypedCount, afterTokensArr.length]);
+  useEffect(() => { if (typingRef.current) typingRef.current.scrollTop = typingRef.current.scrollHeight; }, [typedCount, afterTypedCount, typingStage]);
+  // (사용자 요청) 무너지는 동안과 유산 수가 정중앙에 떠 있는 동안 화면이 어두워진다.
+  const heroActive = typingStage === "collapse" || typingStage === "heroSolo";
   // (사용자 요청) 유산 수 차례가 되면 곧장 그 수를 두지 않고, 먼저 확대(HERO_PRE_MS만큼 대기)한
   // 뒤에야 그 수가 놓이도록 한다 — 아래 boardHeroActive/heroWindowOpen과 짝을 이룬다.
   const HERO_PRE_MS = 900;
@@ -18139,41 +18171,45 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           </motion.span>
         </motion.div>
       ) : phase === "typing" ? (
-        <motion.div animate={{ opacity: 1, scale: heroActive ? 1.14 : 1 }} initial={{ opacity: 0, scale: 1 }} transition={{ duration: 0.45, ease: "easeInOut" }}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.45, ease: "easeInOut" }}
           style={{ position: "relative", zIndex: 2, width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
           {/* (사용자 요청) 갈색 카드 배경·"대국 훑어보기" 문구를 없애고, 기보 텍스트만 배경 위에 떠 보이게 한다. */}
-          {/* (사용자 요청) 유산으로 지정한 수가 나타나기 직전·직후에는 주변이 어두워진다. */}
+          {/* (사용자 요청) 유산으로 지정한 수 앞의 토큰이 무너져 내리는 동안·유산 수가 정중앙에 떠
+              있는 동안에는 주변이 어두워진다. */}
           <motion.div aria-hidden="true" animate={{ opacity: heroActive ? 1 : 0 }} transition={{ duration: 0.45 }}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
-          {/* (사용자 요청) 유산 수가 항상 화면 정중앙에 타이핑되도록, 유산 수보다 앞선 토큰은 오른쪽
-              정렬로 왼쪽 칸에, 뒤따르는 토큰은 왼쪽 정렬로 오른쪽 칸에 흘려보내고, 유산 수 자신은
-              가운데 고정 칸에 둔다 — 이 3분할 구조 자체가 "항상 중심부"를 보장하는 알고리즘이라,
-              앞뒤 토큰이 몇 개든(1~7수) 유산 수는 흔들리지 않고 컨테이너 확대(scale) 중심에 그대로 있다. */}
-          <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px", display: "flex", alignItems: "flex-start" }}>
-            <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexWrap: "wrap", justifyContent: "flex-end", fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
-              {pgnTokens.slice(0, Math.min(typedCount, moveIndex)).map((tok, i) => {
-                // (사용자 요청) 유산 수가 등장한 뒤(heroTyped)에만, 그보다 앞선 토큰만 흔들린다.
-                const dist = moveIndex - i;
-                return (
-                  <span key={i} style={{ display: "inline-block", marginRight: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)",
-                    animationName: heroTyped ? "legacyWaveShake" : "none", animationDuration: "0.5s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
-                    animationDelay: (dist * 0.025) + "s" }}>{tok}</span>
-                );
-              })}
-            </div>
-            <div style={{ flexShrink: 0, fontFamily: LEGACY_FONT, fontSize: 19, lineHeight: 1.8, textAlign: "center", minWidth: typedCount <= moveIndex ? 0 : undefined }}>
-              {typedCount > moveIndex && (
-                <span style={{ display: "inline-block", fontWeight: 900, color, textShadow: "0 0 16px " + color + ", 0 2px 10px rgba(0,0,0,.6)",
-                  animationName: "legacyHeroPop", animationDuration: "0.5s", animationTimingFunction: "ease-out", animationFillMode: "backwards" }}>{pgnTokens[moveIndex]}</span>
-              )}
-            </div>
-            <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexWrap: "wrap", justifyContent: "flex-start", fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
-              {typedCount > moveIndex + 1 && pgnTokens.slice(moveIndex + 1, typedCount).map((tok, idx) => (
-                <span key={moveIndex + 1 + idx} style={{ display: "inline-block", marginLeft: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{tok}</span>
-              ))}
-              <motion.span aria-hidden="true" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ color: T.brassHi, marginLeft: 6 }}>▍</motion.span>
-            </div>
+          {/* (사용자 요청) 유산 수가 등장할 차례가 되면, 그 앞의 수들이 와르르 무너져 내리며 사라지고,
+              유산 수가 화면 정중앙에 크게 나타났다가, 원래 자리(왼쪽 위)로 옮겨간 뒤 그 옆에서부터
+              나머지 수들이 이어서 타이핑된다. */}
+          <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px", display: "flex", flexWrap: "wrap", alignItems: "flex-start", fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
+            {(typingStage === "before" || typingStage === "collapse") && beforeTokens.slice(0, typedCount).map((tok, i) => (
+              <motion.span key={i} initial={false}
+                animate={typingStage === "collapse"
+                  ? { opacity: 0, y: 30 + (i % 3) * 14, rotate: (i % 2 ? 1 : -1) * (12 + (i % 4) * 6), transition: { duration: 0.5, delay: i * 0.02, ease: "easeIn" } }
+                  : { opacity: 1, y: 0, rotate: 0 }}
+                style={{ display: "inline-block", marginRight: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{tok}</motion.span>
+            ))}
+            {typingStage === "after" && (
+              // (사용자 요청) 정중앙 solo 등장(아래)과 같은 layoutId를 공유 — framer-motion이 두
+              // 인스턴스 사이를 자동으로 매끄럽게 이동·축소시켜 "정중앙 → 왼쪽 위 제자리"로 보인다.
+              <motion.span layoutId="legacyHeroToken" transition={{ duration: 0.6, ease: "easeInOut" }}
+                style={{ display: "inline-block", marginRight: 8, fontWeight: 900, fontSize: 19, color, textShadow: "0 0 16px " + color + ", 0 2px 10px rgba(0,0,0,.6)" }}>
+                {heroTok}
+              </motion.span>
+            )}
+            {typingStage === "after" && afterTokensArr.slice(0, afterTypedCount).map((tok, idx) => (
+              <span key={idx} style={{ display: "inline-block", marginRight: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{tok}</span>
+            ))}
+            {typingStage === "after" && <motion.span aria-hidden="true" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ color: T.brassHi, marginLeft: 2 }}>▍</motion.span>}
           </div>
+          {typingStage === "heroSolo" && (
+            <motion.div style={{ position: "fixed", inset: 0, zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+              <motion.span layoutId="legacyHeroToken" initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5, ease: "easeOut" }}
+                style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 34, color, textShadow: "0 0 26px " + color + ", 0 2px 14px rgba(0,0,0,.7)" }}>
+                {heroTok}
+              </motion.span>
+            </motion.div>
+          )}
         </motion.div>
       ) : (
         <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
