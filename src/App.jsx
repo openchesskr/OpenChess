@@ -11409,12 +11409,41 @@ function questLabel(q) {
 }
 // (사용자 요청) 퀘스트 문구 속 "chess.com"에 밑줄 + 실제 chess.com 하이퍼링크를 건다 — 일반 https
 // 링크라 모바일에 chess.com 앱이 설치돼 있으면 OS가 알아서 앱으로 열어준다(유니버설/앱 링크, 별도
-// 커스텀 스킴 불필요). 단, target="_blank"(새 창/탭)으로 열면 대부분의 모바일 브라우저가 유니버설
-// 링크 가로채기를 건너뛰고 항상 웹사이트로 열어버리므로, 같은 탭에서 이동시켜야 앱 설치 시 OS가
-// 앱으로 가로챌 수 있다. 퀘스트 행 전체가 클릭되면 오프닝 집중 학습으로 이동하므로, 이 링크 클릭은
-// stopPropagation으로 그 상위 클릭을 막아 실수로 딴 곳으로 이동하지 않게 한다.
+// 커스텀 스킴 불필요). target="_blank"(새 창/탭)으로 열면 대부분의 모바일 브라우저가 유니버설 링크
+// 가로채기를 건너뛰고 항상 웹사이트로 열어버리므로 같은 탭에서 이동시킨다(v0.3.3에서 이미 고침).
+// (v0.3.4 버그 수정) 그렇게 해도 여전히 웹사이트로만 열린다는 신고 — iOS는 사용자가 예전에 그
+// 도메인을 "브라우저에서 열기"로 한 번이라도 선택한 적이 있으면(또는 애초에 그 경로가 유니버설
+// 링크 대상에 포함돼 있지 않으면) 이후로도 계속 웹사이트로만 열리는 잘 알려진 제약이 있다 —
+// chess.com 자체 사이트에 별도 "앱으로 열기" 버튼이 있는 것도 순수 유니버설 링크만으로는 이 상황을
+// 못 벗어나기 때문으로 보인다. 순수 https 링크 하나로는 그 버튼과 똑같은 동작을 재현할 수 없어,
+// 스마트 배너들이 쓰는 표준 폴백 패턴을 추가했다 — 평소처럼 https 링크로 이동을 시도하고, 짧은
+// 시간(APP_FALLBACK_MS) 안에도 이 페이지를 실제로 떠나지 않으면(=OS가 앱으로 가로채지 못한 것)
+// 앱스토어/플레이스토어로 대신 보낸다. 앱이 이미 설치돼 있으면 스토어 링크를 열 때 OS가 스토어
+// 대신 앱을 직접 여는 경우가 많고, 안 열리더라도 최소한 설치 페이지까지는 한 번의 탭으로 확실히
+// 도착하므로, 평범한 웹사이트에 그대로 머무르는 것보다는 낫다. 페이지를 실제로 떠났다면(앱 전환·탭
+// 전환 등으로 visibilitychange/pagehide 발생) 타이머를 취소해 불필요한 스토어 이동을 하지 않는다.
+const CHESSCOM_APP_STORE = { ios: "https://apps.apple.com/app/id329218549", android: "https://play.google.com/store/apps/details?id=com.chess" };
+function chesscomMobilePlatform() {
+  if (typeof navigator === "undefined") return null;
+  const ua = navigator.userAgent || "";
+  if (/iPhone|iPad|iPod/.test(ua)) return "ios";
+  if (/Android/.test(ua)) return "android";
+  return null;
+}
+const CHESSCOM_APP_FALLBACK_MS = 1500;
 function ChesscomTextLink({ children }) {
-  return <a href="https://www.chess.com" onClick={(e) => e.stopPropagation()} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
+  const onClick = (e) => {
+    e.stopPropagation();
+    const platform = chesscomMobilePlatform();
+    if (!platform) return; // 데스크톱은 그냥 평범한 링크로 연다.
+    const timer = setTimeout(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") window.location.href = CHESSCOM_APP_STORE[platform];
+    }, CHESSCOM_APP_FALLBACK_MS);
+    const cancel = () => { clearTimeout(timer); document.removeEventListener("visibilitychange", cancel); window.removeEventListener("pagehide", cancel); };
+    document.addEventListener("visibilitychange", cancel);
+    window.addEventListener("pagehide", cancel);
+  };
+  return <a href="https://www.chess.com" onClick={onClick} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
 }
 function questLabelNode(q) {
   const text = questLabel(q);
