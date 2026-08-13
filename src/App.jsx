@@ -9227,19 +9227,10 @@ function anchoredZoomPan(pan, zoom, nextZoom, anchorX, anchorY) {
 // (v0.1.2 기능) 도감 오프닝 트리 캔버스 좌상단에는 검색창이 떠 있어(대략 이 높이만큼), 팬 한계가
 // 스냅한 블록이 그 뒤에 가려지지 않도록 유효 뷰포트 상단을 이만큼 안으로 줄인다.
 const SCHEMATIC_TOP_INSET = 44;
-// (사용자 요청) 나침반 중심 회로 칩을 "박스 자신의 전체 높이 절반"이 아니라 "실제로 화면에 보이는
-// 범위의 절반"에 맞춘다 — 모바일처럼 박스(높이 640px 고정)가 화면 세로 폭보다 커서 아래쪽이 화면
-// 밖으로 넘어가면(헤더·탭 아래로 시작해 하단 고정 내비게이션 위까지가 실제 가시 영역), 박스 전체를
-// 기준으로 중앙을 잡을 때보다 칩이 훨씬 아래로 처져 보인다. 하단 고정 내비게이션(66px)에 가려지는
-// 몫도 뺀다.
-function visibleBoxCenter(rect) {
-  const navH = 66;
-  const vTop = Math.max(rect.top, 0), vBottom = Math.min(rect.bottom, window.innerHeight - navH);
-  const vLeft = Math.max(rect.left, 0), vRight = Math.min(rect.right, window.innerWidth);
-  const cy = vBottom > vTop ? (vTop + vBottom) / 2 - rect.top : rect.height / 2;
-  const cx = vRight > vLeft ? (vLeft + vRight) / 2 - rect.left : rect.width / 2;
-  return { x: cx, y: cy };
-}
+// (사용자 요청) 예전엔 나침반 중심 회로 칩을 "실제로 화면에 보이는 범위의 절반"(visibleBoxCenter,
+// 박스가 뷰포트보다 커서 잘릴 때를 대비한 보정)에 맞췄으나, 이제 모식도 박스 자신이 항상 뷰포트
+// 안에 통째로 들어오도록 높이가 동적으로 계산되므로(OpeningSchematic의 panelH) 그런 보정이 필요
+// 없어졌다 — 박스 자신의 정중앙(rect.width/2, rect.height/2)에 그대로 맞춘다.
 function clampPanAxis(p, viewportSize, min, max, minVisible) {
   const lo = minVisible - max, hi = (viewportSize - minVisible) - min;
   if (lo > hi) return (lo + hi) / 2;
@@ -9923,6 +9914,25 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const dragRef = useRef(null);
   const boxRef = useRef(null);
   const userPannedRef = useRef(false);
+  // (사용자 요청) 모식도 영역이 스크롤 없이 한 화면에 다 담기도록, 고정 640px 대신 위쪽에 이미 자리한
+  // 요소(탭 버튼줄·해금률 문구 등)와 하단 고정 내비게이션을 뺀 실제 남은 뷰포트 높이에 박스 높이를
+  // 맞춘다 — 박스 자신의 top은 자기 높이와 무관(그 위 형제 요소들의 높이로만 결정)하므로 되먹임 없이
+  // 한 번에 계산된다. 이렇게 박스가 항상 뷰포트 안에 통째로 들어오면, 나침반 중심 칩을 "박스 자신의
+  // 중심"에 맞추는 것만으로도 항상 뷰포트 정중앙에 오게 된다(visibleBoxCenter류의 별도 보정 불필요).
+  const [panelH, setPanelH] = useState(640);
+  useLayoutEffect(() => {
+    const compute = () => {
+      const el = boxRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const BOTTOM_SAFE = 66 + 16; // 하단 고정 내비게이션 + 여백
+      const avail = window.innerHeight - top - BOTTOM_SAFE;
+      setPanelH(Math.max(360, Math.round(avail)));
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [vertical]);
   // (기능) 검색·클릭으로 오프닝을 선택하면 화면 중앙으로 이동시키고 살짝 확대해 강조하는데, 이후
   // 사용자가 직접 드래그·휠로 그 노드를 중앙에서 멀리 치워버리면(즉 더 이상 "선택 직후" 뷰가 아니게
   // 되면) 강조 확대만 100%로 되돌리고 색 강조는 그대로 유지한다. 팬/줌 핸들러(특히 한 번만 등록되는
@@ -9993,9 +10003,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // 중심이 오도록 그려진다(`left: centerX - CHIP_SIZE/2`) — 블록(boxW×boxH) 좌상단 좌표가
       // 아니라 이미 그 자체로 중심점이므로, 다른 곳(노드 중앙 정렬)처럼 boxW/2·boxH/2를 더하면
       // 오히려 칩이 뷰포트 정중앙에서 반 칸 어긋나 보인다 — 더하지 않고 그대로 맞춘다.
-      // (사용자 요청) 모바일에서 박스가 화면 세로 폭보다 커서 더 멀어져 보이던 문제 — 박스 전체
-      // 높이가 아니라 실제로 화면에 보이는 범위를 기준으로 중앙을 잡는다(visibleBoxCenter).
-      const vc = visibleBoxCenter(rect);
+      // (사용자 요청) 실제 화면(뷰포트)에 보이는 범위가 아니라, 모식도 영역(박스) 자신의 정중앙에
+      // 항상 고정되도록 맞춘다 — 박스 높이 자체가 이제 남는 뷰포트 높이에 맞춰 동적으로 계산되어
+      // 항상 뷰포트 안에 통째로 들어오므로(panelH), 박스 중심과 뷰포트에 보이는 중심이 항상 일치한다.
+      const vc = { x: rect.width / 2, y: rect.height / 2 };
       setPan({ x: vc.x - centerRef.current.x * z, y: vc.y - centerRef.current.y * z });
     }, 150);
     return () => clearInterval(id);
@@ -10345,7 +10356,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
       // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
-      style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 640, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
       {!ready && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</div>
       )}
@@ -10360,7 +10371,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             selectionLockRef.current = false;
             setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
             const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, top: 0, bottom: 640, left: 0, right: 640 };
-            const vc = visibleBoxCenter(rect);
+            const vc = { x: rect.width / 2, y: rect.height / 2 };
             setPan({ x: vc.x - centerRef.current.x * SCHEMATIC_ZOOM_LABEL_BASE, y: vc.y - centerRef.current.y * SCHEMATIC_ZOOM_LABEL_BASE });
           }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <RotateCcw size={13} />
@@ -15269,6 +15280,8 @@ const CHANGELOG = [
       "유산 재생에서 유산 수가 나온 뒤에 이어지는 수들이 잘못 흔들리던 문제를 고쳤어요. 유산 수를 둘 때 확대 배율을 더 키우고, 기물이 더 크게 흔들리도록 했어요. 하단 등급 아이콘 자리를 재생 시작 전부터 고정해 둬 더 이상 밀리지 않고, 줄바꿈이 일어나도 정렬이 흐트러지지 않아요.",
       "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼, 기물 칸을 감싸던 색 테두리를 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시돼요(예전에 만든 유산도 지정한 수만큼은 확실히 표시돼요). 배경은 검은색으로, 기보 타이핑 속도는 조금 느리게 바꿨어요.",
       "프로필의 유산 블록을 이제 종류별로 세로 열(3열)로 나눠 보여줘요. 기보 타이핑 화면에서 유산 수는 항상 화면 정중앙에 오도록 새로 설계했고, 체스보드에서 유산 수를 둘 때는 뷰포트를 벗어나지 않는 한도 안에서 최대한 확대되면서 보드가 잠시 화면 정중앙으로 옮겨졌다가 다시 원래 자리로 돌아와요. 유산 수 아이콘의 금색 테두리가 다른 아이콘과 크기가 달라 보이던 문제를 고쳤어요. 그리고 이제 지워지거나 새 유산으로 덮어써진 옛 유산도 '더보기' 화면 아래 '지난 유산' 목록에서 다시 볼 수 있어요.",
+      "도감 탭 오프닝 트리 영역이 이제 화면 크기에 맞춰 스크롤 없이 한 화면에 다 들어와요. 나침반 중심 회로 칩도 다시 그 영역 정중앙에 고정돼요.",
+      "유산 수 아이콘 금테가 확대된 체스보드에 가려 겹쳐 보이던 진짜 원인을 찾아 고쳤어요 — 체스보드가 확대되는 동안은 아래 아이콘·영사기 블록이 잠시 투명해져요. 유산 수 뒤에 더 이상 재생할 수가 없어도 체스보드가 이제 항상 원래 크기로 돌아오고, 확대가 먼저 되고 나서 그 수가 놓이도록 순서를 바꿨어요. 빛의 체스보드 칸마다 밝기가 은은하게 계속 반짝이는 영사기 연출도 추가했어요.",
     ]
   },
   {
@@ -17776,11 +17789,17 @@ function LegacyLightBoard({ board, size = 320, halo, haloKind, flip, heroActive 
         const isHalo = halo && halo[0] === br && halo[1] === bc;
         const isLight = (r + c) % 2 === 0;
         const dist = Math.hypot(r - originR, c - originC);
+        // (사용자 요청) 영사기가 쏘는 빛처럼, 칸마다 밝기가 조금씩 다르게·계속(무한 반복) 미세하게
+        // 흔들리도록 한다 — 모든 칸이 똑같이 맞춰 숨쉬면 인위적으로 보이므로, r/c로부터 결정적으로
+        // (매 렌더 동일하게) 뽑아낸 의사난수로 칸마다 주기·시작 지연을 어긋나게 한다.
+        const flickerDur = 2.4 + ((r * 7 + c * 3) % 5) * 0.35;
+        const flickerDelay = ((r * 5 + c * 11) % 9) * 0.17;
         return (
           <motion.div key={r + "_" + c} initial={{ opacity: 0, scale: 0.15 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: dist * 0.045, duration: 0.22, ease: "easeOut" }}
             style={{ position: "relative", boxSizing: "border-box", border: "1px solid rgba(196,154,80,.22)",
             background: isLight ? "rgba(236,203,134,.16)" : "rgba(61,38,22,.42)",
-            display: "flex", alignItems: "center", justifyContent: "center" }}>
+            display: "flex", alignItems: "center", justifyContent: "center",
+            animationName: "legacyBoardFlicker", animationDuration: flickerDur + "s", animationDelay: flickerDelay + "s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
             {/* (사용자 요청) 기물 칸을 감싸던 등급색 테두리(링)를 없앴다 — 우상단 수 체계 배지만 남긴다. */}
             {isHalo && haloKind && (
               // (사용자 요청) 실제 체스보드가 칸 우상단에 띄우는 수 체계 배지와 동일한 위치·크기·스타일(3656줄).
@@ -17862,12 +17881,17 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const heroTyped = typedCount > moveIndex;
   // (사용자 요청) 지정한 수가 나타나기 직전·직후엔 화면이 어두워지고 확대된다.
   const heroActive = phase === "typing" && (typedCount === moveIndex || typedCount === moveIndex + 1);
+  // (사용자 요청) 유산 수 차례가 되면 곧장 그 수를 두지 않고, 먼저 확대(HERO_PRE_MS만큼 대기)한
+  // 뒤에야 그 수가 놓이도록 한다 — 아래 boardHeroActive/heroWindowOpen과 짝을 이룬다.
+  const HERO_PRE_MS = 900;
   useEffect(() => {
     if (phase !== "board" || appliedCount >= endCount) return;
-    // (사용자 요청) 다음 수로 넘어가는 간격을 살짝 늘림(1150ms → 1450ms).
-    const t = setTimeout(() => setAppliedCount((n) => Math.min(endCount, n + 1)), 1450);
+    const isPreHero = appliedCount === moveIndex;
+    // (사용자 요청) 다음 수로 넘어가는 간격을 살짝 늘림(1150ms → 1450ms). 유산 수 직전만 먼저
+    // 확대할 시간을 주기 위해 더 짧게(HERO_PRE_MS) 둔다.
+    const t = setTimeout(() => setAppliedCount((n) => Math.min(endCount, n + 1)), isPreHero ? HERO_PRE_MS : 1450);
     return () => clearTimeout(t);
-  }, [phase, appliedCount, endCount]);
+  }, [phase, appliedCount, endCount, moveIndex]);
   const board = useMemo(() => boardFromSans(sans.slice(0, appliedCount)), [sans, appliedCount]);
   const prevBoard = useMemo(() => boardFromSans(sans.slice(0, Math.max(0, appliedCount - 1))), [sans, appliedCount]);
   const lastSan = appliedCount > 0 ? sans[appliedCount - 1] : null;
@@ -17893,7 +17917,21 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   // animation-name을 "none"↔실제 키프레임으로 바꿔주므로(별도 key remount 없이도 브라우저가
   // 값이 바뀌는 시점에 애니메이션을 다시 재생한다) 이 순간에만, 그리고 정확히 한 번만 흔들리고
   // 그 이후 수들에는 전혀 적용되지 않는다.
-  const boardHeroActive = phase === "board" && appliedCount - 1 === moveIndex;
+  // (버그 수정) appliedCount-1===moveIndex "그 순간"만 켜는 파생값을 그대로 썼더니, 유산 수가
+  // 재생 구간의 마지막 수라 그 뒤로 appliedCount가 더 이상 바뀌지 않는 경우 이 값이 영원히
+  // true로 남아 체스보드가 확대된 채 원래 크기로 돌아오지 않았다 — 스스로 만료되는 타이머를 가진
+  // 상태값으로 바꿔, 뒤이은 수가 있든 없든 HERO_TOTAL_MS 뒤에는 항상 꺼지도록 한다. 또한 "먼저
+  // 확대한 뒤 그 수가 두어지도록" 하기 위해, 그 수가 실제로 놓이기 직전(appliedCount===moveIndex)
+  // 부터 이미 확대 창을 열어 둔다(놓인 직후appliedCount===moveIndex+1까지 계속 이어짐).
+  const HERO_TOTAL_MS = 2300;
+  const heroWindowOpen = phase === "board" && (appliedCount === moveIndex || appliedCount === moveIndex + 1);
+  const [boardHeroActive, setBoardHeroActive] = useState(false);
+  useEffect(() => {
+    if (!heroWindowOpen) { setBoardHeroActive(false); return; }
+    setBoardHeroActive(true);
+    const t = setTimeout(() => setBoardHeroActive(false), HERO_TOTAL_MS);
+    return () => clearTimeout(t);
+  }, [heroWindowOpen]);
   // (사용자 요청) 재생 화면의 체스보드를 더 크게(최대 360→440).
   const [lightBoardSize, boardWrapRef] = useBoardSize(440);
   const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
@@ -17981,39 +18019,49 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
               style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
               <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} flip={flip} heroActive={boardHeroActive} />
             </motion.div>
-            {/* (사용자 요청) 아이콘 자리를 처음부터(재생 시작 전부터) 전부 고정해 둔다 — 매 수마다
-                새 아이콘이 추가되며 레이아웃이 밀리지 않도록, startCount~endCount 범위의 슬롯을 전부
-                미리 그려 두고 아직 두지 않은 수는 자리만 차지한 채 안 보이게(visibility:hidden) 한다.
-                한 줄 flex-wrap(justifyContent:center)이라 다음 줄로 넘어가도 정렬이 흐트러지지 않는다.
-                유산으로 지정한 수의 자리만 금색 테두리로 구분한다. */}
-            <div style={{ minHeight: 34, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, margin: "6px 0 2px", width: "100%", maxWidth: lightBoardSize }}>
-              {allSlots.map((i) => {
-                const revealed = i < appliedCount;
-                const k = kindAt(i);
-                const isHero = i === moveIndex;
-                // (버그 수정) 금색 테두리가 있는 칸(hero)과 없는 칸의 실제 렌더 크기가 서로 달라(테두리
-                // 두께만큼) flex 정렬이 흔들리던 문제 — 모든 칸에 항상 같은 두께의 테두리를 두되
-                // (기본은 투명), box-sizing:border-box로 테두리가 안쪽에 그려지게 해 바깥 크기(34×34)를
-                // 항상 동일하게 고정한다.
-                return (
-                  <span key={i} style={{ width: 34, height: 34, boxSizing: "border-box", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
-                    visibility: revealed && k ? "visible" : "hidden",
-                    border: "2px solid " + ((isHero && revealed) ? T.brassHi : "transparent"),
-                    boxShadow: (isHero && revealed) ? "0 0 12px 2px rgba(236,203,134,.85), 0 0 4px " + (k ? QCOLOR[k] : "transparent") : "none",
-                    background: (isHero && revealed) ? "rgba(236,203,134,.12)" : "transparent" }}>
-                    {revealed && k && <span style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>}
-                  </span>
-                );
-              })}
-            </div>
-            {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
-            <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
-              style={{ width: lightBoardSize, height: beamHeight,
-                clipPath: "polygon(0% 0%, 100% 0%, " + (50 + beamNarrow) + "% 100%, " + (50 - beamNarrow) + "% 100%)",
-                background: "linear-gradient(180deg, rgba(196,154,80,.04) 0%, rgba(196,154,80,.3) 55%, rgba(236,203,134,.75) 100%)",
-                filter: "blur(1.5px)", marginTop: -4, marginBottom: -4, pointerEvents: "none" }} />
-            {/* (사용자 요청) "다시 보기" 버튼 대신, 유산 블록을 클릭할 때마다 처음부터 다시 재생된다. */}
-            <LegacyProjectorBlock entry={entry} size={blockSize} onClick={() => setAppliedCount(startCount)} />
+            {/* (버그 수정) 체스보드가 boardHeroActive 동안 최대 배율로 확대되면(위 motion.div가
+                z-index:2로 자기 레이아웃 박스보다 훨씬 크게 그려짐) 바로 아래 있는 이 블록(아이콘
+                트레일·광선·영사기)이 확대된 보드 밑에 깔려 겹쳐 보이고, 금테 두른 유산 수 아이콘도
+                그 사이에 파묻혀 좌표가 뒤틀린 것처럼 보였다 — 확대가 켜져 있는 동안은 이 블록 전체를
+                투명하게 감춰(pointer-events도 함께 꺼서 숨은 상태에서 클릭되지 않게) 겹침 자체를
+                없앤다. 확대가 끝나면(그 사이 유산 수 아이콘도 이미 appliedCount가 넘어가 채워진
+                뒤이므로) 다시 페이드인되며 정상적으로 보인다. */}
+            <motion.div animate={{ opacity: boardHeroActive ? 0 : 1 }} transition={{ duration: 0.35 }}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", pointerEvents: boardHeroActive ? "none" : "auto" }}>
+              {/* (사용자 요청) 아이콘 자리를 처음부터(재생 시작 전부터) 전부 고정해 둔다 — 매 수마다
+                  새 아이콘이 추가되며 레이아웃이 밀리지 않도록, startCount~endCount 범위의 슬롯을 전부
+                  미리 그려 두고 아직 두지 않은 수는 자리만 차지한 채 안 보이게(visibility:hidden) 한다.
+                  한 줄 flex-wrap(justifyContent:center)이라 다음 줄로 넘어가도 정렬이 흐트러지지 않는다.
+                  유산으로 지정한 수의 자리만 금색 테두리로 구분한다. */}
+              <div style={{ minHeight: 34, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, margin: "6px 0 2px", width: "100%", maxWidth: lightBoardSize }}>
+                {allSlots.map((i) => {
+                  const revealed = i < appliedCount;
+                  const k = kindAt(i);
+                  const isHero = i === moveIndex;
+                  // (버그 수정) 금색 테두리가 있는 칸(hero)과 없는 칸의 실제 렌더 크기가 서로 달라(테두리
+                  // 두께만큼) flex 정렬이 흔들리던 문제 — 모든 칸에 항상 같은 두께의 테두리를 두되
+                  // (기본은 투명), box-sizing:border-box로 테두리가 안쪽에 그려지게 해 바깥 크기(34×34)를
+                  // 항상 동일하게 고정한다.
+                  return (
+                    <span key={i} style={{ width: 34, height: 34, boxSizing: "border-box", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
+                      visibility: revealed && k ? "visible" : "hidden",
+                      border: "2px solid " + ((isHero && revealed) ? T.brassHi : "transparent"),
+                      boxShadow: (isHero && revealed) ? "0 0 12px 2px rgba(236,203,134,.85), 0 0 4px " + (k ? QCOLOR[k] : "transparent") : "none",
+                      background: (isHero && revealed) ? "rgba(236,203,134,.12)" : "transparent" }}>
+                      {revealed && k && <span style={{ filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>}
+                    </span>
+                  );
+                })}
+              </div>
+              {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
+              <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+                style={{ width: lightBoardSize, height: beamHeight,
+                  clipPath: "polygon(0% 0%, 100% 0%, " + (50 + beamNarrow) + "% 100%, " + (50 - beamNarrow) + "% 100%)",
+                  background: "linear-gradient(180deg, rgba(196,154,80,.04) 0%, rgba(196,154,80,.3) 55%, rgba(236,203,134,.75) 100%)",
+                  filter: "blur(1.5px)", marginTop: -4, marginBottom: -4, pointerEvents: "none" }} />
+              {/* (사용자 요청) "다시 보기" 버튼 대신, 유산 블록을 클릭할 때마다 처음부터 다시 재생된다. */}
+              <LegacyProjectorBlock entry={entry} size={blockSize} onClick={() => setAppliedCount(startCount)} />
+            </motion.div>
           </div>
         </motion.div>
       )}
@@ -20340,7 +20388,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
