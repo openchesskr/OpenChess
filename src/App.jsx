@@ -11109,6 +11109,16 @@ async function puzzleShareSend(no, fromUid, toUid) {
   try { await sbRpc("puzzle_share_inc", { p_no: no }); } catch { }
   return true;
 }
+// (사용자 요청) 유산 공유 — 퍼즐 공유와 같은 패턴으로, 대화창에 유산 미리보기 카드(legacy_slot이
+// 설정된 chat_messages 행)로 남긴다. 유산은 번호별 전역 저장소(puzzles 테이블 같은 것)가 따로
+// 없으므로 퍼즐처럼 데이터 자체를 복제해 두지 않고, 그 슬롯 키(best/only/brilliant, 그랜드마스터
+// 보너스 칸이면 best2 등)만 저장한다 — 받는 쪽 화면이 from_uid(보낸 사람=유산 주인)의 공개 프로필에서
+// 그 슬롯을 그대로 읽어와 보여준다(그 사람이 나중에 그 칸을 바꾸면 공유된 카드도 최신 내용을 보여줌).
+async function legacyShareSend(fromUid, toUid, slotKey) {
+  if (!SB_ON || !fromUid || !toUid || !slotKey) return false;
+  try { await sbInsert("chat_messages", { from_uid: fromUid, to_uid: toUid, legacy_slot: slotKey }); return true; }
+  catch { return false; }
+}
 // (v0.1.0) 친구가 내가 공유한 퍼즐을 풀어 얻은 XP의 10%를 나에게 돌려준다 — p_share_msg_id로 그 공유
 // 메시지가 실제로 나(호출자)에게 온 것인지 서버가 검증하므로, 임의 메시지 id로 위조 보상을 요청할 수
 // 없다. RPC는 보상 금액 자체를 내 XP에 더하지 않고 공유자에게 갈 chat_messages 시스템 메시지만 남긴다
@@ -13147,6 +13157,10 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
   const [profiles, setProfiles] = useState({});
   const [sent, setSent] = useState(() => new Set());
   const [busy, setBusy] = useState(null); // 전송 중인 uid
+  // (버그 수정) 전송이 실패해도(puzzleShareSend가 false를 돌려줘도) 아무 표시가 없어 버튼만
+  // "보내기"로 돌아가고 끝 — 사용자 입장에서는 "전달이 눌리지 않는다"로 보였다. 실패 시 짧은
+  // 안내 문구를 보여준다.
+  const [sendErr, setSendErr] = useState("");
   useEffect(() => {
     let cc = false;
     (async () => {
@@ -13160,10 +13174,12 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
   }, [myUid]);
   const send = async (toUid) => {
     if (busy || sent.has(toUid)) return;
-    setBusy(toUid);
+    if (!puzzle || puzzle.id == null) { setSendErr("퍼즐 정보를 불러오지 못해 전달할 수 없어요."); return; }
+    setBusy(toUid); setSendErr("");
     const ok = await puzzleShareSend(puzzleNo(puzzle.id), myUid, toUid);
     setBusy(null);
     if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
+    else setSendErr("전달하지 못했어요. 잠시 후 다시 시도해 주세요.");
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
@@ -13173,6 +13189,7 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
+          {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
           {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
             : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
             : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -15118,10 +15135,12 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
-function MyProfileCard({ card, profile, setProfile, user, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked }) {
+function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked }) {
   const [editOpen, setEditOpen] = useState(false);
   // (사용자 요청) 유산(Legacy) 관리 — 어떤 종류(best/only/brilliant)를 편집 중인지 키만 들고 있는다.
   const [managingLegacy, setManagingLegacy] = useState(null);
+  // (사용자 요청) 유산 공유 — 어떤 슬롯을 공유 시트로 열었는지 키만 들고 있는다.
+  const [sharingLegacy, setSharingLegacy] = useState(null);
   const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, legacies: profile.legacies, legacyHistory: profile.legacyHistory };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft } = chesscomUi;
   // (기능6) 프로필에서 메인 퀘스트 진척도·푼 퍼즐을 한눈에 볼 수 있게 표시.
@@ -15152,7 +15171,17 @@ function MyProfileCard({ card, profile, setProfile, user, currentTitle, totalXp,
           카드 안의 "내 진행 상황"(퀘스트·퍼즐)을 먼저 보여주고, chess.com 데이터는 그 아래로
           내린다. PublicProfileStats 내부에 함께 있던 chess.com 블록(AccountChessStats)은
           hideChesscom으로 꺼 두고, 같은 컴포넌트를 아래에서 따로 렌더링한다. */}
-      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom onManageLegacy={(key) => setManagingLegacy(key)} />
+      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom onManageLegacy={(key) => setManagingLegacy(key)} onShareLegacy={(key) => setSharingLegacy(key)} />
+      {sharingLegacy && profile.legacies && profile.legacies[sharingLegacy] && (
+        <LegacyShareSheet
+          slotKey={sharingLegacy}
+          typeInfo={LEGACY_TYPES.find((t) => t.key === legacyBaseKey(sharingLegacy))}
+          entry={profile.legacies[sharingLegacy]}
+          myUid={myUid}
+          onClose={() => setSharingLegacy(null)}
+          onShared={() => {}}
+        />
+      )}
       {managingLegacy && (
         <LegacyManageModal
           typeInfo={LEGACY_TYPES.find((t) => t.key === legacyBaseKey(managingLegacy))}
@@ -15282,6 +15311,10 @@ const CHANGELOG = [
       "프로필의 유산 블록을 이제 종류별로 세로 열(3열)로 나눠 보여줘요. 기보 타이핑 화면에서 유산 수는 항상 화면 정중앙에 오도록 새로 설계했고, 체스보드에서 유산 수를 둘 때는 뷰포트를 벗어나지 않는 한도 안에서 최대한 확대되면서 보드가 잠시 화면 정중앙으로 옮겨졌다가 다시 원래 자리로 돌아와요. 유산 수 아이콘의 금색 테두리가 다른 아이콘과 크기가 달라 보이던 문제를 고쳤어요. 그리고 이제 지워지거나 새 유산으로 덮어써진 옛 유산도 '더보기' 화면 아래 '지난 유산' 목록에서 다시 볼 수 있어요.",
       "도감 탭 오프닝 트리 영역이 이제 화면 크기에 맞춰 스크롤 없이 한 화면에 다 들어와요. 나침반 중심 회로 칩도 다시 그 영역 정중앙에 고정돼요.",
       "유산 수 아이콘 금테가 확대된 체스보드에 가려 겹쳐 보이던 진짜 원인을 찾아 고쳤어요 — 체스보드가 확대되는 동안은 아래 아이콘·영사기 블록이 잠시 투명해져요. 유산 수 뒤에 더 이상 재생할 수가 없어도 체스보드가 이제 항상 원래 크기로 돌아오고, 확대가 먼저 되고 나서 그 수가 놓이도록 순서를 바꿨어요. 빛의 체스보드 칸마다 밝기가 은은하게 계속 반짝이는 영사기 연출도 추가했어요.",
+      "프로필의 '자주 두는 첫 수'가 컴퓨터 화면에서 카드에 비해 작게 떠 보이던 문제를 고쳤어요 — 이제 카드 폭이 넓어지는 만큼 함께 커져요.",
+      "채팅 메시지의 수정/삭제(전달) 메뉴를 컴퓨터에서는 오른쪽 클릭으로도 열 수 있어요 — 꾹 누르기로 열 때와 똑같이 항상 화면 중앙 쪽으로, 다른 말풍선과 안 겹치게 떠요.",
+      "채팅에서 퍼즐 '전달'이 실패했을 때 아무 표시가 없던 문제를 고쳐, 이제 실패하면 안내 문구가 떠요.",
+      "유산을 이제 채팅으로 친구에게 공유할 수 있어요 — 유산 블록의 편집(✎) 아이콘은 좌하단으로 옮기고, 우하단에 새 공유 아이콘을 추가했어요. 누르면 친구를 골라 보낼 수 있고, 받은 친구는 채팅창의 유산 카드에서 '유산 보기'로 그대로 재생해 볼 수 있어요. 채팅창에 '/legacy 1'~'/legacy 6'을 입력해도 내 유산을 바로 보낼 수 있어요(1~3은 기본 칸, 4~6은 그랜드마스터 보너스 칸) — 등록되지 않은 칸이거나 그랜드마스터가 아닌데 보너스 칸을 입력하면 안내 문구가 떠요.",
     ]
   },
   {
@@ -16318,7 +16351,7 @@ function DailyPuzzleDevPanel({ card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
+function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, myUid, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -16398,7 +16431,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
       {canEdit && <DailyPuzzleDevPanel card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
-      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
+      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
         mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
@@ -17165,7 +17198,7 @@ function ChatUserProfileModal({ username, onClose }) {
     </div>
   );
 }
-function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, fillNarrow }) {
+function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, fillNarrow, myLegacies, myIsGM }) {
   // (사용자 요청) 모바일 전체 화면 모드(ChatsModal이 narrow일 때만 fillNarrow=true로 넘겨준다)에서는
   // 메시지 목록이 고정 320px가 아니라 남은 세로 공간을 채우도록(flex:1) 바꾼다 — 이 루트가 height:100%로
   // 늘어나려면 부모도 그만큼의 높이를 flex로 마련해 둬야 하므로, 그런 부모를 보장하지 않는 다른
@@ -17209,6 +17242,35 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     })();
     return () => { cancelled = true; };
   }, [msgs]);
+  // (사용자 요청) 유산 공유 카드 미리보기 — legacy_slot이 설정된 메시지가 보이면, 보낸 사람(from_uid,
+  // 즉 그 유산의 주인)의 공개 프로필에서 그 슬롯을 지연 조회해 캐싱한다(키: "uid|slot" ->
+  // {entry,typeInfo} | null(그 사이 삭제·교체돼 더 이상 없음), 아직 없으면 로딩 중으로 취급) — 퍼즐과
+  // 달리 유산은 번호별 전역 저장소가 없어, 매번 그 사람의 "지금" 프로필을 그대로 읽어와 보여준다.
+  const [legacyPreviews, setLegacyPreviews] = useState({});
+  useEffect(() => {
+    const keys = [...new Set(msgs.filter((m) => m.legacy_slot != null).map((m) => m.from_uid + "|" + m.legacy_slot))].filter((k) => !(k in legacyPreviews));
+    if (!keys.length) return;
+    let cancelled = false;
+    (async () => {
+      const fromUids = [...new Set(keys.map((k) => k.split("|")[0]))];
+      const profiles = await usersProfiles(fromUids);
+      if (cancelled) return;
+      setLegacyPreviews((prev) => {
+        const n = { ...prev };
+        keys.forEach((k) => {
+          const [fu, slot] = k.split("|");
+          const pub = (profiles[fu] && profiles[fu].pub) || {};
+          const entry = pub.legacies && pub.legacies[slot];
+          const typeInfo = LEGACY_TYPES.find((t) => t.key === legacyBaseKey(slot));
+          n[k] = (entry && typeInfo) ? { entry, typeInfo } : null;
+        });
+        return n;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [msgs]);
+  // (사용자 요청) 유산 공유 카드의 "유산 보기"로 열어 둔 재생 화면 대상.
+  const [viewLegacy, setViewLegacy] = useState(null);
   // (18차 보충 UX7) 인스타그램식 홀드-드래그 — 메시지를 좌우로 밀면 생긴 공간에 보낸 시각을 표시(내용은 유지).
   const [drag, setDrag] = useState(null);       // { id, dx }
   const dragRef = useRef(null);                  // { id, startX, mine }
@@ -17303,13 +17365,33 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       if (ok) { setText(""); load(); } else setCmdError("퍼즐을 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
       return;
     }
+    // (사용자 요청) "/legacy N"(N=1~6) 명령어 — 내 유산 슬롯 중 N번째를 공유 카드로 보낸다.
+    // 1~3은 기본 칸, 4~6은 그랜드마스터 보너스 칸(LEGACY_SLOT_ORDER). 그 범위를 벗어난 숫자는
+    // 애초에 정규식이 매치하지 않아 명령어로 인식되지 않고(그냥 평범한 텍스트로 전송됨) — 그 외
+    // 유효한 범위 안에서는 먼저 슬롯이 실제로 있는지, 보너스 칸이면 그랜드마스터인지를 검증한다.
+    const legacyCmdMatch = body && body.match(/^\/legacy\s+([1-6])\s*$/i);
+    if (legacyCmdMatch) {
+      setCmdError("");
+      const n = parseInt(legacyCmdMatch[1], 10);
+      const slotKey = LEGACY_SLOT_ORDER[n - 1];
+      if (n >= 4 && !myIsGM) { setCmdError("그랜드마스터 티어에 도달해야 추가 유산을 설정할 수 있어요."); return; }
+      if (!myLegacies || !myLegacies[slotKey]) { setCmdError("#" + n + "번 유산이 등록되어 있지 않습니다."); return; }
+      setSending(true);
+      const ok = await legacyShareSend(myUid, otherUid, slotKey);
+      setSending(false);
+      if (ok) { setText(""); load(); } else setCmdError("유산을 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
     setSending(true);
     const ok = await chatSend(myUid, otherUid, body, emoji);
     setSending(false);
     if (ok) { setText(""); load(); }
   };
-  // (v0.2.6 기능) "/"로 시작하면 쓸 수 있는 명령어 — 이번 버전엔 /puzzle 하나만 존재한다.
-  const CHAT_COMMANDS = [{ cmd: "/puzzle -num 000000", desc: "그 번호의 퍼즐을 공유해요(또는 /puzzle 000000)" }];
+  // (v0.2.6 기능) "/"로 시작하면 쓸 수 있는 명령어.
+  const CHAT_COMMANDS = [
+    { cmd: "/puzzle -num 000000", desc: "그 번호의 퍼즐을 공유해요(또는 /puzzle 000000)" },
+    { cmd: "/legacy N(1~6)", desc: "내 N번째 유산을 공유해요(1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)" },
+  ];
   const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
   const cancelEdit = () => { setEditingId(null); setText(""); };
   const doDelete = async (m) => {
@@ -17359,6 +17441,73 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
               </div>
             );
           }
+          // (사용자 요청) 유산 공유 카드 — 보낸 사람의 유산(등급 배지+새겨진 수) 미리보기 + "유산 보기"
+          // 버튼. 퍼즐 카드와 같은 패턴(당겨서 시각 확인 + 꾹 누르기/오른쪽 클릭으로 삭제 메뉴, 내가
+          // 보낸 것만)을 따른다 — 다만 유산은 "전달"(다시 공유) 대신 삭제만 지원한다.
+          if (m.legacy_slot != null) {
+            const key = m.from_uid + "|" + m.legacy_slot;
+            const lp = legacyPreviews[key]; // undefined=로딩중, null=찾을 수 없음, {entry,typeInfo}
+            const dx = drag && drag.id === m.id ? drag.dx : 0;
+            const d = new Date(m.created_at);
+            const hh = d.getHours(); const ampm = hh < 12 ? "AM" : "PM"; const h12 = String(hh % 12 === 0 ? 12 : hh % 12).padStart(2, "0");
+            const timeTxt = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + " " + ampm + " " + h12 + ":" + String(d.getMinutes()).padStart(2, "0");
+            const onDown = (e) => {
+              dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
+              if (mine) {
+                clearTimeout(longPressTimerRef.current);
+                const anchorEl = e.currentTarget;
+                longPressTimerRef.current = setTimeout(() => {
+                  openMsgMenu(m.id, anchorEl, "right");
+                  dragRef.current = null; setDrag(null);
+                }, 480);
+              }
+            };
+            const onMove = (e) => {
+              if (!dragRef.current || dragRef.current.id !== m.id) return;
+              const x = e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0;
+              let d2 = x - dragRef.current.startX;
+              if (Math.abs(d2) > 6) clearTimeout(longPressTimerRef.current);
+              d2 = mine ? Math.max(-96, Math.min(0, d2)) : Math.min(96, Math.max(0, d2));
+              setDrag({ id: m.id, dx: d2 });
+            };
+            const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
+            const onContext = (e) => { if (!mine) return; e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, "right"); };
+            const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
+            return (
+              <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
+                {!mine && (showAvatar
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                      {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                        : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+                    </button>
+                  : <div style={{ width: 26, flexShrink: 0 }} />)}
+                <div style={{ display: "flex", flexDirection: "column", flex: "0 1 auto" }}
+                  onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+                  onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
+                  {menuFor === m.id && mine && (
+                    <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: 0, ...(menuOpenDown ? { top: "calc(100% + " + (4 + menuDy) + "px)" } : { bottom: "calc(100% + " + (4 + menuDy) + "px)" }), transform: menuDx ? "translateX(" + menuDx + "px)" : undefined, zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                      <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
+                    </div>
+                  )}
+                  <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
+                    <div style={{ padding: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                      {lp === undefined ? <div style={{ fontSize: 11, color: T.ivory, padding: "20px 0" }}>불러오는 중…</div>
+                        : lp === null ? <div style={{ fontSize: 11, color: T.ivory, padding: "20px 0", textAlign: "center" }}>유산을 찾을 수 없어요.</div>
+                        : <>
+                            <span style={{ width: 44, height: 44, borderRadius: "50%", background: QCOLOR[lp.typeInfo.kind], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 10px 2px " + QCOLOR[lp.typeInfo.kind] + "77" }}>{badgeIcon(lp.typeInfo.kind, 26)}</span>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: T.ivoryHi, fontFamily: "ui-monospace,monospace" }}>{legacyMoveLabel(lp.entry)}</div>
+                            <div style={{ fontSize: 9.5, color: T.brassHi, fontWeight: 700 }}>{lp.typeInfo.label}</div>
+                          </>}
+                      <button onClick={() => lp && setViewLegacy(lp)} disabled={!lp} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: lp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#5A4630", color: lp ? "#241509" : "#B0A183", fontWeight: 800, fontSize: 11.5, border: "none", cursor: lp ? "pointer" : "default" }}>유산 보기</button>
+                    </div>
+                  </div>
+                </div>
+                </div>
+              </div>
+            );
+          }
           // (v0.1.0) 퍼즐 공유 카드 — 인스타그램 릴스 공유처럼 미리보기 + "풀러 가기" 버튼.
           // (v0.1.4 기능) 텍스트 메시지와 동일하게 당겨서 시각 확인 + 꾹 눌러 전달/삭제 메뉴를 지원한다.
           if (m.puzzle_no != null) {
@@ -17386,6 +17535,10 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
               setDrag({ id: m.id, dx: d2 });
             };
             const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
+            // (사용자 요청) 컴퓨터(마우스) 환경에서는 꾹 누르기 대신 오른쪽 클릭으로도 전달/삭제
+            // 메뉴를 열 수 있게 한다 — 브라우저 기본 컨텍스트 메뉴는 막고, 같은 openMsgMenu(안전한
+            // 중앙 쪽 배치 계산까지 그대로 재사용)로 연다.
+            const onContext = (e) => { e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, mine ? "right" : "left"); };
             // (v0.2.6 기능) 상대 말풍선 묶음 중 가장 위에만 프로필 사진을 왼쪽에 표시.
             const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
             return (
@@ -17398,7 +17551,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                   : <div style={{ width: 26, flexShrink: 0 }} />)}
                 <div style={{ display: "flex", flexDirection: "column", flex: mine ? "0 1 auto" : "0 1 auto" }}
                   onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
-                  onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
+                  onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {menuFor === m.id && (
@@ -17470,6 +17623,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
             dragRef.current = null; setDrag(null);
             if (wasTap) { const mention = firstMention(m.body); if (mention) setViewProfile(mention); }
           };
+          // (사용자 요청) 컴퓨터(마우스) 환경에서는 꾹 누르기 대신 오른쪽 클릭으로도 수정/삭제 메뉴를
+          // 열 수 있게 한다 — 내가 보낸 메시지만(꾹 누르기와 동일한 제약), 같은 openMsgMenu로 연다.
+          const onContext = (e) => { if (!mine) return; e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, "right"); };
           // (v0.2.6 기능) 상대 말풍선 묶음 중 가장 위에만 프로필 사진을 왼쪽에 표시.
           const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
           return (
@@ -17485,7 +17641,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                   : <div style={{ width: 26, flexShrink: 0 }} />)}
               <div className="flex items-center" style={{ gap: 4, position: "relative" }}
                 onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
-                onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}>
+                onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
                 {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
                 {/* (18차 보충 UX7 → 19차 선행) 드래그로 생긴 공간에 보낸 시각 표시 — 내 메시지는 오른쪽, 상대 메시지는 왼쪽.
                     래퍼를 inline-block으로 두어 transform이 정상 적용(말풍선 왜곡 해소)되고, overflow 미적용으로 시각이 가려지지 않는다. */}
@@ -17547,6 +17703,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       </div>
       {forwardTarget && <PuzzleShareSheet puzzle={forwardTarget} myUid={myUid} onClose={() => setForwardTarget(null)} onShared={() => setForwardTarget(null)} />}
       {viewProfile && <ChatUserProfileModal username={viewProfile} onClose={() => setViewProfile(null)} />}
+      <AnimatePresence>
+        {viewLegacy && <LegacyRevealScreen typeInfo={viewLegacy.typeInfo} entry={viewLegacy.entry} onClose={() => setViewLegacy(null)} />}
+      </AnimatePresence>
     </div>
   );
 }
@@ -17567,9 +17726,13 @@ function FirstMovesDisplay({ firstMoves }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>자주 두는 첫 수</div>
+      {/* (버그 수정) 두 박스 폭이 90px/200px로 고정돼 있어, 유산 타일처럼 카드 폭에 비례해(%) 커지는
+          다른 요소와 달리 컴퓨터(넓은 화면)에서는 카드 안에 작은 섬처럼 떠 보였다 — 카드 폭에 비례한
+          flex 비율(백 1 : 흑 2)로 바꿔, 모바일이든 컴퓨터든 카드가 넓어지는 만큼 이 블록도 함께
+          커져 다른 요소와 비율이 항상 맞도록 했다. */}
       <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
         {fm.white && (
-          <div style={{ flex: "0 0 auto", width: 90, display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: blackEntries.length ? "1 1 0" : "1 1 auto", minWidth: 0, maxWidth: blackEntries.length ? 170 : "none", display: "flex", flexDirection: "column" }}>
             <div style={headStyle}>백</div>
             <div style={{ ...boxStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 6px" }}>
               <span style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, whiteSpace: "nowrap" }}>1.{fm.white}</span>
@@ -17577,7 +17740,7 @@ function FirstMovesDisplay({ firstMoves }) {
           </div>
         )}
         {blackEntries.length > 0 && (
-          <div style={{ flex: "0 1 200px", minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: "2 1 0", minWidth: 0, display: "flex", flexDirection: "column" }}>
             <div style={headStyle}>흑</div>
             <div style={{ ...boxStyle, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
               {blackEntries.map(([w, b], i) => (
@@ -17705,6 +17868,9 @@ const LEGACY_TYPES = [
 // (사용자 요청) 그랜드마스터 보너스 슬롯 키(예: "best2")에서 기반 종류 키("best")를 뽑아낸다 —
 // LEGACY_TYPES는 여전히 종류 3개뿐이라, 저장/조회 키와 등급 정보(kind/label/short) 조회 키를 분리한다.
 function legacyBaseKey(slotKey) { return slotKey && slotKey.endsWith("2") ? slotKey.slice(0, -1) : slotKey; }
+// (사용자 요청) 채팅 명령어 "/legacy N"(1~6)이 가리키는 슬롯 순서 — 1~3은 기본 칸(최선/유일/탁월),
+// 4~6은 그랜드마스터 보너스 칸(같은 순서로 다시).
+const LEGACY_SLOT_ORDER = ["best", "only", "brilliant", "best2", "only2", "brilliant2"];
 function legacyMoveLabel(entry) {
   if (!entry || !entry.sans || entry.sans[entry.moveIndex] == null) return "";
   return moveNumber(entry.moveIndex) + entry.sans[entry.moveIndex];
@@ -17736,7 +17902,7 @@ const LEGACY_TILE_FLEX = "0 0 calc((100% - 16px) / 3)";
 // 만든 라운딩 사각 블록. 이미 저장된 유산을 보여주며, 누르면 LegacyRevealScreen이 열린다.
 // (사용자 요청) 등급 라벨 텍스트 대신, 그 등급에 해당하는 수 체계 아이콘을 블록 우상단에 — 같은
 // 색 원형 배경 없이, 블록 밖으로 살짝 삐져나올 만큼 크게 — 띄운다. 편집 버튼은 우하단으로.
-function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit }) {
+function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare }) {
   const color = QCOLOR[typeInfo.kind];
   return (
     <div style={{ position: "relative", flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
@@ -17747,7 +17913,9 @@ function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit }) {
       </button>
       {/* 버튼(overflow:hidden) 바깥의 형제로 둬야 살짝 삐져나오는 효과가 실제로 잘리지 않는다. */}
       <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{badgeIcon(typeInfo.kind, 26)}</span>
-      {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label="유산 편집" title="편집" className="press" style={{ position: "absolute", bottom: 4, right: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
+      {/* (사용자 요청) 편집(펜) 아이콘은 좌하단으로, 공유(종이비행기) 아이콘은 우하단에 새로 추가. */}
+      {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label="유산 편집" title="편집" className="press" style={{ position: "absolute", bottom: 4, left: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
+      {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(); }} aria-label="유산 공유" title="공유" className="press" style={{ position: "absolute", bottom: 4, right: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Send size={11} /></button>}
     </div>
   );
 }
@@ -18077,7 +18245,7 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
 // (사용자 요청) 유산 타일을 종류(최선/유일/탁월)별로 세로 한 열에 묶어 보여준다 — 세 종류가
 // 나란히 열로 놓이고, 그랜드마스터 보너스 칸이 있으면 그 종류의 열 안에서 아래로 쌓인다.
 // LegacyStoneRow(카드 인라인)와 LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
-function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate }) {
+function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare }) {
   return (
     <div className="flex" style={{ gap: 8 }}>
       {LEGACY_TYPES.map((t) => {
@@ -18093,7 +18261,7 @@ function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate }) {
               // 세로로 바뀌어 오작동한다 — flex가 아닌 일반 블록 래퍼로 한 겹 감싸 무력화한다.
               if (entry) return (
                 <div key={slotKey}>
-                  <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} />
+                  <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null} />
                   {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{new Date(entry.savedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
                 </div>
               );
@@ -18109,7 +18277,7 @@ function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate }) {
 // 언제 등록했는지(savedAt)와 함께 더 크게 볼 수 있는 전체 화면. (사용자 요청) 지워진 유산까지 다시
 // 볼 수 있는 이력(history) — 새로 저장하거나 삭제해서 그 칸에서 밀려난 옛 유산들을 "지난 유산"
 // 섹션에 최신순으로 나열한다(클릭하면 그대로 재생해 볼 수 있다. 편집·복원은 지원하지 않는다).
-function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose }) {
+function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onShare }) {
   const [openTarget, setOpenTarget] = useState(null); // { typeInfo, entry } | null
   const histItems = useMemo(() => (history || []).map((h, idx) => ({ ...h, idx, typeInfo: LEGACY_TYPES.find((t) => t.key === legacyBaseKey(h.slotKey)) })).filter((h) => h.typeInfo).reverse(), [history]);
   return (
@@ -18119,7 +18287,7 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose }) {
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>유산 전체 보기</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate />
+        <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate onShare={onShare} />
         {histItems.length > 0 && (
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed #C9B58C" }}>
             <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>지난 유산</div>
@@ -18143,7 +18311,7 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose }) {
     </div>
   );
 }
-function LegacyStoneRow({ legacies, history, onManageLegacy, isGM }) {
+function LegacyStoneRow({ legacies, history, onManageLegacy, isGM, onShareLegacy }) {
   const [openKey, setOpenKey] = useState(null);
   const [showAll, setShowAll] = useState(false);
   const slots = useMemo(() => {
@@ -18162,11 +18330,79 @@ function LegacyStoneRow({ legacies, history, onManageLegacy, isGM }) {
         {/* (사용자 요청) "유산" 텍스트와 같은 줄에 더보기 버튼 — 눌러 등록된 모든 유산을 등록 시점과 함께 크게 본다. */}
         <button onClick={() => setShowAll(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 1, background: "none", border: "none", cursor: "pointer", color: T.brass, fontSize: 11, fontWeight: 800 }}>더보기 <ChevronRight size={12} /></button>
       </div>
-      <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} />
+      <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} onShare={onShareLegacy} />
       <AnimatePresence>
         {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
       </AnimatePresence>
-      {showAll && <LegacyAllModal slots={slots} legacies={legacies} history={history} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} />}
+      {showAll && <LegacyAllModal slots={slots} legacies={legacies} history={history} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} onShare={onShareLegacy} />}
+    </div>
+  );
+}
+// (사용자 요청) 유산 공유 — 퍼즐 공유(PuzzleShareSheet)와 같은 패턴의 친구 선택 시트. 위쪽에 공유할
+// 유산 미리보기(등급 배지+새겨진 수)를 보여주고, 아래 친구 목록에서 보낼 대상을 고른다.
+function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }) {
+  const [friends, setFriends] = useState(null); // null=로딩중, [] = 없음
+  const [profiles, setProfiles] = useState({});
+  const [sent, setSent] = useState(() => new Set());
+  const [busy, setBusy] = useState(null);
+  const [sendErr, setSendErr] = useState("");
+  useEffect(() => {
+    let cc = false;
+    (async () => {
+      const edges = await friendEdges();
+      const ids = edges.filter((e) => e.status === "accepted" && (e.from_uid === myUid || e.to_uid === myUid)).map((e) => (e.from_uid === myUid ? e.to_uid : e.from_uid));
+      if (cc) return;
+      setFriends(ids);
+      if (ids.length) { const pm = await usersProfiles(ids); if (!cc) setProfiles(pm); }
+    })();
+    return () => { cc = true; };
+  }, [myUid]);
+  const send = async (toUid) => {
+    if (busy || sent.has(toUid)) return;
+    setBusy(toUid); setSendErr("");
+    const ok = await legacyShareSend(myUid, toUid, slotKey);
+    setBusy(null);
+    if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
+    else setSendErr("전달하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  };
+  const color = QCOLOR[typeInfo.kind];
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
+          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />유산 공유</span>
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+        </div>
+        <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)" }}>
+          <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 20)}</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{legacyMoveLabel(entry)}</div>
+            <div style={{ fontSize: 10.5, color: T.inkSoft }}>{typeInfo.label}</div>
+          </div>
+        </div>
+        <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
+          {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
+          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
+            : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {friends.map((u) => {
+                  const pr = profiles[u] || {}; const pub = pr.pub || {};
+                  const isSent = sent.has(u);
+                  return (
+                    <div key={u} style={{ display: "flex", alignItems: "center", gap: 10, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
+                      {pub.photo ? <img src={pub.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
+                        : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
+                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
+                      </div>
+                      <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
+                    </div>
+                  );
+                })}
+              </div>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -18355,7 +18591,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
 // (버그 수정) 친구 프로필 창의 채팅·친구 요청/수락/거절 버튼을 카드 맨 아래 대신 티어와 메인
 // 퀘스트 진척도 사이에 두기 위해, 그 자리에 끼워 넣을 내용을 actions prop으로 받는다 — 이 컴포넌트를
 // 쓰는 다른 곳(내 프로필·유저 검색)은 actions를 안 넘기면 예전과 완전히 동일하다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves, actions, onManageLegacy }) {
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
@@ -18378,7 +18614,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         </div>
       )}
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
-      <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} />
+      <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
@@ -18562,7 +18798,7 @@ function FriendRow({ id, pub, right, onClick }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
+function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, myLegacies, myIsGM }) {
   const [rows, setRows] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [chatWith, setChatWith] = useState(null);
@@ -18599,7 +18835,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle }) {
         )}
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} />
+            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} />
           </div>
         ) : (
           <div style={{ padding: 12, minHeight: 140, maxHeight: narrow ? undefined : 440, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
@@ -19036,7 +19272,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenPuzzle, mySolved, myLineSolves }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenPuzzle, mySolved, myLineSolves, myLegacies, myIsGM }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -19132,7 +19368,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} />
+            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} />
           </div>
         ) : sel ? (() => {
           const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
@@ -20463,8 +20699,8 @@ export default function App() {
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} />}</AnimatePresence>
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} />}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} />}
@@ -20560,7 +20796,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
