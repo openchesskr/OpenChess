@@ -15237,7 +15237,7 @@ const CHANGELOG = [
       "유산을 만들 때 'chess.com 대국에서 선택'을 누르면 이제 다른 통계 없이 '최근 대국' 목록만 간단히 보여줘요.",
       "퍼즐 탭 티어 표시에서 그랜드마스터 별 개수가 티어 이름과 겹쳐 보이던 문제를 고쳤어요 — 게이지 바 오른쪽으로 옮겼어요.",
       "도감 오프닝 트리를 처음 열었을 때 정중앙 회로 칩이 화면 한가운데에 정확히 오지 않던 문제를 고쳤어요.",
-      "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼을 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시되며, 수마다 배경 색도 은은하게 바뀌어요.",
+      "유산 재생 화면을 다시 다듬었어요 — 기보 타이핑 배경과 안내 문구, 유산 등급 이름, 하단 수 텍스트, '다시 보기' 버튼, 기물 칸을 감싸던 색 테두리를 없애고, 대신 유산 블록을 누르면 언제든 다시 재생돼요. 체스보드는 더 커졌고, 각 수의 등급 아이콘이 크게 표시돼요(예전에 만든 유산도 지정한 수만큼은 확실히 표시돼요). 배경은 검은색으로, 기보 타이핑 속도는 조금 느리게 바꿨어요.",
     ]
   },
   {
@@ -17717,7 +17717,7 @@ function LegacyEmptySlot({ typeInfo, onClick }) {
 // halo는 방금 둔 수의 도착 칸([r,c])에 그 수의 등급 색으로 발광 하이라이트를 씌우고, haloKind가
 // 있으면 실제 체스보드(Board, 3656줄 부근)와 똑같은 위치·크기·흰 테두리로 수 체계 아이콘을 띄운다.
 // 밝은/어두운 칸은 색이 아니라 (r+c) 홀짝에 따른 배경 불투명도 차이(=빛의 밝기 차이)로 구분한다.
-function LegacyLightBoard({ board, size = 320, glowColor, halo, haloKind }) {
+function LegacyLightBoard({ board, size = 320, halo, haloKind }) {
   const cell = Math.max(1, Math.floor(size / 8));
   return (
     <div style={{ position: "relative", width: cell * 8, height: cell * 8, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", filter: "drop-shadow(0 0 26px rgba(196,154,80,.28))" }}>
@@ -17728,7 +17728,7 @@ function LegacyLightBoard({ board, size = 320, glowColor, halo, haloKind }) {
           <div key={r + "_" + c} style={{ position: "relative", boxSizing: "border-box", border: "1px solid rgba(196,154,80,.22)",
             background: isLight ? "rgba(236,203,134,.16)" : "rgba(61,38,22,.42)",
             display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {isHalo && <span aria-hidden="true" style={{ position: "absolute", inset: cell * 0.06, borderRadius: 6, border: "1.5px solid " + glowColor, boxShadow: "0 0 14px 2px " + glowColor + ", inset 0 0 12px " + glowColor + "55", background: glowColor + "22" }} />}
+            {/* (사용자 요청) 기물 칸을 감싸던 등급색 테두리(링)를 없앴다 — 우상단 수 체계 배지만 남긴다. */}
             {isHalo && haloKind && (
               // (사용자 요청) 실제 체스보드가 칸 우상단에 띄우는 수 체계 배지와 동일한 위치·크기·스타일(3656줄).
               <div aria-hidden="true" style={{ position: "absolute", top: -cell * 0.18, right: -cell * 0.18, width: cell * 0.44, height: cell * 0.44, borderRadius: "50%", background: QCOLOR[haloKind], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6 }}>
@@ -17782,7 +17782,8 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
       const t = setTimeout(() => setPhase("board"), 320);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => setTypedCount((n) => Math.min(pgnTokens.length, n + 1)), 45);
+    // (사용자 요청) 타이핑 속도를 조금 늦춤(45ms → 80ms).
+    const t = setTimeout(() => setTypedCount((n) => Math.min(pgnTokens.length, n + 1)), 80);
     return () => clearTimeout(t);
   }, [phase, typedCount, pgnTokens.length]);
   useEffect(() => { if (typingRef.current) typingRef.current.scrollTop = typingRef.current.scrollHeight; }, [typedCount]);
@@ -17797,10 +17798,14 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const lastSan = appliedCount > 0 ? sans[appliedCount - 1] : null;
   const lastMover = appliedCount > 0 && (appliedCount - 1) % 2 === 0 ? "w" : "b";
   const haloInfo = lastSan ? sanSrc(prevBoard, stripSuffix(lastSan), lastMover) : null;
-  const haloKind = kinds && appliedCount > 0 ? kinds[appliedCount - 1] : null;
+  // (버그 수정) entry.kinds는 구버전 유산(이 필드가 생기기 전에 저장됨)이거나, 분석 결과에서 그
+  // ply를 못 찾으면 "pending"으로 채워져 있을 수 있어, 이 경우 그대로면 아이콘이 영영 안 뜬다.
+  // 다만 유산을 저장할 때 "지정한 수(moveIndex)는 반드시 그 유산 등급(typeInfo.kind)으로 채점된
+  // 수"라는 게 이미 검증돼 있으므로, kinds가 없거나 못 믿을 때도 지정한 수 차례에는 그 등급으로
+  // 확실하게 표시할 수 있다(그 외의 수는 실제로 몰라 아이콘을 생략한다).
+  const rawKind = kinds && appliedCount > 0 ? kinds[appliedCount - 1] : null;
+  const haloKind = (rawKind && rawKind !== "pending") ? rawKind : (appliedCount - 1 === moveIndex ? typeInfo.kind : null);
   const color = QCOLOR[typeInfo.kind];
-  // (사용자 요청) 뒷 배경이 현재 두어진 수의 수 체계 아이콘 색을 반영하도록 — 아직 수를 두기 전
-  // (charge·typing 단계)에는 유산 등급 색으로, 이후에는 매 수의 등급 색으로 부드럽게 전환된다.
   const bgColor = (haloKind && QCOLOR[haloKind]) || color;
   // (사용자 요청) 재생 화면의 체스보드를 더 크게(최대 360→440).
   const [lightBoardSize, boardWrapRef] = useBoardSize(440);
@@ -17809,7 +17814,7 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const beamNarrow = Math.min(46, (blockSize / Math.max(1, lightBoardSize)) * 50);
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
-      style={{ position: "fixed", inset: 0, zIndex: 210, background: "radial-gradient(120% 100% at 50% 30%," + bgColor + "26 0%,#030407 70%)", transition: "background 900ms ease", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 20, boxSizing: "border-box" }}>
+      style={{ position: "fixed", inset: 0, zIndex: 210, background: "#000", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 20, boxSizing: "border-box" }}>
       {/* 배경 별 입자(순수 CSS 장식) */}
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, opacity: 0.55, backgroundImage: "radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent), radial-gradient(1px 1px at 70% 65%, #fff, transparent), radial-gradient(1.5px 1.5px at 85% 20%, #fff, transparent), radial-gradient(1px 1px at 40% 80%, #fff, transparent), radial-gradient(1.5px 1.5px at 55% 45%, #fff, transparent), radial-gradient(1px 1px at 12% 68%, #fff, transparent), radial-gradient(1.5px 1.5px at 92% 55%, #fff, transparent)" }} />
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 16, right: 16, zIndex: 5, width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.2)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={17} /></button>
@@ -17842,7 +17847,7 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
             {/* (사용자 요청) 재생 화면 체스보드를 더 크게 키우고(useBoardSize(440)), "탁월한 유산" 같은
                 유산 등급 라벨은 없앤다. */}
             <div ref={boardWrapRef} style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
-              <LegacyLightBoard board={board} size={lightBoardSize} glowColor={bgColor} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} />
+              <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} />
             </div>
             {/* (사용자 요청) 매 수의 수 체계 아이콘을 보드 바로 아래, 하단 SAN 텍스트가 있던 자리에 표시. */}
             <div style={{ minHeight: 30, display: "flex", alignItems: "center", justifyContent: "center", margin: "6px 0 2px" }}>
