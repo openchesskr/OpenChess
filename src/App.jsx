@@ -5797,6 +5797,13 @@ const MEC_PHRASES = {
   // (신규) 수비자 제거 — 사용자 요청에 따라 매번 같은 고정 문구를 쓴다(다른 사실처럼 무작위로
   // 바뀌지 않는다).
   removeDefender: () => "수비자 제거 전술은 간단하지만 매우 강력합니다!",
+  // (사용자 요청) 체크메이트 — 다른 어떤 사실보다 우선하는 최상위 규칙이라 removeDefender와 같은
+  // 이유로 매번 같은 고정 문구를 쓴다. 탁월한 수·유일한 수와 연계된 두 문구는 그 등급을 상징하는
+  // 기호(체스 표기법 그대로 — 탁월한 수 "!!", 유일한 수 "!")로 끝난다(아래 mecFacts 끝의 일반
+  // 규칙과 자릿수를 맞춤). 그 외 등급의 체크메이트는 일반 문구를 쓴다.
+  checkmateBrilliant: (p) => "당신의 " + josaEunNeun(p) + " 상대의 킹과 맞바꾸게 될 거에요!!",
+  checkmateOnly: () => "체크메이트를 향한 유일한 길을 찾아냈어요!",
+  checkmate: () => "체크메이트! 이 수로 게임이 끝나요.",
 };
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
@@ -5808,6 +5815,21 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   const beforeBoard = boardFromSans(sansBeforeMove);
   const board = boardFromSans([...sansBeforeMove, san]);
   const facts = [];
+  // (사용자 요청) 체크메이트 — MEC의 어떤 규칙보다도 최우선으로 확인한다(바로 아래 수비자 제거보다도
+  // 위). 게임이 그 자리에서 끝나는 궁극의 사실이라 다른 어떤 사실을 설명할 이유도 없다. 탁월한
+  // 수(희생으로 외통을 만든 경우)·유일한 수(외통으로 가는 유일한 길이었던 경우)는 각각 전용 고정
+  // 문구로, 그 외 등급은 일반 체크메이트 고정 문구로 대체한다(수비자 제거와 같은 이유로 무작위
+  // 변주 없이 매번 같은 문구).
+  if (/#$/.test(san)) {
+    if (threatOut) threatOut.keyword = "체크메이트";
+    if (kind === "brilliant") {
+      const mateMoveInfo = sanSrc(beforeBoard, san, color);
+      const piece = mateMoveInfo ? PIECE_KOR[mateMoveInfo.piece] : "기물";
+      return [MEC_PHRASES.checkmateBrilliant(piece)];
+    }
+    if (kind === "only") return [MEC_PHRASES.checkmateOnly()];
+    return [MEC_PHRASES.checkmate()];
+  }
   // (신규) 수비자 제거 — 다른 어떤 사실보다 먼저 확인한다. 대부분 이어지는 수가 최선의 수뿐인
   // 명확하고 강력한 전술이라, 이게 있으면 다른 사실은 밀어내고 고정 문구 하나로 대체한다.
   const removeDef = removeDefenderFact(sansBeforeMove, san, color);
@@ -5967,6 +5989,13 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
     // R2/R3의 "엔진에 의하면" 취지를 일반화 — 좋은 수인데 위 어떤 사실도 찾지 못했으면, 설명할 수
     // 있는 직관적인 이유가 없다는 사실 자체를 명시한다.
     facts.push(MEC_PHRASES.noObviousReason(seed));
+  }
+  // (사용자 요청) 유일한 수·탁월한 수는 코멘트 끝에 그 등급을 상징하는 체스 표기 기호(!·!!)를
+  // 붙인다 — 호출부(ReviewCoachCard)는 facts[0]만 실제 코멘트에 붙이므로 거기에만 적용한다. 문장이
+  // 이미 마침표로 끝나 있으면 그 자리를 대신한다(요청받은 문장 그대로가 아니라 "...예요.!!"처럼
+  // 겹쳐 보이지 않도록).
+  if (facts.length && (kind === "only" || kind === "brilliant")) {
+    facts[0] = facts[0].replace(/[.!?]+$/, "") + (kind === "brilliant" ? "!!" : "!");
   }
   return facts;
 }
@@ -15387,6 +15416,7 @@ const CHANGELOG = [
       "퍼즐에서 오답을 뒀을 때 상대의 응징 수가 안 뜨고 그냥 되돌아가기만 하던 문제를 고쳤어요.",
       "퍼즐 라인 버튼에서 이미 푼 라인은 숫자 대신 초록색 체크로, 지금 풀고 있는 라인은 금색 테두리로 표시해 더 알아보기 쉬워졌어요.",
       "새로 만드는 퍼즐은 명확히 기물을 따내고(3점 이상) 그 이득이 확실히 유지될 때 곧바로 수순이 끝나도록 만들어져요 — 순간적으로만 유리해 보였다 몇 수 뒤 다시 균형을 찾는 애매한 수순이 줄어들어요.",
+      "학습 탭·게임 리뷰의 코치 코멘트에 체크메이트 전용 설명이 생겼어요 — 탁월한 수로 만든 외통, 유일한 외통 수순을 각각 따로 짚어줘요. 유일한 수·탁월한 수 코멘트 끝에는 이제 체스 기보 표기(!·!!)가 붙어요.",
     ]
   },
   {
