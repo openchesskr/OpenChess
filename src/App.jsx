@@ -15417,6 +15417,7 @@ const CHANGELOG = [
       "퍼즐 라인 버튼에서 이미 푼 라인은 숫자 대신 초록색 체크로, 지금 풀고 있는 라인은 금색 테두리로 표시해 더 알아보기 쉬워졌어요.",
       "새로 만드는 퍼즐은 명확히 기물을 따내고(3점 이상) 그 이득이 확실히 유지될 때 곧바로 수순이 끝나도록 만들어져요 — 순간적으로만 유리해 보였다 몇 수 뒤 다시 균형을 찾는 애매한 수순이 줄어들어요.",
       "학습 탭·게임 리뷰의 코치 코멘트에 체크메이트 전용 설명이 생겼어요 — 탁월한 수로 만든 외통, 유일한 외통 수순을 각각 따로 짚어줘요. 유일한 수·탁월한 수 코멘트 끝에는 이제 체스 기보 표기(!·!!)가 붙어요.",
+      "유산 재생에서 유산 수가 다 등장하기도 전에 주변 수 무너짐 연출이 먼저 시작될 수 있던 문제를 고쳐, 이제 유산 수가 확실히 다 나타난 뒤에만 무너짐이 시작돼요.",
     ]
   },
   {
@@ -18361,13 +18362,21 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
     const t = setTimeout(() => setTypedCount((n) => Math.min(moveIndex, n + 1)), 80);
     return () => clearTimeout(t);
   }, [phase, typingStage, typedCount, moveIndex]);
+  // (사용자 요청) 유산 수의 기보가 "확실하게" 등장한 뒤에야 주변 수가 무너지기 시작해야 한다 —
+  // 예전엔 유산 수의 낙하 스프링이 대략 언제 바닥을 찍는지 시간을 추측해(WAVE_BASE_MS) 그 시점에
+  // 무조건 무너뜨리기 시작했는데, 기기 성능·리렌더 지연에 따라 실제 낙하 애니메이션이 아직 안
+  // 끝났는데도 무너짐이 먼저 시작될 수 있었다(추측이라 확실하지 않음). 대신 유산 수 motion.span의
+  // onAnimationComplete(framer-motion이 스프링이 실제로 정착했을 때 호출)로 heroLanded를 켜고,
+  // LegacyShatterToken의 active를 이 값에 직접 연결해 "정말로 다 등장한 뒤"에만 무너짐이 시작되도록
+  // 확실하게 순서를 보장한다.
+  const [heroLanded, setHeroLanded] = useState(false);
   // (v0.3.4 기능) 파동이 유산 수(충격 지점)로부터 퍼져나가는 속도 — 거리(토큰 개수 차이) 1당
-  // WAVE_STEP_MS만큼 늦게 반응한다. WAVE_BASE_MS는 유산 수 자신의 낙하가 실제로 "부딪히는" 시점
-  // (스프링 파라미터상 대략 이 무렵 처음 바닥을 찍는다)과 맞춘 최소 지연.
-  const WAVE_BASE_MS = 260, WAVE_STEP_MS = 45;
-  // (v0.3.4 기능) 유산 수 낙하 충격이 주변 토큰까지 파동으로 퍼지는 물리 연출(LegacyShatterToken)이
-  // 이전보다 오래 걸려(거리 기반 지연 + 2단계 스프링), 가장 먼 토큰까지 다 흩어질 시간을 넉넉히 준다.
-  const HERO_SOLO_MS = 1600;
+  // WAVE_STEP_MS만큼 늦게 반응한다. WAVE_BASE_MS는 이제 착지 시점을 추측할 필요가 없어(heroLanded가
+  // 이미 착지를 보장) 착지 직후 아주 짧은 호흡만 준다.
+  const WAVE_BASE_MS = 80, WAVE_STEP_MS = 45;
+  // (사용자 요청 반영) 무너짐 시작이 착지 완료 확인 이후로 미뤄진 만큼(예전의 낙관적 추측 260ms보다
+  // 늦게 시작), 가장 먼 토큰까지 다 흩어질 시간을 더 넉넉히 준다.
+  const HERO_SOLO_MS = 2000;
   useEffect(() => {
     if (typingStage !== "heroSolo") return;
     const t = setTimeout(() => setTypingStage("after"), HERO_SOLO_MS);
@@ -18518,7 +18527,8 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
             {typingStage === "heroSolo" && beforeTokens.slice(0, typedCount).map((tok, i) => (
               // 유산 수(충격 지점)에 가장 가까운 마지막 토큰(i = moveIndex-1)의 거리가 0 — 멀어질수록
               // delay가 커져, 충격파가 가까운 곳부터 먼 곳으로 순서대로 퍼져나가는 것처럼 보인다.
-              <LegacyShatterToken key={i} active delay={WAVE_BASE_MS + (moveIndex - 1 - i) * WAVE_STEP_MS} dir={i % 2 === 0 ? -1 : 1}>{tok}</LegacyShatterToken>
+              // (사용자 요청) active를 heroLanded에 연결해, 유산 수가 실제로 다 착지한 뒤에만 시작한다.
+              <LegacyShatterToken key={i} active={heroLanded} delay={WAVE_BASE_MS + (moveIndex - 1 - i) * WAVE_STEP_MS} dir={i % 2 === 0 ? -1 : 1}>{tok}</LegacyShatterToken>
             ))}
             {typingStage === "after" && (
               // (사용자 요청) 정중앙 solo 등장(아래)과 같은 layoutId를 공유 — framer-motion이 두
@@ -18537,9 +18547,12 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           {typingStage === "heroSolo" && (
             <motion.div style={{ position: "fixed", inset: 0, zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
               {/* (v0.3.4 UI) 위에서 떨어져 정중앙에 부딪히듯 등장 — 스프링(질량-감쇠 진동) 물리로 계산돼
-                  실제로 한두 번 튀어오르는 반동을 남기고 자리를 잡는다(easeOut 트윈이 아니라 진짜 스프링). */}
+                  실제로 한두 번 튀어오르는 반동을 남기고 자리를 잡는다(easeOut 트윈이 아니라 진짜 스프링).
+                  (사용자 요청) onAnimationComplete로 이 스프링이 실제로 정착한 순간을 확실히 알아내
+                  heroLanded를 켠다 — 주변 수 무너짐(LegacyShatterToken)은 이 값이 켜진 뒤에만 시작된다. */}
               <motion.span layoutId="legacyHeroToken" initial={{ opacity: 0, y: -220, scale: 0.85 }} animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ type: "spring", stiffness: 380, damping: 13, mass: 1 }}
+                onAnimationComplete={() => setHeroLanded(true)}
                 style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 34, color, textShadow: "0 0 26px " + color + ", 0 2px 14px rgba(0,0,0,.7)" }}>
                 {heroTok}
               </motion.span>
