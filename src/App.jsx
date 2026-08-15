@@ -1299,7 +1299,29 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
               // 치지 않는다. "기물 우위"(수비자 제거처럼 최선의 수만 이어지지만 명확한 기물 이득을
               // 보는 전술)는 cp 기준 없이, 기물 점수가 실제로 유리해지는 순간 곧바로 끝낸다.
               const gainOk = puzzleType === "material" ? matGain > 0 : (cpGain >= target && matGain > 0);
-              if (gainOk && matOk && capOk) terminal = true;
+              // (사용자 요청) 새 종료 조건 — 기물 이득 3점 이상 + 평가치가 절대값으로 2점(200cp)
+              // 이상 유리 + 그 기물 이득이 최소 5수 뒤까지도 유지된다면, 기존 target(누적 cp 이득)
+              // 기준을 만족하지 못했더라도 곧바로 그 수에서 라인을 끝낸다. 순간적으로만 유리해
+              // 보였다가 몇 수 뒤 상대의 반격(예: 되잡기·핀 풀림)으로 다시 기물이 정리되는 얕은
+              // 전술은 "5수 유지" 검증에서 걸러진다. 지속 여부는 이 위치(cur2)에서 이미 받아 둔
+              // pvs2[0].pv(엔진이 예상하는 이후 진행)를 그대로 시뮬레이션해 확인하므로 엔진을
+              // 추가로 호출하지 않는다 — 그 PV가 5수보다 짧으면(막다른 강제 수순 등) 지속을 증명할
+              // 수 없다고 보고 인정하지 않는다(기존 gainOk 기준으로만 판단).
+              const MATERIAL_LOCK_MIN_GAIN = 3, MATERIAL_LOCK_MIN_CP = 200, MATERIAL_LOCK_PLIES = 5;
+              let materialLockOk = false;
+              if (matGain >= MATERIAL_LOCK_MIN_GAIN && userCp >= MATERIAL_LOCK_MIN_CP) {
+                const futurePv = pvs2 && pvs2[0] && pvs2[0].pv;
+                const futureSans = futurePv ? pvUciToSans(cur2, futurePv, MATERIAL_LOCK_PLIES) : [];
+                if (futureSans.length >= MATERIAL_LOCK_PLIES) {
+                  materialLockOk = true;
+                  let sim = cur2;
+                  for (const s of futureSans) {
+                    sim = [...sim, s];
+                    if (materialDiff(boardFromSans(sim), userColor) - startMat < MATERIAL_LOCK_MIN_GAIN) { materialLockOk = false; break; }
+                  }
+                }
+              }
+              if ((gainOk || materialLockOk) && matOk && capOk) terminal = true;
             }
           }
         }
@@ -15347,6 +15369,7 @@ const CHANGELOG = [
       "퍼즐에서 한 라인을 다 풀면 이제 자동으로 다음 라인으로 넘어가요.",
       "퍼즐에서 오답을 뒀을 때 상대의 응징 수가 안 뜨고 그냥 되돌아가기만 하던 문제를 고쳤어요.",
       "퍼즐 라인 버튼에서 이미 푼 라인은 숫자 대신 초록색 체크로, 지금 풀고 있는 라인은 금색 테두리로 표시해 더 알아보기 쉬워졌어요.",
+      "새로 만드는 퍼즐은 명확히 기물을 따내고(3점 이상) 그 이득이 확실히 유지될 때 곧바로 수순이 끝나도록 만들어져요 — 순간적으로만 유리해 보였다 몇 수 뒤 다시 균형을 찾는 애매한 수순이 줄어들어요.",
     ]
   },
   {
