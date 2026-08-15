@@ -11178,6 +11178,23 @@ async function puzzleShare(p) {
   } catch { }
 }
 async function puzzleFetch(no) { if (!SB_ON) return null; try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; } }
+// (v0.3.4 기능) 개발자 전용 "전체 퍼즐 일괄 재생성" 도구용 — 존재하는 모든 퍼즐 번호를 페이지
+// 단위로 끝까지 모아 온다(PostgREST 기본 최대 반환 행 수 제한을 limit/offset 페이지네이션으로
+// 안전하게 우회 — 퍼즐은 유저가 계속 새로 공유하는 크라우드소싱 구조라 상한이 없다).
+async function puzzleListAllNos() {
+  if (!SB_ON) return [];
+  const out = []; const pageSize = 1000; let offset = 0;
+  for (;;) {
+    let rows;
+    try { rows = await sbSelect("puzzles?select=no&order=no.asc&limit=" + pageSize + "&offset=" + offset); }
+    catch { break; }
+    if (!rows || !rows.length) break;
+    out.push(...rows.map((r) => r.no));
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+  return out;
+}
 // (16차) "이 퍼즐을 푼 친구" 표기용 — 퍼즐 번호별 해결자 uid 기록. 테이블 puzzle_solvers(no, uid) PK(no,uid) 필요.
 // 테이블이 없거나 Supabase 미설정이면 무해하게 비활성(전체 풀이수만 표시).
 async function puzzleSolverAdd(no, uid) { if (!SB_ON || !uid) return; try { await sbUpsert("puzzle_solvers", { no, uid }); } catch { } }
@@ -16460,7 +16477,96 @@ function DailyPuzzleDevPanel({ card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, myUid, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
+// (v0.3.4 기능) 개발자 전용 — 이미 만들어진 모든 퍼즐을 최신 라인 종료 규칙(genPuzzleTree)으로
+// 한꺼번에 다시 생성한다(요청: "기존 퍼즐에도 적용해 달라"). genPuzzleTree는 브라우저 WASM
+// 엔진(getAnalysisPool)에 강하게 결합돼 있어 Node 스크립트로 서버에서 일괄 실행할 방법이 없다 —
+// 개발자가 이 패널을 열어 둔 실제 브라우저 탭에서, 단일 퍼즐 재생성(regenerateWithTarget)과 정확히
+// 같은 genPuzzleTree 호출을 퍼즐 번호 순서대로 하나씩(engine 내부 워커 풀은 그대로 재사용되므로
+// 병렬 처리 자체는 유지된다) 실행해 puzzles 테이블에 직접 덮어쓴다. 퍼즐 수가 많으면 오래 걸릴 수
+// 있어(요청 이전에 이미 그런 구조) 진행률·실패 목록을 보여주고 언제든 멈출 수 있게 한다. (주의)
+// 재생성은 라인 태그를 새로 발급하므로, 기존 유저의 lineSolves(라인별 별 3개 보상 여부)가 재생성된
+// 퍼즐에서 더 이상 일치하지 않을 수 있다 — 베타 단계라 이 위험을 감수하기로 확인받았다.
+function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
+  const [status, setStatus] = useState("idle"); // idle | listing | running | done | stopped
+  const [total, setTotal] = useState(0);
+  const [doneCount, setDoneCount] = useState(0);
+  const [curNo, setCurNo] = useState(null);
+  const [failed, setFailed] = useState([]); // [{ no, error }]
+  const stopRef = useRef(false);
+  const running = status === "listing" || status === "running";
+  const start = async () => {
+    if (!engine || engine.status !== "ready" || running) return;
+    stopRef.current = false;
+    setFailed([]); setDoneCount(0); setCurNo(null); setTotal(0);
+    setStatus("listing");
+    const nos = await puzzleListAllNos();
+    setTotal(nos.length);
+    setStatus("running");
+    let overridesTouched = false;
+    for (const no of nos) {
+      if (stopRef.current) { setStatus("stopped"); return; }
+      setCurNo(no);
+      try {
+        const data = await puzzleFetch(no);
+        if (!data) throw new Error("퍼즐 데이터를 찾을 수 없음");
+        const setup = [...(data.setupSans || []), data.mistakeSan].filter(Boolean);
+        const th = primaryTheme(data);
+        // (regenerateWithTarget과 동일) 개발자가 이 퍼즐에 직접 지정해 둔 목표 cp·종류가 있으면
+        // 그대로 이어받고, 없으면 테마 기본값을 쓴다 — "희생" 테마는 지금 트리가 고른 첫 수(탁월한
+        // 수)를 그대로 고정해야 같은 전술 위치가 유지된다.
+        const ov = (CONTENT.puzzleOverrides || {})[no] || {};
+        const curLines = treeLinesOf(puzzleTreeOf(data));
+        const firstSan = th === "sacrifice" ? (curLines[0] && curLines[0].sans[0]) : null;
+        const opts = { ...puzzleThemeOpts(th, ov.target, ov.puzzleType), firstSan, tagSeq: 0 };
+        const gen = await genPuzzleTree(engine, setup, opts);
+        if (!gen) throw new Error("이 기준으로는 트리를 만들 수 없음");
+        await sbUpsert("puzzles", { no, data: { ...data, tree: gen.tree, lines: gen.lines } });
+        // 재생성한 트리가 실제로 보이도록, 이 번호에 남아있을 수 있는 개발자 override(더 우선시됨)를 함께 지운다.
+        if (CONTENT.puzzleOverrides && CONTENT.puzzleOverrides[no]) { delete CONTENT.puzzleOverrides[no]; overridesTouched = true; }
+      } catch (e) {
+        setFailed((f) => [...f, { no, error: (e && e.message) || String(e) }]);
+      }
+      setDoneCount((d) => d + 1);
+    }
+    if (overridesTouched && bumpContent) { try { await bumpContent(); } catch { } }
+    setCurNo(null);
+    setStatus("done");   // 여기 도달했다는 건 중간에 stopRef로 멈추지 않고 목록을 끝까지 순회했다는 뜻.
+  };
+  const stop = () => { stopRef.current = true; };
+  const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 전체 퍼즐 일괄 재생성</div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>모든 퍼즐을 최신 라인 종료 규칙으로 다시 만듭니다. 이 창을 닫거나 새로고침하면 멈추고, 다시 시작하면 처음부터 다시 순회합니다. 퍼즐 수에 따라 오래 걸릴 수 있어요 — 기존 라인 태그가 바뀌어 유저의 라인별 풀이 기록과 안 맞을 수 있습니다.</p>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
+        {running
+          ? <button onClick={stop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
+          : <button onClick={start} disabled={!engine || engine.status !== "ready"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", opacity: (!engine || engine.status !== "ready") ? .5 : 1 }}>{status === "idle" ? "전체 재생성 시작" : "처음부터 다시 시작"}</button>}
+        {!engine || engine.status !== "ready" ? <span style={{ fontSize: 10.5, color: T.blunder }}>엔진이 준비되면 시작할 수 있어요.</span> : null}
+      </div>
+      {status !== "idle" && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
+            {status === "listing" ? "퍼즐 목록을 불러오는 중…" : status === "done" ? "완료" : status === "stopped" ? "중단됨" : "진행 중…"}
+            {total > 0 && " — " + doneCount + " / " + total + (curNo != null && running ? " (지금 #" + curNo + ")" : "")}
+          </div>
+          {total > 0 && (
+            <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
+              <div style={{ width: (100 * doneCount / total) + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .3s ease" }} />
+            </div>
+          )}
+        </div>
+      )}
+      {failed.length > 0 && (
+        <div style={{ maxHeight: 160, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.blunder, marginBottom: 4 }}>실패 {failed.length}건</div>
+          {failed.map((f) => <div key={f.no} style={{ fontSize: 10, color: T.blunder }}>#{f.no} — {f.error}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, myUid, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -16538,6 +16644,7 @@ function SettingsTab({ profile, setProfile, engineStatus, liveOn, setLiveOn, eng
           패널도 공동 개발자 모드에서 함께 보여준다. */}
       {((isDev && devOn) || (isCodev && codevOn)) && <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={card} />}
       {canEdit && <DailyPuzzleDevPanel card={card} />}
+      {canEdit && <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={card} />}
 
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
@@ -21157,7 +21264,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로

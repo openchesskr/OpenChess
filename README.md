@@ -69,6 +69,11 @@ v0.3.3에서 `target="_blank"`를 제거했는데도(같은 탭 이동으로 바
 **기능 — 퍼즐 생성 라인 종료 조건에 "기물 이득 확정" 규칙 추가**
 `genPuzzleTree`는 사용자 수를 둔 뒤 기존엔 오직 `target`(누적 cp 이득) 기준(포지션 우위 테마) 또는 순수 기물 증가(기물 우위 테마)로만 라인 종료를 판단했다. 요청대로 새 독립 조건을 추가했다 — 그 수 이후 기물 이득이 3점 이상(`MATERIAL_LOCK_MIN_GAIN`)이고, 평가치가 절대값으로 2점(200cp, `MATERIAL_LOCK_MIN_CP`) 이상 유리하며, 그 기물 이득이 최소 5수(`MATERIAL_LOCK_PLIES`) 뒤까지도 유지된다면 기존 `target` 기준을 만족하지 못했더라도 곧바로 그 수에서 라인을 끝낸다. "5수 유지" 검증은 새로 엔진을 호출하지 않고, 이 위치 평가 시 이미 받아 둔 멀티PV 결과(`pvs2[0].pv`)를 `pvUciToSans`로 그대로 시뮬레이션해 각 수마다 기물 이득이 3점 밑으로 떨어지지 않는지 확인한다(PV가 5수보다 짧으면 지속을 증명할 수 없다고 보고 이 규칙을 적용하지 않음) — 순간적으로만 유리해 보였다가 몇 수 뒤 되잡기 등으로 다시 균형을 찾는 얕은 전술은 걸러진다. `puzzleType`(포지션/기물 우위)과 무관하게 항상 함께 적용되며, 테마별 조건(`requireMaterialRecovery`/`requireCapture`)은 그대로 함께 검사한다.
 
+**기능 — 개발자 전용 "전체 퍼즐 일괄 재생성" 도구**
+사용자 요청: 새 라인 종료 규칙(바로 위 항목)을 기존에 이미 만들어진 모든 퍼즐에도 소급 적용해 달라는 것. `genPuzzleTree`는 브라우저 WASM 엔진(`getAnalysisPool`)에 강하게 결합돼 있어 Node 스크립트로 서버에서 일괄 실행할 방법이 없다(`scripts/` 전체를 확인 — Stockfish를 Node에서 구동하는 코드는 `refresh-data.mjs`의 오프닝 이론 수 평가용뿐이고 퍼즐 트리와는 무관, `genPuzzleTree`를 호출하거나 Supabase 클라이언트를 쓰는 스크립트는 전무). 기존 재생성 기능(`regenerateWithTarget`)도 개발자가 화면에 열어 둔 퍼즐 1개만 재생성해 `CONTENT.puzzleOverrides`(전역 `app_content` 단일 행)에 저장하는 구조라, 퍼즐이 수천 개 규모일 수 있는 크라우드소싱 구조(`puzzles` 테이블에 상한 없음, 각 퍼즐이 `{no, data}` 독립 행)에는 맞지 않는다(모든 결과를 하나의 JSON 블롭에 누적하면 매 저장마다 그 전체를 다시 올려야 해 사실상 못 씀).
+
+새 컴포넌트 `PuzzleBatchRegenPanel`(설정 탭, `canEdit` 게이트 — 개발자/공동 개발자 모드 전용)을 만들었다. 새 헬퍼 `puzzleListAllNos()`가 PostgREST 기본 반환 행 수 제한을 `limit`/`offset` 페이지네이션으로 우회해 존재하는 모든 퍼즐 번호를 모아 오면, `regenerateWithTarget`과 정확히 같은 방식(같은 `puzzleThemeOpts`·"희생" 테마의 `firstSan` 고정 로직)으로 번호 순서대로 하나씩 `genPuzzleTree`를 돌려 결과를 **`puzzles` 테이블에 직접**(override 경유 없이) `sbUpsert`한다 — `getAnalysisPool`은 프로필별로 메모이즈돼 있어 수천 번을 순회로 호출해도 워커가 누적되지 않는다. 재생성한 퍼즐 번호에 예전 `CONTENT.puzzleOverrides` 항목이 남아있으면 함께 지운다(`puzzleTreeOf`가 override를 `p.tree`보다 우선시켜, 안 지우면 방금 새로 쓴 트리가 계속 가려짐). 진행률·현재 처리 중인 번호·실패 목록을 보여주고 언제든 중단할 수 있으며(브라우저 탭을 열어 둔 채로 개발자가 직접 실행해야 함 — 이 저장소 개발 환경은 실제 프로덕션 Supabase 접근 권한이 없어 이 도구를 직접 실행해 볼 수는 없었다), 이 작업은 라인 태그를 전부 새로 발급하므로 기존 유저의 라인별 풀이 기록(`lineSolves`)이 재생성된 퍼즐과 더 이상 안 맞을 수 있다는 위험을 사용자에게 먼저 확인받았다(베타 단계라 감수하기로 함).
+
 ### OpenChess v0.3.3 — 2026/8/12
 
 **성능 — 모바일에서 도감 오프닝 트리를 열면 심하게 버벅이던 문제**
