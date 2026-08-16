@@ -412,22 +412,14 @@ const GeoBackdrop = React.memo(function GeoBackdrop() {
 });
 
 const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-/* (v0.2.4 개편) 엔진 선택 — "분석"(학습/퍼즐 탭 및 사이트 전반)과 "게임 리뷰"는 서로 다른 엔진을
-   쓴다. "full"(Stockfish 16)은 이제 게임 리뷰 전용 고정 엔진으로만 쓰이고(사람 최상급 수준으로
-   세기를 제한, elo 참고), 설정 탭에는 노출되지 않는다. 분석 쪽은 "lite"(Stockfish 18 Lite, 기기
-   종류와 무관하게 기본값)와 "full17"(Stockfish 17.1, 셋 중 가장 강력하지만 초기 로딩 용량이 가장
-   크다 — 약 80MB, 여러 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는 그 선택을
-   기억한다. */
+/* (v0.2.4 개편 → v0.3.5 통합) 엔진 선택 — 예전엔 "분석"(학습/퍼즐 탭 및 사이트 전반)과 "게임 리뷰"가
+   서로 다른 엔진을 썼다("full", Stockfish 16을 게임 리뷰 전용 고정 엔진으로 사람 최상급 수준까지
+   세기를 제한해 썼다). 사용자 요청으로 이제 게임 리뷰도 설정 탭에서 고른 분석 엔진을 그대로 쓰도록
+   통합하고, Stockfish 16("full" 프로필)은 완전히 폐기했다(engine/stockfish-nnue-16* 파일·npm
+   별칭도 함께 제거 — scripts/copy-engine.mjs, package.json 참고). "lite"(Stockfish 18 Lite, 기기
+   종류와 무관하게 기본값)와 "full17"(Stockfish 17.1, 둘 중 더 강력하지만 초기 로딩 용량이 크다 —
+   약 80MB, 여러 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는 그 선택을 기억한다. */
 const ENGINE_PROFILES = {
-  // (v0.2.4) 게임 리뷰 전용 고정 엔진 — 분석 엔진 선택지에서는 빠진다(ANALYSIS_ENGINE_IDS 참고).
-  full: {
-    id: "full", label: "Stockfish 16",
-    urls: [ENGINE_BASE + "engine/stockfish-nnue-16-single.js", "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js"],
-    // (성능) 교차 출처 격리(COOP/COEP)가 된 환경에서만 시도하는 멀티스레드 빌드 — CDN 폴백 없이
-    // 같은 출처(public/engine) 파일만 쓴다(교차 출처 워커 스크립트는 격리 요건과 맞물려 불확실하다).
-    mtUrl: ENGINE_BASE + "engine/stockfish-nnue-16.js",
-    elo: 3270, // (v0.2.4) 게임 리뷰는 사람 최상급 수준(약 3270 elo)으로 세기를 제한해 둔다(UCI_LimitStrength).
-  },
   lite: {
     id: "lite", label: "Stockfish 18 Lite",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
@@ -451,13 +443,8 @@ const ENGINE_PROFILES = {
     parts: 6,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
   },
 };
-// (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — 게임 리뷰 전용 "full"은 제외한다.
+// (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
 const ANALYSIS_ENGINE_IDS = ["lite", "full17"];
-// (v0.2.4) 프로필에 elo가 지정돼 있으면(게임 리뷰 전용 "full") 세기를 그 수준으로 제한하는
-// setoption 명령을 함께 보낸다 — 분석 엔진 프로필들은 elo가 없어 항상 빈 배열([])을 반환한다.
-function eloSetoptions(profile) {
-  return profile && profile.elo ? ["setoption name UCI_LimitStrength value true", "setoption name UCI_Elo value " + profile.elo] : [];
-}
 // (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
 // Policy)가 걸린 페이지에서만 쓸 수 있다 — vite.config.js(개발)·vercel.json(배포)에서 헤더를 설정해
 // 뒀을 때만 true가 된다. 격리가 안 된 환경(구형 브라우저, 헤더 미지원 배포지 등)에서는 이 값이
@@ -471,7 +458,7 @@ function mainEngineThreads() { return 2; }
 // 단일 스레드 빌드(로컬 → CDN)를 그대로 이어 붙여, 멀티스레드 부팅이 실패해도 기존 폴백 경로가
 // 그대로 살아있게 한다.
 function engineBootList(profileId, threads) {
-  const profile = ENGINE_PROFILES[profileId] || ENGINE_PROFILES.full;
+  const profile = ENGINE_PROFILES[profileId] || ENGINE_PROFILES[defaultEnginePref()];
   // (v0.2.0 버그 수정) Stockfish 17.1(최고 성능) 프로필은 신경망이 조각(-part-N.wasm)째로 수십MB에
   // 달해, 다 받아 이어 붙이고 컴파일하는 데 기존 4초 부팅 타임아웃보다 오래 걸릴 수 있다 — 이
   // 타임아웃이 먼저 끝나 워커를 강제 종료하면 파일을 받던 중이라 "연결 실패"로 이어졌다. 신경망이
@@ -977,7 +964,6 @@ function useEngine(enginePref) {
         // 높아져 실질적으로 더 깊이 탐색할 수 있다 — 이 엔진 인스턴스는 워커 1개뿐이라 메모리 부담도
         // 작다(태블릿·저사양 기기에서도 64MB는 안전한 수준).
         w.postMessage("setoption name Hash value 64");
-        eloSetoptions(ENGINE_PROFILES[enginePref]).forEach((c) => w.postMessage(c));
         w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
       } catch (_) { tryNext(); }
@@ -1009,7 +995,7 @@ function useEngine(enginePref) {
   }), [pump, supersede]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
-  const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
+  const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES[defaultEnginePref()]).urls;
   return { status, evaluate, evaluateMulti, profile: enginePref, urls };
 }
 /* UCI -> SAN (보드 기준). ep를 넘기면 앙파상 캡처도 올바르게 "x"를 붙인다. uci 5번째 글자(승진 기물,
@@ -2688,7 +2674,7 @@ const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : 
 // 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 학습 탭의 실시간 후보 수
 // 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
 // evaluate + onProgress, MultiPV evaluateMulti)을 둘 다 지원하도록 넓혔다.
-function bootAnalysisWorker(urls, eloOpts) {
+function bootAnalysisWorker(urls) {
   return new Promise((resolve) => {
     let idx = 0, booted = false, worker = null;
     const queue = []; let running = false, swallowBest = 0;
@@ -2827,7 +2813,6 @@ function bootAnalysisWorker(urls, eloOpts) {
         // 워커를 띄우므로(analyzePoolSize) 워커당 크기를 32MB로 더 보수적으로 잡아, 코어가 많은
         // 기기에서도 총 메모리 사용량이 과하게 불어나지 않게 한다.
         w.postMessage("setoption name Hash value 32");
-        (eloOpts || []).forEach((c) => w.postMessage(c));
         w.postMessage("isready");
         setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
       } catch (_) { tryNext(); }
@@ -2842,11 +2827,13 @@ function bootAnalysisWorker(urls, eloOpts) {
 // 세션 내내 재사용한다 — depth·movetime(정확도)은 절대 건드리지 않고, 부팅을 한 번만 치르고 나면
 // 그 뒤로는 병렬도만큼 순수하게 시간을 줄인다.
 // (v0.2.4 버그 수정) 예전엔 프로필 하나만 유지하는 단일 슬롯 캐시라, 분석 엔진(lite/full17)과
-// 게임 리뷰 전용 엔진(full)이 서로 다른 프로필이라는 이유만으로 상대 풀을 매번 통째로 정리하고
-// 새로 띄웠다 — 학습 탭을 쓰다가 리뷰를 열면 학습 탭 풀이 꺼지고, 리뷰를 닫고 학습 탭에 돌아오면
-// 또 학습 탭 풀을 새로 띄우는 식으로 서로를 밀어내며(thrashing) 부팅 비용을 반복해서 치렀다. 프로필이
-// 최대 3개(full/lite/full17)뿐이라 메모리 부담이 크지 않으므로, 프로필별로 풀을 따로 유지하고 절대
-// 서로를 정리하지 않는다(탭을 오가도 이미 띄운 풀은 그대로 살아있다).
+// 게임 리뷰 전용 엔진(당시 "full", Stockfish 16)이 서로 다른 프로필이라는 이유만으로 상대 풀을 매번
+// 통째로 정리하고 새로 띄웠다 — 학습 탭을 쓰다가 리뷰를 열면 학습 탭 풀이 꺼지고, 리뷰를 닫고 학습
+// 탭에 돌아오면 또 학습 탭 풀을 새로 띄우는 식으로 서로를 밀어내며(thrashing) 부팅 비용을 반복해서
+// 치렀다. 프로필별로 풀을 따로 유지하고 절대 서로를 정리하지 않아(탭을 오가도 이미 띄운 풀은 그대로
+// 살아있다) 이 문제를 없앴는데, (v0.3.5) 게임 리뷰가 사용자가 고른 분석 엔진(lite/full17)을 그대로
+// 쓰도록 통합된 뒤로는 애초에 프로필이 갈릴 일 자체가 없어져 이 캐시 분리는 더 단순한 이유로만
+// 남았다 — 리뷰가 열려 있는 동안에도 학습 탭 풀을 매번 새로 띄우지 않는다.
 const analysisPoolCache = new Map(); // profile -> Promise<worker[]>
 // (성능) 풀 크기 — 기기가 가진 코어 수만큼 그대로 다 쓴다. 발열·CPU 점유율은 감수하더라도(사용자
 // 요청) 렉 없이 최대 성능을 내는 쪽을 택한다 — 예전처럼 프로필별로 낮게 캡을 걸어 코어를 남겨두지
@@ -2859,8 +2846,7 @@ function getAnalysisPool(profile, urls) {
   const cached = analysisPoolCache.get(profile);
   if (cached) return cached;
   const size = analyzePoolSize(profile);
-  const eloOpts = eloSetoptions(ENGINE_PROFILES[profile]);
-  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls, eloOpts))).then((ws) => ws.filter(Boolean));
+  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
   analysisPoolCache.set(profile, promise);
   return promise;
 }
@@ -7857,28 +7843,12 @@ const RV = {
 // 그 전에 depth에서 먼저 끝나 실제 계산 시간은 기존과 비슷하게 유지된다(상한만 넉넉해진 것).
 const REVIEW_DEPTH = 20;
 const REVIEW_MOVETIME_MS = 1000;
-// (v0.2.4 성능) 게임 리뷰는 항상 고정된 프로필("full")이라 useEngine처럼 별도의 "메인 연결"을
-// 매번 새로 부팅할 필요가 없다 — 실제 계산은 전부 getAnalysisPool의 풀이 담당하고(analyzeGame,
-// 엔진 라인 패널, 수 판정 모두), 아래 evaluate/evaluateMulti는 풀 부팅이 통째로 실패했을 때만
-// 쓰이는 진짜 마지막 폴백이다. 그래서 폴백 워커도 실제로 호출될 때만("지연 부팅") 띄운다 — 흔한
-// 경우(풀이 정상 부팅됨)엔 이 폴백이 아예 뜨지 않아, 리뷰를 열 때마다 불필요한 wasm을 중복
-// 컴파일하던 비용이 사라진다.
-function useReviewEngine() {
-  const profile = ENGINE_PROFILES.full;
-  const fallbackRef = useRef(null);
-  const getFallback = useCallback(() => {
-    if (!fallbackRef.current) fallbackRef.current = bootAnalysisWorker(profile.urls, eloSetoptions(profile));
-    return fallbackRef.current;
-  }, [profile]);
-  useEffect(() => () => { const p = fallbackRef.current; if (p) p.then((w) => w && w.terminate()); }, []);
-  return useMemo(() => ({
-    status: "ready", // 정적 프로필이라 "연결 상태"라는 개념이 없다 — 실제 준비 여부는 getAnalysisPool이 비동기로 처리.
-    profile: profile.id,
-    urls: profile.urls,
-    evaluate: (...args) => getFallback().then((w) => w ? w.evaluate(...args) : null),
-    evaluateMulti: (...args) => getFallback().then((w) => w ? w.evaluateMulti(...args) : []),
-  }), [profile, getFallback]);
-}
+// (v0.3.5 버그 수정 → 통합) 예전엔 게임 리뷰가 항상 고정된 프로필("full", Stockfish 16)이라 이
+// 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
+// 게임 리뷰도 설정 탭에서 고른 분석 엔진(useEngine(enginePref))을 그대로 쓰도록 통합해, 이 전용
+// 훅과 Stockfish 16 프로필 자체를 없앴다 — ReviewPage는 이제 App 루트의 공유 engine을 prop으로
+// 받는다(LearnTab·PuzzleTab 등과 동일한 패턴). 실제 계산은 여전히 getAnalysisPool의 풀이 담당한다
+// (analyzeGame, 엔진 라인 패널, 수 판정 모두 이 풀을 공유 — 위 analysisPoolCache 주석 참고).
 // (v0.2.9 기능) 사용자 요청 — 게임 리뷰(analyzeGame)가 도는 동안 보여줄 3분할 일러스트 애니메이션.
 // 사용자가 올려 준 세 장(MILKU·KOKOA가 체스보드를 사이에 두고 있는 장면들)을 위에서부터 ilust-7 →
 // ilust-6 → ilust-5 순으로 쌓는다("7이 가장 위, 5가 가장 아래"). 각 장이 순서대로 팝인하며 등장하고
@@ -7934,10 +7904,9 @@ function AnalyzingPiecesAnim() {
     </div>
   );
 }
-// (v0.2.4) 게임 리뷰는 사용자가 설정 탭에서 고른 분석 엔진과 무관하게 항상 Stockfish 16(사람
-// 최상급 수준으로 세기 제한, ENGINE_PROFILES.full.elo)으로 고정한다.
-function ReviewPage({ game, onClose, myUid }) {
-  const engine = useReviewEngine();
+// (v0.3.5 기능) 사용자 요청 — 게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(engine, App 루트의
+// useEngine(enginePref))을 그대로 prop으로 받아 쓴다(예전엔 항상 Stockfish 16으로 고정).
+function ReviewPage({ game, onClose, myUid, engine }) {
   const narrow = useNarrow(760);
   const [phase, setPhase] = useState("summary"); // "summary" | "review"
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
@@ -7986,9 +7955,19 @@ function ReviewPage({ game, onClose, myUid }) {
   // game.fenRoot(원본 FEN 문자열)에서부터 시작한다. parseFenFull로 다시 파싱해 {board,turn,rights,ep}를
   // 얻고, LearnTab의 FEN 모드와 똑같이 replayFromFen으로 그 위치부터 effSans만큼 재생한다.
   const fenRoot = useMemo(() => (game.fenRoot ? parseFenFull(game.fenRoot) : null), [game.fenRoot]);
+  // (v0.3.5 버그 수정) engine이 항상 "ready"로 고정된 전용 훅(useReviewEngine)을 쓰던 시절엔 이
+  // effect가 deps=[]로 마운트 시 딱 한 번만 돌아도 문제가 없었다 — 이제 실제 useEngine(enginePref)을
+  // 받으므로 마운트 시점엔 아직 "loading"인 경우가 흔한데, deps=[]로 두면 그 순간의 상태로 영영
+  // "연결 실패"(setErr)로 굳어버린다(리뷰 딥링크 티켓 오탐 버그와 같은 종류의 클로저 문제). status가
+  // 바뀔 때마다 다시 확인하고, 실제로 분석을 시작한 뒤에는 startedRef로 한 번만 시작하게 막는다.
+  const analysisStartedRef = useRef(false);
   useEffect(() => {
+    if (analysisStartedRef.current || !engine) return;
+    if (engine.status === "off") { setErr(true); return; }
+    if (engine.status !== "ready") return; // 아직 부팅 중 — status가 바뀌면 이 effect가 다시 실행된다.
+    if (!sans || (sans.length < 1 && !fenRoot)) { setErr(true); return; }
+    analysisStartedRef.current = true;
     let cancelled = false;
-    if (!engine || engine.status !== "ready" || !sans || (sans.length < 1 && !fenRoot)) { setErr(true); return; }
     (async () => {
       try {
         const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
@@ -7997,7 +7976,7 @@ function ReviewPage({ game, onClose, myUid }) {
       } catch { if (!cancelled) setErr(true); }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [engine && engine.status]);
   useEffect(() => { setShowingLine(false); }, [curPly]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
@@ -15794,7 +15773,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
-function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked }) {
+function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, engine }) {
   const [editOpen, setEditOpen] = useState(false);
   // (사용자 요청) 유산(Legacy) 관리 — 어떤 종류(best/only/brilliant)를 편집 중인지 키만 들고 있는다.
   const [managingLegacy, setManagingLegacy] = useState(null);
@@ -15848,6 +15827,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           existingEntry={profile.legacies && profile.legacies[managingLegacy]}
           chesscom={chesscom}
           username={profile.chesscom}
+          engine={engine}
           onClose={() => setManagingLegacy(null)}
           // (사용자 요청) 지워진 유산까지 다시 볼 수 있는 이력 기능 — 새로 저장(덮어쓰기)하거나
           // 삭제해서 그 칸에서 밀려나는 기존 유산을 profile.legacyHistory에 보존해 둔다(그 칸 자체는
@@ -15928,6 +15908,8 @@ const CHANGELOG = [
     version: "0.3.5", date: "2026.8.16", dev: ["openchesskr"], items: [
       "공유받은 리뷰 링크(openchess.kr/review/...)로 곧장 들어가거나 새로고침했을 때, 실제로는 티켓이 있거나 이미 본 리뷰인데도 항상 '리뷰 티켓이 부족해요' 안내만 뜨던 문제를 고쳤어요.",
       "내가 만든 퍼즐을 편집한 직후 곧바로 다시 편집을 시도했을 때 뜨던 부정확한 오류 문구를 '아직 편집 주기가 안 지났어요'로 바로잡았어요.",
+      "게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(Stockfish 18 Lite / 17.1)을 그대로 써요 — 예전엔 게임 리뷰만 따로 Stockfish 16으로 고정돼 있었는데, 이제 하나로 통일됐어요.",
+      "설정 탭에 흩어져 있던 개발자 전용 도구들을 '개발자 도구' 카드 하나로 모았어요. 개발자 모드를 켜면 자동으로 그 카드까지 스크롤돼요.",
     ]
   },
   {
@@ -17168,6 +17150,20 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
   const chesscomDaysLeft = chesscomChangeBypass ? 0 : chesscomChangeDaysLeft(profile.chesscomChangedAt);
   const changeChesscom = () => { if (chesscomDaysLeft > 0) return; setProfile({ ...profile, chesscom: "" }); setCc(""); setCcState("idle"); };
   const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8", marginTop: 14 };
+  // (v0.3.5 기능) 사용자 요청 — 흩어져 있던 개발자 전용 패널(자원 조정·공동 개발자 지정·일일 퍼즐
+  // 관리·퍼즐 일괄 재생성)을 설정 탭 맨 아래 카드 하나("개발자 도구")로 모았다. 개발자/공동 개발자
+  // 모드를 막 켰을 때만(false→true로 바뀐 순간) 이 블록으로 자동 스크롤한다 — 이미 켜진 채로
+  // 새로고침·재접속한 경우(마운트 시점부터 true)에는 스크롤하지 않는다.
+  const devToolsRef = useRef(null);
+  const prevCanEditRef = useRef(canEdit);
+  useEffect(() => {
+    if (canEdit && !prevCanEditRef.current) {
+      const id = requestAnimationFrame(() => { devToolsRef.current && devToolsRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); });
+      prevCanEditRef.current = canEdit;
+      return () => cancelAnimationFrame(id);
+    }
+    prevCanEditRef.current = canEdit;
+  }, [canEdit]);
   // (UX6) 존재하지 않는 아이디를 공동 개발자로 등록할 수 없도록, 추가 전 실제 계정 존재 여부를 확인한다.
   const addCodev = async () => {
     const id = codevId.trim();
@@ -17208,22 +17204,15 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         </div>
       )}
 
-      {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
-          않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
-      {/* (버그 수정) 공동 개발자도 임명 권한 외에는 개발자와 동일한 권한을 써야 하므로, 자원 조정
-          패널도 공동 개발자 모드에서 함께 보여준다. */}
-      {((isDev && devOn) || (isCodev && codevOn)) && <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={card} />}
-      {canEdit && <DailyPuzzleDevPanel card={card} />}
-      {canEdit && <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={card} />}
-
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
-        mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked}
+        mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
 
-      {/* (v0.2.4 개편) 분석 엔진 선택 — 학습/퍼즐 탭 및 사이트 전반의 분석에 쓰인다(게임 리뷰는 별도로
-          Stockfish 16 고정, 여기서 고를 수 없다). 가볍고 빠른 Stockfish 18 Lite가 기본값이고,
+      {/* (v0.2.4 개편 → v0.3.5 통합) 분석 엔진 선택 — 학습/퍼즐 탭 및 사이트 전반의 분석은 물론
+          v0.3.5부터는 게임 리뷰도 여기서 고른 엔진을 그대로 쓴다(예전엔 게임 리뷰만 별도로 Stockfish 16에
+          고정돼 있었는데, 그 전용 엔진은 폐기했다). 가볍고 빠른 Stockfish 18 Lite가 기본값이고,
           Stockfish 17.1(초기 로딩 용량이 크지만 가장 강력함)로 바꿀 수 있다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
@@ -17249,7 +17238,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             );
           })}
         </div>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(이 기기에서만 기억돼요).</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(게임 리뷰에도 똑같이 쓰여요, 이 기기에서만 기억돼요).</p>
       </div>
 
       {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
@@ -17280,16 +17269,6 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       {/* (18차 보충 기능3) 전역 퍼즐 수 길이 상한 설정은 삭제 — 개별 퍼즐의 수 길이는 퍼즐 풀이 창에서 개발자가 직접 조정한다. */}
 
       {/* (2차 개편) 이론 수 체계 추가는 도감 탭(오프닝)으로 이동 — 설정 탭에는 더 이상 두지 않는다. */}
-
-      {/* 공동 개발자 관리 (개발자 모드 한정) */}
-      {canManageCodev && (
-        <div style={card}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>공동 개발자 지정</div>
-          <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder="아이디 (영문+숫자)" style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{codevBusy ? "확인 중…" : "추가"}</button></div>
-          {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
-          <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>공동 개발자는 트리·분기점·해설을 <b>추가</b>만 할 수 있고 수정·삭제는 불가합니다.</p>
-        </div>
-      )}
 
       {/* 개발진 명단 (수 기호 안내 대체) */}
       <div style={card}>
@@ -17339,6 +17318,38 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문을 확인하거나, 이메일로 직접 문의할 수 있어요.</p>
       </div>
       {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
+
+      {/* (v0.3.5 기능) 개발자 도구 — 예전엔 페이지 곳곳에 흩어져 있던 개발자 전용 패널을 관련 주제별로
+          순서를 맞춰(권한 → 재화·티어 테스트 → 퍼즐 콘텐츠 관리) 카드 하나로 모았다. 스크롤을 내려야
+          보이는 "2번째 페이지"처럼 맨 아래에 두고, 개발자/공동 개발자 모드를 막 켠 순간에는
+          devToolsRef로 이 블록까지 자동 스크롤한다(위 devToolsRef 선언부 참고). */}
+      {canEdit && (
+        <div ref={devToolsRef} style={{ ...card, marginTop: 28, border: "1.5px solid " + T.brass, background: "linear-gradient(180deg,#FBF4E2,#F2E8D5)" }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+            <Crown size={16} style={{ color: T.brass }} />
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>개발자 도구</div>
+          </div>
+          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? "공동 개발자 모드에서는 임명 권한을 뺀 나머지를 그대로 쓸 수 있어요." : "개발자 전용 도구예요."}</p>
+
+          {canManageCodev && (
+            <>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>공동 개발자 지정</div>
+              <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder="아이디 (영문+숫자)" style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{codevBusy ? "확인 중…" : "추가"}</button></div>
+              {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
+              <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>공동 개발자는 트리·분기점·해설을 <b>추가</b>만 할 수 있고 수정·삭제는 불가합니다.</p>
+              <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+            </>
+          )}
+
+          {/* (기능) 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지 않고도 바로
+              확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
+          <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={{}} />
+          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+          <DailyPuzzleDevPanel card={{}} />
+          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+          <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={{}} />
+        </div>
+      )}
 
       {/* chess.com 계정 확인 모달 */}
       {pending && (
@@ -19488,8 +19499,7 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
 }
 // 유산 만들기/편집 — PGN 직접 입력 또는 chess.com 대국 선택 → analyzeGame으로 전체 채점 → 그
 // 유산이 요구하는 등급(typeInfo.kind)을 만족하는 수만 고를 수 있게 필터링 → 재생할 수 개수 입력 → 저장.
-function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, username, onClose, onSave, onDelete }) {
-  const engine = useReviewEngine();
+function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, username, onClose, onSave, onDelete, engine }) {
   const [step, setStep] = useState("source"); // source | paste | analyzing | pick | count
   // (사용자 요청) "chess.com 대국에서 선택"을 눌러도 창을 한 번 더 띄우지 않고, 이 자리 바로 아래에
   // 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI(AccountChessStats)를 펼친다.
@@ -19529,12 +19539,22 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
     if (validated.length < 1) { setPgnErr("기보가 너무 짧아요."); return; }
     setPgnErr(""); setSans(validated); setStep("analyzing");
   };
+  // (v0.3.5 버그 수정) ReviewPage와 같은 이유 — engine이 항상 "ready"였던 전용 훅(useReviewEngine) 대신
+  // 실제 useEngine(enginePref)을 받으므로, "analyzing" 단계에 막 들어선 시점엔 아직 엔진이 부팅 중일
+  // 수 있다. 부팅 여부와 무관하게 매번 결과를 초기화하던 것과 실제 분석 시작을 분리해, engine.status가
+  // 뒤늦게 "ready"로 바뀌어도(analyzeStartedRef로 중복 시작만 막고) 다시 시도하도록 고쳤다.
+  const analyzeStartedRef = useRef(false);
   useEffect(() => {
-    if (step !== "analyzing" || !sans) return;
+    if (step === "analyzing") { setResult(null); setProgress(0); setAnalyzeErr(false); analyzeStartedRef.current = false; }
+  }, [step]);
+  useEffect(() => {
+    if (step !== "analyzing" || !sans || analyzeStartedRef.current || !engine) return;
+    if (engine.status === "off") { setAnalyzeErr(true); return; }
+    if (engine.status !== "ready") return; // 아직 부팅 중 — status가 바뀌면 다시 확인한다.
+    if (sans.length < 1) { setAnalyzeErr(true); return; }
+    analyzeStartedRef.current = true;
     let cancelled = false;
-    setResult(null); setProgress(0); setAnalyzeErr(false);
     (async () => {
-      if (!engine || engine.status !== "ready" || sans.length < 1) { setAnalyzeErr(true); return; }
       try {
         const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProgress(p); }, REVIEW_MOVETIME_MS,
           (partial) => { if (!cancelled) setResult(partial); });
@@ -19542,7 +19562,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
       } catch { if (!cancelled) setAnalyzeErr(true); }
     })();
     return () => { cancelled = true; };
-  }, [step, sans]);
+  }, [step, sans, engine && engine.status]);
   const qualifying = result ? result.moves.filter((m) => m.kind === typeInfo.kind) : [];
   const maxPlayCount = sans && moveIndex != null ? Math.max(1, sans.length - moveIndex) : 20;
   const maxBeforeCount = moveIndex != null ? moveIndex : 0;
@@ -21167,20 +21187,22 @@ export default function App() {
   const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
   const engine = useEngine(enginePref);
   const chesscom = useChessCom(profile.chesscom);
-  // (v0.2.4 성능) 게임 리뷰 전용 엔진 풀(Stockfish 16)을 사용자가 실제로 리뷰를 열기 전에 유휴
-  // 시간에 미리 부팅해 둔다 — depth·movetime·세기는 그대로고(analyzeGame 등은 여전히 이 풀을
-  // getAnalysisPool로 그대로 재사용), 리뷰를 열었을 때 "부팅부터 기다리는" 체감 지연만 없앤다.
-  // requestIdleCallback이 없는 환경(사파리 등)은 넉넉한 setTimeout으로 대체한다. 초기 페이지
-  // 렌더링·분석 엔진 부팅과 경합하지 않도록 우선순위를 가장 낮춰 둔다.
+  // (v0.2.4 성능 → v0.3.5) 게임 리뷰용 분석 엔진 풀을 사용자가 실제로 리뷰를 열기 전에 유휴 시간에
+  // 미리 부팅해 둔다 — depth·movetime은 그대로고(analyzeGame 등은 여전히 이 풀을 getAnalysisPool로
+  // 재사용), 리뷰를 열었을 때 "부팅부터 기다리는" 체감 지연만 없앤다. 예전엔 게임 리뷰가 항상
+  // Stockfish 16("full") 고정이라 그 프로필만 미리 부팅했는데, 이제 리뷰도 사용자가 고른 분석
+  // 엔진(enginePref)을 그대로 쓰므로 그 프로필을 미리 부팅한다(학습/퍼즐 탭을 먼저 거치지 않고 공유된
+  // 리뷰 링크로 곧장 들어오는 경우에도 대비). requestIdleCallback이 없는 환경(사파리 등)은 넉넉한
+  // setTimeout으로 대체한다. 초기 페이지 렌더링·분석 엔진 부팅과 경합하지 않도록 우선순위를 가장 낮춰 둔다.
   useEffect(() => {
-    const boot = () => { const p = ENGINE_PROFILES.full; getAnalysisPool(p.id, p.urls); };
+    const boot = () => { const p = ENGINE_PROFILES[enginePref] || ENGINE_PROFILES[defaultEnginePref()]; getAnalysisPool(p.id, p.urls); };
     if (typeof window.requestIdleCallback === "function") {
       const id = window.requestIdleCallback(boot, { timeout: 8000 });
       return () => window.cancelIdleCallback(id);
     }
     const id = setTimeout(boot, 3000);
     return () => clearTimeout(id);
-  }, []);
+  }, [enginePref]);
 
   useEffect(() => { loadContent().then(() => setContentVer((v) => v + 1)); }, []);
   const bumpContent = useCallback(async () => { await saveContent(); setContentVer((v) => v + 1); }, []);
@@ -21986,7 +22008,7 @@ export default function App() {
       <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
-      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} />}
+      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} />}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} ticketReward={tierUpAnim.ticketReward} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
