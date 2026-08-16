@@ -743,7 +743,11 @@ grant insert, update, delete on public.daily_puzzles_dev to authenticated;
 -- 3번 섹션, is_content_editor만 쓸 수 있는 단일 값 콘텐츠 블롭)에 개발자/공동개발자만 등록할 수
 -- 있었다. 이제 로그인한 모든 유저가 짧은 설명을 남길 수 있도록 완전히 별도 테이블로 분리한다 —
 -- app_content는 그대로 두고(다른 콘텐츠가 계속 그 테이블을 쓰므로) 이 기능만 여기로 옮겼다.
--- 1인당 같은 수에는 1개만(스팸 방지 — puzzle_likes/puzzle_solvers와 같은 1인 1행 패턴). 수정·삭제는
+-- 1인당 같은 수에 남길 수 있는 개수는 계정 등급에 따라 다르다(v0.3.4, 사용자 요청) — 개발자
+-- 계정(DEV_ACCOUNT, src/App.jsx와 동일한 값)은 무제한, 그랜드마스터 티어에 도달한 일반 계정은
+-- 2개까지, 그 외는 기존과 같이 1개만(스팸 방지 — puzzle_likes/puzzle_solvers와 같은 1인 1행
+-- 패턴의 확장). 그래서 고정된 unique(move_key, uid) 제약 대신, 아래 move_notes_cap()이 계정마다
+-- 다른 한도를 계산하고 move_notes_moderate 트리거가 삽입 시점에 그 한도를 검사한다. 수정·삭제는
 -- 작성자 본인(자기 글에 한해)과 개발자/공동개발자(모든 글, is_content_editor)가 함께 할 수 있다
 -- (v0.3.4 변경 — 예전엔 본인도 스스로 못 고치고 개발자에게만 최종 편집권이 있었다).
 create table if not exists public.move_notes (
@@ -752,26 +756,53 @@ create table if not exists public.move_notes (
   uid uuid not null references auth.users(id) on delete cascade,
   author_username text not null default '',
   body text not null check (char_length(body) between 1 and 100),
-  created_at timestamptz not null default now(),
-  unique (move_key, uid)
+  created_at timestamptz not null default now()
 );
+-- (v0.3.4 변경) 예전엔 여기 unique(move_key, uid)로 "1인 1개"를 DB 제약으로 강제했다 — 계정 등급별로
+-- 허용 개수가 달라지므로 고정 제약을 걷어내고, 그 자리를 아래 move_notes_moderate 트리거의 동적
+-- 개수 검사로 대신한다(기존에 이미 이 제약이 걸려 있던 배포본을 위한 정리).
+alter table public.move_notes drop constraint if exists move_notes_move_key_uid_key;
 create index if not exists idx_move_notes_key on public.move_notes(move_key, created_at);
 alter table public.move_notes enable row level security;
+
+-- (v0.3.4 기능) 이 계정이 한 수에 남길 수 있는 수 설명 개수 한도 — 개발자 계정은 사실상 무제한,
+-- 그랜드마스터 티어(누적 XP가 src/App.jsx TIER_XP_REQ 총합인 200,000 이상 — 그 배열이 바뀌면 이
+-- 숫자도 함께 맞춰야 한다)에 도달한 계정은 2개, 그 외는 1개. XP는 클라이언트가 소유한
+-- user_progress.progress 블롭 값을 그대로 신뢰한다(이 앱의 XP·티어 체계 전체가 이미 같은 신뢰
+-- 모델이다 — 서버가 직접 XP를 증감시키지 않는다, 7-1번 섹션 주석 참고). auth.uid()가 없으면
+-- (비로그인) 1을 돌려주는데, 어차피 insert 정책이 로그인 없이는 애초에 막는다.
+create or replace function public.move_notes_cap()
+returns int language sql stable security definer set search_path = public as $$
+  select case
+    when exists (select 1 from public.profiles where id = auth.uid() and username = 'openchesskr') then 2147483647
+    when coalesce((select (up.progress->>'xp')::bigint from public.user_progress up where up.id = auth.uid()), 0) >= 200000 then 2
+    else 1
+  end;
+$$;
+grant execute on function public.move_notes_cap() to authenticated;
 
 -- 등록·수정 시 서버에서도 흔한 욕설·혐오 표현을 다시 검사한다 — 클라이언트 필터(src/App.jsx의
 -- containsBannedWord)는 REST를 직접 호출하면 우회할 수 있으므로, 실제 강제력은 이 트리거에서
 -- 나온다. 숫자·영문·한글만 남기고 나머지(공백·구두점·이모지 등)는 전부 지운 뒤 부분 문자열로
 -- 대조한다 — 같은 단어를 특수문자로 쪼개 피하는 경우("시🌟발")도 걸러진다. 완벽한 검열은 아니며,
 -- 이를 뚫는 표현은 개발자가 delete 정책(아래)으로 사후에 지운다.
+-- (v0.3.4 기능) INSERT일 때만 위 move_notes_cap()으로 이 계정이 이 수(move_key)에 이미 남긴 개수를
+-- 검사한다 — UPDATE(기존 글 수정)는 새 글을 만드는 게 아니므로 이 검사와 무관하다.
 create or replace function public.move_notes_moderate()
 returns trigger language plpgsql as $$
-declare v_norm text; v_word text;
+declare v_norm text; v_word text; v_cnt int;
   v_words text[] := array[
     '시발','씨발','씨팔','시팔','개새끼','개새기','병신','븅신','좆','좃','자지','보지','걸레년',
     '미친놈','미친년','닥쳐','꺼져','죽어라','죽여버','강간','섹스','야동','포르노',
     'fuck','shit','bitch','asshole','cunt','nigger','nigga','faggot','rape','porn'
   ];
 begin
+  if TG_OP = 'INSERT' then
+    select count(*) into v_cnt from public.move_notes where move_key = new.move_key and uid = new.uid;
+    if v_cnt >= public.move_notes_cap() then
+      raise exception 'move_notes_cap_exceeded';
+    end if;
+  end if;
   v_norm := lower(regexp_replace(new.body, '[^0-9a-zA-Zㄱ-ㆎ가-힣]', '', 'g'));
   foreach v_word in array v_words loop
     if v_norm like '%' || v_word || '%' then

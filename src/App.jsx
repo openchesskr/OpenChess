@@ -6557,7 +6557,7 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted }) {
 // 박스 자리에 그대로 병합한다. 설명이 하나도 없을 때만 기존 개발자 정적 해설(explain)을 그 자리에
 // 보여주는 폴백으로 남긴다. 가로 스와이프 대신 세로로 자동 스크롤되도록 축을 바꿨고(5초 간격),
 // 카드 좌상단에 "@아이디"를 보여준다. 손으로 위아래 스크롤하면 기존과 동일하게 6초간 자동 넘김을 쉰다.
-function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explainLong, title, setShowExpl }) {
+function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explainLong, title, setShowExpl, noteCap }) {
   const [notes, setNotes] = useState(null); // null=로딩 중
   const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState("");
@@ -6593,7 +6593,13 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
       setIdx((cur) => (i !== cur ? i : cur));
     }, 120);
   };
-  const myNote = uid && notes ? notes.find((n) => n.uid === uid) : null;
+  // (v0.3.4 기능) 사용자 요청 — 개발자 계정은 한 수에 남길 수 있는 설명 개수가 무제한이고, 그랜드
+  // 마스터 티어에 도달한 일반 계정은 2개까지(그 외는 기존과 같이 1개) 남길 수 있다. 실제 한도는
+  // 서버(move_notes_cap, supabase-setup.sql 15번 섹션)가 최종 결정하므로, 여기서는 noteCap을
+  // 못 받은 경우에도 안전하게 기존 동작(1개)으로 되돌아간다.
+  const cap = noteCap != null ? noteCap : 1;
+  const myNotes = uid && notes ? notes.filter((n) => n.uid === uid) : [];
+  const canAddMore = !!uid && myNotes.length < cap;
   const submit = async () => {
     const t = draft.trim();
     if (!t) return;
@@ -6641,8 +6647,8 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
       <div style={{ height: 1, background: "#E4D5B6", margin: "10px 0" }} />
       {!uid ? (
         <p style={{ fontSize: 11, color: T.inkSoft }}>로그인하면 이 수에 대한 설명을 직접 남길 수 있어요.</p>
-      ) : myNote ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>이미 이 수에 설명을 남겼어요 — 위 카드에서 직접 수정하거나 지울 수 있어요.</p>
+      ) : !canAddMore ? (
+        <p style={{ fontSize: 11, color: T.inkSoft }}>{cap > 1 ? "이미 이 수에 설명을 " + myNotes.length + "개 남겼어요(최대 " + cap + "개) — 위 카드에서 직접 수정하거나 지울 수 있어요." : "이미 이 수에 설명을 남겼어요 — 위 카드에서 직접 수정하거나 지울 수 있어요."}</p>
       ) : (
         <div>
           <textarea value={draft} onChange={(e) => { setDraft(e.target.value.slice(0, MOVE_NOTE_MAX_LEN)); setErr(""); }} rows={2} placeholder="이 수에 대한 짧은 설명을 남겨보세요" style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
@@ -6669,7 +6675,7 @@ function normalizePlayerKey(name) {
   const first = s.slice(comma + 1).trim();
   return last + "|" + (first ? first[0] : "");
 }
-function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username }) {
+function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
   if (!fa.active) return null;
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, mkKey,
@@ -6834,7 +6840,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {/* (18차 UI5) 미니보드 하단 범례 텍스트 삭제 */}
         </div>
         <div style={{ flex: 1, minWidth: 180 }}>
-          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} explain={explain} explainLong={explainLong} title={title} setShowExpl={setShowExpl} />
+          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} explain={explain} explainLong={explainLong} title={title} setShowExpl={setShowExpl} noteCap={noteCap} />
         </div>
       </div>
       {(canEdit || canAdd) && (
@@ -8508,7 +8514,7 @@ function ReviewPage({ game, onClose }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 학습 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
-function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenReview, dailyQuest, uid, user }) {
+function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenReview, dailyQuest, uid, user, noteCap }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -9064,7 +9070,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} />
+              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
             </div>
           </div>
         )}
@@ -15783,6 +15789,7 @@ const CHANGELOG = [
       "퍼즐 풀이 카드에 그 퍼즐을 처음 만든 사람(제작자)이 표시돼요. 내가 만든 퍼즐은 개발자와 똑같이 라인을 추가·삭제하거나 통째로 재생성할 수 있어요(1시간에 한 번). 개발자·공동개발자는 특정 퍼즐의 제작 권한을 회수하거나 다른 유저에게 넘길 수 있어요.",
       "게임 리뷰·퍼즐 풀이 창에 그대로 공유할 수 있는 고유 주소가 생겼어요(openchess.kr/review/... , openchess.kr/퍼즐번호-라인번호) — 그 주소를 열면 실제로 같은 화면이 다시 열려요. 학습 탭 FEN 모드에서도 이제 '분석' 버튼으로 게임 리뷰를 열 수 있어요.",
       "퍼즐 공유 시트에서 이제 카카오톡·인스타그램 등 외부 앱으로도 바로 공유할 수 있어요(모바일에서는 '공유하기' 버튼을 누르면 설치된 앱 목록이 그대로 떠요). 데스크톱에서는 링크 복사와 카카오스토리·X·페이스북 바로가기를 대신 보여줘요.",
+      "학습 탭 '수 설명'을 한 수에 몇 개까지 남길 수 있는지가 이제 등급에 따라 달라져요 — 그랜드마스터 티어에 도달하면 2개까지, 개발자는 무제한으로 남길 수 있어요(그 외는 기존과 같이 1개).",
     ]
   },
   {
@@ -20871,6 +20878,13 @@ export default function App() {
   const isCodev = !!user && Array.isArray(CONTENT.codev) && CONTENT.codev.includes(user);
   const canEdit = (isDev && devOn) || (isCodev && codevOn);   // (기능3) 분기점 해설·수 설명·수 키워드 수정 권한
   const canAdd = canEdit;
+  // (v0.3.4 기능) 사용자 요청 — 한 수에 남길 수 있는 "수 설명"(move_notes) 개수 한도. 개발자 계정은
+  // 개발자 모드가 켜져 있는 동안(다른 모든 canEdit류 권한과 같은 결) 무제한, 그랜드마스터 티어에
+  // 도달한 일반 계정은 2개까지, 그 외는 기존과 같이 1개다. 공동개발자(isCodev)는 포함하지 않는다 —
+  // 사용자 요청이 명시적으로 "개발자 계정"이라 다른 편집 권한(canEdit)과 달리 공동개발자까지
+  // 넓히지 않았다. 실제 강제는 서버(move_notes_cap, supabase-setup.sql)가 최종 결정한다 — 여기는
+  // UI를 미리 맞게 보여주는 용도.
+  const moveNoteCap = useMemo(() => (isDev && devOn) ? Infinity : (tierFromXp(totalXp).tier.key === "grandmaster" ? 2 : 1), [isDev, devOn, totalXp]);
   const canManageCodev = isDev && devOn;
   const devUnlockAll = (isDev && devOn) || (isCodev && codevOn);                       // 공동 개발자 지정/해제는 개발자만
   const openAuth = (mode) => { setAuthMode(mode); setAuthOpen(true); };
@@ -21721,7 +21735,7 @@ export default function App() {
             열려 있는 동안 이 두 탭에는 liveOn을 강제로 꺼서(!reviewGame) 분석 풀 전체를 리뷰 페이지에
             양보한다 — "분석 모달이 열려 있는 동안 학습 탭 실시간 평가를 멈춘다"던 예전 주석이 가리키던
             의도가 ReviewPage로 교체되며 실제로는 빠져 있었다. */}
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} uid={uid} user={user} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} />}
         {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 학습으로 이동한 경우(focusReturnTab === "dex"),
             집중 학습이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
             학습을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다
