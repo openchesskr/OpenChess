@@ -1037,3 +1037,31 @@ begin
   update public.puzzles set creator_uid = v_uid, creator_username = v_uname, creator_edited_at = null where no = p_no;
 end; $$;
 grant execute on function public.puzzle_reassign_creator(bigint, text) to authenticated;
+
+-- ============================================================================
+-- 21) reviewed_games — 게임 리뷰 고유 URL의 chess.com 대국 캐시 (v0.3.4)
+-- ============================================================================
+-- 사용자 요청: 리뷰 페이지에 openchess.kr/review/(대국 식별자) 형태의 고유 URL을 붙인다. chess.com
+-- 대국은 chess.com이 이미 발급한 숫자 게임 ID를 그대로 식별자로 쓰는데, chess.com 공개 API는 "이
+-- ID의 대국 하나"를 바로 조회하는 엔드포인트를 제공하지 않는다(플레이어별 월간 아카이브로만 조회
+-- 가능) — 그래서 그 링크를 처음 만든 사람이 아닌 다른 방문자가 딥링크로 열면 원본 대국을 되찾을
+-- 방법이 없다. puzzles 테이블과 똑같은 크라우드소싱 방식으로: 어떤 유저든 chess.com 대국을 리뷰로
+-- 열면 그 순간 이 테이블에 게임 데이터를 올려 두고(멱등 upsert), 이후 누구든 그 ID로 딥링크를 열면
+-- 여기서 그대로 복원한다. FEN 분석·PGN 분석 리뷰는 식별자 자체가 그 내용을 담고 있어(URL만으로
+-- 완전히 복원 가능) 이 캐시가 필요 없다.
+create table if not exists public.reviewed_games (
+  cc_id bigint primary key,
+  data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.reviewed_games enable row level security;
+drop policy if exists "reviewed games read"   on public.reviewed_games;
+drop policy if exists "reviewed games insert" on public.reviewed_games;
+drop policy if exists "reviewed games update" on public.reviewed_games;
+-- (puzzles 테이블과 동일한 판단) 게임 데이터를 조작해도 이득 볼 카운터·랭킹이 이 테이블엔 전혀
+-- 없으므로, insert/update 모두 열어 둔다 — 크라우드소싱 캐시의 성격상 최초 발견자 외에도 누구나
+-- 갱신할 수 있어야 한다(puzzles.data와 동일한 이유).
+create policy "reviewed games read"   on public.reviewed_games for select using (true);
+create policy "reviewed games insert" on public.reviewed_games for insert with check (true);
+create policy "reviewed games update" on public.reviewed_games for update using (true) with check (true);
+grant select, insert, update on public.reviewed_games to anon, authenticated;

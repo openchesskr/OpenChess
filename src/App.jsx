@@ -630,7 +630,10 @@ function parseFenFull(fen) {
   const epField = parts[3];
   let ep = null;
   if (epField && /^[a-h][1-8]$/.test(epField)) ep = [8 - parseInt(epField[1], 10), FILES.indexOf(epField[0])];
-  return { board, turn, rights, ep };
+  // (v0.3.4 기능) raw — 원본 FEN 문자열 그대로. 게임 리뷰 고유 URL의 식별자로 이 값을 그대로
+  // 쓰고(사용자 요청: "fen 코드를 그대로 쓰고"), 딥링크로 돌아왔을 때도 이 문자열만 있으면
+  // parseFenFull을 다시 호출해 완전히 같은 시작 위치를 복원할 수 있다.
+  return { board, turn, rights, ep, raw: (fen || "").trim() };
 }
 // fenRoot에서 sans(그 위치부터 둔 수순)만큼 재생한 {board, rights, ep}를 돌려준다.
 function replayFromFen(fenRoot, sans) {
@@ -811,14 +814,18 @@ function sansToUci(sans) {
 // 항상 "KQkq -"로 하드코딩돼 있어, 엔진이 이미 사라진 캐슬링 권리를 합법으로 착각하거나 실제
 // 앙파상 기회를 항상 놓쳤다. 호출부가 안 넘기면 "-"(권리 없음/대상 없음)로 안전하게 기본값을
 // 둔다 — 예전 버그처럼 "일단 다 된다"고 잘못 알리는 대신, 모르면 "안 된다"고 보수적으로 답한다.
-function boardToFen(b, plyCount, castleStr, epStr) {
+// (v0.3.4 기능) startColor — 표준 시작 위치(백이 0수째 둠)를 전제하던 이 함수를, 임의 FEN에서
+// 시작한 리뷰(analyzeGame의 fenRoot)에서도 재사용할 수 있도록 시작 진영을 선택적으로 받는다.
+// 안 넘기면(기존 모든 호출부) 예전과 완전히 같게 백이 시작한다고 본다 — 하위 호환.
+function boardToFen(b, plyCount, castleStr, epStr, startColor) {
   const rows = [];
   for (let r = 0; r < 8; r++) {
     let row = "", empty = 0;
     for (let c = 0; c < 8; c++) { const p = b[r][c]; if (!p) empty++; else { if (empty) { row += empty; empty = 0; } const ch = p.t; row += p.c === "w" ? ch : ch.toLowerCase(); } }
     if (empty) row += empty; rows.push(row);
   }
-  return rows.join("/") + " " + (plyCount % 2 === 0 ? "w" : "b") + " " + (castleStr || "-") + " " + (epStr || "-") + " 0 " + (Math.floor(plyCount / 2) + 1);
+  const turn = plyIsWhite(plyCount, startColor || "w") ? "w" : "b";
+  return rows.join("/") + " " + turn + " " + (castleStr || "-") + " " + (epStr || "-") + " 0 " + (Math.floor(plyCount / 2) + 1);
 }
 function sansToFen(sans) {
   const { board, rights, ep } = replaySans(sans);
@@ -2403,8 +2410,19 @@ function computeRatingChanges(games) {
 // 않고(티켓도 소모 안 됨) "리뷰한 대국만" 필터에서도 영원히 걸러졌다(=리뷰 기록이 저장 자체가
 // 안 되는 것처럼 보인 원인). 버전을 올려 캐시 키를 바꾸면 옛 캐시가 자동으로 무시되고 모든 달을
 // 새 스키마로 한 번 다시 받아 오므로, 이후로는 모든 대국이 항상 white/black을 갖게 된다.
-const CHESSCOM_CACHE_VERSION = 2;
+// (v0.3.4 버그 수정) 게임 리뷰 고유 URL(사용자 요청)의 chess.com 대국 식별자로 쓰기 위해 게임마다
+// chess.com 자신의 숫자 게임 ID(g.url 끝자리, 예: .../game/live/12345678 → 12345678)를 새로
+// 저장한다 — 이 필드 하나가 스키마에 추가되므로 옛 캐시는 무시하고 한 번 다시 받아 온다.
+const CHESSCOM_CACHE_VERSION = 3;
 function chesscomCacheKey(u) { return "occ_chesscom_v" + CHESSCOM_CACHE_VERSION + "_" + u; }
+// (v0.3.4 기능) chess.com 대국 URL(g.url, 예: "https://www.chess.com/game/live/12345678" 또는
+// ".../game/daily/12345678")에서 끝자리 숫자 ID만 뽑는다 — 사용자 요청대로 이 게임 리뷰의 고유
+// URL 식별자로 chess.com이 이미 발급한 이 값을 "그대로" 쓴다.
+function extractChesscomGameId(url) {
+  if (!url) return null;
+  const m = /\/(\d+)\/?(?:\?.*)?$/.exec(url);
+  return m ? m[1] : null;
+}
 function loadChesscomCache(u) {
   try {
     const raw = window.localStorage.getItem(chesscomCacheKey(u));
@@ -2497,6 +2515,7 @@ function useChessCom(username) {
               games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
                 white: { username: (g.white && g.white.username) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
                 black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
+                id: extractChesscomGameId(g.url), // (v0.3.4 기능) 게임 리뷰 고유 URL의 chess.com 식별자
                 __month: url });
             }
             fetchedSet.add(url);
@@ -2864,10 +2883,19 @@ function poolWorker(pool, idx, engine) {
 // "둔 뒤 포지션"을 추가로 평가했는데, 그 포지션은 다음 반복에서 또 평가돼(중복) 시간이 2배 가까이 들었다.
 // posEval[i] 하나로 최선수 손실(둔 수==1순위면 0)과 다음 포지션 평가치를 모두 얻는다. movetime 상한으로
 // 포지션당 시간을 제한해 전체 분석 시간을 예측 가능하게 한다.
-async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, onMove) {
+// (v0.3.4 기능) fenRoot — 표준 시작 위치를 전제하던 이 함수를, 학습 탭 "FEN 모드"에서 임의
+// 위치부터 둔 수순을 리뷰할 때도 재사용할 수 있도록 시작 위치를 선택적으로 받는다(parseFenFull이
+// 돌려주는 {board, turn, rights, ep} 형태). 안 넘기면(기존 모든 호출부) 예전과 완전히 같이 표준
+// 시작 위치·백선수를 가정한다 — 하위 호환. sanSrc/isSacrifice처럼 board를 직접 받는 판정은 이
+// 함수가 넘겨주는 실제 board(fenRoot부터 재생된)를 그대로 쓰므로 자동으로 올바르지만, recaptureFact
+// 처럼 sans 배열만 받아 내부적으로 boardFromSans(항상 표준 시작 가정)로 다시 재생하는 보조 판정
+// 함수 몇 개는 fenRoot 리뷰에서 잘못된 보드를 볼 수 있다 — try/catch로 감싸져 있어 죽지는 않고,
+// "유일한 수" 강등처럼 부가적인 등급 보정 하나가 가끔 안 걸리는 정도로만 영향을 준다.
+async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, onMove, fenRoot) {
   // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
   fullSans = decorateLine(fullSans);
   const N = fullSans.length;
+  const startColor = fenRoot ? fenRoot.turn : "w";
   // MultiPV-2: 각 포지션을 한 번만 평가해 최선수(pv0)와 2순위(pv1)를 함께 얻는다(중복 평가 없음).
   // 2순위와의 격차로 "유일한 수(Great)"를 판정하고, movetime 상한으로 시간이 폭주하지 않게 한다.
   const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
@@ -2881,11 +2909,11 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     // (버그 수정) 캐슬링 권리·앙파상도 같은 이유로 매번 처음부터 다시 계산(sansToFen이 하듯)하지
     // 않고, 이 한 번의 순회 안에서 함께 누적한다 — 매 수의 sanSrc 결과 하나로 rights 갱신과 그
     // 수가 진짜 더블 푸시였는지(다음 위치의 ep) 판정을 모두 얻으므로 추가 순회가 필요 없다.
-    let board = startBoard(), rights = { K: true, Q: true, k: true, q: true }, ep = null;
+    let board = fenRoot ? fenRoot.board : startBoard(), rights = fenRoot ? fenRoot.rights : { K: true, Q: true, k: true, q: true }, ep = fenRoot ? fenRoot.ep : null;
     for (let i = 0; i <= N; i++) {
-      fens[i] = boardToFen(board, i, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-");
+      fens[i] = boardToFen(board, i, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-", startColor);
       if (i < N) {
-        const color = i % 2 === 0 ? "w" : "b";
+        const color = plyIsWhite(i, startColor) ? "w" : "b";
         const info = sanSrc(board, fullSans[i], color);
         rights = updateCastleRights(rights, info, color);
         ep = epTargetFromMoveInfo(info);
@@ -2915,13 +2943,23 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // gradeIdx가 따라잡을 때까지 큐잉되므로 안전하다).
   const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
   const graphCp = new Array(N + 1), evalDisp = new Array(N + 1);
-  let gradeBoard = startBoard(), gradeIdx = 0;
+  let gradeBoard = fenRoot ? fenRoot.board : startBoard(), gradeIdx = 0;
+  // (v0.3.4 기능) posEvalToWhite(전역, sansAfter.length%2로 백 차례를 판정)는 표준 시작 위치를
+  // 전제하고 앱 전체에서 널리 쓰이므로 그대로 두고, fenRoot가 있을 때만 이 함수 안에서 같은 계산을
+  // startColor 기준으로 다시 한다(그 전역 함수는 건드리지 않아 다른 호출부에 영향이 없다).
   function computeDisplay(i) {
-    graphCp[i] = (i % 2 === 0) ? posEval[i].cp : -posEval[i].cp; // 백 관점 시퀀스
-    evalDisp[i] = posEvalToWhite({ cp: posEval[i].cp, mate: posEval[i].mate }, fullSans.slice(0, i));
+    const whiteToMove = plyIsWhite(i, startColor);
+    graphCp[i] = whiteToMove ? posEval[i].cp : -posEval[i].cp; // 백 관점 시퀀스
+    if (fenRoot) {
+      const s = whiteToMove ? 1 : -1;
+      const ev = { cp: posEval[i].cp, mate: posEval[i].mate };
+      evalDisp[i] = (ev.cp == null && ev.mate == null) ? null : (ev.mate != null ? { mate: ev.mate * s, win: (ev.mate > 0) === (s === 1) ? "w" : "b", plies: matePliesOf(ev.mate) } : { cp: (ev.cp || 0) * s });
+    } else {
+      evalDisp[i] = posEvalToWhite({ cp: posEval[i].cp, mate: posEval[i].mate }, fullSans.slice(0, i));
+    }
   }
   function gradeOne(i) {
-    const moverWhite = i % 2 === 0;
+    const moverWhite = plyIsWhite(i, startColor);
     const brd = gradeBoard;
     const color = moverWhite ? "w" : "b";
     const playedSan = stripSuffix(fullSans[i]);
@@ -3043,7 +3081,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // (v0.2.1) 마지막 수가 체크메이트(#)면 종료 포지션은 엔진이 평가를 못 준다(둘 수가 없음) — cp 0으로 남아
   // 코치 카드가 "+0.00", 평가치 바·그래프가 무승부처럼 보였다. 실제 승패로 채워 "1-0"/"0-1"과 완승 막대로 표시한다.
   if (N > 0 && /#/.test(fullSans[N - 1])) {
-    const winnerWhite = (N - 1) % 2 === 0;
+    const winnerWhite = plyIsWhite(N - 1, startColor);
     evalDisp[N] = { mate: 0, win: winnerWhite ? "w" : "b", plies: 0 };
     graphCp[N] = winnerWhite ? 100000 : -100000;
   }
@@ -7255,6 +7293,101 @@ function reviewGameKey(game) {
   if (!w || !b || !game.endTime) return null;
   return w + "|" + b + "|" + game.endTime;
 }
+// (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 고유 URL(openchess.kr/review/(식별자))의 "PGN 분석" 쪽
+// 식별자는 암호화한다. 진짜 비밀을 지키는 용도가 아니라(키 자체가 클라이언트 번들에 있어 누구나
+// 복호화할 수 있음), URL을 짧고 안 읽히게 만드는 게 목적 — Web Crypto AES-GCM을 그대로 쓴다.
+// 매번 새 IV(nonce)를 앞에 붙여 base64url로 인코딩하므로, 같은 PGN도 열 때마다 다른 문자열이
+// 나오지만(재현성 불필요 — 딥링크 자체가 그 결과를 그대로 담고 있으므로) 복호화는 항상 성공한다.
+const REVIEW_ID_KEY_MATERIAL = "openchess-review-id-v1";
+let _reviewIdKeyPromise = null;
+function reviewIdKey() {
+  if (!_reviewIdKeyPromise) {
+    _reviewIdKeyPromise = crypto.subtle.digest("SHA-256", new TextEncoder().encode(REVIEW_ID_KEY_MATERIAL))
+      .then((material) => crypto.subtle.importKey("raw", material, "AES-GCM", false, ["encrypt", "decrypt"]));
+  }
+  return _reviewIdKeyPromise;
+}
+function bufToBase64Url(buf) {
+  let bin = ""; const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function base64UrlToBuf(s) {
+  let b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4) b64 += "=";
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+async function encryptPgnId(text) {
+  const key = await reviewIdKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
+  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+  combined.set(iv, 0); combined.set(new Uint8Array(ciphertext), iv.length);
+  return bufToBase64Url(combined.buffer);
+}
+async function decryptPgnId(id) {
+  try {
+    const key = await reviewIdKey();
+    const bytes = new Uint8Array(base64UrlToBuf(id));
+    if (bytes.length <= 12) return null;
+    const iv = bytes.slice(0, 12), ciphertext = bytes.slice(12);
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    return new TextDecoder().decode(plain);
+  } catch { return null; }
+}
+// (v0.3.4 기능) 사용자 요청 — 리뷰의 "대국 식별자". 소스별로 분기한다:
+// · chess.com 대국(game.id 있음) — chess.com이 이미 발급한 숫자 게임 ID를 그대로 쓴다.
+// · FEN 분석(fenRoot는 있지만 그 위치에서 아직 한 수도 안 뒀음) — 그 FEN 코드 자체를 그대로 쓴다
+//   (경로 세그먼트라 URL 인코딩은 하되, 디코딩하면 정확히 원래 FEN 문자열이다 — "그대로 쓰고").
+// · 그 외(직접 둔 수순·PGN 붙여넣기·마스터 대국 리뷰, 또는 FEN에서 시작해 수를 더 둔 경우) — PGN으로
+//   합쳐(FEN에서 시작했다면 [FEN]/[SetUp] 헤더까지 포함해 시작 위치까지 복원 가능하게) 암호화한다.
+// 일부러 접두사(예: "cc-"/"fen-")를 붙이지 않는다 — 되돌릴 때(resolveReviewIdentifier) chess.com
+// ID는 숫자로만 되어 있고, base64url 암호문은 '/'가 절대 나오지 않아(bufToBase64Url이 그 문자를
+// 이미 걸러냄) FEN 특유의 "/"로 8칸씩 나뉘는 형태(looksLikeFen)와 구조적으로 겹치지 않는다.
+async function reviewGameIdentifier(game) {
+  if (!game) return null;
+  if (game.id) return String(game.id);
+  if (game.fenRoot && (!game.sans || !game.sans.length)) return encodeURIComponent(game.fenRoot);
+  if (game.sans && game.sans.length) {
+    try {
+      const parsed = game.fenRoot ? parseFenFull(game.fenRoot) : null;
+      const body = sansToPgnText(game.sans, parsed ? parsed.turn : undefined);
+      const pgnText = parsed ? "[FEN \"" + game.fenRoot + "\"]\n[SetUp \"1\"]\n\n" + body : body;
+      return await encryptPgnId(pgnText);
+    } catch { return null; }
+  }
+  return null;
+}
+// 위 reviewGameIdentifier의 역변환 — 딥링크(openchess.kr/review/(식별자))로 들어왔을 때 그 식별자
+// 하나만으로 다시 리뷰를 열 수 있는 만큼을 복원한다. chess.com 식별자는 여기서 대국 전체를 복원할
+// 수 없다(chess.com 공개 API가 게임 ID 단건 조회를 지원하지 않음) — { kind: "chesscom", ccId }만
+// 돌려주고, 실제 복원(로컬 캐시 → 서버 공유 캐시)은 호출부(App)가 맡는다.
+async function resolveReviewIdentifier(raw) {
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return { kind: "chesscom", ccId: raw };
+  let decoded; try { decoded = decodeURIComponent(raw); } catch { decoded = raw; }
+  if (looksLikeFen(decoded) && parseFenFull(decoded)) return { kind: "game", game: { sans: [], fenRoot: decoded } };
+  const pgnText = await decryptPgnId(raw);
+  if (!pgnText) return null;
+  const fenMatch = /\[FEN\s+"([^"]+)"\]/.exec(pgnText);
+  const sans = parsePgnSans(pgnText);
+  if (!sans.length) return null;
+  return { kind: "game", game: { sans, fenRoot: fenMatch ? fenMatch[1] : null } };
+}
+// (v0.3.4 기능) chess.com 대국 리뷰 딥링크(/review/(숫자 ID))용 캐시 — supabase-setup.sql 21번
+// 섹션 참고. puzzleShare/puzzleFetch와 같은 패턴: 리뷰를 여는 모든 유저가 최선을 다해(실패해도
+// 무시) 업로드하고, 딥링크로 들어온 방문자는 여기서 조회한다.
+async function reviewedGameShare(ccId, game) {
+  if (!SB_ON || !ccId) return;
+  try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), data: game }); } catch { }
+}
+async function reviewedGameFetch(ccId) {
+  if (!SB_ON || !ccId) return null;
+  try { const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; }
+}
 // (v0.2.1 기능) 대국 참가자의 chess.com 아바타 — username이 확정된 경우에만 프로필을 조회한다.
 // 계정이 없거나(예: 옛날 마스터 대국) 요청이 실패해도 null로 남아 기본 나이트 이미지로 대체된다.
 function useChesscomAvatar(username) {
@@ -7787,13 +7920,17 @@ function ReviewPage({ game, onClose }) {
   const [mobileBoardSize, mobileBoardSizeRef] = useBoardSize(420);
   const boardSize = narrow ? mobileBoardSize : 440;
   const sans = game.sans;
+  // (v0.3.4 기능) 사용자 요청 — 학습 탭 "FEN 모드"에서 분석한 리뷰는 표준 시작 위치가 아니라
+  // game.fenRoot(원본 FEN 문자열)에서부터 시작한다. parseFenFull로 다시 파싱해 {board,turn,rights,ep}를
+  // 얻고, LearnTab의 FEN 모드와 똑같이 replayFromFen으로 그 위치부터 effSans만큼 재생한다.
+  const fenRoot = useMemo(() => (game.fenRoot ? parseFenFull(game.fenRoot) : null), [game.fenRoot]);
   useEffect(() => {
     let cancelled = false;
-    if (!engine || engine.status !== "ready" || !sans || sans.length < 1) { setErr(true); return; }
+    if (!engine || engine.status !== "ready" || !sans || (sans.length < 1 && !fenRoot)) { setErr(true); return; }
     (async () => {
       try {
         const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
-          (partial, gradedIdx) => { if (!cancelled) { setResult(partial); setGradedCount(gradedIdx); } });
+          (partial, gradedIdx) => { if (!cancelled) { setResult(partial); setGradedCount(gradedIdx); } }, fenRoot);
         if (!cancelled) { setResult(r); setGradedCount(sans.length); setResultDone(true); }
       } catch { if (!cancelled) setErr(true); }
     })();
@@ -7802,11 +7939,25 @@ function ReviewPage({ game, onClose }) {
   useEffect(() => { setShowingLine(false); }, [curPly]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
+  // (v0.3.4 기능) FEN 모드 리뷰는 자유 탐색(직접 새 수 두기)을 지원하지 않는다 — legalDests의
+  // 캐슬링 판정이 "지금 킹/룩이 원위치인지"만 보고 그 전에 이미 잃은 권리는 추적하지 않는 기존
+  // 단순화, gameEndState의 3회 반복 판정이 표준 시작을 전제하는 것 등 자유 탐색 특유의 보조 판정을
+  // 전부 fenRoot까지 정확히 확장하는 건 이번 작업 범위를 크게 넘어선다 — 실제로 둔 수를 한 수씩
+  // 밟아 보며 평가·코치 코멘트를 보는 핵심 리뷰 기능만 정확하게 지원하고, 가상의 수를 더 둬 보는
+  // 기능은 안전하게 꺼 둔다(아래 interactive prop).
   const exploring = exploreSans.length > 0;
   const effSans = useMemo(() => sans.slice(0, curPly).concat(exploreSans), [sans, curPly, exploreSans]);
-  const board = useMemo(() => boardFromSans(effSans), [effSans]);
-  const explColor = effSans.length % 2 === 0 ? "w" : "b";
-  const ep = useMemo(() => epTarget(effSans), [effSans]);
+  const fenReplay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, effSans) : null), [effSans, fenRoot]);
+  const board = useMemo(() => (fenRoot ? fenReplay.board : boardFromSans(effSans)), [effSans, fenRoot, fenReplay]);
+  const explColor = fenRoot ? (plyIsWhite(effSans.length, fenRoot.turn) ? "w" : "b") : (effSans.length % 2 === 0 ? "w" : "b");
+  const epStd = useMemo(() => epTarget(effSans), [effSans]); // (Rules of Hooks) 항상 호출 — fenRoot가 있을 때만 아래에서 무시된다.
+  const ep = fenRoot ? fenReplay.ep : epStd;
+  // (v0.3.4 기능) fenRoot 리뷰의 실시간 엔진 라인 패널(아래 sansToFen 세 호출)이 쓸 FEN — 표준
+  // 시작이면 기존 sansToFen(effSans) 그대로, fenRoot면 지금 보드·캐슬링 권리·앙파상을 그 시작
+  // 진영(fenRoot.turn) 기준으로 직렬화한다.
+  const effFen = fenRoot
+    ? boardToFen(board, effSans.length, castleRightsStr(fenReplay.rights), fenReplay.ep ? sqName(fenReplay.ep[0], fenReplay.ep[1]) : "-", fenRoot.turn)
+    : sansToFen(effSans);
   const legalTargets = useMemo(() => (sel ? legalDests(board, sel[0], sel[1], explColor, ep) : []), [sel, board, explColor, ep]);
   // (v0.2.3 기능) 학습 탭과 동일하게, 자유 탐색 중인 지금 위치가 스테일메이트·3회 동형 반복으로
   // 이미 끝나 있으면 더 이상 수를 둘 수 없게 막고 무승부로 표시한다.
@@ -7899,6 +8050,13 @@ function ReviewPage({ game, onClose }) {
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready") { setEngineLines([]); setLinesPending(false); return; }
+    // (v0.3.4 기능) 이 패널의 pvUciToSans(effSans, ...)는 내부적으로 표준 시작 위치를 전제하고
+    // 수순을 다시 재생한다 — fenRoot 리뷰에서 그대로 쓰면 PV가 엉뚱한(때로는 불법인) 표기로
+    // 보인다. fenRoot까지 정확히 지원하려면 pvUciToSans 자체를 고쳐야 해 범위가 커지므로,
+    // 위 exploring 주석과 같은 이유로 fenRoot 리뷰에서는 이 실시간 엔진 라인 패널만 비워 둔다
+    // (핵심 기능인 실제 둔 수의 등급·코치 코멘트·평가 그래프는 analyzeGame 쪽에서 이미 fenRoot를
+    // 정확히 반영하므로 영향이 없다).
+    if (fenRoot) { setEngineLines([]); setLinesPending(false); return; }
     // (v0.2.3 버그 수정) 학습 탭(useMergedMoves)의 엔진 라인은 포지션이 바뀌어도 이전 값을 옅게 유지한
     // 채 "계산 중"만 표시하지만, 그건 평가치 바(posEval)를 별도의 빠른 단일PV 진행 콜백으로 항상 이
     // 포지션 전용 값으로만 채우기 때문에 가능한 선택이었다(barEval 계산부 참고). 이 페이지는 그런
@@ -7931,14 +8089,14 @@ function ReviewPage({ game, onClose }) {
         // REVIEW_MOVETIME_MS 그대로 유지된다(아래 참고). 여기서 깊어진 결과는 화면(엔진 라인 패널·
         // 평가치 막대)에만 실시간으로 반영되고, 이미 확정된 점수·등급표는 건드리지 않는다.
         const onLines = (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } };
-        const pvsAll = await w.evaluateMulti(sansToFen(effSans), MAX_SEARCH_DEPTH, 3, REVIEW_MOVETIME_MS, onLines, "review-lines");
+        const pvsAll = await w.evaluateMulti(effFen, MAX_SEARCH_DEPTH, 3, REVIEW_MOVETIME_MS, onLines, "review-lines");
         if (cancelled) return;
         setEngineLines(toLines(pvsAll));
         setLinesPending(false);
-        const deepPvs = await w.evaluateMulti(sansToFen(effSans), MAX_SEARCH_DEPTH, 3, 5000, onLines, "review-lines");
+        const deepPvs = await w.evaluateMulti(effFen, MAX_SEARCH_DEPTH, 3, 5000, onLines, "review-lines");
         if (cancelled) return;
         if (deepPvs && deepPvs.length) setEngineLines(toLines(deepPvs));
-        const deeperPvs = await w.evaluateMulti(sansToFen(effSans), MAX_SEARCH_DEPTH, 3, 20000, onLines, "review-lines");
+        const deeperPvs = await w.evaluateMulti(effFen, MAX_SEARCH_DEPTH, 3, 20000, onLines, "review-lines");
         if (cancelled) return;
         if (deeperPvs && deeperPvs.length) setEngineLines(toLines(deeperPvs));
       } catch { if (!cancelled) setEngineLines([]); }
@@ -8278,7 +8436,7 @@ function ReviewPage({ game, onClose }) {
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive={!fenRoot} topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
@@ -8305,7 +8463,7 @@ function ReviewPage({ game, onClose }) {
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive={!fenRoot} topInfo={blackPInfo} bottomInfo={whitePInfo}
               leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
@@ -8747,7 +8905,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // (v0.2.0 기능) "게임 리뷰" — 예전엔 대국을 학습 보드에 불러오며 즉석 분석 모드(AnalysisModal)를
   // 자동으로 열었는데, 이제 결과·상대·타임클래스 같은 대국 메타데이터까지 갖춘 전용 /review
   // 페이지로 완전히 넘긴다(학습 보드 상태는 건드리지 않는다).
-  const onOpenMyGameAnalyze = (g) => { onOpenReview && onOpenReview({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black }); };
+  const onOpenMyGameAnalyze = (g) => { onOpenReview && onOpenReview({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id }); };
   // (UI2) PGN 붙여넣기로 검증된 수순을 그대로 이어서 두도록 불러온다(FEN 모드였다면 표준 시작
   // 위치로 돌아가는 것이므로 함께 해제한다).
   const onLoadPgn = (movesList) => { setFocus(null); setFenRoot(null); setSans(movesList); setFuture([]); setSel(null); setLastQ(null); };
@@ -8864,7 +9022,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               {/* (v0.2.0 기능) 기보 위 분석 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
                   띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
                   (FEN 모드는 표준 시작 위치를 가정하는 분석 페이지 대상이 아니라 비활성화한다.) */}
-              <button onClick={() => onOpenReview && onOpenReview({ sans: [...sans, ...future] })} disabled={!!fenRoot || ([...sans, ...future].length < 1) || engine.status !== "ready"} title={fenRoot ? "FEN 모드에서는 사용할 수 없어요" : "기보 분석"} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: (fenRoot || [...sans, ...future].length < 1 || engine.status !== "ready") ? "default" : "pointer", opacity: (fenRoot || [...sans, ...future].length < 1 || engine.status !== "ready") ? 0.45 : 1 }}><BarChart3 size={13} /> 분석</button>
+              {/* (v0.3.4 기능) 사용자 요청 — FEN 모드에서도 분석(게임 리뷰)을 열 수 있게 한다. FEN 모드는
+                  붙여넣은 위치 자체를 그 리뷰의 "대국 식별자"(fenRoot.raw)로 쓰므로, 아직 한 수도 안
+                  뒀어도(포지션만 분석) 열 수 있다 — 표준 시작 위치는 그 반대로 최소 한 수는 있어야
+                  의미가 있으므로 그 조건만 그대로 남긴다. */}
+              <button onClick={() => onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: fenRoot ? fenRoot.raw : null })} disabled={(!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready"} title="기보 분석" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: ((!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready") ? "default" : "pointer", opacity: ((!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready") ? 0.45 : 1 }}><BarChart3 size={13} /> 분석</button>
               <NotationTools sans={sans} startColor={fenRoot ? fenRoot.turn : undefined} onLoadPgn={onLoadPgn} onLoadFen={onLoadFen} />
               {/* (18차 UI5) 와이파이 아이콘 + "라이브" 상태 텍스트 삭제 */}
             </div>
@@ -12559,7 +12721,7 @@ function summarizePosition(board, userColor) {
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, engine, liveOn, canEdit, bumpContent }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange }) {
   const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
@@ -12664,6 +12826,21 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
     setTargetTag(first ? first.tag : null);
   }, [puzzle.id, tree]);
+  // (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 창 고유 URL(openchess.kr/(퍼즐 번호)-(라인 번호))로 들어왔을
+  // 때, 위 "미해결 라인부터" 기본값 대신 그 특정 라인으로 바로 이동한다. 위 effect 바로 다음에 둬서
+  // (같은 커밋 안 effect는 선언 순서대로 실행됨) 기본값을 정한 뒤 필요할 때만 곧바로 덮어쓴다.
+  useEffect(() => {
+    if (initialLineNo == null) return;
+    const line = allLines[initialLineNo - 1];
+    if (line) gotoLine(line.tag);
+  }, [puzzle.id, initialLineNo]);
+  // (v0.3.4 기능) 사용자 요청 — 지금 풀고 있는(또는 보고 있는) 라인 번호를 부모에게 알려, 퍼즐 풀이
+  // 창 고유 URL(openchess.kr/(퍼즐 번호)-(라인 번호))이 항상 실제로 보이는 라인을 가리키게 한다.
+  useEffect(() => {
+    if (!onLineChange) return;
+    const idx = allLines.findIndex((l) => l.tag === targetTag);
+    if (idx >= 0) onLineChange(idx + 1);
+  }, [targetTag, allLines, onLineChange]);
   // (버그 수정) 모식도는 "실제로 두어진 수"만 보여주는데, 그 기준이 지금 진행 중인 pathNodes였다 —
   // 그래서 라인을 몇 수 두어 보다가(아직 못 풀고) "처음부터"를 누르면 pathNodes가 비워지면서 그
   // 라인에서 이미 드러났던 수들이 모식도에서 도로 고스트(가려짐)로 돌아가, 마치 진행 상황이 통째로
@@ -14135,7 +14312,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -14263,7 +14440,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
     return [...byId.values()].filter((p) => String(puzzleNo(p.id)).startsWith(numInput)).slice(0, 6);
   }, [numInput, isDateInput, remoteNumSuggestions, puzzles, archivedPuzzles]);
-  if (active) return <PuzzleSolver puzzle={active} onClose={() => setActive(null)} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} />;
+  // (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 창을 열 때 새 히스토리 항목(/(퍼즐 번호)-(라인 번호))을
+  // 쌓아 뒀으므로, 닫을 때는(뒤로가기 버튼이 아니라 이 X 버튼이어도) 그 항목을 되돌아가는 게
+  // 맞다 — pushState를 하나 더 쌓는 대신 history.back()으로 정확히 하나만 되돌린다(게임 리뷰의
+  // closeReview와 같은 패턴).
+  const closeActive = () => { setActive(null); try { if (/^\/\d{6}-\d+$/.test(window.location.pathname)) window.history.back(); } catch { } };
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
   // 없어요"를 띄웠다. 개발자(canEdit)는 이런 손상된 퍼즐을 찾아 삭제할 수 있어야 하므로 그대로
@@ -15370,7 +15552,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                 ) : onOpenGame && (
                   <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                     <button onClick={() => onOpenGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                    {onOpenGameAnalyze && <BestMoveJumpButton onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username, white: g.white, black: g.black })} />}
+                    {onOpenGameAnalyze && <BestMoveJumpButton onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username, white: g.white, black: g.black, id: g.id })} />}
                   </div>
                 )}
               </div>
@@ -15551,6 +15733,7 @@ const CHANGELOG = [
       "도감 탭 오프닝 트리에서 수 설명 카드가 여전히 화면 밖으로 잘리거나 스크롤 중 말풍선 모양이 뒤틀려 보이던 문제를 고쳤어요 — 이제 카드는 연 순간의 고정된 위치·모양으로만 뜨고, 화면을 스크롤(팬)하거나 확대·축소하면 카드가 함께 사라져요.",
       "학습 탭 '수 설명'에서 이제 내가 남긴 글은 직접 수정·삭제할 수 있어요(예전엔 개발자에게만 편집 권한이 있었어요). 개발자·공동개발자는 그대로 모든 글을 편집할 수 있어요.",
       "퍼즐 풀이 카드에 그 퍼즐을 처음 만든 사람(제작자)이 표시돼요. 내가 만든 퍼즐은 개발자와 똑같이 라인을 추가·삭제하거나 통째로 재생성할 수 있어요(1시간에 한 번). 개발자·공동개발자는 특정 퍼즐의 제작 권한을 회수하거나 다른 유저에게 넘길 수 있어요.",
+      "게임 리뷰·퍼즐 풀이 창에 그대로 공유할 수 있는 고유 주소가 생겼어요(openchess.kr/review/... , openchess.kr/퍼즐번호-라인번호) — 그 주소를 열면 실제로 같은 화면이 다시 열려요. 학습 탭 FEN 모드에서도 이제 '분석' 버튼으로 게임 리뷰를 열 수 있어요.",
     ]
   },
   {
@@ -16239,7 +16422,7 @@ function QuestClearGameRow({ g, onOpenGameAnalyze }) {
         {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}> ({oppSide.rating})</span>}</div>}
       </div>
       {onOpenGameAnalyze && g.moves && g.moves.length > 0 && (
-        <button onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black })} aria-label="대국 분석" title="대국 분석" className="press"
+        <button onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id })} aria-label="대국 분석" title="대국 분석" className="press"
           style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={11} /></button>
       )}
     </div>
@@ -20416,6 +20599,8 @@ export default function App() {
   // (switchTab) 이 예약은 취소된다 — 도감으로 "자동으로" 돌아가는 건 이 흐름 하나뿐이어야 하므로.
   const [focusReturnTab, setFocusReturnTab] = useState(null);
   const [puzzleActive, setPuzzleActive] = useState(null);   // (UX4) 탭 이동에도 퍼즐 창 유지
+  // (v0.3.4 기능) 딥링크(/(퍼즐 번호)-(라인 번호))로 지정된 라인 — { no, lineNo } | null.
+  const [puzzleTargetLine, setPuzzleTargetLine] = useState(null);
   // (v0.1.0) 채팅으로 공유받은 퍼즐을 "풀러 가기"로 열었을 때의 공유 출처 — { msgId, no, fromUid(공유자) }.
   // 지금 열려 있는 puzzleActive가 이 no와 일치하는 동안 라인을 풀면 공유자에게 XP 10%를 돌려준다.
   const [shareReferral, setShareReferral] = useState(null);
@@ -21145,20 +21330,21 @@ export default function App() {
     }
     prevLearnFocusRef.current = learnFocus;
   }, [learnFocus, focusReturnTab]);
-  // (v0.2.0 기능) /review는 세션 안에서 리뷰할 대국 데이터(reviewGame)가 있어야만 의미가 있는
-  // 화면이라 URL만으로 복원할 방법이 없다 — 이 주소로 직접 들어오거나 새로고침하면 조용히
-  // 학습 탭으로 되돌린다(빈 화면·깨진 화면 대신).
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.location.pathname === "/review") {
-      try { window.history.replaceState(null, "", "/learn"); } catch { }
-    }
-  }, []);
+  // (v0.3.4 기능) 사용자 요청 — /review(/(식별자))와 /(퍼즐 번호)-(라인 번호)는 이제 그 URL만으로
+  // 실제로 복원 가능하다(아래 딥링크 resolver effect, openReview/onOpenPuzzle이 모두 정의된 뒤에
+  // 둔다 — 그 함수들을 그대로 재사용한다). 예전엔 여기서 무조건 /learn으로 되돌렸다.
   // (16차) 브라우저 뒤로/앞으로 가기로 주소가 바뀌면 그에 맞는 탭으로 전환한다.
   useEffect(() => {
     // (v0.2.0 기능) /review에서 브라우저 뒤로가기를 누르면(헤더의 뒤로 버튼이 아니라 실제 브라우저
     // 뒤로가기) reviewGame을 함께 정리해, 이전 화면으로 돌아갔는데 리뷰 오버레이만 계속 남아있는
-    // 일이 없게 한다.
-    const onPop = () => { if (window.location.pathname !== "/review") setReviewGame(null); const k = tabFromPath(window.location.pathname); if (k) { urlTabRef.current = k; setTab(k); } };
+    // 일이 없게 한다. (v0.3.4) 퍼즐 고유 URL(/(번호)-(라인))에서도 같은 이유로 puzzleActive를 정리한다.
+    const onPop = () => {
+      const p = window.location.pathname;
+      if (!p.startsWith("/review")) setReviewGame(null);
+      if (!/^\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
+      const k = tabFromPath(p);
+      if (k) { urlTabRef.current = k; setTab(k); }
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -21199,7 +21385,9 @@ export default function App() {
   // 구분할 방법이 없으므로 안전하게 무료로 취급한다.
   const [ticketBlockedOpen, setTicketBlockedOpen] = useState(false);
   const openReview = useCallback((game) => {
-    if (!game || !game.sans || !game.sans.length) return;
+    // (v0.3.4 기능) FEN 모드 분석은 아직 한 수도 안 뒀어도(그 위치 자체를 분석) 열 수 있게 허용한다
+    // — fenRoot가 있으면 sans가 비어 있어도 통과시킨다.
+    if (!game || (!game.fenRoot && (!game.sans || !game.sans.length))) return;
     // (버그 수정) devUnlockAll과 같은 결로 공동 개발자 모드도 포함하도록 — 임명 권한만 빼고
     // 개발자와 동일하게 리뷰 티켓 시스템을 건너뛴다.
     const bypass = devUnlockAll;
@@ -21216,11 +21404,20 @@ export default function App() {
     // 모달·오버레이(z-index 90/70)를 그대로 마운트해 두고 리뷰(z-index 300)로 덮기만 하므로, 리뷰를
     // 닫으면(뒤로가기) 곧장 그 경로로 되돌아간다.
     setReviewGame(game);
+    // (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 고유 URL. 식별자 계산(특히 PGN 분석 쪽 암호화)이
+    // 비동기라 화면은 즉시 열되, 우선 예전과 같은 자리표시자("/review")를 히스토리에 쌓아
+    // 뒤로가기/닫기가 곧바로 동작하게 하고, 식별자가 준비되면 그 자리를 실제 주소로 바꿔치기한다
+    // (replaceState — 이 열기 동작 하나가 히스토리 항목 두 개를 만들지 않도록).
     try { if (window.location.pathname !== "/review") window.history.pushState({ review: true }, "", "/review"); } catch { }
+    if (game.id) reviewedGameShare(game.id, game).catch(() => { });
+    reviewGameIdentifier(game).then((id) => {
+      if (!id) return;
+      try { window.history.replaceState({ review: true }, "", "/review/" + id); } catch { }
+    });
   }, [devUnlockAll, reviewUnlocked, reviewTickets]);
   const closeReview = useCallback(() => {
     setReviewGame(null);
-    try { if (window.location.pathname === "/review") window.history.back(); } catch { }
+    try { if (window.location.pathname.startsWith("/review")) window.history.back(); } catch { }
   }, []);
   const onOpenGameAnalyze = useCallback((game) => openReview(game), [openReview]);
   const onOpenPuzzle = useCallback(async (pzId, fallback) => {
@@ -21262,6 +21459,54 @@ export default function App() {
   // (v0.1.0) 다른 퍼즐을 열거나(일반 탐색) 퍼즐 창을 닫으면 공유 출처를 지운다 — 공유로 들어온 그
   // 퍼즐을 실제로 풀고 있는 세션에서만 보상이 나가도록 좁힌다.
   useEffect(() => { setShareReferral((r) => (r && puzzleActive && r.no === puzzleNo(puzzleActive.id)) ? r : null); }, [puzzleActive]);
+  // (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 창 고유 URL(openchess.kr/(퍼즐 번호)-(라인 번호)). 처음 열
+  // 때(아직 퍼즐 URL이 아닐 때)는 pushState로 새 히스토리 항목을 쌓아 뒤로가기로 닫을 수 있게 하고,
+  // 이미 같은 퍼즐을 보고 있는 동안 라인만 바뀌면(PuzzleSolver의 onLineChange) replaceState로
+  // 항목을 늘리지 않고 그 자리만 갱신한다.
+  const onPuzzleLineChange = useCallback((lineNo) => {
+    if (!puzzleActive) return;
+    const path = "/" + puzzleNo(puzzleActive.id) + "-" + lineNo;
+    try {
+      if (/^\/\d{6}-\d+$/.test(window.location.pathname)) window.history.replaceState({ puzzle: true }, "", path);
+      else window.history.pushState({ puzzle: true }, "", path);
+    } catch { }
+  }, [puzzleActive]);
+  // (v0.3.4 기능) 딥링크(/(퍼즐 번호)-(라인 번호))로 열 라인 — puzzleActive와 번호가 일치할 때만
+  // PuzzleTab에 내려준다(다른 퍼즐을 열면 자연히 무시된다, 별도 소비 처리 불필요).
+  const puzzleTargetLineNo = (puzzleActive && puzzleTargetLine && puzzleTargetLine.no === puzzleNo(puzzleActive.id)) ? puzzleTargetLine.lineNo : null;
+  // (v0.3.4 기능) 사용자 요청 — 앱이 처음 뜰 때(또는 새로고침) 주소가 /review(/(식별자)) 또는
+  // /(퍼즐 번호)-(라인 번호) 형태면 그 리뷰·퍼즐을 실제로 되살린다. openReview/onOpenPuzzle이 모두
+  // 정의된 뒤라야 호출할 수 있어 이 컴포넌트 마지막 부분에 둔다. 실패하면(식별자가 깨졌거나, 아직
+  // 아무도 공유한 적 없는 chess.com 대국이거나) 조용히 /learn으로 되돌린다(예전과 같은 안전한 기본값).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const path = window.location.pathname;
+    (async () => {
+      const puzzleMatch = /^\/(\d{6})-(\d+)$/.exec(path);
+      if (puzzleMatch) {
+        const no = parseInt(puzzleMatch[1], 10), lineNo = parseInt(puzzleMatch[2], 10);
+        const data = await puzzleFetch(no);
+        if (!data) { try { window.history.replaceState(null, "", "/learn"); } catch { } return; }
+        setPuzzleTargetLine({ no, lineNo });
+        setTab("puzzle");
+        setPuzzleActive(data);
+        return;
+      }
+      if (path === "/review" || path.startsWith("/review/")) {
+        const idRaw = path === "/review" ? null : path.slice("/review/".length);
+        const resolved = idRaw ? await resolveReviewIdentifier(idRaw) : null;
+        if (!resolved) { try { window.history.replaceState(null, "", "/learn"); } catch { } return; }
+        if (resolved.kind === "chesscom") {
+          const cached = await reviewedGameFetch(resolved.ccId);
+          if (!cached) { try { window.history.replaceState(null, "", "/learn"); } catch { } return; }
+          openReview(cached);
+        } else {
+          openReview(resolved.game);
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 오직 최초 마운트 시 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없다).
+  }, []);
 
   return (
     <SkinContext.Provider value={skinValue}>
@@ -21437,7 +21682,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
