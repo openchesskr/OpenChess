@@ -265,6 +265,12 @@ alter table public.chat_messages add column if not exists edited boolean not nul
 -- 두지 않고, 받는 쪽 화면이 from_uid(=유산 주인)의 "지금" 공개 프로필(profiles.pub.legacies)에서
 -- 그 슬롯을 그대로 읽어와 보여준다(legacyShareSend).
 alter table public.chat_messages add column if not exists legacy_slot text;
+-- (v0.3.4 기능) 리뷰 공유 카드 — puzzle_no/legacy_slot과 같은 패턴. 설정돼 있으면 이 메시지는 리뷰
+-- 미리보기 카드로 렌더링된다. 값은 리뷰 딥링크 식별자 그 자체(reviewGameIdentifier가 만든 문자열 —
+-- chess.com 대국은 숫자 ID, FEN 분석은 FEN 원문, PGN 분석은 암호화된 PGN)라 리뷰와 달리 별도 서버
+-- 캐시가 필요 없다(chess.com 대국만 reviewed_games를 통해 복원되고, FEN/PGN은 식별자 자체가 데이터를
+-- 담고 있다 — resolveReviewIdentifier 참고).
+alter table public.chat_messages add column if not exists review_id text;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;

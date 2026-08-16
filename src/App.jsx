@@ -3057,11 +3057,46 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
       }
     }
   }
+  // (v0.3.4 성능) 사용자 요청 — depth 20(REVIEW_DEPTH)이 더 안정적으로 실제로 찍히게 하되, 전체
+  // 리뷰 시간은 예전(포지션마다 movetime 고정 상한)의 약 1.1~1.2배로만 유지한다. 예전엔 모든
+  // 포지션이 똑같이 movetime 하나로 잘렸는데, 실제로는 대부분의 조용한 포지션이 depth 20에 그보다
+  // 훨씬 일찍 도달해(엔진이 스스로 멈춤) 그 남는 시간이 그냥 버려지고, 정작 후보 수가 많은 복잡한
+  // 중반전 포지션 몇 개만 그 짧은 상한 안에 depth 20을 못 찍어 정확도가 떨어졌다.
+  // "이 게임 전체에 쓸 총 시간 예산"(병렬 워커 수를 감안한 벽시계 기준 예산)을 미리 잡아 두고, 매
+  // 포지션마다 "남은 예산 ÷ 남은 포지션 수"를 그 포지션의 movetime으로 새로 계산해서 쓴다 — 쉬운
+  // 포지션이 일찍 끝내고 남긴 여유를 다음 어려운 포지션이 자동으로 이어받는 식이다(실제 체스
+  // 엔진들이 대국 중 스스로 하는 시간 관리와 같은 원리). 한 포지션이 예산을 통째로 집어삼키지
+  // 않도록 상한(기본 movetime의 6배)을, 예산이 바닥나도 최소한의 탐색은 보장하는 하한(기본
+  // movetime의 0.4배)을 둔다. workers.length개가 항상 동시에 도는 work-stealing 구조라, "벽시계
+  // 예산"은 (포지션 수 ÷ 워커 수) × movetime × 여유율로 잡는다.
+  // (v0.3.4 버그 수정) 상한을 너무 넉넉히 주면(예: 6배) 그 포지션 하나가 오래 걸리는 동안 gradeIdx가
+  // 그 자리에 완전히 멈춰(아래 gradeOne은 gradeBoard·moves[i-1]·moves[i-2]에 의존해 반드시 순서대로
+  // 채점해야 한다), 그 뒤로 이미 평가가 다 끝나 있는 포지션 여러 개까지 한꺼번에 대기하게 된다 —
+  // "몇몇 수의 수 체계 아이콘·평가치가 미리 계산돼 있지 않고, 마치 그 수까지 왔을 때에야 계산이
+  // 시작되는 것처럼 보이는" 사용자 보고 증상의 정체다. depth 20을 더 채우려는 목적과 이 정체 현상을
+  // 완화하려는 목적이 서로 상충해, 상한을 4배로 다소 보수적으로 잡는다.
+  const REVIEW_BUDGET_FACTOR = 1.15, REVIEW_PER_POS_CAP_MULT = 4, REVIEW_PER_POS_FLOOR_MULT = 0.4;
+  const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+  const workersLen = Math.max(1, workers.length);
+  const wallBudgetMs = ((N + 1) / workersLen) * movetime * REVIEW_BUDGET_FACTOR;
+  const startTs = now();
+  const nextMovetime = (doneSoFar) => {
+    const remainingBudget = Math.max(0, wallBudgetMs - (now() - startTs));
+    const remainingPositions = Math.max(1, (N + 1) - doneSoFar);
+    const fairShare = (remainingBudget * workersLen) / remainingPositions;
+    return Math.round(Math.min(movetime * REVIEW_PER_POS_CAP_MULT, Math.max(movetime * REVIEW_PER_POS_FLOOR_MULT, fairShare)));
+  };
   let nextIdx = 0, doneCount = 0;
   async function runWorker(w) {
     for (;;) {
       const i = nextIdx++; if (i > N) return;
-      const lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, movetime), movetime + 4000);
+      const mt = nextMovetime(doneCount);
+      let lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, mt), mt + 4000);
+      // (v0.3.4 버그 수정) 몇몇 포지션이 타임아웃(워커가 그 순간 다른 요청으로 바빴거나 일시적으로
+      // 응답이 늦었을 뿐인 경우가 대부분)으로 실패하면, 예전엔 그 자리에서 그대로 "pending"으로
+      // 영영 남아 그 수의 등급·평가치가 다시는 채워지지 않았다(다른 어떤 경로도 재시도하지 않음).
+      // 한 번만 더 재시도한다 — 실제로 계산 불가능한 포지션은 거의 없으므로 대부분 이걸로 회복된다.
+      if (!lines || !lines[0]) lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, mt), mt + 4000);
       const p0 = lines && lines[0], p1 = lines && lines[1];
       // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
       // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
@@ -6089,19 +6124,25 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       return k;
     };
     (async () => {
-      const best = await engine.evaluate(sansToFen(sans), 20, undefined, 5000, "focus-best");
-      if (cancel || !best) return;
+      // (버그 수정) best/after는 서로 다른 독립된 포지션이라 순서를 지킬 이유가 없는데도, 단일
+      // 공용 엔진의 FIFO 큐에서 순차 처리돼(최대 5초+5초) "탁월한 수"가 한참 뒤에야 확정되면서
+      // 그동안 "좋은 수"로 잘못 표시되고 그 확정을 기다리는 퍼즐 생성도 함께 지연됐다. 세션 내내
+      // 재사용되는 공용 풀(getAnalysisPool)에서 워커 두 개를 받아 완전히 병렬로 평가한다(풀 부팅
+      // 실패 시 기존처럼 단일 engine으로 폴백).
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => null);
+      if (cancel) return;
+      const wBest = (pool && pool[0]) || engine, wAfter = (pool && pool[1]) || engine;
+      const bestPromise = wBest.evaluate(sansToFen(sans), 20, undefined, 5000, "focus-best");
+      const afterPromise = wAfter.evaluate(sansToFen([...sans, san]), 20, undefined, 5000, "focus-after");
+      const [best, after] = await Promise.all([bestPromise, afterPromise]);
+      if (cancel || !best || !after) return;
       const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
       const bestSan = best.best ? uciToSan(boardFromSans(sans), best.best, col) : null;
-      const after = await engine.evaluate(sansToFen([...sans, san]), 20, (partial) => {
-        if (cancel || !partial) return;
-        setLiveKind(gradeFrom(bestCp, bestSan, partial));
-      }, 5000, "focus-after");
-      if (!cancel && after) setLiveKind(gradeFrom(bestCp, bestSan, after));
+      setLiveKind(gradeFrom(bestCp, bestSan, after));
     })();
     return () => { cancel = true; };
-  }, [active, sansKey, san, active && m.kind, active && m.book, engine && engine.status]);
-  const kind = active ? (liveKind || m.kind || (m.book ? "book" : "good")) : null;
+  }, [active, sansKey, san, active && m.kind, active && m.book, engine && engine.status, engine && engine.profile]);
+  const kind = active ? (liveKind || (m.kind && m.kind !== "good" ? m.kind : null) || (m.book ? "book" : "pending")) : null;
   const evTxt = active ? (m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null)) : null;
   // (v0.2.2 기능) 언더프로모션(=/=Q 아닌 승진)으로 "탁월한 수"가 매겨진 경우는 실제 기물 희생이 아니라
   // 규칙상 완화된 표기일 뿐이라, "내 기물이 공격받는다" 경고 화살표를 보여주지 않는다.
@@ -7383,6 +7424,21 @@ async function resolveReviewIdentifier(raw) {
   if (!sans.length) return null;
   return { kind: "game", game: { sans, fenRoot: fenMatch ? fenMatch[1] : null } };
 }
+// (v0.3.4 기능) 사용자 요청 — 채팅 "/review -PGN"·"/review -FEN" 명령어로 들어온 수순이 실제로
+// 재생 가능한지(각 SAN이 그 시점에 실제로 둘 수 있는 합법적인 수인지) 미리 검증한다. parsePgnSans는
+// 토큰 모양만 보고 걸러내므로(오타·불법수를 그대로 통과시킬 수 있음), sanSrc로 한 수씩 실제로
+// 찾아보고 한 수라도 실패하면(=null) 그 즉시 무효로 판정한다 — 전송 전 검증에 쓴다.
+function sanSequenceValid(sans, fenRoot) {
+  if (!sans.length) return true;
+  let board = fenRoot ? fenRoot.board : startBoard();
+  for (let i = 0; i < sans.length; i++) {
+    const color = fenRoot ? (plyIsWhite(i, fenRoot.turn) ? "w" : "b") : (i % 2 === 0 ? "w" : "b");
+    const info = sanSrc(board, sans[i], color);
+    if (!info) return false;
+    board = applySan(board, sans[i], color);
+  }
+  return true;
+}
 // (v0.3.4 기능) chess.com 대국 리뷰 딥링크(/review/(숫자 ID))용 캐시 — supabase-setup.sql 21번
 // 섹션 참고. puzzleShare/puzzleFetch와 같은 패턴: 리뷰를 여는 모든 유저가 최선을 다해(실패해도
 // 무시) 업로드하고, 딥링크로 들어온 방문자는 여기서 조회한다.
@@ -7880,7 +7936,7 @@ function AnalyzingPiecesAnim() {
 }
 // (v0.2.4) 게임 리뷰는 사용자가 설정 탭에서 고른 분석 엔진과 무관하게 항상 Stockfish 16(사람
 // 최상급 수준으로 세기 제한, ENGINE_PROFILES.full.elo)으로 고정한다.
-function ReviewPage({ game, onClose }) {
+function ReviewPage({ game, onClose, myUid }) {
   const engine = useReviewEngine();
   const narrow = useNarrow(760);
   const [phase, setPhase] = useState("summary"); // "summary" | "review"
@@ -8391,15 +8447,27 @@ function ReviewPage({ game, onClose }) {
   // (v0.2.1) 모바일 뒤로가기 — 리뷰 진행 화면에서는 /review를 닫지 않고 Analysis(요약) 창으로 먼저
   // 돌아가고, 요약 창에서 한 번 더 눌러야 /review가 닫힌다. 데스크톱은 요약 단계가 없어 곧장 닫는다.
   const handleBack = () => { if (narrow && phase === "review") { setPhase("summary"); setExploreSans([]); setExploreFuture([]); setShowingLine(false); } else onClose(); };
+  // (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 공유 버튼(모바일·데스크톱 공통 헤더). 딥링크 식별자는
+  // openReview(App 레벨)와 완전히 같은 계산(reviewGameIdentifier)을 이 페이지에서도 독립적으로
+  // 구해 둔다 — 히스토리 URL이 아직 교체 전(비동기)이어도 공유 시트는 준비되는 대로 곧장 쓸 수 있다.
+  const [reviewId, setReviewId] = useState(null);
+  useEffect(() => { let cc = false; reviewGameIdentifier(game).then((id) => { if (!cc) setReviewId(id); }); return () => { cc = true; }; }, [game]);
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareLabel = hasPlayerData ? (reviewPlayerInfo(game, "w").name + " vs " + reviewPlayerInfo(game, "b").name) : (fenRoot ? "FEN 포지션 분석" : "PGN 대국 리뷰");
   const header = (
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
       <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
       <span style={{ fontSize: 15, fontWeight: 800, color: RV.text }}>게임 리뷰</span>
-      {/* (v0.3.0 기능) result가 있어도(=첫 수 채점 완료) 전체 분석은 백그라운드에서 계속 진행 중일 수
-          있다 — 아직 안 끝났으면 진행 중임을 알리는 작은 배지를 보여준다(끝나면 조용히 사라짐). */}
-      {result && !resultDone && sans && sans.length > 0 ? (
-        <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: RV.dim, whiteSpace: "nowrap" }}><Cpu size={11} /> 분석 중 {Math.round((gradedCount / sans.length) * 100)}%</span>
-      ) : <span style={{ width: 34 }} />}
+      <div className="flex items-center gap-2">
+        {/* (v0.3.0 기능) result가 있어도(=첫 수 채점 완료) 전체 분석은 백그라운드에서 계속 진행 중일 수
+            있다 — 아직 안 끝났으면 진행 중임을 알리는 작은 배지를 보여준다(끝나면 조용히 사라짐). */}
+        {result && !resultDone && sans && sans.length > 0 && (
+          <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: RV.dim, whiteSpace: "nowrap" }}><Cpu size={11} /> 분석 중 {Math.round((gradedCount / sans.length) * 100)}%</span>
+        )}
+        {result ? (
+          <button onClick={() => setShareOpen(true)} aria-label="리뷰 공유" title="공유" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Share2 size={18} /></button>
+        ) : <span style={{ width: 34 }} />}
+      </div>
     </div>
   );
   if (err) return (
@@ -8451,6 +8519,7 @@ function ReviewPage({ game, onClose }) {
               <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
             </div>
           )}
+        {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} />}
       </div>
     );
   }
@@ -8507,6 +8576,7 @@ function ReviewPage({ game, onClose }) {
           )}
         </div>
       </div>
+      {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} />}
     </div>
   );
 }
@@ -11361,6 +11431,15 @@ async function legacyShareSend(fromUid, toUid, slotKey) {
   try { await sbInsert("chat_messages", { from_uid: fromUid, to_uid: toUid, legacy_slot: slotKey }); return true; }
   catch { return false; }
 }
+// (v0.3.4 기능) 사용자 요청 — 리뷰 공유는 퍼즐/유산과 같은 패턴으로, 대화창에 리뷰 미리보기 카드
+// (review_id가 설정된 chat_messages 행)로 남긴다. reviewId는 reviewGameIdentifier가 만든 딥링크
+// 식별자 그 자체(chess.com 숫자 ID / FEN 원문 / 암호화된 PGN) — 별도 카운터는 없다(퍼즐과 달리
+// 리뷰는 전역 번호 체계가 없어 공유 수를 셀 대상이 없다).
+async function reviewShareSend(fromUid, toUid, reviewId) {
+  if (!SB_ON || !fromUid || !toUid || !reviewId) return false;
+  try { await sbInsert("chat_messages", { from_uid: fromUid, to_uid: toUid, review_id: reviewId }); return true; }
+  catch { return false; }
+}
 // (v0.1.0) 친구가 내가 공유한 퍼즐을 풀어 얻은 XP의 10%를 나에게 돌려준다 — p_share_msg_id로 그 공유
 // 메시지가 실제로 나(호출자)에게 온 것인지 서버가 검증하므로, 임의 메시지 id로 위조 보상을 요청할 수
 // 없다. RPC는 보상 금액 자체를 내 XP에 더하지 않고 공유자에게 갈 chat_messages 시스템 메시지만 남긴다
@@ -13607,6 +13686,12 @@ function puzzleShareUrl(no, lineNo) {
   const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://openchess.kr";
   return origin + "/" + no + "-" + (lineNo || 1);
 }
+// (v0.3.4 기능) 리뷰 고유 딥링크(openchess.kr/review/(식별자)) — reviewGameIdentifier가 만든 식별자를
+// 그대로 이어붙인다.
+function reviewShareUrl(reviewId) {
+  const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://openchess.kr";
+  return origin + "/review/" + reviewId;
+}
 // (v0.3.4 기능) 사용자 요청 — 인앱 친구 목록뿐 아니라 카카오톡·인스타그램 등 외부 앱으로도 퍼즐을
 // 공유할 수 있게 한다. 각 앱마다 별도 SDK·API 키를 등록하는 대신, 표준 Web Share API
 // (navigator.share)에 이 퍼즐의 딥링크를 넘긴다 — 모바일 브라우저에서는 OS가 지금 이 기기에 설치된
@@ -13703,6 +13788,71 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
                         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
                       </div>
                       <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
+                    </div>
+                  );
+                })}
+              </div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+// (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 공유 시트. PuzzleShareSheet와 같은 두 축(외부 앱 공유 +
+// 인앱 친구 대화창 공유)을 그대로 따르되, 퍼즐과 달리 리뷰는 전역 번호·좋아요 같은 부가 데이터가
+// 없어 훨씬 단순하다 — reviewId(딥링크 식별자)만 있으면 두 공유 경로 모두 동작한다.
+function ReviewShareSheet({ reviewId, label, myUid, onClose }) {
+  const [friends, setFriends] = useState(null); // null=로딩중, [] = 없음
+  const [profiles, setProfiles] = useState({});
+  const [sent, setSent] = useState(() => new Set());
+  const [busy, setBusy] = useState(null); // 전송 중인 uid
+  const [sendErr, setSendErr] = useState("");
+  useEffect(() => {
+    let cc = false;
+    (async () => {
+      const edges = await friendEdges();
+      const ids = edges.filter((e) => e.status === "accepted" && (e.from_uid === myUid || e.to_uid === myUid)).map((e) => (e.from_uid === myUid ? e.to_uid : e.from_uid));
+      if (cc) return;
+      setFriends(ids);
+      if (ids.length) { const pm = await usersProfiles(ids); if (!cc) setProfiles(pm); }
+    })();
+    return () => { cc = true; };
+  }, [myUid]);
+  const send = async (toUid) => {
+    if (busy || sent.has(toUid)) return;
+    if (!reviewId) { setSendErr("리뷰 정보를 불러오지 못해 전달할 수 없어요."); return; }
+    setBusy(toUid); setSendErr("");
+    const ok = await reviewShareSend(myUid, toUid, reviewId);
+    setBusy(null);
+    if (ok) setSent((s) => new Set(s).add(toUid));
+    else setSendErr("전달하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 310, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
+          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />리뷰 공유</span>
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+        </div>
+        {reviewId ? <ExternalShareRow url={reviewShareUrl(reviewId)} title="OpenChess 리뷰" text={"OpenChess 리뷰 — " + (label || "대국 리뷰 보기")} />
+          : <div style={{ padding: "10px 16px", fontSize: 12, color: T.inkSoft }}>공유 링크를 만드는 중…</div>}
+        <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>친구에게 보내기</div>
+          {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
+          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
+            : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {friends.map((u) => {
+                  const pr = profiles[u] || {}; const pub = pr.pub || {};
+                  const isSent = sent.has(u);
+                  return (
+                    <div key={u} style={{ display: "flex", alignItems: "center", gap: 10, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
+                      {pub.photo ? <img src={pub.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
+                        : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
+                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
+                      </div>
+                      <button onClick={() => send(u)} disabled={!!busy || isSent || !reviewId} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
                     </div>
                   );
                 })}
@@ -15770,6 +15920,11 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 const CHANGELOG = [
   {
     version: "0.3.4", date: "2026.8.13", dev: ["openchesskr"], items: [
+      "게임 리뷰 화면에도 이제 공유 버튼이 생겼어요 — 카카오톡·인스타그램 등 외부 앱으로 보내거나, 친구 목록에서 골라 채팅으로 바로 보낼 수 있어요.",
+      "게임 리뷰가 depth 20에 더 안정적으로 도달하도록 시간 배분 방식을 바꿨어요 — 전체 걸리는 시간은 거의 그대로 유지하면서 어려운 포지션에 더 많은 시간을 자동으로 몰아줘요.",
+      "리뷰에서 몇몇 수의 등급·평가치가 마치 그 수까지 봐야 계산이 시작되는 것처럼 늦게 뜨던 문제를 줄였어요.",
+      "집중 학습에서 '탁월한 수'를 눌렀을 때 처음엔 '좋은 수'로 잘못 떴다가 한참 뒤에 바뀌면서 퍼즐 생성도 함께 늦어지던 문제를 고쳤어요 — 이제 확정되기 전까지는 '분석 중'으로만 보이다가 곧바로 정확한 등급으로 바뀌어요.",
+      "채팅에 '/review' 명령어가 생겼어요 — '/review -recent'로 가장 최근 chess.com 대국을, '/review -PGN 코드'·'/review -FEN 코드'로 원하는 기보·포지션의 리뷰를 공유할 수 있어요. 코드가 올바르지 않으면 전송되지 않고 안내가 떠요.",
       "유산 만들기·공유·전체 보기 창을 이제 모바일에서도 채팅·친구 창처럼 화면을 꽉 채우는 전체 화면으로 크게 볼 수 있어요.",
       "채팅 메시지를 꾹 눌러 여는 수정/삭제 메뉴가 이제 말풍선과 겹치지 않고 옆 여백에 떠요.",
       "채팅 메시지 수정/삭제가 실패했을 때 그냥 아무 반응이 없던 문제를 고쳐, 이제 실패하면 안내 문구가 떠요.",
@@ -17847,7 +18002,7 @@ function ChatUserProfileModal({ username, onClose }) {
     </div>
   );
 }
-function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, fillNarrow, myLegacies, myIsGM }) {
+function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, fillNarrow, myLegacies, myIsGM, myChesscomGames }) {
   // (사용자 요청) 모바일 전체 화면 모드(ChatsModal이 narrow일 때만 fillNarrow=true로 넘겨준다)에서는
   // 메시지 목록이 고정 320px가 아니라 남은 세로 공간을 채우도록(flex:1) 바꾼다 — 이 루트가 height:100%로
   // 늘어나려면 부모도 그만큼의 높이를 flex로 마련해 둬야 하므로, 그런 부모를 보장하지 않는 다른
@@ -17908,6 +18063,40 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
           const entry = pub.legacies && pub.legacies[slot];
           const typeInfo = LEGACY_TYPES.find((t) => t.key === legacyBaseKey(slot));
           n[k] = (entry && typeInfo) ? { entry, typeInfo } : null;
+        });
+        return n;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [msgs]);
+  // (v0.3.4 기능) 사용자 요청 — 리뷰 공유 카드 미리보기. review_id는 reviewGameIdentifier가 만든 딥링크
+  // 식별자 자체라(resolveReviewIdentifier의 역변환) FEN·PGN 리뷰는 그 자리에서 바로 복원되고,
+  // chess.com 리뷰만 reviewedGameFetch로 서버 캐시(reviewed_games)를 한 번 더 조회한다(보낸 사람이
+  // 그 대국을 이미 한 번 열어 캐시에 업로드해 뒀을 것이라 가정 — 실패하면 카드가 "볼 수 없음"으로
+  // 표시된다).
+  const [reviewPreviews, setReviewPreviews] = useState({});
+  useEffect(() => {
+    const ids = [...new Set(msgs.filter((m) => m.review_id != null).map((m) => m.review_id))].filter((id) => !(id in reviewPreviews));
+    if (!ids.length) return;
+    let cancelled = false;
+    (async () => {
+      const resolved = await Promise.all(ids.map((id) => resolveReviewIdentifier(id)));
+      if (cancelled) return;
+      const withGames = await Promise.all(resolved.map(async (r) => {
+        if (!r) return null;
+        if (r.kind === "chesscom") { const g = await reviewedGameFetch(r.ccId); return g ? { game: g } : null; }
+        return { game: r.game };
+      }));
+      if (cancelled) return;
+      setReviewPreviews((prev) => {
+        const n = { ...prev };
+        ids.forEach((id, i) => {
+          const w = withGames[i];
+          if (!w) { n[id] = null; return; }
+          const g = w.game;
+          const hasPD = !!(g.white || g.black || g.color);
+          const label = hasPD ? (reviewPlayerInfo(g, "w").name + " vs " + reviewPlayerInfo(g, "b").name) : (g.fenRoot && (!g.sans || !g.sans.length) ? "FEN 포지션 분석" : "PGN 대국 리뷰");
+          n[id] = { game: g, label };
         });
         return n;
       });
@@ -18032,6 +18221,47 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       if (ok) { setText(""); load(); } else setCmdError("유산을 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
       return;
     }
+    // (v0.3.4 기능) 사용자 요청 — "/review -recent"(가장 최근 chess.com 대국)·"/review -PGN <코드>"·
+    // "/review -FEN <코드>" 명령어로 리뷰를 공유한다. -PGN/-FEN은 대소문자 무관(정규식 /i)하게
+    // 인식하고, 코드가 실제로 재생 가능한지(sanSequenceValid — 각 SAN이 그 시점에 실제로 둘 수 있는
+    // 합법적인 수인지)부터 검증한 뒤에만 전송한다 — 검증에 실패하면 전송 자체를 막고 아래 공통
+    // "유효하지 않은 코드" 안내로 돌린다(/puzzle·/legacy와 달리, 인식은 됐지만 형식이 틀린 /review는
+    // 평범한 텍스트로 흘려보내지 않는다 — 사용자 요청).
+    if (body && /^\/review\b/i.test(body)) {
+      const recentMatch = /^\/review\s+-recent\s*$/i.test(body);
+      const pgnMatch = body.match(/^\/review\s+-pgn\s+([\s\S]+)$/i);
+      const fenMatch = body.match(/^\/review\s+-fen\s+([\s\S]+)$/i);
+      let game = null;
+      if (recentMatch) {
+        if (!myChesscomGames || !myChesscomGames.length) { setCmdError("연동된 chess.com 계정의 최근 대국을 찾을 수 없어요."); return; }
+        const g = [...myChesscomGames].sort((a, b) => (b.endTime || 0) - (a.endTime || 0))[0];
+        game = { sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id };
+      } else if (pgnMatch) {
+        const pgnText = pgnMatch[1].trim();
+        const fenTagMatch = /\[FEN\s+"([^"]+)"\]/.exec(pgnText);
+        const fenRoot = fenTagMatch ? parseFenFull(fenTagMatch[1]) : null;
+        if (fenTagMatch && !fenRoot) { setCmdError("유효하지 않은 코드예요."); return; }
+        const sans = parsePgnSans(pgnText);
+        if (!sans.length || !sanSequenceValid(sans, fenRoot)) { setCmdError("유효하지 않은 코드예요."); return; }
+        game = { sans, fenRoot: fenTagMatch ? fenTagMatch[1] : null };
+      } else if (fenMatch) {
+        const fenText = fenMatch[1].trim();
+        if (!looksLikeFen(fenText) || !parseFenFull(fenText)) { setCmdError("유효하지 않은 코드예요."); return; }
+        game = { sans: [], fenRoot: fenText };
+      } else {
+        setCmdError("유효하지 않은 코드예요. (/review -recent, /review -PGN <코드>, /review -FEN <코드>)");
+        return;
+      }
+      setCmdError("");
+      setSending(true);
+      const rid = await reviewGameIdentifier(game);
+      if (!rid) { setSending(false); setCmdError("유효하지 않은 코드예요."); return; }
+      if (game.id) reviewedGameShare(game.id, game).catch(() => { });
+      const ok = await reviewShareSend(myUid, otherUid, rid);
+      setSending(false);
+      if (ok) { setText(""); load(); } else setCmdError("리뷰를 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
     setSending(true);
     const ok = await chatSend(myUid, otherUid, body, emoji);
     setSending(false);
@@ -18041,6 +18271,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const CHAT_COMMANDS = [
     { cmd: "/puzzle -num 000000", desc: "그 번호의 퍼즐을 공유해요(또는 /puzzle 000000)" },
     { cmd: "/legacy N(1~6)", desc: "내 N번째 유산을 공유해요(1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)" },
+    { cmd: "/review -recent", desc: "가장 최근에 플레이한 chess.com 대국의 리뷰를 공유해요" },
+    { cmd: "/review -PGN <코드>", desc: "그 PGN 기보의 리뷰를 공유해요" },
+    { cmd: "/review -FEN <코드>", desc: "그 FEN 포지션의 리뷰를 공유해요" },
   ];
   const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
   const cancelEdit = () => { setEditingId(null); setText(""); };
@@ -18155,6 +18388,71 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                     {lp === undefined ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.ivory }}>불러오는 중…</div>
                       : lp === null ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 10, fontSize: 11, color: T.ivory }}>유산을 찾을 수 없어요.</div>
                       : <LegacyStoneTile typeInfo={lp.typeInfo} entry={lp.entry} onOpen={() => setViewLegacy(lp)} size={150} />}
+                  </div>
+                </div>
+                </div>
+              </div>
+            );
+          }
+          // (v0.3.4 기능) 사용자 요청 — 리뷰 공유 카드. 유산 카드와 같은 단순한 패턴(전달 없이 보기+
+          // 삭제만) — reviewPreviews[review_id]가 undefined면 로딩 중, null이면 복원 실패(예: chess.com
+          // 대국인데 아직 아무도 캐시에 올린 적 없음), 그 외엔 {game,label}.
+          if (m.review_id != null) {
+            const rp = reviewPreviews[m.review_id];
+            const dx = drag && drag.id === m.id ? drag.dx : 0;
+            const d = new Date(m.created_at);
+            const hh = d.getHours(); const ampm = hh < 12 ? "AM" : "PM"; const h12 = String(hh % 12 === 0 ? 12 : hh % 12).padStart(2, "0");
+            const timeTxt = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + " " + ampm + " " + h12 + ":" + String(d.getMinutes()).padStart(2, "0");
+            const onDown = (e) => {
+              dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
+              if (mine) {
+                clearTimeout(longPressTimerRef.current);
+                const anchorEl = e.currentTarget;
+                longPressTimerRef.current = setTimeout(() => {
+                  openMsgMenu(m.id, anchorEl, true);
+                  dragRef.current = null; setDrag(null);
+                }, 480);
+              }
+            };
+            const onMove = (e) => {
+              if (!dragRef.current || dragRef.current.id !== m.id) return;
+              const x = e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0;
+              let d2 = x - dragRef.current.startX;
+              if (Math.abs(d2) > 6) clearTimeout(longPressTimerRef.current);
+              d2 = mine ? Math.max(-96, Math.min(0, d2)) : Math.min(96, Math.max(0, d2));
+              setDrag({ id: m.id, dx: d2 });
+            };
+            const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
+            const onContext = (e) => { if (!mine) return; e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, true); };
+            const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
+            return (
+              <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
+                {!mine && (showAvatar
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                      {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                        : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+                    </button>
+                  : <div style={{ width: 26, flexShrink: 0 }} />)}
+                <div style={{ display: "flex", flexDirection: "column", flex: "0 1 auto", position: "relative" }}
+                  onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+                  onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                {menuFor === m.id && mine && (
+                  <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
+                    <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
+                  </div>
+                )}
+                <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
+                  <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
+                    <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                      {rp === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>불러오는 중…</div>
+                        : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>리뷰를 불러올 수 없어요.</div>
+                        : <>
+                            <BarChart3 size={26} color={T.brass} />
+                            <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{rp.label}</div>
+                          </>}
+                      <button onClick={() => onOpenSharedReview && onOpenSharedReview(m)} disabled={!rp} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: rp ? "pointer" : "default" }}>리뷰 보기</button>
+                    </div>
                   </div>
                 </div>
                 </div>
@@ -19573,7 +19871,7 @@ function FriendRow({ id, pub, right, onClick }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, myLegacies, myIsGM }) {
+function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, myLegacies, myIsGM, myChesscomGames }) {
   const [rows, setRows] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [chatWith, setChatWith] = useState(null);
@@ -19679,7 +19977,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, myLegacies, myIsGM
         )}
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} />
+            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} />
           </div>
         ) : (
           <div ref={rowsRef} style={{ padding: 12, minHeight: 140, maxHeight: narrow ? undefined : 440, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
@@ -19704,7 +20002,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, myLegacies, myIsGM
                         {pinned && <Pin size={10} style={{ color: T.brass, flexShrink: 0 }} fill={T.brass} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
+                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.review_id != null ? "📊 리뷰를 공유했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
                     </span>
                     <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(m.created_at)}</span>
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}
@@ -20148,7 +20446,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenPuzzle, mySolved, myLineSolves, myLegacies, myIsGM }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenPuzzle, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -20244,7 +20542,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} />
+            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} />
           </div>
         ) : sel ? (() => {
           const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
@@ -21517,6 +21815,22 @@ export default function App() {
     setPuzzleActive(pz);
     setShareReferral({ msgId: m.id, no: m.puzzle_no, fromUid: m.from_uid });
   }, []);
+  // (v0.3.4 기능) 사용자 요청 — 채팅의 리뷰 공유 카드 "리뷰 보기" — review_id(reviewGameIdentifier가
+  // 만든 딥링크 식별자)를 resolveReviewIdentifier로 복원해 곧장 리뷰 화면을 연다. chess.com 대국은
+  // 서버 캐시(reviewed_games)까지 한 번 더 거쳐야 하므로 실패할 수 있다(보낸 사람이 아직 그 대국을
+  // 캐시에 올린 적 없는 경우) — 실패하면 조용히 무시한다(ChatPanel이 이미 카드에 "불러올 수 없어요"로
+  // 표시해 뒀다).
+  const onOpenSharedReview = useCallback(async (m) => {
+    if (!m || m.review_id == null) return;
+    const resolved = await resolveReviewIdentifier(m.review_id);
+    if (!resolved) return;
+    if (resolved.kind === "chesscom") {
+      const cached = await reviewedGameFetch(resolved.ccId);
+      if (cached) openReview(cached);
+    } else {
+      openReview(resolved.game);
+    }
+  }, [openReview]);
   useEffect(() => { if (!puzzleActive) return; setPuzzles((prev) => prev.some((x) => x.id === puzzleActive.id) ? prev : ((deletedPuzzles.has(puzzleActive.id) && !solved.has(puzzleActive.id)) ? prev : [...prev, puzzleActive])); }, [puzzleActive]);   // (UX3) 열어본 퍼즐은 로컬 탭에 추가
   // (v0.1.0) 다른 퍼즐을 열거나(일반 탐색) 퍼즐 창을 닫으면 공유 출처를 지운다 — 공유로 들어온 그
   // 퍼즐을 실제로 풀고 있는 세션에서만 보상이 나가도록 좁힌다.
@@ -21650,11 +21964,11 @@ export default function App() {
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} />}</AnimatePresence>
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} />}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
-      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} />}
+      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} />}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} ticketReward={tierUpAnim.ticketReward} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
