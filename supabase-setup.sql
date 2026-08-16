@@ -265,6 +265,12 @@ alter table public.chat_messages add column if not exists edited boolean not nul
 -- 두지 않고, 받는 쪽 화면이 from_uid(=유산 주인)의 "지금" 공개 프로필(profiles.pub.legacies)에서
 -- 그 슬롯을 그대로 읽어와 보여준다(legacyShareSend).
 alter table public.chat_messages add column if not exists legacy_slot text;
+-- (v0.3.4 기능) 리뷰 공유 카드 — puzzle_no/legacy_slot과 같은 패턴. 설정돼 있으면 이 메시지는 리뷰
+-- 미리보기 카드로 렌더링된다. 값은 리뷰 딥링크 식별자 그 자체(reviewGameIdentifier가 만든 문자열 —
+-- chess.com 대국은 숫자 ID, FEN 분석은 FEN 원문, PGN 분석은 암호화된 PGN)라 리뷰와 달리 별도 서버
+-- 캐시가 필요 없다(chess.com 대국만 reviewed_games를 통해 복원되고, FEN/PGN은 식별자 자체가 데이터를
+-- 담고 있다 — resolveReviewIdentifier 참고).
+alter table public.chat_messages add column if not exists review_id text;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -743,35 +749,69 @@ grant insert, update, delete on public.daily_puzzles_dev to authenticated;
 -- 3번 섹션, is_content_editor만 쓸 수 있는 단일 값 콘텐츠 블롭)에 개발자/공동개발자만 등록할 수
 -- 있었다. 이제 로그인한 모든 유저가 짧은 설명을 남길 수 있도록 완전히 별도 테이블로 분리한다 —
 -- app_content는 그대로 두고(다른 콘텐츠가 계속 그 테이블을 쓰므로) 이 기능만 여기로 옮겼다.
--- 1인당 같은 수에는 1개만(스팸 방지 — puzzle_likes/puzzle_solvers와 같은 1인 1행 패턴). 수정·삭제는
--- 개발자/공동개발자만 가능하고(is_content_editor), 작성자 본인도 스스로 고치거나 지울 수 없다 —
--- 이 캐러셀은 "게시판"이라 최종 편집권을 항상 운영진에게 남기는 설계다.
+-- 1인당 같은 수에 남길 수 있는 개수는 계정 등급에 따라 다르다(v0.3.4, 사용자 요청) — 개발자/
+-- 공동개발자(is_content_editor, app_content·master_games_dev와 동일한 헬퍼 재사용)는 무제한,
+-- 그랜드마스터 티어에 도달한 일반 계정은 2개까지, 그 외는 기존과 같이 1개만(스팸 방지 —
+-- puzzle_likes/puzzle_solvers와 같은 1인 1행 패턴의 확장). 그래서 고정된 unique(move_key, uid)
+-- 제약 대신, 아래 move_notes_cap()이 계정마다 다른 한도를 계산하고 move_notes_moderate 트리거가
+-- 삽입 시점에 그 한도를 검사한다. 수정·삭제는
+-- 작성자 본인(자기 글에 한해)과 개발자/공동개발자(모든 글, is_content_editor)가 함께 할 수 있다
+-- (v0.3.4 변경 — 예전엔 본인도 스스로 못 고치고 개발자에게만 최종 편집권이 있었다).
 create table if not exists public.move_notes (
   id bigint generated always as identity primary key,
   move_key text not null,
   uid uuid not null references auth.users(id) on delete cascade,
   author_username text not null default '',
   body text not null check (char_length(body) between 1 and 100),
-  created_at timestamptz not null default now(),
-  unique (move_key, uid)
+  created_at timestamptz not null default now()
 );
+-- (v0.3.4 변경) 예전엔 여기 unique(move_key, uid)로 "1인 1개"를 DB 제약으로 강제했다 — 계정 등급별로
+-- 허용 개수가 달라지므로 고정 제약을 걷어내고, 그 자리를 아래 move_notes_moderate 트리거의 동적
+-- 개수 검사로 대신한다(기존에 이미 이 제약이 걸려 있던 배포본을 위한 정리).
+alter table public.move_notes drop constraint if exists move_notes_move_key_uid_key;
 create index if not exists idx_move_notes_key on public.move_notes(move_key, created_at);
 alter table public.move_notes enable row level security;
+
+-- (v0.3.4 기능) 이 계정이 한 수에 남길 수 있는 수 설명 개수 한도 — 개발자/공동개발자
+-- (is_content_editor, 처음엔 개발자 계정만이었다가 사용자 요청으로 공동개발자까지 넓힘)는
+-- 사실상 무제한, 그랜드마스터
+-- 티어(누적 XP가 src/App.jsx TIER_XP_REQ 총합인 200,000 이상 — 그 배열이 바뀌면 이 숫자도 함께
+-- 맞춰야 한다)에 도달한 계정은 2개, 그 외는 1개. XP는 클라이언트가 소유한 user_progress.progress
+-- 블롭 값을 그대로 신뢰한다(이 앱의 XP·티어 체계 전체가 이미 같은 신뢰 모델이다 — 서버가 직접
+-- XP를 증감시키지 않는다, 7-1번 섹션 주석 참고). auth.uid()가 없으면(비로그인) 1을 돌려주는데,
+-- 어차피 insert 정책이 로그인 없이는 애초에 막는다.
+create or replace function public.move_notes_cap()
+returns int language sql stable security definer set search_path = public as $$
+  select case
+    when public.is_content_editor(auth.uid()) then 2147483647
+    when coalesce((select (up.progress->>'xp')::bigint from public.user_progress up where up.id = auth.uid()), 0) >= 200000 then 2
+    else 1
+  end;
+$$;
+grant execute on function public.move_notes_cap() to authenticated;
 
 -- 등록·수정 시 서버에서도 흔한 욕설·혐오 표현을 다시 검사한다 — 클라이언트 필터(src/App.jsx의
 -- containsBannedWord)는 REST를 직접 호출하면 우회할 수 있으므로, 실제 강제력은 이 트리거에서
 -- 나온다. 숫자·영문·한글만 남기고 나머지(공백·구두점·이모지 등)는 전부 지운 뒤 부분 문자열로
 -- 대조한다 — 같은 단어를 특수문자로 쪼개 피하는 경우("시🌟발")도 걸러진다. 완벽한 검열은 아니며,
 -- 이를 뚫는 표현은 개발자가 delete 정책(아래)으로 사후에 지운다.
+-- (v0.3.4 기능) INSERT일 때만 위 move_notes_cap()으로 이 계정이 이 수(move_key)에 이미 남긴 개수를
+-- 검사한다 — UPDATE(기존 글 수정)는 새 글을 만드는 게 아니므로 이 검사와 무관하다.
 create or replace function public.move_notes_moderate()
 returns trigger language plpgsql as $$
-declare v_norm text; v_word text;
+declare v_norm text; v_word text; v_cnt int;
   v_words text[] := array[
     '시발','씨발','씨팔','시팔','개새끼','개새기','병신','븅신','좆','좃','자지','보지','걸레년',
     '미친놈','미친년','닥쳐','꺼져','죽어라','죽여버','강간','섹스','야동','포르노',
     'fuck','shit','bitch','asshole','cunt','nigger','nigga','faggot','rape','porn'
   ];
 begin
+  if TG_OP = 'INSERT' then
+    select count(*) into v_cnt from public.move_notes where move_key = new.move_key and uid = new.uid;
+    if v_cnt >= public.move_notes_cap() then
+      raise exception 'move_notes_cap_exceeded';
+    end if;
+  end if;
   v_norm := lower(regexp_replace(new.body, '[^0-9a-zA-Zㄱ-ㆎ가-힣]', '', 'g'));
   foreach v_word in array v_words loop
     if v_norm like '%' || v_word || '%' then
@@ -790,11 +830,12 @@ drop policy if exists "move notes insert" on public.move_notes;
 drop policy if exists "move notes update" on public.move_notes;
 drop policy if exists "move notes delete" on public.move_notes;
 -- 읽기는 누구나(로그인 없이도 학습 탭을 쓸 수 있으므로), 등록은 로그인 유저 본인 이름으로만,
--- 수정·삭제는 개발자/공동개발자만(app_content·master_games_dev와 동일한 is_content_editor 재사용).
+-- 수정·삭제는 작성자 본인(auth.uid() = uid, 자기 글만) 또는 개발자/공동개발자(app_content·
+-- master_games_dev와 동일한 is_content_editor 재사용, 모든 글) 둘 중 하나만 만족하면 된다.
 create policy "move notes read"   on public.move_notes for select using (true);
 create policy "move notes insert" on public.move_notes for insert with check (auth.uid() = uid);
-create policy "move notes update" on public.move_notes for update using (public.is_content_editor(auth.uid())) with check (public.is_content_editor(auth.uid()));
-create policy "move notes delete" on public.move_notes for delete using (public.is_content_editor(auth.uid()));
+create policy "move notes update" on public.move_notes for update using (auth.uid() = uid or public.is_content_editor(auth.uid())) with check (auth.uid() = uid or public.is_content_editor(auth.uid()));
+create policy "move notes delete" on public.move_notes for delete using (auth.uid() = uid or public.is_content_editor(auth.uid()));
 grant select on public.move_notes to anon, authenticated;
 grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
@@ -902,3 +943,165 @@ returns table(avg_ms numeric, sample_count bigint) language sql stable as $$
 $$;
 grant execute on function public.puzzle_line_avg_solve_ms(bigint, text) to anon, authenticated;
 
+-- ============================================================================
+-- 19) chat_conv_prefs — 채팅 목록의 대화방별 설정(고정/알림 끄기)과 "나에게서만 삭제" 워터마크 (v0.3.4)
+-- ============================================================================
+-- 대화(conversation) 자체는 별도 테이블 없이 chat_messages를 클라이언트가 상대별로 묶어서 쓰는
+-- 구조라, 그 목록 화면에서만 의미 있는 "나만의" 설정(고정 여부·알림 끄기 여부·내가 지운 시점)을
+-- 담을 곳이 없었다. (uid, other_uid) 조합마다 딱 한 행 — pinned/muted는 uid 본인이 자유롭게
+-- 읽고 쓴다(일반 RLS, RPC 불필요). cleared_before(대화 삭제 워터마크)만은 상대방의 워터마크를
+-- 함께 봐야 영구 삭제 여부를 판단할 수 있어 아래 SECURITY DEFINER RPC로 처리한다.
+create table if not exists public.chat_conv_prefs (
+  uid uuid not null references auth.users(id) on delete cascade,
+  other_uid uuid not null references auth.users(id) on delete cascade,
+  pinned boolean not null default false,
+  muted boolean not null default false,
+  cleared_before timestamptz,
+  updated_at timestamptz not null default now(),
+  primary key (uid, other_uid)
+);
+alter table public.chat_conv_prefs enable row level security;
+drop policy if exists "conv prefs own" on public.chat_conv_prefs;
+create policy "conv prefs own" on public.chat_conv_prefs for all using (auth.uid() = uid) with check (auth.uid() = uid);
+grant select, insert, update, delete on public.chat_conv_prefs to authenticated;
+
+-- 대화 삭제("나에게서만 삭제") — 내 워터마크(cleared_before)를 지금 시각으로 올려 두면, 클라이언트는
+-- 이후 그 시각 이전 메시지를 더 이상 불러오지 않는다(나에게만 안 보임, 상대방 화면엔 그대로 남음).
+-- 상대방도 이미 자신의 워터마크를 기록해 두었다면(=상대도 그 대화를 지운 적이 있다면), 두 워터마크
+-- 중 더 이른 시점까지의 메시지는 이제 양쪽 어디에서도 다시 보일 일이 없으므로 서버에서 영구적으로
+-- 삭제한다 — chat_edit_message와 같은 이유(상대 소유 행까지 들여다봐야 함)로 SECURITY DEFINER.
+create or replace function public.chat_clear_conversation(p_other uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid();
+  v_now timestamptz := now();
+  v_other_cleared timestamptz;
+begin
+  insert into public.chat_conv_prefs(uid, other_uid, cleared_before, updated_at)
+    values (v_me, p_other, v_now, v_now)
+    on conflict (uid, other_uid) do update set cleared_before = v_now, updated_at = v_now;
+  select cleared_before into v_other_cleared from public.chat_conv_prefs where uid = p_other and other_uid = v_me;
+  if v_other_cleared is not null then
+    delete from public.chat_messages
+      where ((from_uid = v_me and to_uid = p_other) or (from_uid = p_other and to_uid = v_me))
+        and created_at <= least(v_now, v_other_cleared);
+  end if;
+end; $$;
+grant execute on function public.chat_clear_conversation(uuid) to authenticated;
+
+
+-- ============================================================================
+-- 20) puzzles 생성자 — 퍼즐 제작자 표시·본인 퍼즐 편집권(1시간 주기)·개발자의 재지정 (v0.3.4)
+-- ============================================================================
+-- 지금까지 puzzles(위 7번 섹션)는 "no"만으로 식별되는 완전한 크라우드소싱 데이터라 어느 유저가
+-- 처음 만들었는지 전혀 기록하지 않았다. 이제 그 최초 생성자를 별도 컬럼으로 기록해 풀이 카드에
+-- 표시하고, 생성자 본인에게는 그 퍼즐에 한해 개발자와 같은 라인 추가/삭제·재생성 권한을 준다.
+-- data(퍼즐 본문 jsonb) 자체는 기존처럼 누구나 갱신할 수 있어야 한다(테마 태그 병합 등 크라우드
+-- 소싱 자체는 그대로 유지 — puzzleShare 참고) — 그래서 생성자 식별 정보는 data 안이 아니라 별도
+-- 컬럼으로 분리하고, 그 컬럼들은 REST 직접 update grant를 아예 주지 않는다(update(data)만 grant됨,
+-- 아래 puzzle_solve/puzzle_like_toggle과 같은 패턴) — 오직 이 섹션의 SECURITY DEFINER RPC 세 개
+-- (테이블 소유자 권한으로 실행되어 grant를 우회함)로만 바뀐다.
+alter table public.puzzles add column if not exists creator_uid uuid references auth.users(id) on delete set null;
+alter table public.puzzles add column if not exists creator_username text;
+alter table public.puzzles add column if not exists creator_edited_at timestamptz;
+create index if not exists idx_puzzles_creator_uid on public.puzzles(creator_uid);
+
+-- 생성자 "선점" — 아직 아무도 생성자로 기록되지 않은 퍼즐(creator_uid is null)에 한해, 처음
+-- 성공적으로 호출한 로그인 유저를 생성자로 기록한다. puzzleShare가 퍼즐을 서버에 새로 공유할
+-- 때마다 호출하므로(멱등 — 이미 생성자가 있으면 조용히 아무 일도 안 함), 같은 실수를 나중에
+-- 다시 만난 다른 유저가 재호출해도 원래 생성자가 바뀌지 않는다. 비로그인 게스트가 먼저 만들어
+-- 공유한 퍼즐은 게스트가 생성자로 기록될 수 없으므로(auth.uid() is null) 생성자 없는 채로 남고,
+-- 이후 처음 로그인한 상태로 다시 공유하는 유저가 대신 생성자가 된다.
+create or replace function public.puzzle_claim_creator(p_no bigint)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_username text;
+begin
+  if auth.uid() is null then return; end if;
+  select username into v_username from public.profiles where id = auth.uid();
+  update public.puzzles set creator_uid = auth.uid(), creator_username = coalesce(v_username, ''), creator_edited_at = null
+  where no = p_no and creator_uid is null;
+end; $$;
+grant execute on function public.puzzle_claim_creator(bigint) to authenticated;
+
+-- 라인 추가/삭제·재생성 저장 — 개발자/공동개발자(is_content_editor)는 언제든, 그 퍼즐의 생성자
+-- 본인은 마지막으로 이 함수를 성공적으로 호출한 지 1시간이 지난 뒤에만(creator_edited_at 기준)
+-- 호출할 수 있다. 개발자 호출은 creator_edited_at을 건드리지 않는다(생성자의 다음 편집 가능
+-- 시점과 무관 — 개발자가 손댔다고 생성자의 주기가 당겨지거나 늦춰지지 않는다).
+-- p_tag_seq/p_target/p_puzzle_type은 선택값 — null이면 기존 data의 해당 필드를 그대로 둔다.
+-- 개발자가 CONTENT.puzzleOverrides(app_content, is_content_editor 전용 블롭)로 이 번호에 이미
+-- 만들어 둔 재조정이 있으면 puzzleTreeOf가 그 override를 이 data보다 항상 우선시켜, 생성자가
+-- 여기서 저장한 내용이 다음 로드 때 가려질 수 있다 — 그 충돌을 막기 위해 이 함수가 그 override
+-- 항목이 있으면 함께 지운다(SECURITY DEFINER라 app_content RLS와 무관하게 가능).
+create or replace function public.puzzle_creator_save(
+  p_no bigint, p_tree jsonb, p_lines jsonb,
+  p_tag_seq int default null, p_target int default null, p_puzzle_type text default null
+) returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_creator uuid; v_last timestamptz; v_is_editor boolean;
+begin
+  select creator_uid, creator_edited_at into v_creator, v_last from public.puzzles where no = p_no for update;
+  if not found then raise exception 'puzzle_not_found'; end if;
+  v_is_editor := public.is_content_editor(auth.uid());
+  if not v_is_editor then
+    if v_creator is null or v_creator <> auth.uid() then raise exception 'not_puzzle_creator'; end if;
+    if v_last is not null and now() < v_last + interval '1 hour' then raise exception 'edit_cooldown'; end if;
+  end if;
+  update public.puzzles set
+    data = data
+      || jsonb_build_object('tree', p_tree, 'lines', p_lines)
+      || case when p_tag_seq is null then '{}'::jsonb else jsonb_build_object('tagSeq', p_tag_seq) end
+      || case when p_target is null then '{}'::jsonb else jsonb_build_object('target', p_target) end
+      || case when p_puzzle_type is null then '{}'::jsonb else jsonb_build_object('puzzleType', p_puzzle_type) end,
+    creator_edited_at = case when v_is_editor then creator_edited_at else now() end
+  where no = p_no;
+  update public.app_content set value = value #- array['puzzleOverrides', p_no::text]
+  where key = 'global' and (value -> 'puzzleOverrides') ? p_no::text;
+end; $$;
+grant execute on function public.puzzle_creator_save(bigint, jsonb, jsonb, int, int, text) to authenticated;
+
+-- 생성자 재지정 — 개발자/공동개발자 전용. p_target_username이 비어 있으면 개발자 계정(DEV_ACCOUNT,
+-- src/App.jsx와 동일한 값) 명의로 회수하고, 값이 있으면 그 아이디의 유저에게 생성 권한을 양도한다
+-- (둘 다 원래 생성자의 그 퍼즐 편집권을 박탈하는 효과 — 대상이 바뀌므로). 새 생성자의 1시간 편집
+-- 주기는 재지정 시점에 초기화된다(creator_edited_at을 null로).
+create or replace function public.puzzle_reassign_creator(p_no bigint, p_target_username text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_uid uuid; v_uname text;
+begin
+  if not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
+  if p_target_username is null or btrim(p_target_username) = '' then
+    select id, username into v_uid, v_uname from public.profiles where username = 'openchesskr';
+  else
+    select id, username into v_uid, v_uname from public.profiles where username = btrim(p_target_username);
+    if v_uid is null then raise exception 'user_not_found'; end if;
+  end if;
+  update public.puzzles set creator_uid = v_uid, creator_username = v_uname, creator_edited_at = null where no = p_no;
+end; $$;
+grant execute on function public.puzzle_reassign_creator(bigint, text) to authenticated;
+
+-- ============================================================================
+-- 21) reviewed_games — 게임 리뷰 고유 URL의 chess.com 대국 캐시 (v0.3.4)
+-- ============================================================================
+-- 사용자 요청: 리뷰 페이지에 openchess.kr/review/(대국 식별자) 형태의 고유 URL을 붙인다. chess.com
+-- 대국은 chess.com이 이미 발급한 숫자 게임 ID를 그대로 식별자로 쓰는데, chess.com 공개 API는 "이
+-- ID의 대국 하나"를 바로 조회하는 엔드포인트를 제공하지 않는다(플레이어별 월간 아카이브로만 조회
+-- 가능) — 그래서 그 링크를 처음 만든 사람이 아닌 다른 방문자가 딥링크로 열면 원본 대국을 되찾을
+-- 방법이 없다. puzzles 테이블과 똑같은 크라우드소싱 방식으로: 어떤 유저든 chess.com 대국을 리뷰로
+-- 열면 그 순간 이 테이블에 게임 데이터를 올려 두고(멱등 upsert), 이후 누구든 그 ID로 딥링크를 열면
+-- 여기서 그대로 복원한다. FEN 분석·PGN 분석 리뷰는 식별자 자체가 그 내용을 담고 있어(URL만으로
+-- 완전히 복원 가능) 이 캐시가 필요 없다.
+create table if not exists public.reviewed_games (
+  cc_id bigint primary key,
+  data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.reviewed_games enable row level security;
+drop policy if exists "reviewed games read"   on public.reviewed_games;
+drop policy if exists "reviewed games insert" on public.reviewed_games;
+drop policy if exists "reviewed games update" on public.reviewed_games;
+-- (puzzles 테이블과 동일한 판단) 게임 데이터를 조작해도 이득 볼 카운터·랭킹이 이 테이블엔 전혀
+-- 없으므로, insert/update 모두 열어 둔다 — 크라우드소싱 캐시의 성격상 최초 발견자 외에도 누구나
+-- 갱신할 수 있어야 한다(puzzles.data와 동일한 이유).
+create policy "reviewed games read"   on public.reviewed_games for select using (true);
+create policy "reviewed games insert" on public.reviewed_games for insert with check (true);
+create policy "reviewed games update" on public.reviewed_games for update using (true) with check (true);
+grant select, insert, update on public.reviewed_games to anon, authenticated;
