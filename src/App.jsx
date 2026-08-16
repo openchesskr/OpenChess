@@ -10414,6 +10414,49 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   }, [items, edges, groups, cullVersion]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
+  // (사용자 요청, 버그 수정) v0.3.3에서 카드를 position:fixed(뷰포트 좌표계)로 옮겼지만, 그 좌표
+  // 자체(left/top/tailPos)는 여전히 매 렌더 pan/zoom을 다시 읽어 앵커(수 블록)를 계속 따라가도록
+  // 계산했다 — 그래서 드래그·휠 확대 도중에도 카드가 화면 위를 실시간으로 미끄러지듯 움직였는데,
+  // 그 이동 자체가 clamp 경계를 넘나들며 말풍선 꼬리(tailPos) 각도가 뒤틀리고, 클램프가 한 프레임
+  // 늦게 따라잡는 순간 잠깐씩 화면 밖으로 잘려 보이는 근본 원인이었다. 이제 카드를 연 "그 순간"의
+  // pan/zoom으로 좌표를 딱 한 번만 계산해 openKey가 바뀌기 전까지 그대로 얼려 두고(useMemo dep이
+  // openKey뿐이라 pan/zoom이 바뀌어도 재계산되지 않는다), 이후 사용자가 실제로 스크롤(팬)하거나
+  // 확대/축소하면 카드를 따라오게 하는 대신 아예 닫아버린다(아래 useEffect) — 항상 화면 안에,
+  // 뒤틀리지 않은 고정된 모양으로만 보인다.
+  const frozenCard = useMemo(() => {
+    if (!openItem || !openParentM) return null;
+    const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, left: 0, top: 0 };
+    const oc = coord(openItem);
+    const nodeX = rect.left + pan.x + zoom * oc.x, nodeY = rect.top + pan.y + zoom * oc.y;
+    const nodeW = boxW * zoom, nodeH = boxH * zoom;
+    const cardScale = vertical ? 0.65 : 1;
+    const vw = typeof window !== "undefined" ? window.innerWidth : 480;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    const CARD_W = Math.max(240, Math.min(300, vw - 32));
+    const cardH = 460 * cardScale;
+    const BOTTOM_SAFE = 66 + 40;
+    const nodeCX = nodeX + nodeW / 2, nodeCY = nodeY + nodeH / 2;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+    let left, top, tailPos;
+    if (vertical) {
+      left = clamp(nodeCX - CARD_W / 2, 8, Math.max(8, vw - CARD_W - 8));
+      top = clamp(nodeY + nodeH + 11, 8, Math.max(8, vh - BOTTOM_SAFE - cardH));
+      tailPos = clamp(nodeCX - left, 20, CARD_W - 20);
+    } else {
+      left = clamp(nodeX + nodeW + 11, 8, Math.max(8, vw - CARD_W - 8));
+      top = clamp(nodeCY - cardH / 2, 8, Math.max(8, vh - BOTTOM_SAFE - cardH));
+      tailPos = clamp(nodeCY - top, 20, cardH - 20);
+    }
+    return { key: openItem.key, item: openItem, parentM: openParentM, left, top, tailPos, cardScale, CARD_W, pan, zoom };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 의도적으로 openKey에만 반응한다(위 주석 참고): pan/zoom은 "연 순간" 값을 얼려두는 용도로만 읽는다.
+  }, [openKey]);
+  // 카드가 열려 있는 동안 실제로 팬(스크롤)하거나 확대/축소하면, 얼려 둔 좌표를 계속 우겨넣는 대신
+  // 카드를 그냥 닫는다 — "스크롤하면 같이 사라지도록" 요청 그대로.
+  useEffect(() => {
+    if (!frozenCard) return;
+    if (pan.x !== frozenCard.pan.x || pan.y !== frozenCard.pan.y || zoom !== frozenCard.zoom) onToggleOpen(frozenCard.key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pan, zoom]);
   return (
     <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
@@ -10523,53 +10566,18 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         </div>
         <DexNodesLayer items={culledItems} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} electric={electric} selectedTargetR={selectedTargetR} />
       </div>
-      {/* (버그 수정) 수 설명 카드가 팬/줌 트랜스폼이 걸린(scale(zoom)) 안쪽에 있으면 카드 자신도
-          모식도 확대/축소를 그대로 따라가 축소 시엔 잘리고 확대 시엔 지나치게 커졌다 — 트랜스폼
-          바깥(화면 좌표계)으로 꺼내, 앵커(그 수 블록)의 화면상 위치만 pan/zoom으로 계산해 따라가되
-          카드 자신의 크기는 항상 창(boxRef) 크기에 비례한 고정 비율로 유지한다.
-          (사용자 요청, 버그 수정) v0.3.2에서 카드를 모식도 박스(boxRef, overflow:hidden) 안쪽
-          좌표계에 clamp했는데도, 실기기(모바일)에서 카드가 박스 밖 — 특히 화면 하단 고정
-          내비게이션 위로 — 삐져나와 보이는 현상이 계속 나왔다(스크린 녹화로 재현 확인). 카드를
-          박스의 로컬 좌표(position:absolute) 대신 뷰포트 기준 고정 좌표(position:fixed)로 바꾸고,
-          clamp 기준도 박스 자신의 크기가 아니라 실제 화면 크기(window.innerWidth/innerHeight,
-          하단 고정 내비게이션 높이만큼 여유를 뺀 값)로 잡는다 — 박스가 실제로 화면에 얼마나
-          보이는지와 무관하게, 카드는 항상 화면(뷰포트) 안에만 그려진다. */}
-      {openItem && openParentM && (() => {
-        const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, left: 0, top: 0 };
-        const oc = coord(openItem);
-        // 박스 로컬 좌표(pan/zoom 기준)를 뷰포트 좌표로 변환 — rect.left/top이 박스의 화면상 위치.
-        const nodeX = rect.left + pan.x + zoom * oc.x, nodeY = rect.top + pan.y + zoom * oc.y;
-        const nodeW = boxW * zoom, nodeH = boxH * zoom;
-        // (v0.2.2 UI#2) 모바일(세로 모식도)에서는 설명 카드를 65% 크기로 줄인다 — transformOrigin을
-        // 꼬리(블록에 맞닿는 지점)에 두어, 축소해도 꼬리는 블록에 그대로 붙어 있게 한다.
-        const cardScale = vertical ? 0.65 : 1;
-        const vw = typeof window !== "undefined" ? window.innerWidth : 480;
-        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-        const CARD_W = Math.max(240, Math.min(300, vw - 32));
-        const cardH = 460 * cardScale;
-        // 하단 고정 내비게이션(66px + 안전 영역)에 가리지 않도록 넉넉히 여유를 둔다.
-        const BOTTOM_SAFE = 66 + 40;
-        const nodeCX = nodeX + nodeW / 2, nodeCY = nodeY + nodeH / 2;
-        const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
-        let left, top, tailPos;
-        if (vertical) {
-          // 블록 아래에 두고, 꼬리는 위로 — 블록을 가리지 않는다.
-          left = clamp(nodeCX - CARD_W / 2, 8, Math.max(8, vw - CARD_W - 8));
-          top = clamp(nodeY + nodeH + 11, 8, Math.max(8, vh - BOTTOM_SAFE - cardH));
-          tailPos = clamp(nodeCX - left, 20, CARD_W - 20);
-        } else {
-          // 블록 오른쪽에 두고, 꼬리는 왼쪽으로.
-          left = clamp(nodeX + nodeW + 11, 8, Math.max(8, vw - CARD_W - 8));
-          top = clamp(nodeCY - cardH / 2, 8, Math.max(8, vh - BOTTOM_SAFE - cardH));
-          tailPos = clamp(nodeCY - top, 20, cardH - 20);
-        }
-        return (
-          <DexMoveBlock path={openItem.path.slice(0, -1)} m={openParentM} isUnlocked={openItem.unlocked}
-            cc={ccReady ? chesscom.analyze(openItem.path) : null} onClose={() => onToggleOpen(openItem.key)} onOpenOpening={onOpenOpening}
-            vertical={vertical} scale={cardScale} tailPos={tailPos}
-            style={{ position: "fixed", left, top, width: CARD_W }} />
-        );
-      })()}
+      {/* (버그 수정) 카드는 위 frozenCard(useMemo, dep=[openKey])가 "연 순간"에 딱 한 번 계산해 둔
+          좌표를 그대로 쓴다 — 뷰포트 기준 고정 좌표(position:fixed)라는 점은 v0.3.2와 같지만, 그
+          좌표 자체를 pan/zoom이 바뀔 때마다 다시 계산해 앵커를 따라가게 하지는 않는다(그 실시간
+          추적이 드래그·휠 확대 중 말풍선 꼬리 뒤틀림과 프레임 지연 순간의 잘림의 원인이었다). 팬·
+          줌이 실제로 바뀌면 위 useEffect가 카드를 아예 닫아버리므로, 카드가 떠 있는 동안은 항상
+          연 순간 그대로의 고정된 모양으로만 보인다. */}
+      {frozenCard && (
+        <DexMoveBlock path={frozenCard.item.path.slice(0, -1)} m={frozenCard.parentM} isUnlocked={frozenCard.item.unlocked}
+          cc={ccReady ? chesscom.analyze(frozenCard.item.path) : null} onClose={() => onToggleOpen(frozenCard.key)} onOpenOpening={onOpenOpening}
+          vertical={vertical} scale={frozenCard.cardScale} tailPos={frozenCard.tailPos}
+          style={{ position: "fixed", left: frozenCard.left, top: frozenCard.top, width: frozenCard.CARD_W }} />
+      )}
     </div>
   );
 }
@@ -15418,6 +15426,7 @@ const CHANGELOG = [
       "새로 만드는 퍼즐은 명확히 기물을 따내고(3점 이상) 그 이득이 확실히 유지될 때 곧바로 수순이 끝나도록 만들어져요 — 순간적으로만 유리해 보였다 몇 수 뒤 다시 균형을 찾는 애매한 수순이 줄어들어요.",
       "학습 탭·게임 리뷰의 코치 코멘트에 체크메이트 전용 설명이 생겼어요 — 탁월한 수로 만든 외통, 유일한 외통 수순을 각각 따로 짚어줘요. 유일한 수·탁월한 수 코멘트 끝에는 이제 체스 기보 표기(!·!!)가 붙어요.",
       "유산 재생에서 유산 수가 다 등장하기도 전에 주변 수 무너짐 연출이 먼저 시작될 수 있던 문제를 고쳐, 이제 유산 수가 확실히 다 나타난 뒤에만 무너짐이 시작돼요.",
+      "도감 탭 오프닝 트리에서 수 설명 카드가 여전히 화면 밖으로 잘리거나 스크롤 중 말풍선 모양이 뒤틀려 보이던 문제를 고쳤어요 — 이제 카드는 연 순간의 고정된 위치·모양으로만 뜨고, 화면을 스크롤(팬)하거나 확대·축소하면 카드가 함께 사라져요.",
     ]
   },
   {
