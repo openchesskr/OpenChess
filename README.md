@@ -26,6 +26,14 @@
 
 ## 버전 기록
 
+### OpenChess v0.3.5 — 2026/8/16
+
+**버그 수정 — 리뷰 공유 딥링크가 실제 티켓 보유 여부와 무관하게 항상 "티켓 부족"으로 막히던 문제**
+지시 없이 코드베이스 자체 감사로 발견: v0.3.4에서 게임 리뷰에 고유 주소(`/review/<식별자>`)가 생겼는데, 그 주소로 새로고침·직접 진입하면 실제로는 리뷰 티켓이 있거나 이미 열어봤던 리뷰라도 항상 `NoReviewTicketsModal`이 뜨는 회귀가 있었다. 원인은 마운트 시 진입 주소를 해석하는 `useEffect(..., [])`(App 루트, `/review`·`/(퍼즐번호)-(라인번호)` 딥링크를 되살리는 자리)가 콜백 안에서 `openReview`를 호출하는데, 이 콜백 자체가 이 effect의 dep 배열이 `[]`라 **최초 렌더 시점**의 `openReview` 클로저에 영구히 고정된다는 데 있었다 — `openReview`는 `useCallback([devUnlockAll, reviewUnlocked, reviewTickets])`으로 매 렌더 갱신되는 함수지만, 딥링크 effect는 그 함수가 갱신될 때마다 다시 구독하는 게 아니라 마운트 때 캡처한 단 하나의 버전만 영원히 참조한다. 마운트 직후 시점의 `reviewTickets`/`reviewUnlocked`는 아직 로컬·계정 복원이 끝나기 전의 초기값(`0`, 빈 `Set`)이므로, `openReview` 안의 `if (reviewTickets<=0) { setTicketBlockedOpen(true); return; }` 분기가 실제 값과 무관하게 항상 참이 됐다 — 채팅의 "리뷰 보기"(`onOpenSharedReview`, 클릭 시점의 최신 `openReview`를 씀)는 이 문제가 없고, 순수 URL 직접 진입·새로고침 경로만 영향을 받는다는 점도 이 클로저 캡처 구조로 설명된다. 이 딥링크 해석 effect를 `loaded`(로컬+계정 복원이 모두 끝난 뒤 서게 되는 기존 플래그) 의존성으로 바꿔, `loaded`가 `false→true`로 바뀌는 그 렌더의(=실제 값을 반영한) `openReview`를 쓰도록 고쳤다. 퍼즐 딥링크(`/(퍼즐번호)-(라인번호)`)는 티켓 게이팅이 없어 원래도 문제는 없었지만 같은 effect 안에 있어 함께 `loaded`를 기다리게 됐다 — 열리는 시점이 복원 완료 이후로 약간(보통 1개 네트워크 왕복 이내) 밀리는 정도의 트레이드오프.
+
+**버그 수정 — 퍼즐 생성자가 자기 퍼즐을 편집한 직후 곧바로 재편집을 시도하면 부정확한 오류가 뜨던 문제**
+같은 감사에서 발견: `PuzzleSolver`의 `creatorInfo`(생성자 uid·`editedAt`, 1시간 편집 주기 판정에 씀)는 퍼즐을 열 때 서버에서 한 번만 불러오고, 생성자 본인의 저장 경로(`persistEdit`의 `puzzleCreatorSave` 분기)는 성공해도 이 로컬 값을 갱신하지 않았다. 서버는 저장 성공 시 `editedAt`을 갱신해 새 1시간 주기를 시작하지만, 클라이언트의 `creatorCooldownMs`(`creatorInfo.editedAt` 기반 `useMemo`)는 낡은 값을 계속 써 마치 편집 가능한 것처럼 `canEditPuzzle`을 계속 허용했다 — 같은 세션에서 곧바로 다시 편집을 시도하면 서버 RPC가 주기 제한으로 거절하는데도, UI엔 정확한 사유("아직 편집 주기가 안 지났어요") 대신 catch 블록의 범용 문구("저장에 실패했어요. 잠시 후 다시 시도해주세요.")만 떴다. `persistEdit`의 생성자 저장 성공 직후 `setCreatorInfo`로 `editedAt`을 지금 시각으로 로컬 반영해, 다음 시도부터 `creatorCooldownMs`가 곧바로 올바른 값을 갖도록 고쳤다.
+
 ### OpenChess v0.3.4 — 2026/8/13
 
 **기능 — 게임 리뷰 페이지에 공유 버튼(인앱 친구·외부 앱)**

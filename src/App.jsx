@@ -13306,6 +13306,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     } else {
       await puzzleCreatorSave(puzzleNoForTag, treeArg, linesArg, { tagSeq: seq, ...(extra || {}) });
       if (seq != null) setCreatorTagSeq(seq);
+      // (v0.3.5 버그 수정) 서버는 이 저장으로 editedAt을 지금 시각으로 갱신해 새 1시간 주기를 시작하는데,
+      // creatorInfo는 퍼즐을 열 때 한 번만 불러온 값이라 그대로 두면 낡은 editedAt(주기가 이미 지난
+      // 것처럼 보이는 값)이 남는다 — 같은 세션에서 곧바로 다시 편집을 시도하면 UI는 허용된 것처럼
+      // 보이다가 서버 RPC가 주기 제한으로 거절해, 정확한 "아직 편집 주기가 안 지났어요" 대신 뜬금없는
+      // "저장에 실패했어요" 오류만 뜨는 원인이었다. 로컬에도 즉시 반영해 둔다.
+      setCreatorInfo((prev) => prev ? { ...prev, editedAt: new Date().toISOString() } : prev);
     }
     setOverrideTree(treeArg);
   };
@@ -15918,6 +15924,12 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.3.5", date: "2026.8.16", dev: ["openchesskr"], items: [
+      "공유받은 리뷰 링크(openchess.kr/review/...)로 곧장 들어가거나 새로고침했을 때, 실제로는 티켓이 있거나 이미 본 리뷰인데도 항상 '리뷰 티켓이 부족해요' 안내만 뜨던 문제를 고쳤어요.",
+      "내가 만든 퍼즐을 편집한 직후 곧바로 다시 편집을 시도했을 때 뜨던 부정확한 오류 문구를 '아직 편집 주기가 안 지났어요'로 바로잡았어요.",
+    ]
+  },
   {
     version: "0.3.4", date: "2026.8.13", dev: ["openchesskr"], items: [
       "게임 리뷰 화면에도 이제 공유 버튼이 생겼어요 — 카카오톡·인스타그램 등 외부 앱으로 보내거나, 친구 목록에서 골라 채팅으로 바로 보낼 수 있어요.",
@@ -21854,8 +21866,14 @@ export default function App() {
   // /(퍼즐 번호)-(라인 번호) 형태면 그 리뷰·퍼즐을 실제로 되살린다. openReview/onOpenPuzzle이 모두
   // 정의된 뒤라야 호출할 수 있어 이 컴포넌트 마지막 부분에 둔다. 실패하면(식별자가 깨졌거나, 아직
   // 아무도 공유한 적 없는 chess.com 대국이거나) 조용히 /learn으로 되돌린다(예전과 같은 안전한 기본값).
+  // (v0.3.5 버그 수정) loaded를 기다리지 않고 마운트 즉시 실행했더니, 이 effect의 deps가 []이라
+  // 클로저로 캡처한 openReview가 항상 "최초 렌더 시점"의 것(reviewTickets=0, reviewUnlocked=빈 Set,
+  // devUnlockAll=false — 아직 로컬/계정 복원 전 기본값)으로 고정돼, 계정 로딩이 끝나 실제로는 티켓이
+  // 있고 이미 열어본 리뷰라도 링크로 곧장 들어오면 항상 "리뷰 티켓 부족" 모달이 떴다(리뷰 공유 딥링크
+  // 자체가 사실상 항상 막혀 있던 셈). 복원이 끝난 뒤(loaded)에만 실행되도록 바꿔, 그 시점 렌더의
+  // openReview(실제 reviewTickets/reviewUnlocked/devUnlockAll을 반영)를 쓰게 한다.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !loaded) return;
     const path = window.location.pathname;
     (async () => {
       const puzzleMatch = /^\/(\d{6})-(\d+)$/.exec(path);
@@ -21881,8 +21899,8 @@ export default function App() {
         }
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 오직 최초 마운트 시 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없다).
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loaded가 false→true로 바뀌는 최초 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없고, openReview/onOpenPuzzle 등은 매번 최신 클로저를 쓰면 충분해 deps에 넣지 않는다).
+  }, [loaded]);
 
   return (
     <SkinContext.Provider value={skinValue}>
