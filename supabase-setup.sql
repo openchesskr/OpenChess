@@ -743,11 +743,12 @@ grant insert, update, delete on public.daily_puzzles_dev to authenticated;
 -- 3번 섹션, is_content_editor만 쓸 수 있는 단일 값 콘텐츠 블롭)에 개발자/공동개발자만 등록할 수
 -- 있었다. 이제 로그인한 모든 유저가 짧은 설명을 남길 수 있도록 완전히 별도 테이블로 분리한다 —
 -- app_content는 그대로 두고(다른 콘텐츠가 계속 그 테이블을 쓰므로) 이 기능만 여기로 옮겼다.
--- 1인당 같은 수에 남길 수 있는 개수는 계정 등급에 따라 다르다(v0.3.4, 사용자 요청) — 개발자
--- 계정(DEV_ACCOUNT, src/App.jsx와 동일한 값)은 무제한, 그랜드마스터 티어에 도달한 일반 계정은
--- 2개까지, 그 외는 기존과 같이 1개만(스팸 방지 — puzzle_likes/puzzle_solvers와 같은 1인 1행
--- 패턴의 확장). 그래서 고정된 unique(move_key, uid) 제약 대신, 아래 move_notes_cap()이 계정마다
--- 다른 한도를 계산하고 move_notes_moderate 트리거가 삽입 시점에 그 한도를 검사한다. 수정·삭제는
+-- 1인당 같은 수에 남길 수 있는 개수는 계정 등급에 따라 다르다(v0.3.4, 사용자 요청) — 개발자/
+-- 공동개발자(is_content_editor, app_content·master_games_dev와 동일한 헬퍼 재사용)는 무제한,
+-- 그랜드마스터 티어에 도달한 일반 계정은 2개까지, 그 외는 기존과 같이 1개만(스팸 방지 —
+-- puzzle_likes/puzzle_solvers와 같은 1인 1행 패턴의 확장). 그래서 고정된 unique(move_key, uid)
+-- 제약 대신, 아래 move_notes_cap()이 계정마다 다른 한도를 계산하고 move_notes_moderate 트리거가
+-- 삽입 시점에 그 한도를 검사한다. 수정·삭제는
 -- 작성자 본인(자기 글에 한해)과 개발자/공동개발자(모든 글, is_content_editor)가 함께 할 수 있다
 -- (v0.3.4 변경 — 예전엔 본인도 스스로 못 고치고 개발자에게만 최종 편집권이 있었다).
 create table if not exists public.move_notes (
@@ -765,16 +766,18 @@ alter table public.move_notes drop constraint if exists move_notes_move_key_uid_
 create index if not exists idx_move_notes_key on public.move_notes(move_key, created_at);
 alter table public.move_notes enable row level security;
 
--- (v0.3.4 기능) 이 계정이 한 수에 남길 수 있는 수 설명 개수 한도 — 개발자 계정은 사실상 무제한,
--- 그랜드마스터 티어(누적 XP가 src/App.jsx TIER_XP_REQ 총합인 200,000 이상 — 그 배열이 바뀌면 이
--- 숫자도 함께 맞춰야 한다)에 도달한 계정은 2개, 그 외는 1개. XP는 클라이언트가 소유한
--- user_progress.progress 블롭 값을 그대로 신뢰한다(이 앱의 XP·티어 체계 전체가 이미 같은 신뢰
--- 모델이다 — 서버가 직접 XP를 증감시키지 않는다, 7-1번 섹션 주석 참고). auth.uid()가 없으면
--- (비로그인) 1을 돌려주는데, 어차피 insert 정책이 로그인 없이는 애초에 막는다.
+-- (v0.3.4 기능) 이 계정이 한 수에 남길 수 있는 수 설명 개수 한도 — 개발자/공동개발자
+-- (is_content_editor, 처음엔 개발자 계정만이었다가 사용자 요청으로 공동개발자까지 넓힘)는
+-- 사실상 무제한, 그랜드마스터
+-- 티어(누적 XP가 src/App.jsx TIER_XP_REQ 총합인 200,000 이상 — 그 배열이 바뀌면 이 숫자도 함께
+-- 맞춰야 한다)에 도달한 계정은 2개, 그 외는 1개. XP는 클라이언트가 소유한 user_progress.progress
+-- 블롭 값을 그대로 신뢰한다(이 앱의 XP·티어 체계 전체가 이미 같은 신뢰 모델이다 — 서버가 직접
+-- XP를 증감시키지 않는다, 7-1번 섹션 주석 참고). auth.uid()가 없으면(비로그인) 1을 돌려주는데,
+-- 어차피 insert 정책이 로그인 없이는 애초에 막는다.
 create or replace function public.move_notes_cap()
 returns int language sql stable security definer set search_path = public as $$
   select case
-    when exists (select 1 from public.profiles where id = auth.uid() and username = 'openchesskr') then 2147483647
+    when public.is_content_editor(auth.uid()) then 2147483647
     when coalesce((select (up.progress->>'xp')::bigint from public.user_progress up where up.id = auth.uid()), 0) >= 200000 then 2
     else 1
   end;

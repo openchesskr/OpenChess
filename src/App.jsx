@@ -15789,7 +15789,7 @@ const CHANGELOG = [
       "퍼즐 풀이 카드에 그 퍼즐을 처음 만든 사람(제작자)이 표시돼요. 내가 만든 퍼즐은 개발자와 똑같이 라인을 추가·삭제하거나 통째로 재생성할 수 있어요(1시간에 한 번). 개발자·공동개발자는 특정 퍼즐의 제작 권한을 회수하거나 다른 유저에게 넘길 수 있어요.",
       "게임 리뷰·퍼즐 풀이 창에 그대로 공유할 수 있는 고유 주소가 생겼어요(openchess.kr/review/... , openchess.kr/퍼즐번호-라인번호) — 그 주소를 열면 실제로 같은 화면이 다시 열려요. 학습 탭 FEN 모드에서도 이제 '분석' 버튼으로 게임 리뷰를 열 수 있어요.",
       "퍼즐 공유 시트에서 이제 카카오톡·인스타그램 등 외부 앱으로도 바로 공유할 수 있어요(모바일에서는 '공유하기' 버튼을 누르면 설치된 앱 목록이 그대로 떠요). 데스크톱에서는 링크 복사와 카카오스토리·X·페이스북 바로가기를 대신 보여줘요.",
-      "학습 탭 '수 설명'을 한 수에 몇 개까지 남길 수 있는지가 이제 등급에 따라 달라져요 — 그랜드마스터 티어에 도달하면 2개까지, 개발자는 무제한으로 남길 수 있어요(그 외는 기존과 같이 1개).",
+      "학습 탭 '수 설명'을 한 수에 몇 개까지 남길 수 있는지가 이제 등급에 따라 달라져요 — 그랜드마스터 티어에 도달하면 2개까지, 개발자·공동개발자는 무제한으로 남길 수 있어요(그 외는 기존과 같이 1개).",
     ]
   },
   {
@@ -20878,13 +20878,12 @@ export default function App() {
   const isCodev = !!user && Array.isArray(CONTENT.codev) && CONTENT.codev.includes(user);
   const canEdit = (isDev && devOn) || (isCodev && codevOn);   // (기능3) 분기점 해설·수 설명·수 키워드 수정 권한
   const canAdd = canEdit;
-  // (v0.3.4 기능) 사용자 요청 — 한 수에 남길 수 있는 "수 설명"(move_notes) 개수 한도. 개발자 계정은
-  // 개발자 모드가 켜져 있는 동안(다른 모든 canEdit류 권한과 같은 결) 무제한, 그랜드마스터 티어에
-  // 도달한 일반 계정은 2개까지, 그 외는 기존과 같이 1개다. 공동개발자(isCodev)는 포함하지 않는다 —
-  // 사용자 요청이 명시적으로 "개발자 계정"이라 다른 편집 권한(canEdit)과 달리 공동개발자까지
-  // 넓히지 않았다. 실제 강제는 서버(move_notes_cap, supabase-setup.sql)가 최종 결정한다 — 여기는
+  // (v0.3.4 기능) 사용자 요청 — 한 수에 남길 수 있는 "수 설명"(move_notes) 개수 한도. 개발자·
+  // 공동개발자는(각자 모드가 켜져 있는 동안 — 다른 모든 canEdit류 권한과 같은 결이라 그대로
+  // canEdit을 재사용) 무제한, 그랜드마스터 티어에 도달한 일반 계정은 2개까지, 그 외는 기존과
+  // 같이 1개다. 실제 강제는 서버(move_notes_cap, supabase-setup.sql)가 최종 결정한다 — 여기는
   // UI를 미리 맞게 보여주는 용도.
-  const moveNoteCap = useMemo(() => (isDev && devOn) ? Infinity : (tierFromXp(totalXp).tier.key === "grandmaster" ? 2 : 1), [isDev, devOn, totalXp]);
+  const moveNoteCap = useMemo(() => canEdit ? Infinity : (tierFromXp(totalXp).tier.key === "grandmaster" ? 2 : 1), [canEdit, totalXp]);
   const canManageCodev = isDev && devOn;
   const devUnlockAll = (isDev && devOn) || (isCodev && codevOn);                       // 공동 개발자 지정/해제는 개발자만
   const openAuth = (mode) => { setAuthMode(mode); setAuthOpen(true); };
