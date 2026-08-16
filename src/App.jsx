@@ -5,7 +5,7 @@ import {
   GraduationCap, Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff,
+  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -13594,6 +13594,52 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     </div>
   );
 }
+// (v0.3.4 기능) 퍼즐 고유 딥링크(openchess.kr/(번호)-(라인 번호)) — 링크를 열면 그 퍼즐의 그
+// 라인이 실제로 다시 열린다(리뷰·퍼즐 URL 기능 참고). 외부 공유는 항상 1번 라인부터 보여준다
+// (공유받는 사람은 대개 그 퍼즐을 처음 푸는 사람이라 어느 라인에서 공유했는지는 중요하지 않다).
+function puzzleShareUrl(no, lineNo) {
+  const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://openchess.kr";
+  return origin + "/" + no + "-" + (lineNo || 1);
+}
+// (v0.3.4 기능) 사용자 요청 — 인앱 친구 목록뿐 아니라 카카오톡·인스타그램 등 외부 앱으로도 퍼즐을
+// 공유할 수 있게 한다. 각 앱마다 별도 SDK·API 키를 등록하는 대신, 표준 Web Share API
+// (navigator.share)에 이 퍼즐의 딥링크를 넘긴다 — 모바일 브라우저에서는 OS가 지금 이 기기에 설치된
+// 모든 공유 대상 앱(카카오톡·인스타그램 DM·문자 등)을 담은 공유 시트를 그대로 보여주므로, 이 방법
+// 하나로 사실상 모든 외부 앱을 다 지원한다. navigator.share를 지원하지 않는 환경(대부분의 데스크톱
+// 브라우저)에서는 링크 복사와, URL만으로 공유 가능한 서비스(카카오스토리·X·페이스북) 바로가기로
+// 대신한다 — 인스타그램은 웹에 "이 링크를 공유받아라"라는 공개 URL 방식 자체가 없어(앱 전용 공유만
+// 지원) 데스크톱 대체 목록에는 넣지 않았다(모바일에서는 위 Web Share API 경로로 인스타그램 DM
+// 공유가 가능하다).
+function ExternalShareRow({ url, title, text }) {
+  const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;
+  const [copied, setCopied] = useState(false);
+  const doNativeShare = async () => {
+    try { await navigator.share({ title, text, url }); } catch { /* 사용자가 취소했거나(AbortError) 지원하지 않음 — 조용히 무시 */ }
+  };
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { }
+  };
+  const encoded = encodeURIComponent(url);
+  const linkBtnStyle = { display: "inline-flex", alignItems: "center", padding: "7px 13px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 12, textDecoration: "none", cursor: "pointer" };
+  return (
+    <div style={{ padding: "10px 16px", borderBottom: "1px solid #E4D5B6" }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>외부 앱으로 공유</div>
+      <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+        {canNativeShare && (
+          <button onClick={doNativeShare} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}><Share2 size={13} /> 공유하기(카카오톡·인스타그램 등)</button>
+        )}
+        <button onClick={copyLink} className="press" style={linkBtnStyle}><Copy size={13} style={{ marginRight: 5 }} /> {copied ? "복사됨!" : "링크 복사"}</button>
+        {!canNativeShare && (
+          <>
+            <a href={"https://story.kakao.com/share?url=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>카카오스토리</a>
+            <a href={"https://twitter.com/intent/tweet?url=" + encoded + "&text=" + encodeURIComponent(text || "")} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>X(트위터)</a>
+            <a href={"https://www.facebook.com/sharer/sharer.php?u=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>페이스북</a>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 // (v0.1.0) 퍼즐 공유 시트 — 인스타그램 릴스 공유처럼 친구 목록에서 골라 대화창으로 퍼즐을 보낸다.
 // 친구별로 독립적으로 "보내기" 가능(여러 명에게 동시에 보낼 수 있음), 보낸 친구는 "보냄"으로 표시만 바뀌고 시트는 유지된다.
 function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
@@ -13632,7 +13678,9 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
           <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />퍼즐 공유</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
+        {puzzle && puzzle.id != null && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title="OpenChess 퍼즐" text={"OpenChess 퍼즐 — " + (puzzle.name || "퍼즐 풀어보기")} />}
         <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>친구에게 보내기</div>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
           {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
             : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
@@ -15734,6 +15782,7 @@ const CHANGELOG = [
       "학습 탭 '수 설명'에서 이제 내가 남긴 글은 직접 수정·삭제할 수 있어요(예전엔 개발자에게만 편집 권한이 있었어요). 개발자·공동개발자는 그대로 모든 글을 편집할 수 있어요.",
       "퍼즐 풀이 카드에 그 퍼즐을 처음 만든 사람(제작자)이 표시돼요. 내가 만든 퍼즐은 개발자와 똑같이 라인을 추가·삭제하거나 통째로 재생성할 수 있어요(1시간에 한 번). 개발자·공동개발자는 특정 퍼즐의 제작 권한을 회수하거나 다른 유저에게 넘길 수 있어요.",
       "게임 리뷰·퍼즐 풀이 창에 그대로 공유할 수 있는 고유 주소가 생겼어요(openchess.kr/review/... , openchess.kr/퍼즐번호-라인번호) — 그 주소를 열면 실제로 같은 화면이 다시 열려요. 학습 탭 FEN 모드에서도 이제 '분석' 버튼으로 게임 리뷰를 열 수 있어요.",
+      "퍼즐 공유 시트에서 이제 카카오톡·인스타그램 등 외부 앱으로도 바로 공유할 수 있어요(모바일에서는 '공유하기' 버튼을 누르면 설치된 앱 목록이 그대로 떠요). 데스크톱에서는 링크 복사와 카카오스토리·X·페이스북 바로가기를 대신 보여줘요.",
     ]
   },
   {
