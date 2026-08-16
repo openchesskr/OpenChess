@@ -6466,7 +6466,11 @@ function containsBannedWord(text) {
   const norm = normalizeForFilter(text);
   return BANNED_WORD_LIST.some((w) => norm.includes(normalizeForFilter(w)));
 }
-function MoveNoteCard({ n, canModerate, onSaved, onDeleted }) {
+function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted }) {
+  // (사용자 요청) 예전엔 작성자 본인도 스스로 못 고치고 개발자(canModerate)만 편집·삭제할 수
+  // 있었다 — 이제 자기 글은 본인이 자유롭게 고치고 지울 수 있고, 개발자/공동개발자는 그대로
+  // 모든 글에 대해 편집 권한을 유지한다(RLS도 함께 맞춤, supabase-setup.sql 15번 섹션 참고).
+  const canEditThis = canModerate || (!!uid && n.uid === uid);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(n.body);
   const [busy, setBusy] = useState(false);
@@ -6502,7 +6506,7 @@ function MoveNoteCard({ n, canModerate, onSaved, onDeleted }) {
           <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{n.body}</p>
         )}
       </div>
-      {!editing && canModerate && (
+      {!editing && canEditThis && (
         <div className="flex gap-2" style={{ marginTop: 6, justifyContent: "flex-end" }}>
           <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
           <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
@@ -6582,7 +6586,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
         <>
           <div ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
             {notes.map((n) => (
-              <MoveNoteCard key={n.id} n={n} canModerate={canModerate}
+              <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid}
                 onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
                 onDeleted={(id) => setNotes((prev) => { const next = prev.filter((x) => x.id !== id); setIdx((i) => Math.min(i, Math.max(0, next.length - 1))); return next; })} />
             ))}
@@ -6600,7 +6604,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
       {!uid ? (
         <p style={{ fontSize: 11, color: T.inkSoft }}>로그인하면 이 수에 대한 설명을 직접 남길 수 있어요.</p>
       ) : myNote ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>이미 이 수에 설명을 남겼어요 — 수정·삭제는 개발자에게 문의해주세요.</p>
+        <p style={{ fontSize: 11, color: T.inkSoft }}>이미 이 수에 설명을 남겼어요 — 위 카드에서 직접 수정하거나 지울 수 있어요.</p>
       ) : (
         <div>
           <textarea value={draft} onChange={(e) => { setDraft(e.target.value.slice(0, MOVE_NOTE_MAX_LEN)); setErr(""); }} rows={2} placeholder="이 수에 대한 짧은 설명을 남겨보세요" style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
@@ -11212,9 +11216,49 @@ async function puzzleShare(p) {
     const server = await puzzleFetch(no);
     const merged = server ? { ...p, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
     await sbUpsert("puzzles", { no, data: merged });
+    // (v0.3.4 기능) 사용자 요청 — 이 퍼즐(no)에 아직 생성자가 기록되지 않았다면(creator_uid is
+    // null) 지금 이 공유를 실행한 로그인 유저를 생성자로 선점한다. puzzle_claim_creator는 이미
+    // 생성자가 있으면 조용히 아무 일도 하지 않으므로(멱등), 같은 퍼즐을 나중에 또 만난 다른
+    // 유저가 그저 테마 태그만 병합하려고 다시 공유해도 원래 생성자가 바뀌지 않는다. 실패해도
+    // (비로그인 게스트 등) 퍼즐 공유 자체는 이미 끝났으므로 조용히 무시한다.
+    sbRpc("puzzle_claim_creator", { p_no: no }).catch(() => { });
   } catch { }
 }
 async function puzzleFetch(no) { if (!SB_ON) return null; try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; } }
+// (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 카드에 생성자를 표시하고, 생성자 본인에게 그 퍼즐에 한해
+// 개발자와 같은 편집 권한(1시간 주기)을 주기 위한 조회. puzzleFetch와 별도로 둔 이유는, 이 창구가
+// 반환하는 필드(creator_uid 등)를 puzzle 본문 객체(data)에 섞어 넣지 않기 위해서다 — 섞이면 그
+// 객체가 puzzleShare로 다시 업로드될 때 data jsonb 안에 낡은 사본이 함께 저장되어(예: 개발자가
+// 나중에 재지정해도 그 사본은 갱신되지 않음) 진짜 출처(puzzles.creator_uid 컬럼)와 어긋날 수 있다.
+async function puzzleCreatorInfo(no) {
+  if (!SB_ON) return null;
+  try {
+    const rows = await sbSelect("puzzles?no=eq." + no + "&select=creator_uid,creator_username,creator_edited_at&limit=1");
+    const r = rows && rows[0];
+    if (!r || !r.creator_uid) return null;
+    return { uid: r.creator_uid, username: r.creator_username || "", editedAt: r.creator_edited_at || null };
+  } catch { return null; }
+}
+// (v0.3.4 기능) 퍼즐 생성자 본인(또는 개발자/공동개발자)의 라인 추가/삭제·재생성 저장 — 실제 권한·
+// 1시간 주기 검사는 서버(puzzle_creator_save RPC, SECURITY DEFINER)가 한다. extra는 { tagSeq,
+// target, puzzleType } 중 있는 값만 골라 보낸다(없으면 서버가 기존 값을 그대로 둔다).
+async function puzzleCreatorSave(no, tree, lines, extra) {
+  if (!SB_ON) throw new Error("offline");
+  const e = extra || {};
+  await sbRpc("puzzle_creator_save", {
+    p_no: no, p_tree: tree, p_lines: lines,
+    p_tag_seq: e.tagSeq != null ? e.tagSeq : null,
+    p_target: e.target != null ? e.target : null,
+    p_puzzle_type: e.puzzleType != null ? e.puzzleType : null,
+  });
+}
+// (v0.3.4 기능) 개발자/공동개발자 전용 — 이 퍼즐의 생성자를 재지정한다. targetUsername이 없으면
+// 개발자 계정 명의로 회수, 있으면 그 아이디의 유저에게 양도한다(서버 puzzle_reassign_creator가
+// 실제 권한을 다시 검사한다 — 클라이언트 canEdit 체크는 UI 편의일 뿐 진짜 방어선이 아니다).
+async function puzzleReassignCreator(no, targetUsername) {
+  if (!SB_ON) return false;
+  try { await sbRpc("puzzle_reassign_creator", { p_no: no, p_target_username: targetUsername || null }); return true; } catch { return false; }
+}
 // (v0.3.4 기능) 개발자 전용 "전체 퍼즐 일괄 재생성" 도구용 — 존재하는 모든 퍼즐 번호를 페이지
 // 단위로 끝까지 모아 온다(PostgREST 기본 최대 반환 행 수 제한을 limit/offset 페이지네이션으로
 // 안전하게 우회 — 퍼즐은 유저가 계속 새로 공유하는 크라우드소싱 구조라 상한이 없다).
@@ -12525,6 +12569,33 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // (20차 UX4) 퍼즐 목록에서 스크롤을 내린 채로 카드를 눌러 들어오면 이전 스크롤 위치가 그대로 남아
   // 보드(특히 응수 애니메이션 중인 기물)가 화면 아래 하단 탭 뒤로 가려지던 문제 — 진입 시 맨 위로 스크롤.
   useEffect(() => { window.scrollTo({ top: 0, behavior: "auto" }); }, [puzzle.id]);
+  // (v0.3.4 기능) 사용자 요청 — 이 퍼즐의 생성자를 조회해 풀이 카드에 표시하고, 생성자 본인에게는
+  // 개발자와 같은 편집 권한(1시간 주기)을 준다. 퍼즐을 열 때마다 서버에서 새로 가져온다 — 개발자가
+  // 방금 재지정했을 수도 있고, 1시간 주기가 지났는지도 매번 최신값으로 판단해야 하기 때문이다.
+  const [creatorInfo, setCreatorInfo] = useState(null); // { uid, username, editedAt } | null
+  const puzzleNoForTag = puzzleNo(puzzle.id);
+  useEffect(() => {
+    let cancelled = false;
+    setCreatorInfo(null);
+    puzzleCreatorInfo(puzzleNoForTag).then((info) => { if (!cancelled) setCreatorInfo(info); });
+    return () => { cancelled = true; };
+  }, [puzzleNoForTag]);
+  const isMyPuzzle = !!(myUid && creatorInfo && creatorInfo.uid === myUid);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (!isMyPuzzle || canEdit) return; // 개발자는 주기 표시가 필요 없다(항상 편집 가능)
+    const iv = setInterval(() => setNowTick(Date.now()), 15000);
+    return () => clearInterval(iv);
+  }, [isMyPuzzle, canEdit]);
+  const creatorCooldownMs = useMemo(() => {
+    if (!isMyPuzzle || canEdit || !creatorInfo || !creatorInfo.editedAt) return 0;
+    return Math.max(0, new Date(creatorInfo.editedAt).getTime() + 60 * 60 * 1000 - nowTick);
+  }, [isMyPuzzle, canEdit, creatorInfo, nowTick]);
+  // 개발자는 항상, 생성자 본인은 주기가 지났을 때만 이 퍼즐을 편집할 수 있다.
+  const canEditPuzzle = canEdit || (isMyPuzzle && creatorCooldownMs <= 0);
+  // (기능) 생성자 본인의 편집은 CONTENT.puzzleOverrides(개발자/공동개발자만 쓸 수 있는 공유
+  // app_content 블롭)가 아니라 puzzles.data에 직접 저장된다(puzzle_creator_save RPC) — 아래
+  // persistEdit이 편집 주체에 따라 저장 창구를 나눠 준다.
   const tree = useMemo(() => overrideTree || puzzleTreeOf(puzzle), [puzzle.id, overrideTree]);
   const allLines = useMemo(() => treeLinesOf(tree), [tree]);
   const totalLines = Math.max(1, allLines.length);
@@ -12954,52 +13025,58 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     })();
     return () => { cancelled = true; };
   }, [puzzle.id, tree, liveOn, engine && engine.status, pathNodes.length, solvedNow.size, everRevealed]);
-  // (20차 기능1) 개발자 전용 — 모식도의 리프(라인의 끝)에서 "+"를 누르면 그 라인에 수를 하나 직접
-  // 추가한다. 전체 트리를 다시 만드는 대신 그 리프 하나만 연장하며, kind/ev/adopt는 위 메타 보강
-  // 효과가 배경에서 채운다. 결과는 CONTENT.puzzleOverrides로 저장되어 이 퍼즐을 푸는 모든 유저에게 반영된다.
+  // (v0.3.4 기능) 사용자 요청 — 이 아래 편집 함수들은 이제 개발자/공동개발자뿐 아니라 그 퍼즐의
+  // 생성자 본인(1시간 편집 주기 안에서)도 호출할 수 있다. 저장 창구만 둘로 나뉜다 — 개발자는
+  // 예전 그대로 CONTENT.puzzleOverrides(app_content, is_content_editor 전용 공유 블롭)에, 생성자는
+  // puzzles.data에 직접(puzzle_creator_save RPC, 서버가 생성자 본인·1시간 주기를 다시 검증한다).
+  // creatorTagSeq는 그 RPC 경로 전용 tagSeq 시작값 — CONTENT.puzzleOverrides에는 생성자 편집
+  // 이력이 없으므로 puzzle 자신의 data.tagSeq(RPC가 매번 저장해 둔 값, 없으면 0)에서 이어간다.
+  const [creatorTagSeq, setCreatorTagSeq] = useState(() => puzzle.tagSeq || 0);
+  useEffect(() => { setCreatorTagSeq(puzzle.tagSeq || 0); }, [puzzle.id]);
+  const seedTagSeq = () => canEdit ? (((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0) : creatorTagSeq;
+  const persistEdit = async (treeArg, linesArg, seq, extra) => {
+    if (canEdit) {
+      if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+      const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+      const withSeq = seq != null && (cur.tagSeq || 0) < seq ? { tagSeq: seq } : {};
+      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: treeArg, lines: linesArg, ...(extra || {}), ...withSeq };
+      if (bumpContent) await bumpContent();
+    } else {
+      await puzzleCreatorSave(puzzleNoForTag, treeArg, linesArg, { tagSeq: seq, ...(extra || {}) });
+      if (seq != null) setCreatorTagSeq(seq);
+    }
+    setOverrideTree(treeArg);
+  };
+  // (20차 기능1) 모식도의 리프(라인의 끝)에서 "+"를 누르면 그 라인에 수를 하나 직접 추가한다.
+  // 전체 트리를 다시 만드는 대신 그 리프 하나만 연장하며, kind/ev/adopt는 위 메타 보강 효과가
+  // 배경에서 채운다. 결과는 편집 주체에 따라 위 persistEdit이 알맞은 창구로 저장한다.
   // (20차 기능3) 이 퍼즐에서 지금까지 발급된 태그 번호(tagSeq)를 이어서 쓴다 — 삭제로 트리가
   // 비어도 카운터가 리셋되지 않아, 예전 라인이 쓰던 번호를 새 라인이 재사용해 "이미 해결됨"으로
   // 잘못 표시되는 사고를 막는다(nextLeafTag 주석 참고).
-  const puzzleNoForTag = puzzleNo(puzzle.id);
-  const persistTagSeq = (seq) => {
-    if (seq == null) return;
-    const cur = (CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {};
-    if ((cur.tagSeq || 0) >= seq) return;
-    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tagSeq: seq };
-  };
   const addMoveToLeaf = async (path, sanRaw) => {
+    if (!canEditPuzzle) return "편집 권한이 없어요.";
     if (!path) return "라인을 찾을 수 없습니다.";
-    const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
-    const res = extendPuzzleLeaf(tree, setup, path, sanRaw, seedSeq);
+    const res = extendPuzzleLeaf(tree, setup, path, sanRaw, seedTagSeq());
     if (res.error) return res.error;
-    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
-    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
-    persistTagSeq(res.seq);
-    if (bumpContent) await bumpContent();
-    setOverrideTree(res.tree);
+    try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
+    catch { return "저장에 실패했어요. 잠시 후 다시 시도해주세요."; }
     return null;
   };
-  // (20차 기능3) 개발자 전용 — 모식도의 리프에서 "삭제"를 누르면 그 라인의 마지막 수를 하나 지운다.
-  // 실수로 라인 전체가 한 번에 사라지지 않도록 항상 정확히 한 수만(그 리프 자신) 지운다.
+  // (20차 기능3) 모식도의 리프에서 "삭제"를 누르면 그 라인의 마지막 수를 하나 지운다. 실수로
+  // 라인 전체가 한 번에 사라지지 않도록 항상 정확히 한 수만(그 리프 자신) 지운다.
   const deleteMoveFromLeaf = async (path) => {
+    if (!canEditPuzzle) return "편집 권한이 없어요.";
     if (!path) return "라인을 찾을 수 없습니다.";
-    const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
-    const res = removeLastMoveOfLine(tree, path, seedSeq);
+    const res = removeLastMoveOfLine(tree, path, seedTagSeq());
     if (res.error) return res.error;
-    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
-    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
-    persistTagSeq(res.seq);
-    if (bumpContent) await bumpContent();
-    setOverrideTree(res.tree);
+    try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
+    catch { return "저장에 실패했어요. 잠시 후 다시 시도해주세요."; }
     return null;
   };
-  // (v0.3.0 기능) 개발자 전용 — 임의의 상대 응수 노드에 형제 갈래를 추가한다. genPuzzleTree가 실제로
-  // 계산해 뒀던 후보 목록(puzzleCandidatesAt)을 그대로 다시 불러와 보여준다 — isDevelopingMove 필터나
+  // (v0.3.0 기능) 임의의 상대 응수 노드에 형제 갈래를 추가한다. genPuzzleTree가 실제로 계산해
+  // 뒀던 후보 목록(puzzleCandidatesAt)을 그대로 다시 불러와 보여준다 — isDevelopingMove 필터나
   // "채택률·손실 점수 상위 3개만" 규칙 때문에 자동 생성 단계에서 걸러진 멀쩡한 응수가 여기서는 그대로
-  // 드러나므로, 개발자가 골라 다시 채워 넣을 수 있다(추가 엔진 호출 없이 kind/ev/adopt 그대로 재사용).
+  // 드러나므로, 편집 권한이 있는 사람이 골라 다시 채워 넣을 수 있다(추가 엔진 호출 없이 재사용).
   const suggestSiblings = async (path) => {
     if (!engine || engine.status !== "ready") return [];
     try {
@@ -13010,6 +13087,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     } catch { return []; }
   };
   const addSibling = async (path, cand) => {
+    if (!canEditPuzzle) return "편집 권한이 없어요.";
     let finalCand = cand;
     if (cand.manual) {
       const board = boardFromSans([...setup, ...path]);
@@ -13017,62 +13095,78 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       if (!sanSrc(board, cand.san, color)) return "불법 수입니다.";
       finalCand = { san: decorateSan(board, cand.san, color), kind: null, ev: null, adopt: null };
     }
-    const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
-    const res = addSiblingBranch(tree, path, finalCand, seedSeq);
+    const res = addSiblingBranch(tree, path, finalCand, seedTagSeq());
     if (res.error) return res.error;
-    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
-    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: res.tree, lines: treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })) };
-    persistTagSeq(res.seq);
-    if (bumpContent) await bumpContent();
-    setOverrideTree(res.tree);
+    try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
+    catch { return "저장에 실패했어요. 잠시 후 다시 시도해주세요."; }
     return null;
   };
-  // (20차 기능3) 개발자 전용 — 이 퍼즐의 "기본 이점 기준"(자동 생성이 확실한 이점으로 볼 cp 기준)을
-  // 퍼즐마다 직접 설정한다. 값을 바꾸는 것만으로는 아무 일도 벌어지지 않고(저장만 됨), 명시적으로
-  // "이 기준으로 기본 트리 재생성"을 눌러야 실제로 트리 전체를 새로 만든다 — 수동으로 추가/삭제한
+  // (20차 기능3) 이 퍼즐의 "기본 이점 기준"(자동 생성이 확실한 이점으로 볼 cp 기준)을 퍼즐마다
+  // 직접 설정한다. 값을 바꾸는 것만으로는 아무 일도 벌어지지 않고(저장만 됨), 명시적으로 "이
+  // 기준으로 기본 트리 재생성"을 눌러야 실제로 트리 전체를 새로 만든다 — 수동으로 추가/삭제한
   // 내용이 전부 사라지는 되돌릴 수 없는 동작이므로 실수로 발동하지 않도록 별도 버튼으로 분리한다.
-  const savedTarget = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).target;
+  const savedTarget = canEdit ? ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).target : puzzle.target;
   const defaultTarget = savedTarget != null ? savedTarget : puzzleThemeOpts(theme).target;
   const [targetInput, setTargetInput] = useState(defaultTarget);
   useEffect(() => { setTargetInput(defaultTarget); }, [puzzle.id, savedTarget]);
-  // (신규) 개발자 전용 — 퍼즐 종류(기물 우위/포지션 우위) 표시·설정. 목표 cp는 포지션 우위일 때만
-  // 의미가 있으므로(기물 우위는 cp 기준 없이 기물 이득만으로 종료), 종류가 포지션 우위일 때만
-  // 위의 목표 cp 입력을 노출한다.
-  const savedPuzzleType = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).puzzleType;
+  // (신규) 퍼즐 종류(기물 우위/포지션 우위) 표시·설정. 목표 cp는 포지션 우위일 때만 의미가
+  // 있으므로(기물 우위는 cp 기준 없이 기물 이득만으로 종료), 종류가 포지션 우위일 때만 위의
+  // 목표 cp 입력을 노출한다.
+  const savedPuzzleType = canEdit ? ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).puzzleType : puzzle.puzzleType;
   const defaultPuzzleType = savedPuzzleType != null ? savedPuzzleType : puzzleThemeOpts(theme).puzzleType;
   const [puzzleTypeInput, setPuzzleTypeInput] = useState(defaultPuzzleType);
   useEffect(() => { setPuzzleTypeInput(defaultPuzzleType); }, [puzzle.id, savedPuzzleType]);
   const savePuzzleType = async (v) => {
+    if (!canEditPuzzle) return;
     setPuzzleTypeInput(v);
-    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
-    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, puzzleType: v };
-    if (bumpContent) await bumpContent();
+    if (canEdit) {
+      if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+      const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, puzzleType: v };
+      if (bumpContent) await bumpContent();
+    } else {
+      try { await puzzleCreatorSave(puzzleNoForTag, tree, allLines.map((l) => ({ tag: l.tag, solution: l.sans })), { puzzleType: v }); } catch { }
+    }
   };
   const [regenBusy, setRegenBusy] = useState(false);
   const [regenErr, setRegenErr] = useState("");
   const saveDefaultTarget = async (v) => {
-    if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-    const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
-    CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, target: v };
-    if (bumpContent) await bumpContent();
+    if (!canEditPuzzle) return;
+    if (canEdit) {
+      if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
+      const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
+      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, target: v };
+      if (bumpContent) await bumpContent();
+    } else {
+      try { await puzzleCreatorSave(puzzleNoForTag, tree, allLines.map((l) => ({ tag: l.tag, solution: l.sans })), { target: v }); } catch { }
+    }
   };
   const regenerateWithTarget = async () => {
-    if (!engine || engine.status !== "ready" || regenBusy) return;
+    if (!engine || engine.status !== "ready" || regenBusy || !canEditPuzzle) return;
     setRegenBusy(true); setRegenErr("");
     try {
       const th = primaryTheme(puzzle);
-      const seedSeq = ((CONTENT.puzzleOverrides || {})[puzzleNoForTag] || {}).tagSeq || 0;
-      const opts = { ...puzzleThemeOpts(th, targetInput, puzzleTypeInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedSeq };
+      const opts = { ...puzzleThemeOpts(th, targetInput, puzzleTypeInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedTagSeq() };
       const gen = await genPuzzleTree(engine, setup, opts);
       if (!gen) { setRegenErr("이 기준으로는 트리를 만들 수 없어요(기준을 낮춰보세요)."); return; }
-      if (!CONTENT.puzzleOverrides) CONTENT.puzzleOverrides = {};
-      const cur = CONTENT.puzzleOverrides[puzzleNoForTag] || {};
-      CONTENT.puzzleOverrides[puzzleNoForTag] = { ...cur, tree: gen.tree, lines: gen.lines, target: targetInput, puzzleType: puzzleTypeInput, tagSeq: gen.seq };
-      if (bumpContent) await bumpContent();
-      setOverrideTree(gen.tree);
+      try { await persistEdit(gen.tree, gen.lines, gen.seq, { target: targetInput, puzzleType: puzzleTypeInput }); }
+      catch { setRegenErr("저장에 실패했어요. 잠시 후 다시 시도해주세요."); }
     } finally { setRegenBusy(false); }
+  };
+  // (v0.3.4 기능) 사용자 요청 — 개발자/공동개발자 전용, 이 퍼즐의 생성자를 재지정한다(원래 생성자의
+  // 편집권은 그 즉시 사라진다 — 대상이 바뀌므로). 실제 권한·아이디 검증은 서버(RPC)가 다시 한다.
+  const [reassignInput, setReassignInput] = useState("");
+  const [reassignBusy, setReassignBusy] = useState(false);
+  const [reassignMsg, setReassignMsg] = useState("");
+  const doReassign = async (targetUsername) => {
+    setReassignBusy(true); setReassignMsg("");
+    const ok = await puzzleReassignCreator(puzzleNoForTag, targetUsername);
+    if (ok) {
+      setReassignMsg(targetUsername ? "생성자를 @" + targetUsername + "님에게 양도했어요." : "생성자를 개발자 명의로 회수했어요.");
+      setReassignInput("");
+      setCreatorInfo(await puzzleCreatorInfo(puzzleNoForTag));
+    } else setReassignMsg("실패했어요 — 아이디를 확인해주세요.");
+    setReassignBusy(false);
   };
   // (20차 기능3) allLines(완결된 라인)가 0개여도, 트리 자체에 내용이 있으면(개발자가 삭제로 잠시
   // "미완성" 상태를 만든 경우) 퍼즐 화면 자체를 닫아버리면 안 된다 — 그러면 다시 수를 추가해 완성할
@@ -13111,6 +13205,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{puzzle.name}</div>
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
+          {/* (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 카드에 생성자를 표시. 생성자가 아직 없는(예:
+              이 기능이 생기기 전에 만들어졌거나 게스트가 최초 공유한) 퍼즐은 아무것도 보여주지 않는다. */}
+          {creatorInfo && creatorInfo.username && <div style={{ fontSize: 10.5, color: T.brass, fontWeight: 700, marginTop: 3 }}>제작 · @{creatorInfo.username}</div>}
           {/* (20차 기능1) 별: 라인 1개 이상 ★1 · 50% 이상 ★2 · 전부 ★3 */}
           <div className="flex items-center" style={{ gap: 7, marginTop: 5 }}>
             <LineStars total={3} solved={starsOf(solvedNow.size, totalLines)} />
@@ -13242,13 +13339,22 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
             </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupSans={setup} setupLen={setup.length} onPick={onPickNode} canEdit={canEdit} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
-            {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다. */}
-            {canEdit && (
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupSans={setup} setupLen={setup.length} onPick={onPickNode} canEdit={canEditPuzzle} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다.
+                (v0.3.4 기능) 사용자 요청 — 개발자/공동개발자뿐 아니라 이 퍼즐의 생성자 본인도(1시간
+                편집 주기 안에서) 이 도구 전체를 그대로 쓸 수 있다. 주기가 아직 안 지났으면 도구
+                대신 남은 시간을 알려준다. */}
+            {isMyPuzzle && !canEdit && creatorCooldownMs > 0 && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C", fontSize: 11, color: T.inkSoft }}>
+                내가 만든 퍼즐이에요 — 방금 편집해서, 약 {Math.max(1, Math.ceil(creatorCooldownMs / 60000))}분 뒤에 다시 라인을 조정할 수 있어요.
+              </div>
+            )}
+            {canEditPuzzle && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
+                {isMyPuzzle && !canEdit && <div style={{ fontSize: 11, color: T.brass, fontWeight: 700, marginBottom: 8 }}>내가 만든 퍼즐이에요 — 개발자와 같은 라인 조정·재생성을 1시간에 한 번 할 수 있어요.</div>}
                 {/* (신규) 퍼즐 종류 — 포지션 우위(cp 이득 기준)/기물 우위(기물 이득 즉시 종료, 수비자
                     제거 같은 전술용). 목표 cp는 포지션 우위일 때만 의미가 있으므로 그때만 보여준다. */}
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 퍼즐 종류</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{canEdit ? "개발자" : "제작자"} · 퍼즐 종류</div>
                 <div className="flex items-center gap-2" style={{ flexWrap: "wrap", marginBottom: 10 }}>
                   {[["positional", "포지션 우위"], ["material", "기물 우위"]].map(([v, label]) => (
                     <button key={v} onClick={() => savePuzzleType(v)} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: puzzleTypeInput === v ? T.brass : "transparent", color: puzzleTypeInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>{label}</button>
@@ -13256,7 +13362,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 </div>
                 {puzzleTypeInput === "positional" && (
                   <>
-                    <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{canEdit ? "개발자" : "제작자"} · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
                     <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
                       <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
                         style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
@@ -13268,8 +13374,24 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                   <button onClick={regenerateWithTarget} disabled={!engine || engine.status !== "ready" || regenBusy} className="press" style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 11.5, opacity: (!engine || engine.status !== "ready") ? 0.5 : 1 }}>{regenBusy ? "재생성 중…" : "이 기준으로 기본 트리 재생성"}</button>
                 </div>
                 <div style={{ fontSize: 9.5, color: T.blunder, marginTop: 5 }}>재생성하면 이 퍼즐의 트리가 통째로 새로 만들어져 수동으로 추가·삭제한 내용이 모두 사라져요.</div>
+                {!canEdit && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 3 }}>이 퍼즐은 1시간에 한 번만 라인을 조정하거나 재생성할 수 있어요.</div>}
                 {regenErr && <div style={{ fontSize: 10, color: T.blunder, marginTop: 3 }}>{regenErr}</div>}
                 {(!engine || engine.status !== "ready") && <div style={{ fontSize: 10, color: T.blunder, marginTop: 3 }}>엔진이 준비되면 라인에 수를 추가·삭제하거나 재생성할 수 있어요.</div>}
+              </div>
+            )}
+            {/* (v0.3.4 기능) 사용자 요청 — 개발자/공동개발자 전용, 이 퍼즐의 생성자를 재지정(박탈)한다.
+                개발자 명의로 회수하거나 다른 유저에게 양도할 수 있다 — 둘 다 원래 생성자의 이 퍼즐
+                편집권을 그 즉시 잃게 만든다. */}
+            {canEdit && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>개발자 · 퍼즐 생성자</div>
+                <div style={{ fontSize: 11, color: T.ink, marginBottom: 6 }}>현재: {creatorInfo && creatorInfo.username ? "@" + creatorInfo.username : "없음"}</div>
+                <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+                  <input value={reassignInput} onChange={(e) => setReassignInput(e.target.value)} placeholder="양도할 아이디" style={{ flex: 1, minWidth: 120, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 11.5 }} />
+                  <button disabled={reassignBusy || !reassignInput.trim()} onClick={() => doReassign(reassignInput.trim())} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: T.brass, color: "#241509", fontWeight: 800, fontSize: 11, cursor: "pointer", opacity: reassignBusy || !reassignInput.trim() ? 0.6 : 1 }}>양도</button>
+                  <button disabled={reassignBusy} onClick={() => doReassign(null)} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brass, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>개발자 명의로 회수</button>
+                </div>
+                {reassignMsg && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 5 }}>{reassignMsg}</div>}
               </div>
             )}
           </div>
@@ -15427,6 +15549,8 @@ const CHANGELOG = [
       "학습 탭·게임 리뷰의 코치 코멘트에 체크메이트 전용 설명이 생겼어요 — 탁월한 수로 만든 외통, 유일한 외통 수순을 각각 따로 짚어줘요. 유일한 수·탁월한 수 코멘트 끝에는 이제 체스 기보 표기(!·!!)가 붙어요.",
       "유산 재생에서 유산 수가 다 등장하기도 전에 주변 수 무너짐 연출이 먼저 시작될 수 있던 문제를 고쳐, 이제 유산 수가 확실히 다 나타난 뒤에만 무너짐이 시작돼요.",
       "도감 탭 오프닝 트리에서 수 설명 카드가 여전히 화면 밖으로 잘리거나 스크롤 중 말풍선 모양이 뒤틀려 보이던 문제를 고쳤어요 — 이제 카드는 연 순간의 고정된 위치·모양으로만 뜨고, 화면을 스크롤(팬)하거나 확대·축소하면 카드가 함께 사라져요.",
+      "학습 탭 '수 설명'에서 이제 내가 남긴 글은 직접 수정·삭제할 수 있어요(예전엔 개발자에게만 편집 권한이 있었어요). 개발자·공동개발자는 그대로 모든 글을 편집할 수 있어요.",
+      "퍼즐 풀이 카드에 그 퍼즐을 처음 만든 사람(제작자)이 표시돼요. 내가 만든 퍼즐은 개발자와 똑같이 라인을 추가·삭제하거나 통째로 재생성할 수 있어요(1시간에 한 번). 개발자·공동개발자는 특정 퍼즐의 제작 권한을 회수하거나 다른 유저에게 넘길 수 있어요.",
     ]
   },
   {
