@@ -3994,22 +3994,40 @@ const LEGACY_FONT = "'Merriweather', 'Noto Sans KR', serif";
 // 가운데 정렬 때문에 앞부분이 화면 밖으로 잘려 아예 안 보였다. 별도의 박스에 담아 한 줄(nowrap)로
 // 고정하고, 다른 곳(엔진 라인·SequenceBar)과 동일한 포인터 드래그 스크롤을 붙여 좌우로 끌어볼 수
 // 있게 한다.
-function PuzzlePgnBox({ text }) {
+// (UI) 사용자 요청 — 일일 퍼즐 팝업·퍼즐 카드(이 박스)의 기보에서 임의의 수를 누르면 그 기보가
+// 입력된 학습 탭으로 이동한다. onPick이 주어지면 각 수를 클릭 가능한 span으로 렌더링하고(드래그
+// 스크롤과 충돌하지 않도록 SequenceBar와 동일한 "드래그로 이동했으면 클릭 무시" 패턴을 쓴다),
+// onPick이 없으면(text만 넘어오는 예전 호출부 호환) 예전처럼 순수 텍스트로 표시한다.
+function PuzzlePgnBox({ text, sans, startColor, onPick }) {
   const scrollRef = useRef(null);
   const dragRef = useRef(null);
   const onPointerDown = (e) => {
-    dragRef.current = { x: e.clientX, scrollLeft: scrollRef.current ? scrollRef.current.scrollLeft : 0 };
+    dragRef.current = { x: e.clientX, scrollLeft: scrollRef.current ? scrollRef.current.scrollLeft : 0, moved: false };
     if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
   };
   const onPointerMove = (e) => {
     const d = dragRef.current;
     if (!d || !scrollRef.current) return;
-    scrollRef.current.scrollLeft = d.scrollLeft - (e.clientX - d.x) * DRAG_SCROLL_MULT;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 3) d.moved = true;
+    scrollRef.current.scrollLeft = d.scrollLeft - dx * DRAG_SCROLL_MULT;
   };
+  const onPointerUpOrCancel = () => { dragRef.current = null; };
+  const onClickCapture = (e) => { if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); } dragRef.current = null; };
+  const deco = useMemo(() => decorateLine(sans || []), [(sans || []).join(" ")]);
+  const boxStyle = { overflowX: "auto", whiteSpace: "nowrap", fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, minHeight: 16, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" };
   return (
-    <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerCancel={() => { dragRef.current = null; }} onPointerUp={() => { dragRef.current = null; }}
+    <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerCancel={onPointerUpOrCancel} onPointerUp={onPointerUpOrCancel} onClickCapture={onPick ? onClickCapture : undefined}
       className="no-pan" style={{ marginBottom: 8, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.03)", padding: "6px 10px", cursor: "grab" }}>
-      <div ref={scrollRef} style={{ overflowX: "auto", whiteSpace: "nowrap", fontSize: 12.5, color: T.inkSoft, fontFamily: SEQ_FONT, fontWeight: 600, minHeight: 16, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>{text || " "}</div>
+      {onPick
+        ? <div ref={scrollRef} style={boxStyle}>{deco.length === 0 ? " " : deco.map((san, i) => (
+            <span key={i}>
+              {(i === 0 || plyIsWhite(i, startColor)) && <span>{plyMoveNum(i, startColor) + (plyIsWhite(i, startColor) ? "." : "...")} </span>}
+              <span onClick={() => onPick(sans.slice(0, i + 1))} style={{ cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, textDecorationColor: "rgba(120,102,70,.5)" }}>{san}</span>
+              {" "}
+            </span>
+          ))}</div>
+        : <div ref={scrollRef} style={boxStyle}>{text || " "}</div>}
     </div>
   );
 }
@@ -9898,7 +9916,7 @@ function useOpeningTreeAuto(priorityRef) {
 }
 // (개편) 도감 오프닝 상세 블록 — 모식도 안, 그 수 노드 옆에 인라인으로 열리고 닫힌다. 기존 카드 내용
 // (미리보기·해금 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 더해 보여준다.
-function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, vertical, scale = 1, tailPos = null }) {
+function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, onOpenLearn, vertical, scale = 1, tailPos = null }) {
   // (버그 수정) 흑의 6번째 수(ply 12)처럼 그 수 자신에게는 ECO 명칭이 새로 안 붙는(리체스 API가
   // 그 정확한 위치에 이름을 안 주는) 깊은 이론 라인을 열면, m.name이 없어 그냥 "Main Line"이라는
   // 뭉뚱그린 표시만 떴다 — 실제 원인은 체스 오프닝 이름이 매 수마다 새로 붙는 게 아니라 마지막으로
@@ -9940,13 +9958,20 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
       </div>
       <div className="flex items-center gap-2" style={{ marginTop: 10, flexWrap: "wrap" }}>
         <CircleBadge kind={kind} descOnClick />
-        <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>
+        {/* (UI) 사용자 요청 — 이 수를 누르면 그 기보가 입력된 학습 탭으로 바로 이동한다(예전엔
+            집중 학습 모드로 이동했었다). */}
+        {onOpenLearn
+          ? <button onClick={() => onOpenLearn([...path, m.san])} className="press" style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>{moveNumber(ply)}{m.san}</button>
+          : <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>}
         {evTxt && <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
         <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
       </div>
       {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}</div>}
-      {/* (버그 수정) 오프닝 이름을 누르면 그 수의 집중학습 모드로 바로 이동할 수 있게 한다. */}
-      {label && (onOpenOpening
+      {/* (사용자 요청) 오프닝 이름을 누르면 그 기보가 입력된 학습 탭으로 바로 이동한다(예전엔
+          집중 학습 모드로 이동했었다). */}
+      {label && (onOpenLearn
+        ? <button onClick={() => onOpenLearn([...path, m.san])} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
+        : onOpenOpening
         ? <button onClick={() => onOpenOpening(label)} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
         : <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>)}
       {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>채택률 {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"} · {fmtFull(m.games)}국</div>}
@@ -10166,7 +10191,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     );
   });
 });
-function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, priorityRef, onUnlockStats, contentVer }) {
+function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
@@ -11318,14 +11343,14 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           연 순간 그대로의 고정된 모양으로만 보인다. */}
       {frozenCard && (
         <DexMoveBlock path={frozenCard.item.path.slice(0, -1)} m={frozenCard.parentM} isUnlocked={frozenCard.item.unlocked}
-          cc={ccReady ? chesscom.analyze(frozenCard.item.path) : null} onClose={() => onToggleOpen(frozenCard.key)} onOpenOpening={onOpenOpening}
+          cc={ccReady ? chesscom.analyze(frozenCard.item.path) : null} onClose={() => onToggleOpen(frozenCard.key)} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn}
           vertical={vertical} scale={frozenCard.cardScale} tailPos={frozenCard.tailPos}
           style={{ position: "fixed", left: frozenCard.left, top: frozenCard.top, width: frozenCard.CARD_W }} />
       )}
     </div>
   );
 }
-function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening, treeData, treeVersion, genPriorityRef }) {
+function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening, onOpenLearn, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
@@ -11406,7 +11431,7 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
         도감 해금률 {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}%
         <span style={{ marginLeft: 6, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>
       </div>
-      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} />
+      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} />
       {/* (2차 개편) 이론 수 체계 편집 — 설정 탭에 있던 개발자 전용 기능을 도감(오프닝)으로 옮겨 통합. */}
       {canAdd && (
         <div style={{ marginTop: 16 }}>
@@ -13347,7 +13372,7 @@ function summarizePosition(board, userColor) {
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn }) {
   const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
@@ -13652,6 +13677,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   }, [wrong]);
   const gotoLine = (tag) => { solveStartRef.current = Date.now(); setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); };
   const restart = () => gotoLine(targetTag);
+  // (UI) 사용자 요청 — 퍼즐 화면 기보(PuzzlePgnBox)의 수를 누르면 그 기보가 입력된 학습 탭으로
+  // 이동한다. 퍼즐 풀이 화면 자체는 더 이상 볼 이유가 없으므로 함께 닫는다.
+  const pickToLearn = onOpenLearn ? (sans) => { onOpenLearn(sans); onClose(); } : undefined;
   // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
   // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
   // 대신 모식도 페이지에 새로 생긴 미니보드에서 그 수를 애니메이션으로 재생해 바로 복기할 수 있게 한다.
@@ -14060,7 +14088,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
               </button>
             </div>
             {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
-            <PuzzlePgnBox text={sansToPgnText(curSans)} />
+            <PuzzlePgnBox sans={curSans} onPick={pickToLearn} />
             {/* (버그 수정) 바깥 페이저(보드↔모식도 스와이프)의 onPagerPointerDown이 이 보드 위에서 눌러도
                 예외 없이 setPointerCapture를 걸어, 클릭의 대상이 실제 눌린 칸이 아니라 페이저 쪽으로
                 가로채어져 칸의 onClick(기물 선택)이 전혀 발동하지 않았다 — HTML5 네이티브 드래그 앤 드롭은
@@ -14142,7 +14170,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 애니메이션으로 재생해 복기할 수 있다(아직 안 둔 갈래는 예전처럼 그 라인을 풀도록 이동). */}
             {/* (v0.1.3 UI) "모식도의 수를 눌러 다시 보기" 안내 문구를 삭제 — 모바일에서 좁은 화면을
                 더 차지하기만 하고, 모식도 자체가 눌러보는 UI임은 이미 충분히 직관적이다. */}
-            <PuzzlePgnBox text={previewNode ? sansToPgnText([...setup, ...previewNode.path]) : ""} />
+            <PuzzlePgnBox sans={previewNode ? [...setup, ...previewNode.path] : []} onPick={pickToLearn} />
             <div style={{ width: "100%", maxWidth: 380, margin: "0 auto 12px" }}>
               {previewNode
                 ? <AnimatedMove key={previewNode.key} sans={[...setup, ...previewNode.path.slice(0, -1)]} san={previewNode.path[previewNode.path.length - 1]} size={boardSize} loopMs={2200} flip={userColor === "b"} />
@@ -15065,7 +15093,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn }) {
   const [filter, setFilter] = useState("all");
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -15198,7 +15226,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 맞다 — pushState를 하나 더 쌓는 대신 history.back()으로 정확히 하나만 되돌린다(게임 리뷰의
   // closeReview와 같은 패턴).
   const closeActive = () => { setActive(null); try { if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) window.history.back(); } catch { } };
-  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
   // 없어요"를 띄웠다. 개발자(canEdit)는 이런 손상된 퍼즐을 찾아 삭제할 수 있어야 하므로 그대로
@@ -17059,7 +17087,7 @@ function AnnouncementModal({ onClose }) {
 // 레이아웃 대신 체스보드를 상단에 별도로 크게 배치해 위아래로 늘리고(좁은 화면에서 104px짜리
 // 보드는 너무 작았다), 데스크톱은 레이아웃 구조(좌: 날짜+보드, 우: 점선 구분선+텍스트+버튼)는
 // 그대로 두고 크기 비율만 전체적으로 키운다.
-function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose }) {
+function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLearn }) {
   const [hide, setHide] = useState(false);
   const close = () => onClose(hide);
   const t = todayStr();
@@ -17068,6 +17096,7 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose }) {
   // 포지션 미리보기(AnimatedMove)다 — 사용자 스케치의 "정사각형 격자 = 미니 체스보드" 의도를
   // 그대로 반영한다.
   const flip = ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0;
+  const puzzleSans = (puzzle.setupSans || []).concat(puzzle.mistakeSan ? [puzzle.mistakeSan] : []);
   const narrow = useNarrow(640);
   // (버그 수정) 모바일 보드 상자를 width:100%로 키워도 AnimatedMove의 size는 고정 220px이라 상자
   // 안에 실제 보드보다 훨씬 큰 빈 여백이 남았다(화면 폭에 따라 폭 차이가 커서 고정값 하나로는
@@ -17133,10 +17162,10 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose }) {
                 {labelRow}
                 {titleRow}
                 {solveRow}
-                {/* 기보 — 시작 위치부터 이 포지션까지의 수순을 한 줄로, 길면 드래그해 스크롤(onJump을
-                    안 넘겨 SequenceBar가 읽기 전용 텍스트로만 렌더링됨). */}
+                {/* 기보 — 시작 위치부터 이 포지션까지의 수순을 한 줄로, 길면 드래그해 스크롤.
+                    (UI) 사용자 요청 — 임의의 수를 누르면 그 기보가 입력된 학습 탭으로 이동한다. */}
                 <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 9, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
-                  <SequenceBar sans={(puzzle.setupSans || []).concat(puzzle.mistakeSan ? [puzzle.mistakeSan] : [])} />
+                  <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => { onOpenLearn(puzzleSans.slice(0, ply)); close(); } : undefined} />
                 </div>
                 <div style={{ marginBottom: 20 }}>
                   <MascotBubble text={(puzzle.name || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" stacked />
@@ -18570,7 +18599,24 @@ function ChatUserProfileModal({ username, onClose }) {
     </div>
   );
 }
-function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, fillNarrow, myLegacies, myIsGM, myChesscomGames }) {
+function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, fillNarrow, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+  // (UI) 사용자 요청 — 채팅에 공유된 퍼즐 블록도 퍼즐 탭(PuzzleCard)과 완전히 같은 UI를 쓴다.
+  // puzzlePreviews에 담긴 pz는 puzzles.data(전체 퍼즐 레코드, id 포함)라 PuzzleCard가 그대로 쓸 수
+  // 있고, 좋아요·리포스트·공유·풀이수는 전역 상태(위 props)에서 puzzle_no로 바로 조회한다.
+  const chatPuzzleCardProps = (no, pz) => ({
+    isSolved: mySolved && pz ? mySolved.has(pz.id) : false,
+    solvedTags: myLineSolves && pz ? myLineSolves[pz.id] : null,
+    friendSolverNames: null,
+    solveCount: Math.max((solveCounts && solveCounts[no]) || 0, (mySolved && pz && mySolved.has(pz.id)) ? 1 : 0),
+    isLiked: likedPuzzles && pz ? likedPuzzles.has(pz.id) : false,
+    likeCount: (likeCounts && likeCounts[no]) || 0,
+    onToggleLike: onToggleLike && pz ? () => onToggleLike(pz.id) : undefined,
+    isReposted: repostedPuzzles && pz ? repostedPuzzles.has(pz.id) : false,
+    repostCount: (repostCounts && repostCounts[no]) || 0,
+    onToggleRepost: onToggleRepost && pz ? () => onToggleRepost(pz.id) : undefined,
+    shareCount: (shareCounts && shareCounts[no]) || 0,
+    onShare: onShare && pz ? () => onShare(pz) : undefined,
+  });
   // (사용자 요청) 모바일 전체 화면 모드(ChatsModal이 narrow일 때만 fillNarrow=true로 넘겨준다)에서는
   // 메시지 목록이 고정 320px가 아니라 남은 세로 공간을 채우도록(flex:1) 바꾼다 — 이 루트가 height:100%로
   // 늘어나려면 부모도 그만큼의 높이를 flex로 마련해 둬야 하므로, 그런 부모를 보장하지 않는 다른
@@ -19031,7 +19077,6 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
           // (v0.1.4 기능) 텍스트 메시지와 동일하게 당겨서 시각 확인 + 꾹 눌러 전달/삭제 메뉴를 지원한다.
           if (m.puzzle_no != null) {
             const pz = puzzlePreviews[m.puzzle_no];
-            const flip = pz && pz.setupSans ? (pz.setupSans.length + 1) % 2 !== 0 : false;
             const dx = drag && drag.id === m.id ? drag.dx : 0;
             const d = new Date(m.created_at);
             const hh = d.getHours(); const ampm = hh < 12 ? "AM" : "PM"; const h12 = String(hh % 12 === 0 ? 12 : hh % 12).padStart(2, "0");
@@ -19079,18 +19124,18 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                   </div>
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
-                  <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
-                    <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                      {pz === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>불러오는 중…</div>
-                        : pz === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>퍼즐을 찾을 수 없어요.</div>
-                        : <>
-                            {pz.setupSans && pz.mistakeSan && <AnimatedMove sans={pz.setupSans} san={pz.mistakeSan} size={140} loopMs={2400} flip={flip} />}
-                            <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{pz.name}</div>
-                            <div style={{ fontSize: 9.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>#{m.puzzle_no}</div>
-                          </>}
-                      <button onClick={() => onOpenSharedPuzzle && onOpenSharedPuzzle(m)} disabled={!pz} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: pz ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: pz ? "pointer" : "default" }}>퍼즐 풀러 가기</button>
+                  {/* (UI) 사용자 요청 — 채팅 공유 퍼즐 블록도 퍼즐 탭의 PuzzleCard와 동일한 UI를 그대로 쓴다. */}
+                  {(pz === undefined || pz === null) ? (
+                    <div style={{ width: 200, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
+                      <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                        <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>{pz === undefined ? "불러오는 중…" : "퍼즐을 찾을 수 없어요."}</div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div style={{ width: 200, userSelect: "none", WebkitUserSelect: "none" }}>
+                      <PuzzleCard p={pz} onClick={() => onOpenSharedPuzzle && onOpenSharedPuzzle(m)} {...chatPuzzleCardProps(m.puzzle_no, pz)} />
+                    </div>
+                  )}
                 </div>
                 </div>
               </div>
@@ -20458,7 +20503,7 @@ function FriendRow({ id, pub, right, onClick }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, myLegacies, myIsGM, myChesscomGames }) {
+function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [rows, setRows] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [chatWith, setChatWith] = useState(null);
@@ -20564,7 +20609,8 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
         )}
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} />
+            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
+              mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : (
           <div ref={rowsRef} style={{ padding: 12, minHeight: 140, maxHeight: narrow ? undefined : 440, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
@@ -21029,7 +21075,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenPuzzle, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenPuzzle, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -21125,7 +21171,8 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} />
+            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
+              mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : sel ? (() => {
           const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
@@ -22533,14 +22580,16 @@ export default function App() {
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
-      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
+      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={onOpenGame} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} />}</AnimatePresence>
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+        solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+        mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} />}
@@ -22629,10 +22678,10 @@ export default function App() {
             재마운트하면 이 상태가 전부 초기화되고, 트리 로딩 연출도 처음부터 다시 재생된다). */}
         {(tab === "dex" || focusReturnTab === "dex") && (
           <div style={tab === "dex" ? undefined : { display: "none" }}>
-            <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
+            <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
