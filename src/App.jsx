@@ -15951,6 +15951,7 @@ const CHANGELOG = [
       "개발자 전용 — 퍼즐 라인 길이를 조정할 때(수 추가) 이제 직접 타이핑하는 대신, 평가치 순으로 정렬된 후보 수 목록에서 채택률과 함께 골라 추가할 수 있어요. 원하는 수가 목록에 없을 때만 맨 아래 직접 입력을 쓰면 돼요.",
       "퍼즐 풀이 화면의 '다음 라인 풀기' 버튼을 없앴어요 — 한 라인을 풀면 어차피 자동으로 다음 라인으로 넘어가서 필요 없어졌어요.",
       "채팅 목록에서 알림을 꺼 둔 상대는 이름 옆에 알림 해제 아이콘이 함께 떠요.",
+      "유산 재생에서 유산 수가 등장하기 직전 1초간 짧은 정적을 둬서 등장이 더 극적으로 느껴져요. 등장한 뒤 위아래로 계속 흔들리던 문제도 고쳤어요.",
     ]
   },
   {
@@ -19090,9 +19091,15 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const beforeTokens = useMemo(() => pgnTokens.slice(0, moveIndex), [pgnTokens, moveIndex]);
   const afterTokensArr = useMemo(() => pgnTokens.slice(moveIndex + 1), [pgnTokens, moveIndex]);
   const heroTok = pgnTokens[moveIndex];
+  // (사용자 요청) 유산 수 직전 토큰까지 다 타이핑된 뒤 곧바로 유산 수가 떨어지면 등장이 너무
+  // 순식간이라 극적으로 느껴지지 않는다 — 잠깐(1초) 숨을 고른 뒤에야 떨어지도록 짧은 정적을 준다.
+  const HERO_ENTRANCE_DELAY_MS = 1000;
   useEffect(() => {
     if (phase !== "typing" || typingStage !== "before") return;
-    if (typedCount >= moveIndex) { setTypingStage("heroSolo"); return; }
+    if (typedCount >= moveIndex) {
+      const t = setTimeout(() => setTypingStage("heroSolo"), HERO_ENTRANCE_DELAY_MS);
+      return () => clearTimeout(t);
+    }
     const t = setTimeout(() => setTypedCount((n) => Math.min(moveIndex, n + 1)), 80);
     return () => clearTimeout(t);
   }, [phase, typingStage, typedCount, moveIndex]);
@@ -19280,12 +19287,16 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           </div>
           {typingStage === "heroSolo" && (
             <motion.div style={{ position: "fixed", inset: 0, zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-              {/* (v0.3.4 UI) 위에서 떨어져 정중앙에 부딪히듯 등장 — 스프링(질량-감쇠 진동) 물리로 계산돼
-                  실제로 한두 번 튀어오르는 반동을 남기고 자리를 잡는다(easeOut 트윈이 아니라 진짜 스프링).
+              {/* (v0.3.4 UI → v0.3.5 버그 수정) 위에서 떨어져 정중앙에 부딪히듯 등장 — 스프링(질량-감쇠
+                  진동) 물리로 계산돼 자리를 잡는다(easeOut 트윈이 아니라 진짜 스프링). damping이 13으로
+                  너무 낮아(감쇠비 ≈0.33) 착지 후에도 여러 차례 위아래로 튀는 진동이 한동안 눈에 띄게
+                  이어지는 문제가 있었다 — damping을 22로 올려(감쇠비 ≈0.56) 착지 직후 한 번만 또렷하게
+                  튀어오르고 곧바로 정착하도록 다듬었다(완전히 감쇠비 1로 만들면 반동 자체가 없어져
+                  "부딪히는" 느낌이 사라지므로, 반동은 남기되 반복 진동만 없앤다).
                   (사용자 요청) onAnimationComplete로 이 스프링이 실제로 정착한 순간을 확실히 알아내
                   heroLanded를 켠다 — 주변 수 무너짐(LegacyShatterToken)은 이 값이 켜진 뒤에만 시작된다. */}
               <motion.span layoutId="legacyHeroToken" initial={{ opacity: 0, y: -220, scale: 0.85 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: "spring", stiffness: 380, damping: 13, mass: 1 }}
+                transition={{ type: "spring", stiffness: 380, damping: 22, mass: 1 }}
                 onAnimationComplete={() => setHeroLanded(true)}
                 style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 34, color, textShadow: "0 0 26px " + color + ", 0 2px 14px rgba(0,0,0,.7)" }}>
                 {heroTok}
