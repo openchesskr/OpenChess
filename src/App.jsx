@@ -2300,6 +2300,29 @@ function recommendReasonFor(key) { const v = (CONTENT.recommends || {})[key]; re
 function isMainline(key, san) { return !!CONTENT.mainline[key + "|" + san]; }
 function forceKindFor(key, san) { return CONTENT.forceKind[key + "|" + san] || null; }
 function addsFor(key) { return CONTENT.treeAdds[key] || []; }
+function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+// (사용자 요청) 오프닝 명칭이 바뀌면, 그 이름을 접두사로 쓰던 자손 수들의 오프닝 명칭도 그 접두사만
+// 자연스럽게 함께 바뀐다 — 예: "Queen's Gambit"을 "QG"로 바꾸면 "Queen's Gambit Declined"도
+// "QG Declined"로. path 아래(자기 자신 제외) 실제 이론 트리(SNAP.tree)를 훑어, 그 자신의 이름
+// (개발자 오버라이드 우선, 없으면 원본 ECO 이름)이 oldName으로 시작하는 노드만 오버라이드를 새로
+// 써 넣는다 — 이름이 전혀 없거나 단순히 그 이름을 물려받기만 하는(자기 이름이 없는) 노드는 건드리지
+// 않는다(부모 조회 시 자동으로 새 이름을 따라간다).
+function cascadeRenameOpeningDescendants(path, oldName, newName) {
+  if (!oldName || !newName || oldName === newName) return;
+  const prefix = path.join(" ");
+  const boundaryRe = new RegExp("^" + escapeRegExp(oldName) + "(?=[:,]|\\s|$)");
+  for (const key in SNAP.tree) {
+    if (key === prefix || !key.startsWith(prefix + " ")) continue;
+    const nd = SNAP.tree[key];
+    if (!nd || !nd.opening || !nd.opening.name) continue;
+    const parts = key.split(" ");
+    const lastSan = parts[parts.length - 1];
+    const parentKey = parts.slice(0, -1).join(" ");
+    const cur = nameOverride(parentKey, lastSan) ?? nd.opening.name;
+    if (!boundaryRe.test(cur)) continue;
+    CONTENT.names[parentKey + "|" + stripSuffix(lastSan)] = newName + cur.slice(oldName.length);
+  }
+}
 /* 개발자 오버라이드: 수 이름 / 키워드 / '이론 수에서 삭제' */
 function nameOverride(key, san) { const v = CONTENT.names[key + "|" + stripSuffix(san)]; return v === undefined ? null : v; }
 function kwOverride(key, san) { const v = CONTENT.keywords[key + "|" + stripSuffix(san)]; return Array.isArray(v) ? v : null; }
@@ -6585,7 +6608,15 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     if (sans.length) { const pj = sans.slice(0, -1).join(" "); const last = sans[sans.length - 1]; const ov = nameOverride(pj, last); if (ov) parentName = ov; else { const nd = snapNode(sans.slice(0, -1)); const mm = nd && nd.moves.find((x) => stripSuffix(x.san) === stripSuffix(last)); parentName = (mm && mm.name) || ""; } }
     setNameDraft(nameOverride(editKey, san) ?? (m.name || parentName)); setKwDraft(kwOverride(editKey, san) || deriveKeywords(m)); setDevEdit(true);
   };
-  const saveMeta = async () => { const k = editKey + "|" + stripSuffix(san); CONTENT.names[k] = nameDraft.trim(); CONTENT.keywords[k] = kwDraft; await bumpContent(); setDevEdit(false); };
+  const saveMeta = async () => {
+    const k = editKey + "|" + stripSuffix(san);
+    const newName = nameDraft.trim();
+    // (사용자 요청) 이름이 바뀌면 그 이름을 접두사로 쓰던 자손 수들의 오프닝 명칭도 함께 갱신한다.
+    const oldName = nameOverride(editKey, san) ?? m.name ?? null;
+    CONTENT.names[k] = newName; CONTENT.keywords[k] = kwDraft;
+    if (newName) cascadeRenameOpeningDescendants([...sans, san], oldName, newName);
+    await bumpContent(); setDevEdit(false);
+  };
   const toggleUnbook = async () => { const k = editKey + "|" + stripSuffix(san); if (CONTENT.unbook[k]) delete CONTENT.unbook[k]; else CONTENT.unbook[k] = true; await bumpContent(); };
   const toggleKw = (kw) => setKwDraft((d) => { if (d.includes(kw)) return d.filter((x) => x !== kw); const p = kwPartner(kw); return [...d.filter((x) => x !== p), kw]; });
   const explainLong = !!explain && explain.length > 90;
