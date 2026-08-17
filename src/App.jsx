@@ -818,6 +818,19 @@ function sansToFen(sans) {
   const { board, rights, ep } = replaySans(sans);
   return boardToFen(board, sans.length, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-");
 }
+// (v0.3.5 기능) 사용자 요청 — v0.3.4에서 "이번 범위를 넘어선다"고 미뤄 둔 FEN 리뷰 관련 작업 중,
+// 보드 조작(자유 탐색)·정확한 무승부 판정만 이번에 마저 지원한다(수의 등급·코치 코멘트 같은 MEC
+// 채점까지는 여전히 범위 밖 — LearnTab의 기존 FEN 모드도 처음부터 같은 선을 긋고 있었다, goFen
+// 참고). boardFromSans/sansToFen(둘 다 표준 시작 위치 전용, 모듈 전역 캐시로 최적화됨)을 그대로
+// 두고, fenRoot가 있을 때만 이 보조 함수들로 갈아탄다 — fenRoot 재생은 호출 빈도가 낮아(자유 탐색
+// 중에만) 캐시 없이 매번 replayFromFen을 불러도 무방하다.
+function boardOfRoot(fenRoot, sans) { return fenRoot ? replayFromFen(fenRoot, sans).board : boardFromSans(sans); }
+function fenOfRoot(fenRoot, sans) {
+  if (!fenRoot) return sansToFen(sans);
+  const r = replayFromFen(fenRoot, sans);
+  return boardToFen(r.board, sans.length, castleRightsStr(r.rights), r.ep ? sqName(r.ep[0], r.ep[1]) : "-", fenRoot.turn);
+}
+function colorOfRoot(fenRoot, plyCount) { return plyIsWhite(plyCount, fenRoot ? fenRoot.turn : "w") ? "w" : "b"; }
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 
@@ -1016,11 +1029,29 @@ function uciToSan(board, uci, color, ep) {
 // 보드 재구성(boardFromSans)에는 반영되지 않아, 다음 반복의 uciToSan이 그 폰이 여전히 있다고 보고
 // 완전히 다른(때로는 불가능한) 수로 오판해 null을 반환하며 그 지점에서 라인이 조용히 끊겼다. 매
 // 반복마다 직전 수로 새로 생긴 ep 타깃을 계산해 다음 uciToSan 호출에 넘긴다.
-function pvUciToSans(prevSans, uciList, maxPlies) {
+// (v0.3.5 기능) fenRoot를 선택적으로 받는다 — 예전엔 항상 표준 시작 위치를 전제해(boardFromSans),
+// FEN 리뷰의 실시간 엔진 라인 패널에 그대로 쓰면 PV가 엉뚱한(때로는 불법인) 표기로 보였다("범위가
+// 커진다"고 미룬 항목). fenRoot 경로는 표준 경로가 쓰는 전역 재생 캐시(replaySans)가 없어 매번
+// replayFromFen부터 다시 재생하지만, 이 함수는 최대 maxPlies(보통 15수 안팎)만 도는 짧은 루프라
+// 비용은 무시할 만하다.
+function pvUciToSans(prevSans, uciList, maxPlies, fenRoot) {
   const sans = [];
   const cur = prevSans.slice();
-  let ep = epTarget(cur);
   const n = Math.min(uciList.length, maxPlies || uciList.length);
+  if (fenRoot) {
+    let { board, ep } = replayFromFen(fenRoot, cur);
+    for (let i = 0; i < n; i++) {
+      const color = plyIsWhite(cur.length, fenRoot.turn) ? "w" : "b";
+      const san = uciToSan(board, uciList[i], color, ep);
+      if (!san) break;
+      sans.push(san);
+      cur.push(san);
+      ep = epTargetFromMoveInfo(sanSrc(board, san, color));
+      board = applySan(board, san, color);
+    }
+    return sans;
+  }
+  let ep = epTarget(cur);
   for (let i = 0; i < n; i++) {
     const color = cur.length % 2 === 0 ? "w" : "b";
     const board = boardFromSans(cur);
@@ -1944,20 +1975,25 @@ function positionKey(board, color) {
 // sans가 나타내는 수순이 "지금" 스테일메이트·체크메이트·3회 동형 반복 중 하나로 이미 끝나 있는
 // 국면인지 판정한다(진행 중이면 end: null). 학습 탭 메인 보드·리뷰 페이지 자유 탐색 양쪽에서 더
 // 이상 수를 둘 수 없어야 하는 국면인지 확인하는 데 쓴다.
-function gameEndState(sans) {
-  if (!sans || !sans.length) return { end: null };
-  let board = startBoard();
-  const seen = new Map([[positionKey(board, "w"), 1]]);
-  for (let i = 0; i < sans.length; i++) {
-    const color = i % 2 === 0 ? "w" : "b";
+// (v0.3.5 버그 수정) fenRoot를 선택적으로 받는다 — 예전엔 항상 표준 시작 위치를 전제해, FEN 리뷰의
+// 자유 탐색·학습 탭 FEN 모드에서는 이 판정 자체를 아예 꺼 둘 수밖에 없었다("범위 밖"으로 미룬
+// 항목). fenRoot가 있으면 그 위치·그 차례부터 재생해 판정한다(생략 시 기존 표준 시작 위치 동작과
+// 완전히 동일).
+function gameEndState(sans, fenRoot) {
+  const startColor = fenRoot ? fenRoot.turn : "w";
+  let board = fenRoot ? fenRoot.board : startBoard();
+  const seen = new Map([[positionKey(board, startColor), 1]]);
+  const n = sans ? sans.length : 0;
+  for (let i = 0; i < n; i++) {
+    const color = plyIsWhite(i, startColor) ? "w" : "b";
     board = applySan(board, sans[i], color);
     const nextColor = color === "w" ? "b" : "w";
     const key = positionKey(board, nextColor);
     seen.set(key, (seen.get(key) || 0) + 1);
   }
-  const lastColor = (sans.length - 1) % 2 === 0 ? "w" : "b";
-  const toMove = lastColor === "w" ? "b" : "w";
+  const toMove = n === 0 ? startColor : (plyIsWhite(n - 1, startColor) ? "b" : "w");
   if (!hasAnyLegalMove(board, toMove)) return isInCheck(board, toMove) ? { end: "checkmate", color: toMove } : { end: "stalemate", color: toMove };
+  if (n === 0) return { end: null };
   if (seen.get(positionKey(board, toMove)) >= 3) return { end: "threefold" };
   return { end: null };
 }
@@ -7999,10 +8035,19 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   const effFen = fenRoot
     ? boardToFen(board, effSans.length, castleRightsStr(fenReplay.rights), fenReplay.ep ? sqName(fenReplay.ep[0], fenReplay.ep[1]) : "-", fenRoot.turn)
     : sansToFen(effSans);
-  const legalTargets = useMemo(() => (sel ? legalDests(board, sel[0], sel[1], explColor, ep) : []), [sel, board, explColor, ep]);
-  // (v0.2.3 기능) 학습 탭과 동일하게, 자유 탐색 중인 지금 위치가 스테일메이트·3회 동형 반복으로
-  // 이미 끝나 있으면 더 이상 수를 둘 수 없게 막고 무승부로 표시한다.
-  const drawState = useMemo(() => gameEndState(effSans), [effSans]);
+  // (v0.3.5 기능) 학습 탭 FEN 모드와 동일하게, fenRoot가 있으면 legalDests의 캐슬링 판정(기물
+  // 배치만 봄)을 그대로 쓰지 않고 FEN에서 유래한 캐슬링 권리로 한 번 더 걸러낸다(fenLegalDests) —
+  // 예전엔 이 자체가 없어 FEN 리뷰의 자유 탐색을 통째로 꺼 둘 수밖에 없었다("범위를 크게 넘어선다"고
+  // 미룬 항목).
+  const legalTargets = useMemo(() => {
+    if (!sel) return [];
+    return fenRoot ? fenLegalDests(sel[0], sel[1], explColor, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], explColor, ep);
+  }, [sel, board, explColor, ep, fenRoot, fenReplay]);
+  // (v0.2.3 기능 → v0.3.5) 학습 탭과 동일하게, 자유 탐색 중인 지금 위치가 스테일메이트·3회 동형
+  // 반복으로 이미 끝나 있으면 더 이상 수를 둘 수 없게 막고 무승부로 표시한다. gameEndState가
+  // fenRoot를 받도록 고쳐져 FEN 리뷰에서도 정확히 판정한다(effSans는 fenRoot가 있을 때 "그 FEN부터
+  // 둔 수순"을 의미하므로 그대로 넘기면 된다).
+  const drawState = useMemo(() => gameEndState(effSans, fenRoot), [effSans, fenRoot]);
   const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
   const curMove = curPly > 0 && result ? result.moves[curPly - 1] : null;
   // (v0.2.1) 지금 화면에 반영할 수/평가 — 자유 탐색 중이면 그 라이브 분석(exploreMove·엔진 라인 1순위
@@ -8059,14 +8104,15 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   }, [gameDrawn, activeMove, engineLines, effSans, exploreSans, curPly, sans]);
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
-    if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
+    const dests = fenRoot ? fenLegalDests(from[0], from[1], explColor, board, fenReplay.rights, ep) : legalDests(board, from[0], from[1], explColor, ep);
+    if (!dests.some(([r, c]) => r === to[0] && c === to[1])) return false;
     const pc = board[from[0]][from[1]];
     if (pc && pc.t === "P" && ((explColor === "w" && to[0] === 0) || (explColor === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }
     const san = buildSan(board, from[0], from[1], to[0], to[1], explColor, ep);
     if (!san) return false;
     playFree(san);
     return true;
-  }, [board, explColor, ep, playFree]);
+  }, [board, explColor, ep, playFree, fenRoot, fenReplay]);
   const completePromo = useCallback((piece) => {
     if (!promoPrompt) return;
     const { from, to } = promoPrompt; setPromoPrompt(null); setSel(null); setDrag(null);
@@ -8091,13 +8137,8 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready") { setEngineLines([]); setLinesPending(false); return; }
-    // (v0.3.4 기능) 이 패널의 pvUciToSans(effSans, ...)는 내부적으로 표준 시작 위치를 전제하고
-    // 수순을 다시 재생한다 — fenRoot 리뷰에서 그대로 쓰면 PV가 엉뚱한(때로는 불법인) 표기로
-    // 보인다. fenRoot까지 정확히 지원하려면 pvUciToSans 자체를 고쳐야 해 범위가 커지므로,
-    // 위 exploring 주석과 같은 이유로 fenRoot 리뷰에서는 이 실시간 엔진 라인 패널만 비워 둔다
-    // (핵심 기능인 실제 둔 수의 등급·코치 코멘트·평가 그래프는 analyzeGame 쪽에서 이미 fenRoot를
-    // 정확히 반영하므로 영향이 없다).
-    if (fenRoot) { setEngineLines([]); setLinesPending(false); return; }
+    // (v0.3.4 기능 → v0.3.5) 이 패널의 pvUciToSans(effSans, ...)가 fenRoot를 받도록 고쳐져("범위가
+    // 커진다"고 미뤄 뒀던 항목), FEN 리뷰에서도 이제 정확한 SAN으로 엔진 상위 줄을 보여준다.
     // (v0.2.3 버그 수정) 학습 탭(useMergedMoves)의 엔진 라인은 포지션이 바뀌어도 이전 값을 옅게 유지한
     // 채 "계산 중"만 표시하지만, 그건 평가치 바(posEval)를 별도의 빠른 단일PV 진행 콜백으로 항상 이
     // 포지션 전용 값으로만 채우기 때문에 가능한 선택이었다(barEval 계산부 참고). 이 페이지는 그런
@@ -8107,7 +8148,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
     // 항상 지금 포지션의 값(또는 아직 없음)만 보이게 한다.
     setEngineLines([]);
     setLinesPending(true);
-    const baseWhite = effSans.length % 2 === 0 ? 1 : -1;
+    const baseWhite = colorOfRoot(fenRoot, effSans.length) === "w" ? 1 : -1;
     // 원시 PV 목록 → 표시용 라인(백 관점 평가 + 수순). 실시간 스트리밍·최종 결과가 같은 변환을 공유한다.
     // (Array 가드: 풀 부팅 실패로 useEngine 폴백을 쓰면 5번째 인자가 onLines가 아니라 onProgress라 단일
     //  엔트리가 올 수 있다 — 그럴 땐 무시한다.)
@@ -8115,7 +8156,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       ev: pv.mate != null
         ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
         : { cp: pv.cp * baseWhite },
-      sans: pvUciToSans(effSans, pv.pv, 15),
+      sans: pvUciToSans(effSans, pv.pv, 15, fenRoot),
     })));
     (async () => {
       try {
@@ -8144,14 +8185,22 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       finally { if (!cancelled) setLinesPending(false); }
     })();
     return () => { cancelled = true; };
-  }, [effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  }, [effSans.join(" "), engine && engine.status, engine && engine.profile, fenRoot]);
   // (v0.2.1 기능) 기보에 없는 자유 탐색 수도 기보 수와 똑같이 — 코치 카드에 등급·평가·설명을, 보드에
   // 수 체계 아이콘("계산 중" 포함)을, Show 화살표에 최선수를 표시하기 위해, 마지막으로 둔 자유 탐색
   // 수를 게임 리뷰와 동일한 방식(analyzeGame의 채점 규칙)으로 라이브 분석한다. 공용 엔진 큐 대신 게임
   // 리뷰와 같은 독립 풀을 써서 학습 탭과 충돌하지 않게 한다. (exploreMove state는 playFree보다 먼저
   // 선언돼야 해 위쪽으로 옮겨졌다.)
+  // (v0.3.5 기능) 사용자 요청으로 FEN 리뷰도 이제 보드를 직접 조작하는 자유 탐색 자체는 지원하지만
+  // (위 legalTargets/tryMove의 fenLegalDests, 위 drawState의 gameEndState(fenRoot) 참고), 이 채점
+  // 로직(및 그 아래 코치 카드가 참조하는 mecFacts)은 여전히 fenRoot를 모른 채 boardFromSans 등으로
+  // 표준 시작 위치를 전제하고 있다 — recaptureFact 하나만 봐도 mecFacts 안에서 10개 넘는 하위
+  // "Fact" 함수가 전부 같은 가정을 깔고 있어, 전부 fenRoot 인식하게 고치는 건 이번 범위를 넘어선다
+  // (LearnTab의 기존 FEN 모드도 goFen에서 stampQ/evalMoveKind를 아예 건너뛰는 것과 같은 선). FEN
+  // 리뷰에서는 자유 탐색 수를 등급·코치 코멘트 없이(exploreMove를 null로 유지) 보드·평가치 막대·
+  // 엔진 상위 줄만으로 보여준다.
   useEffect(() => {
-    if (!exploring) { setExploreMove(null); return; }
+    if (!exploring || fenRoot) { setExploreMove(null); return; }
     let cancelled = false;
     const prevSans = effSans.slice(0, -1);
     const san = effSans[effSans.length - 1];
@@ -8219,7 +8268,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       } catch { }
     })();
     return () => { cancelled = true; };
-  }, [exploring, effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  }, [exploring, fenRoot, effSans.join(" "), engine && engine.status, engine && engine.profile]);
   // (v0.2.9 기능) 평가치 바가 실시간 엔진 라인 1순위 평가를 따라 계속 움직이도록 — engineLines는 포지션이
   // 바뀔 때 곧장 []로 비워졌다가(위 효과의 setEngineLines([])) 스트리밍(onLines)으로 depth가 깊어질
   // 때마다 갱신되므로, 채워져 있는 한 그 1순위 줄의 평가치를 그대로 쓰면 바가 탐색 내내 실시간으로
@@ -8396,11 +8445,16 @@ function ReviewPage({ game, onClose, myUid, engine }) {
     })();
     return () => { cancelled = true; };
   }, [effSans.join(" "), activeMove && activeMove.kind, engine && engine.status, engine && engine.profile]);
+  // (v0.3.5 버그 수정) 여기 boardFromSans(effSans...)는 analyzeGame과 무관하게 이 컴포넌트가 직접
+  // "Show" 화살표·마지막 수 배지 칸을 구하려고 보드를 다시 재생하는 자리라, fenRoot가 있어도 표준
+  // 시작 위치를 그대로 전제하고 있었다 — 실제 둔 수를 볼 때도(자유 탐색 여부와 무관하게) 화살표·
+  // 배지가 엉뚱한 칸을 가리키는 latent 버그였다. boardOfRoot로 바꿔 고쳤다(등급·코치 코멘트 자체는
+  // 이번 범위에 포함하지 않았지만, 이 칸 계산은 MEC와 무관한 순수 위치 재생이라 안전하게 고칠 수 있다).
   const arrows = useMemo(() => {
     const out = [];
     if (activeMove && showingLine) {
       const target = activeMove.best || activeMove.san;
-      const prevBoard = boardFromSans(effSans.slice(0, -1));
+      const prevBoard = boardOfRoot(fenRoot, effSans.slice(0, -1));
       const info = sanSrc(prevBoard, target, activeMove.white ? "w" : "b");
       if (info && !info.castle) out.push({ from: info.from, to: info.to, adopt: 80 });
     }
@@ -8409,12 +8463,12 @@ function ReviewPage({ game, onClose, myUid, engine }) {
     // 아니라, 그 수로 인해 방치된 다른 기물까지 전부) — sacrificedPiece가 있다는 것 자체가 이미
     // "탁월한 수 + 언더프로모션 아님"을 뜻하므로 그대로 게이트로 재사용한다.
     if (sacrificedPiece) {
-      out.push(...hangingPieceArrows(boardFromSans(effSans), activeMove.white ? "w" : "b"));
+      out.push(...hangingPieceArrows(boardOfRoot(fenRoot, effSans), activeMove.white ? "w" : "b"));
     }
     out.push(...threatArrows);
     return out;
-  }, [activeMove, showingLine, effSans, sacrificedPiece, threatArrows]);
-  const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardFromSans(effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
+  }, [activeMove, showingLine, effSans, sacrificedPiece, threatArrows, fenRoot]);
+  const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardOfRoot(fenRoot, effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
   // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
   // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
   const hasPlayerData = !!(game.white || game.black || game.color);
@@ -8489,7 +8543,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive={!fenRoot} topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
@@ -8517,7 +8571,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive={!fenRoot} topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
               leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
@@ -8614,13 +8668,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const ep = fenRoot ? fenReplay.ep : stdEp;
   const onLoadFen = (root) => { setFocus(null); setFenRoot(root); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
   const exitFenMode = () => { setFenRoot(null); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
-  // (v0.2.3 기능) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히 더 이상의
-  // 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수 있는" 수가
-  // 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더 이상 수를
-  // 둘 수 없게 하고 보드 하단에 무승부를 표시한다. (FEN 모드는 표준 시작 위치 가정을 쓰는 이 판정
-  // 대상이 아니므로 항상 false — 별도의 무승부 판정은 이번 범위 밖.)
-  const drawState = useMemo(() => gameEndState(sans), [key]);
-  const gameDrawn = !fenRoot && (drawState.end === "stalemate" || drawState.end === "threefold");
+  // (v0.2.3 기능 → v0.3.5) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히
+  // 더 이상의 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수
+  // 있는" 수가 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더
+  // 이상 수를 둘 수 없게 하고 보드 하단에 무승부를 표시한다. gameEndState가 fenRoot를 받도록 고쳐져
+  // (예전엔 "범위 밖"으로 미룬 항목) FEN 모드에서도 이제 정확히 판정한다 — sans는 이미 "이 FEN부터
+  // 둔 수순"이라 gameEndState(sans, fenRoot)에 그대로 넘기면 된다.
+  const drawState = useMemo(() => gameEndState(sans, fenRoot), [key, fenRoot]);
+  const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
   const [mode, setMode] = useState("normal");
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
@@ -8812,11 +8867,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 그냥 그 수를 둔다. 이 값들은 전부 "표준 시작 위치에서의 이 sans"를 전제하므로, FEN 모드의 sans에
   // 그대로 적용하면 완전히 엉뚱한 포지션을 기준으로 평가해 버린다.
   const goFen = useCallback((san) => {
+    if (gameDrawn) return;   // (v0.3.5 버그 수정) gameEndState가 fenRoot를 지원하게 되면서 FEN 모드도 이제 정확히 판정되므로, 표준 모드(go)와 똑같이 게이팅한다.
     playMoveSfx(san);
     setSans([...sans, san]);
     setFuture((future.length && stripSuffix(future[0]) === stripSuffix(san)) ? future.slice(1) : []);
     setSel(null); setDrag(null);
-  }, [sans, future]);
+  }, [sans, future, gameDrawn]);
 
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
@@ -15952,6 +16008,7 @@ const CHANGELOG = [
       "퍼즐 풀이 화면의 '다음 라인 풀기' 버튼을 없앴어요 — 한 라인을 풀면 어차피 자동으로 다음 라인으로 넘어가서 필요 없어졌어요.",
       "채팅 목록에서 알림을 꺼 둔 상대는 이름 옆에 알림 해제 아이콘이 함께 떠요.",
       "유산 재생에서 유산 수가 등장하기 직전 1초간 짧은 정적을 둬서 등장이 더 극적으로 느껴져요. 등장한 뒤 위아래로 계속 흔들리던 문제도 고쳤어요.",
+      "FEN 포지션 게임 리뷰에서도 이제 보드를 직접 만져 원하는 수를 자유롭게 둬 볼 수 있어요(실시간 엔진 평가·상위 후보 수도 함께 떠요). 학습 탭 FEN 모드의 스테일메이트·3회 동형 반복 무승부 판정도 정확해졌어요.",
     ]
   },
   {
