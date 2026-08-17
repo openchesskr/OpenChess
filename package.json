@@ -14,7 +14,6 @@
     "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.117.1",
     "@supabase/supabase-js": "^2.45.4",
     "framer-motion": "^12.42.2",
     "lucide-react": "^0.383.0",
