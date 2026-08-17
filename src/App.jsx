@@ -14195,15 +14195,15 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     </div>
   );
 }
-// (v0.3.4 기능 → v0.3.5 형식 변경) 퍼즐 고유 딥링크(openchess.kr/puzzle/(번호)/(라인 번호)) — 링크를
+// (v0.3.4 기능 → v0.3.5 형식 변경) 퍼즐 고유 딥링크(openchess.kr/puzzle/(번호)-(라인 번호)) — 링크를
 // 열면 그 퍼즐의 그 라인이 실제로 다시 열린다(리뷰·퍼즐 URL 기능 참고). 외부 공유는 항상 1번
 // 라인부터 보여준다(공유받는 사람은 대개 그 퍼즐을 처음 푸는 사람이라 어느 라인에서 공유했는지는
 // 중요하지 않다). (사용자 요청) 예전엔 접두사 없이 "/123456-2"처럼 곧장 번호로 시작해 URL만 봐선
 // 이게 무슨 링크인지 알 수 없었다 — "/puzzle/"을 붙여 리뷰 링크("/review/...")와 같은 방식으로
-// 용도가 URL만 봐도 드러나게 했다.
+// 용도가 URL만 봐도 드러나게 했다(번호-라인 사이는 그대로 "-"로 연결).
 function puzzleShareUrl(no, lineNo) {
   const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://openchess.kr";
-  return origin + "/puzzle/" + no + "/" + (lineNo || 1);
+  return origin + "/puzzle/" + no + "-" + (lineNo || 1);
 }
 // (v0.3.4 기능) 리뷰 고유 딥링크(openchess.kr/review/(식별자)) — reviewGameIdentifier가 만든 식별자를
 // 그대로 이어붙인다.
@@ -15167,7 +15167,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 쌓아 뒀으므로, 닫을 때는(뒤로가기 버튼이 아니라 이 X 버튼이어도) 그 항목을 되돌아가는 게
   // 맞다 — pushState를 하나 더 쌓는 대신 history.back()으로 정확히 하나만 되돌린다(게임 리뷰의
   // closeReview와 같은 패턴).
-  const closeActive = () => { setActive(null); try { if (/^\/puzzle\/\d{6}\/\d+$/.test(window.location.pathname)) window.history.back(); } catch { } };
+  const closeActive = () => { setActive(null); try { if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) window.history.back(); } catch { } };
   if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
@@ -16454,7 +16454,7 @@ const CHANGELOG = [
       "보드 편집기에서 이제 기물을 손가락(또는 마우스)으로 자연스럽게 끌어다 옮길 수 있어요 — 팔레트에서 보드로 끌어다 놓거나, 보드 위 기물을 직접 끌어서 옮기거나, 보드 밖으로 끌어다 놓아 지울 수 있어요.",
       "보드 편집기의 이미지 스캔 기능이 실제로 동작해요 — 체스판 사진을 올리면 기물 배치를 읽어 자동으로 포지션을 채워줘요.",
       "FEN 포지션에서는 리뷰(분석) 페이지를 열 수 없어요 — 아직 준비 중인 기능이라 눌러도 '업데이트를 기대해 주세요!' 안내만 떠요. 대신 그 자리에서도 평가치 바와 엔진의 추천 수 3가지는 정상적으로 볼 수 있어요.",
-      "퍼즐 공유 링크가 openchess.kr/(번호)-(라인)에서 openchess.kr/puzzle/(번호)/(라인)으로 바뀌었어요 — 리뷰 링크처럼 링크만 봐도 무슨 링크인지 알 수 있어요.",
+      "퍼즐 공유 링크가 openchess.kr/(번호)-(라인)에서 openchess.kr/puzzle/(번호)-(라인)으로 바뀌었어요 — 리뷰 링크처럼 링크만 봐도 무슨 링크인지 알 수 있어요.",
       "리뷰 티켓 제도를 완전히 없앴어요 — 이제 게임 리뷰는 티켓 없이 몇 번이든 자유롭게 열 수 있어요. 상점의 티켓 표시, 일일 퀘스트·티어 승급의 티켓 보상도 함께 사라졌어요. '리뷰한 대국만' 필터는 그대로 남아 있어요.",
     ]
   },
@@ -22237,7 +22237,7 @@ export default function App() {
     const onPop = () => {
       const p = window.location.pathname;
       if (!p.startsWith("/review")) setReviewGame(null);
-      if (!/^\/puzzle\/\d{6}\/\d+$/.test(p)) setPuzzleActive(null);
+      if (!/^\/puzzle\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
       const k = tabFromPath(p);
       if (k) { urlTabRef.current = k; setTab(k); }
     };
@@ -22367,9 +22367,9 @@ export default function App() {
   // 항목을 늘리지 않고 그 자리만 갱신한다.
   const onPuzzleLineChange = useCallback((lineNo) => {
     if (!puzzleActive) return;
-    const path = "/puzzle/" + puzzleNo(puzzleActive.id) + "/" + lineNo;
+    const path = "/puzzle/" + puzzleNo(puzzleActive.id) + "-" + lineNo;
     try {
-      if (/^\/puzzle\/\d{6}\/\d+$/.test(window.location.pathname)) window.history.replaceState({ puzzle: true }, "", path);
+      if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) window.history.replaceState({ puzzle: true }, "", path);
       else window.history.pushState({ puzzle: true }, "", path);
     } catch { }
   }, [puzzleActive]);
@@ -22388,7 +22388,7 @@ export default function App() {
     if (typeof window === "undefined" || !loaded) return;
     const path = window.location.pathname;
     (async () => {
-      const puzzleMatch = /^\/puzzle\/(\d{6})\/(\d+)$/.exec(path);
+      const puzzleMatch = /^\/puzzle\/(\d{6})-(\d+)$/.exec(path);
       if (puzzleMatch) {
         const no = parseInt(puzzleMatch[1], 10), lineNo = parseInt(puzzleMatch[2], 10);
         const data = await puzzleFetch(no);
