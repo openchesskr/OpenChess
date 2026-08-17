@@ -2034,6 +2034,16 @@ function hasAnyLegalMove(board, color) {
   }
   return false;
 }
+// (UI) 사용자 요청 — 지금 둘 수 있는 합법수 총 개수(승격은 목적지 1칸으로 뭉뚱그려 셈, 이 용도로는
+// 충분하다). 1~2개뿐인 "사실상 강제된" 국면에서는 엔진 라인·평가치 박스를 깔끔하게 비우는 데 쓴다.
+function countLegalMoves(board, color, ep) {
+  let n = 0;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p || p.c !== color) continue;
+    n += legalDests(board, r, c, color, ep).length;
+  }
+  return n;
+}
 /* 수가 만드는 체크(+)·체크메이트(#) 기호 */
 function checkSuffix(boardBefore, sanBare, color) {
   const after = applySan(boardBefore, sanBare, color);
@@ -3459,6 +3469,11 @@ function EngineLineSkeleton() {
     </div>
   );
 }
+// (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면에서 남는 엔진 라인 자리를 채우는 빈 칸.
+// 높이는 EngineLineSkeleton과 맞추되(레이아웃 들썩임 방지) 배경·테두리·점 애니메이션 없이 완전히 비워 둔다.
+function EngineLineBlank() {
+  return <div style={{ height: 16 }} aria-hidden="true" />;
+}
 // (v0.2.1) 엔진 라인 수순을 한 번에 다 찍지 않고 한 수씩 "타이핑"되듯 드러낸다 — posKey(포지션)가
 // 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
 // (버그 수정 — 근본) 한 수씩 55ms 간격으로 늘려 보여주던 "타이핑" 애니메이션이 이 세션 내내
@@ -3566,7 +3581,7 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
     </motion.div>
   );
 }
-function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
+function EngineLines({ lines, pending, sans, width, onPlayFirst, forced }) {
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
   if (!hasLines && !pending) return null;
@@ -3574,6 +3589,8 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
   // engineLines 배열 길이가 잠깐 1~2로 줄었다가 다시 3으로 늘어, 그때마다 이 블록의 높이가 바뀌어
   // 학습 탭 체스보드(belowEval 아래)가 위아래로 들썩였다 — 실제 줄 수와 무관하게 항상 3줄 높이를
   // 차지하도록, 모자란 슬롯은 스켈레톤으로 채워 넣는다.
+  // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면(forced)에서는 어차피 스켈레톤이 계속 채워질
+  // 리 없으므로(엔진이 그 이상 줄을 낼 수 없음), 남은 자리를 로딩 스켈레톤 대신 빈 칸으로 둔다.
   const missing = Math.max(0, 3 - (lines ? lines.length : 0));
   // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
   // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
@@ -3606,7 +3623,7 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst }) {
               <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
             );
           })}
-          {Array.from({ length: missing }, (_, i) => <EngineLineSkeleton key={"pad" + i} />)}
+          {Array.from({ length: missing }, (_, i) => forced ? <EngineLineBlank key={"pad" + i} /> : <EngineLineSkeleton key={"pad" + i} />)}
         </>
         : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} />)}
     </div>
@@ -4104,7 +4121,7 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
   };
   return (
     <>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
         <button onClick={copy} title="현재 기보 복사" className="press" style={iconBtn}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>
         <button onClick={() => { setOpen(true); setErr(""); }} title="FEN/PGN 붙여넣기" className="press" style={iconBtn}><ClipboardPaste size={13} /></button>
       </div>
@@ -6670,12 +6687,13 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
 // (20차 UI2) 최선 수(연두색+별) 바로가기 버튼 — 누르면 그 대국을 즉시 분석 모드로 연다.
 // (v0.3.5 기능) title을 선택적으로 받는다 — 호출부마다 문맥에 맞는 문구를 쓸 수 있도록(기본값은
 // 기존 문구 그대로 유지해 기존 호출부는 전부 무수정으로 동일하게 동작한다).
-function BestMoveJumpButton({ onClick, disabled, title = "이 대국 분석 모드로 바로 보기" }) {
+function BestMoveJumpButton({ onClick, disabled, title = "이 대국 분석 모드로 바로 보기", size = 30 }) {
+  const dotSize = Math.round(size * 0.6), starSize = Math.round(size * 0.367);
   return (
     <button onClick={onClick} disabled={disabled} title={title} className="press"
-      style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: disabled ? "#9CC98A" : "#6EBF4A", border: "none", cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.6 : 1 }}>
-      <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-        <Star size={11} fill="#6EBF4A" color="#6EBF4A" />
+      style={{ flexShrink: 0, width: size, height: size, borderRadius: 8, background: disabled ? "#9CC98A" : "#6EBF4A", border: "none", cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.6 : 1 }}>
+      <span style={{ width: dotSize, height: dotSize, borderRadius: "50%", background: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+        <Star size={starSize} fill="#6EBF4A" color="#6EBF4A" />
       </span>
     </button>
   );
@@ -8163,18 +8181,20 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
   const hasBetter = !!move.best;
+  // (UI) 사용자 요청 — 모바일 리뷰 페이지에서 코치 블록 크기를 조금 줄여, 그 여백으로 평가치
+  // 그래프를 리뷰 기보와 엔진 라인 사이에 끼워 넣을 자리를 만든다.
   return (
     <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, border: "1px solid " + RV.border, overflow: "hidden" }}>
-      <div className="flex items-start gap-2" style={{ padding: "12px 13px 6px" }}>
-        <Mascot name={mascotName} emotion={mascotEmo} size={narrow ? 44 : 40} />
+      <div className="flex items-start gap-2" style={{ padding: narrow ? "9px 10px 5px" : "12px 13px 6px" }}>
+        <Mascot name={mascotName} emotion={mascotEmo} size={narrow ? 32 : 40} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="flex items-center justify-between" style={{ gap: 8 }}>
-            <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: 13.5, fontWeight: 800, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
+            <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: narrow ? 12.5 : 13.5, fontWeight: 800, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
             {/* (v0.2.2 기능) 평가치 박스를 흰색/검은색(EvalBadge, 유리한 쪽 색으로 반전)으로 통일 —
                 엔진 라인 등 리뷰 페이지 다른 곳의 평가치 표기와 같은 규칙을 쓴다. */}
             {evalDisp && <EvalBadge ev={evalDisp} />}
           </div>
-          <p style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}>{copy.body}</p>
+          <p style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}>{copy.body}</p>
           {/* (R7 기능, 예방 수·연결까지 확장) "위협"·"위협 대처"·"과보호"·"예방 수"·"연결"·"중첩"
               사실이면 그 용어(mecKeyword)에만 밑줄 표시 + 클릭 시 애니메이션 재생 — 문장 전체가
               아니라 실제 그 단어를 눌러야만 재생된다(MecKeywordLine). threatDetail/preventDetail/
@@ -8188,14 +8208,14 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
                 : preventDetail ? () => onPreventClick && onPreventClick(preventDetail)
                 : connectDetail ? () => onConnectClick && onConnectClick(connectDetail)
                 : null}
-              style={{ fontSize: 12, color: RV.soft, marginTop: 5, lineHeight: 1.5 }}
+              style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}
             />
           )}
         </div>
       </div>
-      <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: "8px 10px", gap: 6 }}>
-        <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={16} /> Show</button>
-        <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>{isLast ? "완료" : "Next"}</button>
+      <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: narrow ? "5px 8px" : "8px 10px", gap: 6 }}>
+        <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={narrow ? 13 : 16} /> Show</button>
+        <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? "완료" : "Next"}</button>
       </div>
     </div>
   );
@@ -8908,6 +8928,9 @@ function ReviewPage({ game, onClose, myUid, engine }) {
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
               <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} drawn={gameDrawn} />
+              {/* (UI) 사용자 요청 — 코치 블록을 줄여 만든 여백으로, 모바일에서도 평가치 그래프를
+                  리뷰 기보와 엔진 라인 사이에 표시한다(데스크톱의 배치 순서와 동일). */}
+              <div style={{ marginTop: 10 }}><EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} /></div>
               {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. */}
               <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
             </div>
@@ -9026,6 +9049,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const ply = sans.length;
   const stdEp = useMemo(() => epTarget(sans), [key]);
   const ep = fenRoot ? fenReplay.ep : stdEp;
+  // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면(사실상 강제된 수순)에서는 엔진 라인의 남은
+  // 줄과 평가치 박스를 표시하지 않는다.
+  const legalMoveCount = useMemo(() => countLegalMoves(board, color, ep), [board, color, ep]);
+  const forcedPosition = legalMoveCount > 0 && legalMoveCount <= 2;
   const onLoadFen = (root) => { setFocus(null); setFenRoot(root); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
   const exitFenMode = () => { setFenRoot(null); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
   // (v0.3.5 기능) 사용자 요청 — 보드 편집기(BoardEditorModal) 열림 상태. 완료를 누르면 onLoadFen과
@@ -9559,15 +9586,18 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
               {/* (v0.3.5 기능) 사용자 요청 — 예전에 "분석" 버튼이 있던 자리에 보드 편집기(펜 아이콘)를
                   두고, 분석 버튼은 다른 화면에서 쓰는 연두색+별 모양 리뷰 버튼(BestMoveJumpButton)으로
-                  바꿔 이 줄의 맨 오른쪽으로 옮겼다. */}
-              <button onClick={() => setEditorOpen(true)} title="보드 편집" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Pencil size={14} /></button>
+                  바꿔 이 줄의 맨 오른쪽으로 옮겼다.
+                  (UI) 사용자 요청 — 펜/리뷰 버튼을 복사·붙여넣기 버튼과 같은 26px 크기로 맞추고, 펜
+                  버튼 디자인도 복사/붙여넣기 버튼(iconBtn)과 동일하게 통일. 네 버튼 모두 같은 부모의
+                  gap-2(8px)로 감싸 간격도 통일한다. */}
+              <button onClick={() => setEditorOpen(true)} title="보드 편집" className="press" style={{ width: 26, height: 26, borderRadius: 7, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Pencil size={13} /></button>
               <NotationTools sans={sans} startColor={fenRoot ? fenRoot.turn : undefined} onLoadPgn={onLoadPgn} onLoadFen={onLoadFen} />
               {/* (18차 UI5) 와이파이 아이콘 + "라이브" 상태 텍스트 삭제 */}
               {/* (v0.2.0 기능) 기보 위 리뷰 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
                   띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
                   (v0.3.4 기능 → v0.3.5 되돌림) 사용자 요청 — FEN 모드에서는 리뷰를 아예 열지 못하게
                   막고(위 fenReviewNotice), 대신 이 위치에서도 평가치 바·엔진 라인은 작동한다(아래 fenEval). */}
-              <BestMoveJumpButton title="기보 분석(리뷰)"
+              <BestMoveJumpButton title="기보 분석(리뷰)" size={26}
                 onClick={() => { if (fenRoot) { setFenReviewNotice(true); return; } onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: null }); }}
                 disabled={(!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready"} />
             </div>
@@ -9580,8 +9610,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             />
           )}
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
-            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial
-              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} />} />
+            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition}
+              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
@@ -14857,8 +14887,8 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
     <div>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 퀘스트 아이콘과 중복돼 제거. */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
-      <FadeIn index={0}><MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
-      <FadeIn index={1}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} /></FadeIn>
+      <FadeIn index={0}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} /></FadeIn>
+      <FadeIn index={1}><MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
     </div>
   );
 }
@@ -15810,6 +15840,7 @@ function TopOpeningsPair({ games, label }) {
 // 시간 규정·흑백 필터와는 별개 축). 대국이 아예 없으면 표시하지 않고, 고른 기간 안에 대국이 2판
 // 미만이면(선을 그릴 수 없음) 버튼은 그대로 둔 채 안내 문구만 보여준다.
 const RATING_CHART_PERIODS = [
+  { key: "1d", label: "1일", days: 1 },
   { key: "7d", label: "1주", days: 7 },
   { key: "30d", label: "1달", days: 30 },
   { key: "180d", label: "6개월", days: 182 },
@@ -16188,13 +16219,26 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         {prof && prof.avatar ? <img src={prof.avatar} alt="" style={{ width: 48, height: 48, borderRadius: 12, border: "1px solid #C9B58C" }} />
           : <span style={{ width: 48, height: 48, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 22 }}>{username[0].toUpperCase()}</span>}
-        <div style={{ minWidth: 0 }}>
-          <div className="flex items-center gap-2">
-            <ChesscomIcon size={16} />
-            <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{(prof && prof.username) || username}</span>
-            {prof && prof.country && <span style={{ fontSize: 12.5, fontWeight: 700, padding: "2px 8px", borderRadius: 7, background: "rgba(0,0,0,.06)", border: "1px solid #DCCBA8", color: T.ink, whiteSpace: "nowrap" }}>{countryFlag(prof.country)} {prof.country}</span>}
+        {/* (UI) 사용자 요청 — 레이팅 텍스트를 아이디 아래 한 줄이 아니라, 아이디와 같은 줄의 우측에
+            표시하고(각 시간 규정은 줄바꿈), "래피드 : 1200"처럼 공백+콜론 표기로, 사이트 기본
+            폰트인 IBM Plex Sans KR로 통일한다. */}
+        <div className="flex items-center justify-between" style={{ flex: 1, minWidth: 0, gap: 8 }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="flex items-center gap-2">
+              <ChesscomIcon size={16} />
+              <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{(prof && prof.username) || username}</span>
+              {prof && prof.country && <span style={{ fontSize: 12.5, fontWeight: 700, padding: "2px 8px", borderRadius: 7, background: "rgba(0,0,0,.06)", border: "1px solid #DCCBA8", color: T.ink, whiteSpace: "nowrap" }}>{countryFlag(prof.country)} {prof.country}</span>}
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{prof ? ["래피드 " + (prof.rapid ?? "—"), "블리츠 " + (prof.blitz ?? "—"), "불릿 " + (prof.bullet ?? "—")].join(" · ") : "레이팅 불러오는 중…"}</div>
+          <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "'IBM Plex Sans KR', sans-serif", textAlign: "right", flexShrink: 0 }}>
+            {prof ? (
+              <>
+                <div>래피드 : {prof.rapid ?? "—"}</div>
+                <div>블리츠 : {prof.blitz ?? "—"}</div>
+                <div>불릿 : {prof.bullet ?? "—"}</div>
+              </>
+            ) : "레이팅 불러오는 중…"}
+          </div>
         </div>
       </div>
       )}
@@ -22445,7 +22489,9 @@ export default function App() {
             (버그 수정) 로고와 버전 텍스트 사이가 붕 떠 보여 음수 marginTop으로 로고 바로 아래에
             바짝 붙였다. 눌러서 소개 페이지(/about)로 바로 이동할 수 있는 링크로 바꿨다. */}
         <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 0 }}>
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <a href="https://openchess.kr" style={{ display: "block" }}>
+            <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", cursor: "pointer" }} />
+          </a>
           <a href="/about" style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
         </div>
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
