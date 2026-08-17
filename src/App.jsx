@@ -4306,7 +4306,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setFenErr("");
     } catch { setFenErr("클립보드를 읽을 수 없어요."); }
   };
-  // (v0.3.5 기능) 사용자 요청 — 이미지 스캔(사진 → FEN). 서버(api/scan-board.js, Gemini 비전)에
+  // (v0.3.5 기능) 사용자 요청 — 이미지 스캔(사진 → FEN). 서버(api/scan-board.js, OpenRouter 무료 비전 모델)에
   // 보드 배치만 물어보고, 캐슬링 권리·차례는 사용자가 이미 이 화면에서 설정해 둔 값을 그대로 둔다
   // (사진만으로는 알 수 없는 정보라 서버도 이 값을 추측하지 않는다).
   const scanInputRef = useRef(null);
