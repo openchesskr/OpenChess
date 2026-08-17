@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star, Gem, Pin, Share2,
+  Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -708,14 +708,15 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.3.5", date: "2026.8.16",
-    summary: "FEN 포지션 게임 리뷰에서도 이제 보드를 직접 만져 자유롭게 수를 둬 볼 수 있어요 — 실시간 엔진 평가·상위 후보 수도 함께 뜨고, 무승부 판정도 정확해졌어요. 게임 리뷰도 이제 설정 탭에서 고른 분석 엔진을 그대로 써요(예전엔 리뷰만 따로 Stockfish 16에 고정, 그 전용 엔진은 없앴어요). 설정 탭에 흩어져 있던 개발자 전용 도구는 카드 하나로 모았고, 공유된 리뷰 링크가 항상 '티켓 부족'으로 막히던 문제도 고쳤어요.",
+    summary: "학습 탭에 보드 편집기가 생겼어요 — 팔레트에서 기물을 골라 보드에 찍어 원하는 포지션을 처음부터 구성하고, 차례·캐슬링 권리까지 설정한 뒤 곧장 그 포지션부터 이어서 둘 수 있어요. FEN 포지션 게임 리뷰에서도 이제 보드를 직접 만져 자유롭게 수를 둬 볼 수 있어요 — 실시간 엔진 평가·상위 후보 수도 함께 뜨고, 무승부 판정도 정확해졌어요. 게임 리뷰 엔진도 설정 탭에서 고른 분석 엔진으로 통일했고, 공유된 리뷰 링크가 항상 '티켓 부족'으로 막히던 문제도 고쳤어요.",
     mascot: {
-      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "FEN 포지션 리뷰에서도 이제 보드를 직접 만져 수를 둬 볼 수 있어요 — 엔진 평가까지 실시간으로 떠요!" },
-      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "게임 리뷰 엔진도 학습·퍼즐 탭과 하나로 통일됐어요 — 링크로 막히던 문제도 고쳤어요!" },
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "학습 탭에 보드 편집기가 생겼어요 — 원하는 포지션을 기물을 찍어가며 직접 만들어 볼 수 있어요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "FEN 리뷰도 이제 보드를 직접 만져 수를 둬 볼 수 있어요 — 엔진 평가까지 실시간으로 떠요!" },
     },
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: "FEN 리뷰 자유 탐색 + 엔진 통합" },
+    highlight: { kind: "icon", Icon: Pencil, color: T.brassHi, label: "보드 편집기 + FEN 리뷰 자유 탐색" },
     sections: [
       { cat: "feature", items: [
+        "학습 탭 체스보드에 편집기(펜 아이콘)가 생겼어요 — 팔레트에서 기물을 골라 보드 칸에 찍어 원하는 포지션을 처음부터 구성하고, 착수 차례·캐슬링 권리를 직접 설정할 수 있어요. FEN을 복사·붙여넣기하거나 직접 입력할 수도 있고, 되돌리기/다시하기·처음으로/마지막으로도 지원해요. 완료하면 그 포지션의 FEN 모드로 곧장 들어가요. 모바일에서는 세로 전체 화면으로, 데스크톱에서는 보드와 나머지 도구를 가로로 나눈 넓은 창으로 떠요.",
         "FEN 포지션으로 연 게임 리뷰에서도 이제 보드를 직접 클릭·드래그해 원하는 가상의 수를 자유롭게 둬 볼 수 있어요(예전엔 실제로 둔 수만 한 수씩 볼 수 있었어요) — 실시간 엔진 평가 막대와 상위 후보 수 3줄도 함께 떠요. 다만 이 가상의 수에는 등급·코치 코멘트는 붙지 않아요.",
         "게임 리뷰가 이제 설정 탭 '분석 엔진'에서 고른 엔진(Stockfish 18 Lite / 17.1)을 학습·퍼즐 탭과 똑같이 그대로 써요 — 예전엔 게임 리뷰만 따로 Stockfish 16에 고정돼 있었어요.",
       ] },
@@ -726,6 +727,7 @@ const VERSION_HISTORY = [
         "채팅 목록에서 알림을 꺼 둔 상대는 이름 옆에 알림 해제 아이콘이 함께 떠요.",
         "유산 재생에서 유산 수가 등장하기 직전 1초간 짧은 정적을 둬서 등장이 더 극적으로 느껴져요.",
         "학습 탭 FEN 모드에서도 스테일메이트·3회 동형 반복 무승부 판정이 정확해졌어요(예전엔 표준 시작 위치 기준으로만 판정해 FEN 모드에서는 항상 꺼져 있었어요).",
+        "학습 탭 체스보드 위 '분석' 버튼이 다른 화면에서 쓰던 연두색+별 모양 리뷰 버튼으로 바뀌어 맨 오른쪽으로 옮겼어요.",
       ] },
       { cat: "fix", items: [
         "채팅으로 공유받은 리뷰 카드의 '리뷰 보기'가 아니라, openchess.kr/review/... 주소로 곧장 들어가거나 새로고침했을 때는 실제 보유 티켓 수·이미 열어본 리뷰 여부와 상관없이 항상 '리뷰 티켓이 부족해요' 안내가 뜨던 문제를 고쳤어요 — 계정 정보를 다 불러온 뒤에 링크를 열도록 순서를 바로잡았어요.",
