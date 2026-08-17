@@ -11967,6 +11967,28 @@ async function puzzleLikeToggle(no, uid) {
   catch { return null; }
 }
 async function puzzleLikeCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,likes"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.likes; }); return m; } catch { return {}; } }
+// (사용자 요청) 유산 블록 좋아요 — puzzle_like_toggle과 완전히 같은 토글 패턴이지만, 유산은 전역
+// 번호가 없어 (등록한 유저 ownerUid, 슬롯 키)로 식별한다. ownerUid의 유산 좋아요 수 전체와, 지금
+// 보는 사람(uid)이 그중 어느 슬롯을 좋아요했는지를 각각 한 번의 조회로 가져온다.
+async function legacyLikeCounts(ownerUid) {
+  if (!SB_ON || !ownerUid) return {};
+  try {
+    const rows = await sbSelect("legacy_like_counts?owner_uid=eq." + encodeURIComponent(ownerUid) + "&select=slot_key,likes");
+    const m = {}; (rows || []).forEach((x) => { m[x.slot_key] = x.likes; }); return m;
+  } catch { return {}; }
+}
+async function legacyLikedSlots(ownerUid, uid) {
+  if (!SB_ON || !ownerUid || !uid) return new Set();
+  try {
+    const rows = await sbSelect("legacy_likes?owner_uid=eq." + encodeURIComponent(ownerUid) + "&uid=eq." + encodeURIComponent(uid) + "&select=slot_key");
+    return new Set((rows || []).map((x) => x.slot_key));
+  } catch { return new Set(); }
+}
+async function legacyLikeToggle(ownerUid, slotKey, uid) {
+  if (!SB_ON || !ownerUid || !uid) return null;
+  try { const r = await sbRpc("legacy_like_toggle", { p_owner_uid: ownerUid, p_slot_key: slotKey, p_uid: uid }); const row = Array.isArray(r) ? r[0] : r; return row ? { liked: !!row.liked, likes: row.likes || 0 } : null; }
+  catch { return null; }
+}
 // (v0.1.0) 퍼즐 리포스트 — 좋아요와 동일한 토글 패턴(puzzle_repost_toggle RPC가 등록/취소를 알아서 판단).
 async function puzzleRepostToggle(no, uid) {
   if (!SB_ON || !uid) return null;
@@ -16501,7 +16523,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           카드 안의 "내 진행 상황"(퀘스트·퍼즐)을 먼저 보여주고, chess.com 데이터는 그 아래로
           내린다. PublicProfileStats 내부에 함께 있던 chess.com 블록(AccountChessStats)은
           hideChesscom으로 꺼 두고, 같은 컴포넌트를 아래에서 따로 렌더링한다. */}
-      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom onManageLegacy={(key) => setManagingLegacy(key)} onShareLegacy={(key) => setSharingLegacy(key)} />
+      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom onManageLegacy={(key) => setManagingLegacy(key)} onShareLegacy={(key) => setSharingLegacy(key)} ownerUid={myUid} viewerUid={myUid} />
       {sharingLegacy && profile.legacies && profile.legacies[sharingLegacy] && (
         <LegacyShareSheet
           slotKey={sharingLegacy}
@@ -18538,7 +18560,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
 // (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·티어·퍼즐 수·
 // 자주 두는 첫 수 — PublicProfileStats 재사용)를 보여주고, 그 아래 로그아웃 버튼을 둔다. 아바타/이름/
 // 아이디를 누르면 메뉴를 닫고 설정 탭의 내 프로필로 이동한다.
-function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile, mainQuestSummary, solvedNos, onOpenPuzzle, mySolved, myLineSolves }) {
+function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile, mainQuestSummary, solvedNos, onOpenPuzzle, mySolved, myLineSolves, myUid }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   useEffect(() => {
@@ -18581,7 +18603,7 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
             onOpenGame={onOpenGame && ((m) => { setOpen(false); onOpenGame(m); })}
             onOpenGameAnalyze={onOpenGameAnalyze && ((m) => { setOpen(false); onOpenGameAnalyze(m); })}
             onOpenPuzzle={onOpenPuzzle && ((id, fallback) => { setOpen(false); onOpenPuzzle(id, fallback); })}
-            mySolved={mySolved} myLineSolves={myLineSolves}
+            mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={myUid} viewerUid={myUid}
           />
           <button onClick={() => { setOpen(false); onLogoutClick(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
         </div>
@@ -18648,13 +18670,14 @@ function renderMentionText(body) {
 }
 // (v0.2.6 기능) 채팅에서 상대 프로필 사진·멘션을 클릭했을 때 뜨는 간단한 프로필 보기 모달 —
 // UserSearchModal의 프로필 상세 화면과 같은 구성(PublicProfileStats 재사용)을 아이디 하나만으로 연다.
-function ChatUserProfileModal({ username, onClose }) {
+function ChatUserProfileModal({ username, onClose, myUid }) {
   const [pub, setPub] = useState(null);
+  const [pubUid, setPubUid] = useState(null);
   // (사용자 요청) 모바일에서는 이 프로필 창을 카드가 아니라 전체 화면으로 띄운다.
   const narrow = useNarrow(640);
   useEffect(() => {
     let cc = false;
-    userProfile(username).then((r) => { if (!cc) setPub(r ? { ...(r.pub || {}), username: r.username || username } : { username }); });
+    userProfile(username).then((r) => { if (!cc) { setPub(r ? { ...(r.pub || {}), username: r.username || username } : { username }); setPubUid(r ? r.id : null); } });
     return () => { cc = true; };
   }, [username]);
   return (
@@ -18676,7 +18699,7 @@ function ChatUserProfileModal({ username, onClose }) {
                   {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
                 </div>
               </div>
-              <PublicProfileStats pub={pub} hideChesscom={false} />
+              <PublicProfileStats pub={pub} hideChesscom={false} ownerUid={pubUid} viewerUid={myUid} />
             </>
           )}
         </div>
@@ -19353,7 +19376,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
         </div>
       </div>
       {forwardTarget && <PuzzleShareSheet puzzle={forwardTarget} myUid={myUid} onClose={() => setForwardTarget(null)} onShared={() => setForwardTarget(null)} />}
-      {viewProfile && <ChatUserProfileModal username={viewProfile} onClose={() => setViewProfile(null)} />}
+      {viewProfile && <ChatUserProfileModal username={viewProfile} onClose={() => setViewProfile(null)} myUid={myUid} />}
       <AnimatePresence>
         {viewLegacy && <LegacyRevealScreen typeInfo={viewLegacy.typeInfo} entry={viewLegacy.entry} onClose={() => setViewLegacy(null)} />}
       </AnimatePresence>
@@ -19556,7 +19579,7 @@ const LEGACY_TILE_FLEX = "0 0 calc((100% - 16px) / 3)";
 // (v0.3.4 기능) size(px) — 프로필의 3칸 행(LEGACY_TILE_FLEX, 부모 폭에 비례)이 아니라 고정 픽셀
 // 크기로도 쓸 수 있게 한다. 채팅에 공유된 유산 카드가 프로필과 정확히 같은 디자인을 재사용하기
 // 위해 추가했다 — 채팅 말풍선처럼 3칸 행 맥락이 없는 곳에서는 flex-basis 대신 고정 폭이 필요하다.
-function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size }) {
+function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size, likeCount, isLiked, onToggleLike }) {
   const color = QCOLOR[typeInfo.kind];
   return (
     <div style={{ position: "relative", flex: size ? "0 0 auto" : LEGACY_TILE_FLEX, width: size || undefined, minWidth: 0 }}>
@@ -19567,6 +19590,14 @@ function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size }) {
       </button>
       {/* 버튼(overflow:hidden) 바깥의 형제로 둬야 살짝 삐져나오는 효과가 실제로 잘리지 않는다. */}
       <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{badgeIcon(typeInfo.kind, 26)}</span>
+      {/* (사용자 요청) 좌상단에 좋아요 — 아이콘 + 수를 표시하고, 눌러서 좋아요를 토글한다. */}
+      {onToggleLike && (
+        <button onClick={(e) => { e.stopPropagation(); onToggleLike(); }} aria-label="유산 좋아요" title="좋아요" className="press"
+          style={{ position: "absolute", top: 4, left: 4, zIndex: 2, display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", borderRadius: 7, background: "rgba(0,0,0,.55)", color: isLiked ? T.brassHi : T.ivory, border: "1px solid #000", cursor: "pointer" }}>
+          <ThumbsUp size={11} fill={isLiked ? T.brassHi : "none"} />
+          <span style={{ fontSize: 10, fontWeight: 800 }}>{likeCount || 0}</span>
+        </button>
+      )}
       {/* (사용자 요청) 편집(펜) 아이콘은 좌하단으로, 공유(종이비행기) 아이콘은 우하단에 새로 추가. */}
       {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label="유산 편집" title="편집" className="press" style={{ position: "absolute", bottom: 4, left: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
       {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(); }} aria-label="유산 공유" title="공유" className="press" style={{ position: "absolute", bottom: 4, right: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Send size={11} /></button>}
@@ -20014,7 +20045,7 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
 // (사용자 요청) 유산 타일을 종류(최선/유일/탁월)별로 세로 한 열에 묶어 보여준다 — 세 종류가
 // 나란히 열로 놓이고, 그랜드마스터 보너스 칸이 있으면 그 종류의 열 안에서 아래로 쌓인다.
 // LegacyStoneRow(카드 인라인)와 LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
-function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare }) {
+function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare, likeCounts, likedSlots, onToggleLike }) {
   return (
     <div className="flex" style={{ gap: 8 }}>
       {LEGACY_TYPES.map((t) => {
@@ -20030,7 +20061,8 @@ function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare
               // 세로로 바뀌어 오작동한다 — flex가 아닌 일반 블록 래퍼로 한 겹 감싸 무력화한다.
               if (entry) return (
                 <div key={slotKey}>
-                  <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null} />
+                  <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null}
+                    likeCount={likeCounts ? likeCounts[slotKey] : 0} isLiked={likedSlots ? likedSlots.has(slotKey) : false} onToggleLike={onToggleLike ? () => onToggleLike(slotKey) : null} />
                   {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{new Date(entry.savedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
                 </div>
               );
@@ -20046,7 +20078,7 @@ function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare
 // 언제 등록했는지(savedAt)와 함께 더 크게 볼 수 있는 전체 화면. (사용자 요청) 지워진 유산까지 다시
 // 볼 수 있는 이력(history) — 새로 저장하거나 삭제해서 그 칸에서 밀려난 옛 유산들을 "지난 유산"
 // 섹션에 최신순으로 나열한다(클릭하면 그대로 재생해 볼 수 있다. 편집·복원은 지원하지 않는다).
-function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onShare }) {
+function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onShare, likeCounts, likedSlots, onToggleLike }) {
   const [openTarget, setOpenTarget] = useState(null); // { typeInfo, entry } | null
   const histItems = useMemo(() => (history || []).map((h, idx) => ({ ...h, idx, typeInfo: LEGACY_TYPES.find((t) => t.key === legacyBaseKey(h.slotKey)) })).filter((h) => h.typeInfo).reverse(), [history]);
   // (v0.3.4 UI) 채팅·프로필·검색·친구 창(v0.3.2~v0.3.3)과 같은 모바일 전체 화면 패턴을 유산 관련
@@ -20060,7 +20092,7 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onS
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
-          <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate onShare={onShare} />
+          <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate onShare={onShare} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />
           {histItems.length > 0 && (
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed #C9B58C" }}>
               <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>지난 유산</div>
@@ -20085,9 +20117,43 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onS
     </div>
   );
 }
-function LegacyStoneRow({ legacies, history, onManageLegacy, isGM, onShareLegacy }) {
+// (사용자 요청) 유산 블록 좋아요 — 프로필 주인(ownerUid)의 유산 슬롯별 좋아요 수와, 지금 보는 사람
+// (viewerUid)이 좋아요했는지를 이 행이 직접 조회·토글해서 아래 LegacyGrid/LegacyAllModal에 물려준다.
+// 퍼즐 좋아요(likedPuzzles/likeCounts/onToggleLike)와 달리 App 최상단 state가 아니라 이 행 스코프의
+// 로컬 state로 두는 이유 — 프로필 주인이 바뀔 때마다(다른 유저 프로필을 열 때마다) 새로 조회해야
+// 하는 값이라, 전역에 계속 들고 있을 이유가 없다.
+function LegacyStoneRow({ legacies, history, onManageLegacy, isGM, onShareLegacy, ownerUid, viewerUid }) {
   const [openKey, setOpenKey] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  const [likeCounts, setLikeCounts] = useState({});
+  const [likedSlots, setLikedSlots] = useState(new Set());
+  const likeInFlightRef = useRef(new Set());
+  useEffect(() => {
+    let cc = false;
+    setLikeCounts({}); setLikedSlots(new Set());
+    if (!ownerUid) return;
+    (async () => {
+      const [counts, liked] = await Promise.all([legacyLikeCounts(ownerUid), legacyLikedSlots(ownerUid, viewerUid)]);
+      if (!cc) { setLikeCounts(counts); setLikedSlots(liked); }
+    })();
+    return () => { cc = true; };
+  }, [ownerUid, viewerUid]);
+  const onToggleLike = viewerUid ? (slotKey) => {
+    if (likeInFlightRef.current.has(slotKey)) return;
+    likeInFlightRef.current.add(slotKey);
+    const wasLiked = likedSlots.has(slotKey);
+    setLikedSlots((s) => { const n = new Set(s); if (wasLiked) n.delete(slotKey); else n.add(slotKey); return n; });
+    setLikeCounts((m) => ({ ...m, [slotKey]: Math.max(0, (m[slotKey] || 0) + (wasLiked ? -1 : 1)) }));
+    legacyLikeToggle(ownerUid, slotKey, viewerUid).then((r) => {
+      if (!r) {
+        setLikedSlots((s) => { const n = new Set(s); if (wasLiked) n.add(slotKey); else n.delete(slotKey); return n; });
+        setLikeCounts((m) => ({ ...m, [slotKey]: Math.max(0, (m[slotKey] || 0) + (wasLiked ? 1 : -1)) }));
+        return;
+      }
+      setLikeCounts((m) => ({ ...m, [slotKey]: r.likes }));
+      setLikedSlots((s) => { if (s.has(slotKey) === r.liked) return s; const n = new Set(s); if (r.liked) n.add(slotKey); else n.delete(slotKey); return n; });
+    }).finally(() => { likeInFlightRef.current.delete(slotKey); });
+  } : null;
   const slots = useMemo(() => {
     const out = [];
     for (const t of LEGACY_TYPES) { out.push({ slotKey: t.key, typeInfo: t }); if (isGM) out.push({ slotKey: t.key + "2", typeInfo: t }); }
@@ -20104,11 +20170,11 @@ function LegacyStoneRow({ legacies, history, onManageLegacy, isGM, onShareLegacy
         {/* (사용자 요청) "유산" 텍스트와 같은 줄에 더보기 버튼 — 눌러 등록된 모든 유산을 등록 시점과 함께 크게 본다. */}
         <button onClick={() => setShowAll(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 1, background: "none", border: "none", cursor: "pointer", color: T.brass, fontSize: 11, fontWeight: 800 }}>더보기 <ChevronRight size={12} /></button>
       </div>
-      <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} onShare={onShareLegacy} />
+      <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} onShare={onShareLegacy} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />
       <AnimatePresence>
         {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
       </AnimatePresence>
-      {showAll && <LegacyAllModal slots={slots} legacies={legacies} history={history} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} onShare={onShareLegacy} />}
+      {showAll && <LegacyAllModal slots={slots} legacies={legacies} history={history} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} onShare={onShareLegacy} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />}
     </div>
   );
 }
@@ -20381,7 +20447,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
 // (버그 수정) 친구 프로필 창의 채팅·친구 요청/수락/거절 버튼을 카드 맨 아래 대신 티어와 메인
 // 퀘스트 진척도 사이에 두기 위해, 그 자리에 끼워 넣을 내용을 actions prop으로 받는다 — 이 컴포넌트를
 // 쓰는 다른 곳(내 프로필·유저 검색)은 actions를 안 넘기면 예전과 완전히 동일하다.
-function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy }) {
+function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
@@ -20404,7 +20470,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         </div>
       )}
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
-      <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} />
+      <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
@@ -20522,7 +20588,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
               </div>
             </div>
-            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} />
+            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pub.uid} viewerUid={myUid} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
@@ -21287,7 +21353,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
               {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
               {/* (버그 수정) 채팅/친구 요청·수락·거절 버튼을 카드 맨 아래 대신 티어와 메인 퀘스트
                   진척도 사이(actions prop)에 둔다. */}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} />
+              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} ownerUid={sel.uid} viewerUid={meId} />
             </div>
           );
         })() : (
@@ -22658,7 +22724,7 @@ export default function App() {
           {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
           {user ? (
             <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setTab("set")}
-              mainQuestSummary={mainQuestOverallProgress(mainQuest)} solvedNos={[...solved].map((id) => puzzleNo(id))} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />
+              mainQuestSummary={mainQuestOverallProgress(mainQuest)} solvedNos={[...solved].map((id) => puzzleNo(id))} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myUid={uid} />
           ) : (
             <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
               <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>로그인</button>

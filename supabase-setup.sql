@@ -1104,4 +1104,64 @@ drop policy if exists "reviewed games update" on public.reviewed_games;
 create policy "reviewed games read"   on public.reviewed_games for select using (true);
 create policy "reviewed games insert" on public.reviewed_games for insert with check (true);
 create policy "reviewed games update" on public.reviewed_games for update using (true) with check (true);
+
+-- ============================================================================
+-- 22) legacy_likes / legacy_like_counts — 유산(Legacy) 블록 좋아요 (사용자 요청)
+-- ============================================================================
+-- 퍼즐과 달리 유산은 전역 번호가 없고 (등록한 유저 uid, 슬롯 키(예: brilliant/brilliant2))로만
+-- 식별된다. puzzle_likes/puzzle_like_toggle과 완전히 같은 패턴(1인 1행 토글 + 집계 테이블)을 쓰되,
+-- 집계를 puzzles.likes처럼 원본 테이블 컬럼에 얹을 수 없으므로(유산은 profiles.pub jsonb 안에만
+-- 있고, 그 jsonb는 클라이언트가 통째로 덮어쓰는 소유 데이터라 서버가 원자적으로 못 늘림) 좋아요
+-- 수만 담는 별도 집계 테이블(legacy_like_counts)을 둔다.
+create table if not exists public.legacy_likes (
+  owner_uid uuid not null references auth.users(id) on delete cascade,
+  slot_key text not null,
+  uid uuid not null references auth.users(id) on delete cascade,
+  liked_at timestamptz not null default now(),
+  primary key (owner_uid, slot_key, uid)
+);
+alter table public.legacy_likes enable row level security;
+drop policy if exists "legacy likes read"   on public.legacy_likes;
+drop policy if exists "legacy likes insert" on public.legacy_likes;
+drop policy if exists "legacy likes delete" on public.legacy_likes;
+create policy "legacy likes read"   on public.legacy_likes for select using (true);
+create policy "legacy likes insert" on public.legacy_likes for insert with check (auth.uid() = uid);
+create policy "legacy likes delete" on public.legacy_likes for delete using (auth.uid() = uid);
+grant select on public.legacy_likes to anon, authenticated;
+grant insert, delete on public.legacy_likes to authenticated;
+
+create table if not exists public.legacy_like_counts (
+  owner_uid uuid not null references auth.users(id) on delete cascade,
+  slot_key text not null,
+  likes bigint not null default 0,
+  primary key (owner_uid, slot_key)
+);
+alter table public.legacy_like_counts enable row level security;
+drop policy if exists "legacy like counts read" on public.legacy_like_counts;
+create policy "legacy like counts read" on public.legacy_like_counts for select using (true);
+-- insert/update 권한을 아예 주지 않는다 — puzzles.likes와 동일하게, 오직 아래 SECURITY DEFINER
+-- RPC(legacy_like_toggle)만 이 카운터를 바꿀 수 있다.
+grant select on public.legacy_like_counts to anon, authenticated;
+
+-- 좋아요 토글 — puzzle_like_toggle과 동일한 패턴(이미 눌렀으면 취소, 아니면 등록).
+drop function if exists public.legacy_like_toggle(uuid, text, uuid) cascade;
+create or replace function public.legacy_like_toggle(p_owner_uid uuid, p_slot_key text, p_uid uuid)
+returns table(liked boolean, likes bigint) language plpgsql security definer set search_path = public as $$
+declare v_likes bigint; v_liked boolean;
+begin
+  if exists (select 1 from public.legacy_likes where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = p_uid) then
+    delete from public.legacy_likes where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = p_uid;
+    update public.legacy_like_counts set likes = greatest(0, public.legacy_like_counts.likes - 1)
+      where owner_uid = p_owner_uid and slot_key = p_slot_key returning public.legacy_like_counts.likes into v_likes;
+    v_liked := false;
+  else
+    insert into public.legacy_likes(owner_uid, slot_key, uid) values (p_owner_uid, p_slot_key, p_uid);
+    insert into public.legacy_like_counts(owner_uid, slot_key, likes) values (p_owner_uid, p_slot_key, 1)
+    on conflict (owner_uid, slot_key) do update set likes = public.legacy_like_counts.likes + 1
+    returning public.legacy_like_counts.likes into v_likes;
+    v_liked := true;
+  end if;
+  return query select v_liked, coalesce(v_likes, 0);
+end; $$;
+grant execute on function public.legacy_like_toggle(uuid, text, uuid) to authenticated;
 grant select, insert, update on public.reviewed_games to anon, authenticated;
