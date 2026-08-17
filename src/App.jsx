@@ -13210,9 +13210,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const nextTag = (allLines.find((l) => !solvedNow.has(l.tag)) || {}).tag;
   // (v0.3.4 기능·버그 수정) 클리어 애니메이션은 잠깐만 재생하고 스스로 꺼진다(반복 재생 방지) — 그
   // 시점에 맞춰, 모든 라인을 다 푼 게 아니라면(사용자 요청) 자동으로 다음 미해결 라인으로 넘어간다.
-  // gotoLine 자체가 celebrate를 함께 초기화하므로 별도 처리는 필요 없다. 사용자가 그 사이 "다음
-  // 라인 풀기" 버튼이나 라인 번호 버튼을 직접 눌러 먼저 이동했다면 celebrate가 이미 null이 되어
-  // 있어(gotoLine이 그렇게 만듦) 이 타이머 자체가 예약되지 않으므로 중복 전환도 없다.
+  // gotoLine 자체가 celebrate를 함께 초기화하므로 별도 처리는 필요 없다. 사용자가 그 사이 라인 번호
+  // 버튼을 직접 눌러 먼저 이동했다면 celebrate가 이미 null이 되어 있어(gotoLine이 그렇게 만듦) 이
+  // 타이머 자체가 예약되지 않으므로 중복 전환도 없다. (v0.3.5) 자동 전환을 미리 당기는 용도였던
+  // "다음 라인 풀기" 수동 버튼은 이제 중복이라 없앴다 — 이 자동 전환이 유일한 경로다.
   useEffect(() => {
     if (!celebrate) return;
     const t = setTimeout(() => {
@@ -13685,16 +13686,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         {page === 1 && <button onClick={() => setPage(0)} aria-label="보드 보기" className="press" style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={16} /></button>}
         {page === 0 && <button onClick={() => setPage(1)} aria-label="모식도 보기" className="press" style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={16} /></button>}
       </div>
-      {/* (20차 기능2) 라인 해결 배너는 어느 페이지에 있든(자동 전환 중이어도) 항상 보이도록 페이저 바깥(공통 영역)에 둔다. */}
-      {done && (fullyComplete ? (
+      {/* (20차 기능2 → v0.3.5) 라인 해결 배너는 어느 페이지에 있든(자동 전환 중이어도) 항상 보이도록
+          페이저 바깥(공통 영역)에 둔다. (사용자 요청) "다음 라인 풀기" 버튼은 없앴다 — 아래 자동 전환
+          effect(celebrate 종료 2.4초 뒤 자동으로 nextTag로 넘어감)가 이미 그 역할을 하고 있어 중복이었다. */}
+      {done && fullyComplete && (
         <div style={{ marginTop: 12, textAlign: "center", background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 12, padding: "12px 14px", border: "1px solid " + T.brass }}>
           <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 13 }}>🎉 완전 해결! {totalLines}개 라인을 모두 정복해 별 3개를 모았어요.</div>
         </div>
-      ) : nextTag != null && (
-        <div className="flex justify-center" style={{ marginTop: 12 }}>
-          <button onClick={() => gotoLine(nextTag)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>다음 라인 풀기 — {LINE_TAG_LABEL[nextTag] || ("라인 " + (allLines.findIndex((l) => l.tag === nextTag) + 1))}</button>
-        </div>
-      ))}
+      )}
       <div className="flex items-center justify-center gap-2" style={{ marginTop: 8, marginBottom: 4 }}>
         <button onClick={() => setPage(0)} aria-label="보드 페이지" className="press" style={{ width: page === 0 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 0 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
         <button onClick={() => setPage(1)} aria-label="모식도 페이지" className="press" style={{ width: page === 1 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 1 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
@@ -15950,6 +15949,8 @@ const CHANGELOG = [
       "게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(Stockfish 18 Lite / 17.1)을 그대로 써요 — 예전엔 게임 리뷰만 따로 Stockfish 16으로 고정돼 있었는데, 이제 하나로 통일됐어요.",
       "설정 탭에 흩어져 있던 개발자 전용 도구들을 '개발자 도구' 카드 하나로 모았어요. 개발자 모드를 켜면 자동으로 그 카드까지 스크롤돼요.",
       "개발자 전용 — 퍼즐 라인 길이를 조정할 때(수 추가) 이제 직접 타이핑하는 대신, 평가치 순으로 정렬된 후보 수 목록에서 채택률과 함께 골라 추가할 수 있어요. 원하는 수가 목록에 없을 때만 맨 아래 직접 입력을 쓰면 돼요.",
+      "퍼즐 풀이 화면의 '다음 라인 풀기' 버튼을 없앴어요 — 한 라인을 풀면 어차피 자동으로 다음 라인으로 넘어가서 필요 없어졌어요.",
+      "채팅 목록에서 알림을 꺼 둔 상대는 이름 옆에 알림 해제 아이콘이 함께 떠요.",
     ]
   },
   {
@@ -20072,6 +20073,8 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
                       <span className="flex items-center gap-1">
                         {/* (v0.3.4 기능) 고정한 대화는 이름 옆에 핀 아이콘. */}
                         {pinned && <Pin size={10} style={{ color: T.brass, flexShrink: 0 }} fill={T.brass} />}
+                        {/* (v0.3.5 기능) 사용자 요청 — 알림을 꺼 둔 상대는 이름 옆에 알림 해제 아이콘(BellOff, 종 + /)을 함께 보여준다. */}
+                        {muted && <BellOff size={10} style={{ color: T.inkSoft, flexShrink: 0 }} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
                       <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.review_id != null ? "📊 리뷰를 공유했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
