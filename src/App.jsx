@@ -6,6 +6,7 @@ import {
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
+  Pencil, RotateCw, RefreshCw, ScanLine, Save,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -412,22 +413,14 @@ const GeoBackdrop = React.memo(function GeoBackdrop() {
 });
 
 const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-/* (v0.2.4 개편) 엔진 선택 — "분석"(학습/퍼즐 탭 및 사이트 전반)과 "게임 리뷰"는 서로 다른 엔진을
-   쓴다. "full"(Stockfish 16)은 이제 게임 리뷰 전용 고정 엔진으로만 쓰이고(사람 최상급 수준으로
-   세기를 제한, elo 참고), 설정 탭에는 노출되지 않는다. 분석 쪽은 "lite"(Stockfish 18 Lite, 기기
-   종류와 무관하게 기본값)와 "full17"(Stockfish 17.1, 셋 중 가장 강력하지만 초기 로딩 용량이 가장
-   크다 — 약 80MB, 여러 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는 그 선택을
-   기억한다. */
+/* (v0.2.4 개편 → v0.3.5 통합) 엔진 선택 — 예전엔 "분석"(학습/퍼즐 탭 및 사이트 전반)과 "게임 리뷰"가
+   서로 다른 엔진을 썼다("full", Stockfish 16을 게임 리뷰 전용 고정 엔진으로 사람 최상급 수준까지
+   세기를 제한해 썼다). 사용자 요청으로 이제 게임 리뷰도 설정 탭에서 고른 분석 엔진을 그대로 쓰도록
+   통합하고, Stockfish 16("full" 프로필)은 완전히 폐기했다(engine/stockfish-nnue-16* 파일·npm
+   별칭도 함께 제거 — scripts/copy-engine.mjs, package.json 참고). "lite"(Stockfish 18 Lite, 기기
+   종류와 무관하게 기본값)와 "full17"(Stockfish 17.1, 둘 중 더 강력하지만 초기 로딩 용량이 크다 —
+   약 80MB, 여러 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는 그 선택을 기억한다. */
 const ENGINE_PROFILES = {
-  // (v0.2.4) 게임 리뷰 전용 고정 엔진 — 분석 엔진 선택지에서는 빠진다(ANALYSIS_ENGINE_IDS 참고).
-  full: {
-    id: "full", label: "Stockfish 16",
-    urls: [ENGINE_BASE + "engine/stockfish-nnue-16-single.js", "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js"],
-    // (성능) 교차 출처 격리(COOP/COEP)가 된 환경에서만 시도하는 멀티스레드 빌드 — CDN 폴백 없이
-    // 같은 출처(public/engine) 파일만 쓴다(교차 출처 워커 스크립트는 격리 요건과 맞물려 불확실하다).
-    mtUrl: ENGINE_BASE + "engine/stockfish-nnue-16.js",
-    elo: 3270, // (v0.2.4) 게임 리뷰는 사람 최상급 수준(약 3270 elo)으로 세기를 제한해 둔다(UCI_LimitStrength).
-  },
   lite: {
     id: "lite", label: "Stockfish 18 Lite",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
@@ -451,13 +444,8 @@ const ENGINE_PROFILES = {
     parts: 6,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
   },
 };
-// (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — 게임 리뷰 전용 "full"은 제외한다.
+// (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
 const ANALYSIS_ENGINE_IDS = ["lite", "full17"];
-// (v0.2.4) 프로필에 elo가 지정돼 있으면(게임 리뷰 전용 "full") 세기를 그 수준으로 제한하는
-// setoption 명령을 함께 보낸다 — 분석 엔진 프로필들은 elo가 없어 항상 빈 배열([])을 반환한다.
-function eloSetoptions(profile) {
-  return profile && profile.elo ? ["setoption name UCI_LimitStrength value true", "setoption name UCI_Elo value " + profile.elo] : [];
-}
 // (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
 // Policy)가 걸린 페이지에서만 쓸 수 있다 — vite.config.js(개발)·vercel.json(배포)에서 헤더를 설정해
 // 뒀을 때만 true가 된다. 격리가 안 된 환경(구형 브라우저, 헤더 미지원 배포지 등)에서는 이 값이
@@ -471,7 +459,7 @@ function mainEngineThreads() { return 2; }
 // 단일 스레드 빌드(로컬 → CDN)를 그대로 이어 붙여, 멀티스레드 부팅이 실패해도 기존 폴백 경로가
 // 그대로 살아있게 한다.
 function engineBootList(profileId, threads) {
-  const profile = ENGINE_PROFILES[profileId] || ENGINE_PROFILES.full;
+  const profile = ENGINE_PROFILES[profileId] || ENGINE_PROFILES[defaultEnginePref()];
   // (v0.2.0 버그 수정) Stockfish 17.1(최고 성능) 프로필은 신경망이 조각(-part-N.wasm)째로 수십MB에
   // 달해, 다 받아 이어 붙이고 컴파일하는 데 기존 4초 부팅 타임아웃보다 오래 걸릴 수 있다 — 이
   // 타임아웃이 먼저 끝나 워커를 강제 종료하면 파일을 받던 중이라 "연결 실패"로 이어졌다. 신경망이
@@ -831,6 +819,19 @@ function sansToFen(sans) {
   const { board, rights, ep } = replaySans(sans);
   return boardToFen(board, sans.length, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-");
 }
+// (v0.3.5 기능) 사용자 요청 — v0.3.4에서 "이번 범위를 넘어선다"고 미뤄 둔 FEN 리뷰 관련 작업 중,
+// 보드 조작(자유 탐색)·정확한 무승부 판정만 이번에 마저 지원한다(수의 등급·코치 코멘트 같은 MEC
+// 채점까지는 여전히 범위 밖 — LearnTab의 기존 FEN 모드도 처음부터 같은 선을 긋고 있었다, goFen
+// 참고). boardFromSans/sansToFen(둘 다 표준 시작 위치 전용, 모듈 전역 캐시로 최적화됨)을 그대로
+// 두고, fenRoot가 있을 때만 이 보조 함수들로 갈아탄다 — fenRoot 재생은 호출 빈도가 낮아(자유 탐색
+// 중에만) 캐시 없이 매번 replayFromFen을 불러도 무방하다.
+function boardOfRoot(fenRoot, sans) { return fenRoot ? replayFromFen(fenRoot, sans).board : boardFromSans(sans); }
+function fenOfRoot(fenRoot, sans) {
+  if (!fenRoot) return sansToFen(sans);
+  const r = replayFromFen(fenRoot, sans);
+  return boardToFen(r.board, sans.length, castleRightsStr(r.rights), r.ep ? sqName(r.ep[0], r.ep[1]) : "-", fenRoot.turn);
+}
+function colorOfRoot(fenRoot, plyCount) { return plyIsWhite(plyCount, fenRoot ? fenRoot.turn : "w") ? "w" : "b"; }
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 
@@ -977,7 +978,6 @@ function useEngine(enginePref) {
         // 높아져 실질적으로 더 깊이 탐색할 수 있다 — 이 엔진 인스턴스는 워커 1개뿐이라 메모리 부담도
         // 작다(태블릿·저사양 기기에서도 64MB는 안전한 수준).
         w.postMessage("setoption name Hash value 64");
-        eloSetoptions(ENGINE_PROFILES[enginePref]).forEach((c) => w.postMessage(c));
         w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
       } catch (_) { tryNext(); }
@@ -1009,7 +1009,7 @@ function useEngine(enginePref) {
   }), [pump, supersede]);
   // (성능) 게임 리뷰의 병렬 워커 풀(analyzeGame/bootAnalysisWorker)이 지금 선택된 엔진과 같은
   // 프로필(같은 실행 파일·신경망)로 워커를 추가로 띄울 수 있도록 profile 식별자와 부팅 URL을 함께 내보낸다.
-  const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES.full).urls;
+  const urls = (ENGINE_PROFILES[enginePref] || ENGINE_PROFILES[defaultEnginePref()]).urls;
   return { status, evaluate, evaluateMulti, profile: enginePref, urls };
 }
 /* UCI -> SAN (보드 기준). ep를 넘기면 앙파상 캡처도 올바르게 "x"를 붙인다. uci 5번째 글자(승진 기물,
@@ -1030,11 +1030,29 @@ function uciToSan(board, uci, color, ep) {
 // 보드 재구성(boardFromSans)에는 반영되지 않아, 다음 반복의 uciToSan이 그 폰이 여전히 있다고 보고
 // 완전히 다른(때로는 불가능한) 수로 오판해 null을 반환하며 그 지점에서 라인이 조용히 끊겼다. 매
 // 반복마다 직전 수로 새로 생긴 ep 타깃을 계산해 다음 uciToSan 호출에 넘긴다.
-function pvUciToSans(prevSans, uciList, maxPlies) {
+// (v0.3.5 기능) fenRoot를 선택적으로 받는다 — 예전엔 항상 표준 시작 위치를 전제해(boardFromSans),
+// FEN 리뷰의 실시간 엔진 라인 패널에 그대로 쓰면 PV가 엉뚱한(때로는 불법인) 표기로 보였다("범위가
+// 커진다"고 미룬 항목). fenRoot 경로는 표준 경로가 쓰는 전역 재생 캐시(replaySans)가 없어 매번
+// replayFromFen부터 다시 재생하지만, 이 함수는 최대 maxPlies(보통 15수 안팎)만 도는 짧은 루프라
+// 비용은 무시할 만하다.
+function pvUciToSans(prevSans, uciList, maxPlies, fenRoot) {
   const sans = [];
   const cur = prevSans.slice();
-  let ep = epTarget(cur);
   const n = Math.min(uciList.length, maxPlies || uciList.length);
+  if (fenRoot) {
+    let { board, ep } = replayFromFen(fenRoot, cur);
+    for (let i = 0; i < n; i++) {
+      const color = plyIsWhite(cur.length, fenRoot.turn) ? "w" : "b";
+      const san = uciToSan(board, uciList[i], color, ep);
+      if (!san) break;
+      sans.push(san);
+      cur.push(san);
+      ep = epTargetFromMoveInfo(sanSrc(board, san, color));
+      board = applySan(board, san, color);
+    }
+    return sans;
+  }
+  let ep = epTarget(cur);
   for (let i = 0; i < n; i++) {
     const color = cur.length % 2 === 0 ? "w" : "b";
     const board = boardFromSans(cur);
@@ -1958,20 +1976,25 @@ function positionKey(board, color) {
 // sans가 나타내는 수순이 "지금" 스테일메이트·체크메이트·3회 동형 반복 중 하나로 이미 끝나 있는
 // 국면인지 판정한다(진행 중이면 end: null). 학습 탭 메인 보드·리뷰 페이지 자유 탐색 양쪽에서 더
 // 이상 수를 둘 수 없어야 하는 국면인지 확인하는 데 쓴다.
-function gameEndState(sans) {
-  if (!sans || !sans.length) return { end: null };
-  let board = startBoard();
-  const seen = new Map([[positionKey(board, "w"), 1]]);
-  for (let i = 0; i < sans.length; i++) {
-    const color = i % 2 === 0 ? "w" : "b";
+// (v0.3.5 버그 수정) fenRoot를 선택적으로 받는다 — 예전엔 항상 표준 시작 위치를 전제해, FEN 리뷰의
+// 자유 탐색·학습 탭 FEN 모드에서는 이 판정 자체를 아예 꺼 둘 수밖에 없었다("범위 밖"으로 미룬
+// 항목). fenRoot가 있으면 그 위치·그 차례부터 재생해 판정한다(생략 시 기존 표준 시작 위치 동작과
+// 완전히 동일).
+function gameEndState(sans, fenRoot) {
+  const startColor = fenRoot ? fenRoot.turn : "w";
+  let board = fenRoot ? fenRoot.board : startBoard();
+  const seen = new Map([[positionKey(board, startColor), 1]]);
+  const n = sans ? sans.length : 0;
+  for (let i = 0; i < n; i++) {
+    const color = plyIsWhite(i, startColor) ? "w" : "b";
     board = applySan(board, sans[i], color);
     const nextColor = color === "w" ? "b" : "w";
     const key = positionKey(board, nextColor);
     seen.set(key, (seen.get(key) || 0) + 1);
   }
-  const lastColor = (sans.length - 1) % 2 === 0 ? "w" : "b";
-  const toMove = lastColor === "w" ? "b" : "w";
+  const toMove = n === 0 ? startColor : (plyIsWhite(n - 1, startColor) ? "b" : "w");
   if (!hasAnyLegalMove(board, toMove)) return isInCheck(board, toMove) ? { end: "checkmate", color: toMove } : { end: "stalemate", color: toMove };
+  if (n === 0) return { end: null };
   if (seen.get(positionKey(board, toMove)) >= 3) return { end: "threefold" };
   return { end: null };
 }
@@ -2688,7 +2711,7 @@ const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : 
 // 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 학습 탭의 실시간 후보 수
 // 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
 // evaluate + onProgress, MultiPV evaluateMulti)을 둘 다 지원하도록 넓혔다.
-function bootAnalysisWorker(urls, eloOpts) {
+function bootAnalysisWorker(urls) {
   return new Promise((resolve) => {
     let idx = 0, booted = false, worker = null;
     const queue = []; let running = false, swallowBest = 0;
@@ -2827,7 +2850,6 @@ function bootAnalysisWorker(urls, eloOpts) {
         // 워커를 띄우므로(analyzePoolSize) 워커당 크기를 32MB로 더 보수적으로 잡아, 코어가 많은
         // 기기에서도 총 메모리 사용량이 과하게 불어나지 않게 한다.
         w.postMessage("setoption name Hash value 32");
-        (eloOpts || []).forEach((c) => w.postMessage(c));
         w.postMessage("isready");
         setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
       } catch (_) { tryNext(); }
@@ -2842,11 +2864,13 @@ function bootAnalysisWorker(urls, eloOpts) {
 // 세션 내내 재사용한다 — depth·movetime(정확도)은 절대 건드리지 않고, 부팅을 한 번만 치르고 나면
 // 그 뒤로는 병렬도만큼 순수하게 시간을 줄인다.
 // (v0.2.4 버그 수정) 예전엔 프로필 하나만 유지하는 단일 슬롯 캐시라, 분석 엔진(lite/full17)과
-// 게임 리뷰 전용 엔진(full)이 서로 다른 프로필이라는 이유만으로 상대 풀을 매번 통째로 정리하고
-// 새로 띄웠다 — 학습 탭을 쓰다가 리뷰를 열면 학습 탭 풀이 꺼지고, 리뷰를 닫고 학습 탭에 돌아오면
-// 또 학습 탭 풀을 새로 띄우는 식으로 서로를 밀어내며(thrashing) 부팅 비용을 반복해서 치렀다. 프로필이
-// 최대 3개(full/lite/full17)뿐이라 메모리 부담이 크지 않으므로, 프로필별로 풀을 따로 유지하고 절대
-// 서로를 정리하지 않는다(탭을 오가도 이미 띄운 풀은 그대로 살아있다).
+// 게임 리뷰 전용 엔진(당시 "full", Stockfish 16)이 서로 다른 프로필이라는 이유만으로 상대 풀을 매번
+// 통째로 정리하고 새로 띄웠다 — 학습 탭을 쓰다가 리뷰를 열면 학습 탭 풀이 꺼지고, 리뷰를 닫고 학습
+// 탭에 돌아오면 또 학습 탭 풀을 새로 띄우는 식으로 서로를 밀어내며(thrashing) 부팅 비용을 반복해서
+// 치렀다. 프로필별로 풀을 따로 유지하고 절대 서로를 정리하지 않아(탭을 오가도 이미 띄운 풀은 그대로
+// 살아있다) 이 문제를 없앴는데, (v0.3.5) 게임 리뷰가 사용자가 고른 분석 엔진(lite/full17)을 그대로
+// 쓰도록 통합된 뒤로는 애초에 프로필이 갈릴 일 자체가 없어져 이 캐시 분리는 더 단순한 이유로만
+// 남았다 — 리뷰가 열려 있는 동안에도 학습 탭 풀을 매번 새로 띄우지 않는다.
 const analysisPoolCache = new Map(); // profile -> Promise<worker[]>
 // (성능) 풀 크기 — 기기가 가진 코어 수만큼 그대로 다 쓴다. 발열·CPU 점유율은 감수하더라도(사용자
 // 요청) 렉 없이 최대 성능을 내는 쪽을 택한다 — 예전처럼 프로필별로 낮게 캡을 걸어 코어를 남겨두지
@@ -2859,8 +2883,7 @@ function getAnalysisPool(profile, urls) {
   const cached = analysisPoolCache.get(profile);
   if (cached) return cached;
   const size = analyzePoolSize(profile);
-  const eloOpts = eloSetoptions(ENGINE_PROFILES[profile]);
-  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls, eloOpts))).then((ws) => ws.filter(Boolean));
+  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
   analysisPoolCache.set(profile, promise);
   return promise;
 }
@@ -4101,6 +4124,363 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
         </div>
       )}
     </>
+  );
+}
+// (v0.3.5 기능) 사용자 요청 — 학습 탭 보드 편집기. 팔레트에서 기물을 골라 보드 칸에 콕콕 찍어 원하는
+// 포지션을 처음부터 구성하고, 차례·캐슬링 권리를 직접 지정한 뒤 완료하면 NotationTools의 FEN
+// 붙여넣기와 똑같은 계약(onLoadFen(parseFenFull 결과))으로 그 포지션의 FEN 모드로 들어간다.
+const STANDARD_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+const EDITOR_EMPTY_FEN = "8/8/8/8/8/8/8/8 w - - 0 1";
+const EDITOR_PALETTE_PIECES = ["K", "Q", "R", "B", "N", "P"];
+function editorEmptyBoard() { return Array.from({ length: 8 }, () => Array(8).fill(null)); }
+// 캐슬링 권리 없이 앙파상도 없는 순수 "지금 배치+차례"만 담은 FEN — 에디터는 앙파상을 다루지 않는다.
+function editorFenOf(board, turn, rights) {
+  const castle = (rights.K ? "K" : "") + (rights.Q ? "Q" : "") + (rights.k ? "k" : "") + (rights.q ? "q" : "");
+  return boardToFen(board, 0, castle || "-", "-", turn);
+}
+// 보드 칸을 클릭으로 채우는 8x8 그리드 — 실제 대국 보드(Board)와 달리 기물 이동 규칙이 전혀 없고
+// 좌표 라벨만 곁들인 순수 렌더링 그리드다.
+// (v0.3.5 기능) 사용자 요청 — 클릭만이 아니라 실제 대국 보드처럼 드래그로도 기물을 옮길 수 있게
+//한다. Board 컴포넌트가 이미 쓰고 있는 Pointer Events 기반 드래그(마우스·터치·펜을 하나의 API로
+// 통일 — 네이티브 HTML5 드래그는 터치에서 아예 동작하지 않는다)를 그대로 본뜬다. 다만 이 그리드는
+// 실제 대국 규칙이 없어 legalDests 같은 판정이 필요 없으므로, 드롭 위치 계산(gridRef 기준 좌표→칸)
+// 로직만 가져오고 나머지(잡기/두기 판정)는 BoardEditorModal이 훨씬 단순하게 직접 처리한다.
+function EditorBoardGrid({ board, flipped, size, selected, onSquareClick, gridRef, onPieceDown, dragOn, draggingFrom }) {
+  const ranks = flipped ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
+  const files = flipped ? ["h", "g", "f", "e", "d", "c", "b", "a"] : ["a", "b", "c", "d", "e", "f", "g", "h"];
+  const cellPx = size / 8;
+  const cells = [];
+  for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
+    const r = flipped ? 7 - rr : rr, c = flipped ? 7 - cc : cc;
+    const light = (r + c) % 2 === 0;
+    const p = board[r][c];
+    const isSel = !!(selected && selected[0] === r && selected[1] === c);
+    const isDragSource = !!(draggingFrom && draggingFrom[0] === r && draggingFrom[1] === c);
+    cells.push(
+      <div key={r + "_" + c} onClick={() => onSquareClick(r, c)} className="press"
+        style={{ position: "relative", background: light ? T.boardLight : T.boardDark, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : "none", touchAction: "none" }}>
+        {p && <PieceGlyph type={p.t} color={p.c} size={Math.round(cellPx * 0.82)} style={{ opacity: isDragSource ? 0.25 : 1, cursor: "grab" }} />}
+        {/* (기능) 기물 위에만 얹는 투명 오버레이 — pointerdown이 눌린 칸만 드래그 시작점으로 잡고,
+            빈 칸은 여전히 위 onClick(도장 찍기/기존 기물 두기)만으로 동작한다. */}
+        {p && <div onPointerDown={(e) => onPieceDown(e, r, c)} onPointerMove={dragOn.onMove} onPointerUp={dragOn.onUp} onPointerCancel={dragOn.onCancel} style={{ position: "absolute", inset: 0 }} />}
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "inline-flex", flexDirection: "column", flexShrink: 0 }}>
+      <div className="flex">
+        <div style={{ display: "flex", flexDirection: "column", width: 15, flexShrink: 0 }}>
+          {ranks.map((n) => <div key={n} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "rgba(244,238,226,.55)" }}>{n}</div>)}
+        </div>
+        <div ref={gridRef} style={{ width: size, height: size, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", borderRadius: 6, overflow: "hidden", border: "1px solid #000", flexShrink: 0, ...BOARD_GLOSS }}>{cells}</div>
+      </div>
+      <div className="flex" style={{ marginLeft: 15 }}>
+        {files.map((f) => <div key={f} style={{ width: size / 8, textAlign: "center", fontSize: 10, fontWeight: 800, color: "rgba(244,238,226,.55)" }}>{f}</div>)}
+      </div>
+    </div>
+  );
+}
+function BoardEditorModal({ initialFen, onClose, onApply }) {
+  const narrow = useNarrow(760);
+  const startSnap = useMemo(() => {
+    const p = (initialFen && parseFenFull(initialFen)) || parseFenFull(STANDARD_START_FEN);
+    return { board: p.board, turn: p.turn, rights: p.rights };
+  }, [initialFen]);
+  // (기능) 되감기/빨리감기(◀◀▶▶)·되돌리기/다시하기(↶↷) — 스냅샷 배열 하나 + 인덱스로 관리해
+  // board/turn/rights 세 state를 따로 두고 동기화하다 어긋나는 사고를 원천 차단한다.
+  const [hist, setHist] = useState({ list: [startSnap], idx: 0 });
+  const snap = hist.list[hist.idx];
+  const { board, turn, rights } = snap;
+  const pushSnap = (patch) => setHist((h) => {
+    const next = { ...h.list[h.idx], ...patch };
+    const list = [...h.list.slice(0, h.idx + 1), next];
+    return { list, idx: list.length - 1 };
+  });
+  const canUndo = hist.idx > 0, canRedo = hist.idx < hist.list.length - 1;
+  const undo = () => canUndo && setHist((h) => ({ ...h, idx: h.idx - 1 }));
+  const redo = () => canRedo && setHist((h) => ({ ...h, idx: h.idx + 1 }));
+  const rewind = () => setHist((h) => ({ ...h, idx: 0 }));
+  const fastForward = () => setHist((h) => ({ ...h, idx: h.list.length - 1 }));
+  const [flipped, setFlipped] = useState(false);
+  const [tool, setTool] = useState(null); // null | "delete" | { piece, color }
+  const [pickedSq, setPickedSq] = useState(null); // 팔레트 없이 보드 위 기물을 직접 집어 옮기는 중인 칸
+  const placeAt = (r, c, piece) => { const b = board.map((row) => row.slice()); b[r][c] = piece; pushSnap({ board: b }); };
+  const onSqClick = (r, c) => {
+    if (tool) { placeAt(r, c, tool === "delete" ? null : { c: tool.color, t: tool.piece }); return; }
+    if (pickedSq) {
+      if (pickedSq[0] === r && pickedSq[1] === c) { setPickedSq(null); return; }
+      const b = board.map((row) => row.slice());
+      b[r][c] = b[pickedSq[0]][pickedSq[1]]; b[pickedSq[0]][pickedSq[1]] = null;
+      pushSnap({ board: b }); setPickedSq(null);
+      return;
+    }
+    if (board[r][c]) setPickedSq([r, c]);
+  };
+  // (사용자 요청) 이 화면에서도 자연스러운 드래그 무브 — Board 컴포넌트의 Pointer Events 패턴을
+  // 그대로 옮겨왔다: 보드 위 기물뿐 아니라 팔레트의 기물도 드래그 출발점이 될 수 있어 source로 구분한다.
+  // 팔레트로 옮긴 고스트는 그리드 내부 절대좌표가 아니라 position:fixed로 화면 전체에 그린다 — 팔레트가
+  // 그리드 바깥에 있어 좌표계가 다르고, 드래그 도중 보드 경계를 자유로이 넘나들어야 하기 때문이다.
+  const gridRef = useRef(null);
+  const dragStartRef = useRef(null); // { source:"board"|"palette", from:[r,c]|null, piece:{c,t}, x, y }
+  const suppressClickRef = useRef(false);
+  const [ptrDrag, setPtrDrag] = useState(null); // 위와 동일한 모양 — 드래그 임계값을 넘겼을 때만 채워짐(고스트/딤 처리용)
+  const DRAG_THRESHOLD = 4;
+  const onSqClickGuarded = (r, c) => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } onSqClick(r, c); };
+  const paletteClick = (fn) => () => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } fn(); };
+  const squareFromClient = (clientX, clientY) => {
+    const el = gridRef.current; if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const relX = (clientX - rect.left) / rect.width, relY = (clientY - rect.top) / rect.height;
+    if (relX < 0 || relX >= 1 || relY < 0 || relY >= 1) return null;
+    const vc = Math.min(7, Math.max(0, Math.floor(relX * 8))), vr = Math.min(7, Math.max(0, Math.floor(relY * 8)));
+    return flipped ? [7 - vr, 7 - vc] : [vr, vc];
+  };
+  const startDragFromBoard = (e, r, c) => {
+    if (tool) return; // 도구가 활성화된 동안은 클릭 스탬프만 — 드래그는 도구가 없을 때만 시작
+    const piece = board[r][c]; if (!piece) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+    dragStartRef.current = { source: "board", from: [r, c], piece, x: e.clientX, y: e.clientY };
+  };
+  const startDragFromPalette = (e, color, piece) => {
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+    dragStartRef.current = { source: "palette", from: null, piece: { c: color, t: piece }, x: e.clientX, y: e.clientY };
+  };
+  const onDragPointerMove = (e) => {
+    const d = dragStartRef.current; if (!d) return;
+    e.preventDefault();
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!ptrDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    setPtrDrag({ ...d, x: e.clientX, y: e.clientY });
+  };
+  const endDrag = (e, drop) => {
+    const d = dragStartRef.current;
+    const wasDragging = !!ptrDrag;
+    dragStartRef.current = null;
+    setPtrDrag(null);
+    if (!d) return;
+    if (drop && wasDragging) {
+      suppressClickRef.current = true;
+      const target = squareFromClient(e.clientX, e.clientY);
+      if (d.source === "board") {
+        if (target && (target[0] !== d.from[0] || target[1] !== d.from[1])) {
+          const b = board.map((row) => row.slice());
+          b[target[0]][target[1]] = d.piece; b[d.from[0]][d.from[1]] = null;
+          pushSnap({ board: b });
+        } else if (!target) { // 보드 밖으로 드롭 = 기물 삭제
+          const b = board.map((row) => row.slice());
+          b[d.from[0]][d.from[1]] = null;
+          pushSnap({ board: b });
+        }
+        setPickedSq(null);
+      } else if (d.source === "palette" && target) {
+        placeAt(target[0], target[1], d.piece);
+      }
+    }
+  };
+  const onDragPointerUp = (e) => endDrag(e, true);
+  const onDragPointerCancel = (e) => endDrag(e, false);
+  const doReset = () => { const p = parseFenFull(STANDARD_START_FEN); pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setTool(null); setPickedSq(null); };
+  const doClear = () => { const p = parseFenFull(EDITOR_EMPTY_FEN); pushSnap({ board: p.board, turn: p.turn, rights: { K: false, Q: false, k: false, q: false } }); setTool(null); setPickedSq(null); };
+  const setTurnV = (t) => pushSnap({ turn: t });
+  const toggleRight = (k) => pushSnap({ rights: { ...rights, [k]: !rights[k] } });
+  const fenText = useMemo(() => editorFenOf(board, turn, rights), [board, turn, rights]);
+  const [fenInput, setFenInput] = useState(fenText);
+  const [fenErr, setFenErr] = useState("");
+  useEffect(() => { setFenInput(fenText); }, [fenText]);
+  const applyFenInput = () => {
+    const p = parseFenFull(fenInput.trim());
+    if (!p) { setFenErr("올바른 FEN 형식이 아니에요."); return; }
+    pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setFenErr("");
+  };
+  const [copied, setCopied] = useState(false);
+  const copyFen = async () => { try { await navigator.clipboard.writeText(fenText); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { } };
+  const pasteFen = async () => {
+    try {
+      const raw = (await navigator.clipboard.readText()).trim();
+      if (!looksLikeFen(raw)) { setFenErr("클립보드에 올바른 FEN이 없어요."); return; }
+      const p = parseFenFull(raw);
+      if (!p) { setFenErr("올바른 FEN 형식이 아니에요."); return; }
+      pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setFenErr("");
+    } catch { setFenErr("클립보드를 읽을 수 없어요."); }
+  };
+  // (v0.3.5 기능) 사용자 요청 — 이미지 스캔(사진 → FEN). 서버(api/scan-board.js, OpenRouter 무료 비전 모델)에
+  // 보드 배치만 물어보고, 캐슬링 권리·차례는 사용자가 이미 이 화면에서 설정해 둔 값을 그대로 둔다
+  // (사진만으로는 알 수 없는 정보라 서버도 이 값을 추측하지 않는다).
+  const scanInputRef = useRef(null);
+  const [scanning, setScanning] = useState(false);
+  const onScanFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setScanning(true); setFenErr("");
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl || "");
+      if (!m) { setFenErr("이미지를 읽지 못했어요."); return; }
+      const r = await fetch("/api/scan-board", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image: m[2], mediaType: m[1] }),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data || !data.fen_board) { setFenErr((data && data.error) || "이미지에서 체스판을 인식하지 못했어요."); return; }
+      const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
+      if (!p) { setFenErr("인식된 배치를 적용할 수 없었어요."); return; }
+      pushSnap({ board: p.board });
+    } catch { setFenErr("이미지 스캔에 실패했어요."); }
+    finally { setScanning(false); }
+  };
+  const handleDone = () => { const p = parseFenFull(fenText); if (p) onApply(p); };
+  const boardSize = narrow ? Math.min(320, (typeof window !== "undefined" ? window.innerWidth : 360) - 64) : 400;
+  const paletteSq = narrow ? Math.min(40, Math.floor((boardSize + 15) / 7) - 4) : 42;
+
+  const resetClearRow = (
+    <div className="flex gap-2">
+      <button onClick={doReset} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 10px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><RefreshCw size={13} /> 초기화</button>
+      <button onClick={doClear} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 10px", borderRadius: 10, background: "rgba(200,69,59,.18)", color: "#F4A0A0", fontWeight: 800, fontSize: 12.5, border: "1px solid " + T.blunder, cursor: "pointer" }}><Trash2 size={13} /> 지우기</button>
+    </div>
+  );
+  const turnCastleGrid = (
+    <div style={{ display: "grid", gridTemplateColumns: "auto auto 1fr", gap: "7px 16px", alignItems: "center", fontSize: 11 }}>
+      <div />
+      <div style={{ fontWeight: 800, color: "rgba(244,238,226,.6)" }}>착수 차례</div>
+      <div style={{ fontWeight: 800, color: "rgba(244,238,226,.6)" }}>캐슬링 (표준)</div>
+      {[["w", "K", "Q"], ["b", "k", "q"]].map(([col, kKey, qKey]) => (
+        <React.Fragment key={col}>
+          <label className="flex items-center" style={{ gap: 6, cursor: "pointer" }}>
+            <input type="radio" checked={turn === col} onChange={() => setTurnV(col)} />
+            <PieceGlyph type="P" color={col} size={20} />
+          </label>
+          <div />
+          <div className="flex items-center" style={{ gap: 14 }}>
+            <label className="flex items-center" style={{ gap: 5, cursor: "pointer", color: T.ivoryHi, fontWeight: 700 }}>
+              <input type="checkbox" checked={rights[kKey]} onChange={() => toggleRight(kKey)} /> 0-0
+            </label>
+            <label className="flex items-center" style={{ gap: 5, cursor: "pointer", color: T.ivoryHi, fontWeight: 700 }}>
+              <input type="checkbox" checked={rights[qKey]} onChange={() => toggleRight(qKey)} /> 0-0-0
+            </label>
+          </div>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+  const boardEl = <EditorBoardGrid board={board} flipped={flipped} size={boardSize} selected={pickedSq} onSquareClick={onSqClickGuarded} gridRef={gridRef} onPieceDown={startDragFromBoard} dragOn={{ onMove: onDragPointerMove, onUp: onDragPointerUp, onCancel: onDragPointerCancel }} draggingFrom={ptrDrag && ptrDrag.source === "board" ? ptrDrag.from : null} />;
+  const paletteBtnStyle = (armed) => ({ width: paletteSq, height: paletteSq, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: armed ? "2px solid " + T.brassHi : "2px solid transparent", background: armed ? "rgba(255,255,255,.3)" : "transparent", touchAction: "none" });
+  const isArmed = (color, piece) => !!(tool && tool !== "delete" && tool.color === color && tool.piece === piece);
+  const paletteEl = (
+    <div style={{ background: "linear-gradient(180deg,#D9A93A,#B8862A)", borderRadius: 10, padding: 6, border: "1px solid #8A6A2F" }}>
+      <div className="flex" style={{ gap: 4, marginBottom: 4 }}>
+        <button onClick={() => setTool((cur) => (cur === "delete" ? null : "delete"))} title="지우개(칸 비우기)" className="press" style={{ ...paletteBtnStyle(tool === "delete"), background: tool === "delete" ? "rgba(255,255,255,.3)" : "rgba(0,0,0,.15)" }}><Trash2 size={Math.round(paletteSq * 0.42)} color="#3A1E0E" /></button>
+        {EDITOR_PALETTE_PIECES.map((p) => (
+          <button key={"w" + p}
+            onClick={paletteClick(() => setTool((cur) => (cur && cur !== "delete" && cur.piece === p && cur.color === "w") ? null : { piece: p, color: "w" }))}
+            onPointerDown={(e) => startDragFromPalette(e, "w", p)} onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerCancel}
+            className="press" style={paletteBtnStyle(isArmed("w", p))}><PieceGlyph type={p} color="w" size={Math.round(paletteSq * 0.8)} /></button>
+        ))}
+      </div>
+      <div className="flex" style={{ gap: 4 }}>
+        <button onClick={() => setFlipped((f) => !f)} title="보드 뒤집기" className="press" style={{ ...paletteBtnStyle(false), background: "rgba(0,0,0,.15)" }}><Repeat2 size={Math.round(paletteSq * 0.42)} color="#3A1E0E" /></button>
+        {EDITOR_PALETTE_PIECES.map((p) => (
+          <button key={"b" + p}
+            onClick={paletteClick(() => setTool((cur) => (cur && cur !== "delete" && cur.piece === p && cur.color === "b") ? null : { piece: p, color: "b" }))}
+            onPointerDown={(e) => startDragFromPalette(e, "b", p)} onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerCancel}
+            className="press" style={paletteBtnStyle(isArmed("b", p))}><PieceGlyph type={p} color="b" size={Math.round(paletteSq * 0.8)} /></button>
+        ))}
+      </div>
+    </div>
+  );
+  const ghostEl = ptrDrag && (
+    <div style={{ position: "fixed", left: ptrDrag.x, top: ptrDrag.y - 22, transform: "translate(-50%,-50%)", zIndex: 999, pointerEvents: "none", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.55))" }}>
+      <PieceGlyph type={ptrDrag.piece.t} color={ptrDrag.piece.c} size={Math.round(boardSize / 8 * 0.9)} />
+    </div>
+  );
+  const fenActionsRow = (
+    <div className="flex gap-2">
+      <button onClick={pasteFen} className="press" style={{ flex: 1, padding: "8px 10px", borderRadius: 9, background: T.ebony2, color: T.ivoryHi, fontWeight: 700, fontSize: 11.5, border: "1px solid #000", cursor: "pointer" }}>복사한 FEN 붙여넣기</button>
+      <button onClick={copyFen} className="press" style={{ flex: 1, padding: "8px 10px", borderRadius: 9, background: T.ebony2, color: T.ivoryHi, fontWeight: 700, fontSize: 11.5, border: "1px solid #000", cursor: "pointer" }}>{copied ? "복사됨!" : "FEN 복사"}</button>
+    </div>
+  );
+  const fenInputRow = (
+    <div>
+      <div className="flex items-center gap-2">
+        <span title="이 FEN을 보드에 반영" style={{ flexShrink: 0, color: "rgba(244,238,226,.5)" }}><Save size={15} /></span>
+        <input value={fenInput} onChange={(e) => { setFenInput(e.target.value); setFenErr(""); }} onKeyDown={(e) => e.key === "Enter" && applyFenInput()} onBlur={applyFenInput}
+          style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #000", background: "rgba(0,0,0,.35)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 11 }} />
+      </div>
+      {fenErr && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>{fenErr}</div>}
+    </div>
+  );
+  const scanAndHistoryRow = (
+    <div className="flex items-center justify-between">
+      <input ref={scanInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={onScanFile} />
+      <button onClick={() => scanInputRef.current && scanInputRef.current.click()} disabled={scanning} title="사진에서 체스판 배치 읽기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: scanning ? "rgba(255,255,255,.06)" : T.ebony2, color: scanning ? "rgba(244,238,226,.4)" : T.brassHi, fontWeight: 700, fontSize: 11.5, border: "1px solid " + (scanning ? "rgba(255,255,255,.15)" : "#000"), cursor: scanning ? "default" : "pointer" }}><ScanLine size={13} /> {scanning ? "인식하는 중..." : "이미지 스캔"}</button>
+      <div className="flex items-center" style={{ gap: 4 }}>
+        <button onClick={rewind} disabled={!canUndo} title="처음으로" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsLeft size={15} /></button>
+        <button onClick={undo} disabled={!canUndo} title="되돌리기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
+        <button onClick={redo} disabled={!canRedo} title="다시하기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canRedo ? "pointer" : "default", opacity: canRedo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCw size={14} /></button>
+        <button onClick={fastForward} disabled={!canRedo} title="마지막으로" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canRedo ? "pointer" : "default", opacity: canRedo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsRight size={15} /></button>
+      </div>
+    </div>
+  );
+  const footerButtons = (
+    <div className="flex gap-2">
+      <button onClick={onClose} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+      <button onClick={handleDone} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>완료</button>
+    </div>
+  );
+  const header = (
+    <div className="flex items-center justify-between">
+      <div style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>보드 편집</div>
+      <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(255,255,255,.08)", color: T.ivoryHi, border: "1px solid rgba(255,255,255,.15)", cursor: "pointer" }}>✕</button>
+    </div>
+  );
+  if (narrow) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.7)", zIndex: 95, display: "flex" }}>
+        {ghostEl}
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#2E1B10,#160C06)" }}>
+          <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.1)" }}>{header}</div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+            {resetClearRow}
+            {turnCastleGrid}
+            <div className="flex justify-center">{boardEl}</div>
+            {paletteEl}
+            {fenActionsRow}
+            {fenInputRow}
+            {scanAndHistoryRow}
+          </div>
+          <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,.1)" }}>{footerButtons}</div>
+        </div>
+      </div>
+    );
+  }
+  // (사용자 요청) 데스크톱 — 체스보드만 남기고 나머지 UI는 전부 보드 오른쪽에 모아, 가로 비율의 창 하나로.
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.7)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      {ghostEl}
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(880px, 100%)", maxHeight: "min(680px, 100%)", display: "flex", gap: 26, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderRadius: 18, border: "1px solid #000", boxShadow: "0 30px 70px -16px rgba(0,0,0,.7)", padding: 24, overflow: "auto" }}>
+        <div style={{ flexShrink: 0 }}>{boardEl}</div>
+        <div style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 14 }}>
+          {header}
+          {resetClearRow}
+          {turnCastleGrid}
+          {paletteEl}
+          {fenActionsRow}
+          {fenInputRow}
+          {scanAndHistoryRow}
+          <div style={{ flex: 1 }} />
+          {footerButtons}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -6288,9 +6668,11 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
   };
 }
 // (20차 UI2) 최선 수(연두색+별) 바로가기 버튼 — 누르면 그 대국을 즉시 분석 모드로 연다.
-function BestMoveJumpButton({ onClick, disabled }) {
+// (v0.3.5 기능) title을 선택적으로 받는다 — 호출부마다 문맥에 맞는 문구를 쓸 수 있도록(기본값은
+// 기존 문구 그대로 유지해 기존 호출부는 전부 무수정으로 동일하게 동작한다).
+function BestMoveJumpButton({ onClick, disabled, title = "이 대국 분석 모드로 바로 보기" }) {
   return (
-    <button onClick={onClick} disabled={disabled} title="이 대국 분석 모드로 바로 보기" className="press"
+    <button onClick={onClick} disabled={disabled} title={title} className="press"
       style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: disabled ? "#9CC98A" : "#6EBF4A", border: "none", cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.6 : 1 }}>
       <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
         <Star size={11} fill="#6EBF4A" color="#6EBF4A" />
@@ -7857,28 +8239,12 @@ const RV = {
 // 그 전에 depth에서 먼저 끝나 실제 계산 시간은 기존과 비슷하게 유지된다(상한만 넉넉해진 것).
 const REVIEW_DEPTH = 20;
 const REVIEW_MOVETIME_MS = 1000;
-// (v0.2.4 성능) 게임 리뷰는 항상 고정된 프로필("full")이라 useEngine처럼 별도의 "메인 연결"을
-// 매번 새로 부팅할 필요가 없다 — 실제 계산은 전부 getAnalysisPool의 풀이 담당하고(analyzeGame,
-// 엔진 라인 패널, 수 판정 모두), 아래 evaluate/evaluateMulti는 풀 부팅이 통째로 실패했을 때만
-// 쓰이는 진짜 마지막 폴백이다. 그래서 폴백 워커도 실제로 호출될 때만("지연 부팅") 띄운다 — 흔한
-// 경우(풀이 정상 부팅됨)엔 이 폴백이 아예 뜨지 않아, 리뷰를 열 때마다 불필요한 wasm을 중복
-// 컴파일하던 비용이 사라진다.
-function useReviewEngine() {
-  const profile = ENGINE_PROFILES.full;
-  const fallbackRef = useRef(null);
-  const getFallback = useCallback(() => {
-    if (!fallbackRef.current) fallbackRef.current = bootAnalysisWorker(profile.urls, eloSetoptions(profile));
-    return fallbackRef.current;
-  }, [profile]);
-  useEffect(() => () => { const p = fallbackRef.current; if (p) p.then((w) => w && w.terminate()); }, []);
-  return useMemo(() => ({
-    status: "ready", // 정적 프로필이라 "연결 상태"라는 개념이 없다 — 실제 준비 여부는 getAnalysisPool이 비동기로 처리.
-    profile: profile.id,
-    urls: profile.urls,
-    evaluate: (...args) => getFallback().then((w) => w ? w.evaluate(...args) : null),
-    evaluateMulti: (...args) => getFallback().then((w) => w ? w.evaluateMulti(...args) : []),
-  }), [profile, getFallback]);
-}
+// (v0.3.5 버그 수정 → 통합) 예전엔 게임 리뷰가 항상 고정된 프로필("full", Stockfish 16)이라 이
+// 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
+// 게임 리뷰도 설정 탭에서 고른 분석 엔진(useEngine(enginePref))을 그대로 쓰도록 통합해, 이 전용
+// 훅과 Stockfish 16 프로필 자체를 없앴다 — ReviewPage는 이제 App 루트의 공유 engine을 prop으로
+// 받는다(LearnTab·PuzzleTab 등과 동일한 패턴). 실제 계산은 여전히 getAnalysisPool의 풀이 담당한다
+// (analyzeGame, 엔진 라인 패널, 수 판정 모두 이 풀을 공유 — 위 analysisPoolCache 주석 참고).
 // (v0.2.9 기능) 사용자 요청 — 게임 리뷰(analyzeGame)가 도는 동안 보여줄 3분할 일러스트 애니메이션.
 // 사용자가 올려 준 세 장(MILKU·KOKOA가 체스보드를 사이에 두고 있는 장면들)을 위에서부터 ilust-7 →
 // ilust-6 → ilust-5 순으로 쌓는다("7이 가장 위, 5가 가장 아래"). 각 장이 순서대로 팝인하며 등장하고
@@ -7934,10 +8300,9 @@ function AnalyzingPiecesAnim() {
     </div>
   );
 }
-// (v0.2.4) 게임 리뷰는 사용자가 설정 탭에서 고른 분석 엔진과 무관하게 항상 Stockfish 16(사람
-// 최상급 수준으로 세기 제한, ENGINE_PROFILES.full.elo)으로 고정한다.
-function ReviewPage({ game, onClose, myUid }) {
-  const engine = useReviewEngine();
+// (v0.3.5 기능) 사용자 요청 — 게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(engine, App 루트의
+// useEngine(enginePref))을 그대로 prop으로 받아 쓴다(예전엔 항상 Stockfish 16으로 고정).
+function ReviewPage({ game, onClose, myUid, engine }) {
   const narrow = useNarrow(760);
   const [phase, setPhase] = useState("summary"); // "summary" | "review"
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
@@ -7986,9 +8351,19 @@ function ReviewPage({ game, onClose, myUid }) {
   // game.fenRoot(원본 FEN 문자열)에서부터 시작한다. parseFenFull로 다시 파싱해 {board,turn,rights,ep}를
   // 얻고, LearnTab의 FEN 모드와 똑같이 replayFromFen으로 그 위치부터 effSans만큼 재생한다.
   const fenRoot = useMemo(() => (game.fenRoot ? parseFenFull(game.fenRoot) : null), [game.fenRoot]);
+  // (v0.3.5 버그 수정) engine이 항상 "ready"로 고정된 전용 훅(useReviewEngine)을 쓰던 시절엔 이
+  // effect가 deps=[]로 마운트 시 딱 한 번만 돌아도 문제가 없었다 — 이제 실제 useEngine(enginePref)을
+  // 받으므로 마운트 시점엔 아직 "loading"인 경우가 흔한데, deps=[]로 두면 그 순간의 상태로 영영
+  // "연결 실패"(setErr)로 굳어버린다(리뷰 딥링크 티켓 오탐 버그와 같은 종류의 클로저 문제). status가
+  // 바뀔 때마다 다시 확인하고, 실제로 분석을 시작한 뒤에는 startedRef로 한 번만 시작하게 막는다.
+  const analysisStartedRef = useRef(false);
   useEffect(() => {
+    if (analysisStartedRef.current || !engine) return;
+    if (engine.status === "off") { setErr(true); return; }
+    if (engine.status !== "ready") return; // 아직 부팅 중 — status가 바뀌면 이 effect가 다시 실행된다.
+    if (!sans || (sans.length < 1 && !fenRoot)) { setErr(true); return; }
+    analysisStartedRef.current = true;
     let cancelled = false;
-    if (!engine || engine.status !== "ready" || !sans || (sans.length < 1 && !fenRoot)) { setErr(true); return; }
     (async () => {
       try {
         const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
@@ -7997,7 +8372,7 @@ function ReviewPage({ game, onClose, myUid }) {
       } catch { if (!cancelled) setErr(true); }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [engine && engine.status]);
   useEffect(() => { setShowingLine(false); }, [curPly]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
@@ -8020,10 +8395,19 @@ function ReviewPage({ game, onClose, myUid }) {
   const effFen = fenRoot
     ? boardToFen(board, effSans.length, castleRightsStr(fenReplay.rights), fenReplay.ep ? sqName(fenReplay.ep[0], fenReplay.ep[1]) : "-", fenRoot.turn)
     : sansToFen(effSans);
-  const legalTargets = useMemo(() => (sel ? legalDests(board, sel[0], sel[1], explColor, ep) : []), [sel, board, explColor, ep]);
-  // (v0.2.3 기능) 학습 탭과 동일하게, 자유 탐색 중인 지금 위치가 스테일메이트·3회 동형 반복으로
-  // 이미 끝나 있으면 더 이상 수를 둘 수 없게 막고 무승부로 표시한다.
-  const drawState = useMemo(() => gameEndState(effSans), [effSans]);
+  // (v0.3.5 기능) 학습 탭 FEN 모드와 동일하게, fenRoot가 있으면 legalDests의 캐슬링 판정(기물
+  // 배치만 봄)을 그대로 쓰지 않고 FEN에서 유래한 캐슬링 권리로 한 번 더 걸러낸다(fenLegalDests) —
+  // 예전엔 이 자체가 없어 FEN 리뷰의 자유 탐색을 통째로 꺼 둘 수밖에 없었다("범위를 크게 넘어선다"고
+  // 미룬 항목).
+  const legalTargets = useMemo(() => {
+    if (!sel) return [];
+    return fenRoot ? fenLegalDests(sel[0], sel[1], explColor, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], explColor, ep);
+  }, [sel, board, explColor, ep, fenRoot, fenReplay]);
+  // (v0.2.3 기능 → v0.3.5) 학습 탭과 동일하게, 자유 탐색 중인 지금 위치가 스테일메이트·3회 동형
+  // 반복으로 이미 끝나 있으면 더 이상 수를 둘 수 없게 막고 무승부로 표시한다. gameEndState가
+  // fenRoot를 받도록 고쳐져 FEN 리뷰에서도 정확히 판정한다(effSans는 fenRoot가 있을 때 "그 FEN부터
+  // 둔 수순"을 의미하므로 그대로 넘기면 된다).
+  const drawState = useMemo(() => gameEndState(effSans, fenRoot), [effSans, fenRoot]);
   const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
   const curMove = curPly > 0 && result ? result.moves[curPly - 1] : null;
   // (v0.2.1) 지금 화면에 반영할 수/평가 — 자유 탐색 중이면 그 라이브 분석(exploreMove·엔진 라인 1순위
@@ -8080,14 +8464,15 @@ function ReviewPage({ game, onClose, myUid }) {
   }, [gameDrawn, activeMove, engineLines, effSans, exploreSans, curPly, sans]);
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
-    if (!legalDests(board, from[0], from[1], explColor, ep).some(([r, c]) => r === to[0] && c === to[1])) return false;
+    const dests = fenRoot ? fenLegalDests(from[0], from[1], explColor, board, fenReplay.rights, ep) : legalDests(board, from[0], from[1], explColor, ep);
+    if (!dests.some(([r, c]) => r === to[0] && c === to[1])) return false;
     const pc = board[from[0]][from[1]];
     if (pc && pc.t === "P" && ((explColor === "w" && to[0] === 0) || (explColor === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }
     const san = buildSan(board, from[0], from[1], to[0], to[1], explColor, ep);
     if (!san) return false;
     playFree(san);
     return true;
-  }, [board, explColor, ep, playFree]);
+  }, [board, explColor, ep, playFree, fenRoot, fenReplay]);
   const completePromo = useCallback((piece) => {
     if (!promoPrompt) return;
     const { from, to } = promoPrompt; setPromoPrompt(null); setSel(null); setDrag(null);
@@ -8112,13 +8497,8 @@ function ReviewPage({ game, onClose, myUid }) {
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready") { setEngineLines([]); setLinesPending(false); return; }
-    // (v0.3.4 기능) 이 패널의 pvUciToSans(effSans, ...)는 내부적으로 표준 시작 위치를 전제하고
-    // 수순을 다시 재생한다 — fenRoot 리뷰에서 그대로 쓰면 PV가 엉뚱한(때로는 불법인) 표기로
-    // 보인다. fenRoot까지 정확히 지원하려면 pvUciToSans 자체를 고쳐야 해 범위가 커지므로,
-    // 위 exploring 주석과 같은 이유로 fenRoot 리뷰에서는 이 실시간 엔진 라인 패널만 비워 둔다
-    // (핵심 기능인 실제 둔 수의 등급·코치 코멘트·평가 그래프는 analyzeGame 쪽에서 이미 fenRoot를
-    // 정확히 반영하므로 영향이 없다).
-    if (fenRoot) { setEngineLines([]); setLinesPending(false); return; }
+    // (v0.3.4 기능 → v0.3.5) 이 패널의 pvUciToSans(effSans, ...)가 fenRoot를 받도록 고쳐져("범위가
+    // 커진다"고 미뤄 뒀던 항목), FEN 리뷰에서도 이제 정확한 SAN으로 엔진 상위 줄을 보여준다.
     // (v0.2.3 버그 수정) 학습 탭(useMergedMoves)의 엔진 라인은 포지션이 바뀌어도 이전 값을 옅게 유지한
     // 채 "계산 중"만 표시하지만, 그건 평가치 바(posEval)를 별도의 빠른 단일PV 진행 콜백으로 항상 이
     // 포지션 전용 값으로만 채우기 때문에 가능한 선택이었다(barEval 계산부 참고). 이 페이지는 그런
@@ -8128,7 +8508,7 @@ function ReviewPage({ game, onClose, myUid }) {
     // 항상 지금 포지션의 값(또는 아직 없음)만 보이게 한다.
     setEngineLines([]);
     setLinesPending(true);
-    const baseWhite = effSans.length % 2 === 0 ? 1 : -1;
+    const baseWhite = colorOfRoot(fenRoot, effSans.length) === "w" ? 1 : -1;
     // 원시 PV 목록 → 표시용 라인(백 관점 평가 + 수순). 실시간 스트리밍·최종 결과가 같은 변환을 공유한다.
     // (Array 가드: 풀 부팅 실패로 useEngine 폴백을 쓰면 5번째 인자가 onLines가 아니라 onProgress라 단일
     //  엔트리가 올 수 있다 — 그럴 땐 무시한다.)
@@ -8136,7 +8516,7 @@ function ReviewPage({ game, onClose, myUid }) {
       ev: pv.mate != null
         ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
         : { cp: pv.cp * baseWhite },
-      sans: pvUciToSans(effSans, pv.pv, 15),
+      sans: pvUciToSans(effSans, pv.pv, 15, fenRoot),
     })));
     (async () => {
       try {
@@ -8165,14 +8545,22 @@ function ReviewPage({ game, onClose, myUid }) {
       finally { if (!cancelled) setLinesPending(false); }
     })();
     return () => { cancelled = true; };
-  }, [effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  }, [effSans.join(" "), engine && engine.status, engine && engine.profile, fenRoot]);
   // (v0.2.1 기능) 기보에 없는 자유 탐색 수도 기보 수와 똑같이 — 코치 카드에 등급·평가·설명을, 보드에
   // 수 체계 아이콘("계산 중" 포함)을, Show 화살표에 최선수를 표시하기 위해, 마지막으로 둔 자유 탐색
   // 수를 게임 리뷰와 동일한 방식(analyzeGame의 채점 규칙)으로 라이브 분석한다. 공용 엔진 큐 대신 게임
   // 리뷰와 같은 독립 풀을 써서 학습 탭과 충돌하지 않게 한다. (exploreMove state는 playFree보다 먼저
   // 선언돼야 해 위쪽으로 옮겨졌다.)
+  // (v0.3.5 기능) 사용자 요청으로 FEN 리뷰도 이제 보드를 직접 조작하는 자유 탐색 자체는 지원하지만
+  // (위 legalTargets/tryMove의 fenLegalDests, 위 drawState의 gameEndState(fenRoot) 참고), 이 채점
+  // 로직(및 그 아래 코치 카드가 참조하는 mecFacts)은 여전히 fenRoot를 모른 채 boardFromSans 등으로
+  // 표준 시작 위치를 전제하고 있다 — recaptureFact 하나만 봐도 mecFacts 안에서 10개 넘는 하위
+  // "Fact" 함수가 전부 같은 가정을 깔고 있어, 전부 fenRoot 인식하게 고치는 건 이번 범위를 넘어선다
+  // (LearnTab의 기존 FEN 모드도 goFen에서 stampQ/evalMoveKind를 아예 건너뛰는 것과 같은 선). FEN
+  // 리뷰에서는 자유 탐색 수를 등급·코치 코멘트 없이(exploreMove를 null로 유지) 보드·평가치 막대·
+  // 엔진 상위 줄만으로 보여준다.
   useEffect(() => {
-    if (!exploring) { setExploreMove(null); return; }
+    if (!exploring || fenRoot) { setExploreMove(null); return; }
     let cancelled = false;
     const prevSans = effSans.slice(0, -1);
     const san = effSans[effSans.length - 1];
@@ -8240,7 +8628,7 @@ function ReviewPage({ game, onClose, myUid }) {
       } catch { }
     })();
     return () => { cancelled = true; };
-  }, [exploring, effSans.join(" "), engine && engine.status, engine && engine.profile]);
+  }, [exploring, fenRoot, effSans.join(" "), engine && engine.status, engine && engine.profile]);
   // (v0.2.9 기능) 평가치 바가 실시간 엔진 라인 1순위 평가를 따라 계속 움직이도록 — engineLines는 포지션이
   // 바뀔 때 곧장 []로 비워졌다가(위 효과의 setEngineLines([])) 스트리밍(onLines)으로 depth가 깊어질
   // 때마다 갱신되므로, 채워져 있는 한 그 1순위 줄의 평가치를 그대로 쓰면 바가 탐색 내내 실시간으로
@@ -8417,11 +8805,16 @@ function ReviewPage({ game, onClose, myUid }) {
     })();
     return () => { cancelled = true; };
   }, [effSans.join(" "), activeMove && activeMove.kind, engine && engine.status, engine && engine.profile]);
+  // (v0.3.5 버그 수정) 여기 boardFromSans(effSans...)는 analyzeGame과 무관하게 이 컴포넌트가 직접
+  // "Show" 화살표·마지막 수 배지 칸을 구하려고 보드를 다시 재생하는 자리라, fenRoot가 있어도 표준
+  // 시작 위치를 그대로 전제하고 있었다 — 실제 둔 수를 볼 때도(자유 탐색 여부와 무관하게) 화살표·
+  // 배지가 엉뚱한 칸을 가리키는 latent 버그였다. boardOfRoot로 바꿔 고쳤다(등급·코치 코멘트 자체는
+  // 이번 범위에 포함하지 않았지만, 이 칸 계산은 MEC와 무관한 순수 위치 재생이라 안전하게 고칠 수 있다).
   const arrows = useMemo(() => {
     const out = [];
     if (activeMove && showingLine) {
       const target = activeMove.best || activeMove.san;
-      const prevBoard = boardFromSans(effSans.slice(0, -1));
+      const prevBoard = boardOfRoot(fenRoot, effSans.slice(0, -1));
       const info = sanSrc(prevBoard, target, activeMove.white ? "w" : "b");
       if (info && !info.castle) out.push({ from: info.from, to: info.to, adopt: 80 });
     }
@@ -8430,12 +8823,12 @@ function ReviewPage({ game, onClose, myUid }) {
     // 아니라, 그 수로 인해 방치된 다른 기물까지 전부) — sacrificedPiece가 있다는 것 자체가 이미
     // "탁월한 수 + 언더프로모션 아님"을 뜻하므로 그대로 게이트로 재사용한다.
     if (sacrificedPiece) {
-      out.push(...hangingPieceArrows(boardFromSans(effSans), activeMove.white ? "w" : "b"));
+      out.push(...hangingPieceArrows(boardOfRoot(fenRoot, effSans), activeMove.white ? "w" : "b"));
     }
     out.push(...threatArrows);
     return out;
-  }, [activeMove, showingLine, effSans, sacrificedPiece, threatArrows]);
-  const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardFromSans(effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
+  }, [activeMove, showingLine, effSans, sacrificedPiece, threatArrows, fenRoot]);
+  const lastQ = activeMove ? { to: (() => { const info = sanSrc(boardOfRoot(fenRoot, effSans.slice(0, -1)), activeMove.san, activeMove.white ? "w" : "b"); return info ? info.to : null; })(), kind: activeMove.kind } : null;
   // (v0.2.1 기능) chess.com에서 동기화된 실제 대국만 white/black(양쪽 정보) 또는 color(내 진영)를
   // 갖고 있다 — 학습 탭 "분석" 버튼으로 진입한 임의 수순 리뷰는 game이 {sans}뿐이라 아무 표시도 하지 않는다.
   const hasPlayerData = !!(game.white || game.black || game.color);
@@ -8510,7 +8903,7 @@ function ReviewPage({ game, onClose, myUid }) {
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive={!fenRoot} topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
@@ -8538,7 +8931,7 @@ function ReviewPage({ game, onClose, myUid }) {
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} interactive={!fenRoot} topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
               leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
@@ -8635,13 +9028,22 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const ep = fenRoot ? fenReplay.ep : stdEp;
   const onLoadFen = (root) => { setFocus(null); setFenRoot(root); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
   const exitFenMode = () => { setFenRoot(null); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
-  // (v0.2.3 기능) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히 더 이상의
-  // 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수 있는" 수가
-  // 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더 이상 수를
-  // 둘 수 없게 하고 보드 하단에 무승부를 표시한다. (FEN 모드는 표준 시작 위치 가정을 쓰는 이 판정
-  // 대상이 아니므로 항상 false — 별도의 무승부 판정은 이번 범위 밖.)
-  const drawState = useMemo(() => gameEndState(sans), [key]);
-  const gameDrawn = !fenRoot && (drawState.end === "stalemate" || drawState.end === "threefold");
+  // (v0.3.5 기능) 사용자 요청 — 보드 편집기(BoardEditorModal) 열림 상태. 완료를 누르면 onLoadFen과
+  // 같은 계약으로 그 포지션의 FEN 모드로 들어간다(NotationTools의 FEN 붙여넣기와 동일한 경로).
+  const [editorOpen, setEditorOpen] = useState(false);
+  // (v0.3.5 기능) 사용자 요청 — FEN 모드의 리뷰(분석)는 아직 지원하지 않는다(위 채점 로직이 표준
+  // 시작 위치만 전제하는 한계와 같은 이유). v0.3.4에서 일단 열어 뒀던 "FEN 모드에서도 리뷰 열기"를
+  // 되돌리고, 리뷰 버튼을 누르면 안내 토스트만 잠깐 띄운다.
+  const [fenReviewNotice, setFenReviewNotice] = useState(false);
+  useEffect(() => { if (!fenReviewNotice) return; const t = setTimeout(() => setFenReviewNotice(false), 1800); return () => clearTimeout(t); }, [fenReviewNotice]);
+  // (v0.2.3 기능 → v0.3.5) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히
+  // 더 이상의 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수
+  // 있는" 수가 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더
+  // 이상 수를 둘 수 없게 하고 보드 하단에 무승부를 표시한다. gameEndState가 fenRoot를 받도록 고쳐져
+  // (예전엔 "범위 밖"으로 미룬 항목) FEN 모드에서도 이제 정확히 판정한다 — sans는 이미 "이 FEN부터
+  // 둔 수순"이라 gameEndState(sans, fenRoot)에 그대로 넘기면 된다.
+  const drawState = useMemo(() => gameEndState(sans, fenRoot), [key, fenRoot]);
+  const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
   const [mode, setMode] = useState("normal");
   const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 학습 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
@@ -8655,8 +9057,58 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 뜨는 것으로 확인). liveOn만 꺼서는 이 정적 스냅샷 자체를 막지 못하므로, FEN 모드에서는 결과를
   // 아예 중립값으로 덮어써 이 위치와 무관한 데이터가 화면에 노출되지 않게 한다.
   const mergedMoves = useMergedMoves(sans, engine, liveOn && !fenRoot, extra[key], contentVer, mode, sortBy);
+  // (v0.3.5 기능) 사용자 요청 — FEN 모드에서도 평가치 바와 엔진 상위 줄은 작동해야 한다(위 이론 수·
+  // 마스터 통계 등 "책" 데이터만 이 위치와 무관해 계속 중립값이다). useMergedMoves 내부는 이론 수
+  // 보충 로직과 실시간 평가가 한 effect 안에 뒤엉켜 있어(sansToFen·boardFromSans·MultiPV 후보 수
+  // 보충이 전부 표준 시작 위치를 전제) 그 훅 자체를 fenRoot 인식하게 고치는 건 위험이 크다 — 대신
+  // ReviewPage의 엔진 라인 effect(fenOfRoot·colorOfRoot·pvUciToSans(...,fenRoot) 패턴, 이미 FEN 인식)를
+  // 그대로 옮겨온, 훨씬 단순한 별도 effect로 posEval·engineLines·curDepth만 채운다.
+  const [fenEval, setFenEval] = useState({ posEval: null, engineLines: [], linesPending: false, curDepth: null });
+  useEffect(() => {
+    if (!fenRoot || !liveOn || engine.status !== "ready") { setFenEval({ posEval: null, engineLines: [], linesPending: false, curDepth: null }); return; }
+    let cancelled = false;
+    const fen = fenOfRoot(fenRoot, sans);
+    const baseWhite = colorOfRoot(fenRoot, sans.length) === "w" ? 1 : -1;
+    setFenEval({ posEval: null, engineLines: [], linesPending: true, curDepth: null });
+    const mkEv = (ev) => ev.mate != null
+      ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
+      : { cp: ev.cp * baseWhite };
+    const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, 15, fenRoot) }))).slice(0, 3);
+    // (버그 수정) 분석 풀(getAnalysisPool)이 돌려주는 워커 래퍼의 evaluateMulti는 공용 엔진(engine)과
+    // 인자 개수가 다르다 — onProgress 없이 (fen,d,multipv,mt,onLines,slot) 6개뿐이다(callEvaluateMulti
+    // 주석 참고). 순위 1위 줄(top)의 평가·depth를 posEval·curDepth로도 함께 쓴다.
+    const onLines = (raw) => {
+      if (cancelled || !raw || !raw.length) return;
+      const l = toLines(raw);
+      const top = raw[0];
+      setFenEval((prev) => ({
+        ...prev,
+        engineLines: l.length ? l : prev.engineLines,
+        posEval: (top && (top.cp != null || top.mate != null)) ? mkEv(top) : prev.posEval,
+        curDepth: (top && top.depth != null && (prev.curDepth == null || top.depth > prev.curDepth)) ? top.depth : prev.curDepth,
+      }));
+    };
+    (async () => {
+      try {
+        // (버그 수정) 학습 탭의 기본 후보 수 패널(useMergedMoves)이 표준 시작 위치용 "learn-lines" 작업을
+        // 공용 엔진(engine, 워커 하나짜리 단일 FIFO 큐) 위에서 이미 돌리고 있을 수 있다 — 같은 engine
+        // 객체에 바로 요청하면 그 작업(최대 20초짜리 심화 탐색 단계 포함) 뒤에 줄을 서게 되어 FEN 모드
+        // 평가가 한참 늦게 뜬다. 게임 리뷰 엔진 라인과 동일하게 독립된 풀에서 전용 워커를 받아 쓴다.
+        const pool = await getAnalysisPool(engine.profile, engine.urls);
+        const w = poolWorker(pool, 0, engine);
+        const pvsAll = await w.evaluateMulti(fen, MAX_SEARCH_DEPTH, 5, 700, onLines, "learn-fen-lines");
+        if (cancelled) return;
+        onLines(pvsAll);
+        setFenEval((prev) => ({ ...prev, linesPending: false }));
+        const deep = await w.evaluateMulti(fen, MAX_SEARCH_DEPTH, 5, 5000, onLines, "learn-fen-lines");
+        if (cancelled) return;
+        onLines(deep);
+      } catch { if (!cancelled) setFenEval((prev) => ({ ...prev, linesPending: false })); }
+    })();
+    return () => { cancelled = true; };
+  }, [fenRoot, key, liveOn, engine.status, engine.profile]);
   const { moves, posGames, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
-    ? { moves: [], posGames: null, engineNote: null, posEval: null, engineLines: [], linesPending: false, curDepth: null }
+    ? { moves: [], posGames: null, engineNote: null, ...fenEval }
     : mergedMoves;
   // (v0.2.2) 후보 블록에 지금 떠 있는 각 수의 확정 등급(pending 제외)을 pin — 아래 마지막 수 재평가
   // effect가 이 값을 그대로 재사용해 블록과 보드·현재 수 블록의 수 체계 아이콘을 일치시킨다. 등급은
@@ -8833,11 +9285,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 그냥 그 수를 둔다. 이 값들은 전부 "표준 시작 위치에서의 이 sans"를 전제하므로, FEN 모드의 sans에
   // 그대로 적용하면 완전히 엉뚱한 포지션을 기준으로 평가해 버린다.
   const goFen = useCallback((san) => {
+    if (gameDrawn) return;   // (v0.3.5 버그 수정) gameEndState가 fenRoot를 지원하게 되면서 FEN 모드도 이제 정확히 판정되므로, 표준 모드(go)와 똑같이 게이팅한다.
     playMoveSfx(san);
     setSans([...sans, san]);
     setFuture((future.length && stripSuffix(future[0]) === stripSuffix(san)) ? future.slice(1) : []);
     setSel(null); setDrag(null);
-  }, [sans, future]);
+  }, [sans, future, gameDrawn]);
 
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
@@ -9083,7 +9536,16 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           overflow-x:auto+min-width:0으로 자체 스크롤 처리를 해도 grid 트랙 자체가 콘텐츠의
           최소 폭(min-content)만큼 억지로 넓어져 모바일에서 보드가 화면 밖으로 밀려나는 원인이었다. */}
       <div style={{ minWidth: 0 }}>
-        <div style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
+        <div style={{ position: "relative", background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
+          {/* (v0.3.5 기능) 사용자 요청 — FEN 모드에서 리뷰 버튼을 누르면 뜨는 짧은 안내 토스트. */}
+          <AnimatePresence>
+            {fenReviewNotice && (
+              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 20, padding: "8px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 12, fontWeight: 800, boxShadow: "0 8px 20px -6px rgba(0,0,0,.6)", whiteSpace: "nowrap" }}>
+                업데이트를 기대해 주세요!
+              </motion.div>
+            )}
+          </AnimatePresence>
           {/* (사용자 요청) FEN 모드 안내 — 표준 시작 위치 기반 기능(분석·이론 후보·집중 학습 등)은
               이 위치와 무관하므로, 눈에 띄는 배지 + 종료 버튼만 간단히 둔다. */}
           {fenRoot && (
@@ -9095,18 +9557,28 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           <div className="mb-3 flex items-center justify-between gap-2">
             <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} drawn={gameDrawn} startColor={fenRoot ? fenRoot.turn : undefined} />
             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-              {/* (v0.2.0 기능) 기보 위 분석 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
-                  띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
-                  (FEN 모드는 표준 시작 위치를 가정하는 분석 페이지 대상이 아니라 비활성화한다.) */}
-              {/* (v0.3.4 기능) 사용자 요청 — FEN 모드에서도 분석(게임 리뷰)을 열 수 있게 한다. FEN 모드는
-                  붙여넣은 위치 자체를 그 리뷰의 "대국 식별자"(fenRoot.raw)로 쓰므로, 아직 한 수도 안
-                  뒀어도(포지션만 분석) 열 수 있다 — 표준 시작 위치는 그 반대로 최소 한 수는 있어야
-                  의미가 있으므로 그 조건만 그대로 남긴다. */}
-              <button onClick={() => onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: fenRoot ? fenRoot.raw : null })} disabled={(!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready"} title="기보 분석" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: ((!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready") ? "default" : "pointer", opacity: ((!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready") ? 0.45 : 1 }}><BarChart3 size={13} /> 분석</button>
+              {/* (v0.3.5 기능) 사용자 요청 — 예전에 "분석" 버튼이 있던 자리에 보드 편집기(펜 아이콘)를
+                  두고, 분석 버튼은 다른 화면에서 쓰는 연두색+별 모양 리뷰 버튼(BestMoveJumpButton)으로
+                  바꿔 이 줄의 맨 오른쪽으로 옮겼다. */}
+              <button onClick={() => setEditorOpen(true)} title="보드 편집" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Pencil size={14} /></button>
               <NotationTools sans={sans} startColor={fenRoot ? fenRoot.turn : undefined} onLoadPgn={onLoadPgn} onLoadFen={onLoadFen} />
               {/* (18차 UI5) 와이파이 아이콘 + "라이브" 상태 텍스트 삭제 */}
+              {/* (v0.2.0 기능) 기보 위 리뷰 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
+                  띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
+                  (v0.3.4 기능 → v0.3.5 되돌림) 사용자 요청 — FEN 모드에서는 리뷰를 아예 열지 못하게
+                  막고(위 fenReviewNotice), 대신 이 위치에서도 평가치 바·엔진 라인은 작동한다(아래 fenEval). */}
+              <BestMoveJumpButton title="기보 분석(리뷰)"
+                onClick={() => { if (fenRoot) { setFenReviewNotice(true); return; } onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: null }); }}
+                disabled={(!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready"} />
             </div>
           </div>
+          {editorOpen && (
+            <BoardEditorModal
+              initialFen={fenOfRoot(fenRoot, sans)}
+              onClose={() => setEditorOpen(false)}
+              onApply={(root) => { onLoadFen(root); setEditorOpen(false); }}
+            />
+          )}
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
             <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial
               belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} />} />
@@ -12547,12 +13019,29 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
   }, []);
-  // (20차 기능1) 개발자 전용 — 리프(라인의 끝)에 "+"를 누르면 그 라인에 수를 하나 직접 추가한다.
+  // (20차 기능1 → v0.3.5 개편) 개발자 전용 — 리프(라인의 끝)에 "+"를 누르면 그 라인에 수를 하나
+  // 추가한다. 예전엔 SAN을 직접 타이핑하는 입력창 하나뿐이었는데, 사용자 요청으로 onSuggestSiblings와
+  // 같은 후보 조회(puzzleCandidatesAt — 평가치 순으로 이미 정렬돼 오는 엔진 MultiPV 순위 + 채택률 %가
+  // 함께 붙는다)를 재사용해 아래 형제 갈래 추가 패널과 동일한 "후보 목록에서 고르기" 방식으로
+  // 바꿨다 — 직접 입력은 그 후보 중 원하는 수가 없을 때 쓰는 마지막 선택지로 목록 맨 아래에 남겨 둔다.
   const [addAt, setAddAt] = useState(null);   // path(array)|null
+  const [addCands, setAddCands] = useState(null); // null=불러오는 중
   const [sanIn, setSanIn] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const openAdd = (path) => { setAddAt(path); setSanIn(""); setErr(""); };
+  const openAdd = async (path) => {
+    setAddAt(path); setAddCands(null); setSanIn(""); setErr("");
+    const cands = await onSuggestSiblings(path);
+    setAddCands(cands || []);
+  };
+  const pickAdd = async (cand) => {
+    if (busy) return;
+    setBusy(true);
+    const errMsg = await onAddMove(addAt, cand.san);
+    setBusy(false);
+    if (errMsg) { setErr(errMsg); return; }
+    setAddAt(null); setErr("");
+  };
   const submitAdd = async () => {
     const san = sanIn.trim(); if (!san || busy) return;
     setBusy(true);
@@ -12717,13 +13206,35 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             );
           })}
         </div>
+        {/* (20차 기능1 → v0.3.5 개편) 라인 연장 패널 — 형제 갈래 추가 패널과 동일한 후보 조회
+            (onSuggestSiblings)를 재사용한다. 후보는 puzzleCandidatesAt이 엔진 MultiPV 순위(=평가치
+            순)로 이미 정렬해 오고, 실전 채택률 %도 함께 붙는다 — 그중 골라 누르면 바로 추가되고,
+            원하는 수가 후보에 없을 때만 목록 맨 아래 직접 입력을 쓴다. */}
         {addAt && (
-          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(300px, calc(100% - 20px))", padding: 10, borderRadius: 10, border: "1px solid " + T.brass, background: "#fff", boxShadow: "0 10px 24px -8px rgba(0,0,0,.4)" }}>
-            <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>다음 수를 직접 입력하세요</div>
+          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(320px, calc(100% - 20px))", maxHeight: 188, overflowY: "auto", padding: 10, borderRadius: 10, border: "1px solid " + T.brass, background: "#fff", boxShadow: "0 10px 24px -8px rgba(0,0,0,.4)" }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 10.5, color: T.inkSoft }}>다음 수 후보</div>
+              <button onClick={() => setAddAt(null)} className="press" style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 11 }}>닫기</button>
+            </div>
+            {addCands === null ? (
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>엔진으로 후보를 불러오는 중…</div>
+            ) : addCands.length === 0 ? (
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>추천할 후보가 없어요 — 아래에 직접 입력하세요.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                {addCands.map((c) => (
+                  <button key={c.san} onClick={() => pickAdd(c)} disabled={busy} className="press" style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 7, border: "1px solid #DCCBA8", background: "#FBF5E8", cursor: busy ? "default" : "pointer", textAlign: "left" }}>
+                    {c.kind && QCOLOR[c.kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[c.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(c.kind, 11)}</span>}
+                    <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 800, color: T.ink, flexShrink: 0 }}>{c.san}</span>
+                    <span style={{ fontSize: 10, color: T.inkSoft, marginLeft: "auto", flexShrink: 0 }}>{c.adopt != null ? Math.round(c.adopt) + "%" : "–%"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>원하는 수가 없으면 직접 입력하세요</div>
             <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} autoFocus placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
+              <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
               <button onClick={submitAdd} disabled={busy} className="press" style={{ padding: "6px 12px", borderRadius: 7, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{busy ? "추가 중…" : "추가"}</button>
-              <button onClick={() => setAddAt(null)} className="press" style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>취소</button>
             </div>
             {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{err}</div>}
           </div>
@@ -13192,9 +13703,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const nextTag = (allLines.find((l) => !solvedNow.has(l.tag)) || {}).tag;
   // (v0.3.4 기능·버그 수정) 클리어 애니메이션은 잠깐만 재생하고 스스로 꺼진다(반복 재생 방지) — 그
   // 시점에 맞춰, 모든 라인을 다 푼 게 아니라면(사용자 요청) 자동으로 다음 미해결 라인으로 넘어간다.
-  // gotoLine 자체가 celebrate를 함께 초기화하므로 별도 처리는 필요 없다. 사용자가 그 사이 "다음
-  // 라인 풀기" 버튼이나 라인 번호 버튼을 직접 눌러 먼저 이동했다면 celebrate가 이미 null이 되어
-  // 있어(gotoLine이 그렇게 만듦) 이 타이머 자체가 예약되지 않으므로 중복 전환도 없다.
+  // gotoLine 자체가 celebrate를 함께 초기화하므로 별도 처리는 필요 없다. 사용자가 그 사이 라인 번호
+  // 버튼을 직접 눌러 먼저 이동했다면 celebrate가 이미 null이 되어 있어(gotoLine이 그렇게 만듦) 이
+  // 타이머 자체가 예약되지 않으므로 중복 전환도 없다. (v0.3.5) 자동 전환을 미리 당기는 용도였던
+  // "다음 라인 풀기" 수동 버튼은 이제 중복이라 없앴다 — 이 자동 전환이 유일한 경로다.
   useEffect(() => {
     if (!celebrate) return;
     const t = setTimeout(() => {
@@ -13306,6 +13818,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     } else {
       await puzzleCreatorSave(puzzleNoForTag, treeArg, linesArg, { tagSeq: seq, ...(extra || {}) });
       if (seq != null) setCreatorTagSeq(seq);
+      // (v0.3.5 버그 수정) 서버는 이 저장으로 editedAt을 지금 시각으로 갱신해 새 1시간 주기를 시작하는데,
+      // creatorInfo는 퍼즐을 열 때 한 번만 불러온 값이라 그대로 두면 낡은 editedAt(주기가 이미 지난
+      // 것처럼 보이는 값)이 남는다 — 같은 세션에서 곧바로 다시 편집을 시도하면 UI는 허용된 것처럼
+      // 보이다가 서버 RPC가 주기 제한으로 거절해, 정확한 "아직 편집 주기가 안 지났어요" 대신 뜬금없는
+      // "저장에 실패했어요" 오류만 뜨는 원인이었다. 로컬에도 즉시 반영해 둔다.
+      setCreatorInfo((prev) => prev ? { ...prev, editedAt: new Date().toISOString() } : prev);
     }
     setOverrideTree(treeArg);
   };
@@ -13661,16 +14179,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         {page === 1 && <button onClick={() => setPage(0)} aria-label="보드 보기" className="press" style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={16} /></button>}
         {page === 0 && <button onClick={() => setPage(1)} aria-label="모식도 보기" className="press" style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={16} /></button>}
       </div>
-      {/* (20차 기능2) 라인 해결 배너는 어느 페이지에 있든(자동 전환 중이어도) 항상 보이도록 페이저 바깥(공통 영역)에 둔다. */}
-      {done && (fullyComplete ? (
+      {/* (20차 기능2 → v0.3.5) 라인 해결 배너는 어느 페이지에 있든(자동 전환 중이어도) 항상 보이도록
+          페이저 바깥(공통 영역)에 둔다. (사용자 요청) "다음 라인 풀기" 버튼은 없앴다 — 아래 자동 전환
+          effect(celebrate 종료 2.4초 뒤 자동으로 nextTag로 넘어감)가 이미 그 역할을 하고 있어 중복이었다. */}
+      {done && fullyComplete && (
         <div style={{ marginTop: 12, textAlign: "center", background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 12, padding: "12px 14px", border: "1px solid " + T.brass }}>
           <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 13 }}>🎉 완전 해결! {totalLines}개 라인을 모두 정복해 별 3개를 모았어요.</div>
         </div>
-      ) : nextTag != null && (
-        <div className="flex justify-center" style={{ marginTop: 12 }}>
-          <button onClick={() => gotoLine(nextTag)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>다음 라인 풀기 — {LINE_TAG_LABEL[nextTag] || ("라인 " + (allLines.findIndex((l) => l.tag === nextTag) + 1))}</button>
-        </div>
-      ))}
+      )}
       <div className="flex items-center justify-center gap-2" style={{ marginTop: 8, marginBottom: 4 }}>
         <button onClick={() => setPage(0)} aria-label="보드 페이지" className="press" style={{ width: page === 0 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 0 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
         <button onClick={() => setPage(1)} aria-label="모식도 페이지" className="press" style={{ width: page === 1 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 1 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
@@ -13679,12 +14195,15 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     </div>
   );
 }
-// (v0.3.4 기능) 퍼즐 고유 딥링크(openchess.kr/(번호)-(라인 번호)) — 링크를 열면 그 퍼즐의 그
-// 라인이 실제로 다시 열린다(리뷰·퍼즐 URL 기능 참고). 외부 공유는 항상 1번 라인부터 보여준다
-// (공유받는 사람은 대개 그 퍼즐을 처음 푸는 사람이라 어느 라인에서 공유했는지는 중요하지 않다).
+// (v0.3.4 기능 → v0.3.5 형식 변경) 퍼즐 고유 딥링크(openchess.kr/puzzle/(번호)-(라인 번호)) — 링크를
+// 열면 그 퍼즐의 그 라인이 실제로 다시 열린다(리뷰·퍼즐 URL 기능 참고). 외부 공유는 항상 1번
+// 라인부터 보여준다(공유받는 사람은 대개 그 퍼즐을 처음 푸는 사람이라 어느 라인에서 공유했는지는
+// 중요하지 않다). (사용자 요청) 예전엔 접두사 없이 "/123456-2"처럼 곧장 번호로 시작해 URL만 봐선
+// 이게 무슨 링크인지 알 수 없었다 — "/puzzle/"을 붙여 리뷰 링크("/review/...")와 같은 방식으로
+// 용도가 URL만 봐도 드러나게 했다(번호-라인 사이는 그대로 "-"로 연결).
 function puzzleShareUrl(no, lineNo) {
   const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://openchess.kr";
-  return origin + "/" + no + "-" + (lineNo || 1);
+  return origin + "/puzzle/" + no + "-" + (lineNo || 1);
 }
 // (v0.3.4 기능) 리뷰 고유 딥링크(openchess.kr/review/(식별자)) — reviewGameIdentifier가 만든 식별자를
 // 그대로 이어붙인다.
@@ -14648,7 +15167,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 쌓아 뒀으므로, 닫을 때는(뒤로가기 버튼이 아니라 이 X 버튼이어도) 그 항목을 되돌아가는 게
   // 맞다 — pushState를 하나 더 쌓는 대신 history.back()으로 정확히 하나만 되돌린다(게임 리뷰의
   // closeReview와 같은 패턴).
-  const closeActive = () => { setActive(null); try { if (/^\/\d{6}-\d+$/.test(window.location.pathname)) window.history.back(); } catch { } };
+  const closeActive = () => { setActive(null); try { if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) window.history.back(); } catch { } };
   if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
@@ -15566,7 +16085,8 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   const [timeFilter, setTimeFilter] = useState("all");
   // (v0.2.6 기능) 타임 컨트롤에 더해 흑/백으로도 나눠 볼 수 있도록 색 필터를 추가.
   const [colorFilter, setColorFilter] = useState("all");
-  // (v0.3.1 기능) 리뷰 티켓으로 한 번이라도 열어 본 대국만 따로 모아 보는 체크박스 — reviewUnlocked가
+  // (v0.3.1 기능 → v0.3.5 리뷰 티켓 제거) 한 번이라도 리뷰를 열어 본 대국만 따로 모아 보는 체크박스 —
+  // reviewUnlocked(리뷰를 열 때마다 쌓이는 "열어본 대국" 기록, 더는 소비되는 재화가 아니라 순수 기록용)가
   // 넘어오지 않는 화면(예: 다른 사람 프로필)에서는 체크박스 자체를 숨긴다(내 리뷰 기록이 아니므로).
   const [onlyReviewed, setOnlyReviewed] = useState(false);
   const games = useMemo(() => {
@@ -15788,7 +16308,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
-function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked }) {
+function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, engine }) {
   const [editOpen, setEditOpen] = useState(false);
   // (사용자 요청) 유산(Legacy) 관리 — 어떤 종류(best/only/brilliant)를 편집 중인지 키만 들고 있는다.
   const [managingLegacy, setManagingLegacy] = useState(null);
@@ -15842,6 +16362,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           existingEntry={profile.legacies && profile.legacies[managingLegacy]}
           chesscom={chesscom}
           username={profile.chesscom}
+          engine={engine}
           onClose={() => setManagingLegacy(null)}
           // (사용자 요청) 지워진 유산까지 다시 볼 수 있는 이력 기능 — 새로 저장(덮어쓰기)하거나
           // 삭제해서 그 칸에서 밀려나는 기존 유산을 profile.legacyHistory에 보존해 둔다(그 칸 자체는
@@ -15918,6 +16439,25 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.3.5", date: "2026.8.16", dev: ["openchesskr"], items: [
+      "공유받은 리뷰 링크(openchess.kr/review/...)로 곧장 들어가거나 새로고침했을 때, 실제로는 티켓이 있거나 이미 본 리뷰인데도 항상 '리뷰 티켓이 부족해요' 안내만 뜨던 문제를 고쳤어요.",
+      "내가 만든 퍼즐을 편집한 직후 곧바로 다시 편집을 시도했을 때 뜨던 부정확한 오류 문구를 '아직 편집 주기가 안 지났어요'로 바로잡았어요.",
+      "게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(Stockfish 18 Lite / 17.1)을 그대로 써요 — 예전엔 게임 리뷰만 따로 Stockfish 16으로 고정돼 있었는데, 이제 하나로 통일됐어요.",
+      "설정 탭에 흩어져 있던 개발자 전용 도구들을 '개발자 도구' 카드 하나로 모았어요. 개발자 모드를 켜면 자동으로 그 카드까지 스크롤돼요.",
+      "개발자 전용 — 퍼즐 라인 길이를 조정할 때(수 추가) 이제 직접 타이핑하는 대신, 평가치 순으로 정렬된 후보 수 목록에서 채택률과 함께 골라 추가할 수 있어요. 원하는 수가 목록에 없을 때만 맨 아래 직접 입력을 쓰면 돼요.",
+      "퍼즐 풀이 화면의 '다음 라인 풀기' 버튼을 없앴어요 — 한 라인을 풀면 어차피 자동으로 다음 라인으로 넘어가서 필요 없어졌어요.",
+      "채팅 목록에서 알림을 꺼 둔 상대는 이름 옆에 알림 해제 아이콘이 함께 떠요.",
+      "유산 재생에서 유산 수가 등장하기 직전 1초간 짧은 정적을 둬서 등장이 더 극적으로 느껴져요. 등장한 뒤 위아래로 계속 흔들리던 문제도 고쳤어요.",
+      "FEN 포지션 게임 리뷰에서도 이제 보드를 직접 만져 원하는 수를 자유롭게 둬 볼 수 있어요(실시간 엔진 평가·상위 후보 수도 함께 떠요). 학습 탭 FEN 모드의 스테일메이트·3회 동형 반복 무승부 판정도 정확해졌어요.",
+      "학습 탭에 보드 편집기가 생겼어요(펜 아이콘) — 팔레트에서 기물을 골라 보드에 콕콕 찍어 원하는 포지션을 직접 구성하고, 차례·캐슬링 권리도 설정할 수 있어요. FEN을 복사·붙여넣기하거나 직접 입력할 수도 있고, 되돌리기/다시하기도 지원해요. 완료하면 그 포지션의 FEN 모드로 곧장 들어가요. 기존 '분석' 버튼은 다른 화면과 같은 연두색 리뷰 버튼으로 바뀌어 맨 오른쪽으로 옮겼어요.",
+      "보드 편집기에서 이제 기물을 손가락(또는 마우스)으로 자연스럽게 끌어다 옮길 수 있어요 — 팔레트에서 보드로 끌어다 놓거나, 보드 위 기물을 직접 끌어서 옮기거나, 보드 밖으로 끌어다 놓아 지울 수 있어요.",
+      "보드 편집기의 이미지 스캔 기능이 실제로 동작해요 — 체스판 사진을 올리면 기물 배치를 읽어 자동으로 포지션을 채워줘요.",
+      "FEN 포지션에서는 리뷰(분석) 페이지를 열 수 없어요 — 아직 준비 중인 기능이라 눌러도 '업데이트를 기대해 주세요!' 안내만 떠요. 대신 그 자리에서도 평가치 바와 엔진의 추천 수 3가지는 정상적으로 볼 수 있어요.",
+      "퍼즐 공유 링크가 openchess.kr/(번호)-(라인)에서 openchess.kr/puzzle/(번호)-(라인)으로 바뀌었어요 — 리뷰 링크처럼 링크만 봐도 무슨 링크인지 알 수 있어요.",
+      "리뷰 티켓 제도를 완전히 없앴어요 — 이제 게임 리뷰는 티켓 없이 몇 번이든 자유롭게 열 수 있어요. 상점의 티켓 표시, 일일 퀘스트·티어 승급의 티켓 보상도 함께 사라졌어요. '리뷰한 대국만' 필터는 그대로 남아 있어요.",
+    ]
+  },
   {
     version: "0.3.4", date: "2026.8.13", dev: ["openchesskr"], items: [
       "게임 리뷰 화면에도 이제 공유 버튼이 생겼어요 — 카카오톡·인스타그램 등 외부 앱으로 보내거나, 친구 목록에서 골라 채팅으로 바로 보낼 수 있어요.",
@@ -16714,8 +17254,6 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
           <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 16 }}>
             <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".25s", animationFillMode: "backwards" }}><Star size={12} fill={T.brassHi} style={{ color: T.brassHi }} />+<AnimatedCountUp to={20} /> XP</span>
             <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".38s", animationFillMode: "backwards" }}><CoinIcon size={18} />+<AnimatedCountUp to={50} /></span>
-            {/* (v0.2.9 기능) 전체 클리어 추가 보상 — 리뷰 티켓 2개(개별 클리어분 5개는 각 항목 클리어 순간의 questClear 토스트에서 이미 받았다). */}
-            <span className="flex items-center gap-1" style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, padding: "6px 13px", borderRadius: 999, background: "rgba(196,154,80,.1)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".5s", animationFillMode: "backwards" }}><TicketIcon size={22} />+<AnimatedCountUp to={2} /></span>
           </div>
           {rows.length > 0 && (
             <>
@@ -16795,30 +17333,6 @@ function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
     </motion.div>
   );
 }
-// (v0.2.9 기능) 리뷰 티켓이 부족해 게임 리뷰를 열지 못했을 때 — 다른 세 팝업(퀘스트 클리어·티어
-// 승급·칭호 획득)과 같은 밝은 카드 스타일로, X·확인을 눌러야만 닫힌다.
-function NoReviewTicketsModal({ reviewTickets, onClose }) {
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
-      <motion.div initial={{ opacity: 0, scale: 0.9, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 4 }}
-        transition={{ type: "spring", stiffness: 340, damping: 26 }}
-        style={{ position: "relative", width: "100%", maxWidth: 320, margin: "auto", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 20, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", textAlign: "center" }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
-        <div style={{ margin: "4px auto 10px", width: 68, height: 68, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}><TicketIcon size={46} /></div>
-        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>리뷰 티켓이 부족해요</div>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>보유 중인 리뷰 티켓 <b style={{ color: T.brassHi }}>{fmtFull(reviewTickets)}개</b> — 대국을 하나 리뷰할 때마다 1개가 필요해요. 한 번 리뷰한 대국은 이후 티켓 없이 계속 다시 볼 수 있어요.</p>
-        <div style={{ textAlign: "left", fontSize: 11.5, color: T.inkSoft, background: "rgba(196,154,80,.08)", border: "1px solid " + T.brass, borderRadius: 10, padding: "10px 12px", marginBottom: 16, lineHeight: 1.7 }}>
-          <div style={{ fontWeight: 800, color: T.brass, marginBottom: 4 }}>티켓 얻는 방법</div>
-          <div>· 일일 퀘스트 1개 클리어 → 티켓 1개</div>
-          <div>· 일일 퀘스트 5개 모두 클리어 → 티켓 2개 추가</div>
-          <div>· 티어 승급 → 티켓 10개</div>
-        </div>
-        <button onClick={onClose} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>확인</button>
-      </motion.div>
-    </motion.div>
-  );
-}
 // (기능) 문의/FAQ — 아직 등록된 FAQ는 없고(개발진이 추후 이 배열에 직접 채워 넣음), "문의하기"를
 // 누르면 메일 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
 const FAQ_ITEMS = [];
@@ -16883,18 +17397,16 @@ function InquiryModal({ onClose, user }) {
 // 표시와 아래 티어/구간 선택기가 즉시 그 값에 맞춰 갱신되고(useEffect), 반대로 티어·구간(또는
 // 그랜드마스터의 ★)을 골라 "티어 적용"을 누르면 xpForTierDivision으로 그 지점의 XP를 역산해
 // setTotalXp에 반영한다 — 결과적으로 어느 쪽을 조작해도 항상 같은 totalXp 값으로 왕복 일치한다.
-function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, card }) {
+function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, card }) {
   const info = tierFromXp(totalXp);
   const [xpInput, setXpInput] = useState(String(totalXp));
   const [coinInput, setCoinInput] = useState(String(ocCoins));
-  const [ticketInput, setTicketInput] = useState(String(reviewTickets));
   const [tierSel, setTierSel] = useState(info.tier.key);
   const [divSel, setDivSel] = useState(info.division || 1);
   const [starSel, setStarSel] = useState(info.gmStars || 0);
   // 바깥에서(예: 티어 승급 보상 등) 값이 바뀌어도 입력창·선택기가 최신 값을 그대로 반영하게 동기화.
   useEffect(() => { setXpInput(String(totalXp)); const i2 = tierFromXp(totalXp); setTierSel(i2.tier.key); setDivSel(i2.division || 1); setStarSel(i2.gmStars || 0); }, [totalXp]);
   useEffect(() => { setCoinInput(String(ocCoins)); }, [ocCoins]);
-  useEffect(() => { setTicketInput(String(reviewTickets)); }, [reviewTickets]);
   const tierStarts = useMemo(() => {
     let acc = 0; const starts = [0];
     for (const req of TIER_XP_REQ) { acc += req; starts.push(acc); }
@@ -16909,17 +17421,12 @@ function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, reviewTick
     <div style={card}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 재화·티어·경험치 설정</div>
       <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>
-        지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={16} /> {fmtFull(ocCoins)} · <TicketIcon size={18} /> {fmtFull(reviewTickets)}
+        지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={16} /> {fmtFull(ocCoins)}
       </div>
       <div className="flex items-center gap-2" style={rowStyle}>
         <CoinIcon size={20} />
         <input type="number" value={coinInput} onChange={(e) => setCoinInput(e.target.value)} placeholder="OC 코인 수치" style={inputStyle} />
         <button onClick={() => setOcCoins(Math.max(0, parseInt(coinInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
-      </div>
-      <div className="flex items-center gap-2" style={rowStyle}>
-        <TicketIcon size={24} />
-        <input type="number" value={ticketInput} onChange={(e) => setTicketInput(e.target.value)} placeholder="리뷰 티켓 수치" style={inputStyle} />
-        <button onClick={() => setReviewTickets(Math.max(0, parseInt(ticketInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
       </div>
       <div style={{ height: 1, background: "#E4D5B6", margin: "12px 0" }} />
       <div className="flex items-center gap-2" style={rowStyle}>
@@ -17124,7 +17631,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, myUid, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, reviewTickets, setReviewTickets, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
+function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, myUid, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -17156,6 +17663,20 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
   const chesscomDaysLeft = chesscomChangeBypass ? 0 : chesscomChangeDaysLeft(profile.chesscomChangedAt);
   const changeChesscom = () => { if (chesscomDaysLeft > 0) return; setProfile({ ...profile, chesscom: "" }); setCc(""); setCcState("idle"); };
   const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8", marginTop: 14 };
+  // (v0.3.5 기능) 사용자 요청 — 흩어져 있던 개발자 전용 패널(자원 조정·공동 개발자 지정·일일 퍼즐
+  // 관리·퍼즐 일괄 재생성)을 설정 탭 맨 아래 카드 하나("개발자 도구")로 모았다. 개발자/공동 개발자
+  // 모드를 막 켰을 때만(false→true로 바뀐 순간) 이 블록으로 자동 스크롤한다 — 이미 켜진 채로
+  // 새로고침·재접속한 경우(마운트 시점부터 true)에는 스크롤하지 않는다.
+  const devToolsRef = useRef(null);
+  const prevCanEditRef = useRef(canEdit);
+  useEffect(() => {
+    if (canEdit && !prevCanEditRef.current) {
+      const id = requestAnimationFrame(() => { devToolsRef.current && devToolsRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); });
+      prevCanEditRef.current = canEdit;
+      return () => cancelAnimationFrame(id);
+    }
+    prevCanEditRef.current = canEdit;
+  }, [canEdit]);
   // (UX6) 존재하지 않는 아이디를 공동 개발자로 등록할 수 없도록, 추가 전 실제 계정 존재 여부를 확인한다.
   const addCodev = async () => {
     const id = codevId.trim();
@@ -17196,22 +17717,15 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         </div>
       )}
 
-      {/* (기능) 개발자 모드 전용 — 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지
-          않고도 바로 확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
-      {/* (버그 수정) 공동 개발자도 임명 권한 외에는 개발자와 동일한 권한을 써야 하므로, 자원 조정
-          패널도 공동 개발자 모드에서 함께 보여준다. */}
-      {((isDev && devOn) || (isCodev && codevOn)) && <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} card={card} />}
-      {canEdit && <DailyPuzzleDevPanel card={card} />}
-      {canEdit && <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={card} />}
-
       {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
       {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
         chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
-        mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked}
+        mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
 
-      {/* (v0.2.4 개편) 분석 엔진 선택 — 학습/퍼즐 탭 및 사이트 전반의 분석에 쓰인다(게임 리뷰는 별도로
-          Stockfish 16 고정, 여기서 고를 수 없다). 가볍고 빠른 Stockfish 18 Lite가 기본값이고,
+      {/* (v0.2.4 개편 → v0.3.5 통합) 분석 엔진 선택 — 학습/퍼즐 탭 및 사이트 전반의 분석은 물론
+          v0.3.5부터는 게임 리뷰도 여기서 고른 엔진을 그대로 쓴다(예전엔 게임 리뷰만 별도로 Stockfish 16에
+          고정돼 있었는데, 그 전용 엔진은 폐기했다). 가볍고 빠른 Stockfish 18 Lite가 기본값이고,
           Stockfish 17.1(초기 로딩 용량이 크지만 가장 강력함)로 바꿀 수 있다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
@@ -17237,7 +17751,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             );
           })}
         </div>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(이 기기에서만 기억돼요).</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(게임 리뷰에도 똑같이 쓰여요, 이 기기에서만 기억돼요).</p>
       </div>
 
       {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
@@ -17268,16 +17782,6 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       {/* (18차 보충 기능3) 전역 퍼즐 수 길이 상한 설정은 삭제 — 개별 퍼즐의 수 길이는 퍼즐 풀이 창에서 개발자가 직접 조정한다. */}
 
       {/* (2차 개편) 이론 수 체계 추가는 도감 탭(오프닝)으로 이동 — 설정 탭에는 더 이상 두지 않는다. */}
-
-      {/* 공동 개발자 관리 (개발자 모드 한정) */}
-      {canManageCodev && (
-        <div style={card}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>공동 개발자 지정</div>
-          <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder="아이디 (영문+숫자)" style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{codevBusy ? "확인 중…" : "추가"}</button></div>
-          {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
-          <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>공동 개발자는 트리·분기점·해설을 <b>추가</b>만 할 수 있고 수정·삭제는 불가합니다.</p>
-        </div>
-      )}
 
       {/* 개발진 명단 (수 기호 안내 대체) */}
       <div style={card}>
@@ -17327,6 +17831,38 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문을 확인하거나, 이메일로 직접 문의할 수 있어요.</p>
       </div>
       {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
+
+      {/* (v0.3.5 기능) 개발자 도구 — 예전엔 페이지 곳곳에 흩어져 있던 개발자 전용 패널을 관련 주제별로
+          순서를 맞춰(권한 → 재화·티어 테스트 → 퍼즐 콘텐츠 관리) 카드 하나로 모았다. 스크롤을 내려야
+          보이는 "2번째 페이지"처럼 맨 아래에 두고, 개발자/공동 개발자 모드를 막 켠 순간에는
+          devToolsRef로 이 블록까지 자동 스크롤한다(위 devToolsRef 선언부 참고). */}
+      {canEdit && (
+        <div ref={devToolsRef} style={{ ...card, marginTop: 28, border: "1.5px solid " + T.brass, background: "linear-gradient(180deg,#FBF4E2,#F2E8D5)" }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+            <Crown size={16} style={{ color: T.brass }} />
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>개발자 도구</div>
+          </div>
+          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? "공동 개발자 모드에서는 임명 권한을 뺀 나머지를 그대로 쓸 수 있어요." : "개발자 전용 도구예요."}</p>
+
+          {canManageCodev && (
+            <>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>공동 개발자 지정</div>
+              <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder="아이디 (영문+숫자)" style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{codevBusy ? "확인 중…" : "추가"}</button></div>
+              {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
+              <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>공동 개발자는 트리·분기점·해설을 <b>추가</b>만 할 수 있고 수정·삭제는 불가합니다.</p>
+              <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+            </>
+          )}
+
+          {/* (기능) 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지 않고도 바로
+              확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
+          <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} card={{}} />
+          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+          <DailyPuzzleDevPanel card={{}} />
+          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+          <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={{}} />
+        </div>
+      )}
 
       {/* chess.com 계정 확인 모달 */}
       {pending && (
@@ -17388,13 +17924,6 @@ function CoinIcon({ size = 16 }) {
   if (err) return <span style={{ fontSize: Math.round(size * 0.95), lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>🪙</span>;
   return <img src="/oc-coin.png" alt="OC 나이트 코인" onError={() => setErr(true)} style={{ width: size, height: size, objectFit: "contain", display: "inline-block", verticalAlign: "middle" }} />;
 }
-// (v0.2.9 기능) 리뷰 티켓 아이콘 — CoinIcon과 같은 패턴(전용 이미지가 없거나 못 불러오면 이모지로
-// 폴백)이라, public/review-ticket.png를 나중에 채워 넣기만 하면 코드 변경 없이 바로 반영된다.
-function TicketIcon({ size = 16 }) {
-  const [err, setErr] = useState(false);
-  if (err) return <span style={{ fontSize: Math.round(size * 0.95), lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>🎫</span>;
-  return <img src="/review-ticket.png" alt="리뷰 티켓" onError={() => setErr(true)} style={{ width: size, height: size, objectFit: "contain", display: "inline-block", verticalAlign: "middle" }} />;
-}
 // (21차) chess.com 데이터를 보여주는 곳에는 "chess.com"이라는 글자 대신(또는 함께) 실제 로고를 쓴다.
 // 밝은(양피지색) 카드 위에서는 검정 로고, 어두운(흑단색) 카드/버튼 위에서는 흰색 로고를 쓴다.
 function ChesscomLogo({ height = 14, dark }) {
@@ -17447,11 +17976,10 @@ function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) 
     </div>
   );
 }
-function StoreTab({ coins, reviewTickets, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
+function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
   return (
     <div>
-      {/* (디자인) 코인 보유 UI를 화면을 가로지르는 큰 배너 대신, 제목 옆 우상단의 작은 칩으로 축소.
-          (v0.2.9 기능) 사용자 요청 — 리뷰 티켓도 재화이므로 같은 자리에 코인과 나란히 표시한다. */}
+      {/* (디자인) 코인 보유 UI를 화면을 가로지르는 큰 배너 대신, 제목 옆 우상단의 작은 칩으로 축소. */}
       <div className="flex items-center justify-between" style={{ marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 상점 아이콘과 중복돼 제거. */}
         <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
@@ -17459,10 +17987,6 @@ function StoreTab({ coins, reviewTickets, ownedSkins, boardSkin, pieceSkin, onBu
           <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
             <CoinIcon size={26} />
             <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(coins || 0)}</span>
-          </div>
-          <div className="flex items-center gap-1" title="보유 중인 리뷰 티켓 — 게임 리뷰를 하나 열 때마다 1개 소비, 한 번 연 대국은 이후 무료" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
-            <TicketIcon size={30} />
-            <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(reviewTickets || 0)}</span>
           </div>
         </div>
       </div>
@@ -19026,9 +19550,15 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   const beforeTokens = useMemo(() => pgnTokens.slice(0, moveIndex), [pgnTokens, moveIndex]);
   const afterTokensArr = useMemo(() => pgnTokens.slice(moveIndex + 1), [pgnTokens, moveIndex]);
   const heroTok = pgnTokens[moveIndex];
+  // (사용자 요청) 유산 수 직전 토큰까지 다 타이핑된 뒤 곧바로 유산 수가 떨어지면 등장이 너무
+  // 순식간이라 극적으로 느껴지지 않는다 — 잠깐(1초) 숨을 고른 뒤에야 떨어지도록 짧은 정적을 준다.
+  const HERO_ENTRANCE_DELAY_MS = 1000;
   useEffect(() => {
     if (phase !== "typing" || typingStage !== "before") return;
-    if (typedCount >= moveIndex) { setTypingStage("heroSolo"); return; }
+    if (typedCount >= moveIndex) {
+      const t = setTimeout(() => setTypingStage("heroSolo"), HERO_ENTRANCE_DELAY_MS);
+      return () => clearTimeout(t);
+    }
     const t = setTimeout(() => setTypedCount((n) => Math.min(moveIndex, n + 1)), 80);
     return () => clearTimeout(t);
   }, [phase, typingStage, typedCount, moveIndex]);
@@ -19216,12 +19746,16 @@ function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           </div>
           {typingStage === "heroSolo" && (
             <motion.div style={{ position: "fixed", inset: 0, zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-              {/* (v0.3.4 UI) 위에서 떨어져 정중앙에 부딪히듯 등장 — 스프링(질량-감쇠 진동) 물리로 계산돼
-                  실제로 한두 번 튀어오르는 반동을 남기고 자리를 잡는다(easeOut 트윈이 아니라 진짜 스프링).
+              {/* (v0.3.4 UI → v0.3.5 버그 수정) 위에서 떨어져 정중앙에 부딪히듯 등장 — 스프링(질량-감쇠
+                  진동) 물리로 계산돼 자리를 잡는다(easeOut 트윈이 아니라 진짜 스프링). damping이 13으로
+                  너무 낮아(감쇠비 ≈0.33) 착지 후에도 여러 차례 위아래로 튀는 진동이 한동안 눈에 띄게
+                  이어지는 문제가 있었다 — damping을 22로 올려(감쇠비 ≈0.56) 착지 직후 한 번만 또렷하게
+                  튀어오르고 곧바로 정착하도록 다듬었다(완전히 감쇠비 1로 만들면 반동 자체가 없어져
+                  "부딪히는" 느낌이 사라지므로, 반동은 남기되 반복 진동만 없앤다).
                   (사용자 요청) onAnimationComplete로 이 스프링이 실제로 정착한 순간을 확실히 알아내
                   heroLanded를 켠다 — 주변 수 무너짐(LegacyShatterToken)은 이 값이 켜진 뒤에만 시작된다. */}
               <motion.span layoutId="legacyHeroToken" initial={{ opacity: 0, y: -220, scale: 0.85 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: "spring", stiffness: 380, damping: 13, mass: 1 }}
+                transition={{ type: "spring", stiffness: 380, damping: 22, mass: 1 }}
                 onAnimationComplete={() => setHeroLanded(true)}
                 style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 34, color, textShadow: "0 0 26px " + color + ", 0 2px 14px rgba(0,0,0,.7)" }}>
                 {heroTok}
@@ -19476,8 +20010,7 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
 }
 // 유산 만들기/편집 — PGN 직접 입력 또는 chess.com 대국 선택 → analyzeGame으로 전체 채점 → 그
 // 유산이 요구하는 등급(typeInfo.kind)을 만족하는 수만 고를 수 있게 필터링 → 재생할 수 개수 입력 → 저장.
-function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, username, onClose, onSave, onDelete }) {
-  const engine = useReviewEngine();
+function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, username, onClose, onSave, onDelete, engine }) {
   const [step, setStep] = useState("source"); // source | paste | analyzing | pick | count
   // (사용자 요청) "chess.com 대국에서 선택"을 눌러도 창을 한 번 더 띄우지 않고, 이 자리 바로 아래에
   // 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI(AccountChessStats)를 펼친다.
@@ -19517,12 +20050,22 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
     if (validated.length < 1) { setPgnErr("기보가 너무 짧아요."); return; }
     setPgnErr(""); setSans(validated); setStep("analyzing");
   };
+  // (v0.3.5 버그 수정) ReviewPage와 같은 이유 — engine이 항상 "ready"였던 전용 훅(useReviewEngine) 대신
+  // 실제 useEngine(enginePref)을 받으므로, "analyzing" 단계에 막 들어선 시점엔 아직 엔진이 부팅 중일
+  // 수 있다. 부팅 여부와 무관하게 매번 결과를 초기화하던 것과 실제 분석 시작을 분리해, engine.status가
+  // 뒤늦게 "ready"로 바뀌어도(analyzeStartedRef로 중복 시작만 막고) 다시 시도하도록 고쳤다.
+  const analyzeStartedRef = useRef(false);
   useEffect(() => {
-    if (step !== "analyzing" || !sans) return;
+    if (step === "analyzing") { setResult(null); setProgress(0); setAnalyzeErr(false); analyzeStartedRef.current = false; }
+  }, [step]);
+  useEffect(() => {
+    if (step !== "analyzing" || !sans || analyzeStartedRef.current || !engine) return;
+    if (engine.status === "off") { setAnalyzeErr(true); return; }
+    if (engine.status !== "ready") return; // 아직 부팅 중 — status가 바뀌면 다시 확인한다.
+    if (sans.length < 1) { setAnalyzeErr(true); return; }
+    analyzeStartedRef.current = true;
     let cancelled = false;
-    setResult(null); setProgress(0); setAnalyzeErr(false);
     (async () => {
-      if (!engine || engine.status !== "ready" || sans.length < 1) { setAnalyzeErr(true); return; }
       try {
         const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProgress(p); }, REVIEW_MOVETIME_MS,
           (partial) => { if (!cancelled) setResult(partial); });
@@ -19530,7 +20073,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
       } catch { if (!cancelled) setAnalyzeErr(true); }
     })();
     return () => { cancelled = true; };
-  }, [step, sans]);
+  }, [step, sans, engine && engine.status]);
   const qualifying = result ? result.moves.filter((m) => m.kind === typeInfo.kind) : [];
   const maxPlayCount = sans && moveIndex != null ? Math.max(1, sans.length - moveIndex) : 20;
   const maxBeforeCount = moveIndex != null ? moveIndex : 0;
@@ -20000,6 +20543,8 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
                       <span className="flex items-center gap-1">
                         {/* (v0.3.4 기능) 고정한 대화는 이름 옆에 핀 아이콘. */}
                         {pinned && <Pin size={10} style={{ color: T.brass, flexShrink: 0 }} fill={T.brass} />}
+                        {/* (v0.3.5 기능) 사용자 요청 — 알림을 꺼 둔 상대는 이름 옆에 알림 해제 아이콘(BellOff, 종 + /)을 함께 보여준다. */}
+                        {muted && <BellOff size={10} style={{ color: T.inkSoft, flexShrink: 0 }} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
                       <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.review_id != null ? "📊 리뷰를 공유했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
@@ -20342,7 +20887,7 @@ function fireworkColorsFor(tierKey) {
 // 퀘스트 팝업의 반짝임·컨페티(QUEST_CLEAR_SPARKLES/CONFETTI)는 그대로 재사용해 "이 앱의 축하 연출"
 // 이라는 공통 언어는 유지한다. 예전엔 승급 보상(+N 코인)이 이 오버레이(zIndex 200)에 완전히 가려진
 // 별도 토스트(zIndex 65)로만 표시돼 사실상 안 보였는데, 이제 카드 안에 직접 보여준다.
-function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, reward, ticketReward, onDone }) {
+function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, reward, onDone }) {
   const [phase, setPhase] = useState("shake"); // shake(흔들림) -> exit(퇴장) -> enter(새 티어 등장)
   // (v0.2.9 디자인) 사용자 요청 — 폭죽이 처음부터 다 같이 뜨지 않고, 기물 교체 애니메이션(흔들림→
   // 퇴장→등장, 등장 슬라이드 자체도 0.5초 걸림)이 완전히 끝난 뒤에야 터지기 시작해야 한다. enter로
@@ -20428,15 +20973,9 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
           </div>
         </div>
         {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ink, marginTop: 6 }}>{toLabel} 티어 도달!</div>}
-        {(reward > 0 || ticketReward > 0) && (
+        {reward > 0 && (
           <div className="flex items-center justify-center flex-wrap" style={{ gap: 8, marginTop: 12 }}>
-            {reward > 0 && (
-              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={19} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
-            )}
-            {/* (v0.2.9 기능) 티어 승급 보상에 리뷰 티켓 10개를 추가 — 코인 배지와 같은 자리에 나란히. */}
-            {ticketReward > 0 && (
-              <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".68s", animationFillMode: "backwards" }}><TicketIcon size={23} />+<AnimatedCountUp to={ticketReward} /> 리뷰 티켓</span>
-            )}
+            <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={19} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
           </div>
         )}
         {/* (v0.2.9 기능) 우측 상단 X와 같은 역할의 확인 버튼 — 일일 퀘스트 클리어 팝업과 같은 스타일로,
@@ -21004,10 +21543,9 @@ export default function App() {
     });
   }, [totalXp]);
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
-  // (v0.2.9 기능) 리뷰 티켓 — 대국 하나를 리뷰로 열 때마다 1개 소비(첫 열람만, 이후 그 대국은
-  // reviewUnlocked에 영구히 남아 무료). 일일 퀘스트(개별 클리어 +1, 전체 클리어 +2 추가 = 하루 7개)와
-  // 티어 승급(+10)으로 얻는다. reviewUnlocked는 reviewGameKey(game)가 돌려주는 문자열의 집합.
-  const [reviewTickets, setReviewTickets] = useState(0);
+  // (v0.2.9 기능 → v0.3.5 리뷰 티켓 제거) 게임 리뷰는 이제 아무 제한 없이 열 수 있다 — reviewUnlocked는
+  // 더는 소비되는 재화의 잠금 해제 기록이 아니라, "리뷰한 대국만" 필터(AccountChessStats)를 위해 리뷰를
+  // 연 적 있는 대국을 계속 기록해 두는 순수 이력용 집합이다(reviewGameKey(game) 문자열의 Set).
   const [reviewUnlocked, setReviewUnlocked] = useState(new Set());
   // (버그) 개발자 계정 코인 지급을 "코인 기록이 아예 없을 때"로만 한정했더니, 이미 로그인해 progress가
   // 저장돼 있던 기존 개발자·공동 개발자 계정에는 소급 적용되지 않았다. 대신 "1회 지급 여부" 플래그를
@@ -21155,20 +21693,22 @@ export default function App() {
   const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
   const engine = useEngine(enginePref);
   const chesscom = useChessCom(profile.chesscom);
-  // (v0.2.4 성능) 게임 리뷰 전용 엔진 풀(Stockfish 16)을 사용자가 실제로 리뷰를 열기 전에 유휴
-  // 시간에 미리 부팅해 둔다 — depth·movetime·세기는 그대로고(analyzeGame 등은 여전히 이 풀을
-  // getAnalysisPool로 그대로 재사용), 리뷰를 열었을 때 "부팅부터 기다리는" 체감 지연만 없앤다.
-  // requestIdleCallback이 없는 환경(사파리 등)은 넉넉한 setTimeout으로 대체한다. 초기 페이지
-  // 렌더링·분석 엔진 부팅과 경합하지 않도록 우선순위를 가장 낮춰 둔다.
+  // (v0.2.4 성능 → v0.3.5) 게임 리뷰용 분석 엔진 풀을 사용자가 실제로 리뷰를 열기 전에 유휴 시간에
+  // 미리 부팅해 둔다 — depth·movetime은 그대로고(analyzeGame 등은 여전히 이 풀을 getAnalysisPool로
+  // 재사용), 리뷰를 열었을 때 "부팅부터 기다리는" 체감 지연만 없앤다. 예전엔 게임 리뷰가 항상
+  // Stockfish 16("full") 고정이라 그 프로필만 미리 부팅했는데, 이제 리뷰도 사용자가 고른 분석
+  // 엔진(enginePref)을 그대로 쓰므로 그 프로필을 미리 부팅한다(학습/퍼즐 탭을 먼저 거치지 않고 공유된
+  // 리뷰 링크로 곧장 들어오는 경우에도 대비). requestIdleCallback이 없는 환경(사파리 등)은 넉넉한
+  // setTimeout으로 대체한다. 초기 페이지 렌더링·분석 엔진 부팅과 경합하지 않도록 우선순위를 가장 낮춰 둔다.
   useEffect(() => {
-    const boot = () => { const p = ENGINE_PROFILES.full; getAnalysisPool(p.id, p.urls); };
+    const boot = () => { const p = ENGINE_PROFILES[enginePref] || ENGINE_PROFILES[defaultEnginePref()]; getAnalysisPool(p.id, p.urls); };
     if (typeof window.requestIdleCallback === "function") {
       const id = window.requestIdleCallback(boot, { timeout: 8000 });
       return () => window.cancelIdleCallback(id);
     }
     const id = setTimeout(boot, 3000);
     return () => clearTimeout(id);
-  }, []);
+  }, [enginePref]);
 
   useEffect(() => { loadContent().then(() => setContentVer((v) => v + 1)); }, []);
   const bumpContent = useCallback(async () => { await saveContent(); setContentVer((v) => v + 1); }, []);
@@ -21195,7 +21735,7 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); setReviewTickets(d.reviewTickets || 0); setReviewUnlocked(new Set(d.reviewUnlocked || [])); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setOcCoins(d.coins || 0); setReviewUnlocked(new Set(d.reviewUnlocked || [])); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate);
       // (UX1) 새로고침해도 현재 탭·집중 학습·퍼즐 진행 상황이 유지되도록 복원
       // (v0.2.3 버그 수정) 복원 대상이 "어제 이전"의 오늘의 퍼즐(id: "daily_YYYY-MM-DD", 그 문자열
       // 자체가 날짜를 담고 있음)이면 복원하지 않는다 — 예전엔 이 값이 그대로 복원돼, 어제 오늘의
@@ -21223,7 +21763,7 @@ export default function App() {
     // 되돌린다. 새로고침 타이밍이 나쁘면 방금 dev 패널로 바꾼 값이 한 번 되돌아 보일 수 있지만(진짜
     // 서버 저장 자체는 그대로 진행 중이므로 곧 다시 저장되어 정상화된다), 클라이언트가 서버 값을
     // 임의로 이기게 하는 것보다 이 쪽이 안전하다.
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewTickets != null) setReviewTickets(pr.reviewTickets); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
@@ -21278,8 +21818,8 @@ export default function App() {
   // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest), legacies: profile.legacies || null, legacyHistory: profile.legacyHistory || null }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId, mainQuest, profile.legacies, profile.legacyHistory]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewTickets, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewTickets, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewTickets, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewTickets, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
   // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
   // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
@@ -21368,7 +21908,7 @@ export default function App() {
   const logout = useCallback(() => {
     authLogout();
     setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
-    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setRepostedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setReviewTickets(0); setReviewUnlocked(new Set()); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
+    setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setRepostedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setReviewUnlocked(new Set()); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "", displayId: "", photo: "", firstMoves: null, legacies: null }); setDevBonusGranted(false);
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
     // (버그 수정) 이 두 값은 여기서 안 비워지고 있었다 — dismissedAnnounceVersion을 그대로 두면
@@ -21545,15 +22085,13 @@ export default function App() {
       // TierUpOverlay(zIndex 200)에 화면 전체가 가려져 사실상 보이지 않았다 — 토스트 대신 승급 연출
       // 카드 안에 직접 보여주도록 tierUpAnim에 실어 보낸다.
       const tierUpReward = tierInfo.tierIndex * 50;
-      const tierUpTicketReward = 10; // (v0.2.9 기능) 티어 승급 보상 — 리뷰 티켓 10개(티어 무관 고정)
       setTierUpAnim({
         fromKey: TIERS[prevTierIndexRef.current].key, fromDiv: 1,
         toKey: tierInfo.tier.key, toDiv: tierInfo.division,
-        reward: tierUpReward, ticketReward: tierUpTicketReward,
+        reward: tierUpReward,
       });
       if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
       setOcCoins((c) => c + tierUpReward);
-      setReviewTickets((t) => t + tierUpTicketReward);
     }
     prevTierIndexRef.current = tierInfo.tierIndex;
   }, [tierInfo.tierIndex, loaded]);
@@ -21577,7 +22115,6 @@ export default function App() {
     setDailyQuest((dq) => {
       if (!dq || dq.claimed[questKey]) return dq;
       setOcCoins((c) => c + amount);
-      setReviewTickets((t) => t + 1); // (v0.2.9 기능) 일일 퀘스트 개별 클리어 보상 — 리뷰 티켓 1개
       const label = questSlotLabel(questKey, dq);
       setToast({ type: "questClear", amount, label });
       setTimeout(() => setToast((t) => (t && t.type === "questClear" ? null : t)), 2600);
@@ -21647,7 +22184,6 @@ export default function App() {
     if (!allDone) return;
     setTotalXp((x) => x + 20);
     setOcCoins((c) => c + 50); // (19차 기능5) 일일 퀘스트 전체 완료 보상: OC 나이트 코인 50개
-    setReviewTickets((t) => t + 2); // (v0.2.9 기능) 전체 클리어 추가 보상 — 리뷰 티켓 2개(개별 클리어 5개 + 이 2개 = 하루 총 7개)
     setDailyQuest((dq) => (dq && !dq.bonusClaimed ? { ...dq, bonusClaimed: true } : dq));
   }, [dailyQuest && JSON.stringify(dailyQuest.claimed), dailyQuest && dailyQuest.bonusClaimed]);
   // (v0.2.9 기능) 전체 클리어를 실제로 "봤는지"는 bonusClaimed(보상 지급 여부)와 별개로 추적한다 —
@@ -21701,7 +22237,7 @@ export default function App() {
     const onPop = () => {
       const p = window.location.pathname;
       if (!p.startsWith("/review")) setReviewGame(null);
-      if (!/^\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
+      if (!/^\/puzzle\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
       const k = tabFromPath(p);
       if (k) { urlTabRef.current = k; setTab(k); }
     };
@@ -21738,26 +22274,16 @@ export default function App() {
   // 타임클래스 같은 대국 메타데이터를 갖춘 완전한 리뷰 화면으로 대체한다 — 학습 보드 상태는
   // 건드리지 않는다(onOpenGame과 달리 setTab("learn")을 호출하지 않음).
   const [reviewGame, setReviewGame] = useState(null);
-  // (v0.2.9 기능) 사용자 요청 — 대국 하나를 리뷰로 여는 데 리뷰 티켓 1개를 쓴다. 한 번 연 대국은
-  // reviewGameKey로 기억해 두고, 그 대국은 이후 티켓 없이 몇 번이든 다시 볼 수 있다. 개발자 모드에선
-  // 티켓 시스템 자체를 건너뛴다(devUnlockAll이 다른 잠금들을 건너뛰는 것과 같은 결). 키를 만들 수
-  // 없는 대국(현재는 항상 chess.com 대국이라 실질적으로 없지만, 나중에 다른 소스가 생길 경우 대비)은
-  // 구분할 방법이 없으므로 안전하게 무료로 취급한다.
-  const [ticketBlockedOpen, setTicketBlockedOpen] = useState(false);
+  // (v0.2.9 기능 → v0.3.5 리뷰 티켓 제거) 게임 리뷰는 이제 제한 없이 몇 번이든 열 수 있다. 다만
+  // "리뷰한 대국만" 필터(AccountChessStats)가 여전히 reviewUnlocked를 쓰므로, 리뷰를 열 때마다
+  // reviewGameKey로 그 대국을 계속 기록은 해 둔다(순수 이력, 더는 아무것도 막거나 소비하지 않는다).
   const openReview = useCallback((game) => {
     // (v0.3.4 기능) FEN 모드 분석은 아직 한 수도 안 뒀어도(그 위치 자체를 분석) 열 수 있게 허용한다
     // — fenRoot가 있으면 sans가 비어 있어도 통과시킨다.
     if (!game || (!game.fenRoot && (!game.sans || !game.sans.length))) return;
-    // (버그 수정) devUnlockAll과 같은 결로 공동 개발자 모드도 포함하도록 — 임명 권한만 빼고
-    // 개발자와 동일하게 리뷰 티켓 시스템을 건너뛴다.
-    const bypass = devUnlockAll;
-    if (!bypass) {
-      const key = reviewGameKey(game);
-      if (key && !reviewUnlocked.has(key)) {
-        if (reviewTickets <= 0) { setTicketBlockedOpen(true); return; }
-        setReviewTickets((t) => Math.max(0, t - 1));
-        setReviewUnlocked((prev) => { const n = new Set(prev); n.add(key); return n; });
-      }
+    const key = reviewGameKey(game);
+    if (key && !reviewUnlocked.has(key)) {
+      setReviewUnlocked((prev) => { const n = new Set(prev); n.add(key); return n; });
     }
     // (v0.2.1) 리뷰를 연 경로(검색 모달·설정 탭 내 프로필·집중학습의 마스터 대국 등)를 그대로 유지한다 —
     // 예전엔 검색·친구 모달을 닫아 리뷰를 닫으면 그 원래 화면이 아니라 밑의 탭으로 튕겨 나갔다. 이제 그
@@ -21774,7 +22300,7 @@ export default function App() {
       if (!id) return;
       try { window.history.replaceState({ review: true }, "", "/review/" + id); } catch { }
     });
-  }, [devUnlockAll, reviewUnlocked, reviewTickets]);
+  }, [reviewUnlocked]);
   const closeReview = useCallback(() => {
     setReviewGame(null);
     try { if (window.location.pathname.startsWith("/review")) window.history.back(); } catch { }
@@ -21841,9 +22367,9 @@ export default function App() {
   // 항목을 늘리지 않고 그 자리만 갱신한다.
   const onPuzzleLineChange = useCallback((lineNo) => {
     if (!puzzleActive) return;
-    const path = "/" + puzzleNo(puzzleActive.id) + "-" + lineNo;
+    const path = "/puzzle/" + puzzleNo(puzzleActive.id) + "-" + lineNo;
     try {
-      if (/^\/\d{6}-\d+$/.test(window.location.pathname)) window.history.replaceState({ puzzle: true }, "", path);
+      if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) window.history.replaceState({ puzzle: true }, "", path);
       else window.history.pushState({ puzzle: true }, "", path);
     } catch { }
   }, [puzzleActive]);
@@ -21854,11 +22380,15 @@ export default function App() {
   // /(퍼즐 번호)-(라인 번호) 형태면 그 리뷰·퍼즐을 실제로 되살린다. openReview/onOpenPuzzle이 모두
   // 정의된 뒤라야 호출할 수 있어 이 컴포넌트 마지막 부분에 둔다. 실패하면(식별자가 깨졌거나, 아직
   // 아무도 공유한 적 없는 chess.com 대국이거나) 조용히 /learn으로 되돌린다(예전과 같은 안전한 기본값).
+  // (v0.3.5 버그 수정) loaded를 기다리지 않고 마운트 즉시 실행했더니, 이 effect의 deps가 []이라
+  // 클로저로 캡처한 openReview가 항상 "최초 렌더 시점"의 것(reviewUnlocked=빈 Set — 아직 로컬/계정
+  // 복원 전 기본값)으로 고정됐다. 복원이 끝난 뒤(loaded)에만 실행되도록 바꿔, 그 시점 렌더의 최신
+  // openReview를 쓰게 한다.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !loaded) return;
     const path = window.location.pathname;
     (async () => {
-      const puzzleMatch = /^\/(\d{6})-(\d+)$/.exec(path);
+      const puzzleMatch = /^\/puzzle\/(\d{6})-(\d+)$/.exec(path);
       if (puzzleMatch) {
         const no = parseInt(puzzleMatch[1], 10), lineNo = parseInt(puzzleMatch[2], 10);
         const data = await puzzleFetch(no);
@@ -21881,8 +22411,8 @@ export default function App() {
         }
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 오직 최초 마운트 시 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없다).
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loaded가 false→true로 바뀌는 최초 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없고, openReview/onOpenPuzzle 등은 매번 최신 클로저를 쓰면 충분해 deps에 넣지 않는다).
+  }, [loaded]);
 
   return (
     <SkinContext.Provider value={skinValue}>
@@ -21960,7 +22490,6 @@ export default function App() {
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
-      <AnimatePresence>{ticketBlockedOpen && <NoReviewTicketsModal key="noTicketsModal" reviewTickets={reviewTickets} onClose={() => setTicketBlockedOpen(false)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
@@ -21968,8 +22497,8 @@ export default function App() {
       <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
-      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} />}
-      {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} ticketReward={tierUpAnim.ticketReward} onDone={() => setTierUpAnim(null)} />}
+      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} />}
+      {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
@@ -22022,7 +22551,6 @@ export default function App() {
               </div>
               <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
                 <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={20} /></span>
-                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+1<TicketIcon size={24} /></span>
               </div>
             </div>
           ) : (
@@ -22060,8 +22588,8 @@ export default function App() {
         )}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} />}
-        {tab === "store" && <StoreTab coins={ocCoins} reviewTickets={reviewTickets} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} reviewTickets={reviewTickets} setReviewTickets={setReviewTickets} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
+        {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
