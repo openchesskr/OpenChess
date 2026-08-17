@@ -12526,12 +12526,29 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
   }, []);
-  // (20차 기능1) 개발자 전용 — 리프(라인의 끝)에 "+"를 누르면 그 라인에 수를 하나 직접 추가한다.
+  // (20차 기능1 → v0.3.5 개편) 개발자 전용 — 리프(라인의 끝)에 "+"를 누르면 그 라인에 수를 하나
+  // 추가한다. 예전엔 SAN을 직접 타이핑하는 입력창 하나뿐이었는데, 사용자 요청으로 onSuggestSiblings와
+  // 같은 후보 조회(puzzleCandidatesAt — 평가치 순으로 이미 정렬돼 오는 엔진 MultiPV 순위 + 채택률 %가
+  // 함께 붙는다)를 재사용해 아래 형제 갈래 추가 패널과 동일한 "후보 목록에서 고르기" 방식으로
+  // 바꿨다 — 직접 입력은 그 후보 중 원하는 수가 없을 때 쓰는 마지막 선택지로 목록 맨 아래에 남겨 둔다.
   const [addAt, setAddAt] = useState(null);   // path(array)|null
+  const [addCands, setAddCands] = useState(null); // null=불러오는 중
   const [sanIn, setSanIn] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const openAdd = (path) => { setAddAt(path); setSanIn(""); setErr(""); };
+  const openAdd = async (path) => {
+    setAddAt(path); setAddCands(null); setSanIn(""); setErr("");
+    const cands = await onSuggestSiblings(path);
+    setAddCands(cands || []);
+  };
+  const pickAdd = async (cand) => {
+    if (busy) return;
+    setBusy(true);
+    const errMsg = await onAddMove(addAt, cand.san);
+    setBusy(false);
+    if (errMsg) { setErr(errMsg); return; }
+    setAddAt(null); setErr("");
+  };
   const submitAdd = async () => {
     const san = sanIn.trim(); if (!san || busy) return;
     setBusy(true);
@@ -12696,13 +12713,35 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             );
           })}
         </div>
+        {/* (20차 기능1 → v0.3.5 개편) 라인 연장 패널 — 형제 갈래 추가 패널과 동일한 후보 조회
+            (onSuggestSiblings)를 재사용한다. 후보는 puzzleCandidatesAt이 엔진 MultiPV 순위(=평가치
+            순)로 이미 정렬해 오고, 실전 채택률 %도 함께 붙는다 — 그중 골라 누르면 바로 추가되고,
+            원하는 수가 후보에 없을 때만 목록 맨 아래 직접 입력을 쓴다. */}
         {addAt && (
-          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(300px, calc(100% - 20px))", padding: 10, borderRadius: 10, border: "1px solid " + T.brass, background: "#fff", boxShadow: "0 10px 24px -8px rgba(0,0,0,.4)" }}>
-            <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>다음 수를 직접 입력하세요</div>
+          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(320px, calc(100% - 20px))", maxHeight: 188, overflowY: "auto", padding: 10, borderRadius: 10, border: "1px solid " + T.brass, background: "#fff", boxShadow: "0 10px 24px -8px rgba(0,0,0,.4)" }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 10.5, color: T.inkSoft }}>다음 수 후보</div>
+              <button onClick={() => setAddAt(null)} className="press" style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 11 }}>닫기</button>
+            </div>
+            {addCands === null ? (
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>엔진으로 후보를 불러오는 중…</div>
+            ) : addCands.length === 0 ? (
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>추천할 후보가 없어요 — 아래에 직접 입력하세요.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                {addCands.map((c) => (
+                  <button key={c.san} onClick={() => pickAdd(c)} disabled={busy} className="press" style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 7, border: "1px solid #DCCBA8", background: "#FBF5E8", cursor: busy ? "default" : "pointer", textAlign: "left" }}>
+                    {c.kind && QCOLOR[c.kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[c.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(c.kind, 11)}</span>}
+                    <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 800, color: T.ink, flexShrink: 0 }}>{c.san}</span>
+                    <span style={{ fontSize: 10, color: T.inkSoft, marginLeft: "auto", flexShrink: 0 }}>{c.adopt != null ? Math.round(c.adopt) + "%" : "–%"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>원하는 수가 없으면 직접 입력하세요</div>
             <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} autoFocus placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
+              <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
               <button onClick={submitAdd} disabled={busy} className="press" style={{ padding: "6px 12px", borderRadius: 7, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{busy ? "추가 중…" : "추가"}</button>
-              <button onClick={() => setAddAt(null)} className="press" style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>취소</button>
             </div>
             {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{err}</div>}
           </div>
@@ -15910,6 +15949,7 @@ const CHANGELOG = [
       "내가 만든 퍼즐을 편집한 직후 곧바로 다시 편집을 시도했을 때 뜨던 부정확한 오류 문구를 '아직 편집 주기가 안 지났어요'로 바로잡았어요.",
       "게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(Stockfish 18 Lite / 17.1)을 그대로 써요 — 예전엔 게임 리뷰만 따로 Stockfish 16으로 고정돼 있었는데, 이제 하나로 통일됐어요.",
       "설정 탭에 흩어져 있던 개발자 전용 도구들을 '개발자 도구' 카드 하나로 모았어요. 개발자 모드를 켜면 자동으로 그 카드까지 스크롤돼요.",
+      "개발자 전용 — 퍼즐 라인 길이를 조정할 때(수 추가) 이제 직접 타이핑하는 대신, 평가치 순으로 정렬된 후보 수 목록에서 채택률과 함께 골라 추가할 수 있어요. 원하는 수가 목록에 없을 때만 맨 아래 직접 입력을 쓰면 돼요.",
     ]
   },
   {
