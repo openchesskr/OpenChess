@@ -4140,7 +4140,12 @@ function editorFenOf(board, turn, rights) {
 }
 // 보드 칸을 클릭으로 채우는 8x8 그리드 — 실제 대국 보드(Board)와 달리 기물 이동 규칙이 전혀 없고
 // 좌표 라벨만 곁들인 순수 렌더링 그리드다.
-function EditorBoardGrid({ board, flipped, size, selected, onSquareClick }) {
+// (v0.3.5 기능) 사용자 요청 — 클릭만이 아니라 실제 대국 보드처럼 드래그로도 기물을 옮길 수 있게
+//한다. Board 컴포넌트가 이미 쓰고 있는 Pointer Events 기반 드래그(마우스·터치·펜을 하나의 API로
+// 통일 — 네이티브 HTML5 드래그는 터치에서 아예 동작하지 않는다)를 그대로 본뜬다. 다만 이 그리드는
+// 실제 대국 규칙이 없어 legalDests 같은 판정이 필요 없으므로, 드롭 위치 계산(gridRef 기준 좌표→칸)
+// 로직만 가져오고 나머지(잡기/두기 판정)는 BoardEditorModal이 훨씬 단순하게 직접 처리한다.
+function EditorBoardGrid({ board, flipped, size, selected, onSquareClick, gridRef, onPieceDown, dragOn, draggingFrom }) {
   const ranks = flipped ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
   const files = flipped ? ["h", "g", "f", "e", "d", "c", "b", "a"] : ["a", "b", "c", "d", "e", "f", "g", "h"];
   const cellPx = size / 8;
@@ -4150,10 +4155,14 @@ function EditorBoardGrid({ board, flipped, size, selected, onSquareClick }) {
     const light = (r + c) % 2 === 0;
     const p = board[r][c];
     const isSel = !!(selected && selected[0] === r && selected[1] === c);
+    const isDragSource = !!(draggingFrom && draggingFrom[0] === r && draggingFrom[1] === c);
     cells.push(
       <div key={r + "_" + c} onClick={() => onSquareClick(r, c)} className="press"
-        style={{ position: "relative", background: light ? T.boardLight : T.boardDark, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : "none" }}>
-        {p && <PieceGlyph type={p.t} color={p.c} size={Math.round(cellPx * 0.82)} />}
+        style={{ position: "relative", background: light ? T.boardLight : T.boardDark, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : "none", touchAction: "none" }}>
+        {p && <PieceGlyph type={p.t} color={p.c} size={Math.round(cellPx * 0.82)} style={{ opacity: isDragSource ? 0.25 : 1, cursor: "grab" }} />}
+        {/* (기능) 기물 위에만 얹는 투명 오버레이 — pointerdown이 눌린 칸만 드래그 시작점으로 잡고,
+            빈 칸은 여전히 위 onClick(도장 찍기/기존 기물 두기)만으로 동작한다. */}
+        {p && <div onPointerDown={(e) => onPieceDown(e, r, c)} onPointerMove={dragOn.onMove} onPointerUp={dragOn.onUp} onPointerCancel={dragOn.onCancel} style={{ position: "absolute", inset: 0 }} />}
       </div>
     );
   }
@@ -4163,7 +4172,7 @@ function EditorBoardGrid({ board, flipped, size, selected, onSquareClick }) {
         <div style={{ display: "flex", flexDirection: "column", width: 15, flexShrink: 0 }}>
           {ranks.map((n) => <div key={n} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "rgba(244,238,226,.55)" }}>{n}</div>)}
         </div>
-        <div style={{ width: size, height: size, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", borderRadius: 6, overflow: "hidden", border: "1px solid #000", flexShrink: 0, ...BOARD_GLOSS }}>{cells}</div>
+        <div ref={gridRef} style={{ width: size, height: size, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", borderRadius: 6, overflow: "hidden", border: "1px solid #000", flexShrink: 0, ...BOARD_GLOSS }}>{cells}</div>
       </div>
       <div className="flex" style={{ marginLeft: 15 }}>
         {files.map((f) => <div key={f} style={{ width: size / 8, textAlign: "center", fontSize: 10, fontWeight: 800, color: "rgba(244,238,226,.55)" }}>{f}</div>)}
@@ -4207,6 +4216,72 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     }
     if (board[r][c]) setPickedSq([r, c]);
   };
+  // (사용자 요청) 이 화면에서도 자연스러운 드래그 무브 — Board 컴포넌트의 Pointer Events 패턴을
+  // 그대로 옮겨왔다: 보드 위 기물뿐 아니라 팔레트의 기물도 드래그 출발점이 될 수 있어 source로 구분한다.
+  // 팔레트로 옮긴 고스트는 그리드 내부 절대좌표가 아니라 position:fixed로 화면 전체에 그린다 — 팔레트가
+  // 그리드 바깥에 있어 좌표계가 다르고, 드래그 도중 보드 경계를 자유로이 넘나들어야 하기 때문이다.
+  const gridRef = useRef(null);
+  const dragStartRef = useRef(null); // { source:"board"|"palette", from:[r,c]|null, piece:{c,t}, x, y }
+  const suppressClickRef = useRef(false);
+  const [ptrDrag, setPtrDrag] = useState(null); // 위와 동일한 모양 — 드래그 임계값을 넘겼을 때만 채워짐(고스트/딤 처리용)
+  const DRAG_THRESHOLD = 4;
+  const onSqClickGuarded = (r, c) => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } onSqClick(r, c); };
+  const paletteClick = (fn) => () => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } fn(); };
+  const squareFromClient = (clientX, clientY) => {
+    const el = gridRef.current; if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const relX = (clientX - rect.left) / rect.width, relY = (clientY - rect.top) / rect.height;
+    if (relX < 0 || relX >= 1 || relY < 0 || relY >= 1) return null;
+    const vc = Math.min(7, Math.max(0, Math.floor(relX * 8))), vr = Math.min(7, Math.max(0, Math.floor(relY * 8)));
+    return flipped ? [7 - vr, 7 - vc] : [vr, vc];
+  };
+  const startDragFromBoard = (e, r, c) => {
+    if (tool) return; // 도구가 활성화된 동안은 클릭 스탬프만 — 드래그는 도구가 없을 때만 시작
+    const piece = board[r][c]; if (!piece) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+    dragStartRef.current = { source: "board", from: [r, c], piece, x: e.clientX, y: e.clientY };
+  };
+  const startDragFromPalette = (e, color, piece) => {
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+    dragStartRef.current = { source: "palette", from: null, piece: { c: color, t: piece }, x: e.clientX, y: e.clientY };
+  };
+  const onDragPointerMove = (e) => {
+    const d = dragStartRef.current; if (!d) return;
+    e.preventDefault();
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!ptrDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    setPtrDrag({ ...d, x: e.clientX, y: e.clientY });
+  };
+  const endDrag = (e, drop) => {
+    const d = dragStartRef.current;
+    const wasDragging = !!ptrDrag;
+    dragStartRef.current = null;
+    setPtrDrag(null);
+    if (!d) return;
+    if (drop && wasDragging) {
+      suppressClickRef.current = true;
+      const target = squareFromClient(e.clientX, e.clientY);
+      if (d.source === "board") {
+        if (target && (target[0] !== d.from[0] || target[1] !== d.from[1])) {
+          const b = board.map((row) => row.slice());
+          b[target[0]][target[1]] = d.piece; b[d.from[0]][d.from[1]] = null;
+          pushSnap({ board: b });
+        } else if (!target) { // 보드 밖으로 드롭 = 기물 삭제
+          const b = board.map((row) => row.slice());
+          b[d.from[0]][d.from[1]] = null;
+          pushSnap({ board: b });
+        }
+        setPickedSq(null);
+      } else if (d.source === "palette" && target) {
+        placeAt(target[0], target[1], d.piece);
+      }
+    }
+  };
+  const onDragPointerUp = (e) => endDrag(e, true);
+  const onDragPointerCancel = (e) => endDrag(e, false);
   const doReset = () => { const p = parseFenFull(STANDARD_START_FEN); pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setTool(null); setPickedSq(null); };
   const doClear = () => { const p = parseFenFull(EDITOR_EMPTY_FEN); pushSnap({ board: p.board, turn: p.turn, rights: { K: false, Q: false, k: false, q: false } }); setTool(null); setPickedSq(null); };
   const setTurnV = (t) => pushSnap({ turn: t });
@@ -4230,6 +4305,38 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       if (!p) { setFenErr("올바른 FEN 형식이 아니에요."); return; }
       pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setFenErr("");
     } catch { setFenErr("클립보드를 읽을 수 없어요."); }
+  };
+  // (v0.3.5 기능) 사용자 요청 — 이미지 스캔(사진 → FEN). 서버(api/scan-board.js, Claude 비전)에
+  // 보드 배치만 물어보고, 캐슬링 권리·차례는 사용자가 이미 이 화면에서 설정해 둔 값을 그대로 둔다
+  // (사진만으로는 알 수 없는 정보라 서버도 이 값을 추측하지 않는다).
+  const scanInputRef = useRef(null);
+  const [scanning, setScanning] = useState(false);
+  const onScanFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setScanning(true); setFenErr("");
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl || "");
+      if (!m) { setFenErr("이미지를 읽지 못했어요."); return; }
+      const r = await fetch("/api/scan-board", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image: m[2], mediaType: m[1] }),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data || !data.fen_board) { setFenErr((data && data.error) || "이미지에서 체스판을 인식하지 못했어요."); return; }
+      const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
+      if (!p) { setFenErr("인식된 배치를 적용할 수 없었어요."); return; }
+      pushSnap({ board: p.board });
+    } catch { setFenErr("이미지 스캔에 실패했어요."); }
+    finally { setScanning(false); }
   };
   const handleDone = () => { const p = parseFenFull(fenText); if (p) onApply(p); };
   const boardSize = narrow ? Math.min(320, (typeof window !== "undefined" ? window.innerWidth : 360) - 64) : 400;
@@ -4265,23 +4372,34 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       ))}
     </div>
   );
-  const boardEl = <EditorBoardGrid board={board} flipped={flipped} size={boardSize} selected={pickedSq} onSquareClick={onSqClick} />;
-  const paletteBtnStyle = (armed) => ({ width: paletteSq, height: paletteSq, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: armed ? "2px solid " + T.brassHi : "2px solid transparent", background: armed ? "rgba(255,255,255,.3)" : "transparent" });
+  const boardEl = <EditorBoardGrid board={board} flipped={flipped} size={boardSize} selected={pickedSq} onSquareClick={onSqClickGuarded} gridRef={gridRef} onPieceDown={startDragFromBoard} dragOn={{ onMove: onDragPointerMove, onUp: onDragPointerUp, onCancel: onDragPointerCancel }} draggingFrom={ptrDrag && ptrDrag.source === "board" ? ptrDrag.from : null} />;
+  const paletteBtnStyle = (armed) => ({ width: paletteSq, height: paletteSq, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: armed ? "2px solid " + T.brassHi : "2px solid transparent", background: armed ? "rgba(255,255,255,.3)" : "transparent", touchAction: "none" });
   const isArmed = (color, piece) => !!(tool && tool !== "delete" && tool.color === color && tool.piece === piece);
   const paletteEl = (
     <div style={{ background: "linear-gradient(180deg,#D9A93A,#B8862A)", borderRadius: 10, padding: 6, border: "1px solid #8A6A2F" }}>
       <div className="flex" style={{ gap: 4, marginBottom: 4 }}>
         <button onClick={() => setTool((cur) => (cur === "delete" ? null : "delete"))} title="지우개(칸 비우기)" className="press" style={{ ...paletteBtnStyle(tool === "delete"), background: tool === "delete" ? "rgba(255,255,255,.3)" : "rgba(0,0,0,.15)" }}><Trash2 size={Math.round(paletteSq * 0.42)} color="#3A1E0E" /></button>
         {EDITOR_PALETTE_PIECES.map((p) => (
-          <button key={"w" + p} onClick={() => setTool((cur) => (cur && cur !== "delete" && cur.piece === p && cur.color === "w") ? null : { piece: p, color: "w" })} className="press" style={paletteBtnStyle(isArmed("w", p))}><PieceGlyph type={p} color="w" size={Math.round(paletteSq * 0.8)} /></button>
+          <button key={"w" + p}
+            onClick={paletteClick(() => setTool((cur) => (cur && cur !== "delete" && cur.piece === p && cur.color === "w") ? null : { piece: p, color: "w" }))}
+            onPointerDown={(e) => startDragFromPalette(e, "w", p)} onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerCancel}
+            className="press" style={paletteBtnStyle(isArmed("w", p))}><PieceGlyph type={p} color="w" size={Math.round(paletteSq * 0.8)} /></button>
         ))}
       </div>
       <div className="flex" style={{ gap: 4 }}>
         <button onClick={() => setFlipped((f) => !f)} title="보드 뒤집기" className="press" style={{ ...paletteBtnStyle(false), background: "rgba(0,0,0,.15)" }}><Repeat2 size={Math.round(paletteSq * 0.42)} color="#3A1E0E" /></button>
         {EDITOR_PALETTE_PIECES.map((p) => (
-          <button key={"b" + p} onClick={() => setTool((cur) => (cur && cur !== "delete" && cur.piece === p && cur.color === "b") ? null : { piece: p, color: "b" })} className="press" style={paletteBtnStyle(isArmed("b", p))}><PieceGlyph type={p} color="b" size={Math.round(paletteSq * 0.8)} /></button>
+          <button key={"b" + p}
+            onClick={paletteClick(() => setTool((cur) => (cur && cur !== "delete" && cur.piece === p && cur.color === "b") ? null : { piece: p, color: "b" }))}
+            onPointerDown={(e) => startDragFromPalette(e, "b", p)} onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerCancel}
+            className="press" style={paletteBtnStyle(isArmed("b", p))}><PieceGlyph type={p} color="b" size={Math.round(paletteSq * 0.8)} /></button>
         ))}
       </div>
+    </div>
+  );
+  const ghostEl = ptrDrag && (
+    <div style={{ position: "fixed", left: ptrDrag.x, top: ptrDrag.y - 22, transform: "translate(-50%,-50%)", zIndex: 999, pointerEvents: "none", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.55))" }}>
+      <PieceGlyph type={ptrDrag.piece.t} color={ptrDrag.piece.c} size={Math.round(boardSize / 8 * 0.9)} />
     </div>
   );
   const fenActionsRow = (
@@ -4302,7 +4420,8 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   );
   const scanAndHistoryRow = (
     <div className="flex items-center justify-between">
-      <button disabled title="사진에서 포지션 읽기 — 준비 중인 기능이에요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: "rgba(255,255,255,.06)", color: "rgba(244,238,226,.4)", fontWeight: 700, fontSize: 11.5, border: "1px solid rgba(255,255,255,.15)", cursor: "default" }}><ScanLine size={13} /> 이미지 스캔</button>
+      <input ref={scanInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={onScanFile} />
+      <button onClick={() => scanInputRef.current && scanInputRef.current.click()} disabled={scanning} title="사진에서 체스판 배치 읽기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: scanning ? "rgba(255,255,255,.06)" : T.ebony2, color: scanning ? "rgba(244,238,226,.4)" : T.brassHi, fontWeight: 700, fontSize: 11.5, border: "1px solid " + (scanning ? "rgba(255,255,255,.15)" : "#000"), cursor: scanning ? "default" : "pointer" }}><ScanLine size={13} /> {scanning ? "인식하는 중..." : "이미지 스캔"}</button>
       <div className="flex items-center" style={{ gap: 4 }}>
         <button onClick={rewind} disabled={!canUndo} title="처음으로" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsLeft size={15} /></button>
         <button onClick={undo} disabled={!canUndo} title="되돌리기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
@@ -4326,6 +4445,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   if (narrow) {
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.7)", zIndex: 95, display: "flex" }}>
+        {ghostEl}
         <div style={{ width: "100%", display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#2E1B10,#160C06)" }}>
           <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.1)" }}>{header}</div>
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -4345,6 +4465,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   // (사용자 요청) 데스크톱 — 체스보드만 남기고 나머지 UI는 전부 보드 오른쪽에 모아, 가로 비율의 창 하나로.
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.7)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      {ghostEl}
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(880px, 100%)", maxHeight: "min(680px, 100%)", display: "flex", gap: 26, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderRadius: 18, border: "1px solid #000", boxShadow: "0 30px 70px -16px rgba(0,0,0,.7)", padding: 24, overflow: "auto" }}>
         <div style={{ flexShrink: 0 }}>{boardEl}</div>
         <div style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -8910,6 +9031,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // (v0.3.5 기능) 사용자 요청 — 보드 편집기(BoardEditorModal) 열림 상태. 완료를 누르면 onLoadFen과
   // 같은 계약으로 그 포지션의 FEN 모드로 들어간다(NotationTools의 FEN 붙여넣기와 동일한 경로).
   const [editorOpen, setEditorOpen] = useState(false);
+  // (v0.3.5 기능) 사용자 요청 — FEN 모드의 리뷰(분석)는 아직 지원하지 않는다(위 채점 로직이 표준
+  // 시작 위치만 전제하는 한계와 같은 이유). v0.3.4에서 일단 열어 뒀던 "FEN 모드에서도 리뷰 열기"를
+  // 되돌리고, 리뷰 버튼을 누르면 안내 토스트만 잠깐 띄운다.
+  const [fenReviewNotice, setFenReviewNotice] = useState(false);
+  useEffect(() => { if (!fenReviewNotice) return; const t = setTimeout(() => setFenReviewNotice(false), 1800); return () => clearTimeout(t); }, [fenReviewNotice]);
   // (v0.2.3 기능 → v0.3.5) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히
   // 더 이상의 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수
   // 있는" 수가 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더
@@ -8931,8 +9057,58 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 뜨는 것으로 확인). liveOn만 꺼서는 이 정적 스냅샷 자체를 막지 못하므로, FEN 모드에서는 결과를
   // 아예 중립값으로 덮어써 이 위치와 무관한 데이터가 화면에 노출되지 않게 한다.
   const mergedMoves = useMergedMoves(sans, engine, liveOn && !fenRoot, extra[key], contentVer, mode, sortBy);
+  // (v0.3.5 기능) 사용자 요청 — FEN 모드에서도 평가치 바와 엔진 상위 줄은 작동해야 한다(위 이론 수·
+  // 마스터 통계 등 "책" 데이터만 이 위치와 무관해 계속 중립값이다). useMergedMoves 내부는 이론 수
+  // 보충 로직과 실시간 평가가 한 effect 안에 뒤엉켜 있어(sansToFen·boardFromSans·MultiPV 후보 수
+  // 보충이 전부 표준 시작 위치를 전제) 그 훅 자체를 fenRoot 인식하게 고치는 건 위험이 크다 — 대신
+  // ReviewPage의 엔진 라인 effect(fenOfRoot·colorOfRoot·pvUciToSans(...,fenRoot) 패턴, 이미 FEN 인식)를
+  // 그대로 옮겨온, 훨씬 단순한 별도 effect로 posEval·engineLines·curDepth만 채운다.
+  const [fenEval, setFenEval] = useState({ posEval: null, engineLines: [], linesPending: false, curDepth: null });
+  useEffect(() => {
+    if (!fenRoot || !liveOn || engine.status !== "ready") { setFenEval({ posEval: null, engineLines: [], linesPending: false, curDepth: null }); return; }
+    let cancelled = false;
+    const fen = fenOfRoot(fenRoot, sans);
+    const baseWhite = colorOfRoot(fenRoot, sans.length) === "w" ? 1 : -1;
+    setFenEval({ posEval: null, engineLines: [], linesPending: true, curDepth: null });
+    const mkEv = (ev) => ev.mate != null
+      ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
+      : { cp: ev.cp * baseWhite };
+    const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, 15, fenRoot) }))).slice(0, 3);
+    // (버그 수정) 분석 풀(getAnalysisPool)이 돌려주는 워커 래퍼의 evaluateMulti는 공용 엔진(engine)과
+    // 인자 개수가 다르다 — onProgress 없이 (fen,d,multipv,mt,onLines,slot) 6개뿐이다(callEvaluateMulti
+    // 주석 참고). 순위 1위 줄(top)의 평가·depth를 posEval·curDepth로도 함께 쓴다.
+    const onLines = (raw) => {
+      if (cancelled || !raw || !raw.length) return;
+      const l = toLines(raw);
+      const top = raw[0];
+      setFenEval((prev) => ({
+        ...prev,
+        engineLines: l.length ? l : prev.engineLines,
+        posEval: (top && (top.cp != null || top.mate != null)) ? mkEv(top) : prev.posEval,
+        curDepth: (top && top.depth != null && (prev.curDepth == null || top.depth > prev.curDepth)) ? top.depth : prev.curDepth,
+      }));
+    };
+    (async () => {
+      try {
+        // (버그 수정) 학습 탭의 기본 후보 수 패널(useMergedMoves)이 표준 시작 위치용 "learn-lines" 작업을
+        // 공용 엔진(engine, 워커 하나짜리 단일 FIFO 큐) 위에서 이미 돌리고 있을 수 있다 — 같은 engine
+        // 객체에 바로 요청하면 그 작업(최대 20초짜리 심화 탐색 단계 포함) 뒤에 줄을 서게 되어 FEN 모드
+        // 평가가 한참 늦게 뜬다. 게임 리뷰 엔진 라인과 동일하게 독립된 풀에서 전용 워커를 받아 쓴다.
+        const pool = await getAnalysisPool(engine.profile, engine.urls);
+        const w = poolWorker(pool, 0, engine);
+        const pvsAll = await w.evaluateMulti(fen, MAX_SEARCH_DEPTH, 5, 700, onLines, "learn-fen-lines");
+        if (cancelled) return;
+        onLines(pvsAll);
+        setFenEval((prev) => ({ ...prev, linesPending: false }));
+        const deep = await w.evaluateMulti(fen, MAX_SEARCH_DEPTH, 5, 5000, onLines, "learn-fen-lines");
+        if (cancelled) return;
+        onLines(deep);
+      } catch { if (!cancelled) setFenEval((prev) => ({ ...prev, linesPending: false })); }
+    })();
+    return () => { cancelled = true; };
+  }, [fenRoot, key, liveOn, engine.status, engine.profile]);
   const { moves, posGames, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
-    ? { moves: [], posGames: null, engineNote: null, posEval: null, engineLines: [], linesPending: false, curDepth: null }
+    ? { moves: [], posGames: null, engineNote: null, ...fenEval }
     : mergedMoves;
   // (v0.2.2) 후보 블록에 지금 떠 있는 각 수의 확정 등급(pending 제외)을 pin — 아래 마지막 수 재평가
   // effect가 이 값을 그대로 재사용해 블록과 보드·현재 수 블록의 수 체계 아이콘을 일치시킨다. 등급은
@@ -9360,7 +9536,16 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           overflow-x:auto+min-width:0으로 자체 스크롤 처리를 해도 grid 트랙 자체가 콘텐츠의
           최소 폭(min-content)만큼 억지로 넓어져 모바일에서 보드가 화면 밖으로 밀려나는 원인이었다. */}
       <div style={{ minWidth: 0 }}>
-        <div style={{ background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
+        <div style={{ position: "relative", background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
+          {/* (v0.3.5 기능) 사용자 요청 — FEN 모드에서 리뷰 버튼을 누르면 뜨는 짧은 안내 토스트. */}
+          <AnimatePresence>
+            {fenReviewNotice && (
+              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 20, padding: "8px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 12, fontWeight: 800, boxShadow: "0 8px 20px -6px rgba(0,0,0,.6)", whiteSpace: "nowrap" }}>
+                업데이트를 기대해 주세요!
+              </motion.div>
+            )}
+          </AnimatePresence>
           {/* (사용자 요청) FEN 모드 안내 — 표준 시작 위치 기반 기능(분석·이론 후보·집중 학습 등)은
               이 위치와 무관하므로, 눈에 띄는 배지 + 종료 버튼만 간단히 둔다. */}
           {fenRoot && (
@@ -9380,12 +9565,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               {/* (18차 UI5) 와이파이 아이콘 + "라이브" 상태 텍스트 삭제 */}
               {/* (v0.2.0 기능) 기보 위 리뷰 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
                   띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
-                  (v0.3.4 기능) 사용자 요청 — FEN 모드에서도 리뷰를 열 수 있게 한다. FEN 모드는 붙여넣은
-                  위치 자체를 그 리뷰의 "대국 식별자"(fenRoot.raw)로 쓰므로, 아직 한 수도 안 뒀어도
-                  (포지션만 분석) 열 수 있다 — 표준 시작 위치는 그 반대로 최소 한 수는 있어야 의미가
-                  있으므로 그 조건만 그대로 남긴다. */}
+                  (v0.3.4 기능 → v0.3.5 되돌림) 사용자 요청 — FEN 모드에서는 리뷰를 아예 열지 못하게
+                  막고(위 fenReviewNotice), 대신 이 위치에서도 평가치 바·엔진 라인은 작동한다(아래 fenEval). */}
               <BestMoveJumpButton title="기보 분석(리뷰)"
-                onClick={() => onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: fenRoot ? fenRoot.raw : null })}
+                onClick={() => { if (fenRoot) { setFenReviewNotice(true); return; } onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: null }); }}
                 disabled={(!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready"} />
             </div>
           </div>
@@ -16264,6 +16447,9 @@ const CHANGELOG = [
       "유산 재생에서 유산 수가 등장하기 직전 1초간 짧은 정적을 둬서 등장이 더 극적으로 느껴져요. 등장한 뒤 위아래로 계속 흔들리던 문제도 고쳤어요.",
       "FEN 포지션 게임 리뷰에서도 이제 보드를 직접 만져 원하는 수를 자유롭게 둬 볼 수 있어요(실시간 엔진 평가·상위 후보 수도 함께 떠요). 학습 탭 FEN 모드의 스테일메이트·3회 동형 반복 무승부 판정도 정확해졌어요.",
       "학습 탭에 보드 편집기가 생겼어요(펜 아이콘) — 팔레트에서 기물을 골라 보드에 콕콕 찍어 원하는 포지션을 직접 구성하고, 차례·캐슬링 권리도 설정할 수 있어요. FEN을 복사·붙여넣기하거나 직접 입력할 수도 있고, 되돌리기/다시하기도 지원해요. 완료하면 그 포지션의 FEN 모드로 곧장 들어가요. 기존 '분석' 버튼은 다른 화면과 같은 연두색 리뷰 버튼으로 바뀌어 맨 오른쪽으로 옮겼어요.",
+      "보드 편집기에서 이제 기물을 손가락(또는 마우스)으로 자연스럽게 끌어다 옮길 수 있어요 — 팔레트에서 보드로 끌어다 놓거나, 보드 위 기물을 직접 끌어서 옮기거나, 보드 밖으로 끌어다 놓아 지울 수 있어요.",
+      "보드 편집기의 이미지 스캔 기능이 실제로 동작해요 — 체스판 사진을 올리면 기물 배치를 읽어 자동으로 포지션을 채워줘요.",
+      "FEN 포지션에서는 리뷰(분석) 페이지를 열 수 없어요 — 아직 준비 중인 기능이라 눌러도 '업데이트를 기대해 주세요!' 안내만 떠요. 대신 그 자리에서도 평가치 바와 엔진의 추천 수 3가지는 정상적으로 볼 수 있어요.",
     ]
   },
   {
