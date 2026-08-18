@@ -10016,7 +10016,7 @@ function useOpeningTreeAuto(priorityRef) {
 }
 // (개편) 도감 오프닝 상세 블록 — 모식도 안, 그 수 노드 옆에 인라인으로 열리고 닫힌다. 기존 카드 내용
 // (미리보기·해금 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 더해 보여준다.
-function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, onOpenLearn, vertical, scale = 1, tailPos = null }) {
+function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, onOpenLearn, vertical, scale = 1, tailPos = null, canAdd, editInfo, onStageAdd, onUnstageAdd, onToggleRemove }) {
   // (버그 수정) 흑의 6번째 수(ply 12)처럼 그 수 자신에게는 ECO 명칭이 새로 안 붙는(리체스 API가
   // 그 정확한 위치에 이름을 안 주는) 깊은 이론 라인을 열면, m.name이 없어 그냥 "Main Line"이라는
   // 뭉뚱그린 표시만 떴다 — 실제 원인은 체스 오프닝 이름이 매 수마다 새로 붙는 게 아니라 마지막으로
@@ -10080,6 +10080,64 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
         <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
           <span style={{ fontWeight: 800, color: "#2E6E2E" }}>내 승률 {cc.winRate}%</span>
           <span><span style={{ color: T.best }}>{cc.w}승</span> {cc.d}무 <span style={{ color: T.blunder }}>{cc.l}패</span> · {fmtFull(cc.total)}판</span>
+        </div>
+      )}
+      {/* (사용자 요청) 개발자 모드 오프닝 트리 인라인 편집 — 별도 화면 대신 선택한 수의 이 카드
+          안에서 바로 자녀·형제 수를 추가/삭제한다(저장 전까지 미반영). */}
+      {canAdd && editInfo && <DexTreeEditSection path={path} san={m.san} isUnlocked={isUnlocked} editInfo={editInfo} onStageAdd={onStageAdd} onUnstageAdd={onUnstageAdd} onToggleRemove={onToggleRemove} />}
+    </div>
+  );
+}
+// (사용자 요청) 개발자 모드 오프닝 트리 인라인 편집 도구 — DexMoveBlock(선택한 수의 상세 카드) 안에
+// 점선("유령") 테두리 블록으로 붙는다. 여기서 만드는 변경은 CONTENT에 바로 쓰이지 않고 draft에만
+// 쌓인다(OpeningSchematic의 stageAdd/unstageAdd/toggleStageRemove) — 저장 버튼을 눌러야 실제
+// 반영되어 트리가 재생성된다. 선택한 수 주변에만 이 작은 카드 하나가 늘어날 뿐이라 전체 트리
+// 레이아웃에는 영향이 없다.
+function DexTreeEditSection({ path, san, isUnlocked, editInfo, onStageAdd, onUnstageAdd, onToggleRemove }) {
+  const [addKind, setAddKind] = useState(null); // null | "child" | "sibling"
+  const [sanIn, setSanIn] = useState("");
+  const [nameIn, setNameIn] = useState("");
+  const [err, setErr] = useState("");
+  const ghostStyle = { border: "1.5px dashed " + T.brassHi, borderRadius: 8, background: "rgba(236,203,134,.1)" };
+  const openForm = (kind) => { setAddKind(kind); setSanIn(""); setNameIn(""); setErr(""); };
+  const submit = () => {
+    const targetPath = addKind === "child" ? [...path, san] : path;
+    const errMsg = onStageAdd(targetPath, sanIn, nameIn);
+    if (errMsg) { setErr(errMsg); return; }
+    setAddKind(null);
+  };
+  const chip = (key, label, onRemove) => (
+    <span key={key} style={{ ...ghostStyle, display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 7px", fontSize: 10.5, fontWeight: 700, color: T.brassHi, marginRight: 5, marginBottom: 5 }}>
+      {label}
+      <button onClick={onRemove} aria-label="대기 취소" className="press" style={{ background: "none", border: "none", color: T.brassHi, cursor: "pointer", padding: 0, display: "inline-flex" }}><X size={10} /></button>
+    </span>
+  );
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + (isUnlocked ? "#CDB98E" : "#4A3826") }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: isUnlocked ? T.inkSoft : T.ivory, marginBottom: 6 }}>개발자 · 이론 수 편집(저장 전까지 미반영)</div>
+      {(editInfo.childAdds.length > 0 || editInfo.siblingAdds.length > 0) && (
+        <div>
+          {editInfo.childAdds.map((a) => chip("c" + a.san, "+ " + a.san + " (자녀)", () => onUnstageAdd([...path, san], a.san)))}
+          {editInfo.siblingAdds.map((a) => chip("s" + a.san, "+ " + a.san + " (형제)", () => onUnstageAdd(path, a.san)))}
+        </div>
+      )}
+      <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+        <button onClick={() => openForm("child")} className="press" style={{ ...ghostStyle, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: T.brassHi, fontSize: 10.5, fontWeight: 800 }}>＋ 자녀 수</button>
+        <button onClick={() => openForm("sibling")} className="press" style={{ ...ghostStyle, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: T.brassHi, fontSize: 10.5, fontWeight: 800 }}>＋ 형제 수</button>
+        <button onClick={() => onToggleRemove(path, san)} className="press" style={{ ...ghostStyle, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: editInfo.selfRemoved ? T.blunder : T.inkSoft, fontSize: 10.5, fontWeight: 800, borderColor: editInfo.selfRemoved ? T.blunder : T.brassHi }}>
+          {editInfo.selfRemoved ? "삭제 취소" : "이 수 삭제"}
+        </button>
+      </div>
+      {addKind && (
+        <div style={{ ...ghostStyle, marginTop: 6, padding: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ fontSize: 10, color: T.brassHi, fontWeight: 800 }}>{addKind === "child" ? "자녀 수 추가" : "형제 수 추가"}</div>
+          <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} placeholder="SAN (예: Nf3)" style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5, boxSizing: "border-box" }} />
+          <input value={nameIn} onChange={(e) => setNameIn(e.target.value)} placeholder="오프닝 이름(선택)" style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5, boxSizing: "border-box" }} />
+          {err && <div style={{ fontSize: 10, color: T.blunder }}>{err}</div>}
+          <div className="flex gap-2">
+            <button onClick={submit} className="press" style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "none", background: T.brass, color: "#241509", fontWeight: 800, fontSize: 11, cursor: "pointer" }}>추가 대기</button>
+            <button onClick={() => setAddKind(null)} className="press" style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>닫기</button>
+          </div>
         </div>
       )}
     </div>
@@ -10291,7 +10349,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     );
   });
 });
-function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer }) {
+function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer, canAdd, bumpContent }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
@@ -11296,6 +11354,66 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   }, [items, edges, groups, cullVersion]);
   const openItem = openKey ? items.find((it) => it.key === openKey) : null;
   const openParentM = openItem ? (treeData.get(openItem.path.slice(0, -1).join(" ")) || []).find((x) => x.san === openItem.san) : null;
+  // (사용자 요청) 개발자 모드 오프닝 트리 인라인 편집 — 별도 화면(SchematicEditor) 대신 선택한 수의
+  // 카드 안에서 자녀·형제 수를 추가/삭제할 수 있게 한다. 저장 버튼을 누르기 전까지는 CONTENT를 전혀
+  // 건드리지 않고(따라서 트리도 실시간으로 재생성되지 않는다) 이 draft state에만 쌓아 둔다 —
+  // 저장하면 그때 한 번에 CONTENT.treeAdds/names/forceKind/unbook에 반영하고 bumpContent()를
+  // 호출해, 그 결과값으로 트리를 처음부터 다시(겹침 없이, 위 캐시 초기화 로직과 맞물려) 그린다.
+  const [draft, setDraft] = useState({ adds: {}, removes: {} }); // adds: {parentKey:[{san,name}]}, removes: {"parentKey|san":true}
+  const stageAdd = (parentPath, sanRaw, nameRaw) => {
+    const san = (sanRaw || "").trim();
+    if (!san) return "수를 입력하세요.";
+    const board = boardFromSans(parentPath);
+    const color = parentPath.length % 2 === 0 ? "w" : "b";
+    if (!sanSrc(board, san, color)) return "불법 수입니다.";
+    const key = parentPath.join(" ");
+    let dup = false;
+    setDraft((d) => {
+      const list = d.adds[key] || [];
+      if (list.some((x) => x.san === san)) { dup = true; return d; }
+      return { ...d, adds: { ...d.adds, [key]: [...list, { san, name: (nameRaw || "").trim() }] } };
+    });
+    return dup ? "이미 추가 대기 중인 수예요." : null;
+  };
+  const unstageAdd = (parentPath, san) => {
+    const key = parentPath.join(" ");
+    setDraft((d) => ({ ...d, adds: { ...d.adds, [key]: (d.adds[key] || []).filter((x) => x.san !== san) } }));
+  };
+  const toggleStageRemove = (parentPath, san) => {
+    const rk = parentPath.join(" ") + "|" + stripSuffix(san);
+    setDraft((d) => { const removes = { ...d.removes }; if (removes[rk]) delete removes[rk]; else removes[rk] = true; return { ...d, removes }; });
+  };
+  const draftAddCount = useMemo(() => Object.values(draft.adds).reduce((n, l) => n + l.length, 0), [draft]);
+  const draftRemoveCount = Object.keys(draft.removes).length;
+  const [draftSaving, setDraftSaving] = useState(false);
+  const cancelDraft = () => setDraft({ adds: {}, removes: {} });
+  const commitDraft = async () => {
+    setDraftSaving(true);
+    for (const parentKey in draft.adds) {
+      for (const { san, name } of draft.adds[parentKey]) {
+        if (!CONTENT.treeAdds[parentKey]) CONTENT.treeAdds[parentKey] = [];
+        const existing = CONTENT.treeAdds[parentKey].find((x) => x.san === san);
+        if (existing) existing.theory = true; else CONTENT.treeAdds[parentKey].push({ san, theory: true });
+        CONTENT.forceKind[parentKey + "|" + san] = "book";
+        if (name) CONTENT.names[parentKey + "|" + stripSuffix(san)] = name;
+      }
+    }
+    for (const rk in draft.removes) CONTENT.unbook[rk] = true;
+    await bumpContent();
+    setDraft({ adds: {}, removes: {} });
+    setDraftSaving(false);
+  };
+  const editInfo = useMemo(() => {
+    if (!canAdd || !openItem) return null;
+    const siblingPath = openItem.path.slice(0, -1);
+    const childPath = openItem.path;
+    const selfRemoveKey = siblingPath.join(" ") + "|" + stripSuffix(openItem.san);
+    return {
+      childAdds: draft.adds[childPath.join(" ")] || [],
+      siblingAdds: draft.adds[siblingPath.join(" ")] || [],
+      selfRemoved: !!draft.removes[selfRemoveKey],
+    };
+  }, [canAdd, openItem, draft]);
   // (사용자 요청, 버그 수정) v0.3.3에서 카드를 position:fixed(뷰포트 좌표계)로 옮겼지만, 그 좌표
   // 자체(left/top/tailPos)는 여전히 매 렌더 pan/zoom을 다시 읽어 앵커(수 블록)를 계속 따라가도록
   // 계산했다 — 그래서 드래그·휠 확대 도중에도 카드가 화면 위를 실시간으로 미끄러지듯 움직였는데,
@@ -11458,12 +11576,28 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         <DexMoveBlock path={frozenCard.item.path.slice(0, -1)} m={frozenCard.parentM} isUnlocked={frozenCard.item.unlocked}
           cc={ccReady ? chesscom.analyze(frozenCard.item.path) : null} onClose={() => onToggleOpen(frozenCard.key)} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn}
           vertical={vertical} scale={frozenCard.cardScale} tailPos={frozenCard.tailPos}
+          canAdd={canAdd} editInfo={editInfo} onStageAdd={stageAdd} onUnstageAdd={unstageAdd} onToggleRemove={toggleStageRemove}
           style={{ position: "fixed", left: frozenCard.left, top: frozenCard.top, width: frozenCard.CARD_W }} />
+      )}
+      {/* (사용자 요청) 개발자 모드일 때만, 모식도 영역 하단에 저장·취소 버튼 — 대기 중인 변경(추가/
+          삭제)이 하나라도 있을 때만 나타난다. 저장을 눌러야 비로소 CONTENT에 반영되고 트리가
+          재생성된다(그 전까지는 이 draft만 쌓일 뿐 실시간으로 다시 그려지지 않는다). */}
+      {canAdd && (draftAddCount > 0 || draftRemoveCount > 0) && (
+        <div className="no-pan" onPointerDown={(e) => e.stopPropagation()}
+          style={{ position: "absolute", left: 10, right: 10, bottom: 10, zIndex: 62, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.5)" }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: T.brassHi }}>
+            대기 중인 변경 —{draftAddCount > 0 ? " 추가 " + draftAddCount : ""}{draftRemoveCount > 0 ? " 삭제 " + draftRemoveCount : ""}
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={cancelDraft} disabled={draftSaving} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: draftSaving ? "default" : "pointer", opacity: draftSaving ? .6 : 1 }}>취소</button>
+            <button onClick={commitDraft} disabled={draftSaving} className="press" style={{ padding: "7px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: draftSaving ? "default" : "pointer", opacity: draftSaving ? .6 : 1, display: "inline-flex", alignItems: "center", gap: 5 }}><Save size={13} />{draftSaving ? "저장 중…" : "저장"}</button>
+          </div>
+        </div>
       )}
     </div>
   );
 }
-function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, treeFocus, setTreeFocus, onOpenOpening, onOpenLearn, treeData, treeVersion, genPriorityRef }) {
+function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
@@ -11478,8 +11612,6 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
   // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 도감 해금률 — { unlocked, total }.
   const [unlockStats, setUnlockStats] = useState(null);
-  // (2차 개편) 설정 탭에 있던 "이론 수 체계 추가"를 여기로 옮겨왔다 — 기본은 접혀 있고 개발자가 필요할 때만 연다.
-  const [showEditor, setShowEditor] = useState(false);
   return (
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
@@ -11544,20 +11676,11 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
         도감 해금률 {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}%
         <span style={{ marginLeft: 6, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>
       </div>
-      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} />
-      {/* (2차 개편) 이론 수 체계 편집 — 설정 탭에 있던 개발자 전용 기능을 도감(오프닝)으로 옮겨 통합. */}
-      {canAdd && (
-        <div style={{ marginTop: 16 }}>
-          <button onClick={() => setShowEditor((v) => !v)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 800, padding: "7px 14px", borderRadius: 9, border: "1px solid " + T.brass, background: showEditor ? T.brass : "transparent", color: showEditor ? "#241509" : T.brassHi, cursor: "pointer" }}>
-            <Settings size={13} /> 이론 수 체계 편집 {showEditor ? "닫기" : "열기"}
-          </button>
-          {showEditor && (
-            <div style={{ marginTop: 10, padding: 14, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
-              <SchematicEditor bumpContent={bumpContent} contentVer={contentVer} canAdd={canAdd} focusPath={treeFocus} setFocusPath={setTreeFocus} />
-            </div>
-          )}
-        </div>
-      )}
+      {/* (사용자 요청) 개발자의 이론 수 편집을 별도 분리된 영역(예전의 "이론 수 체계 편집" 패널·
+          SchematicEditor) 대신 이 모식도 안에서 바로 할 수 있도록, canAdd일 때만 편집 도구를
+          덧씌운다 — 수를 선택하면 그 카드 안에 자녀/형제 추가·삭제 도구가 나타나고, 모식도 하단에
+          저장/취소 버튼이 뜬다(OpeningSchematic 내부 구현 참고). */}
+      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent} />
       </>)}
     </div>
   );
@@ -15694,190 +15817,6 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
             <ValidatedMoveInput value={(fm.black || {})[w] || ""} onCommit={(v) => setFM({ black: { ...(fm.black || {}), [w]: v } })} board={boardFromSans([w])} color="b" placeholder="응수" style={{ ...field, fontFamily: "ui-monospace,monospace" }} />
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-// (UI7) 이론 트리의 특정 위치에서 실제로 "이론 수"로 표시되는 자식 수 목록(가지치기 없이 스냅샷+추가분 통합).
-function theoryChildren(path) {
-  const key = path.join(" ");
-  const node = snapNode(path);
-  const seen = new Set();
-  const out = [];
-  const consider = (san, nm) => {
-    if (isUnbooked(key, san)) return;
-    const k = stripSuffix(san);
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push({ san, name: nameOverride(key, san) ?? nm ?? "" });
-  };
-  if (node) for (const m of node.moves) { const forced = forceKindFor(key, m.san); if (forced === "book" || (m.book && forced == null)) consider(m.san, m.name); }
-  for (const a of addsFor(key)) { const forced = forceKindFor(key, a.san); if (a.theory || forced === "book") consider(a.san, a.name); }
-  return out;
-}
-// (UI7) BFS로 트리 구성 — 이미 이론에 있는 하위 수는 자동으로 가지에 포함(재입력 불필요), 개수/깊이는 상한을 둬 렌더 성능을 보호.
-function buildSchematicTree(focusPath, maxNodes, maxDepth) {
-  const root = { path: focusPath, san: focusPath[focusPath.length - 1] || null, name: focusPath.length ? (nameOverride(focusPath.slice(0, -1).join(" "), focusPath[focusPath.length - 1]) ?? "") : "", children: [], depth: 0 };
-  let count = 1;
-  const queue = [root];
-  while (queue.length) {
-    const n = queue.shift();
-    if (n.depth >= maxDepth || count >= maxNodes) continue;
-    for (const k of theoryChildren(n.path)) {
-      if (count >= maxNodes) break;
-      const child = { path: [...n.path, k.san], san: k.san, name: k.name, children: [], depth: n.depth + 1 };
-      n.children.push(child); count++; queue.push(child);
-    }
-  }
-  return { root, truncated: count >= maxNodes };
-}
-// (UI7) 타이디 트리 레이아웃 — depth=가로(x), 형제 순서=세로(y). 공유 부모는 한 번만 그려지고 새 가지는 오른쪽으로 가로 확장.
-function layoutSchematicTree(root) {
-  let cursor = 0;
-  const nodes = [];
-  const edges = [];
-  const visit = (node) => {
-    if (!node.children.length) { node.y = cursor++; }
-    else {
-      for (const c of node.children) visit(c);
-      node.y = (node.children[0].y + node.children[node.children.length - 1].y) / 2;
-    }
-    node.x = node.depth;
-    nodes.push(node);
-    for (const c of node.children) edges.push([node, c]);
-  };
-  visit(root);
-  return { nodes, edges };
-}
-// (기능6/UI7) 이론 수 체계 추가 — 실제 이론 트리를 가로 분기 다이어그램으로 렌더링, 드래그로 패닝, 노드 클릭으로 하위 수 추가.
-function SchematicEditor({ bumpContent, contentVer, canAdd, focusPath, setFocusPath }) {
-  const [pan, setPan] = useState({ x: 24, y: 200 });
-  const [addAt, setAddAt] = useState(null); // path(array)|null — 어느 노드에 자식 추가 폼이 열려있는지
-  const [sanIn, setSanIn] = useState(""); const [nameIn, setNameIn] = useState(""); const [err, setErr] = useState("");
-  const [added, setAdded] = useState([]); // (19차 버그3) 이번 세션에 추가한 이론 수 변경사항 요약(모식도 창 하단)
-  const dragRef = useRef(null);
-  // (17차) 모식도를 전체 화면으로 띄우고, 확대/축소해 자유롭게 편집할 수 있게 한다.
-  const [fullscreen, setFullscreen] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const clampZoom = snapSchematicZoom;
-  const onWheelZoom = (e) => { e.preventDefault(); setZoom((z) => clampZoom(z - e.deltaY * 0.0015)); };
-  const colW = 148, rowH = 42, boxW = 108, boxH = 30;
-  const { nodes, edges, truncated } = useMemo(() => {
-    const { root, truncated } = buildSchematicTree(focusPath, 320, 8);
-    const { nodes, edges } = layoutSchematicTree(root);
-    return { nodes, edges, truncated };
-  }, [focusPath.join(" "), contentVer]);
-  useEffect(() => { const root = nodes[nodes.length - 1]; setPan({ x: 24, y: 195 - (root ? root.y * rowH : 0) }); setAddAt(null); }, [focusPath.join(" ")]);
-  const width = Math.max(600, (Math.max(...nodes.map((n) => n.x)) + 2) * colW);
-  const height = Math.max(320, (Math.max(...nodes.map((n) => n.y)) + 2) * rowH);
-  // (19차 버그) 노드 버튼/+버튼/전체화면 X/입력 위에서 눌렀을 땐 패닝(setPointerCapture)을 걸지 않는다.
-  // 그러지 않으면 컨테이너가 포인터를 캡처해 버튼 클릭이 삼켜져(수 클릭·수 추가·창 닫기가 동작하지 않음).
-  const onPointerDown = (e) => {
-    if (e.target.closest && e.target.closest("button, input, .no-pan")) return;
-    dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const onPointerMove = (e) => { if (!dragRef.current) return; setPan({ x: dragRef.current.px + (e.clientX - dragRef.current.sx), y: dragRef.current.py + (e.clientY - dragRef.current.sy) }); };
-  const onPointerUp = () => { dragRef.current = null; };
-  // (20차 UX5) 방금 이름 붙인 수 바로 다음에 새 이론 수를 추가할 때, 매번 새로 타이핑하지 않아도
-  // 되도록 그 수(부모 노드)의 이름을 다음 수 이름의 기본값으로 미리 채워 둔다(같은 오프닝 체계를
-  // 이어서 명명하는 경우가 많음 — 필요하면 그대로 덮어써서 바꿀 수 있다).
-  const openAdd = (path, defaultName = "") => { setAddAt(path); setSanIn(""); setNameIn(defaultName); setErr(""); };
-  const submitAdd = async () => {
-    const san = sanIn.trim(); if (!san) return;
-    const path = addAt; const board = boardFromSans(path); const color = path.length % 2 === 0 ? "w" : "b";
-    if (!sanSrc(board, san, color)) { setErr("불법 수입니다."); return; }
-    const key = path.join(" ");
-    if (!CONTENT.treeAdds[key]) CONTENT.treeAdds[key] = [];
-    const existing = CONTENT.treeAdds[key].find((x) => x.san === san);
-    if (existing) existing.theory = true; else CONTENT.treeAdds[key].push({ san, theory: true });
-    CONTENT.forceKind[key + "|" + san] = "book";
-    const nm = nameIn.trim(); if (nm) CONTENT.names[key + "|" + stripSuffix(san)] = nm;
-    await bumpContent();
-    setAdded((a) => [{ key, san, name: nm, at: path.length }, ...a].slice(0, 30));
-    setFocusPath(path); // (19차 버그3) 추가 후 그 지점으로 이동해 새 가지가 모식도 안에 바로 보이도록
-    setAddAt(null);
-  };
-  return (
-    <div>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 10px", lineHeight: 1.55 }}>실제 이론 트리입니다. 이미 이론에 있는 하위 수는 자동으로 가지에 표시되며, 공유하는 앞수는 한 번만 그려지고 새 가지는 그 지점에서 가로로 뻗어나갑니다. 캔버스를 드래그해 이동할 수 있습니다. 수를 클릭하면 그 위치로 이동(더 깊이 탐색)하고, <b>+</b> 버튼으로 그 지점에 새 이론 수를 추가합니다.</p>
-      <div className="flex items-center justify-between gap-2" style={{ marginBottom: 8, flexWrap: "wrap" }}>
-        <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-          <button onClick={() => setFocusPath([])} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: focusPath.length ? "transparent" : T.brass, color: focusPath.length ? T.brassHi : "#241509", cursor: "pointer" }}>시작 위치</button>
-          {focusPath.map((s, i) => (
-            <span key={i} className="flex items-center gap-2">
-              <Crumb size={12} style={{ color: T.inkSoft }} />
-              <button onClick={() => setFocusPath(focusPath.slice(0, i + 1))} className="press" style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", fontWeight: 800, padding: "3px 9px", borderRadius: 7, border: "1px solid #DCCBA8", background: i === focusPath.length - 1 ? T.brass : "transparent", color: i === focusPath.length - 1 ? "#241509" : T.ink, cursor: "pointer" }}>{moveNumber(i)}{s}</button>
-            </span>
-          ))}
-        </div>
-        {/* (17차) 전체 화면 + 확대/축소 컨트롤 */}
-        <div className="flex items-center gap-1">
-          <button onClick={() => setZoom((z) => clampZoom(z - 0.25))} className="press" title="축소" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>−</button>
-          <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", width: 36, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((z) => clampZoom(z + 0.25))} className="press" title="확대" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>+</button>
-          <button onClick={() => setFullscreen((v) => !v)} className="press" title={fullscreen ? "전체 화면 닫기" : "전체 화면"} style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: fullscreen ? T.brass : "transparent", color: fullscreen ? "#241509" : T.brassHi, cursor: "pointer", fontSize: 11, fontWeight: 800 }}>{fullscreen ? "닫기" : "전체 화면"}</button>
-        </div>
-      </div>
-      <div
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
-        onWheel={onWheelZoom}
-        style={fullscreen
-          ? { position: "fixed", inset: 0, zIndex: 200, overflow: "hidden", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }
-          : { position: "relative", overflow: "hidden", height: 420, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", cursor: dragRef.current ? "grabbing" : "grab" }}
-      >
-        {fullscreen && <button onClick={() => setFullscreen(false)} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 201, width: 32, height: 32, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>}
-        <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
-          <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-            {edges.map(([p, c], i) => {
-              const x1 = p.x * colW + boxW, y1 = p.y * rowH + boxH / 2, x2 = c.x * colW, y2 = c.y * rowH + boxH / 2;
-              const mx = (x1 + x2) / 2;
-              return <path key={i} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} stroke={T.brass} strokeWidth={1.6} fill="none" opacity={0.7} />;
-            })}
-          </svg>
-          {nodes.map((n, i) => {
-            const isRoot = n.depth === 0;
-            const label = isRoot ? (n.san ? n.san : "시작") : n.san;
-            return (
-              <div key={i} style={{ position: "absolute", left: n.x * colW, top: n.y * rowH, width: boxW }}>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setFocusPath(n.path)} className="press" title={n.name || label} style={{ flex: 1, minWidth: 0, height: boxH, padding: "0 8px", borderRadius: 7, border: "1px solid " + (isRoot ? T.brass : "#C9B58C"), background: isRoot ? T.brass : "#fff", color: isRoot ? "#241509" : T.ink, fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 800, cursor: "pointer", textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</button>
-                  {canAdd && <button onClick={() => openAdd(n.path, n.name || "")} className="press" title="이 위치에 이론 수 추가" style={{ width: boxH, height: boxH, flexShrink: 0, borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 15, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>+</button>}
-                </div>
-                {n.name && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.name}</div>}
-              </div>
-            );
-          })}
-        </div>
-        {truncated && <div style={{ position: "absolute", right: 8, bottom: added.length ? 104 : 8, fontSize: 10.5, color: T.inkSoft, background: "rgba(255,255,255,.85)", padding: "2px 7px", borderRadius: 6 }}>일부만 표시됨 — 수를 클릭해 더 깊이 탐색하세요</div>}
-        {/* (19차 버그3) 이론 수 추가 폼 — 캔버스 안 상단 오버레이로 띄워 전체 화면에서도 보이고 사용 가능하게 한다. */}
-        {addAt && (
-          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()} style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 202, width: "min(360px, calc(100% - 24px))", padding: 12, borderRadius: 10, border: "1px solid " + T.brass, background: "#fff", boxShadow: "0 12px 30px -10px rgba(0,0,0,.4)" }}>
-            <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}><b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>{addAt.join(" ") || "시작 위치"}</b> 다음에 이론 수 추가</div>
-            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} autoFocus placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
-              <input value={nameIn} onChange={(e) => setNameIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} placeholder="이름(선택)" style={{ width: 150, padding: "6px 8px", borderRadius: 7, border: "1px solid #DCCBA8", fontSize: 12 }} />
-              <button onClick={submitAdd} className="press" style={{ padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>추가</button>
-              <button onClick={() => setAddAt(null)} className="press" style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>취소</button>
-            </div>
-            {err && <div style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{err}</div>}
-          </div>
-        )}
-        {/* (19차 버그3) 변경 사항 요약 — 모식도 창 하단에 이번에 추가한 이론 수 목록 정리 */}
-        {added.length > 0 && (
-          <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: 96, overflowY: "auto", background: "rgba(43,28,16,.92)", borderTop: "1px solid " + T.brass, padding: "7px 12px", zIndex: 201 }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>변경 사항 · 추가한 이론 수 {added.length}개</span>
-              <button onClick={() => setAdded([])} className="press" style={{ fontSize: 10, color: T.inkSoft, background: "transparent", border: "1px solid #5A4630", borderRadius: 6, padding: "2px 7px", cursor: "pointer" }}>지우기</button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {added.map((a, i) => (
-                <div key={i} style={{ fontSize: 11, color: T.ivory, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  <span style={{ color: T.best }}>＋</span> {(a.key ? a.key + " " : "") }<b style={{ color: T.brassHi }}>{a.san}</b>{a.name ? <span style={{ color: T.inkSoft, fontFamily: "inherit" }}> · {a.name}</span> : ""}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -22925,7 +22864,7 @@ export default function App() {
             재마운트하면 이 상태가 전부 초기화되고, 트리 로딩 연출도 처음부터 다시 재생된다). */}
         {(tab === "dex" || focusReturnTab === "dex") && (
           <div style={tab === "dex" ? undefined : { display: "none" }}>
-            <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} treeFocus={treeFocus} setTreeFocus={setTreeFocus} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
+            <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} />}
