@@ -26,6 +26,49 @@
 
 ## 버전 기록
 
+### OpenChess v0.3.7 — 2026/8/18
+
+**버그 수정 — 퍼즐 탭에서 퍼즐을 클릭하면 흰 화면과 함께 사이트 전체가 멈추던 크래시**
+지시 없이 코드베이스 자체 감사로 발견: v0.3.6에서 `PuzzleTab`에 오프닝·생성자 필터(`openingOptions`/`creatorOptions`/`openingSuggestions`/`creatorSuggestions`, 전부 `useMemo`)가 추가됐는데, 이 4개 훅 선언이 `if (active) return <PuzzleSolver .../>`라는 기존 조기 반환문보다 **뒤에** 삽입돼 있었다. 퍼즐 목록 화면(`active === null`)에서는 이 조기 반환에 걸리지 않아 4개 `useMemo`가 매 렌더 정상 호출되지만, 퍼즐을 하나 열어 `active`가 채워지는 순간 함수가 그 조기 반환에서 곧장 끝나버려 뒤에 있는 4개 훅 호출이 통째로 건너뛰어졌다 — 같은 컴포넌트가 렌더마다 서로 다른 개수의 훅을 호출하는 React Rules of Hooks 위반이다. React는 이를 "Rendered fewer hooks than expected. This may be caused by an accidental early return statement."로 감지해 에러 바운더리가 없는 이 트리 전체를 그대로 unmount시켰고, 그 결과가 사용자에게는 "퍼즐을 아무거나 누르면 흰 화면이 뜨고 사이트가 완전히 멈춘다"로 나타났다. 재현이 관건이었다 — 로컬 개발 환경은 Supabase 환경변수가 없으면 `puzzleFetch`가 항상 `null`을 반환해 퍼즐 데이터 자체를 받아올 수 없다(`puzzles` state는 방금 만든 퍼즐만 채워짐). `.env.local`에 가짜 `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`를 채워 `SB_ON`을 켠 뒤, Playwright `page.route()`로 `**/rest/v1/**` 요청을 가로채 `puzzles?no=eq...` 조회에만 크래프트한 퍼즐 데이터를 응답하도록 모킹해 퍼즐 탭에서 실제 클릭 흐름을 그대로 재현했고, `PAGEERROR: Rendered fewer hooks than expected`가 그대로 뜨며 `document.body.innerHTML`이 73자(사실상 빈 페이지)로 붕괴하는 것을 확인했다. 조기 반환문을 4개 `useMemo` 호출 뒤로(다른 일반 함수 `matchesOpeningFilter`/`matchesCreatorFilter` 선언보다도 앞, 즉 이 컴포넌트의 모든 훅 호출 다음)로 옮겨 해결했고, 같은 모킹 시나리오로 퍼즐 풀이 화면이 정상적으로 렌더링됨을 재확인했다.
+
+**버그 수정 — 헤더 버전 표기가 실제 배포 버전보다 뒤처져 보이던 문제**
+헤더 로고 아래 버전 텍스트(`v{APP_VERSION}`)는 `src/App.jsx`의 `CHANGELOG[0].version`에서 파생된다(v0.0.5/v0.0.6이 이 배열에 반영되지 않아 겪었던 과거 회귀의 재발을 막기 위해 도입된 구조 — 이 README 상단 "개발 워크플로우 규칙" 참고). 그런데 정작 v0.3.6을 배포하면서 `CHANGELOG`·`AboutPage.jsx`의 `VERSION_HISTORY`·이 README `## 버전 기록` 세 곳 중 어디에도 v0.3.6 항목을 추가하지 않아, 실제로는 v0.3.6이 이미 배포돼 있는데도 사이트 전체에서 계속 "v0.3.5"로 표시되고 있었다 — 정확히 그 구조 도입 계기가 됐던 문제가 다른 경로로 재발한 셈이다. 누락됐던 v0.3.6 항목을 `CHANGELOG`·`VERSION_HISTORY`·이 README 세 곳 모두에 뒤늦게 채워 넣고, 이번 두 버그 수정을 담은 v0.3.7 항목을 함께 추가했다.
+
+**시스템 — package.json version 필드 갱신**
+0.3.5로 멈춰 있던 `package.json`의 `version` 필드를 0.3.7로 올렸다.
+
+### OpenChess v0.3.6 — 2026/8/18
+
+**기능 — 퍼즐·학습 탭 기보 클릭 시 학습 탭으로 이동, 채팅 공유 퍼즐 블록 UI 통일**
+퍼즐 풀이 화면 기보(`PuzzlePgnBox`), 일일 퍼즐 팝업의 `SequenceBar`, 도감 오프닝 트리 수 카드(`DexMoveBlock`)에서 수·오프닝 이름을 누르면 그 기보가 입력된 학습 탭으로 바로 이동하도록 통일했다(예전엔 도감 쪽만 집중 학습 모드로 이동했다). `PuzzlePgnBox`는 `onPick`이 주어지면 각 수를 클릭 가능한 `span`으로 렌더링하고(드래그 스크롤과 충돌하지 않도록 `SequenceBar`와 동일한 "드래그로 이동했으면 클릭 무시" 패턴을 씀), `onPick`이 없으면 예전처럼 순수 텍스트로 렌더링해 기존 호출부와 호환되게 했다. 채팅에 공유된 퍼즐 블록도 퍼즐 탭과 동일한 `PuzzleCard` UI로 교체해 좋아요·리포스트·공유·풀이수까지 그 자리에서 연동했다.
+
+**기능 — 퍼즐 라인/퍼즐 클리어 애니메이션**
+라인 하나를 클리어할 때마다 어두운 반투명 배경 위로 LINE(갈색)/CLEAR(금색)가 좌우에서 튕겨 들어오는 배너(`LineClearBanner`)를 재생하고, 퍼즐의 모든 라인을 다 클리어하면 이어서(1.1초 뒤) 별 3개가 하나씩 빛나며 등장한 뒤 PUZZLE/CLEAR 텍스트가 나타나는 배너(`PuzzleClearBanner`)를 재생한다. `PuzzleSolver`의 보드↔모식도 페이저(`position:relative`) 위에 얹어 어느 페이지에 있든(자동 전환 중이어도) 보이게 했다.
+
+**기능 — 퍼즐 탭 오프닝·생성자 필터**
+번호 검색창 근처에 오프닝·생성자 자동완성 필터를 추가해 여러 개를 다중 태그로 선택할 수 있게 했다. 필터용 오프닝 이름은 카드·오프닝별 묶음(`groupByTopOpening`)과 완전히 같은 기준(`firstNamedOpening` 최상위 갈래)을 써서 필터에 뜨는 이름과 카드에 보이는 이름이 항상 일치하도록 했다. 선택한 필터는 별도 결과 화면 없이 기존 미해결/해결됨 목록과 테마 칩 개수를 그 자리에서 좁혀 반영한다. 생성자 필터를 위해 `puzzles` 테이블에서 번호별 `creator_username`을 한 번에 읽어오는 `puzzleCreatorUsernames()`를 추가했다(기존 solves/likes 카운트 조회와 동일한 패턴).
+
+**기능 — 학습 탭 퀘스트 배지 클릭 시 퀘스트 탭 이동 + 하이라이트, 유산 좋아요, 오프닝 명칭 캐스케이드**
+수 블록 좌상단 퀘스트 배지를 누르면 즉시 퀘스트 탭으로 이동하고 해당 일일 퀘스트 오프닝 줄로 스크롤하며 금색 펄스 애니메이션(`questRowHighlight`)으로 표시한다. 유산(Legacy) 블록에는 퍼즐 좋아요(`puzzle_likes`)와 동일한 패턴으로 `legacy_likes`/`legacy_like_counts` 테이블과 `legacy_like_toggle` RPC를 추가했다 — 유산은 전역 번호가 없어 (소유자 uid, 슬롯 키)로 식별한다. 개발자가 이론 수 이름을 수정하면 `cascadeRenameOpeningDescendants`가 실제 이론 트리(`SNAP.tree`)를 훑어 그 이름을 접두사로 쓰던 자손 수들의 명칭도 새 이름으로 자동 갱신한다(이름이 없거나 부모 이름을 그대로 물려받기만 하는 노드는 건드리지 않음).
+
+**UI — 학습 탭 버튼·퀘스트 순서·chess.com 레이팅 표기 정리, 로고 클릭 시 홈 이동**
+학습 탭 펜/리뷰 버튼을 복사·붙여넣기 버튼과 같은 26px 크기·디자인으로 통일하고 네 버튼 간격을 `gap-2`로 맞췄다. 퀘스트 탭에서 일일 퀘스트를 메인 퀘스트보다 위에 배치했다. 프로필 카드의 chess.com 레이팅 텍스트를 IBM Plex Sans KR로, "래피드 : 1200"처럼 공백+콜론 표기·줄바꿈으로 바꾸고 아이디와 같은 줄 우측에 배치했으며, 기간별 레이팅 변동 그래프에 "1일" 기간 옵션을 추가했다. 모바일 리뷰 페이지 코치 블록 크기를 줄이고 생긴 여백에 평가치 그래프를 리뷰 기보와 엔진 라인 사이에 표시했다. 좌상단 OpenChess 로고 클릭 시 openchess.kr로 이동하도록 했다. 데스크톱 퍼즐 번호 검색 미리보기는 그리드 줄바꿈 대신 추천 퍼즐과 같은 점선 테두리 박스 안에서 한 줄로 표시하고 좌우 스크롤되도록 바꿨다(카드 크기 `zoom:0.86`, 호버 시 금색 테두리).
+
+**UX — 둘 수 있는 합법수가 1~2개뿐인 국면에서 엔진 라인·평가치 바 비우기**
+새 `countLegalMoves(board, color, ep)`로 지금 둘 수 있는 합법수 총 개수를 세어, 1~2개뿐인 "사실상 강제된" 국면에서는 엔진 라인 남은 줄을 로딩 스켈레톤(`EngineLineSkeleton`) 대신 완전히 빈 칸(`EngineLineBlank`)으로 채우고 평가치 바도 숨긴다 — 엔진이 그 이상 줄을 낼 수 없는 상황에서 스켈레톤이 영원히 채워지길 기다리는 것처럼 보이던 문제를 없앴다.
+
+**리팩터 — 도감 오프닝 트리 개발자 모드 인라인 편집으로 전환**
+별도 분리돼 있던 "이론 수 체계 편집" 패널(`SchematicEditor`)을 없애고, 도감 오프닝 트리(`OpeningSchematic`) 자체에 개발자 모드(`canAdd`)일 때만 편집 도구를 덧씌우는 방식으로 바꿨다. 수를 선택하면 그 상세 카드 안에 점선(유령) 스타일의 "자녀 수 추가"/"형제 수 추가"/"이 수 삭제" 도구가 나타나 SAN·이름을 입력해 대기(draft) 상태로 쌓을 수 있고(`DexTreeEditSection`), 저장 전까지는 `CONTENT`를 건드리지 않아 트리가 실시간으로 재생성되지 않는다. 저장을 누르면 그제서야 `CONTENT.treeAdds`/`names`/`forceKind`/`unbook`에 한 번에 반영하고 `bumpContent()`로 트리를 겹침 없이 재생성하고, 취소하면 대기 중이던 변경을 모두 버린다. 더 이상 쓰이지 않는 `SchematicEditor`/`buildSchematicTree`/`layoutSchematicTree`/`theoryChildren`과 `CollectionTab`의 관련 배선을 정리했다.
+
+**성능 — 집중 학습 오프닝 실수 분석 개선**
+후보 라인들이 공유하는 포지션 평가를 세션 내 캐시로 재사용하고, 이미 상위 5개를 확보한 뒤 남은 라인의 빈도가 더 낮으면 조기 종료해 불필요한 엔진 호출을 줄였다. 실수를 다 모은 뒤 한꺼번에 표시하지 않고 계산이 끝나는 대로 하나씩 바로 표시하도록 바꿨고, 실수 수순을 클릭하면 곧장 학습 탭으로 이동하는 대신 그 수순으로 실제 진행된 내 chess.com 대국을 프로필 카드와 같은 UI로 바로 아래에 펼쳐 보여주고 검색/리뷰 버튼으로 각각 학습 탭/리뷰로 이동하게 했다.
+
+**버그 수정 — 이론 수 추가 시 오프닝 트리 겹침, 이미지 스캔에서 파일 선택 불가**
+`OpeningSchematic`의 순서·각도 캐시(`orderCacheRef`/`posCacheRef`)를 `contentVer`가 바뀔 때(개발자가 이론 수를 추가/수정해 `CONTENT`가 실제로 바뀔 때)마다 비워, 다음 렌더에서 형제·사촌·자녀 수를 반영해 전체를 처음부터 겹침 없이 다시 배치하도록 했다(배경 점진 로딩용 `treeVersion`에는 반응하지 않아 로딩 중 흔들림 방지 로직은 그대로 유지). 보드 편집기 이미지 스캔의 `<input type="file">`에 걸려 있던 `capture="environment"`가 모바일에서 카메라 촬영만 강제해 갤러리의 기존 이미지 파일을 선택할 수 없었던 문제도 그 속성을 제거해 고쳤다.
+
+**보안 — 유산 좋아요 RPC의 임의 사용자 명의 도용 취약점**
+새로 추가한 `legacy_like_toggle` RPC가 행위자 uid를 `p_uid` 파라미터로 받아 `SECURITY DEFINER` 권한으로 실행되던 탓에, 로그인한 아무나 다른 사람의 uid를 넣어 그 사람 명의로 좋아요를 등록/취소할 수 있었다. RPC가 인자로 받은 uid 대신 `auth.uid()`에서 행위자를 직접 가져오도록 수정하고(로그인하지 않았으면 예외), 클라이언트(`legacyLikeToggle`)도 더 이상 `p_uid`를 RPC에 보내지 않도록 함께 고쳤다.
+
 ### OpenChess v0.3.5 — 2026/8/16
 
 **버그 수정 — 리뷰 공유 딥링크가 실제 티켓 보유 여부와 무관하게 항상 "티켓 부족"으로 막히던 문제**
