@@ -12157,6 +12157,9 @@ function puzzleNo(id) { let h = 2166136261; const s = String(id); for (let i = 0
 // (UX6) 전역 풀이수: Supabase RPC 'puzzle_solve'(증가, 새 카운트 반환) / 테이블 'puzzle_stats' 조회. 미설정·미생성 시 무해하게 비활성.
 async function puzzleSolveInc(no) { if (!SB_ON) return null; try { const r = await sbRpc("puzzle_solve", { p_no: no }); return typeof r === "number" ? r : (r && r.solves) || null; } catch { return null; } }
 async function puzzleSolveCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,solves"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.solves; }); return m; } catch { return {}; } }
+// (사용자 요청) 퍼즐 탭 필터(생성자) — 번호별 생성자 아이디를 한 번에 가져온다. solves/likes와 같은
+// 패턴으로 no,creator_username 두 컬럼만 읽어 가볍다.
+async function puzzleCreatorUsernames() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,creator_username"); const m = {}; (rows || []).forEach((x) => { if (x.creator_username) m[x.no] = x.creator_username; }); return m; } catch { return {}; } }
 // (기능) 퍼즐 좋아요 — 풀이수(solves)와 달리 취소 가능해야 하므로 RPC 'puzzle_like_toggle'이 현재
 // 상태를 보고 등록/취소를 알아서 판단해, 그 결과(liked·likes)를 한 번에 돌려준다. 테이블/RPC
 // 미생성 시 무해하게 비활성(하트를 눌러도 아무 반응 없음).
@@ -15401,8 +15404,17 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames }) {
   const [filter, setFilter] = useState("all");
+  // (사용자 요청) 퍼즐 탭 필터 — 오프닝/생성자를 여러 개 골라(다중 태그) 미해결/해결됨 목록을 그
+  // 자리에서 좁혀 본다. 자동완성 후보는 지금 목록에 실제로 있는 값만(없는 값을 검색해 봐야 결과가
+  // 0개인 게 뻔하므로) 보여준다.
+  const [selectedOpenings, setSelectedOpenings] = useState([]);
+  const [selectedCreators, setSelectedCreators] = useState([]);
+  const [openingQuery, setOpeningQuery] = useState("");
+  const [creatorQuery, setCreatorQuery] = useState("");
+  const [openingFocus, setOpeningFocus] = useState(false);
+  const [creatorFocus, setCreatorFocus] = useState(false);
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
   const [numFocus, setNumFocus] = useState(false);
@@ -15541,7 +15553,22 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 다 보여주고, 일반 유저에게는 목록·개수 단계에서부터 아예 걸러낸다(이미 푼 퍼즐은 실제로 라인을
   // 완주했어야만 solved 상태가 되므로 걸러낼 필요가 없다).
   const playablePuzzles = canEdit ? puzzles : puzzles.filter((p) => solved.has(p.id) || isPuzzlePlayable(p));
-  const themed = filter === "all" ? playablePuzzles : playablePuzzles.filter((p) => themesOf(p).includes(filter));
+  // (사용자 요청) 필터용 오프닝 이름 — 카드·오프닝별 묶음(groupByTopOpening)과 완전히 같은 기준
+  // (최상위 오프닝)을 써서, 필터에 뜨는 이름과 카드에 실제로 보이는 이름이 항상 일치하게 한다.
+  const openingKeyOf = (p) => (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "기타";
+  const openingOptions = useMemo(() => [...new Set(playablePuzzles.map(openingKeyOf))].sort((a, b) => a.localeCompare(b)), [playablePuzzles]);
+  const creatorOptions = useMemo(() => [...new Set(playablePuzzles.map((p) => (creatorUsernames || {})[puzzleNo(p.id)]).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [playablePuzzles, creatorUsernames]);
+  const openingSuggestions = useMemo(() => {
+    const q = openingQuery.trim().toLowerCase();
+    return openingOptions.filter((o) => !selectedOpenings.includes(o) && (!q || o.toLowerCase().includes(q))).slice(0, 8);
+  }, [openingOptions, openingQuery, selectedOpenings]);
+  const creatorSuggestions = useMemo(() => {
+    const q = creatorQuery.trim().toLowerCase();
+    return creatorOptions.filter((c) => !selectedCreators.includes(c) && (!q || c.toLowerCase().includes(q))).slice(0, 8);
+  }, [creatorOptions, creatorQuery, selectedCreators]);
+  const matchesOpeningFilter = (p) => selectedOpenings.length === 0 || selectedOpenings.includes(openingKeyOf(p));
+  const matchesCreatorFilter = (p) => selectedCreators.length === 0 || selectedCreators.includes((creatorUsernames || {})[puzzleNo(p.id)]);
+  const themed = playablePuzzles.filter((p) => (filter === "all" || themesOf(p).includes(filter)) && matchesOpeningFilter(p) && matchesCreatorFilter(p));
   const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
   const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
   const cleared = themed.filter((p) => solved.has(p.id)).sort(byOpening);
@@ -15555,7 +15582,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const clearedByOpening = groupByTopOpening(cleared);
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
-  const count = (k) => (k === "all" ? playablePuzzles.length : playablePuzzles.filter((p) => themesOf(p).includes(k)).length);
+  // (사용자 요청) 오프닝·생성자 필터가 걸려 있으면 테마 칩의 개수도 그 필터가 적용된 상태를 반영한다.
+  const filteredForCount = playablePuzzles.filter((p) => matchesOpeningFilter(p) && matchesCreatorFilter(p));
+  const count = (k) => (k === "all" ? filteredForCount.length : filteredForCount.filter((p) => themesOf(p).includes(k)).length);
   // (기능) 캐러셀 스와이프 범위가 최근 7일로 제한된 대신, "번호로 풀기" 입력창에 YYYYMMDD
   // 형식으로 날짜를 입력하면 그 날짜의 일일 퍼즐을 직접 찾아 연다 — 캐러셀과 똑같이
   // resolveDailyPuzzleCached(dateStr, engine)를 재사용하므로 계산 결과도 항상 일치한다.
@@ -15629,6 +15658,51 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
         )}
       </div>
       {numMsg && <p style={{ fontSize: 11.5, color: T.blunder, margin: "-4px 0 10px" }}>{numMsg}</p>}
+      {/* (사용자 요청) 퍼즐 필터 — 오프닝/생성자를 자동완성으로 검색해 여러 개(다중 태그) 고르면,
+          아래 미해결/해결됨 목록·테마 칩 개수가 그 자리에서 그대로 좁혀진다(별도 결과 화면 없음). */}
+      <div style={{ marginBottom: 10 }}>
+        {(selectedOpenings.length > 0 || selectedCreators.length > 0) && (
+          <div className="flex items-center gap-1.5" style={{ flexWrap: "wrap", marginBottom: 6 }}>
+            {selectedOpenings.map((o) => (
+              <span key={"op-" + o} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 999, background: "rgba(196,154,80,.16)", border: "1px solid " + T.brass, fontSize: 10.5, fontWeight: 700, color: T.brassHi }}>
+                {o}
+                <button onClick={() => setSelectedOpenings((s) => s.filter((x) => x !== o))} aria-label="오프닝 필터 해제" className="press" style={{ background: "none", border: "none", color: T.brassHi, cursor: "pointer", padding: 0, display: "inline-flex" }}><X size={10} /></button>
+              </span>
+            ))}
+            {selectedCreators.map((c) => (
+              <span key={"cr-" + c} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 999, background: "rgba(60,138,60,.16)", border: "1px solid " + T.best, fontSize: 10.5, fontWeight: 700, color: "#BEEAB0" }}>
+                @{c}
+                <button onClick={() => setSelectedCreators((s) => s.filter((x) => x !== c))} aria-label="생성자 필터 해제" className="press" style={{ background: "none", border: "none", color: "#BEEAB0", cursor: "pointer", padding: 0, display: "inline-flex" }}><X size={10} /></button>
+              </span>
+            ))}
+            <button onClick={() => { setSelectedOpenings([]); setSelectedCreators([]); }} className="press" style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, background: "none", border: "none", cursor: "pointer", padding: "3px 4px" }}>전체 해제</button>
+          </div>
+        )}
+        <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: "1 1 150px", minWidth: 130 }}>
+            <input value={openingQuery} onChange={(e) => setOpeningQuery(e.target.value)} onFocus={() => setOpeningFocus(true)} onBlur={() => setTimeout(() => setOpeningFocus(false), 150)}
+              placeholder="오프닝으로 필터" style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
+            {openingFocus && openingSuggestions.length > 0 && (
+              <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
+                {openingSuggestions.map((o) => (
+                  <button key={o} onMouseDown={(e) => e.preventDefault()} onClick={() => { setSelectedOpenings((s) => [...s, o]); setOpeningQuery(""); }} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>{o}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ position: "relative", flex: "1 1 150px", minWidth: 130 }}>
+            <input value={creatorQuery} onChange={(e) => setCreatorQuery(e.target.value)} onFocus={() => setCreatorFocus(true)} onBlur={() => setTimeout(() => setCreatorFocus(false), 150)}
+              placeholder="생성자로 필터" style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
+            {creatorFocus && creatorSuggestions.length > 0 && (
+              <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
+                {creatorSuggestions.map((c) => (
+                  <button key={c} onMouseDown={(e) => e.preventDefault()} onClick={() => { setSelectedCreators((s) => [...s, c]); setCreatorQuery(""); }} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>@{c}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
       {/* (v0.2.2 UI#3) 수 체계(테마) 칩은 줄바꿈 없이 한 줄에 다 들어가도록 크기를 줄이고, 아주 좁은
           화면에서만 가로 스크롤로 넘겨 본다. */}
       <div className="flex gap-1.5" style={{ marginBottom: 14, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
@@ -21778,6 +21852,7 @@ export default function App() {
   const [likeCounts, setLikeCounts] = useState({});                 // (기능) 번호별 전역 좋아요수
   const [repostCounts, setRepostCounts] = useState({});             // (v0.1.0) 번호별 전역 리포스트수
   const [shareCounts, setShareCounts] = useState({});               // (v0.1.0) 번호별 전역 공유수
+  const [creatorUsernames, setCreatorUsernames] = useState({});      // (사용자 요청) 퍼즐 탭 필터용 — 번호별 생성자 아이디
   const [friendUids, setFriendUids] = useState([]);                // (16차) 수락된 친구 uid 목록
   const [puzzleSolvers, setPuzzleSolvers] = useState({});          // (16차) { [puzzleNo]: uid[] } — 그 퍼즐을 푼 사람들
   const [solverNames, setSolverNames] = useState({});              // (16차) uid -> username (친구 중 해결자만)
@@ -22046,6 +22121,7 @@ export default function App() {
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
     try { const rcounts = await puzzleRepostCounts(); if (rcounts && Object.keys(rcounts).length) setRepostCounts(rcounts); } catch { }
     try { const scounts = await puzzleShareCounts(); if (scounts && Object.keys(scounts).length) setShareCounts(scounts); } catch { }
+    try { const creators = await puzzleCreatorUsernames(); if (creators && Object.keys(creators).length) setCreatorUsernames(creators); } catch { }
     setLoaded(true);
   })(); }, []);
   // (기능) 저장된 값을 다 복원한 뒤(loaded) 이 버전을 아직 "다시 보지 않기"로 끄지 않았다면(또는
@@ -22867,7 +22943,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} creatorUsernames={creatorUsernames} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
