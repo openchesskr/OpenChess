@@ -6628,28 +6628,49 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     let cancelled = false;
     setAnalyzing(true);
     (async () => {
-      const base = [...sans, san]; const found = [];
-      // (v0.2.4) depth 20·moveTime 5초 상한으로 올리되, base 포지션은 모든 후보 라인에서 공통이라
-      // 라인마다 다시 구하지 않고 한 번만 구해 재사용한다(불필요한 중복 호출 제거, 결과는 동일).
-      const base0 = await engine.evaluate(sansToFen(base), 20, undefined, 5000, "focus-mistakes");
+      const base = [...sans, san];
+      // (사용자 요청) 로딩 속도 개선 — 후보 라인(stats.lines)들은 서로 앞부분(접두사)을 공유하는
+      // 경우가 많은데, 예전엔 라인마다 처음부터 다시 평가해 같은 포지션을 몇 번이고 중복 계산했다.
+      // 이번 분석 세션 동안 포지션(FEN) 기준으로 평가를 캐시해 재사용 — 같은 포지션은 딱 한 번만
+      // 엔진에 묻는다(Promise 자체를 캐시해, 아직 계산 중인 포지션도 중복 호출 없이 함께 기다린다).
+      const evalCache = new Map();
+      const evalPos = (sansUpTo) => {
+        const fen = sansToFen(sansUpTo);
+        let p = evalCache.get(fen);
+        if (!p) { p = engine.evaluate(fen, 20, undefined, 5000, "focus-mistakes"); evalCache.set(fen, p); }
+        return p;
+      };
+      const base0 = await evalPos(base);
+      // stats.lines는 이미 빈도(count) 내림차순 — 상위 5개를 이미 확보했는데 다음 라인의 빈도가
+      // 다섯 번째로 확보한 실수보다 낮거나 같다면, 그 이후 어떤 라인도 top-5를 밀어낼 수 없으므로
+      // 더 계산하지 않고 멈춘다(조기 종료로 불필요한 엔진 호출을 더 줄인다).
+      let collected = [];
       for (const ln of stats.lines) {
         if (cancelled) return;
+        if (collected.length >= 5 && ln.count <= collected[collected.length - 1].count) break;
         const full = [...base, ...ln.seq];
         let prev = base0;
         for (let i = base.length; i < full.length; i++) {
           if (cancelled) return;
-          const after = await engine.evaluate(sansToFen(full.slice(0, i + 1)), 20, undefined, 5000, "focus-mistakes");
+          const after = await evalPos(full.slice(0, i + 1));
           if (!prev || !after) { prev = after; continue; }
           const moverWhite = i % 2 === 0;
           const isUser = (moverWhite && ln.color === "w") || (!moverWhite && ln.color === "b");
           const pcp = prev.mate != null ? (prev.mate > 0 ? 1000 : -1000) : prev.cp;
           const acp = after.mate != null ? (after.mate > 0 ? 1000 : -1000) : after.cp;
           const drop = pcp + acp;   // prev=착수자 POV, after=상대 POV → 착수자 손실 = pcp-(-acp)
-          if (isUser && drop >= 100) { found.push({ seq: full.slice(base.length, i + 1), kind: drop >= 250 ? "blunder" : "inaccuracy", count: ln.count, color: ln.color }); break; }
+          if (isUser && drop >= 100) {
+            collected.push({ seq: full.slice(base.length, i + 1), kind: drop >= 250 ? "blunder" : "inaccuracy", count: ln.count, color: ln.color });
+            collected.sort((a, b) => b.count - a.count);
+            if (collected.length > 5) collected = collected.slice(0, 5);
+            // (사용자 요청) 다 모아서 마지막에 한꺼번에 보여주지 않고, 계산이 끝나는 대로 하나씩 바로 표시한다.
+            if (!cancelled) setMistakes([...collected]);
+            break;
+          }
           prev = after;
         }
       }
-      if (!cancelled) { found.sort((a, b) => b.count - a.count); setMistakes(found.slice(0, 5)); setAnalyzing(false); }
+      if (!cancelled) setAnalyzing(false);
     })();
     return () => { cancelled = true; setAnalyzing(false); };
   }, [active, sansKey, san, engine && engine.status, chesscom && chesscom.status, stats && stats.total]);
@@ -11985,8 +12006,10 @@ async function legacyLikedSlots(ownerUid, uid) {
   } catch { return new Set(); }
 }
 async function legacyLikeToggle(ownerUid, slotKey, uid) {
+  // (보안 수정) 서버(legacy_like_toggle RPC)가 auth.uid()로 행위자를 직접 판별하므로 p_uid는 더 이상
+  // 보내지 않는다 — uid 인자는 "로그인 여부"만 클라이언트에서 미리 확인하는 용도로 남겨 둔다.
   if (!SB_ON || !ownerUid || !uid) return null;
-  try { const r = await sbRpc("legacy_like_toggle", { p_owner_uid: ownerUid, p_slot_key: slotKey, p_uid: uid }); const row = Array.isArray(r) ? r[0] : r; return row ? { liked: !!row.liked, likes: row.likes || 0 } : null; }
+  try { const r = await sbRpc("legacy_like_toggle", { p_owner_uid: ownerUid, p_slot_key: slotKey }); const row = Array.isArray(r) ? r[0] : r; return row ? { liked: !!row.liked, likes: row.likes || 0 } : null; }
   catch { return null; }
 }
 // (v0.1.0) 퍼즐 리포스트 — 좋아요와 동일한 토글 패턴(puzzle_repost_toggle RPC가 등록/취소를 알아서 판단).

@@ -1144,18 +1144,23 @@ create policy "legacy like counts read" on public.legacy_like_counts for select 
 grant select on public.legacy_like_counts to anon, authenticated;
 
 -- 좋아요 토글 — puzzle_like_toggle과 동일한 패턴(이미 눌렀으면 취소, 아니면 등록).
+-- (보안 수정) 처음엔 puzzle_like_toggle을 그대로 본떠 p_uid를 파라미터로 받았는데, 이 함수는
+-- SECURITY DEFINER라 그러면 로그인한 아무나 임의의 p_uid를 넣어 "다른 사람 명의로" 좋아요를
+-- 토글할 수 있었다(권한 우회) — 행위자를 인자로 받지 않고 auth.uid()에서 직접 가져와, 요청을
+-- 보낸 세션의 실제 로그인 유저만 자기 자신 명의로 좋아요를 남길 수 있게 한다.
 drop function if exists public.legacy_like_toggle(uuid, text, uuid) cascade;
-create or replace function public.legacy_like_toggle(p_owner_uid uuid, p_slot_key text, p_uid uuid)
+create or replace function public.legacy_like_toggle(p_owner_uid uuid, p_slot_key text)
 returns table(liked boolean, likes bigint) language plpgsql security definer set search_path = public as $$
-declare v_likes bigint; v_liked boolean;
+declare v_likes bigint; v_liked boolean; v_uid uuid := auth.uid();
 begin
-  if exists (select 1 from public.legacy_likes where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = p_uid) then
-    delete from public.legacy_likes where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = p_uid;
+  if v_uid is null then raise exception 'auth required'; end if;
+  if exists (select 1 from public.legacy_likes where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = v_uid) then
+    delete from public.legacy_likes where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = v_uid;
     update public.legacy_like_counts set likes = greatest(0, public.legacy_like_counts.likes - 1)
       where owner_uid = p_owner_uid and slot_key = p_slot_key returning public.legacy_like_counts.likes into v_likes;
     v_liked := false;
   else
-    insert into public.legacy_likes(owner_uid, slot_key, uid) values (p_owner_uid, p_slot_key, p_uid);
+    insert into public.legacy_likes(owner_uid, slot_key, uid) values (p_owner_uid, p_slot_key, v_uid);
     insert into public.legacy_like_counts(owner_uid, slot_key, likes) values (p_owner_uid, p_slot_key, 1)
     on conflict (owner_uid, slot_key) do update set likes = public.legacy_like_counts.likes + 1
     returning public.legacy_like_counts.likes into v_likes;
@@ -1163,5 +1168,5 @@ begin
   end if;
   return query select v_liked, coalesce(v_likes, 0);
 end; $$;
-grant execute on function public.legacy_like_toggle(uuid, text, uuid) to authenticated;
+grant execute on function public.legacy_like_toggle(uuid, text) to authenticated;
 grant select, insert, update on public.reviewed_games to anon, authenticated;
