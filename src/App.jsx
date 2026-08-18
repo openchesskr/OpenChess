@@ -7208,6 +7208,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   // 규정·진영으로 나눠 볼 수 있게 한다.
   const [myTimeFilter, setMyTimeFilter] = useState("all");
   const [myColorFilter, setMyColorFilter] = useState("all");
+  // (사용자 요청) 오프닝 실수 수순을 누르면 곧장 학습 탭으로 이동하는 대신, 그 수순으로 실제 진행된
+  // 내 chess.com 대국을 바로 아래에 펼쳐 보여준다 — 펼쳐진 항목의 인덱스.
+  const [expandedMistakeIdx, setExpandedMistakeIdx] = useState(null);
+  useEffect(() => { setExpandedMistakeIdx(null); }, [sans.join(","), san]);
   const myGames = useMemo(() => {
     if (!chesscom || chesscom.status !== "ready") return [];
     const path = [...sans, san];
@@ -7472,28 +7476,66 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                       </div>
                     )}
                     <div style={{ marginTop: 8 }}>
-                      <div style={{ fontWeight: 800, color: T.mistake, fontSize: 11.5, marginBottom: 4 }}>오프닝 실수 <span style={{ color: T.inkSoft, fontWeight: 600 }}>(연동 계정이 둔 수만 굵게)</span></div>
-                      {analyzing ? (
+                      <div style={{ fontWeight: 800, color: T.mistake, fontSize: 11.5, marginBottom: 4 }}>오프닝 실수</div>
+                      {analyzing && mistakes.length === 0 ? (
                         <div className="flex items-center gap-2" style={{ padding: "4px 0" }}>
                           <Mascot name={ply % 2 === 0 ? "kokoa" : "milku"} emotion="think" size={62} />
                           <span style={{ fontSize: 11.5, color: T.inkSoft }}>내 대국 기보를 분석하는 중…</span>
                         </div>
-                      ) : mistakes.length === 0 ? <div style={{ fontSize: 11.5, color: T.inkSoft }}>{engine && engine.status === "ready" ? "15수 이내에서 두드러진 실수가 발견되지 않았습니다." : "엔진이 준비되면 분석합니다."}</div>
+                      ) : (!analyzing && mistakes.length === 0) ? <div style={{ fontSize: 11.5, color: T.inkSoft }}>{engine && engine.status === "ready" ? "15수 이내에서 두드러진 실수가 발견되지 않았습니다." : "엔진이 준비되면 분석합니다."}</div>
                         : mistakes.map((mt, idx) => {
                           const seqStr = [san, ...mt.seq]; // 표기: 집중 학습 수부터
+                          // (사용자 요청) 이 실수 수순으로 실제로 진행된 내 chess.com 대국 — 클릭하면
+                          // 곧장 학습 탭으로 이동하는 대신, 프로필 카드와 같은 UI로 바로 아래에 펼쳐
+                          // 보여주고, 그 안의 검색·리뷰 버튼으로 각자 학습 탭/리뷰로 이동한다.
+                          const fullPrefix = [...sans, san, ...mt.seq];
+                          const isOpen = expandedMistakeIdx === idx;
+                          const mtGames = isOpen && chesscom && chesscom.status === "ready"
+                            ? chesscom.games.filter((g) => g.moves.length >= fullPrefix.length && fullPrefix.every((s, i) => stripSuffix(g.moves[i]) === stripSuffix(s))).sort((a, b) => (b.endTime || 0) - (a.endTime || 0))
+                            : [];
                           return (
-                            <button key={idx} onClick={() => { const pre = [...sans, san, ...mt.seq.slice(0, -1)]; onJump && onJump(pre, mt.seq[mt.seq.length - 1]); }} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
-                              {seqStr.map((mv, i) => {
-                                const isMistake = i === seqStr.length - 1;
-                                const moverWhite = (ply + i) % 2 === 0;
-                                const isUserMove = (moverWhite && mt.color === "w") || (!moverWhite && mt.color === "b");
-                                const num = moveNumber(ply + i);
-                                const st = isMistake ? { fontWeight: 900, textDecoration: "underline", color: mt.kind === "blunder" ? T.blunder : T.inaccuracy }
-                                  : isUserMove ? { fontWeight: 800, color: T.ink } : { color: T.inkSoft, fontWeight: 500 };
-                                return <span key={i} style={st}>{num}{mv} </span>;
-                              })}
-                              <span style={{ color: T.inkSoft }}>({mt.count}회)</span>
-                            </button>
+                            <div key={idx}>
+                              <button onClick={() => setExpandedMistakeIdx(isOpen ? null : idx)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
+                                {seqStr.map((mv, i) => {
+                                  const isMistake = i === seqStr.length - 1;
+                                  const moverWhite = (ply + i) % 2 === 0;
+                                  const isUserMove = (moverWhite && mt.color === "w") || (!moverWhite && mt.color === "b");
+                                  const num = moveNumber(ply + i);
+                                  const st = isMistake ? { fontWeight: 900, textDecoration: "underline", color: mt.kind === "blunder" ? T.blunder : T.inaccuracy }
+                                    : isUserMove ? { fontWeight: 800, color: T.ink } : { color: T.inkSoft, fontWeight: 500 };
+                                  return <span key={i} style={st}>{num}{mv} </span>;
+                                })}
+                                <span style={{ color: T.inkSoft }}>({mt.count}회)</span>
+                              </button>
+                              {isOpen && (
+                                <div style={{ margin: "2px 0 6px", padding: "4px 8px", borderRadius: 8, background: "rgba(0,0,0,.04)" }}>
+                                  {mtGames.length === 0 ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "4px 0" }}>이 대국을 찾을 수 없습니다.</div>
+                                    : mtGames.map((g, gi) => {
+                                      const won = g.result === "win", lost = g.result === "loss";
+                                      const rc = ratingChanges.get(g);
+                                      const oppSide = g.color === "w" ? g.black : g.white;
+                                      return (
+                                        <div key={gi} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 2px", borderTop: gi === 0 ? "none" : "1px solid #E4D5B6" }}>
+                                          <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
+                                          <div style={{ minWidth: 0, flex: 1 }}>
+                                            <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
+                                              {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
+                                              {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
+                                              {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
+                                            </div>
+                                            {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
+                                            {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
+                                          </div>
+                                          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                                            <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                                            <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(g)} />
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                     </div>
