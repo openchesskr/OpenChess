@@ -10356,6 +10356,19 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 않는다 — 이후 더 뻗어나가는 블록은 (필요하면) 캔버스의 처음 예상 못 한 여백 밖으로도 그냥
   // 그려지고(SVG는 overflow:visible, 블록 div들도 잘리지 않음), 사용자가 팬해서 보면 된다.
   const centerFrozenRef = useRef(null);
+  // (사용자 요청) 이론 수가 새로 추가되면(개발자가 이름 수정·수 추가 등으로 CONTENT를 바꿔
+  // contentVer가 올라가면), 형제·사촌·자녀 수가 실제로 달라졌을 수 있으므로 안정성을 위해 쌓아 둔
+  // 순서·각도 캐시(orderCacheRef/posCacheRef)를 비워 다음 렌더에서 전체를 처음부터 다시 배치한다 —
+  // 겹침 없이 각 부모가 "지금" 자식 수만큼 각도 구간을 다시 나눠 갖는다. treeVersion(백그라운드
+  // 점진 로딩, 220ms마다 흔함)이 아니라 contentVer(개발자의 명시적 편집, 훨씬 드묾)에만 반응하므로
+  // 로딩 중 흔들림 방지 목적의 기존 안정화 로직은 그대로 유지된다 — 구조가 실제로 안 바뀐 편집
+  // (이름만 수정 등)은 다시 배치해도 같은 결과가 나와 시각적으로 아무 변화가 없다.
+  const prevContentVerRef = useRef(contentVer);
+  if (prevContentVerRef.current !== contentVer) {
+    prevContentVerRef.current = contentVer;
+    orderCacheRef.current = new Map();
+    posCacheRef.current = { N: new Map(), S: new Map() };
+  }
   const { items, edges, width, height, centerX, centerY, groups, bounds } = useMemo(() => {
     const items = []; const edges = [];
     const leafList = { N: [], S: [] };
