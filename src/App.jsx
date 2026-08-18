@@ -15546,7 +15546,6 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 맞다 — pushState를 하나 더 쌓는 대신 history.back()으로 정확히 하나만 되돌린다(게임 리뷰의
   // closeReview와 같은 패턴).
   const closeActive = () => { setActive(null); try { if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) window.history.back(); } catch { } };
-  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} />;
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
   // 없어요"를 띄웠다. 개발자(canEdit)는 이런 손상된 퍼즐을 찾아 삭제할 수 있어야 하므로 그대로
@@ -15566,6 +15565,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     const q = creatorQuery.trim().toLowerCase();
     return creatorOptions.filter((c) => !selectedCreators.includes(c) && (!q || c.toLowerCase().includes(q))).slice(0, 8);
   }, [creatorOptions, creatorQuery, selectedCreators]);
+  // (버그 수정) 이 조기 반환이 위 useMemo 4개보다 앞에 있었다 — 퍼즐 목록 화면(active=null)에서는
+  // 그 훅들이 매 렌더 호출되다가, 퍼즐을 열어(active가 생겨) 이 분기를 타는 순간 그 훅 호출이
+  // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
+  // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
+  // 아무거나 클릭만 하면 항상 재현됨). 조기 반환을 이 컴포넌트의 모든 훅 호출 뒤로 옮겨 해결한다.
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} />;
   const matchesOpeningFilter = (p) => selectedOpenings.length === 0 || selectedOpenings.includes(openingKeyOf(p));
   const matchesCreatorFilter = (p) => selectedCreators.length === 0 || selectedCreators.includes((creatorUsernames || {})[puzzleNo(p.id)]);
   const themed = playablePuzzles.filter((p) => (filter === "all" || themesOf(p).includes(filter)) && matchesOpeningFilter(p) && matchesCreatorFilter(p));
@@ -16719,6 +16724,31 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.3.7", date: "2026.8.18", dev: ["openchesskr"], items: [
+      "헤더에 표시되는 버전 번호가 실제 배포된 최신 버전보다 뒤처져 보이던 문제를 고쳤어요(v0.3.6 업데이트 내역이 이 목록에 반영되지 않고 있었어요).",
+      "퍼즐 탭에서 퍼즐을 아무거나 클릭하면 흰 화면과 함께 사이트 전체 동작이 멈춰버리던 심각한 오류를 고쳤어요.",
+    ]
+  },
+  {
+    version: "0.3.6", date: "2026.8.18", dev: ["openchesskr"], items: [
+      "퍼즐 풀이 화면·일일 퍼즐 팝업·도감 오프닝 트리의 기보에서 수를 누르면 그 수순이 입력된 학습 탭으로 바로 이동해요.",
+      "라인 하나를 클리어할 때마다 LINE CLEAR 배너가, 퍼즐의 모든 라인을 다 풀면 이어서 별 3개와 PUZZLE CLEAR 배너가 재생돼요.",
+      "퍼즐 탭에 오프닝·생성자로 목록을 좁혀 보는 필터가 생겼어요(여러 개를 태그로 동시에 선택 가능).",
+      "학습 탭에서 둘 수 있는 수가 1~2개뿐인 국면에서는 엔진 라인·평가치 바를 깔끔하게 비워 둬요.",
+      "학습 탭 펜/리뷰 버튼을 복사·붙여넣기 버튼과 같은 크기·간격으로 통일했어요.",
+      "퀘스트 탭에서 일일 퀘스트가 메인 퀘스트보다 위에 표시돼요. 학습 탭의 퀘스트 배지를 누르면 퀘스트 탭의 해당 줄로 바로 이동하며 반짝여요.",
+      "프로필 카드의 chess.com 레이팅 표기를 다듬고, 레이팅 변동 그래프에 '1일' 기간 옵션을 추가했어요.",
+      "모바일 리뷰 화면의 코치 말풍선 크기를 줄이고, 그 자리에 평가치 그래프를 추가로 보여줘요.",
+      "좌상단 OpenChess 로고를 누르면 openchess.kr로 이동해요.",
+      "채팅에 공유된 퍼즐 블록이 퍼즐 탭과 똑같은 카드 UI로 바뀌어 좋아요·리포스트·공유·풀이수까지 그 자리에서 볼 수 있어요.",
+      "유산(Legacy) 블록에 좋아요 기능이 생겼어요.",
+      "집중 학습의 오프닝 실수 분석이 더 빨라졌고, 실수 수순을 누르면 그 수순으로 실제 진행됐던 내 chess.com 대국을 바로 아래에서 볼 수 있어요.",
+      "보드 편집기의 이미지 스캔에서 카메라 촬영뿐 아니라 기존 사진(갤러리)도 선택할 수 있게 됐어요.",
+      "이론 수 이름을 바꾸면 그 이름을 접두사로 쓰던 하위 오프닝 이름들도 함께 자동으로 바뀌어요.",
+      "보안 — 유산 좋아요 기능에서 다른 사람 명의로 좋아요를 등록/취소할 수 있던 권한 우회를 막았어요.",
+    ]
+  },
   {
     version: "0.3.5", date: "2026.8.16", dev: ["openchesskr"], items: [
       "공유받은 리뷰 링크(openchess.kr/review/...)로 곧장 들어가거나 새로고침했을 때, 실제로는 티켓이 있거나 이미 본 리뷰인데도 항상 '리뷰 티켓이 부족해요' 안내만 뜨던 문제를 고쳤어요.",
