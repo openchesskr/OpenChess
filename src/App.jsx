@@ -4478,7 +4478,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   );
   const scanAndHistoryRow = (
     <div className="flex items-center justify-between">
-      <input ref={scanInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={onScanFile} />
+      <input ref={scanInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onScanFile} />
       <button onClick={() => scanInputRef.current && scanInputRef.current.click()} disabled={scanning} title="사진에서 체스판 배치 읽기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: scanning ? "rgba(255,255,255,.06)" : T.ebony2, color: scanning ? "rgba(244,238,226,.4)" : T.brassHi, fontWeight: 700, fontSize: 11.5, border: "1px solid " + (scanning ? "rgba(255,255,255,.15)" : "#000"), cursor: scanning ? "default" : "pointer" }}><ScanLine size={13} /> {scanning ? "인식하는 중..." : "이미지 스캔"}</button>
       <div className="flex items-center" style={{ gap: 4 }}>
         <button onClick={rewind} disabled={!canUndo} title="처음으로" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsLeft size={15} /></button>
