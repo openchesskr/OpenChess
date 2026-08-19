@@ -1094,6 +1094,12 @@ create table if not exists public.reviewed_games (
   data jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+-- (v0.3.9 기능) 리뷰 결과 재현성 — analyzeGame은 movetime(벽시계 시간) 기준이라 같은 대국도 다시
+-- 분석하면 값이 미세하게 달라질 수 있었다("같은 게임인데 리뷰를 다시 열 때마다 정확도가 다르다"는
+-- 신고). 한 번 완결된 분석 결과(analyzeGame의 반환값, {v, result} 형태 — v는 App.jsx의
+-- REVIEW_RESULT_CACHE_VERSION과 대조해 채점 로직이 바뀐 뒤의 옛 캐시를 무시하기 위함)를 여기 함께
+-- 올려 두고, 이후 누구든 같은 cc_id로 리뷰를 열면 재분석 대신 이 값을 그대로 재사용한다.
+alter table public.reviewed_games add column if not exists analysis jsonb;
 alter table public.reviewed_games enable row level security;
 drop policy if exists "reviewed games read"   on public.reviewed_games;
 drop policy if exists "reviewed games insert" on public.reviewed_games;

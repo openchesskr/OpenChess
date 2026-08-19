@@ -8547,6 +8547,59 @@ const RV = {
 // 1000→1500(약 1.5배)로 올렸다 — REVIEW_PER_POS_CAP_MULT/FLOOR_MULT도 이 값의 배수라 함께 비례해 늘어난다.
 const REVIEW_DEPTH = 20;
 const REVIEW_MOVETIME_MS = 1500;
+// (v0.3.9 버그 수정) 리뷰 결과 재현성 — 이 상수·아래 캐시 함수들이 생기기 전엔 리뷰 페이지를 열
+// 때마다(같은 대국이라도) `analyzeGame`을 처음부터 다시 돌렸다. 문제는 이 분석이 movetime(실제
+// 벽시계 시간) 기준이라 재현성이 없다는 것 — 서버·기기 부하에 따라 매번 조금씩 다른 depth에서
+// 멈추고, 그 결과 어떤 포지션에서는 최선수·평가치가 실행마다 달라질 수 있어(특히 후보 수끼리
+// 평가가 팽팽한 포지션), 같은 대국인데도 열 때마다 정확도%가 미세하게 흔들리는 게 사용자에게
+// 신뢰도 문제로 보였다("같은 게임인데 리뷰를 다시 열 때마다 정확도 차이가 난다"). 재분석 자체를
+// 캐시하지 않는다는 예전 원칙(정확도 절대 타협 금지)은 "매번 다시 계산하면 더 정확해진다"는
+// 전제 하에 세운 것이었는데, 실제로는 재실행이 더 정확해지는 게 아니라 그냥 무작위로 달라질
+// 뿐이었다 — 그래서 원칙을 "한 번 완결된(resultDone) 분석 결과는 그대로 재사용해 항상 같은
+// 값을 보여준다"로 바꾼다(정확도를 낮추는 지름길이 아니라, 이미 낸 최선의 결과를 보존하는
+// 것뿐이다). 채점 로직(gradeOne)·정확도 공식(NEW_ACC_*) 자체를 고칠 때는 이미 캐시된 옛 결과가
+// 새 코드로도 그대로 남아있으면 안 되므로, 그런 변경을 할 때마다 이 버전을 반드시 올려야 한다 —
+// 버전이 다른 캐시는 무시하고 새로 분석한다.
+const REVIEW_RESULT_CACHE_VERSION = 1;
+// 로컬(이 기기·브라우저) 캐시 — sessionStorage(탭 닫으면 사라짐)가 아니라 localStorage(브라우저를
+// 껐다 켜도 남음)를 쓴다, "다시 열 때마다"라는 신고가 새로고침뿐 아니라 다른 날 다시 들어와도
+// 재현되므로. reviewStorageKey와 같은 식별 방식(선수+종료 시각 / id / fenRoot+sans)을 재사용한다.
+function reviewResultStorageKey(game) {
+  const posKey = reviewStorageKey(game);
+  return posKey ? posKey.replace("oc-review-pos:", "oc-review-result:") : null;
+}
+function loadCachedReviewResult(storageKey, expectedLen) {
+  if (!storageKey) return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.v !== REVIEW_RESULT_CACHE_VERSION || !parsed.result) return null;
+    if (expectedLen != null && (!parsed.result.moves || parsed.result.moves.length !== expectedLen)) return null;
+    return parsed.result;
+  } catch { return null; }
+}
+function saveCachedReviewResult(storageKey, result) {
+  if (!storageKey || !result) return;
+  try { window.localStorage.setItem(storageKey, JSON.stringify({ v: REVIEW_RESULT_CACHE_VERSION, result })); } catch { }
+}
+// chess.com 대국(game.id 있음)은 크라우드소싱 캐시(reviewed_games, puzzles 테이블과 같은 패턴)에도
+// 함께 올려 둔다 — 다른 기기·다른 유저가 같은 대국을 리뷰로 열어도 항상 같은 값을 보게 하기 위함
+// (이것도 "재현성" 신고를 해결하는 데 필요하다 — 로컬 캐시만으로는 이 기기에서만 일관될 뿐이다).
+async function reviewedAnalysisFetch(ccId, expectedLen) {
+  if (!SB_ON || !ccId) return null;
+  try {
+    const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=analysis&limit=1");
+    const a = rows && rows[0] ? rows[0].analysis : null;
+    if (!a || a.v !== REVIEW_RESULT_CACHE_VERSION || !a.result) return null;
+    if (expectedLen != null && (!a.result.moves || a.result.moves.length !== expectedLen)) return null;
+    return a.result;
+  } catch { return null; }
+}
+async function reviewedAnalysisShare(ccId, result) {
+  if (!SB_ON || !ccId || !result) return;
+  try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis: { v: REVIEW_RESULT_CACHE_VERSION, result } }); } catch { }
+}
 // (v0.3.5 버그 수정 → 통합) 예전엔 게임 리뷰가 항상 고정된 프로필("full", Stockfish 16)이라 이
 // 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
 // 게임 리뷰도 설정 탭에서 고른 분석 엔진(useEngine(enginePref))을 그대로 쓰도록 통합해, 이 전용
@@ -8894,8 +8947,35 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   // "연결 실패"(setErr)로 굳어버린다(리뷰 딥링크 티켓 오탐 버그와 같은 종류의 클로저 문제). status가
   // 바뀔 때마다 다시 확인하고, 실제로 분석을 시작한 뒤에는 startedRef로 한 번만 시작하게 막는다.
   const analysisStartedRef = useRef(false);
+  // (v0.3.9 기능) 재현성 캐시 조회 — 엔진 부팅과 무관하게(로컬/Supabase 조회일 뿐) 먼저 시도한다.
+  // 캐시가 있으면 analysisStartedRef를 먼저 세워 아래 engine-의존 분석 effect를 아예 건너뛰게 한다
+  // (같은 대국을 다시 열었을 때 항상 똑같은 결과를 즉시 보여주기 위함 — 재분석하면 movetime 기반
+  // 엔진 특성상 매번 값이 미세하게 달라질 수 있다). cacheChecked가 될 때까지는 분석 effect도 시작하지
+  // 않아, 이 조회와 새 분석이 동시에 시작되는 경합을 막는다.
+  const resultCacheKey = useMemo(() => reviewResultStorageKey(game), [game]);
+  const [cacheChecked, setCacheChecked] = useState(false);
   useEffect(() => {
-    if (analysisStartedRef.current || !engine) return;
+    let cancelled = false;
+    (async () => {
+      const expectedLen = sans ? sans.length : null;
+      const local = loadCachedReviewResult(resultCacheKey, expectedLen);
+      if (local) {
+        if (!cancelled) { setResult(local); setGradedCount(expectedLen || 0); setResultDone(true); analysisStartedRef.current = true; setCacheChecked(true); }
+        return;
+      }
+      if (game.id) {
+        const remote = await reviewedAnalysisFetch(game.id, expectedLen);
+        if (!cancelled && remote) {
+          setResult(remote); setGradedCount(expectedLen || 0); setResultDone(true); analysisStartedRef.current = true;
+          saveCachedReviewResult(resultCacheKey, remote);
+        }
+      }
+      if (!cancelled) setCacheChecked(true);
+    })();
+    return () => { cancelled = true; };
+  }, [resultCacheKey, game.id]);
+  useEffect(() => {
+    if (!cacheChecked || analysisStartedRef.current || !engine) return;
     if (engine.status === "off") { setErr(true); return; }
     if (engine.status !== "ready") return; // 아직 부팅 중 — status가 바뀌면 이 effect가 다시 실행된다.
     if (!sans || (sans.length < 1 && !fenRoot)) { setErr(true); return; }
@@ -8905,11 +8985,15 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       try {
         const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
           (partial, gradedIdx) => { if (!cancelled) { setResult(partial); setGradedCount(gradedIdx); } }, fenRoot);
-        if (!cancelled) { setResult(r); setGradedCount(sans.length); setResultDone(true); }
+        if (!cancelled) {
+          setResult(r); setGradedCount(sans.length); setResultDone(true);
+          saveCachedReviewResult(resultCacheKey, r);
+          if (game.id) reviewedAnalysisShare(game.id, r);
+        }
       } catch { if (!cancelled) setErr(true); }
     })();
     return () => { cancelled = true; };
-  }, [engine && engine.status]);
+  }, [engine && engine.status, cacheChecked]);
   useEffect(() => { setShowingLine(false); }, [curPly]);
   // (v0.3.8 기능) phase·curPly·introRevealDone이 바뀔 때마다(리뷰 시작, 수 이동, 정확도 공개
   // 애니메이션 완료 등) 같은 대국 키로 sessionStorage에 계속 갱신 저장 — 다음 새로고침이 이 값을
@@ -17209,6 +17293,7 @@ const CHANGELOG = [
       "체크메이트로 끝난 대국을 리뷰할 때 마지막 수의 아이콘이 계속 '분석 중'에서 멈춰 있던 문제를 고쳤어요.",
       "설정 탭 내 프로필 카드 — '내 프로필' 라벨 자리에 이제 내 아이디가 표시되고, 이름과 소개 사이에 중복으로 있던 아이디 표시는 없앴어요.",
       "퍼즐을 모두 풀었을 때 뜨는 PUZZLE CLEAR 애니메이션의 폰트가 바뀌고, 글자가 하나씩 튕겨 들어오는 더 역동적인 연출로 바뀌었어요. 재생 시간도 늘고, 다 보인 뒤 창이 닫히기까지 여유를 더 줬어요.",
+      "같은 대국을 리뷰로 다시 열 때마다 정확도가 미세하게 달라지던 문제를 고쳤어요 — 이제 한 번 분석이 끝나면 그 결과를 그대로 저장해 뒀다가, 다시 열 때 항상 똑같은 값을 보여줘요.",
     ]
   },
   {
