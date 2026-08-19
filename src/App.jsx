@@ -8511,40 +8511,30 @@ function ReviewIntroCarousel() {
     </div>
   );
 }
-// ===================== (v0.3.8) 리뷰 진입 애니메이션 — 정확도 공개 시퀀스 — 사용자 설계 =====================
-// (v0.3.8 2차 개편) 처음엔 분석(resultDone)이 100% 끝난 뒤에만 재생하는 정해진 길이의 "리플레이"였는데,
-// 사용자 요청으로 분석이 진행되는 도중에 실시간으로 재생하도록 바꿨다 — analyzeGame이 onMove로 수를
-// 하나씩 채점해 나가는 그대로(result.moves가 자라나는 그대로)를 반영해, 이 애니메이션의 진행 속도 자체가
-// 실제 분석 속도와 정확히 같아진다(따로 타이머로 재생 속도를 맞출 필요가 없다 — 실제로 계산되는 대로
-// 보여줄 뿐이므로 어떤 근사도 없다). moveEvalGraph(f)·bestMoveEvalGraph(g)는 항상 "지금까지 채점된
-// 지점까지만" 그려지고, 그 오른쪽 끝(스윕 지점)을 계속 확대·추적하는 카메라(아래 ZOOM 관련 상수)로
-// 수 구간 하나하나의 넓이(=그 수의 손실)가 채워지는 과정을 크게 보여준다. 전체 진행 상황을 놓치지
-// 않도록 그 아래 축소된 전체 그래프(개요 띠)에 지금 확대해서 보고 있는 구간을 표시한다.
+// ===================== (v0.3.8 3차 개편) 리뷰 진입 애니메이션 — 정확도 공개 시퀀스 =====================
+// (사용자 피드백) 리뷰 페이지의 평가치 변동 그래프(EvalGraph)와 다른 모양의 그래프를 새로 그렸더니
+// "형태가 다르다"는 지적을 받았다 — 그래프를 따로 다시 그리지 않고 EvalGraph 컴포넌트를 그대로
+// 재사용해, 실제 리뷰 화면에서 보게 될 그래프와 완전히 같은 모양(진한 카드 배경, 채워진 영역, 수
+// 등급별 점 표시)이 되도록 한다. "애니메이션으로 그리길" 원하는 부분은 analyzeGame이 onMove로
+// 흘려보내는 result.evalWin/moves를 그대로 넘기기만 하면 저절로 풀린다 — evalWin은 항상 게임 전체
+// 길이로 채워져 있고(아직 채점 안 된 뒤쪽은 마지막 값으로 평평하게 유지, paddedTo 참고) moves는
+// 채점되는 대로 하나씩 늘어나므로, 이 컴포넌트가 매 렌더 그 살아있는 값을 EvalGraph에 그대로
+// 넘기기만 해도 그래프 선이 왼쪽부터 실제로 채점되는 만큼씩 자라나고 그 지점의 등급 점도 함께
+// 나타난다 — 별도 타이머·좌표 계산 없이 실제 분석 진행 그 자체가 애니메이션이 된다.
 function buildRevealData(result) {
-  if (!result) return { moves: [], g: [], evalWin: [0], wCurve: [100], bCurve: [100], N: 0 };
-  const { moves, evalWin } = result;
-  const N = moves.length;
-  // g(n) = n번째 수를 두기 전 최선수 기준 평가(백 관점 승률%) — f(n)에 그 수의 손실을 그 수를 둔
-  // 진영 기준 부호로 되돌려 더하면 된다(백이 잃었으면 g가 f보다 높고, 흑이 잃었으면 g가 f보다 낮다 —
-  // 흑의 손실은 이 승률% 모델에서 백 관점으로는 그만큼의 이득으로 보이기 때문).
-  const g = evalWin.slice();
-  for (let i = 0; i < N; i++) {
-    const m = moves[i];
-    if (m.lossWinPct == null) continue;
-    g[i + 1] = evalWin[i + 1] + (m.white ? 1 : -1) * m.lossWinPct;
-  }
+  if (!result) return { moves: [], wCurve: [100], bCurve: [100] };
+  const { moves } = result;
   // 진영별 구간 누적 정확도 곡선 — index 0은 "아직 한 수도 안 둔 상태"(100)로 시작해, 그 진영이 스스로
   // 둔 n번째 수까지 newCumulativeAccuracy를 다시 계산해 나간다(newCumulativeAccuracy 자체가 사용자
   // 설계 그대로 — App.jsx 앞부분 "독립 정확도 체계" 참고).
   const wLoss = [], wSharp = [], bLoss = [], bSharp = [];
   const wCurve = [100], bCurve = [100];
-  for (let i = 0; i < N; i++) {
-    const m = moves[i];
+  for (const m of moves) {
     if (m.lossWinPct == null) continue;
     if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); wCurve.push(newCumulativeAccuracy(wLoss, wSharp, wLoss.length)); }
     else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); bCurve.push(newCumulativeAccuracy(bLoss, bSharp, bLoss.length)); }
   }
-  return { moves, g, evalWin, wCurve, bCurve, N };
+  return { moves, wCurve, bCurve };
 }
 // 진영 하나의 구간 누적 정확도 곡선을 그리는 작은 스파크라인 — 지금까지 채점된 만큼만 그린다. 투명 배경.
 function MiniAccCurve({ curve, shownCount, color, label }) {
@@ -8567,49 +8557,15 @@ function MiniAccCurve({ curve, shownCount, color, label }) {
     </div>
   );
 }
-// 개요 띠 — 확대 화면이 지금 전체 수순 중 어디를 보고 있는지 잃지 않도록, 축소된 f 곡선 전체와 지금
-// 확대해서 보는 구간(윈도우)을 표시한다. x좌표 눈금 4개도 여기에 둔다(확대 화면은 계속 움직여서
-// 눈금을 붙이기 부적절하다).
-function RevealOverviewStrip({ evalWin, N, windowStart, windowEnd }) {
-  const W2 = 320, H2 = 30;
-  const x2 = (i) => (N <= 0 ? 0 : (i / N) * W2);
-  const y2 = (w) => H2 - (Math.max(0, Math.min(100, w)) / 100) * H2;
-  const path = evalWin.length >= 2 ? "M " + evalWin.map((w, i) => x2(i).toFixed(1) + "," + y2(w).toFixed(1)).join(" L ") : "";
-  return (
-    <div style={{ marginTop: 8 }}>
-      <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: 24, background: "transparent" }}>
-        <rect x={x2(windowStart).toFixed(1)} y="0" width={Math.max(1, x2(windowEnd) - x2(windowStart)).toFixed(1)} height={H2} fill="rgba(236,203,134,.28)" />
-        {path && <path d={path} fill="none" stroke="rgba(235,221,196,.55)" strokeWidth="1.2" />}
-      </svg>
-      <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 2px 0", fontSize: 9.5, color: RV.dim, fontFamily: "ui-monospace,monospace" }}>
-        {[0, 1, 2, 3].map((k) => <span key={k}>{Math.round((k / 3) * N)}</span>)}
-      </div>
-    </div>
-  );
-}
-const REVEAL_WINDOW_INTERVALS = 6; // 확대 화면에 한 번에 보여줄 수 구간 개수
-const REVEAL_ANCHOR_FRAC = 0.62;   // 지금 채점 중인 지점을 확대 화면 가로 몇 % 지점에 고정할지
-const REVEAL_HOLD_MS = 900;        // 분석이 다 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
+const REVEAL_HOLD_MS = 900; // 분석이 다 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
 function ReviewAccuracyRevealAnim({ result, resultDone, onDone }) {
   const data = useMemo(() => buildRevealData(result), [result]);
-  const { moves, g, evalWin, wCurve, bCurve, N } = data;
-  const sweepIdx = moves.length; // 지금까지 실제로 채점된 수 개수 — 타이머가 아니라 실제 분석 진행에 그대로 연동
+  const { moves, wCurve, bCurve } = data;
   const { wShown, bShown } = useMemo(() => {
     let w = 0, b = 0;
     for (const m of moves) { if (m.white) w++; else b++; }
     return { wShown: w, bShown: b };
   }, [moves]);
-  const W = 320, H = 130;
-  const x = (i) => (N <= 0 ? 0 : (i / N) * W);
-  const y = (w) => H - (Math.max(0, Math.min(100, w)) / 100) * H;
-  // 확대·추적 카메라 — 전체 좌표계(0..N)는 그대로 두고, 그 위의 <g>에 CSS transform(translate 후 scale)만
-  // 걸어 지금 채점 중인 지점(sweepIdx) 근방 REVEAL_WINDOW_INTERVALS개 구간만 화면 가득 확대해서 보여준다.
-  // stroke는 scale만큼 얇아 보이므로 1/scale로 나눠 화면상 굵기를 일정하게 유지한다.
-  const scale = N > 0 ? Math.max(1, N / REVEAL_WINDOW_INTERVALS) : 1;
-  const frontierX = x(sweepIdx);
-  const rawTx = W * REVEAL_ANCHOR_FRAC - frontierX * scale;
-  const tx = Math.min(W * REVEAL_ANCHOR_FRAC, Math.max(W - W * scale, rawTx));
-  const camStyle = { transform: "translate(" + tx.toFixed(1) + "px,0) scale(" + scale.toFixed(3) + ")", transformOrigin: "0 0", transition: "transform .45s cubic-bezier(.22,.9,.32,1)" };
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   useEffect(() => {
@@ -8619,29 +8575,15 @@ function ReviewAccuracyRevealAnim({ result, resultDone, onDone }) {
   }, [resultDone]);
   const wVal = wCurve[Math.min(wShown, wCurve.length - 1)];
   const bVal = bCurve[Math.min(bShown, bCurve.length - 1)];
+  // EvalGraph는 n(포인트 개수)이 2 이상이어야 그려진다 — 아직 첫 수도 채점되지 않은 순간엔 평평한
+  // 두 점(50=팽팽함)으로 자리만 잡아 둔다.
+  const evalWin = result && result.evalWin && result.evalWin.length >= 2 ? result.evalWin : [50, 50];
   return (
-    <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", padding: "6px 4px", background: "transparent" }}>
+    <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", padding: "6px 4px" }}>
       <p style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px" }}>{resultDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요..."}</p>
-      <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, overflow: "hidden", background: "transparent" }}>
-        <g style={camStyle}>
-          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth={(0.6 / scale).toFixed(3)} strokeDasharray={(3 / scale).toFixed(2) + " " + (3 / scale).toFixed(2)} />
-          {/* 수 구간별 f·g 넓이(=그 수의 손실) — 정적분을 도형으로 시각화. 실제로 채점된 수만큼만 그 즉시 나타난다. */}
-          {moves.map((m, i) => {
-            if (m.lossWinPct == null) return null;
-            const fillCol = m.white ? "rgba(237,231,220,.55)" : "rgba(15,9,4,.65)";
-            const pts = [[x(i), y(evalWin[i])], [x(i + 1), y(evalWin[i + 1])], [x(i + 1), y(g[i + 1])], [x(i), y(g[i])]]
-              .map(([px, py]) => px.toFixed(1) + "," + py.toFixed(1)).join(" ");
-            return <polygon key={i} points={pts} fill={fillCol} />;
-          })}
-          {/* moveEvalGraph(f) — 실제로 채점된 지점까지만 그려지는 실제 평가 곡선 */}
-          {sweepIdx >= 1 && <path d={"M " + evalWin.slice(0, sweepIdx + 1).map((w, i) => x(i).toFixed(1) + "," + y(w).toFixed(1)).join(" L ")} fill="none" stroke="#EBCB86" strokeWidth={(2.2 / scale).toFixed(3)} strokeLinecap="round" />}
-          {/* bestMoveEvalGraph(g) — 같은 지점까지 덧그려지는 최선수 기준 곡선 */}
-          {sweepIdx >= 1 && <path d={"M " + g.slice(0, sweepIdx + 1).map((w, i) => x(i).toFixed(1) + "," + y(w).toFixed(1)).join(" L ")} fill="none" stroke="#8FB55E" strokeWidth={(1.6 / scale).toFixed(3)} strokeDasharray={(3 / scale).toFixed(2) + " " + (2 / scale).toFixed(2)} />}
-          {/* 지금 채점 중인 지점 — 카메라가 계속 이 점을 따라간다 */}
-          {sweepIdx >= 1 && <circle cx={frontierX} cy={y(evalWin[sweepIdx])} r={3.2 / scale} fill="#EBCB86" stroke="#241509" strokeWidth={(0.8 / scale).toFixed(3)} />}
-        </g>
-      </svg>
-      <RevealOverviewStrip evalWin={evalWin} N={N} windowStart={Math.max(0, sweepIdx - REVEAL_WINDOW_INTERVALS)} windowEnd={sweepIdx} />
+      {/* 리뷰 화면의 평가치 변동 그래프와 완전히 같은 컴포넌트 — 실시간으로 자라나는 evalWin·moves를
+          그대로 넘기기만 해서, 실제 분석 진행 속도 그대로 왼쪽부터 그려진다. */}
+      <EvalGraph evalWin={evalWin} moves={moves} />
       <div className="flex items-start" style={{ gap: 14, marginTop: 10 }}>
         <div style={{ flex: 1, textAlign: "center" }}>
           <MiniAccCurve curve={wCurve} shownCount={wShown} color="#EDE7DC" label="⬜ 백 정확도" />
@@ -16961,7 +16903,7 @@ const CHANGELOG = [
   {
     version: "0.3.8", date: "2026.8.19", dev: ["openchesskr"], items: [
       "게임 리뷰가 복잡한 포지션에서 더 깊이 분석하도록 시간을 늘려 정확도를 개선했어요(평소보다 리뷰 시간이 조금 더 걸릴 수 있어요).",
-      "게임 리뷰에 들어갈 때 보여주는 화면이 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 분석이 진행되는 동안 실시간으로 평가 그래프가 그려지며 백·흑 각각의 정확도가 계산되는 모습을 확대해서 보여준 뒤 정확도 박스로 이어져요.",
+      "게임 리뷰에 들어갈 때 보여주는 화면이 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 분석이 진행되는 동안 리뷰 화면과 똑같은 모양의 평가 그래프가 실시간으로 그려지며 백·흑 각각의 정확도가 계산되는 모습을 보여준 뒤 정확도 박스로 이어져요.",
       "게임 리뷰의 정확도 계산 방식을 새로 설계했어요 — 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지고, 후보 수가 여럿인 무난한 포지션에서의 실수는 관대하게, 정답이 하나뿐인 날카로운 포지션에서의 실수는 더 엄격하게 반영돼요.",
       "라인/퍼즐 클리어 배너의 글자가 전용 폰트로 바뀌고, 위아래로 줄바꿈되어 화면 정중앙에 표시돼요.",
       "체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률을 개선했어요.",
