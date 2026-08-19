@@ -7842,14 +7842,6 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const markX = hasMark ? x(curPly) : null;
   const markY = hasMark ? y(evalWin[curPly]) : null;
   const markFrac = hasMark ? curPly / (n - 1) : 0;
-  // (사용자 요청) 최선 수 기준 평가(g) 흐릿한 점 — 예전엔 리뷰 진입 애니메이션에서 수마다 하나씩
-  // 찍었는데, 이제 그 애니메이션에서는 빼고 대신 이 실제 리뷰 그래프에서 역삼각형 마커로 지금
-  // 선택한 지점 하나에만 보여준다(마커를 옮기면 그 지점의 값으로 함께 움직인다). 연두색으로
-  // 눈에 띄게 하고, "1st"(엔진 1순위 수 기준이라는 뜻) 라벨을 작게 함께 표기한다.
-  const bestMoveSrc = hasMark && curPly > 0 && moves ? moves[curPly - 1] : null;
-  const bestMoveY = (bestMoveSrc && bestMoveSrc.lossWinPct != null)
-    ? y(evalWin[curPly] + (bestMoveSrc.white ? 1 : -1) * bestMoveSrc.lossWinPct)
-    : null;
   return (
     <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, overflow: "hidden" }}>
       <div style={{ position: "relative", touchAction: "none" }}
@@ -7859,19 +7851,16 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
         <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none"
           style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default" }}>
           <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
-          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
           <polygon points={areaPts} fill="#EDE7DC" />
           <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
+          {/* (사용자 요청) 정중앙(0.0 평가) 점선 — 흰 영역 채우기보다 먼저 그리면 백이 우세한 구간(채우기가
+              이 선까지 덮는 구간)에서 가려져 안 보였다. 채우기 뒤(위)에 다시 그려 항상 보이게 하고, 배경
+              (어두운 갈색)·채우기(밝은 크림) 양쪽에서 다 눈에 띄도록 진한 황동색을 쓴다. */}
+          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke={T.brass} strokeWidth="0.9" strokeOpacity="0.65" strokeDasharray="3 3" />
           {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
           {hasMark && (
             <>
               <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
-              {bestMoveY != null && (
-                <>
-                  <circle cx={markX} cy={bestMoveY} r="2.6" fill={T.good} stroke="#241509" strokeWidth="0.6" />
-                  <text x={markX + 4.5} y={bestMoveY + 2} fontSize="6" fontWeight="800" fill={T.good} fontFamily="ui-monospace,monospace" paintOrder="stroke" stroke="#241509" strokeWidth="1.6">1st</text>
-                </>
-              )}
               <circle cx={markX} cy={markY} r="3.6" fill="#EBCB86" stroke="#241509" strokeWidth="0.8" />
             </>
           )}
@@ -8632,10 +8621,11 @@ function MiniAccCurve({ curve, shownCount, color, label, big }) {
       <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3 }}>{label}</div>
       <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: big ? 64 : 40, background: "transparent" }}>
         <rect x="0" y="0" width={W2} height={H2} rx="6" fill="rgba(255,255,255,.05)" />
+        {/* (사용자 요청) 축 눈금 숫자를 더 크고 잘 보이게 — 글자 크기·불투명도·굵기를 모두 올렸다. */}
         {[low, high].map((g) => (
           <React.Fragment key={g}>
             <line x1="0" y1={yy(g).toFixed(1)} x2={W2} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
-            <text x="2" y={(g === high ? yy(g) + 6 : yy(g) - 1.5).toFixed(1)} fontSize={big ? 7 : 5.5} fill="rgba(235,221,196,.45)" fontFamily="ui-monospace,monospace">{g}</text>
+            <text x="2" y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily="ui-monospace,monospace">{g}</text>
           </React.Fragment>
         ))}
         {path && <path d={path} fill="none" stroke={color} strokeWidth={big ? 2.4 : 1.8} strokeLinejoin="round" />}
@@ -8754,12 +8744,14 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
           {tipX < W && <rect x={tipX.toFixed(1)} y="0" width={(W - tipX).toFixed(1)} height={H} fill="#0A0604" />}
           {tipX > 0 && (
             <>
-              <line x1="0" y1={H / 2} x2={tipX.toFixed(1)} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
               {/* 펜이 지나간 부분만 아래쪽을 흰색으로 채운다 */}
               {areaPts && <polygon points={areaPts} fill="#EDE7DC" />}
               {lineD && <path d={lineD} fill="none" stroke="#B9B0A4" strokeWidth="1" />}
             </>
           )}
+          {/* (사용자 요청) 정중앙(0.0 평가) 점선 — 아직 그려지지 않은 검은 구간에도, 흰 채우기가 덮는
+              구간에도 항상 보이도록 채우기보다 나중에(위에) 그리고, 진한 황동색을 쓴다. */}
+          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke={T.brass} strokeWidth="0.9" strokeOpacity="0.65" strokeDasharray="3 3" />
           {/* 정확도 증가/감소 — 그 수를 지나가는 순간 잠깐 떴다 사라지는 숫자(초록=증가, 빨강=감소) */}
           <AnimatePresence>
             {popups.map((p) => {
@@ -17170,12 +17162,12 @@ const CHANGELOG = [
       "리뷰 페이지를 닫았다가 리뷰 버튼을 다시 눌러 들어가면 화면이 멈춰버리던 심각한 오류를 고쳤어요.",
       "정확도가 오르내릴 때 잠깐 떴다 사라지는 숫자에 %가 붙고, 변동이 아주 작은 수는 숫자가 너무 겹쳐 보이지 않도록 표시하지 않아요. 백·흑 정확도 그래프의 눈금은 평소 60~100 구간만 보여주다가, 정확도가 60 밑으로 떨어지면 그때만 0~100 전체로 자동으로 넓어져요.",
       "게임 리뷰 진입 화면의 그래프가 특정 대국에서 한동안 멈춰 있다가 뒤늦게 한꺼번에 몰아 그려지던 문제를 고쳤어요 — 이제 항상 고르게 채워져요.",
-      "최선 수 위치를 보여주는 흐릿한 점을 리뷰 화면의 평가치 그래프로 옮겼어요 — 역삼각형 마커로 특정 지점을 선택하면 그 지점에 연두색 점과 '1st' 표시로 나타나요.",
       "평가치 그래프의 역삼각형 마커를 빠르게 좌우로 끌면 엔진 라인이 잠깐 먹통이 되던 문제를 고쳤어요 — 마커가 한 지점에 멈춘 뒤부터 계산이 시작돼요.",
       "프로필에 짧은 소개를 남길 수 있어요 — 프로필 편집에서 작성하면 프로필 카드와 유저 검색 결과의 닉네임 바로 밑에 표시돼요.",
       "정확도 증감 숫자를 그래프 위뿐 아니라 백·흑 정확도 박스 우하단에도 함께 띄워 변동을 더 직관적으로 보여줘요. 잔상이 사라지는 속도를 높이고, 다음 숫자가 뜨기 전 살짝의 간격을 둬서 숫자끼리 겹치지 않게 했어요.",
       "모바일에서는 백 정확도 그래프와 흑 정확도 그래프를 각각 다른 줄에 더 크게 보여줘요.",
       "게임 리뷰의 정확도 계산이 실제보다 너무 높게, 백·흑 차이도 너무 적게 나오던 문제를 고쳤어요 — 이제 대국 중 실수·블런더가 정확도에 더 뚜렷하게 반영돼요.",
+      "평가치 그래프의 정중앙(0.0 평가) 점선이 더 진해지고, 흰 영역에 가려지지 않고 그래프 전체에서 항상 보여요. 정확도 그래프의 눈금 숫자도 더 크고 잘 보이게 바뀌었어요.",
     ]
   },
   {
