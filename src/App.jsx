@@ -2850,7 +2850,12 @@ function bootAnalysisWorker(urls) {
           if (queue[0] !== job) return;
           queue.shift(); running = false; swallowBest++; pump();
         }, 1500);
-      }, job.mt ? job.mt + 4000 : 15000);
+        // (v0.3.8 버그 수정) hardBuffer — 게임 리뷰(analyzeGame)처럼 이 워치독이 곧 "채점(gradeIdx)이
+        // 전부 멈춰서는" 자리인 호출부는, 기본 4000ms 여유가 실제로 아주 가끔(엔진 워커가 그 순간
+        // 멈춰버린 것으로 보이는 드문 경우) 통째로 낭비된다 — 어차피 이 시점엔 그 포지션이 정상
+        // 응답을 못 준 것으로 확정하고 넘어가는 참이므로, 그 호출부만 더 짧은 여유를 요청할 수 있게
+        // 열어 둔다(생략하면 기존과 동일한 4000ms — 다른 호출부는 전혀 영향받지 않는다).
+      }, job.mt ? job.mt + (job.hardBuffer != null ? job.hardBuffer : 4000) : 15000);
     }
     function handleLine(line) {
       const job = queue[0]; if (!job) return;
@@ -2898,12 +2903,12 @@ function bootAnalysisWorker(urls) {
                   pump();
                 });
               },
-              evaluateMulti(fen, d, multipv, mt, onLines, slot) {
+              evaluateMulti(fen, d, multipv, mt, onLines, slot, hardBuffer) {
                 return new Promise((res) => {
                   supersede(slot);
                   // (버그 수정) movetime을 "go" 명령에 직접 넣지 않는다 — pump()의 soft-stop 타이머가
                   // multipvTarget개 순위가 전부 보고될 때까지 기다렸다가 stop을 보낸다(위 pump() 참고).
-                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, multipvTarget: multipv, slot, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d] });
+                  queue.push({ resolve: res, multi: true, lines: {}, onLines, mt, multipvTarget: multipv, slot, hardBuffer, cmds: ["setoption name MultiPV value " + multipv, "position fen " + fen, "go depth " + d] });
                   pump();
                 });
               },
@@ -2995,6 +3000,16 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // 늘어나 긴 대국일수록 끝없이 느려진다. depth·movetime(정확도)은 손대지 않고, 같은 엔진 프로필의
   // 전용 워커를 여러 개 띄워 포지션들을 나눠 동시에 계산해 총 시간만 줄인다.
   const fens = new Array(N + 1);
+  // (버그 수정) MultiPV=3을 고정으로 요청했는데, 실제 그 포지션의 합법수가 1~2개뿐이면(외통 직전
+  // 외길 응수, 유일한 되잡기 등) 엔진은 절대 3순위 줄을 내놓지 못한다. pump()의 소프트 스톱은 "요청한
+  // 순위 전부가 나올 때까지" 기다리므로, 이런 포지션은 movetime을 다 채우고도 계속 기다리다 결국
+  // 하드 워치독(movetime+4000ms)에 걸려서야 끝난다 — 게다가 실패로 잡혀(!lines[0]) 한 번 더
+  // 재시도까지 하므로 포지션 하나가 최대 (movetime+4000)×2(≈10초 안팎)를 통째로 잡아먹는다. 채점
+  // (gradeIdx)은 반드시 순서대로만 진행되므로, 이 포지션 하나가 리뷰 진입 애니메이션 전체를 몇 초씩
+  // 멈춰 세웠다가 밀려 있던 뒤 수들을 한꺼번에 쏟아내는(사용자 보고 "그래프가 한꺼번에 그려짐") 원인이었다.
+  // 실제 합법수 개수를 미리 세어 두고 MultiPV 목표를 그 이상 요구하지 않으면, 소프트 스톱이 movetime
+  // 안에 정상적으로 끝난다(탐색 깊이·movetime 자체는 전혀 건드리지 않으므로 정확도에 영향 없음).
+  const legalCounts = new Array(N + 1);
   {
     // (20차 기능5) 매 반복마다 sansToFen(fullSans.slice(0,i))로 처음부터 다시 재생하면 O(n²)가 되어
     // 기보가 길어질수록 분석이 급격히 느려진다 — 보드를 한 번만 만들어 한 수씩 전진시키며 재사용한다.
@@ -3004,8 +3019,9 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     let board = fenRoot ? fenRoot.board : startBoard(), rights = fenRoot ? fenRoot.rights : { K: true, Q: true, k: true, q: true }, ep = fenRoot ? fenRoot.ep : null;
     for (let i = 0; i <= N; i++) {
       fens[i] = boardToFen(board, i, castleRightsStr(rights), ep ? sqName(ep[0], ep[1]) : "-", startColor);
+      const color = plyIsWhite(i, startColor) ? "w" : "b";
+      legalCounts[i] = countLegalMoves(board, color, ep);
       if (i < N) {
-        const color = plyIsWhite(i, startColor) ? "w" : "b";
         const info = sanSrc(board, fullSans[i], color);
         rights = updateCastleRights(rights, info, color);
         ep = epTargetFromMoveInfo(info);
@@ -3178,6 +3194,10 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // "몇몇 수의 수 체계 아이콘·평가치가 미리 계산돼 있지 않고, 마치 그 수까지 왔을 때에야 계산이
   // 시작되는 것처럼 보이는" 사용자 보고 증상의 정체다. depth 20을 더 채우려는 목적과 이 정체 현상을
   // 완화하려는 목적이 서로 상충해, 상한을 4배로 다소 보수적으로 잡는다.
+  // (v0.3.8 버그 수정) 이 상한과는 별개로, 리뷰 진입 애니메이션의 그래프가 "멈춰 있다가 갑자기
+  // 한꺼번에 그려지는" 진짜 원인은 따로 있었다 — 아래 legalCounts 주석 참고(MultiPV 목표를 실제
+  // 합법수 이상으로 요구해 소프트 스톱이 하드 워치독까지 가던 문제). 그 진짜 원인을 고쳤으므로 이
+  // 상한은 원래의 정확도 우선 값(4배)을 그대로 유지한다.
   const REVIEW_BUDGET_FACTOR = 1.15, REVIEW_PER_POS_CAP_MULT = 4, REVIEW_PER_POS_FLOOR_MULT = 0.4;
   const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   const workersLen = Math.max(1, workers.length);
@@ -3196,13 +3216,26 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
       const mt = nextMovetime(doneCount);
       // (v0.3.8 기능) 독립 정확도 체계의 "날카로움 보정"이 후보 1·2·3위 평가를 다 필요로 해 MultiPV를
       // 2→3으로 늘렸다 — 그만큼 포지션마다 엔진 호출이 조금 더 걸린다(리뷰 정확도가 최우선이므로
-      // 감수한다, 위 REVIEW_BUDGET_FACTOR가 알아서 나머지 시간 배분을 흡수한다).
-      let lines = await withTimeout(w.evaluateMulti(fens[i], depth, 3, mt), mt + 4000);
+      // 감수한다, 위 REVIEW_BUDGET_FACTOR가 알아서 나머지 시간 배분을 흡수한다). 다만 실제 합법수가
+      // 3개 미만인 포지션엔 그 이상을 요구하지 않는다(위 legalCounts 주석 참고) — 안 그러면 소프트
+      // 스톱이 절대 나올 수 없는 3순위 줄을 기다리다 하드 워치독까지 가서 포지션 하나가 몇 초씩
+      // gradeIdx를 막는다.
+      const multipvTarget = Math.max(1, Math.min(3, legalCounts[i]));
+      // (v0.3.8 버그 수정) 사용자 보고 — 리뷰 진입 애니메이션의 그래프가 "멈춰 있다가 갑자기
+      // 한꺼번에 그려지는" 문제를 Playwright로 실제 재현해 보니, 극히 드물게(약 40포지션에 1~2개
+      // 꼴) 워커가 이 포지션 하나에서 멈춰(엔진 자체 문제로 추정 — 합법수 부족 때문은 아님, 위에서
+      // 이미 배제했다) 기본 4000ms 여유를 통째로 날리고, 재시도까지 한 번 더 날려 포지션 하나가
+      // 10초 가까이 gradeIdx를 막는 경우를 확인했다. 이 여유는 "엔진이 완전히 멈췄다"고 확정하고
+      // 다음으로 넘어가기 전 마지막으로 기다려 주는 안전망일 뿐이라, 짧게 줄여도 정상적으로 끝나는
+      // 나머지 포지션들(soft-stop이 movetime 근처에서 정상적으로 멈추는 대다수)에는 전혀 영향이
+      // 없다 — 이 호출부(리뷰 전용)만 hardBuffer로 더 짧은 여유(1500ms)를 요청한다.
+      const REVIEW_HARD_BUFFER_MS = 1500;
+      let lines = await withTimeout(w.evaluateMulti(fens[i], depth, multipvTarget, mt, undefined, undefined, REVIEW_HARD_BUFFER_MS), mt + REVIEW_HARD_BUFFER_MS + 100);
       // (v0.3.4 버그 수정) 몇몇 포지션이 타임아웃(워커가 그 순간 다른 요청으로 바빴거나 일시적으로
       // 응답이 늦었을 뿐인 경우가 대부분)으로 실패하면, 예전엔 그 자리에서 그대로 "pending"으로
       // 영영 남아 그 수의 등급·평가치가 다시는 채워지지 않았다(다른 어떤 경로도 재시도하지 않음).
       // 한 번만 더 재시도한다 — 실제로 계산 불가능한 포지션은 거의 없으므로 대부분 이걸로 회복된다.
-      if (!lines || !lines[0]) lines = await withTimeout(w.evaluateMulti(fens[i], depth, 3, mt), mt + 4000);
+      if (!lines || !lines[0]) lines = await withTimeout(w.evaluateMulti(fens[i], depth, multipvTarget, mt, undefined, undefined, REVIEW_HARD_BUFFER_MS), mt + REVIEW_HARD_BUFFER_MS + 100);
       const p0 = lines && lines[0], p1 = lines && lines[1], p2 = lines && lines[2];
       // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
       // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
@@ -17043,6 +17076,7 @@ const CHANGELOG = [
       "리뷰 요약 화면의 '기다리지 않고 바로 리뷰 시작' 버튼을 없앴어요 — 리뷰 정확도를 위해 이제 항상 분석이 완전히 끝난 뒤에 시작해요.",
       "리뷰 페이지를 닫았다가 리뷰 버튼을 다시 눌러 들어가면 화면이 멈춰버리던 심각한 오류를 고쳤어요.",
       "정확도가 오르내릴 때 잠깐 떴다 사라지는 숫자에 %가 붙고, 변동이 아주 작은 수는 숫자가 너무 겹쳐 보이지 않도록 표시하지 않아요. 백·흑 정확도 그래프의 눈금은 평소 60~100 구간만 보여주다가, 정확도가 60 밑으로 떨어지면 그때만 0~100 전체로 자동으로 넓어져요.",
+      "게임 리뷰 진입 화면의 그래프가 특정 대국에서 한동안 멈춰 있다가 뒤늦게 한꺼번에 몰아 그려지던 문제를 고쳤어요 — 이제 항상 고르게 채워져요.",
     ]
   },
   {
