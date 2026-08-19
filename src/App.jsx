@@ -7802,10 +7802,19 @@ function pickEvalGraphDots(moves) {
 // 위치를 옮길 수 있다 — 포인터를 누른 채 좌우로 끌면(pointer capture) 그 시점의 평가치가 부드럽게
 // 이어서 갱신된다. 마커(점+세로 점선)와 그래프 위 역삼각형은 curPly를 그대로 그리므로, 기보 클릭 등
 // 다른 방법으로 위치를 옮겨도 항상 지금 보고 있는 지점에 그대로 따라온다.
+// (사용자 요청) 역삼각형 마커를 누르고 있는 동안 그 지점 주변으로 그래프를 확대해서 보여준다 —
+// 확대 배율(ZOOM_SCALE)만큼 폭이 좁아진 "창"을 markX 중심으로 잡되, 게임 시작/끝 근처에서 창이
+// 그려질 영역(0..W) 밖으로 나가지 않게 clamp한다. 실제 좌표계(viewBox)는 그대로 두고 내용물을 담은
+// `<g>` 하나에만 CSS `transform: scale() translate()`를 걸어 미는 방식이라(리뷰 진입 애니메이션
+// 2차 개편 때 쓴 "카메라"와 같은 기법), 별도의 좌표 재계산이나 SVG viewBox 애니메이션 없이 CSS
+// transition만으로 부드럽게 확대·축소된다 — 확대 배율만큼 늘어나 보이는 선 굵기·점 반지름은
+// 나눠서(sw 헬퍼) 원래 두께로 되돌린다.
+const EVAL_GRAPH_ZOOM_SCALE = 3;
 function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const W = 320, H = 92; const n = evalWin.length;
   const svgRef = useRef(null);
   const draggingRef = useRef(false);
+  const [pressing, setPressing] = useState(false);
   if (n < 2) return null;
   const x = (i) => (i / (n - 1)) * W;
   const y = (w) => H - (w / 100) * H;
@@ -7819,40 +7828,57 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
     const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     onJump(Math.round(relX * (n - 1)));
   };
-  const onPointerDown = (e) => { if (!onJump) return; draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } jumpToClientX(e.clientX); };
+  const onPointerDown = (e) => { if (!onJump) return; draggingRef.current = true; setPressing(true); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } jumpToClientX(e.clientX); };
   const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
-  const onPointerUp = (e) => { draggingRef.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { } };
+  const onPointerUp = (e) => { draggingRef.current = false; setPressing(false); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { } };
   const hasMark = curPly != null && curPly >= 0 && curPly < n;
   const markX = hasMark ? x(curPly) : null;
   const markY = hasMark ? y(evalWin[curPly]) : null;
-  const markFrac = hasMark ? curPly / (n - 1) : 0;
   // (사용자 요청) 최선 수 기준 평가(g) 흐릿한 점 — 예전엔 리뷰 진입 애니메이션에서 수마다 하나씩
   // 찍었는데, 이제 그 애니메이션에서는 빼고 대신 이 실제 리뷰 그래프에서 역삼각형 마커로 지금
-  // 선택한 지점 하나에만 보여준다(마커를 옮기면 그 지점의 값으로 함께 움직인다).
+  // 선택한 지점 하나에만 보여준다(마커를 옮기면 그 지점의 값으로 함께 움직인다). 연두색으로
+  // 눈에 띄게 하고, "1st"(엔진 1순위 수 기준이라는 뜻) 라벨을 작게 함께 표기한다.
   const bestMoveSrc = hasMark && curPly > 0 && moves ? moves[curPly - 1] : null;
   const bestMoveY = (bestMoveSrc && bestMoveSrc.lossWinPct != null)
     ? y(evalWin[curPly] + (bestMoveSrc.white ? 1 : -1) * bestMoveSrc.lossWinPct)
     : null;
+  const zoomActive = pressing && hasMark;
+  let zoomVbX0 = 0;
+  if (zoomActive) {
+    const windowW = W / EVAL_GRAPH_ZOOM_SCALE;
+    zoomVbX0 = Math.max(0, Math.min(W - windowW, markX - windowW / 2));
+  }
+  const zoomScale = zoomActive ? EVAL_GRAPH_ZOOM_SCALE : 1;
+  const sw = (v) => zoomActive ? v / zoomScale : v;
+  // 확대 중엔 역삼각형 마커(SVG 밖 HTML 오버레이)도 같은 변환을 반영해 위치를 맞춘다.
+  const displayMarkFrac = hasMark ? (zoomActive ? ((markX - zoomVbX0) * zoomScale) / W : markX / W) : 0;
   return (
     <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, overflow: "hidden" }}>
       <div style={{ position: "relative", touchAction: "none" }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
         {/* 그래프 위 역삼각형 — 점선 x좌표와 함께 움직여 지금 보고 있는 지점을 더 또렷이 보여준다. */}
-        {hasMark && <div style={{ position: "absolute", top: -1, left: markFrac * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #EBCB86", pointerEvents: "none", zIndex: 2 }} />}
+        {hasMark && <div style={{ position: "absolute", top: -1, left: displayMarkFrac * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #EBCB86", pointerEvents: "none", zIndex: 2, transition: "left .18s ease" }} />}
         <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none"
-          style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default" }}>
+          style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default", overflow: "hidden" }}>
           <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
-          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
-          <polygon points={areaPts} fill="#EDE7DC" />
-          <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
-          {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
-          {hasMark && (
-            <>
-              <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
-              {bestMoveY != null && <circle cx={markX} cy={bestMoveY} r="2.6" fill="rgba(235,221,196,.6)" stroke="#241509" strokeWidth="0.5" />}
-              <circle cx={markX} cy={markY} r="3.6" fill="#EBCB86" stroke="#241509" strokeWidth="0.8" />
-            </>
-          )}
+          <g style={{ transform: "scale(" + zoomScale + ",1) translate(" + (-zoomVbX0) + "px,0)", transformOrigin: "0 0", transition: "transform .18s ease" }}>
+            <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth={sw(0.5)} strokeDasharray="3 3" />
+            <polygon points={areaPts} fill="#EDE7DC" />
+            <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth={sw(1)} />
+            {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r={sw(3.2)} fill={c} stroke="#241509" strokeWidth={sw(0.6)} />; })}
+            {hasMark && (
+              <>
+                <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth={sw(0.8)} strokeDasharray="2.5 2.5" />
+                {bestMoveY != null && (
+                  <>
+                    <circle cx={markX} cy={bestMoveY} r={sw(2.6)} fill={T.good} stroke="#241509" strokeWidth={sw(0.6)} />
+                    <text x={markX + sw(4.5)} y={bestMoveY + sw(2)} fontSize={sw(6)} fontWeight="800" fill={T.good} fontFamily="ui-monospace,monospace" paintOrder="stroke" stroke="#241509" strokeWidth={sw(1.6)}>1st</text>
+                  </>
+                )}
+                <circle cx={markX} cy={markY} r={sw(3.6)} fill="#EBCB86" stroke="#241509" strokeWidth={sw(0.8)} />
+              </>
+            )}
+          </g>
         </svg>
       </div>
     </div>
@@ -16161,6 +16187,9 @@ function ValidatedMoveInput({ value, onCommit, board, color, placeholder, style 
   );
 }
 // (기능5) 프로필 편집 — 사진/이름/칭호/자주 두는 첫 수/국적
+// (사용자 요청) 프로필 소개 — 짧은 한 줄 소개라 넉넉히 60자로 제한(프로필 카드·검색 결과 행 모두
+// 한 줄 표시를 전제로 하므로 너무 길면 다른 요소를 밀어내거나 줄바꿈되어 레이아웃이 깨진다).
+const PROFILE_BIO_MAX_LEN = 60;
 function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEquipTitle, card, user, isDev, isCodev, totalXp, solvedCount, chesscom }) {
   const set = (patch) => setProfile({ ...profile, ...patch });
   const fm = profile.firstMoves || { white: "", black: {} };
@@ -16240,6 +16269,12 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
       <input value={(profile.photo || "").startsWith("data:") ? "" : (profile.photo || "")} onChange={(e) => set({ photo: e.target.value })} placeholder="또는 이미지 주소(URL) 입력" style={field} />
       <div style={lab}>이름</div>
       <input value={profile.nickname || ""} onChange={(e) => set({ nickname: e.target.value })} placeholder="표시 이름" style={field} />
+      {/* (사용자 요청) 소개 — 프로필 카드·검색 창에서 닉네임 바로 밑에 표시되는 한 줄 자기소개. */}
+      <div className="flex items-center justify-between" style={lab}>
+        <span>소개</span>
+        <span style={{ fontWeight: 600, color: T.inkSoft, fontSize: 11 }}>{(profile.bio || "").length}/{PROFILE_BIO_MAX_LEN}</span>
+      </div>
+      <input value={profile.bio || ""} onChange={(e) => set({ bio: e.target.value.slice(0, PROFILE_BIO_MAX_LEN) })} maxLength={PROFILE_BIO_MAX_LEN} placeholder="예: 시칠리안 좋아하는 클럽 플레이어예요" style={field} />
       <div style={lab}>자주 두는 첫 수 — 백{chesscom && chesscom.status === "ready" && <span style={{ fontWeight: 600, color: T.inkSoft }}> (연동된 chess.com 기록으로 자동 입력됨 — 직접 수정 가능)</span>}</div>
       <ValidatedMoveInput value={fm.white || ""} onCommit={(v) => setFM({ white: v })} board={startBoard()} color="w" placeholder="예: e4 (생략 가능)" style={{ ...field, fontFamily: "ui-monospace,monospace" }} />
       <div style={lab}>자주 두는 첫 수 — 흑 (백의 첫 수별, 생략 가능)</div>
@@ -16953,7 +16988,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
   const [managingLegacy, setManagingLegacy] = useState(null);
   // (사용자 요청) 유산 공유 — 어떤 슬롯을 공유 시트로 열었는지 키만 들고 있는다.
   const [sharingLegacy, setSharingLegacy] = useState(null);
-  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, legacies: profile.legacies, legacyHistory: profile.legacyHistory };
+  const myPub = { nickname: profile.nickname, photo: profile.photo, bio: profile.bio, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, legacies: profile.legacies, legacyHistory: profile.legacyHistory };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft } = chesscomUi;
   // (기능6) 프로필에서 메인 퀘스트 진척도·푼 퍼즐을 한눈에 볼 수 있게 표시.
   const mq = useMemo(() => mainQuestOverallProgress(mainQuest), [mainQuest]);
@@ -16975,6 +17010,8 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           {/* (디자인) 칭호는 이름 위에 표시 */}
           {myPub.title && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={myPub.title} earned compact /></div>}
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{myPub.nickname || myPub.displayId || user}</div>
+          {/* (사용자 요청) 소개 — 닉네임 바로 밑에, @핸들보다도 위에 표시한다. */}
+          {myPub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
           <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
         </div>
       </div>
@@ -17092,8 +17129,10 @@ const CHANGELOG = [
       "리뷰 페이지를 닫았다가 리뷰 버튼을 다시 눌러 들어가면 화면이 멈춰버리던 심각한 오류를 고쳤어요.",
       "정확도가 오르내릴 때 잠깐 떴다 사라지는 숫자에 %가 붙고, 변동이 아주 작은 수는 숫자가 너무 겹쳐 보이지 않도록 표시하지 않아요. 백·흑 정확도 그래프의 눈금은 평소 60~100 구간만 보여주다가, 정확도가 60 밑으로 떨어지면 그때만 0~100 전체로 자동으로 넓어져요.",
       "게임 리뷰 진입 화면의 그래프가 특정 대국에서 한동안 멈춰 있다가 뒤늦게 한꺼번에 몰아 그려지던 문제를 고쳤어요 — 이제 항상 고르게 채워져요.",
-      "최선 수 위치를 보여주는 흐릿한 점을 리뷰 화면의 평가치 그래프로 옮겼어요 — 역삼각형 마커로 특정 지점을 선택하면 그 지점에만 표시돼요.",
+      "최선 수 위치를 보여주는 흐릿한 점을 리뷰 화면의 평가치 그래프로 옮겼어요 — 역삼각형 마커로 특정 지점을 선택하면 그 지점에 연두색 점과 '1st' 표시로 나타나요.",
       "평가치 그래프의 역삼각형 마커를 빠르게 좌우로 끌면 엔진 라인이 잠깐 먹통이 되던 문제를 고쳤어요 — 마커가 한 지점에 멈춘 뒤부터 계산이 시작돼요.",
+      "평가치 그래프의 역삼각형 마커를 누르고 있는 동안 그 지점 주변으로 그래프가 확대돼 자세히 볼 수 있어요.",
+      "프로필에 짧은 소개를 남길 수 있어요 — 프로필 편집에서 작성하면 프로필 카드와 유저 검색 결과의 닉네임 바로 밑에 표시돼요.",
     ]
   },
   {
@@ -19077,7 +19116,7 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
   // (v0.1.3 기능) 설정 탭 "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐을 이 헤더 드롭다운에도
   // 보여준다 — PublicProfileStats는 이미 pub.mainQuestSummary/solvedNos가 있으면 그 두 블록을
   // 자동으로 그려주므로(다른 유저 공개 프로필과 동일한 컴포넌트), myPub에 그대로 채워 넣기만 하면 된다.
-  const myPub = { nickname: profile.nickname, photo: profile.photo, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, mainQuestSummary, solvedNos, legacies: profile.legacies, legacyHistory: profile.legacyHistory };
+  const myPub = { nickname: profile.nickname, photo: profile.photo, bio: profile.bio, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, solvedCount, displayId: profile.displayId, mainQuestSummary, solvedNos, legacies: profile.legacies, legacyHistory: profile.legacyHistory };
   const goToProfile = () => { setOpen(false); onGoToProfile(); };
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
@@ -19095,6 +19134,7 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
             <div style={{ minWidth: 0 }}>
               {myPub.title && <div style={{ maxWidth: 180, marginBottom: 3 }}><TitleBadge id={myPub.title} earned compact /></div>}
               <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.nickname || myPub.displayId || user}</div>
+              {myPub.bio && <div style={{ fontSize: 11, color: T.ink, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
               <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
             </div>
           </div>
@@ -21013,6 +21053,9 @@ function userSearchRow(r, onClick, right, opts) {
       {p.photo ? <img src={p.photo} alt="" style={{ width: avatar, height: avatar, borderRadius: 9, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(isGM, 2) || {}) }} /> : <span style={{ width: avatar, height: avatar, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
         <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>나</span>}{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
+        {/* (사용자 요청) 소개 — 닉네임 바로 밑, @핸들 위. 촘촘한 리더보드(compact)에서는 줄 수를
+            늘리지 않도록 생략한다. */}
+        {!compact && p.bio && <div style={{ fontSize: 11, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
       </div>
       {right}
@@ -21086,6 +21129,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 <div className="flex items-center gap-2">
                   <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</span>
                 </div>
+                {pub.bio && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 1 }}>{pub.bio}</div>}
                 <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(pub.displayId || pub.username)}{roleIcon(pub.username)}</div>
                 {/* (18차 UI11) 칭호는 텍스트 대신 칭호 이미지로 표시 */}
                 {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
@@ -21849,6 +21893,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
+                  {p.bio && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 1 }}>{p.bio}</div>}
                   <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</div>
                 </div>
                 {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 10, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={17} /></button>}
@@ -22572,7 +22617,7 @@ export default function App() {
   // 자체는 이미 공개돼 있으므로 no만 실어도 보는 쪽에서 PuzzleCard를 그대로 그릴 수 있음)과 메인
   // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
-  useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest), legacies: profile.legacies || null, legacyHistory: profile.legacyHistory || null }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId, mainQuest, profile.legacies, profile.legacyHistory]);
+  useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", bio: profile.bio || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest), legacies: profile.legacies || null, legacyHistory: profile.legacyHistory || null }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.bio, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, solved, profile.displayId, mainQuest, profile.legacies, profile.legacyHistory]);
   useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
   useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
@@ -22657,7 +22702,7 @@ export default function App() {
     // (버그 수정) 이전엔 각 필드를 "없으면 직전 상태(p) 값 유지"로 병합했다 — 새 계정에 닉네임/사진이
     // 아직 없으면 직전 계정(또는 게스트) 것이 화면에 그대로 남아 보이는, 훨씬 눈에 띄는 형태의 같은
     // 버그였다. 병합 대신 이 계정의 실제 값(없으면 빈 값)으로 완전히 교체한다.
-    const pub = acc.pub || {}; setProfile({ chesscom: pub.chesscom || "", nickname: pub.nickname || "", displayId: pub.displayId || "", photo: pub.photo || "", firstMoves: pub.firstMoves || null, legacies: pub.legacies || null, legacyHistory: pub.legacyHistory || null }); setAuthOpen(false); }, []);
+    const pub = acc.pub || {}; setProfile({ chesscom: pub.chesscom || "", nickname: pub.nickname || "", bio: pub.bio || "", displayId: pub.displayId || "", photo: pub.photo || "", firstMoves: pub.firstMoves || null, legacies: pub.legacies || null, legacyHistory: pub.legacyHistory || null }); setAuthOpen(false); }, []);
   // (UX7) 로그아웃 시 메모리에 남아있던 이전 계정 데이터를 완전히 비운다 — 그대로 두면 로그아웃 화면에서도
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
