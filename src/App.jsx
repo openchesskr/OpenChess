@@ -2710,32 +2710,67 @@ async function classifyMoveKind(engine, prevSans, san, depth = 12) {
   const r = await classifyMoveKindDetailed(engine, prevSans, san, depth);
   return r ? r.kind : null;
 }
-// (19차 기능3) chess.com 게임 리뷰식 정확도 — 공개된 승률 기대값 모델 기반 근사(오차 ~1% 이내 목표).
-// cp는 백 관점(양수=백 우세). 반환은 백의 기대 승률(0~100).
+// (19차 기능3 → v0.3.8 완전 교체) 정확도 계산에 필요한 승률 기대값 모델은 그대로 재사용한다(공개된
+// 승률 기대값 근사 — cp는 백 관점(양수=백 우세), 반환은 백의 기대 승률(0~100)). 이 함수 자체는
+// EvalGraph·평가치 바 등 정확도와 무관한 다른 표시에도 쓰이므로 그대로 둔다.
 function winPctFromCp(cp) { const c = Math.max(-1200, Math.min(1200, cp)); return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1); }
-// 둔 사람 관점의 승률 하락(before-after)으로 그 수의 정확도(0~100)를 산출.
-// (정확도 모델 개편 · (B)) 감쇠 계수 ACC_DECAY로 실수의 감점 세기를 조절한다. Lichess 기본값
-// 0.04354는 chess.com보다 관대해 실수가 있는 대국을 높게 준다 — 실측 2대국(chess.com 값)에
-// 맞춰 0.055로 키웠다(실수 하나당 감점이 더 커짐). acc(0)=100은 그대로 유지된다.
-const ACC_DECAY = 0.055;
-function moveAccuracy(winBefore, winAfter) { const drop = Math.max(0, winBefore - winAfter); return Math.max(0, Math.min(100, 103.1668 * Math.exp(-ACC_DECAY * drop) - 3.1669)); }
-// 게임 정확도 = 수별 정확도의 조화평균.
-// (정확도 모델 개편 · (B)) chess.com은 실수·블런더가 여러 번 나온 대국을 훨씬 낮게 준다. 조화평균은
-// 낮은 값(실수)에 민감해 실수가 쌓일수록 점수가 크게 내려간다. 예전엔 여기에 '변동성 가중 산술평균'을
-// 섞었는데(사실상 단순평균이라 나쁜 대국을 위로 끌어올림), 실측 결과 순수 조화평균 + 더 가파른 감점
-// (ACC_DECAY)이 chess.com에 더 가까웠다(총오차 24.8→16.8). winsBefore는 향후 국면 가중 실험을 위해
-// 시그니처에 남겨둔다.
-function gameAccuracyFrom(accs, winsBefore) {
-  if (!accs.length) return null;
-  const harmonic = accs.length / accs.reduce((s, a) => s + 1 / Math.max(a, 1), 0);
-  return calibrateAccuracy(harmonic);
+// ===================== (v0.3.8) 독립 정확도 체계 — 사용자 설계 =====================
+// 기존엔 chess.com 공개 근사 공식(수 하나의 승률 손실 → exp 감쇠로 그 수의 정확도, 게임 전체는
+// 정확도들의 조화평균)만 썼다. 사용자가 손으로 유도한 모델로 완전히 교체한다:
+//   · f(n) = n번째 수를 둔 뒤 실제 평가(승률%), g(n) = n번째 수를 두기 전 최선수 기준 평가(승률%).
+//     한 수의 손실(f·g의 격차)은 이미 기존에도 쓰던 winBefore-winAfter와 같다.
+//   · h(n) = "구간 n까지의 누적 정확도" — 시작부터 n번째 자기 수까지의 손실을 평균 낸 뒤 그 평균을
+//     정확도로 변환한 값. n이 커질수록(대국이 길어질수록) 평균이 희석되어 수 하나가 전체에 미치는
+//     영향이 자연히 줄어든다 — 그래서 오프닝/미들게임/엔드게임 구간 정확도도 "그 구간만"이 아니라
+//     "시작부터 그 구간 끝까지"의 누적값으로 정의한다(사용자 확인 — 아래 reviewPhaseAccuracy 참고).
+//   · 날카로움 보정 — 그 수를 두기 전 포지션의 엔진 상위 1·2·3위 후보 수 평가(승률%)의 표준편차가
+//     작을수록(비슷한 값의 대안이 여럿이라 "무난한" 포지션) 그 수의 손실을 더 관대하게(작게), 표준편차가
+//     클수록(정답이 사실상 하나뿐인 날카로운 포지션) 더 엄격하게(크게) 취급한다 — 즉 "같은 손실이라도
+//     무난한 포지션에서 난 손실은 덜 아프고, 날카로운 포지션에서 난 손실은 더 아프다"로 보정한다.
+//     손실이 아니라 정확도 자체에 곱하면 손실이 0인(완벽하게 둔) 수까지 포지션 난이도로 깎이는 부작용이
+//     생겨(0에 무엇을 곱해도 0이어야 함) 손실 쪽에 곱한다. 보정 기준(SHARP_REF_*)은 그때그때 대국의
+//     상대적 분포가 아니라 고정된 절대 기준값이다 — 상대 기준으로 하면 "모든 수가 다 날카로웠던 대국"과
+//     "모든 수가 다 무난했던 대국"이 보정 후 똑같아지는 문제가 생긴다(내부적으로 실측 확인함).
+//   · 마지막으로 전체를 하나의 튜닝 상수(NEW_ACC_CALIB)로 스케일한다 — chess.com 체감 수치와의
+//     유사도는 이 상수(와 아래 다른 상수들)만 조정하면 원하는 만큼 다시 맞출 수 있다.
+const NEW_ACC_DECAY = 0.055;      // 누적 평균 손실(승률%p) → 정확도 변환 감쇠 계수(기존 ACC_DECAY와 형태는 같되 독립된 튜닝 상수)
+const SHARP_REF_MEAN = 8;         // "평균적으로 무난한" 포지션의 후보 표준편차(승률%p) 절대 기준값 — 실측 없이 상식적으로 잡은 값, 튜닝 가능
+const SHARP_REF_SD = 8;           // 위 기준 근방에서 보정이 완만하게 갈리는 폭
+const NEW_ACC_SHARP_LO = 0.85;    // 아주 무난한 포지션에서 손실에 곱하는 배율 하한(관대)
+const NEW_ACC_SHARP_HI = 1.15;    // 아주 날카로운 포지션에서 손실에 곱하는 배율 상한(엄격)
+const NEW_ACC_CALIB = 1.0;        // 전체 스케일 보정 — chess.com 근사치에 맞추는 최종 튜닝 손잡이
+// 모집단 표준편차 — gradeOne이 그 수를 두기 전 포지션의 후보 1·2·3위 평가(승률%)로 "날카로움"(sharp)을 잴 때 쓴다.
+function stdev(nums) {
+  const n = nums.length; if (!n) return 0;
+  const mean = nums.reduce((s, v) => s + v, 0) / n;
+  return Math.sqrt(nums.reduce((s, v) => s + (v - mean) * (v - mean), 0) / n);
 }
-// (정확도 보정) 예전에는 잘못된 집계(단순평균에 가까운 성분)를 억지로 끌어올리는 선형 보정을 뒀지만,
-// 집계를 '변동성 가중 조화평균'으로 바꾼 뒤로는 그 역할이 사라졌다. 지금은 항등(보정 없음) — 집계 자체가
-// chess.com에 맞도록 하고, 향후 빅데이터로 잔차가 확인되면 여기서 다시 보정한다.
-function calibrateAccuracy(a) {
-  if (a == null) return null;
-  return Math.round(Math.max(0, Math.min(100, a)) * 10) / 10;
+// 표준정규분포 누적분포함수(Φ) — 외부 통계 라이브러리 없이 Abramowitz&Stegun 근사(오차 <1.5e-7)로 계산.
+function normalCdf(z) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp(-z * z / 2);
+  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return z >= 0 ? 1 - p : p;
+}
+// 포지션 날카로움(sharp, 승률%p 표준편차) → 그 수의 손실에 곱할 배율. 절대 기준(SHARP_REF_MEAN/SD)
+// 대비 이 포지션이 얼마나 날카로웠는지의 백분위(Φ)를 [LO,HI] 구간으로 매핑한다.
+function sharpLossMultiplier(sharp) {
+  const z = ((sharp || 0) - SHARP_REF_MEAN) / SHARP_REF_SD;
+  return NEW_ACC_SHARP_LO + (NEW_ACC_SHARP_HI - NEW_ACC_SHARP_LO) * normalCdf(z);
+}
+// 누적 평균(보정된) 손실(승률%p) → 정확도(0~100). 기존 moveAccuracy와 같은 곡선 형태
+// (103.1668·exp(-k·x)-3.1669)를 재사용하되, 이제는 수 하나가 아니라 "지금까지의 평균 손실"에 적용한다.
+function newAccuracyFromAvgLoss(avgLossWinPct) {
+  return Math.max(0, Math.min(100, 103.1668 * Math.exp(-NEW_ACC_DECAY * Math.max(0, avgLossWinPct)) - 3.1669));
+}
+// losses[i]=i번째(0-based) 자기 수의 승률% 손실, sharps[i]=그 수를 두기 전 포지션의 후보 표준편차 —
+// 둘 다 같은 진영의 수 순서대로 쌓인 배열. n(1 이상)까지의 누적 정확도를 구한다.
+function newCumulativeAccuracy(losses, sharps, n) {
+  if (n <= 0 || !losses.length) return null;
+  let adjSum = 0;
+  for (let i = 0; i < n; i++) adjSum += losses[i] * sharpLossMultiplier(sharps[i]);
+  const avgLoss = adjSum / n;
+  return Math.round(Math.max(0, Math.min(100, newAccuracyFromAvgLoss(avgLoss) * NEW_ACC_CALIB)) * 10) / 10;
 }
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
@@ -2952,9 +2987,10 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   fullSans = decorateLine(fullSans);
   const N = fullSans.length;
   const startColor = fenRoot ? fenRoot.turn : "w";
-  // MultiPV-2: 각 포지션을 한 번만 평가해 최선수(pv0)와 2순위(pv1)를 함께 얻는다(중복 평가 없음).
-  // 2순위와의 격차로 "유일한 수(Great)"를 판정하고, movetime 상한으로 시간이 폭주하지 않게 한다.
-  const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null }
+  // (v0.3.8) MultiPV-3: 각 포지션을 한 번만 평가해 최선수(pv0)·2순위(pv1)·3순위(pv2)를 함께 얻는다
+  // (중복 평가 없음). 2순위와의 격차로 "유일한 수(Great)"를 판정하고, 1·2·3순위 평가의 표준편차로
+  // 독립 정확도 체계의 "날카로움 보정"을 계산한다. movetime 상한으로 시간이 폭주하지 않게 한다.
+  const posEval = new Array(N + 1); // { cp: 최선(둘 차례 관점), best: 최선 UCI, second: 2순위 평가치|null, third: 3순위 평가치|null }
   // (버그 수정) 워커 하나로 포지션을 순서대로 평가하면 총 분석 시간이 포지션 수(N+1)에 정비례해
   // 늘어나 긴 대국일수록 끝없이 느려진다. depth·movetime(정확도)은 손대지 않고, 같은 엔진 프로필의
   // 전용 워커를 여러 개 띄워 포지션들을 나눠 동시에 계산해 총 시간만 줄인다.
@@ -2997,7 +3033,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // posEval[i+1]이 둘 다 준비돼야 하므로(최선수 일치 시 다음 포지션 평가치를 이어받는 보정 때문),
   // 그 둘이 갖춰지는 순서대로 진행된다(대개 앞에서부터 순서대로 끝나지만, 몇 수 앞서 끝나도
   // gradeIdx가 따라잡을 때까지 큐잉되므로 안전하다).
-  const moves = [], wAcc = [], bAcc = [], wWin = [], bWin = [];
+  const moves = [], wLoss = [], bLoss = [], wSharp = [], bSharp = [];
   const graphCp = new Array(N + 1), evalDisp = new Array(N + 1);
   let gradeBoard = fenRoot ? fenRoot.board : startBoard(), gradeIdx = 0;
   // (v0.3.4 기능) posEvalToWhite(전역, sansAfter.length%2로 백 차례를 판정)는 표준 시작 위치를
@@ -3040,7 +3076,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     // 건너뛴다. 예전엔 평가 실패 시 cp=0으로 취급돼 loss=0 → '최선의 수' → 정확도 100이 되어, 엔진이
     // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 pending으로 두고 정확도 집계에서 뺀다.
     if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
-      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
+      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, lossWinPct: null, sharp: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
       gradeBoard = applySan(gradeBoard, fullSans[i], color);
       return;
     }
@@ -3079,14 +3115,25 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
       const under = /=/.test(fullSans[i]) && !/=Q/.test(fullSans[i]);
       if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
     }
+    // (v0.3.4 유지) best/only/brilliant/book로 분류된 수는 원 손실(엔진 depth 노이즈로 미세하게
+    // 남을 수 있음)과 무관하게 정확도 계산에서 감점하지 않는다 — 예전 chess.com 근사 체계의 규칙을
+    // 그대로 물려받는다(이 판정 자체는 "어떤 수가 감점 대상인지"이지, 손실→정확도 변환 공식과는 무관).
     const noPenalty = ["best", "only", "brilliant", "book"].includes(kind);
     const winBefore = winPctFromCp(bestCp), winAfter = winPctFromCp(playedCp);
-    const acc = noPenalty ? 100 : moveAccuracy(winBefore, winAfter);
+    const lossWinPct = noPenalty ? 0 : Math.max(0, winBefore - winAfter);
+    // (v0.3.8 기능) 독립 정확도 체계의 "날카로움" — 이 수를 두기 전 포지션에서 엔진 상위 1·2·3위
+    // 후보 수 평가(승률%)가 서로 얼마나 퍼져 있는지(표준편차). 후보가 2개 미만(사실상 강제수)이면
+    // 고를 여지가 없었다는 뜻이라 가장 무난한 포지션(0)으로 둔다.
+    const sharpCands = [bestCp, posEval[i].second, posEval[i].third].filter((v) => v != null).map(winPctFromCp);
+    const sharp = sharpCands.length >= 2 ? stdev(sharpCands) : 0;
+    // 단일 수 정확도(향후 개별 표시용, 날카로움 보정까지 반영) — 실제 정확도 집계는 누적값을 쓰는
+    // 아래 wLoss/bLoss·newCumulativeAccuracy가 맡는다.
+    const acc = newAccuracyFromAvgLoss(lossWinPct * sharpLossMultiplier(sharp));
     // (v0.2.0 기능) /review 페이지가 "최선의 수는 Xx였어요" 코멘트·"수 보기" 화살표를 보여주려면
     // 실제로 둔 수와 다른 최선수만 있으면 된다 — 이미 최선수를 뒀다면(matched) 굳이 같은 수를
     // 다시 "더 나은 수"로 제안할 필요가 없어 null로 둔다.
-    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, best: matched ? null : bestSan, beforeCp: moveBeforeCp });
-    if (moverWhite) { wAcc.push(acc); wWin.push(winBefore); } else { bAcc.push(acc); bWin.push(winBefore); }
+    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, lossWinPct, sharp, best: matched ? null : bestSan, beforeCp: moveBeforeCp });
+    if (moverWhite) { wLoss.push(lossWinPct); wSharp.push(sharp); } else { bLoss.push(lossWinPct); bSharp.push(sharp); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
   // (v0.3.0 성능) EvalGraph는 evalWin.length를 x축 스케일로 쓴다 — 아직 안 끝난 구간을 그냥 잘라
@@ -3147,19 +3194,22 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     for (;;) {
       const i = nextIdx++; if (i > N) return;
       const mt = nextMovetime(doneCount);
-      let lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, mt), mt + 4000);
+      // (v0.3.8 기능) 독립 정확도 체계의 "날카로움 보정"이 후보 1·2·3위 평가를 다 필요로 해 MultiPV를
+      // 2→3으로 늘렸다 — 그만큼 포지션마다 엔진 호출이 조금 더 걸린다(리뷰 정확도가 최우선이므로
+      // 감수한다, 위 REVIEW_BUDGET_FACTOR가 알아서 나머지 시간 배분을 흡수한다).
+      let lines = await withTimeout(w.evaluateMulti(fens[i], depth, 3, mt), mt + 4000);
       // (v0.3.4 버그 수정) 몇몇 포지션이 타임아웃(워커가 그 순간 다른 요청으로 바빴거나 일시적으로
       // 응답이 늦었을 뿐인 경우가 대부분)으로 실패하면, 예전엔 그 자리에서 그대로 "pending"으로
       // 영영 남아 그 수의 등급·평가치가 다시는 채워지지 않았다(다른 어떤 경로도 재시도하지 않음).
       // 한 번만 더 재시도한다 — 실제로 계산 불가능한 포지션은 거의 없으므로 대부분 이걸로 회복된다.
-      if (!lines || !lines[0]) lines = await withTimeout(w.evaluateMulti(fens[i], depth, 2, mt), mt + 4000);
-      const p0 = lines && lines[0], p1 = lines && lines[1];
+      if (!lines || !lines[0]) lines = await withTimeout(w.evaluateMulti(fens[i], depth, 3, mt), mt + 4000);
+      const p0 = lines && lines[0], p1 = lines && lines[1], p2 = lines && lines[2];
       // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
       // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
       // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
       // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
       // 승률로만 변환되므로 문제없다).
-      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, ok: !!p0 };
+      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, third: p2 ? cpOfLine(p2) : null, ok: !!p0 };
       doneCount++;
       onProgress && onProgress(doneCount / (N + 1));
       tryFlush();
@@ -3176,7 +3226,9 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     evalDisp[N] = { mate: 0, win: winnerWhite ? "w" : "b", plies: 0 };
     graphCp[N] = winnerWhite ? 100000 : -100000;
   }
-  return { moves, whiteAcc: gameAccuracyFrom(wAcc, wWin), blackAcc: gameAccuracyFrom(bAcc, bWin), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp, evalDisp };
+  // (v0.3.8) 게임 전체 정확도 = h(n)을 그 진영이 둔 마지막 수까지(n=전체) 평가한 값 — 구간 정확도와
+  // 완전히 같은 누적 계산이며, "전체 구간"이라는 특수 케이스일 뿐이다.
+  return { moves, whiteAcc: newCumulativeAccuracy(wLoss, wSharp, wLoss.length), blackAcc: newCumulativeAccuracy(bLoss, bSharp, bLoss.length), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp, evalDisp };
 }
 const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
 // (v0.2.1 기능) 수 체계 아이콘을 누르면 그 등급의 조건·설명을 말풍선으로 보여준다(나무위키 "체스닷컴" 수 등급 참고).
@@ -8036,14 +8088,19 @@ function reviewPhaseHighlight(moves, fromPly, toPly, white) {
   }
   return bestKind;
 }
-// (v0.2.1) 한 단계(구간) 안에서 한쪽 진영의 부분 정확도 — 그 구간 그 진영 수들의 acc 평균(단계 아이콘 클릭 시 표시).
+// (v0.2.1 → v0.3.8 완전 교체) 단계 아이콘(오프닝/미들게임/엔드게임)을 누르면 뜨는 부분 정확도.
+// 예전엔 "그 구간(fromPly~toPly)만"의 acc 평균이었지만, 새 정확도 체계는 h(n)이 원래 "대국 시작부터
+// n번째 수까지의 누적 정확도"로 정의돼 있어 fromPly는 더 쓰지 않는다 — 예를 들어 "미들게임 정확도"는
+// 미들게임 구간만 따로 떼어 잰 값이 아니라 오프닝부터 미들게임 끝까지 누적된 값이다(사용자 설계:
+// 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지는 게 의도된 동작). "엔드게임
+// 정확도"는 그래서 항상 그 진영의 게임 전체 정확도(whiteAcc/blackAcc)와 같아진다.
 function reviewPhaseAccuracy(moves, fromPly, toPly, white) {
-  let sum = 0, n = 0;
-  for (let i = fromPly; i <= toPly && i < moves.length; i++) {
-    const m = moves[i]; if (m.white !== white || m.acc == null) continue;
-    sum += m.acc; n++;
+  const losses = [], sharps = [];
+  for (let i = 0; i <= toPly && i < moves.length; i++) {
+    const m = moves[i]; if (m.white !== white || m.lossWinPct == null) continue;
+    losses.push(m.lossWinPct); sharps.push(m.sharp);
   }
-  return n ? Math.round((sum / n) * 10) / 10 : null;
+  return newCumulativeAccuracy(losses, sharps, losses.length);
 }
 // (v0.2.1) 오프닝처럼 하이라이트할 비이론 수가 없는 단계는, 이론 수를 아이콘으로 쓰지 않고 그 단계·진영의
 // 정확도로 대표 등급을 정해 아이콘을 표시한다(chess.com 정확도 구간을 참고한 근사 매핑).
@@ -16783,6 +16840,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 const CHANGELOG = [
   {
     version: "0.3.8", date: "2026.8.19", dev: ["openchesskr"], items: [
+      "게임 리뷰의 정확도 계산 방식을 새로 설계했어요 — 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지고, 후보 수가 여럿인 무난한 포지션에서의 실수는 관대하게, 정답이 하나뿐인 날카로운 포지션에서의 실수는 더 엄격하게 반영돼요.",
       "라인/퍼즐 클리어 배너의 글자가 전용 폰트로 바뀌고, 위아래로 줄바꿈되어 화면 정중앙에 표시돼요.",
       "체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률을 개선했어요.",
       "모바일 리뷰 화면의 엔진 라인 글자가 커지고 왼쪽으로 정렬돼요.",
