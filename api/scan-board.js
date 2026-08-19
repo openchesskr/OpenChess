@@ -15,12 +15,85 @@
 // 않았어요" 안내만 보여준다(다른 기능엔 영향 없음).
 const OPENROUTER_MODEL = "openrouter/free";
 
+// (v0.3.8 기능) 사용자 요청 — 인식률 개선. 예전엔 모델에게 곧장 압축된 FEN 문자열("rnbqkbnr/8/..."
+// 처럼 빈 칸 개수를 숫자로 뭉친 표기)을 만들어 달라고 했는데, 이 압축 과정 자체가 LLM이 흔히 틀리는
+// 종류의 작업이다 — 8칸을 정확히 세어 숫자 하나로 뭉치는 건 "보는" 문제가 아니라 "세는" 문제라,
+// 기물 배치를 완벽히 맞게 읽어 놓고도 마지막에 칸 수를 잘못 세거나(7이나 9가 되는 등) 자릿수를 밀려
+// 써서 실패하는 경우가 실제로 잦았다. 이제는 모델에게 64칸 각각을 한 칸씩 그대로(빈 칸은 ""로) 나열만
+// 시키고, 그 배열을 압축해 FEN으로 조립하는 건 서버가 결정적으로(항상 정확하게) 계산한다 — 모델은
+// 자신이 실제로 잘하는 일(각 칸에 뭐가 있는지 보는 것)만 맡는다.
+const FEN_LETTERS = new Set(["P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"]);
+
 function extractJson(text) {
   if (!text) return null;
   try { return JSON.parse(text); } catch { }
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) return null;
   try { return JSON.parse(match[0]); } catch { return null; }
+}
+
+// ranks: 랭크8→1 순서의 8개 배열, 각 배열은 파일 a→h 순서의 8칸(기물 FEN 문자 1개 또는 빈 칸 "").
+// 구조가 정확히 8x8이고 값이 전부 유효한 문자일 때만 FEN 보드 문자열을 조립해 돌려주고, 아니면 null.
+function ranksToFenBoard(ranks) {
+  if (!Array.isArray(ranks) || ranks.length !== 8) return null;
+  const rows = [];
+  for (const rank of ranks) {
+    if (!Array.isArray(rank) || rank.length !== 8) return null;
+    let row = "", empty = 0;
+    for (const cell of rank) {
+      const v = typeof cell === "string" ? cell.trim() : "";
+      if (!v) { empty++; continue; }
+      if (!FEN_LETTERS.has(v)) return null;
+      if (empty) { row += empty; empty = 0; }
+      row += v;
+    }
+    if (empty) row += empty;
+    rows.push(row);
+  }
+  return rows.join("/");
+}
+// 64칸 전부가 빈 칸으로만 읽혔으면(=명백한 오독) 실패로 취급 — 재시도를 유도한다.
+function isPlausibleBoard(fenBoard) {
+  return !!fenBoard && /[A-Za-z]/.test(fenBoard);
+}
+
+const SCAN_PROMPT = "이 이미지는 체스판 사진 또는 스크린샷이야. 이제부터 랭크 8(맨 위 가로줄)부터 랭크 1(맨 아래 가로줄)까지 한 줄씩, 각 줄은 파일 a부터 h까지 왼쪽에서 오른쪽 순서로, 정확히 64칸을 하나도 빠짐없이 훑어. 보드가 어느 방향으로 찍혔든(흑이 아래쪽이어도, 대각선이어도) 실제 체스 기물의 색과 종류를 기준으로 표준 방향(백 진영이 랭크 1)으로 좌표를 맞춰서 읽어. 각 칸에 대해: 기물이 있으면 그 종류와 색을 FEN 문자 하나로 적어(대문자 PNBRQK=백, 소문자 pnbrqk=흑 — 색이 밝은/흰 계열이면 백, 어둡고 진한 계열이면 흑), 기물이 없는 빈 칸이면 빈 문자열 \"\"로 적어. 절대로 빈 칸 개수를 세어 숫자로 뭉치지 마 — 반드시 64개 칸을 하나씩 전부 나열해. 결과는 다른 설명 없이 정확히 이 형태의 JSON 객체 하나로만 답해: {\"ranks\": [[랭크8의 8칸],[랭크7의 8칸],...,[랭크1의 8칸]], \"confidence\": \"high\"|\"medium\"|\"low\"}. 예를 들어 초기 배치의 첫 줄(랭크8)은 [\"r\",\"n\",\"b\",\"q\",\"k\",\"b\",\"n\",\"r\"]이고 그다음 줄(랭크7)은 [\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\"]이야.";
+
+async function callOpenRouter(apiKey, safeMediaType, image) {
+  const orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + apiKey,
+      "HTTP-Referer": "https://openchess.kr",
+      "X-Title": "OpenChess",
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      temperature: 0,
+      max_tokens: 1200,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: SCAN_PROMPT },
+            { type: "image_url", image_url: { url: "data:" + safeMediaType + ";base64," + image, detail: "high" } },
+          ],
+        },
+      ],
+    }),
+  });
+  const data = await orRes.json();
+  if (!orRes.ok) {
+    const err = new Error((data && data.error && data.error.message) || "OpenRouter 요청에 실패했어요.");
+    err.upstream = true;
+    throw err;
+  }
+  const choice = data.choices && data.choices[0];
+  const content = choice && choice.message && choice.message.content;
+  const parsed = extractJson(typeof content === "string" ? content : "");
+  const fenBoard = parsed && ranksToFenBoard(parsed.ranks);
+  return { fenBoard, confidence: parsed && parsed.confidence };
 }
 
 export default async function handler(req, res) {
@@ -34,44 +107,19 @@ export default async function handler(req, res) {
   const safeMediaType = allowedTypes.includes(mediaType) ? mediaType : "image/jpeg";
 
   try {
-    const orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + apiKey,
-        "HTTP-Referer": "https://openchess.kr",
-        "X-Title": "OpenChess",
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "이 이미지는 체스판 사진 또는 스크린샷이야. 각 칸의 기물 배치를 정확히 읽어서 FEN 표기법의 보드 부분(랭크 8부터 1까지, 파일 a부터 h까지, '/'로 구분, 빈 칸은 연속 개수를 숫자로)만 만들어줘. 캐슬링 권리·차례·앙파상·이동 횟수는 사진만으로 알 수 없으니 절대 추측하지 말고 fen_board 필드에는 보드 배치만 담아. 보드가 어느 방향으로 찍혔든(흑이 아래쪽이어도) 실제 체스 기물 색과 위치를 기준으로 표준 FEN 방향(백이 1랭크)으로 변환해줘. 반드시 다른 설명 없이 정확히 이 형태의 JSON 객체 하나만 답해: {\"fen_board\": \"...\", \"confidence\": \"high\"|\"medium\"|\"low\"}",
-              },
-              { type: "image_url", image_url: { url: "data:" + safeMediaType + ";base64," + image } },
-            ],
-          },
-        ],
-      }),
-    });
-
-    const data = await orRes.json();
-    if (!orRes.ok) {
-      res.status(502).json({ error: (data && data.error && data.error.message) || "OpenRouter 요청에 실패했어요." });
-      return;
+    // (v0.3.8 기능) 첫 응답이 구조적으로 이상하거나(64칸 아님·잘못된 문자) 64칸이 전부 빈 칸으로만
+    // 읽혔으면(명백한 오독) 한 번 더 시도한다 — "openrouter/free"는 호출마다 다른 무료 모델로 배정될
+    // 수 있어, 재시도가 실제로 다른(때로는 더 나은) 모델을 만나는 경우가 있다.
+    let last = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      last = await callOpenRouter(apiKey, safeMediaType, image);
+      if (isPlausibleBoard(last.fenBoard)) break;
     }
-    const choice = data.choices && data.choices[0];
-    const content = choice && choice.message && choice.message.content;
-    const parsed = extractJson(typeof content === "string" ? content : "");
-    if (!parsed || !parsed.fen_board) {
+    if (!last || !isPlausibleBoard(last.fenBoard)) {
       res.status(502).json({ error: "이미지에서 체스판을 인식하지 못했어요." });
       return;
     }
-    res.status(200).json({ fen_board: parsed.fen_board, confidence: parsed.confidence });
+    res.status(200).json({ fen_board: last.fenBoard, confidence: last.confidence });
   } catch (e) {
     res.status(502).json({ error: String(e && e.message ? e.message : e) });
   }

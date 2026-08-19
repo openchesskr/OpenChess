@@ -3483,10 +3483,10 @@ function EvalBar({ cp, width, depth, vertical }) {
 // (버그 수정) 계산 중인 줄 자리에 실제 줄과 똑같은 높이의 뼈대(스켈레톤)를 깔아, 수를 두면 이
 // 컴포넌트가 통째로 사라졌다 나타나며 아래 보드·기보를 들썩이게 하던 문제를 없앤다 — 3-dot
 // 바운스(EvalBar의 "탐색 중" 표시와 같은 애니메이션)로 지금 계산 중임을 보여준다.
-function EngineLineSkeleton() {
+function EngineLineSkeleton({ large }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516" }}>
-      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, height: 13 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: large ? 50 : 32, height: 13 }}>
         {[0, 1, 2].map((i) => <span key={i} style={{ width: 3, height: 3, marginLeft: i ? 3 : 0, borderRadius: "50%", background: T.brassHi, display: "inline-block", animation: "dotbounceSm 1.1s ease-in-out " + (i * 0.18) + "s infinite" }} />)}
       </span>
     </div>
@@ -3494,8 +3494,8 @@ function EngineLineSkeleton() {
 }
 // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면에서 남는 엔진 라인 자리를 채우는 빈 칸.
 // 높이는 EngineLineSkeleton과 맞추되(레이아웃 들썩임 방지) 배경·테두리·점 애니메이션 없이 완전히 비워 둔다.
-function EngineLineBlank() {
-  return <div style={{ height: 16 }} aria-hidden="true" />;
+function EngineLineBlank({ large }) {
+  return <div style={{ height: large ? 30 : 16 }} aria-hidden="true" />;
 }
 // (v0.2.1) 엔진 라인 수순을 한 번에 다 찍지 않고 한 수씩 "타이핑"되듯 드러낸다 — posKey(포지션)가
 // 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
@@ -3559,7 +3559,7 @@ function dedupeEngineLines(list) {
 // maxPlies=15까지, MultiPV 탐색이 도달한 depth만큼 수를 이미 다 갖고 있고(TypedMoveLine이 그걸
 // 전부 타이핑해 준다) 화면에 한 번에 안 보일 뿐이었다 — 네이티브 스크롤은 어떤 모바일 브라우저에서도
 // 항상 동작이 보장되므로, 이제 실제로 밀면 반드시 나머지가 나온다.
-function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst }) {
+function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst, large }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   const [showFade, setShowFade] = useState(false);
@@ -3592,10 +3592,10 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
     // 수(수의 정체성)로 잡아야, 순위가 바뀌어도 같은 컴포넌트 인스턴스가 유지되며 framer-motion이
     // 옛 위치→새 위치로의 이동을 자동으로(FLIP) 애니메이션할 수 있다.
     <motion.div layout transition={{ duration: 0.32, ease: MOTION_EASE }} className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
-      style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, padding: "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
-      <EvalBadge ev={l.ev} small />
+      style={{ display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
+      <EvalBadge ev={l.ev} small={!large} />
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
-        style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
+        style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: large ? 13 : 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
         <span ref={innerRef} style={{ display: "inline-block" }}>
           <TypedMoveLine startPly={startPly} sans={l.sans} posKeyBase={posKeyBase} />
         </span>
@@ -3604,7 +3604,7 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst 
     </motion.div>
   );
 }
-function EngineLines({ lines, pending, sans, width, onPlayFirst, forced }) {
+function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large }) {
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
   if (!hasLines && !pending) return null;
@@ -3623,7 +3623,7 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst, forced }) {
   // 스크롤되도록(overflow-x:auto가 비로소 제대로 작동) 막는다. wrapper에도 overflow:hidden을
   // 더해, 혹시라도 새는 경우 이 컴포넌트 선에서 끝나고 위로 전파되지 않게 한다.
   return (
-    <div style={{ width, minWidth: 0, margin: "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
+    <div style={{ width, minWidth: 0, margin: large ? "0 0 8px" : "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
       {hasLines
         ? <>
           {lines.map((l, i) => {
@@ -3643,12 +3643,12 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst, forced }) {
             // (다른 후보로 완전히 교체) 자연스럽게 새 컴포넌트로 마운트/언마운트된다.
             const rowKey = (l.sans && l.sans[0]) || ("slot" + i);
             return (
-              <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} />
+              <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} large={large} />
             );
           })}
-          {Array.from({ length: missing }, (_, i) => forced ? <EngineLineBlank key={"pad" + i} /> : <EngineLineSkeleton key={"pad" + i} />)}
+          {Array.from({ length: missing }, (_, i) => forced ? <EngineLineBlank key={"pad" + i} large={large} /> : <EngineLineSkeleton key={"pad" + i} large={large} />)}
         </>
-        : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} />)}
+        : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} large={large} />)}
     </div>
   );
 }
@@ -4011,6 +4011,8 @@ const SEQ_FONT = "'Merriweather', 'Noto Sans KR', serif";
 // 제목에만 적용하는 디스플레이 폰트 — 문단 본문에 쓰기엔 너무 두꺼워 가독성이 떨어진다.
 // (사용자 요청) 알림 창·팝업에 등장하는 한글 Title 텍스트는 Google Fonts의 Bagel Fat One으로.
 const GAME_FONT = "'Bagel Fat One', 'Noto Sans KR', cursive";
+// (사용자 요청, v0.3.8) 라인/퍼즐 클리어 배너(LINE·PUZZLE·CLEAR)는 Google Fonts의 Kotta One으로.
+const CLEAR_FONT = "'Kotta One', 'Noto Sans KR', serif";
 // (사용자 요청, v0.3.3) 유산(Legacy) 암석판에 새겨지는 수 표기는 Google Fonts의 Merriweather로.
 const LEGACY_FONT = "'Merriweather', 'Noto Sans KR', serif";
 // (v0.2.6 기능) 퍼즐 풀이 화면의 기보 — 예전엔 텍스트 한 줄을 그냥 중앙 정렬해 두어, 길어지면
@@ -7855,6 +7857,28 @@ function reviewGameKey(game) {
   if (!w || !b || !game.endTime) return null;
   return w + "|" + b + "|" + game.endTime;
 }
+// (v0.3.8 사용자 요청) 리뷰 페이지를 새로고침하면 phase("summary"/"review")·curPly가 useState 초기값
+// (각각 "summary"·1)으로 되돌아가, 이미 몇 수째 보고 있던 리뷰도 새로고침 한 번에 처음(요약 화면)부터
+// 다시 시작해야 했다. reviewGameKey와 같은 방식(선수+종료 시각)으로 그 대국을 식별하는 키를 만들고,
+// chess.com 대국이 아니면(고유 id 있는 저장된 대국·PGN 붙여넣기·FEN 리뷰) 그 대신 쓸 수 있는 다른
+// 안정적 식별자(id·fenRoot·sans 전체)로 대체한다 — 이 키로 sessionStorage에 phase·curPly만 저장해
+// 두면(엔진 재분석 자체는 그대로 다시 하고 결과를 캐시하지 않는다 — 분석 정확도는 절대 타협하지
+// 않는다는 원칙), 새로고침 뒤에도 재분석이 끝나는 대로 보고 있던 수·화면으로 바로 돌아간다. 세션이
+// 끝나면(탭 닫힘) 자동으로 사라지는 sessionStorage를 써서 영구 저장소를 어지럽히지 않는다.
+function reviewStorageKey(game) {
+  if (!game) return null;
+  const rk = reviewGameKey(game);
+  if (rk) return "oc-review-pos:cc:" + rk;
+  if (game.id) return "oc-review-pos:id:" + game.id;
+  if (game.fenRoot && game.sans && game.sans.length) return "oc-review-pos:fen:" + game.fenRoot + "|" + game.sans.join(" ");
+  if (game.fenRoot) return "oc-review-pos:fen:" + game.fenRoot;
+  if (game.sans && game.sans.length) return "oc-review-pos:pgn:" + game.sans.join(" ");
+  return null;
+}
+function loadReviewPos(storageKey) {
+  if (!storageKey) return null;
+  try { const raw = window.sessionStorage.getItem(storageKey); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
 // (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 고유 URL(openchess.kr/review/(식별자))의 "PGN 분석" 쪽
 // 식별자는 암호화한다. 진짜 비밀을 지키는 용도가 아니라(키 자체가 클라이언트 번들에 있어 누구나
 // 복호화할 수 있음), URL을 짧고 안 읽히게 만드는 게 목적 — Web Crypto AES-GCM을 그대로 쓴다.
@@ -8071,6 +8095,31 @@ function ReviewKindTable({ moves, showAll = false, onPick }) {
     </div>
   );
 }
+// (v0.3.8 사용자 요청) 단계별 정확도 말풍선 — 아이콘 바로 위에 left:50%로 중앙 정렬해 띄웠는데,
+// 이 아이콘들(w/b)이 단계 줄 오른쪽에 나란히 붙어 있어 모바일 화면에서는 말풍선 폭(내용에 따라
+// 가변)이 화면 오른쪽 안전 영역을 넘어가 잘려 보였다. 렌더된 실제 폭·위치(getBoundingClientRect)를
+// 재서 화면 가장자리를 넘는 만큼만 반대(화면 중앙) 방향으로 밀어 넣고, 말풍선을 가리키는 꼬리
+// 화살표는 그 이동분만큼 반대로 보정해 항상 트리거 아이콘의 중앙을 계속 가리키게 한다.
+function PhaseAccBubble({ text }) {
+  const ref = useRef(null);
+  const [shift, setShift] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const margin = 10; // 화면 가장자리로부터의 안전 여백
+    const rect = el.getBoundingClientRect();
+    let s = 0;
+    if (rect.left < margin) s = margin - rect.left;
+    else if (rect.right > window.innerWidth - margin) s = (window.innerWidth - margin) - rect.right;
+    setShift(s);
+  }, [text]);
+  return (
+    <span ref={ref} style={{ position: "absolute", bottom: 34, left: "50%", transform: "translateX(calc(-50% + " + shift + "px))", whiteSpace: "nowrap", padding: "12px 12px", borderRadius: 8, background: T.brassHi, color: "#241509", fontSize: 11.5, fontWeight: 800, fontFamily: "'IBM Plex Sans KR', sans-serif", boxShadow: "0 6px 14px -5px rgba(0,0,0,.55)", zIndex: 30 }}>
+      {text}
+      <span style={{ position: "absolute", bottom: -5, left: "calc(50% - " + shift + "px)", transform: "translateX(-50%) rotate(45deg)", width: 9, height: 9, background: T.brassHi }} />
+    </span>
+  );
+}
 // (기능) 요약 화면 — chess.com 모바일 앱의 "Game Review" 진입 화면과 동일한 순서(코치 인사말 →
 // 평가 그래프 → 플레이어·정확성 → 등급별 개수 → 단계별 하이라이트 → 리뷰 시작)로 구성한다.
 // (설계) chess.com의 "Game Rating"(대국 퍼포먼스 레이팅 추정치)은 별도의 통계적 산출 방식이 필요해
@@ -8140,12 +8189,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
                   {/* 오프닝처럼 하이라이트할 비이론 수가 없으면 이론 아이콘 대신 정확도로 등급을 정해 표시한다. */}
                   <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind || gradeFromAccuracy(acc)} /></span>
                 </button>
-                {active && (
-                  <span style={{ position: "absolute", bottom: 34, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", padding: "6px 10px", borderRadius: 8, background: T.brassHi, color: "#241509", fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", boxShadow: "0 6px 14px -5px rgba(0,0,0,.55)", zIndex: 30 }}>
-                    {p.label + " 정확도 " + acc.toFixed(1) + "%"}
-                    <span style={{ position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 9, height: 9, background: T.brassHi }} />
-                  </span>
-                )}
+                {active && <PhaseAccBubble text={p.label + " 정확도 " + acc.toFixed(1) + "%"} />}
               </span>
             );
           };
@@ -8439,7 +8483,11 @@ function AnalyzingPiecesAnim() {
 // useEngine(enginePref))을 그대로 prop으로 받아 쓴다(예전엔 항상 Stockfish 16으로 고정).
 function ReviewPage({ game, onClose, myUid, engine }) {
   const narrow = useNarrow(760);
-  const [phase, setPhase] = useState("summary"); // "summary" | "review"
+  // (v0.3.8 기능) 새로고침해도 이어보기 — reviewStorageKey 참고. 마운트 시 한 번만 읽으면 되므로
+  // useState 지연 초기화로 동기 복원한다(game은 prop이라 이 시점에 이미 확정돼 있다).
+  const reviewPosKey = useMemo(() => reviewStorageKey(game), [game]);
+  const savedPos = useMemo(() => loadReviewPos(reviewPosKey), [reviewPosKey]);
+  const [phase, setPhase] = useState(() => (savedPos && savedPos.phase) || "summary"); // "summary" | "review"
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
   const [prog, setProg] = useState(0);
   const [result, setResult] = useState(null);
@@ -8453,7 +8501,9 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   // (버그 수정) 0(시작 위치)으로 두면 코치 카드가 아직 설명할 수가 없어 텅 비어 보인다 — 데스크톱은
   // 요약 단계 없이 바로 리뷰 화면으로 들어오므로 처음부터 1(첫 수)로 시작한다. 모바일은 요약 화면의
   // "리뷰 시작" 버튼이 이 값을 다시 1로 명시적으로 맞추므로 이 초기값과 무관하게 항상 올바르다.
-  const [curPly, setCurPly] = useState(1); // 0=시작 위치, i=i번째 수까지 둔 위치
+  // (v0.3.8 기능) 새로고침 이어보기 — 저장된 위치가 있으면(=이전에 리뷰 화면까지 들어와 있었으면) 그
+  // ply부터 이어서 보여준다.
+  const [curPly, setCurPly] = useState(() => (savedPos && savedPos.curPly != null ? savedPos.curPly : 1)); // 0=시작 위치, i=i번째 수까지 둔 위치
   const [showingLine, setShowingLine] = useState(false);
   // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
   // curPly/sans는 건드리지 않는다 — 학습 탭의 sans/future와 같은 패턴으로 curPly 이후에 갈라져 나온
@@ -8509,6 +8559,12 @@ function ReviewPage({ game, onClose, myUid, engine }) {
     return () => { cancelled = true; };
   }, [engine && engine.status]);
   useEffect(() => { setShowingLine(false); }, [curPly]);
+  // (v0.3.8 기능) phase·curPly가 바뀔 때마다(리뷰 시작, 수 이동 등) 같은 대국 키로 sessionStorage에
+  // 계속 갱신 저장 — 다음 새로고침이 이 값을 읽어 복원한다.
+  useEffect(() => {
+    if (!reviewPosKey) return;
+    try { window.sessionStorage.setItem(reviewPosKey, JSON.stringify({ phase, curPly })); } catch { }
+  }, [reviewPosKey, phase, curPly]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
   // (v0.3.4 기능) FEN 모드 리뷰는 자유 탐색(직접 새 수 두기)을 지원하지 않는다 — legalDests의
@@ -9020,14 +9076,13 @@ function ReviewPage({ game, onClose, myUid, engine }) {
           ? (resultDone ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
             : (
               // (v0.3.0 성능) 정확도%·단계별 하이라이트 같은 요약 통계는 분석이 100% 끝나야 신뢰할 수
-              // 있어 그대로 기다린다 — 다만 그 사이에도 이미 채점된 수부터 곧장 리뷰를 시작할 수 있는
-              // 지름길을 준다(기다리기 싫은 사용자는 굳이 요약까지 기다릴 필요가 없다).
+              // 있어 그대로 기다린다. (v0.3.8) 분석이 덜 끝난 채로 리뷰를 시작하면 등급·코멘트가
+              // 부정확할 수 있어, 리뷰 정확도를 위해 지름길 버튼은 두지 않는다 — 항상 완료까지 기다린다.
               <div style={{ padding: "14px 16px 24px", textAlign: "center" }}>
                 <ReviewLoadingSplit />
                 <div style={{ marginTop: 16 }}><AnalyzingPiecesAnim /></div>
                 <div style={{ maxWidth: 280, margin: "12px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><div style={{ width: (gradedCount / sans.length * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
                 <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6 }}>요약 준비 중 {Math.round(gradedCount / sans.length * 100)}%</p>
-                <button onClick={() => { setPhase("review"); setCurPly(1); }} className="press" style={{ marginTop: 14, padding: "10px 18px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: RV.text, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>기다리지 않고 바로 리뷰 시작</button>
               </div>
             ))
           : (
@@ -9046,8 +9101,10 @@ function ReviewPage({ game, onClose, myUid, engine }) {
               {/* (UI) 사용자 요청 — 코치 블록을 줄여 만든 여백으로, 모바일에서도 평가치 그래프를
                   리뷰 기보와 엔진 라인 사이에 표시한다(데스크톱의 배치 순서와 동일). */}
               <div style={{ marginTop: 10 }}><EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} /></div>
-              {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. */}
-              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width={boardSize} onPlayFirst={playFree} />
+              {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. (v0.3.8 사용자 요청) 글자
+                  크기를 키우고, 보드 그리드 폭(프레임 제외)이 아니라 카드 전체 폭을 채워 왼쪽(보드 왼쪽
+                  끝)에 맞춰 정렬되도록 width를 100%로 바꿨다. */}
+              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} large />
             </div>
           )}
         {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} />}
@@ -13637,11 +13694,11 @@ function summarizePosition(board, userColor) {
 function LineClearBanner({ trigger }) {
   if (!trigger) return null;
   return (
-    <div key={trigger} aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 15, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", borderRadius: 12, animation: "lineClearFade 1.5s ease-out forwards" }}>
+    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 15, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", animation: "lineClearFade 1.5s ease-out forwards" }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(10,6,3,.55)" }} />
-      <div style={{ position: "relative", display: "flex", alignItems: "baseline", gap: 12 }}>
-        <span style={{ fontFamily: GAME_FONT, fontSize: 32, fontWeight: 800, color: T.book, textShadow: "0 3px 10px rgba(0,0,0,.65)", animation: "lineWordInLeft .55s cubic-bezier(.2,1.4,.4,1) both" }}>LINE</span>
-        <span style={{ fontFamily: GAME_FONT, fontSize: 32, fontWeight: 800, color: T.brassHi, textShadow: "0 3px 10px rgba(0,0,0,.65)", animation: "lineWordInRight .55s cubic-bezier(.2,1.4,.4,1) both .1s" }}>CLEAR</span>
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+        <span style={{ fontFamily: CLEAR_FONT, fontSize: 32, fontWeight: 800, color: T.book, textShadow: "0 3px 10px rgba(0,0,0,.65)", animation: "lineWordInLeft .55s cubic-bezier(.2,1.4,.4,1) both" }}>LINE</span>
+        <span style={{ fontFamily: CLEAR_FONT, fontSize: 32, fontWeight: 800, color: T.brassHi, textShadow: "0 3px 10px rgba(0,0,0,.65)", animation: "lineWordInRight .55s cubic-bezier(.2,1.4,.4,1) both .1s" }}>CLEAR</span>
       </div>
     </div>
   );
@@ -13652,7 +13709,7 @@ function LineClearBanner({ trigger }) {
 function PuzzleClearBanner({ trigger }) {
   if (!trigger) return null;
   return (
-    <div key={trigger} aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 16, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, overflow: "hidden", borderRadius: 12, opacity: 0, animation: "puzzleClearFade 2.6s ease-out 1.1s both" }}>
+    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 16, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, overflow: "hidden", opacity: 0, animation: "puzzleClearFade 2.6s ease-out 1.1s both" }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(10,6,3,.7)" }} />
       <div style={{ position: "relative", display: "flex", gap: 10 }}>
         {[0, 1, 2].map((i) => (
@@ -13661,9 +13718,9 @@ function PuzzleClearBanner({ trigger }) {
           </span>
         ))}
       </div>
-      <div style={{ position: "relative", display: "flex", alignItems: "baseline", gap: 12 }}>
-        <span style={{ fontFamily: GAME_FONT, fontSize: 38, fontWeight: 800, color: T.book, textShadow: "0 3px 10px rgba(0,0,0,.65)", opacity: 0, animation: "lineWordInLeft .6s cubic-bezier(.2,1.4,.4,1) 2s both" }}>PUZZLE</span>
-        <span style={{ fontFamily: GAME_FONT, fontSize: 38, fontWeight: 800, color: T.brassHi, textShadow: "0 3px 10px rgba(0,0,0,.65)", opacity: 0, animation: "lineWordInRight .6s cubic-bezier(.2,1.4,.4,1) 2.1s both" }}>CLEAR</span>
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+        <span style={{ fontFamily: CLEAR_FONT, fontSize: 38, fontWeight: 800, color: T.book, textShadow: "0 3px 10px rgba(0,0,0,.65)", opacity: 0, animation: "lineWordInLeft .6s cubic-bezier(.2,1.4,.4,1) 2s both" }}>PUZZLE</span>
+        <span style={{ fontFamily: CLEAR_FONT, fontSize: 38, fontWeight: 800, color: T.brassHi, textShadow: "0 3px 10px rgba(0,0,0,.65)", opacity: 0, animation: "lineWordInRight .6s cubic-bezier(.2,1.4,.4,1) 2.1s both" }}>CLEAR</span>
       </div>
     </div>
   );
@@ -16724,6 +16781,16 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.3.8", date: "2026.8.19", dev: ["openchesskr"], items: [
+      "라인/퍼즐 클리어 배너의 글자가 전용 폰트로 바뀌고, 위아래로 줄바꿈되어 화면 정중앙에 표시돼요.",
+      "체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률을 개선했어요.",
+      "모바일 리뷰 화면의 엔진 라인 글자가 커지고 왼쪽으로 정렬돼요.",
+      "리뷰 화면을 새로고침해도 처음부터 다시 시작하지 않고 보던 수에서 이어서 볼 수 있어요.",
+      "오프닝/미들게임/엔드게임 아이콘을 눌러 뜨는 단계별 정확도 말풍선이 모바일에서 화면 밖으로 잘리지 않아요. 말풍선 세로 폭도 넓어졌어요.",
+      "리뷰 요약 화면의 '기다리지 않고 바로 리뷰 시작' 버튼을 없앴어요 — 리뷰 정확도를 위해 이제 항상 분석이 완전히 끝난 뒤에 시작해요.",
+    ]
+  },
   {
     version: "0.3.7", date: "2026.8.18", dev: ["openchesskr"], items: [
       "헤더에 표시되는 버전 번호가 실제 배포된 최신 버전보다 뒤처져 보이던 문제를 고쳤어요(v0.3.6 업데이트 내역이 이 목록에 반영되지 않고 있었어요).",
