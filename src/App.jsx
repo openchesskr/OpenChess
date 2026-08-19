@@ -2758,19 +2758,35 @@ function sharpLossMultiplier(sharp) {
   const z = ((sharp || 0) - SHARP_REF_MEAN) / SHARP_REF_SD;
   return NEW_ACC_SHARP_LO + (NEW_ACC_SHARP_HI - NEW_ACC_SHARP_LO) * normalCdf(z);
 }
-// 누적 평균(보정된) 손실(승률%p) → 정확도(0~100). 기존 moveAccuracy와 같은 곡선 형태
-// (103.1668·exp(-k·x)-3.1669)를 재사용하되, 이제는 수 하나가 아니라 "지금까지의 평균 손실"에 적용한다.
+// 손실(승률%p, 한 수 또는 평균) → 정확도(0~100). 기존 moveAccuracy와 같은 곡선 형태
+// (103.1668·exp(-k·x)-3.1669)를 그대로 재사용한다.
 function newAccuracyFromAvgLoss(avgLossWinPct) {
   return Math.max(0, Math.min(100, 103.1668 * Math.exp(-NEW_ACC_DECAY * Math.max(0, avgLossWinPct)) - 3.1669));
 }
-// losses[i]=i번째(0-based) 자기 수의 승률% 손실, sharps[i]=그 수를 두기 전 포지션의 후보 표준편차 —
-// 둘 다 같은 진영의 수 순서대로 쌓인 배열. n(1 이상)까지의 누적 정확도를 구한다.
+// (사용자 재피드백) 실제 대국(같은 게임을 chess.com에서 리뷰하면 58.8/72.8인데 이 체계는 82.1/83.2로
+// 나옴 — 전체적으로 너무 높고, 두 진영 차이도 거의 안 남)으로 원인을 찾았다. 처음엔 "그 수들의 손실을
+// 먼저 평균 낸 뒤 그 평균 하나만 정확도로 변환"했는데(옛 구현), 이 변환 곡선(exp 감쇠)은 아래로 볼록
+// (convex)이라 옌센 부등식에 의해 "손실을 먼저 평균 → 한 번 변환"은 "각 수를 먼저 변환 → 그 정확도를
+// 평균"보다 항상 같거나 높게 나온다 — 즉 무난한 수(손실 0)가 많은 대국일수록 실제로는 뼈아픈 블런더
+// 한두 개가 있어도 그 평균 손실 자체가 옅게 희석돼 버려, 블런더의 타격이 거의 반영되지 않았다.
+// chess.com의 실제 방식(공개적으로 알려진 대로 "각 수의 정확도를 구한 뒤 조화평균")과 같은 순서로
+// 바꾼다 — ① 수 하나하나의 손실(날카로움 보정 포함)을 그 자리에서 바로 정확도로 변환하고, ② 그
+// 정확도들을 조화평균(harmonic mean)으로 누적한다. 조화평균은 산술평균보다 낮은 값(블런더처럼 낮은
+// 값)에 훨씬 민감해(1/x의 평균이라 x가 작을수록 그 항이 급격히 커짐) 가끔 한 번 나는 블런더도 전체
+// 정확도를 눈에 띄게 끌어내린다 — "게임이 길어질수록 수 하나의 영향이 자연히 옅어진다"는 설계 의도는
+// n으로 나누는 구조 자체(조화평균도 결국 n/Σ(1/acc_i)로, n이 커질수록 각 항의 상대적 비중이 줄어듦)로
+// 그대로 유지된다. 손실이 정확히 0인 수는 어떤 방식으로도 정확도 100을 그대로 유지한다(0에 무엇을
+// 곱해도 0 → newAccuracyFromAvgLoss(0)=100).
 function newCumulativeAccuracy(losses, sharps, n) {
   if (n <= 0 || !losses.length) return null;
-  let adjSum = 0;
-  for (let i = 0; i < n; i++) adjSum += losses[i] * sharpLossMultiplier(sharps[i]);
-  const avgLoss = adjSum / n;
-  return Math.round(Math.max(0, Math.min(100, newAccuracyFromAvgLoss(avgLoss) * NEW_ACC_CALIB)) * 10) / 10;
+  let sumInvAcc = 0;
+  for (let i = 0; i < n; i++) {
+    const adjLoss = losses[i] * sharpLossMultiplier(sharps[i]);
+    const acc = newAccuracyFromAvgLoss(adjLoss);
+    sumInvAcc += 1 / Math.max(0.5, acc); // (버그 수정) 정확도가 0에 근접하는 극단적 블런더에서 1/acc가 발산하지 않도록 최소값을 둔다.
+  }
+  const harmonicMean = n / sumInvAcc;
+  return Math.round(Math.max(0, Math.min(100, harmonicMean * NEW_ACC_CALIB)) * 10) / 10;
 }
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
@@ -7802,19 +7818,10 @@ function pickEvalGraphDots(moves) {
 // 위치를 옮길 수 있다 — 포인터를 누른 채 좌우로 끌면(pointer capture) 그 시점의 평가치가 부드럽게
 // 이어서 갱신된다. 마커(점+세로 점선)와 그래프 위 역삼각형은 curPly를 그대로 그리므로, 기보 클릭 등
 // 다른 방법으로 위치를 옮겨도 항상 지금 보고 있는 지점에 그대로 따라온다.
-// (사용자 요청) 역삼각형 마커를 누르고 있는 동안 그 지점 주변으로 그래프를 확대해서 보여준다 —
-// 확대 배율(ZOOM_SCALE)만큼 폭이 좁아진 "창"을 markX 중심으로 잡되, 게임 시작/끝 근처에서 창이
-// 그려질 영역(0..W) 밖으로 나가지 않게 clamp한다. 실제 좌표계(viewBox)는 그대로 두고 내용물을 담은
-// `<g>` 하나에만 CSS `transform: scale() translate()`를 걸어 미는 방식이라(리뷰 진입 애니메이션
-// 2차 개편 때 쓴 "카메라"와 같은 기법), 별도의 좌표 재계산이나 SVG viewBox 애니메이션 없이 CSS
-// transition만으로 부드럽게 확대·축소된다 — 확대 배율만큼 늘어나 보이는 선 굵기·점 반지름은
-// 나눠서(sw 헬퍼) 원래 두께로 되돌린다.
-const EVAL_GRAPH_ZOOM_SCALE = 3;
 function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const W = 320, H = 92; const n = evalWin.length;
   const svgRef = useRef(null);
   const draggingRef = useRef(false);
-  const [pressing, setPressing] = useState(false);
   if (n < 2) return null;
   const x = (i) => (i / (n - 1)) * W;
   const y = (w) => H - (w / 100) * H;
@@ -7828,12 +7835,13 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
     const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     onJump(Math.round(relX * (n - 1)));
   };
-  const onPointerDown = (e) => { if (!onJump) return; draggingRef.current = true; setPressing(true); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } jumpToClientX(e.clientX); };
+  const onPointerDown = (e) => { if (!onJump) return; draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } jumpToClientX(e.clientX); };
   const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
-  const onPointerUp = (e) => { draggingRef.current = false; setPressing(false); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { } };
+  const onPointerUp = (e) => { draggingRef.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { } };
   const hasMark = curPly != null && curPly >= 0 && curPly < n;
   const markX = hasMark ? x(curPly) : null;
   const markY = hasMark ? y(evalWin[curPly]) : null;
+  const markFrac = hasMark ? curPly / (n - 1) : 0;
   // (사용자 요청) 최선 수 기준 평가(g) 흐릿한 점 — 예전엔 리뷰 진입 애니메이션에서 수마다 하나씩
   // 찍었는데, 이제 그 애니메이션에서는 빼고 대신 이 실제 리뷰 그래프에서 역삼각형 마커로 지금
   // 선택한 지점 하나에만 보여준다(마커를 옮기면 그 지점의 값으로 함께 움직인다). 연두색으로
@@ -7842,43 +7850,31 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const bestMoveY = (bestMoveSrc && bestMoveSrc.lossWinPct != null)
     ? y(evalWin[curPly] + (bestMoveSrc.white ? 1 : -1) * bestMoveSrc.lossWinPct)
     : null;
-  const zoomActive = pressing && hasMark;
-  let zoomVbX0 = 0;
-  if (zoomActive) {
-    const windowW = W / EVAL_GRAPH_ZOOM_SCALE;
-    zoomVbX0 = Math.max(0, Math.min(W - windowW, markX - windowW / 2));
-  }
-  const zoomScale = zoomActive ? EVAL_GRAPH_ZOOM_SCALE : 1;
-  const sw = (v) => zoomActive ? v / zoomScale : v;
-  // 확대 중엔 역삼각형 마커(SVG 밖 HTML 오버레이)도 같은 변환을 반영해 위치를 맞춘다.
-  const displayMarkFrac = hasMark ? (zoomActive ? ((markX - zoomVbX0) * zoomScale) / W : markX / W) : 0;
   return (
     <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, overflow: "hidden" }}>
       <div style={{ position: "relative", touchAction: "none" }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
         {/* 그래프 위 역삼각형 — 점선 x좌표와 함께 움직여 지금 보고 있는 지점을 더 또렷이 보여준다. */}
-        {hasMark && <div style={{ position: "absolute", top: -1, left: displayMarkFrac * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #EBCB86", pointerEvents: "none", zIndex: 2, transition: "left .18s ease" }} />}
+        {hasMark && <div style={{ position: "absolute", top: -1, left: markFrac * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #EBCB86", pointerEvents: "none", zIndex: 2 }} />}
         <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none"
-          style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default", overflow: "hidden" }}>
+          style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default" }}>
           <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
-          <g style={{ transform: "scale(" + zoomScale + ",1) translate(" + (-zoomVbX0) + "px,0)", transformOrigin: "0 0", transition: "transform .18s ease" }}>
-            <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth={sw(0.5)} strokeDasharray="3 3" />
-            <polygon points={areaPts} fill="#EDE7DC" />
-            <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth={sw(1)} />
-            {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r={sw(3.2)} fill={c} stroke="#241509" strokeWidth={sw(0.6)} />; })}
-            {hasMark && (
-              <>
-                <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth={sw(0.8)} strokeDasharray="2.5 2.5" />
-                {bestMoveY != null && (
-                  <>
-                    <circle cx={markX} cy={bestMoveY} r={sw(2.6)} fill={T.good} stroke="#241509" strokeWidth={sw(0.6)} />
-                    <text x={markX + sw(4.5)} y={bestMoveY + sw(2)} fontSize={sw(6)} fontWeight="800" fill={T.good} fontFamily="ui-monospace,monospace" paintOrder="stroke" stroke="#241509" strokeWidth={sw(1.6)}>1st</text>
-                  </>
-                )}
-                <circle cx={markX} cy={markY} r={sw(3.6)} fill="#EBCB86" stroke="#241509" strokeWidth={sw(0.8)} />
-              </>
-            )}
-          </g>
+          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
+          <polygon points={areaPts} fill="#EDE7DC" />
+          <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
+          {dots.map((m) => { const c = QCOLOR[m.kind]; if (!c) return null; const i = m.ply + 1; return <circle key={m.ply} cx={x(i)} cy={y(evalWin[i])} r="3.2" fill={c} stroke="#241509" strokeWidth="0.6" />; })}
+          {hasMark && (
+            <>
+              <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
+              {bestMoveY != null && (
+                <>
+                  <circle cx={markX} cy={bestMoveY} r="2.6" fill={T.good} stroke="#241509" strokeWidth="0.6" />
+                  <text x={markX + 4.5} y={bestMoveY + 2} fontSize="6" fontWeight="800" fill={T.good} fontFamily="ui-monospace,monospace" paintOrder="stroke" stroke="#241509" strokeWidth="1.6">1st</text>
+                </>
+              )}
+              <circle cx={markX} cy={markY} r="3.6" fill="#EBCB86" stroke="#241509" strokeWidth="0.8" />
+            </>
+          )}
         </svg>
       </div>
     </div>
@@ -8607,7 +8603,7 @@ function buildRevealData(result) {
     let delta;
     if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); const prev = wCurve[wCurve.length - 1]; const next = newCumulativeAccuracy(wLoss, wSharp, wLoss.length); wCurve.push(next); delta = next - prev; }
     else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); const prev = bCurve[bCurve.length - 1]; const next = newCumulativeAccuracy(bLoss, bSharp, bLoss.length); bCurve.push(next); delta = next - prev; }
-    moveMeta.push({ ply: i + 1, gVal, delta });
+    moveMeta.push({ ply: i + 1, gVal, delta, white: m.white });
   }
   return { moves, evalWin, wCurve, bCurve, moveMeta };
 }
@@ -8617,9 +8613,11 @@ function buildRevealData(result) {
 // 오르면 60~100으로 되돌아간다. 이 확대·축소를 실제로 알아볼 수 있도록 위·아래 경계값에 격자선과
 // 숫자를 함께 그린다(60~100 구간일 때 60 밑으로 내려간 과거 지점은 그 순간엔 격자 맨 위에 눌린
 // 것처럼 보인다 — 어차피 60 이상이면 정상 범위로 다시 늘어나므로 자연스러운 동작으로 둔다).
-function MiniAccCurve({ curve, shownCount, color, label }) {
+// (사용자 요청) big — 모바일에서 백/흑 그래프를 각각 다른 줄에 더 크게 보여줄 때 쓰는 확대 모드.
+// 비율(W2:H2)만 낮춰(더 납작하지 않게) 세로로 키우고, 그 안의 격자 숫자·선 굵기도 함께 키운다.
+function MiniAccCurve({ curve, shownCount, color, label, big }) {
   const total = curve.length - 1; // 그 진영이 실제로 둔 수 개수
-  const W2 = 320, H2 = 46;
+  const W2 = 320, H2 = big ? 70 : 46;
   // (버그 수정) 정확도 100(가장 흔한 값 — 실수 없이 두면 계속 100)이 y=0 정확히 그 자리에 그려져
   // 위쪽 끝에서 선이 절반쯤 잘려 거의 안 보였다 — 위아래 4px씩 여백을 둬 100이어도 온전히 보이게 한다.
   const PAD = 4;
@@ -8631,24 +8629,29 @@ function MiniAccCurve({ curve, shownCount, color, label }) {
   const path = pts.length >= 2 ? "M " + pts.map((v, i) => xx(i).toFixed(1) + "," + yy(v).toFixed(1)).join(" L ") : "";
   return (
     <div>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3 }}>{label}</div>
-      <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: 40, background: "transparent" }}>
+      <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3 }}>{label}</div>
+      <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: big ? 64 : 40, background: "transparent" }}>
         <rect x="0" y="0" width={W2} height={H2} rx="6" fill="rgba(255,255,255,.05)" />
         {[low, high].map((g) => (
           <React.Fragment key={g}>
             <line x1="0" y1={yy(g).toFixed(1)} x2={W2} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
-            <text x="2" y={(g === high ? yy(g) + 6 : yy(g) - 1.5).toFixed(1)} fontSize="5.5" fill="rgba(235,221,196,.45)" fontFamily="ui-monospace,monospace">{g}</text>
+            <text x="2" y={(g === high ? yy(g) + 6 : yy(g) - 1.5).toFixed(1)} fontSize={big ? 7 : 5.5} fill="rgba(235,221,196,.45)" fontFamily="ui-monospace,monospace">{g}</text>
           </React.Fragment>
         ))}
-        {path && <path d={path} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />}
+        {path && <path d={path} fill="none" stroke={color} strokeWidth={big ? 2.4 : 1.8} strokeLinejoin="round" />}
       </svg>
     </div>
   );
 }
 const REVEAL_SPEED_PER_SEC = 4;   // 그래프가 채워지는 속도(x축 1수 = 1초 기준 4수/초 — 실제 분석 속도와 무관하게 항상 이 속도)
-const REVEAL_POPUP_MS = 1300;     // 정확도 증가/감소 숫자가 떴다 사라지는 총 시간
+// (사용자 요청) 숫자가 그래프 위에서 서로 겹치지 않도록 두 가지를 함께 조정한다 — ① 잔상(떠 있다
+// 사라지는 자취)이 빨리 없어지도록 표시 시간·페이드아웃 시간을 모두 줄이고, ② 델타가 큰 수들이
+// 연달아 나올 때 다음 숫자가 뜨기 전 최소한의 간격(스태거)을 강제로 둔다.
+const REVEAL_POPUP_MS = 850;      // 정확도 증가/감소 숫자가 떴다 사라지는 총 시간(예전 1300ms → 850ms)
+const REVEAL_POPUP_EXIT_S = 0.15; // 사라질 때 페이드아웃 속도(예전 0.3s → 0.15s, 잔상이 더 빨리 사라짐)
+const REVEAL_POPUP_STAGGER_MS = 480; // 숫자 하나가 뜬 뒤 다음 숫자가 뜨기까지 최소 간격
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
-function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone }) {
+function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow }) {
   const data = useMemo(() => buildRevealData(result), [result]);
   const { moves, evalWin, wCurve, bCurve, moveMeta } = data;
   const N = Math.max(1, totalPlies || moves.length || 1);
@@ -8673,9 +8676,22 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   }, []);
   const floored = Math.min(N, Math.floor(progress));
   // 방금 펜이 지나간 수마다 "정확도 증가/감소" 숫자를 한 번씩 잠깐 띄운다 — firedRef로 같은 수에
-  // 두 번 띄우지 않게 막는다.
+  // 두 번 띄우지 않게 막는다. (사용자 요청) 델타가 큰 수들이 한꺼번에(같은 프레임에) 여러 개 지나가도
+  // 숫자를 동시에 다 띄우지 않고 큐에 쌓아 REVEAL_POPUP_STAGGER_MS 간격으로 하나씩만 순서대로
+  // 띄운다 — queueRef/poppingRef는 렌더와 무관한 진행 상태라 ref로 관리한다.
   const [popups, setPopups] = useState([]);
   const firedRef = useRef(new Set());
+  const queueRef = useRef([]);
+  const poppingRef = useRef(false);
+  const drainQueue = () => {
+    if (poppingRef.current) return;
+    const next = queueRef.current.shift();
+    if (!next) return;
+    poppingRef.current = true;
+    setPopups((p) => [...p, next]);
+    setTimeout(() => setPopups((p) => p.filter((x) => x.id !== next.id)), REVEAL_POPUP_MS);
+    setTimeout(() => { poppingRef.current = false; drainQueue(); }, REVEAL_POPUP_STAGGER_MS);
+  };
   useEffect(() => {
     const revealedCount = Math.min(moves.length, floored);
     for (let i = 0; i < revealedCount; i++) {
@@ -8685,10 +8701,9 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
       // (사용자 요청) 변동폭이 절댓값 0.5%p 미만인 수는 띄우지 않는다 — 대부분의 이론 수·무난한 수가
       // 여기 해당해, 그대로 두면 숫자가 너무 자주(거의 매 수마다) 겹쳐 떴다.
       if (!meta || Math.abs(meta.delta) < 0.5) continue;
-      const id = i;
-      setPopups((p) => [...p, { id, ply: meta.ply, gVal: meta.gVal, delta: meta.delta }]);
-      setTimeout(() => setPopups((p) => p.filter((x) => x.id !== id)), REVEAL_POPUP_MS);
+      queueRef.current.push({ id: i, ply: meta.ply, gVal: meta.gVal, delta: meta.delta, white: meta.white });
     }
+    drainQueue();
   }, [floored, moves, moveMeta]);
   const { wShown, bShown } = useMemo(() => {
     let w = 0, b = 0;
@@ -8754,7 +8769,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
                 <motion.text key={p.id} x={x(p.ply).toFixed(1)} y={py.toFixed(1)} textAnchor="middle"
                   fontSize="7.5" fontWeight="800" fontFamily="ui-monospace,monospace"
                   fill={positive ? T.good : T.blunder} paintOrder="stroke" stroke="#150C06" strokeWidth="2.2"
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
                   {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
                 </motion.text>
               );
@@ -8762,14 +8777,40 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
           </AnimatePresence>
         </svg>
       </div>
-      <div className="flex items-start" style={{ gap: 14, marginTop: 10 }}>
-        <div style={{ flex: 1, textAlign: "center" }}>
-          <MiniAccCurve curve={wCurve} shownCount={wShown} color="#EDE7DC" label="⬜ 백 정확도" />
-          <motion.div layoutId="review-acc-w" style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{wVal.toFixed(1)}</motion.div>
+      {/* (사용자 요청) 모바일에서는 백·흑 그래프를 나란히 좁게 두지 않고 각각 다른 줄에 더 크게
+          보여준다 — narrow일 때만 세로(column)로 쌓고 MiniAccCurve에 big을 넘겨 키운다. */}
+      <div className={narrow ? "flex flex-col" : "flex items-start"} style={{ gap: narrow ? 18 : 14, marginTop: 10 }}>
+        <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
+          <MiniAccCurve curve={wCurve} shownCount={wShown} color="#EDE7DC" label="⬜ 백 정확도" big={narrow} />
+          <motion.div layoutId="review-acc-w" style={{ fontSize: narrow ? 30 : 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{wVal.toFixed(1)}</motion.div>
+          {/* (사용자 요청) 그래프 위 팝업과 똑같은 증감 숫자를 정확도 박스 우하단에도 함께 띄워
+              변동을 더 직관적으로 보여준다 — 같은 popups 배열을 진영별로 걸러 재사용한다. */}
+          <AnimatePresence>
+            {popups.filter((p) => p.white).map((p) => {
+              const positive = p.delta >= 0;
+              return (
+                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 2, fontSize: 12, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
+                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
+                  {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
+                </motion.span>
+              );
+            })}
+          </AnimatePresence>
         </div>
-        <div style={{ flex: 1, textAlign: "center" }}>
-          <MiniAccCurve curve={bCurve} shownCount={bShown} color="#B8A78C" label="⬛ 흑 정확도" />
-          <motion.div layoutId="review-acc-b" style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{bVal.toFixed(1)}</motion.div>
+        <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
+          <MiniAccCurve curve={bCurve} shownCount={bShown} color="#B8A78C" label="⬛ 흑 정확도" big={narrow} />
+          <motion.div layoutId="review-acc-b" style={{ fontSize: narrow ? 30 : 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{bVal.toFixed(1)}</motion.div>
+          <AnimatePresence>
+            {popups.filter((p) => !p.white).map((p) => {
+              const positive = p.delta >= 0;
+              return (
+                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 2, fontSize: 12, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
+                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
+                  {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
+                </motion.span>
+              );
+            })}
+          </AnimatePresence>
         </div>
       </div>
     </div>
@@ -9396,7 +9437,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       {header}
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewIntroCarousel />
-        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} />
+        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} />
         <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
         <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(prog * 100)}%</p>
       </div>
@@ -17131,8 +17172,10 @@ const CHANGELOG = [
       "게임 리뷰 진입 화면의 그래프가 특정 대국에서 한동안 멈춰 있다가 뒤늦게 한꺼번에 몰아 그려지던 문제를 고쳤어요 — 이제 항상 고르게 채워져요.",
       "최선 수 위치를 보여주는 흐릿한 점을 리뷰 화면의 평가치 그래프로 옮겼어요 — 역삼각형 마커로 특정 지점을 선택하면 그 지점에 연두색 점과 '1st' 표시로 나타나요.",
       "평가치 그래프의 역삼각형 마커를 빠르게 좌우로 끌면 엔진 라인이 잠깐 먹통이 되던 문제를 고쳤어요 — 마커가 한 지점에 멈춘 뒤부터 계산이 시작돼요.",
-      "평가치 그래프의 역삼각형 마커를 누르고 있는 동안 그 지점 주변으로 그래프가 확대돼 자세히 볼 수 있어요.",
       "프로필에 짧은 소개를 남길 수 있어요 — 프로필 편집에서 작성하면 프로필 카드와 유저 검색 결과의 닉네임 바로 밑에 표시돼요.",
+      "정확도 증감 숫자를 그래프 위뿐 아니라 백·흑 정확도 박스 우하단에도 함께 띄워 변동을 더 직관적으로 보여줘요. 잔상이 사라지는 속도를 높이고, 다음 숫자가 뜨기 전 살짝의 간격을 둬서 숫자끼리 겹치지 않게 했어요.",
+      "모바일에서는 백 정확도 그래프와 흑 정확도 그래프를 각각 다른 줄에 더 크게 보여줘요.",
+      "게임 리뷰의 정확도 계산이 실제보다 너무 높게, 백·흑 차이도 너무 적게 나오던 문제를 고쳤어요 — 이제 대국 중 실수·블런더가 정확도에 더 뚜렷하게 반영돼요.",
     ]
   },
   {
