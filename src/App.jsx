@@ -8511,30 +8511,38 @@ function ReviewIntroCarousel() {
     </div>
   );
 }
-// ===================== (v0.3.8 3차 개편) 리뷰 진입 애니메이션 — 정확도 공개 시퀀스 =====================
-// (사용자 피드백) 리뷰 페이지의 평가치 변동 그래프(EvalGraph)와 다른 모양의 그래프를 새로 그렸더니
-// "형태가 다르다"는 지적을 받았다 — 그래프를 따로 다시 그리지 않고 EvalGraph 컴포넌트를 그대로
-// 재사용해, 실제 리뷰 화면에서 보게 될 그래프와 완전히 같은 모양(진한 카드 배경, 채워진 영역, 수
-// 등급별 점 표시)이 되도록 한다. "애니메이션으로 그리길" 원하는 부분은 analyzeGame이 onMove로
-// 흘려보내는 result.evalWin/moves를 그대로 넘기기만 하면 저절로 풀린다 — evalWin은 항상 게임 전체
-// 길이로 채워져 있고(아직 채점 안 된 뒤쪽은 마지막 값으로 평평하게 유지, paddedTo 참고) moves는
-// 채점되는 대로 하나씩 늘어나므로, 이 컴포넌트가 매 렌더 그 살아있는 값을 EvalGraph에 그대로
-// 넘기기만 해도 그래프 선이 왼쪽부터 실제로 채점되는 만큼씩 자라나고 그 지점의 등급 점도 함께
-// 나타난다 — 별도 타이머·좌표 계산 없이 실제 분석 진행 그 자체가 애니메이션이 된다.
+// ===================== (v0.3.8 4차 개편) 리뷰 진입 애니메이션 — 정확도 공개 시퀀스 =====================
+// (사용자 피드백) 3차 개편에서 EvalGraph를 그대로 재사용했는데, 그건 "이미 다 있는 값을 그대로
+// 넘기는" 정적 재사용이라(padding된 뒷부분이 평평한 값으로 즉시 다 보임) 진짜 "그려지는" 느낌이
+// 없었다. 이번엔 EvalGraph와 같은 배색·비율은 유지하되 이 컴포넌트 전용으로 직접 그린다 — 아직
+// 채점되지 않은 구간은 값을 추측해 평평하게 잇지 않고 그냥 검은 여백으로 두고, 이미 지나간 구간만
+// 아래쪽을 흰색으로 채운다. 그 경계(진행 지점)는 실제 분석 속도에 그대로 매이지 않고 별도의
+// requestAnimationFrame 루프로 일정한 속도(REVEAL_SPEED_PER_PLY_SEC)로 전진한다 — 다만 "아직
+// 채점되지 않은 지점"을 앞지르지는 못하게 그 지점(target)에서 멈춰 기다린다. 그래서 수가 한꺼번에
+// 여러 개 채점돼 도착해도(빠른 포지션들이 몰려 끝났을 때 등) 화면은 절대 순간이동하듯 확 그려지지
+// 않고, 항상 같은 속도로 채워지는 것처럼 보인다.
 function buildRevealData(result) {
-  if (!result) return { moves: [], wCurve: [100], bCurve: [100] };
-  const { moves } = result;
-  // 진영별 구간 누적 정확도 곡선 — index 0은 "아직 한 수도 안 둔 상태"(100)로 시작해, 그 진영이 스스로
-  // 둔 n번째 수까지 newCumulativeAccuracy를 다시 계산해 나간다(newCumulativeAccuracy 자체가 사용자
-  // 설계 그대로 — App.jsx 앞부분 "독립 정확도 체계" 참고).
+  if (!result) return { moves: [], evalWin: [50, 50], wCurve: [100], bCurve: [100], moveMeta: [] };
+  const { moves, evalWin } = result;
+  // 진영별 구간 누적 정확도 곡선(기존과 동일, App.jsx 앞부분 "독립 정확도 체계" 참고) — 그 김에 그
+  // 수 하나가 누적 정확도를 얼마나 올렸는지/내렸는지(delta)도 함께 기록해 둔다. moveMeta[i]는
+  // moves[i]와 1:1 대응 — ply(=i+1의 x좌표), 최선수 기준 평가(gVal, 흐릿한 점의 y좌표), delta(그
+  // 수 하나가 그 진영의 누적 정확도에 미친 영향, 부호 있음)를 담는다.
   const wLoss = [], wSharp = [], bLoss = [], bSharp = [];
   const wCurve = [100], bCurve = [100];
-  for (const m of moves) {
-    if (m.lossWinPct == null) continue;
-    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); wCurve.push(newCumulativeAccuracy(wLoss, wSharp, wLoss.length)); }
-    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); bCurve.push(newCumulativeAccuracy(bLoss, bSharp, bLoss.length)); }
+  const moveMeta = [];
+  for (let i = 0; i < moves.length; i++) {
+    const m = moves[i];
+    if (m.lossWinPct == null) { moveMeta.push(null); continue; }
+    // gVal = 이 수를 두기 전 최선수 기준 평가(백 관점 승률%) — f(evalWin[i+1])에 이 수의 손실을 그
+    // 수를 둔 진영 기준 부호로 되돌려 더한다(흑의 손실은 백 관점으로는 그만큼의 이득으로 보인다).
+    const gVal = evalWin[i + 1] + (m.white ? 1 : -1) * m.lossWinPct;
+    let delta;
+    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); const prev = wCurve[wCurve.length - 1]; const next = newCumulativeAccuracy(wLoss, wSharp, wLoss.length); wCurve.push(next); delta = next - prev; }
+    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); const prev = bCurve[bCurve.length - 1]; const next = newCumulativeAccuracy(bLoss, bSharp, bLoss.length); bCurve.push(next); delta = next - prev; }
+    moveMeta.push({ ply: i + 1, gVal, delta });
   }
-  return { moves, wCurve, bCurve };
+  return { moves, evalWin, wCurve, bCurve, moveMeta };
 }
 // 진영 하나의 구간 누적 정확도 곡선을 그리는 작은 스파크라인 — 지금까지 채점된 만큼만 그린다. 투명 배경.
 function MiniAccCurve({ curve, shownCount, color, label }) {
@@ -8557,33 +8565,121 @@ function MiniAccCurve({ curve, shownCount, color, label }) {
     </div>
   );
 }
-const REVEAL_HOLD_MS = 900; // 분석이 다 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
-function ReviewAccuracyRevealAnim({ result, resultDone, onDone }) {
+const REVEAL_SPEED_PER_SEC = 4;   // 그래프가 채워지는 속도(x축 1수 = 1초 기준 4수/초 — 실제 분석 속도와 무관하게 항상 이 속도)
+const REVEAL_POPUP_MS = 1300;     // 정확도 증가/감소 숫자가 떴다 사라지는 총 시간
+const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
+function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, onDone }) {
   const data = useMemo(() => buildRevealData(result), [result]);
-  const { moves, wCurve, bCurve } = data;
+  const { moves, evalWin, wCurve, bCurve, moveMeta } = data;
+  const N = Math.max(1, totalPlies || moves.length || 1);
+  // progress(0..N) — 실제 분석 진행(target)과는 별도로, 일정한 속도로만 전진하는 "그리는 펜의 위치".
+  // target을 넘어서지는 못한다(아직 채점 안 된 곳을 앞질러 그릴 수는 없으므로). target이 늘어나는
+  // 순간(수가 새로 채점됨)에도 progress는 여전히 REVEAL_SPEED_PER_SEC로만 따라잡아, 여러 수가 한꺼번에
+  // 도착해도 화면이 순간이동하듯 확 채워지지 않는다.
+  const [progress, setProgress] = useState(0);
+  const targetRef = useRef(0);
+  useEffect(() => { targetRef.current = Math.min(moves.length, N); }, [moves.length, N]);
+  useEffect(() => {
+    let raf, lastTs = null;
+    function tick(ts) {
+      if (lastTs == null) lastTs = ts;
+      const dt = Math.min(0.05, (ts - lastTs) / 1000); // 탭 비활성 등으로 프레임이 크게 튀는 경우 대비 상한
+      lastTs = ts;
+      setProgress((p) => { const t = targetRef.current; return p >= t ? p : Math.min(t, p + REVEAL_SPEED_PER_SEC * dt); });
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const floored = Math.min(N, Math.floor(progress));
+  // 방금 펜이 지나간 수마다 "정확도 증가/감소" 숫자를 한 번씩 잠깐 띄운다 — firedRef로 같은 수에
+  // 두 번 띄우지 않게 막는다.
+  const [popups, setPopups] = useState([]);
+  const firedRef = useRef(new Set());
+  useEffect(() => {
+    const revealedCount = Math.min(moves.length, floored);
+    for (let i = 0; i < revealedCount; i++) {
+      if (firedRef.current.has(i)) continue;
+      firedRef.current.add(i);
+      const meta = moveMeta[i];
+      if (!meta) continue;
+      const id = i;
+      setPopups((p) => [...p, { id, ply: meta.ply, gVal: meta.gVal, delta: meta.delta }]);
+      setTimeout(() => setPopups((p) => p.filter((x) => x.id !== id)), REVEAL_POPUP_MS);
+    }
+  }, [floored, moves, moveMeta]);
   const { wShown, bShown } = useMemo(() => {
     let w = 0, b = 0;
-    for (const m of moves) { if (m.white) w++; else b++; }
+    for (let i = 0; i < floored && i < moves.length; i++) { if (moves[i].white) w++; else b++; }
     return { wShown: w, bShown: b };
-  }, [moves]);
+  }, [moves, floored]);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   useEffect(() => {
-    if (!resultDone) return;
+    if (!resultDone || progress < N) return;
     const t = setTimeout(() => onDoneRef.current && onDoneRef.current(), REVEAL_HOLD_MS);
     return () => clearTimeout(t);
-  }, [resultDone]);
+  }, [resultDone, progress, N]);
   const wVal = wCurve[Math.min(wShown, wCurve.length - 1)];
   const bVal = bCurve[Math.min(bShown, bCurve.length - 1)];
-  // EvalGraph는 n(포인트 개수)이 2 이상이어야 그려진다 — 아직 첫 수도 채점되지 않은 순간엔 평평한
-  // 두 점(50=팽팽함)으로 자리만 잡아 둔다.
-  const evalWin = result && result.evalWin && result.evalWin.length >= 2 ? result.evalWin : [50, 50];
+
+  // ---- 그래프 좌표계 — EvalGraph와 같은 비율(320×92)·배색을 쓰되 이 컴포넌트가 직접 그린다 ----
+  const W = 320, H = 92;
+  const x = (i) => (i / N) * W;
+  const y = (w) => H - (Math.max(0, Math.min(100, w)) / 100) * H;
+  const evalAt = (i) => (evalWin[i] != null ? evalWin[i] : 50);
+  const frac = progress - floored;
+  // 펜 끝(tip) — floored까지는 실제 값, 그 다음 한 칸은 다음 값으로 선형보간해 매끄럽게 움직이는
+  // 것처럼 보이게 한다(다음 값이 아직 없으면 제자리에서 멈춘 것처럼 보인다 — target이 그 이상 못 감).
+  let tipX = x(floored), tipY = y(evalAt(floored));
+  if (floored < N && frac > 0 && floored + 1 <= targetRef.current) {
+    const v0 = evalAt(floored), v1 = evalAt(floored + 1);
+    tipX = x(floored + frac);
+    tipY = y(v0 + (v1 - v0) * frac);
+  }
+  const linePts = [];
+  for (let i = 0; i <= floored; i++) linePts.push([x(i), y(evalAt(i))]);
+  if (tipX > x(floored)) linePts.push([tipX, tipY]);
+  const lineD = linePts.length ? "M " + linePts.map(([px, py]) => px.toFixed(1) + "," + py.toFixed(1)).join(" L ") : "";
+  const areaPts = linePts.length ? [[0, H], ...linePts, [tipX, H]].map(([px, py]) => px.toFixed(1) + "," + py.toFixed(1)).join(" ") : "";
+  const allDone = resultDone && progress >= N;
   return (
     <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", padding: "6px 4px" }}>
-      <p style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px" }}>{resultDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요..."}</p>
-      {/* 리뷰 화면의 평가치 변동 그래프와 완전히 같은 컴포넌트 — 실시간으로 자라나는 evalWin·moves를
-          그대로 넘기기만 해서, 실제 분석 진행 속도 그대로 왼쪽부터 그려진다. */}
-      <EvalGraph evalWin={evalWin} moves={moves} />
+      <p style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px" }}>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요..."}</p>
+      <div style={{ background: "#3B342E", borderRadius: 10, padding: 6 }}>
+        <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
+          {/* 아직 펜이 지나가지 않은 구간 — 값을 추측해 잇지 않고 그냥 검은 여백으로 둔다 */}
+          {tipX < W && <rect x={tipX.toFixed(1)} y="0" width={(W - tipX).toFixed(1)} height={H} fill="#0A0604" />}
+          {tipX > 0 && (
+            <>
+              <line x1="0" y1={H / 2} x2={tipX.toFixed(1)} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
+              {/* 펜이 지나간 부분만 아래쪽을 흰색으로 채운다 */}
+              {areaPts && <polygon points={areaPts} fill="#EDE7DC" />}
+              {lineD && <path d={lineD} fill="none" stroke="#B9B0A4" strokeWidth="1" />}
+            </>
+          )}
+          {/* 각 수의 최선수 기준 평가 — 흐릿한 점 하나씩, 펜이 그 수를 지나간 뒤에만 보인다 */}
+          {moveMeta.map((meta, i) => {
+            if (!meta || i >= floored) return null;
+            return <circle key={i} cx={x(meta.ply).toFixed(1)} cy={y(meta.gVal).toFixed(1)} r="2.2" fill="rgba(235,221,196,.55)" />;
+          })}
+          {/* 정확도 증가/감소 — 그 수를 지나가는 순간 잠깐 떴다 사라지는 숫자(초록=증가, 빨강=감소) */}
+          <AnimatePresence>
+            {popups.map((p) => {
+              const py = Math.max(8, Math.min(y(evalAt(p.ply)), y(p.gVal)) - 5);
+              const positive = p.delta >= 0;
+              return (
+                <motion.text key={p.id} x={x(p.ply).toFixed(1)} y={py.toFixed(1)} textAnchor="middle"
+                  fontSize="7.5" fontWeight="800" fontFamily="ui-monospace,monospace"
+                  fill={positive ? T.good : T.blunder} paintOrder="stroke" stroke="#150C06" strokeWidth="2.2"
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+                  {(positive ? "+" : "") + p.delta.toFixed(1)}
+                </motion.text>
+              );
+            })}
+          </AnimatePresence>
+        </svg>
+      </div>
       <div className="flex items-start" style={{ gap: 14, marginTop: 10 }}>
         <div style={{ flex: 1, textAlign: "center" }}>
           <MiniAccCurve curve={wCurve} shownCount={wShown} color="#EDE7DC" label="⬜ 백 정확도" />
@@ -9192,7 +9288,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       {header}
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewIntroCarousel />
-        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} onDone={() => setIntroRevealDone(true)} />
+        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} onDone={() => setIntroRevealDone(true)} />
         <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
         <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(prog * 100)}%</p>
       </div>
@@ -16903,7 +16999,7 @@ const CHANGELOG = [
   {
     version: "0.3.8", date: "2026.8.19", dev: ["openchesskr"], items: [
       "게임 리뷰가 복잡한 포지션에서 더 깊이 분석하도록 시간을 늘려 정확도를 개선했어요(평소보다 리뷰 시간이 조금 더 걸릴 수 있어요).",
-      "게임 리뷰에 들어갈 때 보여주는 화면이 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 분석이 진행되는 동안 리뷰 화면과 똑같은 모양의 평가 그래프가 실시간으로 그려지며 백·흑 각각의 정확도가 계산되는 모습을 보여준 뒤 정확도 박스로 이어져요.",
+      "게임 리뷰에 들어갈 때 보여주는 화면이 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 아직 분석되지 않은 구간은 검게, 분석이 끝난 구간만 채워지며 그래프가 일정한 속도로 그려져요. 각 수마다 최선 수 위치가 흐릿한 점으로 표시되고, 그 수가 정확도를 얼마나 올리거나 내렸는지 초록·빨강 숫자로 잠깐 떴다 사라지며, 끝나면 백·흑 정확도가 정확도 박스로 자연스럽게 이어져요.",
       "게임 리뷰의 정확도 계산 방식을 새로 설계했어요 — 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지고, 후보 수가 여럿인 무난한 포지션에서의 실수는 관대하게, 정답이 하나뿐인 날카로운 포지션에서의 실수는 더 엄격하게 반영돼요.",
       "라인/퍼즐 클리어 배너의 글자가 전용 폰트로 바뀌고, 위아래로 줄바꿈되어 화면 정중앙에 표시돼요.",
       "체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률을 개선했어요.",
