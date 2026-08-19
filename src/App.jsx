@@ -2739,6 +2739,11 @@ const SHARP_REF_SD = 8;           // 위 기준 근방에서 보정이 완만하
 const NEW_ACC_SHARP_LO = 0.85;    // 아주 무난한 포지션에서 손실에 곱하는 배율 하한(관대)
 const NEW_ACC_SHARP_HI = 1.15;    // 아주 날카로운 포지션에서 손실에 곱하는 배율 상한(엄격)
 const NEW_ACC_CALIB = 1.0;        // 전체 스케일 보정 — chess.com 근사치에 맞추는 최종 튜닝 손잡이
+// (사용자 요청) 이론 수·최선 수(noPenalty로 분류된 수)는 그대로 손실 0을 유지하되, 그 외의 모든
+// 감점 대상 수(우수·좋음·부정확·실수·놓친 수·블런더)는 손실을 이 배율만큼 키워 정확도를 더 엄격하게
+// 매긴다 — "평균적으로 모든 게임에서 5~7%p 정도 낮아지게" 요청받아, 실제 기보(클린한 게임·블런더
+// 있는 게임 둘 다)로 여러 배율을 재보 값이다.
+const NEW_ACC_PENALTY_MULT = 1.2;
 // 모집단 표준편차 — gradeOne이 그 수를 두기 전 포지션의 후보 1·2·3위 평가(승률%)로 "날카로움"(sharp)을 잴 때 쓴다.
 function stdev(nums) {
   const n = nums.length; if (!n) return 0;
@@ -3152,7 +3157,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     // 그대로 물려받는다(이 판정 자체는 "어떤 수가 감점 대상인지"이지, 손실→정확도 변환 공식과는 무관).
     const noPenalty = ["best", "only", "brilliant", "book"].includes(kind);
     const winBefore = winPctFromCp(bestCp), winAfter = winPctFromCp(playedCp);
-    const lossWinPct = noPenalty ? 0 : Math.max(0, winBefore - winAfter);
+    const lossWinPct = noPenalty ? 0 : Math.max(0, winBefore - winAfter) * NEW_ACC_PENALTY_MULT;
     // (v0.3.8 기능) 독립 정확도 체계의 "날카로움" — 이 수를 두기 전 포지션에서 엔진 상위 1·2·3위
     // 후보 수 평가(승률%)가 서로 얼마나 퍼져 있는지(표준편차). 후보가 2개 미만(사실상 강제수)이면
     // 고를 여지가 없었다는 뜻이라 가장 무난한 포지션(0)으로 둔다.
@@ -8637,8 +8642,8 @@ const REVEAL_SPEED_PER_SEC = 4;   // 그래프가 채워지는 속도(x축 1수 
 // (사용자 요청) 숫자가 그래프 위에서 서로 겹치지 않도록 두 가지를 함께 조정한다 — ① 잔상(떠 있다
 // 사라지는 자취)이 빨리 없어지도록 표시 시간·페이드아웃 시간을 모두 줄이고, ② 델타가 큰 수들이
 // 연달아 나올 때 다음 숫자가 뜨기 전 최소한의 간격(스태거)을 강제로 둔다.
-const REVEAL_POPUP_MS = 850;      // 정확도 증가/감소 숫자가 떴다 사라지는 총 시간(예전 1300ms → 850ms)
-const REVEAL_POPUP_EXIT_S = 0.15; // 사라질 때 페이드아웃 속도(예전 0.3s → 0.15s, 잔상이 더 빨리 사라짐)
+const REVEAL_POPUP_MS = 550;      // 정확도 증가/감소 숫자가 떴다 사라지는 총 시간(1300ms → 850ms → 550ms, 등장하자마자 더 빨리 사라지도록 재요청)
+const REVEAL_POPUP_EXIT_S = 0.1;  // 사라질 때 페이드아웃 속도(0.3s → 0.15s → 0.1s)
 const REVEAL_POPUP_STAGGER_MS = 480; // 숫자 하나가 뜬 뒤 다음 숫자가 뜨기까지 최소 간격
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
 function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow }) {
@@ -8759,8 +8764,8 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
               const positive = p.delta >= 0;
               return (
                 <motion.text key={p.id} x={x(p.ply).toFixed(1)} y={py.toFixed(1)} textAnchor="middle"
-                  fontSize="7.5" fontWeight="800" fontFamily="ui-monospace,monospace"
-                  fill={positive ? T.good : T.blunder} paintOrder="stroke" stroke="#150C06" strokeWidth="2.2"
+                  fontSize="6" fontWeight="800" fontFamily="ui-monospace,monospace"
+                  fill={positive ? T.good : T.blunder} paintOrder="stroke" stroke="#150C06" strokeWidth="1.8"
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
                   {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
                 </motion.text>
@@ -8781,7 +8786,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
             {popups.filter((p) => p.white).map((p) => {
               const positive = p.delta >= 0;
               return (
-                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 2, fontSize: 12, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
+                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 2, fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
                   initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
                   {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
                 </motion.span>
@@ -8796,7 +8801,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
             {popups.filter((p) => !p.white).map((p) => {
               const positive = p.delta >= 0;
               return (
-                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 2, fontSize: 12, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
+                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 2, fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
                   initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
                   {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
                 </motion.span>
@@ -17168,6 +17173,8 @@ const CHANGELOG = [
       "모바일에서는 백 정확도 그래프와 흑 정확도 그래프를 각각 다른 줄에 더 크게 보여줘요.",
       "게임 리뷰의 정확도 계산이 실제보다 너무 높게, 백·흑 차이도 너무 적게 나오던 문제를 고쳤어요 — 이제 대국 중 실수·블런더가 정확도에 더 뚜렷하게 반영돼요.",
       "평가치 그래프의 정중앙(0.0 평가) 점선이 더 진해지고, 흰 영역에 가려지지 않고 그래프 전체에서 항상 보여요. 정확도 그래프의 눈금 숫자도 더 크고 잘 보이게 바뀌었어요.",
+      "이론 수·최선의 수는 여전히 정확도 감점이 없고, 그 외의 수(우수한 수·좋은 수·부정확·실수·놓친 수·블런더)는 감점 폭을 조금 늘렸어요 — 실수가 있는 대국일수록 정확도가 더 뚜렷하게 낮아져요.",
+      "정확도 증감 팝업 글자 크기를 줄이고, 뜬 뒤 더 빨리 사라지도록 해서 여러 숫자가 겹쳐 보이는 걸 줄였어요.",
     ]
   },
   {
