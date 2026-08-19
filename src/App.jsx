@@ -7826,6 +7826,13 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const markX = hasMark ? x(curPly) : null;
   const markY = hasMark ? y(evalWin[curPly]) : null;
   const markFrac = hasMark ? curPly / (n - 1) : 0;
+  // (사용자 요청) 최선 수 기준 평가(g) 흐릿한 점 — 예전엔 리뷰 진입 애니메이션에서 수마다 하나씩
+  // 찍었는데, 이제 그 애니메이션에서는 빼고 대신 이 실제 리뷰 그래프에서 역삼각형 마커로 지금
+  // 선택한 지점 하나에만 보여준다(마커를 옮기면 그 지점의 값으로 함께 움직인다).
+  const bestMoveSrc = hasMark && curPly > 0 && moves ? moves[curPly - 1] : null;
+  const bestMoveY = (bestMoveSrc && bestMoveSrc.lossWinPct != null)
+    ? y(evalWin[curPly] + (bestMoveSrc.white ? 1 : -1) * bestMoveSrc.lossWinPct)
+    : null;
   return (
     <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, overflow: "hidden" }}>
       <div style={{ position: "relative", touchAction: "none" }}
@@ -7842,6 +7849,7 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
           {hasMark && (
             <>
               <line x1={markX} y1="0" x2={markX} y2={H} stroke="#EBCB86" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
+              {bestMoveY != null && <circle cx={markX} cy={bestMoveY} r="2.6" fill="rgba(235,221,196,.6)" stroke="#241509" strokeWidth="0.5" />}
               <circle cx={markX} cy={markY} r="3.6" fill="#EBCB86" stroke="#241509" strokeWidth="0.8" />
             </>
           )}
@@ -8711,11 +8719,6 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
               {lineD && <path d={lineD} fill="none" stroke="#B9B0A4" strokeWidth="1" />}
             </>
           )}
-          {/* 각 수의 최선수 기준 평가 — 흐릿한 점 하나씩, 펜이 그 수를 지나간 뒤에만 보인다 */}
-          {moveMeta.map((meta, i) => {
-            if (!meta || i >= floored) return null;
-            return <circle key={i} cx={x(meta.ply).toFixed(1)} cy={y(meta.gVal).toFixed(1)} r="2.2" fill="rgba(235,221,196,.55)" />;
-          })}
           {/* 정확도 증가/감소 — 그 수를 지나가는 순간 잠깐 떴다 사라지는 숫자(초록=증가, 빨강=감소) */}
           <AnimatePresence>
             {popups.map((p) => {
@@ -8963,9 +8966,21 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   // 풀이 유휴 상태이므로 곧바로 응답한다). (engineLines state는 playFree보다 먼저 선언돼야 해
   // 위쪽으로 옮겨졌다.)
   const [linesPending, setLinesPending] = useState(false);
+  // (버그 수정) 사용자 보고 — 평가치 그래프의 역삼각형 마커를 좌우로 빠르게 드래그하면 curPly가
+  // 초당 수십 번 바뀌고, 그때마다 이 무거운 엔진 라인 계산(과 이전 계산의 취소)이 즉시 다시
+  // 시작돼 워커에 명령이 쌓이며 엔진 라인 패널이 잠깐 먹통이 된다. 보드·마커·코치 카드 등 나머지
+  // 화면은 드래그 중에도 즉시 반응해야 하므로 effSans/effFen 자체는 건드리지 않고, 이 효과가
+  // 실제로 바라보는 스냅샷만 짧게 디바운스한다 — 마커가 한 지점에 멈춘 뒤 일정 시간(220ms)이
+  // 지나야 그 지점의 엔진 계산이 시작된다.
+  const [debouncedEff, setDebouncedEff] = useState(() => ({ sans: effSans, fen: effFen }));
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedEff({ sans: effSans, fen: effFen }), 220);
+    return () => clearTimeout(t);
+  }, [effFen]);
   useEffect(() => {
     let cancelled = false;
     if (!engine || engine.status !== "ready") { setEngineLines([]); setLinesPending(false); return; }
+    const effSans = debouncedEff.sans, effFen = debouncedEff.fen;
     // (v0.3.4 기능 → v0.3.5) 이 패널의 pvUciToSans(effSans, ...)가 fenRoot를 받도록 고쳐져("범위가
     // 커진다"고 미뤄 뒀던 항목), FEN 리뷰에서도 이제 정확한 SAN으로 엔진 상위 줄을 보여준다.
     // (v0.2.3 버그 수정) 학습 탭(useMergedMoves)의 엔진 라인은 포지션이 바뀌어도 이전 값을 옅게 유지한
@@ -9014,7 +9029,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       finally { if (!cancelled) setLinesPending(false); }
     })();
     return () => { cancelled = true; };
-  }, [effSans.join(" "), engine && engine.status, engine && engine.profile, fenRoot]);
+  }, [debouncedEff, engine && engine.status, engine && engine.profile, fenRoot]);
   // (v0.2.1 기능) 기보에 없는 자유 탐색 수도 기보 수와 똑같이 — 코치 카드에 등급·평가·설명을, 보드에
   // 수 체계 아이콘("계산 중" 포함)을, Show 화살표에 최선수를 표시하기 위해, 마지막으로 둔 자유 탐색
   // 수를 게임 리뷰와 동일한 방식(analyzeGame의 채점 규칙)으로 라이브 분석한다. 공용 엔진 큐 대신 게임
@@ -17066,7 +17081,7 @@ const CHANGELOG = [
   {
     version: "0.3.8", date: "2026.8.19", dev: ["openchesskr"], items: [
       "게임 리뷰가 복잡한 포지션에서 더 깊이 분석하도록 시간을 늘려 정확도를 개선했어요(평소보다 리뷰 시간이 조금 더 걸릴 수 있어요).",
-      "게임 리뷰에 들어갈 때 보여주는 화면이 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 아직 분석되지 않은 구간은 검게, 분석이 끝난 구간만 채워지며 그래프가 일정한 속도로 그려져요. 각 수마다 최선 수 위치가 흐릿한 점으로 표시되고, 그 수가 정확도를 얼마나 올리거나 내렸는지 초록·빨강 숫자로 잠깐 떴다 사라지며, 끝나면 백·흑 정확도가 정확도 박스로 자연스럽게 이어져요.",
+      "게임 리뷰에 들어갈 때 보여주는 화면이 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 아직 분석되지 않은 구간은 검게, 분석이 끝난 구간만 채워지며 그래프가 일정한 속도로 그려져요. 각 수가 정확도를 얼마나 올리거나 내렸는지 초록·빨강 숫자로 잠깐 떴다 사라지며, 끝나면 백·흑 정확도가 정확도 박스로 자연스럽게 이어져요.",
       "게임 리뷰의 정확도 계산 방식을 새로 설계했어요 — 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지고, 후보 수가 여럿인 무난한 포지션에서의 실수는 관대하게, 정답이 하나뿐인 날카로운 포지션에서의 실수는 더 엄격하게 반영돼요.",
       "라인/퍼즐 클리어 배너의 글자가 전용 폰트로 바뀌고, 위아래로 줄바꿈되어 화면 정중앙에 표시돼요.",
       "체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률을 개선했어요.",
@@ -17077,6 +17092,8 @@ const CHANGELOG = [
       "리뷰 페이지를 닫았다가 리뷰 버튼을 다시 눌러 들어가면 화면이 멈춰버리던 심각한 오류를 고쳤어요.",
       "정확도가 오르내릴 때 잠깐 떴다 사라지는 숫자에 %가 붙고, 변동이 아주 작은 수는 숫자가 너무 겹쳐 보이지 않도록 표시하지 않아요. 백·흑 정확도 그래프의 눈금은 평소 60~100 구간만 보여주다가, 정확도가 60 밑으로 떨어지면 그때만 0~100 전체로 자동으로 넓어져요.",
       "게임 리뷰 진입 화면의 그래프가 특정 대국에서 한동안 멈춰 있다가 뒤늦게 한꺼번에 몰아 그려지던 문제를 고쳤어요 — 이제 항상 고르게 채워져요.",
+      "최선 수 위치를 보여주는 흐릿한 점을 리뷰 화면의 평가치 그래프로 옮겼어요 — 역삼각형 마커로 특정 지점을 선택하면 그 지점에만 표시돼요.",
+      "평가치 그래프의 역삼각형 마커를 빠르게 좌우로 끌면 엔진 라인이 잠깐 먹통이 되던 문제를 고쳤어요 — 마커가 한 지점에 멈춘 뒤부터 계산이 시작돼요.",
     ]
   },
   {
