@@ -3257,11 +3257,16 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
       // 없다 — 이 호출부(리뷰 전용)만 hardBuffer로 더 짧은 여유(1500ms)를 요청한다.
       const REVIEW_HARD_BUFFER_MS = 1500;
       let lines = await withTimeout(w.evaluateMulti(fens[i], depth, multipvTarget, mt, undefined, undefined, REVIEW_HARD_BUFFER_MS), mt + REVIEW_HARD_BUFFER_MS + 100);
-      // (v0.3.4 버그 수정) 몇몇 포지션이 타임아웃(워커가 그 순간 다른 요청으로 바빴거나 일시적으로
-      // 응답이 늦었을 뿐인 경우가 대부분)으로 실패하면, 예전엔 그 자리에서 그대로 "pending"으로
-      // 영영 남아 그 수의 등급·평가치가 다시는 채워지지 않았다(다른 어떤 경로도 재시도하지 않음).
-      // 한 번만 더 재시도한다 — 실제로 계산 불가능한 포지션은 거의 없으므로 대부분 이걸로 회복된다.
-      if (!lines || !lines[0]) lines = await withTimeout(w.evaluateMulti(fens[i], depth, multipvTarget, mt, undefined, undefined, REVIEW_HARD_BUFFER_MS), mt + REVIEW_HARD_BUFFER_MS + 100);
+      // (v0.3.4 버그 수정 → v0.3.9 강화) 몇몇 포지션이 타임아웃(워커가 그 순간 다른 요청으로 바빴거나
+      // 일시적으로 응답이 늦었을 뿐인 경우가 대부분)으로 실패하면, 예전엔 그 자리에서 그대로
+      // "pending"으로 영영 남아 그 수의 등급·평가치가 다시는 채워지지 않고 정확도 집계에서도
+      // 통째로 빠졌다(표본이 줄어들수록 조화평균이 남은 값에 더 민감해져, 정확도 재보정 실측 때도
+      // 이 탈락 자체가 결과를 왜곡하는 게 확인됐다). 재시도를 1회→2회로 늘린다 — 실제로 계산
+      // 불가능한 포지션은 거의 없고 대부분 일시적 부하 때문이라, 재시도 한 번 더로 회복되는
+      // 경우가 늘어난다(그래도 실패하면 여전히 pending — 존재하지 않는 값을 지어내진 않는다).
+      for (let retry = 0; retry < 2 && (!lines || !lines[0]); retry++) {
+        lines = await withTimeout(w.evaluateMulti(fens[i], depth, multipvTarget, mt, undefined, undefined, REVIEW_HARD_BUFFER_MS), mt + REVIEW_HARD_BUFFER_MS + 100);
+      }
       const p0 = lines && lines[0], p1 = lines && lines[1], p2 = lines && lines[2];
       // ok: 이 포지션을 엔진이 실제로 평가했는지. 타임아웃/엔진 미응답이면 p0가 없어 ok=false.
       // (v0.2.1 버그 수정) cp만 남기면(cpOfLine이 메이트를 ±100000으로 뭉갠 값) /review 코치 카드가
@@ -17294,6 +17299,7 @@ const CHANGELOG = [
       "설정 탭 내 프로필 카드 — '내 프로필' 라벨 자리에 이제 내 아이디가 표시되고, 이름과 소개 사이에 중복으로 있던 아이디 표시는 없앴어요.",
       "퍼즐을 모두 풀었을 때 뜨는 PUZZLE CLEAR 애니메이션의 폰트가 바뀌고, 글자가 하나씩 튕겨 들어오는 더 역동적인 연출로 바뀌었어요. 재생 시간도 늘고, 다 보인 뒤 창이 닫히기까지 여유를 더 줬어요.",
       "같은 대국을 리뷰로 다시 열 때마다 정확도가 미세하게 달라지던 문제를 고쳤어요 — 이제 한 번 분석이 끝나면 그 결과를 그대로 저장해 뒀다가, 다시 열 때 항상 똑같은 값을 보여줘요.",
+      "게임 리뷰 중 일부 포지션이 드물게 분석에 실패해 그 수의 정확도 반영이 빠지던 문제를 줄였어요(재시도 횟수 확대).",
     ]
   },
   {
