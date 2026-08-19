@@ -8114,12 +8114,15 @@ function gradeFromAccuracy(acc) {
   return "blunder";
 }
 // 정확성 산출과 동일한 값(analyzeGame의 whiteAcc/blackAcc)을 재사용하고, 여기서는 표시 서식만 맡는다.
-function ReviewAccuracyPill({ label, value, hi }) {
+// (v0.3.8 기능) layoutId를 주면 framer-motion이 같은 layoutId를 가진 다른 요소(진입 애니메이션의
+// 마지막 숫자, ReviewAccuracyRevealAnim 참고)에서 여기로 자리를 이어받는 "공유 요소" 전환을 자동
+// 재생한다 — 그 애니메이션이 끝날 때 이 박스로 자연스럽게 이동해 합쳐지는 효과.
+function ReviewAccuracyPill({ label, value, hi, layoutId }) {
   return (
-    <div style={{ flex: 1, textAlign: "center" }}>
+    <motion.div layoutId={layoutId} style={{ flex: 1, textAlign: "center" }}>
       <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
-    </div>
+    </motion.div>
   );
 }
 // (기능) 요약 화면의 수 체계별 개수 표 — ANALYSIS_KIND_ROWS·QCOLOR·CircleBadge를 그대로 재사용해
@@ -8227,8 +8230,8 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
         </div>
       </div>
       <div className="flex items-stretch" style={{ gap: 10, marginBottom: 16 }}>
-        <ReviewAccuracyPill label="정확성" value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} />
-        <ReviewAccuracyPill label="정확성" value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
+        <ReviewAccuracyPill label="정확성" value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} layoutId="review-acc-w" />
+        <ReviewAccuracyPill label="정확성" value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} layoutId="review-acc-b" />
       </div>
       <ReviewKindTable moves={result.moves} showAll onPick={onPickMove} />
       {/* (v0.2.1) 세 단계(오프닝/미들게임/엔드게임)를 모두 보여준다 — 그 단계에 수가 없으면(예: 엔드게임 미도달)
@@ -8481,33 +8484,26 @@ const REVIEW_MOVETIME_MS = 1000;
 // 훅과 Stockfish 16 프로필 자체를 없앴다 — ReviewPage는 이제 App 루트의 공유 engine을 prop으로
 // 받는다(LearnTab·PuzzleTab 등과 동일한 패턴). 실제 계산은 여전히 getAnalysisPool의 풀이 담당한다
 // (analyzeGame, 엔진 라인 패널, 수 판정 모두 이 풀을 공유 — 위 analysisPoolCache 주석 참고).
-// (v0.2.9 기능) 사용자 요청 — 게임 리뷰(analyzeGame)가 도는 동안 보여줄 3분할 일러스트 애니메이션.
-// 사용자가 올려 준 세 장(MILKU·KOKOA가 체스보드를 사이에 두고 있는 장면들)을 위에서부터 ilust-7 →
-// ilust-6 → ilust-5 순으로 쌓는다("7이 가장 위, 5가 가장 아래"). 각 장이 순서대로 팝인하며 등장하고
-// (framer-motion stagger), 자리를 잡은 뒤에는 다른 화면(그랜드마스터 보드 등)과 같은 금속 광택 스윕
-// 클래스(gm-board-shine)를 패널마다 다른 지연으로 얹어, 대국 분석이 몇 초 넘게 걸려도 "계속 진행
-// 중"이라는 인상을 준다 — 이 앱의 "특별한" 화면들이 이미 공유하는 시각 언어를 그대로 재사용한 것이라
-// 이 로딩 화면만을 위한 새 애니메이션을 따로 만들지 않았다.
-const REVIEW_LOADING_PANELS = [
-  { src: "/ilust-7-web.webp", pos: "center 38%", delay: 0 },
-  { src: "/ilust-6-web.webp", pos: "center 22%", delay: 0.5 },
-  { src: "/ilust-5-web.webp", pos: "center 46%", delay: 1.0 },
-];
-// (v0.2.9 UI 조정) 사용자 요청 — 화면을 더 꽉 채우고, 위 패널이 자리를 완전히 잡은 뒤에야 다음 패널이
-// 등장하도록 delay 간격을 늘렸다(기존 0.14초 간격은 duration .45초와 겹쳐 거의 동시에 튀어나오는
-// 것처럼 보였다). 패널이 부모의 남는 세로 공간을 균등히 나눠 갖도록(flex:1) 바꿔, 로딩 화면 전체
-// 높이에 맞춰 3장이 커진다 — 부모(ReviewPage 로딩 분기)가 flex column이어야 의도대로 늘어난다.
-function ReviewLoadingSplit() {
+// (v0.2.9 기능 → v0.3.8 전면 개편) 게임 리뷰(analyzeGame)가 도는 동안 보여줄 일러스트 — 예전엔 세
+// 장(ilust-5·6·7, MILKU·KOKOA가 체스보드를 사이에 두고 있는 장면들)을 카드 세 칸에 겹쳐서 한 번에
+// 보여줬다. 사용자 요청으로 한 번에 한 장만, 카드 테두리·배경 없이(투명 배경) 전체가 잘리지 않게
+// (objectFit:contain) 보여주고, 몇 초마다 자연스럽게 좌우로 넘어가는 캐러셀로 바꿨다.
+const REVIEW_INTRO_ILLUSTRATIONS = ["/ilust-7-web.webp", "/ilust-6-web.webp", "/ilust-5-web.webp"];
+const REVIEW_INTRO_SLIDE_MS = 4200;
+function ReviewIntroCarousel() {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setIdx((v) => (v + 1) % REVIEW_INTRO_ILLUSTRATIONS.length), REVIEW_INTRO_SLIDE_MS);
+    return () => clearInterval(iv);
+  }, []);
   return (
-    <div style={{ width: "100%", maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 8, flex: "1 1 auto", minHeight: 0, maxHeight: 620 }}>
-      {REVIEW_LOADING_PANELS.map((p, i) => (
-        <motion.div key={p.src} initial={{ opacity: 0, y: -28 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: p.delay, duration: 0.5, ease: "easeOut" }}
-          style={{ position: "relative", flex: "1 1 0", minHeight: 110, borderRadius: 14, overflow: "hidden", border: "1px solid " + RV.border, boxShadow: "0 8px 20px -8px rgba(0,0,0,.6)" }}>
-          <img src={p.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: p.pos, display: "block" }} />
-          <span className="gm-board-shine" style={{ borderRadius: 14, animationDelay: (i * 0.6) + "s" }} />
-        </motion.div>
-      ))}
+    <div style={{ position: "relative", width: "100%", maxWidth: 420, height: 230, margin: "0 auto", overflow: "hidden", background: "transparent", flexShrink: 0 }}>
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.img key={idx} src={REVIEW_INTRO_ILLUSTRATIONS[idx]} alt="" draggable={false}
+          initial={{ x: 70, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -70, opacity: 0 }}
+          transition={{ duration: 0.75, ease: [0.22, 0.9, 0.32, 1] }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", background: "transparent" }} />
+      </AnimatePresence>
     </div>
   );
 }
@@ -8536,6 +8532,160 @@ function AnalyzingPiecesAnim() {
     </div>
   );
 }
+// ===================== (v0.3.8) 리뷰 진입 애니메이션 — 정확도 공개 시퀀스 — 사용자 설계 =====================
+// 분석(analyzeGame)이 100% 끝나면(resultDone) 곧바로 요약·리뷰 화면으로 넘어가는 대신, moveEvalGraph
+// (f)를 왼쪽부터 그리고 → bestMoveEvalGraph(g)를 덧그리고 → 두 곡선 사이 넓이(=그 수의 손실)를 수
+// 구간마다 순서대로 채우면서 → 그 자리에서 백·흑 각각의 구간 누적 정확도 곡선(h)과 숫자가 함께
+// 갱신되는 짧은 시퀀스를 한 번 보여준다. 숫자는 계속 motion.div layoutId="review-acc-w"/"review-acc-b"를
+// 달고 있어, 이 컴포넌트가 언마운트되고 그 자리를 이어받는 ReviewAccuracyPill(같은 layoutId)이
+// 마운트되면 framer-motion이 두 위치 사이를 자동으로 보간해 "그 정확도 표시 박스로 이동해 합쳐지는"
+// 효과를 낸다(부모가 AnimatePresence로 감싸고 있어야 마운트/언마운트 전환 사이에도 이 보간이 이어짐).
+function buildRevealData(result) {
+  const { moves, evalWin } = result;
+  const N = moves.length;
+  // g(n) = n번째 수를 두기 전 최선수 기준 평가(백 관점 승률%) — f(n)에 그 수의 손실을 그 수를 둔
+  // 진영 기준 부호로 되돌려 더하면 된다(백이 잃었으면 g가 f보다 높고, 흑이 잃었으면 g가 f보다 낮다 —
+  // 흑의 손실은 이 승률% 모델에서 백 관점으로는 그만큼의 이득으로 보이기 때문).
+  const g = evalWin.slice();
+  for (let i = 0; i < N; i++) {
+    const m = moves[i];
+    if (m.lossWinPct == null) continue;
+    g[i + 1] = evalWin[i + 1] + (m.white ? 1 : -1) * m.lossWinPct;
+  }
+  // 진영별 구간 누적 정확도 곡선 — index 0은 "아직 한 수도 안 둔 상태"(100)로 시작해, 그 진영이 스스로
+  // 둔 n번째 수까지 newCumulativeAccuracy를 다시 계산해 나간다(newCumulativeAccuracy 자체가 사용자
+  // 설계 그대로 — App.jsx 앞부분 "독립 정확도 체계" 참고).
+  const wLoss = [], wSharp = [], bLoss = [], bSharp = [];
+  const wCurve = [100], bCurve = [100];
+  for (let i = 0; i < N; i++) {
+    const m = moves[i];
+    if (m.lossWinPct == null) continue;
+    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); wCurve.push(newCumulativeAccuracy(wLoss, wSharp, wLoss.length)); }
+    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); bCurve.push(newCumulativeAccuracy(bLoss, bSharp, bLoss.length)); }
+  }
+  return { moves, g, wCurve, bCurve, N };
+}
+// 진영 하나의 구간 누적 정확도 곡선을 그리는 작은 스파크라인 — shownCount만큼만(스윕이 공개한 만큼만) 그린다.
+function MiniAccCurve({ curve, shownCount, color, label }) {
+  const total = curve.length - 1; // 그 진영이 실제로 둔 수 개수
+  const W2 = 320, H2 = 46;
+  // (버그 수정) 정확도 100(가장 흔한 값 — 실수 없이 두면 계속 100)이 y=0 정확히 그 자리에 그려져
+  // 박스 위쪽 테두리에 선이 절반쯤 잘려 거의 안 보였다 — 위아래 4px씩 여백을 둬 100이어도 박스
+  // 안쪽에 온전히 보이게 한다.
+  const PAD = 4;
+  const xx = (i) => (total <= 0 ? 0 : (i / total) * W2);
+  const yy = (v) => PAD + (H2 - PAD * 2) - (Math.max(0, Math.min(100, v)) / 100) * (H2 - PAD * 2);
+  const pts = curve.slice(0, Math.max(1, shownCount + 1));
+  const path = pts.length >= 2 ? "M " + pts.map((v, i) => xx(i).toFixed(1) + "," + yy(v).toFixed(1)).join(" L ") : "";
+  return (
+    <div>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3 }}>{label}</div>
+      <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: 40, background: "#3B342E", borderRadius: 6 }}>
+        {path && <path d={path} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />}
+      </svg>
+    </div>
+  );
+}
+const REVEAL_DRAW_F_MS = 1300;
+const REVEAL_DRAW_G_MS = 650;
+const REVEAL_SWEEP_TOTAL_MS = 3200;
+const REVEAL_HOLD_MS = 900;
+function ReviewAccuracyRevealAnim({ result, onDone }) {
+  const data = useMemo(() => buildRevealData(result), [result]);
+  const { moves, g, wCurve, bCurve, N } = data;
+  const evalWin = result.evalWin;
+  const W = 320, H = 120;
+  const x = (i) => (N <= 0 ? 0 : (i / N) * W);
+  const y = (w) => H - (Math.max(0, Math.min(100, w)) / 100) * H;
+  const fPath = useMemo(() => "M " + evalWin.map((w, i) => x(i).toFixed(1) + "," + y(w).toFixed(1)).join(" L "), [evalWin]);
+  const gPath = useMemo(() => "M " + g.map((w, i) => x(i).toFixed(1) + "," + y(w).toFixed(1)).join(" L "), [g]);
+  const fRef = useRef(null);
+  const [fLen, setFLen] = useState(0);
+  useLayoutEffect(() => { if (fRef.current) setFLen(fRef.current.getTotalLength()); }, [fPath]);
+  // measuring(길이 재기) → drawF(f 그리기) → drawG(g 덧그리기) → sweep(수 구간별 넓이+누적곡선 공개) → hold(잠깐 멈춤, 그 뒤 onDone)
+  const [stage, setStage] = useState("measuring");
+  const [sweepIdx, setSweepIdx] = useState(0); // 공개된 수 구간 개수(0..N)
+  const [wShown, setWShown] = useState(0), [bShown, setBShown] = useState(0);
+  useEffect(() => {
+    if (stage !== "measuring" || fLen <= 0) return;
+    const raf = requestAnimationFrame(() => setStage("drawF"));
+    return () => cancelAnimationFrame(raf);
+  }, [stage, fLen]);
+  useEffect(() => {
+    if (stage !== "drawF") return;
+    const t = setTimeout(() => setStage("drawG"), REVEAL_DRAW_F_MS + 80);
+    return () => clearTimeout(t);
+  }, [stage]);
+  useEffect(() => {
+    if (stage !== "drawG") return;
+    const t = setTimeout(() => setStage("sweep"), REVEAL_DRAW_G_MS + 120);
+    return () => clearTimeout(t);
+  }, [stage]);
+  useEffect(() => {
+    if (stage !== "sweep") return;
+    if (sweepIdx >= N) { const t = setTimeout(() => setStage("hold"), 500); return () => clearTimeout(t); }
+    const stepMs = Math.max(26, Math.min(220, REVEAL_SWEEP_TOTAL_MS / Math.max(1, N)));
+    const t = setTimeout(() => {
+      const m = moves[sweepIdx];
+      if (m.white) setWShown((v) => v + 1); else setBShown((v) => v + 1);
+      setSweepIdx((v) => v + 1);
+    }, stepMs);
+    return () => clearTimeout(t);
+  }, [stage, sweepIdx, N, moves]);
+  // onDone은 부모(ReviewPage)에서 매 렌더 새로 만들어질 수 있어 ref로 최신 값만 들고 있다가 부른다
+  // (effect deps에 직접 넣으면 그 새 함수 참조 때문에 hold 진입 타이머가 매번 다시 걸릴 위험이 있다).
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  useEffect(() => {
+    if (stage !== "hold") return;
+    const t = setTimeout(() => onDoneRef.current && onDoneRef.current(), REVEAL_HOLD_MS);
+    return () => clearTimeout(t);
+  }, [stage]);
+  const fDrawn = stage !== "measuring";
+  const gShown = stage === "drawG" || stage === "sweep" || stage === "hold";
+  const wVal = wCurve[Math.min(wShown, wCurve.length - 1)];
+  const bVal = bCurve[Math.min(bShown, bCurve.length - 1)];
+  return (
+    <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", padding: "6px 4px" }}>
+      <p style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px" }}>정확도를 계산하는 중이에요...</p>
+      <div style={{ background: "#3B342E", borderRadius: 10, padding: 6 }}>
+        <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
+          <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
+          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#6B625A" strokeWidth="0.5" strokeDasharray="3 3" />
+          {/* 수 구간별 f·g 넓이(=그 수의 손실) — 정적분을 도형으로 시각화, 스윕이 지나가는 순서대로 공개 */}
+          {moves.map((m, i) => {
+            if (m.lossWinPct == null) return null;
+            const revealed = sweepIdx > i;
+            const fillCol = m.white ? "rgba(237,231,220,.5)" : "rgba(15,9,4,.6)";
+            const pts = [[x(i), y(evalWin[i])], [x(i + 1), y(evalWin[i + 1])], [x(i + 1), y(g[i + 1])], [x(i), y(g[i])]]
+              .map(([px, py]) => px.toFixed(1) + "," + py.toFixed(1)).join(" ");
+            return <polygon key={i} points={pts} fill={fillCol} opacity={revealed ? 1 : 0} style={{ transition: "opacity .3s ease" }} />;
+          })}
+          {/* moveEvalGraph(f) — 왼쪽부터 그려지는 실제 평가 곡선 */}
+          <path ref={fRef} d={fPath} fill="none" stroke="#EBCB86" strokeWidth="1.8"
+            style={{ strokeDasharray: fLen || 1, strokeDashoffset: fDrawn ? 0 : (fLen || 1), transition: "stroke-dashoffset " + REVEAL_DRAW_F_MS + "ms ease-in-out" }} />
+          {/* bestMoveEvalGraph(g) — f가 다 그려진 뒤 덧그려지는 최선수 기준 곡선 */}
+          <path d={gPath} fill="none" stroke="#8FB55E" strokeWidth="1.4" strokeDasharray="3 2"
+            style={{ opacity: gShown ? 1 : 0, transition: "opacity " + REVEAL_DRAW_G_MS + "ms ease" }} />
+        </svg>
+        {/* x좌표 눈금 4개 */}
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 2px 0", fontSize: 9.5, color: RV.dim, fontFamily: "ui-monospace,monospace" }}>
+          {[0, 1, 2, 3].map((k) => <span key={k}>{Math.round((k / 3) * N)}</span>)}
+        </div>
+      </div>
+      <div className="flex items-start" style={{ gap: 14, marginTop: 10 }}>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <MiniAccCurve curve={wCurve} shownCount={wShown} color="#EDE7DC" label="⬜ 백 정확도" />
+          <motion.div layoutId="review-acc-w" style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{wVal.toFixed(1)}</motion.div>
+        </div>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <MiniAccCurve curve={bCurve} shownCount={bShown} color="#B8A78C" label="⬛ 흑 정확도" />
+          <motion.div layoutId="review-acc-b" style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{bVal.toFixed(1)}</motion.div>
+        </div>
+      </div>
+    </div>
+  );
+}
 // (v0.3.5 기능) 사용자 요청 — 게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(engine, App 루트의
 // useEngine(enginePref))을 그대로 prop으로 받아 쓴다(예전엔 항상 Stockfish 16으로 고정).
 function ReviewPage({ game, onClose, myUid, engine }) {
@@ -8561,6 +8711,10 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   // (v0.3.8 기능) 새로고침 이어보기 — 저장된 위치가 있으면(=이전에 리뷰 화면까지 들어와 있었으면) 그
   // ply부터 이어서 보여준다.
   const [curPly, setCurPly] = useState(() => (savedPos && savedPos.curPly != null ? savedPos.curPly : 1)); // 0=시작 위치, i=i번째 수까지 둔 위치
+  // (v0.3.8 기능) 정확도 공개 애니메이션(ReviewAccuracyRevealAnim)은 분석이 100% 끝난 뒤 한 번만
+  // 재생한다 — 저장된 위치가 있다면(=이전에 이미 그 화면을 지나 리뷰까지 들어와 있었다는 뜻) 새로고침
+  // 때마다 다시 보여줄 필요가 없어 건너뛴다.
+  const [introRevealDone, setIntroRevealDone] = useState(() => !!(savedPos && savedPos.introSeen));
   const [showingLine, setShowingLine] = useState(false);
   // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
   // curPly/sans는 건드리지 않는다 — 학습 탭의 sans/future와 같은 패턴으로 curPly 이후에 갈라져 나온
@@ -8616,12 +8770,13 @@ function ReviewPage({ game, onClose, myUid, engine }) {
     return () => { cancelled = true; };
   }, [engine && engine.status]);
   useEffect(() => { setShowingLine(false); }, [curPly]);
-  // (v0.3.8 기능) phase·curPly가 바뀔 때마다(리뷰 시작, 수 이동 등) 같은 대국 키로 sessionStorage에
-  // 계속 갱신 저장 — 다음 새로고침이 이 값을 읽어 복원한다.
+  // (v0.3.8 기능) phase·curPly·introRevealDone이 바뀔 때마다(리뷰 시작, 수 이동, 정확도 공개
+  // 애니메이션 완료 등) 같은 대국 키로 sessionStorage에 계속 갱신 저장 — 다음 새로고침이 이 값을
+  // 읽어 복원한다(introSeen이 저장돼 있으면 새로고침 때 공개 애니메이션을 다시 재생하지 않는다).
   useEffect(() => {
     if (!reviewPosKey) return;
-    try { window.sessionStorage.setItem(reviewPosKey, JSON.stringify({ phase, curPly })); } catch { }
-  }, [reviewPosKey, phase, curPly]);
+    try { window.sessionStorage.setItem(reviewPosKey, JSON.stringify({ phase, curPly, introSeen: introRevealDone })); } catch { }
+  }, [reviewPosKey, phase, curPly, introRevealDone]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
   // (v0.3.4 기능) FEN 모드 리뷰는 자유 탐색(직접 새 수 두기)을 지원하지 않는다 — legalDests의
@@ -9114,15 +9269,29 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   if (err) return (
     <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: RV.text, fontSize: 13 }}>분석할 수 없습니다. 엔진이 준비되었는지 확인해 주세요.</p></div></div>
   );
-  if (!result) return (
+  // (v0.3.0 성능) 정확도%·단계별 하이라이트 같은 요약 통계, 그리고 아래 정확도 공개 애니메이션은
+  // 분석이 100% 끝나야(resultDone) 신뢰할 수 있는 완결된 데이터가 필요해 그대로 기다린다. (v0.3.8)
+  // 분석이 덜 끝난 채로 리뷰를 시작하면 등급·코멘트가 부정확할 수 있어, 리뷰 정확도를 위해 지름길은
+  // 두지 않는다 — narrow·데스크톱 모두 완료까지 기다린 뒤에야 화면이 넘어간다.
+  if (!resultDone || !result) return (
     <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
       {header}
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
-        <ReviewLoadingSplit />
-        <div style={{ marginTop: 16, flexShrink: 0 }}><AnalyzingPiecesAnim /></div>
+        <ReviewIntroCarousel />
+        <div style={{ marginTop: 10, flexShrink: 0 }}><AnalyzingPiecesAnim /></div>
         <div style={{ maxWidth: 280, margin: "12px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
         <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(prog * 100)}%</p>
       </div>
+    </div>
+  );
+  // (v0.3.8 기능) 진입 애니메이션 2단계 — moveEvalGraph·bestMoveEvalGraph를 그리고 그 차이(그 수의
+  // 손실)를 수 구간마다 순서대로 넓이로 공개하면서, 백·흑 각각의 구간 누적 정확도 곡선·숫자가 함께
+  // 자라나는 시퀀스를 한 번 재생한다. 끝나면(onDone) 아래 실제 화면(narrow는 요약, 데스크톱은
+  // 코치+보드)으로 넘어간다 — 새로고침으로 이어보기 중이면(introRevealDone이 저장돼 있으면) 건너뛴다.
+  if (!introRevealDone) return (
+    <div style={wrap}>
+      {header}
+      <ReviewAccuracyRevealAnim result={result} onDone={() => setIntroRevealDone(true)} />
     </div>
   );
   if (narrow) {
@@ -9130,18 +9299,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       <div style={wrap}>
         {header}
         {phase === "summary"
-          ? (resultDone ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
-            : (
-              // (v0.3.0 성능) 정확도%·단계별 하이라이트 같은 요약 통계는 분석이 100% 끝나야 신뢰할 수
-              // 있어 그대로 기다린다. (v0.3.8) 분석이 덜 끝난 채로 리뷰를 시작하면 등급·코멘트가
-              // 부정확할 수 있어, 리뷰 정확도를 위해 지름길 버튼은 두지 않는다 — 항상 완료까지 기다린다.
-              <div style={{ padding: "14px 16px 24px", textAlign: "center" }}>
-                <ReviewLoadingSplit />
-                <div style={{ marginTop: 16 }}><AnalyzingPiecesAnim /></div>
-                <div style={{ maxWidth: 280, margin: "12px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><div style={{ width: (gradedCount / sans.length * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
-                <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6 }}>요약 준비 중 {Math.round(gradedCount / sans.length * 100)}%</p>
-              </div>
-            ))
+          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
           : (
             <div style={{ padding: "0 12px 24px" }}>
               <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
@@ -9213,8 +9371,8 @@ function ReviewPage({ game, onClose, myUid, engine }) {
           {tab === "analysis" && (
             <>
               <div className="flex items-stretch" style={{ gap: 10, marginBottom: 14 }}>
-                <ReviewAccuracyPill label={"⬜ " + reviewPlayerInfo(game, "w").name} value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} />
-                <ReviewAccuracyPill label={"⬛ " + reviewPlayerInfo(game, "b").name} value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} />
+                <ReviewAccuracyPill label={"⬜ " + reviewPlayerInfo(game, "w").name} value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} layoutId="review-acc-w" />
+                <ReviewAccuracyPill label={"⬛ " + reviewPlayerInfo(game, "b").name} value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} layoutId="review-acc-b" />
               </div>
               <ReviewKindTable moves={result.moves} showAll onPick={(p) => { setTab("review"); jump(p); }} />
             </>
@@ -16840,6 +16998,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 const CHANGELOG = [
   {
     version: "0.3.8", date: "2026.8.19", dev: ["openchesskr"], items: [
+      "게임 리뷰에 들어갈 때 보여주는 화면이 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 분석이 끝나면 평가 그래프가 그려지며 백·흑 각각의 정확도가 실시간으로 계산되는 모습을 보여준 뒤 정확도 박스로 이어져요.",
       "게임 리뷰의 정확도 계산 방식을 새로 설계했어요 — 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지고, 후보 수가 여럿인 무난한 포지션에서의 실수는 관대하게, 정답이 하나뿐인 날카로운 포지션에서의 실수는 더 엄격하게 반영돼요.",
       "라인/퍼즐 클리어 배너의 글자가 전용 폰트로 바뀌고, 위아래로 줄바꿈되어 화면 정중앙에 표시돼요.",
       "체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률을 개선했어요.",
