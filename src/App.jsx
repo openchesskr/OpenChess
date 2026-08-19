@@ -8545,6 +8545,11 @@ function buildRevealData(result) {
   return { moves, evalWin, wCurve, bCurve, moveMeta };
 }
 // 진영 하나의 구간 누적 정확도 곡선을 그리는 작은 스파크라인 — 지금까지 채점된 만큼만 그린다. 투명 배경.
+// (사용자 요청) 세로 격자를 기본 60~100 구간으로 확대해 작은 변화도 잘 보이게 하고, 지금(마지막으로
+// 공개된 값) 60 밑으로 떨어졌을 때만 그 순간 0~100 전체 구간으로 다시 잡는다 — 다시 60 이상으로
+// 오르면 60~100으로 되돌아간다. 이 확대·축소를 실제로 알아볼 수 있도록 위·아래 경계값에 격자선과
+// 숫자를 함께 그린다(60~100 구간일 때 60 밑으로 내려간 과거 지점은 그 순간엔 격자 맨 위에 눌린
+// 것처럼 보인다 — 어차피 60 이상이면 정상 범위로 다시 늘어나므로 자연스러운 동작으로 둔다).
 function MiniAccCurve({ curve, shownCount, color, label }) {
   const total = curve.length - 1; // 그 진영이 실제로 둔 수 개수
   const W2 = 320, H2 = 46;
@@ -8552,14 +8557,22 @@ function MiniAccCurve({ curve, shownCount, color, label }) {
   // 위쪽 끝에서 선이 절반쯤 잘려 거의 안 보였다 — 위아래 4px씩 여백을 둬 100이어도 온전히 보이게 한다.
   const PAD = 4;
   const xx = (i) => (total <= 0 ? 0 : (i / total) * W2);
-  const yy = (v) => PAD + (H2 - PAD * 2) - (Math.max(0, Math.min(100, v)) / 100) * (H2 - PAD * 2);
   const pts = curve.slice(0, Math.max(1, shownCount + 1));
+  const curVal = pts.length ? pts[pts.length - 1] : 100;
+  const low = curVal < 60 ? 0 : 60, high = 100;
+  const yy = (v) => PAD + (H2 - PAD * 2) - (Math.max(low, Math.min(high, v)) - low) / (high - low) * (H2 - PAD * 2);
   const path = pts.length >= 2 ? "M " + pts.map((v, i) => xx(i).toFixed(1) + "," + yy(v).toFixed(1)).join(" L ") : "";
   return (
     <div>
       <div style={{ fontSize: 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3 }}>{label}</div>
       <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: 40, background: "transparent" }}>
         <rect x="0" y="0" width={W2} height={H2} rx="6" fill="rgba(255,255,255,.05)" />
+        {[low, high].map((g) => (
+          <React.Fragment key={g}>
+            <line x1="0" y1={yy(g).toFixed(1)} x2={W2} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
+            <text x="2" y={(g === high ? yy(g) + 6 : yy(g) - 1.5).toFixed(1)} fontSize="5.5" fill="rgba(235,221,196,.45)" fontFamily="ui-monospace,monospace">{g}</text>
+          </React.Fragment>
+        ))}
         {path && <path d={path} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />}
       </svg>
     </div>
@@ -8568,7 +8581,7 @@ function MiniAccCurve({ curve, shownCount, color, label }) {
 const REVEAL_SPEED_PER_SEC = 4;   // 그래프가 채워지는 속도(x축 1수 = 1초 기준 4수/초 — 실제 분석 속도와 무관하게 항상 이 속도)
 const REVEAL_POPUP_MS = 1300;     // 정확도 증가/감소 숫자가 떴다 사라지는 총 시간
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
-function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, onDone }) {
+function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone }) {
   const data = useMemo(() => buildRevealData(result), [result]);
   const { moves, evalWin, wCurve, bCurve, moveMeta } = data;
   const N = Math.max(1, totalPlies || moves.length || 1);
@@ -8602,7 +8615,9 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, onDone }) {
       if (firedRef.current.has(i)) continue;
       firedRef.current.add(i);
       const meta = moveMeta[i];
-      if (!meta) continue;
+      // (사용자 요청) 변동폭이 절댓값 0.5%p 미만인 수는 띄우지 않는다 — 대부분의 이론 수·무난한 수가
+      // 여기 해당해, 그대로 두면 숫자가 너무 자주(거의 매 수마다) 겹쳐 떴다.
+      if (!meta || Math.abs(meta.delta) < 0.5) continue;
       const id = i;
       setPopups((p) => [...p, { id, ply: meta.ply, gVal: meta.gVal, delta: meta.delta }]);
       setTimeout(() => setPopups((p) => p.filter((x) => x.id !== id)), REVEAL_POPUP_MS);
@@ -8615,11 +8630,16 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, onDone }) {
   }, [moves, floored]);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  // (버그 수정) instant(=이미 본 적 있는 리뷰로 이 페이지가 열렸을 때)면 그림이 다 그려지는 것도,
+  // REVEAL_HOLD_MS만큼 붙잡아 두는 것도 기다리지 않고 resultDone이 되는 즉시 다음 화면으로 넘어간다
+  // — 새로고침·재진입 때마다 분석 자체는(캐시하지 않으므로) 다시 기다려야 하지만, 이미 본 적 있는
+  // 애니메이션까지 다시 억지로 재생할 필요는 없다.
   useEffect(() => {
-    if (!resultDone || progress < N) return;
-    const t = setTimeout(() => onDoneRef.current && onDoneRef.current(), REVEAL_HOLD_MS);
+    if (!resultDone) return;
+    if (!instant && progress < N) return;
+    const t = setTimeout(() => onDoneRef.current && onDoneRef.current(), instant ? 0 : REVEAL_HOLD_MS);
     return () => clearTimeout(t);
-  }, [resultDone, progress, N]);
+  }, [resultDone, progress, N, instant]);
   const wVal = wCurve[Math.min(wShown, wCurve.length - 1)];
   const bVal = bCurve[Math.min(bShown, bCurve.length - 1)];
 
@@ -8673,7 +8693,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, onDone }) {
                   fontSize="7.5" fontWeight="800" fontFamily="ui-monospace,monospace"
                   fill={positive ? T.good : T.blunder} paintOrder="stroke" stroke="#150C06" strokeWidth="2.2"
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-                  {(positive ? "+" : "") + p.delta.toFixed(1)}
+                  {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
                 </motion.text>
               );
             })}
@@ -8722,6 +8742,12 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   // 재생한다 — 저장된 위치가 있다면(=이전에 이미 그 화면을 지나 리뷰까지 들어와 있었다는 뜻) 새로고침
   // 때마다 다시 보여줄 필요가 없어 건너뛴다.
   const [introRevealDone, setIntroRevealDone] = useState(() => !!(savedPos && savedPos.introSeen));
+  // 이 마운트가 "이미 본 적 있는 리뷰"로 시작했는지(=introRevealDone이 sessionStorage에서 true로
+  // seed됐는지) — 이 값 자체는 절대 안 바뀌는 스냅샷이라 ref로 고정해 둔다. 데이터(resultDone)는
+  // 새로고침·재진입 때마다 항상 다시 기다려야 하지만(분석은 캐시하지 않음), 이미 본 적 있는 리뷰라면
+  // 그 대기 화면에서 애니메이션이 다 끝나길 굳이 기다리지 않고 resultDone이 되는 즉시 다음 화면으로
+  // 넘어가도록(REVEAL_HOLD_MS 생략) ReviewAccuracyRevealAnim에 넘겨준다.
+  const introRevealSeededRef = useRef(introRevealDone);
   const [showingLine, setShowingLine] = useState(false);
   // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
   // curPly/sans는 건드리지 않는다 — 학습 탭의 sans/future와 같은 패턴으로 curPly 이후에 갈라져 나온
@@ -9282,13 +9308,21 @@ function ReviewPage({ game, onClose, myUid, engine }) {
   // 모두 완료까지 기다린 뒤에야 다음 화면으로 넘어간다). 그 기다리는 시간 자체를 사용자 요청대로
   // 그래프 애니메이션(ReviewAccuracyRevealAnim)으로 채운다 — 분석이 끝나기 전에는 실시간으로 자라나는
   // 그래프를, 끝난 뒤에는 잠깐(REVEAL_HOLD_MS) 완성된 모습을 보여준 뒤(onDone) 다음 화면으로 넘어간다.
-  // 새로고침으로 이어보기 중이면(introRevealDone이 저장돼 있으면) 이 화면 자체를 건너뛴다.
-  if (!introRevealDone) return (
+  // (버그 수정) 새로고침 이어보기로 introRevealDone이 sessionStorage에서 true로 미리 seed되면(=예전에
+  // 이 애니메이션을 본 적 있는 리뷰), 이 게이트를 `!introRevealDone` 하나만으로 걸었을 때 마운트
+  // 직후(result가 아직 null인 시점)에도 곧장 narrow/desktop 분기로 새 나가 result.moves를 읽다가
+  // TypeError로 리액트 트리 전체가 죽었다(에러 바운더리가 없어 "리뷰를 닫고 다시 열면 사이트가
+  // 먹통이 된다"는 증상으로 보임 — 실제로는 크래시). 데이터 자체는(분석은 절대 캐시하지 않으므로)
+  // 새로고침·재진입 때마다 항상 다시 기다려야 하니, `!resultDone || !result`도 함께 게이트에 넣는다 —
+  // 이어보기(introRevealDone=true)여도 이 화면은 그대로 보여주되, ReviewAccuracyRevealAnim 내부에서
+  // resultDone이 되는 즉시(REVEAL_HOLD_MS로 더 붙잡지 않고) onDone이 불려 다음 화면으로 곧장 넘어간다
+  // — "이미 본 적 있는 리뷰는 애니메이션을 다시 재생하지 않는다"는 원래 의도는 그대로 유지된다.
+  if (!introRevealDone || !resultDone || !result) return (
     <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
       {header}
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewIntroCarousel />
-        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} onDone={() => setIntroRevealDone(true)} />
+        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} />
         <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
         <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(prog * 100)}%</p>
       </div>
@@ -17007,6 +17041,8 @@ const CHANGELOG = [
       "리뷰 화면을 새로고침해도 처음부터 다시 시작하지 않고 보던 수에서 이어서 볼 수 있어요.",
       "오프닝/미들게임/엔드게임 아이콘을 눌러 뜨는 단계별 정확도 말풍선이 모바일에서 화면 밖으로 잘리지 않아요. 말풍선 세로 폭도 넓어졌어요.",
       "리뷰 요약 화면의 '기다리지 않고 바로 리뷰 시작' 버튼을 없앴어요 — 리뷰 정확도를 위해 이제 항상 분석이 완전히 끝난 뒤에 시작해요.",
+      "리뷰 페이지를 닫았다가 리뷰 버튼을 다시 눌러 들어가면 화면이 멈춰버리던 심각한 오류를 고쳤어요.",
+      "정확도가 오르내릴 때 잠깐 떴다 사라지는 숫자에 %가 붙고, 변동이 아주 작은 수는 숫자가 너무 겹쳐 보이지 않도록 표시하지 않아요. 백·흑 정확도 그래프의 눈금은 평소 60~100 구간만 보여주다가, 정확도가 60 밑으로 떨어지면 그때만 0~100 전체로 자동으로 넓어져요.",
     ]
   },
   {
