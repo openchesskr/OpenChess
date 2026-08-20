@@ -3978,11 +3978,14 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const [ptrDrag, setPtrDrag] = useState(null); // { r, c, x, y } — 드래그 임계값을 넘겼을 때만 채워짐(고스트 표시용)
   // (사용자 요청) 드래그 인식을 조금 더 빠르게(더 적은 이동만으로 탭과 구분) 하기 위해 5px→4px로
   // 살짝 낮췄다 — 단순 탭(거의 0px 이동)과는 여전히 뚜렷이 구분되면서, 드래그 의도를 더 일찍 반응한다.
-  // (v0.3.9 재조정, 정정) "인식 감도를 올려달라"는 요청을 처음엔 "더 예민하게"(4→3px)로 잘못
-  // 이해했다 — 실제로는 반대로 "대충 움직여도 잘 인식되도록 더 둔감하게" 해 달라는 뜻이었다. 이
-  // 버전 시작 시점 값(4px)보다도 더 높여, 약간의 흔들림에는 반응하지 않고 확실한 드래그 의도만
-  // 인식하게 한다. (v0.3.9 재재조정) 그래도 더 둔감하게 해 달라는 재요청 — 8px에서 14px로 더 높인다.
-  const DRAG_THRESHOLD = 14;
+  // (v0.3.9 재조정, 정정 → 재재조정, 재정정) 이 값을 올렸다 내렸다 했는데 방향 자체가 잘못됐었다 —
+  // DRAG_THRESHOLD는 "드래그를 시작한 걸로 인식하는 데 필요한 최소 이동 거리"라, 이 값을 올리면
+  // 짧고 가볍게(대충) 툭 옮기는 드래그일수록 오히려 이 문턱을 못 넘어 아예 드래그로 인식되지 않고
+  // 무시된다(사용자가 실제로 "오히려 더 안 된다"고 재신고한 원인) — "대충 움직여도 잘 되게"는
+  // 드래그 "시작"은 최대한 쉽게(문턱을 낮게), 드래그 "종료 지점" 판정만 관대하게(DROP_TOLERANCE·
+  // DRAG_LOOKAHEAD_MS를 높게) 조정해야 하는, 서로 반대 방향인 두 값이었다. 시작 문턱은 이 버전에서
+  // 가장 낮았던 값(2px)까지 내린다 — 살짝만 움직여도 즉시 드래그로 반응한다.
+  const DRAG_THRESHOLD = 2;
   // (사용자 요청) "빠르고 부정확하게 드래그해도 인식되도록" — 예전엔 손을 뗀 지점이 보드 칸 안에
   // 정확히 들어와야만 그 칸으로 인식하고, 조금이라도 벗어나면(빠른 드래그일수록 흔함 — 손가락이
   // 목표 칸을 살짝 지나치거나, pointermove 샘플링 간격 때문에 마지막 좌표가 칸 경계 바로 밖에서
@@ -4505,9 +4508,9 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const dragStartRef = useRef(null); // { source:"board"|"palette", from:[r,c]|null, piece:{c,t}, x, y }
   const suppressClickRef = useRef(false);
   const [ptrDrag, setPtrDrag] = useState(null); // 위와 동일한 모양 — 드래그 임계값을 넘겼을 때만 채워짐(고스트/딤 처리용)
-  // (v0.3.9 재조정, 정정 → 재재조정) Board 컴포넌트와 동일하게 "대충 움직여도 잘 움직여지도록" 더
-  // 둔감하게 — 자세한 이유는 그쪽 같은 이름 상수 주석 참고.
-  const DRAG_THRESHOLD = 14;
+  // (v0.3.9 재조정, 정정 → 재재조정 → 재정정) Board 컴포넌트와 동일하게 — 드래그 "시작" 문턱은
+  // 최대한 낮게, "종료 지점" 판정만 관대하게. 자세한 이유는 그쪽 같은 이름 상수 주석 참고.
+  const DRAG_THRESHOLD = 2;
   const onSqClickGuarded = (r, c) => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } onSqClick(r, c); };
   const paletteClick = (fn) => () => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } fn(); };
   // (v0.3.9 기능 → 재재조정) Board 컴포넌트의 DROP_TOLERANCE와 동일한 이유로, 이 보드 편집기도 놓는
