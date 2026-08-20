@@ -17242,8 +17242,8 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
             카드 최상단의 큰 세그먼트 바 대신 이 헤더 줄 우상단 여백으로 옮겨, 편집 버튼과 나란히 둔다. */}
         <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
         <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-          {statsViewToggle(statsView, setStatsView)}
           <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>프로필 편집</button>
+          {statsViewToggle(statsView, setStatsView)}
         </div>
       </div>
       <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
