@@ -3976,11 +3976,21 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     const vc = Math.min(7, Math.max(0, Math.floor(clampedX * 8))), vr = Math.min(7, Math.max(0, Math.floor(clampedY * 8)));
     return flip ? [7 - vr, 7 - vc] : [vr, vc];
   };
+  // (사용자 요청) 드래그 무브 성공률·조작감 개선 — 예전엔 손을 뗀 마지막 pointermove 좌표 하나만으로
+  // 놓을 칸을 정했는데, 빠르게 휙 움직이는(flick) 드래그일수록 pointermove 샘플링 간격 때문에 마지막
+  // 좌표가 실제로 손가락이 향하던 지점보다 앞서(=목표 칸에 못 미쳐) 잡히는 경향이 있다. 최근 몇 개
+  // 샘플의 이동 방향·속도(px/ms)를 재 두었다가 손을 뗄 때 아주 짧게(DRAG_LOOKAHEAD_MS) 그 방향으로
+  // 외삽해, 손을 뗀 좌표가 아니라 "손가락이 향하던 좌표"에 더 가까운 지점을 놓을 칸 판정에 쓴다.
+  // 외삽량은 반 칸(cell*0.5)으로 클램프해 두어 저속·정밀 드래그(속도≈0 → 보정량도 거의 0, 기존 동작과
+  // 동일)에는 영향이 없고, 샘플 노이즈로 순간 속도가 튀어도 최대 한 칸 너머까지만 밀어준다(여러 칸을
+  // 건너뛰지 않음). 외삽된 지점이 보드 경계 밖으로 나가 판정에 실패하면(null) 원래 좌표로 다시
+  // 시도해 이 보정이 있기 전보다 성공률이 떨어지는 경우가 생기지 않게 한다.
+  const DRAG_LOOKAHEAD_MS = 45;
   const onPiecePointerDown = (e, r, c) => {
     if (!interactive || !onPieceDrag) return;
     e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
-    dragStartRef.current = { r, c, x: e.clientX, y: e.clientY };
+    dragStartRef.current = { r, c, x: e.clientX, y: e.clientY, hist: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
     onPieceDrag([r, c]);
   };
   const onPiecePointerMove = (e) => {
@@ -3988,7 +3998,21 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     e.preventDefault();
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!ptrDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return; // 임계값 전엔 탭일 수도 있으니 아직 고스트를 안 띄운다
+    d.hist.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+    if (d.hist.length > 4) d.hist.shift(); // 최근 속도만 반영 — 드래그 전체 평균이 아니라 놓기 직전 방향이 중요하다
     setPtrDrag({ r: d.r, c: d.c, x: e.clientX, y: e.clientY });
+  };
+  const predictedDropPoint = (d, clientX, clientY) => {
+    const hist = d.hist || [];
+    if (hist.length < 2) return { x: clientX, y: clientY };
+    const first = hist[0], last = hist[hist.length - 1];
+    const dt = last.t - first.t;
+    if (!(dt > 0)) return { x: clientX, y: clientY };
+    const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
+    const maxOffset = cell * 0.5;
+    const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
+    const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
+    return { x: clientX + offX, y: clientY + offY };
   };
   const endPiecePointerDrag = (e, drop) => {
     const d = dragStartRef.current;
@@ -3998,7 +4022,8 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     if (!d) return;
     if (drop && wasDragging) {
       suppressClickRef.current = true;   // 실제로 옮긴 드래그 뒤에 따라오는 합성 click(재선택처럼 보임) 무시
-      const target = squareFromClient(e.clientX, e.clientY);
+      const pred = predictedDropPoint(d, e.clientX, e.clientY);
+      const target = squareFromClient(pred.x, pred.y) || squareFromClient(e.clientX, e.clientY);
       onDrop && onDrop(target || [d.r, d.c]);   // 보드 바깥에 놓으면 제자리(불법 수 취급 → 취소)로
     }
     // 임계값을 못 넘긴 단순 탭이면 onDrop을 부르지 않는다 — pointerdown의 onPieceDrag가 이미
@@ -4460,24 +4485,42 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     const vc = Math.min(7, Math.max(0, Math.floor(relX * 8))), vr = Math.min(7, Math.max(0, Math.floor(relY * 8)));
     return flipped ? [7 - vr, 7 - vc] : [vr, vc];
   };
+  // (사용자 요청) Board 컴포넌트와 동일한 드래그 무브 개선 — 최근 이동 방향·속도로 놓는 지점을 아주
+  // 짧게 외삽해(반 칸 이내로 클램프) 빠른 드래그가 목표 칸에 못 미쳐 취소되는 경우를 줄인다. 자세한
+  // 이유는 Board 컴포넌트의 같은 이름 상수 주석 참고.
+  const DRAG_LOOKAHEAD_MS = 45;
   const startDragFromBoard = (e, r, c) => {
     if (tool) return; // 도구가 활성화된 동안은 클릭 스탬프만 — 드래그는 도구가 없을 때만 시작
     const piece = board[r][c]; if (!piece) return;
     e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
-    dragStartRef.current = { source: "board", from: [r, c], piece, x: e.clientX, y: e.clientY };
+    dragStartRef.current = { source: "board", from: [r, c], piece, x: e.clientX, y: e.clientY, hist: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
   };
   const startDragFromPalette = (e, color, piece) => {
     e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
-    dragStartRef.current = { source: "palette", from: null, piece: { c: color, t: piece }, x: e.clientX, y: e.clientY };
+    dragStartRef.current = { source: "palette", from: null, piece: { c: color, t: piece }, x: e.clientX, y: e.clientY, hist: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
   };
   const onDragPointerMove = (e) => {
     const d = dragStartRef.current; if (!d) return;
     e.preventDefault();
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!ptrDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    d.hist.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+    if (d.hist.length > 4) d.hist.shift();
     setPtrDrag({ ...d, x: e.clientX, y: e.clientY });
+  };
+  const predictedDropPoint = (d, clientX, clientY) => {
+    const hist = d.hist || [];
+    if (hist.length < 2) return { x: clientX, y: clientY };
+    const first = hist[0], last = hist[hist.length - 1];
+    const dt = last.t - first.t;
+    if (!(dt > 0)) return { x: clientX, y: clientY };
+    const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
+    const maxOffset = (gridRef.current ? gridRef.current.getBoundingClientRect().width / 8 : 0) * 0.5;
+    const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
+    const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
+    return { x: clientX + offX, y: clientY + offY };
   };
   const endDrag = (e, drop) => {
     const d = dragStartRef.current;
@@ -4487,7 +4530,8 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     if (!d) return;
     if (drop && wasDragging) {
       suppressClickRef.current = true;
-      const target = squareFromClient(e.clientX, e.clientY);
+      const pred = predictedDropPoint(d, e.clientX, e.clientY);
+      const target = squareFromClient(pred.x, pred.y) || squareFromClient(e.clientX, e.clientY);
       if (d.source === "board") {
         if (target && (target[0] !== d.from[0] || target[1] !== d.from[1])) {
           const b = board.map((row) => row.slice());
