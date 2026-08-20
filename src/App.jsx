@@ -14190,16 +14190,18 @@ function summarizePosition(board, userColor) {
 function LineClearBanner({ trigger }) {
   if (!trigger) return null;
   return (
-    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 15, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, overflow: "hidden", opacity: 0, animation: "puzzleClearFade 4.2s ease-out both" }}>
+    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 15, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, overflow: "hidden", opacity: 0, animation: "puzzleClearFade 4.2s ease-out both" }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(10,6,3,.55)" }} />
       <div aria-hidden="true" style={{ position: "absolute", width: 440, height: 440, borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.28) 0%, rgba(236,203,134,0) 70%)", opacity: 0, animation: "puzzleClearFade 4.2s ease-out .15s both" }} />
-      <svg width="60" height="60" viewBox="0 0 120 120" style={{ position: "relative", filter: "drop-shadow(0 0 8px rgba(74,222,128,.75))" }}>
-        <circle cx="60" cy="60" r="34" fill="none" stroke="#4ADE80" strokeWidth="7" strokeLinecap="round" strokeDasharray="214" strokeDashoffset="214" style={{ animation: "checkDraw .45s ease-out both" }} />
-        <path d="M44 62 L54 72 L78 46" fill="none" stroke="#4ADE80" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="50" strokeDashoffset="50" style={{ animation: "checkDraw .25s ease-out .45s both" }} />
-      </svg>
+      <div style={{ position: "relative", height: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <svg width="60" height="60" viewBox="0 0 120 120" style={{ filter: "drop-shadow(0 0 8px rgba(74,222,128,.75))" }}>
+          <circle cx="60" cy="60" r="34" fill="none" stroke="#4ADE80" strokeWidth="7" strokeLinecap="round" strokeDasharray="214" strokeDashoffset="214" style={{ animation: "checkDraw .45s ease-out both" }} />
+          <path d="M44 62 L54 72 L78 46" fill="none" stroke="#4ADE80" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="50" strokeDashoffset="50" style={{ animation: "checkDraw .25s ease-out .45s both" }} />
+        </svg>
+      </div>
       <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-        <div style={{ display: "flex" }}>{typoLetters("LINE", T.book, 0.85)}</div>
-        <div style={{ display: "flex" }}>{typoLetters("CLEAR", T.brassHi, 1.1)}</div>
+        <div style={{ display: "flex" }}>{typoLetters("LINE", T.book, 0.85, 46, 4)}</div>
+        <div style={{ display: "flex" }}>{typoLetters("CLEAR", T.brassHi, 1.1, 46, 4)}</div>
       </div>
     </div>
   );
@@ -14211,31 +14213,33 @@ function LineClearBanner({ trigger }) {
 // 되도록 하고, 글자 크기(size)만 배너별로 다르게 준다. 등장 도중에만(--tr) 살짝 회전했다가 각 글자의
 // keyframe(puzzleLetterPop)이 끝나는 시점엔 항상 rotate(0deg)로 되돌아와, 다 자리 잡은 뒤에는 어떤
 // 글자도 기울어져 있지 않다(요청: "텍스트가 기울어지지는 않게").
-function typoLetters(word, color, startDelay, size = 46) {
-  return word.split("").map((ch, i) => (
+function typoLetters(word, color, startDelay, size = 46, spacing = 0) {
+  const chars = word.split("");
+  return chars.map((ch, i) => (
     <span key={i} style={{
       display: "inline-block", fontFamily: CLEAR_TYPO_FONT, fontSize: size, color,
       textShadow: "0 4px 14px rgba(0,0,0,.7)", opacity: 0,
+      marginRight: i < chars.length - 1 ? spacing : 0,
       "--tr": ((i % 2 === 0 ? -1 : 1) * (10 - (i % 3) * 3)) + "deg",
       animation: "puzzleLetterPop .55s cubic-bezier(.22,1.6,.4,1) " + (startDelay + i * 0.05) + "s both",
     }}>{ch === " " ? " " : ch}</span>
   ));
 }
 // (사용자 요청) 퍼즐 전체(모든 라인) 클리어 — LINE CLEAR와 같은 느낌의 어두운 배경 위에, 별 3개가
-// 하나씩 빛나며 등장한 뒤 "PUZZLE"(갈색)·"CLEAR"(금색)이 글자 단위로 튕겨 들어온다. LINE CLEAR
-// 배너가 먼저 재생되도록 살짝 늦게(1.1s) 나타나기 시작한다. (v0.3.8 버그 수정) 예전엔 이 배너의
-// 실제 재생 시간(1.1s 지연 + 2.6s 재생 = 3.7s)보다 celebrate 자동 종료 타이머(2.4s, 아래
-// PuzzleSolver의 useEffect)가 더 짧아 글자가 다 나오기도 전에 배너가 통째로 잘려 사라졌다 — 재생
-// 시간을 늘리고(1.1s 지연 + 4.2s 재생) 그 타이머도 늘어난 길이에 맞춰 함께 늦춰야 한다(그쪽 참고).
+// 하나씩 빛나며 등장한 뒤 "PUZZLE"(갈색)·"CLEAR"(금색)이 글자 단위로 튕겨 들어온다. (사용자 요청,
+// v0.3.9) LINE CLEAR 배너가 완전히 재생되고 사라진 뒤에야 나타나도록, 지연 시간을 LINE CLEAR의
+// 총 재생 시간(4.2s)과 같게 맞췄다(1.1s → 4.2s) — 내부 요소들의 절대 딜레이도 전부 +3.1s 밀어
+// 배너가 나타난 시점 기준의 상대적인 등장 타이밍은 그대로 유지한다. celebrate 자동 종료 타이머
+// (아래 PuzzleSolver의 useEffect)도 늘어난 총 길이(4.2s 지연 + 4.2s 재생)에 맞춰 함께 늦춰야 한다.
 function PuzzleClearBanner({ trigger }) {
   if (!trigger) return null;
   return (
-    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 16, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, overflow: "hidden", opacity: 0, animation: "puzzleClearFade 4.2s ease-out 1.1s both" }}>
+    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 16, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, overflow: "hidden", opacity: 0, animation: "puzzleClearFade 4.2s ease-out 4.2s both" }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(10,6,3,.7)" }} />
-      <div aria-hidden="true" style={{ position: "absolute", width: 440, height: 440, borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.32) 0%, rgba(236,203,134,0) 70%)", opacity: 0, animation: "puzzleClearFade 4.2s ease-out 1.3s both" }} />
-      <div style={{ position: "relative", display: "flex", gap: 10 }}>
+      <div aria-hidden="true" style={{ position: "absolute", width: 440, height: 440, borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.32) 0%, rgba(236,203,134,0) 70%)", opacity: 0, animation: "puzzleClearFade 4.2s ease-out 4.4s both" }} />
+      <div style={{ position: "relative", height: 60, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
         {[0, 1, 2].map((i) => (
-          <span key={i} style={{ display: "inline-flex", opacity: 0, animation: "puzzleStarPop .5s cubic-bezier(.34,1.56,.64,1) " + (1.3 + i * 0.22) + "s both" }}>
+          <span key={i} style={{ display: "inline-flex", opacity: 0, animation: "puzzleStarPop .5s cubic-bezier(.34,1.56,.64,1) " + (4.4 + i * 0.22) + "s both" }}>
             <Star size={30} fill={T.brassHi} color={T.brassHi} style={{ filter: "drop-shadow(0 0 9px rgba(236,203,134,.9))" }} />
           </span>
         ))}
@@ -14244,8 +14248,8 @@ function PuzzleClearBanner({ trigger }) {
           정적 rotate(-2.5deg)/rotate(2deg) 기울임을 없앴다 — 글자별 등장 모션(typoLetters의 --tr)만
           으로 충분히 역동적이라 굳이 정지 상태까지 기울일 필요가 없다. */}
       <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-        <div style={{ display: "flex" }}>{typoLetters("PUZZLE", T.book, 2.0)}</div>
-        <div style={{ display: "flex" }}>{typoLetters("CLEAR", T.brassHi, 2.35)}</div>
+        <div style={{ display: "flex" }}>{typoLetters("PUZZLE", T.book, 5.1)}</div>
+        <div style={{ display: "flex" }}>{typoLetters("CLEAR", T.brassHi, 5.45)}</div>
       </div>
     </div>
   );
@@ -14650,15 +14654,17 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // (v0.3.8 버그 수정) 퍼즐 전체 클리어 배너(1.1s 지연 + 4.2s 재생 = 총 5.3초)가 라인 클리어
   // 배너보다 훨씬 길어졌는데, 이 타이머가 항상 고정돼 있으면 전체 클리어일 때 글자가 다 나오기도
   // 전에 배너가 통째로 잘려 사라진다(사용자 요청 원인) — 전체 클리어일 때는 배너 재생이 다 끝난
-  // 뒤에도 "조금 더" 기다렸다가(요청) 닫히도록 여유(0.9초)를 더해 총 6.2초로 늘린다. (v0.3.9 사용자
-  // 요청) 라인 클리어 배너도 이제 PuzzleClearBanner와 완전히 같은 재생 시간(4.2초)을 쓰므로, 이쪽
-  // 타이머도 함께 늘려(2.7초→5.1초, 배너가 다 끝난 뒤 약 0.9초 여유) 잘리지 않게 한다.
+  // 뒤에도 "조금 더" 기다렸다가(요청) 닫히도록 여유를 더한다. (v0.3.9 사용자 요청) 라인 클리어
+  // 배너도 이제 PuzzleClearBanner와 완전히 같은 재생 시간(4.2초)을 쓰므로, 이쪽 타이머도 함께
+  // 늘려(2.7초→5.1초, 배너가 다 끝난 뒤 약 0.9초 여유) 잘리지 않게 한다. (v0.3.9 추가 요청) 전체
+  // 클리어일 때는 PuzzleClearBanner가 LINE CLEAR(4.2초)를 다 기다렸다가 4.2초 뒤에야 시작해 총
+  // 재생 시간이 8.4초로 늘었으므로, 그 뒤 잘리지 않도록 이 타이머도 9.3초(0.9초 여유)로 늘린다.
   useEffect(() => {
     if (!celebrate) return;
     const t = setTimeout(() => {
       if (!fullyComplete && nextTag != null) gotoLine(nextTag);
       else setCelebrate(null);
-    }, fullyComplete ? 6200 : 5100);
+    }, fullyComplete ? 9300 : 5100);
     return () => clearTimeout(t);
   }, [celebrate, fullyComplete, nextTag]);
   const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
@@ -15125,8 +15131,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         {page === 1 && <button onClick={() => setPage(0)} aria-label="보드 보기" className="press" style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={16} /></button>}
         {page === 0 && <button onClick={() => setPage(1)} aria-label="모식도 보기" className="press" style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={16} /></button>}
         {/* (사용자 요청) 라인 하나를 클리어할 때마다 LINE CLEAR 배너를, 퍼즐의 모든 라인을 다 클리어했으면
-            이어서(1.1s 뒤) 별 3개 + PUZZLE CLEAR 배너를 함께 재생한다. 보드/모식도 어느 페이지에 있든 보이도록
-            페이저(position:relative) 위에 얹는다. */}
+            LINE CLEAR가 완전히 재생되고 사라진 뒤(v0.3.9 사용자 요청, 4.2s 뒤) 이어서 별 3개 + PUZZLE CLEAR
+            배너를 재생한다. 보드/모식도 어느 페이지에 있든 보이도록 페이저(position:relative) 위에 얹는다. */}
         <LineClearBanner trigger={celebrate ? celebrate.tag : null} />
         {celebrate && fullyComplete && <PuzzleClearBanner trigger={celebrate.tag} />}
       </div>
@@ -17433,6 +17439,9 @@ const CHANGELOG = [
       "LINE CLEAR 애니메이션의 글자 크기·재생 시간이 PUZZLE CLEAR와 완전히 같아졌고, 초록색 원과 체크 표시가 그려지는 애니메이션이 텍스트보다 먼저 재생돼요.",
       "내 프로필 카드가 설정 탭에 항상 보이는 대신, 헤더의 내 아이디를 눌러 나오는 카드에서 화살표 버튼을 눌러야 볼 수 있는 별도 창으로 바뀌었어요. 그 카드도 프로필 카드와 똑같이 아이디 표시 방식이 정리됐어요.",
       "프로필 카드 맨 위에서 OpenChess 아이콘/chess.com 아이콘을 눌러 두 서비스의 통계를 각각 따로 볼 수 있어요.",
+      "LINE CLEAR 텍스트의 자간이 살짝 넓어지고, LINE CLEAR·PUZZLE CLEAR 두 배너의 텍스트가 항상 같은 높이(y좌표)에 오도록 정렬을 맞췄어요.",
+      "퍼즐의 모든 라인을 다 풀었을 때, 이제 LINE CLEAR 애니메이션이 완전히 끝나고 사라진 뒤에 PUZZLE CLEAR 애니메이션이 이어서 나타나요 — 예전엔 두 애니메이션이 겹쳐 보였어요.",
+      "친구·검색 창에서 확인하는 나와 다른 사람의 프로필 카드에도 맨 위에서 OpenChess/chess.com 아이콘을 눌러 두 서비스 통계를 나눠 볼 수 있어요. 아이디 표시 방식도 프로필 카드와 똑같이 정리됐어요.",
     ]
   },
   {
@@ -21317,6 +21326,38 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
     </div>
   );
 }
+// (사용자 요청, v0.3.9) 친구·검색 창 경로로 보는 남(또는 나 자신)의 프로필 상세에도, 이번 세션에
+// MyProfileCard에 추가한 "최상단 선택 박스"(OpenChess/chess.com 통계 분리)를 그대로 적용한다 —
+// 읽기 전용(편집·유산 관리 버튼 없음) 판이라 MyProfileCard와 별개의 작은 컴포넌트로 둔다.
+function ProfileStatsToggle({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, actions, ownerUid, viewerUid }) {
+  const [statsView, setStatsView] = useState("oc"); // "oc" | "cc"
+  const chesscom = useChessCom(pub.chesscom);
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div className="flex items-center justify-center" style={{ marginBottom: 14 }}>
+        <div className="flex items-center" style={{ padding: 3, borderRadius: 12, background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: 3 }}>
+          <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+            <img src="/favicon.png" alt="OpenChess" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
+          </button>
+          <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+            <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
+          </button>
+        </div>
+      </div>
+      {actions && <div style={{ display: "flex", gap: 8, marginBottom: 14, justifyContent: "center" }}>{actions}</div>}
+      {statsView === "oc" ? (
+        <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} />
+      ) : pub.chesscom ? (
+        <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      ) : (
+        <div style={{ textAlign: "center", padding: "22px 10px" }}>
+          <ChesscomLogo height={28} />
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 0", lineHeight: 1.6 }}>chess.com 계정을 연동하지 않았습니다.</p>
+        </div>
+      )}
+    </div>
+  );
+}
 // (기능) 유저 검색 결과 한 줄 — 검색 결과와 기본 추천(친구의 친구·리더보드)이 같은 모양을 공유한다.
 // right는 오른쪽 끝에 덧붙일 부가 정보(같이 아는 친구 수, 티어 등) — 없으면 기존과 똑같은 모양이다.
 // (about 페이지 그랜드마스터 카드 연동) 검색 결과·티어 리더보드에서 그랜드마스터는 오로라 톤
@@ -21420,20 +21461,22 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
         </div>
         {sel ? (
           <div style={{ padding: 18, overflowY: "auto" }}>
+            {/* (사용자 요청, v0.3.9) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
+                이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. */}
+            <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(pub.displayId || pub.username)}{roleIcon(pub.username)}</span>
+            </div>
             <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
               {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
                 : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
               <div style={{ minWidth: 0 }}>
-                <div className="flex items-center gap-2">
-                  <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</span>
-                </div>
-                {pub.bio && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 1 }}>{pub.bio}</div>}
-                <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(pub.displayId || pub.username)}{roleIcon(pub.username)}</div>
-                {/* (18차 UI11) 칭호는 텍스트 대신 칭호 이미지로 표시 */}
-                {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
+                {/* (18차 UI11) 칭호는 텍스트 대신 칭호 이미지로 표시 — 이름 위에 표시 */}
+                {pub.title && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
+                <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</div>
+                {pub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.bio}</div>}
               </div>
             </div>
-            <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pub.uid} viewerUid={myUid} />
+            <ProfileStatsToggle pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pub.uid} viewerUid={myUid} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
@@ -22186,20 +22229,24 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
             // 배경(탭 콘텐츠)이 대신 스크롤됐다 — UserSearchModal의 프로필 서브뷰와 동일하게 자체
             // 최대 높이 + 세로 스크롤을 준다.
             <div style={{ padding: 18, maxHeight: narrow ? undefined : "60vh", flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto" }}>
+              {/* (사용자 요청, v0.3.9) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
+                  이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. */}
+              <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
+                {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
+              </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
                 {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
                 <div style={{ minWidth: 0, flex: 1 }}>
+                  {p.title && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={p.title} earned compact /></div>}
                   <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
-                  {p.bio && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 1 }}>{p.bio}</div>}
-                  <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</div>
+                  {p.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
                 </div>
-                {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 10, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={17} /></button>}
               </div>
-              {p.title && <div style={{ marginBottom: 12 }}><TitleBadge id={p.title} earned /></div>}
               {/* (버그 수정) 채팅/친구 요청·수락·거절 버튼을 카드 맨 아래 대신 티어와 메인 퀘스트
                   진척도 사이(actions prop)에 둔다. */}
-              <PublicProfileStats pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} ownerUid={sel.uid} viewerUid={meId} />
+              <ProfileStatsToggle pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} ownerUid={sel.uid} viewerUid={meId} />
             </div>
           );
         })() : (

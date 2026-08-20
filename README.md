@@ -28,6 +28,19 @@
 
 ### OpenChess v0.3.8 — 2026/8/19
 
+**UI/기능 — LINE CLEAR·PUZZLE CLEAR 배너 마무리 다듬기(자간·정렬·순차 재생) + 친구·검색 프로필 상세에도 OpenChess/chess.com 통계 분리 적용**
+사용자 요청 네 가지.
+
+① "LINE CLEAR 텍스트의 자간을 조금 늘리고" — `typoLetters` 헬퍼에 `spacing`(기본값 0) 매개변수를 추가해 글자마다 `marginRight`를 줄 수 있게 하고, `LineClearBanner`의 LINE·CLEAR 두 줄에만 4px을 줘 자간을 살짝 넓혔다(`PuzzleClearBanner`는 그대로 0이라 기존 자간 그대로).
+
+② "LINE CLEAR와 PUZZLE CLEAR의 두 텍스트의 y좌표를 각각 통일해줘" — 두 배너 모두 `flexDirection:column`+`justify-content:center`로 화면 정중앙에 콘텐츠를 배치하는데, 아이콘 영역의 높이(체크 표시 SVG 60px vs 별 3개 약 30px)와 바깥 `gap` 값(12 vs 14)이 서로 달라 전체 콘텐츠 블록의 높이가 미묘하게 갈리면서 정중앙에 오는 텍스트 줄의 y좌표도 따라 어긋나 있었다. 두 배너의 아이콘 영역을 똑같이 `height:60px`인 flex 슬롯으로 감싸고 바깥 `gap`도 14로 통일해, 두 텍스트 블록이 항상 같은 y좌표에 오도록 고쳤다.
+
+③ "퍼즐의 마지막 라인을 해결했을 때, LINE CLEAR 애니메이션이 완전히 재생되고 사라진 뒤에 PUZZLE CLEAR 애니메이션이 나타나도록 해줘" — `PuzzleClearBanner`의 시작 지연을 LINE CLEAR의 총 재생 시간과 같은 1.1s에서 4.2s로 늘리고, 내부 모든 요소의 절대 지연 값도 함께 +3.1s만큼 밀었다(글로우 1.3→4.4s, 별 3개 `1.3+i*0.22`→`4.4+i*0.22`s, PUZZLE·CLEAR 글자 2.0/2.35→5.1/5.45s) — 배너가 나타난 시점 기준으로 본 내부 등장 순서(글로우→별→글자)는 그대로 유지된다. 전체 재생 길이가 8.4초(지연 4.2s + 재생 4.2s)로 늘어난 만큼, `PuzzleSolver`의 celebrate 자동 종료 타이머(전체 클리어 케이스)도 6.2초에서 9.3초로 늘려 글자가 다 나오기 전에 배너가 잘리지 않게 했다.
+
+④ "친구, 검색 창 경로로 확인하는 자신이나 남의 프로필 카드에도 이번 세션에서 변경된 내용을 적용해줘" — `UserSearchModal`·`FriendsModal`의 프로필 상세 화면에도, 지난 라운드에 `MyProfileCard`에 추가한 최상단 OpenChess/chess.com 통계 분리 토글을 그대로 적용했다. 두 모달에 중복 구현하는 대신 읽기 전용 버전의 공용 컴포넌트 `ProfileStatsToggle`을 새로 만들어(편집·유산 관리 버튼 없이 토글 + `PublicProfileStats(hideChesscom)`/`AccountChessStats`만 전환) 두 모달 모두 이 컴포넌트를 쓰도록 바꿨다. 아울러 이름 아래 줄에 있던 "@아이디" 표시도 `MyProfileCard`·`HeaderProfileMenu`와 같은 자리(상단 헤더 라벨)로 옮겨 세 곳의 프로필 표시 방식을 완전히 통일했다(`FriendsModal`의 채팅 버튼도 이 헤더 라벨 줄로 함께 옮겨졌다).
+
+로컬 dev 서버로 `npm run build` 통과를 확인했다. 이 세션의 샌드박스는 실제 유저 데이터가 있는 Supabase 프로젝트에 접근하지 못해(검색·리더보드·친구 추천 모두 빈 결과) 두 모달의 프로필 상세 화면을 실제로 열어보는 종단 간 테스트는 하지 못했고, 대신 코드 리뷰로 각 컴포넌트가 참조하는 prop·상태가 실제로 올바르게 전달되는지(특히 `ownerUid`/`viewerUid`, `chesscom` 훅 호출 위치) 재확인했다.
+
 **UI/기능 — LINE CLEAR 배너 완전 통일(초록 체크 애니메이션 추가) + 프로필 카드를 헤더 드롭다운의 별도 "프로필 창"으로 이전 + OpenChess/chess.com 통계 분리**
 사용자 요청 세 가지.
 
