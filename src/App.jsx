@@ -413,13 +413,15 @@ const GeoBackdrop = React.memo(function GeoBackdrop() {
 });
 
 const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-/* (v0.2.4 개편 → v0.3.5 통합) 엔진 선택 — 예전엔 "분석"(학습/퍼즐 탭 및 사이트 전반)과 "게임 리뷰"가
-   서로 다른 엔진을 썼다("full", Stockfish 16을 게임 리뷰 전용 고정 엔진으로 사람 최상급 수준까지
-   세기를 제한해 썼다). 사용자 요청으로 이제 게임 리뷰도 설정 탭에서 고른 분석 엔진을 그대로 쓰도록
-   통합하고, Stockfish 16("full" 프로필)은 완전히 폐기했다(engine/stockfish-nnue-16* 파일·npm
-   별칭도 함께 제거 — scripts/copy-engine.mjs, package.json 참고). "lite"(Stockfish 18 Lite, 기기
-   종류와 무관하게 기본값)와 "full17"(Stockfish 17.1, 둘 중 더 강력하지만 초기 로딩 용량이 크다 —
-   약 80MB, 여러 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는 그 선택을 기억한다. */
+/* (v0.2.4 개편 → v0.3.5 통합 → 8z5dbt 세션 기능 추가) 엔진 선택 — 예전엔 "분석"(학습/퍼즐 탭 및
+   사이트 전반)과 "게임 리뷰"가 서로 다른 엔진을 썼다("full", Stockfish 16을 게임 리뷰 전용 고정
+   엔진으로 사람 최상급 수준까지 세기를 제한해 썼다). 사용자 요청으로 이제 게임 리뷰도 설정 탭에서
+   고른 분석 엔진을 그대로 쓰도록 통합하고, Stockfish 16("full" 프로필)은 완전히 폐기했다
+   (engine/stockfish-nnue-16* 파일·npm 별칭도 함께 제거 — scripts/copy-engine.mjs, package.json
+   참고). "lite"(Stockfish 18 Lite, 기기 종류와 무관하게 기본값), "full17"(Stockfish 17.1, 정식
+   대형 신경망 — 약 80MB, 여러 조각으로 나눠 받는다), "full18"(Stockfish 18 정식 대형 신경망, 셋 중
+   가장 강력함 — 약 108MB, 마찬가지로 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는
+   그 선택을 기억한다. */
 const ENGINE_PROFILES = {
   lite: {
     id: "lite", label: "Stockfish 18 Lite",
@@ -443,9 +445,21 @@ const ENGINE_PROFILES = {
     mtUrl: ENGINE_BASE + "engine/17/boot-mt.js#stockfish-17.1-8e4d048.wasm",
     parts: 6,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
   },
+  // (8z5dbt 세션 기능) 셋 중 가장 강력한 엔진 — Stockfish 18의 정식(비-Lite) 대형 신경망 빌드. npm
+  // 패키지가 이 빌드는 조각내지 않고 wasm 파일 하나(~113MB)로만 배포해서, Vercel의 배포 파일당
+  // 100MB 제한을 넘는다 — scripts/copy-engine.mjs가 빌드 시점에 100MB 미만 조각(-part-N.wasm)으로
+  // 직접 쪼개 두고, boot-single.js/boot-mt.js가 그 조각들을 워커 안에서 fetch로 받아 이어붙인 뒤
+  // self.fetch를 바꿔치기해서 로더의 원래 wasm 요청 자리에 끼워 넣는다(로더 자체엔 조각 재조립
+  // 기능이 없어 17.1의 self.location.hash 방식은 못 씀 — 부트 스크립트가 조각 목록을 직접 들고 있다).
+  full18: {
+    id: "full18", label: "Stockfish 18",
+    urls: [ENGINE_BASE + "engine/18/boot-single.js"],
+    mtUrl: ENGINE_BASE + "engine/18/boot-mt.js",
+    parts: 2,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
+  },
 };
 // (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
-const ANALYSIS_ENGINE_IDS = ["lite", "full17"];
+const ANALYSIS_ENGINE_IDS = ["lite", "full17", "full18"];
 // (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
 // Policy)가 걸린 페이지에서만 쓸 수 있다 — vite.config.js(개발)·vercel.json(배포)에서 헤더를 설정해
 // 뒀을 때만 true가 된다. 격리가 안 된 환경(구형 브라우저, 헤더 미지원 배포지 등)에서는 이 값이
@@ -18828,8 +18842,10 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
 
       {/* (v0.2.4 개편 → v0.3.5 통합 → v0.3.9 "리뷰 설정" 카드로 확장) 원래는 분석 엔진 선택만 있던
           카드였다(학습/퍼즐 탭 및 사이트 전반의 분석은 물론 게임 리뷰도 여기서 고른 엔진을 그대로
-          쓴다). 사용자 요청으로 게임 리뷰에만 영향을 주는 두 설정 — 리뷰 속도(더 빠르게/더
-          정확하게)와 포지션 변동성 보정 on/off — 을 같은 카드에 추가해 "리뷰 설정"으로 확장한다. */}
+          쓴다 — 가볍고 빠른 Stockfish 18 Lite가 기본값이고, Stockfish 17.1이나 Stockfish 18(둘 다
+          초기 로딩 용량이 크지만 더 강력함, 그중 18이 셋 중 가장 강력함)로 바꿀 수 있다). 사용자
+          요청으로 게임 리뷰에만 영향을 주는 두 설정 — 리뷰 속도(더 빠르게/더 정확하게)와 포지션
+          변동성 보정 on/off — 을 같은 카드에 추가해 "리뷰 설정"으로 확장한다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>리뷰 설정</div>
