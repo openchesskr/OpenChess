@@ -3619,9 +3619,15 @@ function EvalBar({ cp, width, depth, vertical }) {
               흰색이든 검은색이든 늘 뚜렷이 보이도록 순백 대신 사이트 테마의 브라스 골드로 바꾼다. */}
           <button onClick={() => setTipOpen((v) => !v)} aria-label="탐색 상태 도움말" style={{ width: 14, height: 14, padding: 0, border: "none", background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: .9 }}><HelpCircle size={12} /></button>
           {/* (18차 보충 UX5) 말풍선이 체스보드에 가려지던 문제 — 바 아래가 아니라 위쪽으로 띄우고 z-index를 높인다 */}
+          {/* (v0.3.9 버그 수정) 이 말풍선은 항상 right:0(자기 오른쪽 끝 기준 좌측으로 확장)로 고정돼
+              있었는데, 바깥 인디케이터가 흑 유리 시 left:4로(=바 왼쪽 끝 근처) 옮겨가도 말풍선은 여전히
+              그 좁은 인디케이터의 오른쪽 끝에서부터 왼쪽으로 자라 나가 바/보드 왼쪽 바깥으로 넘어갔다 —
+              모바일 좁은 화면에서 잘려 보인 원인. 인디케이터와 같은 조건으로 말풍선도 반대편(왼쪽 유리
+              시 left:0, 오른쪽으로 확장)으로 뒤집어 항상 바 안쪽으로만 자라도록 한다. 꼬리표(삼각형)도
+              같은 쪽 모서리로 맞춰 뒤집는다. */}
           {tipOpen && (
-            <span style={{ position: "absolute", bottom: 24, right: 0, whiteSpace: "nowrap", background: "rgba(20,12,6,.97)", color: T.ivoryHi, fontSize: 10.5, fontWeight: 700, borderRadius: 8, border: "1px solid " + T.brass, padding: "5px 9px", zIndex: 999, boxShadow: "0 6px 16px -6px rgba(0,0,0,.6)" }}>
-              <span style={{ position: "absolute", bottom: -4, right: 10, width: 7, height: 7, background: "rgba(20,12,6,.97)", borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass, transform: "rotate(45deg)" }} />
+            <span style={{ position: "absolute", bottom: 24, whiteSpace: "nowrap", background: "rgba(20,12,6,.97)", color: T.ivoryHi, fontSize: 10.5, fontWeight: 700, borderRadius: 8, border: "1px solid " + T.brass, padding: "5px 9px", zIndex: 999, boxShadow: "0 6px 16px -6px rgba(0,0,0,.6)", ...(num >= 0 ? { right: 0 } : { left: 0 }) }}>
+              <span style={{ position: "absolute", bottom: -4, width: 7, height: 7, background: "rgba(20,12,6,.97)", transform: "rotate(45deg)", ...(num >= 0 ? { right: 10, borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass } : { left: 10, borderLeft: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass }) }} />
               {depth}수 후까지 탐색 중..
             </span>
           )}
@@ -12635,7 +12641,17 @@ function puzzleLineBaseRating(setupSans, tree, line) {
   const tensionPoints = Math.min(700, avgTension * 140);
   const qualityPoints = Math.min(900, onlyBrilliant * 300);
   const swingPoints = Math.min(700, (swing / 40) * 100);
-  const raw = 100 + lengthPoints + tensionPoints + qualityPoints + swingPoints;
+  // (v0.3.9 버그 수정) 사용자 신고 — 실제로 생성되는 퍼즐 중 1300점을 넘는 게 하나도 없다. 위 네
+  // 요소의 캡을 합치면 이론상 2900(+기본 100=3000)까지 오를 수 있는데, 실제 퍼즐 라인들의 길이·긴장·
+  // 유일한 수 개수·평가치 변동폭은 각 캡에 크게 못 미치는 값으로만 나와(짧은 오프닝 트랩 위주라 캡의
+  // 극히 일부만 채움) 사실상 100~3000 전체 척도 중 아래쪽 절반도 못 쓰고 있었다. 각 요소의 "캡 대비
+  // 실제 도달치" 비율은 그대로 두고(길이가 긴 만큼, 긴장이 높은 만큼 더 어렵다는 상대적 순서는
+  // 유지) 네 요소의 합에만 배율을 곱해 전체 척도를 위로 늘렸다 — 실측 벤치마크로 검증한 배율은 아니고
+  // (실제 서비스에 쌓인 퍼즐 풀이 데이터가 이 개발 환경엔 없다), "체감 최고 난이도가 1300 근방이었다"는
+  // 보고를 "그 근방 puzzles가 대략 2200~2400 정도로 올라가면 적당하겠다"는 목표로 역산해 고른 값이다 —
+  // 필요하면 이 상수 하나만 조정하면 된다.
+  const DIFFICULTY_SCALE = 1.8;
+  const raw = 100 + DIFFICULTY_SCALE * (lengthPoints + tensionPoints + qualityPoints + swingPoints);
   return Math.max(100, Math.min(3000, Math.round(raw)));
 }
 // (기능) 라인 하나의 평균 실제 풀이 시간(ms, 이상치 제외 후 서버가 집계 — puzzle_line_avg_solve_ms
@@ -17088,7 +17104,15 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
     const total = w + d + l;
     return { total, w, d, l, winRate: total ? Math.round(100 * w / total) : 0 };
   }, [games]);
-  const ratingChanges = useMemo(() => (ready ? computeRatingChanges(games) : new Map()), [ready, games]);
+  // (v0.3.9 버그 수정) 사용자 신고 — "리뷰한 대국만" 체크박스를 켜면 승리한 대국의 레이팅 변동이
+  // 음수로 뜬다. computeRatingChanges는 "바로 직전 대국 대비" 증감이라 반드시 시간순으로 빈틈없는
+  // 목록에서 계산해야 하는데, 여기선 그 필터로 이미 듬성듬성 걸러진 games를 그대로 넘기고 있었다 —
+  // 리뷰 안 한 대국들이 사이사이 빠지면 "직전 대국"이 실제로는 몇 판 전의, 전혀 다른 레이팅을 가진
+  // 대국이 돼 버려 승리해도 그사이 다른 대국에서 레이팅이 더 많이 깎였으면 음수로 보였다. 색 필터도
+  // 같은 이유로 위험해 gamesForRating을 이미 따로 두고 있었으므로(바로 위 주석 참고), 여기도 그
+  // 빈틈없는 목록을 그대로 재사용한다 — games는 gamesForRating의 부분집합이라 이후 games를 순회하며
+  // ratingChanges.get(g)로 조회할 때도 같은 게임 객체 참조로 그대로 찾아진다.
+  const ratingChanges = useMemo(() => (ready ? computeRatingChanges(gamesForRating) : new Map()), [ready, gamesForRating]);
   // (버그 수정) 예전엔 대국 하나를 "가장 깊이 매칭된 오프닝 이름" 딱 하나에만 집계했다 — 정석에서
   // 일찍 이탈하는 대다수 대국이 얕은 상위 갈래(King's Pawn Game 등)로 몰려 표본이 커지고, 정석을
   // 끝까지 따라간 소수 대국만 깊은 하위 갈래(Marshall Attack 등)에 잡혀 표본이 1~2판으로 작아진다.
