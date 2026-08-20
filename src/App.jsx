@@ -8670,7 +8670,7 @@ function ReviewIntroCarousel() {
 // 여러 개 채점돼 도착해도(빠른 포지션들이 몰려 끝났을 때 등) 화면은 절대 순간이동하듯 확 그려지지
 // 않고, 항상 같은 속도로 채워지는 것처럼 보인다.
 function buildRevealData(result, sharpOn = true) {
-  if (!result) return { moves: [], evalWin: [50, 50], wCurve: [100], bCurve: [100], moveMeta: [] };
+  if (!result) return { moves: [], evalWin: [50, 50], wCurve: [100], bCurve: [100], wMoves: [], bMoves: [], moveMeta: [] };
   const { moves, evalWin } = result;
   // 진영별 구간 누적 정확도 곡선(기존과 동일, App.jsx 앞부분 "독립 정확도 체계" 참고) — 그 김에 그
   // 수 하나가 누적 정확도를 얼마나 올렸는지/내렸는지(delta)도 함께 기록해 둔다. moveMeta[i]는
@@ -8678,6 +8678,10 @@ function buildRevealData(result, sharpOn = true) {
   // 수 하나가 그 진영의 누적 정확도에 미친 영향, 부호 있음)를 담는다.
   const wLoss = [], wSharp = [], bLoss = [], bSharp = [];
   const wCurve = [100], bCurve = [100];
+  // (사용자 요청) 정확도 그래프에 수마다 원 마커(그 수의 등급 아이콘)를 찍고, 그래프 선 구간도 그
+  // 등급 색으로 칠하려면 wCurve[i+1]·bCurve[i+1]이 어느 move 레퍼런스와 짝인지 알아야 한다 —
+  // wCurve/bCurve와 정확히 같은 시점에 같은 조건으로 push해 always 1:1 대응이 되게 한다.
+  const wMoves = [], bMoves = [];
   const moveMeta = [];
   for (let i = 0; i < moves.length; i++) {
     const m = moves[i];
@@ -8686,21 +8690,25 @@ function buildRevealData(result, sharpOn = true) {
     // 수를 둔 진영 기준 부호로 되돌려 더한다(흑의 손실은 백 관점으로는 그만큼의 이득으로 보인다).
     const gVal = evalWin[i + 1] + (m.white ? 1 : -1) * m.lossWinPct;
     let delta;
-    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); const prev = wCurve[wCurve.length - 1]; const next = newCumulativeAccuracy(wLoss, wSharp, wLoss.length, sharpOn); wCurve.push(next); delta = next - prev; }
-    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); const prev = bCurve[bCurve.length - 1]; const next = newCumulativeAccuracy(bLoss, bSharp, bLoss.length, sharpOn); bCurve.push(next); delta = next - prev; }
+    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); const prev = wCurve[wCurve.length - 1]; const next = newCumulativeAccuracy(wLoss, wSharp, wLoss.length, sharpOn); wCurve.push(next); wMoves.push(m); delta = next - prev; }
+    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); const prev = bCurve[bCurve.length - 1]; const next = newCumulativeAccuracy(bLoss, bSharp, bLoss.length, sharpOn); bCurve.push(next); bMoves.push(m); delta = next - prev; }
     moveMeta.push({ ply: i + 1, gVal, delta, white: m.white });
   }
-  return { moves, evalWin, wCurve, bCurve, moveMeta };
+  return { moves, evalWin, wCurve, bCurve, wMoves, bMoves, moveMeta };
 }
 // 진영 하나의 구간 누적 정확도 곡선을 그리는 작은 스파크라인 — 지금까지 채점된 만큼만 그린다. 투명 배경.
-// (사용자 요청) 세로 격자를 기본 60~100 구간으로 확대해 작은 변화도 잘 보이게 하고, 지금(마지막으로
-// 공개된 값) 60 밑으로 떨어졌을 때만 그 순간 0~100 전체 구간으로 다시 잡는다 — 다시 60 이상으로
-// 오르면 60~100으로 되돌아간다. 이 확대·축소를 실제로 알아볼 수 있도록 위·아래 경계값에 격자선과
-// 숫자를 함께 그린다(60~100 구간일 때 60 밑으로 내려간 과거 지점은 그 순간엔 격자 맨 위에 눌린
-// 것처럼 보인다 — 어차피 60 이상이면 정상 범위로 다시 늘어나므로 자연스러운 동작으로 둔다).
+// (사용자 요청, v0.3.9) 세로 격자 하한선을 기존 60보다 훨씬 좁은 95에서 시작해 작은 변화도 더 잘
+// 보이게 하고, 정확도가 그 하한선 밑으로 떨어지면 예전처럼(60→0으로) 한 번에 확 넓히는 대신 딱
+// 필요한 만큼만 "조금씩"(rAF 기반 시간비례 감쇠) 낮춘다 — 반대로 회복되면 다시 95로 조금씩
+// 좁혀진다. low 자체가 매 프레임 목표값에 다가가는 연속값이라 격자선·눈금 숫자도 함께 부드럽게
+// 움직인다(숫자는 반올림해서 보여준다).
 // (사용자 요청) big — 모바일에서 백/흑 그래프를 각각 다른 줄에 더 크게 보여줄 때 쓰는 확대 모드.
 // 비율(W2:H2)만 낮춰(더 납작하지 않게) 세로로 키우고, 그 안의 격자 숫자·선 굵기도 함께 키운다.
-function MiniAccCurve({ curve, shownCount, color, label, big }) {
+// (사용자 요청, v0.3.9) moves — 그 진영이 둔 순서대로의 move 레퍼런스(buildRevealData의 wMoves/
+// bMoves). 수 하나마다 원 마커를 찍고 그 수의 등급(kind) 아이콘을 pop-in 애니메이션으로 채워
+// 넣으며, 그래프 선 구간 자체도 각 수의 등급 색(QCOLOR)으로 칠한다 — 등급이 없는(있을 수 없지만
+// 방어적으로) 구간만 기존 중립색(color)으로 그린다.
+function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
   const total = curve.length - 1; // 그 진영이 실제로 둔 수 개수
   const W2 = 320, H2 = big ? 70 : 46;
   // (버그 수정) 정확도 100(가장 흔한 값 — 실수 없이 두면 계속 100)이 y=0 정확히 그 자리에 그려져
@@ -8709,23 +8717,84 @@ function MiniAccCurve({ curve, shownCount, color, label, big }) {
   const xx = (i) => (total <= 0 ? 0 : (i / total) * W2);
   const pts = curve.slice(0, Math.max(1, shownCount + 1));
   const curVal = pts.length ? pts[pts.length - 1] : 100;
-  const low = curVal < 60 ? 0 : 60, high = 100;
+  const curValRef = useRef(curVal);
+  curValRef.current = curVal;
+  const [low, setLow] = useState(95);
+  const lowRef = useRef(95);
+  useEffect(() => {
+    let raf, lastTs = null;
+    function tick(ts) {
+      if (lastTs == null) lastTs = ts;
+      const dt = Math.min(0.1, (ts - lastTs) / 1000);
+      lastTs = ts;
+      const cv = curValRef.current;
+      // (버그 수정) 목표를 "지금 하한선(lowRef)보다 낮은가"로 판단하면, lowRef 자신이 낮아지는
+      // 도중에 cv를 다시 추월해버려 목표가 95↔낮은값 사이를 왔다갔다 진동하다 cv 바로 밑에서
+      // 멈춰버렸다(여유 없이 딱 붙어버림). 대신 항상 고정된 기준(기본 하한선 95)만 보고 목표를
+      // 정한다 — 95 이상이면 목표 95, 미만이면 그 값을 5 단위로 살짝 여유 있게 담을 수 있는 값.
+      const target = cv >= 95 ? 95 : Math.max(0, Math.floor((cv - 5) / 5) * 5);
+      const decay = 1 - Math.pow(0.001, dt); // 초당 약 99.9% 수렴 — 프레임 속도와 무관하게 일정한 속도
+      lowRef.current += (target - lowRef.current) * Math.min(1, decay);
+      if (Math.abs(lowRef.current - target) < 0.05) lowRef.current = target;
+      setLow(lowRef.current);
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const high = 100;
   const yy = (v) => PAD + (H2 - PAD * 2) - (Math.max(low, Math.min(high, v)) - low) / (high - low) * (H2 - PAD * 2);
-  const path = pts.length >= 2 ? "M " + pts.map((v, i) => xx(i).toFixed(1) + "," + yy(v).toFixed(1)).join(" L ") : "";
+  // (버그 수정) 처음엔 원 자체를 작게(지름 8~11px) 잡았는데, 그 안에 들어가는 등급 아이콘(PNG,
+  // 세부 형태가 있는 이미지)이 그 크기에서는 뭉개져 하얀 얼룩처럼만 보이고 무슨 아이콘인지 전혀
+  // 알아볼 수 없었다 — 이 앱 다른 곳에서 이미 등급 아이콘을 쓰는 최소 크기(11~15px, badgeIcon 호출부
+  // 참고)에 맞춰 원 자체를 그만큼 키운다.
+  const dotBox = big ? 18 : 14;
+  const dotIconSize = dotBox - (big ? 4 : 3);
   return (
     <div>
       <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3 }}>{label}</div>
-      <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: big ? 64 : 40, background: "transparent" }}>
-        <rect x="0" y="0" width={W2} height={H2} rx="6" fill="rgba(255,255,255,.05)" />
-        {/* (사용자 요청) 축 눈금 숫자를 더 크고 잘 보이게 — 글자 크기·불투명도·굵기를 모두 올렸다. */}
-        {[low, high].map((g) => (
-          <React.Fragment key={g}>
-            <line x1="0" y1={yy(g).toFixed(1)} x2={W2} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
-            <text x="2" y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily="ui-monospace,monospace">{g}</text>
-          </React.Fragment>
-        ))}
-        {path && <path d={path} fill="none" stroke={color} strokeWidth={big ? 2.4 : 1.8} strokeLinejoin="round" />}
-      </svg>
+      <div style={{ position: "relative", width: "100%", height: big ? 64 : 40 }}>
+        <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "100%", background: "transparent" }}>
+          <rect x="0" y="0" width={W2} height={H2} rx="6" fill="rgba(255,255,255,.05)" />
+          {/* (사용자 요청) 축 눈금 숫자를 더 크고 잘 보이게 — 글자 크기·불투명도·굵기를 모두 올렸다. */}
+          {[low, high].map((g, gi) => (
+            <React.Fragment key={gi}>
+              <line x1="0" y1={yy(g).toFixed(1)} x2={W2} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
+              <text x="2" y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily="ui-monospace,monospace">{Math.round(g)}</text>
+            </React.Fragment>
+          ))}
+          {/* (사용자 요청) 그래프 선을 구간(수)마다 나눠 그려, 각 구간이 그 수의 등급 색을 그대로
+              띠도록 한다 — 굵기도 기존보다 더 굵게(1.8/2.4 → 2.6/3.4) 잡아 색이 잘 보이게 했다. */}
+          {pts.length >= 2 && pts.slice(1).map((v, idx) => {
+            const i = idx + 1;
+            const mv = moves && moves[idx];
+            const segColor = (mv && QCOLOR[mv.kind]) || color;
+            return <line key={i} x1={xx(i - 1).toFixed(1)} y1={yy(pts[idx]).toFixed(1)} x2={xx(i).toFixed(1)} y2={yy(v).toFixed(1)} stroke={segColor} strokeWidth={big ? 3.4 : 2.6} strokeLinecap="round" />;
+          })}
+        </svg>
+        {/* (사용자 요청) 수마다 원 마커를 찍고, 그 안에 그 수의 등급 아이콘을 pop-in 애니메이션으로
+            채워 넣는다 — SVG 안에 raster 아이콘을 끼워 넣는 대신(비율이 왜곡되기 쉬움) 같은 박스
+            위에 겹친 일반 HTML 오버레이로 그려 아이콘이 항상 또렷하게 보이게 한다. 좌표는 SVG
+            viewBox 비율(%) 그대로 써서 반응형 크기 변화에도 항상 그래프 선과 정확히 맞아떨어진다.
+            shownCount가 늘어날 때마다 그 수의 마커가 처음 마운트되므로, 애니메이션은 그 순간 자연히
+            한 번만 재생된다(typoLetters 등과 같은 패턴). */}
+        {pts.length >= 2 && pts.slice(1).map((v, idx) => {
+          const i = idx + 1;
+          const mv = moves && moves[idx];
+          const c = mv && QCOLOR[mv.kind];
+          if (!c) return null;
+          return (
+            <div key={i} style={{
+              position: "absolute", left: (xx(i) / W2 * 100) + "%", top: (yy(v) / H2 * 100) + "%",
+              width: dotBox, height: dotBox, borderRadius: "50%", background: c,
+              border: "1.5px solid #241509", boxShadow: "0 1px 3px rgba(0,0,0,.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transform: "translate(-50%,-50%) scale(0)", opacity: 0,
+              animation: "miniAccDotPop .35s cubic-bezier(.34,1.56,.64,1) forwards",
+            }}>{badgeIcon(mv.kind, dotIconSize)}</div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -8739,7 +8808,7 @@ const REVEAL_POPUP_STAGGER_MS = 480; // 숫자 하나가 뜬 뒤 다음 숫자�
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
 function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn }) {
   const data = useMemo(() => buildRevealData(result, sharpOn), [result, sharpOn]);
-  const { moves, evalWin, wCurve, bCurve, moveMeta } = data;
+  const { moves, evalWin, wCurve, bCurve, wMoves, bMoves, moveMeta } = data;
   const N = Math.max(1, totalPlies || moves.length || 1);
   // progress(0..N) — 실제 분석 진행(target)과는 별도로, 일정한 속도로만 전진하는 "그리는 펜의 위치".
   // target을 넘어서지는 못한다(아직 채점 안 된 곳을 앞질러 그릴 수는 없으므로). target이 늘어나는
@@ -8869,7 +8938,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
           보여준다 — narrow일 때만 세로(column)로 쌓고 MiniAccCurve에 big을 넘겨 키운다. */}
       <div className={narrow ? "flex flex-col" : "flex items-start"} style={{ gap: narrow ? 18 : 14, marginTop: 10 }}>
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
-          <MiniAccCurve curve={wCurve} shownCount={wShown} color="#EDE7DC" label="⬜ 백 정확도" big={narrow} />
+          <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big={narrow} />
           <motion.div layoutId="review-acc-w" style={{ fontSize: narrow ? 30 : 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{wVal.toFixed(1)}</motion.div>
           {/* (사용자 요청) 그래프 위 팝업과 똑같은 증감 숫자를 정확도 박스 우하단에도 함께 띄워
               변동을 더 직관적으로 보여준다 — 같은 popups 배열을 진영별로 걸러 재사용한다. */}
@@ -8886,7 +8955,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
           </AnimatePresence>
         </div>
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
-          <MiniAccCurve curve={bCurve} shownCount={bShown} color="#B8A78C" label="⬛ 흑 정확도" big={narrow} />
+          <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big={narrow} />
           <motion.div layoutId="review-acc-b" style={{ fontSize: narrow ? 30 : 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{bVal.toFixed(1)}</motion.div>
           <AnimatePresence>
             {popups.filter((p) => !p.white).map((p) => {
@@ -17454,6 +17523,7 @@ const CHANGELOG = [
       "퍼즐의 모든 라인을 다 풀었을 때, 이제 LINE CLEAR 애니메이션이 완전히 끝나고 사라진 뒤에 PUZZLE CLEAR 애니메이션이 이어서 나타나요 — 예전엔 두 애니메이션이 겹쳐 보였어요.",
       "친구·검색 창에서 확인하는 나와 다른 사람의 프로필 카드에도 맨 위에서 OpenChess/chess.com 아이콘을 눌러 두 서비스 통계를 나눠 볼 수 있어요. 아이디 표시 방식도 프로필 카드와 똑같이 정리됐어요.",
       "OpenChess/chess.com 통계 토글이 프로필 카드 맨 위 큰 버튼 대신, 아이디 표시 줄 오른쪽의 작은 아이콘 두 개로 옮겨졌어요 — 그만큼 이름·소개가 더 위로 올라와요.",
+      "게임 리뷰에 들어갈 때 보여주는 백·흑 정확도 그래프가 더 자세해졌어요 — 세로 눈금 범위가 더 좁게(95부터) 시작해서 작은 변화도 잘 보이고, 정확도가 많이 떨어지면 그때그때 필요한 만큼만 부드럽게 넓어져요. 선도 더 굵어졌고, 수마다 그 수의 등급 아이콘(책·별·체크·물음표 등)이 담긴 원이 하나씩 나타나며, 그래프 선 색깔도 구간마다 그 수의 등급 색으로 표시돼요.",
     ]
   },
   {
@@ -23591,7 +23661,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes miniAccDotPop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
