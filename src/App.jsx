@@ -8791,8 +8791,24 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
   // (버그 수정) 정확도 100(가장 흔한 값 — 실수 없이 두면 계속 100)이 y=0 정확히 그 자리에 그려져
   // 위쪽 끝에서 선이 절반쯤 잘려 거의 안 보였다 — 위아래 4px씩 여백을 둬 100이어도 온전히 보이게 한다.
   const PAD = 4;
-  const xx = (i) => (total <= 0 ? 0 : (i / total) * W2);
+  // (사용자 요청, v0.3.9) 예전엔 수가 몇 개든 항상 고정폭(W2) 안에 눌러 담아(i/total*W2) 그려서, 수가
+  // 많은 대국일수록 수 아이콘들이 다닥다닥 겹쳐 보였다 — 대신 수 하나당 항상 같은 간격(SPACING)을 주는
+  // "가상 캔버스"(contentWidth = 수 개수 × SPACING)에 그리고, 실제로 보이는 영역(W2 폭의 뷰포트)은 그
+  // 위를 좌우로 훑는 창(viewBox의 min-x만 이동)으로 구현한다 — 카메라가 목표를 따라가되 양 끝에서는
+  // 더 못 가게 막히는(clamp) 흔한 패턴과 같다: 그려진 마지막 점이 뷰포트 중앙에 오도록 카메라를 옮기되
+  // (① 대국 초반 — 아직 다 그리지 않아 중앙까지 못 왔으면 카메라는 원점에 그대로, 그래서 "왼쪽부터
+  // 오른쪽으로 그려 나가는" 것처럼 보인다), 그 이동량을 [0, contentWidth-W2] 사이로 눌러 담는다(②
+  // 카메라가 이미 오른쪽 끝까지 다 밀렸으면 더는 따라가지 못하고 마지막 점이 그대로 오른쪽 끝을 향해
+  // 다가가며 찍힌다 — 그래서 "전체 그래프의 끝부분이 영역의 오른쪽 끝에 그려지는" 결과가 된다). 수가
+  // 적어 contentWidth가 W2보다 작으면 클램프 상한이 0이 되어 카메라가 아예 안 움직이고(예전처럼 그냥
+  // 왼쪽부터 채워짐), 화면이 스크롤되는 건 실제로 다 못 담을 만큼 수가 많을 때뿐이다.
+  const SPACING = big ? 30 : 22;
+  const contentWidth = Math.max(W2, total * SPACING);
+  const xx = (i) => i * SPACING;
   const pts = curve.slice(0, Math.max(1, shownCount + 1));
+  const rightmostX = xx(pts.length - 1);
+  const maxOffset = Math.max(0, contentWidth - W2);
+  const offset = Math.max(0, Math.min(maxOffset, rightmostX - W2 / 2));
   const curVal = pts.length ? pts[pts.length - 1] : 100;
   const curValRef = useRef(curVal);
   curValRef.current = curVal;
@@ -8830,14 +8846,17 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
   return (
     <div>
       <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3 }}>{label}</div>
-      <div style={{ position: "relative", width: "100%", height: big ? 64 : 40 }}>
-        <svg viewBox={"0 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "100%", background: "transparent" }}>
-          <rect x="0" y="0" width={W2} height={H2} rx="6" fill="rgba(255,255,255,.05)" />
+      <div style={{ position: "relative", width: "100%", height: big ? 64 : 40, overflow: "hidden" }}>
+        {/* (v0.3.9 기능) viewBox의 min-x를 offset만큼 옮겨 가상 캔버스(폭 contentWidth) 중 W2폭짜리
+            창만 보여준다 — 배경·격자선은 항상 전체 캔버스(contentWidth)를 채워 어느 위치로 창이
+            옮겨가도 잘리지 않게 하고, 눈금 숫자만 창의 왼쪽 끝(offset+2)에 계속 붙어 있도록 한다. */}
+        <svg viewBox={offset.toFixed(1) + " 0 " + W2 + " " + H2} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "100%", background: "transparent" }}>
+          <rect x="0" y="0" width={contentWidth} height={H2} rx="6" fill="rgba(255,255,255,.05)" />
           {/* (사용자 요청) 축 눈금 숫자를 더 크고 잘 보이게 — 글자 크기·불투명도·굵기를 모두 올렸다. */}
           {[low, high].map((g, gi) => (
             <React.Fragment key={gi}>
-              <line x1="0" y1={yy(g).toFixed(1)} x2={W2} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
-              <text x="2" y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily="ui-monospace,monospace">{Math.round(g)}</text>
+              <line x1="0" y1={yy(g).toFixed(1)} x2={contentWidth} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
+              <text x={(offset + 2).toFixed(1)} y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily="ui-monospace,monospace">{Math.round(g)}</text>
             </React.Fragment>
           ))}
           {/* (사용자 요청) 그래프 선을 구간(수)마다 나눠 그려, 각 구간이 그 수의 등급 색을 그대로
@@ -8862,7 +8881,7 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
           if (!c) return null;
           return (
             <div key={i} style={{
-              position: "absolute", left: (xx(i) / W2 * 100) + "%", top: (yy(v) / H2 * 100) + "%",
+              position: "absolute", left: ((xx(i) - offset) / W2 * 100) + "%", top: (yy(v) / H2 * 100) + "%",
               width: dotBox, height: dotBox, borderRadius: "50%", background: c,
               border: "1.5px solid #241509", boxShadow: "0 1px 3px rgba(0,0,0,.4)",
               display: "flex", alignItems: "center", justifyContent: "center",
