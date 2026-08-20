@@ -17222,7 +17222,10 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
       <div className="flex items-center justify-center" style={{ marginBottom: 14 }}>
         <div className="flex items-center" style={{ padding: 3, borderRadius: 12, background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: 3 }}>
           <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-            <img src="/favicon.png" alt="OpenChess" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
+            {/* (사용자 요청) favicon.png는 나이트 그림 둘레에 여백이 넓게 있어(실제 그림 높이가 캔버스의
+                약 86%) chess.com 폰 아이콘(캔버스 전체를 꽉 채움)과 같은 픽셀 크기로 두면 훨씬 작아
+                보인다 — 실제 눈에 보이는 그림 높이가 비슷해지도록 이 아이콘만 22px로 키운다. */}
+            <img src="/favicon.png" alt="OpenChess" style={{ width: 22, height: 22, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
           </button>
           <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
             <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
@@ -21337,7 +21340,10 @@ function ProfileStatsToggle({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
       <div className="flex items-center justify-center" style={{ marginBottom: 14 }}>
         <div className="flex items-center" style={{ padding: 3, borderRadius: 12, background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: 3 }}>
           <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-            <img src="/favicon.png" alt="OpenChess" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
+            {/* (사용자 요청) favicon.png는 나이트 그림 둘레에 여백이 넓게 있어(실제 그림 높이가 캔버스의
+                약 86%) chess.com 폰 아이콘(캔버스 전체를 꽉 채움)과 같은 픽셀 크기로 두면 훨씬 작아
+                보인다 — 실제 눈에 보이는 그림 높이가 비슷해지도록 이 아이콘만 22px로 키운다. */}
+            <img src="/favicon.png" alt="OpenChess" style={{ width: 22, height: 22, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
           </button>
           <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
             <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
