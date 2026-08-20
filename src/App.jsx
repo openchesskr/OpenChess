@@ -18877,12 +18877,20 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn }) {
+function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn,
+  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom }) {
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
   const [codevBusy, setCodevBusy] = useState(false);
   const [inquiryOpen, setInquiryOpen] = useState(false);
   const [devLogOpen, setDevLogOpen] = useState(false);
+  // (v0.3.9 기능) 사용자 요청 — 로그아웃 상태에서 뜨는 "계정" 박스와 같은 자리에, 로그인 상태에서는
+  // OpenChess 프로필의 상단 요소(아바타·칭호·닉네임·소개, MyProfileCard 최상단과 같은 구성)를 압축해
+  // 보여주고 "자세히 보기"로 전체 프로필 카드(ProfileWindow)를 연다 — 헤더 드롭다운의 화살표 버튼과
+  // 정확히 같은 모달이라, 이 탭에서도 같은 방식으로 연다(ProfileWindow가 필요로 하는 prop은 이미 이
+  // 컴포넌트 호출부가 다 넘겨주고 있었다 — v0.3.8에서 상시 표시 MyProfileCard를 뺄 때 구조 분해에서만
+  // 빠졌던 것들을 다시 받는다).
+  const [profileWinOpen, setProfileWinOpen] = useState(false);
   const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8", marginTop: 14 };
   // (v0.3.5 기능) 사용자 요청 — 흩어져 있던 개발자 전용 패널(자원 조정·공동 개발자 지정·일일 퍼즐
   // 관리·퍼즐 일괄 재생성)을 설정 탭 맨 아래 카드 하나("개발자 도구")로 모았다. 개발자/공동 개발자
@@ -18916,12 +18924,34 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 설정 아이콘과 중복돼 제거. */}
       <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
 
-      {/* 계정 — 로그아웃 상태에서만 표시(로그인 시 아래 프로필 카드에 통합) */}
-      {!user && (
+      {/* 계정 — 로그아웃 상태에서는 로그인 유도, 로그인 상태에서는 같은 자리에 프로필 미리보기(v0.3.9). */}
+      {!user ? (
         <div style={card}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>계정</div>
           <div className="flex items-center justify-between gap-3"><span style={{ fontSize: 12.5, color: T.inkSoft, minWidth: 0 }}>로그인하면 진도가 계정에 저장됩니다.</span><button onClick={() => openAuth("login")} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>로그인 / 회원가입</button></div>
         </div>
+      ) : (
+        <div style={card}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(profile.displayId || user)}{roleIcon(user)}</span>
+            <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>자세히 보기</button>
+          </div>
+          <div className="flex items-center gap-3">
+            {profile.photo ? <img src={profile.photo} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(totalXp || 0).tier.key === "grandmaster") || {}) }} />
+              : <span style={{ width: 56, height: 56, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 22, flexShrink: 0 }}>{(profile.nickname || user || "?")[0].toUpperCase()}</span>}
+            <div style={{ minWidth: 0 }}>
+              {currentTitle && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={currentTitle} earned compact /></div>}
+              <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{profile.nickname || profile.displayId || user}</div>
+              {profile.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.bio}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+      {profileWinOpen && user && (
+        <ProfileWindow onClose={() => setProfileWinOpen(false)} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount}
+          onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts}
+          onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine} earnedTitles={earnedTitles} onEquipTitle={onEquipTitle} isDev={isDev} isCodev={isCodev}
+          devOn={devOn} codevOn={codevOn} chesscomStatus={chesscomStatus} chesscom={chesscom} />
       )}
 
       {/* (18차 UI10) 개발자/공동 개발자 모드 — 블록·설명 없이 온오프 토글 한 줄만 */}
