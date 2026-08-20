@@ -518,6 +518,173 @@ function ChessComSection() {
   );
 }
 
+// ============================================================ 정확도 체계 ============================================================
+// (v0.3.9 기능, 사용자 요청) "이번 세션에서 만든 정확도 체계를 /about 첫 페이지에 내 사고 과정을 그대로
+// 시각화해서 보여줘, 구체적인 계산 수식과 그래프를 적극 활용해서". 실제 App.jsx의 독립 정확도 체계
+// (winPctFromCp·newAccuracyFromAvgLoss·newCumulativeAccuracy·sharpLossMultiplier)를 그 설계 과정
+// 그대로 4단계로 재구성해 보여준다 — 이 페이지는 App.jsx와 별개 번들이라(파일 상단 T 팔레트 주석
+// 참고) 공식을 import하지 않고 그대로 복사해 둔다. App.jsx 쪽 공식이 바뀌면(계수 조정 등) 이 사본도
+// 함께 맞춰야 소개 페이지가 실제 동작과 어긋나지 않는다.
+const AS_DECAY = 0.055;
+const AS_SHARP_REF_MEAN = 8, AS_SHARP_REF_SD = 8;
+const AS_SHARP_LO = 0.85, AS_SHARP_HI = 1.15;
+function asWinPct(cp) { const c = Math.max(-1200, Math.min(1200, cp)); return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1); }
+function asNormalCdf(z) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp(-z * z / 2);
+  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return z >= 0 ? 1 - p : p;
+}
+function asSharpMult(sharp) { return AS_SHARP_LO + (AS_SHARP_HI - AS_SHARP_LO) * asNormalCdf((sharp - AS_SHARP_REF_MEAN) / AS_SHARP_REF_SD); }
+function asAccFromLoss(loss) { return Math.max(0, Math.min(100, 103.1668 * Math.exp(-AS_DECAY * Math.max(0, loss)) - 3.1669)); }
+const AS_WINPCT_PTS = Array.from({ length: 49 }, (_, i) => { const cp = -1200 + i * 50; return [cp, asWinPct(cp)]; });
+const AS_DECAY_PTS = Array.from({ length: 41 }, (_, i) => [i, asAccFromLoss(i)]);
+const AS_SHARP_PTS = Array.from({ length: 26 }, (_, i) => [i, asSharpMult(i)]);
+// 손 계산으로 재현 가능한 작은 예시 하나로 "손실을 먼저 평균 낸 뒤 변환" vs "각 수를 먼저 변환한 뒤
+// 평균" 두 방식의 결과 차이를 보여준다 — 무난한 수 9개(손실 0)와 블런더 1개(손실 25%p)로 이뤄진
+// 10수짜리 가상의 대국.
+const AS_JENSEN_NAIVE = Math.round(asAccFromLoss(25 / 10) * 10) / 10;
+const AS_JENSEN_CORRECT = Math.round((10 / (9 / 100 + 1 / Math.max(0.5, asAccFromLoss(25)))) * 10) / 10;
+// 그래프 하나를 그리는 범용 SVG 라인 차트 — 격자·축 눈금·강조 점(marker)까지 갖춰, 이 섹션의 세
+// 곡선(승률% 변환, 손실→정확도 감쇠, 날카로움 배율)을 모두 이 컴포넌트 하나로 그린다.
+function AsLineChart({ points, xDomain, yDomain, xTicks, yTicks, markers = [], color = T.brassHi }) {
+  const w = 300, h = 168, padL = 30, padR = 14, padT = 16, padB = 24;
+  const [x0, x1] = xDomain, [y0, y1] = yDomain;
+  const sx = (x) => padL + ((x - x0) / (x1 - x0)) * (w - padL - padR);
+  const sy = (y) => (h - padB) - ((y - y0) / (y1 - y0)) * (h - padT - padB);
+  const d = points.map((p, i) => (i === 0 ? "M" : "L") + sx(p[0]).toFixed(2) + "," + sy(p[1]).toFixed(2)).join(" ");
+  return (
+    <svg viewBox={"0 0 " + w + " " + h} style={{ width: "100%", maxWidth: 320, display: "block" }}>
+      {yTicks.map((ty) => (
+        <g key={"y" + ty}>
+          <line x1={padL} x2={w - padR} y1={sy(ty)} y2={sy(ty)} stroke="rgba(184,167,140,.16)" strokeWidth={1} />
+          <text x={padL - 6} y={sy(ty) + 3} textAnchor="end" fontSize="8.5" fill={T.inkSoft}>{ty}</text>
+        </g>
+      ))}
+      {xTicks.map((tx) => (
+        <text key={"x" + tx} x={sx(tx)} y={h - 8} textAnchor="middle" fontSize="8.5" fill={T.inkSoft}>{tx}</text>
+      ))}
+      <line x1={padL} x2={padL} y1={padT} y2={h - padB} stroke="rgba(184,167,140,.35)" strokeWidth={1} />
+      <line x1={padL} x2={w - padR} y1={h - padB} y2={h - padB} stroke="rgba(184,167,140,.35)" strokeWidth={1} />
+      <path d={d} fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+      {markers.map((m, i) => (
+        <g key={i}>
+          <circle cx={sx(m[0])} cy={sy(m[1])} r={3.2} fill={T.ivoryHi} stroke={color} strokeWidth={1.6} />
+          <text x={sx(m[0])} y={sy(m[1]) - 8} textAnchor="middle" fontSize="8.5" fontWeight="800" fill={T.ivoryHi}>{m[2]}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+// "손실을 먼저 평균 낸 뒤 변환" vs "각 수를 먼저 변환한 뒤 평균"을 나란한 막대 두 개로 비교.
+function AsJensenBars() {
+  const w = 240, h = 168, base = h - 26;
+  const scaleY = (v) => base - (v / 100) * (base - 18);
+  const bars = [
+    { v: AS_JENSEN_NAIVE, label: "손실 먼저 평균", sub: "(예전 방식)", color: T.brass },
+    { v: AS_JENSEN_CORRECT, label: "정확도 먼저 평균", sub: "(현재 방식)", color: "#8FB55E" },
+  ];
+  return (
+    <svg viewBox={"0 0 " + w + " " + h} style={{ width: "100%", maxWidth: 260, display: "block" }}>
+      <line x1={16} x2={w - 16} y1={base} y2={base} stroke="rgba(184,167,140,.35)" strokeWidth={1} />
+      {bars.map((b, i) => {
+        const bw = 64, x = 30 + i * 110;
+        return (
+          <g key={i}>
+            <rect x={x} y={scaleY(b.v)} width={bw} height={base - scaleY(b.v)} rx={7} fill={b.color} opacity={0.88} />
+            <text x={x + bw / 2} y={scaleY(b.v) - 9} textAnchor="middle" fontSize="14" fontWeight="900" fill={T.ivoryHi}>{b.v.toFixed(1)}</text>
+            <text x={x + bw / 2} y={h - 10} textAnchor="middle" fontSize="9" fontWeight="800" fill={T.inkSoft}>{b.label}</text>
+            <text x={x + bw / 2} y={h - 1} textAnchor="middle" fontSize="8" fill={T.inkSoft} opacity={0.8}>{b.sub}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+// 공식을 그대로 보여주는 모노스페이스 코드 박스 — 이 섹션 전용.
+function AsFormula({ children }) {
+  return <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, color: T.brassHi, background: "rgba(0,0,0,.28)", border: "1px solid rgba(196,154,80,.3)", borderRadius: 8, padding: "8px 12px", margin: "10px 0", overflowX: "auto", whiteSpace: "nowrap" }}>{children}</div>;
+}
+// 단계 하나(번호 배지 + 제목 + 설명 + 공식 + 그래프)를 좌우로 배치하는 카드. FeatureRow와 같은 구조를
+// 재사용하되, 스크린샷 대신 직접 그린 SVG 그래프를 얹는다.
+function AsStep({ n, title, children, formula, chart, reverse }) {
+  return (
+    <div className="flex items-center flex-wrap" style={{ gap: 28, flexDirection: reverse ? "row-reverse" : "row" }}>
+      <Reveal delay={0.05}>
+        <div style={{ flex: "1 1 300px", minWidth: 260 }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+            <span style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#8A6C2F)", color: "#241509", fontWeight: 900, fontSize: 12.5, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
+            <h4 style={{ fontSize: 16, fontWeight: 900, color: T.ivoryHi, margin: 0 }}>{title}</h4>
+          </div>
+          <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.75 }}>{children}</div>
+          {formula}
+        </div>
+      </Reveal>
+      <div style={{ flex: "0 0 auto", width: 280, maxWidth: "100%", margin: "0 auto" }}>
+        <Reveal delay={0.15}>
+          <div style={{ background: "rgba(0,0,0,.22)", border: "1px solid rgba(196,154,80,.25)", borderRadius: 14, padding: "14px 10px 8px" }}>
+            {chart}
+          </div>
+        </Reveal>
+      </div>
+    </div>
+  );
+}
+function AccuracySystemSection() {
+  return (
+    <section>
+      <Reveal>
+        <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
+          <Zap size={16} color={T.brassHi} />
+          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>정확도 체계</span>
+        </div>
+        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>정확도는 어떻게 계산될까요?</h3>
+        <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 22px", textAlign: "center", maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}>
+          단순히 "실수를 몇 번 했는지" 세는 게 아니에요. 실제로 게임 리뷰를 설계하며 거쳤던 네 단계를 그대로 보여드릴게요 — 수식과 그래프로요.
+        </p>
+      </Reveal>
+
+      <section style={{ maxWidth: 620, margin: "0 auto 28px" }}>
+        <SpeechBubble mascot={{ char: "kokoa", expr: "think" }} name="KOKOA 코치">
+          "정확도 몇 %"라는 숫자 하나 뒤에는 이런 계산이 숨어 있어요. 하나씩 같이 뜯어볼까요?
+        </SpeechBubble>
+      </section>
+
+      <div className="flex flex-col" style={{ gap: 40 }}>
+        <AsStep n={1} title="① 평가치(cp)는 승률로 바꿔야 공평해요"
+          formula={<AsFormula>win%(cp) = 50 + 50 × (2 / (1 + e^(&#8722;0.00368×cp)) &#8722; 1)</AsFormula>}
+          chart={<AsLineChart points={AS_WINPCT_PTS} xDomain={[-1200, 1200]} yDomain={[0, 100]} xTicks={[-1200, 0, 1200]} yTicks={[0, 50, 100]} markers={[[0, 50, "0 → 50%"], [300, asWinPct(300), "+300 → " + asWinPct(300).toFixed(0) + "%"]]} />}>
+          엔진이 내놓는 평가치(centipawn)는 그 자체로는 불공평한 잣대예요. 이미 +500으로 압도적으로 이기고 있을 때 100점을 더 잃는 것과, 팽팽한 0점 근처에서 100점을 잃는 건 승부에 미치는 영향이 완전히 달라요. 그래서 cp를 먼저 "이 포지션에서 이길 확률(win%)"로 바꿔요 — 로지스틱 곡선이라 0 근처에서는 가파르게, 이미 승부가 기운 구간에서는 완만하게 휘어져요. <b>손실은 이 win%가 그 수 전후로 얼마나 떨어졌는지</b>로 정의합니다.
+        </AsStep>
+
+        <AsStep n={2} title="② 손실이 클수록, 정확도는 훨씬 더 가파르게 떨어져요" reverse
+          formula={<AsFormula>정확도 = 103.17 × e^(&#8722;0.055 × 손실) &#8722; 3.17</AsFormula>}
+          chart={<AsLineChart points={AS_DECAY_PTS} xDomain={[0, 40]} yDomain={[0, 100]} xTicks={[0, 20, 40]} yTicks={[0, 50, 100]} markers={[[0, 100, "0 → 100"], [25, asAccFromLoss(25), "25 → " + asAccFromLoss(25).toFixed(1)]]} color="#8FB55E" />}>
+          이 승률% 손실 하나를 다시 지수 감쇠(exponential decay) 곡선에 넣어 그 수 하나의 "정확도"로 바꿔요. 손실이 0에 가까우면 정확도는 계속 100 근처(최선의 수를 그대로 뒀다는 뜻이니 당연하죠), 손실이 커질수록 정확도는 완만하게가 아니라 <b>점점 더 가파르게</b> 떨어집니다 — 작은 실수는 관대하게, 큰 블런더는 훨씬 냉정하게 반영하려는 의도예요.
+        </AsStep>
+
+        <AsStep n={3} title="③ 여기서 순서를 한 번 잘못 잡았었어요"
+          formula={<AsFormula>❌ acc(mean(loss))  vs.  ✅ mean(acc(loss))</AsFormula>}
+          chart={<AsJensenBars />}>
+          처음엔 "그 대국에서 낸 손실들을 먼저 평균 낸 뒤, 그 평균 하나만 정확도로 변환"했어요. 그런데 위 감쇠 곡선은 아래로 볼록(convex)해서, <b>옌센 부등식(Jensen's inequality)</b>에 의해 이 순서는 항상 "각 수를 먼저 변환한 뒤 평균 내는" 것보다 결과가 같거나 높게 나와요 — 무난한 수가 많은 대국일수록 블런더 한 번의 타격이 평균에 옅게 희석되는 거예요. 왼쪽 예시(무난한 수 9개 + 블런더 1개짜리 가상의 10수)로 보면, 예전 방식은 <b>{AS_JENSEN_NAIVE.toFixed(1)}점</b>이 나오지만 chess.com처럼 각 수의 정확도를 먼저 구하고 <b>조화평균(harmonic mean)</b>으로 모으면 <b>{AS_JENSEN_CORRECT.toFixed(1)}점</b>으로, 블런더 하나가 실제로 체감되는 만큼 정확도에 반영돼요.
+        </AsStep>
+
+        <AsStep n={4} title="④ 같은 실수라도 포지션에 따라 무게가 달라요" reverse
+          formula={<AsFormula>배율 = 0.85 + 0.3 × Φ((날카로움 &#8722; 8) / 8)</AsFormula>}
+          chart={<AsLineChart points={AS_SHARP_PTS} xDomain={[0, 25]} yDomain={[0.8, 1.2]} xTicks={[0, 8, 25]} yTicks={[0.85, 1, 1.15]} markers={[[8, 1, "8 → ×1.0"], [20, asSharpMult(20), "20 → ×" + asSharpMult(20).toFixed(2)]]} color="#E0B53A" />}>
+          정답이 하나뿐인 날카로운 포지션(엔진 후보 1·2·3위 평가가 서로 크게 벌어져 있음)에서의 실수는 더 엄격하게, 후보가 다 고만고만한 무난한 포지션에서의 실수는 더 관대하게 반영해요. 후보 수들 평가의 표준편차(Φ는 정규분포 누적분포함수)를 0.85~1.15배 배율로 매핑해 손실에 곱합니다 — 마지막으로 이 값들을 진영별로 처음부터 지금까지 <b>조화평균</b>내면, 게임이 길어질수록 수 하나의 영향이 자연히 옅어지면서도 블런더는 여전히 뚜렷하게 드러나는 최종 정확도가 나와요.
+        </AsStep>
+      </div>
+
+      <section style={{ maxWidth: 620, margin: "28px auto 0" }}>
+        <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">
+          이 네 단계, 그리고 이 계산에 쓰이는 "포지션 변동성 보정"까지 — 설정 탭의 리뷰 설정 카드에서 직접 켜고 끌 수 있어요!
+        </SpeechBubble>
+      </section>
+    </section>
+  );
+}
+
 // 페이지1 — 소개(히어로+기능+티어+CTA). 기존에 만들어 둔 내용을 그대로 페이저의 첫 페이지로 옮겼다.
 // (about 페이지 기능) ilust-2·3·4처럼 액자에 담긴 일러스트는 등장(Reveal/motion) 애니메이션에
 // 더해, 계속 은은하게 위아래로 떠 있는 연출(DecoBoard·PhoneFrame과 같은 방식)을 얹어 정지된
@@ -619,6 +786,10 @@ function IntroPage() {
 
       <SectionDivider />
 
+      <AccuracySystemSection />
+
+      <SectionDivider />
+
       <section>
         <Reveal>
           <div className="flex items-center gap-2" style={{ marginBottom: 6, justifyContent: "center" }}>
@@ -708,7 +879,7 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.3.8", date: "2026.8.19",
-    summary: "게임 리뷰가 복잡한 포지션을 더 깊이 분석하도록 시간을 늘려 정확도를 개선했어요. 리뷰에 들어갈 때 보여주는 화면도 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 아직 분석되지 않은 구간은 검게, 끝난 구간만 채워지며 그래프가 일정한 속도로 그려져요. 각 수가 정확도를 얼마나 올리거나 내렸는지 초록·빨강 숫자로 잠깐 나타났다 사라져요. 정확도 계산 방식 자체도 새로 설계했어요 — 대국이 길어질수록 수 하나의 영향이 자연히 옅어지고, 포지션이 무난했는지 날카로웠는지도 반영돼요. 체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률도 개선했고, 리뷰 화면을 새로고침해도 보던 수에서 이어서 볼 수 있어요. 모바일 리뷰의 엔진 라인·단계별 정확도 말풍선도 더 보기 편해졌고, 라인/퍼즐 클리어 배너는 전용 폰트로 새 단장했어요. 체크메이트로 끝난 대국의 마지막 수 아이콘이 멈춰 있던 문제도 고쳤고, 내 프로필 카드 아이디 표시를 정리했고, PUZZLE CLEAR 애니메이션은 더 역동적으로 바뀌었어요. 같은 대국을 다시 열 때마다 정확도가 미세하게 달라지던 문제도 고쳤어요. 설정 탭에서 리뷰 속도와 정확도 보정 방식도 직접 고를 수 있게 됐어요.",
+    summary: "게임 리뷰가 복잡한 포지션을 더 깊이 분석하도록 시간을 늘려 정확도를 개선했어요. 리뷰에 들어갈 때 보여주는 화면도 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 아직 분석되지 않은 구간은 검게, 끝난 구간만 채워지며 그래프가 일정한 속도로 그려져요. 각 수가 정확도를 얼마나 올리거나 내렸는지 초록·빨강 숫자로 잠깐 나타났다 사라져요. 정확도 계산 방식 자체도 새로 설계했어요 — 대국이 길어질수록 수 하나의 영향이 자연히 옅어지고, 포지션이 무난했는지 날카로웠는지도 반영돼요. 체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률도 개선했고, 리뷰 화면을 새로고침해도 보던 수에서 이어서 볼 수 있어요. 모바일 리뷰의 엔진 라인·단계별 정확도 말풍선도 더 보기 편해졌고, 라인/퍼즐 클리어 배너는 전용 폰트로 새 단장했어요. 체크메이트로 끝난 대국의 마지막 수 아이콘이 멈춰 있던 문제도 고쳤고, 내 프로필 카드 아이디 표시를 정리했고, PUZZLE CLEAR 애니메이션은 더 역동적으로 바뀌었어요. 같은 대국을 다시 열 때마다 정확도가 미세하게 달라지던 문제도 고쳤어요. 설정 탭에서 리뷰 속도와 정확도 보정 방식도 직접 고를 수 있게 됐고, LINE/PUZZLE CLEAR 배너 디자인을 통일했어요. /about 페이지에는 이 정확도 체계를 수식·그래프로 소개하는 섹션도 새로 생겼어요.",
     mascot: {
       intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "게임 리뷰에 들어가면 분석되는 동안 실시간으로 평가 그래프가 그려지며 정확도가 계산되는 걸 볼 수 있어요!" },
       outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "리뷰 화면은 이제 새로고침해도 보던 수 그대로 이어서 볼 수 있어요." },
@@ -720,7 +891,9 @@ const VERSION_HISTORY = [
         "게임 리뷰의 정확도 계산 방식을 새로 설계했어요 — 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지고, 후보 수가 여럿인 무난한 포지션에서의 실수는 관대하게, 정답이 하나뿐인 날카로운 포지션에서의 실수는 더 엄격하게 반영돼요. 이론 수·최선의 수는 여전히 감점이 없고, 그 외의 수는 감점 폭을 조금 늘려 실수가 있는 대국일수록 정확도가 더 뚜렷하게 낮아져요.",
         "리뷰 화면을 새로고침해도 처음부터 다시 시작하지 않고 보던 수에서 이어서 볼 수 있어요.",
         "프로필에 짧은 소개를 남길 수 있어요 — 프로필 편집에서 작성하면 프로필 카드와 유저 검색 결과의 닉네임 바로 밑에 표시돼요.",
-        "설정 탭에 '리뷰 설정' 카드가 생겼어요 — 게임 리뷰 속도를 '더 빠르게'/'더 정확하게' 중 고를 수 있고, 국면 변동성 보정을 켜고 끌 수 있어요(꺼도 다시 분석할 필요 없이 바로 반영돼요).",
+        "설정 탭에 '리뷰 설정' 카드가 생겼어요 — 게임 리뷰 속도를 '더 빠르게'(depth=20)/'더 정확하게'(depth=25) 중 고를 수 있고, 포지션 변동성 보정을 켜고 끌 수 있어요(꺼도 다시 분석할 필요 없이 바로 반영돼요).",
+        "LINE CLEAR 배너가 PUZZLE CLEAR와 똑같은 디자인으로 바뀌었어요. 두 배너 모두 글자가 기울어지지 않고 하나씩 튕겨 들어와요.",
+        "/about 페이지에 이번 정확도 체계를 실제 수식·그래프로 소개하는 섹션이 새로 생겼어요.",
       ] },
       { cat: "perf", items: [
         "게임 리뷰가 복잡한 포지션에서 더 깊이 분석하도록 포지션당 분석 시간을 늘려 정확도를 개선했어요(리뷰가 조금 더 걸릴 수 있어요).",

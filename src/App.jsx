@@ -482,7 +482,7 @@ function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, 
 const REVIEW_SPEED_PREF_KEY = "occ_review_speed_pref";
 function loadReviewSpeedPref() { try { return window.localStorage.getItem(REVIEW_SPEED_PREF_KEY) === "accurate" ? "accurate" : "fast"; } catch { return "fast"; } }
 function saveReviewSpeedPref(v) { try { window.localStorage.setItem(REVIEW_SPEED_PREF_KEY, v); } catch { } }
-// (v0.3.9 기능) 사용자 요청 — 국면 변동성 보정(sharpLossMultiplier, "날카로운 국면일수록 실수를 더
+// (v0.3.9 기능) 사용자 요청 — 포지션 변동성 보정(sharpLossMultiplier, "날카로운 국면일수록 실수를 더
 // 엄격하게 반영") on/off. 기본은 켜짐(기존 동작 그대로) — 꺼도 재분석이 필요 없다(원본 손실·날카로움
 // 값은 그대로 저장돼 있고, 최종 정확도 변환에서만 이 배율을 적용하거나 건너뛴다).
 const REVIEW_VOLATILITY_PREF_KEY = "occ_review_volatility_pref";
@@ -2770,7 +2770,7 @@ function normalCdf(z) {
 }
 // 포지션 날카로움(sharp, 승률%p 표준편차) → 그 수의 손실에 곱할 배율. 절대 기준(SHARP_REF_MEAN/SD)
 // 대비 이 포지션이 얼마나 날카로웠는지의 백분위(Φ)를 [LO,HI] 구간으로 매핑한다.
-// (v0.3.9 기능) 사용자 요청 — 설정 탭에서 이 "국면 변동성 보정"(chess.com 실제 방식을 본뜬 날카로움
+// (v0.3.9 기능) 사용자 요청 — 설정 탭에서 이 "포지션 변동성 보정"(chess.com 실제 방식을 본뜬 날카로움
 // 가중치) 자체를 끌 수 있게 한다. on=false면 항상 배율 1(보정 없음, 손실을 그대로 씀)을 돌려준다.
 function sharpLossMultiplier(sharp, on = true) {
   if (!on) return 1;
@@ -4141,11 +4141,9 @@ const SEQ_FONT = "'Merriweather', 'Noto Sans KR', serif";
 // 제목에만 적용하는 디스플레이 폰트 — 문단 본문에 쓰기엔 너무 두꺼워 가독성이 떨어진다.
 // (사용자 요청) 알림 창·팝업에 등장하는 한글 Title 텍스트는 Google Fonts의 Bagel Fat One으로.
 const GAME_FONT = "'Bagel Fat One', 'Noto Sans KR', cursive";
-// (사용자 요청, v0.3.8) 라인 클리어 배너(LINE·CLEAR)는 Google Fonts의 Kotta One으로.
-const CLEAR_FONT = "'Kotta One', 'Noto Sans KR', serif";
-// (사용자 요청, v0.3.8) 퍼즐 전체 클리어 배너(PUZZLE·CLEAR)만 따로 Google Fonts의 Alfa Slab One으로
-// 바꿔, 더 두껍고 포스터 문구 같은 인상을 준다.
-const PUZZLE_CLEAR_FONT = "'Alfa Slab One', 'Noto Sans KR', cursive";
+// (사용자 요청, v0.3.8 → v0.3.9 라인 클리어도 동일 폰트로 통일) 라인/퍼즐 클리어 배너(LINE·PUZZLE·
+// CLEAR) 전용 디스플레이 폰트 — Google Fonts의 Alfa Slab One. 더 두껍고 포스터 문구 같은 인상을 준다.
+const CLEAR_TYPO_FONT = "'Alfa Slab One', 'Noto Sans KR', cursive";
 // (사용자 요청, v0.3.3) 유산(Legacy) 암석판에 새겨지는 수 표기는 Google Fonts의 Merriweather로.
 const LEGACY_FONT = "'Merriweather', 'Noto Sans KR', serif";
 // (v0.2.6 기능) 퍼즐 풀이 화면의 기보 — 예전엔 텍스트 한 줄을 그냥 중앙 정렬해 두어, 길어지면
@@ -8270,7 +8268,7 @@ function PhaseAccBubble({ text }) {
 // 이 배치에서 근거 없는 숫자를 지어내기보다 생략한다 — 나머지 항목은 전부 analyzeGame의 실제 결과다.
 function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   const { openEnd, endStart } = useMemo(() => reviewGamePhases(result.moves), [result.moves]);
-  // (v0.3.9 기능) 사용자 요청 — 설정 탭의 "국면 변동성 보정" 토글이 꺼져 있으면, 분석 시점에 저장해 둔
+  // (v0.3.9 기능) 사용자 요청 — 설정 탭의 "포지션 변동성 보정" 토글이 꺼져 있으면, 분석 시점에 저장해 둔
   // result.whiteAcc/blackAcc(항상 보정 켜짐으로 계산됨)를 그대로 쓰지 않고 원본 손실(lossWinPct)·
   // 날카로움(sharp)에서 그 자리에서 다시 계산한다 — 재분석(엔진 재호출) 없이도 토글이 즉시 반영되고,
   // 아래 단계별 정확도(phases)와 항상 같은 계산 경로를 타서 서로 어긋나지 않는다.
@@ -8596,7 +8594,7 @@ function reviewResultStorageKey(game) {
 // (v0.3.9 기능) "더 빠르게"/"더 정확하게"(depth 20/25)가 서로 다른 분석 결과를 만들어내므로, 캐시된
 // 결과가 지금 선택된 속도와 다른 depth로 분석된 것이면(예: depth 20으로 캐시돼 있는데 방금 "더
 // 정확하게"로 바꿈) 재사용하지 않고 새로 분석한다 — depth는 저장된 값에 함께 실어(`d`) 대조한다.
-// (국면 변동성 보정 on/off는 여기 영향을 안 준다 — 분석 자체가 아니라 이미 저장된 손실·날카로움
+// (포지션 변동성 보정 on/off는 여기 영향을 안 준다 — 분석 자체가 아니라 이미 저장된 손실·날카로움
 // 값을 최종 정확도로 변환하는 단계에서만 갈리므로, 캐시된 원본 그대로 재사용해도 무방하다.)
 function loadCachedReviewResult(storageKey, expectedLen, depth) {
   if (!storageKey) return null;
@@ -9030,7 +9028,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
     })();
     return () => { cancelled = true; };
   }, [engine && engine.status, cacheChecked, reviewDepth]);
-  // (v0.3.9 기능) 국면 변동성 보정 토글이 꺼져 있으면 result.whiteAcc/blackAcc(항상 보정 켜짐으로
+  // (v0.3.9 기능) 포지션 변동성 보정 토글이 꺼져 있으면 result.whiteAcc/blackAcc(항상 보정 켜짐으로
   // 계산됨)를 그대로 쓰지 않고, 저장된 원본 손실·날카로움 값에서 그 자리에서 다시 변환한다(재분석
   // 없음 — reviewPhaseAccuracy가 ReviewSummary 내부 계산과 완전히 같은 경로를 탄다).
   const liveWhiteAcc = useMemo(() => result ? reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, true, sharpOn) : null, [result, sharpOn]);
@@ -14182,28 +14180,34 @@ function summarizePosition(board, userColor) {
   if (diff <= -1) return "지금 기물이 조금 부족해요 — 포지션을 뒤집을 수를 찾아보세요.";
   return "기물 점수는 팽팽해요 — 포지션을 유리하게 이끌 수를 찾아보세요.";
 }
-// (사용자 요청) 퍼즐 라인 클리어 — 어두운 반투명 배경 위에 "LINE"(갈색)·"CLEAR"(금색)이 각각
-// 좌·우에서 회전하며 튕겨 들어오는 역동적인 배너. trigger(라인 태그)가 바뀔 때마다 key로 리마운트돼
-// 다시 재생된다. 보드/모식도 페이저 위에 pointer-events:none으로 얹혀 조작을 가리지 않는다.
+// (사용자 요청, v0.3.9) 퍼즐 라인 클리어 — 아래 PuzzleClearBanner와 완전히 같은 디자인·애니메이션
+// (typoLetters 글자별 팝인, 방사형 글로우 배경)을 쓰되, 라인 하나 클리어는 퍼즐 전체 클리어보다
+// 훨씬 자주 일어나는 가벼운 이벤트라 별 아이콘 없이 글자 크기를 조금 줄이고(32px) 재생 시간도 짧게
+// (2.2초) 잡는다 — 그만큼 아래 PuzzleSolver의 celebrate 자동 종료 타이머도 이 길이에 맞춰 늘렸다.
+// trigger(라인 태그)가 바뀔 때마다 key로 리마운트돼 다시 재생된다. 보드/모식도 페이저 위에
+// pointer-events:none으로 얹혀 조작을 가리지 않는다.
 function LineClearBanner({ trigger }) {
   if (!trigger) return null;
   return (
-    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 15, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", animation: "lineClearFade 1.5s ease-out forwards" }}>
+    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 15, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, overflow: "hidden", opacity: 0, animation: "puzzleClearFade 2.2s ease-out both" }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(10,6,3,.55)" }} />
-      <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-        <span style={{ fontFamily: CLEAR_FONT, fontSize: 32, fontWeight: 800, color: T.book, textShadow: "0 3px 10px rgba(0,0,0,.65)", animation: "lineWordInLeft .55s cubic-bezier(.2,1.4,.4,1) both" }}>LINE</span>
-        <span style={{ fontFamily: CLEAR_FONT, fontSize: 32, fontWeight: 800, color: T.brassHi, textShadow: "0 3px 10px rgba(0,0,0,.65)", animation: "lineWordInRight .55s cubic-bezier(.2,1.4,.4,1) both .1s" }}>CLEAR</span>
-      </div>
+      <div aria-hidden="true" style={{ position: "absolute", width: 340, height: 340, borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.28) 0%, rgba(236,203,134,0) 70%)", opacity: 0, animation: "puzzleClearFade 2.2s ease-out .15s both" }} />
+      <div style={{ position: "relative", display: "flex" }}>{typoLetters("LINE", T.book, 0.1, 32)}</div>
+      <div style={{ position: "relative", display: "flex" }}>{typoLetters("CLEAR", T.brassHi, 0.35, 32)}</div>
     </div>
   );
 }
-// (사용자 요청, v0.3.8) 퍼즐 전체 클리어 배너의 "PUZZLE"·"CLEAR" 글자 하나하나가 제각기 다른 각도로
-// 튕겨 들어와 자리를 잡는, 좀더 역동적인 타이포그래피 연출용 헬퍼 — 단어를 통째로 슬라이드시키던
-// 예전 방식 대신 글자 단위로 스태거(stagger)해 포스터 문구 같은 느낌을 낸다.
-function typoLetters(word, color, startDelay) {
+// (사용자 요청, v0.3.8 → v0.3.9 라인 클리어와 공유) 클리어 배너의 글자 하나하나가 제각기 다른
+// 각도로 튕겨 들어와 자리를 잡는 타이포그래피 연출용 헬퍼 — 단어를 통째로 슬라이드시키던 예전
+// 방식 대신 글자 단위로 스태거(stagger)해 포스터 문구 같은 느낌을 낸다. LineClearBanner·
+// PuzzleClearBanner 둘 다 이 헬퍼 하나를 그대로 써서 "완전히 같은 디자인·애니메이션"(사용자 요청)이
+// 되도록 하고, 글자 크기(size)만 배너별로 다르게 준다. 등장 도중에만(--tr) 살짝 회전했다가 각 글자의
+// keyframe(puzzleLetterPop)이 끝나는 시점엔 항상 rotate(0deg)로 되돌아와, 다 자리 잡은 뒤에는 어떤
+// 글자도 기울어져 있지 않다(요청: "텍스트가 기울어지지는 않게").
+function typoLetters(word, color, startDelay, size = 46) {
   return word.split("").map((ch, i) => (
     <span key={i} style={{
-      display: "inline-block", fontFamily: PUZZLE_CLEAR_FONT, fontSize: 46, color,
+      display: "inline-block", fontFamily: CLEAR_TYPO_FONT, fontSize: size, color,
       textShadow: "0 4px 14px rgba(0,0,0,.7)", opacity: 0,
       "--tr": ((i % 2 === 0 ? -1 : 1) * (10 - (i % 3) * 3)) + "deg",
       animation: "puzzleLetterPop .55s cubic-bezier(.22,1.6,.4,1) " + (startDelay + i * 0.05) + "s both",
@@ -14229,9 +14233,12 @@ function PuzzleClearBanner({ trigger }) {
           </span>
         ))}
       </div>
+      {/* (사용자 요청, v0.3.9) 다 자리 잡은 뒤 텍스트가 기울어 보이지 않도록, 단어 전체를 감싸던
+          정적 rotate(-2.5deg)/rotate(2deg) 기울임을 없앴다 — 글자별 등장 모션(typoLetters의 --tr)만
+          으로 충분히 역동적이라 굳이 정지 상태까지 기울일 필요가 없다. */}
       <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-        <div style={{ display: "flex", transform: "rotate(-2.5deg)" }}>{typoLetters("PUZZLE", T.book, 2.0)}</div>
-        <div style={{ display: "flex", transform: "rotate(2deg)" }}>{typoLetters("CLEAR", T.brassHi, 2.35)}</div>
+        <div style={{ display: "flex" }}>{typoLetters("PUZZLE", T.book, 2.0)}</div>
+        <div style={{ display: "flex" }}>{typoLetters("CLEAR", T.brassHi, 2.35)}</div>
       </div>
     </div>
   );
@@ -14634,15 +14641,17 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // 타이머 자체가 예약되지 않으므로 중복 전환도 없다. (v0.3.5) 자동 전환을 미리 당기는 용도였던
   // "다음 라인 풀기" 수동 버튼은 이제 중복이라 없앴다 — 이 자동 전환이 유일한 경로다.
   // (v0.3.8 버그 수정) 퍼즐 전체 클리어 배너(1.1s 지연 + 4.2s 재생 = 총 5.3초)가 라인 클리어
-  // 배너(1.5초)보다 훨씬 길어졌는데, 이 타이머가 항상 2.4초로 고정돼 있어 전체 클리어일 때 글자가
-  // 다 나오기도 전에 배너가 통째로 잘려 사라졌다(사용자 요청 원인) — 전체 클리어일 때는 배너 재생이
-  // 다 끝난 뒤에도 "조금 더" 기다렸다가(요청) 닫히도록 여유(0.9초)를 더해 총 6.2초로 늘린다.
+  // 배너보다 훨씬 길어졌는데, 이 타이머가 항상 고정돼 있으면 전체 클리어일 때 글자가 다 나오기도
+  // 전에 배너가 통째로 잘려 사라진다(사용자 요청 원인) — 전체 클리어일 때는 배너 재생이 다 끝난
+  // 뒤에도 "조금 더" 기다렸다가(요청) 닫히도록 여유(0.9초)를 더해 총 6.2초로 늘린다. (v0.3.9) 라인
+  // 클리어 배너도 PuzzleClearBanner와 같은 디자인·애니메이션으로 바뀌며 재생 시간이 1.5초→2.2초로
+  // 늘어, 이쪽 타이머도 함께 늘려(2.4초→2.7초, 배너가 다 끝난 뒤 약 0.5초 여유) 잘리지 않게 한다.
   useEffect(() => {
     if (!celebrate) return;
     const t = setTimeout(() => {
       if (!fullyComplete && nextTag != null) gotoLine(nextTag);
       else setCelebrate(null);
-    }, fullyComplete ? 6200 : 2400);
+    }, fullyComplete ? 6200 : 2700);
     return () => clearTimeout(t);
   }, [celebrate, fullyComplete, nextTag]);
   const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
@@ -17336,7 +17345,9 @@ const CHANGELOG = [
       "퍼즐을 모두 풀었을 때 뜨는 PUZZLE CLEAR 애니메이션의 폰트가 바뀌고, 글자가 하나씩 튕겨 들어오는 더 역동적인 연출로 바뀌었어요. 재생 시간도 늘고, 다 보인 뒤 창이 닫히기까지 여유를 더 줬어요.",
       "같은 대국을 리뷰로 다시 열 때마다 정확도가 미세하게 달라지던 문제를 고쳤어요 — 이제 한 번 분석이 끝나면 그 결과를 그대로 저장해 뒀다가, 다시 열 때 항상 똑같은 값을 보여줘요.",
       "게임 리뷰 중 일부 포지션이 드물게 분석에 실패해 그 수의 정확도 반영이 빠지던 문제를 줄였어요(재시도 횟수 확대).",
-      "설정 탭의 분석 엔진 카드가 '리뷰 설정' 카드로 확장됐어요 — 게임 리뷰 속도를 '더 빠르게'/'더 정확하게'(depth 25) 중에 고를 수 있고, 국면 변동성 보정(날카로운 포지션의 실수를 더 엄격하게 반영하는 기능)을 켜고 끌 수 있어요. 보정을 껐다 켜도 다시 분석할 필요 없이 그 자리에서 바로 값이 바뀌어요.",
+      "설정 탭의 분석 엔진 카드가 '리뷰 설정' 카드로 확장됐어요 — 게임 리뷰 속도를 '더 빠르게'(depth=20)/'더 정확하게'(depth=25) 중에 고를 수 있고, 포지션 변동성 보정(날카로운 포지션의 실수를 더 엄격하게 반영하는 기능)을 켜고 끌 수 있어요. 보정을 껐다 켜도 다시 분석할 필요 없이 그 자리에서 바로 값이 바뀌어요.",
+      "LINE CLEAR 배너가 PUZZLE CLEAR와 똑같은 디자인(글자가 하나씩 튕겨 들어오는 연출)으로 바뀌었어요. 두 배너 모두 다 자리 잡은 뒤에는 글자가 기울어져 보이지 않아요.",
+      "/about 페이지에 이번 정확도 체계를 실제 수식·그래프로 소개하는 섹션이 새로 생겼어요.",
     ]
   },
   {
@@ -18652,7 +18663,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       {/* (v0.2.4 개편 → v0.3.5 통합 → v0.3.9 "리뷰 설정" 카드로 확장) 원래는 분석 엔진 선택만 있던
           카드였다(학습/퍼즐 탭 및 사이트 전반의 분석은 물론 게임 리뷰도 여기서 고른 엔진을 그대로
           쓴다). 사용자 요청으로 게임 리뷰에만 영향을 주는 두 설정 — 리뷰 속도(더 빠르게/더
-          정확하게)와 국면 변동성 보정 on/off — 을 같은 카드에 추가해 "리뷰 설정"으로 확장한다. */}
+          정확하게)와 포지션 변동성 보정 on/off — 을 같은 카드에 추가해 "리뷰 설정"으로 확장한다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>리뷰 설정</div>
@@ -18688,7 +18699,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             25까지 더 파고들게 되고, 그만큼 리뷰 전체 시간도 자연히 늘어난다. */}
         <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>리뷰 속도</div>
         <div style={{ display: "flex", gap: 8 }}>
-          {[{ id: "fast", label: "더 빠르게", desc: "기존과 동일한 속도" }, { id: "accurate", label: "더 정확하게", desc: "depth 25, 더 오래 걸려요" }].map((o) => {
+          {[{ id: "fast", label: "더 빠르게", desc: "depth=" + REVIEW_DEPTH }, { id: "accurate", label: "더 정확하게", desc: "depth=25" }].map((o) => {
             const on = reviewSpeed === o.id;
             return (
               <button key={o.id} onClick={() => setReviewSpeed(o.id)} className="press"
@@ -18706,13 +18717,13 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
 
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
-        {/* (v0.3.9 기능) 사용자 요청 — 국면 변동성 보정(후보 수끼리 평가가 얼마나 팽팽했는지에 따라
+        {/* (v0.3.9 기능) 사용자 요청 — 포지션 변동성 보정(후보 수끼리 평가가 얼마나 팽팽했는지에 따라
             그 수의 손실을 더 엄격하게/관대하게 반영하는, chess.com 실제 방식을 본뜬 가중치) 자체를
             켜고 끌 수 있게 한다. 꺼도 재분석은 필요 없다 — 이미 저장된 손실·날카로움 값에서 최종
             정확도로 변환하는 마지막 단계만 건너뛴다(reviewPhaseAccuracy/buildRevealData 참고). */}
         <div className="flex items-center justify-between">
           <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>국면 변동성 보정</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>포지션 변동성 보정</div>
             <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>날카로운 국면의 실수를 더 엄격하게 반영해요</div>
           </div>
           <button onClick={() => setSharpOn(!sharpOn)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sharpOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: sharpOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
@@ -23469,7 +23480,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes lineClearFade{0%{opacity:0}10%{opacity:1}72%{opacity:1}100%{opacity:0}} @keyframes lineWordInLeft{0%{transform:translateX(-170px) rotate(-14deg) scale(.55);opacity:0}60%{transform:translateX(6px) rotate(3deg) scale(1.08);opacity:1}100%{transform:translateX(0) rotate(0deg) scale(1);opacity:1}} @keyframes lineWordInRight{0%{transform:translateX(170px) rotate(14deg) scale(.55);opacity:0}60%{transform:translateX(-6px) rotate(-3deg) scale(1.08);opacity:1}100%{transform:translateX(0) rotate(0deg) scale(1);opacity:1}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
