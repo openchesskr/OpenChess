@@ -13218,21 +13218,27 @@ function questLabel(q) {
   const side = questOpeningSide(q.opening);
   return "chess.com에서 " + (side ? side + "으로 " : "") + (q.opening || "오프닝") + " 1회 플레이하기";
 }
-// (사용자 요청) 퀘스트 문구 속 "chess.com"에 밑줄 + 실제 chess.com 하이퍼링크를 건다 — 일반 https
-// 링크라 모바일에 chess.com 앱이 설치돼 있으면 OS가 알아서 앱으로 열어준다(유니버설/앱 링크, 별도
-// 커스텀 스킴 불필요). target="_blank"(새 창/탭)으로 열면 대부분의 모바일 브라우저가 유니버설 링크
-// 가로채기를 건너뛰고 항상 웹사이트로 열어버리므로 같은 탭에서 이동시킨다(v0.3.3에서 이미 고침).
-// (v0.3.4 버그 수정) 그렇게 해도 여전히 웹사이트로만 열린다는 신고 — iOS는 사용자가 예전에 그
-// 도메인을 "브라우저에서 열기"로 한 번이라도 선택한 적이 있으면(또는 애초에 그 경로가 유니버설
-// 링크 대상에 포함돼 있지 않으면) 이후로도 계속 웹사이트로만 열리는 잘 알려진 제약이 있다 —
-// chess.com 자체 사이트에 별도 "앱으로 열기" 버튼이 있는 것도 순수 유니버설 링크만으로는 이 상황을
-// 못 벗어나기 때문으로 보인다. 순수 https 링크 하나로는 그 버튼과 똑같은 동작을 재현할 수 없어,
-// 스마트 배너들이 쓰는 표준 폴백 패턴을 추가했다 — 평소처럼 https 링크로 이동을 시도하고, 짧은
-// 시간(APP_FALLBACK_MS) 안에도 이 페이지를 실제로 떠나지 않으면(=OS가 앱으로 가로채지 못한 것)
-// 앱스토어/플레이스토어로 대신 보낸다. 앱이 이미 설치돼 있으면 스토어 링크를 열 때 OS가 스토어
-// 대신 앱을 직접 여는 경우가 많고, 안 열리더라도 최소한 설치 페이지까지는 한 번의 탭으로 확실히
-// 도착하므로, 평범한 웹사이트에 그대로 머무르는 것보다는 낫다. 페이지를 실제로 떠났다면(앱 전환·탭
-// 전환 등으로 visibilitychange/pagehide 발생) 타이머를 취소해 불필요한 스토어 이동을 하지 않는다.
+// (사용자 요청) 퀘스트 문구 속 "chess.com"에 밑줄 + 실제 chess.com 하이퍼링크를 건다 — 모바일에
+// chess.com 앱이 설치돼 있으면 OS가 앱으로 열어주길 기대했다(유니버설/앱 링크). target="_blank"(새
+// 창/탭)으로 열면 대부분의 모바일 브라우저가 유니버설 링크 가로채기를 건너뛰고 항상 웹사이트로
+// 열어버리므로 같은 탭에서 이동시킨다(v0.3.3에서 이미 고침).
+// (v0.3.4 버그 수정) 그렇게 해도 여전히 웹사이트로만 열린다는 신고 — 순수 https 링크 하나로는 그
+// 사이트 자체의 "앱으로 열기" 버튼과 똑같은 동작을 재현할 수 없어, 스마트 배너들이 쓰는 표준 폴백
+// 패턴을 추가했었다 — 평소처럼 https 링크로 이동을 시도하고, 짧은 시간(APP_FALLBACK_MS) 안에도 이
+// 페이지를 실제로 떠나지 않으면(=OS가 앱으로 가로채지 못한 것) 앱스토어/플레이스토어로 대신 보낸다.
+// (v0.3.9 버그 수정) 그 폴백을 추가하고도 여전히 안 열린다는 재신고 — 실기기(Android)로 직접
+// 재현해보니 `chess.com`/`chess.com/home`/`chess.com/play/online`처럼 우리가 짐작으로 골랐던
+// 경로는 전부 웹사이트로만 열리는데, chess.com 웹사이트 자신의 "Get App" 버튼(길게 눌러 링크 주소
+// 확인함)은 `chess.com/register?returnUrl=...`로 연결돼 있고 이건 실제로 앱을 직접 연다 — 즉
+// chess.com이 앱 링크(Android App Links/iOS 유니버설 링크)에 등록해 둔 경로가 우리가 짐작했던
+// 마케팅/로비 페이지들이 아니라 이 회원가입 경로였던 것. 그래서 짐작이 아니라 chess.com이 자기
+// "앱 열기" 버튼에 실제로 쓰는 이 URL을 그대로 재사용한다 — 앱이 이미 설치돼 있으면 앱을 직접 열고
+// (실제 계정 유무와 무관하게 그런 것으로 보임 — chess.com도 기존 웹 사용자가 이 버튼을 누를 걸
+// 알고 만들었을 것), 없는 사람만 진짜 가입 페이지로 넘어간다. 아래 스토어 폴백은 이 URL로도 못
+// 여는 극소수 상황(iOS의 "항상 브라우저에서 열기" 고정 설정 등, OS 차원의 제약이라 클라이언트
+// 코드로 우회 불가)을 위한 안전망으로 그대로 둔다. 페이지를 실제로 떠났다면(앱 전환·탭 전환 등으로
+// visibilitychange/pagehide 발생) 타이머를 취소해 불필요한 스토어 이동을 하지 않는다.
+const CHESSCOM_GET_APP_URL = "https://www.chess.com/register?returnUrl=https://www.chess.com/";
 const CHESSCOM_APP_STORE = { ios: "https://apps.apple.com/app/id329218549", android: "https://play.google.com/store/apps/details?id=com.chess" };
 function chesscomMobilePlatform() {
   if (typeof navigator === "undefined") return null;
@@ -13254,7 +13260,7 @@ function ChesscomTextLink({ children }) {
     document.addEventListener("visibilitychange", cancel);
     window.addEventListener("pagehide", cancel);
   };
-  return <a href="https://www.chess.com" onClick={onClick} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
+  return <a href={CHESSCOM_GET_APP_URL} onClick={onClick} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
 }
 function questLabelNode(q) {
   const text = questLabel(q);
