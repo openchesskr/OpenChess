@@ -3623,11 +3623,17 @@ function EvalBar({ cp, width, depth, vertical }) {
               있었는데, 바깥 인디케이터가 흑 유리 시 left:4로(=바 왼쪽 끝 근처) 옮겨가도 말풍선은 여전히
               그 좁은 인디케이터의 오른쪽 끝에서부터 왼쪽으로 자라 나가 바/보드 왼쪽 바깥으로 넘어갔다 —
               모바일 좁은 화면에서 잘려 보인 원인. 인디케이터와 같은 조건으로 말풍선도 반대편(왼쪽 유리
-              시 left:0, 오른쪽으로 확장)으로 뒤집어 항상 바 안쪽으로만 자라도록 한다. 꼬리표(삼각형)도
-              같은 쪽 모서리로 맞춰 뒤집는다. */}
+              시 left:0, 오른쪽으로 확장)으로 뒤집어 항상 바 안쪽으로만 자라도록 한다. */}
+          {/* (v0.3.9 버그 수정, 2차) 위 수정에서 꼬리표(삼각형)의 테두리 쪽도 borderLeft로 함께
+              뒤집었는데, 이건 잘못이었다 — rotate(45deg)는 정사각형의 "우하단" 모서리를 화면상
+              "정하단"으로 보낸다(다른 세 모서리는 각각 상/우/좌로 감), 그래서 아래로 뾰족하게 보이려면
+              항상 borderRight+borderBottom 조합이어야 하고, 왼쪽으로 뒤집어야 하는 건 이 사각형
+              자체의 좌우 위치(left/right: 10)뿐이다 — 테두리까지 같이 뒤집으면 꼬리가 아래가 아니라
+              옆(왼쪽)을 향한 모양으로 비뚤어져 보인다(사용자 신고 "모양이 왜곡되는 문제"의 원인).
+              위치만 좌우로 바꾸고 테두리 조합은 두 경우 모두 동일하게 유지한다. */}
           {tipOpen && (
             <span style={{ position: "absolute", bottom: 24, whiteSpace: "nowrap", background: "rgba(20,12,6,.97)", color: T.ivoryHi, fontSize: 10.5, fontWeight: 700, borderRadius: 8, border: "1px solid " + T.brass, padding: "5px 9px", zIndex: 999, boxShadow: "0 6px 16px -6px rgba(0,0,0,.6)", ...(num >= 0 ? { right: 0 } : { left: 0 }) }}>
-              <span style={{ position: "absolute", bottom: -4, width: 7, height: 7, background: "rgba(20,12,6,.97)", transform: "rotate(45deg)", ...(num >= 0 ? { right: 10, borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass } : { left: 10, borderLeft: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass }) }} />
+              <span style={{ position: "absolute", bottom: -4, width: 7, height: 7, background: "rgba(20,12,6,.97)", transform: "rotate(45deg)", borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass, ...(num >= 0 ? { right: 10 } : { left: 10 }) }} />
               {depth}수 후까지 탐색 중..
             </span>
           )}
@@ -3958,7 +3964,8 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const [ptrDrag, setPtrDrag] = useState(null); // { r, c, x, y } — 드래그 임계값을 넘겼을 때만 채워짐(고스트 표시용)
   // (사용자 요청) 드래그 인식을 조금 더 빠르게(더 적은 이동만으로 탭과 구분) 하기 위해 5px→4px로
   // 살짝 낮췄다 — 단순 탭(거의 0px 이동)과는 여전히 뚜렷이 구분되면서, 드래그 의도를 더 일찍 반응한다.
-  const DRAG_THRESHOLD = 4;
+  // (v0.3.9 재조정) "인식 감도를 더 올려달라"는 재요청 — 4px에서 3px로 한 번 더 낮춘다.
+  const DRAG_THRESHOLD = 3;
   // (사용자 요청) "빠르고 부정확하게 드래그해도 인식되도록" — 예전엔 손을 뗀 지점이 보드 칸 안에
   // 정확히 들어와야만 그 칸으로 인식하고, 조금이라도 벗어나면(빠른 드래그일수록 흔함 — 손가락이
   // 목표 칸을 살짝 지나치거나, pointermove 샘플링 간격 때문에 마지막 좌표가 칸 경계 바로 밖에서
@@ -3981,11 +3988,13 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   // 좌표가 실제로 손가락이 향하던 지점보다 앞서(=목표 칸에 못 미쳐) 잡히는 경향이 있다. 최근 몇 개
   // 샘플의 이동 방향·속도(px/ms)를 재 두었다가 손을 뗄 때 아주 짧게(DRAG_LOOKAHEAD_MS) 그 방향으로
   // 외삽해, 손을 뗀 좌표가 아니라 "손가락이 향하던 좌표"에 더 가까운 지점을 놓을 칸 판정에 쓴다.
-  // 외삽량은 반 칸(cell*0.5)으로 클램프해 두어 저속·정밀 드래그(속도≈0 → 보정량도 거의 0, 기존 동작과
-  // 동일)에는 영향이 없고, 샘플 노이즈로 순간 속도가 튀어도 최대 한 칸 너머까지만 밀어준다(여러 칸을
-  // 건너뛰지 않음). 외삽된 지점이 보드 경계 밖으로 나가 판정에 실패하면(null) 원래 좌표로 다시
-  // 시도해 이 보정이 있기 전보다 성공률이 떨어지는 경우가 생기지 않게 한다.
-  const DRAG_LOOKAHEAD_MS = 45;
+  // 외삽량은 클램프해 두어 저속·정밀 드래그(속도≈0 → 보정량도 거의 0, 기존 동작과 동일)에는 영향이
+  // 없고, 샘플 노이즈로 순간 속도가 튀어도 그 클램프 너머까지는 밀어주지 않는다(여러 칸을 건너뛰지
+  // 않음). 외삽된 지점이 보드 경계 밖으로 나가 판정에 실패하면(null) 원래 좌표로 다시 시도해 이
+  // 보정이 있기 전보다 성공률이 떨어지는 경우가 생기지 않게 한다.
+  // (v0.3.9 재조정) "인식 감도를 더 올려달라"는 재요청 — 외삽 시간을 45ms→65ms로 늘리고, 클램프 상한도
+  // 반 칸(0.5)에서 0.65칸으로 넓혀 빠른 드래그의 보정 폭 자체를 키웠다.
+  const DRAG_LOOKAHEAD_MS = 65;
   const onPiecePointerDown = (e, r, c) => {
     if (!interactive || !onPieceDrag) return;
     e.preventDefault();
@@ -4009,7 +4018,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     const dt = last.t - first.t;
     if (!(dt > 0)) return { x: clientX, y: clientY };
     const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
-    const maxOffset = cell * 0.5;
+    const maxOffset = cell * 0.65;
     const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
     const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
     return { x: clientX + offX, y: clientY + offY };
@@ -4473,7 +4482,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const dragStartRef = useRef(null); // { source:"board"|"palette", from:[r,c]|null, piece:{c,t}, x, y }
   const suppressClickRef = useRef(false);
   const [ptrDrag, setPtrDrag] = useState(null); // 위와 동일한 모양 — 드래그 임계값을 넘겼을 때만 채워짐(고스트/딤 처리용)
-  const DRAG_THRESHOLD = 4;
+  const DRAG_THRESHOLD = 3; // (v0.3.9 재조정) 인식 감도 상향 — Board 컴포넌트와 동일하게 4→3
   const onSqClickGuarded = (r, c) => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } onSqClick(r, c); };
   const paletteClick = (fn) => () => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } fn(); };
   const squareFromClient = (clientX, clientY) => {
@@ -4486,9 +4495,9 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     return flipped ? [7 - vr, 7 - vc] : [vr, vc];
   };
   // (사용자 요청) Board 컴포넌트와 동일한 드래그 무브 개선 — 최근 이동 방향·속도로 놓는 지점을 아주
-  // 짧게 외삽해(반 칸 이내로 클램프) 빠른 드래그가 목표 칸에 못 미쳐 취소되는 경우를 줄인다. 자세한
-  // 이유는 Board 컴포넌트의 같은 이름 상수 주석 참고.
-  const DRAG_LOOKAHEAD_MS = 45;
+  // 짧게 외삽해(클램프 이내로) 빠른 드래그가 목표 칸에 못 미쳐 취소되는 경우를 줄인다. 자세한 이유는
+  // Board 컴포넌트의 같은 이름 상수 주석 참고. (v0.3.9 재조정) 인식 감도 상향 — 45ms→65ms.
+  const DRAG_LOOKAHEAD_MS = 65;
   const startDragFromBoard = (e, r, c) => {
     if (tool) return; // 도구가 활성화된 동안은 클릭 스탬프만 — 드래그는 도구가 없을 때만 시작
     const piece = board[r][c]; if (!piece) return;
@@ -4517,7 +4526,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     const dt = last.t - first.t;
     if (!(dt > 0)) return { x: clientX, y: clientY };
     const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
-    const maxOffset = (gridRef.current ? gridRef.current.getBoundingClientRect().width / 8 : 0) * 0.5;
+    const maxOffset = (gridRef.current ? gridRef.current.getBoundingClientRect().width / 8 : 0) * 0.65;
     const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
     const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
     return { x: clientX + offX, y: clientY + offY };
