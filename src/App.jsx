@@ -459,7 +459,8 @@ const ENGINE_PROFILES = {
   },
 };
 // (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
-const ANALYSIS_ENGINE_IDS = ["lite", "full17", "full18"];
+// (v0.3.9 재조정) 사용자 요청 — Stockfish 18(정식, 셋 중 가장 강력함)을 목록 맨 위로.
+const ANALYSIS_ENGINE_IDS = ["full18", "lite", "full17"];
 // (성능) SharedArrayBuffer 기반 멀티스레드 Stockfish는 교차 출처 격리(Cross-Origin-Opener/Embedder
 // Policy)가 걸린 페이지에서만 쓸 수 있다 — vite.config.js(개발)·vercel.json(배포)에서 헤더를 설정해
 // 뒀을 때만 true가 된다. 격리가 안 된 환경(구형 브라우저, 헤더 미지원 배포지 등)에서는 이 값이
@@ -3010,8 +3011,21 @@ const analysisPoolCache = new Map(); // profile -> Promise<worker[]>
 // (성능) 풀 크기 — 기기가 가진 코어 수만큼 그대로 다 쓴다. 발열·CPU 점유율은 감수하더라도(사용자
 // 요청) 렉 없이 최대 성능을 내는 쪽을 택한다 — 예전처럼 프로필별로 낮게 캡을 걸어 코어를 남겨두지
 // 않는다. 비정상적으로 큰 값이 보고되는 극단적인 경우에 대비한 넉넉한 안전 상한(32)만 둔다.
+// (v0.3.9 버그 수정) 단, 신경망이 커서 조각(-part-N.wasm)째로 fetch+컴파일해야 하는 프로필(full17/
+// full18, ENGINE_PROFILES의 parts)은 예외다 — getAnalysisPool은 Promise.all로 풀 크기만큼 워커를
+// 한꺼번에 부팅해 전부 끝나야 리뷰를 시작하는데, 코어 수(최대 32)만큼 띄우면 같은 100MB급 파일을
+// 그만큼 중복으로 동시에 받고 동시에 컴파일해야 해 대역폭·CPU 경합으로 부팅 자체가 훨씬 오래 걸리고
+// (저사양 기기는 메모리 압박까지 겹친다) — 사용자가 Stockfish 18(정식)+depth 25로 리뷰를 돌렸을 때
+// 몇몇 수의 아이콘이 계속 "계산 중"에 머물고 엔진 라인도 첫 movetime 안에 안 뜨던 원인이 바로 이
+// 부팅 지연이었다(헤드리스 브라우저로 재현·실측함 — 워커 하나만 놓고 재보면 초당 탐색 노드 수는
+// Lite와 사실상 동일했다. 즉 탐색 자체가 느린 게 아니라 "리뷰 시작 전 부팅"이 병목이었다). 가벼운
+// Lite는 기존처럼 코어 수를 그대로 쓰고, 신경망이 큰 프로필만 풀을 작게(2) 고정해 중복 부팅 비용을
+// 크게 줄인다.
+const HEAVY_ENGINE_POOL_SIZE = 2;
 function analyzePoolSize(profile) {
   const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
+  const prof = ENGINE_PROFILES[profile];
+  if (prof && prof.parts) return HEAVY_ENGINE_POOL_SIZE;
   return Math.max(2, Math.min(cores, 32));
 }
 function getAnalysisPool(profile, urls) {
