@@ -477,6 +477,17 @@ function loadEnginePref() {
   return defaultEnginePref();
 }
 function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, v); } catch { } }
+// (v0.3.9 기능) 사용자 요청 — 설정 탭 "리뷰 설정" 카드의 리뷰 속도(더 빠르게=depth 20 그대로/
+// 더 정확하게=depth 25) 선택. 엔진 선택과 같은 패턴으로 이 기기에만 저장한다.
+const REVIEW_SPEED_PREF_KEY = "occ_review_speed_pref";
+function loadReviewSpeedPref() { try { return window.localStorage.getItem(REVIEW_SPEED_PREF_KEY) === "accurate" ? "accurate" : "fast"; } catch { return "fast"; } }
+function saveReviewSpeedPref(v) { try { window.localStorage.setItem(REVIEW_SPEED_PREF_KEY, v); } catch { } }
+// (v0.3.9 기능) 사용자 요청 — 국면 변동성 보정(sharpLossMultiplier, "날카로운 국면일수록 실수를 더
+// 엄격하게 반영") on/off. 기본은 켜짐(기존 동작 그대로) — 꺼도 재분석이 필요 없다(원본 손실·날카로움
+// 값은 그대로 저장돼 있고, 최종 정확도 변환에서만 이 배율을 적용하거나 건너뛴다).
+const REVIEW_VOLATILITY_PREF_KEY = "occ_review_volatility_pref";
+function loadReviewVolatilityPref() { try { return window.localStorage.getItem(REVIEW_VOLATILITY_PREF_KEY) !== "0"; } catch { return true; } }
+function saveReviewVolatilityPref(v) { try { window.localStorage.setItem(REVIEW_VOLATILITY_PREF_KEY, v ? "1" : "0"); } catch { } }
 // (v0.1.4 기능) 배경음악(BGM) on/off 기기별 저장 — 브라우저 자동재생 정책상 첫 방문에는 소리 있는
 // 재생이 항상 막히므로, 이 값은 "사용자의 의도"만 기억하고 실제 재생 성공 여부는 <audio> 이벤트로
 // 별도 추적한다(loadBgmPref()가 true여도 처음엔 무음 상태로 시작할 수 있음 — 버튼을 한 번 누르면
@@ -2759,7 +2770,10 @@ function normalCdf(z) {
 }
 // 포지션 날카로움(sharp, 승률%p 표준편차) → 그 수의 손실에 곱할 배율. 절대 기준(SHARP_REF_MEAN/SD)
 // 대비 이 포지션이 얼마나 날카로웠는지의 백분위(Φ)를 [LO,HI] 구간으로 매핑한다.
-function sharpLossMultiplier(sharp) {
+// (v0.3.9 기능) 사용자 요청 — 설정 탭에서 이 "국면 변동성 보정"(chess.com 실제 방식을 본뜬 날카로움
+// 가중치) 자체를 끌 수 있게 한다. on=false면 항상 배율 1(보정 없음, 손실을 그대로 씀)을 돌려준다.
+function sharpLossMultiplier(sharp, on = true) {
+  if (!on) return 1;
   const z = ((sharp || 0) - SHARP_REF_MEAN) / SHARP_REF_SD;
   return NEW_ACC_SHARP_LO + (NEW_ACC_SHARP_HI - NEW_ACC_SHARP_LO) * normalCdf(z);
 }
@@ -2782,11 +2796,11 @@ function newAccuracyFromAvgLoss(avgLossWinPct) {
 // n으로 나누는 구조 자체(조화평균도 결국 n/Σ(1/acc_i)로, n이 커질수록 각 항의 상대적 비중이 줄어듦)로
 // 그대로 유지된다. 손실이 정확히 0인 수는 어떤 방식으로도 정확도 100을 그대로 유지한다(0에 무엇을
 // 곱해도 0 → newAccuracyFromAvgLoss(0)=100).
-function newCumulativeAccuracy(losses, sharps, n) {
+function newCumulativeAccuracy(losses, sharps, n, sharpOn = true) {
   if (n <= 0 || !losses.length) return null;
   let sumInvAcc = 0;
   for (let i = 0; i < n; i++) {
-    const adjLoss = losses[i] * sharpLossMultiplier(sharps[i]);
+    const adjLoss = losses[i] * sharpLossMultiplier(sharps[i], sharpOn);
     const acc = newAccuracyFromAvgLoss(adjLoss);
     sumInvAcc += 1 / Math.max(0.5, acc); // (버그 수정) 정확도가 0에 근접하는 극단적 블런더에서 1/acc가 발산하지 않도록 최소값을 둔다.
   }
@@ -8164,13 +8178,13 @@ function reviewPhaseHighlight(moves, fromPly, toPly, white) {
 // 미들게임 구간만 따로 떼어 잰 값이 아니라 오프닝부터 미들게임 끝까지 누적된 값이다(사용자 설계:
 // 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지는 게 의도된 동작). "엔드게임
 // 정확도"는 그래서 항상 그 진영의 게임 전체 정확도(whiteAcc/blackAcc)와 같아진다.
-function reviewPhaseAccuracy(moves, fromPly, toPly, white) {
+function reviewPhaseAccuracy(moves, fromPly, toPly, white, sharpOn = true) {
   const losses = [], sharps = [];
   for (let i = 0; i <= toPly && i < moves.length; i++) {
     const m = moves[i]; if (m.white !== white || m.lossWinPct == null) continue;
     losses.push(m.lossWinPct); sharps.push(m.sharp);
   }
-  return newCumulativeAccuracy(losses, sharps, losses.length);
+  return newCumulativeAccuracy(losses, sharps, losses.length, sharpOn);
 }
 // (v0.2.1) 오프닝처럼 하이라이트할 비이론 수가 없는 단계는, 이론 수를 아이콘으로 쓰지 않고 그 단계·진영의
 // 정확도로 대표 등급을 정해 아이콘을 표시한다(chess.com 정확도 구간을 참고한 근사 매핑).
@@ -8254,8 +8268,14 @@ function PhaseAccBubble({ text }) {
 // 평가 그래프 → 플레이어·정확성 → 등급별 개수 → 단계별 하이라이트 → 리뷰 시작)로 구성한다.
 // (설계) chess.com의 "Game Rating"(대국 퍼포먼스 레이팅 추정치)은 별도의 통계적 산출 방식이 필요해
 // 이 배치에서 근거 없는 숫자를 지어내기보다 생략한다 — 나머지 항목은 전부 analyzeGame의 실제 결과다.
-function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
+function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   const { openEnd, endStart } = useMemo(() => reviewGamePhases(result.moves), [result.moves]);
+  // (v0.3.9 기능) 사용자 요청 — 설정 탭의 "국면 변동성 보정" 토글이 꺼져 있으면, 분석 시점에 저장해 둔
+  // result.whiteAcc/blackAcc(항상 보정 켜짐으로 계산됨)를 그대로 쓰지 않고 원본 손실(lossWinPct)·
+  // 날카로움(sharp)에서 그 자리에서 다시 계산한다 — 재분석(엔진 재호출) 없이도 토글이 즉시 반영되고,
+  // 아래 단계별 정확도(phases)와 항상 같은 계산 경로를 타서 서로 어긋나지 않는다.
+  const fullWhiteAcc = useMemo(() => reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, true, sharpOn), [result.moves, sharpOn]);
+  const fullBlackAcc = useMemo(() => reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, false, sharpOn), [result.moves, sharpOn]);
   const hasEndgame = endStart < result.moves.length;
   const midTo = hasEndgame ? endStart - 1 : result.moves.length - 1;
   const phaseRanges = [
@@ -8267,8 +8287,8 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
     label: r.label, from: r.from, to: r.to,
     w: r.to >= r.from ? reviewPhaseHighlight(result.moves, r.from, r.to, true) : null,
     b: r.to >= r.from ? reviewPhaseHighlight(result.moves, r.from, r.to, false) : null,
-    wAcc: r.to >= r.from ? reviewPhaseAccuracy(result.moves, r.from, r.to, true) : null,
-    bAcc: r.to >= r.from ? reviewPhaseAccuracy(result.moves, r.from, r.to, false) : null,
+    wAcc: r.to >= r.from ? reviewPhaseAccuracy(result.moves, r.from, r.to, true, sharpOn) : null,
+    bAcc: r.to >= r.from ? reviewPhaseAccuracy(result.moves, r.from, r.to, false, sharpOn) : null,
   }));
   // (v0.2.1) 단계 아이콘을 누르면 그 단계·진영의 부분 정확도를 잠깐 보여준다(등급 설명 대신).
   const [accShow, setAccShow] = useState(null); // "라벨:side"
@@ -8300,8 +8320,8 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow }) {
         </div>
       </div>
       <div className="flex items-stretch" style={{ gap: 10, marginBottom: 16 }}>
-        <ReviewAccuracyPill label="정확성" value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} layoutId="review-acc-w" />
-        <ReviewAccuracyPill label="정확성" value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} layoutId="review-acc-b" />
+        <ReviewAccuracyPill label="정확성" value={fullWhiteAcc} hi={(fullWhiteAcc || 0) >= (fullBlackAcc || 0)} layoutId="review-acc-w" />
+        <ReviewAccuracyPill label="정확성" value={fullBlackAcc} hi={(fullBlackAcc || 0) > (fullWhiteAcc || 0)} layoutId="review-acc-b" />
       </div>
       <ReviewKindTable moves={result.moves} showAll onPick={onPickMove} />
       {/* (v0.2.1) 세 단계(오프닝/미들게임/엔드게임)를 모두 보여준다 — 그 단계에 수가 없으면(예: 엔드게임 미도달)
@@ -8573,37 +8593,44 @@ function reviewResultStorageKey(game) {
   const posKey = reviewStorageKey(game);
   return posKey ? posKey.replace("oc-review-pos:", "oc-review-result:") : null;
 }
-function loadCachedReviewResult(storageKey, expectedLen) {
+// (v0.3.9 기능) "더 빠르게"/"더 정확하게"(depth 20/25)가 서로 다른 분석 결과를 만들어내므로, 캐시된
+// 결과가 지금 선택된 속도와 다른 depth로 분석된 것이면(예: depth 20으로 캐시돼 있는데 방금 "더
+// 정확하게"로 바꿈) 재사용하지 않고 새로 분석한다 — depth는 저장된 값에 함께 실어(`d`) 대조한다.
+// (국면 변동성 보정 on/off는 여기 영향을 안 준다 — 분석 자체가 아니라 이미 저장된 손실·날카로움
+// 값을 최종 정확도로 변환하는 단계에서만 갈리므로, 캐시된 원본 그대로 재사용해도 무방하다.)
+function loadCachedReviewResult(storageKey, expectedLen, depth) {
   if (!storageKey) return null;
   try {
     const raw = window.localStorage.getItem(storageKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.v !== REVIEW_RESULT_CACHE_VERSION || !parsed.result) return null;
+    if (depth != null && parsed.d !== depth) return null;
     if (expectedLen != null && (!parsed.result.moves || parsed.result.moves.length !== expectedLen)) return null;
     return parsed.result;
   } catch { return null; }
 }
-function saveCachedReviewResult(storageKey, result) {
+function saveCachedReviewResult(storageKey, result, depth) {
   if (!storageKey || !result) return;
-  try { window.localStorage.setItem(storageKey, JSON.stringify({ v: REVIEW_RESULT_CACHE_VERSION, result })); } catch { }
+  try { window.localStorage.setItem(storageKey, JSON.stringify({ v: REVIEW_RESULT_CACHE_VERSION, d: depth, result })); } catch { }
 }
 // chess.com 대국(game.id 있음)은 크라우드소싱 캐시(reviewed_games, puzzles 테이블과 같은 패턴)에도
 // 함께 올려 둔다 — 다른 기기·다른 유저가 같은 대국을 리뷰로 열어도 항상 같은 값을 보게 하기 위함
 // (이것도 "재현성" 신고를 해결하는 데 필요하다 — 로컬 캐시만으로는 이 기기에서만 일관될 뿐이다).
-async function reviewedAnalysisFetch(ccId, expectedLen) {
+async function reviewedAnalysisFetch(ccId, expectedLen, depth) {
   if (!SB_ON || !ccId) return null;
   try {
     const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=analysis&limit=1");
     const a = rows && rows[0] ? rows[0].analysis : null;
     if (!a || a.v !== REVIEW_RESULT_CACHE_VERSION || !a.result) return null;
+    if (depth != null && a.d !== depth) return null;
     if (expectedLen != null && (!a.result.moves || a.result.moves.length !== expectedLen)) return null;
     return a.result;
   } catch { return null; }
 }
-async function reviewedAnalysisShare(ccId, result) {
+async function reviewedAnalysisShare(ccId, result, depth) {
   if (!SB_ON || !ccId || !result) return;
-  try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis: { v: REVIEW_RESULT_CACHE_VERSION, result } }); } catch { }
+  try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis: { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result } }); } catch { }
 }
 // (v0.3.5 버그 수정 → 통합) 예전엔 게임 리뷰가 항상 고정된 프로필("full", Stockfish 16)이라 이
 // 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
@@ -8644,7 +8671,7 @@ function ReviewIntroCarousel() {
 // 채점되지 않은 지점"을 앞지르지는 못하게 그 지점(target)에서 멈춰 기다린다. 그래서 수가 한꺼번에
 // 여러 개 채점돼 도착해도(빠른 포지션들이 몰려 끝났을 때 등) 화면은 절대 순간이동하듯 확 그려지지
 // 않고, 항상 같은 속도로 채워지는 것처럼 보인다.
-function buildRevealData(result) {
+function buildRevealData(result, sharpOn = true) {
   if (!result) return { moves: [], evalWin: [50, 50], wCurve: [100], bCurve: [100], moveMeta: [] };
   const { moves, evalWin } = result;
   // 진영별 구간 누적 정확도 곡선(기존과 동일, App.jsx 앞부분 "독립 정확도 체계" 참고) — 그 김에 그
@@ -8661,8 +8688,8 @@ function buildRevealData(result) {
     // 수를 둔 진영 기준 부호로 되돌려 더한다(흑의 손실은 백 관점으로는 그만큼의 이득으로 보인다).
     const gVal = evalWin[i + 1] + (m.white ? 1 : -1) * m.lossWinPct;
     let delta;
-    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); const prev = wCurve[wCurve.length - 1]; const next = newCumulativeAccuracy(wLoss, wSharp, wLoss.length); wCurve.push(next); delta = next - prev; }
-    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); const prev = bCurve[bCurve.length - 1]; const next = newCumulativeAccuracy(bLoss, bSharp, bLoss.length); bCurve.push(next); delta = next - prev; }
+    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); const prev = wCurve[wCurve.length - 1]; const next = newCumulativeAccuracy(wLoss, wSharp, wLoss.length, sharpOn); wCurve.push(next); delta = next - prev; }
+    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); const prev = bCurve[bCurve.length - 1]; const next = newCumulativeAccuracy(bLoss, bSharp, bLoss.length, sharpOn); bCurve.push(next); delta = next - prev; }
     moveMeta.push({ ply: i + 1, gVal, delta, white: m.white });
   }
   return { moves, evalWin, wCurve, bCurve, moveMeta };
@@ -8712,8 +8739,8 @@ const REVEAL_POPUP_MS = 550;      // 정확도 증가/감소 숫자가 떴다 �
 const REVEAL_POPUP_EXIT_S = 0.1;  // 사라질 때 페이드아웃 속도(0.3s → 0.15s → 0.1s)
 const REVEAL_POPUP_STAGGER_MS = 480; // 숫자 하나가 뜬 뒤 다음 숫자가 뜨기까지 최소 간격
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
-function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow }) {
-  const data = useMemo(() => buildRevealData(result), [result]);
+function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn }) {
+  const data = useMemo(() => buildRevealData(result, sharpOn), [result, sharpOn]);
   const { moves, evalWin, wCurve, bCurve, moveMeta } = data;
   const N = Math.max(1, totalPlies || moves.length || 1);
   // progress(0..N) — 실제 분석 진행(target)과는 별도로, 일정한 속도로만 전진하는 "그리는 펜의 위치".
@@ -8881,7 +8908,11 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
 }
 // (v0.3.5 기능) 사용자 요청 — 게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(engine, App 루트의
 // useEngine(enginePref))을 그대로 prop으로 받아 쓴다(예전엔 항상 Stockfish 16으로 고정).
-function ReviewPage({ game, onClose, myUid, engine }) {
+function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
+  // (v0.3.9 기능) 사용자 요청 — "더 정확하게"를 고르면 depth 상한을 20→25로 올린다(movetime은
+  // 그대로 — 상한이 높아진 만큼 예전엔 depth 20에서 일찍 멈추던 쉬운 포지션들도 남은 시간을 더 써서
+  // depth 25까지 파고들게 되므로, 그 자체로 이미 "더 오래 걸리지만 더 정확한" 리뷰가 된다).
+  const reviewDepth = reviewSpeed === "accurate" ? 25 : REVIEW_DEPTH;
   const narrow = useNarrow(760);
   // (v0.3.8 기능) 새로고침해도 이어보기 — reviewStorageKey 참고. 마운트 시 한 번만 읽으면 되므로
   // useState 지연 초기화로 동기 복원한다(game은 prop이라 이 시점에 이미 확정돼 있다).
@@ -8963,22 +8994,22 @@ function ReviewPage({ game, onClose, myUid, engine }) {
     let cancelled = false;
     (async () => {
       const expectedLen = sans ? sans.length : null;
-      const local = loadCachedReviewResult(resultCacheKey, expectedLen);
+      const local = loadCachedReviewResult(resultCacheKey, expectedLen, reviewDepth);
       if (local) {
         if (!cancelled) { setResult(local); setGradedCount(expectedLen || 0); setResultDone(true); analysisStartedRef.current = true; setCacheChecked(true); }
         return;
       }
       if (game.id) {
-        const remote = await reviewedAnalysisFetch(game.id, expectedLen);
+        const remote = await reviewedAnalysisFetch(game.id, expectedLen, reviewDepth);
         if (!cancelled && remote) {
           setResult(remote); setGradedCount(expectedLen || 0); setResultDone(true); analysisStartedRef.current = true;
-          saveCachedReviewResult(resultCacheKey, remote);
+          saveCachedReviewResult(resultCacheKey, remote, reviewDepth);
         }
       }
       if (!cancelled) setCacheChecked(true);
     })();
     return () => { cancelled = true; };
-  }, [resultCacheKey, game.id]);
+  }, [resultCacheKey, game.id, reviewDepth]);
   useEffect(() => {
     if (!cacheChecked || analysisStartedRef.current || !engine) return;
     if (engine.status === "off") { setErr(true); return; }
@@ -8988,17 +9019,22 @@ function ReviewPage({ game, onClose, myUid, engine }) {
     let cancelled = false;
     (async () => {
       try {
-        const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
+        const r = await analyzeGame(sans, engine, reviewDepth, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
           (partial, gradedIdx) => { if (!cancelled) { setResult(partial); setGradedCount(gradedIdx); } }, fenRoot);
         if (!cancelled) {
           setResult(r); setGradedCount(sans.length); setResultDone(true);
-          saveCachedReviewResult(resultCacheKey, r);
-          if (game.id) reviewedAnalysisShare(game.id, r);
+          saveCachedReviewResult(resultCacheKey, r, reviewDepth);
+          if (game.id) reviewedAnalysisShare(game.id, r, reviewDepth);
         }
       } catch { if (!cancelled) setErr(true); }
     })();
     return () => { cancelled = true; };
-  }, [engine && engine.status, cacheChecked]);
+  }, [engine && engine.status, cacheChecked, reviewDepth]);
+  // (v0.3.9 기능) 국면 변동성 보정 토글이 꺼져 있으면 result.whiteAcc/blackAcc(항상 보정 켜짐으로
+  // 계산됨)를 그대로 쓰지 않고, 저장된 원본 손실·날카로움 값에서 그 자리에서 다시 변환한다(재분석
+  // 없음 — reviewPhaseAccuracy가 ReviewSummary 내부 계산과 완전히 같은 경로를 탄다).
+  const liveWhiteAcc = useMemo(() => result ? reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, true, sharpOn) : null, [result, sharpOn]);
+  const liveBlackAcc = useMemo(() => result ? reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, false, sharpOn) : null, [result, sharpOn]);
   useEffect(() => { setShowingLine(false); }, [curPly]);
   // (v0.3.8 기능) phase·curPly·introRevealDone이 바뀔 때마다(리뷰 시작, 수 이동, 정확도 공개
   // 애니메이션 완료 등) 같은 대국 키로 sessionStorage에 계속 갱신 저장 — 다음 새로고침이 이 값을
@@ -9531,7 +9567,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       {header}
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewIntroCarousel />
-        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} />
+        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} />
         <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
         <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(prog * 100)}%</p>
       </div>
@@ -9542,7 +9578,7 @@ function ReviewPage({ game, onClose, myUid, engine }) {
       <div style={wrap}>
         {header}
         {phase === "summary"
-          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow />
+          ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow sharpOn={sharpOn} />
           : (
             <div style={{ padding: "0 12px 24px" }}>
               <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
@@ -9614,8 +9650,8 @@ function ReviewPage({ game, onClose, myUid, engine }) {
           {tab === "analysis" && (
             <>
               <div className="flex items-stretch" style={{ gap: 10, marginBottom: 14 }}>
-                <ReviewAccuracyPill label={"⬜ " + reviewPlayerInfo(game, "w").name} value={result.whiteAcc} hi={(result.whiteAcc || 0) >= (result.blackAcc || 0)} layoutId="review-acc-w" />
-                <ReviewAccuracyPill label={"⬛ " + reviewPlayerInfo(game, "b").name} value={result.blackAcc} hi={(result.blackAcc || 0) > (result.whiteAcc || 0)} layoutId="review-acc-b" />
+                <ReviewAccuracyPill label={"⬜ " + reviewPlayerInfo(game, "w").name} value={liveWhiteAcc} hi={(liveWhiteAcc || 0) >= (liveBlackAcc || 0)} layoutId="review-acc-w" />
+                <ReviewAccuracyPill label={"⬛ " + reviewPlayerInfo(game, "b").name} value={liveBlackAcc} hi={(liveBlackAcc || 0) > (liveWhiteAcc || 0)} layoutId="review-acc-b" />
               </div>
               <ReviewKindTable moves={result.moves} showAll onPick={(p) => { setTab("review"); jump(p); }} />
             </>
@@ -17300,6 +17336,7 @@ const CHANGELOG = [
       "퍼즐을 모두 풀었을 때 뜨는 PUZZLE CLEAR 애니메이션의 폰트가 바뀌고, 글자가 하나씩 튕겨 들어오는 더 역동적인 연출로 바뀌었어요. 재생 시간도 늘고, 다 보인 뒤 창이 닫히기까지 여유를 더 줬어요.",
       "같은 대국을 리뷰로 다시 열 때마다 정확도가 미세하게 달라지던 문제를 고쳤어요 — 이제 한 번 분석이 끝나면 그 결과를 그대로 저장해 뒀다가, 다시 열 때 항상 똑같은 값을 보여줘요.",
       "게임 리뷰 중 일부 포지션이 드물게 분석에 실패해 그 수의 정확도 반영이 빠지던 문제를 줄였어요(재시도 횟수 확대).",
+      "설정 탭의 분석 엔진 카드가 '리뷰 설정' 카드로 확장됐어요 — 게임 리뷰 속도를 '더 빠르게'/'더 정확하게'(depth 25) 중에 고를 수 있고, 국면 변동성 보정(날카로운 포지션의 실수를 더 엄격하게 반영하는 기능)을 켜고 끌 수 있어요. 보정을 껐다 켜도 다시 분석할 필요 없이 그 자리에서 바로 값이 바뀌어요.",
     ]
   },
   {
@@ -18520,7 +18557,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, chesscomStatus, chesscom, user, myUid, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
+function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, chesscomStatus, chesscom, user, myUid, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -18612,18 +18649,19 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
         profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
 
-      {/* (v0.2.4 개편 → v0.3.5 통합) 분석 엔진 선택 — 학습/퍼즐 탭 및 사이트 전반의 분석은 물론
-          v0.3.5부터는 게임 리뷰도 여기서 고른 엔진을 그대로 쓴다(예전엔 게임 리뷰만 별도로 Stockfish 16에
-          고정돼 있었는데, 그 전용 엔진은 폐기했다). 가볍고 빠른 Stockfish 18 Lite가 기본값이고,
-          Stockfish 17.1(초기 로딩 용량이 크지만 가장 강력함)로 바꿀 수 있다. */}
+      {/* (v0.2.4 개편 → v0.3.5 통합 → v0.3.9 "리뷰 설정" 카드로 확장) 원래는 분석 엔진 선택만 있던
+          카드였다(학습/퍼즐 탭 및 사이트 전반의 분석은 물론 게임 리뷰도 여기서 고른 엔진을 그대로
+          쓴다). 사용자 요청으로 게임 리뷰에만 영향을 주는 두 설정 — 리뷰 속도(더 빠르게/더
+          정확하게)와 국면 변동성 보정 on/off — 을 같은 카드에 추가해 "리뷰 설정"으로 확장한다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>분석 엔진</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>리뷰 설정</div>
           <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: engineStatus === "ready" ? T.best : engineStatus === "off" ? T.blunder : T.inkSoft }}>
             {engineStatus === "ready" ? <Wifi size={12} /> : engineStatus === "off" ? <WifiOff size={12} /> : <Cpu size={12} />}
             {engineStatus === "ready" ? "연결됨" : engineStatus === "off" ? "연결 실패" : "불러오는 중…"}
           </span>
         </div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>분석 엔진</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ANALYSIS_ENGINE_IDS.map((id) => {
             const p = ENGINE_PROFILES[id];
@@ -18641,6 +18679,44 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
           })}
         </div>
         <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(게임 리뷰에도 똑같이 쓰여요, 이 기기에서만 기억돼요).</p>
+
+        <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
+
+        {/* (v0.3.9 기능) 사용자 요청 — 게임 리뷰의 분석 속도/정확도를 선택. "더 빠르게"는 기존
+            그대로(REVIEW_DEPTH=20), "더 정확하게"는 포지션당 depth 상한을 25로 올린다 — movetime은
+            그대로라 예전엔 depth 20에서 일찍 끝나던 쉬운 포지션들도 남는 시간을 마저 써서 depth
+            25까지 더 파고들게 되고, 그만큼 리뷰 전체 시간도 자연히 늘어난다. */}
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>리뷰 속도</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[{ id: "fast", label: "더 빠르게", desc: "기존과 동일한 속도" }, { id: "accurate", label: "더 정확하게", desc: "depth 25, 더 오래 걸려요" }].map((o) => {
+            const on = reviewSpeed === o.id;
+            return (
+              <button key={o.id} onClick={() => setReviewSpeed(o.id)} className="press"
+                style={{ flex: 1, textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+                  border: "1.5px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.12)" : "#fff" }}>
+                <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
+                  <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (on ? T.brass : "#C9B58C"), background: on ? T.brass : "transparent", flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{o.label}</span>
+                </div>
+                <div style={{ fontSize: 10, color: T.inkSoft, marginLeft: 24 }}>{o.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
+
+        {/* (v0.3.9 기능) 사용자 요청 — 국면 변동성 보정(후보 수끼리 평가가 얼마나 팽팽했는지에 따라
+            그 수의 손실을 더 엄격하게/관대하게 반영하는, chess.com 실제 방식을 본뜬 가중치) 자체를
+            켜고 끌 수 있게 한다. 꺼도 재분석은 필요 없다 — 이미 저장된 손실·날카로움 값에서 최종
+            정확도로 변환하는 마지막 단계만 건너뛴다(reviewPhaseAccuracy/buildRevealData 참고). */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>국면 변동성 보정</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>날카로운 국면의 실수를 더 엄격하게 반영해요</div>
+          </div>
+          <button onClick={() => setSharpOn(!sharpOn)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sharpOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: sharpOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        </div>
       </div>
 
       {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
@@ -22658,6 +22734,13 @@ export default function App() {
   const [enginePref, setEnginePrefState] = useState(loadEnginePref);
   const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
   const engine = useEngine(enginePref);
+  // (v0.3.9 기능) 사용자 요청 — 설정 탭 "리뷰 설정" 카드의 리뷰 속도(더 빠르게/더 정확하게)·국면
+  // 변동성 보정 on/off. 둘 다 이 기기에만 저장되고(엔진 선택과 같은 패턴), ReviewPage에 그대로
+  // prop으로 전달한다.
+  const [reviewSpeed, setReviewSpeedState] = useState(loadReviewSpeedPref);
+  const setReviewSpeed = useCallback((v) => { setReviewSpeedState(v); saveReviewSpeedPref(v); }, []);
+  const [reviewSharpOn, setReviewSharpOnState] = useState(loadReviewVolatilityPref);
+  const setReviewSharpOn = useCallback((v) => { setReviewSharpOnState(v); saveReviewVolatilityPref(v); }, []);
   const chesscom = useChessCom(profile.chesscom);
   // (v0.2.4 성능 → v0.3.5) 게임 리뷰용 분석 엔진 풀을 사용자가 실제로 리뷰를 열기 전에 유휴 시간에
   // 미리 부팅해 둔다 — depth·movetime은 그대로고(analyzeGame 등은 여전히 이 풀을 getAnalysisPool로
@@ -23468,7 +23551,7 @@ export default function App() {
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
-      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} />}
+      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -23560,7 +23643,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} creatorUsernames={creatorUsernames} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
