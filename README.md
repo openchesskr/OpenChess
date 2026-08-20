@@ -28,6 +28,17 @@
 
 ### OpenChess v0.3.8 — 2026/8/19
 
+**UI/기능 — LINE CLEAR 배너 완전 통일(초록 체크 애니메이션 추가) + 프로필 카드를 헤더 드롭다운의 별도 "프로필 창"으로 이전 + OpenChess/chess.com 통계 분리**
+사용자 요청 세 가지.
+
+① "LINE CLEAR 애니메이션도 글자 크기를 똑같이 하고, 재생 시간도 똑같이 해주고, 초록색 원과 체크 표시가 되는 애니메이션을 먼저 삽입해줘" — 지난 라운드에서 이미 폰트·연출 방식은 통일했지만 라인 클리어 쪽만 글자를 32px로 줄이고 재생 시간도 2.2초로 짧게 잡아 뒀었다. 이번엔 글자 크기(46px)·재생 시간(4.2초) 모두 PuzzleClearBanner와 완전히 같게 맞추고, 별 3개가 있던 자리에 초록색 원이 먼저 그려진 뒤(스트로크 `stroke-dashoffset` 애니메이션으로 원 둘레를 0.45초에 걸쳐 그림) 그 안에 체크 표시가 이어서 그려지는(0.25초) "성공" 아이콘을 추가해 텍스트보다 먼저 재생되게 했다(`checkDraw` 키프레임 신규 추가). 재생 시간이 늘어난 만큼 `PuzzleSolver`의 celebrate 자동 종료 타이머도 라인 단독 클리어 케이스를 2.7초→5.1초로 늘렸다.
+
+② "프로필 창에서 보이는 프로필 카드와 우상단 아이디를 눌러 나오는 카드도 이번 세션에서 변경된 사항을 똑같이 적용해 주고, 이제 설정 탭에서는 프로필 카드를 표시하지 말고, 대신 우상단 아이디를 눌러 나오는 카드의 우상단에 화살표 버튼을 눌러 자세히 볼 수 있게 하자" — `MyProfileCard`(내 프로필 카드)를 설정 탭(`SettingsTab`)에 상시 표시하던 것을 그만두고, 헤더 드롭다운(`HeaderProfileMenu`)의 새 화살표(`ChevronRight`) 버튼으로만 여는 별도 모달 `ProfileWindow`로 옮겼다. `MyProfileCard`가 필요로 하던 chess.com 계정 연동 플로우(아이디 입력·검증·확인 모달 — `cc`/`ccState`/`pending`/`verifyChesscom`/`confirmLink`/`changeChesscom`/`chesscomDaysLeft` 상태와 관련 UI)는 원래 `SettingsTab`이 들고 있었는데, `MyProfileCard` 없이는 그 자리에 남아 있을 이유가 없어 `ProfileWindow`로 통째로 옮겼다(z-index는 `ProfileWindow` 자체 배경 80 < `MyProfileCard`의 "프로필 편집" 모달 85 < chess.com 계정 확인 모달 90 순으로, 세 겹이 항상 이 순서로 쌓이도록 유지했다). `HeaderProfileMenu` 드롭다운 카드에도 `MyProfileCard`와 같은 헤더 구성(상단에 "@아이디" 라벨, 이름·소개 사이 중복 @아이디 줄 제거)을 적용해 두 곳의 프로필 표시가 완전히 일치하게 했다.
+
+③ "프로필 카드에서 이제 최상단에 선택 박스를 만들고, OpenChess 아이콘(검은색 나이트), Chess.com 아이콘(초록색 폰)만을 각각 표시하여 두 부분의 통계를 분리하여 볼 수 있게 하자" — `MyProfileCard` 최상단에 아이콘 두 개(OpenChess 파비콘 `/favicon.png`, chess.com 로고 `/chess.com_Icon.png`)만 있는 세그먼트 토글을 추가하고, `statsView`("oc"|"cc") 상태에 따라 OpenChess 자체 통계(퀘스트 진척도·유산·푼 퍼즐, `PublicProfileStats`)와 chess.com 통계(`AccountChessStats`)를 완전히 분리해서 한 번에 한쪽만 보여준다 — 예전엔 이 카드 하나에 OC 통계 먼저, chess.com 통계는 점선 아래로 순서대로 쌓아 함께 보여줬다. chess.com 미연동 상태에서 그 탭을 고르면 통계 대신 연동 안내와 "연동하기" 버튼(편집 모달로 바로 이어짐)을 보여준다.
+
+로컬 dev 서버로 `npm run build` 통과를 확인했고, Playwright로 게스트(비로그인) 상태에서 설정 탭에 더 이상 프로필 카드가 표시되지 않고 "리뷰 설정" 카드가 정상적으로 보이는 것, 콘솔 에러가 없는 것을 확인했다. 로그인이 필요한 부분(헤더 드롭다운의 화살표 버튼 클릭 → 프로필 창 열기, OpenChess/chess.com 통계 토글 전환)은 이 샌드박스에서 실제 Supabase 인증 없이는 종단 간 테스트를 하지 못해, 프롭 전달 경로(어떤 상태가 어느 컴포넌트로 흘러가는지)와 각 컴포넌트에서 참조하는 모든 식별자가 실제로 정의돼 있는지를 코드 리뷰로 재확인했다(예전 `SettingsTab`에서 쓰던 chess.com 연동 상태·함수가 새 `ProfileWindow`로 옮겨진 뒤 남은 곳 어디에서도 더는 참조되지 않는 것을 grep으로 확인).
+
 **UI/기능 — LINE CLEAR·PUZZLE CLEAR 배너 통일 + 설정 탭 문구 수정 + /about 정확도 체계 소개 섹션**
 사용자 요청 세 가지.
 

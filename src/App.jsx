@@ -14181,19 +14181,26 @@ function summarizePosition(board, userColor) {
   return "기물 점수는 팽팽해요 — 포지션을 유리하게 이끌 수를 찾아보세요.";
 }
 // (사용자 요청, v0.3.9) 퍼즐 라인 클리어 — 아래 PuzzleClearBanner와 완전히 같은 디자인·애니메이션
-// (typoLetters 글자별 팝인, 방사형 글로우 배경)을 쓰되, 라인 하나 클리어는 퍼즐 전체 클리어보다
-// 훨씬 자주 일어나는 가벼운 이벤트라 별 아이콘 없이 글자 크기를 조금 줄이고(32px) 재생 시간도 짧게
-// (2.2초) 잡는다 — 그만큼 아래 PuzzleSolver의 celebrate 자동 종료 타이머도 이 길이에 맞춰 늘렸다.
-// trigger(라인 태그)가 바뀔 때마다 key로 리마운트돼 다시 재생된다. 보드/모식도 페이저 위에
-// pointer-events:none으로 얹혀 조작을 가리지 않는다.
+// (typoLetters 글자별 팝인, 같은 글자 크기·재생 시간, 방사형 글로우 배경)을 쓴다. 별 3개 대신, 그
+// 자리에 초록 원이 먼저 그려진 뒤 안에 체크 표시가 그려지는 "성공" 애니메이션을 넣어 텍스트보다
+// 먼저 재생한다(요청: "초록색 원과 체크 표시가 되는 애니메이션을 먼저 삽입"). trigger(라인 태그)가
+// 바뀔 때마다 key로 리마운트돼 다시 재생된다. 보드/모식도 페이저 위에 pointer-events:none으로
+// 얹혀 조작을 가리지 않는다. (v0.3.9) 재생 시간이 PuzzleClearBanner와 같아진 만큼, 아래
+// PuzzleSolver의 celebrate 자동 종료 타이머도 이 길이에 맞춰 늘렸다.
 function LineClearBanner({ trigger }) {
   if (!trigger) return null;
   return (
-    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 15, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, overflow: "hidden", opacity: 0, animation: "puzzleClearFade 2.2s ease-out both" }}>
+    <div key={trigger} aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 15, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, overflow: "hidden", opacity: 0, animation: "puzzleClearFade 4.2s ease-out both" }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(10,6,3,.55)" }} />
-      <div aria-hidden="true" style={{ position: "absolute", width: 340, height: 340, borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.28) 0%, rgba(236,203,134,0) 70%)", opacity: 0, animation: "puzzleClearFade 2.2s ease-out .15s both" }} />
-      <div style={{ position: "relative", display: "flex" }}>{typoLetters("LINE", T.book, 0.1, 32)}</div>
-      <div style={{ position: "relative", display: "flex" }}>{typoLetters("CLEAR", T.brassHi, 0.35, 32)}</div>
+      <div aria-hidden="true" style={{ position: "absolute", width: 440, height: 440, borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.28) 0%, rgba(236,203,134,0) 70%)", opacity: 0, animation: "puzzleClearFade 4.2s ease-out .15s both" }} />
+      <svg width="60" height="60" viewBox="0 0 120 120" style={{ position: "relative", filter: "drop-shadow(0 0 8px rgba(74,222,128,.75))" }}>
+        <circle cx="60" cy="60" r="34" fill="none" stroke="#4ADE80" strokeWidth="7" strokeLinecap="round" strokeDasharray="214" strokeDashoffset="214" style={{ animation: "checkDraw .45s ease-out both" }} />
+        <path d="M44 62 L54 72 L78 46" fill="none" stroke="#4ADE80" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="50" strokeDashoffset="50" style={{ animation: "checkDraw .25s ease-out .45s both" }} />
+      </svg>
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+        <div style={{ display: "flex" }}>{typoLetters("LINE", T.book, 0.85)}</div>
+        <div style={{ display: "flex" }}>{typoLetters("CLEAR", T.brassHi, 1.1)}</div>
+      </div>
     </div>
   );
 }
@@ -14643,15 +14650,15 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   // (v0.3.8 버그 수정) 퍼즐 전체 클리어 배너(1.1s 지연 + 4.2s 재생 = 총 5.3초)가 라인 클리어
   // 배너보다 훨씬 길어졌는데, 이 타이머가 항상 고정돼 있으면 전체 클리어일 때 글자가 다 나오기도
   // 전에 배너가 통째로 잘려 사라진다(사용자 요청 원인) — 전체 클리어일 때는 배너 재생이 다 끝난
-  // 뒤에도 "조금 더" 기다렸다가(요청) 닫히도록 여유(0.9초)를 더해 총 6.2초로 늘린다. (v0.3.9) 라인
-  // 클리어 배너도 PuzzleClearBanner와 같은 디자인·애니메이션으로 바뀌며 재생 시간이 1.5초→2.2초로
-  // 늘어, 이쪽 타이머도 함께 늘려(2.4초→2.7초, 배너가 다 끝난 뒤 약 0.5초 여유) 잘리지 않게 한다.
+  // 뒤에도 "조금 더" 기다렸다가(요청) 닫히도록 여유(0.9초)를 더해 총 6.2초로 늘린다. (v0.3.9 사용자
+  // 요청) 라인 클리어 배너도 이제 PuzzleClearBanner와 완전히 같은 재생 시간(4.2초)을 쓰므로, 이쪽
+  // 타이머도 함께 늘려(2.7초→5.1초, 배너가 다 끝난 뒤 약 0.9초 여유) 잘리지 않게 한다.
   useEffect(() => {
     if (!celebrate) return;
     const t = setTimeout(() => {
       if (!fullyComplete && nextTag != null) gotoLine(nextTag);
       else setCelebrate(null);
-    }, fullyComplete ? 6200 : 2700);
+    }, fullyComplete ? 6200 : 5100);
     return () => clearTimeout(t);
   }, [celebrate, fullyComplete, nextTag]);
   const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
@@ -17185,6 +17192,10 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
 function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, engine }) {
   const [editOpen, setEditOpen] = useState(false);
+  // (사용자 요청) 최상단 선택 박스 — OpenChess 자체 통계(퀘스트·퍼즐)와 chess.com 통계를 한 카드에
+  // 같이 쌓아 보여주던 것을 분리해, 아이콘 두 개(검은 나이트=OpenChess, 초록 폰=chess.com)로 어느
+  // 쪽을 볼지 고르게 한다.
+  const [statsView, setStatsView] = useState("oc"); // "oc" | "cc"
   // (사용자 요청) 유산(Legacy) 관리 — 어떤 종류(best/only/brilliant)를 편집 중인지 키만 들고 있는다.
   const [managingLegacy, setManagingLegacy] = useState(null);
   // (사용자 요청) 유산 공유 — 어떤 슬롯을 공유 시트로 열었는지 키만 들고 있는다.
@@ -17200,6 +17211,18 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
   }, [puzzles, solved]);
   return (
     <div style={card}>
+      {/* (사용자 요청) 최상단 선택 박스 — 아이콘 둘만으로 OpenChess 자체 통계(검은 나이트, 파비콘과
+          동일)와 chess.com 통계(초록 폰, chess.com 로고) 중 무엇을 볼지 고른다. */}
+      <div className="flex items-center justify-center" style={{ marginBottom: 14 }}>
+        <div className="flex items-center" style={{ padding: 3, borderRadius: 12, background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: 3 }}>
+          <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+            <img src="/favicon.png" alt="OpenChess" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
+          </button>
+          <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+            <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
+          </button>
+        </div>
+      </div>
       <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
         {/* (사용자 요청) 이 자리의 라벨을 "내 프로필" 대신 @아이디로 표시 — 아래 이름·소개 사이에 있던
             별도 @아이디 표시는 지우고 이 라벨 하나로 합친다. */}
@@ -17218,63 +17241,66 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           {myPub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
         </div>
       </div>
-      {/* (버그 수정) 메인 퀘스트 진척도·푼 퍼즐이 chess.com 대국 기록(최근 대국·오프닝별 승률 등,
-          분량이 많아 화면을 길게 차지함)보다 아래에 있어 스크롤을 한참 내려야 보였다 — 이 프로필
-          카드 안의 "내 진행 상황"(퀘스트·퍼즐)을 먼저 보여주고, chess.com 데이터는 그 아래로
-          내린다. PublicProfileStats 내부에 함께 있던 chess.com 블록(AccountChessStats)은
-          hideChesscom으로 꺼 두고, 같은 컴포넌트를 아래에서 따로 렌더링한다. */}
-      <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom onManageLegacy={(key) => setManagingLegacy(key)} onShareLegacy={(key) => setSharingLegacy(key)} ownerUid={myUid} viewerUid={myUid} />
-      {sharingLegacy && profile.legacies && profile.legacies[sharingLegacy] && (
-        <LegacyShareSheet
-          slotKey={sharingLegacy}
-          typeInfo={LEGACY_TYPES.find((t) => t.key === legacyBaseKey(sharingLegacy))}
-          entry={profile.legacies[sharingLegacy]}
-          myUid={myUid}
-          onClose={() => setSharingLegacy(null)}
-          onShared={() => {}}
-        />
-      )}
-      {managingLegacy && (
-        <LegacyManageModal
-          typeInfo={LEGACY_TYPES.find((t) => t.key === legacyBaseKey(managingLegacy))}
-          slotKey={managingLegacy}
-          existingEntry={profile.legacies && profile.legacies[managingLegacy]}
-          chesscom={chesscom}
-          username={profile.chesscom}
-          engine={engine}
-          onClose={() => setManagingLegacy(null)}
-          // (사용자 요청) 지워진 유산까지 다시 볼 수 있는 이력 기능 — 새로 저장(덮어쓰기)하거나
-          // 삭제해서 그 칸에서 밀려나는 기존 유산을 profile.legacyHistory에 보존해 둔다(그 칸 자체는
-          // 최신 것만 담으므로, 밀려나는 순간의 기존 값만 옮겨 적으면 된다).
-          onSave={(key, entry) => { setProfile((p) => { const prev = p.legacies && p.legacies[key]; const history = prev ? [...(p.legacyHistory || []), { slotKey: key, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [key]: entry }, legacyHistory: history }; }); setManagingLegacy(null); }}
-          onDelete={() => { setProfile((p) => { const prev = p.legacies && p.legacies[managingLegacy]; const history = prev ? [...(p.legacyHistory || []), { slotKey: managingLegacy, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [managingLegacy]: null }, legacyHistory: history }; }); setManagingLegacy(null); }}
-        />
-      )}
-      {mq.totalChapters > 0 && (
-        <div style={{ marginTop: 4, marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>메인 퀘스트 진척도</span>
-            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
-          </div>
-          <div style={{ height: 7, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
-            <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
-          </div>
-          {mq.totalItems > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>문제 {mq.doneItems}/{mq.totalItems}개 정답</div>}
-        </div>
-      )}
-      {puzzles && solved && (
-        <div style={{ paddingTop: mq.totalChapters > 0 ? 0 : 12, borderTop: mq.totalChapters > 0 ? "none" : "1px solid #E4D5B6" }}>
-          <SolvedPuzzlesBlock puzzles={solvedPuzzles} total={solvedPuzzles.length} loading={false} onOpenPuzzle={onOpenPuzzle}
-            renderCard={(p, onClick) => <PuzzleCard key={p.id} p={p} isSolved onClick={onClick} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />} />
-        </div>
-      )}
-      {/* (v0.2.6 버그 수정) OpenChess 자체 정보(퀘스트·퍼즐)와 chess.com 통계 사이 구분을 실선 대신
-          점선으로, 집중 학습 모드의 chess.com 통계 카드와 같은 "Chess.com 통계" 아이콘+텍스트
-          헤더를 추가해 두 화면의 구성을 통일한다. */}
-      {linked && (
-        <div style={{ marginTop: 4, paddingTop: 12, borderTop: "1px dashed #C9B58C" }}>
-          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><ChesscomLogo height={19} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>통계</span></div>
-          <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} reviewUnlocked={reviewUnlocked} />
+      {/* (사용자 요청) 위 선택 박스로 OpenChess 자체 통계(퀘스트·퍼즐)와 chess.com 통계를 완전히
+          분리했다 — 예전엔 이 카드 하나에 둘 다 순서대로(OC 먼저, chess.com은 점선 아래) 쌓아
+          보여줬지만, 이제 한 번에 한 쪽만 보인다. */}
+      {statsView === "oc" ? (
+        <>
+          <PublicProfileStats pub={myPub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideChesscom onManageLegacy={(key) => setManagingLegacy(key)} onShareLegacy={(key) => setSharingLegacy(key)} ownerUid={myUid} viewerUid={myUid} />
+          {sharingLegacy && profile.legacies && profile.legacies[sharingLegacy] && (
+            <LegacyShareSheet
+              slotKey={sharingLegacy}
+              typeInfo={LEGACY_TYPES.find((t) => t.key === legacyBaseKey(sharingLegacy))}
+              entry={profile.legacies[sharingLegacy]}
+              myUid={myUid}
+              onClose={() => setSharingLegacy(null)}
+              onShared={() => {}}
+            />
+          )}
+          {managingLegacy && (
+            <LegacyManageModal
+              typeInfo={LEGACY_TYPES.find((t) => t.key === legacyBaseKey(managingLegacy))}
+              slotKey={managingLegacy}
+              existingEntry={profile.legacies && profile.legacies[managingLegacy]}
+              chesscom={chesscom}
+              username={profile.chesscom}
+              engine={engine}
+              onClose={() => setManagingLegacy(null)}
+              // (사용자 요청) 지워진 유산까지 다시 볼 수 있는 이력 기능 — 새로 저장(덮어쓰기)하거나
+              // 삭제해서 그 칸에서 밀려나는 기존 유산을 profile.legacyHistory에 보존해 둔다(그 칸 자체는
+              // 최신 것만 담으므로, 밀려나는 순간의 기존 값만 옮겨 적으면 된다).
+              onSave={(key, entry) => { setProfile((p) => { const prev = p.legacies && p.legacies[key]; const history = prev ? [...(p.legacyHistory || []), { slotKey: key, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [key]: entry }, legacyHistory: history }; }); setManagingLegacy(null); }}
+              onDelete={() => { setProfile((p) => { const prev = p.legacies && p.legacies[managingLegacy]; const history = prev ? [...(p.legacyHistory || []), { slotKey: managingLegacy, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [managingLegacy]: null }, legacyHistory: history }; }); setManagingLegacy(null); }}
+            />
+          )}
+          {mq.totalChapters > 0 && (
+            <div style={{ marginTop: 4, marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>메인 퀘스트 진척도</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
+              </div>
+              <div style={{ height: 7, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
+                <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
+              </div>
+              {mq.totalItems > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>문제 {mq.doneItems}/{mq.totalItems}개 정답</div>}
+            </div>
+          )}
+          {puzzles && solved && (
+            <div style={{ paddingTop: mq.totalChapters > 0 ? 0 : 12, borderTop: mq.totalChapters > 0 ? "none" : "1px solid #E4D5B6" }}>
+              <SolvedPuzzlesBlock puzzles={solvedPuzzles} total={solvedPuzzles.length} loading={false} onOpenPuzzle={onOpenPuzzle}
+                renderCard={(p, onClick) => <PuzzleCard key={p.id} p={p} isSolved onClick={onClick} isLiked={likedPuzzles ? likedPuzzles.has(p.id) : false} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} />} />
+            </div>
+          )}
+        </>
+      ) : linked ? (
+        <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} reviewUnlocked={reviewUnlocked} />
+      ) : (
+        // chess.com 미연동 상태에서 이 탭을 고르면 통계 대신 연동 안내 — 아래 편집 모달의 계정
+        // 섹션으로 바로 이어지도록 편집 버튼을 함께 둔다.
+        <div style={{ textAlign: "center", padding: "22px 10px" }}>
+          <ChesscomLogo height={28} />
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 14px", lineHeight: 1.6 }}>chess.com 계정을 연동하면 실전 대국 통계를 여기서 볼 수 있어요.</p>
+          <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12.5, border: "none", cursor: "pointer" }}>연동하기</button>
         </div>
       )}
       {editOpen && (
@@ -17301,6 +17327,62 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
                 </div>
               )}
               {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} reviewUnlocked={reviewUnlocked} />}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// (사용자 요청, v0.3.9) "프로필 창" — 예전엔 MyProfileCard가 설정 탭에 항상 펼쳐져 있었지만, 이제
+// 헤더 드롭다운(HeaderProfileMenu)의 화살표 버튼을 눌러야만 여는 별도 모달로 옮긴다. chess.com 계정
+// 연동 플로우(아이디 입력·검증·확인 모달)도 예전엔 SettingsTab이 들고 있었는데, MyProfileCard 없이는
+// 쓸 데가 없어져 이 컴포넌트로 그대로 옮겨왔다 — SettingsTab에는 더 이상 이 상태가 필요 없다.
+// z-index는 MyProfileCard 자신의 "프로필 편집" 모달(85)보다 낮고, 그 안에서 다시 뜨는 chess.com
+// 계정 확인 모달(90)보다도 낮게(80) 잡아, 세 겹이 항상 이 순서로 쌓이게 한다.
+function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, engine, earnedTitles, onEquipTitle, isDev, isCodev, devOn, codevOn, chesscomStatus, chesscom }) {
+  const [cc, setCc] = useState(profile.chesscom || "");
+  const [ccState, setCcState] = useState("idle");   // idle | checking | failed
+  const [pending, setPending] = useState(null);
+  useEffect(() => { setCc(profile.chesscom || ""); }, [profile.chesscom]);
+  const linked = !!profile.chesscom;
+  const verifyChesscom = async () => {
+    const name = cc.trim(); if (!name) return;
+    setCcState("checking");
+    try { const p = await fetchChesscomProfile(name); setPending(p); setCcState("idle"); }
+    catch { setCcState("failed"); setTimeout(() => setCcState("idle"), 1700); }
+  };
+  const confirmLink = () => { setProfile({ ...profile, chesscom: (pending && pending.username) || cc.trim(), chesscomChangedAt: Date.now() }); setPending(null); };
+  const chesscomChangeBypass = (isDev && devOn) || (isCodev && codevOn);
+  const chesscomDaysLeft = chesscomChangeBypass ? 0 : chesscomChangeDaysLeft(profile.chesscomChangedAt);
+  const changeChesscom = () => { if (chesscomDaysLeft > 0) return; setProfile({ ...profile, chesscom: "" }); setCc(""); setCcState("idle"); };
+  const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8" };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, marginBottom: 40 }}>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: -12, right: -12, zIndex: 10, width: 32, height: 32, borderRadius: "50%", border: "1px solid #DCCBA8", background: T.paper, color: T.ink, cursor: "pointer", boxShadow: "0 4px 10px rgba(0,0,0,.35)" }}>✕</button>
+        <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
+          chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
+          mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
+          profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />
+      </div>
+      {/* chess.com 계정 확인 모달 */}
+      {pending && (
+        <div onClick={(e) => { e.stopPropagation(); setPending(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 320, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+            <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
+              {pending.avatar ? <img src={pending.avatar} alt="" style={{ width: 46, height: 46, borderRadius: 10 }} /> : <span style={{ width: 46, height: 46, borderRadius: 10, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20 }}>{pending.username[0].toUpperCase()}</span>}
+              <div><div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{pending.username}</div><div style={{ fontSize: 11.5, color: T.inkSoft }}>플레이한 게임 {fmtFull(pending.games)}국</div></div>
+            </div>
+            <div className="flex gap-2" style={{ marginBottom: 14 }}>
+              {[["래피드", pending.rapid], ["블리츠", pending.blitz], ["불릿", pending.bullet]].map(([lb, v]) => (
+                <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{v != null ? v : "—"}</div></div>
+              ))}
+            </div>
+            <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 14 }}>이 계정이 맞나요?</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setPending(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>아니요</button>
+              <button onClick={confirmLink} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>이 계정으로 연동</button>
             </div>
           </div>
         </div>
@@ -17348,6 +17430,9 @@ const CHANGELOG = [
       "설정 탭의 분석 엔진 카드가 '리뷰 설정' 카드로 확장됐어요 — 게임 리뷰 속도를 '더 빠르게'(depth=20)/'더 정확하게'(depth=25) 중에 고를 수 있고, 포지션 변동성 보정(날카로운 포지션의 실수를 더 엄격하게 반영하는 기능)을 켜고 끌 수 있어요. 보정을 껐다 켜도 다시 분석할 필요 없이 그 자리에서 바로 값이 바뀌어요.",
       "LINE CLEAR 배너가 PUZZLE CLEAR와 똑같은 디자인(글자가 하나씩 튕겨 들어오는 연출)으로 바뀌었어요. 두 배너 모두 다 자리 잡은 뒤에는 글자가 기울어져 보이지 않아요.",
       "/about 페이지에 이번 정확도 체계를 실제 수식·그래프로 소개하는 섹션이 새로 생겼어요.",
+      "LINE CLEAR 애니메이션의 글자 크기·재생 시간이 PUZZLE CLEAR와 완전히 같아졌고, 초록색 원과 체크 표시가 그려지는 애니메이션이 텍스트보다 먼저 재생돼요.",
+      "내 프로필 카드가 설정 탭에 항상 보이는 대신, 헤더의 내 아이디를 눌러 나오는 카드에서 화살표 버튼을 눌러야 볼 수 있는 별도 창으로 바뀌었어요. 그 카드도 프로필 카드와 똑같이 아이디 표시 방식이 정리됐어요.",
+      "프로필 카드 맨 위에서 OpenChess 아이콘/chess.com 아이콘을 눌러 두 서비스의 통계를 각각 따로 볼 수 있어요.",
     ]
   },
   {
@@ -18568,37 +18653,12 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, chesscomStatus, chesscom, user, myUid, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, earnedTitles, currentTitle, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, totalXp, setTotalXp, ocCoins, setOcCoins, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, reviewUnlocked }) {
-  const [cc, setCc] = useState(profile.chesscom || "");
+function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange }) {
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
   const [codevBusy, setCodevBusy] = useState(false);
-  const [ccState, setCcState] = useState("idle");   // idle | checking | failed
-  const [pending, setPending] = useState(null);
   const [inquiryOpen, setInquiryOpen] = useState(false);
   const [devLogOpen, setDevLogOpen] = useState(false);
-  useEffect(() => { setCc(profile.chesscom || ""); }, [profile.chesscom]);
-  const linked = !!profile.chesscom;
-  const verifyChesscom = async () => {
-    const name = cc.trim(); if (!name) return;
-    setCcState("checking");
-    try { const p = await fetchChesscomProfile(name); setPending(p); setCcState("idle"); }
-    catch { setCcState("failed"); setTimeout(() => setCcState("idle"), 1700); }
-  };
-  // (18차 UI1 → 버그 수정) 예전엔 사용자가 입력창에 입력한 원형(cc.trim())을 우선 저장했는데, 바로
-  // 위 미리보기 카드가 보여주는 pending.username(검증된 chess.com 실제 계정, 이제 chesscomDisplayUsername로
-  // 정확한 대소문자까지 보존됨)과 다른 값이 저장될 수 있었다 — 사용자가 소문자로만 입력해도(대부분의
-  // 사용자가 그렇게 입력함) 그 입력이 그대로 저장돼, "연동은 됐는데 표시는 항상 소문자"인 신고가
-  // 반복됐다. 이 버튼은 pending이 채워져 있을 때만 렌더링되므로(9107번째 줄 부근 `{pending && (...)}`)
-  // 항상 검증된 pending.username을 신뢰하고, cc.trim()은 pending이 비어 있는 이론상의 경우에만 대체값으로 쓴다.
-  // (20차 UX3) 연동/재연동 시점을 기록해 30일 쿨다운의 기준으로 삼는다.
-  const confirmLink = () => { setProfile({ ...profile, chesscom: (pending && pending.username) || cc.trim(), chesscomChangedAt: Date.now() }); setPending(null); };
-  // (버그 수정) 공동 개발자 모드에서도 "공동 개발자 임명" 권한만 빼고 개발자와 동일한 모든 권한을
-  // 쓸 수 있어야 하는데, 이 bypass는 isDev && devOn으로만 걸려 있어 공동 개발자는 chess.com 계정
-  // 변경 30일 쿨다운을 그대로 적용받고 있었다 — 공동 개발자 모드에서도 우회하도록 조건을 넓힌다.
-  const chesscomChangeBypass = (isDev && devOn) || (isCodev && codevOn);
-  const chesscomDaysLeft = chesscomChangeBypass ? 0 : chesscomChangeDaysLeft(profile.chesscomChangedAt);
-  const changeChesscom = () => { if (chesscomDaysLeft > 0) return; setProfile({ ...profile, chesscom: "" }); setCc(""); setCcState("idle"); };
   const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8", marginTop: 14 };
   // (v0.3.5 기능) 사용자 요청 — 흩어져 있던 개발자 전용 패널(자원 조정·공동 개발자 지정·일일 퍼즐
   // 관리·퍼즐 일괄 재생성)을 설정 탭 맨 아래 카드 하나("개발자 도구")로 모았다. 개발자/공동 개발자
@@ -18654,11 +18714,9 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         </div>
       )}
 
-      {/* (18차 UI10) 내 프로필 — 유저 검색에서 보이는 프로필 UI와 동일한 블록 + 프로필 편집 버튼(모달) */}
-      {user && <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
-        chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
-        mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
-        profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />}
+      {/* (v0.3.9 사용자 요청) 내 프로필 카드는 이제 설정 탭에 상시 표시하지 않는다 — 헤더 드롭다운
+          (HeaderProfileMenu)의 화살표 버튼으로 여는 별도 "프로필 창"(ProfileWindow, App 루트)으로
+          옮겼다. */}
 
       {/* (v0.2.4 개편 → v0.3.5 통합 → v0.3.9 "리뷰 설정" 카드로 확장) 원래는 분석 엔진 선택만 있던
           카드였다(학습/퍼즐 탭 및 사이트 전반의 분석은 물론 게임 리뷰도 여기서 고른 엔진을 그대로
@@ -18840,27 +18898,6 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         </div>
       )}
 
-      {/* chess.com 계정 확인 모달 */}
-      {pending && (
-        <div onClick={() => setPending(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 320, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
-            <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
-              {pending.avatar ? <img src={pending.avatar} alt="" style={{ width: 46, height: 46, borderRadius: 10 }} /> : <span style={{ width: 46, height: 46, borderRadius: 10, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20 }}>{pending.username[0].toUpperCase()}</span>}
-              <div><div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{pending.username}</div><div style={{ fontSize: 11.5, color: T.inkSoft }}>플레이한 게임 {fmtFull(pending.games)}국</div></div>
-            </div>
-            <div className="flex gap-2" style={{ marginBottom: 14 }}>
-              {[["래피드", pending.rapid], ["블리츠", pending.blitz], ["불릿", pending.bullet]].map(([lb, v]) => (
-                <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{v != null ? v : "—"}</div></div>
-              ))}
-            </div>
-            <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 14 }}>이 계정이 맞나요?</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setPending(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>아니요</button>
-              <button onClick={confirmLink} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>이 계정으로 연동</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -19382,19 +19419,26 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
       </button>
       {open && (
         <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: 300, maxWidth: "90vw", maxHeight: 460, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90, padding: 14 }}>
-          <div className="flex items-center gap-3 press" onClick={goToProfile} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") goToProfile(); }} style={{ marginBottom: 12, cursor: "pointer" }}>
+          {/* (v0.3.9 사용자 요청) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
+              이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. 우상단 화살표 버튼을 누르면 설정 탭
+              대신 별도 "프로필 창"(ProfileWindow)이 열려 통계·유산·chess.com 연동까지 자세히 볼 수
+              있다(예전엔 이 카드 전체를 눌러야 했다). */}
+          <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
+            <button onClick={goToProfile} aria-label="프로필 자세히 보기" title="프로필 자세히 보기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
+          </div>
+          <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
             {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
               : <span style={{ width: 52, height: 52, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 21, flexShrink: 0 }}>{initial}</span>}
             <div style={{ minWidth: 0 }}>
               {myPub.title && <div style={{ maxWidth: 180, marginBottom: 3 }}><TitleBadge id={myPub.title} earned compact /></div>}
               <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.nickname || myPub.displayId || user}</div>
-              {myPub.bio && <div style={{ fontSize: 11, color: T.ink, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
-              <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</div>
+              {myPub.bio && <div style={{ fontSize: 11, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
             </div>
           </div>
           {/* (버그 수정) 이 드롭다운은 로그아웃 버튼까지 한눈에 보여야 하는데, chess.com 최근 대국·
               오프닝별 승률까지 다 표시하면 내용이 너무 길어져 로그아웃 버튼이 화면 아래로 밀려났다 —
-              여기서는 chess.com 정보를 빼고, 자세한 내용은 "내 프로필"(설정 탭)에서 보게 한다. */}
+              여기서는 chess.com 정보를 빼고, 자세한 내용은 위 화살표 버튼으로 여는 프로필 창에서 보게 한다. */}
           <PublicProfileStats pub={myPub} hideChesscom
             onOpenOpening={onOpenOpening && ((n) => { setOpen(false); onOpenOpening(n); })}
             onOpenGame={onOpenGame && ((m) => { setOpen(false); onOpenGame(m); })}
@@ -23335,6 +23379,9 @@ export default function App() {
   // 타임클래스 같은 대국 메타데이터를 갖춘 완전한 리뷰 화면으로 대체한다 — 학습 보드 상태는
   // 건드리지 않는다(onOpenGame과 달리 setTab("learn")을 호출하지 않음).
   const [reviewGame, setReviewGame] = useState(null);
+  // (v0.3.9 기능) 사용자 요청 — 내 프로필 카드가 더는 설정 탭에 상시 표시되지 않고, 헤더 드롭다운의
+  // 화살표 버튼으로 여는 별도 "프로필 창"(ProfileWindow)이 됐다.
+  const [profileWinOpen, setProfileWinOpen] = useState(false);
   // (v0.2.9 기능 → v0.3.5 리뷰 티켓 제거) 게임 리뷰는 이제 제한 없이 몇 번이든 열 수 있다. 다만
   // "리뷰한 대국만" 필터(AccountChessStats)가 여전히 reviewUnlocked를 쓰므로, 리뷰를 열 때마다
   // reviewGameKey로 그 대국을 계속 기록은 해 둔다(순수 이력, 더는 아무것도 막거나 소비하지 않는다).
@@ -23480,7 +23527,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
@@ -23534,7 +23581,7 @@ export default function App() {
           {/* (버그 수정) 알림은 시급성이 다른 정보라 세그먼트에 묶지 않고 오른쪽에 따로 분리해 둔다. */}
           {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
           {user ? (
-            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setTab("set")}
+            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setProfileWinOpen(true)}
               mainQuestSummary={mainQuestOverallProgress(mainQuest)} solvedNos={[...solved].map((id) => puzzleNo(id))} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myUid={uid} />
           ) : (
             <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
@@ -23563,6 +23610,12 @@ export default function App() {
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
+      {profileWinOpen && user && (
+        <ProfileWindow onClose={() => setProfileWinOpen(false)} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size}
+          onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
+          mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
+          earnedTitles={earnedTitles} onEquipTitle={equipTitle} isDev={isDev} isCodev={isCodev} devOn={devOn} codevOn={codevOn} chesscomStatus={chesscom.status} chesscom={chesscom} />
+      )}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} onDone={() => setTierUpAnim(null)} />}
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
