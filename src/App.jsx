@@ -17196,6 +17196,25 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
+// (사용자 요청) 통계 분리 토글 — 처음엔 카드 최상단에 큰 세그먼트 바로 뒀는데, 그만큼 세로 공간을
+// 먼저 차지해 아이디·이름이 아래로 밀렸다. 아이디 라벨과 같은 줄, 그 줄 오른쪽 여백(우상단)에 들어갈
+// 만큼 작은 아이콘 두 개로 줄여 그 자리로 옮긴다. MyProfileCard(내 프로필 카드)와 친구·검색 프로필
+// 상세(ProfileStatsPanel을 쓰는 곳)가 이 헬퍼 하나를 공유해 완전히 같은 모양을 쓴다.
+function statsViewToggle(statsView, setStatsView) {
+  return (
+    <div className="flex items-center" style={{ padding: 2, borderRadius: 9, background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: 2, flexShrink: 0 }}>
+      <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: 30, height: 26, borderRadius: 7, border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+        {/* (사용자 요청) favicon.png는 나이트 그림 둘레에 여백이 넓게 있어(실제 그림 높이가 캔버스의 약
+            86%) chess.com 폰 아이콘(캔버스 전체를 꽉 채움)과 같은 픽셀 크기로 두면 훨씬 작아 보인다 —
+            실제 눈에 보이는 그림 높이가 비슷해지도록 이 아이콘만 조금 더 크게 잡는다(17px vs 15px). */}
+        <img src="/favicon.png" alt="OpenChess" style={{ width: 17, height: 17, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
+      </button>
+      <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: 30, height: 26, borderRadius: 7, border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+        <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: 15, height: 15, objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
+      </button>
+    </div>
+  );
+}
 function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, engine }) {
   const [editOpen, setEditOpen] = useState(false);
   // (사용자 요청) 최상단 선택 박스 — OpenChess 자체 통계(퀘스트·퍼즐)와 chess.com 통계를 한 카드에
@@ -17217,26 +17236,15 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
   }, [puzzles, solved]);
   return (
     <div style={card}>
-      {/* (사용자 요청) 최상단 선택 박스 — 아이콘 둘만으로 OpenChess 자체 통계(검은 나이트, 파비콘과
-          동일)와 chess.com 통계(초록 폰, chess.com 로고) 중 무엇을 볼지 고른다. */}
-      <div className="flex items-center justify-center" style={{ marginBottom: 14 }}>
-        <div className="flex items-center" style={{ padding: 3, borderRadius: 12, background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: 3 }}>
-          <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-            {/* (사용자 요청) favicon.png는 나이트 그림 둘레에 여백이 넓게 있어(실제 그림 높이가 캔버스의
-                약 86%) chess.com 폰 아이콘(캔버스 전체를 꽉 채움)과 같은 픽셀 크기로 두면 훨씬 작아
-                보인다 — 실제 눈에 보이는 그림 높이가 비슷해지도록 이 아이콘만 22px로 키운다. */}
-            <img src="/favicon.png" alt="OpenChess" style={{ width: 22, height: 22, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
-          </button>
-          <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-            <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
-          </button>
-        </div>
-      </div>
       <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
         {/* (사용자 요청) 이 자리의 라벨을 "내 프로필" 대신 @아이디로 표시 — 아래 이름·소개 사이에 있던
-            별도 @아이디 표시는 지우고 이 라벨 하나로 합친다. */}
+            별도 @아이디 표시는 지우고 이 라벨 하나로 합친다. (사용자 요청, v0.3.9) 통계 분리 토글은
+            카드 최상단의 큰 세그먼트 바 대신 이 헤더 줄 우상단 여백으로 옮겨, 편집 버튼과 나란히 둔다. */}
         <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
-        <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>프로필 편집</button>
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          {statsViewToggle(statsView, setStatsView)}
+          <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>프로필 편집</button>
+        </div>
       </div>
       <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
         {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
@@ -17445,6 +17453,7 @@ const CHANGELOG = [
       "LINE CLEAR 텍스트의 자간이 살짝 넓어지고, LINE CLEAR·PUZZLE CLEAR 두 배너의 텍스트가 항상 같은 높이(y좌표)에 오도록 정렬을 맞췄어요.",
       "퍼즐의 모든 라인을 다 풀었을 때, 이제 LINE CLEAR 애니메이션이 완전히 끝나고 사라진 뒤에 PUZZLE CLEAR 애니메이션이 이어서 나타나요 — 예전엔 두 애니메이션이 겹쳐 보였어요.",
       "친구·검색 창에서 확인하는 나와 다른 사람의 프로필 카드에도 맨 위에서 OpenChess/chess.com 아이콘을 눌러 두 서비스 통계를 나눠 볼 수 있어요. 아이디 표시 방식도 프로필 카드와 똑같이 정리됐어요.",
+      "OpenChess/chess.com 통계 토글이 프로필 카드 맨 위 큰 버튼 대신, 아이디 표시 줄 오른쪽의 작은 아이콘 두 개로 옮겨졌어요 — 그만큼 이름·소개가 더 위로 올라와요.",
     ]
   },
   {
@@ -21330,26 +21339,15 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
   );
 }
 // (사용자 요청, v0.3.9) 친구·검색 창 경로로 보는 남(또는 나 자신)의 프로필 상세에도, 이번 세션에
-// MyProfileCard에 추가한 "최상단 선택 박스"(OpenChess/chess.com 통계 분리)를 그대로 적용한다 —
-// 읽기 전용(편집·유산 관리 버튼 없음) 판이라 MyProfileCard와 별개의 작은 컴포넌트로 둔다.
-function ProfileStatsToggle({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, actions, ownerUid, viewerUid }) {
-  const [statsView, setStatsView] = useState("oc"); // "oc" | "cc"
+// MyProfileCard에 추가한 OpenChess/chess.com 통계 분리를 그대로 적용한다 — 읽기 전용(편집·유산 관리
+// 버튼 없음) 판이라 MyProfileCard와 별개의 작은 컴포넌트로 둔다. (사용자 요청, v0.3.9 후속) 토글
+// 버튼 자체는 이제 카드 우상단(아이디 라벨과 같은 줄)에 두므로, 이 컴포넌트는 더는 토글을 직접
+// 그리지 않고 statsView를 부모(UserSearchModal·FriendsModal)로부터 값만 받아 그 값에 맞는 통계만
+// 보여준다 — 토글 버튼은 부모가 헤더 줄에서 statsViewToggle 헬퍼로 그린다.
+function ProfileStatsPanel({ pub, statsView, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, actions, ownerUid, viewerUid }) {
   const chesscom = useChessCom(pub.chesscom);
   return (
     <div style={{ marginBottom: 12 }}>
-      <div className="flex items-center justify-center" style={{ marginBottom: 14 }}>
-        <div className="flex items-center" style={{ padding: 3, borderRadius: 12, background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: 3 }}>
-          <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-            {/* (사용자 요청) favicon.png는 나이트 그림 둘레에 여백이 넓게 있어(실제 그림 높이가 캔버스의
-                약 86%) chess.com 폰 아이콘(캔버스 전체를 꽉 채움)과 같은 픽셀 크기로 두면 훨씬 작아
-                보인다 — 실제 눈에 보이는 그림 높이가 비슷해지도록 이 아이콘만 22px로 키운다. */}
-            <img src="/favicon.png" alt="OpenChess" style={{ width: 22, height: 22, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
-          </button>
-          <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: 42, height: 34, borderRadius: 9, border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 5px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-            <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: 19, height: 19, objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
-          </button>
-        </div>
-      </div>
       {actions && <div style={{ display: "flex", gap: 8, marginBottom: 14, justifyContent: "center" }}>{actions}</div>}
       {statsView === "oc" ? (
         <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} />
@@ -21410,6 +21408,10 @@ function userSearchRow(r, onClick, right, opts) {
 function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
+  // (사용자 요청, v0.3.9) 통계 분리 토글 — 카드 우상단(아이디 라벨과 같은 줄)에 두므로 이 모달이
+  // statsView를 들고 있다가 헤더 줄에서 그리고, 아래 내용 패널(ProfileStatsPanel)에는 값만 넘긴다.
+  // 새 프로필을 열 때마다(open) "oc"로 되돌린다.
+  const [statsView, setStatsView] = useState("oc");
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
   // (버그 수정) 검색 버튼을 눌러야만 검색되던 것 — 입력할 때마다(살짝 debounce해) 자동으로
   // 실시간 검색되도록 한다. 검색 버튼은 그대로 두어 즉시 재검색하고 싶을 때도 쓸 수 있게 한다.
@@ -21438,7 +21440,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
     })();
     return () => { cancelled = true; };
   }, [me, myUid]);
-  const open = async (username) => { setReqState(null); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
+  const open = async (username) => { setReqState(null); setStatsView("oc"); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
   const doReq = async () => {
     const pub = sel || {}; if (!me || !pub.username) return; setReqBusy(true);
     const r = await friendRequest(pub.username); setReqBusy(false);
@@ -21468,9 +21470,11 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
         {sel ? (
           <div style={{ padding: 18, overflowY: "auto" }}>
             {/* (사용자 요청, v0.3.9) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
-                이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. */}
+                이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. 통계 분리 토글도 MyProfileCard와 같이
+                이 줄 우상단 여백에 둔다. */}
             <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(pub.displayId || pub.username)}{roleIcon(pub.username)}</span>
+              {statsViewToggle(statsView, setStatsView)}
             </div>
             <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
               {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
@@ -21482,7 +21486,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 {pub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.bio}</div>}
               </div>
             </div>
-            <ProfileStatsToggle pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pub.uid} viewerUid={myUid} />
+            <ProfileStatsPanel pub={pub} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pub.uid} viewerUid={myUid} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
                 {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
@@ -22131,6 +22135,10 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   const [chatWith, setChatWith] = useState(null); // (17차) 채팅 상대: { uid, username }
   // (버그 수정) 친구 삭제 버튼을 누르면 곧장 삭제되던 것 — 확인 다이얼로그를 띄운 뒤 확정해야 지워지게 한다.
   const [confirmRemove, setConfirmRemove] = useState(null); // 삭제 확인 대상: sel과 같은 { uid, username, pub }
+  // (사용자 요청, v0.3.9) 통계 분리 토글 — 카드 우상단(아이디 라벨과 같은 줄)에 두므로 이 모달이
+  // statsView를 들고 있다가 헤더 줄에서 그리고, 아래 내용 패널(ProfileStatsPanel)에는 값만 넘긴다.
+  // 새 프로필을 열 때마다(viewProfileUid) "oc"로 되돌린다.
+  const [statsView, setStatsView] = useState("oc");
   // (v0.3.3 UI) 채팅·프로필·검색 창(v0.3.2)과 마찬가지로, 모바일에서는 이 친구 창도 카드가 아니라
   // 전체 화면으로 띄운다.
   const narrow = useNarrow(640);
@@ -22169,7 +22177,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   // "거절" 버튼에서만 이 함수를 쓴다.
   const doReject = (uid) => guard(uid, async () => { await friendRemove(uid); await notifyResolveFriendRequest(meId, uid, "rejected"); })();
 
-  const viewProfileUid = (uid) => { const pr = profiles[uid] || {}; setSel({ uid, username: pr.username || uid, pub: pr.pub || {} }); };
+  const viewProfileUid = (uid) => { const pr = profiles[uid] || {}; setStatsView("oc"); setSel({ uid, username: pr.username || uid, pub: pr.pub || {} }); };
 
   // 검색(추가) 탭
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
@@ -22239,7 +22247,10 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                   이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. */}
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
-                {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
+                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                  {statsViewToggle(statsView, setStatsView)}
+                  {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
+                </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
                 {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
@@ -22252,7 +22263,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
               </div>
               {/* (버그 수정) 채팅/친구 요청·수락·거절 버튼을 카드 맨 아래 대신 티어와 메인 퀘스트
                   진척도 사이(actions prop)에 둔다. */}
-              <ProfileStatsToggle pub={p} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} ownerUid={sel.uid} viewerUid={meId} />
+              <ProfileStatsPanel pub={p} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} ownerUid={sel.uid} viewerUid={meId} />
             </div>
           );
         })() : (
