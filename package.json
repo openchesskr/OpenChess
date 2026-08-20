@@ -1,0 +1,31 @@
+{
+  "name": "opening-lab",
+  "private": true,
+  "version": "0.3.8",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-engine.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "refresh": "node scripts/refresh-data.mjs",
+    "list-external-game-urls": "node scripts/list-external-game-urls.mjs",
+    "fetch-external-games": "node scripts/fetch-external-games.mjs",
+    "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "framer-motion": "^12.42.2",
+    "lucide-react": "^0.383.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "adm-zip": "^0.6.0",
+    "chess.js": "^1.0.0-beta.8",
+    "stockfish171": "npm:stockfish@17.1.0",
+    "stockfish18": "npm:stockfish@^18.0.8",
+    "vite": "^5.3.0"
+  }
+}
