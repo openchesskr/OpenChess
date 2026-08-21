@@ -4005,7 +4005,20 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const gridRef = useRef(null);
   const dragStartRef = useRef(null);       // { r, c, x, y } — pointerdown 시점
   const suppressClickRef = useRef(false);  // 드래그가 실제로 일어났으면 뒤이어 오는 합성 click을 무시
-  const [ptrDrag, setPtrDrag] = useState(null); // { r, c, x, y } — 드래그 임계값을 넘겼을 때만 채워짐(고스트 표시용)
+  // (v0.3.9 버그 수정) 사용자 신고 "기물이 너무 무겁게 끌려온다" — ptrDrag에 손가락 좌표(x,y)까지
+  // 담아 pointermove마다(초당 수십 번) setState로 갱신하고 있었다. React state 변경은 이 Board
+  // 컴포넌트 전체(8x8 칸·기물·화살표 SVG 등)를 매번 다시 렌더링시키므로, 손가락이 움직일 때마다
+  // 보드 전체가 통째로 재조정(reconciliation)돼 고스트가 눈에 띄게 뒤처져 따라오고(무겁게 느껴짐),
+  // 메인 스레드가 그 렌더링으로 바빠 실제 pointer 이벤트 처리·판정까지 밀리는 부작용까지 있었다 —
+  // "근처에 끌고 와서 놓아도 착수가 안 된다"는 신고의 실제 원인 중 하나로 보인다(고스트가 시각적으로
+  // 뒤처지니 사용자가 놓는 시점을 실제 손가락 위치와 다르게 판단하게 되는 것도 한몫한다). ptrDrag는
+  // 이제 "어느 칸을 드래그 중인지"(r,c, 원본 기물 옅게 표시용)만 담고, 드래그 임계값을 넘는 그
+  // 순간에만 딱 한 번 setState한다 — 그 이후 손가락 좌표는 ghostPosRef(순수 ref)에만 쓰고, 고스트
+  // DOM 엘리먼트(ghostElRef)의 style.left/top을 pointermove 핸들러에서 직접 갱신해(React 렌더링을
+  // 거치지 않는 명령형 DOM 조작) 60fps로 부드럽게 따라오면서도 보드 전체는 다시 그리지 않는다.
+  const [ptrDrag, setPtrDrag] = useState(null); // { r, c } — 드래그 임계값을 넘겼을 때만 채워짐(고스트 존재 여부·원본 기물 딤 처리용)
+  const ghostPosRef = useRef({ x: 0, y: 0 });    // 최신 손가락 좌표 — React state를 거치지 않는다
+  const ghostElRef = useRef(null);               // 고스트 DOM 엘리먼트 — pointermove마다 직접 style을 갱신
   // (사용자 요청) 드래그 인식을 조금 더 빠르게(더 적은 이동만으로 탭과 구분) 하기 위해 5px→4px로
   // 살짝 낮췄다 — 단순 탭(거의 0px 이동)과는 여전히 뚜렷이 구분되면서, 드래그 의도를 더 일찍 반응한다.
   // (v0.3.9 재조정, 정정 → 재재조정, 재정정) 이 값을 올렸다 내렸다 했는데 방향 자체가 잘못됐었다 —
@@ -4054,13 +4067,31 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   // 칸까지 건너뛸 수 있어, 느린 드래그가 더 오래 이 외삽의 영향을 받게 하는 쪽(시간)만 늘렸다.
   // (v0.3.9 재요청) 두 지점 모두 훨씬 더 관대하게 — 외삽 시간을 250ms로 더 늘리고, 클램프 상한도
   // 정확히 한 칸(1.0)까지 늘린다(그 이상은 그다음 칸까지 건너뛸 위험이 실질적으로 커져 여기서 상한).
-  const DRAG_LOOKAHEAD_MS = 250;
+  // (v0.3.9 되돌림) 이렇게까지 키운 뒤에도 "무겁게 끌려온다"·"놓아도 착수가 안 된다"는 신고가
+  // 계속돼 원인을 다시 보니, 고스트 위치를 매 pointermove마다 React state로 갱신해 보드 전체를
+  // 다시 렌더링하던 게 실제 병목이었다(바로 아래 moveGhostTo 참고 — 이제 DOM을 직접 갱신해 렌더링과
+  // 무관해졌다). 그 병목이 실제 pointer 이벤트 처리까지 지연시켜, 외삽을 아무리 키워도 근본 문제는
+  // 못 가렸던 것으로 보인다 — 렌더링 병목을 없앤 지금은 외삽을 이렇게 크게 둘 필요가 없고, 오히려
+  // 과도하면 의도한 칸을 넘어 엉뚱한(불법인) 칸으로 착수를 시도해 조용히 취소되는 부작용만 커지므로
+  // 다시 절반 정도(100ms)로 낮춘다.
+  const DRAG_LOOKAHEAD_MS = 100;
   const onPiecePointerDown = (e, r, c) => {
     if (!interactive || !onPieceDrag) return;
     e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
     dragStartRef.current = { r, c, x: e.clientX, y: e.clientY, hist: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
     onPieceDrag([r, c]);
+  };
+  // 고스트 DOM을 pointermove에서 직접(React 렌더링 없이) 옮긴다 — Board 그리드는 position:relative라
+  // 그리드 기준 상대좌표로 변환해야 한다(고스트가 fixed가 아니라 그리드 내부 absolute이므로).
+  const moveGhostTo = (clientX, clientY) => {
+    ghostPosRef.current = { x: clientX, y: clientY };
+    const el = ghostElRef.current, grid = gridRef.current;
+    if (el && grid) {
+      const rect = grid.getBoundingClientRect();
+      el.style.left = (clientX - rect.left) + "px";
+      el.style.top = (clientY - rect.top - cell * 0.5) + "px";
+    }
   };
   const onPiecePointerMove = (e) => {
     const d = dragStartRef.current; if (!d) return;
@@ -4069,7 +4100,8 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     if (!ptrDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return; // 임계값 전엔 탭일 수도 있으니 아직 고스트를 안 띄운다
     d.hist.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
     if (d.hist.length > 4) d.hist.shift(); // 최근 속도만 반영 — 드래그 전체 평균이 아니라 놓기 직전 방향이 중요하다
-    setPtrDrag({ r: d.r, c: d.c, x: e.clientX, y: e.clientY });
+    moveGhostTo(e.clientX, e.clientY);
+    if (!ptrDrag) setPtrDrag({ r: d.r, c: d.c }); // 딱 한 번만(임계값을 처음 넘는 순간) — 이후엔 ref/DOM만 갱신
   };
   const predictedDropPoint = (d, clientX, clientY) => {
     const hist = d.hist || [];
@@ -4078,7 +4110,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     const dt = last.t - first.t;
     if (!(dt > 0)) return { x: clientX, y: clientY };
     const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
-    const maxOffset = cell * 1.0;
+    const maxOffset = cell * 0.6; // (v0.3.9 되돌림) 렌더링 병목을 없앤 뒤로 과도한 외삽이 불필요해져 다시 낮춤 — 위 DRAG_LOOKAHEAD_MS 주석 참고
     const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
     const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
     return { x: clientX + offX, y: clientY + offY };
@@ -4205,10 +4237,12 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
         {ptrDrag && gridRef.current && (() => {
           const gp = board[ptrDrag.r][ptrDrag.c];
           if (!gp) return null;
+          // 이 블록은 ptrDrag가 {r,c}로 바뀌는 최초 한 번만 렌더된다(그 이후 좌표 갱신은 moveGhostTo가
+          // ghostElRef를 통해 직접 DOM에 쓴다) — 그 첫 렌더 시점의 좌표를 ghostPosRef에서 그대로 읽는다.
           const rect = gridRef.current.getBoundingClientRect();
-          const gx = ptrDrag.x - rect.left, gy = ptrDrag.y - rect.top - cell * 0.5;
+          const gx = ghostPosRef.current.x - rect.left, gy = ghostPosRef.current.y - rect.top - cell * 0.5;
           return (
-            <div style={{ position: "absolute", left: gx, top: gy, transform: "translate(-50%,-50%)", zIndex: 20, pointerEvents: "none", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.5))" }}>
+            <div ref={ghostElRef} style={{ position: "absolute", left: gx, top: gy, transform: "translate(-50%,-50%)", zIndex: 20, pointerEvents: "none", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.5))" }}>
               <PieceGlyph type={gp.t} color={gp.c} size={cell * 0.86} pieceSkin={effPieceSkin} />
             </div>
           );
@@ -4549,7 +4583,13 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const gridRef = useRef(null);
   const dragStartRef = useRef(null); // { source:"board"|"palette", from:[r,c]|null, piece:{c,t}, x, y }
   const suppressClickRef = useRef(false);
-  const [ptrDrag, setPtrDrag] = useState(null); // 위와 동일한 모양 — 드래그 임계값을 넘겼을 때만 채워짐(고스트/딤 처리용)
+  // (v0.3.9 버그 수정) Board 컴포넌트와 동일한 이유 — ptrDrag에 손가락 좌표까지 담아 pointermove마다
+  // setState하면 이 모달 전체가 매번 다시 렌더링돼 고스트가 무겁게 뒤처져 보인다. ptrDrag는 이제
+  // {source,from,piece}만(드래그 임계값을 처음 넘는 순간 한 번만) 담고, 좌표는 ghostPosRef/ghostElRef로
+  // React 렌더링 없이 직접 갱신한다.
+  const [ptrDrag, setPtrDrag] = useState(null); // 드래그 임계값을 넘겼을 때만 채워짐(고스트 존재 여부·딤 처리용)
+  const ghostPosRef = useRef({ x: 0, y: 0 });
+  const ghostElRef = useRef(null);
   // (v0.3.9 재조정, 정정 → 재재조정 → 재정정 → 재요청) Board 컴포넌트와 동일하게 — 드래그 "시작"
   // 문턱은 최대한 낮게, "종료 지점" 판정만 관대하게. 자세한 이유는 그쪽 같은 이름 상수 주석 참고.
   const DRAG_THRESHOLD = 1;
@@ -4571,9 +4611,10 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   };
   // (사용자 요청) Board 컴포넌트와 동일한 드래그 무브 개선 — 최근 이동 방향·속도로 놓는 지점을 아주
   // 짧게 외삽해(클램프 이내로) 빠른 드래그가 목표 칸에 못 미쳐 취소되는 경우를 줄인다. 자세한 이유는
-  // Board 컴포넌트의 같은 이름 상수 주석 참고. (v0.3.9 재조정, 정정 → 재재조정 → 재요청) 더
-  // 둔감하게 — 250ms.
-  const DRAG_LOOKAHEAD_MS = 250;
+  // Board 컴포넌트의 같은 이름 상수 주석 참고. (v0.3.9 되돌림) 렌더링 병목(고스트를 매 pointermove마다
+  // setState로 갱신해 모달 전체가 다시 렌더링되던 문제)을 없앤 뒤로는 과도한 외삽이 불필요해져 100ms로
+  // 다시 낮췄다.
+  const DRAG_LOOKAHEAD_MS = 100;
   const startDragFromBoard = (e, r, c) => {
     if (tool) return; // 도구가 활성화된 동안은 클릭 스탬프만 — 드래그는 도구가 없을 때만 시작
     const piece = board[r][c]; if (!piece) return;
@@ -4586,6 +4627,13 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
     dragStartRef.current = { source: "palette", from: null, piece: { c: color, t: piece }, x: e.clientX, y: e.clientY, hist: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
   };
+  // position:fixed 고스트라 뷰포트 좌표를 그대로 쓴다(팔레트가 그리드 바깥에 있어 그리드 상대좌표로는
+  // 못 그리므로 — 위 주석 참고).
+  const moveGhostTo = (clientX, clientY) => {
+    ghostPosRef.current = { x: clientX, y: clientY };
+    const el = ghostElRef.current;
+    if (el) { el.style.left = clientX + "px"; el.style.top = (clientY - 22) + "px"; }
+  };
   const onDragPointerMove = (e) => {
     const d = dragStartRef.current; if (!d) return;
     e.preventDefault();
@@ -4593,7 +4641,8 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     if (!ptrDrag && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
     d.hist.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
     if (d.hist.length > 4) d.hist.shift();
-    setPtrDrag({ ...d, x: e.clientX, y: e.clientY });
+    moveGhostTo(e.clientX, e.clientY);
+    if (!ptrDrag) setPtrDrag(d); // 딱 한 번만 — 이후엔 ref/DOM만 갱신
   };
   const predictedDropPoint = (d, clientX, clientY) => {
     const hist = d.hist || [];
@@ -4602,7 +4651,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     const dt = last.t - first.t;
     if (!(dt > 0)) return { x: clientX, y: clientY };
     const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
-    const maxOffset = (gridRef.current ? gridRef.current.getBoundingClientRect().width / 8 : 0) * 1.0;
+    const maxOffset = (gridRef.current ? gridRef.current.getBoundingClientRect().width / 8 : 0) * 0.6;
     const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
     const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
     return { x: clientX + offX, y: clientY + offY };
@@ -4754,7 +4803,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     </div>
   );
   const ghostEl = ptrDrag && (
-    <div style={{ position: "fixed", left: ptrDrag.x, top: ptrDrag.y - 22, transform: "translate(-50%,-50%)", zIndex: 999, pointerEvents: "none", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.55))" }}>
+    <div ref={ghostElRef} style={{ position: "fixed", left: ghostPosRef.current.x, top: ghostPosRef.current.y - 22, transform: "translate(-50%,-50%)", zIndex: 999, pointerEvents: "none", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.55))" }}>
       <PieceGlyph type={ptrDrag.piece.t} color={ptrDrag.piece.c} size={Math.round(boardSize / 8 * 0.9)} />
     </div>
   );
