@@ -9137,11 +9137,20 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
     </div>
   );
 });
-// (v0.3.9 재설계, 사용자 요청) 한 수를 화면에 보여준 뒤 다음 수로 넘어가기까지의 최소 체류 시간 —
-// 채점이 이미 끝나 있으면 이 시간만 지나면 곧장 다음 수로 넘어간다(예전의 고정 속도 애니메이션과
-// 달리 실제 분석이 밀린 만큼만 기다린다). 너무 짧으면 아이콘이 뜨자마자 다음 수로 넘어가 눈에
-// 안 들어오고, 너무 길면 다시 예전처럼 굼떠 보이므로 그 사이 값으로 잡는다.
-const REVEAL_MIN_STEP_MS = 130;
+// (v0.3.9 재설계, 사용자 재요청) "처음엔 너무 오래 멈춰 있다가, 막상 재생될 땐 너무 빨라서 눈으로
+// 못 따라간다" — 고정 속도 하나로는 "평소엔 한 수씩 눈에 잘 들어오게 느긋하면서, 밀린 수를 몰아
+// 보여줄 땐 답답하지 않은" 두 요구를 동시에 만족할 수 없었다. 대신 탄력적인 속도를 쓴다 — 밀린 수
+// (backlog = 이미 채점됐지만 아직 화면에 못 보여준 수)가 거의 없는 평소에는 느긋한 기본 속도
+// (REVEAL_BASE_STEP_MS)로 한 수씩 여유 있게 보여주고, backlog가 쌓일수록 점점 빨라져 최댓값
+// (REVEAL_BACKLOG_FULL_SPEED개 이상)에서 가장 빠른 속도(REVEAL_MIN_STEP_MS)까지 좁혀진다.
+// 평소보다 느긋한 기본 속도 덕분에 채점이 여유 있게 앞서갈 때는 자연히 backlog가 미리 쌓이고
+// ("버퍼"), 그 버퍼가 있는 동안은 중간에 어느 한 포지션이 느려져 채점이 잠깐 멈춰도 그 버퍼를
+// 소비하며 화면은 계속 흘러간다 — 완전히 막을 수는 없지만(버퍼가 다 소진되면 여전히 기다려야
+// 한다), 훨씬 자주 자연스럽게 흡수된다. 대국 맨 처음(아직 버퍼가 쌓일 시간이 없었을 때) 첫 몇 수가
+// 한꺼번에 채점 완료돼 있으면 backlog가 커서 이 속도가 저절로 빨라지므로, 초반도 더 빠르게 재생된다.
+const REVEAL_BASE_STEP_MS = 220;
+const REVEAL_MIN_STEP_MS = 90;
+const REVEAL_BACKLOG_FULL_SPEED = 9;
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
 function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn, sans, startWhite = true }) {
   const data = useMemo(() => buildRevealData(result, sharpOn), [result, sharpOn]);
@@ -9176,14 +9185,18 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
     function tick(ts) {
       if (lastStepTs == null) lastStepTs = ts;
       const target = targetRef.current;
+      // (사용자 재요청) 밀린 수(backlog)가 많을수록 한 수당 머무는 시간을 REVEAL_BASE_STEP_MS에서
+      // REVEAL_MIN_STEP_MS까지 선형으로 좁힌다 — 위 상수 선언부 주석 참고.
+      const backlog = Math.max(0, target - curFloored);
+      const stepMs = REVEAL_BASE_STEP_MS - (REVEAL_BASE_STEP_MS - REVEAL_MIN_STEP_MS) * Math.min(1, backlog / REVEAL_BACKLOG_FULL_SPEED);
       let stepped = false;
-      if (curFloored < target && ts - lastStepTs >= REVEAL_MIN_STEP_MS) {
+      if (curFloored < target && ts - lastStepTs >= stepMs) {
         curFloored += 1;
         lastStepTs = ts;
         stepped = true;
       }
       const elapsed = ts - lastStepTs;
-      const frac = curFloored < target ? Math.min(0.9, elapsed / REVEAL_MIN_STEP_MS) : 0;
+      const frac = curFloored < target ? Math.min(0.9, elapsed / stepMs) : 0;
       // (사용자 요청) "애니메이션이 부드럽게 재생되도록" — 대기 없이 채점된 수가 연달아 밀려 있으면
       // (밀린 만큼 빠르게 따라잡는 동안) 매 프레임(60fps)마다 이 무거운 컴포넌트(SVG 두 개 +
       // MiniAccCurve 두 개)가 통째로 다시 렌더링돼, 특히 느린 기기에서 그 구간만 뚝뚝 끊겨(jank)
