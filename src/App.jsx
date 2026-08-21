@@ -9255,13 +9255,13 @@ function buildRevealData(result, sharpOn = true) {
 // (progress의 소수부 변화와는 무관), React.memo로 얕은 비교를 걸어 그 사이의 낭비 렌더링을 없앤다.
 const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, layoutId, calculatingSan, toast }) {
   const total = curve.length - 1; // 그 진영이 실제로 둔 수 개수
-  const W2 = 320, H2 = big ? 70 : 46;
+  const W2 = 320, H2 = big ? 108 : 46;
   // (v0.3.9 사용자 요청) 등급 아이콘(원 마커)이 그래프 위아래 끝에서 잘리던 문제 — 마커는 고정 픽셀
   // 크기(dotBox)의 HTML 오버레이라, 위아래 여백(PAD)이 마커 반지름보다 작으면 값이 최고/최저 근처일
   // 때 컨테이너의 overflow:hidden에 마커 절반이 잘렸다. dotBox 반지름 이상의 여백을 확보하도록 PAD를
   // 키우고, 컨테이너 자체 높이도 조금 늘려 픽셀 단위 여유를 추가로 더한다.
-  const PAD = big ? 12 : 10;
-  const boxHeight = big ? 76 : 50;
+  const PAD = big ? 18 : 10;
+  const boxHeight = big ? 116 : 50;
   // (사용자 요청, v0.3.9) 예전엔 수가 몇 개든 항상 고정폭(W2) 안에 눌러 담아(i/total*W2) 그려서, 수가
   // 많은 대국일수록 수 아이콘들이 다닥다닥 겹쳐 보였다 — 대신 수 하나당 항상 같은 간격(SPACING)을 주는
   // "가상 캔버스"(contentWidth = 수 개수 × SPACING)에 그리고, 실제로 보이는 영역(W2 폭의 뷰포트)은 그
@@ -9318,11 +9318,11 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
   // 세부 형태가 있는 이미지)이 그 크기에서는 뭉개져 하얀 얼룩처럼만 보이고 무슨 아이콘인지 전혀
   // 알아볼 수 없었다 — 이 앱 다른 곳에서 이미 등급 아이콘을 쓰는 최소 크기(11~15px, badgeIcon 호출부
   // 참고)에 맞춰 원 자체를 그만큼 키운다.
-  const dotBox = big ? 18 : 14;
+  const dotBox = big ? 24 : 14;
   const dotIconSize = dotBox - (big ? 4 : 3);
   return (
     <div>
-      <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3, fontFamily: SITE_FONT }}>{label}</div>
+      <div style={{ fontSize: big ? 15 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3, fontFamily: SITE_FONT }}>{label}</div>
       <div style={{ position: "relative", width: "100%", height: boxHeight, overflow: "hidden" }}>
         {/* (v0.3.9 기능) viewBox의 min-x를 offset만큼 옮겨 가상 캔버스(폭 contentWidth) 중 W2폭짜리
             창만 보여준다 — 배경·격자선은 항상 전체 캔버스(contentWidth)를 채워 어느 위치로 창이
@@ -9333,7 +9333,7 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
           {[low, high].map((g, gi) => (
             <React.Fragment key={gi}>
               <line x1="0" y1={yy(g).toFixed(1)} x2={contentWidth} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
-              <text x={(offset + 2).toFixed(1)} y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily={SITE_FONT}>{Math.round(g)}</text>
+              <text x={(offset + 2).toFixed(1)} y={(g === high ? yy(g) + 9 : yy(g) - 2.5).toFixed(1)} fontSize={big ? 11.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily={SITE_FONT}>{Math.round(g)}</text>
             </React.Fragment>
           ))}
           {/* (사용자 요청) 그래프 선을 구간(수)마다 나눠 그려, 각 구간이 그 수의 등급 색을 그대로
@@ -9342,7 +9342,7 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
             const i = idx + 1;
             const mv = moves && moves[idx];
             const segColor = (mv && QCOLOR[mv.kind]) || color;
-            return <line key={i} x1={xx(i - 1).toFixed(1)} y1={yy(pts[idx]).toFixed(1)} x2={xx(i).toFixed(1)} y2={yy(v).toFixed(1)} stroke={segColor} strokeWidth={big ? 3.4 : 2.6} strokeLinecap="round" />;
+            return <line key={i} x1={xx(i - 1).toFixed(1)} y1={yy(pts[idx]).toFixed(1)} x2={xx(i).toFixed(1)} y2={yy(v).toFixed(1)} stroke={segColor} strokeWidth={big ? 4 : 2.6} strokeLinecap="round" />;
           })}
         </svg>
         {/* (사용자 요청) 수마다 원 마커를 찍고, 그 안에 그 수의 등급 아이콘을 pop-in 애니메이션으로
@@ -9584,7 +9584,12 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
         <span>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요"}</span>
         {!allDone && <PendingDots size={11} />}
       </p>
-      <div style={{ background: "#3B342E", borderRadius: 10, padding: 6 }}>
+      {/* (사용자 요청) 이 평가치 미리보기 그래프는 아래 백·흑 정확도 그래프 두 개와 "거의 같은
+          크기"를 이루도록 폭을 줄인다 — 데스크톱(narrow=false)에서는 아래 두 그래프가 이 컨테이너
+          폭을 절반씩 나눠 쓰므로, 이 그래프도 그 한 칸(절반, 사이 간격 14 절반씩 뺀 값)만큼만 쓰고
+          가운데 정렬한다. 모바일에서는 아래 그래프들도 이미 한 줄에 하나씩 전체 폭을 쓰므로 그대로
+          전체 폭을 쓴다. */}
+      <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, width: narrow ? "100%" : (waitMaxWidth - 14) / 2, maxWidth: "100%", margin: narrow ? 0 : "0 auto" }}>
         <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
           {/* 아직 펜이 지나가지 않은 구간 — 값을 추측해 잇지 않고 그냥 검은 여백으로 둔다 */}
           {tipX < W && <rect x={tipX.toFixed(1)} y="0" width={(W - tipX).toFixed(1)} height={H} fill="#0A0604" />}
