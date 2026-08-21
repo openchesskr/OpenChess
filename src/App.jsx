@@ -3588,11 +3588,13 @@ function evalBarText(ev) {
   if (ev.mate != null) return "M" + (ev.plies != null ? ev.plies : matePliesOf(ev.mate));
   return (Math.abs(ev.cp || 0) / 100).toFixed(1);
 }
-function EvalBadge({ ev, small }) {
+// (v0.3.9 사용자 요청) font — 리뷰 페이지 호출부만 REVIEW_FONT를 넘겨 그 화면에서만 폰트를
+// 바꾼다(학습 탭·퍼즐 등 다른 화면은 기본값 그대로 ui-monospace 유지).
+function EvalBadge({ ev, small, font }) {
   const num = !ev ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : (ev.cp || 0));
   const txt = evalDisplayText(ev);
   // (v0.1.3 UI) 엔진 라인(small)은 자리를 훨씬 더 압축한다 — 좌우 여백·최소폭·글자 크기를 크게 줄임.
-  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: small ? 32 : 50, padding: small ? "1px 3px" : "3px 8px", borderRadius: small ? 4 : 6, fontSize: small ? 9 : 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)", flexShrink: 0 };
+  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: small ? 32 : 50, padding: small ? "1px 3px" : "3px 8px", borderRadius: small ? 4 : 6, fontSize: small ? 9 : 11, fontWeight: 800, fontFamily: font || "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)", flexShrink: 0 };
   if (num > 0) return <span style={{ ...base, background: "#FFFFFF", color: "#0E0907" }}>{txt}</span>;
   if (num < 0) return <span style={{ ...base, background: "#0E0907", color: "#FFFFFF" }}>{txt}</span>;
   return (
@@ -3613,7 +3615,7 @@ const BOARD_FRAME_INSET = 11;
 // 딱 맞춘다 — 그러면 막대 위끝=8행 위, 아래끝=1행 아래, 세로 중앙(0.0)=4·5행 사이가 된다. 한 칸당
 // 1점, 최대 ±4점(그 밖은 e를 ±4로 클램프하므로 막대가 유리한 쪽 한 색으로 통일됨). 가로 막대(기존
 // 학습 탭 등)는 vertical 없이 그대로 동작한다.
-function EvalBar({ cp, width, depth, vertical }) {
+function EvalBar({ cp, width, depth, vertical, font }) {
   // (20차) cp는 숫자(cp) 또는 {cp}|{mate,win} 객체 — 메이트 수순에서 +10.00이 아니라 M수로 표기한다.
   const ev = cp == null ? null : (typeof cp === "number" ? { cp } : cp);
   const num = ev == null ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : ev.cp);
@@ -3633,7 +3635,7 @@ function EvalBar({ cp, width, depth, vertical }) {
           <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: (100 - whitePct) + "%", background: "#140C07" }} />
         </div>
         {/* 부호 없이 크기만 — 위치(아래=백/위=흑)로 유불리를 구분한다. 폭(22px)에 다 들어오도록 글자를 줄인다. */}
-        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 7.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", lineHeight: 1, letterSpacing: "-.02em", ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalBarText(ev)}</span>
+        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 7.5, fontWeight: 800, fontFamily: font || "ui-monospace,monospace", lineHeight: 1, letterSpacing: "-.02em", ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalBarText(ev)}</span>
       </div>
     );
   }
@@ -3649,7 +3651,7 @@ function EvalBar({ cp, width, depth, vertical }) {
       {/* (v0.1.3 UI) 색이 채워진 박스 배지 대신, 소수점 둘째 자리까지 표기한 텍스트를 바에 직접
           얹는다(박스 배경 없음) — 백이 유리하면 흰 구간(좌측)에 검은 텍스트를 좌측 끝에, 흑이
           유리하면 검은 구간(우측)에 흰 텍스트를 우측 끝에 두어 항상 자신이 놓인 구간과 대비되게 한다. */}
-      <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", ...(num >= 0 ? { left: 6, color: "#140C07" } : { right: 6, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
+      <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: font || "ui-monospace,monospace", ...(num >= 0 ? { left: 6, color: "#140C07" } : { right: 6, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
       {/* (버그 수정) 평가치 텍스트가 백 유리 시 좌측, 흑 유리 시 우측으로 옮겨 다니게 되면서, 항상
           우측 고정이던 탐색 인디케이터와 겹칠 수 있어 평가치 텍스트의 반대편에 두도록 바꾼다. */}
       {depth != null && (
@@ -3772,7 +3774,7 @@ function dedupeEngineLines(list) {
 // maxPlies=15까지, MultiPV 탐색이 도달한 depth만큼 수를 이미 다 갖고 있고(TypedMoveLine이 그걸
 // 전부 타이핑해 준다) 화면에 한 번에 안 보일 뿐이었다 — 네이티브 스크롤은 어떤 모바일 브라우저에서도
 // 항상 동작이 보장되므로, 이제 실제로 밀면 반드시 나머지가 나온다.
-function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst, large }) {
+function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst, large, font }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   const [showFade, setShowFade] = useState(false);
@@ -3806,9 +3808,9 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst,
     // 옛 위치→새 위치로의 이동을 자동으로(FLIP) 애니메이션할 수 있다.
     <motion.div layout transition={{ duration: 0.32, ease: MOTION_EASE }} className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
       style={{ display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
-      <EvalBadge ev={l.ev} small={!large} />
+      <EvalBadge ev={l.ev} small={!large} font={font} />
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
-        style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: large ? 13 : 10, color: T.ivory, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
+        style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: large ? 13 : 10, color: T.ivory, fontFamily: font || SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
         <span ref={innerRef} style={{ display: "inline-block" }}>
           <TypedMoveLine startPly={startPly} sans={l.sans} posKeyBase={posKeyBase} />
         </span>
@@ -3817,7 +3819,7 @@ function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst,
     </motion.div>
   );
 }
-function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large }) {
+function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large, font }) {
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
   if (!hasLines && !pending) return null;
@@ -3856,7 +3858,7 @@ function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large }
             // (다른 후보로 완전히 교체) 자연스럽게 새 컴포넌트로 마운트/언마운트된다.
             const rowKey = (l.sans && l.sans[0]) || ("slot" + i);
             return (
-              <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} large={large} />
+              <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} large={large} font={font} />
             );
           })}
           {Array.from({ length: missing }, (_, i) => forced ? <EngineLineBlank key={"pad" + i} large={large} /> : <EngineLineSkeleton key={"pad" + i} large={large} />)}
@@ -4318,6 +4320,11 @@ function sansToPgnText(sans, startColor) {
 // (18차 UI6 → 사용자 요청으로 v0.3.3에 유산 기보 폰트로 통일) 기보 표기 전반에 쓰는 폰트 —
 // 원래 Playfair Display였으나, 유산(Legacy) 재생 화면의 기보에 쓰던 폰트(LEGACY_FONT)로 맞췄다.
 const SEQ_FONT = "'Merriweather', 'Noto Sans KR', serif";
+// (v0.3.9 사용자 요청) 리뷰 페이지 전용 폰트 — 숫자를 포함해 리뷰 페이지에 쓰이는 텍스트는 전부
+// 이 폰트로 통일한다. 리뷰 전용 컴포넌트는 기존 fontFamily 값을 이걸로 바로 바꾸고, 다른 화면과
+// 공유하는 컴포넌트(EvalBadge·EvalBar·SequenceBar 등)는 font(옵션) prop을 추가해 리뷰 페이지
+// 호출부에서만 이 값을 넘겨 다른 화면(학습 탭·퍼즐 등)의 기존 폰트에는 영향이 없게 한다.
+const REVIEW_FONT = "'IBM Plex Sans KR', sans-serif";
 // (v0.2.9 디자인 → v0.3.3 폰트 교체) 퀘스트 클리어·티어 승급 같은 "게임 보상 화면" 팝업의 큰
 // 제목에만 적용하는 디스플레이 폰트 — 문단 본문에 쓰기엔 너무 두꺼워 가독성이 떨어진다.
 // (사용자 요청) 알림 창·팝업에 등장하는 한글 Title 텍스트는 Google Fonts의 Bagel Fat One으로.
@@ -4372,7 +4379,8 @@ function PuzzlePgnBox({ text, sans, startColor, onPick }) {
 // 흐리게 계속 표시되며, 현재 수만 볼드로 강조된다. future 수를 클릭하면 그 수까지 다시 진행한다.
 // (v0.1.3 버그 수정) 기보가 길어지면 flex-wrap으로 줄바꿈돼 이 바의 높이가 계속 늘어나며 아래
 // 보드를 밀어냈다 — 한 줄로 고정하고(flexWrap:nowrap) 넘치는 만큼은 좌우 스크롤로 보게 한다.
-function SequenceBar({ sans, future = [], onJump, drawn, startColor }) {
+function SequenceBar({ sans, future = [], onJump, drawn, startColor, font }) {
+  const seqFont = font || SEQ_FONT;
   // (20차) 보드 상단 기보에 체크(+)/체크메이트(#) 기호가 항상 표시되도록 표기 직전에 보정한다.
   const all = useMemo(() => decorateLine([...sans, ...(future || [])]), [sans.join(" "), (future || []).join(" ")]);
   // (v0.1.3 기능) 기보가 길어져 화면에 다 안 담기면, 수를 둘 때마다 자동으로 오른쪽(최신 수)으로
@@ -4412,17 +4420,17 @@ function SequenceBar({ sans, future = [], onJump, drawn, startColor }) {
     dragRef.current = null;
   };
   const dragHandlers = { onPointerDown, onPointerMove, onPointerCancel: () => { dragRef.current = null; }, onClickCapture };
-  if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
+  if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (plyIsWhite(i, startColor)) parts.push(plyMoveNum(i, startColor) + "." + san); else if (parts.length) parts[parts.length - 1] += " " + san; else parts.push(plyMoveNum(i, startColor) + "..." + san); });
     // (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
     // 끝에 결과 기호(½-½)만 덧붙인다.
     if (drawn) parts.push("½-½");
-    return <div ref={scrollRef} {...dragHandlers} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>{parts.join("  ")}</div>;
+    return <div ref={scrollRef} {...dragHandlers} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
   return (
-    <div ref={scrollRef} className="flex items-center no-pan" {...dragHandlers} style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: SEQ_FONT, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+    <div ref={scrollRef} className="flex items-center no-pan" {...dragHandlers} style={{ flex: "1 1 auto", minWidth: 0, color: T.ivoryHi, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em", gap: "0 2px", flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
       {all.map((san, i) => {
         const isCur = i === cur;
         const isFuture = i > cur;
@@ -8430,15 +8438,21 @@ function reviewPhaseAccuracy(moves, fromPly, toPly, white, sharpOn = true) {
   }
   return newCumulativeAccuracy(losses, sharps, losses.length, sharpOn);
 }
-// (v0.2.1) 오프닝처럼 하이라이트할 비이론 수가 없는 단계는, 이론 수를 아이콘으로 쓰지 않고 그 단계·진영의
-// 정확도로 대표 등급을 정해 아이콘을 표시한다(chess.com 정확도 구간을 참고한 근사 매핑).
-function gradeFromAccuracy(acc) {
+// (v0.2.1 → v0.3.9 사용자 요청으로 임계값·반영 규칙 재설계) 단계 아이콘의 등급을 그 단계·진영의
+// 정확도로 정한다 — 100 이상은 최선의 수, 90~100은 우수한 수, 80~90은 좋은 수, 60~80은 부정확,
+// 50~60은 실수, 50 미만은 블런더. highlightKind(reviewPhaseHighlight의 결과)가 그 단계에 실제로
+// 탁월한 수·유일한 수가 있었음을 가리키면(REVIEW_PHASE_PRIORITY상 최우선이라 탁월이 있으면 항상
+// highlightKind가 "brilliant"로, 없고 유일한 수만 있으면 "only"로 나온다 — 그래서 탁월이 자동으로
+// 유일보다 우선한다), 최선/우수/좋음 세 구간에서는 그 특정 아이콘으로 대체해 보여준다(부정확·실수·
+// 블런더 구간은 애초에 탁월·유일이 나올 수 없는 손실 크기이므로 반영 대상이 아니다).
+function gradeFromAccuracy(acc, highlightKind) {
   if (acc == null) return null;
-  if (acc >= 96) return "best";
-  if (acc >= 90) return "excellent";
-  if (acc >= 80) return "good";
-  if (acc >= 65) return "inaccuracy";
-  if (acc >= 45) return "mistake";
+  const override = (highlightKind === "brilliant" || highlightKind === "only") ? highlightKind : null;
+  if (acc >= 100) return override || "best";
+  if (acc >= 90) return override || "excellent";
+  if (acc >= 80) return override || "good";
+  if (acc >= 60) return "inaccuracy";
+  if (acc >= 50) return "mistake";
   return "blunder";
 }
 // 정확성 산출과 동일한 값(analyzeGame의 whiteAcc/blackAcc)을 재사용하고, 여기서는 표시 서식만 맡는다.
@@ -8449,7 +8463,7 @@ function ReviewAccuracyPill({ label, value, hi, layoutId }) {
   return (
     <motion.div layoutId={layoutId} style={{ flex: 1, textAlign: "center" }}>
       <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: REVIEW_FONT, borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
     </motion.div>
   );
 }
@@ -8466,7 +8480,7 @@ function ReviewKindTable({ moves, showAll = false, onPick }) {
     const m = kind === "book" ? ms[ms.length - 1] : ms[0];
     onPick(m.ply + 1); // curPly = ply+1 (그 수까지 둔 위치)
   };
-  const numStyle = (kind, n) => ({ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: QCOLOR[kind], background: "none", border: "none", cursor: onPick && n ? "pointer" : "default", padding: 0 });
+  const numStyle = (kind, n) => ({ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: REVIEW_FONT, color: QCOLOR[kind], background: "none", border: "none", cursor: onPick && n ? "pointer" : "default", padding: 0 });
   return (
     <div style={{ borderTop: "1px solid " + RV.border }}>
       {ANALYSIS_KIND_ROWS.map(([kind, label]) => {
@@ -8555,12 +8569,12 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "w" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={whiteAvatar} side="w" size={52} /></div>
           <div style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{whiteInfo.name}</div>
-          {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: "ui-monospace,monospace" }}>{whiteInfo.rating}</div>}
+          {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: REVIEW_FONT }}>{whiteInfo.rating}</div>}
         </div>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "b" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={blackAvatar} side="b" size={52} /></div>
           <div style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{blackInfo.name}</div>
-          {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: "ui-monospace,monospace" }}>{blackInfo.rating}</div>}
+          {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: REVIEW_FONT }}>{blackInfo.rating}</div>}
         </div>
       </div>
       <div className="flex items-stretch" style={{ gap: 10, marginBottom: 16 }}>
@@ -8580,8 +8594,9 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
             return (
               <span style={{ position: "relative", display: "inline-flex", lineHeight: 0 }}>
                 <button onClick={() => setAccShow((v) => (v === key ? null : key))} className="press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0 }}>
-                  {/* 오프닝처럼 하이라이트할 비이론 수가 없으면 이론 아이콘 대신 정확도로 등급을 정해 표시한다. */}
-                  <span style={{ pointerEvents: "none" }}><CircleBadge kind={kind || gradeFromAccuracy(acc)} /></span>
+                  {/* (v0.3.9 재설계) 등급은 이제 그 단계·진영의 정확도로 정하고, 그 단계에 탁월한
+                      수·유일한 수가 있었으면(kind) 최선/우수/좋음 구간에서만 그 아이콘으로 대체한다. */}
+                  <span style={{ pointerEvents: "none" }}><CircleBadge kind={gradeFromAccuracy(acc, kind)} /></span>
                 </button>
                 {active && <PhaseAccBubble text={p.label + " 정확도 " + acc.toFixed(1) + "%"} />}
               </span>
@@ -8687,7 +8702,7 @@ function ReviewMoveTable({ sans, moves, curPly, onJump, drawn }) {
     <div style={{ maxHeight: 220, overflowY: "auto", borderRadius: 8, background: RV.table }}>
       {rows.map(([i, w, b]) => (
         <div key={i} className="flex items-center" style={{ fontSize: 12.5 }}>
-          <span style={{ width: 32, padding: "6px 4px", color: RV.dim, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{i / 2 + 1}.</span>
+          <span style={{ width: 32, padding: "6px 4px", color: RV.dim, fontFamily: REVIEW_FONT, flexShrink: 0 }}>{i / 2 + 1}.</span>
           <ReviewMoveCell san={w} move={moves[i]} active={curPly === i + 1} onClick={() => onJump(i + 1)} />
           <ReviewMoveCell san={b} move={moves[i + 1]} active={curPly === i + 2} onClick={() => onJump(i + 2)} />
         </div>
@@ -8745,7 +8760,7 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
             <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: narrow ? 12.5 : 13.5, fontWeight: 800, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
             {/* (v0.2.2 기능) 평가치 박스를 흰색/검은색(EvalBadge, 유리한 쪽 색으로 반전)으로 통일 —
                 엔진 라인 등 리뷰 페이지 다른 곳의 평가치 표기와 같은 규칙을 쓴다. */}
-            {evalDisp && <EvalBadge ev={evalDisp} />}
+            {evalDisp && <EvalBadge ev={evalDisp} font={REVIEW_FONT} />}
           </div>
           <p style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}>{copy.body}</p>
           {/* (R7 기능, 예방 수·연결까지 확장) "위협"·"위협 대처"·"과보호"·"예방 수"·"연결"·"중첩"
@@ -8954,12 +8969,15 @@ function buildRevealData(result, sharpOn = true) {
 // bMoves). 수 하나마다 원 마커를 찍고 그 수의 등급(kind) 아이콘을 pop-in 애니메이션으로 채워
 // 넣으며, 그래프 선 구간 자체도 각 수의 등급 색(QCOLOR)으로 칠한다 — 등급이 없는(있을 수 없지만
 // 방어적으로) 구간만 기존 중립색(color)으로 그린다.
-function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
+function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, layoutId, calculatingSan, toast }) {
   const total = curve.length - 1; // 그 진영이 실제로 둔 수 개수
   const W2 = 320, H2 = big ? 70 : 46;
-  // (버그 수정) 정확도 100(가장 흔한 값 — 실수 없이 두면 계속 100)이 y=0 정확히 그 자리에 그려져
-  // 위쪽 끝에서 선이 절반쯤 잘려 거의 안 보였다 — 위아래 4px씩 여백을 둬 100이어도 온전히 보이게 한다.
-  const PAD = 4;
+  // (v0.3.9 사용자 요청) 등급 아이콘(원 마커)이 그래프 위아래 끝에서 잘리던 문제 — 마커는 고정 픽셀
+  // 크기(dotBox)의 HTML 오버레이라, 위아래 여백(PAD)이 마커 반지름보다 작으면 값이 최고/최저 근처일
+  // 때 컨테이너의 overflow:hidden에 마커 절반이 잘렸다. dotBox 반지름 이상의 여백을 확보하도록 PAD를
+  // 키우고, 컨테이너 자체 높이도 조금 늘려 픽셀 단위 여유를 추가로 더한다.
+  const PAD = big ? 12 : 10;
+  const boxHeight = big ? 76 : 50;
   // (사용자 요청, v0.3.9) 예전엔 수가 몇 개든 항상 고정폭(W2) 안에 눌러 담아(i/total*W2) 그려서, 수가
   // 많은 대국일수록 수 아이콘들이 다닥다닥 겹쳐 보였다 — 대신 수 하나당 항상 같은 간격(SPACING)을 주는
   // "가상 캔버스"(contentWidth = 수 개수 × SPACING)에 그리고, 실제로 보이는 영역(W2 폭의 뷰포트)은 그
@@ -8972,7 +8990,11 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
   // 적어 contentWidth가 W2보다 작으면 클램프 상한이 0이 되어 카메라가 아예 안 움직이고(예전처럼 그냥
   // 왼쪽부터 채워짐), 화면이 스크롤되는 건 실제로 다 못 담을 만큼 수가 많을 때뿐이다.
   const SPACING = big ? 30 : 22;
-  const contentWidth = Math.max(W2, total * SPACING);
+  // (사용자 요청) 오른쪽에도 여유 공간을 둬 마지막 수의 아이콘이 우하단 정확도 숫자·그래프 오른쪽
+  // 끝과 겹치지 않게 한다 — contentWidth에 여백 하나를 더해 두면, 대국이 다 끝나 카메라가 오른쪽
+  // 끝까지 밀렸을 때도 마지막 점 뒤로 이 여백만큼 빈 공간이 항상 남는다.
+  const RIGHT_MARGIN = big ? 34 : 26;
+  const contentWidth = Math.max(W2, total * SPACING + RIGHT_MARGIN);
   const xx = (i) => i * SPACING;
   const pts = curve.slice(0, Math.max(1, shownCount + 1));
   const rightmostX = xx(pts.length - 1);
@@ -9014,8 +9036,8 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
   const dotIconSize = dotBox - (big ? 4 : 3);
   return (
     <div>
-      <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3 }}>{label}</div>
-      <div style={{ position: "relative", width: "100%", height: big ? 64 : 40, overflow: "hidden" }}>
+      <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3, fontFamily: REVIEW_FONT }}>{label}</div>
+      <div style={{ position: "relative", width: "100%", height: boxHeight, overflow: "hidden" }}>
         {/* (v0.3.9 기능) viewBox의 min-x를 offset만큼 옮겨 가상 캔버스(폭 contentWidth) 중 W2폭짜리
             창만 보여준다 — 배경·격자선은 항상 전체 캔버스(contentWidth)를 채워 어느 위치로 창이
             옮겨가도 잘리지 않게 하고, 눈금 숫자만 창의 왼쪽 끝(offset+2)에 계속 붙어 있도록 한다. */}
@@ -9025,7 +9047,7 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
           {[low, high].map((g, gi) => (
             <React.Fragment key={gi}>
               <line x1="0" y1={yy(g).toFixed(1)} x2={contentWidth} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
-              <text x={(offset + 2).toFixed(1)} y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily="ui-monospace,monospace">{Math.round(g)}</text>
+              <text x={(offset + 2).toFixed(1)} y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily={REVIEW_FONT}>{Math.round(g)}</text>
             </React.Fragment>
           ))}
           {/* (사용자 요청) 그래프 선을 구간(수)마다 나눠 그려, 각 구간이 그 수의 등급 색을 그대로
@@ -9059,6 +9081,33 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big }) {
             }}>{badgeIcon(mv.kind, dotIconSize)}</div>
           );
         })}
+        {/* (사용자 요청) 정확도 숫자를 그래프 아래 별도 줄이 아니라 그래프 안쪽 우하단으로 옮긴다 —
+            layoutId는 그대로 유지해 ReviewSummary의 ReviewAccuracyPill로 이어지는 공유 요소 전환이
+            깨지지 않게 한다. */}
+        {accValue != null && (
+          <motion.div layoutId={layoutId} style={{ position: "absolute", right: 6, bottom: 3, fontSize: big ? 15 : 12, fontWeight: 800, fontFamily: REVIEW_FONT, color: T.ivoryHi, textShadow: "0 1px 3px rgba(0,0,0,.6)", pointerEvents: "none" }}>
+            {accValue.toFixed(1)}
+          </motion.div>
+        )}
+        {/* (사용자 요청) 아직 채점되지 않은(대기 중인) 다음 수의 SAN을 좌하단에 안내한다 — 리뷰 펜이
+            지금까지 확보된 채점 결과(shownCount)를 다 보여준 뒤에도 그 진영의 남은 수가 있으면, 엔진이
+            바로 그 수를 계산하고 있는 것이므로 이 문구를 띄운다. */}
+        {calculatingSan && (
+          <div style={{ position: "absolute", left: 6, bottom: 3, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: REVIEW_FONT, color: RV.soft, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "55%" }}>
+            {calculatingSan}을 분석 중입니다...
+          </div>
+        )}
+        {/* (사용자 요청) 수 체계 아이콘이 확정될 때마다 "SAN : 등급"을 잠깐 띄운다 — 등급 아이콘을
+            글자 왼쪽에 함께 보여준다. */}
+        <AnimatePresence>
+          {toast && (
+            <motion.div key={toast.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
+              style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 4, background: "rgba(20,16,12,.82)", borderRadius: 6, padding: "2px 7px", fontSize: big ? 10.5 : 9, fontWeight: 800, fontFamily: REVIEW_FONT, color: T.ivoryHi, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
+              {badgeIcon(toast.kind, big ? 13 : 11)}
+              <span>{toast.san} : {QLABEL[toast.kind] || toast.kind}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -9071,9 +9120,18 @@ const REVEAL_POPUP_MS = 550;      // 정확도 증가/감소 숫자가 떴다 �
 const REVEAL_POPUP_EXIT_S = 0.1;  // 사라질 때 페이드아웃 속도(0.3s → 0.15s → 0.1s)
 const REVEAL_POPUP_STAGGER_MS = 480; // 숫자 하나가 뜬 뒤 다음 숫자가 뜨기까지 최소 간격
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
-function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn }) {
+function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn, sans, startWhite = true }) {
   const data = useMemo(() => buildRevealData(result, sharpOn), [result, sharpOn]);
   const { moves, evalWin, wCurve, bCurve, wMoves, bMoves, moveMeta } = data;
+  // (사용자 요청) 아직 채점되지 않은 다음 수의 SAN을 "분석 중입니다..."로 보여주려면, 채점 여부와
+  // 무관하게 그 대국의 실제 수순 전체(진영별로 나눔)를 알아야 한다 — decorateLine은 analyzeGame이
+  // 채점 결과에 쓰는 것과 똑같은 체크(+)/체크메이트(#) 보정을 미리 적용해 표기가 어긋나지 않게 한다.
+  const colorSans = useMemo(() => {
+    const dec = decorateLine(sans || []);
+    const w = [], b = [];
+    for (let i = 0; i < dec.length; i++) ((i % 2 === 0) === startWhite ? w : b).push(dec[i]);
+    return { w, b };
+  }, [sans, startWhite]);
   const N = Math.max(1, totalPlies || moves.length || 1);
   // progress(0..N) — 실제 분석 진행(target)과는 별도로, 일정한 속도로만 전진하는 "그리는 펜의 위치".
   // target을 넘어서지는 못한다(아직 채점 안 된 곳을 앞질러 그릴 수는 없으므로). target이 늘어나는
@@ -9112,11 +9170,31 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
     setTimeout(() => setPopups((p) => p.filter((x) => x.id !== next.id)), REVEAL_POPUP_MS);
     setTimeout(() => { poppingRef.current = false; drainQueue(); }, REVEAL_POPUP_STAGGER_MS);
   };
+  // (사용자 요청) 수 체계 아이콘이 확정될 때마다 "SAN : 등급"을 잠깐 띄운다 — 델타 팝업과 달리
+  // 변동폭과 무관하게 채점된 모든 수(pending으로 영구히 실패한 수는 제외)마다 뜬다. 두 색이 같은
+  // 프레임에 함께 지나가도 순서대로만 뜨도록 델타 팝업과 같은 큐/스태거 패턴을 그대로 쓰되, 별도
+  // 큐로 관리해 델타 팝업의 0.5%p 문턱과는 완전히 독립적으로 동작한다.
+  const [moveToasts, setMoveToasts] = useState([]);
+  const toastQueueRef = useRef([]);
+  const toastPoppingRef = useRef(false);
+  const drainToastQueue = () => {
+    if (toastPoppingRef.current) return;
+    const next = toastQueueRef.current.shift();
+    if (!next) return;
+    toastPoppingRef.current = true;
+    setMoveToasts((p) => [...p, next]);
+    setTimeout(() => setMoveToasts((p) => p.filter((x) => x.id !== next.id)), REVEAL_POPUP_MS);
+    setTimeout(() => { toastPoppingRef.current = false; drainToastQueue(); }, REVEAL_POPUP_STAGGER_MS);
+  };
   useEffect(() => {
     const revealedCount = Math.min(moves.length, floored);
     for (let i = 0; i < revealedCount; i++) {
       if (firedRef.current.has(i)) continue;
       firedRef.current.add(i);
+      const mv = moves[i];
+      if (mv && mv.kind && mv.kind !== "pending") {
+        toastQueueRef.current.push({ id: "t" + i, san: mv.san, kind: mv.kind, white: mv.white });
+      }
       const meta = moveMeta[i];
       // (사용자 요청) 변동폭이 절댓값 0.5%p 미만인 수는 띄우지 않는다 — 대부분의 이론 수·무난한 수가
       // 여기 해당해, 그대로 두면 숫자가 너무 자주(거의 매 수마다) 겹쳐 떴다.
@@ -9124,12 +9202,19 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
       queueRef.current.push({ id: i, ply: meta.ply, gVal: meta.gVal, delta: meta.delta, white: meta.white });
     }
     drainQueue();
+    drainToastQueue();
   }, [floored, moves, moveMeta]);
   const { wShown, bShown } = useMemo(() => {
     let w = 0, b = 0;
     for (let i = 0; i < floored && i < moves.length; i++) { if (moves[i].white) w++; else b++; }
     return { wShown: w, bShown: b };
   }, [moves, floored]);
+  // (사용자 요청) "계산 중" 안내 — 리뷰 펜(wShown/bShown)이 지금까지 실제로 채점된 그 진영의 수를
+  // 전부 보여준 상태(wShown>=wMoves.length, 애니메이션 페이싱이 아니라 진짜로 더 채점된 게 없음)인데
+  // 그 진영이 앞으로 둘 수가 더 남아 있으면(colorSans 전체 길이보다 적게 보여줬으면), 엔진이 바로
+  // 그 다음 수(colorSans[wShown])를 계산하고 있는 것이다.
+  const wCalcSan = (wShown >= wMoves.length && wShown < colorSans.w.length) ? colorSans.w[wShown] : null;
+  const bCalcSan = (bShown >= bMoves.length && bShown < colorSans.b.length) ? colorSans.b[bShown] : null;
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   // (버그 수정) instant(=이미 본 적 있는 리뷰로 이 페이지가 열렸을 때)면 그림이 다 그려지는 것도,
@@ -9167,7 +9252,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   const allDone = resultDone && progress >= N;
   return (
     <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", padding: "6px 4px" }}>
-      <p style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px" }}>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요..."}</p>
+      <p style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px", fontFamily: REVIEW_FONT }}>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요..."}</p>
       <div style={{ background: "#3B342E", borderRadius: 10, padding: 6 }}>
         <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
           {/* 아직 펜이 지나가지 않은 구간 — 값을 추측해 잇지 않고 그냥 검은 여백으로 둔다 */}
@@ -9189,7 +9274,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
               const positive = p.delta >= 0;
               return (
                 <motion.text key={p.id} x={x(p.ply).toFixed(1)} y={py.toFixed(1)} textAnchor="middle"
-                  fontSize="6" fontWeight="800" fontFamily="ui-monospace,monospace"
+                  fontSize="6" fontWeight="800" fontFamily={REVIEW_FONT}
                   fill={positive ? T.good : T.blunder} paintOrder="stroke" stroke="#150C06" strokeWidth="1.8"
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
                   {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
@@ -9203,15 +9288,15 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
           보여준다 — narrow일 때만 세로(column)로 쌓고 MiniAccCurve에 big을 넘겨 키운다. */}
       <div className={narrow ? "flex flex-col" : "flex items-start"} style={{ gap: narrow ? 18 : 14, marginTop: 10 }}>
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
-          <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big={narrow} />
-          <motion.div layoutId="review-acc-w" style={{ fontSize: narrow ? 30 : 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{wVal.toFixed(1)}</motion.div>
-          {/* (사용자 요청) 그래프 위 팝업과 똑같은 증감 숫자를 정확도 박스 우하단에도 함께 띄워
-              변동을 더 직관적으로 보여준다 — 같은 popups 배열을 진영별로 걸러 재사용한다. */}
+          <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big={narrow}
+            accValue={wVal} layoutId="review-acc-w" calculatingSan={wCalcSan} toast={moveToasts.find((t) => t.white)} />
+          {/* (사용자 요청) 그래프 위 팝업과 똑같은 증감 숫자를 정확도 박스 우하단(정확도 숫자 바로
+              위)에도 함께 띄워 변동을 더 직관적으로 보여준다 — 같은 popups 배열을 진영별로 걸러 재사용한다. */}
           <AnimatePresence>
             {popups.filter((p) => p.white).map((p) => {
               const positive = p.delta >= 0;
               return (
-                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 2, fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
+                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 22, fontSize: 10, fontWeight: 800, fontFamily: REVIEW_FONT, color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
                   initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
                   {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
                 </motion.span>
@@ -9220,13 +9305,13 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
           </AnimatePresence>
         </div>
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
-          <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big={narrow} />
-          <motion.div layoutId="review-acc-b" style={{ fontSize: narrow ? 30 : 24, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: RV.text, marginTop: 4 }}>{bVal.toFixed(1)}</motion.div>
+          <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big={narrow}
+            accValue={bVal} layoutId="review-acc-b" calculatingSan={bCalcSan} toast={moveToasts.find((t) => !t.white)} />
           <AnimatePresence>
             {popups.filter((p) => !p.white).map((p) => {
               const positive = p.delta >= 0;
               return (
-                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 2, fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
+                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 22, fontSize: 10, fontWeight: 800, fontFamily: REVIEW_FONT, color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
                   initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
                   {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
                 </motion.span>
@@ -9916,7 +10001,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
       {header}
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewIntroCarousel />
-        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} />
+        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} sans={sans} startWhite={fenRoot ? fenRoot.turn === "w" : true} />
         <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
         <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(prog * 100)}%</p>
       </div>
@@ -9937,7 +10022,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
                 <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
+                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={REVIEW_FONT} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
               <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} drawn={gameDrawn} />
@@ -9947,7 +10032,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. (v0.3.8 사용자 요청) 글자
                   크기를 키우고, 보드 그리드 폭(프레임 제외)이 아니라 카드 전체 폭을 채워 왼쪽(보드 왼쪽
                   끝)에 맞춰 정렬되도록 width를 100%로 바꿨다. */}
-              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} large />
+              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} large font={REVIEW_FONT} />
             </div>
           )}
         {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} />}
@@ -9970,7 +10055,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
             <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-              leftOfBoard={<EvalBar vertical cp={activeEvalDisp} />} />
+              leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={REVIEW_FONT} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
@@ -9992,7 +10077,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               {openingText && <ReviewOpeningBanner text={openingText} />}
               <EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} />
               {/* (v0.2.1 기능) 엔진 라인 — 컴퓨터 환경은 평가치 그래프 바로 아래에 표시한다. */}
-              <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} /></div>
+              <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} font={REVIEW_FONT} /></div>
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} drawn={gameDrawn} /></div>
             </>
           )}
@@ -10600,7 +10685,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             </div>
           )}
           <div className="mb-3 flex items-center justify-between gap-2">
-            <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} drawn={gameDrawn} startColor={fenRoot ? fenRoot.turn : undefined} />
+            <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} drawn={gameDrawn} startColor={fenRoot ? fenRoot.turn : undefined} font={REVIEW_FONT} />
             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
               {/* (v0.3.5 기능) 사용자 요청 — 예전에 "분석" 버튼이 있던 자리에 보드 편집기(펜 아이콘)를
                   두고, 분석 버튼은 다른 화면에서 쓰는 연두색+별 모양 리뷰 버튼(BestMoveJumpButton)으로
