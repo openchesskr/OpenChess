@@ -8983,7 +8983,12 @@ function buildRevealData(result, sharpOn = true) {
 // bMoves). 수 하나마다 원 마커를 찍고 그 수의 등급(kind) 아이콘을 pop-in 애니메이션으로 채워
 // 넣으며, 그래프 선 구간 자체도 각 수의 등급 색(QCOLOR)으로 칠한다 — 등급이 없는(있을 수 없지만
 // 방어적으로) 구간만 기존 중립색(color)으로 그린다.
-function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, layoutId, calculatingSan, toast }) {
+// (성능, 사용자 요청 — 렌더링 부하 최적화) 부모(ReviewAccuracyRevealAnim)는 위쪽 평가치 그래프의
+// 펜 보간을 위해 progress를 초당 약 30회 갱신한다 — React.memo 없이는 그때마다 이 컴포넌트(SVG
+// 마커·눈금 여러 개를 다시 그리는, 두 번 렌더링되는 무거운 쪽)까지 매번 통째로 다시 렌더링됐다.
+// 이 컴포넌트가 실제로 받는 값(shownCount·accValue 등)은 floored가 정수 칸을 넘어갈 때만 바뀌므로
+// (progress의 소수부 변화와는 무관), React.memo로 얕은 비교를 걸어 그 사이의 낭비 렌더링을 없앤다.
+const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, layoutId, calculatingSan, toast }) {
   const total = curve.length - 1; // 그 진영이 실제로 둔 수 개수
   const W2 = 320, H2 = big ? 70 : 46;
   // (v0.3.9 사용자 요청) 등급 아이콘(원 마커)이 그래프 위아래 끝에서 잘리던 문제 — 마커는 고정 픽셀
@@ -9131,17 +9136,12 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
       )}
     </div>
   );
-}
+});
 // (v0.3.9 재설계, 사용자 요청) 한 수를 화면에 보여준 뒤 다음 수로 넘어가기까지의 최소 체류 시간 —
 // 채점이 이미 끝나 있으면 이 시간만 지나면 곧장 다음 수로 넘어간다(예전의 고정 속도 애니메이션과
 // 달리 실제 분석이 밀린 만큼만 기다린다). 너무 짧으면 아이콘이 뜨자마자 다음 수로 넘어가 눈에
 // 안 들어오고, 너무 길면 다시 예전처럼 굼떠 보이므로 그 사이 값으로 잡는다.
 const REVEAL_MIN_STEP_MS = 130;
-// (사용자 요청) 숫자가 그래프 위에서 서로 겹치지 않도록 두 가지를 함께 조정한다 — ① 잔상(떠 있다
-// 사라지는 자취)이 빨리 없어지도록 표시 시간·페이드아웃 시간을 모두 줄이고, ② 델타가 큰 수들이
-// 연달아 나올 때 다음 숫자가 뜨기 전 최소한의 간격(스태거)을 강제로 둔다.
-const REVEAL_POPUP_MS = 550;      // "n.SAN : 등급" 토스트가 떴다 사라지는 총 시간
-const REVEAL_POPUP_STAGGER_MS = 480; // 토스트 하나가 뜬 뒤 다음 토스트가 뜨기까지 최소 간격
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
 function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn, sans, startWhite = true }) {
   const data = useMemo(() => buildRevealData(result, sharpOn), [result, sharpOn]);
@@ -9200,40 +9200,37 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
     return () => cancelAnimationFrame(raf);
   }, []);
   const floored = Math.min(N, Math.floor(progress));
-  // (사용자 요청) 수 체계 아이콘이 확정될 때마다 "n.SAN : 등급"을 잠깐 띄운다 — 채점된 모든 수마다
-  // 뜬다(pending으로 영구히 실패한 수는 제외). 여러 수가 같은 프레임에 한꺼번에 지나가도(밀린 만큼
-  // 따라잡는 경우) 한꺼번에 다 띄우지 않고 큐에 쌓아 REVEAL_POPUP_STAGGER_MS 간격으로 하나씩만
-  // 순서대로 띄운다 — toastQueueRef/toastPoppingRef는 렌더와 무관한 진행 상태라 ref로 관리한다.
-  // (사용자 요청) 정확도 증감(delta)은 더 이상 절댓값 0.5%p 문턱으로 거르지 않고 항상 이 토스트 안에
-  // 함께 표시한다 — 평가치 그래프 쪽 델타 팝업은 완전히 없앴으므로(사용자 요청) 이제 이 토스트가
+  // (버그 수정, 사용자 재보고) "정확도 증감 텍스트가 수 아이콘 등장 속도를 못 따라잡고 밀려서,
+  // 그래프는 멈춰 있는데 밀린 토스트가 뒤늦게 연달아 표시된다" — 예전엔 토스트를 큐에 쌓아 두고
+  // REVEAL_POPUP_STAGGER_MS(480ms) 간격으로 하나씩 순서대로 재생했는데, 수 아이콘 자체는 그보다
+  // 훨씬 빠른 REVEAL_MIN_STEP_MS(130ms)마다 나타날 수 있어 큐가 항상 더 느리게 밀렸다 — 그래프(펜)가
+  // 이미 멈춘 뒤에도 큐는 계속 밀린 항목을 하나씩 재생해, "그래프는 정지, 토스트만 뒤늦게 줄줄이"라는
+  // 어긋난 모습으로 보였다. 큐/재생 타이머를 아예 없애고, 그때그때 "이 진영이 지금까지 확정된 수 중
+  // 가장 최근 것"을 곧장 그 값으로 보여주는 순수 파생값으로 바꾼다 — floored가 실제로 전진할 때만
+  // (즉 그래프가 실제로 움직일 때만) 값이 바뀌므로 구조적으로 밀릴 수가 없다. 이전엔 550ms 후 자동
+  // 사라졌지만, 이제는 다음 수가 확정될 때까지(또는 대기 중이면 계속) 그대로 떠 있는다 — 자동으로
+  // 사라지게 하려던 타이머 자체가 "따라잡지 못해 밀리는" 여지였으므로 아예 없앤다.
+  const wLastIdx = useMemo(() => {
+    for (let i = Math.min(floored, moves.length) - 1; i >= 0; i--) if (moves[i].white && moves[i].kind && moves[i].kind !== "pending") return i;
+    return -1;
+  }, [floored, moves]);
+  const bLastIdx = useMemo(() => {
+    for (let i = Math.min(floored, moves.length) - 1; i >= 0; i--) if (!moves[i].white && moves[i].kind && moves[i].kind !== "pending") return i;
+    return -1;
+  }, [floored, moves]);
+  // (사용자 요청) SAN 앞에 수 번호를 붙이고, 정확도 증감(delta)은 더 이상 절댓값 0.5%p 문턱으로
+  // 거르지 않고 항상 함께 표시한다 — 평가치 그래프 쪽 델타 팝업은 완전히 없앴으므로 이 토스트가
   // 유일한 델타 표시처가 됐다.
-  const firedRef = useRef(new Set());
-  const [moveToasts, setMoveToasts] = useState([]);
-  const toastQueueRef = useRef([]);
-  const toastPoppingRef = useRef(false);
-  const drainToastQueue = () => {
-    if (toastPoppingRef.current) return;
-    const next = toastQueueRef.current.shift();
-    if (!next) return;
-    toastPoppingRef.current = true;
-    setMoveToasts((p) => [...p, next]);
-    setTimeout(() => setMoveToasts((p) => p.filter((x) => x.id !== next.id)), REVEAL_POPUP_MS);
-    setTimeout(() => { toastPoppingRef.current = false; drainToastQueue(); }, REVEAL_POPUP_STAGGER_MS);
-  };
-  useEffect(() => {
-    const revealedCount = Math.min(moves.length, floored);
-    for (let i = 0; i < revealedCount; i++) {
-      if (firedRef.current.has(i)) continue;
-      firedRef.current.add(i);
-      const mv = moves[i];
-      const meta = moveMeta[i];
-      if (mv && mv.kind && mv.kind !== "pending") {
-        // (사용자 요청) SAN 앞에 수 번호도 함께 붙인다(예: "12.Nf3").
-        toastQueueRef.current.push({ id: "t" + i, label: moveNumber(mv.ply, startColor) + mv.san, kind: mv.kind, white: mv.white, delta: meta ? meta.delta : null });
-      }
-    }
-    drainToastQueue();
-  }, [floored, moves, moveMeta]);
+  const wToast = useMemo(() => {
+    if (wLastIdx < 0) return null;
+    const mv = moves[wLastIdx], meta = moveMeta[wLastIdx];
+    return { id: wLastIdx, label: moveNumber(mv.ply, startColor) + mv.san, kind: mv.kind, delta: meta ? meta.delta : null };
+  }, [wLastIdx, moves, moveMeta, startColor]);
+  const bToast = useMemo(() => {
+    if (bLastIdx < 0) return null;
+    const mv = moves[bLastIdx], meta = moveMeta[bLastIdx];
+    return { id: bLastIdx, label: moveNumber(mv.ply, startColor) + mv.san, kind: mv.kind, delta: meta ? meta.delta : null };
+  }, [bLastIdx, moves, moveMeta, startColor]);
   const { wShown, bShown } = useMemo(() => {
     let w = 0, b = 0;
     for (let i = 0; i < floored && i < moves.length; i++) { if (moves[i].white) w++; else b++; }
@@ -9318,11 +9315,11 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
             흔들려 정확도 숫자와 간헐적으로 겹쳐 보이던 원인이었다 — 완전히 제거한다. */}
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
           <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big={narrow}
-            accValue={wVal} layoutId="review-acc-w" calculatingSan={wCalcSan} toast={moveToasts.find((t) => t.white)} />
+            accValue={wVal} layoutId="review-acc-w" calculatingSan={wCalcSan} toast={wToast} />
         </div>
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
           <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big={narrow}
-            accValue={bVal} layoutId="review-acc-b" calculatingSan={bCalcSan} toast={moveToasts.find((t) => !t.white)} />
+            accValue={bVal} layoutId="review-acc-b" calculatingSan={bCalcSan} toast={bToast} />
         </div>
       </div>
     </div>
