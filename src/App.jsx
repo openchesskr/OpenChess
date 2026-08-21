@@ -2351,6 +2351,18 @@ function cascadeRenameOpeningDescendants(path, oldName, newName) {
 }
 /* 개발자 오버라이드: 수 이름 / 키워드 / '이론 수에서 삭제' */
 function nameOverride(key, san) { const v = CONTENT.names[key + "|" + stripSuffix(san)]; return v === undefined ? null : v; }
+// (버그 수정) 오프닝 이름을 구하던 lastNamedOpening/firstNamedOpening/openingNameOf(퍼즐 이름 짓기 등에
+// 쓰임)는 정적 스냅샷의 원본 ECO 이름(nd.opening.name)만 보고 개발자가 수정한 이름(nameOverride)은
+// 전혀 반영하지 않았다 — cascadeRenameOpeningDescendants(위)가 자손 갱신에 쓰는 것과 같은 우선순위
+// 규칙(오버라이드 우선, 없으면 원본)을 여기서도 공유해, 오프닝 이름을 고치면 그 즉시(별도 마이그레이션
+// 없이) 그 이름을 참조하는 모든 곳(퍼즐 이름 포함)에 실시간으로 반영되게 한다.
+function effectiveOpeningNameAt(path) {
+  const nd = snapNode(path);
+  if (!nd || !nd.opening || !nd.opening.name) return null;
+  const parentKey = path.slice(0, -1).join(" ");
+  const lastSan = path[path.length - 1];
+  return nameOverride(parentKey, lastSan) ?? nd.opening.name;
+}
 function kwOverride(key, san) { const v = CONTENT.keywords[key + "|" + stripSuffix(san)]; return Array.isArray(v) ? v : null; }
 function isUnbooked(key, san) { return !!CONTENT.unbook[key + "|" + stripSuffix(san)]; }
 // (버그 수정) 어떤 포지션(keyStr: 수순을 공백으로 이은 키)의 특정 수(san)가 '이론'인지 판정한다.
@@ -13084,14 +13096,14 @@ function PuzzleThemePattern({ themes, opacity = 0.1 }) {
 // (UI4) 퍼즐 이름 규칙: 직전 수들 중 '가장 마지막으로 이름이 있는 수'의 오프닝 이름을 기준으로 짓는다.
 function lastNamedOpening(sans) {
   let nm = null;
-  for (let i = 1; i <= sans.length; i++) { const nd = snapNode(sans.slice(0, i)); if (nd && nd.opening && nd.opening.name) nm = nd.opening.name; }
+  for (let i = 1; i <= sans.length; i++) { const n = effectiveOpeningNameAt(sans.slice(0, i)); if (n) nm = n; }
   return nm;
 }
 // (버그 수정) 퍼즐 카드 위쪽 금색 라벨은 lastNamedOpening(가장 구체적인, 세부 갈래까지 포함한
 // 이름)이 아니라 '가장 처음 나온' 오프닝 이름(최상위 갈래)만 보여준다 — 그래서 찾는 순서를
 // 그대로 두되 처음 이름을 만나는 즉시 반환한다(덮어쓰지 않음).
 function firstNamedOpening(sans) {
-  for (let i = 1; i <= sans.length; i++) { const nd = snapNode(sans.slice(0, i)); if (nd && nd.opening && nd.opening.name) return nd.opening.name; }
+  for (let i = 1; i <= sans.length; i++) { const n = effectiveOpeningNameAt(sans.slice(0, i)); if (n) return n; }
   return null;
 }
 // (버그 수정) 테마마다 다른 한국어 문구("~에서 탁월한 수 찾기" 등)를 붙였더니 이름이 길어져
@@ -13101,6 +13113,16 @@ function firstNamedOpening(sans) {
 function puzzleName(theme, setupSans, mistakeSan) {
   const base = lastNamedOpening(setupSans) || "오프닝";
   return base + ", " + moveNumber(setupSans.length) + stripSuffix(mistakeSan || "");
+}
+// (버그 수정, 사용자 제보) 퍼즐 이름(p.name)은 생성 시점에 puzzleName()이 계산한 문자열을 그대로
+// 저장해 둔 스냅샷이라, 이후 오프닝 이름을 수정해도 이미 만들어진 퍼즐들의 이름엔 반영되지 않고
+// 예전 이름이 그대로 남아 있었다. setupSans/mistakeSan이 남아 있는 한(자동 생성 퍼즐은 테마와
+// 무관하게 항상 둘 다 저장됨) 저장된 이름 대신 매번 현재 오프닝 이름 기준으로 즉석에서 다시 계산해
+// 보여준다 — 오프닝 이름을 고치면 과거에 만든 퍼즐들의 이름도 화면에는 자동으로 갱신되어 보인다
+// (마이그레이션 불필요). setupSans가 없는 예외(옛 데이터 등)만 저장된 이름으로 대체한다.
+function livePuzzleName(p) {
+  if (p && p.setupSans && p.mistakeSan) return puzzleName(null, p.setupSans, p.mistakeSan);
+  return p ? p.name : null;
 }
 // (기능2) 저장 직전 최종 안전장치: setup+solution 전체를 시작 위치부터 다시 재생하며 각 수가
 // "그 시점에 둘 차례인 쪽"의 합법수인지 검증한다. 하나라도 어긋나면(불법수·차례 뒤바뀜 등) 저장을 막는다.
@@ -14117,7 +14139,7 @@ function rerollQuestOpening(dq, idx, recentOpenings) {
 }
 function openingNameOf(moves) {
   let name = null; const lim = Math.min(moves.length, 16);
-  for (let i = 1; i <= lim; i++) { const nd = snapNode(moves.slice(0, i)); if (nd && nd.opening) name = nd.opening.name; }
+  for (let i = 1; i <= lim; i++) { const n = effectiveOpeningNameAt(moves.slice(0, i)); if (n) name = n; }
   return name;
 }
 
@@ -15661,7 +15683,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{puzzle.name}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{livePuzzleName(puzzle)}</div>
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
           {/* (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 카드에 생성자를 표시. 생성자가 아직 없는(예:
               이 기능이 생기기 전에 만들어졌거나 게스트가 최초 공유한) 퍼즐은 아무것도 보여주지 않는다. */}
@@ -15971,7 +15993,7 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
           <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />퍼즐 공유</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        {puzzle && puzzle.id != null && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title="OpenChess 퍼즐" text={"OpenChess 퍼즐 — " + (puzzle.name || "퍼즐 풀어보기")} />}
+        {puzzle && puzzle.id != null && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title="OpenChess 퍼즐" text={"OpenChess 퍼즐 — " + (livePuzzleName(puzzle) || "퍼즐 풀어보기")} />}
         <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>친구에게 보내기</div>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
@@ -16147,7 +16169,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             맞춰 함께 늘어나 행 높이가 들쭉날쭉해진다. FitPuzzleName이 높이를 2줄로 고정해두고,
             다 안 들어가는 이름만 글자 크기를 줄여서 맞춘다(위 정의부 참고) — 카드 높이는 항상
             균일하게 유지된다. */}
-        <FitPuzzleName text={p.name} />
+        <FitPuzzleName text={livePuzzleName(p)} />
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
           <span style={{ fontSize: 9, color: broken ? T.blunder : T.inkSoft, fontWeight: broken ? 800 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{broken ? "⚠ 손상된 퍼즐(라인 0개)" : themeLabelsOf(p) + " · 라인 " + totalLines + "개"}</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: SITE_FONT, fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
@@ -16959,7 +16981,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               {numSuggestions.map((p) => (
                 <button key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setActive(p); setNumInput(""); setNumMsg(""); }} className="press flex items-center gap-2" style={{ width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", textAlign: "left" }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
-                  <span style={{ fontSize: 12, color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
+                  <span style={{ fontSize: 12, color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{livePuzzleName(p) || p.opening}</span>
                 </button>
               ))}
             </div>
@@ -18831,7 +18853,7 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLea
       <span style={{ fontSize: narrow ? 10.5 : 10, fontWeight: 800, color: T.brass }}>일일 퍼즐</span>
     </div>
   );
-  const titleRow = <div style={{ fontSize: narrow ? 14.5 : 13, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: narrow ? 6 : 5 }}>{puzzle.name || puzzle.opening}</div>;
+  const titleRow = <div style={{ fontSize: narrow ? 14.5 : 13, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: narrow ? 6 : 5 }}>{livePuzzleName(puzzle) || puzzle.opening}</div>;
   const solveRow = solveCountText(solveCount, null) && <div style={{ fontSize: narrow ? 11 : 10, color: "#2E6E2E", fontWeight: 700, marginBottom: narrow ? 10 : 7 }}>{solveCountText(solveCount, null)}</div>;
   // (사용자 요청) 풀기 버튼은 기존 금색 그라데이션을 그대로 유지한다.
   const playBtn = <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: narrow ? "9px 0" : "7px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: narrow ? 13 : 11.5, border: "none", cursor: "pointer" }}><Play size={narrow ? 13 : 11} fill="#241509" />풀기</button>;
@@ -18875,7 +18897,7 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLea
                   <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => { onOpenLearn(puzzleSans.slice(0, ply)); close(); } : undefined} />
                 </div>
                 <div style={{ marginBottom: 20 }}>
-                  <MascotBubble text={(puzzle.name || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" stacked />
+                  <MascotBubble text={(livePuzzleName(puzzle) || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" stacked />
                 </div>
                 {playBtn}
               </div>
