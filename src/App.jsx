@@ -1205,7 +1205,7 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
     const loss = Math.max(0, bestCp - mvCp);
     let kind = i === 0 ? "best" : tierOf(loss);
     if (i > 0 && kind === "best") kind = "excellent";
-    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(decided && losing)) kind = "brilliant"; } catch { }
+    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -300)) kind = "brilliant"; } catch { }
     cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
   });
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
@@ -2720,7 +2720,7 @@ async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12) {
   // 아무리 나빠져도, 두기 전이 팽팽했다면 그 수 자체가 승부를 가른 것이므로 완화 대상이 아니다.
   const decided = Math.abs(bestCp) > 200;
   const losing = bestCp <= -200;
-  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
+  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(bestCp <= -300) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
   if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
   // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데 그 이점을 응징 못 해 평가치가 감소하되,
   // 결과가 뒤집힐(패배) 정도는 아닌 경우. 후보일 때만 직전 포지션을 1회 추가 평가해 상대 손실을 확인한다.
@@ -3019,20 +3019,39 @@ const analysisPoolCache = new Map(); // profile -> Promise<worker[]>
 // 몇몇 수의 아이콘이 계속 "계산 중"에 머물고 엔진 라인도 첫 movetime 안에 안 뜨던 원인이 바로 이
 // 부팅 지연이었다(헤드리스 브라우저로 재현·실측함 — 워커 하나만 놓고 재보면 초당 탐색 노드 수는
 // Lite와 사실상 동일했다. 즉 탐색 자체가 느린 게 아니라 "리뷰 시작 전 부팅"이 병목이었다). 가벼운
-// Lite는 기존처럼 코어 수를 그대로 쓰고, 신경망이 큰 프로필만 풀을 작게(2) 고정해 중복 부팅 비용을
-// 크게 줄인다.
-const HEAVY_ENGINE_POOL_SIZE = 2;
+// Lite는 기존처럼 코어 수를 그대로 쓴다.
+// (v0.3.9 버그 수정, 2차) 신경망이 큰 프로필의 풀을 2로 고정했더니, 부팅 자체는 빨라졌지만 이번엔
+// 실제 채점 단계의 병렬도가 2로 확 줄어(예전엔 최대 32) 게임 하나 전체를 그 적은 일꾼 수로 나눠
+// 처리하느라 총 소요 시간이 크게 늘었다 — depth 25처럼 포지션당 시간이 오래 걸리는 설정에서는 이
+// 처리량 저하가 오히려 "몇몇 수가 계속 계산 중에 머무는 것처럼 느껴진다"는 재신고로 이어졌을 수
+// 있다. 부팅 경합(동시에 몇 개나 100MB급 파일을 받고 컴파일하는지)과 최종 처리량(풀 크기)을 분리해,
+// 최종 풀은 좀 더 키우되(4) 실제 부팅은 한 번에 HEAVY_ENGINE_BOOT_BATCH개씩만 순차적으로 진행한다 —
+// 동시 경합은 예전 2워커 수준으로 낮게 유지하면서, 다 부팅된 뒤의 처리량은 2배로 키운 절충안이다.
+const HEAVY_ENGINE_POOL_SIZE = 4;
+const HEAVY_ENGINE_BOOT_BATCH = 2;
 function analyzePoolSize(profile) {
   const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
   const prof = ENGINE_PROFILES[profile];
   if (prof && prof.parts) return HEAVY_ENGINE_POOL_SIZE;
   return Math.max(2, Math.min(cores, 32));
 }
+async function bootWorkersStaggered(urls, size, batch) {
+  const out = [];
+  for (let i = 0; i < size; i += batch) {
+    const n = Math.min(batch, size - i);
+    const group = await Promise.all(Array.from({ length: n }, () => bootAnalysisWorker(urls)));
+    out.push(...group);
+  }
+  return out.filter(Boolean);
+}
 function getAnalysisPool(profile, urls) {
   const cached = analysisPoolCache.get(profile);
   if (cached) return cached;
   const size = analyzePoolSize(profile);
-  const promise = Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
+  const prof = ENGINE_PROFILES[profile];
+  const promise = (prof && prof.parts)
+    ? bootWorkersStaggered(urls, size, HEAVY_ENGINE_BOOT_BATCH)
+    : Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
   analysisPoolCache.set(profile, promise);
   return promise;
 }
@@ -3191,16 +3210,25 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
       // (v0.2.6 버그 수정) 직전 자신의 수(2수 전)가 이미 브릴리언트(희생)로 분류됐다면, 지금 수는
       // 그 희생을 잇는 콤보의 연결 수일 뿐이므로 다시 탁월로 중복 태그하지 않는다.
       const continuesOwnSacrifice = i >= 2 && moves[i - 2].kind === "brilliant";
-      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !(decided && losing) && !continuesOwnSacrifice) kind = "brilliant"; } catch { }
+      // (v0.3.9 버그 수정) 사용자 요청 — 이 수를 두기 전 평가(bestCp)가 이미 3점(300cp) 이상 불리한
+      // 쪽에서는 탁월한 수·유일한 수를 매기지 않는다(이미 승부가 크게 기운 위치에서의 발버둥/막판
+      // 수순까지 "탁월"·"유일"로 추켜세우는 게 의미가 없다는 판단). 기존 decided&&losing(2점 기준)은
+      // 실수 등급 완화(바로 아래)에만 쓰고, 이 승격 게이트는 별도 3점 기준(badlyLosing)을 쓴다.
+      const badlyLosing = bestCp <= -300;
+      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !badlyLosing && !continuesOwnSacrifice) kind = "brilliant"; } catch { }
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
       // 유일한 수(Great, 매우 좋아요): 최선수를 뒀는데 2순위가 분명히 열세라(대안이 없다) 반드시 그 수여야 했던 경우.
       // (버그 수정) 상대가 방금 잡은 자리를 되잡을 수 있는 내 기물이 이 하나뿐인 수(단순 되잡기)는
       // 기물 점수를 맞추는 게 너무 직관적이라 "유일한 수"로 놀라워할 이유가 없다 — recaptureFact로
       // 감지해 이런 수는 "유일한 수" 승격에서 제외한다(등급은 그대로 최선의 수로 남는다).
+      // (v0.3.9 버그 수정) 사용자 요청 — 위 badlyLosing(3점 이상 불리)에 더해, 2순위 수(posEval[i].second)
+      // 자체가 이미 +3점(300cp) 이상이면 유리한 쪽이어도 "유일한 수"를 매기지 않는다 — 대안(2순위)도
+      // 여전히 크게 유리한 수라면 "이 수여야만 했다"는 놀라움이 성립하지 않는다.
       const gap = posEval[i].second == null ? 9999 : (bestCp - posEval[i].second);
+      const secondStillWinningBig = posEval[i].second != null && posEval[i].second >= 300;
       let singleRecapture = false;
       try { const rc = recaptureFact(fullSans.slice(0, i), fullSans[i], color); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
-      if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture) kind = "only";
+      if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture && !badlyLosing && !secondStillWinningBig) kind = "only";
       // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데, 그 이점을 응징 못 해 평가치가
       // 의미있게 감소(loss≥100)하되, 결과가 뒤집힐(패배) 정도는 아닌 경우(playedCp≥-30).
       if (["inaccuracy", "mistake", "good"].includes(kind) && i >= 1
@@ -3470,7 +3498,7 @@ function assignTiers(moves, ply, board, keyStr, sans) {
     if (isBook) return { ...m, kind: "book", book: true };
     if (mv == null || best == null) return { ...m, kind: hasRealEval(m) ? "good" : "pending", book: false };
     let kind = tierOf(loss);
-    if (["best", "excellent", "good"].includes(kind) && board && isSacrifice(board, m.san, color) && mv >= -40 && !(decided && losing)) kind = "brilliant";
+    if (["best", "excellent", "good"].includes(kind) && board && isSacrifice(board, m.san, color) && mv >= -40 && !(best != null && best <= -300)) kind = "brilliant";
     return { ...m, kind, book: false };
   });
   // (기능4) 최선의 수는 반드시 1개 이하. 평가치가 가장 좋은 '비이론' 수 1개에만 '최선'을 부여하고
@@ -6816,7 +6844,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
       if (k === "best" && !matched) k = "excellent";
       // (버그 수정) '완화' 판정을 둔 뒤 평가(ourCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로 한다.
       const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-      if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(sans, col)) k = "brilliant";
+      if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(bestCp <= -300) && !ownPriorMoveWasSacrifice(sans, col)) k = "brilliant";
       if (decided) { if (k === "blunder") k = "mistake"; else if (k === "mistake") k = "inaccuracy"; else if (k === "inaccuracy") k = "good"; }
       const under = /=/.test(san) && !/=Q/.test(san); if (under && !["inaccuracy", "mistake", "blunder"].includes(k)) k = "brilliant";
       return k;
@@ -9122,7 +9150,14 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // (v0.3.9 기능) 사용자 요청 — "더 정확하게"를 고르면 depth 상한을 20→25로 올린다(movetime은
   // 그대로 — 상한이 높아진 만큼 예전엔 depth 20에서 일찍 멈추던 쉬운 포지션들도 남은 시간을 더 써서
   // depth 25까지 파고들게 되므로, 그 자체로 이미 "더 오래 걸리지만 더 정확한" 리뷰가 된다).
+  // (v0.3.9 버그 수정) 위 설명은 "쉬운" 포지션(원래 movetime을 다 안 쓰고 일찍 멈추던 것)에만 맞는
+  // 얘기였다 — 이미 depth 20에서도 movetime 예산을 전부 쓰던 복잡한(날카로운) 포지션은 depth
+  // 목표만 25로 올라갔지 그걸 채울 시간은 그대로라, 목표에 못 미친 채 하드 워치독에 걸려 결과 자체가
+  // 안 나오고("계산 중"에 멈춘 수 아이콘) 엔진 라인도 첫 단계(REVIEW_MOVETIME_MS) 안에 못 끝나는
+  // 원인이었다 — 하필 날카로운 포지션(탁월한 수·유일한 수가 나올 법한 자리)일수록 더 잘 걸렸다.
+  // "정확하게"를 고른 경우엔 movetime 예산 자체도 비례해 늘린다.
   const reviewDepth = reviewSpeed === "accurate" ? 25 : REVIEW_DEPTH;
+  const reviewMovetimeMs = reviewSpeed === "accurate" ? Math.round(REVIEW_MOVETIME_MS * 2.5) : REVIEW_MOVETIME_MS;
   const narrow = useNarrow(760);
   // (v0.3.8 기능) 새로고침해도 이어보기 — reviewStorageKey 참고. 마운트 시 한 번만 읽으면 되므로
   // useState 지연 초기화로 동기 복원한다(game은 prop이라 이 시점에 이미 확정돼 있다).
@@ -9229,7 +9264,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
     let cancelled = false;
     (async () => {
       try {
-        const r = await analyzeGame(sans, engine, reviewDepth, (p) => { if (!cancelled) setProg(p); }, REVIEW_MOVETIME_MS,
+        const r = await analyzeGame(sans, engine, reviewDepth, (p) => { if (!cancelled) setProg(p); }, reviewMovetimeMs,
           (partial, gradedIdx) => { if (!cancelled) { setResult(partial); setGradedCount(gradedIdx); } }, fenRoot);
         if (!cancelled) {
           setResult(r); setGradedCount(sans.length); setResultDone(true);
@@ -9422,7 +9457,10 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
         // REVIEW_MOVETIME_MS 그대로 유지된다(아래 참고). 여기서 깊어진 결과는 화면(엔진 라인 패널·
         // 평가치 막대)에만 실시간으로 반영되고, 이미 확정된 점수·등급표는 건드리지 않는다.
         const onLines = (raw) => { if (!cancelled) { const l = toLines(raw); if (l.length) setEngineLines(l); } };
-        const pvsAll = await w.evaluateMulti(effFen, MAX_SEARCH_DEPTH, 3, REVIEW_MOVETIME_MS, onLines, "review-lines");
+        // (v0.3.9 버그 수정) 이 첫 단계도 analyzeGame과 같은 이유로 "정확하게" 선택 시엔 늘어난
+        // reviewMovetimeMs를 그대로 쓴다 — 그래야 depth 25 채점이 끝나기도 전에 이 라인 패널만 먼저
+        // "첫 확정"으로 넘어가 실제 최종 등급과 다른 얕은 라인을 잠깐 보여주는 불일치가 줄어든다.
+        const pvsAll = await w.evaluateMulti(effFen, MAX_SEARCH_DEPTH, 3, reviewMovetimeMs, onLines, "review-lines");
         if (cancelled) return;
         setEngineLines(toLines(pvsAll));
         setLinesPending(false);
@@ -9497,7 +9535,10 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           let kind = tierOf(loss);
           if (kind === "best" && !matched) kind = "excellent";
           const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-          try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant"; } catch { }
+          // (v0.3.9 버그 수정) analyzeGame과 동일 — 별도 3점(300cp) 기준(badlyLosing)으로 탁월한
+          // 수·유일한 수 승격을 막는다. 기존 decided&&losing(2점)은 실수 등급 완화에만 쓴다.
+          const badlyLosing = bestCp <= -300;
+          try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !badlyLosing && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant"; } catch { }
           if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
           // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 학습 탭(evalMoveKind
           // 호출부의 applyKind)에는 있는데 이 자유 탐색 판정에는 빠져 있었다 — 같은 규칙을 그대로 적용한다.
@@ -9508,7 +9549,10 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           // 수"로 승격하지 않는다.
           let singleRecapture = false;
           try { const rc = recaptureFact(prevSans, san, col); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
-          if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture) kind = "only";
+          // (v0.3.9 버그 수정) analyzeGame과 동일 — badlyLosing이거나 2순위(secondCp)가 이미 +3점 이상
+          // 이어도 "유일한 수"를 매기지 않는다.
+          const secondStillWinningBig = secondCp != null && secondCp >= 300;
+          if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture && !badlyLosing && !secondStillWinningBig) kind = "only";
           if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
         };
         await grade(REVIEW_MOVETIME_MS);
@@ -10100,7 +10144,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       // 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
       const decided = Math.abs(bestCp) > 200;  // 이 수를 두기 전, 최선의 수 기준으로도 이미 승부가 기울어 있었는가
       const losing = bestCp <= -200;           // 그 상태에서 이 수를 둔 쪽이 불리했는가
-      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(decided && losing) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
+      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(bestCp <= -300) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }   // 실수류 완화(양측)
       return kind;
     };
