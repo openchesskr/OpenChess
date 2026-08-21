@@ -1900,6 +1900,13 @@ function isSacrifice(board, sanRaw, color) {
   // 못했다. beforeHang 조건을 없애고 afterHang>=2만으로 판정한다 — beforeHang은 더 이상 필요 없다.
   const { loss: afterHang, sq: afterHangSq } = hangingLossSq(after, color, [tr, tc]);
   if (afterHang >= 2) {
+    // (22차, 사용자 요청) 사잇수(zwischenzug) 예외 — 이 수 자체가 방치된 기물(afterHang)과 같거나
+    // 더 비싼 상대 기물을 잡는 수라면, 방금 움직인 내 기물이 곧바로 되잡혀 net이 깎이더라도 희생이
+    // 아니다: 상대가 그 되잡기에 응수를 쓰면 그 사이 나는 다음 수에 원래 걸려 있던 기물을 그대로
+    // 피하면 되고, 상대가 되잡는 대신 방치된 기물을 곧장 챙기더라도 나는 이미 그 이상의 가치를
+    // 상대에게서 받아낸 뒤이므로, 어느 쪽이든 결국 기물 점수 손해를 보지 않는다. 그래서 net(되잡힘
+    // 손실까지 뺀 값)이 아니라 이 수가 실제로 잡은 원값(capturedVal)만 afterHang과 비교한다.
+    if (info.isCap && capturedVal >= afterHang) return false;
     // (20차) 희생의 기본 정의는 "실질 손실"이다. 이 수 자체가 잡은 순이득(net)이 방치한 기물 손실(afterHang)을
     // 상쇄하고 남는다면(예: 1.e4 e5 2.d4 exd4 3.Qxd4 Nc6 4.Qd5 Nf6 5.Qf5 d5 6.exd5 Bxf5 — 퀸(9점)을 잡으며
     // Nc6(≈2점 손실)를 방치) 총합이 이득이므로 희생이 아니다. 총손익이 -2점 이하일 때만 희생으로 본다.
@@ -3930,21 +3937,40 @@ function useNarrow(bp = 480) {
   }, [bp]);
   return narrow;
 }
+// (버그 수정, 사용자 제보) 예전엔 일반 useRef 객체를 돌려줬다 — 그 ref가 실제로 어떤 DOM 노드에
+// "처음" 붙는 순간이, 이 hook의 useEffect가 도는 시점(컴포넌트 마운트 시점, deps=[max]라 그 뒤로는
+// 다시 안 돎)보다 한참 뒤일 수 있다는 게 문제였다. 예를 들어 리뷰 페이지는 분석 대기 화면(그 안엔
+// 이 ref가 붙을 보드 자체가 아직 없음)을 먼저 그리고, 분석이 끝난 뒤에야 실제 보드가 있는 화면으로
+// 넘어간다 — 그 시점엔 이미 useEffect가 (ref.current가 null이던 그 순간에) 딱 한 번 실행되고 끝나
+// 있어, ResizeObserver 자체가 아예 설치되지 못한 채 크기가 초기 추정값(320)에 영원히 멎어 있었다
+// (모바일에선 320이 우연히 봐줄 만한 값이라 티가 안 났지만, 데스크톱처럼 훨씬 큰 컨테이너에서는
+// 보드가 부자연스럽게 작게 고정되는 버그로 드러났다). 콜백 ref로 바꾸면 React가 그 DOM 노드를
+// "실제로 붙이는 순간"(그게 언제든, 몇 번째 렌더든) 그 즉시 측정·관찰을 시작할 수 있어 이 순서
+// 문제가 구조적으로 사라진다.
 function useBoardSize(max = 360) {
-  const ref = useRef(null);
   const [size, setSize] = useState(Math.min(max, 320));
-  useEffect(() => {
-    // (버그·모바일) Board 래퍼는 격자 바깥에 프레임(안쪽 여백 20 + 패딩 20 + 테두리 ~2 ≈ 42px)을 더한다.
-    // 이 프레임을 빼지 않으면 board+프레임이 컨테이너를 넘쳐(모바일 가로 오버플로) 보드 오른쪽이 잘려 보였다.
+  const elRef = useRef(null);
+  const roRef = useRef(null);
+  // (버그·모바일) Board 래퍼는 격자 바깥에 프레임(안쪽 여백 20 + 패딩 20 + 테두리 ~2 ≈ 42px)을 더한다.
+  // 이 프레임을 빼지 않으면 board+프레임이 컨테이너를 넘쳐(모바일 가로 오버플로) 보드 오른쪽이 잘려 보였다.
+  const measure = useCallback(() => {
     const FRAME = 42;
-    const measure = () => { const el = ref.current; if (!el) return; const w = el.clientWidth; if (w > 0) setSize(Math.max(160, Math.floor((Math.min(max, w) - FRAME) / 8) * 8)); };
-    measure();
-    let ro = null;
-    if (typeof ResizeObserver !== "undefined" && ref.current) { ro = new ResizeObserver(measure); ro.observe(ref.current); }
-    window.addEventListener("resize", measure);
-    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", measure); };
+    const el = elRef.current; if (!el) return;
+    const w = el.clientWidth; if (w > 0) setSize(Math.max(160, Math.floor((Math.min(max, w) - FRAME) / 8) * 8));
   }, [max]);
-  return [size, ref];
+  const setRef = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    elRef.current = el;
+    if (el) {
+      measure();
+      if (typeof ResizeObserver !== "undefined") { roRef.current = new ResizeObserver(measure); roRef.current.observe(el); }
+    }
+  }, [measure]);
+  useEffect(() => {
+    window.addEventListener("resize", measure);
+    return () => { window.removeEventListener("resize", measure); if (roRef.current) roRef.current.disconnect(); };
+  }, [measure]);
+  return [size, setRef];
 }
 
 /* ============================================================ 잡힌 기물 · 기물 점수차 ============================================================ */
@@ -8172,7 +8198,14 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
     const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     onJump(Math.round(relX * (n - 1)));
   };
-  const onPointerDown = (e) => { if (!onJump) return; draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } jumpToClientX(e.clientX); };
+  // (버그 수정, 사용자 제보) 마우스로 드래그할 때 커서가 빨간 원(not-allowed/no-drop)으로 바뀌며
+  // 잘 움직이지 않는 문제 — SVG는 브라우저가 기본적으로 이미지처럼 "드래그해서 옮길 수 있는"
+  // 요소로 취급해, preventDefault 없이 그 위를 누른 채 움직이면 우리 Pointer Events 드래그와는
+  // 별개로 네이티브 HTML5 드래그(dragstart)가 함께 시작된다 — 이 페이지엔 그 드롭을 받아줄 대상이
+  // 없으니 브라우저가 "여긴 놓을 수 없다"는 뜻으로 그 커서를 보여주고, 두 드래그가 뒤섞여 버벅였다.
+  // pointerdown에서 preventDefault로 네이티브 드래그·텍스트 선택 제스처 자체를 막고, WebkitUserDrag도
+  // none으로 눌러 이중으로 막는다.
+  const onPointerDown = (e) => { if (!onJump) return; e.preventDefault(); draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } jumpToClientX(e.clientX); };
   const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
   const onPointerUp = (e) => { draggingRef.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { } };
   const hasMark = curPly != null && curPly >= 0 && curPly < n;
@@ -8181,12 +8214,12 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
   const markFrac = hasMark ? curPly / (n - 1) : 0;
   return (
     <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, overflow: "hidden" }}>
-      <div style={{ position: "relative", touchAction: "none" }}
+      <div style={{ position: "relative", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitUserDrag: "none" }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
         {/* 그래프 위 역삼각형 — 점선 x좌표와 함께 움직여 지금 보고 있는 지점을 더 또렷이 보여준다. */}
         {hasMark && <div style={{ position: "absolute", top: -1, left: markFrac * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #EBCB86", pointerEvents: "none", zIndex: 2 }} />}
-        <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none"
-          style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default" }}>
+        <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" onDragStart={(e) => e.preventDefault()}
+          style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H, cursor: onJump ? "ew-resize" : "default", WebkitUserDrag: "none" }}>
           <rect x="0" y="0" width={W} height={H} fill="#3B342E" />
           <polygon points={areaPts} fill="#EDE7DC" />
           <polyline points={linePts} fill="none" stroke="#B9B0A4" strokeWidth="1" />
@@ -8956,14 +8989,16 @@ async function reviewedAnalysisShare(ccId, result, depth) {
 // (objectFit:contain) 보여주고, 몇 초마다 자연스럽게 좌우로 넘어가는 캐러셀로 바꿨다.
 const REVIEW_INTRO_ILLUSTRATIONS = ["/ilust-7-web.webp", "/ilust-6-web.webp", "/ilust-5-web.webp"];
 const REVIEW_INTRO_SLIDE_MS = 4200;
-function ReviewIntroCarousel() {
+// (버그 수정, 사용자 제보) 데스크톱에서도 항상 모바일 크기(maxWidth 420 · height 170) 그대로였다 —
+// narrow가 아니면 훨씬 큰 폭·높이를 써 넓은 화면에서 삽화가 상대적으로 너무 작아 보이지 않게 한다.
+function ReviewIntroCarousel({ narrow = true }) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     const iv = setInterval(() => setIdx((v) => (v + 1) % REVIEW_INTRO_ILLUSTRATIONS.length), REVIEW_INTRO_SLIDE_MS);
     return () => clearInterval(iv);
   }, []);
   return (
-    <div style={{ position: "relative", width: "100%", maxWidth: 420, height: 170, margin: "0 auto", overflow: "hidden", background: "transparent", flexShrink: 0 }}>
+    <div style={{ position: "relative", width: "100%", maxWidth: narrow ? 420 : 640, height: narrow ? 170 : 260, margin: "0 auto", overflow: "hidden", background: "transparent", flexShrink: 0 }}>
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.img key={idx} src={REVIEW_INTRO_ILLUSTRATIONS[idx]} alt="" draggable={false}
           initial={{ x: 70, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -70, opacity: 0 }}
@@ -9535,8 +9570,12 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   // 무거운 트리 자체를 렌더링하지 않는다 — 어차피 화면상 아무도 못 보므로 그릴 이유가 없다. 모든
   // 훅은 이 조건과 무관하게 항상 그대로 호출되고(위쪽에 이미 다 끝남), 반환할 JSX만 갈린다.
   if (!visible) return null;
+  // (버그 수정, 사용자 제보) 이 대기 화면은 데스크톱에서도 항상 maxWidth:360짜리 모바일 폭 그대로
+  // 보여줬다 — 큰 모니터에서는 화면 대부분이 빈 여백이고 그래프·아이콘은 상대적으로 너무 작아
+  // "안 보이는" 것처럼 느껴진 원인. narrow가 아니면(=데스크톱) 훨씬 넓은 폭을 쓴다.
+  const waitMaxWidth = narrow ? 360 : 880;
   return (
-    <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", padding: "6px 4px" }}>
+    <div style={{ width: "100%", maxWidth: waitMaxWidth, margin: "0 auto", padding: "6px 4px" }}>
       {/* (사용자 요청) 실제로 채점 대기 중일 때는(progress가 curFloored에 그대로 머무는 동안) 새로
           보여줄 데이터가 없어 그래프 자체는 정직하게 정지해 있는 게 맞다 — 대신 이 문구 옆에 항상
           움직이는 3-dot 인디케이터(다른 곳의 "계산 중" 표시와 동일)를 붙여, 화면이 아예 멎어버린
@@ -9564,18 +9603,20 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
         </svg>
       </div>
       {/* (사용자 요청) 모바일에서는 백·흑 그래프를 나란히 좁게 두지 않고 각각 다른 줄에 더 크게
-          보여준다 — narrow일 때만 세로(column)로 쌓고 MiniAccCurve에 big을 넘겨 키운다. */}
+          보여준다 — narrow일 때만 세로(column)로 쌓는다. (버그 수정) MiniAccCurve의 big 크기는 이제
+          narrow 여부와 무관하게 항상 켠다 — 데스크톱도 위에서 컨테이너 폭 자체를 넓혔으므로(880),
+          나란히 두 칸으로 나눠도 각 칸이 여전히 충분히 넓어 큰 폰트·굵은 선이 작게 눌리지 않는다. */}
       <div className={narrow ? "flex flex-col" : "flex items-start"} style={{ gap: narrow ? 18 : 14, marginTop: 10 }}>
         {/* (버그 수정) 정확도 증감(delta)은 이제 MiniAccCurve 안의 "SAN : 등급" 토스트에 함께
             표시된다(위 toast.delta 참고) — 여기 따로 떠 있던 팝업은 "n.SAN을 분석 중입니다..."
             줄이 컨테이너 밖으로 나오며 wrapper 높이가 오르내릴 때 그 팝업의 bottom 기준 위치가 함께
             흔들려 정확도 숫자와 간헐적으로 겹쳐 보이던 원인이었다 — 완전히 제거한다. */}
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
-          <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big={narrow}
+          <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big
             accValue={wVal} layoutId="review-acc-w" calculatingSan={wCalcSan} toast={wToast} />
         </div>
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
-          <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big={narrow}
+          <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big
             accValue={bVal} layoutId="review-acc-b" calculatingSan={bCalcSan} toast={bToast} />
         </div>
       </div>
@@ -9652,13 +9693,16 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // (v0.2.4 버그 수정) "이 포지션|이 수"를 화면에 보여준 추천을 그대로 따라 뒀는지 기록해 두는
   // 참조 — playFree에서 채우고, 아래 exploreMove 채점 effect가 재검색 결과와 무관하게 신뢰한다.
   const forcedBestRef = useRef(null);
-  // (버그 방지) 데스크톱 레이아웃은 보드 칸(flexShrink:0)이 옆 사이드바(flex:1)와 나란한 flex row라,
-  // 이 hook을 그 칸에 그대로 붙이면 "컨테이너 폭을 재서 보드 크기를 정하는" 측정 대상 자체가 보드
-  // 크기에 따라 결정되는 순환 참조가 생겨(내용물이 곧 그 칸의 폭) 보드가 항상 최소 크기로 멎는다.
-  // 모바일(좁은 화면, 보드가 전체 폭을 채우는 한 열 레이아웃)에서만 이 자동 측정 hook을 쓰고,
-  // 데스크톱은 고정 크기를 쓴다.
   const [mobileBoardSize, mobileBoardSizeRef] = useBoardSize(420);
-  const boardSize = narrow ? mobileBoardSize : 440;
+  // (버그 수정, 사용자 제보) 예전엔 "이 hook을 보드 칸에 그대로 붙이면 그 칸의 CSS 폭 자체가
+  // boardSize에서 역산돼(Math.floor(boardSize/8)*8+...) 순환 참조가 생긴다"는 이유로 데스크톱은
+  // 항상 고정 크기(440)만 썼다 — 그 결과 큰 데스크톱 모니터에서도 보드가 늘 작게 고정되어 보였다.
+  // boardRef는 실제로 BoardWithMaterial 안의 "보드만 감싸는 flex:1 칸"(세로 평가치 막대·간격은
+  // 이미 형제 요소로 분리되어 있음, 4019행 참고)에 붙으므로, 그 바깥 열의 CSS 폭을 boardSize에서
+  // 역산하지 않고 뷰포트 비율(vw)로 직접 정하면 순환이 아예 생기지 않는다 — 모바일과 완전히 같은
+  // ResizeObserver 자동 측정 패턴을 데스크톱에도 그대로 적용해, 화면이 넓을수록 보드도 함께 커진다.
+  const [desktopBoardSize, desktopBoardSizeRef] = useBoardSize(620);
+  const boardSize = narrow ? mobileBoardSize : desktopBoardSize;
   const sans = game.sans;
   // (v0.3.4 기능) 사용자 요청 — 학습 탭 "FEN 모드"에서 분석한 리뷰는 표준 시작 위치가 아니라
   // game.fenRoot(원본 FEN 문자열)에서부터 시작한다. parseFenFull로 다시 파싱해 {board,turn,rights,ep}를
@@ -10275,7 +10319,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
         {!boardIntroDone && <ReviewBoardIntroAnim sans={sans} onDone={() => setBoardIntroDone(true)} />}
       </AnimatePresence>
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
-        <ReviewIntroCarousel />
+        <ReviewIntroCarousel narrow={narrow} />
         <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} sans={sans} startWhite={fenRoot ? fenRoot.turn === "w" : true} visible={boardIntroDone} />
         {/* (버그 수정) 예전엔 이 막대·퍼센트가 엔진이 실제로 평가를 끝낸 포지션 수(doneCount, 워크
             스틸링이라 순서 없이 끝남)를 그대로 보여줬다 — 채점(gradeIdx)은 반드시 순서대로만 진행되므로
@@ -10328,18 +10372,22 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           좌우로 큰 여백만 남고 실제로는 "전체 화면"처럼 안 보였다 — 폭 제한을 없애 wrap(뷰포트 전체를
           덮는 position:fixed 컨테이너)만큼 그대로 넓게 쓰도록 한다. */}
       <div className="flex items-start" style={{ gap: 20, width: "100%", margin: "0 auto", padding: "8px 32px 32px", boxSizing: "border-box" }}>
-        {/* 열 폭 = 보드 바깥 폭(격자 + 프레임 20) + 세로 평가치 막대(22) + 간격(8). 이 폭을 명시하지 않으면
-            코치 카드의 긴 텍스트가 max-content로 열을 늘려 보드가 오른쪽 사이드바를 밀어낸다. */}
-        <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
+        {/* (버그 수정, 사용자 제보) 열 폭을 더 이상 boardSize에서 역산하지 않는다(위 hook 주석 참고) —
+            뷰포트 폭(vw)에 비례해 직접 정해, 화면이 넓을수록 이 열도, 그 안의 보드도 함께 커진다.
+            clamp 하한(520)은 보드가 예전 고정값(440)보다 작아지지 않도록, 상한(700)은 초대형
+            모니터에서 코치 카드 한 줄이 지나치게 길어지지 않도록 잡은 값이다. */}
+        <div style={{ flexShrink: 0, width: "clamp(520px, 42vw, 700px)", position: "relative" }}>
           {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
             <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
-              놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
+              놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. boardRef는 모바일과
+              동일하게 그 보드 칸(막대 제외)에 붙어 실제 렌더된 폭을 재고, useBoardSize가 8px 격자에
+              맞춰 떨어지는 크기로 환산해 돌려준다. */}
           <div style={{ position: "relative" }}>
             <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-              leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
+              boardRef={desktopBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
@@ -10349,7 +10397,11 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
             <button onClick={() => jump(sans.length)} disabled={curPly >= sans.length && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: (curPly >= sans.length && !exploring && !exploreFuture.length) ? RV.dim : RV.text, cursor: (curPly >= sans.length && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsRight size={16} /></button>
           </div>
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* (버그 수정, 사용자 제보) 예전엔 이 열이 flex:1로 남은 폭을 전부 차지해, 그 안의 EvalGraph
+            (SVG가 width:100%로 부모 폭을 그대로 따라감)가 초대형 모니터에서 보드에 비해 지나치게
+            거대해 보였다 — maxWidth로 상한을 둬 보드(위 clamp 상한 700 + 프레임/막대 약 50)와
+            비슷한 눈높이 비율을 유지한다. */}
+        <div style={{ flex: 1, minWidth: 0, maxWidth: 820 }}>
           <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
             {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)} className="press" style={{ padding: "9px 14px", border: "none", background: "transparent", color: tab === k ? RV.text : RV.dim, fontWeight: 800, fontSize: 13, cursor: "pointer", borderBottom: tab === k ? "2px solid " + T.brass : "2px solid transparent" }}>{label}</button>
