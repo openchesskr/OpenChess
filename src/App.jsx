@@ -3596,13 +3596,14 @@ function evalBarText(ev) {
   if (ev.mate != null) return "M" + (ev.plies != null ? ev.plies : matePliesOf(ev.mate));
   return (Math.abs(ev.cp || 0) / 100).toFixed(1);
 }
-// (v0.3.9 사용자 요청) font — 리뷰 페이지 호출부만 REVIEW_FONT를 넘겨 그 화면에서만 폰트를
-// 바꾼다(학습 탭·퍼즐 등 다른 화면은 기본값 그대로 ui-monospace 유지).
+// (v0.3.9 사용자 요청 → 재요청으로 site-wide 폰트가 SITE_FONT 자체가 되며 이 prop은 사실상
+// 무의미해졌다 — font를 넘기든 안 넘기든 이제 항상 SITE_FONT를 쓴다. 다만 걷어낼 이유도 없어(다른
+// 화면에서 실수로 다른 폰트를 넘기고 싶어질 미래를 대비해) prop 구조 자체는 그대로 둔다.
 function EvalBadge({ ev, small, font }) {
   const num = !ev ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : (ev.cp || 0));
   const txt = evalDisplayText(ev);
   // (v0.1.3 UI) 엔진 라인(small)은 자리를 훨씬 더 압축한다 — 좌우 여백·최소폭·글자 크기를 크게 줄임.
-  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: small ? 32 : 50, padding: small ? "1px 3px" : "3px 8px", borderRadius: small ? 4 : 6, fontSize: small ? 9 : 11, fontWeight: 800, fontFamily: font || "ui-monospace,monospace", border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)", flexShrink: 0 };
+  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: small ? 32 : 50, padding: small ? "1px 3px" : "3px 8px", borderRadius: small ? 4 : 6, fontSize: small ? 9 : 11, fontWeight: 800, fontFamily: font || SITE_FONT, border: "1px solid rgba(0,0,0,.25)", boxShadow: "0 1px 2px rgba(0,0,0,.3)", flexShrink: 0 };
   if (num > 0) return <span style={{ ...base, background: "#FFFFFF", color: "#0E0907" }}>{txt}</span>;
   if (num < 0) return <span style={{ ...base, background: "#0E0907", color: "#FFFFFF" }}>{txt}</span>;
   return (
@@ -3643,7 +3644,7 @@ function EvalBar({ cp, width, depth, vertical, font }) {
           <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: (100 - whitePct) + "%", background: "#140C07" }} />
         </div>
         {/* 부호 없이 크기만 — 위치(아래=백/위=흑)로 유불리를 구분한다. 폭(22px)에 다 들어오도록 글자를 줄인다. */}
-        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 7.5, fontWeight: 800, fontFamily: font || "ui-monospace,monospace", lineHeight: 1, letterSpacing: "-.02em", ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalBarText(ev)}</span>
+        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 7.5, fontWeight: 800, fontFamily: font || SITE_FONT, lineHeight: 1, letterSpacing: "-.02em", ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalBarText(ev)}</span>
       </div>
     );
   }
@@ -3659,7 +3660,7 @@ function EvalBar({ cp, width, depth, vertical, font }) {
       {/* (v0.1.3 UI) 색이 채워진 박스 배지 대신, 소수점 둘째 자리까지 표기한 텍스트를 바에 직접
           얹는다(박스 배경 없음) — 백이 유리하면 흰 구간(좌측)에 검은 텍스트를 좌측 끝에, 흑이
           유리하면 검은 구간(우측)에 흰 텍스트를 우측 끝에 두어 항상 자신이 놓인 구간과 대비되게 한다. */}
-      <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: font || "ui-monospace,monospace", ...(num >= 0 ? { left: 6, color: "#140C07" } : { right: 6, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
+      <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, fontFamily: font || SITE_FONT, ...(num >= 0 ? { left: 6, color: "#140C07" } : { right: 6, color: "#FFFFFF" }) }}>{evalDisplayText(ev)}</span>
       {/* (버그 수정) 평가치 텍스트가 백 유리 시 좌측, 흑 유리 시 우측으로 옮겨 다니게 되면서, 항상
           우측 고정이던 탐색 인디케이터와 겹칠 수 있어 평가치 텍스트의 반대편에 두도록 바꾼다. */}
       {depth != null && (
@@ -3934,7 +3935,7 @@ function CapturedRow({ pieces, color, diff, textColor, player }) {
   const material = (
     <div className="flex items-center" style={{ gap: 1 }}>
       {sorted.map((t, i) => <PieceGlyph key={i} type={t} color={color} size={16} />)}
-      {diff > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: textColor, marginLeft: 4, fontFamily: "ui-monospace,monospace" }}>+{diff}</span>}
+      {diff > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: textColor, marginLeft: 4, fontFamily: SITE_FONT }}>+{diff}</span>}
     </div>
   );
   if (!player) return <div className="flex items-center" style={{ gap: 8, minHeight: 20 }}>{material}</div>;
@@ -4328,11 +4329,16 @@ function sansToPgnText(sans, startColor) {
 // (18차 UI6 → 사용자 요청으로 v0.3.3에 유산 기보 폰트로 통일) 기보 표기 전반에 쓰는 폰트 —
 // 원래 Playfair Display였으나, 유산(Legacy) 재생 화면의 기보에 쓰던 폰트(LEGACY_FONT)로 맞췄다.
 const SEQ_FONT = "'Merriweather', 'Noto Sans KR', serif";
-// (v0.3.9 사용자 요청) 리뷰 페이지 전용 폰트 — 숫자를 포함해 리뷰 페이지에 쓰이는 텍스트는 전부
-// 이 폰트로 통일한다. 리뷰 전용 컴포넌트는 기존 fontFamily 값을 이걸로 바로 바꾸고, 다른 화면과
-// 공유하는 컴포넌트(EvalBadge·EvalBar·SequenceBar 등)는 font(옵션) prop을 추가해 리뷰 페이지
-// 호출부에서만 이 값을 넘겨 다른 화면(학습 탭·퍼즐 등)의 기존 폰트에는 영향이 없게 한다.
-const REVIEW_FONT = "'IBM Plex Sans KR', sans-serif";
+// (v0.3.9 사용자 요청 → 재요청으로 적용 범위 확대) 처음엔 리뷰 페이지 전용 폰트로 도입했다가,
+// "특수하게 지정해 둔 부분(SEQ_FONT 기보 폰트, LEGACY_FONT, GAME_FONT 등 디자인 의도가 있는 폰트)만
+// 빼고 사이트 전반에 IBM Plex Sans KR을 적용해 달라"는 재요청으로 범위를 넓혔다 — index.css의
+// html/body 기본 폰트도 이미 IBM Plex Sans KR이라(상속) 대부분의 텍스트는 원래도 이 폰트였지만,
+// 숫자·배지 등 곳곳에서 명시적으로 ui-monospace를 지정해 그 상속을 덮어쓰고 있던 자리들을 전부 이
+// 상수로 바꿔, "명시적으로 지정했지만 실은 의도된 디자인 선택이 아니었던" 폰트들을 사이트 기본값과
+// 다시 맞춘다. 리뷰 페이지와만 공유하던 컴포넌트(EvalBadge·EvalBar·SequenceBar 등)의 font(옵션)
+// prop·기본값 구조는 이제 의미가 없어졌지만(기본값 자체가 이미 이 상수이므로), 굳이 걷어내지 않아도
+// 동작에는 차이가 없어 그대로 둔다.
+const SITE_FONT = "'IBM Plex Sans KR', sans-serif";
 // (v0.2.9 디자인 → v0.3.3 폰트 교체) 퀘스트 클리어·티어 승급 같은 "게임 보상 화면" 팝업의 큰
 // 제목에만 적용하는 디스플레이 폰트 — 문단 본문에 쓰기엔 너무 두꺼워 가독성이 떨어진다.
 // (사용자 요청) 알림 창·팝업에 등장하는 한글 Title 텍스트는 Google Fonts의 Bagel Fat One으로.
@@ -4501,7 +4507,7 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
           <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: 420, width: "100%", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
             <button onClick={() => setOpen(false)} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
             <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>FEN 또는 PGN 붙여넣기</div>
-            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} placeholder={"예: 1. e4 e5 2. Nf3 Nc6\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"} style={{ width: "100%", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: "ui-monospace,monospace", boxSizing: "border-box" }} />
+            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} placeholder={"예: 1. e4 e5 2. Nf3 Nc6\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"} style={{ width: "100%", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: SITE_FONT, boxSizing: "border-box" }} />
             {err && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{err}</div>}
             <div className="flex gap-2" style={{ marginTop: 10 }}>
               <button onClick={submit} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>불러오기</button>
@@ -4866,7 +4872,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       <div className="flex items-center gap-2">
         <span title="이 FEN을 보드에 반영" style={{ flexShrink: 0, color: "rgba(244,238,226,.5)" }}><Save size={15} /></span>
         <input value={fenInput} onChange={(e) => { setFenInput(e.target.value); setFenErr(""); }} onKeyDown={(e) => e.key === "Enter" && applyFenInput()} onBlur={applyFenInput}
-          style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #000", background: "rgba(0,0,0,.35)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 11 }} />
+          style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #000", background: "rgba(0,0,0,.35)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 11 }} />
       </div>
       {fenErr && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>{fenErr}</div>}
     </div>
@@ -5055,7 +5061,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply)}{m.disp || m.san}</span>
                 {m.name ? <span style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, wordBreak: "keep-all" }}>{m.name}</span> : m.isMain ? <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>Main Line</span> : null}
-                <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? "이론" : "…")}</span>
+                <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? "이론" : "…")}</span>
               </div>
             </div>
             <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}><Play size={11} /> 학습</button>
@@ -5064,7 +5070,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
             <div style={{ flex: 1, minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
               <div style={{ width: Math.min(100, m.adopt || 0) + "%", height: "100%", background: color, opacity: .85 }} />
             </div>
-            <span style={{ fontSize: 10, color: T.inkSoft, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "62%" }}>{m.games != null ? fmtFull(m.games) + " / " + fmtFull(posGames) : "—"} · {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"}</span>
+            <span style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "62%" }}>{m.games != null ? fmtFull(m.games) + " / " + fmtFull(posGames) : "—"} · {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"}</span>
           </div>
           {/* (UI) 도감 탭과 동일한 형식(백/무/흑 바 + %)으로 이 수의 승률 표기 */}
           {m.wdl && <div onClick={onClick} style={{ marginTop: 7, cursor: "pointer" }}><WinBar wdl={m.wdl} height={6} /></div>}
@@ -7178,7 +7184,7 @@ function ListPager({ page, setPage, pageCount, jump = 5 }) {
     <div className="flex items-center justify-center gap-2" style={{ marginTop: 8 }}>
       {showJump && <button onClick={() => setPage((p) => Math.max(0, p - jump))} disabled={page === 0} aria-label={jump + "페이지 이전"} title={jump + "페이지 이전"} className="press" style={pbtn(page === 0)}><ChevronsLeft size={13} /></button>}
       <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label="이전 페이지" className="press" style={pbtn(page === 0)}><ChevronLeft size={13} /></button>
-      <span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{page + 1} / {pageCount}</span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, fontFamily: SITE_FONT }}>{page + 1} / {pageCount}</span>
       <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1} aria-label="다음 페이지" className="press" style={pbtn(page >= pageCount - 1)}><ChevronRight size={13} /></button>
       {showJump && <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + jump))} disabled={page >= pageCount - 1} aria-label={jump + "페이지 다음"} title={jump + "페이지 다음"} className="press" style={pbtn(page >= pageCount - 1)}><ChevronsRight size={13} /></button>}
     </div>
@@ -7269,7 +7275,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
         <div style={{ marginBottom: 8 }}><label style={labelStyle}>대국 연도</label><input value={year} onChange={(e) => setYear(e.target.value.replace(/\D/g, ""))} style={inputStyle} placeholder="1985" /></div>
         <div style={{ marginBottom: 8 }}>
           <label style={labelStyle}>PGN 기보</label>
-          <textarea value={pgn} onChange={(e) => setPgn(e.target.value)} rows={5} style={{ ...inputStyle, fontFamily: "ui-monospace,monospace", resize: "vertical" }} placeholder="1.e4 e5 2.Nf3 Nc6 3.Bb5 ..." />
+          <textarea value={pgn} onChange={(e) => setPgn(e.target.value)} rows={5} style={{ ...inputStyle, fontFamily: SITE_FONT, resize: "vertical" }} placeholder="1.e4 e5 2.Nf3 Nc6 3.Bb5 ..." />
           <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{parsed.length > 0 ? parsed.length + "수 인식됨" : "아직 인식된 수가 없습니다"}</div>
         </div>
         <div style={{ marginBottom: 14 }}>
@@ -7290,7 +7296,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
         </div>
         <div style={{ marginBottom: 8 }}>
           <label style={labelStyle}>또는 PGN 텍스트 붙여넣기</label>
-          <textarea value={bulkText} onChange={(e) => { setBulkText(e.target.value); setBulkDone(null); }} rows={6} style={{ ...inputStyle, fontFamily: "ui-monospace,monospace", resize: "vertical" }} placeholder={'[Event "..."]\n[White "Kasparov, Garry"]\n[Black "Karpov, Anatoly"]\n...\n\n1.e4 e5 2.Nf3 ...'} />
+          <textarea value={bulkText} onChange={(e) => { setBulkText(e.target.value); setBulkDone(null); }} rows={6} style={{ ...inputStyle, fontFamily: SITE_FONT, resize: "vertical" }} placeholder={'[Event "..."]\n[White "Kasparov, Garry"]\n[Black "Karpov, Anatoly"]\n...\n\n1.e4 e5 2.Nf3 ...'} />
         </div>
         {bulkGames.length > 0 && (
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>
@@ -7838,10 +7844,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                             <div style={{ minWidth: 0, flex: 1 }}>
                               <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
                                 {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                                {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
+                                {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
                                 {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
                               </div>
-                              {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
+                              {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
                               {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                             </div>
                             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -7915,10 +7921,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
                                           <div style={{ minWidth: 0, flex: 1 }}>
                                             <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
                                               {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                                              {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
+                                              {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
                                               {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
                                             </div>
-                                            {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
+                                            {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
                                             {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                                           </div>
                                           <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -7984,10 +7990,10 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
               <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
-                    <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title="승리">👑</span>}</span>
-                    <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "½–½"}</span>
+                    <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title="승리">👑</span>}</span>
+                    <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "½–½"}</span>
                   </div>
-                  <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title="승리">👑</span>}</div>
+                  <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title="승리">👑</span>}</div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? " · 기보를 불러오는 중…" : reviewingGameId === g.id ? " · 리뷰를 여는 중…" : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -8471,7 +8477,7 @@ function ReviewAccuracyPill({ label, value, hi, layoutId }) {
   return (
     <motion.div layoutId={layoutId} style={{ flex: 1, textAlign: "center" }}>
       <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: REVIEW_FONT, borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: SITE_FONT, borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
     </motion.div>
   );
 }
@@ -8488,7 +8494,7 @@ function ReviewKindTable({ moves, showAll = false, onPick }) {
     const m = kind === "book" ? ms[ms.length - 1] : ms[0];
     onPick(m.ply + 1); // curPly = ply+1 (그 수까지 둔 위치)
   };
-  const numStyle = (kind, n) => ({ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: REVIEW_FONT, color: QCOLOR[kind], background: "none", border: "none", cursor: onPick && n ? "pointer" : "default", padding: 0 });
+  const numStyle = (kind, n) => ({ width: 44, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: SITE_FONT, color: QCOLOR[kind], background: "none", border: "none", cursor: onPick && n ? "pointer" : "default", padding: 0 });
   return (
     <div style={{ borderTop: "1px solid " + RV.border }}>
       {ANALYSIS_KIND_ROWS.map(([kind, label]) => {
@@ -8577,12 +8583,12 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "w" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={whiteAvatar} side="w" size={52} /></div>
           <div style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{whiteInfo.name}</div>
-          {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: REVIEW_FONT }}>{whiteInfo.rating}</div>}
+          {whiteInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: SITE_FONT }}>{whiteInfo.rating}</div>}
         </div>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ width: 52, height: 52, margin: "0 auto 6px", borderRadius: 10, overflow: "hidden", border: game.color === "b" ? "2px solid " + T.best : "2px solid transparent" }}><ReviewAvatar src={blackAvatar} side="b" size={52} /></div>
           <div style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{blackInfo.name}</div>
-          {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: REVIEW_FONT }}>{blackInfo.rating}</div>}
+          {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: SITE_FONT }}>{blackInfo.rating}</div>}
         </div>
       </div>
       <div className="flex items-stretch" style={{ gap: 10, marginBottom: 16 }}>
@@ -8710,7 +8716,7 @@ function ReviewMoveTable({ sans, moves, curPly, onJump, drawn }) {
     <div style={{ maxHeight: 220, overflowY: "auto", borderRadius: 8, background: RV.table }}>
       {rows.map(([i, w, b]) => (
         <div key={i} className="flex items-center" style={{ fontSize: 12.5 }}>
-          <span style={{ width: 32, padding: "6px 4px", color: RV.dim, fontFamily: REVIEW_FONT, flexShrink: 0 }}>{i / 2 + 1}.</span>
+          <span style={{ width: 32, padding: "6px 4px", color: RV.dim, fontFamily: SITE_FONT, flexShrink: 0 }}>{i / 2 + 1}.</span>
           <ReviewMoveCell san={w} move={moves[i]} active={curPly === i + 1} onClick={() => onJump(i + 1)} />
           <ReviewMoveCell san={b} move={moves[i + 1]} active={curPly === i + 2} onClick={() => onJump(i + 2)} />
         </div>
@@ -8768,7 +8774,7 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
             <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: narrow ? 12.5 : 13.5, fontWeight: 800, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
             {/* (v0.2.2 기능) 평가치 박스를 흰색/검은색(EvalBadge, 유리한 쪽 색으로 반전)으로 통일 —
                 엔진 라인 등 리뷰 페이지 다른 곳의 평가치 표기와 같은 규칙을 쓴다. */}
-            {evalDisp && <EvalBadge ev={evalDisp} font={REVIEW_FONT} />}
+            {evalDisp && <EvalBadge ev={evalDisp} font={SITE_FONT} />}
           </div>
           <p style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}>{copy.body}</p>
           {/* (R7 기능, 예방 수·연결까지 확장) "위협"·"위협 대처"·"과보호"·"예방 수"·"연결"·"중첩"
@@ -9046,7 +9052,7 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
   const dotIconSize = dotBox - (big ? 4 : 3);
   return (
     <div>
-      <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3, fontFamily: REVIEW_FONT }}>{label}</div>
+      <div style={{ fontSize: big ? 13 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3, fontFamily: SITE_FONT }}>{label}</div>
       <div style={{ position: "relative", width: "100%", height: boxHeight, overflow: "hidden" }}>
         {/* (v0.3.9 기능) viewBox의 min-x를 offset만큼 옮겨 가상 캔버스(폭 contentWidth) 중 W2폭짜리
             창만 보여준다 — 배경·격자선은 항상 전체 캔버스(contentWidth)를 채워 어느 위치로 창이
@@ -9057,7 +9063,7 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
           {[low, high].map((g, gi) => (
             <React.Fragment key={gi}>
               <line x1="0" y1={yy(g).toFixed(1)} x2={contentWidth} y2={yy(g).toFixed(1)} stroke="rgba(235,221,196,.2)" strokeWidth="0.6" strokeDasharray="2 2" />
-              <text x={(offset + 2).toFixed(1)} y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily={REVIEW_FONT}>{Math.round(g)}</text>
+              <text x={(offset + 2).toFixed(1)} y={(g === high ? yy(g) + 7.5 : yy(g) - 2).toFixed(1)} fontSize={big ? 9.5 : 7.5} fontWeight="800" fill="rgba(235,221,196,.85)" fontFamily={SITE_FONT}>{Math.round(g)}</text>
             </React.Fragment>
           ))}
           {/* (사용자 요청) 그래프 선을 구간(수)마다 나눠 그려, 각 구간이 그 수의 등급 색을 그대로
@@ -9095,7 +9101,7 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
             layoutId는 그대로 유지해 ReviewSummary의 ReviewAccuracyPill로 이어지는 공유 요소 전환이
             깨지지 않게 한다. (재요청) 수 아이콘과 겹치지 않도록 글자 크기를 더 줄이고 %를 붙인다. */}
         {accValue != null && (
-          <motion.div layoutId={layoutId} style={{ position: "absolute", right: 6, bottom: 3, fontSize: big ? 12 : 9.5, fontWeight: 800, fontFamily: REVIEW_FONT, color: T.ivoryHi, textShadow: "0 1px 3px rgba(0,0,0,.6)", pointerEvents: "none" }}>
+          <motion.div layoutId={layoutId} style={{ position: "absolute", right: 6, bottom: 3, fontSize: big ? 12 : 9.5, fontWeight: 800, fontFamily: SITE_FONT, color: T.ivoryHi, textShadow: "0 1px 3px rgba(0,0,0,.6)", pointerEvents: "none" }}>
             {accValue.toFixed(1)}%
           </motion.div>
         )}
@@ -9104,7 +9110,7 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
         <AnimatePresence>
           {toast && (
             <motion.div key={toast.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
-              style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 4, background: "rgba(20,16,12,.82)", borderRadius: 6, padding: "2px 7px", fontSize: big ? 10.5 : 9, fontWeight: 800, fontFamily: REVIEW_FONT, color: T.ivoryHi, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
+              style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 4, background: "rgba(20,16,12,.82)", borderRadius: 6, padding: "2px 7px", fontSize: big ? 10.5 : 9, fontWeight: 800, fontFamily: SITE_FONT, color: T.ivoryHi, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
               {badgeIcon(toast.kind, big ? 13 : 11)}
               <span>{toast.label} : {QLABEL[toast.kind] || toast.kind}</span>
               {/* (버그 수정) 정확도 증감 팝업을 이 토스트 안으로 합쳐, 정확도 숫자(우하단)와 서로
@@ -9119,7 +9125,7 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
       {/* (사용자 요청) "n.SAN을 분석 중입니다..."는 그래프 컨테이너(overflow:hidden) 안이 아니라
           바깥에 별도 줄로 표시한다 — 그래프 안쪽 요소와 겹치거나 잘릴 걱정 없이 항상 온전히 보인다. */}
       {calculatingSan && (
-        <div style={{ marginTop: 3, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: REVIEW_FONT, color: RV.soft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ marginTop: 3, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: SITE_FONT, color: RV.soft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {calculatingSan}을 분석 중입니다...
         </div>
       )}
@@ -9134,9 +9140,8 @@ const REVEAL_MIN_STEP_MS = 130;
 // (사용자 요청) 숫자가 그래프 위에서 서로 겹치지 않도록 두 가지를 함께 조정한다 — ① 잔상(떠 있다
 // 사라지는 자취)이 빨리 없어지도록 표시 시간·페이드아웃 시간을 모두 줄이고, ② 델타가 큰 수들이
 // 연달아 나올 때 다음 숫자가 뜨기 전 최소한의 간격(스태거)을 강제로 둔다.
-const REVEAL_POPUP_MS = 550;      // 정확도 증가/감소 숫자가 떴다 사라지는 총 시간(1300ms → 850ms → 550ms, 등장하자마자 더 빨리 사라지도록 재요청)
-const REVEAL_POPUP_EXIT_S = 0.1;  // 사라질 때 페이드아웃 속도(0.3s → 0.15s → 0.1s)
-const REVEAL_POPUP_STAGGER_MS = 480; // 숫자 하나가 뜬 뒤 다음 숫자가 뜨기까지 최소 간격
+const REVEAL_POPUP_MS = 550;      // "n.SAN : 등급" 토스트가 떴다 사라지는 총 시간
+const REVEAL_POPUP_STAGGER_MS = 480; // 토스트 하나가 뜬 뒤 다음 토스트가 뜨기까지 최소 간격
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
 function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn, sans, startWhite = true }) {
   const data = useMemo(() => buildRevealData(result, sharpOn), [result, sharpOn]);
@@ -9167,43 +9172,42 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
     let raf;
     let curFloored = 0;
     let lastStepTs = null;
+    let lastRenderTs = 0;
     function tick(ts) {
       if (lastStepTs == null) lastStepTs = ts;
       const target = targetRef.current;
+      let stepped = false;
       if (curFloored < target && ts - lastStepTs >= REVEAL_MIN_STEP_MS) {
         curFloored += 1;
         lastStepTs = ts;
+        stepped = true;
       }
       const elapsed = ts - lastStepTs;
       const frac = curFloored < target ? Math.min(0.9, elapsed / REVEAL_MIN_STEP_MS) : 0;
-      setProgress(curFloored + frac);
+      // (사용자 요청) "애니메이션이 부드럽게 재생되도록" — 대기 없이 채점된 수가 연달아 밀려 있으면
+      // (밀린 만큼 빠르게 따라잡는 동안) 매 프레임(60fps)마다 이 무거운 컴포넌트(SVG 두 개 +
+      // MiniAccCurve 두 개)가 통째로 다시 렌더링돼, 특히 느린 기기에서 그 구간만 뚝뚝 끊겨(jank)
+      // 오히려 "군데군데 멈추는" 것처럼 보일 수 있었다. 실제로 새 수가 드러나는 순간(stepped)은
+      // 지연 없이 즉시 반영하고, 그 사이를 이어주는 미세한 보간(frac)만 초당 약 30회로 줄인다 —
+      // 사람 눈에는 여전히 매끄러워 보이면서 렌더링 부하는 절반 가까이 준다.
+      if (stepped || ts - lastRenderTs >= 33) {
+        lastRenderTs = ts;
+        setProgress(curFloored + frac);
+      }
       raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, []);
   const floored = Math.min(N, Math.floor(progress));
-  // 방금 펜이 지나간 수마다 "정확도 증가/감소" 숫자를 한 번씩 잠깐 띄운다 — firedRef로 같은 수에
-  // 두 번 띄우지 않게 막는다. (사용자 요청) 델타가 큰 수들이 한꺼번에(같은 프레임에) 여러 개 지나가도
-  // 숫자를 동시에 다 띄우지 않고 큐에 쌓아 REVEAL_POPUP_STAGGER_MS 간격으로 하나씩만 순서대로
-  // 띄운다 — queueRef/poppingRef는 렌더와 무관한 진행 상태라 ref로 관리한다.
-  const [popups, setPopups] = useState([]);
+  // (사용자 요청) 수 체계 아이콘이 확정될 때마다 "n.SAN : 등급"을 잠깐 띄운다 — 채점된 모든 수마다
+  // 뜬다(pending으로 영구히 실패한 수는 제외). 여러 수가 같은 프레임에 한꺼번에 지나가도(밀린 만큼
+  // 따라잡는 경우) 한꺼번에 다 띄우지 않고 큐에 쌓아 REVEAL_POPUP_STAGGER_MS 간격으로 하나씩만
+  // 순서대로 띄운다 — toastQueueRef/toastPoppingRef는 렌더와 무관한 진행 상태라 ref로 관리한다.
+  // (사용자 요청) 정확도 증감(delta)은 더 이상 절댓값 0.5%p 문턱으로 거르지 않고 항상 이 토스트 안에
+  // 함께 표시한다 — 평가치 그래프 쪽 델타 팝업은 완전히 없앴으므로(사용자 요청) 이제 이 토스트가
+  // 유일한 델타 표시처가 됐다.
   const firedRef = useRef(new Set());
-  const queueRef = useRef([]);
-  const poppingRef = useRef(false);
-  const drainQueue = () => {
-    if (poppingRef.current) return;
-    const next = queueRef.current.shift();
-    if (!next) return;
-    poppingRef.current = true;
-    setPopups((p) => [...p, next]);
-    setTimeout(() => setPopups((p) => p.filter((x) => x.id !== next.id)), REVEAL_POPUP_MS);
-    setTimeout(() => { poppingRef.current = false; drainQueue(); }, REVEAL_POPUP_STAGGER_MS);
-  };
-  // (사용자 요청) 수 체계 아이콘이 확정될 때마다 "SAN : 등급"을 잠깐 띄운다 — 델타 팝업과 달리
-  // 변동폭과 무관하게 채점된 모든 수(pending으로 영구히 실패한 수는 제외)마다 뜬다. 두 색이 같은
-  // 프레임에 함께 지나가도 순서대로만 뜨도록 델타 팝업과 같은 큐/스태거 패턴을 그대로 쓰되, 별도
-  // 큐로 관리해 델타 팝업의 0.5%p 문턱과는 완전히 독립적으로 동작한다.
   const [moveToasts, setMoveToasts] = useState([]);
   const toastQueueRef = useRef([]);
   const toastPoppingRef = useRef(false);
@@ -9223,22 +9227,11 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
       firedRef.current.add(i);
       const mv = moves[i];
       const meta = moveMeta[i];
-      // (버그 수정) 정확도 증감(delta) 팝업을 MiniAccCurve 옆에 정확도 숫자와 별도로 떠 있는 요소로
-      // 두면, "n.SAN을 분석 중입니다..." 줄이 컨테이너 밖으로 나오면서 그 줄 유무에 따라 이 팝업이
-      // 기준으로 삼던 바깥 wrapper의 높이 자체가 오르내려(bottom:22가 매번 다른 실제 위치를 가리킴)
-      // 정확도 숫자와 간헐적으로 겹쳐 보였다 — 델타를 아예 같은 토스트 안에 합쳐서 띄우면 두 요소가
-      // 서로 다른 좌표계를 기준으로 삼을 일이 없어 근본적으로 겹칠 수 없다.
       if (mv && mv.kind && mv.kind !== "pending") {
-        const delta = meta && Math.abs(meta.delta) >= 0.5 ? meta.delta : null;
         // (사용자 요청) SAN 앞에 수 번호도 함께 붙인다(예: "12.Nf3").
-        toastQueueRef.current.push({ id: "t" + i, label: moveNumber(mv.ply, startColor) + mv.san, kind: mv.kind, white: mv.white, delta });
+        toastQueueRef.current.push({ id: "t" + i, label: moveNumber(mv.ply, startColor) + mv.san, kind: mv.kind, white: mv.white, delta: meta ? meta.delta : null });
       }
-      // (사용자 요청) 변동폭이 절댓값 0.5%p 미만인 수는 큰 그래프 위 팝업도 띄우지 않는다 — 대부분의
-      // 이론 수·무난한 수가 여기 해당해, 그대로 두면 숫자가 너무 자주(거의 매 수마다) 겹쳐 떴다.
-      if (!meta || Math.abs(meta.delta) < 0.5) continue;
-      queueRef.current.push({ id: i, ply: meta.ply, gVal: meta.gVal, delta: meta.delta, white: meta.white });
     }
-    drainQueue();
     drainToastQueue();
   }, [floored, moves, moveMeta]);
   const { wShown, bShown } = useMemo(() => {
@@ -9290,7 +9283,14 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   const allDone = resultDone && progress >= N;
   return (
     <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", padding: "6px 4px" }}>
-      <p style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px", fontFamily: REVIEW_FONT }}>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요..."}</p>
+      {/* (사용자 요청) 실제로 채점 대기 중일 때는(progress가 curFloored에 그대로 머무는 동안) 새로
+          보여줄 데이터가 없어 그래프 자체는 정직하게 정지해 있는 게 맞다 — 대신 이 문구 옆에 항상
+          움직이는 3-dot 인디케이터(다른 곳의 "계산 중" 표시와 동일)를 붙여, 화면이 아예 멎어버린
+          것처럼 보이지 않고 "지금도 계속 작업 중"이라는 걸 계속 눈에 보이게 알려준다. */}
+      <p className="flex items-center justify-center" style={{ gap: 6, fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px", fontFamily: SITE_FONT }}>
+        <span>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요"}</span>
+        {!allDone && <PendingDots size={11} />}
+      </p>
       <div style={{ background: "#3B342E", borderRadius: 10, padding: 6 }}>
         <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
           {/* 아직 펜이 지나가지 않은 구간 — 값을 추측해 잇지 않고 그냥 검은 여백으로 둔다 */}
@@ -9305,21 +9305,8 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
           {/* (사용자 요청) 정중앙(0.0 평가) 점선 — 아직 그려지지 않은 검은 구간에도, 흰 채우기가 덮는
               구간에도 항상 보이도록 채우기보다 나중에(위에) 그리고, 진한 황동색을 쓴다. */}
           <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke={T.brass} strokeWidth="0.9" strokeOpacity="0.65" strokeDasharray="3 3" />
-          {/* 정확도 증가/감소 — 그 수를 지나가는 순간 잠깐 떴다 사라지는 숫자(초록=증가, 빨강=감소) */}
-          <AnimatePresence>
-            {popups.map((p) => {
-              const py = Math.max(8, Math.min(y(evalAt(p.ply)), y(p.gVal)) - 5);
-              const positive = p.delta >= 0;
-              return (
-                <motion.text key={p.id} x={x(p.ply).toFixed(1)} y={py.toFixed(1)} textAnchor="middle"
-                  fontSize="6" fontWeight="800" fontFamily={REVIEW_FONT}
-                  fill={positive ? T.good : T.blunder} paintOrder="stroke" stroke="#150C06" strokeWidth="1.8"
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
-                  {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
-                </motion.text>
-              );
-            })}
-          </AnimatePresence>
+          {/* (사용자 요청) 정확도 증감 숫자는 더 이상 이 평가치 그래프에 표시하지 않는다 — 이제
+              정확도 그래프(MiniAccCurve) 쪽 "n.SAN : 등급" 토스트 안에서만 함께 보여준다. */}
         </svg>
       </div>
       {/* (사용자 요청) 모바일에서는 백·흑 그래프를 나란히 좁게 두지 않고 각각 다른 줄에 더 크게
@@ -10045,7 +10032,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
                 <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={REVIEW_FONT} />} />
+                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
               </div>
               <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} drawn={gameDrawn} />
@@ -10055,7 +10042,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. (v0.3.8 사용자 요청) 글자
                   크기를 키우고, 보드 그리드 폭(프레임 제외)이 아니라 카드 전체 폭을 채워 왼쪽(보드 왼쪽
                   끝)에 맞춰 정렬되도록 width를 100%로 바꿨다. */}
-              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} large font={REVIEW_FONT} />
+              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} large font={SITE_FONT} />
             </div>
           )}
         {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} />}
@@ -10078,7 +10065,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. */}
           <div style={{ position: "relative" }}>
             <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-              leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={REVIEW_FONT} />} />
+              leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
           </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
@@ -10100,7 +10087,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               {openingText && <ReviewOpeningBanner text={openingText} />}
               <EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} />
               {/* (v0.2.1 기능) 엔진 라인 — 컴퓨터 환경은 평가치 그래프 바로 아래에 표시한다. */}
-              <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} font={REVIEW_FONT} /></div>
+              <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} font={SITE_FONT} /></div>
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} drawn={gameDrawn} /></div>
             </>
           )}
@@ -10708,7 +10695,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             </div>
           )}
           <div className="mb-3 flex items-center justify-between gap-2">
-            <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} drawn={gameDrawn} startColor={fenRoot ? fenRoot.turn : undefined} font={REVIEW_FONT} />
+            <SequenceBar sans={sans} future={future} onJump={focus ? undefined : jumpTo} drawn={gameDrawn} startColor={fenRoot ? fenRoot.turn : undefined} font={SITE_FONT} />
             <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
               {/* (v0.3.5 기능) 사용자 요청 — 예전에 "분석" 버튼이 있던 자리에 보드 편집기(펜 아이콘)를
                   두고, 분석 버튼은 다른 화면에서 쓰는 연두색+별 모양 리뷰 버튼(BestMoveJumpButton)으로
@@ -10830,7 +10817,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                     </div>
                     <div className="flex items-center flex-wrap" style={{ gap: 16, marginTop: 12 }}>
                       {curKind && <span style={{ fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</span>}
-                      {curGames != null && <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{fmtFull(curGames)}회 진행</span>}
+                      {curGames != null && <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{fmtFull(curGames)}회 진행</span>}
                     </div>
                     {curKws.length > 0 && (
                       <div className="flex flex-wrap" style={{ gap: 6, marginTop: 10 }}>
@@ -10844,7 +10831,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                           <div style={{ flex: 1, minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
                             <div style={{ width: Math.min(100, curStat.adopt || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
                           </div>
-                          <span style={{ fontSize: 10, color: T.inkSoft, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "62%" }}>{curStat.games != null ? fmtFull(curStat.games) + (curStat.posTotal != null ? " / " + fmtFull(curStat.posTotal) : "") : "—"} · {curStat.adopt != null ? curStat.adopt.toFixed(1) + "%" : "—"}</span>
+                          <span style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "62%" }}>{curStat.games != null ? fmtFull(curStat.games) + (curStat.posTotal != null ? " / " + fmtFull(curStat.posTotal) : "") : "—"} · {curStat.adopt != null ? curStat.adopt.toFixed(1) + "%" : "—"}</span>
                         </div>
                         {curStat.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
                       </>
@@ -10880,7 +10867,7 @@ function WinBar({ wdl, height = 8 }) {
         <div style={{ width: d + "%", background: "#9C8A6A" }} />
         <div style={{ width: b + "%", background: "#241509" }} />
       </div>
-      <div className="flex justify-between" style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2, fontFamily: "ui-monospace,monospace" }}><span>백 {w}%</span><span>무 {d}%</span><span>흑 {b}%</span></div>
+      <div className="flex justify-between" style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2, fontFamily: SITE_FONT }}><span>백 {w}%</span><span>무 {d}%</span><span>흑 {b}%</span></div>
     </div>
   );
 }
@@ -11069,9 +11056,9 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
         {/* (UI) 사용자 요청 — 이 수를 누르면 그 기보가 입력된 학습 탭으로 바로 이동한다(예전엔
             집중 학습 모드로 이동했었다). */}
         {onOpenLearn
-          ? <button onClick={() => onOpenLearn([...path, m.san])} className="press" style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>{moveNumber(ply)}{m.san}</button>
-          : <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>}
-        {evTxt && <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
+          ? <button onClick={() => onOpenLearn([...path, m.san])} className="press" style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>{moveNumber(ply)}{m.san}</button>
+          : <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>}
+        {evTxt && <span style={{ fontFamily: SITE_FONT, fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
         <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
       </div>
       {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}</div>}
@@ -11082,10 +11069,10 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
         : onOpenOpening
         ? <button onClick={() => onOpenOpening(label)} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
         : <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>)}
-      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>채택률 {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"} · {fmtFull(m.games)}국</div>}
+      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: SITE_FONT, marginTop: 4 }}>채택률 {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"} · {fmtFull(m.games)}국</div>}
       {isUnlocked && m.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={m.wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
-        <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
+        <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
           <span style={{ fontWeight: 800, color: "#2E6E2E" }}>내 승률 {cc.winRate}%</span>
           <span><span style={{ color: T.best }}>{cc.w}승</span> {cc.d}무 <span style={{ color: T.blunder }}>{cc.l}패</span> · {fmtFull(cc.total)}판</span>
         </div>
@@ -11346,7 +11333,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     return (
       <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
         <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
-        <button onClick={() => onSelect(it.key)} className={"press" + (electric ? " dex-surge-node" : "")} style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: "ui-monospace,monospace", fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box", transition: isSel ? "border-color .25s ease " + selDelay + "s, box-shadow .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined }}>
+        <button onClick={() => onSelect(it.key)} className={"press" + (electric ? " dex-surge-node" : "")} style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: SITE_FONT, fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box", transition: isSel ? "border-color .25s ease " + selDelay + "s, box-shadow .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
             {!it.unlocked && <Lock size={10} />}
             {moveNumber(it.path.length - 1)}{it.san}
@@ -12499,7 +12486,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
               : matches.map((it) => (
                 <button key={it.key} onClick={() => selectNode(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid #F0E6D2", cursor: "pointer" }}>
                   <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
-                  <div style={{ fontSize: 10, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sansToPgnText(it.path)}</div>
+                  <div style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sansToPgnText(it.path)}</div>
                 </button>
               ))}
           </div>
@@ -12507,7 +12494,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       </div>
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
         <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{schematicZoomLabel(zoom)}</button>
+        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(zoom)}</button>
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
@@ -12662,7 +12649,7 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{fam.label}</span>
                   </div>
                   {/* (19차 기능6) 퍼즐 해결 수 + chess.com 플레이 수를 함께 표기 */}
-                  <div className="flex items-center gap-2" style={{ marginBottom: 8, fontSize: 10, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
+                  <div className="flex items-center gap-2" style={{ marginBottom: 8, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
                     <span>퍼즐 {fmtFull(n)}</span><span style={{ opacity: .5 }}>·</span><span>체스컴 {fmtFull(ccN)}</span>
                   </div>
                   {/* (UI9) 해금된 단계는 정상 표시, 바로 다음 미해금 단계는 회색+진행도, 그 이후는 잠금 아이콘 */}
@@ -12682,7 +12669,7 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
           펼쳐진 노드 중 몇 개가 해금됐는지를 onUnlockStats로 올려보내 준다. */}
       <div style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 10px", fontWeight: 700 }}>
         도감 해금률 {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}%
-        <span style={{ marginLeft: 6, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>
+        <span style={{ marginLeft: 6, fontFamily: SITE_FONT, color: T.inkSoft, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>
       </div>
       {/* (사용자 요청) 개발자의 이론 수 편집을 별도 분리된 영역(예전의 "이론 수 체계 편집" 패널·
           SchematicEditor) 대신 이 모식도 안에서 바로 할 수 있도록, canAdd일 때만 편집 도구를
@@ -14437,7 +14424,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
         <div className="no-pan flex" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
           <button onClick={() => zoomBy(-PUZZLE_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-          <button onClick={() => zoomBy(PUZZLE_ZOOM_LABEL_BASE - zoom)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: "ui-monospace,monospace" }}>{puzzleZoomLabel(zoom)}</button>
+          <button onClick={() => zoomBy(PUZZLE_ZOOM_LABEL_BASE - zoom)} title="확대/축소 초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{puzzleZoomLabel(zoom)}</button>
           <button onClick={() => zoomBy(PUZZLE_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
@@ -14473,7 +14460,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                     {isGhostLeaf && (
                       <span className="flex items-center" style={{ gap: 4, flexShrink: 0, fontSize: 14, fontWeight: 800, color: T.inkSoft, whiteSpace: "nowrap" }}>
                         라인 {allLines.findIndex((l) => l.tag === it.node.tag) + 1}
-                        <span style={{ fontSize: 11, fontWeight: 700, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{lineRatings.get(it.node.tag)}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: T.brass, fontFamily: SITE_FONT }}>{lineRatings.get(it.node.tag)}</span>
                       </span>
                     )}
                   </div>
@@ -14515,12 +14502,12 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                       boxShadow: it.isCur ? "0 0 0 4px rgba(196,154,80,.25)" : "none" }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                       {!isRoot && kind && QCOLOR[kind] && <span style={{ width: 21, height: 21, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 17)}</span>}
-                      <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 17, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                      <span style={{ fontFamily: SITE_FONT, fontSize: 17, fontWeight: 800, color: isRoot ? T.ivoryHi : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
                     </span>
                     {/* (사용자 요청) 각 수의 평가치(cp) 숫자 대신 수 체계 등급(QLABEL — "최고의 수"·
                         "탁월한 수" 등)을 보여준다 — 이미 위 원형 배지가 등급을 색·아이콘으로 보여주고
                         있었지만, 정확히 무슨 등급인지는 이름을 읽어야 알 수 있었다. */}
-                    <span style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3, fontSize: 14, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3, fontSize: 14, fontWeight: 700, color: isRoot ? "rgba(244,238,226,.75)" : T.inkSoft, fontFamily: SITE_FONT }}>
                       <span>{isRoot ? "시작 위치" : (QLABEL[kind] || "–")}</span>
                       {!isRoot && <span style={{ marginLeft: "auto" }}>{adopt != null ? Math.round(adopt) + "%" : "–%"}</span>}
                     </span>
@@ -14533,7 +14520,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                     <span className="flex items-center" style={{ gap: 4, flexShrink: 0, fontSize: 14, fontWeight: 800, color: it.solvedLeaf ? T.best : T.inkSoft, whiteSpace: "nowrap" }}>
                       {it.solvedLeaf && <span style={{ width: 21, height: 21, borderRadius: "50%", background: T.best, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Check size={15} strokeWidth={3.5} /></span>}
                       라인 {allLines.findIndex((l) => l.tag === it.node.tag) + 1}
-                      <span style={{ fontSize: 11, fontWeight: 700, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{lineRatings.get(it.node.tag)}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: T.brass, fontFamily: SITE_FONT }}>{lineRatings.get(it.node.tag)}</span>
                     </span>
                   )}
                   {/* (20차 기능1) 개발자 전용 — 이 라인 끝에 수를 하나 직접 추가(전체 재생성 없이 라인별 1수 연장) */}
@@ -14567,7 +14554,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                 {addCands.map((c) => (
                   <button key={c.san} onClick={() => pickAdd(c)} disabled={busy} className="press" style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 7, border: "1px solid #DCCBA8", background: "#FBF5E8", cursor: busy ? "default" : "pointer", textAlign: "left" }}>
                     {c.kind && QCOLOR[c.kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[c.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(c.kind, 11)}</span>}
-                    <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 800, color: T.ink, flexShrink: 0 }}>{c.san}</span>
+                    <span style={{ fontFamily: SITE_FONT, fontSize: 12, fontWeight: 800, color: T.ink, flexShrink: 0 }}>{c.san}</span>
                     <span style={{ fontSize: 10, color: T.inkSoft, marginLeft: "auto", flexShrink: 0 }}>{c.adopt != null ? Math.round(c.adopt) + "%" : "–%"}</span>
                   </button>
                 ))}
@@ -14575,7 +14562,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             )}
             <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>원하는 수가 없으면 직접 입력하세요</div>
             <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
+              <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: SITE_FONT, fontSize: 12.5 }} />
               <button onClick={submitAdd} disabled={busy} className="press" style={{ padding: "6px 12px", borderRadius: 7, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{busy ? "추가 중…" : "추가"}</button>
             </div>
             {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{err}</div>}
@@ -14599,14 +14586,14 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                 {siblingCands.map((c) => (
                   <button key={c.san} onClick={() => pickSibling(c)} disabled={siblingBusy} className="press" style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 7, border: "1px solid #DCCBA8", background: "#FBF5E8", cursor: siblingBusy ? "default" : "pointer", textAlign: "left" }}>
                     {c.kind && QCOLOR[c.kind] && <span style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0, background: QCOLOR[c.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(c.kind, 11)}</span>}
-                    <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 800, color: T.ink, flexShrink: 0 }}>{c.san}</span>
+                    <span style={{ fontFamily: SITE_FONT, fontSize: 12, fontWeight: 800, color: T.ink, flexShrink: 0 }}>{c.san}</span>
                     <span style={{ fontSize: 10, color: T.inkSoft, marginLeft: "auto", flexShrink: 0 }}>{c.adopt != null ? Math.round(c.adopt) + "%" : "–%"}</span>
                   </button>
                 ))}
               </div>
             )}
             <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <input value={siblingManualSan} onChange={(e) => setSiblingManualSan(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitManualSibling()} placeholder="직접 입력(예: Be6)" style={{ width: 100, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (siblingErr ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
+              <input value={siblingManualSan} onChange={(e) => setSiblingManualSan(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitManualSibling()} placeholder="직접 입력(예: Be6)" style={{ width: 100, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (siblingErr ? T.blunder : "#C9B58C"), fontFamily: SITE_FONT, fontSize: 12.5 }} />
               <button onClick={submitManualSibling} disabled={siblingBusy} className="press" style={{ padding: "6px 12px", borderRadius: 7, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{siblingBusy ? "추가 중…" : "추가"}</button>
             </div>
             {siblingErr && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{siblingErr}</div>}
@@ -15408,12 +15395,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
       <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
       {/* (사용자 요청) 퍼즐 레이팅 — 풀이 카드 우측 여백(닫기 버튼 바로 아래)에 표시. */}
-      <div title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ position: "absolute", top: 48, right: 12, zIndex: 9, padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{avgRating}</div>
+      <div title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ position: "absolute", top: 48, right: 12, zIndex: 9, padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</div>
       <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{puzzle.name}</div>
-          <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
+          <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
           {/* (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 카드에 생성자를 표시. 생성자가 아직 없는(예:
               이 기능이 생기기 전에 만들어졌거나 게스트가 최초 공유한) 퍼즐은 아무것도 보여주지 않는다. */}
           {creatorInfo && creatorInfo.username && <div style={{ fontSize: 10.5, color: T.brass, fontWeight: 700, marginTop: 3 }}>제작 · @{creatorInfo.username}</div>}
@@ -15526,7 +15513,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                         border: "2px solid " + (isTarget ? T.brassHi : lineIsSolved ? T.best : "#C9B58C"),
                         background: lineIsSolved ? "#EAF3E0" : "#fff",
                         color: lineIsSolved ? T.best : T.ink,
-                        fontWeight: 800, fontSize: 12, fontFamily: "ui-monospace,monospace", cursor: "pointer",
+                        fontWeight: 800, fontSize: 12, fontFamily: SITE_FONT, cursor: "pointer",
                         display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
                       {lineIsSolved ? <Check size={14} /> : (i + 1)}
                     </button>
@@ -15574,7 +15561,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                     <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{canEdit ? "개발자" : "제작자"} · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
                     <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
                       <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
-                        style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
+                        style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
                       <span style={{ fontSize: 10.5, color: T.inkSoft }}>cp (현재 기본값 {defaultTarget})</span>
                     </div>
                   </>
@@ -15738,7 +15725,7 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
                         : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
-                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
+                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
                       </div>
                       <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
                     </div>
@@ -15803,7 +15790,7 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose }) {
                         : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
-                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
+                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
                       </div>
                       <button onClick={() => send(u)} disabled={!!busy || isSent || !reviewId} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
                     </div>
@@ -15901,14 +15888,14 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         <FitPuzzleName text={p.name} />
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
           <span style={{ fontSize: 9, color: broken ? T.blunder : T.inkSoft, fontWeight: broken ? 800 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{broken ? "⚠ 손상된 퍼즐(라인 0개)" : themeLabelsOf(p) + " · 라인 " + totalLines + "개"}</span>
-          <span style={{ fontSize: 9, color: themeAccent, fontFamily: "ui-monospace,monospace", fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
+          <span style={{ fontSize: 9, color: themeAccent, fontFamily: SITE_FONT, fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
             줄에 두면 폭이 좁아 말줄임으로 잘렸다 — 버튼과 분리해 별도 줄에 잘리지 않고 전부 보여준다. */}
         {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9.5, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.35, marginTop: 4, wordBreak: "keep-all" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
         <div className="flex items-center justify-between" style={{ marginTop: 4, gap: 7, flexShrink: 0 }}>
             {/* (사용자 요청) 퍼즐 레이팅 — 카드 좌하단에 표시. */}
-            {avgRating != null && <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>★{avgRating}</span>}
+            {avgRating != null && <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>}
             <div className="flex items-center" style={{ gap: 7, marginLeft: "auto" }}>
             {/* (v0.1.0) 리포스트·공유 — 좋아요와 같은 자리에, 풀이수/좋아요와 무관한 별개 참여 지표로 노출 */}
             {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
@@ -15987,7 +15974,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
         <div className="flex items-center gap-2">
           {allDone && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>모두 완료!</span>}
           {/* (UX2) 갱신은 한국 시간(KST) 자정 기준 */}
-          <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, background: "rgba(0,0,0,.3)", borderRadius: 6, padding: "2px 8px" }}>갱신까지 {fmtRemainHMS(remain)}</span>
+          <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(0,0,0,.3)", borderRadius: 6, padding: "2px 8px" }}>갱신까지 {fmtRemainHMS(remain)}</span>
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -16063,7 +16050,7 @@ function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit
         <div style={{ flex: 1, height: 7, borderRadius: 999, background: "rgba(0,0,0,.4)", overflow: "hidden", border: "1px solid #00000066" }}>
           <div style={{ width: pct + "%", height: "100%", background: complete ? "linear-gradient(90deg,#3C8A3C,#5CB85C)" : "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
         </div>
-        <span style={{ fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brassHi, flexShrink: 0 }}>{done}/{total}</span>
+        <span style={{ fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, color: T.brassHi, flexShrink: 0 }}>{done}/{total}</span>
       </div>
     </div>
   );
@@ -16146,7 +16133,7 @@ function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, con
                 <span style={{ fontSize: 11.5, fontWeight: 900, letterSpacing: ".02em", color: complete ? "#BEEAB0" : T.brassHi, minWidth: 0, flex: 1 }}>{"CHAPTER " + (i + 1) + (pg.heading ? " · " + pg.heading : "")}</span>
                 {locked ? <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, flexShrink: 0 }}><Lock size={11} /> 잠김</span>
                   : complete ? <span style={{ fontSize: 10, fontWeight: 800, color: T.best, flexShrink: 0 }}>완료</span>
-                  : <span style={{ fontSize: 10, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brassHi, flexShrink: 0 }}>{totals.done}/{totals.total}</span>}
+                  : <span style={{ fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, color: T.brassHi, flexShrink: 0 }}>{totals.done}/{totals.total}</span>}
                 {!locked && <ChevronDown size={14} color={T.inkSoft} style={{ flexShrink: 0, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s ease" }} />}
               </button>
               {isOpen && (
@@ -16253,12 +16240,12 @@ function QuestChapterEditor({ chKey, bumpContent, onClose }) {
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
         <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
         <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{isNew ? "새 챕터 추가" : "챕터 편집"} {saving && <span style={{ fontSize: 10, color: T.inkSoft, fontWeight: 600 }}>저장 중…</span>}</div>
-        {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder="챕터 키 (예: ch2-5)" style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12, marginBottom: 8, boxSizing: "border-box" }} />}
+        {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder="챕터 키 (예: ch2-5)" style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12, marginBottom: 8, boxSizing: "border-box" }} />}
         <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => save(draft)} placeholder="챕터 제목" style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 13, fontWeight: 700, marginBottom: 6, boxSizing: "border-box" }} />
         <textarea value={draft.desc} onChange={(e) => setDraft({ ...draft, desc: e.target.value })} onBlur={() => save(draft)} placeholder="챕터 설명" rows={2} style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box", resize: "vertical" }} />
         <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 11, color: T.inkSoft }}>클리어 보상</span>
-          <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 12 }} />
+          <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
           <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={17} /> OC 나이트 코인</span>
         </div>
         <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>문항 {draft.items.length}개</div>
@@ -16266,7 +16253,7 @@ function QuestChapterEditor({ chKey, bumpContent, onClose }) {
           {draft.items.map((it, i) => (
             <div key={i} style={{ border: "1px dashed #C9B58C", borderRadius: 10, padding: 10 }}>
               <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-                <input value={it.move} onChange={(e) => updateItem(i, { move: e.target.value })} placeholder="수(예: e4)" style={{ width: 60, padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 11.5 }} />
+                <input value={it.move} onChange={(e) => updateItem(i, { move: e.target.value })} placeholder="수(예: e4)" style={{ width: 60, padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 11.5 }} />
                 <button onClick={() => delItem(i)} className="press" style={{ marginLeft: "auto", width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
               </div>
               <textarea value={it.q} onChange={(e) => updateItem(i, { q: e.target.value })} placeholder="질문" rows={2} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box", resize: "vertical" }} />
@@ -16696,7 +16683,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div className="flex items-center gap-2">
-          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="numeric" placeholder="번호 또는 날짜로 풀기 (예: 123456 · 20260729)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: "ui-monospace,monospace", fontSize: 13 }} />
+          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="numeric" placeholder="번호 또는 날짜로 풀기 (예: 123456 · 20260729)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 13 }} />
           <button onClick={solveByInput} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
         </div>
         {/* (기능) 입력 중인 번호로 시작하는 퍼즐을 추천 — 모바일은 입력창 바로 아래 작은 드롭다운
@@ -16709,7 +16696,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)" }}>
               {numSuggestions.map((p) => (
                 <button key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setActive(p); setNumInput(""); setNumMsg(""); }} className="press flex items-center gap-2" style={{ width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", textAlign: "left" }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
                   <span style={{ fontSize: 12, color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name || p.opening}</span>
                 </button>
               ))}
@@ -16967,13 +16954,13 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
       </div>
       <input value={profile.bio || ""} onChange={(e) => set({ bio: e.target.value.slice(0, PROFILE_BIO_MAX_LEN) })} maxLength={PROFILE_BIO_MAX_LEN} placeholder="예: 시칠리안 좋아하는 클럽 플레이어예요" style={field} />
       <div style={lab}>자주 두는 첫 수 — 백{chesscom && chesscom.status === "ready" && <span style={{ fontWeight: 600, color: T.inkSoft }}> (연동된 chess.com 기록으로 자동 입력됨 — 직접 수정 가능)</span>}</div>
-      <ValidatedMoveInput value={fm.white || ""} onCommit={(v) => setFM({ white: v })} board={startBoard()} color="w" placeholder="예: e4 (생략 가능)" style={{ ...field, fontFamily: "ui-monospace,monospace" }} />
+      <ValidatedMoveInput value={fm.white || ""} onCommit={(v) => setFM({ white: v })} board={startBoard()} color="w" placeholder="예: e4 (생략 가능)" style={{ ...field, fontFamily: SITE_FONT }} />
       <div style={lab}>자주 두는 첫 수 — 흑 (백의 첫 수별, 생략 가능)</div>
       <div className="grid sm:grid-cols-2 gap-2">
         {["e4", "d4", "c4", "Nf3"].map((w) => (
           <div key={w} className="flex items-center gap-2">
-            <span style={{ fontSize: 12, fontFamily: "ui-monospace,monospace", color: T.inkSoft, width: 56, flexShrink: 0 }}>vs 1.{w}</span>
-            <ValidatedMoveInput value={(fm.black || {})[w] || ""} onCommit={(v) => setFM({ black: { ...(fm.black || {}), [w]: v } })} board={boardFromSans([w])} color="b" placeholder="응수" style={{ ...field, fontFamily: "ui-monospace,monospace" }} />
+            <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft, width: 56, flexShrink: 0 }}>vs 1.{w}</span>
+            <ValidatedMoveInput value={(fm.black || {})[w] || ""} onCommit={(v) => setFM({ black: { ...(fm.black || {}), [w]: v } })} board={boardFromSans([w])} color="b" placeholder="응수" style={{ ...field, fontFamily: SITE_FONT }} />
           </div>
         ))}
       </div>
@@ -17043,7 +17030,7 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
           {onOpenOpening
             ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
             : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
-          <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+          <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: SITE_FONT, color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
         </div>
         {/* 이름 버튼(누르면 도감으로 이동)과 별개의 클릭 영역 — 접기/펼치기가 이동 동작을 가리지 않는다. */}
         {hasChildren && (
@@ -17103,7 +17090,7 @@ function OpeningBox({ label, color, cur, dotsLen, dotsIdx }) {
   const nBadge = (color === "w" ? "백" : "흑") + " " + cur.n + "수";
   // (v0.2.6 UI) "백 n수"/"흑 n수" 배지를 라벨과 같은 줄에 붙이지 않고 오프닝 이름 바로 위 자기
   // 줄에 두며, 배지 배경을 금색 그라데이션으로 통일했다(백/흑 공통).
-  const badgeStyle = { display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", fontSize: 10, fontWeight: 800, color: "#241509", fontFamily: "ui-monospace,monospace" };
+  const badgeStyle = { display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", fontSize: 10, fontWeight: 800, color: "#241509", fontFamily: SITE_FONT };
   return (
     <div style={{ marginBottom: 12 }}>
       {label && <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, marginBottom: 4 }}>{label}</div>}
@@ -17117,7 +17104,7 @@ function OpeningBox({ label, color, cur, dotsLen, dotsIdx }) {
         <AnimatePresence mode="wait">
           <motion.div key={cur.n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, lineHeight: 1.3 }}>{cur.name}</span>
-            <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", flexShrink: 0, whiteSpace: "nowrap" }}>{fmtFull(cur.count)}회</span>
+            <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, flexShrink: 0, whiteSpace: "nowrap" }}>{fmtFull(cur.count)}회</span>
           </motion.div>
         </AnimatePresence>
       </div>
@@ -17282,7 +17269,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
                 {nearest.map((s) => (
                   <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: s.color, display: "inline-block", flexShrink: 0 }} />
-                    {s.label} <b style={{ fontFamily: "ui-monospace,monospace" }}>{s.point.rating}</b>
+                    {s.label} <b style={{ fontFamily: SITE_FONT }}>{s.point.rating}</b>
                   </div>
                 ))}
               </div>
@@ -17328,7 +17315,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
               (v0.2.6 UI 재조정) 3개 항목이 줄바꿈 없이 한 줄에 들어가도록 글자·점·간격을 더 줄였다. */}
           <div className="flex items-center justify-center" style={{ gap: 8, marginTop: 8, flexWrap: "nowrap" }}>
             {series.map((s) => (
-              <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 8.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft, fontWeight: 700, whiteSpace: "nowrap" }}>
+              <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 8.5, fontFamily: SITE_FONT, color: T.inkSoft, fontWeight: 700, whiteSpace: "nowrap" }}>
                 <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: s.color, display: "inline-block", flexShrink: 0 }} />
                 <b style={{ color: T.ink }}>{s.label}</b> {s.points[0].rating}→{s.points[s.points.length - 1].rating}
               </span>
@@ -17364,8 +17351,8 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
     body = (
       <>
         <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-          <span style={{ fontSize: 10.5, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{realCount}판{flatFallback && <span style={{ color: T.inkSoft, fontWeight: 700 }}> · 최근 레이팅 유지</span>}</span>
-          <span style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", color: T.ink, fontWeight: 800 }}>{first} → {last} {!flatFallback && <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span>}</span>
+          <span style={{ fontSize: 10.5, fontFamily: SITE_FONT, color: T.inkSoft }}>{realCount}판{flatFallback && <span style={{ color: T.inkSoft, fontWeight: 700 }}> · 최근 레이팅 유지</span>}</span>
+          <span style={{ fontSize: 11, fontFamily: SITE_FONT, color: T.ink, fontWeight: 800 }}>{first} → {last} {!flatFallback && <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span>}</span>
         </div>
         <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
           style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
@@ -17373,7 +17360,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
           {dragPoint && (
             <div style={{ position: "absolute", ...tooltipPos(xAt(dragIdx)), background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)", textAlign: "center" }}>
               <div style={{ fontWeight: 800, color: T.brassHi }}>{fmtAxisDate(dragPoint.endTime)}</div>
-              <div style={{ fontFamily: "ui-monospace,monospace" }}>{dragPoint.rating}</div>
+              <div style={{ fontFamily: SITE_FONT }}>{dragPoint.rating}</div>
             </div>
           )}
           <svg viewBox={"0 0 " + W + " " + H} style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
@@ -17598,9 +17585,9 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>전체 기간 전적</span>
-            <span style={{ fontSize: 12, fontFamily: "ui-monospace,monospace", color: T.inkSoft }}>{fmtFull(overall.total)}판</span>
+            <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft }}>{fmtFull(overall.total)}판</span>
           </div>
-          <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", color: T.ink }}>
+          <div style={{ fontSize: 13, fontFamily: SITE_FONT, color: T.ink }}>
             <span style={{ color: T.best, fontWeight: 800 }}>{overall.w}승</span> {overall.d}무 <span style={{ color: T.blunder, fontWeight: 800 }}>{overall.l}패</span> · 승률 <b>{overall.winRate}%</b>
           </div>
           <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginTop: 8, border: "1px solid rgba(0,0,0,.2)" }}>
@@ -17636,12 +17623,12 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
                     {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                    {rc != null && <span style={{ fontWeight: 800, fontFamily: "ui-monospace,monospace", color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
+                    {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
                     {/* (v0.2.6 버그 수정) 대국 날짜를 오프닝 이름 옆 별도 줄에 붙이는 대신, 타임컨트롤
                         라벨 뒤에 괄호로 이어 붙인다. */}
                     {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtD(g.endTime) + ")" : ""}</span>}
                   </div>
-                  {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}>({oppSide.rating})</span>}</div>}
+                  {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
                   {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                 </div>
                 {onSelectGame ? (
@@ -17725,7 +17712,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
         {/* (사용자 요청) 이 자리의 라벨을 "내 프로필" 대신 @아이디로 표시 — 아래 이름·소개 사이에 있던
             별도 @아이디 표시는 지우고 이 라벨 하나로 합친다. (사용자 요청, v0.3.9) 통계 분리 토글은
             카드 최상단의 큰 세그먼트 바 대신 이 헤더 줄 우상단 여백으로 옮겨, 편집 버튼과 나란히 둔다. */}
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
         <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
           <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>프로필 편집</button>
           {statsViewToggle(statsView, setStatsView)}
@@ -17779,7 +17766,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
             <div style={{ marginTop: 4, marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>메인 퀘스트 진척도</span>
-                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
               </div>
               <div style={{ height: 7, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
                 <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
@@ -17878,7 +17865,7 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
             </div>
             <div className="flex gap-2" style={{ marginBottom: 14 }}>
               {[["래피드", pending.rapid], ["블리츠", pending.blitz], ["불릿", pending.bullet]].map(([lb, v]) => (
-                <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{v != null ? v : "—"}</div></div>
+                <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{v != null ? v : "—"}</div></div>
               ))}
             </div>
             <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 14 }}>이 계정이 맞나요?</p>
@@ -18511,7 +18498,7 @@ function AnnouncementModal({ onClose }) {
           <Sparkles size={17} style={{ color: T.brass, flexShrink: 0 }} />
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>업데이트 소식</span>
         </div>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 8px" }}>최신 버전 <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>v{latest.version}</b>({latest.date})에서 이런 점이 달라졌어요.</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 8px" }}>최신 버전 <b style={{ color: T.ink, fontFamily: SITE_FONT }}>v{latest.version}</b>({latest.date})에서 이런 점이 달라졌어요.</p>
         {/* (v0.1.2 기능) 소개 페이지(/about)의 버전 기록 파트로 이동 — 2페이지가 최신 버전(카테고리별로
             나뉜 더 자세한 설명)이라 ?page=2로 곧장 연다. */}
         <a href="/about?page=2" target="_blank" rel="noopener noreferrer" className="press flex items-center gap-1" style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 800, color: T.brass, textDecoration: "none", width: "fit-content" }}>
@@ -18521,7 +18508,7 @@ function AnnouncementModal({ onClose }) {
           {CHANGELOG.map((v, i) => (
             <div key={v.version} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: i < CHANGELOG.length - 1 ? "1px dashed #DCCBA8" : "none" }}>
               <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: SITE_FONT }}>v{v.version}</span>
                 <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
                 {i === 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: T.brass, borderRadius: 999, padding: "1px 7px" }}>최신</span>}
               </div>
@@ -18573,7 +18560,7 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLea
     ro.observe(el);
     return () => ro.disconnect();
   }, [narrow]);
-  const dateRow = <div style={{ fontSize: narrow ? 14.5 : 20, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: "ui-monospace,monospace" }}>{dateLabel}</div>;
+  const dateRow = <div style={{ fontSize: narrow ? 14.5 : 20, fontWeight: 800, color: T.ink, marginBottom: 6, fontFamily: SITE_FONT }}>{dateLabel}</div>;
   // (사용자 요청) 데스크톱은 텍스트·버튼 크기를 많이 줄여 오른쪽 칼럼 폭을 좁히고, 그렇게 확보한
   // 자리를 왼쪽 보드 칼럼에 몰아줘 보드를 훨씬 크게 그린다.
   const labelRow = (
@@ -18701,7 +18688,7 @@ function QuestClearGameRow({ g, onOpenGameAnalyze }) {
           <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
           {g.timeClass && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>{(TIME_CLASS_LABEL[g.timeClass] || g.timeClass) + (g.endTime ? " · " + fmtD(g.endTime) : "")}</span>}
         </div>
-        {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: "ui-monospace,monospace" }}> ({oppSide.rating})</span>}</div>}
+        {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}> ({oppSide.rating})</span>}</div>}
       </div>
       {onOpenGameAnalyze && g.moves && g.moves.length > 0 && (
         <button onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id })} aria-label="대국 분석" title="대국 분석" className="press"
@@ -18720,7 +18707,7 @@ function QuestClearRow({ label, moveText, games, onOpenGameAnalyze }) {
         <span style={{ width: 16, height: 16, borderRadius: 999, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: T.best }}><Check size={10} color="#fff" strokeWidth={3} /></span>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, textAlign: "left" }}>{label}</span>
       </div>
-      {moveText && <div style={{ fontSize: 10, fontFamily: "ui-monospace,monospace", color: T.inkSoft, marginTop: 5, marginLeft: 24, textAlign: "left", lineHeight: 1.5 }}>{moveText}</div>}
+      {moveText && <div style={{ fontSize: 10, fontFamily: SITE_FONT, color: T.inkSoft, marginTop: 5, marginLeft: 24, textAlign: "left", lineHeight: 1.5 }}>{moveText}</div>}
       {games && games.slice(0, 2).map((g, i) => <QuestClearGameRow key={i} g={g} onOpenGameAnalyze={onOpenGameAnalyze} />)}
     </div>
   );
@@ -18944,7 +18931,7 @@ function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, card }) {
     return starts; // starts[i] = TIERS[i]로 들어서는 데 필요한 누적 XP
   }, []);
   const rowStyle = { marginBottom: 10 };
-  const inputStyle = { flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box", fontFamily: "ui-monospace,monospace" };
+  const inputStyle = { flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box", fontFamily: SITE_FONT };
   const selectStyle = { padding: "9px 8px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" };
   const applyBtnStyle = { padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" };
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
@@ -19218,7 +19205,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       ) : (
         <div style={card}>
           <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(profile.displayId || user)}{roleIcon(user)}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(profile.displayId || user)}{roleIcon(user)}</span>
             <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>자세히 보기</button>
           </div>
           <div className="flex items-center gap-3">
@@ -19406,7 +19393,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             {CHANGELOG.map((v, i) => (
               <div key={v.version} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: i < CHANGELOG.length - 1 ? "1px dashed #DCCBA8" : "none" }}>
                 <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: SITE_FONT }}>v{v.version}</span>
                   <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 16 }}>
@@ -19564,7 +19551,7 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
         <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
           <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
             <CoinIcon size={26} />
-            <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{fmtFull(coins || 0)}</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{fmtFull(coins || 0)}</span>
           </div>
         </div>
       </div>
@@ -19989,7 +19976,7 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, solvedCount, 
               대신 별도 "프로필 창"(ProfileWindow)이 열려 통계·유산·chess.com 연동까지 자세히 볼 수
               있다(예전엔 이 카드 전체를 눌러야 했다). */}
           <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
             <button onClick={goToProfile} aria-label="프로필 자세히 보기" title="프로필 자세히 보기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
           </div>
           <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
@@ -20101,7 +20088,7 @@ function ChatUserProfileModal({ username, onClose, myUid }) {
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
                 <div style={{ minWidth: 0 }}>
                   <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</span>
-                  <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{(pub.displayId || pub.username)}</div>
+                  <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: SITE_FONT }}>@{(pub.displayId || pub.username)}</div>
                   {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
                 </div>
               </div>
@@ -20502,7 +20489,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                 <div style={{ display: "flex", flexDirection: "column", flex: "0 1 auto", position: "relative" }}
                   onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
                   onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
-                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 {menuFor === m.id && mine && (
                   <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                     <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
@@ -20564,7 +20551,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                 <div style={{ display: "flex", flexDirection: "column", flex: "0 1 auto", position: "relative" }}
                   onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
                   onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
-                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 {menuFor === m.id && mine && (
                   <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                     <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
@@ -20630,7 +20617,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                 <div style={{ display: "flex", flexDirection: "column", flex: mine ? "0 1 auto" : "0 1 auto", position: "relative" }}
                   onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
                   onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
-                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 {menuFor === m.id && (
                   <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
                     <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Send size={10} />전달</button>
@@ -20723,7 +20710,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                 {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
                 {/* (18차 보충 UX7 → 19차 선행) 드래그로 생긴 공간에 보낸 시각 표시 — 내 메시지는 오른쪽, 상대 메시지는 왼쪽.
                     래퍼를 inline-block으로 두어 transform이 정상 적용(말풍선 왜곡 해소)되고, overflow 미적용으로 시각이 가려지지 않는다. */}
-                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, fontSize: 10, fontWeight: 700, fontFamily: "ui-monospace,monospace", color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
+                {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 {/* (v0.1.4 기능) 꾹 눌러 연 수정/삭제 메뉴 — 이모티콘 메시지는 수정 대상이 아니므로 본문(body)이 있을 때만 수정 버튼을 보여준다.
                     (v0.3.4 UX) 말풍선과 겹치지 않도록, 말풍선을 감싸는 transform 요소 밖(이 position:relative 컨테이너)에 두고
                     말풍선이 없는 쪽 여백(대화창 중앙 쪽)에 세로 중앙 정렬로 띄운다. */}
@@ -20770,7 +20757,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
           <div style={{ marginBottom: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass }}>
             <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>사용 가능한 명령어</div>
             {CHAT_COMMANDS.map((c) => (
-              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: "ui-monospace,monospace" }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
             ))}
           </div>
         )}
@@ -21507,7 +21494,7 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onS
                   <button key={h.idx} onClick={() => setOpenTarget({ typeInfo: h.typeInfo, entry: h.entry })} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
                     <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: QCOLOR[h.typeInfo.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(h.typeInfo.kind, 16)}</span>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{legacyMoveLabel(h.entry)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(h.entry)}</div>
                       <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? " · " + new Date(h.replacedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }) + " 교체/삭제됨" : ""}</div>
                     </div>
                   </button>
@@ -21624,7 +21611,7 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
         <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)", flexShrink: 0 }}>
           <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 20)}</span>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{legacyMoveLabel(entry)}</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(entry)}</div>
             <div style={{ fontSize: 10.5, color: T.inkSoft }}>{typeInfo.label}</div>
           </div>
         </div>
@@ -21642,7 +21629,7 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
                         : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
-                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
+                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
                       </div>
                       <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
                     </div>
@@ -21761,7 +21748,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
         )}
         {step === "paste" && (
           <div>
-            <textarea value={pgnText} onChange={(e) => setPgnText(e.target.value)} placeholder="PGN을 붙여넣으세요 (예: 1.e4 e5 2.Nf3 Nc6 ...)" rows={7} style={{ width: "100%", boxSizing: "border-box", padding: 10, borderRadius: 9, border: "1px solid " + (pgnErr ? T.blunder : "#C9B58C"), fontFamily: "ui-monospace,monospace", fontSize: 12.5, resize: "vertical" }} />
+            <textarea value={pgnText} onChange={(e) => setPgnText(e.target.value)} placeholder="PGN을 붙여넣으세요 (예: 1.e4 e5 2.Nf3 Nc6 ...)" rows={7} style={{ width: "100%", boxSizing: "border-box", padding: 10, borderRadius: 9, border: "1px solid " + (pgnErr ? T.blunder : "#C9B58C"), fontFamily: SITE_FONT, fontSize: 12.5, resize: "vertical" }} />
             {pgnErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pgnErr}</div>}
             {/* (사용자 요청) 어느 진영으로 플레이했는지 골라 두면, 재생 화면에서 항상 그 진영이 아래에 오도록 보드를 뒤집는다. */}
             <div style={{ marginTop: 10 }}>
@@ -21803,7 +21790,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
                   {qualifying.map((m) => (
                     <button key={m.ply} onClick={() => { setMoveIndex(m.ply); setPlayCount(Math.min(5, Math.max(1, sans.length - m.ply))); setBeforeCount(Math.min(3, m.ply)); setStep("count"); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: "1px solid " + QCOLOR[m.kind], background: "#fff", cursor: "pointer", textAlign: "left" }}>
                       <span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 14)}</span>
-                      <span style={{ fontFamily: "ui-monospace,monospace", fontWeight: 800, fontSize: 13, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
+                      <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
                     </button>
                   ))}
                 </div>
@@ -21820,7 +21807,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>이 수보다 몇 수 전부터 보여줄까요?</p>
             {beforeOptions.length > 0 ? (
               <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-                <select value={beforeCount} onChange={(e) => setBeforeCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 13, background: "#fff" }}>
+                <select value={beforeCount} onChange={(e) => setBeforeCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 13, background: "#fff" }}>
                   {beforeOptions.map((n) => <option key={n} value={n}>{n}수</option>)}
                 </select>
                 <span style={{ fontSize: 11.5, color: T.inkSoft }}>전부터</span>
@@ -21830,7 +21817,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             )}
             <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>이 수부터 몇 수까지 재생할까요?</p>
             <div className="flex items-center gap-2">
-              <select value={playCount} onChange={(e) => setPlayCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: "ui-monospace,monospace", fontSize: 13, background: "#fff" }}>
+              <select value={playCount} onChange={(e) => setPlayCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 13, background: "#fff" }}>
                 {playOptions.map((n) => <option key={n} value={n}>{n}수</option>)}
               </select>
               <span style={{ fontSize: 11.5, color: T.inkSoft }}>까지</span>
@@ -21868,7 +21855,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         <div style={{ marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
             <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>메인 퀘스트 진척도</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: "ui-monospace,monospace" }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
           </div>
           <div style={{ height: 6, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
             <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
@@ -21934,7 +21921,7 @@ function userSearchRow(r, onClick, right, opts) {
         <span style={{ width: slotW, height: slotH, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
           {rank <= 3
             ? <img src={"/rank-" + rank + ".png"} alt={rank + "위"} style={{ height: medalH, width: "auto", maxWidth: slotW, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.3))" }} />
-            : <span style={{ fontSize: 14, fontWeight: 900, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{rank}</span>}
+            : <span style={{ fontSize: 14, fontWeight: 900, color: T.inkSoft, fontFamily: SITE_FONT }}>{rank}</span>}
         </span>
       )}
       {p.photo ? <img src={p.photo} alt="" style={{ width: avatar, height: avatar, borderRadius: 9, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(isGM, 2) || {}) }} /> : <span style={{ width: avatar, height: avatar, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
@@ -21943,7 +21930,7 @@ function userSearchRow(r, onClick, right, opts) {
         {/* (사용자 요청) 소개 — 닉네임 바로 밑, @핸들 위. 촘촘한 리더보드(compact)에서는 줄 수를
             늘리지 않도록 생략한다. */}
         {!compact && p.bio && <div style={{ fontSize: 11, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
-        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
+        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
       </div>
       {right}
     </button>
@@ -22017,7 +22004,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. 통계 분리 토글도 MyProfileCard와 같이
                 이 줄 우상단 여백에 둔다. */}
             <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(pub.displayId || pub.username)}{roleIcon(pub.username)}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(pub.displayId || pub.username)}{roleIcon(pub.username)}</span>
               {statsViewToggle(statsView, setStatsView)}
             </div>
             <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
@@ -22088,7 +22075,7 @@ function FriendRow({ id, pub, right, onClick }) {
           : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || id || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
           <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || id}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
-          <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>@{id}</div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT }}>@{id}</div>
         </div>
       </button>
       <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>{right}</div>
@@ -22790,7 +22777,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
               {/* (사용자 요청, v0.3.9) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
                   이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. */}
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "ui-monospace,monospace" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                   {statsViewToggle(statsView, setStatsView)}
                   {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
