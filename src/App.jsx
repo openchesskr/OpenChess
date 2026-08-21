@@ -3983,18 +3983,20 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   // 짧고 가볍게(대충) 툭 옮기는 드래그일수록 오히려 이 문턱을 못 넘어 아예 드래그로 인식되지 않고
   // 무시된다(사용자가 실제로 "오히려 더 안 된다"고 재신고한 원인) — "대충 움직여도 잘 되게"는
   // 드래그 "시작"은 최대한 쉽게(문턱을 낮게), 드래그 "종료 지점" 판정만 관대하게(DROP_TOLERANCE·
-  // DRAG_LOOKAHEAD_MS를 높게) 조정해야 하는, 서로 반대 방향인 두 값이었다. 시작 문턱은 이 버전에서
-  // 가장 낮았던 값(2px)까지 내린다 — 살짝만 움직여도 즉시 드래그로 반응한다.
-  const DRAG_THRESHOLD = 2;
+  // DRAG_LOOKAHEAD_MS를 높게) 조정해야 하는, 서로 반대 방향인 두 값이었다. 재요청으로 두 지점 모두
+  // 지금보다 훨씬 더 관대하게 — 시작 문턱은 1px까지 더 내린다(사실상 손이 닿는 순간 바로 드래그로
+  // 반응).
+  const DRAG_THRESHOLD = 1;
   // (사용자 요청) "빠르고 부정확하게 드래그해도 인식되도록" — 예전엔 손을 뗀 지점이 보드 칸 안에
   // 정확히 들어와야만 그 칸으로 인식하고, 조금이라도 벗어나면(빠른 드래그일수록 흔함 — 손가락이
   // 목표 칸을 살짝 지나치거나, pointermove 샘플링 간격 때문에 마지막 좌표가 칸 경계 바로 밖에서
   // 잡힘) 제자리로 취소됐다. 보드 가장자리 바깥으로 칸 하나의 40%만큼은 허용 오차로 두고, 그 안에서
   // 벗어난 지점은 가장 가까운 칸으로 스냅한다 — 그보다 훨씬 많이 벗어나면(보드 밖 다른 UI를 누른
   // 경우) 여전히 취소로 처리한다. (v0.3.9 재조정) "대충 움직여도 잘 움직여지게" 더 둔감히 — 40%에서
-  // 70%로 넓힌다. (v0.3.9 재재조정) 재요청으로 90%까지 더 넓힌다(1칸을 거의 다 채우는 수준 — 그
-  // 이상은 옆 칸과 구분이 안 될 수 있어 여기서 상한으로 둔다).
-  const DROP_TOLERANCE = 0.9 / 8;
+  // 70%로 넓힌다. (v0.3.9 재재조정 → 재요청) 이건 보드 "가장자리 바깥"에만 적용되는 관용치라(칸과
+  // 칸 사이 내부 경계와는 무관 — 보드 밖은 그 이상 더 벗어날 다음 칸이 없으므로 계속 키워도
+  // 모호해지지 않는다) 재요청대로 한 칸을 넘어(120%) 더 넓힌다.
+  const DROP_TOLERANCE = 1.2 / 8;
   const squareFromClient = (clientX, clientY) => {
     const el = gridRef.current; if (!el) return null;
     const rect = el.getBoundingClientRect();
@@ -4020,7 +4022,9 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   // (v0.3.9 재재조정) 더 둔감하게 해 달라는 재요청 — 외삽 시간을 150ms로 한 번 더 늘린다. 클램프
   // 상한(0.9칸)은 이미 한 칸에 거의 다 찼으므로 그대로 둔다 — 더 늘리면 의도한 칸이 아니라 그다음
   // 칸까지 건너뛸 수 있어, 느린 드래그가 더 오래 이 외삽의 영향을 받게 하는 쪽(시간)만 늘렸다.
-  const DRAG_LOOKAHEAD_MS = 150;
+  // (v0.3.9 재요청) 두 지점 모두 훨씬 더 관대하게 — 외삽 시간을 250ms로 더 늘리고, 클램프 상한도
+  // 정확히 한 칸(1.0)까지 늘린다(그 이상은 그다음 칸까지 건너뛸 위험이 실질적으로 커져 여기서 상한).
+  const DRAG_LOOKAHEAD_MS = 250;
   const onPiecePointerDown = (e, r, c) => {
     if (!interactive || !onPieceDrag) return;
     e.preventDefault();
@@ -4044,7 +4048,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     const dt = last.t - first.t;
     if (!(dt > 0)) return { x: clientX, y: clientY };
     const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
-    const maxOffset = cell * 0.9;
+    const maxOffset = cell * 1.0;
     const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
     const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
     return { x: clientX + offX, y: clientY + offY };
@@ -4508,15 +4512,15 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const dragStartRef = useRef(null); // { source:"board"|"palette", from:[r,c]|null, piece:{c,t}, x, y }
   const suppressClickRef = useRef(false);
   const [ptrDrag, setPtrDrag] = useState(null); // 위와 동일한 모양 — 드래그 임계값을 넘겼을 때만 채워짐(고스트/딤 처리용)
-  // (v0.3.9 재조정, 정정 → 재재조정 → 재정정) Board 컴포넌트와 동일하게 — 드래그 "시작" 문턱은
-  // 최대한 낮게, "종료 지점" 판정만 관대하게. 자세한 이유는 그쪽 같은 이름 상수 주석 참고.
-  const DRAG_THRESHOLD = 2;
+  // (v0.3.9 재조정, 정정 → 재재조정 → 재정정 → 재요청) Board 컴포넌트와 동일하게 — 드래그 "시작"
+  // 문턱은 최대한 낮게, "종료 지점" 판정만 관대하게. 자세한 이유는 그쪽 같은 이름 상수 주석 참고.
+  const DRAG_THRESHOLD = 1;
   const onSqClickGuarded = (r, c) => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } onSqClick(r, c); };
   const paletteClick = (fn) => () => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } fn(); };
-  // (v0.3.9 기능 → 재재조정) Board 컴포넌트의 DROP_TOLERANCE와 동일한 이유로, 이 보드 편집기도 놓는
-  // 지점이 보드 경계를 살짝 벗어나면 가장 가까운 칸으로 스냅해 준다(이전엔 관용치가 아예 없어 경계를
-  // 한 픽셀만 벗어나도 취소됐다).
-  const DROP_TOLERANCE = 0.9 / 8;
+  // (v0.3.9 기능 → 재재조정 → 재요청) Board 컴포넌트의 DROP_TOLERANCE와 동일한 이유로, 이 보드
+  // 편집기도 놓는 지점이 보드 경계를 살짝 벗어나면 가장 가까운 칸으로 스냅해 준다(이전엔 관용치가
+  // 아예 없어 경계를 한 픽셀만 벗어나도 취소됐다).
+  const DROP_TOLERANCE = 1.2 / 8;
   const squareFromClient = (clientX, clientY) => {
     const el = gridRef.current; if (!el) return null;
     const rect = el.getBoundingClientRect();
@@ -4529,8 +4533,9 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   };
   // (사용자 요청) Board 컴포넌트와 동일한 드래그 무브 개선 — 최근 이동 방향·속도로 놓는 지점을 아주
   // 짧게 외삽해(클램프 이내로) 빠른 드래그가 목표 칸에 못 미쳐 취소되는 경우를 줄인다. 자세한 이유는
-  // Board 컴포넌트의 같은 이름 상수 주석 참고. (v0.3.9 재조정, 정정 → 재재조정) 더 둔감하게 — 150ms.
-  const DRAG_LOOKAHEAD_MS = 150;
+  // Board 컴포넌트의 같은 이름 상수 주석 참고. (v0.3.9 재조정, 정정 → 재재조정 → 재요청) 더
+  // 둔감하게 — 250ms.
+  const DRAG_LOOKAHEAD_MS = 250;
   const startDragFromBoard = (e, r, c) => {
     if (tool) return; // 도구가 활성화된 동안은 클릭 스탬프만 — 드래그는 도구가 없을 때만 시작
     const piece = board[r][c]; if (!piece) return;
@@ -4559,7 +4564,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     const dt = last.t - first.t;
     if (!(dt > 0)) return { x: clientX, y: clientY };
     const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
-    const maxOffset = (gridRef.current ? gridRef.current.getBoundingClientRect().width / 8 : 0) * 0.9;
+    const maxOffset = (gridRef.current ? gridRef.current.getBoundingClientRect().width / 8 : 0) * 1.0;
     const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
     const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
     return { x: clientX + offX, y: clientY + offY };
