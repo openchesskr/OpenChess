@@ -3308,8 +3308,16 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // (v0.3.8 버그 수정) 이 상한과는 별개로, 리뷰 진입 애니메이션의 그래프가 "멈춰 있다가 갑자기
   // 한꺼번에 그려지는" 진짜 원인은 따로 있었다 — 아래 legalCounts 주석 참고(MultiPV 목표를 실제
   // 합법수 이상으로 요구해 소프트 스톱이 하드 워치독까지 가던 문제). 그 진짜 원인을 고쳤으므로 이
-  // 상한은 원래의 정확도 우선 값(4배)을 그대로 유지한다.
-  const REVIEW_BUDGET_FACTOR = 1.15, REVIEW_PER_POS_CAP_MULT = 4, REVIEW_PER_POS_FLOOR_MULT = 0.4;
+  // 상한은 원래의 정확도 우선 값(4배)을 그대로 유지했었다.
+  // (v0.3.9 재조정, 사용자 재보고) "진행 퍼센테이지는 90%를 넘어가는데 애니메이션은 그대로 멈춰
+  // 있다" — nextIdx는 포지션을 항상 순서대로(0,1,2,...) 배정하지만, 워커별 실제 완료 시각은
+  // work-stealing이라 순서가 없다. 이른 인덱스(특히 gradeIdx가 막 시작하는 0~수 개)가 하필 느린
+  // 워커에 걸리면, 뒤쪽 포지션 여러 개가 이미 다 끝나 doneCount 기반 진행률만 훌쩍 앞서가는 동안
+  // gradeIdx(=화면에 실제로 보이는 진행)는 그 하나에 완전히 멈춰 있을 수 있다 — 위에서 이미 배제한
+  // 하드 실패 케이스(엔진 완전 멈춤)와 달리, 이건 그냥 "느린 포지션이 movetime 상한(4배)까지 정상적으로
+  // 다 쓰는" 흔한 경우라 재시도로도 못 잡는다. 이 상한 자체를 낮추면 그런 느린 포지션 하나가 막을 수
+  // 있는 최대 시간이 그만큼 줄어(가장 직접적인 완화책), depth 정확도와 다시 한번 타협해 2.5배로 낮춘다.
+  const REVIEW_BUDGET_FACTOR = 1.15, REVIEW_PER_POS_CAP_MULT = 2.5, REVIEW_PER_POS_FLOOR_MULT = 0.4;
   const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   const workersLen = Math.max(1, workers.length);
   const wallBudgetMs = ((N + 1) / workersLen) * movetime * REVIEW_BUDGET_FACTOR;
@@ -8989,7 +8997,9 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
   // 다가가며 찍힌다 — 그래서 "전체 그래프의 끝부분이 영역의 오른쪽 끝에 그려지는" 결과가 된다). 수가
   // 적어 contentWidth가 W2보다 작으면 클램프 상한이 0이 되어 카메라가 아예 안 움직이고(예전처럼 그냥
   // 왼쪽부터 채워짐), 화면이 스크롤되는 건 실제로 다 못 담을 만큼 수가 많을 때뿐이다.
-  const SPACING = big ? 30 : 22;
+  // (사용자 요청) 뷰포트(W2=320) 안에 한 번에 보이는 아이콘 수를 기존보다 약 2개 줄인다 — 간격을
+  // 넓혀 W2/SPACING(한 화면에 들어오는 개수)이 그만큼 줄어들게 한다.
+  const SPACING = big ? 37 : 26;
   // (사용자 요청) 오른쪽에도 여유 공간을 둬 마지막 수의 아이콘이 우하단 정확도 숫자·그래프 오른쪽
   // 끝과 겹치지 않게 한다 — contentWidth에 여백 하나를 더해 두면, 대국이 다 끝나 카메라가 오른쪽
   // 끝까지 밀렸을 때도 마지막 점 뒤로 이 여백만큼 빈 공간이 항상 남는다. (재요청으로 더 늘림)
@@ -9097,6 +9107,11 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
               style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 4, background: "rgba(20,16,12,.82)", borderRadius: 6, padding: "2px 7px", fontSize: big ? 10.5 : 9, fontWeight: 800, fontFamily: REVIEW_FONT, color: T.ivoryHi, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
               {badgeIcon(toast.kind, big ? 13 : 11)}
               <span>{toast.label} : {QLABEL[toast.kind] || toast.kind}</span>
+              {/* (버그 수정) 정확도 증감 팝업을 이 토스트 안으로 합쳐, 정확도 숫자(우하단)와 서로
+                  다른 좌표계에서 겹칠 일이 없게 한다. */}
+              {toast.delta != null && (
+                <span style={{ color: toast.delta >= 0 ? T.good : T.blunder }}>{(toast.delta >= 0 ? "+" : "") + toast.delta.toFixed(1) + "%"}</span>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -9207,13 +9222,19 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
       if (firedRef.current.has(i)) continue;
       firedRef.current.add(i);
       const mv = moves[i];
-      if (mv && mv.kind && mv.kind !== "pending") {
-        // (사용자 요청) SAN 앞에 수 번호도 함께 붙인다(예: "12.Nf3").
-        toastQueueRef.current.push({ id: "t" + i, label: moveNumber(mv.ply, startColor) + mv.san, kind: mv.kind, white: mv.white });
-      }
       const meta = moveMeta[i];
-      // (사용자 요청) 변동폭이 절댓값 0.5%p 미만인 수는 띄우지 않는다 — 대부분의 이론 수·무난한 수가
-      // 여기 해당해, 그대로 두면 숫자가 너무 자주(거의 매 수마다) 겹쳐 떴다.
+      // (버그 수정) 정확도 증감(delta) 팝업을 MiniAccCurve 옆에 정확도 숫자와 별도로 떠 있는 요소로
+      // 두면, "n.SAN을 분석 중입니다..." 줄이 컨테이너 밖으로 나오면서 그 줄 유무에 따라 이 팝업이
+      // 기준으로 삼던 바깥 wrapper의 높이 자체가 오르내려(bottom:22가 매번 다른 실제 위치를 가리킴)
+      // 정확도 숫자와 간헐적으로 겹쳐 보였다 — 델타를 아예 같은 토스트 안에 합쳐서 띄우면 두 요소가
+      // 서로 다른 좌표계를 기준으로 삼을 일이 없어 근본적으로 겹칠 수 없다.
+      if (mv && mv.kind && mv.kind !== "pending") {
+        const delta = meta && Math.abs(meta.delta) >= 0.5 ? meta.delta : null;
+        // (사용자 요청) SAN 앞에 수 번호도 함께 붙인다(예: "12.Nf3").
+        toastQueueRef.current.push({ id: "t" + i, label: moveNumber(mv.ply, startColor) + mv.san, kind: mv.kind, white: mv.white, delta });
+      }
+      // (사용자 요청) 변동폭이 절댓값 0.5%p 미만인 수는 큰 그래프 위 팝업도 띄우지 않는다 — 대부분의
+      // 이론 수·무난한 수가 여기 해당해, 그대로 두면 숫자가 너무 자주(거의 매 수마다) 겹쳐 떴다.
       if (!meta || Math.abs(meta.delta) < 0.5) continue;
       queueRef.current.push({ id: i, ply: meta.ply, gVal: meta.gVal, delta: meta.delta, white: meta.white });
     }
@@ -9304,37 +9325,17 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
       {/* (사용자 요청) 모바일에서는 백·흑 그래프를 나란히 좁게 두지 않고 각각 다른 줄에 더 크게
           보여준다 — narrow일 때만 세로(column)로 쌓고 MiniAccCurve에 big을 넘겨 키운다. */}
       <div className={narrow ? "flex flex-col" : "flex items-start"} style={{ gap: narrow ? 18 : 14, marginTop: 10 }}>
+        {/* (버그 수정) 정확도 증감(delta)은 이제 MiniAccCurve 안의 "SAN : 등급" 토스트에 함께
+            표시된다(위 toast.delta 참고) — 여기 따로 떠 있던 팝업은 "n.SAN을 분석 중입니다..."
+            줄이 컨테이너 밖으로 나오며 wrapper 높이가 오르내릴 때 그 팝업의 bottom 기준 위치가 함께
+            흔들려 정확도 숫자와 간헐적으로 겹쳐 보이던 원인이었다 — 완전히 제거한다. */}
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
           <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big={narrow}
             accValue={wVal} layoutId="review-acc-w" calculatingSan={wCalcSan} toast={moveToasts.find((t) => t.white)} />
-          {/* (사용자 요청) 그래프 위 팝업과 똑같은 증감 숫자를 정확도 박스 우하단(정확도 숫자 바로
-              위)에도 함께 띄워 변동을 더 직관적으로 보여준다 — 같은 popups 배열을 진영별로 걸러 재사용한다. */}
-          <AnimatePresence>
-            {popups.filter((p) => p.white).map((p) => {
-              const positive = p.delta >= 0;
-              return (
-                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 22, fontSize: 10, fontWeight: 800, fontFamily: REVIEW_FONT, color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
-                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
-                  {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
-                </motion.span>
-              );
-            })}
-          </AnimatePresence>
         </div>
         <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
           <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big={narrow}
             accValue={bVal} layoutId="review-acc-b" calculatingSan={bCalcSan} toast={moveToasts.find((t) => !t.white)} />
-          <AnimatePresence>
-            {popups.filter((p) => !p.white).map((p) => {
-              const positive = p.delta >= 0;
-              return (
-                <motion.span key={p.id} style={{ position: "absolute", right: 6, bottom: 22, fontSize: 10, fontWeight: 800, fontFamily: REVIEW_FONT, color: positive ? T.good : T.blunder, textShadow: "0 1px 3px rgba(0,0,0,.7)", pointerEvents: "none" }}
-                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: REVEAL_POPUP_EXIT_S }}>
-                  {(positive ? "+" : "") + p.delta.toFixed(1) + "%"}
-                </motion.span>
-              );
-            })}
-          </AnimatePresence>
         </div>
       </div>
     </div>
@@ -9361,7 +9362,6 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   const savedPos = useMemo(() => loadReviewPos(reviewPosKey), [reviewPosKey]);
   const [phase, setPhase] = useState(() => (savedPos && savedPos.phase) || "summary"); // "summary" | "review"
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
-  const [prog, setProg] = useState(0);
   const [result, setResult] = useState(null);
   // (v0.3.0 성능) analyzeGame이 이제 수 하나씩 채점되는 대로 onMove로 흘려보낸다 — result는 첫 수가
   // 채점되자마자(전체 분석이 끝나기 훨씬 전에) 채워지고, 이후 계속 자라난다. resultDone은 전체 분석이
@@ -9460,7 +9460,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
     let cancelled = false;
     (async () => {
       try {
-        const r = await analyzeGame(sans, engine, reviewDepth, (p) => { if (!cancelled) setProg(p); }, reviewMovetimeMs,
+        const r = await analyzeGame(sans, engine, reviewDepth, undefined, reviewMovetimeMs,
           (partial, gradedIdx) => { if (!cancelled) { setResult(partial); setGradedCount(gradedIdx); } }, fenRoot);
         if (!cancelled) {
           setResult(r); setGradedCount(sans.length); setResultDone(true);
@@ -10019,8 +10019,14 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewIntroCarousel />
         <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} sans={sans} startWhite={fenRoot ? fenRoot.turn === "w" : true} />
-        <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (prog * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
-        <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(prog * 100)}%</p>
+        {/* (버그 수정) 예전엔 이 막대·퍼센트가 엔진이 실제로 평가를 끝낸 포지션 수(doneCount, 워크
+            스틸링이라 순서 없이 끝남)를 그대로 보여줬다 — 채점(gradeIdx)은 반드시 순서대로만 진행되므로
+            초반의 한 포지션이 오래 걸리면 뒤 포지션들은 이미 다 평가돼 있어도 애니메이션은 그 자리에
+            멈춰 있는데 이 막대만 90%까지 훌쩍 앞서가, "퍼센티지는 다 됐다는데 화면은 안 움직인다"는
+            혼란(화면이 멎은 듯한 느낌)의 원인이었다. 위 애니메이션과 똑같이 gradedCount(순서대로 채점된
+            수)를 기준으로 삼아 이 표시가 실제로 보이는 진행 상황과 항상 같은 속도로 움직이게 한다. */}
+        <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (Math.min(1, sans.length ? gradedCount / sans.length : 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
+        <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(Math.min(1, sans.length ? gradedCount / sans.length : 0) * 100)}%</p>
       </div>
     </div>
   );
