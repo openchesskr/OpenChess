@@ -19405,26 +19405,41 @@ function DailyPuzzleDevPanel({ card }) {
 // 있어(요청 이전에 이미 그런 구조) 진행률·실패 목록을 보여주고 언제든 멈출 수 있게 한다. (주의)
 // 재생성은 라인 태그를 새로 발급하므로, 기존 유저의 lineSolves(라인별 별 3개 보상 여부)가 재생성된
 // 퍼즐에서 더 이상 일치하지 않을 수 있다 — 베타 단계라 이 위험을 감수하기로 확인받았다.
+// (버그 수정, 사용자 제보) "개발자 도구" 카드는 SettingsTab에 key={"set-"+navNonce}가 걸려 있어(다른
+// 탭들과 같은 "탭을 다시 누르면 그 화면 상태를 초기화" 패턴), 이 배치 재생성이 한창 도는 도중 설정
+// 탭 아이콘을 다시 누르기만 해도(흔한 습관적 재탭) navNonce가 올라 이 패널이 통째로 새로 마운트되며
+// 진행률 화면이 "대기" 상태로 리셋됐다 — 실제로는 orphan된 이전 루프가 백그라운드에서 계속 도는데
+// (자바스크립트 비동기 함수는 컴포넌트가 언마운트돼도 저절로 멈추지 않는다) 화면엔 아무 반응도 없어
+// 보여 "버튼이 제대로 동작하지 않는다"는 제보로 이어졌다. 진행 상태를 컴포넌트 밖 모듈 스코프의
+// 싱글턴으로 옮겨, 패널이 다시 마운트돼도 이미 돌고 있는 작업을 그대로 이어 보여주고(그리고 "시작"
+// 버튼이 새 루프를 중복으로 띄우지 않도록) 구조적으로 고친다.
+const puzzleRegenRun = { status: "idle", total: 0, doneCount: 0, curNo: null, failed: [], stop: false, listeners: new Set() };
+function puzzleRegenNotify() { for (const fn of puzzleRegenRun.listeners) fn(); }
+function usePuzzleRegenRun() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const fn = () => bump((n) => n + 1);
+    puzzleRegenRun.listeners.add(fn);
+    return () => puzzleRegenRun.listeners.delete(fn);
+  }, []);
+  return puzzleRegenRun;
+}
 function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
-  const [status, setStatus] = useState("idle"); // idle | listing | running | done | stopped
-  const [total, setTotal] = useState(0);
-  const [doneCount, setDoneCount] = useState(0);
-  const [curNo, setCurNo] = useState(null);
-  const [failed, setFailed] = useState([]); // [{ no, error }]
-  const stopRef = useRef(false);
+  const run = usePuzzleRegenRun();
+  const { status, total, doneCount, curNo, failed } = run;
   const running = status === "listing" || status === "running";
   const start = async () => {
     if (!engine || engine.status !== "ready" || running) return;
-    stopRef.current = false;
-    setFailed([]); setDoneCount(0); setCurNo(null); setTotal(0);
-    setStatus("listing");
+    run.stop = false;
+    run.failed = []; run.doneCount = 0; run.curNo = null; run.total = 0;
+    run.status = "listing"; puzzleRegenNotify();
     const nos = await puzzleListAllNos();
-    setTotal(nos.length);
-    setStatus("running");
+    run.total = nos.length; puzzleRegenNotify();
+    run.status = "running"; puzzleRegenNotify();
     let overridesTouched = false;
     for (const no of nos) {
-      if (stopRef.current) { setStatus("stopped"); return; }
-      setCurNo(no);
+      if (run.stop) { run.status = "stopped"; puzzleRegenNotify(); return; }
+      run.curNo = no; puzzleRegenNotify();
       try {
         const data = await puzzleFetch(no);
         if (!data) throw new Error("퍼즐 데이터를 찾을 수 없음");
@@ -19443,15 +19458,15 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
         // 재생성한 트리가 실제로 보이도록, 이 번호에 남아있을 수 있는 개발자 override(더 우선시됨)를 함께 지운다.
         if (CONTENT.puzzleOverrides && CONTENT.puzzleOverrides[no]) { delete CONTENT.puzzleOverrides[no]; overridesTouched = true; }
       } catch (e) {
-        setFailed((f) => [...f, { no, error: (e && e.message) || String(e) }]);
+        run.failed = [...run.failed, { no, error: (e && e.message) || String(e) }];
       }
-      setDoneCount((d) => d + 1);
+      run.doneCount += 1; puzzleRegenNotify();
     }
     if (overridesTouched && bumpContent) { try { await bumpContent(); } catch { } }
-    setCurNo(null);
-    setStatus("done");   // 여기 도달했다는 건 중간에 stopRef로 멈추지 않고 목록을 끝까지 순회했다는 뜻.
+    run.curNo = null;
+    run.status = "done"; puzzleRegenNotify();   // 여기 도달했다는 건 중간에 stop으로 멈추지 않고 목록을 끝까지 순회했다는 뜻.
   };
-  const stop = () => { stopRef.current = true; };
+  const stop = () => { run.stop = true; };
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
@@ -23755,7 +23770,14 @@ export default function App() {
   }, [enginePref]);
 
   useEffect(() => { loadContent().then(() => setContentVer((v) => v + 1)); }, []);
-  const bumpContent = useCallback(async () => { await saveContent(); setContentVer((v) => v + 1); }, []);
+  // (버그 수정, 사용자 제보) CONTENT는 이미 호출부에서 동기적으로 다 고쳐 놓은 뒤 이 함수를 부르는데,
+  // 예전엔 서버 저장(saveContent, app_content 테이블에 전체 CONTENT blob을 업서트하는 네트워크
+  // 왕복)이 다 끝나야만 contentVer를 올려 화면을 다시 그렸다 — 예를 들어 도감 트리에 이론 수를
+  // 새로 추가해도, 그 반영(재배치)이 네트워크 왕복이 끝날 때까지 늦어져 "즉각 반영"처럼 느껴지지
+  // 않았다. contentVer부터 먼저 올려 로컬 화면은 그 즉시 새 CONTENT 기준으로 다시 그리고, 서버
+  // 저장은 그 뒤로 미뤄(실패해도 다음 saveContent 호출 때 최신 CONTENT를 다시 통째로 올리므로 무해)
+  // 화면 반응 속도와 무관하게 배경에서 진행한다.
+  const bumpContent = useCallback(async () => { setContentVer((v) => v + 1); saveContent(); }, []);
   const isDev = user === DEV_ACCOUNT;
   const isCodev = !!user && Array.isArray(CONTENT.codev) && CONTENT.codev.includes(user);
   const canEdit = (isDev && devOn) || (isCodev && codevOn);   // (기능3) 분기점 해설·수 설명·수 키워드 수정 권한
@@ -24350,7 +24372,19 @@ export default function App() {
     });
   }, [reviewUnlocked]);
   const closeReview = useCallback(() => {
-    setReviewGame(null);
+    // (버그 수정, 사용자 제보) 학습 탭·채팅창처럼 대국 메타데이터 없이 sans/fenRoot만으로 여는
+    // 리뷰는 같은 수순을 다시 열기 쉬운데, 진입 애니메이션(introRevealDone/boardIntroDone)의
+    // "이미 본 적 있음" sessionStorage 캐시는 순전히 그 수순/FEN만으로 키가 정해져 있어, 리뷰를
+    // 닫았다가 다시 열어도(진짜 새로고침이 아닌데도) 그대로 "본 적 있음"으로 취급돼 애니메이션이
+    // 재생되지 않았다 — chess.com 대국(reviewGameKey로 실제 대국 단위 고유 키를 쓰는 경로)에서는
+    // 같은 대국을 매번 다시 열 일이 드물어 눈에 덜 띄었을 뿐, 구조는 동일한 문제였다. 리뷰를 실제로
+    // 닫는 이 순간 그 키를 지워, "같은 리뷰를 보던 중 새로고침"(이 핸들러를 거치지 않으므로
+    // sessionStorage가 그대로 남아 정상적으로 이어본다)과 "닫고 다시 열기"(항상 처음부터 다시
+    // 재생)를 구조적으로 구분한다.
+    setReviewGame((prev) => {
+      if (prev) { const k = reviewStorageKey(prev); if (k) { try { window.sessionStorage.removeItem(k); } catch { } } }
+      return null;
+    });
     try { if (window.location.pathname.startsWith("/review")) window.history.back(); } catch { }
   }, []);
   const onOpenGameAnalyze = useCallback((game) => openReview(game), [openReview]);
