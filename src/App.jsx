@@ -4050,31 +4050,12 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     const vc = Math.min(7, Math.max(0, Math.floor(clampedX * 8))), vr = Math.min(7, Math.max(0, Math.floor(clampedY * 8)));
     return flip ? [7 - vr, 7 - vc] : [vr, vc];
   };
-  // (사용자 요청) 드래그 무브 성공률·조작감 개선 — 예전엔 손을 뗀 마지막 pointermove 좌표 하나만으로
-  // 놓을 칸을 정했는데, 빠르게 휙 움직이는(flick) 드래그일수록 pointermove 샘플링 간격 때문에 마지막
-  // 좌표가 실제로 손가락이 향하던 지점보다 앞서(=목표 칸에 못 미쳐) 잡히는 경향이 있다. 최근 몇 개
-  // 샘플의 이동 방향·속도(px/ms)를 재 두었다가 손을 뗄 때 아주 짧게(DRAG_LOOKAHEAD_MS) 그 방향으로
-  // 외삽해, 손을 뗀 좌표가 아니라 "손가락이 향하던 좌표"에 더 가까운 지점을 놓을 칸 판정에 쓴다.
-  // 외삽량은 클램프해 두어 저속·정밀 드래그(속도≈0 → 보정량도 거의 0, 기존 동작과 동일)에는 영향이
-  // 없고, 샘플 노이즈로 순간 속도가 튀어도 그 클램프 너머까지는 밀어주지 않는다(여러 칸을 건너뛰지
-  // 않음). 외삽된 지점이 보드 경계 밖으로 나가 판정에 실패하면(null) 원래 좌표로 다시 시도해 이
-  // 보정이 있기 전보다 성공률이 떨어지는 경우가 생기지 않게 한다.
-  // (v0.3.9 재조정, 정정) "대충 움직여도 잘 움직여지도록 더 둔감하게" — 이 버전 시작 시점 값(45ms)보다
-  // 훨씬 크게 늘려 100ms로, 클램프 상한도 시작 시점 값(반 칸)보다 크게 늘려 0.9칸으로 넓힌다(1칸에
-  // 아주 살짝 못 미치게 둬 인접한 두 칸 이상을 건너뛰는 경우만은 계속 막는다).
-  // (v0.3.9 재재조정) 더 둔감하게 해 달라는 재요청 — 외삽 시간을 150ms로 한 번 더 늘린다. 클램프
-  // 상한(0.9칸)은 이미 한 칸에 거의 다 찼으므로 그대로 둔다 — 더 늘리면 의도한 칸이 아니라 그다음
-  // 칸까지 건너뛸 수 있어, 느린 드래그가 더 오래 이 외삽의 영향을 받게 하는 쪽(시간)만 늘렸다.
-  // (v0.3.9 재요청) 두 지점 모두 훨씬 더 관대하게 — 외삽 시간을 250ms로 더 늘리고, 클램프 상한도
-  // 정확히 한 칸(1.0)까지 늘린다(그 이상은 그다음 칸까지 건너뛸 위험이 실질적으로 커져 여기서 상한).
-  // (v0.3.9 되돌림) 이렇게까지 키운 뒤에도 "무겁게 끌려온다"·"놓아도 착수가 안 된다"는 신고가
-  // 계속돼 원인을 다시 보니, 고스트 위치를 매 pointermove마다 React state로 갱신해 보드 전체를
-  // 다시 렌더링하던 게 실제 병목이었다(바로 아래 moveGhostTo 참고 — 이제 DOM을 직접 갱신해 렌더링과
-  // 무관해졌다). 그 병목이 실제 pointer 이벤트 처리까지 지연시켜, 외삽을 아무리 키워도 근본 문제는
-  // 못 가렸던 것으로 보인다 — 렌더링 병목을 없앤 지금은 외삽을 이렇게 크게 둘 필요가 없고, 오히려
-  // 과도하면 의도한 칸을 넘어 엉뚱한(불법인) 칸으로 착수를 시도해 조용히 취소되는 부작용만 커지므로
-  // 다시 절반 정도(100ms)로 낮춘다.
-  const DRAG_LOOKAHEAD_MS = 100;
+  // (사용자 요청 → 여러 차례 재조정 → v0.3.9 재설계) 드래그 무브 성공률·조작감 개선의 역사 — 처음엔
+  // 손을 뗀 좌표를 속도 방향으로 짧게 밀어서(외삽) 그 지점이 속한 칸 하나를 찾는 방식이었다(45ms →
+  // 100 → 150 → 250ms, 클램프도 반 칸 → 1칸까지 계속 키움). 매번 "그래도 안 된다"는 재신고가
+  // 이어져 원인을 다시 보니 진짜 병목은 고스트 렌더링(위 moveGhostTo 참고)이었고, 그걸 고친 뒤로는
+  // 외삽이 크면 오히려 엉뚱한 칸으로 착수를 시도해 조용히 취소되는 부작용만 컸다. 이제는 "한 지점을
+  // 밀어서 찾기" 대신 아래 resolveDropSquare가 진행 방향의 후보 칸 자체를 몇 개 두고 직접 채점한다.
   const onPiecePointerDown = (e, r, c) => {
     if (!interactive || !onPieceDrag) return;
     e.preventDefault();
@@ -4103,17 +4084,49 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     moveGhostTo(e.clientX, e.clientY);
     if (!ptrDrag) setPtrDrag({ r: d.r, c: d.c }); // 딱 한 번만(임계값을 처음 넘는 순간) — 이후엔 ref/DOM만 갱신
   };
-  const predictedDropPoint = (d, clientX, clientY) => {
+  // (v0.3.9 기능) 사용자 요청 — "한 지점을 속도 방향으로 밀어서 그 지점이 속한 칸을 찾는" 방식(위
+  // DRAG_LOOKAHEAD_MS 히스토리) 대신, 드래그 진행 방향의 후보 칸을 미리 몇 개(0·1·2칸 앞) 추려두고
+  // "손을 뗀 실제 지점"이 그 후보 칸 중심에서 얼마나 떨어져 있는지로 직접 채점한다. 허용 거리(칸
+  // 단위)는 항상 그 칸 자체는 보장하는 기본값(BASE, 칸 안 어디서 놓아도 항상 통과)에 속도가 빠를수록
+  // 커지는 보너스를 더한다 — "빠를수록 목표 칸에 조금 못 미쳐 놓아도 인정"이 정확히 이 보너스다.
+  // 후보를 가장 먼(2칸 앞) 것부터 검사해, 허용 거리 안에 드는 가장 먼 칸을 우선한다(빠른 드래그일수록
+  // 실제로 더 먼 칸을 의도했을 가능성이 높으므로).
+  const DROP_TOLERANCE_BASE_CELLS = 0.75;   // 칸 하나 전체(대각선 모서리까지)를 항상 보장하는 기본 허용치
+  const DROP_TOLERANCE_SPEED_SCALE = 30;    // 칸/ms 단위 속도 1당 늘어나는 허용치(칸 단위) — 실기기 실측치는 아니고 대략적인 값이라 체감에 따라 조정 필요
+  const DROP_TOLERANCE_SPEED_CAP_CELLS = 1.5; // 속도 보너스 자체의 상한 — 아무리 빨라도 2칸 앞 후보 중심까지만 닿을 수 있게
+  const resolveDropSquare = (d, clientX, clientY) => {
+    const el = gridRef.current; if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const cellW = rect.width / 8, cellH = rect.height / 8;
+    const relX = clientX - rect.left, relY = clientY - rect.top;
     const hist = d.hist || [];
-    if (hist.length < 2) return { x: clientX, y: clientY };
-    const first = hist[0], last = hist[hist.length - 1];
-    const dt = last.t - first.t;
-    if (!(dt > 0)) return { x: clientX, y: clientY };
-    const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
-    const maxOffset = cell * 0.6; // (v0.3.9 되돌림) 렌더링 병목을 없앤 뒤로 과도한 외삽이 불필요해져 다시 낮춤 — 위 DRAG_LOOKAHEAD_MS 주석 참고
-    const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
-    const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
-    return { x: clientX + offX, y: clientY + offY };
+    let vx = 0, vy = 0;
+    if (hist.length >= 2) {
+      const first = hist[0], last = hist[hist.length - 1];
+      const dt = last.t - first.t;
+      if (dt > 0) { vx = (last.x - first.x) / dt; vy = (last.y - first.y) / dt; }
+    }
+    const speed = Math.hypot(vx, vy) / Math.min(cellW, cellH); // 칸/ms — 화면 크기와 무관하게 일정한 속도 단위
+    // (버그 수정) 전진 후보(step 1·2)의 허용 거리에도 기본치(BASE)를 그대로 더하면, 속도가 거의
+    // 0인 정밀한 드래그조차 칸 경계 근처에서 놓았을 뿐인데 그 기본치만으로 옆 칸 중심까지 닿아버려
+    // (기본치 0.75칸이면 경계에서 옆 칸 중심까지의 거리 0.5~1칸 상당을 이미 커버함) 엉뚱한 칸으로
+    // 잘못 스냅됐다(직접 계산해 재현·확인함) — "제자리 칸(step 0)"만 항상 그 칸 전체를 보장하는
+    // 기본치를 쓰고, 그보다 앞선 후보(step 1·2)는 오직 속도 보너스만으로 허용 거리를 정해 실제로
+    // 빠르게 그 방향으로 움직였을 때만 인정되게 한다.
+    const speedBonusCells = Math.min(DROP_TOLERANCE_SPEED_CAP_CELLS, speed * DROP_TOLERANCE_SPEED_SCALE);
+    const dirLen = Math.hypot(vx, vy) || 1;
+    const ux = vx / dirLen, uy = vy / dirLen; // 드래그 진행 방향의 단위 벡터(속도 0이면 방향 없음 → 전진 후보는 허용 거리도 0이라 무해함)
+    for (let step = 2; step >= 0; step--) {
+      const tolCells = step === 0 ? DROP_TOLERANCE_BASE_CELLS : speedBonusCells;
+      const tolerancePx = tolCells * Math.min(cellW, cellH);
+      const colF = relX / cellW + ux * step, rowF = relY / cellH + uy * step;
+      const vc = Math.min(7, Math.max(0, Math.floor(colF))), vr = Math.min(7, Math.max(0, Math.floor(rowF)));
+      const centerX = (vc + 0.5) * cellW, centerY = (vr + 0.5) * cellH;
+      const dist = Math.hypot(relX - centerX, relY - centerY);
+      if (dist <= tolerancePx) return flip ? [7 - vr, 7 - vc] : [vr, vc];
+    }
+    return null; // 후보 세 칸 중 어느 것도 허용 거리 안에 없다 — 보드 밖 등 명백히 벗어난 경우
   };
   // (v0.3.9 버그 수정) 사용자 신고 — 빠르게 휙 던지듯 하는 드래그일수록 오히려 드래그로 거의
   // 인식되지 않았다. wasDragging을 ptrDrag(=onPiecePointerMove가 한 번이라도 호출돼야 채워짐)로만
@@ -4131,8 +4144,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     if (!d) return;
     if (drop && wasDragging) {
       suppressClickRef.current = true;   // 실제로 옮긴 드래그 뒤에 따라오는 합성 click(재선택처럼 보임) 무시
-      const pred = predictedDropPoint(d, e.clientX, e.clientY);
-      const target = squareFromClient(pred.x, pred.y) || squareFromClient(e.clientX, e.clientY);
+      const target = resolveDropSquare(d, e.clientX, e.clientY) || squareFromClient(e.clientX, e.clientY);
       onDrop && onDrop(target || [d.r, d.c]);   // 보드 바깥에 놓으면 제자리(불법 수 취급 → 취소)로
     }
     // 임계값을 못 넘긴 단순 탭이면 onDrop을 부르지 않는다 — pointerdown의 onPieceDrag가 이미
@@ -4609,12 +4621,6 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     const vc = Math.min(7, Math.max(0, Math.floor(clampedX * 8))), vr = Math.min(7, Math.max(0, Math.floor(clampedY * 8)));
     return flipped ? [7 - vr, 7 - vc] : [vr, vc];
   };
-  // (사용자 요청) Board 컴포넌트와 동일한 드래그 무브 개선 — 최근 이동 방향·속도로 놓는 지점을 아주
-  // 짧게 외삽해(클램프 이내로) 빠른 드래그가 목표 칸에 못 미쳐 취소되는 경우를 줄인다. 자세한 이유는
-  // Board 컴포넌트의 같은 이름 상수 주석 참고. (v0.3.9 되돌림) 렌더링 병목(고스트를 매 pointermove마다
-  // setState로 갱신해 모달 전체가 다시 렌더링되던 문제)을 없앤 뒤로는 과도한 외삽이 불필요해져 100ms로
-  // 다시 낮췄다.
-  const DRAG_LOOKAHEAD_MS = 100;
   const startDragFromBoard = (e, r, c) => {
     if (tool) return; // 도구가 활성화된 동안은 클릭 스탬프만 — 드래그는 도구가 없을 때만 시작
     const piece = board[r][c]; if (!piece) return;
@@ -4644,17 +4650,44 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     moveGhostTo(e.clientX, e.clientY);
     if (!ptrDrag) setPtrDrag(d); // 딱 한 번만 — 이후엔 ref/DOM만 갱신
   };
-  const predictedDropPoint = (d, clientX, clientY) => {
+  // (v0.3.9 기능) Board 컴포넌트와 동일한 재설계 — 자세한 이유는 그쪽 같은 함수 주석 참고. 진행
+  // 방향의 후보 칸(0·1·2칸 앞)을 두고, 손을 뗀 실제 지점이 그 후보 중심에서 얼마나 가까운지로
+  // 채점한다. 속도가 빠를수록 허용 거리가 늘어난다.
+  const DROP_TOLERANCE_BASE_CELLS = 0.75;
+  const DROP_TOLERANCE_SPEED_SCALE = 30;
+  const DROP_TOLERANCE_SPEED_CAP_CELLS = 1.5;
+  const resolveDropSquare = (d, clientX, clientY) => {
+    const el = gridRef.current; if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const cellW = rect.width / 8, cellH = rect.height / 8;
+    const relX = clientX - rect.left, relY = clientY - rect.top;
     const hist = d.hist || [];
-    if (hist.length < 2) return { x: clientX, y: clientY };
-    const first = hist[0], last = hist[hist.length - 1];
-    const dt = last.t - first.t;
-    if (!(dt > 0)) return { x: clientX, y: clientY };
-    const vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt;
-    const maxOffset = (gridRef.current ? gridRef.current.getBoundingClientRect().width / 8 : 0) * 0.6;
-    const offX = Math.max(-maxOffset, Math.min(maxOffset, vx * DRAG_LOOKAHEAD_MS));
-    const offY = Math.max(-maxOffset, Math.min(maxOffset, vy * DRAG_LOOKAHEAD_MS));
-    return { x: clientX + offX, y: clientY + offY };
+    let vx = 0, vy = 0;
+    if (hist.length >= 2) {
+      const first = hist[0], last = hist[hist.length - 1];
+      const dt = last.t - first.t;
+      if (dt > 0) { vx = (last.x - first.x) / dt; vy = (last.y - first.y) / dt; }
+    }
+    const speed = Math.hypot(vx, vy) / Math.min(cellW, cellH);
+    const speedBonusCells = Math.min(DROP_TOLERANCE_SPEED_CAP_CELLS, speed * DROP_TOLERANCE_SPEED_SCALE);
+    const dirLen = Math.hypot(vx, vy) || 1;
+    const ux = vx / dirLen, uy = vy / dirLen;
+    for (let step = 2; step >= 0; step--) {
+      // (v0.3.9 버그 수정) 모든 후보 칸에 "기본 허용치 + 속도 보너스"를 똑같이 주면, 속도가 거의
+      // 0인 정밀한 드래그도 경계 근처에서 옆 칸(step 1)으로 잘못 스냅될 수 있다(기본 허용치 0.75칸
+      // 만으로도 옆 칸 중심에 닿는 경우가 흔함) — 실제로 Node.js 수치 시뮬레이션으로 재현·확인함.
+      // 그래서 원래 놓인 칸(step 0)만 고정 기본 허용치를 쓰고, 방향으로 더 나아간 후보(step 1·2)는
+      // 순수하게 속도에서 나온 보너스만으로 판정한다 — 느린 드래그는 절대 옆 칸으로 새지 않는다.
+      const tolCells = step === 0 ? DROP_TOLERANCE_BASE_CELLS : speedBonusCells;
+      const tolerancePx = tolCells * Math.min(cellW, cellH);
+      const colF = relX / cellW + ux * step, rowF = relY / cellH + uy * step;
+      const vc = Math.min(7, Math.max(0, Math.floor(colF))), vr = Math.min(7, Math.max(0, Math.floor(rowF)));
+      const centerX = (vc + 0.5) * cellW, centerY = (vr + 0.5) * cellH;
+      const dist = Math.hypot(relX - centerX, relY - centerY);
+      if (dist <= tolerancePx) return flipped ? [7 - vr, 7 - vc] : [vr, vc];
+    }
+    return null;
   };
   // (v0.3.9 버그 수정) Board 컴포넌트와 동일 — 아주 빠른 드래그는 중간에 pointermove가 한 번도 안
   // 일어날 수 있어(브라우저 이벤트 코얼레싱) ptrDrag만으로는 항상 "드래그 아님"으로 남았다. 자세한
@@ -4667,8 +4700,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     if (!d) return;
     if (drop && wasDragging) {
       suppressClickRef.current = true;
-      const pred = predictedDropPoint(d, e.clientX, e.clientY);
-      const target = squareFromClient(pred.x, pred.y) || squareFromClient(e.clientX, e.clientY);
+      const target = resolveDropSquare(d, e.clientX, e.clientY) || squareFromClient(e.clientX, e.clientY);
       if (d.source === "board") {
         if (target && (target[0] !== d.from[0] || target[1] !== d.from[1])) {
           const b = board.map((row) => row.slice());
