@@ -8992,8 +8992,8 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
   const SPACING = big ? 30 : 22;
   // (사용자 요청) 오른쪽에도 여유 공간을 둬 마지막 수의 아이콘이 우하단 정확도 숫자·그래프 오른쪽
   // 끝과 겹치지 않게 한다 — contentWidth에 여백 하나를 더해 두면, 대국이 다 끝나 카메라가 오른쪽
-  // 끝까지 밀렸을 때도 마지막 점 뒤로 이 여백만큼 빈 공간이 항상 남는다.
-  const RIGHT_MARGIN = big ? 34 : 26;
+  // 끝까지 밀렸을 때도 마지막 점 뒤로 이 여백만큼 빈 공간이 항상 남는다. (재요청으로 더 늘림)
+  const RIGHT_MARGIN = big ? 46 : 36;
   const contentWidth = Math.max(W2, total * SPACING + RIGHT_MARGIN);
   const xx = (i) => i * SPACING;
   const pts = curve.slice(0, Math.max(1, shownCount + 1));
@@ -9083,36 +9083,39 @@ function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, l
         })}
         {/* (사용자 요청) 정확도 숫자를 그래프 아래 별도 줄이 아니라 그래프 안쪽 우하단으로 옮긴다 —
             layoutId는 그대로 유지해 ReviewSummary의 ReviewAccuracyPill로 이어지는 공유 요소 전환이
-            깨지지 않게 한다. */}
+            깨지지 않게 한다. (재요청) 수 아이콘과 겹치지 않도록 글자 크기를 더 줄이고 %를 붙인다. */}
         {accValue != null && (
-          <motion.div layoutId={layoutId} style={{ position: "absolute", right: 6, bottom: 3, fontSize: big ? 15 : 12, fontWeight: 800, fontFamily: REVIEW_FONT, color: T.ivoryHi, textShadow: "0 1px 3px rgba(0,0,0,.6)", pointerEvents: "none" }}>
-            {accValue.toFixed(1)}
+          <motion.div layoutId={layoutId} style={{ position: "absolute", right: 6, bottom: 3, fontSize: big ? 12 : 9.5, fontWeight: 800, fontFamily: REVIEW_FONT, color: T.ivoryHi, textShadow: "0 1px 3px rgba(0,0,0,.6)", pointerEvents: "none" }}>
+            {accValue.toFixed(1)}%
           </motion.div>
         )}
-        {/* (사용자 요청) 아직 채점되지 않은(대기 중인) 다음 수의 SAN을 좌하단에 안내한다 — 리뷰 펜이
-            지금까지 확보된 채점 결과(shownCount)를 다 보여준 뒤에도 그 진영의 남은 수가 있으면, 엔진이
-            바로 그 수를 계산하고 있는 것이므로 이 문구를 띄운다. */}
-        {calculatingSan && (
-          <div style={{ position: "absolute", left: 6, bottom: 3, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: REVIEW_FONT, color: RV.soft, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "55%" }}>
-            {calculatingSan}을 분석 중입니다...
-          </div>
-        )}
-        {/* (사용자 요청) 수 체계 아이콘이 확정될 때마다 "SAN : 등급"을 잠깐 띄운다 — 등급 아이콘을
+        {/* (사용자 요청) 수 체계 아이콘이 확정될 때마다 "n.SAN : 등급"을 잠깐 띄운다 — 등급 아이콘을
             글자 왼쪽에 함께 보여준다. */}
         <AnimatePresence>
           {toast && (
             <motion.div key={toast.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
               style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 4, background: "rgba(20,16,12,.82)", borderRadius: 6, padding: "2px 7px", fontSize: big ? 10.5 : 9, fontWeight: 800, fontFamily: REVIEW_FONT, color: T.ivoryHi, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
               {badgeIcon(toast.kind, big ? 13 : 11)}
-              <span>{toast.san} : {QLABEL[toast.kind] || toast.kind}</span>
+              <span>{toast.label} : {QLABEL[toast.kind] || toast.kind}</span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+      {/* (사용자 요청) "n.SAN을 분석 중입니다..."는 그래프 컨테이너(overflow:hidden) 안이 아니라
+          바깥에 별도 줄로 표시한다 — 그래프 안쪽 요소와 겹치거나 잘릴 걱정 없이 항상 온전히 보인다. */}
+      {calculatingSan && (
+        <div style={{ marginTop: 3, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: REVIEW_FONT, color: RV.soft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {calculatingSan}을 분석 중입니다...
+        </div>
+      )}
     </div>
   );
 }
-const REVEAL_SPEED_PER_SEC = 4;   // 그래프가 채워지는 속도(x축 1수 = 1초 기준 4수/초 — 실제 분석 속도와 무관하게 항상 이 속도)
+// (v0.3.9 재설계, 사용자 요청) 한 수를 화면에 보여준 뒤 다음 수로 넘어가기까지의 최소 체류 시간 —
+// 채점이 이미 끝나 있으면 이 시간만 지나면 곧장 다음 수로 넘어간다(예전의 고정 속도 애니메이션과
+// 달리 실제 분석이 밀린 만큼만 기다린다). 너무 짧으면 아이콘이 뜨자마자 다음 수로 넘어가 눈에
+// 안 들어오고, 너무 길면 다시 예전처럼 굼떠 보이므로 그 사이 값으로 잡는다.
+const REVEAL_MIN_STEP_MS = 130;
 // (사용자 요청) 숫자가 그래프 위에서 서로 겹치지 않도록 두 가지를 함께 조정한다 — ① 잔상(떠 있다
 // 사라지는 자취)이 빨리 없어지도록 표시 시간·페이드아웃 시간을 모두 줄이고, ② 델타가 큰 수들이
 // 연달아 나올 때 다음 숫자가 뜨기 전 최소한의 간격(스태거)을 강제로 둔다.
@@ -9126,27 +9129,39 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   // (사용자 요청) 아직 채점되지 않은 다음 수의 SAN을 "분석 중입니다..."로 보여주려면, 채점 여부와
   // 무관하게 그 대국의 실제 수순 전체(진영별로 나눔)를 알아야 한다 — decorateLine은 analyzeGame이
   // 채점 결과에 쓰는 것과 똑같은 체크(+)/체크메이트(#) 보정을 미리 적용해 표기가 어긋나지 않게 한다.
+  const startColor = startWhite ? "w" : "b";
   const colorSans = useMemo(() => {
     const dec = decorateLine(sans || []);
     const w = [], b = [];
-    for (let i = 0; i < dec.length; i++) ((i % 2 === 0) === startWhite ? w : b).push(dec[i]);
+    for (let i = 0; i < dec.length; i++) ((i % 2 === 0) === startWhite ? w : b).push({ ply: i, san: dec[i] });
     return { w, b };
   }, [sans, startWhite]);
   const N = Math.max(1, totalPlies || moves.length || 1);
-  // progress(0..N) — 실제 분석 진행(target)과는 별도로, 일정한 속도로만 전진하는 "그리는 펜의 위치".
-  // target을 넘어서지는 못한다(아직 채점 안 된 곳을 앞질러 그릴 수는 없으므로). target이 늘어나는
-  // 순간(수가 새로 채점됨)에도 progress는 여전히 REVEAL_SPEED_PER_SEC로만 따라잡아, 여러 수가 한꺼번에
-  // 도착해도 화면이 순간이동하듯 확 채워지지 않는다.
+  // (v0.3.9 재설계, 사용자 요청) 예전엔 실제 분석 속도와 무관하게 항상 고정 속도(REVEAL_SPEED_PER_SEC)로
+  // 전진하는 펜이었다 — 그러다 보니 엔진 부팅·초반의 느린 포지션 때문에 채점이 실제로는 이미 끝나
+  // 있어도 펜이 그 자리에 닿기까지 계속 기다려야 해 화면이 오래 정지해 지루해 보였다("초기 계산에
+  // 너무 많은 시간이 걸려서 지루해진다"는 제보). 이제는 채점이 끝난 수는 "즉시" 보여주되(펜이 목표를
+  // 넘어설 수는 없으므로 여전히 target 이내로 제한됨), 한 수를 보여준 뒤에는 REVEAL_MIN_STEP_MS만큼은
+  // 반드시 머물러(다음 수의 아이콘이 뜨기 전까지 넘어가지 않음) 각 수가 사람 눈에 들어올 최소한의
+  // 시간을 보장한다 — 대기 중(target에 아직 못 미침)에는 다음 칸 문턱(.9) 앞에서 부드럽게 멈춘
+  // 것처럼 보이다가, 그 수가 채점되는 순간(다음 rAF 틱 안에) 곧장 다음 칸으로 넘어간다.
   const [progress, setProgress] = useState(0);
   const targetRef = useRef(0);
   useEffect(() => { targetRef.current = Math.min(moves.length, N); }, [moves.length, N]);
   useEffect(() => {
-    let raf, lastTs = null;
+    let raf;
+    let curFloored = 0;
+    let lastStepTs = null;
     function tick(ts) {
-      if (lastTs == null) lastTs = ts;
-      const dt = Math.min(0.05, (ts - lastTs) / 1000); // 탭 비활성 등으로 프레임이 크게 튀는 경우 대비 상한
-      lastTs = ts;
-      setProgress((p) => { const t = targetRef.current; return p >= t ? p : Math.min(t, p + REVEAL_SPEED_PER_SEC * dt); });
+      if (lastStepTs == null) lastStepTs = ts;
+      const target = targetRef.current;
+      if (curFloored < target && ts - lastStepTs >= REVEAL_MIN_STEP_MS) {
+        curFloored += 1;
+        lastStepTs = ts;
+      }
+      const elapsed = ts - lastStepTs;
+      const frac = curFloored < target ? Math.min(0.9, elapsed / REVEAL_MIN_STEP_MS) : 0;
+      setProgress(curFloored + frac);
       raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);
@@ -9193,7 +9208,8 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
       firedRef.current.add(i);
       const mv = moves[i];
       if (mv && mv.kind && mv.kind !== "pending") {
-        toastQueueRef.current.push({ id: "t" + i, san: mv.san, kind: mv.kind, white: mv.white });
+        // (사용자 요청) SAN 앞에 수 번호도 함께 붙인다(예: "12.Nf3").
+        toastQueueRef.current.push({ id: "t" + i, label: moveNumber(mv.ply, startColor) + mv.san, kind: mv.kind, white: mv.white });
       }
       const meta = moveMeta[i];
       // (사용자 요청) 변동폭이 절댓값 0.5%p 미만인 수는 띄우지 않는다 — 대부분의 이론 수·무난한 수가
@@ -9213,8 +9229,9 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   // 전부 보여준 상태(wShown>=wMoves.length, 애니메이션 페이싱이 아니라 진짜로 더 채점된 게 없음)인데
   // 그 진영이 앞으로 둘 수가 더 남아 있으면(colorSans 전체 길이보다 적게 보여줬으면), 엔진이 바로
   // 그 다음 수(colorSans[wShown])를 계산하고 있는 것이다.
-  const wCalcSan = (wShown >= wMoves.length && wShown < colorSans.w.length) ? colorSans.w[wShown] : null;
-  const bCalcSan = (bShown >= bMoves.length && bShown < colorSans.b.length) ? colorSans.b[bShown] : null;
+  // (사용자 요청) 여기도 SAN 앞에 수 번호를 붙인다.
+  const wCalcSan = (wShown >= wMoves.length && wShown < colorSans.w.length) ? moveNumber(colorSans.w[wShown].ply, startColor) + colorSans.w[wShown].san : null;
+  const bCalcSan = (bShown >= bMoves.length && bShown < colorSans.b.length) ? moveNumber(colorSans.b[bShown].ply, startColor) + colorSans.b[bShown].san : null;
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   // (버그 수정) instant(=이미 본 적 있는 리뷰로 이 페이지가 열렸을 때)면 그림이 다 그려지는 것도,
