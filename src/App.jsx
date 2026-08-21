@@ -3206,9 +3206,20 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     }
     // (버그 수정) 엔진이 이 포지션(또는 둔 수 판정에 필요한 다음 포지션)을 평가하지 못했으면 채점을
     // 건너뛴다. 예전엔 평가 실패 시 cp=0으로 취급돼 loss=0 → '최선의 수' → 정확도 100이 되어, 엔진이
-    // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 pending으로 두고 정확도 집계에서 뺀다.
+    // 멎은 환경에서 백·흑 정확도가 모두 100으로 잘못 나왔다. 이런 수는 정확도 집계에서 뺀다
+    // (lossWinPct: null — 실제로 평가하지 못했으니 손실을 지어내지 않는다).
+    // (v0.3.9 구조적 안전장치, 사용자 요청) 이 분기에 들어오는 시점엔 이미 evaluateMulti의 재시도까지
+    // 전부 끝난 뒤다(tryFlush는 posEval[i]·posEval[i+1]이 둘 다 확정된 뒤에만 gradeOne을 부른다) —
+    // 즉 "아직 계산 중"이 아니라 "계산을 이미 포기한" 최종 상태인데도 여기서 kind를 "pending"으로
+    // 남기면, 리뷰가 다 끝난(resultDone) 뒤에도 그 수만 영원히 "계산 중"(3-dot 애니메이션)으로 뜨는
+    // 채로 다시는 안 바뀌었다 — 실제로 어딘가 아직 계산 중이라는 착각을 주는 구조적 버그였다.
+    // "pending"은 오직 "이 수가 아직 채점되지 않은 상태"만 뜻해야 하며, moves 배열에는 애초에
+    // gradeOne이 성공적으로든 이렇게 실패로든 한 번 push한 수만 들어오므로(아직 채점 전인 수는
+    // 배열에 아예 없음 — 리뷰 화면은 그 경우 "n.SAN을 분석 중입니다..." 문구로 따로 안내한다) 이
+    // 분기가 moves 배열에 pending을 넣는 유일한 자리였다. 중립적인 표시 등급(good)으로 즉시
+    // 확정해, 리뷰 창에서 "계산 중"인 채로 영영 안 바뀌는 수가 구조적으로 나올 수 없게 한다.
     if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
-      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "pending", acc: null, lossWinPct: null, sharp: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
+      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "good", acc: null, lossWinPct: null, sharp: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
       gradeBoard = applySan(gradeBoard, fullSans[i], color);
       return;
     }
@@ -9355,11 +9366,20 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
 // 소비하며 화면은 계속 흘러간다 — 완전히 막을 수는 없지만(버퍼가 다 소진되면 여전히 기다려야
 // 한다), 훨씬 자주 자연스럽게 흡수된다. 대국 맨 처음(아직 버퍼가 쌓일 시간이 없었을 때) 첫 몇 수가
 // 한꺼번에 채점 완료돼 있으면 backlog가 커서 이 속도가 저절로 빨라지므로, 초반도 더 빠르게 재생된다.
-const REVEAL_BASE_STEP_MS = 220;
-const REVEAL_MIN_STEP_MS = 90;
+// (사용자 요청) 진행 속도를 기존의 약 0.8배로 낮춘다(= 한 수당 머무는 시간을 1/0.8=1.25배로 늘림).
+const REVEAL_BASE_STEP_MS = 275;
+const REVEAL_MIN_STEP_MS = 112;
 const REVEAL_BACKLOG_FULL_SPEED = 9;
 const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝난 뒤 다음 화면으로 넘어가기 전 잠깐 멈추는 시간
-function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn, sans, startWhite = true }) {
+// (v0.3.9 사용자 요청) visible — 체스보드 진입 연출(ReviewBoardIntroAnim)이 이 그래프를 전체
+// 덮개로 가리고 있는 동안은 false로 넘어온다. 실제 채점 데이터(result/moves 등)는 그 뒤에서도
+// analyzeGame이 계속 흘려보내므로 계산(useMemo derive) 자체는 항상 그대로 하되, 시청자가 볼 수
+// 없는 동안 아무도 안 보는 SVG·MiniAccCurve를 애써 60fps로 다시 그리는 건 순수한 낭비라 — 아래
+// 리빌 펜(rAF 틱 루프) 자체를 visible이 될 때까지 아예 시작하지 않는다. false인 동안 progress는
+// 0에 그대로 머물고, visible이 true가 되는 순간 이 시점까지 실제로 쌓여 있던 채점 결과(target)를
+// 그대로 반영해 새로 리빌이 시작된다 — "사용자가 실제로 볼 수 있을 때부터 애니메이션이 시작"됨과
+// 동시에, 이미 쌓인 만큼은 기존의 밀린 만큼 빨라지는 속도 조절이 자연스럽게 처리한다.
+function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn, sans, startWhite = true, visible = true }) {
   const data = useMemo(() => buildRevealData(result, sharpOn), [result, sharpOn]);
   const { moves, evalWin, wCurve, bCurve, wMoves, bMoves, moveMeta } = data;
   // (사용자 요청) 아직 채점되지 않은 다음 수의 SAN을 "분석 중입니다..."로 보여주려면, 채점 여부와
@@ -9385,6 +9405,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   const targetRef = useRef(0);
   useEffect(() => { targetRef.current = Math.min(moves.length, N); }, [moves.length, N]);
   useEffect(() => {
+    if (!visible) return; // 가려져 있는 동안은 rAF 루프 자체를 아예 시작하지 않는다.
     let raf;
     let curFloored = 0;
     let lastStepTs = null;
@@ -9418,7 +9439,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [visible]);
   const floored = Math.min(N, Math.floor(progress));
   // (버그 수정, 사용자 재보고) "정확도 증감 텍스트가 수 아이콘 등장 속도를 못 따라잡고 밀려서,
   // 그래프는 멈춰 있는데 밀린 토스트가 뒤늦게 연달아 표시된다" — 예전엔 토스트를 큐에 쌓아 두고
@@ -9498,6 +9519,10 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   const lineD = linePts.length ? "M " + linePts.map(([px, py]) => px.toFixed(1) + "," + py.toFixed(1)).join(" L ") : "";
   const areaPts = linePts.length ? [[0, H], ...linePts, [tipX, H]].map(([px, py]) => px.toFixed(1) + "," + py.toFixed(1)).join(" ") : "";
   const allDone = resultDone && progress >= N;
+  // (사용자 요청) 가려져 있는 동안은(=위 rAF 루프가 애초에 안 도는 동안) SVG·MiniAccCurve 같은
+  // 무거운 트리 자체를 렌더링하지 않는다 — 어차피 화면상 아무도 못 보므로 그릴 이유가 없다. 모든
+  // 훅은 이 조건과 무관하게 항상 그대로 호출되고(위쪽에 이미 다 끝남), 반환할 JSX만 갈린다.
+  if (!visible) return null;
   return (
     <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", padding: "6px 4px" }}>
       {/* (사용자 요청) 실제로 채점 대기 중일 때는(progress가 curFloored에 그대로 머무는 동안) 새로
@@ -10239,7 +10264,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
       </AnimatePresence>
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewIntroCarousel />
-        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} sans={sans} startWhite={fenRoot ? fenRoot.turn === "w" : true} />
+        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} sans={sans} startWhite={fenRoot ? fenRoot.turn === "w" : true} visible={boardIntroDone} />
         {/* (버그 수정) 예전엔 이 막대·퍼센트가 엔진이 실제로 평가를 끝낸 포지션 수(doneCount, 워크
             스틸링이라 순서 없이 끝남)를 그대로 보여줬다 — 채점(gradeIdx)은 반드시 순서대로만 진행되므로
             초반의 한 포지션이 오래 걸리면 뒤 포지션들은 이미 다 평가돼 있어도 애니메이션은 그 자리에
