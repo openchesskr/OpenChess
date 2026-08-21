@@ -8958,13 +8958,22 @@ function ReviewIntroCarousel() {
 // 줄) 백은 a→h, 흑은 h→a — 서로 반대 방향에서 한 칸씩 채워짐 → ④ 이 대국의 실제 PGN 수순이 보드
 // 위에서 빠르게 재생되다 마지막 몇 수만 정상 속도로 느려짐. 끝나면 onDone.
 const REVIEW_BOARD_INTRO_SUCK_MS = 550;
-const REVIEW_BOARD_INTRO_SQUARE_STAGGER_MS = 9;
-const REVIEW_BOARD_INTRO_SQUARE_POP_MS = 220;
+// (사용자 재요청) 칸이 깔리는 속도를 더 빠르게 — 간격·팝인 시간을 모두 줄인다(64칸 전체가 예전
+// 약 660ms에서 약 320ms 안팎으로 채워진다).
+const REVIEW_BOARD_INTRO_SQUARE_STAGGER_MS = 4;
+const REVIEW_BOARD_INTRO_SQUARE_POP_MS = 150;
 const REVIEW_BOARD_INTRO_PIECE_STAGGER_MS = 42;
 const REVIEW_BOARD_INTRO_ROW_GAP_MS = 160;
 const REVIEW_BOARD_INTRO_REPLAY_FAST_MS = 42;
 const REVIEW_BOARD_INTRO_REPLAY_SLOW_MS = 420;
 const REVIEW_BOARD_INTRO_REPLAY_RAMP = 6; // 마지막 이만큼의 수에 걸쳐 느려진다
+// (사용자 재요청) "기물들이 너무 빠르게 움직여 정신없다" — PGN 전체를 다 재생하는 대신 앞부분
+// REPLAY_HEAD수만 재생하고, 대국이 충분히 길면(HEAD+TAIL보다 길면) 그 뒤 중간 부분은 통째로
+// 건너뛰어(한 번에 점프) 마지막 REPLAY_TAIL수부터 다시 이어 재생한다 — 그 안에서 마지막
+// REPLAY_RAMP수만 정상 속도로 느려지는 기존 규칙은 그대로 유지된다.
+const REVIEW_BOARD_INTRO_REPLAY_HEAD = 4;
+const REVIEW_BOARD_INTRO_REPLAY_TAIL = 10;
+const REVIEW_BOARD_INTRO_REPLAY_JUMP_MS = 260; // 중간을 건너뛴 직후 눈에 띄도록 살짝 더 머무는 시간
 const REVIEW_BOARD_INTRO_HOLD_MS = 260;   // 다 끝난 뒤 사라지기 전 짧게 멈추는 시간
 function ReviewBoardIntroAnim({ sans, onDone }) {
   const skCtx = useContext(SkinContext);
@@ -9031,18 +9040,27 @@ function ReviewBoardIntroAnim({ sans, onDone }) {
     if (stage !== "replay") return;
     const total = sans.length;
     if (total === 0) { setStage("hold"); return; }
+    // (사용자 재요청) 대국이 HEAD+TAIL수보다 길면 앞부분 HEAD수만 재생하고 중간은 통째로 건너뛴다.
+    const needsJump = total > REVIEW_BOARD_INTRO_REPLAY_HEAD + REVIEW_BOARD_INTRO_REPLAY_TAIL;
+    const tailStart = needsJump ? total - REVIEW_BOARD_INTRO_REPLAY_TAIL : 0;
     let cancelled = false, timer = null;
     function step(i) {
       if (cancelled) return;
       setReplayPly(i);
       if (i >= total) { timer = setTimeout(() => { if (!cancelled) setStage("hold"); }, 200); return; }
-      const rampStart = Math.max(0, total - REVIEW_BOARD_INTRO_REPLAY_RAMP);
-      let delay = REVIEW_BOARD_INTRO_REPLAY_FAST_MS;
-      if (i >= rampStart) {
-        const t = (i - rampStart + 1) / (total - rampStart);
-        delay = REVIEW_BOARD_INTRO_REPLAY_FAST_MS + (REVIEW_BOARD_INTRO_REPLAY_SLOW_MS - REVIEW_BOARD_INTRO_REPLAY_FAST_MS) * t;
+      let nextI = i + 1, delay = REVIEW_BOARD_INTRO_REPLAY_FAST_MS;
+      if (needsJump && i === REVIEW_BOARD_INTRO_REPLAY_HEAD) {
+        // 중간 구간(HEAD~tailStart)을 재생하지 않고 한 번에 건너뛴다.
+        nextI = tailStart;
+        delay = REVIEW_BOARD_INTRO_REPLAY_JUMP_MS;
+      } else {
+        const rampStart = Math.max(0, total - REVIEW_BOARD_INTRO_REPLAY_RAMP);
+        if (i >= rampStart) {
+          const t = (i - rampStart + 1) / (total - rampStart);
+          delay = REVIEW_BOARD_INTRO_REPLAY_FAST_MS + (REVIEW_BOARD_INTRO_REPLAY_SLOW_MS - REVIEW_BOARD_INTRO_REPLAY_FAST_MS) * t;
+        }
       }
-      timer = setTimeout(() => step(i + 1), delay);
+      timer = setTimeout(() => step(nextI), delay);
     }
     timer = setTimeout(() => step(1), REVIEW_BOARD_INTRO_REPLAY_FAST_MS);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -9079,7 +9097,10 @@ function ReviewBoardIntroAnim({ sans, onDone }) {
       exit={{ opacity: 0, scale: 0.92, transition: { duration: 0.35, ease: "easeIn" } }}
       transition={{ duration: REVIEW_BOARD_INTRO_SUCK_MS / 1000, ease: [0.16, 1, 0.3, 1] }}
       style={{ position: "absolute", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(120% 120% at 50% 50%, #241509 0%, #150C06 70%)" }}>
-      <div ref={wrapRef} style={{ width: "min(78vw, 340px)", aspectRatio: "1 / 1", position: "relative", borderRadius: 6, overflow: "hidden", boxShadow: "0 12px 40px -8px rgba(0,0,0,.7), 0 0 0 1px #000" }}>
+      {/* (사용자 재요청) "애니메이션도 전체 화면으로" — 예전 340px 상한은 데스크톱에서 화면 대비
+          너무 작아 보였다. 정사각형은 유지하되(체스판이라 반드시 1:1), 가로·세로 중 더 좁은 쪽
+          기준으로 화면을 거의 꽉 채우도록 vw·vh를 함께 쓴다. */}
+      <div ref={wrapRef} style={{ width: "min(92vw, 86vh, 760px)", aspectRatio: "1 / 1", position: "relative", borderRadius: 6, overflow: "hidden", boxShadow: "0 12px 40px -8px rgba(0,0,0,.7), 0 0 0 1px #000" }}>
         <div style={{ position: "absolute", inset: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
           {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => {
             const sqIdx = r * 8 + c;
@@ -10202,7 +10223,12 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // resultDone이 되는 즉시(REVEAL_HOLD_MS로 더 붙잡지 않고) onDone이 불려 다음 화면으로 곧장 넘어간다
   // — "이미 본 적 있는 리뷰는 애니메이션을 다시 재생하지 않는다"는 원래 의도는 그대로 유지된다.
   if (!introRevealDone || !resultDone || !result) return (
-    <div style={{ ...wrap, display: "flex", flexDirection: "column", position: "relative" }}>
+    // (버그 수정) 여기서 position을 "relative"로 덮어썼더니 wrap 본래의 position:"fixed"(뷰포트
+    // 전체를 덮는 실제 이유)가 사라져, 이 리뷰 대기 화면 자체가 더 이상 뷰포트에 고정되지 않고
+    // 내용물 크기만큼만 차지하는 일반 블록이 돼 버렸다(그 위에 겹쳐 그려야 할 체스보드 오버레이가
+    // 화면 일부만 덮거나 다른 콘텐츠와 뒤섞여 보인 원인). position:fixed도 그 자체로 absolute
+    // 자식의 위치 기준(containing block)이 되므로 따로 relative로 바꿀 필요가 전혀 없었다.
+    <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
       {header}
       {/* (사용자 요청) 리뷰에 처음 들어온 순간(=이 대기 화면이 처음 마운트된 순간) "빨려들어가는" 듯한
           체스보드 연출을 전체를 덮는 오버레이로 한 번 재생한다 — 그 뒤에 있는 캐러셀·정확도 그래프는
@@ -10261,7 +10287,10 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   return (
     <div style={wrap}>
       {header}
-      <div className="flex items-start" style={{ gap: 20, maxWidth: 980, margin: "0 auto", padding: "8px 20px 32px" }}>
+      {/* (사용자 요청) 예전엔 maxWidth:980으로 가운데 좁은 열에 눌러 담아, 넓은 데스크톱 화면에서는
+          좌우로 큰 여백만 남고 실제로는 "전체 화면"처럼 안 보였다 — 폭 제한을 없애 wrap(뷰포트 전체를
+          덮는 position:fixed 컨테이너)만큼 그대로 넓게 쓰도록 한다. */}
+      <div className="flex items-start" style={{ gap: 20, width: "100%", margin: "0 auto", padding: "8px 32px 32px", boxSizing: "border-box" }}>
         {/* 열 폭 = 보드 바깥 폭(격자 + 프레임 20) + 세로 평가치 막대(22) + 간격(8). 이 폭을 명시하지 않으면
             코치 카드의 긴 텍스트가 max-content로 열을 늘려 보드가 오른쪽 사이드바를 밀어낸다. */}
         <div style={{ flexShrink: 0, width: Math.floor(boardSize / 8) * 8 + 20 + 30, position: "relative" }}>
