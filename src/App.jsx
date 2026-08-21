@@ -2824,16 +2824,32 @@ function newAccuracyFromAvgLoss(avgLossWinPct) {
 // n으로 나누는 구조 자체(조화평균도 결국 n/Σ(1/acc_i)로, n이 커질수록 각 항의 상대적 비중이 줄어듦)로
 // 그대로 유지된다. 손실이 정확히 0인 수는 어떤 방식으로도 정확도 100을 그대로 유지한다(0에 무엇을
 // 곱해도 0 → newAccuracyFromAvgLoss(0)=100).
-function newCumulativeAccuracy(losses, sharps, n, sharpOn = true) {
+// (v0.3.9 사용자 요청 — 구조적 버그 수정) "부정확한 수인데 누적 정확도가 오히려 오른다" — 조화평균은
+// "전체 평균"이라 수학적으로는 있을 수 있는 일이다(그 수 자신의 개별 정확도가 지금까지의 누적
+// 평균보다 높으면, 감점 대상인 수여도 평균을 끌어올린다). 하지만 사용자에게는 "감점되는 등급의 수인데
+// 정확도가 오른다"는 게 명백한 모순으로 보인다 — 부정확·실수·놓친 수·블런더(MUST_NOT_INCREASE_KINDS)
+// 부터는 누적 정확도가 그 수 때문에 절대 오르지 않도록(직전 값 이하로) 눌러 놓는다. 좋은 수·우수한
+// 수 이상(손실이 있어도 noPenalty거나 상대적으로 가벼운 등급)은 그대로 자연스럽게 오르내리게 둔다
+// (사용자 확인 — "좋은 수부터는 증가·감소 둘 다 가능"). 이 클램프가 호출부마다 다르게 적용되면
+// 리빌 애니메이션의 누적 곡선과 최종 요약의 정확도가 서로 어긋나므로, kinds를 받는 이 함수 자체에서
+// 한 번만 구현해 모든 호출부(analyzeGame 최종 점수·리뷰 요약 구간 정확도·리빌 애니메이션 곡선)가
+// 항상 같은 규칙을 공유하게 한다.
+const MUST_NOT_INCREASE_KINDS = new Set(["inaccuracy", "mistake", "blunder", "miss"]);
+function newCumulativeAccuracy(losses, sharps, n, sharpOn = true, kinds = null) {
   if (n <= 0 || !losses.length) return null;
   let sumInvAcc = 0;
+  let clamped = null;
+  let value = null;
   for (let i = 0; i < n; i++) {
     const adjLoss = losses[i] * sharpLossMultiplier(sharps[i], sharpOn);
     const acc = newAccuracyFromAvgLoss(adjLoss);
     sumInvAcc += 1 / Math.max(NEW_ACC_HARMONIC_FLOOR, acc); // 극단적 블런더 한 수가 조화평균을 혼자 지배하지 못하도록 하한을 둔다(위 NEW_ACC_HARMONIC_FLOOR 설명 참고).
+    const harmonicMean = (i + 1) / sumInvAcc;
+    value = Math.round(Math.max(0, Math.min(100, harmonicMean * NEW_ACC_CALIB)) * 10) / 10;
+    if (clamped != null && kinds && MUST_NOT_INCREASE_KINDS.has(kinds[i])) value = Math.min(value, clamped);
+    clamped = value;
   }
-  const harmonicMean = n / sumInvAcc;
-  return Math.round(Math.max(0, Math.min(100, harmonicMean * NEW_ACC_CALIB)) * 10) / 10;
+  return value;
 }
 // 엔진 호출 워치독 — 워커가 멈춰도 분석이 영영 정지하지 않도록 일정 시간 후 null로 진행.
 function withTimeout(p, ms) { return Promise.race([Promise.resolve(p), new Promise((res) => setTimeout(() => res(null), ms))]); }
@@ -3144,7 +3160,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // posEval[i+1]이 둘 다 준비돼야 하므로(최선수 일치 시 다음 포지션 평가치를 이어받는 보정 때문),
   // 그 둘이 갖춰지는 순서대로 진행된다(대개 앞에서부터 순서대로 끝나지만, 몇 수 앞서 끝나도
   // gradeIdx가 따라잡을 때까지 큐잉되므로 안전하다).
-  const moves = [], wLoss = [], bLoss = [], wSharp = [], bSharp = [];
+  const moves = [], wLoss = [], bLoss = [], wSharp = [], bSharp = [], wKind = [], bKind = [];
   const graphCp = new Array(N + 1), evalDisp = new Array(N + 1);
   let gradeBoard = fenRoot ? fenRoot.board : startBoard(), gradeIdx = 0;
   // (v0.3.4 기능) posEvalToWhite(전역, sansAfter.length%2로 백 차례를 판정)는 표준 시작 위치를
@@ -3260,7 +3276,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     // 실제로 둔 수와 다른 최선수만 있으면 된다 — 이미 최선수를 뒀다면(matched) 굳이 같은 수를
     // 다시 "더 나은 수"로 제안할 필요가 없어 null로 둔다.
     moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, lossWinPct, sharp, best: matched ? null : bestSan, beforeCp: moveBeforeCp });
-    if (moverWhite) { wLoss.push(lossWinPct); wSharp.push(sharp); } else { bLoss.push(lossWinPct); bSharp.push(sharp); }
+    if (moverWhite) { wLoss.push(lossWinPct); wSharp.push(sharp); wKind.push(kind); } else { bLoss.push(lossWinPct); bSharp.push(sharp); bKind.push(kind); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
   // (v0.3.0 성능) EvalGraph는 evalWin.length를 x축 스케일로 쓴다 — 아직 안 끝난 구간을 그냥 잘라
@@ -3385,7 +3401,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   }
   // (v0.3.8) 게임 전체 정확도 = h(n)을 그 진영이 둔 마지막 수까지(n=전체) 평가한 값 — 구간 정확도와
   // 완전히 같은 누적 계산이며, "전체 구간"이라는 특수 케이스일 뿐이다.
-  return { moves, whiteAcc: newCumulativeAccuracy(wLoss, wSharp, wLoss.length), blackAcc: newCumulativeAccuracy(bLoss, bSharp, bLoss.length), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp, evalDisp };
+  return { moves, whiteAcc: newCumulativeAccuracy(wLoss, wSharp, wLoss.length, true, wKind), blackAcc: newCumulativeAccuracy(bLoss, bSharp, bLoss.length, true, bKind), evalWin: graphCp.map(winPctFromCp), evalCp: graphCp, evalDisp };
 }
 const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only: "유일한 수", excellent: "우수한 수", good: "좋은 수", inaccuracy: "부정확한 수", miss: "놓친 수", mistake: "실수", blunder: "블런더", book: "이론적인 수", pending: "분석 중" };
 // (v0.2.1 기능) 수 체계 아이콘을 누르면 그 등급의 조건·설명을 말풍선으로 보여준다(나무위키 "체스닷컴" 수 등급 참고).
@@ -8445,12 +8461,12 @@ function reviewPhaseHighlight(moves, fromPly, toPly, white) {
 // 대국이 길어질수록 수 하나가 전체 정확도에 미치는 영향이 자연히 옅어지는 게 의도된 동작). "엔드게임
 // 정확도"는 그래서 항상 그 진영의 게임 전체 정확도(whiteAcc/blackAcc)와 같아진다.
 function reviewPhaseAccuracy(moves, fromPly, toPly, white, sharpOn = true) {
-  const losses = [], sharps = [];
+  const losses = [], sharps = [], kinds = [];
   for (let i = 0; i <= toPly && i < moves.length; i++) {
     const m = moves[i]; if (m.white !== white || m.lossWinPct == null) continue;
-    losses.push(m.lossWinPct); sharps.push(m.sharp);
+    losses.push(m.lossWinPct); sharps.push(m.sharp); kinds.push(m.kind);
   }
-  return newCumulativeAccuracy(losses, sharps, losses.length, sharpOn);
+  return newCumulativeAccuracy(losses, sharps, losses.length, sharpOn, kinds);
 }
 // (v0.2.1 → v0.3.9 사용자 요청으로 임계값·반영 규칙 재설계) 단계 아이콘의 등급을 그 단계·진영의
 // 정확도로 정한다 — 100 이상은 최선의 수, 90~100은 우수한 수, 80~90은 좋은 수, 60~80은 부정확,
@@ -8934,6 +8950,176 @@ function ReviewIntroCarousel() {
     </div>
   );
 }
+// ===================== (v0.3.9 신규, 사용자 요청) 리뷰 진입 "빨려들어가는" 체스보드 연출 =====================
+// 리뷰 페이지에 처음 들어온 순간(=분석을 기다리는 가장 이른 시점, 아직 그래프에 보여줄 데이터조차
+// 없을 수 있는 구간)의 시각적 주의를 끌기 위한 1회성 연출 — 실제 분석 데이터와 무관하게 항상 같은
+// 시퀀스로 재생된다: ① 화면 안으로 빨려들어가는 듯한 확대·블러 페이드 인 → ② 빈 체스판 64칸이
+// 무작위 순서로 하나씩 나타나며 판이 완성됨 → ③ 그 위에 기물이 줄 단위로(폰 줄 먼저, 그다음 기물
+// 줄) 백은 a→h, 흑은 h→a — 서로 반대 방향에서 한 칸씩 채워짐 → ④ 이 대국의 실제 PGN 수순이 보드
+// 위에서 빠르게 재생되다 마지막 몇 수만 정상 속도로 느려짐. 끝나면 onDone.
+const REVIEW_BOARD_INTRO_SUCK_MS = 550;
+const REVIEW_BOARD_INTRO_SQUARE_STAGGER_MS = 9;
+const REVIEW_BOARD_INTRO_SQUARE_POP_MS = 220;
+const REVIEW_BOARD_INTRO_PIECE_STAGGER_MS = 42;
+const REVIEW_BOARD_INTRO_ROW_GAP_MS = 160;
+const REVIEW_BOARD_INTRO_REPLAY_FAST_MS = 42;
+const REVIEW_BOARD_INTRO_REPLAY_SLOW_MS = 420;
+const REVIEW_BOARD_INTRO_REPLAY_RAMP = 6; // 마지막 이만큼의 수에 걸쳐 느려진다
+const REVIEW_BOARD_INTRO_HOLD_MS = 260;   // 다 끝난 뒤 사라지기 전 짧게 멈추는 시간
+function ReviewBoardIntroAnim({ sans, onDone }) {
+  const skCtx = useContext(SkinContext);
+  const sk = BOARD_SKINS[skCtx.boardSkin] || BOARD_SKINS.classic;
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  // 컨테이너 실제 렌더 폭을 재서 기물 크기(px)를 계산한다 — PieceGlyph는 숫자(px) size만 받는다.
+  const wrapRef = useRef(null);
+  const [boardPx, setBoardPx] = useState(300);
+  useEffect(() => {
+    const measure = () => { const el = wrapRef.current; if (el && el.clientWidth) setBoardPx(el.clientWidth); };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro && wrapRef.current) ro.observe(wrapRef.current);
+    window.addEventListener("resize", measure);
+    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", measure); };
+  }, []);
+  const cellPx = boardPx / 8;
+  // 64칸이 나타나는 무작위 순서 — 마운트 시 한 번만 섞는다. squareOrder[r*8+c] = 그 칸이 몇 번째로 나타나는지.
+  const squareOrder = useMemo(() => {
+    const idx = Array.from({ length: 64 }, (_, i) => i);
+    for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[idx[i], idx[j]] = [idx[j], idx[i]]; }
+    const rank = new Array(64);
+    idx.forEach((sq, order) => { rank[sq] = order; });
+    return rank;
+  }, []);
+  const [stage, setStage] = useState("suck"); // suck → squares → pieces → replay → hold
+  const [squaresShown, setSquaresShown] = useState(0); // 0~64
+  const [pawnsShown, setPawnsShown] = useState(0);     // 0~8 (백·흑 동시에, 서로 반대 방향으로 채워짐)
+  const [piecesShown, setPiecesShown] = useState(0);   // 0~8
+  const [replayPly, setReplayPly] = useState(0);       // 0~sans.length
+  useEffect(() => { const id = setTimeout(() => setStage("squares"), REVIEW_BOARD_INTRO_SUCK_MS); return () => clearTimeout(id); }, []);
+  useEffect(() => {
+    if (stage !== "squares") return;
+    let i = 0;
+    const iv = setInterval(() => {
+      i++; setSquaresShown(i);
+      if (i >= 64) { clearInterval(iv); setTimeout(() => setStage("pieces"), 120); }
+    }, REVIEW_BOARD_INTRO_SQUARE_STAGGER_MS);
+    return () => clearInterval(iv);
+  }, [stage]);
+  useEffect(() => {
+    if (stage !== "pieces") return;
+    let i = 0;
+    const iv = setInterval(() => {
+      i++; setPawnsShown(i);
+      if (i >= 8) {
+        clearInterval(iv);
+        setTimeout(() => {
+          let j = 0;
+          const iv2 = setInterval(() => {
+            j++; setPiecesShown(j);
+            if (j >= 8) { clearInterval(iv2); setTimeout(() => setStage("replay"), 150); }
+          }, REVIEW_BOARD_INTRO_PIECE_STAGGER_MS);
+        }, REVIEW_BOARD_INTRO_ROW_GAP_MS);
+      }
+    }, REVIEW_BOARD_INTRO_PIECE_STAGGER_MS);
+    return () => clearInterval(iv);
+  }, [stage]);
+  // (사용자 요청) PGN을 처음엔 빠르게, 점점 느려지다가 마지막 몇 수만 정상 속도로 재생한다 —
+  // 대부분은 고정된 빠른 간격으로 진행하고, 끝나기 REVEAL_BOARD_INTRO_REPLAY_RAMP수 전부터만 그
+  // 간격을 정상 속도까지 선형으로 늘린다.
+  useEffect(() => {
+    if (stage !== "replay") return;
+    const total = sans.length;
+    if (total === 0) { setStage("hold"); return; }
+    let cancelled = false, timer = null;
+    function step(i) {
+      if (cancelled) return;
+      setReplayPly(i);
+      if (i >= total) { timer = setTimeout(() => { if (!cancelled) setStage("hold"); }, 200); return; }
+      const rampStart = Math.max(0, total - REVIEW_BOARD_INTRO_REPLAY_RAMP);
+      let delay = REVIEW_BOARD_INTRO_REPLAY_FAST_MS;
+      if (i >= rampStart) {
+        const t = (i - rampStart + 1) / (total - rampStart);
+        delay = REVIEW_BOARD_INTRO_REPLAY_FAST_MS + (REVIEW_BOARD_INTRO_REPLAY_SLOW_MS - REVIEW_BOARD_INTRO_REPLAY_FAST_MS) * t;
+      }
+      timer = setTimeout(() => step(i + 1), delay);
+    }
+    timer = setTimeout(() => step(1), REVIEW_BOARD_INTRO_REPLAY_FAST_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [stage, sans]);
+  useEffect(() => {
+    if (stage !== "hold") return;
+    const id = setTimeout(() => onDoneRef.current && onDoneRef.current(), REVIEW_BOARD_INTRO_HOLD_MS);
+    return () => clearTimeout(id);
+  }, [stage]);
+  const { board, lastMoveInfo } = useMemo(() => {
+    if (stage !== "replay" && stage !== "hold") return { board: startBoard(), lastMoveInfo: null };
+    let b = startBoard(), last = null;
+    for (let i = 0; i < replayPly; i++) {
+      const color = i % 2 === 0 ? "w" : "b";
+      last = sanSrc(b, sans[i], color);
+      b = applySan(b, sans[i], color);
+    }
+    return { board: b, lastMoveInfo: last };
+  }, [stage, replayPly, sans]);
+  // (사용자 요청) 백은 a→h(왼→오), 흑은 h→a(오→왼) — "서로 반대 방향에서부터 한 개씩 등장".
+  const pieceVisible = (r, c) => {
+    if (stage === "replay" || stage === "hold") return true;
+    if (stage !== "pieces") return false;
+    const isWhite = r >= 6, isBlack = r <= 1;
+    if (!isWhite && !isBlack) return false;
+    const colIdx = isWhite ? c : (7 - c);
+    const isPawnRow = r === 6 || r === 1;
+    return colIdx < (isPawnRow ? pawnsShown : piecesShown);
+  };
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 2.4, filter: "blur(14px)" }}
+      animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+      exit={{ opacity: 0, scale: 0.92, transition: { duration: 0.35, ease: "easeIn" } }}
+      transition={{ duration: REVIEW_BOARD_INTRO_SUCK_MS / 1000, ease: [0.16, 1, 0.3, 1] }}
+      style={{ position: "absolute", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(120% 120% at 50% 50%, #241509 0%, #150C06 70%)" }}>
+      <div ref={wrapRef} style={{ width: "min(78vw, 340px)", aspectRatio: "1 / 1", position: "relative", borderRadius: 6, overflow: "hidden", boxShadow: "0 12px 40px -8px rgba(0,0,0,.7), 0 0 0 1px #000" }}>
+        <div style={{ position: "absolute", inset: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+          {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => {
+            const sqIdx = r * 8 + c;
+            const order = squareOrder[sqIdx];
+            const light = (r + c) % 2 === 0;
+            const shown = stage !== "suck" && (stage !== "squares" || order < squaresShown);
+            const p = board[r][c];
+            const showPiece = shown && p && pieceVisible(r, c);
+            const isFrom = lastMoveInfo && lastMoveInfo.from && lastMoveInfo.from[0] === r && lastMoveInfo.from[1] === c;
+            const isTo = lastMoveInfo && lastMoveInfo.to && lastMoveInfo.to[0] === r && lastMoveInfo.to[1] === c;
+            // (버그 방지) 이 바깥 칸 자체에는 배경을 미리 깔지 않는다 — 배경을 여기서부터 항상
+            // 보여주면 안쪽 motion.div의 opacity 애니메이션과 무관하게 칸이 처음부터 다 보이는 꼴이
+            // 돼(둘 다 같은 색이라 구분이 안 됨) "무작위로 하나씩 나타나는" 연출 자체가 무력화된다 —
+            // 실제로 보이는 배경은 오직 안쪽 motion.div 하나뿐이어야 한다.
+            return (
+              <div key={sqIdx} style={{ position: "relative", minWidth: 0, minHeight: 0 }}>
+                <motion.div initial={false} animate={{ opacity: shown ? 1 : 0, scale: shown ? 1 : 0.4 }}
+                  transition={{ duration: REVIEW_BOARD_INTRO_SQUARE_POP_MS / 1000, ease: [0.34, 1.4, 0.64, 1] }}
+                  style={{ position: "absolute", inset: 0, ...boardSquareBg(sk, light, r, c) }} />
+                {(isFrom || isTo) && <div style={{ position: "absolute", inset: 0, background: isTo ? "rgba(196,154,80,.45)" : "rgba(196,154,80,.28)", pointerEvents: "none" }} />}
+                {showPiece && (
+                  // (성능·연출) key를 replayPly까지 포함시키면 이 칸에 그대로 머문 기물까지 매 수마다
+                  // 다시 마운트돼(빠른 구간에선 32개 가까운 기물이 42ms마다 동시에) 팝인 애니메이션이
+                  // 매번 다시 재생되며 매우 번잡하고 무거워진다 — 칸·기물 종류·색만으로 키를 잡아,
+                  // 실제로 그 칸에 "새로" 나타난(비어 있다가 채워진) 기물만 팝인이 재생되게 한다.
+                  <motion.div key={sqIdx + ":" + p.t + ":" + p.c}
+                    initial={{ opacity: 0, scale: 0.3 }} animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.16, ease: [0.34, 1.56, 0.64, 1] }}
+                    style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <PieceGlyph type={p.t} color={p.c} size={cellPx * 0.72} pieceSkin={skCtx.pieceSkin} />
+                  </motion.div>
+                )}
+              </div>
+            );
+          }))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 // ===================== (v0.3.8 4차 개편) 리뷰 진입 애니메이션 — 정확도 공개 시퀀스 =====================
 // (사용자 피드백) 3차 개편에서 EvalGraph를 그대로 재사용했는데, 그건 "이미 다 있는 값을 그대로
 // 넘기는" 정적 재사용이라(padding된 뒷부분이 평평한 값으로 즉시 다 보임) 진짜 "그려지는" 느낌이
@@ -8951,7 +9137,7 @@ function buildRevealData(result, sharpOn = true) {
   // 수 하나가 누적 정확도를 얼마나 올렸는지/내렸는지(delta)도 함께 기록해 둔다. moveMeta[i]는
   // moves[i]와 1:1 대응 — ply(=i+1의 x좌표), 최선수 기준 평가(gVal, 흐릿한 점의 y좌표), delta(그
   // 수 하나가 그 진영의 누적 정확도에 미친 영향, 부호 있음)를 담는다.
-  const wLoss = [], wSharp = [], bLoss = [], bSharp = [];
+  const wLoss = [], wSharp = [], bLoss = [], bSharp = [], wKind = [], bKind = [];
   const wCurve = [100], bCurve = [100];
   // (사용자 요청) 정확도 그래프에 수마다 원 마커(그 수의 등급 아이콘)를 찍고, 그래프 선 구간도 그
   // 등급 색으로 칠하려면 wCurve[i+1]·bCurve[i+1]이 어느 move 레퍼런스와 짝인지 알아야 한다 —
@@ -8965,8 +9151,8 @@ function buildRevealData(result, sharpOn = true) {
     // 수를 둔 진영 기준 부호로 되돌려 더한다(흑의 손실은 백 관점으로는 그만큼의 이득으로 보인다).
     const gVal = evalWin[i + 1] + (m.white ? 1 : -1) * m.lossWinPct;
     let delta;
-    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); const prev = wCurve[wCurve.length - 1]; const next = newCumulativeAccuracy(wLoss, wSharp, wLoss.length, sharpOn); wCurve.push(next); wMoves.push(m); delta = next - prev; }
-    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); const prev = bCurve[bCurve.length - 1]; const next = newCumulativeAccuracy(bLoss, bSharp, bLoss.length, sharpOn); bCurve.push(next); bMoves.push(m); delta = next - prev; }
+    if (m.white) { wLoss.push(m.lossWinPct); wSharp.push(m.sharp); wKind.push(m.kind); const prev = wCurve[wCurve.length - 1]; const next = newCumulativeAccuracy(wLoss, wSharp, wLoss.length, sharpOn, wKind); wCurve.push(next); wMoves.push(m); delta = next - prev; }
+    else { bLoss.push(m.lossWinPct); bSharp.push(m.sharp); bKind.push(m.kind); const prev = bCurve[bCurve.length - 1]; const next = newCumulativeAccuracy(bLoss, bSharp, bLoss.length, sharpOn, bKind); bCurve.push(next); bMoves.push(m); delta = next - prev; }
     moveMeta.push({ ply: i + 1, gVal, delta, white: m.white });
   }
   return { moves, evalWin, wCurve, bCurve, wMoves, bMoves, moveMeta };
@@ -9383,6 +9569,11 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // 그 대기 화면에서 애니메이션이 다 끝나길 굳이 기다리지 않고 resultDone이 되는 즉시 다음 화면으로
   // 넘어가도록(REVEAL_HOLD_MS 생략) ReviewAccuracyRevealAnim에 넘겨준다.
   const introRevealSeededRef = useRef(introRevealDone);
+  // (v0.3.9 사용자 요청) 리뷰에 처음 들어온 순간(=분석을 기다리는 가장 이른 시점, 아직 그래프에
+  // 보여줄 데이터조차 없을 수 있는 구간) 시각적 주의를 끌기 위한 1회성 체스보드 연출
+  // (ReviewBoardIntroAnim) — introRevealDone과 같은 패턴으로 sessionStorage에 시청 여부를 남겨,
+  // 새로고침·이어보기에서는 다시 재생하지 않는다.
+  const [boardIntroDone, setBoardIntroDone] = useState(() => !!(savedPos && savedPos.boardIntroSeen));
   const [showingLine, setShowingLine] = useState(false);
   // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
   // curPly/sans는 건드리지 않는다 — 학습 탭의 sans/future와 같은 패턴으로 curPly 이후에 갈라져 나온
@@ -9479,8 +9670,8 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // 읽어 복원한다(introSeen이 저장돼 있으면 새로고침 때 공개 애니메이션을 다시 재생하지 않는다).
   useEffect(() => {
     if (!reviewPosKey) return;
-    try { window.sessionStorage.setItem(reviewPosKey, JSON.stringify({ phase, curPly, introSeen: introRevealDone })); } catch { }
-  }, [reviewPosKey, phase, curPly, introRevealDone]);
+    try { window.sessionStorage.setItem(reviewPosKey, JSON.stringify({ phase, curPly, introSeen: introRevealDone, boardIntroSeen: boardIntroDone })); } catch { }
+  }, [reviewPosKey, phase, curPly, introRevealDone, boardIntroDone]);
   // 뒤로가기(브라우저/헤더 버튼) — 페이지 진입 시 히스토리에 /review를 쌓아 뒀으므로, 팝스테이트든
   // 버튼 클릭이든 항상 onClose 한 곳으로 모은다(App 쪽에서 pushState/popstate를 함께 관리한다).
   // (v0.3.4 기능) FEN 모드 리뷰는 자유 탐색(직접 새 수 두기)을 지원하지 않는다 — legalDests의
@@ -10011,8 +10202,15 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // resultDone이 되는 즉시(REVEAL_HOLD_MS로 더 붙잡지 않고) onDone이 불려 다음 화면으로 곧장 넘어간다
   // — "이미 본 적 있는 리뷰는 애니메이션을 다시 재생하지 않는다"는 원래 의도는 그대로 유지된다.
   if (!introRevealDone || !resultDone || !result) return (
-    <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
+    <div style={{ ...wrap, display: "flex", flexDirection: "column", position: "relative" }}>
       {header}
+      {/* (사용자 요청) 리뷰에 처음 들어온 순간(=이 대기 화면이 처음 마운트된 순간) "빨려들어가는" 듯한
+          체스보드 연출을 전체를 덮는 오버레이로 한 번 재생한다 — 그 뒤에 있는 캐러셀·정확도 그래프는
+          숨어 있는 동안에도 실제 데이터를 그대로 이어받아 조용히 진행되고 있다가, 이 오버레이가
+          끝나며 사라지면 바로 그 상태 그대로 자연스럽게 드러난다. */}
+      <AnimatePresence>
+        {!boardIntroDone && <ReviewBoardIntroAnim sans={sans} onDone={() => setBoardIntroDone(true)} />}
+      </AnimatePresence>
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
         <ReviewIntroCarousel />
         <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} sans={sans} startWhite={fenRoot ? fenRoot.turn === "w" : true} />
