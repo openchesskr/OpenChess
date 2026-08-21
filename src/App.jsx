@@ -10377,10 +10377,6 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
             clamp 하한(520)은 보드가 예전 고정값(440)보다 작아지지 않도록, 상한(700)은 초대형
             모니터에서 코치 카드 한 줄이 지나치게 길어지지 않도록 잡은 값이다. */}
         <div style={{ flexShrink: 0, width: "clamp(520px, 42vw, 700px)", position: "relative" }}>
-          {/* (v0.2.1) 코치 설명 블록은 모바일·컴퓨터 모두 체스보드 바로 위에 둔다. */}
-          <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
-          </div>
           {/* (v0.2.1 기능) 세로 평가치 막대 — leftOfBoard로 Board 자체(잡힌 기물 줄 제외)에만 나란히
               놓여 그 세로 중앙(0.0)이 항상 보드의 4·5행 사이에 오도록 한다. boardRef는 모바일과
               동일하게 그 보드 칸(막대 제외)에 붙어 실제 렌더된 폭을 재고, useBoardSize가 8px 격자에
@@ -10402,6 +10398,13 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
             거대해 보였다 — maxWidth로 상한을 둬 보드(위 clamp 상한 700 + 프레임/막대 약 50)와
             비슷한 눈높이 비율을 유지한다. */}
         <div style={{ flex: 1, minWidth: 0, maxWidth: 820 }}>
+          {/* (사용자 요청) 코치 말풍선(ReviewCoachCard)을 보드 옆(왼쪽 열)이 아니라 이 오른쪽 열,
+              평가치 변동 그래프 위쪽으로 옮긴다 — 텍스트 위주 카드다 보니 보드보다 이 열의 폭(최대
+              820)을 그대로 활용하는 편이 한 줄에 더 많은 글자가 들어가 덜 답답해 보인다. 탭
+              전환과 무관하게(예전 왼쪽 열에 있을 때와 마찬가지로) 항상 보이도록 탭 스위처보다도 위에 둔다. */}
+          <div style={{ marginBottom: 12 }}>
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+          </div>
           <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
             {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)} className="press" style={{ padding: "9px 14px", border: "none", background: "transparent", color: tab === k ? RV.text : RV.dim, fontWeight: 800, fontSize: 13, cursor: "pointer", borderBottom: tab === k ? "2px solid " + T.brass : "2px solid transparent" }}>{label}</button>
@@ -10411,7 +10414,13 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
             <>
               {/* (v0.2.1) 예전 Openings 탭에 뜨던 오프닝 정보 — 평가치 그래프 위에 상시 표시한다. */}
               {openingText && <ReviewOpeningBanner text={openingText} />}
-              <EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} />
+              {/* (사용자 요청) 데스크톱 그래프 크기를 한 번 더 줄인다 — 오른쪽 열 전체(최대 820)를
+                  그대로 채우던 것을 이 폭으로만 한정해(SVG는 width:100%라 이 컨테이너를 그대로
+                  따라간다) 세로 높이도 종횡비(320:92)에 맞춰 함께 줄어든다. 아래 엔진 라인·기보
+                  표는 계속 열 전체 폭(820)을 그대로 쓴다(가독성에 영향이 큰 요소라 그대로 둠). */}
+              <div style={{ maxWidth: 460 }}>
+                <EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} />
+              </div>
               {/* (v0.2.1 기능) 엔진 라인 — 컴퓨터 환경은 평가치 그래프 바로 아래에 표시한다. */}
               <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} font={SITE_FONT} /></div>
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} drawn={gameDrawn} /></div>
