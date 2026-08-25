@@ -1205,7 +1205,10 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
     const loss = Math.max(0, bestCp - mvCp);
     let kind = i === 0 ? "best" : tierOf(loss);
     if (i > 0 && kind === "best") kind = "excellent";
-    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200)) kind = "brilliant"; } catch { }
+    // (v0.4.0 버그 수정) 다른 네 판정 경로(classifyMoveKindDetailed·analyzeGame·학습 탭·자유 탐색)와
+    // 달리 이 퍼즐 후보 판정에만 "직전 자신의 수가 이미 희생이었다면 이어지는 콤보 수는 다시 탁월로
+    // 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 사이트 전체가 같은 기준으로 탁월한 수를 매기도록 통일한다.
+    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color)) kind = "brilliant"; } catch { }
     cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
   });
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
@@ -1830,6 +1833,37 @@ function hasSaferSquare(board, fr, fc, piece, color) {
   }
   return false;
 }
+// (v0.4.0 기능) side 진영 기물 p(er,ec에 위치)가 (tr,tc)를 공격하는지 — 기하학적 공격 패턴만 보고
+// (체크 노출 등 합법성은 따지지 않는다) 포크 판정에 쓴다.
+function attacksSquare(board, p, side, er, ec, tr, tc) {
+  if (p.t === "P") { const dir = side === "w" ? -1 : 1; return tr - er === dir && Math.abs(tc - ec) === 1; }
+  if (p.t === "K") return Math.abs(tr - er) <= 1 && Math.abs(tc - ec) <= 1;
+  return canMove(board, p.t, side, er, ec, tr, tc, true);
+}
+// (v0.4.0 기능, 사용자 요청) 포크(상대 기물 하나가 아군 기물 두 개를 동시에 공격하는 것 — 그중
+// 한쪽이 킹이어서 체크와 동시에 다른 기물도 위협받는 경우까지 포함)에서, 방치되어 실제로 잡히는
+// 기물((hr,hc), 즉 afterHang 자리)과 함께 공격받던 "다른 쪽" 기물을 이 수가 이동·보호·차단으로
+// 실제로 구해냈다면 — 애초에 포크로 둘 다 구할 방법이 없었으니 더 비싼 쪽을 살리는 당연한 선택(또는
+// 체크에 대한 강제 응수)일 뿐, 스스로 찾아낸 희생이 아니므로 탁월한 수로 치지 않는다.
+function forkForcedTheOtherSide(board, after, color, fr, fc, tr, tc, hr, hc) {
+  const enemy = color === "w" ? "b" : "w";
+  for (let er = 0; er < 8; er++) for (let ec = 0; ec < 8; ec++) {
+    const p = board[er][ec]; if (!p || p.c !== enemy) continue;
+    if (!attacksSquare(board, p, enemy, er, ec, hr, hc)) continue;
+    for (let r2 = 0; r2 < 8; r2++) for (let c2 = 0; c2 < 8; c2++) {
+      if (r2 === hr && c2 === hc) continue;
+      const q = board[r2][c2]; if (!q || q.c !== color) continue;
+      if (!attacksSquare(board, p, enemy, er, ec, r2, c2)) continue;
+      // (er,ec)가 (hr,hc)와 (r2,c2) 둘을 동시에 공격하는 포크 — (r2,c2)가 바로 이번 수로 이동한
+      // 기물 자신(fr,fc)이라면 그 새 도착 칸(tr,tc)에서 안전해졌는지 확인한다.
+      const nr = (r2 === fr && c2 === fc) ? tr : r2;
+      const nc = (r2 === fr && c2 === fc) ? tc : c2;
+      if (q.t === "K") { if (!isAttacked(after, nr, nc, enemy)) return true; }
+      else if (seeSquare(after, nr, nc, enemy) === 0) return true;
+    }
+  }
+  return false;
+}
 function isSacrifice(board, sanRaw, color) {
   const info = sanSrc(board, sanRaw, color);
   if (!info) return false;
@@ -1900,6 +1934,11 @@ function isSacrifice(board, sanRaw, color) {
   // 못했다. beforeHang 조건을 없애고 afterHang>=2만으로 판정한다 — beforeHang은 더 이상 필요 없다.
   const { loss: afterHang, sq: afterHangSq } = hangingLossSq(after, color, [tr, tc]);
   if (afterHang >= 2) {
+    // (v0.4.0 기능, 사용자 요청) 방치되는 기물(afterHangSq)이 애초에 다른 아군 기물(킹 포함, 즉
+    // 체크당하며 함께 위협받던 경우도 포함)과 함께 포크당한 것이었고, 이 수가 그 "다른 쪽" 기물을
+    // 구해낸 것뿐이라면 — 둘 다 지킬 수 없던 포크의 당연한 귀결이지 스스로 찾아낸 희생이 아니므로
+    // 탁월한 수로 치지 않는다.
+    if (forkForcedTheOtherSide(board, after, color, fr, fc, tr, tc, afterHangSq[0], afterHangSq[1])) return false;
     // (22차, 사용자 요청) 사잇수(zwischenzug) 예외 — 이 수 자체가 방치된 기물(afterHang)과 같거나
     // 더 비싼 상대 기물을 잡는 수라면, 방금 움직인 내 기물이 곧바로 되잡혀 net이 깎이더라도 희생이
     // 아니다: 상대가 그 되잡기에 응수를 쓰면 그 사이 나는 다음 수에 원래 걸려 있던 기물을 그대로
@@ -3554,7 +3593,10 @@ function assignTiers(moves, ply, board, keyStr, sans) {
     if (isBook) return { ...m, kind: "book", book: true };
     if (mv == null || best == null) return { ...m, kind: hasRealEval(m) ? "good" : "pending", book: false };
     let kind = tierOf(loss);
-    if (["best", "excellent", "good"].includes(kind) && board && isSacrifice(board, m.san, color) && mv >= -40 && !(best != null && best <= -200)) kind = "brilliant";
+    // (v0.4.0 버그 수정) 이 학습 탭 판정에만 "직전 자신의 수가 이미 희생이었다면 이어지는 콤보 수는
+    // 다시 탁월로 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 게임 리뷰·퍼즐 채점·자유 탐색과 같은
+    // 기준으로 통일한다.
+    if (["best", "excellent", "good"].includes(kind) && board && sans && isSacrifice(board, m.san, color) && mv >= -40 && !(best != null && best <= -200) && !ownPriorMoveWasSacrifice(sans, color)) kind = "brilliant";
     return { ...m, kind, book: false };
   });
   // (기능4) 최선의 수는 반드시 1개 이하. 평가치가 가장 좋은 '비이론' 수 1개에만 '최선'을 부여하고
@@ -13921,6 +13963,19 @@ function questOpeningSide(name) {
   if (!tokens.length) return null;
   return tokens.length % 2 === 1 ? "백" : "흑";
 }
+// (v0.4.0 버그 수정) 오프닝 퀘스트는 그 오프닝을 정의하는 수순의 마지막 수를 둔 진영(questOpeningSide)
+// 으로 플레이해야 클리어로 인정돼야 하는데, 기존엔 오프닝 이름만 같으면(내가 백/흑 어느 쪽으로 뒀는지와
+// 무관하게) 클리어로 쳐줬다 — 예를 들어 "슬라브 디펜스"(흑 오프닝)를 백으로 둬도(=상대가 슬라브를
+// 받아준 것뿐인데) 클리어됐다. 진영까지 맞아야 클리어로 본다. questOpeningSide가 "백"/"흑" 대신
+// null을 돌려주는 경우(수순을 못 구한 경우)는 예전처럼 오프닝 이름만으로 판정한다.
+function questOpeningColor(name) {
+  const side = questOpeningSide(name);
+  return side === "백" ? "w" : side === "흑" ? "b" : null;
+}
+function questOpeningCleared(q, games) {
+  const col = questOpeningColor(q.opening);
+  return games.some((g) => openingNameOf(g.moves) === q.opening && (!col || g.color === col));
+}
 function questLabel(q) {
   if (!q) return "";
   if (q.type === "play5") return "chess.com에서 게임 5회 플레이";
@@ -13986,7 +14041,7 @@ function questMatchingGames(q, chesscom) {
   if (!q || !chesscom || !chesscom.games || !chesscom.games.length) return [];
   const t = todayStr();
   const todays = chesscom.games.filter((g) => isSameLocalDay(g.endTime, t));
-  if (q.type === "opening") return todays.filter((g) => openingNameOf(g.moves) === q.opening);
+  if (q.type === "opening") { const col = questOpeningColor(q.opening); return todays.filter((g) => openingNameOf(g.moves) === q.opening && (!col || g.color === col)); }
   if (q.type === "win3") return todays.filter((g) => g.result === "win");
   if (q.type === "play5") return todays;
   return [];
@@ -14248,9 +14303,14 @@ function familyCounts(puzzles, solved) {
   const c = {}; for (const p of puzzles) { if (!solved.has(p.id)) continue; const k = puzzleFamilyKey(p); if (k) c[k] = (c[k] || 0) + 1; } return c;
 }
 // (19차 기능6) chess.com 게임의 오프닝 이름을 6개 칭호 오프닝 패밀리로 분류해 플레이 횟수를 집계.
+// (v0.4.0 버그 수정) g.opening은 chess.com이 자체적으로 붙인 ECO URL 기반 이름(ecoOpeningName)이라
+// 우리 오프닝 트리(openingNameOf — 가장 많이 둔 오프닝·오프닝별 승률·일일 퀘스트가 모두 쓰는 기준)와
+// 명명 방식이 달라(세분화 깊이·표기가 서로 다름) 같은 대국인데도 여기서만 다른(또는 아예 못 찾는)
+// 오프닝으로 집계됐다 — chess.com이 ECO를 못 준 대국(예: 분석 전 오래된 대국)은 아예 집계에서
+// 빠지기도 했다. 사이트 전체와 같은 기준(openingNameOf)으로 통일한다.
 function ccFamilyCounts(games) {
   const c = {}; if (!games) return c;
-  for (const g of games) { const nm = g.opening; if (!nm) continue; for (const fam of TITLE_OPENINGS) { if (fam.rx.test(nm)) { c[fam.key] = (c[fam.key] || 0) + 1; break; } } }
+  for (const g of games) { const nm = openingNameOf(g.moves); if (!nm) continue; for (const fam of TITLE_OPENINGS) { if (fam.rx.test(nm)) { c[fam.key] = (c[fam.key] || 0) + 1; break; } } }
   return c;
 }
 // (19차 기능6) 칭호 획득 = 퍼즐 해결 수(counts) ‘그리고’ chess.com 오프닝 플레이 수(ccCounts)를 모두 만족.
@@ -24246,8 +24306,6 @@ export default function App() {
     if (!dailyQuest || !dailyQuest.quests || !chesscom || chesscom.status !== "ready") return;
     const t = todayStr();
     const todays = chesscom.games.filter((g) => isSameLocalDay(g.endTime, t));
-    const openingsToday = new Set();
-    for (const g of todays) { const nm = openingNameOf(g.moves); if (nm) openingsToday.add(nm); }
     const playCount = todays.length;
     const winCount = todays.filter((g) => g.result === "win").length;
     setDailyQuest((dq) => {
@@ -24256,7 +24314,7 @@ export default function App() {
       dq.quests.forEach((q, i) => {
         if (done[i]) return;
         let ok = false;
-        if (q.type === "opening") ok = openingsToday.has(q.opening);
+        if (q.type === "opening") ok = questOpeningCleared(q, todays);
         else if (q.type === "play5") ok = playCount >= 5;
         else if (q.type === "win3") ok = winCount >= 3;
         if (ok) { done[i] = true; changed = true; }
