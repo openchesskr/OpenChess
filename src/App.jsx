@@ -1209,6 +1209,13 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
     // 달리 이 퍼즐 후보 판정에만 "직전 자신의 수가 이미 희생이었다면 이어지는 콤보 수는 다시 탁월로
     // 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 사이트 전체가 같은 기준으로 탁월한 수를 매기도록 통일한다.
     try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color)) kind = "brilliant"; } catch { }
+    // (v0.4.0 버그 수정) decided(위에서 계산만 해 두고 실제로는 쓰지 않던 변수)를 다른 네 판정
+    // 경로와 같은 완화 규칙에 실제로 연결한다 — 이미 승부가 기운 위치(예: +6점)에서는 실수류 등급을
+    // 한 단계씩 완화해야 하는데, 이 퍼즐 후보 판정에서만 그 완화가 빠져 있어 다른 후보 수들과 다른
+    // 등급(예: 블런더 그대로)이 나오고 있었다. 언더프로모션 승격 규칙도 마찬가지로 빠져 있었다.
+    if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+    const under = /=/.test(san) && !/=Q/.test(san);
+    if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
     cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
   });
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
@@ -1221,6 +1228,13 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
         const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
         const loss = Math.max(0, bestCp - mvCp);
         let kind = tierOf(loss); if (kind === "best") kind = "excellent";
+        // (v0.4.0 버그 수정) 위 엔진 PV 후보들과 달리 이 실전 채택 수 보강 후보에는 탁월한 수 승격·
+        // 완화 규칙이 통째로 빠져 있었다 — 같은 포지션의 같은 종류 수(예: 기물 희생)가 엔진 PV
+        // 목록에 있었다면 탁월로 뜨는데 이 보강 후보로 들어오면 그냥 우수로 뜨는 불일치가 있었다.
+        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color)) kind = "brilliant"; } catch { }
+        if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+        const under2 = /=/.test(san) && !/=Q/.test(san);
+        if (under2 && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
         cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san]), uci: puzzleUciOf(brd, san, color) });
       }
     } catch { }
@@ -2780,6 +2794,10 @@ async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12) {
   const losing = bestCp <= -200;
   if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
   if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+  // (v0.4.0 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 analyzeGame·학습
+  // 탭·자유 탐색에는 있는데 이 판정(MEC/퍼즐 코치가 함께 쓰는 상세 버전)에는 빠져 있었다 — 동일하게 적용한다.
+  const under = /=/.test(san) && !/=Q/.test(san);
+  if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
   // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데 그 이점을 응징 못 해 평가치가 감소하되,
   // 결과가 뒤집힐(패배) 정도는 아닌 경우. 후보일 때만 직전 포지션을 1회 추가 평가해 상대 손실을 확인한다.
   if (["inaccuracy", "mistake", "good"].includes(kind) && prevSans.length >= 1 && bestCp >= 120 && loss >= 100 && ourCp >= -30) {
@@ -3597,6 +3615,12 @@ function assignTiers(moves, ply, board, keyStr, sans) {
     // 다시 탁월로 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 게임 리뷰·퍼즐 채점·자유 탐색과 같은
     // 기준으로 통일한다.
     if (["best", "excellent", "good"].includes(kind) && board && sans && isSacrifice(board, m.san, color) && mv >= -40 && !(best != null && best <= -200) && !ownPriorMoveWasSacrifice(sans, color)) kind = "brilliant";
+    // (v0.4.0 버그 수정) 위 주석(decided)에서 이미 지적된 대로 이 판정만 "이미 승부가 기운 위치에서는
+    // 실수류 등급을 완화한다"는 규칙 자체가 안 걸려 있었다(변수만 계산해 두고 실제로 안 씀) — 다른
+    // 세 곳과 같은 완화를 적용한다. 언더프로모션 승격 규칙도 마찬가지로 빠져 있었다.
+    if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+    const under = /=/.test(m.san) && !/=Q/.test(m.san);
+    if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
     return { ...m, kind, book: false };
   });
   // (기능4) 최선의 수는 반드시 1개 이하. 평가치가 가장 좋은 '비이론' 수 1개에만 '최선'을 부여하고
@@ -10718,6 +10742,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       const losing = bestCp <= -200;           // 그 상태에서 이 수를 둔 쪽이 불리했는가
       if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }   // 실수류 완화(양측)
+      // (v0.4.0 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 다른 판정 경로에는
+      // 있는데 FEN 모드 전용인 이 판정에만 빠져 있었다 — 동일하게 적용한다.
+      const under = /=/.test(san) && !/=Q/.test(san);
+      if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
       return kind;
     };
     // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 — depth 노이즈로 차선 수에 별이 붙던 문제 수정.
