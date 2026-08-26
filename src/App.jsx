@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useAnimationControls } from "framer-motion";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -4241,7 +4242,7 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
 // 금색 대각선 그라데이션으로 바꾸고, 아래 HINT_GOLD_GLOW(외곽 발광 box-shadow)를 더해 훨씬 강하게 빛나 보이게 한다.
 const HINT_GOLD_GRADIENT = "linear-gradient(135deg, rgba(255,229,150,.98), rgba(216,163,58,.97))";
 const HINT_GOLD_GLOW = "0 0 16px 5px rgba(255,196,64,.9), inset 0 0 10px rgba(255,255,255,.55)";
-function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress }) {
+function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress, gridRef: externalGridRef }) {
   const haloSet = useMemo(() => new Set((haloSquares || []).map(([r, c]) => r + "," + c)), [haloSquares]);
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
@@ -4422,7 +4423,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           비율이 달라진 상자에 맞춰 늘어나며 왜곡됐다(바다 스킨처럼 이어진 이미지 텍스처에서 특히 눈에
           띔). aspectRatio:"1/1"인 CSS 그리드로 바꾸면 실제 렌더링 폭이 얼마로 계산되든 높이가 항상
           똑같이 따라가 칸이 항상 정사각형으로 유지된다. */}
-      <div ref={gridRef} style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)",
+      <div ref={(el) => { gridRef.current = el; if (typeof externalGridRef === "function") externalGridRef(el); else if (externalGridRef) externalGridRef.current = el; }} style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)",
         // (사용자 요청) 보드 위(또는 그 언저리)에서 손가락을 움직이면 항상 기물 드래그만 되고 페이지
         // 상하 스크롤로는 새지 않도록, 칸 하나하나가 아니라 보드 전체에 touch-action:none을 건다 —
         // 예전엔 기물 도형 크기(cell*0.74)만큼만 이 속성이 걸려 있어, 손가락이 기물을 살짝 벗어난
@@ -16735,7 +16736,7 @@ function PrinciplesReel({ lines, onDone }) {
     return () => clearTimeout(t);
   }, [idx, lines.length]);
   return (
-    <div style={{ position: "relative", height: 130, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+    <div style={{ position: "relative", flex: "1 1 auto", minHeight: 130, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
       <AnimatePresence>
         {idx < lines.length && (
           <motion.div key={idx}
@@ -16753,23 +16754,29 @@ function PrinciplesReel({ lines, onDone }) {
 }
 // 보드 위 연출 오버레이 — dim(강조 칸만 남기고 나머지 음영), siren(칸이 붉게 사이렌처럼 깜빡임).
 // 금색 강조(glow)는 Board 자체의 haloSquares를 그대로 재사용한다(아래 LessonScreen 참고).
-function LessonBoardFx({ size, flip, dimKeep, siren }) {
-  if (!dimKeep && !siren) return null;
-  const cell = size / 8;
+// (버그 수정) 이전엔 이 오버레이를 Board 바깥 wrapper 기준 절대 좌표(size/8 등 직접 계산)로 그렸는데,
+// Board 자체는 그 wrapper 안에 padding·테두리·(showEval일 때) 평가치 막대까지 더해서 그려지므로
+// 실제 8x8 격자는 그만큼 안쪽으로 밀려 있다 — 그 여백을 빼먹어 강조 칸이 실제 기물 칸과 어긋났다.
+// createPortal로 이 오버레이를 Board의 실제 격자 DOM(gridRef로 넘겨받음) "안"에 직접 그려 넣으면,
+// 그 격자 자신이 이미 8x8 정사각형이므로 12.5% 단위 퍼센트 좌표만으로 항상 정확히 들어맞는다
+// (Board가 보드 위 반짝임 효과(gm-board-shine)에 쓰는 것과 같은 방식 — 절대 위치 자식은 grid
+// 레이아웃에서 빠지므로 실제 64칸 배치에 영향을 주지 않는다).
+function LessonBoardFx({ gridEl, flip, dimKeep, siren }) {
+  if (!gridEl || (!dimKeep && !siren)) return null;
   const cells = [];
   const view = (r, c) => (flip ? [7 - r, 7 - c] : [r, c]);
   if (dimKeep) {
     for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
       if (dimKeep.has(r + "," + c)) continue;
       const [vr, vc] = view(r, c);
-      cells.push(<div key={"d" + r + "_" + c} style={{ position: "absolute", left: vc * cell, top: vr * cell, width: cell, height: cell, background: "rgba(20,12,4,.5)" }} />);
+      cells.push(<div key={"d" + r + "_" + c} style={{ position: "absolute", left: (vc * 100) / 8 + "%", top: (vr * 100) / 8 + "%", width: 100 / 8 + "%", height: 100 / 8 + "%", background: "rgba(20,12,4,.5)" }} />);
     }
   }
   if (siren) {
     const [vr, vc] = view(siren[0], siren[1]);
-    cells.push(<div key="siren" style={{ position: "absolute", left: vc * cell, top: vr * cell, width: cell, height: cell, background: "#E5342A", animation: "lessonSiren .7s ease-in-out infinite" }} />);
+    cells.push(<div key="siren" style={{ position: "absolute", left: (vc * 100) / 8 + "%", top: (vr * 100) / 8 + "%", width: 100 / 8 + "%", height: 100 / 8 + "%", background: "#E5342A", animation: "lessonSiren .7s ease-in-out infinite" }} />);
   }
-  return <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{cells}</div>;
+  return createPortal(<div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{cells}</div>, gridEl);
 }
 /* ============================================================ 레슨 화면 (듀오링고 스타일 스크립트 플레이어) ============================================================ */
 // (사용자 요청) 모든 레슨은 여러 개의 "페이지"를 순서대로 진행하며, 이미 지나온 페이지는 뒤로 가서
@@ -16874,6 +16881,9 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
   const board = useMemo(() => boardFromSans(runningSans), [runningSans.join(",")]);
   const color = runningSans.length % 2 === 0 ? "w" : "b";
   const [boardSize, setBoardRef] = useBoardSize(narrow ? 480 : 640);
+  // (버그 수정) 보드 연출 오버레이(LessonBoardFx)를 Board의 실제 8x8 격자 DOM 안에 그려 넣기 위한
+  // 참조 — Board가 gridRef 콜백으로 그 DOM 노드를 알려주면 상태로 저장해 리렌더를 트리거한다.
+  const [gridEl, setGridEl] = useState(null);
   // say beat 탭 처리 — 아직 다 안 타이핑됐으면 즉시 완성, 다 됐으면 다음 beat로.
   const onSayTap = () => {
     if (!beat || beat.kind !== "say") return;
@@ -16926,7 +16936,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: narrow ? "12px 10px 4px" : "20px", boxSizing: "border-box",
       ...(narrow ? { width: "100%", flexShrink: 0 } : { flexBasis: "50%", flexShrink: 0, flexGrow: 0, height: "100%" }) }}>
       <div ref={setBoardRef} style={{ width: "100%", maxWidth: narrow ? "480px" : "min(640px, 82vh)", position: "relative" }}>
-        <Board board={board} flip={flip} size={boardSize} showEval={false}
+        <Board board={board} flip={flip} size={boardSize} showEval={false} gridRef={setGridEl}
           interactive={!!beat && beat.kind === "move" && !moveDone}
           haloSquares={fx.glow || []}
           selected={moveSel} legalTargets={legalTargets} onSquareClick={onSquareClick}
@@ -16934,7 +16944,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
           onDrop={(sq) => { if (moveSel) attemptMove(moveSel, sq); }}
           onMove={(from, to) => attemptMove(from, to)}
           wrongAt={moveWrongSq} />
-        {boardSize > 0 && <LessonBoardFx size={boardSize} flip={flip} dimKeep={fx.dimKeep} siren={fx.siren} />}
+        <LessonBoardFx gridEl={gridEl} flip={flip} dimKeep={fx.dimKeep} siren={fx.siren} />
       </div>
     </div>
   );
@@ -16969,13 +16979,16 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
             {beat && beat.kind === "principles" ? (
               <PrinciplesReel lines={beat.lines} onDone={advanceBeat} />
             ) : bubble ? (
-              <div className="flex items-start gap-2" style={{ background: "#fff", borderRadius: 14, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 14, position: "relative" }}>
-                <Mascot name={bubble.speaker} emotion={mcFeedback === "correct" || moveDone ? "celebrate" : mcFeedback === "wrong" ? "surprise" : "great"} size={56} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ color: "#8A6A2F", fontSize: 11, fontWeight: 800, marginBottom: 3 }}>{bubble.speaker === "kokoa" ? "KOKOA" : "MILKU"} 코치</div>
-                  <p style={{ color: T.ink, fontSize: 13.5, lineHeight: 1.55, minHeight: "1.55em" }}>{bubble.text}{bubble.typing && <span style={{ animation: "lessonCaretBlink 1s step-end infinite" }}>▌</span>}</p>
+              // (사용자 요청) 말풍선이 상호작용 영역의 남는 세로 공간을 그냥 비워두지 않고 그 비율에
+              // 맞게 꽉 채우도록 — flex:1로 늘어나 아래 퀴즈·안내 영역과 항상 균형 있게 공간을
+              // 나눠 갖고(설명만 있는 스텝은 이 말풍선이 사실상 전부를 차지), 내용은 가운데 정렬한다.
+              <div className="flex flex-col items-center" style={{ flex: "1 1 auto", minHeight: narrow ? "26vh" : "32vh", justifyContent: "center", gap: 14, textAlign: "center", background: "#fff", borderRadius: 16, padding: narrow ? "22px 18px" : "32px 40px", border: "1px solid #DCCBA8", marginBottom: 14, position: "relative", boxSizing: "border-box" }}>
+                <Mascot name={bubble.speaker} emotion={mcFeedback === "correct" || moveDone ? "celebrate" : mcFeedback === "wrong" ? "surprise" : "great"} size={narrow ? 84 : 108} />
+                <div style={{ minWidth: 0, maxWidth: 520 }}>
+                  <div style={{ color: "#8A6A2F", fontSize: 12, fontWeight: 800, marginBottom: 6 }}>{bubble.speaker === "kokoa" ? "KOKOA" : "MILKU"} 코치</div>
+                  <p style={{ color: T.ink, fontSize: narrow ? 15.5 : 18, lineHeight: 1.6, minHeight: "1.6em" }}>{bubble.text}{bubble.typing && <span style={{ animation: "lessonCaretBlink 1s step-end infinite" }}>▌</span>}</p>
                 </div>
-                {sayActive && !bubble.typing && <ChevronDown size={14} color={T.inkSoft} style={{ position: "absolute", bottom: 6, right: 10, animation: "dotbounceSm 1.1s ease-in-out infinite" }} />}
+                {sayActive && !bubble.typing && <ChevronDown size={16} color={T.inkSoft} style={{ position: "absolute", bottom: 10, right: 14, animation: "dotbounceSm 1.1s ease-in-out infinite" }} />}
               </div>
             ) : null}
             {beat && beat.kind === "mc" && (
