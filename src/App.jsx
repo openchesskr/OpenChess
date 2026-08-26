@@ -7833,7 +7833,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: 10, gap: 8 }}>
-        <button onClick={onBack} className="press" title="집중학습 종료" style={{ width: 36, height: 36, borderRadius: 10, background: T.ebony2, color: T.ivoryHi, border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
+        <button onClick={onBack} className="press" title="집중 분석 종료" style={{ width: 36, height: 36, borderRadius: 10, background: T.ebony2, color: T.ivoryHi, border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
         <div className="flex items-center gap-2">
           {(canEdit || canAdd) && !isTheory && <button onClick={addAsTheory} className="press" title="이론 수로 추가" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Book size={14} /> 이론 수로 추가</button>}
           {/* (18차 UX8) 이 수가 이론 수라면 개발자 모드에서 삭제(비이론화) 가능 — 추가 버튼과 동일 레이아웃 */}
@@ -16721,7 +16721,9 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
   return (
     <div>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 퀘스트 아이콘과 중복돼 제거. */}
-      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퀘스트</h2></div>
+      {/* (v0.4.0 UI) 사용자 요청 — 이 탭의 하단 탭바 이름이 "퀘스트"에서 "학습"으로 바뀌어, 탭 안
+          제목도 같은 이름으로 맞춘다(퀘스트 내용·기능 자체는 그대로). */}
+      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>학습</h2></div>
       <FadeIn index={0}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /></FadeIn>
       <FadeIn index={1}><MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
     </div>
@@ -18238,7 +18240,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
             {/* chess.com 연동 — 기존 설정 탭 블록에서 모달로 이동 */}
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
               <label className="flex items-center" style={{ gap: 6, fontSize: 13, fontWeight: 700, color: T.ink }}><ChesscomLogo height={19} /> 계정</label>
-              <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "4px 0 10px" }}>최근 기보를 받아 집중 학습 모드에서 수별 전적·승률과 '오프닝 실수'를 분석합니다.</p>
+              <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "4px 0 10px" }}>최근 기보를 받아 집중 분석 모드에서 수별 전적·승률과 '오프닝 실수'를 분석합니다.</p>
               {linked ? (
                 <div>
                   <div className="flex items-center gap-2">
@@ -20036,7 +20038,10 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
     </div>
   );
 }
-const TABS = [{ key: "learn", label: "학습", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "퀘스트", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
+// (v0.4.0 UI) 사용자 요청 — 탭 이름 개편: 기존 "학습" 탭은 "분석"으로, 기존 "퀘스트" 탭은
+// "학습"으로 이름만 바꾼다(내부 key·라우팅·기능은 그대로 유지 — 메인 퀘스트 탭 강화를 위한 개편의
+// 첫 단계).
+const TABS = [{ key: "learn", label: "분석", Icon: GraduationCap }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 const TAB_PATH = { learn: "/learn", dex: "/book", puzzle: "/puzzle", quest: "/quest", store: "/store", set: "/setting" };
 const PATH_TAB = { "/learn": "learn", "/book": "dex", "/puzzle": "puzzle", "/quest": "quest", "/store": "store", "/setting": "set" };
