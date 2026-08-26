@@ -2240,7 +2240,7 @@ function roleIcon(username) {
 }
 const SYM2KIND = [["??", "blunder"], ["?!", "inaccuracy"], ["!!", "brilliant"], ["☆", "best"], ["★", "best"], ["👍", "excellent"], ["✅️", "good"], ["✅", "good"], ["?", "mistake"], ["!", "only"]];
 function splitSym(tok) { for (const [sym, kind] of SYM2KIND) { if (tok.endsWith(sym)) return { san: tok.slice(0, -sym.length), kind }; } return { san: tok, kind: null }; }
-let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, questChapters: {} };
+let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, lessons: {} };
 let CONTENT_SEEDED = false;
 // 외부 대국 데이터베이스의 "Openings" 카테고리(파일명 자체가 세부 변형 이름인 zip들)에서 뽑아낸 대표
 // 수순 — scripts/build-theory-book.mjs 로 생성. 각 항목 { moves:[san,...], name } 을
@@ -2290,79 +2290,104 @@ function seedContent() {
       posKey = posKey ? posKey + " " + san : san;
     });
   }
-  seedQuestChapters();
+  seedLessons();
 }
-/* ============================================================ 메인 퀘스트 · CHAPTER (20차 기능4) ============================================================ */
-// 챕터 하나 = { title, desc, parent(하위 챕터일 때 상위 챕터 key), reward(코인), items:[{ move, q, opts:[...], answer, note }] }
-// items의 각 질문은 사지선다·오지선다이며 answer는 opts 배열의 정답 인덱스. note는 정답 확인 뒤 보여주는 추가 설명(하위 오프닝 등).
-// 모든 필드는 개발자가 CMS(QuestChapterEditor)로 직접 입력·수정·삭제할 수 있고, CONTENT.questChapters에 저장되어 전 유저에 반영된다.
-function seedQuestChapters() {
-  if (Object.keys(CONTENT.questChapters).length) return;   // 이미 콘텐츠가 있으면(서버에서 불러온 경우 등) 시드로 덮어쓰지 않음
-  const firstMoveOpts = [
-    "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하며, 비숍과 퀸의 대각선을 열어 활발한 기물 전개와 이른 전술전을 지향한다",
-    "폰을 두 칸 전진시켜 중앙을 장악하되, e4보다 더 견고하고 점진적인 구조 싸움을 지향한다",
-    "중앙을 폰이 아닌 기물로 유연하게 통제하며, 전개 순서를 상대의 대응에 따라 나중에 정할 수 있다",
-    "중앙 폰을 아직 정하지 않고 나이트로 핵심 칸(e5·d4)을 미리 견제하며 유연하게 대응 방향을 정한다",
-  ];
-  CONTENT.questChapters.ch1 = {
-    title: "백이 자주 두는 첫 수", desc: "1.e4, 1.d4, 1.c4, 1.Nf3 — 백의 대표적인 첫 수마다 포지션의 성격과 하위 오프닝 갈래를 탐구합니다.", reward: 100,
-    items: [
-      { move: "e4", q: "1.e4의 포지션 성격으로 가장 알맞은 설명은?", opts: firstMoveOpts, answer: 0, note: "킹스 폰 오프닝. 이후 1...e5(오픈 게임), 1...c5(시칠리안), 1...e6(프렌치), 1...c6(카로칸) 등으로 갈립니다." },
-      { move: "d4", q: "1.d4의 포지션 성격으로 가장 알맞은 설명은?", opts: firstMoveOpts, answer: 1, note: "퀸스 폰 오프닝. 이후 1...d5(폐쇄형 퀸스 갬빗 등)와 1...Nf6(인디언 디펜스 계열)로 크게 갈립니다." },
-      { move: "c4", q: "1.c4의 포지션 성격으로 가장 알맞은 설명은?", opts: firstMoveOpts, answer: 2, note: "잉글리시 오프닝. 폰 구조를 늦게 정하며 d4·Nf3와도 자주 합류하는 유연한 오프닝입니다." },
-      { move: "Nf3", q: "1.Nf3의 포지션 성격으로 가장 알맞은 설명은?", opts: firstMoveOpts, answer: 3, note: "레티 오프닝. 흔히 이후 c4나 d4와 합류해 잉글리시·인디언 계열 구조로 전환됩니다." },
+/* ============================================================ 레슨 (v0.4.0 메인 퀘스트 전면 개편) ============================================================ */
+// (사용자 요청) "메인 퀘스트"(사지선다 챕터 퀴즈 나열)를 체스 개념·오프닝 하나하나를 다루는 독립된
+// 학습 콘텐츠 "레슨"으로 전면 개편한다. 레슨은 서로 유기적으로 이어지도록 parent(선행 레슨 key)로
+// 연결해 갈래를 갖는 나무 구조를 이루고, 선행 레슨을 완료(보상 수령)해야 다음 레슨이 열린다(도감
+// 오프닝 모식도와 같은 "순차 해금" 원리). 레슨 하나 = { title, desc, parent, reward, steps:[...] }.
+// steps의 각 단계는 실제 포지션(그 위치까지의 수순 sans)을 보드에 띄운 채 아래 세 형태 중 하나로 진행된다.
+//   · explain — 코치가 개념을 설명만 하고 "다음"으로 넘어간다(퀴즈 없음).
+//   · mc      — 객관식(사지선다류): opts 중 하나를 골라 answer(정답 인덱스)와 맞히면 통과.
+//   · move    — 주관식: 보드 위에서 직접 수를 두어(클릭/드래그) answers(허용되는 SAN 목록) 중 하나와
+//               일치하면 통과 — "직접 이 위치의 최선의 수를 찾아 두어 보세요" 같은 실전형 문제.
+// 모든 필드는 개발자가 CMS(LessonEditor)로 직접 입력·수정·삭제할 수 있고, CONTENT.lessons에 저장되어
+// 전 유저에 반영된다.
+function seedLessons() {
+  if (Object.keys(CONTENT.lessons).length) return;   // 이미 콘텐츠가 있으면(서버에서 불러온 경우 등) 시드로 덮어쓰지 않음
+  const L = CONTENT.lessons;
+  L.l_intro = {
+    title: "체스 오프닝이란?", desc: "오프닝의 세 가지 목표 — 중앙 장악, 기물 전개, 킹의 안전 — 을 첫 수 하나로 살펴봅니다.", reward: 40, parent: null,
+    steps: [
+      { type: "explain", sans: [], coach: "체스는 언제나 백이 먼저 한 수를 두며 시작돼요. 오프닝(초반전)의 목표는 크게 세 가지예요 — ① 중앙을 장악하고 ② 기물을 빠르게 전개하고 ③ 킹을 안전한 곳으로 옮기는 것(캐슬링)이죠." },
+      { type: "explain", sans: [], coach: "지금부터 백이 첫 수로 가장 자주 두는 네 가지 수 — 1.e4, 1.d4, 1.c4, 1.Nf3 — 를 하나씩 레슨으로 살펴볼 거예요. 이 레슨을 완료하면 그 갈래들이 열려요!" },
+      { type: "mc", sans: [], prompt: "오프닝의 목표로 알맞지 않은 것은?", opts: ["중앙을 장악한다", "기물을 빠르게 전개한다", "킹을 안전한 곳으로 옮긴다", "퀸을 최대한 빨리 적진 깊숙이 보낸다"], answer: 3, note: "퀸을 너무 일찍 내보내면 상대 기물에게 쫓기며 오히려 전개가 늦어져요. 초반엔 나이트·비숍부터 전개하는 게 정석이에요." },
     ],
   };
-  const ch2Sub = (key, parentTitle, firstSan, list) => {
-    CONTENT.questChapters[key] = { title: firstSan + " 상대 흑의 응수", parent: "ch2", parentTitle, desc: "1." + firstSan + "에 대한 흑의 대표적인 첫 응수마다 폰 구조·전개·핵심 아이디어를 탐구합니다.", reward: 100, items: list };
+  L.l_e4 = {
+    title: "1.e4 — 킹스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하는 첫 수.", reward: 60, parent: "l_intro",
+    steps: [
+      { type: "explain", sans: [], coach: "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하며, 비숍과 퀸의 대각선을 동시에 열어주는 수가 있어요. 직접 그 수를 둬볼까요?" },
+      { type: "move", sans: [], prompt: "중앙 폰을 두 칸 전진시켜 보세요.", answers: ["e4"], note: "1.e4, 킹스 폰 오프닝이에요! 비숍(f1)과 퀸(d1)의 대각선이 즉시 열려 활발한 기물 전개와 이른 전술전을 지향해요." },
+      { type: "mc", sans: ["e4"], prompt: "1.e4 이후 흑의 응수로 실제로 불가능한 것은?", opts: ["1...e5 (오픈 게임)", "1...c5 (시칠리안 디펜스)", "1...d4 (폰 이중 전진 후 재전진)", "1...c6 (카로칸 디펜스)"], answer: 2, note: "흑 폰은 d7에서 d5나 d6로만 움직일 수 있어요. d4는 아직 그 폰이 닿을 수 없는 칸이에요." },
+    ],
   };
-  const optsFor = (list) => list.map((x) => x.desc);
-  ch2Sub("ch2-1", "흑이 자주 두는 응수", "e4", (() => {
-    const rows = [
-      { san: "e5", desc: "중앙에서 폰을 맞세워 대칭적으로 공간을 나누고, 오픈된 전술전을 준비한다" },
-      { san: "c5", desc: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 흑이 능동적인 반격을 노리는 시칠리안 디펜스" },
-      { san: "e6", desc: "d5를 다음 수에 밀며 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격하는 프렌치 디펜스" },
-      { san: "c6", desc: "d5를 다음 수에 밀되 나이트 전개(Nc3 대응)에 유연하게 대비하는 카로칸 디펜스" },
-      { san: "d5", desc: "즉시 중앙에서 폰을 교환해 빠르게 기물을 전개하는 스칸디나비안 디펜스" },
-      { san: "d6", desc: "중앙을 견고히 지키며 늦게 전개하는 필리도 디펜스" },
-    ];
-    const opts = optsFor(rows);
-    return rows.map((r, i) => ({ move: r.san, q: "1.e4 " + r.san + " 포지션의 성격으로 가장 알맞은 설명은?", opts, answer: i }));
-  })());
-  ch2Sub("ch2-2", "흑이 자주 두는 응수", "d4", (() => {
-    const rows = [
-      { san: "d5", desc: "중앙에서 폰을 맞세워 견고한 구조를 만들고, 퀸스 갬빗 계열로 이어지는 정통 대응" },
-      { san: "Nf6", desc: "중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 인디언 디펜스 계열로 유연하게 대응한다" },
-      { san: "g6", desc: "비숍을 피앙케토(대각선 배치)하며 중앙을 기물로 견제하는 킹스 인디언·그륀펠트 계열" },
-      { san: "c5", desc: "중앙에서 곧바로 비대칭 반격을 노리는 베노니 계열" },
-      { san: "e5", desc: "폰을 희생해서라도 빠른 전개와 주도권을 노리는 부다페스트 갬빗" },
-      { san: "f5", desc: "퀸사이드보다 킹사이드 공간을 선점하며 공격적인 구조를 짜는 더치 디펜스" },
-    ];
-    const opts = optsFor(rows);
-    return rows.map((r, i) => ({ move: r.san, q: "1.d4 " + r.san + " 포지션의 성격으로 가장 알맞은 설명은?", opts, answer: i }));
-  })());
-  ch2Sub("ch2-3", "흑이 자주 두는 응수", "c4", (() => {
-    const rows = [
-      { san: "c5", desc: "양쪽 다 중앙을 기물로 통제하는 대칭 잉글리시 구조" },
-      { san: "e5", desc: "중앙을 폰으로 선점해 리버스드 시칠리안 유형의 구조를 만든다" },
-      { san: "c6", desc: "d5 전진을 준비하며 카로칸과 비슷한 구조로 합류하는 대응" },
-    ];
-    const opts = optsFor(rows);
-    return rows.map((r, i) => ({ move: r.san, q: "1.c4 " + r.san + " 포지션의 성격으로 가장 알맞은 설명은?", opts, answer: i }));
-  })());
-  ch2Sub("ch2-4", "흑이 자주 두는 응수", "Nf3", (() => {
-    const rows = [
-      { san: "Nc6", desc: "중앙 칸(e5·d4)을 두고 유연하게 맞서며 백의 다음 수를 기다린다" },
-      { san: "Nf6", desc: "대칭적으로 나이트를 전개해 인디언 계열 구조로 전환할 여지를 남긴다" },
-      { san: "d5", desc: "중앙을 폰으로 곧바로 선점해 퀸스 갬빗·슬라브 계열 구조로 합류할 수 있다" },
-    ];
-    const opts = optsFor(rows);
-    return rows.map((r, i) => ({ move: r.san, q: "1.Nf3 " + r.san + " 포지션의 성격으로 가장 알맞은 설명은?", opts, answer: i }));
-  })());
+  L.l_e4_e5 = {
+    title: "1...e5 — 오픈 게임", desc: "중앙에서 폰을 맞세워 대칭적으로 공간을 나누는 가장 고전적인 응수.", reward: 60, parent: "l_e4",
+    steps: [
+      { type: "explain", sans: ["e4", "e5"], coach: "흑이 폰을 맞세워 대칭적으로 공간을 나누고, 오픈된 전술전을 준비해요. 이런 대칭적인 시작을 '오픈 게임'이라고 불러요." },
+      { type: "mc", sans: ["e4", "e5"], prompt: "1.e4 e5 포지션에서 백이 흔히 두는 다음 수는?", opts: ["2.Nf3 (나이트로 e5 폰 위협)", "2.Qh5 (초반 퀸 출동)", "2.a4 (사이드 폰 전진)", "2.h4 (킹사이드 룩폰 전진)"], answer: 0, note: "2.Nf3는 e5 폰을 위협하며 자연스럽게 기물을 전개하는 가장 흔한 수예요." },
+      { type: "move", sans: ["e4", "e5"], prompt: "나이트를 전개하며 e5 폰을 위협해 보세요.", answers: ["Nf3"], note: "2.Nf3! 나이트가 e5를 위협하는 동시에 킹사이드 캐슬링을 준비해요." },
+    ],
+  };
+  L.l_e4_e5_open = {
+    title: "이탈리안 게임으로", desc: "2.Nf3 Nc6 이후, 비숍을 활발하게 전개해 이탈리안 게임으로 들어갑니다.", reward: 70, parent: "l_e4_e5",
+    steps: [
+      { type: "explain", sans: ["e4", "e5", "Nf3", "Nc6"], coach: "흑도 나이트로 e5 폰을 지켰어요. 이제 백은 비숍을 가장 활발한 대각선으로 전개할 차례예요 — f7을 겨냥하는 자리죠." },
+      { type: "move", sans: ["e4", "e5", "Nf3", "Nc6"], prompt: "비숍을 f7 폰을 겨냥하는 자리로 전개해 보세요.", answers: ["Bc4"], note: "3.Bc4! 이탈리안 게임이에요. 비숍이 상대의 약점인 f7 폰을 직접 겨냥해요." },
+      { type: "mc", sans: ["e4", "e5", "Nf3", "Nc6", "Bc4"], prompt: "이탈리안 게임(3.Bc4)의 핵심 아이디어로 가장 알맞은 것은?", opts: ["비숍으로 f7 폰을 겨냥하며 빠르게 킹사이드를 노린다", "폰을 희생해서라도 퀸사이드를 빠르게 개방한다", "킹을 일부러 중앙에 오래 남겨둔다", "나이트를 교환해 무승부를 유도한다"], answer: 0, note: "이탈리안 게임은 비숍의 활발한 대각선을 살려 빠르게 공격 기회를 노리는 오프닝이에요." },
+    ],
+  };
+  L.l_e4_c5 = {
+    title: "1...c5 — 시칠리안 디펜스", desc: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 능동적인 반격을 노립니다.", reward: 60, parent: "l_e4",
+    steps: [
+      { type: "explain", sans: ["e4", "c5"], coach: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어, 흑이 퀸사이드에서 능동적인 반격을 노리는 대표적인 오프닝이에요 — 시칠리안 디펜스." },
+      { type: "mc", sans: ["e4", "c5"], prompt: "시칠리안 디펜스의 성격으로 가장 알맞은 설명은?", opts: ["대칭 구조로 무승부를 지향한다", "비대칭 구조로 양쪽 다 승부를 볼 기회를 남긴다", "중앙 폰을 최대한 빨리 다 교환해 버린다", "킹사이드 캐슬링을 절대 하지 않는다"], answer: 1, note: "시칠리안은 통계적으로 승부(흑의 승률 포함)가 가장 많이 나는 오프닝 중 하나로 꼽혀요." },
+    ],
+  };
+  L.l_e4_e6 = {
+    title: "1...e6 — 프렌치 디펜스", desc: "d5를 다음 수에 밀며 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격합니다.", reward: 60, parent: "l_e4",
+    steps: [
+      { type: "explain", sans: ["e4", "e6"], coach: "d5를 다음 수에 밀며 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 나중에 반격하는 오프닝이에요 — 프렌치 디펜스." },
+      { type: "move", sans: ["e4", "e6"], prompt: "다음 수로 중앙에 폰 사슬을 세워 보세요.", answers: ["d5"], note: "2...d5! 이제 중앙에서 폰이 맞부딪혀요. 백이 e5로 전진하면 흑은 c5로 퀸사이드를 반격할 준비를 해요." },
+    ],
+  };
+  L.l_e4_c6 = {
+    title: "1...c6 — 카로칸 디펜스", desc: "d5를 다음 수에 밀되, 나이트 전개에 유연하게 대비하는 견고한 응수.", reward: 60, parent: "l_e4",
+    steps: [
+      { type: "explain", sans: ["e4", "c6"], coach: "d5를 다음 수에 밀되(프렌치와 달리 c8 비숍의 전개 경로를 막지 않아요) 나이트 전개(Nc3 대응)에 유연하게 대비하는 오프닝이에요 — 카로칸 디펜스." },
+      { type: "mc", sans: ["e4", "c6"], prompt: "프렌치 디펜스(1...e6)와 비교했을 때, 카로칸 디펜스(1...c6)의 장점으로 가장 알맞은 것은?", opts: ["퀸을 즉시 교환할 수 있다", "c8 비숍이 e6에 막히지 않고 밖으로 나갈 길이 열려 있다", "킹사이드 캐슬링이 금지된다", "중앙 폰을 절대 교환하지 않는다"], answer: 1, note: "프렌치는 1...e6로 c8 비숍의 전개 경로를 스스로 막지만, 카로칸은 그 문제를 피해가요." },
+    ],
+  };
+  L.l_d4 = {
+    title: "1.d4 — 퀸스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 장악하되, e4보다 더 견고하고 점진적인 구조 싸움을 지향합니다.", reward: 60, parent: "l_intro",
+    steps: [
+      { type: "explain", sans: [], coach: "이번엔 퀸 쪽 폰을 두 칸 전진시켜 봐요. e4보다 더 견고하고 점진적인 구조 싸움을 지향하는 수예요." },
+      { type: "move", sans: [], prompt: "퀸 쪽 중앙 폰을 두 칸 전진시켜 보세요.", answers: ["d4"], note: "1.d4, 퀸스 폰 오프닝이에요! 즉시 폰을 잃을 위험 없이 견고하게 중앙을 장악해요." },
+      { type: "mc", sans: ["d4"], prompt: "1.d4 이후 흑의 응수가 크게 어떤 두 갈래로 나뉘나요?", opts: ["1...d5(폐쇄형) 또는 1...Nf6(인디언 계열)", "1...e5(오픈 게임) 또는 1...c5(시칠리안)", "캐슬링 직후 항복 둘 중 하나", "폰을 전혀 안 움직이는 두 가지 방식"], answer: 0, note: "1...d5는 퀸스 갬빗 계열로, 1...Nf6는 킹스 인디언·그륀펠트 등 인디언 디펜스 계열로 이어져요." },
+    ],
+  };
+  L.l_d4_d5 = {
+    title: "1...d5 — 퀸스 갬빗", desc: "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응.", reward: 60, parent: "l_d4",
+    steps: [
+      { type: "explain", sans: ["d4", "d5"], coach: "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응이에요. 여기서 백이 c4를 두면 유명한 '퀸스 갬빗'이 시작돼요." },
+      { type: "move", sans: ["d4", "d5"], prompt: "폰을 하나 내주는 셈 치고 c4를 두어 퀸스 갬빗을 시작해 보세요.", answers: ["c4"], note: "2.c4! 퀸스 갬빗이에요. 흑이 dxc4로 잡아도 백은 곧 e4나 e3로 중앙을 되찾을 수 있어 실질적인 손해가 거의 없어요(그래서 '갬빗'이지만 진짜 희생은 아니에요)." },
+    ],
+  };
+  L.l_d4_nf6 = {
+    title: "1...Nf6 — 인디언 디펜스", desc: "중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 유연하게 대응합니다.", reward: 60, parent: "l_d4",
+    steps: [
+      { type: "explain", sans: ["d4", "Nf6"], coach: "중앙 폰을 바로 맞세우지 않고 나이트로 e4·d5를 견제하며, 상대의 다음 수를 보고 유연하게 대응 방향을 정하는 계열이에요 — 인디언 디펜스." },
+      { type: "mc", sans: ["d4", "Nf6"], prompt: "인디언 디펜스 계열(킹스 인디언·그륀펠트 등)의 공통적인 특징은?", opts: ["비숍을 피앙케토(대각선 배치)해 중앙을 기물로 견제한다", "폰을 절대 전진시키지 않는다", "킹을 캐슬링 없이 중앙에 둔다", "나이트를 절대 f6에 두지 않는다"], answer: 0, note: "흔히 g6·Bg7로 비숍을 피앙케토해 긴 대각선에서 중앙을 원거리로 견제해요." },
+    ],
+  };
+  // (기획) 이 레슨 콘텐츠는 시드일 뿐이다 — 실제 서비스에서는 개발자가 LessonEditor(CMS)로 자유롭게
+  // 레슨을 추가·수정하며 나무를 계속 넓혀 나간다(parent만 지정하면 자동으로 그 레슨 아래 갈래가 된다).
 }
 seedContent();
 async function loadContent() {
-  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, questChapters: {} };
+  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, lessons: {} };
   try {
     if (SB_ON) {
       try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
@@ -16455,262 +16480,398 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
     </div>
   );
 }
-/* ============================================================ 메인 퀘스트 · CHAPTER (18차→20차 기능4) ============================================================ */
-// (20차 기능4) 메인 퀘스트를 STAGE(도감 해금 진행도) 방식에서 CHAPTER(사지선다 퀴즈) 방식으로 전면 개편.
-// 챕터·질문 콘텐츠는 CONTENT.questChapters에 저장되며 개발자가 QuestChapterEditor로 직접 입력·수정·삭제한다.
-function chapterProgress(mainQuest, key) {
-  const ch = CONTENT.questChapters[key];
-  if (!ch) return { done: 0, total: 0, complete: false };
+/* ============================================================ 레슨 (v0.4.0 메인 퀘스트 전면 개편) ============================================================ */
+// (사용자 요청) 메인 퀘스트(사지선다 챕터 나열)를 체스 개념·오프닝 하나하나를 다루는 독립된 학습
+// 콘텐츠 "레슨"으로 전면 개편 — 레슨은 CONTENT.lessons(seedLessons 참고)에 parent로 서로 연결되어
+// 갈래를 갖는 나무를 이루고, 도감 오프닝 모식도와 같은 원리로 선행 레슨을 완료(보상 수령)해야 다음
+// 레슨이 열린다. 화면은 LessonMap(나무 모양 로드맵)에서 노드를 눌러 LessonScreen(듀오링고 스타일
+// 전체화면 학습 화면)을 열고, 개발자는 LessonEditor(CMS)로 레슨·단계를 직접 입력·수정·삭제한다.
+function lessonProgress(mainQuest, key) {
+  const l = CONTENT.lessons[key];
+  if (!l) return { done: 0, total: 0, complete: false };
   const answered = ((mainQuest && mainQuest.answered) || {})[key] || {};
-  const total = ch.items.length;
-  const done = ch.items.filter((_, i) => answered[i]).length;
+  const total = l.steps.length;
+  const done = l.steps.filter((_, i) => answered[i]).length;
   return { done, total, complete: total > 0 && done >= total };
 }
-function ChapterRow({ ch, chKey, mainQuest, onOpenQuiz, onClaim, canEdit, onEdit, sub, locked }) {
-  const claimed = ((mainQuest && mainQuest.claimed) || {})[chKey];
-  const { done, total, complete } = chapterProgress(mainQuest, chKey);
-  const pct = total ? Math.round((100 * done) / total) : 0;
-  return (
-    <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), marginLeft: sub ? 14 : 0, opacity: locked ? .55 : 1 }}>
-      <div className="flex items-center gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: complete ? "#BEEAB0" : T.ivoryHi, minWidth: 0 }}>{ch.title}</span>
-        <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 7px", flexShrink: 0 }}><CoinIcon size={15} /> {ch.reward || 100}</span>
-        <span style={{ marginLeft: "auto", flexShrink: 0 }}>
-          {locked ? <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}><Lock size={12} /> 잠김</span>
-            : claimed ? <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>완료</span>
-            : complete ? <button onClick={() => onClaim(chKey)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: "pointer" }}>보상 받기</button>
-            : <button onClick={() => onOpenQuiz(chKey)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{done > 0 ? "이어서 풀기" : "도전하기"}</button>}
-        </span>
-        {canEdit && <button onClick={() => onEdit(chKey)} className="press" title="챕터 편집" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid #5A4630", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Settings size={12} /></button>}
-      </div>
-      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 7 }}>{ch.desc}</div>
-      <div className="flex items-center gap-2">
-        <div style={{ flex: 1, height: 7, borderRadius: 999, background: "rgba(0,0,0,.4)", overflow: "hidden", border: "1px solid #00000066" }}>
-          <div style={{ width: pct + "%", height: "100%", background: complete ? "linear-gradient(90deg,#3C8A3C,#5CB85C)" : "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
-        </div>
-        <span style={{ fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, color: T.brassHi, flexShrink: 0 }}>{done}/{total}</span>
-      </div>
-    </div>
-  );
-}
-function isChapterClaimed(mainQuest, key) { return !!((mainQuest && mainQuest.claimed) || {})[key]; }
-// (기능6) 프로필 카드에 보여줄 메인 퀘스트 전체 진척도 — 모든 하위 챕터를 통틀어 완료(보상 수령)한
-// 챕터 수와, 맞힌 문항 수를 합산한다.
+function isLessonClaimed(mainQuest, key) { return !!((mainQuest && mainQuest.claimed) || {})[key]; }
+// (기능6) 프로필 카드에 보여줄 레슨 전체 진척도 — 모든 레슨을 통틀어 완료(보상 수령)한 레슨 수와,
+// 통과한 단계 수를 합산한다. 이름은 기존 프로필·검색 API 호환을 위해 그대로 둔다.
 function mainQuestOverallProgress(mainQuest) {
-  const keys = Object.keys(CONTENT.questChapters);
+  const keys = Object.keys(CONTENT.lessons);
   let claimed = 0, doneItems = 0, totalItems = 0;
   for (const k of keys) {
-    if (isChapterClaimed(mainQuest, k)) claimed++;
-    const p = chapterProgress(mainQuest, k);
+    if (isLessonClaimed(mainQuest, k)) claimed++;
+    const p = lessonProgress(mainQuest, k);
     doneItems += p.done; totalItems += p.total;
   }
   return { claimed, totalChapters: keys.length, doneItems, totalItems };
 }
-// (기능5) 같은 챕터(페이지) 안에 하위 챕터가 여러 개(예: CHAPTER 2의 e4/d4/c4/Nf3 응수)일 때도,
-// 페이지끼리와 마찬가지로 앞 번호부터 순서대로 클리어해야 다음 하위 챕터가 열리도록 한다.
-function rowUnlockedUpTo(rows, mainQuest) {
-  let idx = 0;
-  for (let i = 1; i < rows.length; i++) { if (isChapterClaimed(mainQuest, rows[i - 1][0])) idx = i; else break; }
-  return idx;
+// 선행 레슨(parent)이 없으면 처음부터 해금, 있으면 그 선행 레슨을 완료(보상 수령)해야 해금된다.
+function isLessonUnlocked(mainQuest, key) {
+  const l = CONTENT.lessons[key];
+  if (!l) return false;
+  if (!l.parent || !CONTENT.lessons[l.parent]) return true;
+  return isLessonClaimed(mainQuest, l.parent);
 }
-function MainQuestCard({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, contentVer }) {
-  const [quizKey, setQuizKey] = useState(null);
-  const [editKey, setEditKey] = useState(null);
-  // (기능4 보강) 챕터 목록을 하드코딩된 5개 키가 아니라 CONTENT.questChapters 전체에서 매 렌더마다
-  // 다시 계산한다 — 그래야 개발자가 "+ 새 챕터 추가"로 만든 챕터도 실제로 화면에 노출된다.
-  // parent 필드가 있는 챕터는 같은 parent끼리 묶어 한 페이지(CHAPTER N)로, parent가 없는 챕터는
-  // ch1은 "CHAPTER 1"로, 그 외(신규 추가분)는 각각 별도 페이지가 된다.
-  const pages = useMemo(() => {
-    const entries = Object.entries(CONTENT.questChapters);
-    const ch1Entry = entries.find(([k]) => k === "ch1");
-    const groups = new Map();
-    const singles = [];
-    for (const [k, ch] of entries) {
-      if (k === "ch1") continue;
-      if (ch.parent) {
-        if (!groups.has(ch.parent)) groups.set(ch.parent, { heading: ch.parentTitle || "챕터 모음", rows: [] });
-        groups.get(ch.parent).rows.push([k, ch]);
-      } else singles.push([k, ch]);
-    }
-    const list = [];
-    if (ch1Entry) list.push({ pageKey: "ch1", heading: null, rows: [ch1Entry] });
-    for (const [pk, g] of groups) list.push({ pageKey: pk, heading: g.heading, rows: g.rows });
-    for (const [k, ch] of singles) list.push({ pageKey: k, heading: ch.title, rows: [[k, ch]] });
-    return list;
-  }, [contentVer]);
-  const n = pages.length;
-  const pageComplete = (pg) => pg.rows.every(([k]) => isChapterClaimed(mainQuest, k));
-  // 이전 페이지(챕터)를 모두 클리어(보상까지 수령)해야 다음 페이지가 열리는 순차 잠금은 그대로 유지.
-  const unlockedUpTo = useMemo(() => {
-    let idx = 0;
-    for (let i = 1; i < n; i++) { if (pageComplete(pages[i - 1])) idx = i; else break; }
-    return idx;
-  }, [pages, mainQuest]);
-  // (기능5) 모바일에서 메인 퀘스트가 세로로 너무 길어지던 문제 — 챕터마다 한 페이지씩 좌우로
-  // 넘기는 방식이었는데, 넘기기 위해 모든 챕터가 한 줄(flex row)에 나란히 있어야 했고 기본 정렬
-  // (stretch) 때문에 지금 보고 있는 챕터가 짧아도 가장 긴 챕터의 높이에 항상 맞춰 늘어나 있었다.
-  // 좌우 넘기기 대신 아코디언(접기/펼치기)으로 세로 나열해, 기본으로는 진행 중인 챕터만 펼쳐지고
-  // 나머지는 제목 줄만 보이도록 접어 전체 높이를 크게 줄인다.
-  const [openKey, setOpenKey] = useState(null);
-  useEffect(() => { setOpenKey(pages[unlockedUpTo] ? pages[unlockedUpTo].pageKey : null); }, [unlockedUpTo]);
+function lessonNodeState(mainQuest, key) {
+  if (!isLessonUnlocked(mainQuest, key)) return "locked";
+  if (isLessonClaimed(mainQuest, key)) return "done";
+  return lessonProgress(mainQuest, key).done > 0 ? "progress" : "available";
+}
+// (기능) 갈래를 갖는 모식도 레이아웃 — parent 하나로 이어지는 나무 구조를 "타이디 트리"로 간단히
+// 배치한다: 자식이 없는 노드(잎)는 왼쪽부터 순서대로 열(col)을 하나씩 차지하고, 자식이 있는 노드는
+// 그 자식들 col의 중앙에 놓인다. row는 parent로부터의 깊이(0=최상위).
+function layoutLessonTree(lessons) {
+  const ids = Object.keys(lessons);
+  const childrenOf = {};
+  const roots = [];
+  for (const id of ids) {
+    const p = lessons[id].parent;
+    if (p && lessons[p]) (childrenOf[p] = childrenOf[p] || []).push(id);
+    else roots.push(id);
+  }
+  const pos = {};
+  let nextCol = 0;
+  const place = (id, row) => {
+    const kids = childrenOf[id] || [];
+    if (!kids.length) { const col = nextCol++; pos[id] = { col, row }; return col; }
+    const cols = kids.map((k) => place(k, row + 1));
+    const col = (Math.min(...cols) + Math.max(...cols)) / 2;
+    pos[id] = { col, row };
+    return col;
+  };
+  roots.forEach((r) => place(r, 0));
+  let maxRow = 0, maxCol = 0;
+  for (const id of ids) { if (pos[id]) { maxRow = Math.max(maxRow, pos[id].row); maxCol = Math.max(maxCol, pos[id].col); } }
+  return { pos, childrenOf, roots, maxRow, maxCol };
+}
+const LESSON_COL_W = 96, LESSON_ROW_H = 116, LESSON_NODE_D = 60;
+const LESSON_NODE_STYLE = {
+  locked: { bg: "linear-gradient(180deg,#4A4038,#2A2420)", border: "#5A4630", color: T.inkSoft, ring: null },
+  available: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", ring: "rgba(196,154,80,.5)" },
+  progress: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", ring: "rgba(196,154,80,.5)" },
+  done: { bg: "linear-gradient(180deg,#3C8A3C,#2C6A2C)", border: "#9BE39B", color: "#EAF7E6", ring: "rgba(120,200,120,.5)" },
+};
+function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
+  const s = LESSON_NODE_STYLE[state];
   return (
-    <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#33220F,#1E1206)", border: "1px solid " + T.brass }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, marginBottom: 2 }}>메인 퀘스트</div>
-      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>오프닝 포지션의 성격을 탐구하는 챕터 퀴즈 — 이전 챕터를 클리어해야 다음 챕터가 열립니다.</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {pages.map((pg, i) => {
-          const locked = i > unlockedUpTo;
-          const complete = pageComplete(pg);
-          const isOpen = !locked && openKey === pg.pageKey;
-          const rowUnlockedIdx = rowUnlockedUpTo(pg.rows, mainQuest);
-          const totals = pg.rows.reduce((acc, [k]) => { const p = chapterProgress(mainQuest, k); return { done: acc.done + p.done, total: acc.total + p.total }; }, { done: 0, total: 0 });
-          return (
-            <div key={pg.pageKey} style={{ borderRadius: 10, border: "1px solid " + (complete ? "rgba(120,200,120,.4)" : "#5A4630"), background: "rgba(0,0,0,.15)", opacity: locked ? .55 : 1, overflow: "hidden" }}>
-              <button onClick={() => !locked && setOpenKey(isOpen ? null : pg.pageKey)} disabled={locked} className={locked ? "" : "press"}
-                style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", border: "none", background: "transparent", cursor: locked ? "default" : "pointer", textAlign: "left" }}>
-                <span style={{ fontSize: 11.5, fontWeight: 900, letterSpacing: ".02em", color: complete ? "#BEEAB0" : T.brassHi, minWidth: 0, flex: 1 }}>{"CHAPTER " + (i + 1) + (pg.heading ? " · " + pg.heading : "")}</span>
-                {locked ? <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, flexShrink: 0 }}><Lock size={11} /> 잠김</span>
-                  : complete ? <span style={{ fontSize: 10, fontWeight: 800, color: T.best, flexShrink: 0 }}>완료</span>
-                  : <span style={{ fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, color: T.brassHi, flexShrink: 0 }}>{totals.done}/{totals.total}</span>}
-                {!locked && <ChevronDown size={14} color={T.inkSoft} style={{ flexShrink: 0, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s ease" }} />}
-              </button>
-              {isOpen && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 10px 10px" }}>
-                  {pg.rows.map(([k, ch], ri) => <FadeIn key={k} index={ri}><ChapterRow ch={ch} chKey={k} mainQuest={mainQuest} onOpenQuiz={setQuizKey} onClaim={onClaim} canEdit={canEdit} onEdit={setEditKey} sub={pg.rows.length > 1} locked={ri > rowUnlockedIdx} /></FadeIn>)}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 새 챕터 추가</button>}
-      {quizKey && <QuizModal chKey={quizKey} ch={CONTENT.questChapters[quizKey]} mainQuest={mainQuest} onAnswer={onAnswer} onClose={() => setQuizKey(null)} />}
-      {editKey && <QuestChapterEditor chKey={editKey} bumpContent={bumpContent} onClose={() => setEditKey(null)} />}
+    <div style={{ position: "absolute", left: x, top: y, width: LESSON_COL_W, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+      <button onClick={() => state !== "locked" && onOpen(id)} disabled={state === "locked"} className={state === "locked" ? "" : "press"}
+        title={lesson.title}
+        style={{ width: LESSON_NODE_D, height: LESSON_NODE_D, borderRadius: "50%", border: "3px solid " + s.border, background: s.bg, color: s.color,
+          display: "flex", alignItems: "center", justifyContent: "center", cursor: state === "locked" ? "default" : "pointer",
+          boxShadow: s.ring ? "0 0 0 5px " + s.ring + ", 0 4px 10px rgba(0,0,0,.4)" : "0 4px 10px rgba(0,0,0,.4)", flexShrink: 0 }}>
+        {state === "locked" ? <Lock size={22} /> : state === "done" ? <Check size={26} /> : <Play size={22} fill={s.color} />}
+      </button>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: state === "locked" ? T.inkSoft : T.ivoryHi, textAlign: "center", lineHeight: 1.25, maxWidth: LESSON_COL_W + 16, wordBreak: "keep-all" }}>{lesson.title}</div>
+      {state !== "locked" && (
+        <span className="flex items-center gap-1" style={{ fontSize: 9.5, fontWeight: 800, color: T.brassHi }}><CoinIcon size={12} /> {lesson.reward || 60}</span>
+      )}
+      {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title="레슨 편집" style={{ width: 18, height: 18, borderRadius: 5, border: "1px solid #5A4630", background: "rgba(0,0,0,.3)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: 0, right: 0 }}><Settings size={10} /></button>}
     </div>
   );
 }
-/* (20차 기능4) 챕터 퀴즈 — 사지선다·오지선다, 듀오링고 스타일로 한 문항씩 진행하며 틀리면 그 자리에서 다시 시도한다.
-   이미 정답을 맞힌 문항은 건너뛰고, 전부 맞히면 챕터 완료(보상 받기는 MainQuestCard의 별도 버튼에서). */
-function QuizModal({ chKey, ch, mainQuest, onAnswer, onClose }) {
-  // (20차 기능4) 문항 대기열은 모달을 여는 시점에 한 번만 고정한다 — 정답을 맞힐 때마다 answered가
-  // 즉시 갱신되는데, 그때마다 pending을 다시 계산하면 "다음 문항" 클릭 전에 이미 배열이 한 칸
-  // 당겨져 있어 pos를 증가시키는 순간 바로 다음 문항을 건너뛰는 버그가 생긴다.
-  const initialAnsweredRef = useRef(null);
-  if (initialAnsweredRef.current == null || initialAnsweredRef.current.chKey !== chKey) {
-    initialAnsweredRef.current = { chKey, set: new Set(Object.keys((((mainQuest && mainQuest.answered) || {})[chKey]) || {}).map(Number)) };
-  }
-  const queue = useMemo(() => (ch ? ch.items.map((it, i) => ({ it, i })).filter((x) => !initialAnsweredRef.current.set.has(x.i)) : []), [ch, chKey]);
-  const [pos, setPos] = useState(0);
+// (v0.4.0 UI) 메인 퀘스트 전면 개편 — 챕터 아코디언 목록 대신, 갈래를 갖는 모식도(나무) 형태의
+// 레슨 로드맵을 보여준다. 선행 레슨(parent)을 완료해야 그 아래 레슨이 순차적으로 해금된다.
+function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, contentVer }) {
+  const [openKey, setOpenKey] = useState(null);
+  const [editKey, setEditKey] = useState(null);
+  const layout = useMemo(() => layoutLessonTree(CONTENT.lessons), [contentVer]);
+  const ids = useMemo(() => Object.keys(CONTENT.lessons).filter((id) => layout.pos[id]), [layout]);
+  const width = (layout.maxCol + 1) * LESSON_COL_W + 24;
+  const height = (layout.maxRow + 1) * LESSON_ROW_H + 16;
+  const cx = (id) => layout.pos[id].col * LESSON_COL_W + LESSON_COL_W / 2 + 12;
+  const cy = (id) => layout.pos[id].row * LESSON_ROW_H + LESSON_NODE_D / 2 + 8;
+  const overall = useMemo(() => mainQuestOverallProgress(mainQuest), [mainQuest, contentVer]);
+  // (버그 수정) 타이디 트리 레이아웃은 상위 레슨을 "그 자식들의 가운데"에 놓는다 — 갈래가 한쪽으로
+  // 치우쳐 있으면(예: 첫 레슨 하나 아래 e4·d4 두 갈래가 뻗어나가는 모양) 정작 지금 막 시작해야 할
+  // 최상위 레슨이 왼쪽 끝(스크롤 기본 위치)이 아니라 열 중앙 어딘가로 밀려나, 가로 스크롤을 하지
+  // 않으면 화면 밖에 있어 보이지도 않았다. 지금 도전할 만한(해금됐고 아직 다 못 깬) 레슨—없으면
+  // 첫 최상위 레슨—이 항상 보이도록, 마운트 시 그 레슨이 컨테이너 가운데 오게 자동으로 스크롤한다.
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !ids.length) return;
+    const frontier = ids.find((id) => { const st = lessonNodeState(mainQuest, id); return st === "available" || st === "progress"; }) || layout.roots[0] || ids[0];
+    if (!frontier || !layout.pos[frontier]) return;
+    const targetX = layout.pos[frontier].col * LESSON_COL_W + LESSON_COL_W / 2 + 12;
+    el.scrollLeft = Math.max(0, targetX - el.clientWidth / 2);
+  }, [layout, ids.length]);
+  return (
+    <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#33220F,#1E1206)", border: "1px solid " + T.brass }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>레슨</span>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginLeft: "auto" }}>{overall.claimed}/{overall.totalChapters} 완료</span>
+      </div>
+      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>체스 개념과 오프닝을 하나씩 다루는 독립된 학습 코스 — 갈래를 따라 순서대로 해금됩니다.</div>
+      {ids.length === 0 ? (
+        <div style={{ fontSize: 12, color: T.inkSoft, padding: "16px 0", textAlign: "center" }}>아직 등록된 레슨이 없어요.</div>
+      ) : (
+        <div ref={scrollRef} style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ position: "relative", width, height, margin: "0 auto" }}>
+            <svg width={width} height={height} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+              {ids.map((id) => {
+                const lesson = CONTENT.lessons[id];
+                if (!lesson.parent || !layout.pos[lesson.parent]) return null;
+                const claimed = isLessonClaimed(mainQuest, lesson.parent);
+                return <line key={id} x1={cx(lesson.parent)} y1={cy(lesson.parent) + LESSON_NODE_D / 2} x2={cx(id)} y2={cy(id) - LESSON_NODE_D / 2}
+                  stroke={claimed ? "rgba(120,200,120,.55)" : "rgba(196,154,80,.35)"} strokeWidth={4} strokeLinecap="round" />;
+              })}
+            </svg>
+            {ids.map((id) => (
+              <LessonNode key={id} id={id} lesson={CONTENT.lessons[id]} state={lessonNodeState(mainQuest, id)}
+                x={cx(id) - LESSON_COL_W / 2} y={cy(id) - LESSON_NODE_D / 2} onOpen={setOpenKey} canEdit={canEdit} onEdit={setEditKey} />
+            ))}
+          </div>
+        </div>
+      )}
+      {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 새 레슨 추가</button>}
+      {openKey && CONTENT.lessons[openKey] && <LessonScreen lessonKey={openKey} lesson={CONTENT.lessons[openKey]} mainQuest={mainQuest} onAnswer={onAnswer} onClaim={onClaim} onClose={() => setOpenKey(null)} />}
+      {editKey && <LessonEditor lessonKey={editKey} bumpContent={bumpContent} onClose={() => setEditKey(null)} />}
+    </div>
+  );
+}
+// (기능) 알파벳 좌표("e4") → 보드 배열 좌표([r,c]). 레슨 스텝의 arrows/highlight 저작에 쓴다.
+function lessonSq(name) { return [8 - parseInt(name[1], 10), FILES.indexOf(name[0])]; }
+/* ============================================================ 레슨 화면 (듀오링고 스타일) ============================================================ */
+// (사용자 요청) 모바일에서는 위에 체스보드·아래에 상호작용 영역(세로), 데스크톱에서는 좌측에
+// 체스보드·우측에 상호작용 영역(가로)을 두고, 두 환경 모두 화면 전체 비율을 사용하는 전체화면
+// 학습 화면. 스텝은 세 종류 — explain(설명만)·mc(객관식)·move(보드에 직접 수를 두는 주관식) —
+// 이며 한 스텝씩 순서대로 진행하고, 전부 통과하면 보상을 받을 수 있다.
+function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose }) {
+  const narrow = useNarrow(860);
+  const claimedAlready = isLessonClaimed(mainQuest, lessonKey);
+  // (기능) 이미 완료(보상 수령)한 레슨을 다시 열면 복습 삼아 처음부터 다시 보여주고, 아직 진행 중인
+  // 레슨은 마지막으로 못 푼 스텝부터 이어서 보여준다.
+  const initialStep = useMemo(() => {
+    if (claimedAlready) return 0;
+    const answered = ((mainQuest && mainQuest.answered) || {})[lessonKey] || {};
+    for (let i = 0; i < lesson.steps.length; i++) if (!answered[i]) return i;
+    return lesson.steps.length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonKey]);
+  const [stepIdx, setStepIdx] = useState(initialStep);
   const [picked, setPicked] = useState(null);
-  const [feedback, setFeedback] = useState(null); // "correct" | "wrong" | null
-  useEffect(() => { setPos(0); setPicked(null); setFeedback(null); }, [chKey]);
-  if (!ch) return null;
-  const done = pos >= queue.length;
-  const cur = !done ? queue[pos] : null;
+  const [feedback, setFeedback] = useState(null);   // mc: "correct" | "wrong" | null
+  const [sel, setSel] = useState(null);             // move: 선택한 칸
+  const [wrongSq, setWrongSq] = useState(null);      // move: 오답으로 이동을 시도한 칸(잠깐 빨갛게 표시)
+  const [moveDone, setMoveDone] = useState(false);   // move: 이 스텝을 통과했는지
+  useEffect(() => { setPicked(null); setFeedback(null); setSel(null); setWrongSq(null); setMoveDone(false); }, [stepIdx]);
+  const done = stepIdx >= lesson.steps.length;
+  const step = !done ? lesson.steps[stepIdx] : null;
+  const stepSans = step ? (step.sans || []) : [];
+  const board = useMemo(() => boardFromSans(stepSans), [stepSans.join(",")]);
+  const color = stepSans.length % 2 === 0 ? "w" : "b";
+  const [boardSize, setBoardRef] = useBoardSize(narrow ? 480 : 640);
+  const advance = () => setStepIdx((i) => i + 1);
+  const markAnswered = () => onAnswer(lessonKey, stepIdx);
   const pick = (oi) => {
     if (feedback === "correct") return;
     setPicked(oi);
-    if (oi === cur.it.answer) { setFeedback("correct"); onAnswer(chKey, cur.i); }
+    if (oi === step.answer) { setFeedback("correct"); markAnswered(); }
     else setFeedback("wrong");
   };
-  const next = () => { setPos((p) => p + 1); setPicked(null); setFeedback(null); };
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
-        <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, marginBottom: 4 }}>{ch.title}</div>
+  const legalTargets = (sel && step && step.type === "move" && !moveDone) ? legalDests(board, sel[0], sel[1], color, null) : [];
+  const attemptMove = (from, to) => {
+    if (!step || step.type !== "move" || moveDone) return;
+    if (from[0] === to[0] && from[1] === to[1]) { setSel(null); return; }
+    if (!legalDests(board, from[0], from[1], color, null).some(([r, c]) => r === to[0] && c === to[1])) return;
+    const san = buildSan(board, from[0], from[1], to[0], to[1], color, null);
+    setSel(null);
+    if (!san) return;
+    const ok = (step.answers || []).some((a) => stripSuffix(a) === stripSuffix(san));
+    if (ok) { setMoveDone(true); markAnswered(); }
+    else { setWrongSq(to); setTimeout(() => setWrongSq(null), 700); }
+  };
+  const onSquareClick = (sq) => {
+    if (!step || step.type !== "move" || moveDone) return;
+    const p = board[sq[0]][sq[1]];
+    if (sel) {
+      if (legalDests(board, sel[0], sel[1], color, null).some(([r, c]) => r === sq[0] && c === sq[1])) { attemptMove(sel, sq); return; }
+      if (p && p.c === color) { setSel(sq); return; }
+      setSel(null);
+    } else if (p && p.c === color) setSel(sq);
+  };
+  const claimAndClose = () => { if (!claimedAlready) onClaim(lessonKey); onClose(); };
+  const progressPct = Math.round((100 * Math.min(stepIdx, lesson.steps.length)) / Math.max(1, lesson.steps.length));
+  // (버그 수정) boardPanel이 가로 폭 지정 없이 flex row의 자식으로만 있으면(내부 측정용 div가
+  // width:100%를 자기 자신 기준으로 순환 참조하게 되어) 브라우저가 이 칸을 거의 내용 없는 최소
+  // 크기로 접어버려, 데스크톱에서 보드가 작은 썸네일 크기로만 보이고 상호작용 영역이 그 옆이 아니라
+  // 사실상 전체 폭을 차지하는 것처럼 보이는 문제가 있었다. 데스크톱에서는 이 패널에 실제 가로 폭
+  // 비율(flexBasis)을 명시해 측정 기준을 만들어 주고, 보드 한 변이 세로 공간을 넘지 않도록
+  // 뷰포트 높이 기준 상한(min())도 함께 건다 — 두 환경 모두 전체 화면 비율을 그대로 활용한다.
+  const boardPanel = (
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: narrow ? "12px 10px 4px" : "20px", boxSizing: "border-box",
+      ...(narrow ? { width: "100%", flexShrink: 0 } : { flexBasis: "50%", flexShrink: 0, flexGrow: 0, height: "100%" }) }}>
+      <div ref={setBoardRef} style={{ width: "100%", maxWidth: narrow ? "480px" : "min(640px, 82vh)" }}>
+        <Board board={board} flip={color === "b"} size={boardSize} showEval={false}
+          interactive={!!step && step.type === "move" && !moveDone}
+          selected={sel} legalTargets={legalTargets} onSquareClick={onSquareClick}
+          onPieceDrag={(sq) => { if (step && step.type === "move" && !moveDone) { const p = board[sq[0]][sq[1]]; if (p && p.c === color) setSel(sq); } }}
+          onDrop={(sq) => { if (sel) attemptMove(sel, sq); }}
+          onMove={(from, to) => attemptMove(from, to)}
+          wrongAt={wrongSq} />
+      </div>
+    </div>
+  );
+  const interactionPanel = (
+    <div style={{ flex: 1, minWidth: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: narrow ? "10px 14px" : "18px 24px 8px", flexShrink: 0 }}>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lesson.title}</div>
+          <div style={{ height: 8, borderRadius: 999, background: "rgba(0,0,0,.4)", overflow: "hidden", border: "1px solid #00000066" }}>
+            <div style={{ width: progressPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .4s ease" }} />
+          </div>
+        </div>
+      </div>
+      <div style={{ flex: 1, padding: narrow ? "8px 16px 28px" : "8px 28px 32px", display: "flex", flexDirection: "column", justifyContent: done ? "center" : "flex-start" }}>
         {done ? (
           <div style={{ textAlign: "center", padding: "24px 0" }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: T.best, marginBottom: 6 }}>🎉 이 챕터의 모든 문항을 맞혔어요!</div>
-            <div style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>퀘스트 화면에서 보상을 받아보세요.</div>
-            <button onClick={onClose} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>닫기</button>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.best, marginBottom: 8 }}>{claimedAlready ? "레슨을 복습했어요!" : "레슨을 완료했어요!"}</div>
+            {!claimedAlready && <div className="flex items-center justify-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, marginBottom: 16 }}><CoinIcon size={18} /> +{lesson.reward || 60} OC 나이트 코인</div>}
+            <button onClick={claimAndClose} className="press" style={{ padding: "11px 22px", borderRadius: 11, background: claimedAlready ? "linear-gradient(180deg,#3A2516,#241509)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: claimedAlready ? T.ivoryHi : "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 13.5 }}>{claimedAlready ? "닫기" : "보상 받기"}</button>
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginBottom: 10 }}>{pos + 1} / {queue.length}문항</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 12, lineHeight: 1.4 }}>{cur.it.q}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {cur.it.opts.map((op, oi) => {
-                const isPicked = picked === oi;
-                const showCorrect = feedback && oi === cur.it.answer;
-                const showWrong = feedback === "wrong" && isPicked;
-                return (
-                  <button key={oi} onClick={() => pick(oi)} disabled={feedback === "correct"} className={feedback ? "" : "press"}
-                    style={{ textAlign: "left", padding: "10px 12px", borderRadius: 9, fontSize: 12.5, lineHeight: 1.4, cursor: feedback === "correct" ? "default" : "pointer",
-                      border: "1.5px solid " + (showCorrect ? T.best : showWrong ? T.blunder : "#C9B58C"),
-                      background: showCorrect ? "#EAF3E0" : showWrong ? "#FBEAEA" : "#fff", color: T.ink }}>{op}</button>
-                );
-              })}
+            <div style={{ marginBottom: 14 }}>
+              <MascotBubble ply={0} mascot={step.type === "mc" && feedback === "wrong" ? "kokoa" : "milku"} emotion={feedback === "correct" || moveDone ? "celebrate" : feedback === "wrong" ? "surprise" : "great"}
+                text={step.type === "explain" ? step.coach : (step.prompt || "")} />
             </div>
-            {feedback === "wrong" && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginTop: 10 }}>✕ 다른 설명이에요. 다시 골라보세요.</div>}
-            {feedback === "correct" && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 11.5, color: T.best, fontWeight: 700, marginBottom: 6 }}>✓ 정답이에요!{cur.it.note ? " " + cur.it.note : ""}</div>
-                <button onClick={next} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>다음 문항</button>
+            {step.type === "mc" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {step.opts.map((op, oi) => {
+                  const isPicked = picked === oi;
+                  const showCorrect = feedback && oi === step.answer;
+                  const showWrong = feedback === "wrong" && isPicked;
+                  return (
+                    <button key={oi} onClick={() => pick(oi)} disabled={feedback === "correct"} className={feedback ? "" : "press"}
+                      style={{ textAlign: "left", padding: "11px 13px", borderRadius: 10, fontSize: 12.5, lineHeight: 1.4, cursor: feedback === "correct" ? "default" : "pointer",
+                        border: "1.5px solid " + (showCorrect ? T.best : showWrong ? T.blunder : "#5A4630"),
+                        background: showCorrect ? "rgba(120,200,120,.18)" : showWrong ? "rgba(200,80,80,.18)" : "rgba(0,0,0,.2)", color: T.ivoryHi }}>{op}</button>
+                  );
+                })}
+                {feedback === "wrong" && <div style={{ fontSize: 11.5, color: "#F4A8A8", fontWeight: 700, marginTop: 6 }}>✕ 다른 설명이에요. 다시 골라보세요.</div>}
+                {feedback === "correct" && step.note && <div style={{ fontSize: 11.5, color: "#BEEAB0", fontWeight: 700, marginTop: 6 }}>✓ {step.note}</div>}
               </div>
             )}
+            {step.type === "move" && (
+              <div>
+                {wrongSq && <div style={{ fontSize: 11.5, color: "#F4A8A8", fontWeight: 700, marginBottom: 6 }}>✕ 다른 수예요. 보드를 다시 살펴보세요.</div>}
+                {moveDone && step.note && <div style={{ fontSize: 11.5, color: "#BEEAB0", fontWeight: 700, marginBottom: 6 }}>✓ {step.note}</div>}
+                {!moveDone && !wrongSq && <div style={{ fontSize: 11, color: T.inkSoft }}>보드 위에서 기물을 눌러(또는 끌어서) 두어보세요.</div>}
+              </div>
+            )}
+            <div style={{ marginTop: "auto", paddingTop: 18 }}>
+              {(step.type === "explain" || (step.type === "mc" && feedback === "correct") || (step.type === "move" && moveDone)) && (
+                <button onClick={() => { if (step.type === "explain") markAnswered(); advance(); }} className="press"
+                  style={{ width: "100%", padding: "12px 20px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 13.5 }}>
+                  {stepIdx >= lesson.steps.length - 1 ? "레슨 마치기" : "다음"}
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>
     </div>
   );
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", display: "flex", flexDirection: narrow ? "column" : "row", overflow: "hidden" }}>
+      {boardPanel}
+      {interactionPanel}
+    </div>
+  );
 }
-/* (20차 기능4) 개발자 전용 — 챕터의 제목·설명·보상과 문항(질문·보기·정답·설명)을 직접 입력·수정·삭제하는 CMS. */
-function QuestChapterEditor({ chKey, bumpContent, onClose }) {
-  const isNew = chKey === "__new__";
-  const [key, setKey] = useState(isNew ? "" : chKey);
-  const existing = !isNew ? CONTENT.questChapters[chKey] : null;
-  const [draft, setDraft] = useState(existing || { title: "", desc: "", reward: 100, items: [] });
+/* (v0.4.0) 개발자 전용 — 레슨의 제목·설명·보상·선행 레슨(parent)과 스텝(설명/객관식/주관식)을
+   직접 입력·수정·삭제하는 CMS. 각 스텝의 포지션은 시작 위치부터의 수순(sans, 공백으로 구분)으로 지정한다. */
+function LessonEditor({ lessonKey, bumpContent, onClose }) {
+  const isNew = lessonKey === "__new__";
+  const [key, setKey] = useState(isNew ? "" : lessonKey);
+  const existing = !isNew ? CONTENT.lessons[lessonKey] : null;
+  const [draft, setDraft] = useState(existing || { title: "", desc: "", reward: 60, parent: null, steps: [] });
   const [saving, setSaving] = useState(false);
   const save = async (next) => {
     setDraft(next); setSaving(true);
-    const k = isNew ? key.trim() : chKey;
-    if (k) { CONTENT.questChapters[k] = next; await bumpContent(); }
+    const k = isNew ? key.trim() : lessonKey;
+    if (k) { CONTENT.lessons[k] = next; await bumpContent(); }
     setSaving(false);
   };
-  const updateItem = (i, patch) => { const items = draft.items.map((it, idx) => idx === i ? { ...it, ...patch } : it); save({ ...draft, items }); };
-  const updateOpt = (i, oi, v) => { const opts = draft.items[i].opts.map((o, x) => x === oi ? v : o); updateItem(i, { opts }); };
-  const addItem = () => save({ ...draft, items: [...draft.items, { move: "", q: "", opts: ["", "", "", ""], answer: 0, note: "" }] });
-  const delItem = (i) => save({ ...draft, items: draft.items.filter((_, idx) => idx !== i) });
-  const delChapter = async () => { if (!isNew) { delete CONTENT.questChapters[chKey]; await bumpContent(); } onClose(); };
+  const updateStep = (i, patch) => { const steps = draft.steps.map((s, idx) => idx === i ? { ...s, ...patch } : s); save({ ...draft, steps }); };
+  const updateOpt = (i, oi, v) => { const opts = draft.steps[i].opts.map((o, x) => x === oi ? v : o); updateStep(i, { opts }); };
+  const addStep = (type) => {
+    const step = type === "mc" ? { type: "mc", sans: [], prompt: "", opts: ["", "", "", ""], answer: 0, note: "" }
+      : type === "move" ? { type: "move", sans: [], prompt: "", answers: [""], note: "" }
+      : { type: "explain", sans: [], coach: "" };
+    save({ ...draft, steps: [...draft.steps, step] });
+  };
+  const delStep = (i) => save({ ...draft, steps: draft.steps.filter((_, idx) => idx !== i) });
+  const delLesson = async () => { if (!isNew) { delete CONTENT.lessons[lessonKey]; await bumpContent(); } onClose(); };
+  const sansOf = (s) => (s.sans || []).join(" ");
+  const setSansText = (i, text) => updateStep(i, { sans: text.trim() ? text.trim().split(/\s+/) : [] });
+  const otherLessonKeys = Object.keys(CONTENT.lessons).filter((k) => k !== lessonKey);
+  const field = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box" };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 520, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
         <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
-        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{isNew ? "새 챕터 추가" : "챕터 편집"} {saving && <span style={{ fontSize: 10, color: T.inkSoft, fontWeight: 600 }}>저장 중…</span>}</div>
-        {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder="챕터 키 (예: ch2-5)" style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12, marginBottom: 8, boxSizing: "border-box" }} />}
-        <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => save(draft)} placeholder="챕터 제목" style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 13, fontWeight: 700, marginBottom: 6, boxSizing: "border-box" }} />
-        <textarea value={draft.desc} onChange={(e) => setDraft({ ...draft, desc: e.target.value })} onBlur={() => save(draft)} placeholder="챕터 설명" rows={2} style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box", resize: "vertical" }} />
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{isNew ? "새 레슨 추가" : "레슨 편집"} {saving && <span style={{ fontSize: 10, color: T.inkSoft, fontWeight: 600 }}>저장 중…</span>}</div>
+        {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder="레슨 키 (예: l_e4_c4)" style={{ ...field, fontFamily: SITE_FONT }} />}
+        <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => save(draft)} placeholder="레슨 제목" style={{ ...field, fontWeight: 700 }} />
+        <textarea value={draft.desc} onChange={(e) => setDraft({ ...draft, desc: e.target.value })} onBlur={() => save(draft)} placeholder="레슨 설명" rows={2} style={{ ...field, resize: "vertical" }} />
+        <div className="flex items-center gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: T.inkSoft }}>선행 레슨</span>
+          <select value={draft.parent || ""} onChange={(e) => save({ ...draft, parent: e.target.value || null })} style={{ padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 11.5 }}>
+            <option value="">없음(최상위)</option>
+            {otherLessonKeys.map((k) => <option key={k} value={k}>{k} — {CONTENT.lessons[k].title}</option>)}
+          </select>
+        </div>
         <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
-          <span style={{ fontSize: 11, color: T.inkSoft }}>클리어 보상</span>
+          <span style={{ fontSize: 11, color: T.inkSoft }}>완료 보상</span>
           <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
           <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={17} /> OC 나이트 코인</span>
         </div>
-        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>문항 {draft.items.length}개</div>
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>스텝 {draft.steps.length}개</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {draft.items.map((it, i) => (
+          {draft.steps.map((s, i) => (
             <div key={i} style={{ border: "1px dashed #C9B58C", borderRadius: 10, padding: 10 }}>
               <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-                <input value={it.move} onChange={(e) => updateItem(i, { move: e.target.value })} placeholder="수(예: e4)" style={{ width: 60, padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 11.5 }} />
-                <button onClick={() => delItem(i)} className="press" style={{ marginLeft: "auto", width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
+                <span style={{ fontSize: 10.5, fontWeight: 800, padding: "2px 7px", borderRadius: 999, background: "#EFE3C6", color: "#6B4F1E" }}>{s.type === "explain" ? "설명" : s.type === "mc" ? "객관식" : "주관식(수 두기)"}</span>
+                <button onClick={() => delStep(i)} className="press" style={{ marginLeft: "auto", width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
               </div>
-              <textarea value={it.q} onChange={(e) => updateItem(i, { q: e.target.value })} placeholder="질문" rows={2} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box", resize: "vertical" }} />
-              {it.opts.map((op, oi) => (
-                <div key={oi} className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-                  <input type="radio" checked={it.answer === oi} onChange={() => updateItem(i, { answer: oi })} title="정답으로 표시" />
-                  <input value={op} onChange={(e) => updateOpt(i, oi, e.target.value)} placeholder={"보기 " + (oi + 1)} style={{ flex: 1, minWidth: 0, padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5 }} />
-                </div>
-              ))}
-              <div className="flex items-center gap-2" style={{ marginTop: 4 }}>
-                <button onClick={() => updateItem(i, { opts: [...it.opts, ""] })} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>+ 보기 추가</button>
-              </div>
-              <textarea value={it.note} onChange={(e) => updateItem(i, { note: e.target.value })} placeholder="정답 후 보여줄 추가 설명(선택)" rows={2} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 11.5, marginTop: 6, boxSizing: "border-box", resize: "vertical" }} />
+              <input defaultValue={sansOf(s)} onBlur={(e) => setSansText(i, e.target.value)} placeholder="포지션 수순(공백 구분, 예: e4 e5 Nf3) — 비워두면 시작 위치" style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 11.5, marginBottom: 6, boxSizing: "border-box" }} />
+              {s.type === "explain" && (
+                <textarea value={s.coach} onChange={(e) => updateStep(i, { coach: e.target.value })} placeholder="코치 설명" rows={2} style={{ ...field, marginBottom: 0, resize: "vertical" }} />
+              )}
+              {s.type === "mc" && (
+                <>
+                  <textarea value={s.prompt} onChange={(e) => updateStep(i, { prompt: e.target.value })} placeholder="질문" rows={2} style={{ ...field, resize: "vertical" }} />
+                  {s.opts.map((op, oi) => (
+                    <div key={oi} className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+                      <input type="radio" checked={s.answer === oi} onChange={() => updateStep(i, { answer: oi })} title="정답으로 표시" />
+                      <input value={op} onChange={(e) => updateOpt(i, oi, e.target.value)} placeholder={"보기 " + (oi + 1)} style={{ flex: 1, minWidth: 0, padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5 }} />
+                    </div>
+                  ))}
+                  <button onClick={() => updateStep(i, { opts: [...s.opts, ""] })} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer", marginBottom: 6 }}>+ 보기 추가</button>
+                  <textarea value={s.note} onChange={(e) => updateStep(i, { note: e.target.value })} placeholder="정답 후 보여줄 추가 설명(선택)" rows={2} style={{ ...field, marginBottom: 0, resize: "vertical" }} />
+                </>
+              )}
+              {s.type === "move" && (
+                <>
+                  <textarea value={s.prompt} onChange={(e) => updateStep(i, { prompt: e.target.value })} placeholder="지시문(예: 중앙 폰을 두 칸 전진시켜 보세요)" rows={2} style={{ ...field, resize: "vertical" }} />
+                  <input defaultValue={(s.answers || []).join(", ")} onBlur={(e) => updateStep(i, { answers: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="정답 수(쉼표로 구분, 예: Nf3, Nc3)" style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 11.5, marginBottom: 6, boxSizing: "border-box" }} />
+                  <textarea value={s.note} onChange={(e) => updateStep(i, { note: e.target.value })} placeholder="정답 후 보여줄 추가 설명(선택)" rows={2} style={{ ...field, marginBottom: 0, resize: "vertical" }} />
+                </>
+              )}
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-between" style={{ marginTop: 10 }}>
-          <button onClick={addItem} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 문항 추가</button>
-          {!isNew && <button onClick={delChapter} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>챕터 삭제</button>}
+        <div className="flex items-center gap-2" style={{ marginTop: 10, flexWrap: "wrap" }}>
+          <button onClick={() => addStep("explain")} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 설명</button>
+          <button onClick={() => addStep("mc")} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 객관식</button>
+          <button onClick={() => addStep("move")} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 주관식(수 두기)</button>
+          {!isNew && <button onClick={delLesson} className="press" style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>레슨 삭제</button>}
         </div>
       </div>
     </div>
@@ -16725,7 +16886,7 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
           제목도 같은 이름으로 맞춘다(퀘스트 내용·기능 자체는 그대로). */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>학습</h2></div>
       <FadeIn index={0}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /></FadeIn>
-      <FadeIn index={1}><MainQuestCard mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
+      <FadeIn index={1}><LessonMap mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
     </div>
   );
 }
@@ -18205,8 +18366,8 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           {mq.totalChapters > 0 && (
             <div style={{ marginTop: 4, marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>메인 퀘스트 진척도</span>
-                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>레슨 진척도</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{mq.totalChapters} 레슨 완료</span>
               </div>
               <div style={{ height: 7, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
                 <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
@@ -22325,8 +22486,8 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
       {mq && mq.totalChapters > 0 && (
         <div style={{ marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>메인 퀘스트 진척도</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{mq.totalChapters} 챕터 완료</span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>레슨 진척도</span>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{mq.totalChapters} 레슨 완료</span>
           </div>
           <div style={{ height: 6, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
             <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
@@ -24321,7 +24482,7 @@ export default function App() {
     setMainQuest((mq) => {
       const claimed = (mq && mq.claimed) || {};
       if (claimed[chKey]) return mq;
-      const ch = CONTENT.questChapters[chKey];
+      const ch = CONTENT.lessons[chKey];
       const amount = (ch && ch.reward) || 100;
       setOcCoins((c) => c + amount);
       setToast({ type: "coins", amount });
