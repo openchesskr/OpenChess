@@ -2296,90 +2296,180 @@ function seedContent() {
 // (사용자 요청) "메인 퀘스트"(사지선다 챕터 퀴즈 나열)를 체스 개념·오프닝 하나하나를 다루는 독립된
 // 학습 콘텐츠 "레슨"으로 전면 개편한다. 레슨은 서로 유기적으로 이어지도록 parent(선행 레슨 key)로
 // 연결해 갈래를 갖는 나무 구조를 이루고, 선행 레슨을 완료(보상 수령)해야 다음 레슨이 열린다(도감
-// 오프닝 모식도와 같은 "순차 해금" 원리). 레슨 하나 = { title, desc, parent, reward, steps:[...] }.
-// steps의 각 단계는 실제 포지션(그 위치까지의 수순 sans)을 보드에 띄운 채 아래 세 형태 중 하나로 진행된다.
-//   · explain — 코치가 개념을 설명만 하고 "다음"으로 넘어간다(퀴즈 없음).
-//   · mc      — 객관식(사지선다류): opts 중 하나를 골라 answer(정답 인덱스)와 맞히면 통과.
-//   · move    — 주관식: 보드 위에서 직접 수를 두어(클릭/드래그) answers(허용되는 SAN 목록) 중 하나와
-//               일치하면 통과 — "직접 이 위치의 최선의 수를 찾아 두어 보세요" 같은 실전형 문제.
+// 오프닝 모식도와 같은 "순차 해금" 원리). 레슨 하나 = { title, desc, parent, reward, pages:[...] }.
+//
+// (사용자 요청) 레슨은 여러 개의 "페이지"를 순서대로 진행하며, 이미 지나온 페이지는 뒤로 가서 다시
+// 볼 수 있다. 페이지 하나 = { startSans?, flip?, beats:[...] } — beats는 정해진 스크립트로, 순서대로
+// 재생되며 사용자와 상호작용한다. beat 종류(자세한 재생 로직은 LessonScreen 참고):
+//   say        { speaker:"milku"|"kokoa", text, sans? }        코치 대사 한 줄(타이핑 애니메이션, 눌러서 다음)
+//   principles { lines:[...] }                                 목록이 한 줄씩 떠올랐다 사라지는 자동 연출
+//   mc         { prompt, opts:[...], answer, note, sans? }      객관식 — 정답을 고르면 통과
+//   move       { prompt, answers:[...], note, sans? }           주관식 — 보드에 직접 수를 두면 통과
+//   play       { moves:[...], stepMs? }                         현재 위치에서 이어서 수순을 빠르게 재생(자동)
+//   pause      { ms }                                           잠시 대기(자동)
+//   board      { squares:[...], dim?, glow?, siren?, sans? }     보드 연출(칸 강조/음영/사이렌), 자동으로 다음 진행
+//   clear      { }                                               보드 연출 상태를 초기화
+// 어떤 beat든 sans를 지정하면 그 자리에서 즉시(재생 없이) 그 위치로 전환된다.
 // 모든 필드는 개발자가 CMS(LessonEditor)로 직접 입력·수정·삭제할 수 있고, CONTENT.lessons에 저장되어
 // 전 유저에 반영된다.
+// (기능) 파일(a~h) 전체 + 랭크(1~8) 전체를 합친 "십자" 모양 칸 목록 — d·e 파일과 4·5 랭크를 함께
+// 강조하는 것처럼, 특정 열·행 전체를 하이라이트하는 레슨 연출에 쓴다.
+function lessonCross(files, ranks) {
+  const out = new Set();
+  for (const f of files) for (let r = 1; r <= 8; r++) out.add(f + r);
+  for (const r of ranks) for (const f of FILES) out.add(f + r);
+  return [...out];
+}
 function seedLessons() {
   if (Object.keys(CONTENT.lessons).length) return;   // 이미 콘텐츠가 있으면(서버에서 불러온 경우 등) 시드로 덮어쓰지 않음
   const L = CONTENT.lessons;
+  // (기존 steps 방식 콘텐츠를 pages 방식으로 옮길 때 쓰는 작은 변환 헬퍼 — 옛 스텝 하나 = 새 페이지 하나.)
+  const explainPage = (sans, coach) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "say", speaker: "milku", text: coach }] });
+  const mcPage = (sans, prompt, opts, answer, note) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "mc", prompt, opts, answer, note }] });
+  const movePage = (sans, prompt, answers, note) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "move", prompt, answers, note }] });
+
+  // ------------------------------------------------------------ 오프닝 원칙(모식도 시작점) ------------------------------------------------------------
+  const PRINCIPLES = [
+    "1. 빠르게 최대한 많은 기물을 전개하라.",
+    "2. 비숍보다 먼저 나이트를 전개하라.",
+    "3. 오프닝에서 같은 기물을 두 번 움직이지 말라.",
+    "4. 오프닝에서 폰을 불필요하게 움직이지 말라.",
+    "5. 필요하지 않다면 체크하지 말라.",
+    "6. 전개가 느리다면 포지션을 열지 말라.",
+    "7. 퀸을 폰의 뒤에 배치하라.",
+    "8. 나의 전개된 기물과 상대의 전개되지 않은 기물의 교환을 피하라.",
+    "9. 되도록 빠르게 캐슬링하라.",
+    "10. 킹사이드 캐슬링이 퀸사이드 캐슬링보다 안전하다.",
+    "11. 가능한 한 영역을 최대한 넓히라.",
+    "12. 공간을 지배하기 위해 폰을 밀라.",
+    "13. 기물을 중앙에 가깝게 유지시키라.",
+    "14. 폰을 교환할 때 사이드에서 중앙 쪽으로 하라.",
+    "15. 공격하기 전에 중앙을 제어하라.",
+    "16. 룩으로 빠르게 오픈 파일이나 세미 오픈파일을 장악하라.",
+    "17. 오프닝에서 자주 나오는 폰 구조를 숙지하라.",
+    "18. 늘 예외를 생각하고 필요할 때는 원칙을 어기라.",
+  ];
   L.l_intro = {
-    title: "체스 오프닝이란?", desc: "오프닝의 세 가지 목표 — 중앙 장악, 기물 전개, 킹의 안전 — 을 첫 수 하나로 살펴봅니다.", reward: 40, parent: null,
-    steps: [
-      { type: "explain", sans: [], coach: "체스는 언제나 백이 먼저 한 수를 두며 시작돼요. 오프닝(초반전)의 목표는 크게 세 가지예요 — ① 중앙을 장악하고 ② 기물을 빠르게 전개하고 ③ 킹을 안전한 곳으로 옮기는 것(캐슬링)이죠." },
-      { type: "explain", sans: [], coach: "지금부터 백이 첫 수로 가장 자주 두는 네 가지 수 — 1.e4, 1.d4, 1.c4, 1.Nf3 — 를 하나씩 레슨으로 살펴볼 거예요. 이 레슨을 완료하면 그 갈래들이 열려요!" },
-      { type: "mc", sans: [], prompt: "오프닝의 목표로 알맞지 않은 것은?", opts: ["중앙을 장악한다", "기물을 빠르게 전개한다", "킹을 안전한 곳으로 옮긴다", "퀸을 최대한 빨리 적진 깊숙이 보낸다"], answer: 3, note: "퀸을 너무 일찍 내보내면 상대 기물에게 쫓기며 오히려 전개가 늦어져요. 초반엔 나이트·비숍부터 전개하는 게 정석이에요." },
+    title: "오프닝 원칙", desc: "오프닝에서 지켜야 할 원칙들이 결국 무엇을 위한 것인지 — 중앙 차지, 기물의 전개, 킹의 안전 — 세 가지 목적으로 정리해 봅니다.", reward: 40, parent: null,
+    pages: [
+      { // 1페이지 — 도입 + 원칙 목록 + 세 가지 목적
+        beats: [
+          { kind: "say", speaker: "milku", text: "첫 번째 레슨에 오신 것을 환영합니다!" },
+          { kind: "say", speaker: "milku", text: "저는 OpenChess의 코치, MILKU입니다." },
+          { kind: "say", speaker: "milku", text: "지금부터 당신의 체스 오프닝 실력을 함께 향상시켜보죠." },
+          { kind: "say", speaker: "milku", text: "먼저, 오프닝에는 일반적으로 지켜야 할 원칙들이 여러 개 있습니다." },
+          { kind: "principles", lines: PRINCIPLES },
+          { kind: "say", speaker: "milku", text: "하지만 이 많은 원칙들도 결국 세 가지 목적을 달성하고자 하는 전제 속에 세워진 것입니다." },
+          { kind: "say", speaker: "milku", text: "바로 중앙 차지, 기물의 전개, 킹의 안전이죠." },
+          { kind: "say", speaker: "milku", text: "그럼 하나씩 알아볼까요?" },
+        ],
+      },
+      { // 2페이지 — 중앙 차지
+        beats: [
+          { kind: "say", speaker: "milku", text: "지금까지 연구된 거의 대부분의 체스 오프닝은 본질적으로 중앙을 차지하기 위한 백과 흑의 논리적인 수들이 맞부딪히며 만들어졌습니다." },
+          { kind: "say", speaker: "milku", text: "체스에서 중앙이란 주로 d열과 e열을 의미합니다. 그리고 오프닝에서 백과 흑이 맞붙는 곳은 주로 4행과 5행이죠." },
+          { kind: "board", dim: true, squares: lessonCross(["d", "e"], [4, 5]) },
+          { kind: "say", speaker: "milku", text: "그래서 중앙 차지는 보통 정중앙의 4칸인 e4, e5, d4, d5에 대한 장악 능력을 확보하는 것입니다." },
+          { kind: "board", glow: true, squares: ["e4", "e5", "d4", "d5"] },
+          { kind: "say", speaker: "milku", text: "이 근본적인 목표를 위해 백과 흑으로 플레이한 수많은 체스 선수들은 방법론적인 선택을 연구하게 되었고, 오늘날의 오프닝 이론이 탄생하게 되었습니다." },
+        ],
+      },
+      { // 3페이지 — 기물의 전개
+        beats: [
+          { kind: "say", speaker: "milku", text: "기물의 전개는 오프닝에서 매우 중요합니다." },
+          { kind: "say", speaker: "milku", text: "앞서 배운 중앙 차지 역시 기물의 전개와 균형을 이루어야 하죠." },
+          { kind: "say", speaker: "milku", text: "일반적으로 오프닝에서 같은 기물을 두 번 움직이는 것은 좋지 않습니다." },
+          { kind: "say", speaker: "milku", text: "가능한 한 많은 기물을 전개한 뒤 계획을 실행해 보세요!" },
+          { kind: "play", stepMs: 320, moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "g6", "Be3", "Bg7", "f3", "O-O", "Qd2", "Nc6", "Bc4", "Bd7", "O-O-O"] },
+        ],
+      },
+      { // 4페이지 — 킹의 안전
+        beats: [
+          { kind: "say", speaker: "milku", text: "체스는 상대의 킹을 공격하는 게임입니다. 그렇다면 내 킹의 안전은 당연히 중요하겠죠?" },
+          { kind: "say", speaker: "milku", text: "킹이 중앙에 남아있다면 상대에게 더 쉽게 공격받게 됩니다." },
+          { kind: "say", speaker: "milku", text: "캐슬링을 통해서 한 수만에 킹을 구석에 숨길 수 있어요." },
+          { kind: "play", stepMs: 350, moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6"] },
+          { kind: "pause", ms: 2000 },
+          { kind: "board", dim: true, squares: ["e1", "h1"] },
+          { kind: "play", stepMs: 500, moves: ["O-O"] },
+          { kind: "clear" },
+          { kind: "say", speaker: "milku", text: "단, 킹과 룩 사이의 기물이 없고, 상대가 경로를 공격하지 않으며, 킹과 룩 모두 한번도 움직인 적이 없어야 해요! 이 모든 조건을 충족할 때 캐슬링 권리를 얻습니다." },
+          { kind: "say", speaker: "milku", text: "상대와의 기물 교환으로 킹을 지키고 있던 폰이 끌려가면, 킹 앞이 급격히 약해져 불리해지니 주의하세요!" },
+          { kind: "play", stepMs: 350, moves: ["d6", "Qe1", "Bg4", "Nc3", "Bxf3"] },
+          { kind: "pause", ms: 2000 },
+          { kind: "board", dim: true, squares: ["g2"] },
+          { kind: "play", stepMs: 500, moves: ["gxf3"] },
+          { kind: "clear" },
+          { kind: "board", siren: true, squares: ["g1"] },
+        ],
+      },
     ],
   };
   L.l_e4 = {
     title: "1.e4 — 킹스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하는 첫 수.", reward: 60, parent: "l_intro",
-    steps: [
-      { type: "explain", sans: [], coach: "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하며, 비숍과 퀸의 대각선을 동시에 열어주는 수가 있어요. 직접 그 수를 둬볼까요?" },
-      { type: "move", sans: [], prompt: "중앙 폰을 두 칸 전진시켜 보세요.", answers: ["e4"], note: "1.e4, 킹스 폰 오프닝이에요! 비숍(f1)과 퀸(d1)의 대각선이 즉시 열려 활발한 기물 전개와 이른 전술전을 지향해요." },
-      { type: "mc", sans: ["e4"], prompt: "1.e4 이후 흑의 응수로 실제로 불가능한 것은?", opts: ["1...e5 (오픈 게임)", "1...c5 (시칠리안 디펜스)", "1...d4 (폰 이중 전진 후 재전진)", "1...c6 (카로칸 디펜스)"], answer: 2, note: "흑 폰은 d7에서 d5나 d6로만 움직일 수 있어요. d4는 아직 그 폰이 닿을 수 없는 칸이에요." },
+    pages: [
+      explainPage([], "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하며, 비숍과 퀸의 대각선을 동시에 열어주는 수가 있어요. 직접 그 수를 둬볼까요?"),
+      movePage([], "중앙 폰을 두 칸 전진시켜 보세요.", ["e4"], "1.e4, 킹스 폰 오프닝이에요! 비숍(f1)과 퀸(d1)의 대각선이 즉시 열려 활발한 기물 전개와 이른 전술전을 지향해요."),
+      mcPage(["e4"], "1.e4 이후 흑의 응수로 실제로 불가능한 것은?", ["1...e5 (오픈 게임)", "1...c5 (시칠리안 디펜스)", "1...d4 (폰 이중 전진 후 재전진)", "1...c6 (카로칸 디펜스)"], 2, "흑 폰은 d7에서 d5나 d6로만 움직일 수 있어요. d4는 아직 그 폰이 닿을 수 없는 칸이에요."),
     ],
   };
   L.l_e4_e5 = {
     title: "1...e5 — 오픈 게임", desc: "중앙에서 폰을 맞세워 대칭적으로 공간을 나누는 가장 고전적인 응수.", reward: 60, parent: "l_e4",
-    steps: [
-      { type: "explain", sans: ["e4", "e5"], coach: "흑이 폰을 맞세워 대칭적으로 공간을 나누고, 오픈된 전술전을 준비해요. 이런 대칭적인 시작을 '오픈 게임'이라고 불러요." },
-      { type: "mc", sans: ["e4", "e5"], prompt: "1.e4 e5 포지션에서 백이 흔히 두는 다음 수는?", opts: ["2.Nf3 (나이트로 e5 폰 위협)", "2.Qh5 (초반 퀸 출동)", "2.a4 (사이드 폰 전진)", "2.h4 (킹사이드 룩폰 전진)"], answer: 0, note: "2.Nf3는 e5 폰을 위협하며 자연스럽게 기물을 전개하는 가장 흔한 수예요." },
-      { type: "move", sans: ["e4", "e5"], prompt: "나이트를 전개하며 e5 폰을 위협해 보세요.", answers: ["Nf3"], note: "2.Nf3! 나이트가 e5를 위협하는 동시에 킹사이드 캐슬링을 준비해요." },
+    pages: [
+      explainPage(["e4", "e5"], "흑이 폰을 맞세워 대칭적으로 공간을 나누고, 오픈된 전술전을 준비해요. 이런 대칭적인 시작을 '오픈 게임'이라고 불러요."),
+      mcPage(["e4", "e5"], "1.e4 e5 포지션에서 백이 흔히 두는 다음 수는?", ["2.Nf3 (나이트로 e5 폰 위협)", "2.Qh5 (초반 퀸 출동)", "2.a4 (사이드 폰 전진)", "2.h4 (킹사이드 룩폰 전진)"], 0, "2.Nf3는 e5 폰을 위협하며 자연스럽게 기물을 전개하는 가장 흔한 수예요."),
+      movePage(["e4", "e5"], "나이트를 전개하며 e5 폰을 위협해 보세요.", ["Nf3"], "2.Nf3! 나이트가 e5를 위협하는 동시에 킹사이드 캐슬링을 준비해요."),
     ],
   };
   L.l_e4_e5_open = {
     title: "이탈리안 게임으로", desc: "2.Nf3 Nc6 이후, 비숍을 활발하게 전개해 이탈리안 게임으로 들어갑니다.", reward: 70, parent: "l_e4_e5",
-    steps: [
-      { type: "explain", sans: ["e4", "e5", "Nf3", "Nc6"], coach: "흑도 나이트로 e5 폰을 지켰어요. 이제 백은 비숍을 가장 활발한 대각선으로 전개할 차례예요 — f7을 겨냥하는 자리죠." },
-      { type: "move", sans: ["e4", "e5", "Nf3", "Nc6"], prompt: "비숍을 f7 폰을 겨냥하는 자리로 전개해 보세요.", answers: ["Bc4"], note: "3.Bc4! 이탈리안 게임이에요. 비숍이 상대의 약점인 f7 폰을 직접 겨냥해요." },
-      { type: "mc", sans: ["e4", "e5", "Nf3", "Nc6", "Bc4"], prompt: "이탈리안 게임(3.Bc4)의 핵심 아이디어로 가장 알맞은 것은?", opts: ["비숍으로 f7 폰을 겨냥하며 빠르게 킹사이드를 노린다", "폰을 희생해서라도 퀸사이드를 빠르게 개방한다", "킹을 일부러 중앙에 오래 남겨둔다", "나이트를 교환해 무승부를 유도한다"], answer: 0, note: "이탈리안 게임은 비숍의 활발한 대각선을 살려 빠르게 공격 기회를 노리는 오프닝이에요." },
+    pages: [
+      explainPage(["e4", "e5", "Nf3", "Nc6"], "흑도 나이트로 e5 폰을 지켰어요. 이제 백은 비숍을 가장 활발한 대각선으로 전개할 차례예요 — f7을 겨냥하는 자리죠."),
+      movePage(["e4", "e5", "Nf3", "Nc6"], "비숍을 f7 폰을 겨냥하는 자리로 전개해 보세요.", ["Bc4"], "3.Bc4! 이탈리안 게임이에요. 비숍이 상대의 약점인 f7 폰을 직접 겨냥해요."),
+      mcPage(["e4", "e5", "Nf3", "Nc6", "Bc4"], "이탈리안 게임(3.Bc4)의 핵심 아이디어로 가장 알맞은 것은?", ["비숍으로 f7 폰을 겨냥하며 빠르게 킹사이드를 노린다", "폰을 희생해서라도 퀸사이드를 빠르게 개방한다", "킹을 일부러 중앙에 오래 남겨둔다", "나이트를 교환해 무승부를 유도한다"], 0, "이탈리안 게임은 비숍의 활발한 대각선을 살려 빠르게 공격 기회를 노리는 오프닝이에요."),
     ],
   };
   L.l_e4_c5 = {
     title: "1...c5 — 시칠리안 디펜스", desc: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 능동적인 반격을 노립니다.", reward: 60, parent: "l_e4",
-    steps: [
-      { type: "explain", sans: ["e4", "c5"], coach: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어, 흑이 퀸사이드에서 능동적인 반격을 노리는 대표적인 오프닝이에요 — 시칠리안 디펜스." },
-      { type: "mc", sans: ["e4", "c5"], prompt: "시칠리안 디펜스의 성격으로 가장 알맞은 설명은?", opts: ["대칭 구조로 무승부를 지향한다", "비대칭 구조로 양쪽 다 승부를 볼 기회를 남긴다", "중앙 폰을 최대한 빨리 다 교환해 버린다", "킹사이드 캐슬링을 절대 하지 않는다"], answer: 1, note: "시칠리안은 통계적으로 승부(흑의 승률 포함)가 가장 많이 나는 오프닝 중 하나로 꼽혀요." },
+    pages: [
+      explainPage(["e4", "c5"], "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어, 흑이 퀸사이드에서 능동적인 반격을 노리는 대표적인 오프닝이에요 — 시칠리안 디펜스."),
+      mcPage(["e4", "c5"], "시칠리안 디펜스의 성격으로 가장 알맞은 설명은?", ["대칭 구조로 무승부를 지향한다", "비대칭 구조로 양쪽 다 승부를 볼 기회를 남긴다", "중앙 폰을 최대한 빨리 다 교환해 버린다", "킹사이드 캐슬링을 절대 하지 않는다"], 1, "시칠리안은 통계적으로 승부(흑의 승률 포함)가 가장 많이 나는 오프닝 중 하나로 꼽혀요."),
     ],
   };
   L.l_e4_e6 = {
     title: "1...e6 — 프렌치 디펜스", desc: "d5를 다음 수에 밀며 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격합니다.", reward: 60, parent: "l_e4",
-    steps: [
-      { type: "explain", sans: ["e4", "e6"], coach: "d5를 다음 수에 밀며 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 나중에 반격하는 오프닝이에요 — 프렌치 디펜스." },
-      { type: "move", sans: ["e4", "e6"], prompt: "다음 수로 중앙에 폰 사슬을 세워 보세요.", answers: ["d5"], note: "2...d5! 이제 중앙에서 폰이 맞부딪혀요. 백이 e5로 전진하면 흑은 c5로 퀸사이드를 반격할 준비를 해요." },
+    pages: [
+      explainPage(["e4", "e6"], "d5를 다음 수에 밀며 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 나중에 반격하는 오프닝이에요 — 프렌치 디펜스."),
+      movePage(["e4", "e6"], "다음 수로 중앙에 폰 사슬을 세워 보세요.", ["d5"], "2...d5! 이제 중앙에서 폰이 맞부딪혀요. 백이 e5로 전진하면 흑은 c5로 퀸사이드를 반격할 준비를 해요."),
     ],
   };
   L.l_e4_c6 = {
     title: "1...c6 — 카로칸 디펜스", desc: "d5를 다음 수에 밀되, 나이트 전개에 유연하게 대비하는 견고한 응수.", reward: 60, parent: "l_e4",
-    steps: [
-      { type: "explain", sans: ["e4", "c6"], coach: "d5를 다음 수에 밀되(프렌치와 달리 c8 비숍의 전개 경로를 막지 않아요) 나이트 전개(Nc3 대응)에 유연하게 대비하는 오프닝이에요 — 카로칸 디펜스." },
-      { type: "mc", sans: ["e4", "c6"], prompt: "프렌치 디펜스(1...e6)와 비교했을 때, 카로칸 디펜스(1...c6)의 장점으로 가장 알맞은 것은?", opts: ["퀸을 즉시 교환할 수 있다", "c8 비숍이 e6에 막히지 않고 밖으로 나갈 길이 열려 있다", "킹사이드 캐슬링이 금지된다", "중앙 폰을 절대 교환하지 않는다"], answer: 1, note: "프렌치는 1...e6로 c8 비숍의 전개 경로를 스스로 막지만, 카로칸은 그 문제를 피해가요." },
+    pages: [
+      explainPage(["e4", "c6"], "d5를 다음 수에 밀되(프렌치와 달리 c8 비숍의 전개 경로를 막지 않아요) 나이트 전개(Nc3 대응)에 유연하게 대비하는 오프닝이에요 — 카로칸 디펜스."),
+      mcPage(["e4", "c6"], "프렌치 디펜스(1...e6)와 비교했을 때, 카로칸 디펜스(1...c6)의 장점으로 가장 알맞은 것은?", ["퀸을 즉시 교환할 수 있다", "c8 비숍이 e6에 막히지 않고 밖으로 나갈 길이 열려 있다", "킹사이드 캐슬링이 금지된다", "중앙 폰을 절대 교환하지 않는다"], 1, "프렌치는 1...e6로 c8 비숍의 전개 경로를 스스로 막지만, 카로칸은 그 문제를 피해가요."),
     ],
   };
   L.l_d4 = {
     title: "1.d4 — 퀸스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 장악하되, e4보다 더 견고하고 점진적인 구조 싸움을 지향합니다.", reward: 60, parent: "l_intro",
-    steps: [
-      { type: "explain", sans: [], coach: "이번엔 퀸 쪽 폰을 두 칸 전진시켜 봐요. e4보다 더 견고하고 점진적인 구조 싸움을 지향하는 수예요." },
-      { type: "move", sans: [], prompt: "퀸 쪽 중앙 폰을 두 칸 전진시켜 보세요.", answers: ["d4"], note: "1.d4, 퀸스 폰 오프닝이에요! 즉시 폰을 잃을 위험 없이 견고하게 중앙을 장악해요." },
-      { type: "mc", sans: ["d4"], prompt: "1.d4 이후 흑의 응수가 크게 어떤 두 갈래로 나뉘나요?", opts: ["1...d5(폐쇄형) 또는 1...Nf6(인디언 계열)", "1...e5(오픈 게임) 또는 1...c5(시칠리안)", "캐슬링 직후 항복 둘 중 하나", "폰을 전혀 안 움직이는 두 가지 방식"], answer: 0, note: "1...d5는 퀸스 갬빗 계열로, 1...Nf6는 킹스 인디언·그륀펠트 등 인디언 디펜스 계열로 이어져요." },
+    pages: [
+      explainPage([], "이번엔 퀸 쪽 폰을 두 칸 전진시켜 봐요. e4보다 더 견고하고 점진적인 구조 싸움을 지향하는 수예요."),
+      movePage([], "퀸 쪽 중앙 폰을 두 칸 전진시켜 보세요.", ["d4"], "1.d4, 퀸스 폰 오프닝이에요! 즉시 폰을 잃을 위험 없이 견고하게 중앙을 장악해요."),
+      mcPage(["d4"], "1.d4 이후 흑의 응수가 크게 어떤 두 갈래로 나뉘나요?", ["1...d5(폐쇄형) 또는 1...Nf6(인디언 계열)", "1...e5(오픈 게임) 또는 1...c5(시칠리안)", "캐슬링 직후 항복 둘 중 하나", "폰을 전혀 안 움직이는 두 가지 방식"], 0, "1...d5는 퀸스 갬빗 계열로, 1...Nf6는 킹스 인디언·그륀펠트 등 인디언 디펜스 계열로 이어져요."),
     ],
   };
   L.l_d4_d5 = {
     title: "1...d5 — 퀸스 갬빗", desc: "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응.", reward: 60, parent: "l_d4",
-    steps: [
-      { type: "explain", sans: ["d4", "d5"], coach: "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응이에요. 여기서 백이 c4를 두면 유명한 '퀸스 갬빗'이 시작돼요." },
-      { type: "move", sans: ["d4", "d5"], prompt: "폰을 하나 내주는 셈 치고 c4를 두어 퀸스 갬빗을 시작해 보세요.", answers: ["c4"], note: "2.c4! 퀸스 갬빗이에요. 흑이 dxc4로 잡아도 백은 곧 e4나 e3로 중앙을 되찾을 수 있어 실질적인 손해가 거의 없어요(그래서 '갬빗'이지만 진짜 희생은 아니에요)." },
+    pages: [
+      explainPage(["d4", "d5"], "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응이에요. 여기서 백이 c4를 두면 유명한 '퀸스 갬빗'이 시작돼요."),
+      movePage(["d4", "d5"], "폰을 하나 내주는 셈 치고 c4를 두어 퀸스 갬빗을 시작해 보세요.", ["c4"], "2.c4! 퀸스 갬빗이에요. 흑이 dxc4로 잡아도 백은 곧 e4나 e3로 중앙을 되찾을 수 있어 실질적인 손해가 거의 없어요(그래서 '갬빗'이지만 진짜 희생은 아니에요)."),
     ],
   };
   L.l_d4_nf6 = {
     title: "1...Nf6 — 인디언 디펜스", desc: "중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 유연하게 대응합니다.", reward: 60, parent: "l_d4",
-    steps: [
-      { type: "explain", sans: ["d4", "Nf6"], coach: "중앙 폰을 바로 맞세우지 않고 나이트로 e4·d5를 견제하며, 상대의 다음 수를 보고 유연하게 대응 방향을 정하는 계열이에요 — 인디언 디펜스." },
-      { type: "mc", sans: ["d4", "Nf6"], prompt: "인디언 디펜스 계열(킹스 인디언·그륀펠트 등)의 공통적인 특징은?", opts: ["비숍을 피앙케토(대각선 배치)해 중앙을 기물로 견제한다", "폰을 절대 전진시키지 않는다", "킹을 캐슬링 없이 중앙에 둔다", "나이트를 절대 f6에 두지 않는다"], answer: 0, note: "흔히 g6·Bg7로 비숍을 피앙케토해 긴 대각선에서 중앙을 원거리로 견제해요." },
+    pages: [
+      explainPage(["d4", "Nf6"], "중앙 폰을 바로 맞세우지 않고 나이트로 e4·d5를 견제하며, 상대의 다음 수를 보고 유연하게 대응 방향을 정하는 계열이에요 — 인디언 디펜스."),
+      mcPage(["d4", "Nf6"], "인디언 디펜스 계열(킹스 인디언·그륀펠트 등)의 공통적인 특징은?", ["비숍을 피앙케토(대각선 배치)해 중앙을 기물로 견제한다", "폰을 절대 전진시키지 않는다", "킹을 캐슬링 없이 중앙에 둔다", "나이트를 절대 f6에 두지 않는다"], 0, "흔히 g6·Bg7로 비숍을 피앙케토해 긴 대각선에서 중앙을 원거리로 견제해요."),
     ],
   };
   // (기획) 이 레슨 콘텐츠는 시드일 뿐이다 — 실제 서비스에서는 개발자가 LessonEditor(CMS)로 자유롭게
@@ -16419,25 +16509,25 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
   // 애니메이션을 재생하고 화면에 보이도록 스크롤한다. ref 콜백에서 마운트 시점에 한 번만 처리한다.
   const row = (k, label, sub, extras, highlighted) => { const done = shownDone(k); return (
     <div ref={highlighted ? (el) => el && el.scrollIntoView({ behavior: "smooth", block: "center" }) : undefined}
-      className="flex items-center gap-2" style={{ padding: "7px 10px", borderRadius: 9, background: done ? "rgba(60,138,60,.18)" : "rgba(0,0,0,.15)", border: "1px solid " + (highlighted ? T.brassHi : done ? "rgba(120,200,120,.4)" : "#5A4630"), transition: "background .5s ease, border-color .5s ease", animation: highlighted ? "questRowHighlight 1.7s ease-out 2" : clearing(k) ? "questclear 1.2s ease" : "none" }}>
+      className="flex items-center gap-2" style={{ padding: "7px 10px", borderRadius: 9, background: done ? "rgba(63,122,58,.12)" : "rgba(0,0,0,.035)", border: "1px solid " + (highlighted ? T.brass : done ? "rgba(63,122,58,.35)" : "#DCCBA8"), transition: "background .5s ease, border-color .5s ease", animation: highlighted ? "questRowHighlight 1.7s ease-out 2" : clearing(k) ? "questclear 1.2s ease" : "none" }}>
       <span style={{ width: 18, height: 18, borderRadius: 999, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: done ? T.best : "transparent", border: "1.5px solid " + (done ? T.best : T.inkSoft), transition: "background .4s ease" }}>{done && <Check size={12} color="#fff" />}</span>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: done ? "#BEEAB0" : T.ivory }}>{label}</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: done ? T.best : T.ink }}>{label}</div>
         {sub && <div style={{ fontSize: 10.5, color: T.inkSoft }}>{sub}</div>}
       </div>
       {extras}
       {/* (v0.1.2) 개별 퀘스트 클리어 보상을 XP에서 OC 나이트 코인으로 바꿈. */}
-      <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, flexShrink: 0 }}>+10 <CoinIcon size={16} /></span>
+      <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: "#8A6A2F", flexShrink: 0 }}>+10 <CoinIcon size={16} /></span>
     </div>
   ); };
   return (
-    <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
+    <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
       <div className="flex items-center justify-between flex-wrap" style={{ marginBottom: 10, gap: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>일일 퀘스트</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>일일 퀘스트</div>
         <div className="flex items-center gap-2">
           {allDone && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>모두 완료!</span>}
           {/* (UX2) 갱신은 한국 시간(KST) 자정 기준 */}
-          <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(0,0,0,.3)", borderRadius: 6, padding: "2px 8px" }}>갱신까지 {fmtRemainHMS(remain)}</span>
+          <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(0,0,0,.06)", borderRadius: 6, padding: "2px 8px" }}>갱신까지 {fmtRemainHMS(remain)}</span>
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -16457,7 +16547,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
                 /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
                 canReroll ? (
                   <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title="이 퀘스트만 교체(퀘스트당 1회)"
-                    style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 7, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={12} /></button>
+                    style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 7, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.04)", color: "#8A6A2F", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={12} /></button>
                 ) : null, highlighted)}
             </div>
           );
@@ -16467,11 +16557,11 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       {(() => {
         const doneCount = (dq.claimed.puzzle ? 1 : 0) + (dq.claimed.dailypuzzle ? 1 : 0) + [0, 1, 2].filter((i) => dq.claimed["cc_" + i]).length;
         return (
-          <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, border: "1px solid " + (allDone ? "rgba(120,200,120,.55)" : T.brass), background: allDone ? "rgba(60,138,60,.18)" : "rgba(196,154,80,.08)", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, border: "1px solid " + (allDone ? "rgba(63,122,58,.5)" : T.brass), background: allDone ? "rgba(63,122,58,.1)" : "rgba(196,154,80,.1)", display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ position: "relative", flexShrink: 0 }}><CoinIcon size={46} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? "#BEEAB0" : T.brassHi }}>모든 퀘스트 완료 보상</div>
-              <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>OC 나이트 코인 <b style={{ color: T.brassHi }}>50개</b> · {doneCount}/5 완료</div>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? T.best : "#8A6A2F" }}>모든 퀘스트 완료 보상</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>OC 나이트 코인 <b style={{ color: "#8A6A2F" }}>50개</b> · {doneCount}/5 완료</div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 800, flexShrink: 0, color: allDone ? T.best : T.inkSoft }}>{allDone ? (dq.bonusClaimed ? "획득 완료!" : "획득!") : "잠김"}</span>
           </div>
@@ -16490,8 +16580,8 @@ function lessonProgress(mainQuest, key) {
   const l = CONTENT.lessons[key];
   if (!l) return { done: 0, total: 0, complete: false };
   const answered = ((mainQuest && mainQuest.answered) || {})[key] || {};
-  const total = l.steps.length;
-  const done = l.steps.filter((_, i) => answered[i]).length;
+  const total = l.pages.length;
+  const done = l.pages.filter((_, i) => answered[i]).length;
   return { done, total, complete: total > 0 && done >= total };
 }
 function isLessonClaimed(mainQuest, key) { return !!((mainQuest && mainQuest.claimed) || {})[key]; }
@@ -16548,10 +16638,10 @@ function layoutLessonTree(lessons) {
 }
 const LESSON_COL_W = 96, LESSON_ROW_H = 116, LESSON_NODE_D = 60;
 const LESSON_NODE_STYLE = {
-  locked: { bg: "linear-gradient(180deg,#4A4038,#2A2420)", border: "#5A4630", color: T.inkSoft, ring: null },
-  available: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", ring: "rgba(196,154,80,.5)" },
-  progress: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", ring: "rgba(196,154,80,.5)" },
-  done: { bg: "linear-gradient(180deg,#3C8A3C,#2C6A2C)", border: "#9BE39B", color: "#EAF7E6", ring: "rgba(120,200,120,.5)" },
+  locked: { bg: "linear-gradient(180deg,#E4D5B4,#D2BD91)", border: "#C2AD82", color: "#8A7A5E", ring: null },
+  available: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", ring: "rgba(196,154,80,.4)" },
+  progress: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", ring: "rgba(196,154,80,.4)" },
+  done: { bg: "linear-gradient(180deg,#59A455,#3F7A3A)", border: "#9BE39B", color: "#EAF7E6", ring: "rgba(63,122,58,.35)" },
 };
 function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
   const s = LESSON_NODE_STYLE[state];
@@ -16561,14 +16651,14 @@ function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
         title={lesson.title}
         style={{ width: LESSON_NODE_D, height: LESSON_NODE_D, borderRadius: "50%", border: "3px solid " + s.border, background: s.bg, color: s.color,
           display: "flex", alignItems: "center", justifyContent: "center", cursor: state === "locked" ? "default" : "pointer",
-          boxShadow: s.ring ? "0 0 0 5px " + s.ring + ", 0 4px 10px rgba(0,0,0,.4)" : "0 4px 10px rgba(0,0,0,.4)", flexShrink: 0 }}>
+          boxShadow: s.ring ? "0 0 0 5px " + s.ring + ", 0 3px 8px rgba(90,58,34,.25)" : "0 3px 8px rgba(90,58,34,.25)", flexShrink: 0 }}>
         {state === "locked" ? <Lock size={22} /> : state === "done" ? <Check size={26} /> : <Play size={22} fill={s.color} />}
       </button>
-      <div style={{ fontSize: 10.5, fontWeight: 800, color: state === "locked" ? T.inkSoft : T.ivoryHi, textAlign: "center", lineHeight: 1.25, maxWidth: LESSON_COL_W + 16, wordBreak: "keep-all" }}>{lesson.title}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: state === "locked" ? T.inkSoft : T.ink, textAlign: "center", lineHeight: 1.25, maxWidth: LESSON_COL_W + 16, wordBreak: "keep-all" }}>{lesson.title}</div>
       {state !== "locked" && (
-        <span className="flex items-center gap-1" style={{ fontSize: 9.5, fontWeight: 800, color: T.brassHi }}><CoinIcon size={12} /> {lesson.reward || 60}</span>
+        <span className="flex items-center gap-1" style={{ fontSize: 9.5, fontWeight: 800, color: "#8A6A2F" }}><CoinIcon size={12} /> {lesson.reward || 60}</span>
       )}
-      {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title="레슨 편집" style={{ width: 18, height: 18, borderRadius: 5, border: "1px solid #5A4630", background: "rgba(0,0,0,.3)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: 0, right: 0 }}><Settings size={10} /></button>}
+      {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title="레슨 편집" style={{ width: 18, height: 18, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.7)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: 0, right: 0 }}><Settings size={10} /></button>}
     </div>
   );
 }
@@ -16599,9 +16689,9 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
     el.scrollLeft = Math.max(0, targetX - el.clientWidth / 2);
   }, [layout, ids.length]);
   return (
-    <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "linear-gradient(160deg,#33220F,#1E1206)", border: "1px solid " + T.brass }}>
+    <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>레슨</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>레슨</span>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginLeft: "auto" }}>{overall.claimed}/{overall.totalChapters} 완료</span>
       </div>
       <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>체스 개념과 오프닝을 하나씩 다루는 독립된 학습 코스 — 갈래를 따라 순서대로 해금됩니다.</div>
@@ -16616,7 +16706,7 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
                 if (!lesson.parent || !layout.pos[lesson.parent]) return null;
                 const claimed = isLessonClaimed(mainQuest, lesson.parent);
                 return <line key={id} x1={cx(lesson.parent)} y1={cy(lesson.parent) + LESSON_NODE_D / 2} x2={cx(id)} y2={cy(id) - LESSON_NODE_D / 2}
-                  stroke={claimed ? "rgba(120,200,120,.55)" : "rgba(196,154,80,.35)"} strokeWidth={4} strokeLinecap="round" />;
+                  stroke={claimed ? "rgba(63,122,58,.55)" : "rgba(196,154,80,.55)"} strokeWidth={4} strokeLinecap="round" />;
               })}
             </svg>
             {ids.map((id) => (
@@ -16626,7 +16716,7 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
           </div>
         </div>
       )}
-      {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 새 레슨 추가</button>}
+      {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer" }}>+ 새 레슨 추가</button>}
       {openKey && CONTENT.lessons[openKey] && <LessonScreen lessonKey={openKey} lesson={CONTENT.lessons[openKey]} mainQuest={mainQuest} onAnswer={onAnswer} onClaim={onClaim} onClose={() => setOpenKey(null)} />}
       {editKey && <LessonEditor lessonKey={editKey} bumpContent={bumpContent} onClose={() => setEditKey(null)} />}
     </div>
@@ -16634,67 +16724,198 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
 }
 // (기능) 알파벳 좌표("e4") → 보드 배열 좌표([r,c]). 레슨 스텝의 arrows/highlight 저작에 쓴다.
 function lessonSq(name) { return [8 - parseInt(name[1], 10), FILES.indexOf(name[0])]; }
-/* ============================================================ 레슨 화면 (듀오링고 스타일) ============================================================ */
-// (사용자 요청) 모바일에서는 위에 체스보드·아래에 상호작용 영역(세로), 데스크톱에서는 좌측에
-// 체스보드·우측에 상호작용 영역(가로)을 두고, 두 환경 모두 화면 전체 비율을 사용하는 전체화면
-// 학습 화면. 스텝은 세 종류 — explain(설명만)·mc(객관식)·move(보드에 직접 수를 두는 주관식) —
-// 이며 한 스텝씩 순서대로 진행하고, 전부 통과하면 보상을 받을 수 있다.
+function lessonWait(ms) { return new Promise((res) => setTimeout(res, ms)); }
+// 원칙 목록이 한 줄씩 아래에서 떠오르며 밝아졌다가, 화면 중앙에서 잠깐 완전히 선명하게 멈춘 뒤
+// 다시 위로 빠르게 올라가며 사라지는 연출 — 전부 재생되면 자동으로 다음 스크립트 단계로 넘어간다.
+function PrinciplesReel({ lines, onDone }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (idx >= lines.length) { const t = setTimeout(onDone, 250); return () => clearTimeout(t); }
+    const t = setTimeout(() => setIdx((i) => i + 1), 1350);
+    return () => clearTimeout(t);
+  }, [idx, lines.length]);
+  return (
+    <div style={{ position: "relative", height: 130, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+      <AnimatePresence>
+        {idx < lines.length && (
+          <motion.div key={idx}
+            initial={{ opacity: 0, y: 46 }}
+            animate={{ opacity: [0, 1, 1, 0], y: [46, 0, 0, -46] }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.25, times: [0, 0.3, 0.72, 1], ease: "easeInOut" }}
+            style={{ position: "absolute", fontSize: 13.5, fontWeight: 800, color: T.ink, textAlign: "center", padding: "0 14px", lineHeight: 1.45, maxWidth: 440 }}>
+            {lines[idx]}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+// 보드 위 연출 오버레이 — dim(강조 칸만 남기고 나머지 음영), siren(칸이 붉게 사이렌처럼 깜빡임).
+// 금색 강조(glow)는 Board 자체의 haloSquares를 그대로 재사용한다(아래 LessonScreen 참고).
+function LessonBoardFx({ size, flip, dimKeep, siren }) {
+  if (!dimKeep && !siren) return null;
+  const cell = size / 8;
+  const cells = [];
+  const view = (r, c) => (flip ? [7 - r, 7 - c] : [r, c]);
+  if (dimKeep) {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      if (dimKeep.has(r + "," + c)) continue;
+      const [vr, vc] = view(r, c);
+      cells.push(<div key={"d" + r + "_" + c} style={{ position: "absolute", left: vc * cell, top: vr * cell, width: cell, height: cell, background: "rgba(20,12,4,.5)" }} />);
+    }
+  }
+  if (siren) {
+    const [vr, vc] = view(siren[0], siren[1]);
+    cells.push(<div key="siren" style={{ position: "absolute", left: vc * cell, top: vr * cell, width: cell, height: cell, background: "#E5342A", animation: "lessonSiren .7s ease-in-out infinite" }} />);
+  }
+  return <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{cells}</div>;
+}
+/* ============================================================ 레슨 화면 (듀오링고 스타일 스크립트 플레이어) ============================================================ */
+// (사용자 요청) 모든 레슨은 여러 개의 "페이지"를 순서대로 진행하며, 이미 지나온 페이지는 뒤로 가서
+// 다시 볼 수 있다. 페이지 하나는 정해진 스크립트(beats)가 순서대로 진행되는 연출 — 코치의 대사(한
+// 줄씩 타이핑되며 눌러서 다음으로), 객관식·주관식 퀴즈, 보드 위 수순 재생, 칸 하이라이트·음영·
+// 사이렌 효과 등을 자유롭게 섞어 구성한다. beat 종류는 lesson.pages[].beats 정의부(seedLessons)의
+// 주석을 참고.
 function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose }) {
   const narrow = useNarrow(860);
   const claimedAlready = isLessonClaimed(mainQuest, lessonKey);
-  // (기능) 이미 완료(보상 수령)한 레슨을 다시 열면 복습 삼아 처음부터 다시 보여주고, 아직 진행 중인
-  // 레슨은 마지막으로 못 푼 스텝부터 이어서 보여준다.
-  const initialStep = useMemo(() => {
+  const pages = lesson.pages;
+  // (기능) 이미 완료(보상 수령)한 레슨은 처음부터 복습, 진행 중인 레슨은 아직 못 본 첫 페이지부터.
+  const initialPage = useMemo(() => {
     if (claimedAlready) return 0;
     const answered = ((mainQuest && mainQuest.answered) || {})[lessonKey] || {};
-    for (let i = 0; i < lesson.steps.length; i++) if (!answered[i]) return i;
-    return lesson.steps.length;
+    for (let i = 0; i < pages.length; i++) if (!answered[i]) return i;
+    return pages.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonKey]);
-  const [stepIdx, setStepIdx] = useState(initialStep);
-  const [picked, setPicked] = useState(null);
-  const [feedback, setFeedback] = useState(null);   // mc: "correct" | "wrong" | null
-  const [sel, setSel] = useState(null);             // move: 선택한 칸
-  const [wrongSq, setWrongSq] = useState(null);      // move: 오답으로 이동을 시도한 칸(잠깐 빨갛게 표시)
-  const [moveDone, setMoveDone] = useState(false);   // move: 이 스텝을 통과했는지
-  useEffect(() => { setPicked(null); setFeedback(null); setSel(null); setWrongSq(null); setMoveDone(false); }, [stepIdx]);
-  const done = stepIdx >= lesson.steps.length;
-  const step = !done ? lesson.steps[stepIdx] : null;
-  const stepSans = step ? (step.sans || []) : [];
-  const board = useMemo(() => boardFromSans(stepSans), [stepSans.join(",")]);
-  const color = stepSans.length % 2 === 0 ? "w" : "b";
-  const [boardSize, setBoardRef] = useBoardSize(narrow ? 480 : 640);
-  const advance = () => setStepIdx((i) => i + 1);
-  const markAnswered = () => onAnswer(lessonKey, stepIdx);
-  const pick = (oi) => {
-    if (feedback === "correct") return;
-    setPicked(oi);
-    if (oi === step.answer) { setFeedback("correct"); markAnswered(); }
-    else setFeedback("wrong");
+  // (기능) 지금까지 실제로 열어 본 가장 뒤쪽 페이지 — 진행 중인 레슨은 여기까지만 "다음 페이지"로
+  // 건너뛸 수 있다(뒤로 가서 이미 본 페이지를 다시 보는 건 언제든 가능).
+  const [farthest, setFarthest] = useState(claimedAlready ? pages.length - 1 : initialPage);
+  const [pageIdx, setPageIdx] = useState(initialPage);
+  const [beatIdx, setBeatIdx] = useState(0);
+  const [runningSans, setRunningSans] = useState(() => (pages[initialPage] && pages[initialPage].startSans) || []);
+  const [fx, setFx] = useState({ dimKeep: null, siren: null, glow: null });
+  const [typedLen, setTypedLen] = useState(0);
+  const [lastSay, setLastSay] = useState(null);   // 마지막 코치 대사 — play/pause/board 연출 중에도 말풍선을 비우지 않기 위해 유지
+  const [mcPicked, setMcPicked] = useState(null);
+  const [mcFeedback, setMcFeedback] = useState(null);
+  const [moveSel, setMoveSel] = useState(null);
+  const [moveWrongSq, setMoveWrongSq] = useState(null);
+  const [moveDone, setMoveDone] = useState(false);
+  const lessonDone = pageIdx >= pages.length;
+  const page = !lessonDone ? pages[pageIdx] : null;
+  const beats = page ? page.beats : [];
+  const beat = page && beatIdx < beats.length ? beats[beatIdx] : null;
+  const pageBeatsDone = !!page && beatIdx >= beats.length;
+  const flip = !!(page && page.flip);
+  const goToPage = (idx) => {
+    if (idx < 0 || idx >= pages.length) return;
+    setPageIdx(idx); setBeatIdx(0);
+    setRunningSans((pages[idx] && pages[idx].startSans) || []);
+    setFx({ dimKeep: null, siren: null, glow: null });
+    setLastSay(null); setTypedLen(0); setMcPicked(null); setMcFeedback(null); setMoveSel(null); setMoveWrongSq(null); setMoveDone(false);
   };
-  const legalTargets = (sel && step && step.type === "move" && !moveDone) ? legalDests(board, sel[0], sel[1], color, null) : [];
+  const advanceBeat = () => {
+    setBeatIdx((i) => i + 1);
+    setTypedLen(0); setMcPicked(null); setMcFeedback(null); setMoveSel(null); setMoveWrongSq(null); setMoveDone(false);
+  };
+  // 이 beat가 즉시 위치를 지정하면(sans) 재생 없이 그 자리로 바로 전환한다.
+  useEffect(() => {
+    if (beat && beat.sans) setRunningSans(beat.sans);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageIdx, beatIdx]);
+  // beat별 자동 진행 — 타이핑·선택을 기다리는 say/mc/move는 각자의 처리부(아래)에서 다룬다.
+  useEffect(() => {
+    if (!beat) return;
+    if (beat.kind === "pause") { const t = setTimeout(advanceBeat, beat.ms || 800); return () => clearTimeout(t); }
+    if (beat.kind === "board") {
+      setFx({
+        dimKeep: beat.dim ? new Set((beat.squares || []).map((s) => (Array.isArray(s) ? s.join(",") : lessonSq(s).join(",")))) : null,
+        siren: beat.siren ? (Array.isArray(beat.squares[0]) ? beat.squares[0] : lessonSq(beat.squares[0])) : null,
+        glow: beat.glow ? (beat.squares || []).map((s) => (Array.isArray(s) ? s : lessonSq(s))) : null,
+      });
+      const t = setTimeout(advanceBeat, 150);
+      return () => clearTimeout(t);
+    }
+    if (beat.kind === "clear") { setFx({ dimKeep: null, siren: null, glow: null }); const t = setTimeout(advanceBeat, 100); return () => clearTimeout(t); }
+    if (beat.kind === "play") {
+      let cancelled = false;
+      (async () => {
+        for (const mv of beat.moves) {
+          await lessonWait(beat.stepMs || 420);
+          if (cancelled) return;
+          setRunningSans((s) => [...s, mv]);
+        }
+        await lessonWait(250);
+        if (!cancelled) advanceBeat();
+      })();
+      return () => { cancelled = true; };
+    }
+    if (beat.kind === "say") setLastSay({ speaker: beat.speaker || "milku", text: beat.text || "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageIdx, beatIdx]);
+  // say 대사 타이핑 애니메이션(한 글자씩).
+  useEffect(() => {
+    if (!beat || beat.kind !== "say") return;
+    const text = beat.text || "";
+    setTypedLen(0);
+    if (!text.length) return;
+    let i = 0;
+    const iv = setInterval(() => { i++; setTypedLen(i); if (i >= text.length) clearInterval(iv); }, 26);
+    return () => clearInterval(iv);
+  }, [pageIdx, beatIdx]);
+  // 페이지의 모든 beat를 다 봤으면 그 페이지를 완료로 기록 — onAnswer는 이미 답한 인덱스를 스스로
+  // 걸러내므로(App의 onAnswerChapter) 다시 봐서 여기로 또 도달해도 안전하다.
+  useEffect(() => {
+    if (pageBeatsDone) onAnswer(lessonKey, pageIdx);
+  }, [pageBeatsDone, pageIdx, lessonKey, onAnswer]);
+  useEffect(() => { setFarthest((f) => Math.max(f, pageIdx)); }, [pageIdx]);
+  const board = useMemo(() => boardFromSans(runningSans), [runningSans.join(",")]);
+  const color = runningSans.length % 2 === 0 ? "w" : "b";
+  const [boardSize, setBoardRef] = useBoardSize(narrow ? 480 : 640);
+  // say beat 탭 처리 — 아직 다 안 타이핑됐으면 즉시 완성, 다 됐으면 다음 beat로.
+  const onSayTap = () => {
+    if (!beat || beat.kind !== "say") return;
+    const len = (beat.text || "").length;
+    if (typedLen < len) setTypedLen(len); else advanceBeat();
+  };
+  const pick = (oi) => {
+    if (!beat || beat.kind !== "mc" || mcFeedback === "correct") return;
+    setMcPicked(oi);
+    if (oi === beat.answer) setMcFeedback("correct"); else setMcFeedback("wrong");
+  };
+  const legalTargets = (moveSel && beat && beat.kind === "move" && !moveDone) ? legalDests(board, moveSel[0], moveSel[1], color, null) : [];
   const attemptMove = (from, to) => {
-    if (!step || step.type !== "move" || moveDone) return;
-    if (from[0] === to[0] && from[1] === to[1]) { setSel(null); return; }
+    if (!beat || beat.kind !== "move" || moveDone) return;
+    if (from[0] === to[0] && from[1] === to[1]) { setMoveSel(null); return; }
     if (!legalDests(board, from[0], from[1], color, null).some(([r, c]) => r === to[0] && c === to[1])) return;
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, null);
-    setSel(null);
+    setMoveSel(null);
     if (!san) return;
-    const ok = (step.answers || []).some((a) => stripSuffix(a) === stripSuffix(san));
-    if (ok) { setMoveDone(true); markAnswered(); }
-    else { setWrongSq(to); setTimeout(() => setWrongSq(null), 700); }
+    const ok = (beat.answers || []).some((a) => stripSuffix(a) === stripSuffix(san));
+    if (ok) setMoveDone(true);
+    else { setMoveWrongSq(to); setTimeout(() => setMoveWrongSq(null), 700); }
   };
   const onSquareClick = (sq) => {
-    if (!step || step.type !== "move" || moveDone) return;
+    if (!beat || beat.kind !== "move" || moveDone) return;
     const p = board[sq[0]][sq[1]];
-    if (sel) {
-      if (legalDests(board, sel[0], sel[1], color, null).some(([r, c]) => r === sq[0] && c === sq[1])) { attemptMove(sel, sq); return; }
-      if (p && p.c === color) { setSel(sq); return; }
-      setSel(null);
-    } else if (p && p.c === color) setSel(sq);
+    if (moveSel) {
+      if (legalDests(board, moveSel[0], moveSel[1], color, null).some(([r, c]) => r === sq[0] && c === sq[1])) { attemptMove(moveSel, sq); return; }
+      if (p && p.c === color) { setMoveSel(sq); return; }
+      setMoveSel(null);
+    } else if (p && p.c === color) setMoveSel(sq);
   };
   const claimAndClose = () => { if (!claimedAlready) onClaim(lessonKey); onClose(); };
-  const progressPct = Math.round((100 * Math.min(stepIdx, lesson.steps.length)) / Math.max(1, lesson.steps.length));
+  const isLastPage = pageIdx === pages.length - 1;
+  const canGoNext = pageIdx < farthest || pageBeatsDone;
+  const onNext = () => {
+    if (pageIdx < farthest) { goToPage(pageIdx + 1); return; }
+    if (isLastPage) { setPageIdx(pages.length); return; }
+    goToPage(pageIdx + 1);
+  };
+  const onPrev = () => { if (pageIdx > 0) goToPage(pageIdx - 1); };
+  const progressPct = lessonDone ? 100 : Math.round((100 * pageIdx) / Math.max(1, pages.length));
   // (버그 수정) boardPanel이 가로 폭 지정 없이 flex row의 자식으로만 있으면(내부 측정용 div가
   // width:100%를 자기 자신 기준으로 순환 참조하게 되어) 브라우저가 이 칸을 거의 내용 없는 최소
   // 크기로 접어버려, 데스크톱에서 보드가 작은 썸네일 크기로만 보이고 상호작용 영역이 그 옆이 아니라
@@ -16704,81 +16925,109 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
   const boardPanel = (
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: narrow ? "12px 10px 4px" : "20px", boxSizing: "border-box",
       ...(narrow ? { width: "100%", flexShrink: 0 } : { flexBasis: "50%", flexShrink: 0, flexGrow: 0, height: "100%" }) }}>
-      <div ref={setBoardRef} style={{ width: "100%", maxWidth: narrow ? "480px" : "min(640px, 82vh)" }}>
-        <Board board={board} flip={color === "b"} size={boardSize} showEval={false}
-          interactive={!!step && step.type === "move" && !moveDone}
-          selected={sel} legalTargets={legalTargets} onSquareClick={onSquareClick}
-          onPieceDrag={(sq) => { if (step && step.type === "move" && !moveDone) { const p = board[sq[0]][sq[1]]; if (p && p.c === color) setSel(sq); } }}
-          onDrop={(sq) => { if (sel) attemptMove(sel, sq); }}
+      <div ref={setBoardRef} style={{ width: "100%", maxWidth: narrow ? "480px" : "min(640px, 82vh)", position: "relative" }}>
+        <Board board={board} flip={flip} size={boardSize} showEval={false}
+          interactive={!!beat && beat.kind === "move" && !moveDone}
+          haloSquares={fx.glow || []}
+          selected={moveSel} legalTargets={legalTargets} onSquareClick={onSquareClick}
+          onPieceDrag={(sq) => { if (beat && beat.kind === "move" && !moveDone) { const p = board[sq[0]][sq[1]]; if (p && p.c === color) setMoveSel(sq); } }}
+          onDrop={(sq) => { if (moveSel) attemptMove(moveSel, sq); }}
           onMove={(from, to) => attemptMove(from, to)}
-          wrongAt={wrongSq} />
+          wrongAt={moveWrongSq} />
+        {boardSize > 0 && <LessonBoardFx size={boardSize} flip={flip} dimKeep={fx.dimKeep} siren={fx.siren} />}
       </div>
     </div>
   );
+  const sayActive = beat && beat.kind === "say";
+  const bubble = sayActive ? { speaker: beat.speaker || "milku", text: (beat.text || "").slice(0, typedLen), typing: typedLen < (beat.text || "").length }
+    : (beat && (beat.kind === "mc" || beat.kind === "move")) ? { speaker: "milku", text: beat.prompt || "", typing: false }
+    : lastSay ? { ...lastSay, typing: false } : null;
   const interactionPanel = (
-    <div style={{ flex: 1, minWidth: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+    <div style={{ flex: 1, minWidth: 0, overflowY: "auto", display: "flex", flexDirection: "column", background: T.paper }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: narrow ? "10px 14px" : "18px 24px 8px", flexShrink: 0 }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "#fff", color: T.ink, border: "1px solid #DCCBA8", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lesson.title}</div>
-          <div style={{ height: 8, borderRadius: 999, background: "rgba(0,0,0,.4)", overflow: "hidden", border: "1px solid #00000066" }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 4, gap: 6 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lesson.title}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft, flexShrink: 0, fontFamily: SITE_FONT }}>{lessonDone ? pages.length : pageIdx + 1} / {pages.length}</span>
+          </div>
+          <div style={{ height: 8, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", border: "1px solid #DCCBA8" }}>
             <div style={{ width: progressPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .4s ease" }} />
           </div>
         </div>
       </div>
-      <div style={{ flex: 1, padding: narrow ? "8px 16px 28px" : "8px 28px 32px", display: "flex", flexDirection: "column", justifyContent: done ? "center" : "flex-start" }}>
-        {done ? (
+      <div onClick={sayActive ? onSayTap : undefined} style={{ flex: 1, padding: narrow ? "8px 16px 16px" : "8px 28px 20px", display: "flex", flexDirection: "column", justifyContent: lessonDone ? "center" : "flex-start", cursor: sayActive ? "pointer" : "default" }}>
+        {lessonDone ? (
           <div style={{ textAlign: "center", padding: "24px 0" }}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
             <div style={{ fontSize: 17, fontWeight: 800, color: T.best, marginBottom: 8 }}>{claimedAlready ? "레슨을 복습했어요!" : "레슨을 완료했어요!"}</div>
-            {!claimedAlready && <div className="flex items-center justify-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, marginBottom: 16 }}><CoinIcon size={18} /> +{lesson.reward || 60} OC 나이트 코인</div>}
-            <button onClick={claimAndClose} className="press" style={{ padding: "11px 22px", borderRadius: 11, background: claimedAlready ? "linear-gradient(180deg,#3A2516,#241509)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: claimedAlready ? T.ivoryHi : "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 13.5 }}>{claimedAlready ? "닫기" : "보상 받기"}</button>
+            {!claimedAlready && <div className="flex items-center justify-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: "#8A6A2F", marginBottom: 16 }}><CoinIcon size={18} /> +{lesson.reward || 60} OC 나이트 코인</div>}
+            <button onClick={claimAndClose} className="press" style={{ padding: "11px 22px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 13.5 }}>{claimedAlready ? "닫기" : "보상 받기"}</button>
           </div>
         ) : (
           <>
-            <div style={{ marginBottom: 14 }}>
-              <MascotBubble ply={0} mascot={step.type === "mc" && feedback === "wrong" ? "kokoa" : "milku"} emotion={feedback === "correct" || moveDone ? "celebrate" : feedback === "wrong" ? "surprise" : "great"}
-                text={step.type === "explain" ? step.coach : (step.prompt || "")} />
-            </div>
-            {step.type === "mc" && (
+            {beat && beat.kind === "principles" ? (
+              <PrinciplesReel lines={beat.lines} onDone={advanceBeat} />
+            ) : bubble ? (
+              <div className="flex items-start gap-2" style={{ background: "#fff", borderRadius: 14, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 14, position: "relative" }}>
+                <Mascot name={bubble.speaker} emotion={mcFeedback === "correct" || moveDone ? "celebrate" : mcFeedback === "wrong" ? "surprise" : "great"} size={56} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#8A6A2F", fontSize: 11, fontWeight: 800, marginBottom: 3 }}>{bubble.speaker === "kokoa" ? "KOKOA" : "MILKU"} 코치</div>
+                  <p style={{ color: T.ink, fontSize: 13.5, lineHeight: 1.55, minHeight: "1.55em" }}>{bubble.text}{bubble.typing && <span style={{ animation: "lessonCaretBlink 1s step-end infinite" }}>▌</span>}</p>
+                </div>
+                {sayActive && !bubble.typing && <ChevronDown size={14} color={T.inkSoft} style={{ position: "absolute", bottom: 6, right: 10, animation: "dotbounceSm 1.1s ease-in-out infinite" }} />}
+              </div>
+            ) : null}
+            {beat && beat.kind === "mc" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {step.opts.map((op, oi) => {
-                  const isPicked = picked === oi;
-                  const showCorrect = feedback && oi === step.answer;
-                  const showWrong = feedback === "wrong" && isPicked;
+                {beat.opts.map((op, oi) => {
+                  const isPicked = mcPicked === oi;
+                  const showCorrect = mcFeedback && oi === beat.answer;
+                  const showWrong = mcFeedback === "wrong" && isPicked;
                   return (
-                    <button key={oi} onClick={() => pick(oi)} disabled={feedback === "correct"} className={feedback ? "" : "press"}
-                      style={{ textAlign: "left", padding: "11px 13px", borderRadius: 10, fontSize: 12.5, lineHeight: 1.4, cursor: feedback === "correct" ? "default" : "pointer",
-                        border: "1.5px solid " + (showCorrect ? T.best : showWrong ? T.blunder : "#5A4630"),
-                        background: showCorrect ? "rgba(120,200,120,.18)" : showWrong ? "rgba(200,80,80,.18)" : "rgba(0,0,0,.2)", color: T.ivoryHi }}>{op}</button>
+                    <button key={oi} onClick={() => pick(oi)} disabled={mcFeedback === "correct"} className={mcFeedback ? "" : "press"}
+                      style={{ textAlign: "left", padding: "11px 13px", borderRadius: 10, fontSize: 12.5, lineHeight: 1.4, cursor: mcFeedback === "correct" ? "default" : "pointer",
+                        border: "1.5px solid " + (showCorrect ? T.best : showWrong ? T.blunder : "#DCCBA8"),
+                        background: showCorrect ? "rgba(63,122,58,.12)" : showWrong ? "rgba(200,80,80,.12)" : "#fff", color: T.ink }}>{op}</button>
                   );
                 })}
-                {feedback === "wrong" && <div style={{ fontSize: 11.5, color: "#F4A8A8", fontWeight: 700, marginTop: 6 }}>✕ 다른 설명이에요. 다시 골라보세요.</div>}
-                {feedback === "correct" && step.note && <div style={{ fontSize: 11.5, color: "#BEEAB0", fontWeight: 700, marginTop: 6 }}>✓ {step.note}</div>}
+                {mcFeedback === "wrong" && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginTop: 6 }}>✕ 다른 설명이에요. 다시 골라보세요.</div>}
+                {mcFeedback === "correct" && (
+                  <div style={{ marginTop: 6 }}>
+                    {beat.note && <div style={{ fontSize: 11.5, color: T.best, fontWeight: 700, marginBottom: 8 }}>✓ {beat.note}</div>}
+                    <button onClick={advanceBeat} className="press" style={{ width: "100%", padding: "10px 18px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>다음</button>
+                  </div>
+                )}
               </div>
             )}
-            {step.type === "move" && (
+            {beat && beat.kind === "move" && (
               <div>
-                {wrongSq && <div style={{ fontSize: 11.5, color: "#F4A8A8", fontWeight: 700, marginBottom: 6 }}>✕ 다른 수예요. 보드를 다시 살펴보세요.</div>}
-                {moveDone && step.note && <div style={{ fontSize: 11.5, color: "#BEEAB0", fontWeight: 700, marginBottom: 6 }}>✓ {step.note}</div>}
-                {!moveDone && !wrongSq && <div style={{ fontSize: 11, color: T.inkSoft }}>보드 위에서 기물을 눌러(또는 끌어서) 두어보세요.</div>}
+                {moveWrongSq && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginBottom: 6 }}>✕ 다른 수예요. 보드를 다시 살펴보세요.</div>}
+                {!moveDone && !moveWrongSq && <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>보드 위에서 기물을 눌러(또는 끌어서) 두어보세요.</div>}
+                {moveDone && (
+                  <>
+                    {beat.note && <div style={{ fontSize: 11.5, color: T.best, fontWeight: 700, marginBottom: 8 }}>✓ {beat.note}</div>}
+                    <button onClick={advanceBeat} className="press" style={{ width: "100%", padding: "10px 18px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>다음</button>
+                  </>
+                )}
               </div>
             )}
-            <div style={{ marginTop: "auto", paddingTop: 18 }}>
-              {(step.type === "explain" || (step.type === "mc" && feedback === "correct") || (step.type === "move" && moveDone)) && (
-                <button onClick={() => { if (step.type === "explain") markAnswered(); advance(); }} className="press"
-                  style={{ width: "100%", padding: "12px 20px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 13.5 }}>
-                  {stepIdx >= lesson.steps.length - 1 ? "레슨 마치기" : "다음"}
-                </button>
-              )}
-            </div>
           </>
         )}
       </div>
+      {!lessonDone && (
+        <div className="flex items-center justify-between" style={{ padding: narrow ? "10px 16px 16px" : "10px 28px 22px", flexShrink: 0, gap: 10 }}>
+          <button onClick={onPrev} disabled={pageIdx === 0} className={pageIdx === 0 ? "" : "press"}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "8px 14px", borderRadius: 10, border: "1px solid #DCCBA8", background: "#fff", color: pageIdx === 0 ? "#C9BBA0" : T.ink, fontWeight: 800, fontSize: 12, cursor: pageIdx === 0 ? "default" : "pointer" }}><ChevronLeft size={14} /> 이전</button>
+          <button onClick={onNext} disabled={!canGoNext} className={canGoNext ? "press" : ""}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "8px 14px", borderRadius: 10, border: "none", background: canGoNext ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#E4D5B4", color: canGoNext ? "#241509" : "#B7A57C", fontWeight: 800, fontSize: 12, cursor: canGoNext ? "pointer" : "default" }}>
+            {isLastPage && pageBeatsDone ? "레슨 마치기" : "다음 페이지"} <ChevronRight size={14} /></button>
+        </div>
+      )}
     </div>
   );
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", display: "flex", flexDirection: narrow ? "column" : "row", overflow: "hidden" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: T.ivory, display: "flex", flexDirection: narrow ? "column" : "row", overflow: "hidden" }}>
       {boardPanel}
       {interactionPanel}
     </div>
@@ -16790,7 +17039,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
   const isNew = lessonKey === "__new__";
   const [key, setKey] = useState(isNew ? "" : lessonKey);
   const existing = !isNew ? CONTENT.lessons[lessonKey] : null;
-  const [draft, setDraft] = useState(existing || { title: "", desc: "", reward: 60, parent: null, steps: [] });
+  const [draft, setDraft] = useState(existing || { title: "", desc: "", reward: 60, parent: null, pages: [] });
   const [saving, setSaving] = useState(false);
   const save = async (next) => {
     setDraft(next); setSaving(true);
@@ -16798,23 +17047,22 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
     if (k) { CONTENT.lessons[k] = next; await bumpContent(); }
     setSaving(false);
   };
-  const updateStep = (i, patch) => { const steps = draft.steps.map((s, idx) => idx === i ? { ...s, ...patch } : s); save({ ...draft, steps }); };
-  const updateOpt = (i, oi, v) => { const opts = draft.steps[i].opts.map((o, x) => x === oi ? v : o); updateStep(i, { opts }); };
-  const addStep = (type) => {
-    const step = type === "mc" ? { type: "mc", sans: [], prompt: "", opts: ["", "", "", ""], answer: 0, note: "" }
-      : type === "move" ? { type: "move", sans: [], prompt: "", answers: [""], note: "" }
-      : { type: "explain", sans: [], coach: "" };
-    save({ ...draft, steps: [...draft.steps, step] });
-  };
-  const delStep = (i) => save({ ...draft, steps: draft.steps.filter((_, idx) => idx !== i) });
   const delLesson = async () => { if (!isNew) { delete CONTENT.lessons[lessonKey]; await bumpContent(); } onClose(); };
-  const sansOf = (s) => (s.sans || []).join(" ");
-  const setSansText = (i, text) => updateStep(i, { sans: text.trim() ? text.trim().split(/\s+/) : [] });
   const otherLessonKeys = Object.keys(CONTENT.lessons).filter((k) => k !== lessonKey);
   const field = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box" };
+  // (v0.4.0) 페이지·스크립트(beats)는 종류가 다양하고(설명/객관식/주관식/원칙 목록/보드 연출 등)
+  // 구조가 깊어(레슨 > 페이지 > beat) 폼 UI로 하나하나 입력받기보다, 개발자가 JSON으로 직접
+  // 작성·붙여넣기 하는 편이 훨씬 빠르고 표현력도 높다 — 필드 구성은 seedLessons 주석 참고.
+  const [pagesText, setPagesText] = useState(() => JSON.stringify(draft.pages || [], null, 2));
+  const [pagesErr, setPagesErr] = useState(null);
+  useEffect(() => { setPagesText(JSON.stringify(draft.pages || [], null, 2)); }, [lessonKey]);
+  const savePages = () => {
+    try { const parsed = JSON.parse(pagesText); if (!Array.isArray(parsed)) throw new Error("배열이어야 해요"); setPagesErr(null); save({ ...draft, pages: parsed }); }
+    catch (e) { setPagesErr(e.message); }
+  };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 520, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
         <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
         <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{isNew ? "새 레슨 추가" : "레슨 편집"} {saving && <span style={{ fontSize: 10, color: T.inkSoft, fontWeight: 600 }}>저장 중…</span>}</div>
         {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder="레슨 키 (예: l_e4_c4)" style={{ ...field, fontFamily: SITE_FONT }} />}
@@ -16832,46 +17080,14 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
           <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
           <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={17} /> OC 나이트 코인</span>
         </div>
-        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>스텝 {draft.steps.length}개</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {draft.steps.map((s, i) => (
-            <div key={i} style={{ border: "1px dashed #C9B58C", borderRadius: 10, padding: 10 }}>
-              <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-                <span style={{ fontSize: 10.5, fontWeight: 800, padding: "2px 7px", borderRadius: 999, background: "#EFE3C6", color: "#6B4F1E" }}>{s.type === "explain" ? "설명" : s.type === "mc" ? "객관식" : "주관식(수 두기)"}</span>
-                <button onClick={() => delStep(i)} className="press" style={{ marginLeft: "auto", width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
-              </div>
-              <input defaultValue={sansOf(s)} onBlur={(e) => setSansText(i, e.target.value)} placeholder="포지션 수순(공백 구분, 예: e4 e5 Nf3) — 비워두면 시작 위치" style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 11.5, marginBottom: 6, boxSizing: "border-box" }} />
-              {s.type === "explain" && (
-                <textarea value={s.coach} onChange={(e) => updateStep(i, { coach: e.target.value })} placeholder="코치 설명" rows={2} style={{ ...field, marginBottom: 0, resize: "vertical" }} />
-              )}
-              {s.type === "mc" && (
-                <>
-                  <textarea value={s.prompt} onChange={(e) => updateStep(i, { prompt: e.target.value })} placeholder="질문" rows={2} style={{ ...field, resize: "vertical" }} />
-                  {s.opts.map((op, oi) => (
-                    <div key={oi} className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-                      <input type="radio" checked={s.answer === oi} onChange={() => updateStep(i, { answer: oi })} title="정답으로 표시" />
-                      <input value={op} onChange={(e) => updateOpt(i, oi, e.target.value)} placeholder={"보기 " + (oi + 1)} style={{ flex: 1, minWidth: 0, padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5 }} />
-                    </div>
-                  ))}
-                  <button onClick={() => updateStep(i, { opts: [...s.opts, ""] })} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer", marginBottom: 6 }}>+ 보기 추가</button>
-                  <textarea value={s.note} onChange={(e) => updateStep(i, { note: e.target.value })} placeholder="정답 후 보여줄 추가 설명(선택)" rows={2} style={{ ...field, marginBottom: 0, resize: "vertical" }} />
-                </>
-              )}
-              {s.type === "move" && (
-                <>
-                  <textarea value={s.prompt} onChange={(e) => updateStep(i, { prompt: e.target.value })} placeholder="지시문(예: 중앙 폰을 두 칸 전진시켜 보세요)" rows={2} style={{ ...field, resize: "vertical" }} />
-                  <input defaultValue={(s.answers || []).join(", ")} onBlur={(e) => updateStep(i, { answers: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="정답 수(쉼표로 구분, 예: Nf3, Nc3)" style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 11.5, marginBottom: 6, boxSizing: "border-box" }} />
-                  <textarea value={s.note} onChange={(e) => updateStep(i, { note: e.target.value })} placeholder="정답 후 보여줄 추가 설명(선택)" rows={2} style={{ ...field, marginBottom: 0, resize: "vertical" }} />
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2" style={{ marginTop: 10, flexWrap: "wrap" }}>
-          <button onClick={() => addStep("explain")} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 설명</button>
-          <button onClick={() => addStep("mc")} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 객관식</button>
-          <button onClick={() => addStep("move")} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 주관식(수 두기)</button>
-          {!isNew && <button onClick={delLesson} className="press" style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>레슨 삭제</button>}
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 4 }}>페이지·스크립트(JSON) — {(draft.pages || []).length}페이지</div>
+        <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>beat 종류(say/principles/mc/move/play/pause/board/clear)는 seedLessons 함수 주석에 설명돼 있어요.</div>
+        <textarea value={pagesText} onChange={(e) => setPagesText(e.target.value)} onBlur={savePages} rows={16}
+          style={{ width: "100%", padding: "8px 9px", borderRadius: 8, border: "1px solid " + (pagesErr ? T.blunder : "#C9B58C"), fontFamily: "monospace", fontSize: 11, boxSizing: "border-box", resize: "vertical", marginBottom: 6 }} />
+        {pagesErr && <div style={{ fontSize: 11, color: T.blunder, fontWeight: 700, marginBottom: 6 }}>JSON을 저장하지 못했어요: {pagesErr}</div>}
+        <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
+          <button onClick={savePages} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: "pointer" }}>페이지 저장</button>
+          {!isNew && <button onClick={delLesson} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>레슨 삭제</button>}
         </div>
       </div>
     </div>
@@ -24780,7 +24996,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes miniAccDotPop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes miniAccDotPop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50} @keyframes lessonSiren{0%,100%{opacity:.35}50%{opacity:.85}} @keyframes lessonCaretBlink{0%,55%{opacity:1}56%,100%{opacity:0}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
