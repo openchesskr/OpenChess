@@ -17048,6 +17048,171 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
 }
 /* (v0.4.0) 개발자 전용 — 레슨의 제목·설명·보상·선행 레슨(parent)과 스텝(설명/객관식/주관식)을
    직접 입력·수정·삭제하는 CMS. 각 스텝의 포지션은 시작 위치부터의 수순(sans, 공백으로 구분)으로 지정한다. */
+// (v0.4.0) beat 종류별 기본값 — kind를 바꿀 때 그 종류에 맞는 빈 틀로 갈아끼우는 용도.
+// 필드 구성은 seedLessons 함수 위 주석(beat 스키마)을 그대로 따른다.
+function defaultBeat(kind) {
+  switch (kind) {
+    case "say": return { kind, speaker: "milku", text: "" };
+    case "principles": return { kind, lines: [] };
+    case "mc": return { kind, prompt: "", opts: [], answer: 0, note: "" };
+    case "move": return { kind, prompt: "", answers: [], note: "" };
+    case "play": return { kind, moves: [], stepMs: 420 };
+    case "pause": return { kind, ms: 800 };
+    case "board": return { kind, squares: [] };
+    case "clear": return { kind };
+    default: return { kind: "say", speaker: "milku", text: "" };
+  }
+}
+const LESSON_BEAT_KINDS = ["say", "principles", "mc", "move", "play", "pause", "board", "clear"];
+const LESSON_BEAT_LABELS = { say: "대사 (say)", principles: "원칙 목록 (principles)", mc: "객관식 (mc)", move: "주관식 (move)", play: "자동 재생 (play)", pause: "대기 (pause)", board: "보드 연출 (board)", clear: "연출 초기화 (clear)" };
+const lsField = { width: "100%", padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11, marginBottom: 4, boxSizing: "border-box" };
+const spaceToArr = (s) => s.trim() ? s.trim().split(/\s+/) : [];
+const linesToArr = (s) => s.split("\n").map((x) => x.trim()).filter(Boolean);
+// (v0.4.0) 순서 조정용 위/아래 화살표 버튼 — 페이지 목록·beat 목록에서 공용으로 쓴다.
+function LsReorderBtns({ onUp, onDown, disabledUp, disabledDown }) {
+  return (
+    <>
+      <button type="button" onClick={onUp} disabled={disabledUp} className="press" title="위로" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.7)", color: T.inkSoft, cursor: disabledUp ? "default" : "pointer", opacity: disabledUp ? 0.35 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={12} /></button>
+      <button type="button" onClick={onDown} disabled={disabledDown} className="press" title="아래로" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.7)", color: T.inkSoft, cursor: disabledDown ? "default" : "pointer", opacity: disabledDown ? 0.35 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={12} /></button>
+    </>
+  );
+}
+// (v0.4.0) beat 하나(say/principles/mc/move/play/pause/board/clear)를 폼으로 편집 — 필드는
+// seedLessons 주석의 beat 스키마를 그대로 따른다. 텍스트류는 로컬 입력 상태 + onBlur 커밋 패턴으로,
+// 체크박스·셀렉트·숫자는 즉시 커밋한다(레슨 편집기 상단 필드들과 같은 스타일).
+function BeatEditor({ beat, index, total, onChange, onRemove, onMoveUp, onMoveDown }) {
+  const kind = beat.kind || "say";
+  const [text, setText] = useState(beat.text || "");
+  const [linesText, setLinesText] = useState((beat.lines || []).join("\n"));
+  const [prompt, setPrompt] = useState(beat.prompt || "");
+  const [optsText, setOptsText] = useState((beat.opts || []).join("\n"));
+  const [note, setNote] = useState(beat.note || "");
+  const [answersText, setAnswersText] = useState((beat.answers || []).join("\n"));
+  const [movesText, setMovesText] = useState((beat.moves || []).join(" "));
+  const [stepMs, setStepMs] = useState(beat.stepMs ?? "");
+  const [ms, setMs] = useState(beat.ms ?? 800);
+  const [squaresText, setSquaresText] = useState((beat.squares || []).join(" "));
+  const [sansText, setSansText] = useState((beat.sans || []).join(" "));
+  useEffect(() => {
+    setText(beat.text || ""); setLinesText((beat.lines || []).join("\n"));
+    setPrompt(beat.prompt || ""); setOptsText((beat.opts || []).join("\n")); setNote(beat.note || "");
+    setAnswersText((beat.answers || []).join("\n")); setMovesText((beat.moves || []).join(" "));
+    setStepMs(beat.stepMs ?? ""); setMs(beat.ms ?? 800); setSquaresText((beat.squares || []).join(" "));
+    setSansText((beat.sans || []).join(" "));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(beat)]);
+  const patch = (p) => onChange({ ...beat, ...p });
+  const onKindChange = (nk) => { const nb = defaultBeat(nk); if (beat.sans && beat.sans.length) nb.sans = beat.sans; onChange(nb); };
+  const commitSans = () => patch({ sans: spaceToArr(sansText).length ? spaceToArr(sansText) : undefined });
+  return (
+    <div style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.5)", border: "1px solid #E2D2AC", marginBottom: 6 }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 5 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>#{index + 1}</span>
+        <select value={kind} onChange={(e) => onKindChange(e.target.value)} style={{ fontSize: 10.5, padding: "3px 5px", borderRadius: 6, border: "1px solid #C9B58C", flex: 1 }}>
+          {LESSON_BEAT_KINDS.map((k) => <option key={k} value={k}>{LESSON_BEAT_LABELS[k]}</option>)}
+        </select>
+        <LsReorderBtns onUp={onMoveUp} onDown={onMoveDown} disabledUp={index === 0} disabledDown={index === total - 1} />
+        <button type="button" onClick={onRemove} className="press" title="beat 삭제" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
+      </div>
+      {kind === "say" && (
+        <>
+          <select value={beat.speaker || "milku"} onChange={(e) => patch({ speaker: e.target.value })} style={{ ...lsField, width: "auto" }}>
+            <option value="milku">milku</option>
+            <option value="kokoa">kokoa</option>
+          </select>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => patch({ text })} placeholder="대사 텍스트" rows={2} style={{ ...lsField, resize: "vertical" }} />
+        </>
+      )}
+      {kind === "principles" && (
+        <textarea value={linesText} onChange={(e) => setLinesText(e.target.value)} onBlur={() => patch({ lines: linesToArr(linesText) })} placeholder={"원칙 목록 — 한 줄에 하나씩"} rows={4} style={{ ...lsField, resize: "vertical" }} />
+      )}
+      {kind === "mc" && (
+        <>
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={() => patch({ prompt })} placeholder="질문(prompt)" rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={optsText} onChange={(e) => setOptsText(e.target.value)} onBlur={() => patch({ opts: linesToArr(optsText) })} placeholder={"선택지 — 한 줄에 하나씩"} rows={3} style={{ ...lsField, resize: "vertical" }} />
+          <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+            <span style={{ fontSize: 10.5, color: T.inkSoft }}>정답 인덱스(0부터)</span>
+            <input type="number" min={0} value={beat.answer ?? 0} onChange={(e) => patch({ answer: parseInt(e.target.value, 10) || 0 })} style={{ width: 60, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
+          </div>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => patch({ note })} placeholder="정답 해설(note)" rows={2} style={{ ...lsField, resize: "vertical" }} />
+        </>
+      )}
+      {kind === "move" && (
+        <>
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={() => patch({ prompt })} placeholder="질문(prompt)" rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={answersText} onChange={(e) => setAnswersText(e.target.value)} onBlur={() => patch({ answers: linesToArr(answersText) })} placeholder={"정답으로 인정할 수(SAN) — 한 줄에 하나씩, 예: e4"} rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => patch({ note })} placeholder="정답 해설(note)" rows={2} style={{ ...lsField, resize: "vertical" }} />
+        </>
+      )}
+      {kind === "play" && (
+        <>
+          <input value={movesText} onChange={(e) => setMovesText(e.target.value)} onBlur={() => patch({ moves: spaceToArr(movesText) })} placeholder={"이어서 재생할 수(SAN) 나열 — 띄어쓰기로 구분, 예: e4 e5 Nf3"} style={lsField} />
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: 10.5, color: T.inkSoft }}>한 수당 재생 간격(ms)</span>
+            <input type="number" min={0} value={stepMs} onChange={(e) => setStepMs(e.target.value)} onBlur={() => patch({ stepMs: stepMs === "" ? undefined : parseInt(stepMs, 10) || 420 })} placeholder="420" style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
+          </div>
+        </>
+      )}
+      {kind === "pause" && (
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: 10.5, color: T.inkSoft }}>대기 시간(ms)</span>
+          <input type="number" min={0} value={ms} onChange={(e) => setMs(e.target.value)} onBlur={() => patch({ ms: parseInt(ms, 10) || 800 })} style={{ width: 80, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
+        </div>
+      )}
+      {kind === "board" && (
+        <>
+          <input value={squaresText} onChange={(e) => setSquaresText(e.target.value)} onBlur={() => patch({ squares: spaceToArr(squaresText) })} placeholder={"강조할 칸 — 띄어쓰기로 구분, 예: e4 e5 d4 d5"} style={lsField} />
+          <div className="flex items-center gap-3" style={{ marginBottom: 4 }}>
+            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.dim} onChange={(e) => patch({ dim: e.target.checked })} /> dim(음영)</label>
+            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.glow} onChange={(e) => patch({ glow: e.target.checked })} /> glow(발광)</label>
+            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.siren} onChange={(e) => patch({ siren: e.target.checked })} /> siren(경고)</label>
+          </div>
+        </>
+      )}
+      {kind === "clear" && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>이 beat는 별도 필드 없이 보드 연출(dim/glow/siren)만 초기화해요.</div>}
+      <input value={sansText} onChange={(e) => setSansText(e.target.value)} onBlur={commitSans} placeholder={"(선택) 즉시 전환할 위치 — 수순(SAN)을 띄어쓰기로, 예: e4 e5 Nf3"} style={{ ...lsField, marginBottom: 0, fontSize: 10.5, color: T.inkSoft }} />
+    </div>
+  );
+}
+// (v0.4.0) 페이지 하나(startSans?/flip?/beats[])를 폼으로 편집 — beats는 BeatEditor 목록 + 추가용
+// kind 셀렉트로 구성한다.
+function PageEditor({ page, index, total, onChange, onRemove, onMoveUp, onMoveDown }) {
+  const [startSansText, setStartSansText] = useState((page.startSans || []).join(" "));
+  const [addKind, setAddKind] = useState("say");
+  useEffect(() => { setStartSansText((page.startSans || []).join(" ")); }, [JSON.stringify(page.startSans)]);
+  const beats = page.beats || [];
+  const setBeats = (nb) => onChange({ ...page, beats: nb });
+  const updateBeatAt = (bi, nb) => { const arr = [...beats]; arr[bi] = nb; setBeats(arr); };
+  const removeBeatAt = (bi) => setBeats(beats.filter((_, j) => j !== bi));
+  const moveBeatAt = (bi, dir) => { const j = bi + dir; if (j < 0 || j >= beats.length) return; const arr = [...beats]; [arr[bi], arr[j]] = [arr[j], arr[bi]]; setBeats(arr); };
+  const addBeat = () => setBeats([...beats, defaultBeat(addKind)]);
+  const commitStartSans = () => onChange({ ...page, startSans: spaceToArr(startSansText) });
+  return (
+    <div style={{ padding: 10, borderRadius: 10, background: T.ivoryHi, border: "1px solid #DCCBA8", marginBottom: 8 }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>페이지 {index + 1}</span>
+        <span style={{ fontSize: 10, color: T.inkSoft }}>({beats.length} beats)</span>
+        <div className="flex items-center gap-1" style={{ marginLeft: "auto" }}>
+          <LsReorderBtns onUp={onMoveUp} onDown={onMoveDown} disabledUp={index === 0} disabledDown={index === total - 1} />
+          <button type="button" onClick={onRemove} className="press" title="페이지 삭제" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
+        </div>
+      </div>
+      <input value={startSansText} onChange={(e) => setStartSansText(e.target.value)} onBlur={commitStartSans} placeholder={"(선택) 시작 위치 — 수순(SAN)을 띄어쓰기로, 예: e4 e5 Nf3"} style={lsField} />
+      <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer", marginBottom: 6 }}>
+        <input type="checkbox" checked={!!page.flip} onChange={(e) => onChange({ ...page, flip: e.target.checked })} /> flip(보드 반전 — 흑 시점으로 보기)
+      </label>
+      {beats.map((b, bi) => (
+        <BeatEditor key={bi} beat={b} index={bi} total={beats.length} onChange={(nb) => updateBeatAt(bi, nb)} onRemove={() => removeBeatAt(bi)} onMoveUp={() => moveBeatAt(bi, -1)} onMoveDown={() => moveBeatAt(bi, 1)} />
+      ))}
+      <div className="flex items-center gap-2">
+        <select value={addKind} onChange={(e) => setAddKind(e.target.value)} style={{ fontSize: 10.5, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C" }}>
+          {LESSON_BEAT_KINDS.map((k) => <option key={k} value={k}>{LESSON_BEAT_LABELS[k]}</option>)}
+        </select>
+        <button type="button" onClick={addBeat} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "4px 9px", borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer" }}>+ beat 추가</button>
+      </div>
+    </div>
+  );
+}
 function LessonEditor({ lessonKey, bumpContent, onClose }) {
   const isNew = lessonKey === "__new__";
   const [key, setKey] = useState(isNew ? "" : lessonKey);
@@ -17064,15 +17229,14 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
   const otherLessonKeys = Object.keys(CONTENT.lessons).filter((k) => k !== lessonKey);
   const field = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", fontSize: 12, marginBottom: 6, boxSizing: "border-box" };
   // (v0.4.0) 페이지·스크립트(beats)는 종류가 다양하고(설명/객관식/주관식/원칙 목록/보드 연출 등)
-  // 구조가 깊어(레슨 > 페이지 > beat) 폼 UI로 하나하나 입력받기보다, 개발자가 JSON으로 직접
-  // 작성·붙여넣기 하는 편이 훨씬 빠르고 표현력도 높다 — 필드 구성은 seedLessons 주석 참고.
-  const [pagesText, setPagesText] = useState(() => JSON.stringify(draft.pages || [], null, 2));
-  const [pagesErr, setPagesErr] = useState(null);
-  useEffect(() => { setPagesText(JSON.stringify(draft.pages || [], null, 2)); }, [lessonKey]);
-  const savePages = () => {
-    try { const parsed = JSON.parse(pagesText); if (!Array.isArray(parsed)) throw new Error("배열이어야 해요"); setPagesErr(null); save({ ...draft, pages: parsed }); }
-    catch (e) { setPagesErr(e.message); }
-  };
+  // 구조가 깊지만(레슨 > 페이지 > beat), PageEditor/BeatEditor 폼 컴포넌트로 각 필드를 직접
+  // 입력·추가·삭제·순서 변경할 수 있다 — 필드 구성은 seedLessons 함수 위 주석(beat 스키마) 그대로.
+  const pages = draft.pages || [];
+  const setPages = (np) => save({ ...draft, pages: np });
+  const updatePageAt = (i, np) => { const arr = [...pages]; arr[i] = np; setPages(arr); };
+  const removePageAt = (i) => setPages(pages.filter((_, j) => j !== i));
+  const movePageAt = (i, dir) => { const j = i + dir; if (j < 0 || j >= pages.length) return; const arr = [...pages]; [arr[i], arr[j]] = [arr[j], arr[i]]; setPages(arr); };
+  const addPage = () => setPages([...pages, { startSans: [], flip: false, beats: [] }]);
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
@@ -17093,13 +17257,13 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
           <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
           <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={17} /> OC 나이트 코인</span>
         </div>
-        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 4 }}>페이지·스크립트(JSON) — {(draft.pages || []).length}페이지</div>
-        <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>beat 종류(say/principles/mc/move/play/pause/board/clear)는 seedLessons 함수 주석에 설명돼 있어요.</div>
-        <textarea value={pagesText} onChange={(e) => setPagesText(e.target.value)} onBlur={savePages} rows={16}
-          style={{ width: "100%", padding: "8px 9px", borderRadius: 8, border: "1px solid " + (pagesErr ? T.blunder : "#C9B58C"), fontFamily: "monospace", fontSize: 11, boxSizing: "border-box", resize: "vertical", marginBottom: 6 }} />
-        {pagesErr && <div style={{ fontSize: 11, color: T.blunder, fontWeight: 700, marginBottom: 6 }}>JSON을 저장하지 못했어요: {pagesErr}</div>}
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>페이지·스크립트 — {pages.length}페이지</div>
+        {pages.map((p, i) => (
+          <PageEditor key={i} page={p} index={i} total={pages.length} onChange={(np) => updatePageAt(i, np)} onRemove={() => removePageAt(i)} onMoveUp={() => movePageAt(i, -1)} onMoveDown={() => movePageAt(i, 1)} />
+        ))}
+        <button onClick={addPage} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer", marginBottom: 10 }}>+ 페이지 추가</button>
         <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
-          <button onClick={savePages} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: "pointer" }}>페이지 저장</button>
+          <span style={{ fontSize: 10, color: T.inkSoft }}>{saving ? "저장 중…" : "모든 필드는 변경 즉시(포커스를 벗어나면) 저장돼요."}</span>
           {!isNew && <button onClick={delLesson} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>레슨 삭제</button>}
         </div>
       </div>
@@ -17107,7 +17271,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
   );
 }
 // (18차 UI2) 학습 탭 — 일일 퀘스트를 퍼즐 탭에서 분리하고 메인 퀘스트와 함께 표시.
-function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, bumpContent, contentVer, questHighlight }) {
+function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, canEditLessons, bumpContent, contentVer, questHighlight }) {
   return (
     <div>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 퀘스트 아이콘과 중복돼 제거. */}
@@ -17115,7 +17279,7 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
           제목도 같은 이름으로 맞춘다(퀘스트 내용·기능 자체는 그대로). */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>학습</h2></div>
       <FadeIn index={0}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /></FadeIn>
-      <FadeIn index={1}><LessonMap mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
+      <FadeIn index={1}><LessonMap mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
     </div>
   );
 }
@@ -24291,6 +24455,7 @@ export default function App() {
   const isDev = user === DEV_ACCOUNT;
   const isCodev = !!user && Array.isArray(CONTENT.codev) && CONTENT.codev.includes(user);
   const canEdit = (isDev && devOn) || (isCodev && codevOn);   // (기능3) 분기점 해설·수 설명·수 키워드 수정 권한
+  const canEditLessons = isDev && devOn;   // (기능) 레슨 편집(CMS)은 개발자 계정 전용 — 공동개발자는 제외
   const canAdd = canEdit;
   // (v0.3.4 기능) 사용자 요청 — 한 수에 남길 수 있는 "수 설명"(move_notes) 개수 한도. 개발자·
   // 공동개발자는(각자 모드가 켜져 있는 동안 — 다른 모든 canEdit류 권한과 같은 결이라 그대로
@@ -25187,7 +25352,7 @@ export default function App() {
           </div>
         )}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} />}
-        {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
+        {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} />}
       </main>
