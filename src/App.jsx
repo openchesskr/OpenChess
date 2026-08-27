@@ -16684,7 +16684,11 @@ function layoutLessonTree(lessons) {
   for (const id of ids) if (row[id] !== undefined) maxKnownRow = Math.max(maxKnownRow, row[id]);
   for (const id of ids) if (row[id] === undefined) row[id] = maxKnownRow + 1;
 
-  // --- col: layer by layer, snapping each node near the average col of its parents, then de-overlapping ---
+  // --- col: layer by layer, top-left root sprawling down-right — each node snaps to the RIGHTMOST of
+  // its parents' cols (rather than the average) so a branch point never pulls its children back toward
+  // the left, then any same-row collision is pushed further right. Combined with "row = depth" this
+  // makes the whole map grow diagonally toward the bottom-right as it branches, instead of a centered
+  // symmetric tree — the root stays pinned at (row 0, col 0).
   const byRow = {};
   for (const id of ids) (byRow[row[id]] = byRow[row[id]] || []).push(id);
   const maxRow = ids.length ? Math.max(...ids.map((id) => row[id])) : 0;
@@ -16695,7 +16699,7 @@ function layoutLessonTree(lessons) {
     const desired = nodes.map((id) => {
       const ps = parentsOf[id];
       if (!ps.length) return 0;
-      return ps.reduce((s, p) => s + (pos[p] ? pos[p].col : 0), 0) / ps.length;
+      return Math.max(...ps.map((p) => (pos[p] ? pos[p].col : 0)));
     });
     // place in order of desired col (stable on ties) so converging/diverging edges stay visually sane,
     // then push anything that collides strictly to the right of the previous node in that order.
@@ -16713,29 +16717,36 @@ function layoutLessonTree(lessons) {
   for (const id of ids) if (pos[id]) maxCol = Math.max(maxCol, pos[id].col);
   return { pos, childrenOf, roots, maxRow, maxCol };
 }
-const LESSON_COL_W = 96, LESSON_ROW_H = 116, LESSON_NODE_D = 60;
+// (v0.4.2 UI) 노드를 "원형 아이콘 버튼 + 아래쪽 캡션" 대신 가로로 넓은 직사각형 카드로 바꿨다 —
+// 왼쪽에 상태 아이콘(자물쇠/재생/체크) 배지, 오른쪽에 레슨 이름과 보상을 한 카드 안에 담는다.
+const LESSON_CARD_W = 208, LESSON_CARD_H = 58, LESSON_BADGE_D = 38;
+const LESSON_COL_W = 232, LESSON_ROW_H = 92;
 const LESSON_NODE_STYLE = {
-  locked: { bg: "linear-gradient(180deg,#E4D5B4,#D2BD91)", border: "#C2AD82", color: "#8A7A5E", ring: null },
-  available: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", ring: "rgba(196,154,80,.4)" },
-  progress: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", ring: "rgba(196,154,80,.4)" },
-  done: { bg: "linear-gradient(180deg,#59A455,#3F7A3A)", border: "#9BE39B", color: "#EAF7E6", ring: "rgba(63,122,58,.35)" },
+  locked: { bg: "linear-gradient(180deg,#E9DEC2,#D9C69C)", border: "#C2AD82", color: "#8A7A5E", badgeBg: "rgba(138,122,94,.16)", ring: null },
+  available: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", badgeBg: "rgba(36,21,9,.14)", ring: "rgba(196,154,80,.4)" },
+  progress: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", badgeBg: "rgba(36,21,9,.14)", ring: "rgba(196,154,80,.4)" },
+  done: { bg: "linear-gradient(180deg,#59A455,#3F7A3A)", border: "#9BE39B", color: "#EAF7E6", badgeBg: "rgba(234,247,230,.2)", ring: "rgba(63,122,58,.35)" },
 };
 function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
   const s = LESSON_NODE_STYLE[state];
   return (
-    <div style={{ position: "absolute", left: x, top: y, width: LESSON_COL_W, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+    <div style={{ position: "absolute", left: x, top: y, width: LESSON_CARD_W, height: LESSON_CARD_H }}>
       <button onClick={() => state !== "locked" && onOpen(id)} disabled={state === "locked"} className={state === "locked" ? "" : "press"}
         title={lesson.title}
-        style={{ width: LESSON_NODE_D, height: LESSON_NODE_D, borderRadius: 18, border: "3px solid " + s.border, background: s.bg, color: s.color,
-          display: "flex", alignItems: "center", justifyContent: "center", cursor: state === "locked" ? "default" : "pointer",
-          boxShadow: s.ring ? "0 0 0 5px " + s.ring + ", 0 3px 8px rgba(90,58,34,.25)" : "0 3px 8px rgba(90,58,34,.25)", flexShrink: 0 }}>
-        {state === "locked" ? <Lock size={22} /> : state === "done" ? <Check size={26} /> : <Play size={22} fill={s.color} />}
+        style={{ width: "100%", height: "100%", borderRadius: 16, border: "3px solid " + s.border, background: s.bg, color: s.color,
+          display: "flex", alignItems: "center", gap: 10, padding: "0 12px 0 0", cursor: state === "locked" ? "default" : "pointer", textAlign: "left",
+          boxShadow: s.ring ? "0 0 0 5px " + s.ring + ", 0 3px 8px rgba(90,58,34,.25)" : "0 3px 8px rgba(90,58,34,.25)" }}>
+        <span style={{ width: LESSON_BADGE_D, height: LESSON_BADGE_D, borderRadius: 12, background: s.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginLeft: 10 }}>
+          {state === "locked" ? <Lock size={19} /> : state === "done" ? <Check size={22} /> : <Play size={19} fill={s.color} />}
+        </span>
+        <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, flex: 1 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: state === "locked" ? T.inkSoft : s.color, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "keep-all" }}>{lesson.title}</span>
+          {state !== "locked" && (
+            <span className="flex items-center gap-1" style={{ fontSize: 9.5, fontWeight: 800, color: state === "done" ? "rgba(234,247,230,.85)" : "rgba(36,21,9,.7)" }}><CoinIcon size={11} /> {lesson.reward || 60}</span>
+          )}
+        </span>
       </button>
-      <div style={{ fontSize: 10.5, fontWeight: 800, color: state === "locked" ? T.inkSoft : T.ink, textAlign: "center", lineHeight: 1.25, maxWidth: LESSON_COL_W + 16, wordBreak: "keep-all" }}>{lesson.title}</div>
-      {state !== "locked" && (
-        <span className="flex items-center gap-1" style={{ fontSize: 9.5, fontWeight: 800, color: "#8A6A2F" }}><CoinIcon size={12} /> {lesson.reward || 60}</span>
-      )}
-      {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title="레슨 편집" style={{ width: 18, height: 18, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.7)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: 0, right: 0 }}><Settings size={10} /></button>}
+      {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title="레슨 편집" style={{ width: 18, height: 18, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.85)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: -6, right: -6, zIndex: 1 }}><Settings size={10} /></button>}
     </div>
   );
 }
@@ -16746,23 +16757,22 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
   const [editKey, setEditKey] = useState(null);
   const layout = useMemo(() => layoutLessonTree(CONTENT.lessons), [contentVer]);
   const ids = useMemo(() => Object.keys(CONTENT.lessons).filter((id) => layout.pos[id]), [layout]);
-  const width = (layout.maxCol + 1) * LESSON_COL_W + 24;
-  const height = (layout.maxRow + 1) * LESSON_ROW_H + 16;
-  const cx = (id) => layout.pos[id].col * LESSON_COL_W + LESSON_COL_W / 2 + 12;
-  const cy = (id) => layout.pos[id].row * LESSON_ROW_H + LESSON_NODE_D / 2 + 8;
+  // (v0.4.2) 카드가 넓은 직사각형이 되면서, 루트가 좌상단에 고정되고 갈래가 늘어날수록 우하단으로
+  // 뻗어나가는 대각선 형태가 됐다 — 컨테이너 크기도 그 최대 col/row + 카드 한 장 크기만큼 잡는다.
+  const nodeX = (id) => layout.pos[id].col * LESSON_COL_W + 14;
+  const nodeY = (id) => layout.pos[id].row * LESSON_ROW_H + 10;
+  const width = (layout.maxCol) * LESSON_COL_W + LESSON_CARD_W + 28;
+  const height = (layout.maxRow) * LESSON_ROW_H + LESSON_CARD_H + 20;
   const overall = useMemo(() => mainQuestOverallProgress(mainQuest), [mainQuest, contentVer]);
-  // (버그 수정) 타이디 트리 레이아웃은 상위 레슨을 "그 자식들의 가운데"에 놓는다 — 갈래가 한쪽으로
-  // 치우쳐 있으면(예: 첫 레슨 하나 아래 e4·d4 두 갈래가 뻗어나가는 모양) 정작 지금 막 시작해야 할
-  // 최상위 레슨이 왼쪽 끝(스크롤 기본 위치)이 아니라 열 중앙 어딘가로 밀려나, 가로 스크롤을 하지
-  // 않으면 화면 밖에 있어 보이지도 않았다. 지금 도전할 만한(해금됐고 아직 다 못 깬) 레슨—없으면
-  // 첫 최상위 레슨—이 항상 보이도록, 마운트 시 그 레슨이 컨테이너 가운데 오게 자동으로 스크롤한다.
+  // 루트는 항상 좌상단(col 0)에 고정되므로, 마운트 시 지금 도전할 만한(해금됐고 아직 다 못 깬)
+  // 레슨—없으면 첫 최상위 레슨—이 뷰포트 안에 들어오도록만 가로로 스크롤해 준다.
   const scrollRef = useRef(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !ids.length) return;
     const frontier = ids.find((id) => { const st = lessonNodeState(mainQuest, id); return st === "available" || st === "progress"; }) || layout.roots[0] || ids[0];
     if (!frontier || !layout.pos[frontier]) return;
-    const targetX = layout.pos[frontier].col * LESSON_COL_W + LESSON_COL_W / 2 + 12;
+    const targetX = nodeX(frontier) + LESSON_CARD_W / 2;
     el.scrollLeft = Math.max(0, targetX - el.clientWidth / 2);
   }, [layout, ids.length]);
   return (
@@ -16776,21 +16786,23 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
         <div style={{ fontSize: 12, color: T.inkSoft, padding: "16px 0", textAlign: "center" }}>아직 등록된 레슨이 없어요.</div>
       ) : (
         <div ref={scrollRef} style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
-          <div style={{ position: "relative", width, height, margin: "0 auto" }}>
+          <div style={{ position: "relative", width, height }}>
             <svg width={width} height={height} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
               {ids.flatMap((id) => {
                 const lesson = CONTENT.lessons[id];
                 const parents = lessonParents(lesson).filter((p) => layout.pos[p]);
                 return parents.map((p) => {
                   const claimed = isLessonClaimed(mainQuest, p);
-                  return <line key={p + "->" + id} x1={cx(p)} y1={cy(p) + LESSON_NODE_D / 2} x2={cx(id)} y2={cy(id) - LESSON_NODE_D / 2}
+                  // 카드가 넓은 직사각형이라 부모 카드 아래쪽 중앙에서 자식 카드 위쪽 중앙으로 잇는다 —
+                  // 열이 다르면 자연히 대각선으로 우하단을 향해 기울어져 보인다.
+                  return <line key={p + "->" + id} x1={nodeX(p) + LESSON_CARD_W / 2} y1={nodeY(p) + LESSON_CARD_H} x2={nodeX(id) + LESSON_CARD_W / 2} y2={nodeY(id)}
                     stroke={claimed ? "rgba(63,122,58,.55)" : "rgba(196,154,80,.55)"} strokeWidth={4} strokeLinecap="round" />;
                 });
               })}
             </svg>
             {ids.map((id) => (
               <LessonNode key={id} id={id} lesson={CONTENT.lessons[id]} state={lessonNodeState(mainQuest, id)}
-                x={cx(id) - LESSON_COL_W / 2} y={cy(id) - LESSON_NODE_D / 2} onOpen={setOpenKey} canEdit={canEdit} onEdit={setEditKey} />
+                x={nodeX(id)} y={nodeY(id)} onOpen={setOpenKey} canEdit={canEdit} onEdit={setEditKey} />
             ))}
           </div>
         </div>
