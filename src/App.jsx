@@ -7651,7 +7651,85 @@ function FocusBoxPager({ pages }) {
 // UI만 바꿔서는 일반 유저의 등록이 서버에서 그대로 거부된다. 대신 새 테이블 move_notes(수마다 여러 행,
 // 1인 1수당 1개, RLS: 누구나 읽기·로그인 유저 본인 것만 쓰기·개발자만 수정·삭제)를 새로 만들어 이
 // 기능 전용으로 완전히 분리했다 — supabase-setup.sql 15번 섹션 참고.
-const MOVE_NOTE_MAX_LEN = 100;
+const MOVE_NOTE_MAX_LEN = 150;
+// (v0.4.0 기능) 사용자 요청 — 수 설명 본문에서 실제로 그 위치에서 둘 수 있는 SAN을 언급하면 자동으로
+// 집중분석으로 바로 이동하는 링크가 되게 한다. 문장에서 SAN처럼 생긴 토큰만 우선 정규식으로 후보로
+// 뽑고("모양"만 걸러내는 용도), 진짜로 그 위치에서 합법인지는 반드시 sanSrc(기존 수 적용 로직,
+// applySan/boardFromSans가 이미 쓰는 것과 같은 함수)로 재검증한다 — 그냥 SAN처럼 보이기만 하는
+// 우연의 일치 단어를 링크로 만들지 않기 위해서다.
+const SAN_TOKEN_RE = /\b(?:O-O-O|O-O|[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h]x[a-h][1-8]|[a-h][1-8])(?:=[QRBN])?[+#]?\b/g;
+// moveKey는 "그 수 이전까지의 수순(공백 join) + '|' + 그 수 자체"로 만들어진다(mkKey 정의부 참고).
+// 이 함수는 반대로 moveKey에서 "이 설명이 달린 바로 그 위치"까지의 전체 수순(sans 배열, 그 수까지
+// 포함)을 복원한다 — 이후 이 위치를 기준으로 다음 수 합법성을 검사하고, 링크 클릭 시 enterFocusAt에
+// 넘겨줄 sans로 쓴다.
+function ownSansFromMoveKey(moveKey) {
+  if (!moveKey) return [];
+  const bar = moveKey.lastIndexOf("|");
+  if (bar === -1) return [];
+  const priorPart = moveKey.slice(0, bar);
+  const san = moveKey.slice(bar + 1);
+  const prior = priorPart ? priorPart.split(" ") : [];
+  return san ? [...prior, san] : prior;
+}
+// baseSans 위치에서 seq(SAN 배열)를 순서대로 재생해본다 — 하나라도 그 시점 보드에서 합법이 아니면
+// 즉시 null(실패)을 돌려주고, 전부 성공하면 재생이 끝난 보드를 돌려준다(호출부는 성공 여부만 보면
+// 충분해 보드 자체는 안 쓰지만, 판정 로직을 sanSrc/applySan에 그대로 위임하기 위해 실제로 둬 본다).
+function tryReplaySanSequence(baseSans, seq) {
+  if (!seq || !seq.length) return null;
+  let board = boardFromSans(baseSans);
+  let color = baseSans.length % 2 === 0 ? "w" : "b";
+  for (const san of seq) {
+    const info = sanSrc(board, san, color);
+    if (!info) return null;
+    board = applySan(board, san, color);
+    color = color === "w" ? "b" : "w";
+  }
+  return board;
+}
+// 수 설명 본문을 렌더링용 노드 배열로 바꾼다 — [[e5 Nf3 Nc6 Bb5]] 같은 이중 대괄호 구간은 그 안의
+// SAN 수순 전체를 baseSans 위치부터 재생해보고, 전부 합법이면 링크(대괄호는 표시에서 제거)로,
+// 하나라도 불합법이면 그냥 대괄호만 벗긴 일반 텍스트로 보여준다. 대괄호 밖 일반 문장에서는 SAN처럼
+// 생긴 낱말 하나하나가 "바로 다음 수"로 합법일 때만(길이 1 재생) 같은 방식으로 링크가 된다 — 대괄호
+// 구문은 이 length-1 케이스를 여러 수로 확장한 것뿐이라 같은 tryReplaySanSequence를 재사용한다.
+function renderMoveNoteBody(body, baseSans, onJump) {
+  const text = body || "";
+  if (!onJump || !baseSans) return text;
+  const linkStyle = { color: T.brass, fontWeight: 800, textDecoration: "underline", textDecorationStyle: "dotted", cursor: "pointer" };
+  const renderPlain = (str, keyPrefix) => {
+    const out = [];
+    let last = 0, i = 0, mm;
+    SAN_TOKEN_RE.lastIndex = 0;
+    while ((mm = SAN_TOKEN_RE.exec(str))) {
+      const token = mm[0];
+      if (tryReplaySanSequence(baseSans, [token])) {
+        if (mm.index > last) out.push(str.slice(last, mm.index));
+        out.push(<a key={keyPrefix + "-t" + (i++)} onClick={() => onJump(baseSans, token)} style={linkStyle}>{token}</a>);
+        last = SAN_TOKEN_RE.lastIndex;
+      }
+    }
+    if (last < str.length) out.push(str.slice(last));
+    return out;
+  };
+  const parts = [];
+  const bracketRe = /\[\[([^[\]]+)\]\]/g;
+  let last = 0, bm, k = 0;
+  while ((bm = bracketRe.exec(text))) {
+    if (bm.index > last) parts.push(...renderPlain(text.slice(last, bm.index), "p" + k));
+    const seqStr = bm[1].trim();
+    const seq = seqStr.split(/\s+/).filter(Boolean);
+    const board = tryReplaySanSequence(baseSans, seq);
+    if (board) {
+      const prefixedSans = [...baseSans, ...seq.slice(0, -1)];
+      const lastSan = seq[seq.length - 1];
+      parts.push(<a key={"b" + k} onClick={() => onJump(prefixedSans, lastSan)} style={linkStyle}>{seqStr}</a>);
+    } else {
+      parts.push(seqStr);
+    }
+    last = bracketRe.lastIndex; k++;
+  }
+  if (last < text.length) parts.push(...renderPlain(text.slice(last), "p" + k));
+  return parts;
+}
 // 등록 전 1차 방어선(클라이언트) — 완전한 검열은 아니지만, 흔한 욕설·혐오 표현을 공백·구두점을 뺀
 // 뒤 부분 문자열로 잡아낸다("시 발"처럼 띄어써서 피하는 경우도 걸러짐). 진짜 강제력은 서버 트리거
 // (public.move_notes_moderate, supabase-setup.sql)가 같은 판정을 다시 하는 데서 나온다 — 클라이언트
@@ -7673,7 +7751,7 @@ function containsBannedWord(text) {
   const norm = normalizeForFilter(text);
   return BANNED_WORD_LIST.some((w) => norm.includes(normalizeForFilter(w)));
 }
-function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted }) {
+function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump }) {
   // (사용자 요청) 예전엔 작성자 본인도 스스로 못 고치고 개발자(canModerate)만 편집·삭제할 수
   // 있었다 — 이제 자기 글은 본인이 자유롭게 고치고 지울 수 있고, 개발자/공동개발자는 그대로
   // 모든 글에 대해 편집 권한을 유지한다(RLS도 함께 맞춤, supabase-setup.sql 15번 섹션 참고).
@@ -7710,7 +7788,7 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted }) {
             </div>
           </div>
         ) : (
-          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{n.body}</p>
+          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{renderMoveNoteBody(n.body, ownSans, onJump)}</p>
         )}
       </div>
       {!editing && canEditThis && (
@@ -7726,7 +7804,7 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted }) {
 // 박스 자리에 그대로 병합한다. 설명이 하나도 없을 때만 기존 개발자 정적 해설(explain)을 그 자리에
 // 보여주는 폴백으로 남긴다. 가로 스와이프 대신 세로로 자동 스크롤되도록 축을 바꿨고(5초 간격),
 // 카드 좌상단에 "@아이디"를 보여준다. 손으로 위아래 스크롤하면 기존과 동일하게 6초간 자동 넘김을 쉰다.
-function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explainLong, title, setShowExpl, noteCap }) {
+function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explainLong, title, setShowExpl, noteCap, onJump }) {
   const [notes, setNotes] = useState(null); // null=로딩 중
   const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState("");
@@ -7734,6 +7812,9 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
   const [err, setErr] = useState("");
   const scrollerRef = useRef(null);
   const pauseUntilRef = useRef(0);
+  // (v0.4.0 기능) 이 설명이 달린 바로 그 위치까지의 전체 수순 — 본문에 언급된 SAN을 그 위치 기준으로
+  // 합법성 검사하고, 링크 클릭 시 그 위치에서부터 집중분석으로 이동하기 위해 필요하다.
+  const ownSans = useMemo(() => ownSansFromMoveKey(moveKey), [moveKey]);
   const load = useCallback(async () => {
     if (!moveKey) { setNotes([]); return; }
     try { setNotes(await sbSelect("move_notes?select=*&move_key=eq." + encodeURIComponent(moveKey) + "&order=created_at.asc")); }
@@ -7799,7 +7880,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
         <>
           <div ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
             {notes.map((n) => (
-              <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid}
+              <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump}
                 onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
                 onDeleted={(id) => setNotes((prev) => { const next = prev.filter((x) => x.id !== id); setIdx((i) => Math.min(i, Math.max(0, next.length - 1))); return next; })} />
             ))}
@@ -7825,6 +7906,9 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
             <span style={{ fontSize: 10, color: draft.length >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{draft.length}/{MOVE_NOTE_MAX_LEN}</span>
             <button disabled={busy || !draft.trim()} onClick={submit} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: busy ? "default" : "pointer", opacity: busy || !draft.trim() ? 0.6 : 1 }}>등록</button>
           </div>
+          {/* (v0.4.0 기능) 바로 다음 수는 SAN을 그냥 문장에 적기만 해도 자동으로 링크가 된다는 것과,
+              더 뒤쪽 수로 링크를 걸려면 [[...]] 안에 이어지는 수순을 적어야 한다는 걸 안내한다. */}
+          <p style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 4, lineHeight: 1.4 }}>Tip: 문장에 "Nf3"처럼 바로 다음 수를 적으면 자동으로 그 수로 이동하는 링크가 돼요. 더 이어지는 수로 링크하려면 <code style={{ fontSize: 9.5 }}>[[e5 Nf3 Nc6 Bb5]]</code>처럼 대괄호 두 개 안에 이 위치부터 이어지는 수순을 공백으로 구분해 적어주세요.</p>
           {err && <p style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>{err}</p>}
         </div>
       )}
@@ -8013,7 +8097,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {/* (18차 UI5) 미니보드 하단 범례 텍스트 삭제 */}
         </div>
         <div style={{ flex: 1, minWidth: 180 }}>
-          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} explain={explain} explainLong={explainLong} title={title} setShowExpl={setShowExpl} noteCap={noteCap} />
+          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} explain={explain} explainLong={explainLong} title={title} setShowExpl={setShowExpl} noteCap={noteCap} onJump={onJump} />
         </div>
       </div>
       {(canEdit || canAdd) && (
