@@ -2295,9 +2295,13 @@ function seedContent() {
 }
 /* ============================================================ 레슨 (v0.4.0 메인 퀘스트 전면 개편) ============================================================ */
 // (사용자 요청) "메인 퀘스트"(사지선다 챕터 퀴즈 나열)를 체스 개념·오프닝 하나하나를 다루는 독립된
-// 학습 콘텐츠 "레슨"으로 전면 개편한다. 레슨은 서로 유기적으로 이어지도록 parent(선행 레슨 key)로
-// 연결해 갈래를 갖는 나무 구조를 이루고, 선행 레슨을 완료(보상 수령)해야 다음 레슨이 열린다(도감
-// 오프닝 모식도와 같은 "순차 해금" 원리). 레슨 하나 = { title, desc, parent, reward, pages:[...] }.
+// 학습 콘텐츠 "레슨"으로 전면 개편한다. 레슨은 서로 유기적으로 이어지도록 parents(선행 레슨 key
+// 배열)로 연결해 갈래를 갖는 그래프(DAG) 구조를 이루고, 선행 레슨을 모두 완료(보상 수령)해야 다음
+// 레슨이 열린다(도감 오프닝 모식도와 같은 "순차 해금" 원리) — 서로 다른 갈래가 하나의 레슨으로 다시
+// 합류할 수도 있다(예: 두 오프닝 라인 모두 끝내야 열리는 "엔드게임 기초"). 레슨 하나 =
+// { title, desc, parents:[...], reward, pages:[...] } (parents가 빈 배열이면 최상위 레슨). 옛
+// 콘텐츠가 여전히 parent(단수) 하나만 갖고 있을 수도 있어, 실제로 읽을 때는 항상 이 필드를 직접
+// 읽지 않고 lessonParents(lesson) 헬퍼(정규화해서 배열로 반환)를 통해서만 다룬다.
 //
 // (사용자 요청) 레슨은 여러 개의 "페이지"를 순서대로 진행하며, 이미 지나온 페이지는 뒤로 가서 다시
 // 볼 수 있다. 페이지 하나 = { startSans?, flip?, beats:[...] } — beats는 정해진 스크립트로, 순서대로
@@ -16580,6 +16584,29 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
 // 갈래를 갖는 나무를 이루고, 도감 오프닝 모식도와 같은 원리로 선행 레슨을 완료(보상 수령)해야 다음
 // 레슨이 열린다. 화면은 LessonMap(나무 모양 로드맵)에서 노드를 눌러 LessonScreen(듀오링고 스타일
 // 전체화면 학습 화면)을 열고, 개발자는 LessonEditor(CMS)로 레슨·단계를 직접 입력·수정·삭제한다.
+// (v0.4.1 다중 선행 레슨) 레슨은 원래 parent(선행 레슨 key 하나)로만 이어져 엄격한 나무 구조였지만,
+// 서로 다른 갈래(예: 두 개의 다른 오프닝 라인)가 하나의 레슨(예: "엔드게임 기초")으로 다시 합류할 수
+// 있도록 parents(선행 레슨 key 배열)를 지원한다. 기존에 이미 시드되었거나 저장된 레슨은 여전히 단수
+// parent 필드를 쓸 수 있으므로, 이 헬퍼로 정규화해서 어디서든 lesson.parent/lesson.parents를 직접
+// 읽지 않고 항상 lessonParents(lesson)을 통해 배열로 다룬다. parents가 있으면 그것을 쓰고, 없으면
+// parent(있다면)를 배열로 감싸고, 둘 다 없으면 빈 배열(최상위 레슨)을 반환한다.
+function lessonParents(lesson) {
+  if (!lesson) return [];
+  if (Array.isArray(lesson.parents)) return lesson.parents;
+  return lesson.parent ? [lesson.parent] : [];
+}
+// 레슨 key의 (간접 포함) 하위 레슨 집합 — LessonEditor에서 순환(사이클) 방지용으로 쓴다.
+function lessonDescendants(key, lessons) {
+  const seen = new Set();
+  const stack = [key];
+  while (stack.length) {
+    const id = stack.pop();
+    for (const cid of Object.keys(lessons)) {
+      if (!seen.has(cid) && lessonParents(lessons[cid]).includes(id)) { seen.add(cid); stack.push(cid); }
+    }
+  }
+  return seen;
+}
 function lessonProgress(mainQuest, key) {
   const l = CONTENT.lessons[key];
   if (!l) return { done: 0, total: 0, complete: false };
@@ -16601,43 +16628,89 @@ function mainQuestOverallProgress(mainQuest) {
   }
   return { claimed, totalChapters: keys.length, doneItems, totalItems };
 }
-// 선행 레슨(parent)이 없으면 처음부터 해금, 있으면 그 선행 레슨을 완료(보상 수령)해야 해금된다.
+// 선행 레슨(parents)이 없으면 처음부터 해금, 있으면 그 선행 레슨들을 "전부" 완료(보상 수령)해야
+// 해금된다(AND 조건) — 서로 다른 갈래가 하나의 레슨으로 다시 합류하는 경우, 두 갈래를 모두 끝내야
+// 그 다음 레슨이 열리는 게 자연스럽기 때문이다.
 function isLessonUnlocked(mainQuest, key) {
   const l = CONTENT.lessons[key];
   if (!l) return false;
-  if (!l.parent || !CONTENT.lessons[l.parent]) return true;
-  return isLessonClaimed(mainQuest, l.parent);
+  const parents = lessonParents(l).filter((p) => CONTENT.lessons[p]);
+  if (!parents.length) return true;
+  return parents.every((p) => isLessonClaimed(mainQuest, p));
 }
 function lessonNodeState(mainQuest, key) {
   if (!isLessonUnlocked(mainQuest, key)) return "locked";
   if (isLessonClaimed(mainQuest, key)) return "done";
   return lessonProgress(mainQuest, key).done > 0 ? "progress" : "available";
 }
-// (기능) 갈래를 갖는 모식도 레이아웃 — parent 하나로 이어지는 나무 구조를 "타이디 트리"로 간단히
-// 배치한다: 자식이 없는 노드(잎)는 왼쪽부터 순서대로 열(col)을 하나씩 차지하고, 자식이 있는 노드는
-// 그 자식들 col의 중앙에 놓인다. row는 parent로부터의 깊이(0=최상위).
+// (기능, v0.4.1 다중 선행 레슨 대응) 갈래가 갈라졌다가 다시 합류할 수 있는 모식도(DAG) 레이아웃.
+// 더 이상 parent 하나만 가정한 "타이디 트리"가 아니라, 레슨마다 parents(여러 선행 레슨)를 가질 수
+// 있다는 전제로 다시 짰다:
+//   1) row(세로 위치) = 그 레슨으로 이어지는 가장 긴 경로의 길이 — "부모의 row 중 최댓값 + 1"로
+//      계산해서, 합류 지점이 항상 자신의 모든 부모보다 아래(row가 큰 쪽)에 그려지도록 보장한다.
+//      최상위(parents 없음) 레슨은 row 0. 위상정렬(Kahn) 순서로 계산해서 순환이 있어도 멈추지 않는다.
+//   2) col(가로 위치)는 층(row)별로 배치한다 — 0행은 왼쪽부터 순서대로, 그 다음 행부터는 각 레슨을
+//      "자신의 부모들 col 평균"에 최대한 가깝게 놓되(합류/분기 선이 시각적으로 자연스럽도록), 같은
+//      행 안에서 겹치면 원래 순서를 유지한 채 오른쪽으로 밀어 겹침을 해소한다.
 function layoutLessonTree(lessons) {
   const ids = Object.keys(lessons);
-  const childrenOf = {};
-  const roots = [];
+  const parentsOf = {}, childrenOf = {};
   for (const id of ids) {
-    const p = lessons[id].parent;
-    if (p && lessons[p]) (childrenOf[p] = childrenOf[p] || []).push(id);
-    else roots.push(id);
+    const ps = lessonParents(lessons[id]).filter((p) => lessons[p] && p !== id);
+    parentsOf[id] = ps;
+    for (const p of ps) (childrenOf[p] = childrenOf[p] || []).push(id);
   }
+  const roots = ids.filter((id) => parentsOf[id].length === 0);
+
+  // --- row: longest-path-from-any-root, via Kahn topological order (also tolerates accidental cycles) ---
+  const row = {};
+  const indeg = {};
+  for (const id of ids) indeg[id] = parentsOf[id].length;
+  let frontier = ids.filter((id) => indeg[id] === 0);
+  frontier.forEach((id) => (row[id] = 0));
+  while (frontier.length) {
+    const next = [];
+    for (const id of frontier) {
+      for (const c of childrenOf[id] || []) {
+        row[c] = Math.max(row[c] || 0, row[id] + 1);
+        if (--indeg[c] === 0) next.push(c);
+      }
+    }
+    frontier = next;
+  }
+  // leftover ids only happen if there's an actual cycle (shouldn't occur — editor blocks it) — place
+  // them one row below the deepest known row so they still render instead of silently vanishing.
+  let maxKnownRow = 0;
+  for (const id of ids) if (row[id] !== undefined) maxKnownRow = Math.max(maxKnownRow, row[id]);
+  for (const id of ids) if (row[id] === undefined) row[id] = maxKnownRow + 1;
+
+  // --- col: layer by layer, snapping each node near the average col of its parents, then de-overlapping ---
+  const byRow = {};
+  for (const id of ids) (byRow[row[id]] = byRow[row[id]] || []).push(id);
+  const maxRow = ids.length ? Math.max(...ids.map((id) => row[id])) : 0;
   const pos = {};
-  let nextCol = 0;
-  const place = (id, row) => {
-    const kids = childrenOf[id] || [];
-    if (!kids.length) { const col = nextCol++; pos[id] = { col, row }; return col; }
-    const cols = kids.map((k) => place(k, row + 1));
-    const col = (Math.min(...cols) + Math.max(...cols)) / 2;
-    pos[id] = { col, row };
-    return col;
-  };
-  roots.forEach((r) => place(r, 0));
-  let maxRow = 0, maxCol = 0;
-  for (const id of ids) { if (pos[id]) { maxRow = Math.max(maxRow, pos[id].row); maxCol = Math.max(maxCol, pos[id].col); } }
+  (byRow[0] || []).forEach((id, i) => (pos[id] = { row: 0, col: i }));
+  for (let r = 1; r <= maxRow; r++) {
+    const nodes = byRow[r] || [];
+    const desired = nodes.map((id) => {
+      const ps = parentsOf[id];
+      if (!ps.length) return 0;
+      return ps.reduce((s, p) => s + (pos[p] ? pos[p].col : 0), 0) / ps.length;
+    });
+    // place in order of desired col (stable on ties) so converging/diverging edges stay visually sane,
+    // then push anything that collides strictly to the right of the previous node in that order.
+    const order = nodes.map((_, i) => i).sort((a, b) => desired[a] - desired[b] || a - b);
+    const col = new Array(nodes.length);
+    let lastCol = -Infinity;
+    for (const i of order) {
+      const c = Math.max(desired[i], lastCol + 1);
+      col[i] = c;
+      lastCol = c;
+    }
+    nodes.forEach((id, i) => (pos[id] = { row: r, col: col[i] }));
+  }
+  let maxCol = 0;
+  for (const id of ids) if (pos[id]) maxCol = Math.max(maxCol, pos[id].col);
   return { pos, childrenOf, roots, maxRow, maxCol };
 }
 const LESSON_COL_W = 96, LESSON_ROW_H = 116, LESSON_NODE_D = 60;
@@ -16667,7 +16740,7 @@ function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
   );
 }
 // (v0.4.0 UI) 메인 퀘스트 전면 개편 — 챕터 아코디언 목록 대신, 갈래를 갖는 모식도(나무) 형태의
-// 레슨 로드맵을 보여준다. 선행 레슨(parent)을 완료해야 그 아래 레슨이 순차적으로 해금된다.
+// 레슨 로드맵을 보여준다. 선행 레슨(parents)을 모두 완료해야 그 아래 레슨이 해금된다.
 function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, contentVer }) {
   const [openKey, setOpenKey] = useState(null);
   const [editKey, setEditKey] = useState(null);
@@ -16705,12 +16778,14 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
         <div ref={scrollRef} style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
           <div style={{ position: "relative", width, height, margin: "0 auto" }}>
             <svg width={width} height={height} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-              {ids.map((id) => {
+              {ids.flatMap((id) => {
                 const lesson = CONTENT.lessons[id];
-                if (!lesson.parent || !layout.pos[lesson.parent]) return null;
-                const claimed = isLessonClaimed(mainQuest, lesson.parent);
-                return <line key={id} x1={cx(lesson.parent)} y1={cy(lesson.parent) + LESSON_NODE_D / 2} x2={cx(id)} y2={cy(id) - LESSON_NODE_D / 2}
-                  stroke={claimed ? "rgba(63,122,58,.55)" : "rgba(196,154,80,.55)"} strokeWidth={4} strokeLinecap="round" />;
+                const parents = lessonParents(lesson).filter((p) => layout.pos[p]);
+                return parents.map((p) => {
+                  const claimed = isLessonClaimed(mainQuest, p);
+                  return <line key={p + "->" + id} x1={cx(p)} y1={cy(p) + LESSON_NODE_D / 2} x2={cx(id)} y2={cy(id) - LESSON_NODE_D / 2}
+                    stroke={claimed ? "rgba(63,122,58,.55)" : "rgba(196,154,80,.55)"} strokeWidth={4} strokeLinecap="round" />;
+                });
               })}
             </svg>
             {ids.map((id) => (
@@ -17055,7 +17130,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
     </div>
   );
 }
-/* (v0.4.0) 개발자 전용 — 레슨의 제목·설명·보상·선행 레슨(parent)과 스텝(설명/객관식/주관식)을
+/* (v0.4.0) 개발자 전용 — 레슨의 제목·설명·보상·선행 레슨(parents)과 스텝(설명/객관식/주관식)을
    직접 입력·수정·삭제하는 CMS. 각 스텝의 포지션은 시작 위치부터의 수순(sans, 공백으로 구분)으로 지정한다. */
 // (v0.4.0) beat 종류별 기본값 — kind를 바꿀 때 그 종류에 맞는 빈 틀로 갈아끼우는 용도.
 // 필드 구성은 seedLessons 함수 위 주석(beat 스키마)을 그대로 따른다.
@@ -17245,7 +17320,12 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
   const isNew = lessonKey === "__new__";
   const [key, setKey] = useState(isNew ? "" : lessonKey);
   const existing = !isNew ? CONTENT.lessons[lessonKey] : null;
-  const [draft, setDraft] = useState(existing || { title: "", desc: "", reward: 60, parent: null, pages: [] });
+  // (v0.4.1) 기존 레슨이 옛 단수 parent 필드를 쓰고 있어도, 여기서 바로 배열(parents)로 정규화해
+  // 편집 폼은 항상 배열을 다루고, 저장하는 순간부터 parents 형태로 굳어지게 한다.
+  const [draft, setDraft] = useState(() => {
+    const base = existing || { title: "", desc: "", reward: 60, parents: [], pages: [] };
+    return { ...base, parents: lessonParents(base) };
+  });
   const [saving, setSaving] = useState(false);
   const save = async (next) => {
     setDraft(next); setSaving(true);
@@ -17273,12 +17353,36 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
         {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder="레슨 키 (예: l_e4_c4)" style={{ ...field, fontFamily: SITE_FONT }} />}
         <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => save(draft)} placeholder="레슨 제목" style={{ ...field, fontWeight: 700 }} />
         <textarea value={draft.desc} onChange={(e) => setDraft({ ...draft, desc: e.target.value })} onBlur={() => save(draft)} placeholder="레슨 설명" rows={2} style={{ ...field, resize: "vertical" }} />
-        <div className="flex items-center gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: T.inkSoft }}>선행 레슨</span>
-          <select value={draft.parent || ""} onChange={(e) => save({ ...draft, parent: e.target.value || null })} style={{ padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 11.5 }}>
-            <option value="">없음(최상위)</option>
-            {otherLessonKeys.map((k) => <option key={k} value={k}>{k} — {CONTENT.lessons[k].title}</option>)}
-          </select>
+        <div style={{ marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 4 }}>선행 레슨 (여러 개 선택 가능 — 전부 완료해야 이 레슨이 열려요)</div>
+          {otherLessonKeys.length === 0 ? (
+            <div style={{ fontSize: 11, color: T.inkSoft }}>없음(최상위)</div>
+          ) : (
+            <div className="flex items-center gap-1" style={{ flexWrap: "wrap" }}>
+              {otherLessonKeys.map((k) => {
+                const checked = (draft.parents || []).includes(k);
+                // (사이클 방지) k가 이미 이 레슨의 (간접) 하위 레슨이면 부모로 선택할 수 없다 —
+                // 선택하면 k → ... → 이 레슨 → k처럼 순환이 생기기 때문.
+                const blocked = !isNew && lessonDescendants(lessonKey, CONTENT.lessons).has(k);
+                return (
+                  <label key={k} title={blocked ? "순환(사이클)이 생겨서 선택할 수 없어요" : ""}
+                    style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, padding: "3px 7px", borderRadius: 7,
+                      border: "1px solid #C9B58C", background: checked ? "rgba(196,154,80,.22)" : "transparent",
+                      opacity: blocked ? 0.4 : 1, cursor: blocked ? "not-allowed" : "pointer" }}>
+                    <input type="checkbox" checked={checked} disabled={blocked}
+                      onChange={(e) => {
+                        const cur = draft.parents || [];
+                        const next = e.target.checked ? [...cur, k] : cur.filter((x) => x !== k);
+                        const nd = { ...draft, parents: next };
+                        delete nd.parent;
+                        save(nd);
+                      }} />
+                    {k} — {CONTENT.lessons[k].title}
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 11, color: T.inkSoft }}>완료 보상</span>
