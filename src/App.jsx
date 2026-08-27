@@ -13648,6 +13648,17 @@ function puzzleAverageRating(lineRatings) {
   if (!lineRatings || !lineRatings.length) return 100;
   return Math.round(lineRatings.reduce((a, b) => a + b, 0) / lineRatings.length);
 }
+// (사용자 요청) 퍼즐 탭 "레이팅순" 정렬용 — PuzzleCard 카드 좌하단에 이미 표시 중인 ★avgRating과
+// 완전히 같은 계산(puzzleTreeOf→treeLinesOf→라인별 puzzleLineBaseRating→puzzleAverageRating)을
+// 그대로 재사용한다. 새 필드를 지어내지 않고, 이미 화면에 노출돼 검증된 기존 난이도 지표를 정렬
+// 기준으로 쓴다. 라인이 0개인 손상된 퍼즐은 정렬 시 가장 낮은 순위로 밀려나도록 -1을 반환한다.
+function puzzleRatingOf(p) {
+  const tree = puzzleTreeOf(p);
+  const allLines = treeLinesOf(tree);
+  if (!allLines.length) return -1;
+  const setupForRating = [...(p.setupSans || []), p.mistakeSan].filter(Boolean);
+  return puzzleAverageRating(allLines.map((l) => puzzleLineBaseRating(setupForRating, tree, l)));
+}
 // (버그 수정) genPuzzleTree가 결국 실패해 트리를 못 만들었는데도(과거 로직 결함·중간에 취소된
 // 생성 등) 그 실패한 결과가 그대로 저장돼, 실제로는 통과 가능한 라인이 0개인 "빈 퍼즐"이 목록에
 // 남아 있었다. PuzzleCard가 실제 라인 수 대신 Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시해
@@ -17691,10 +17702,14 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 0개인 게 뻔하므로) 보여준다.
   const [selectedOpenings, setSelectedOpenings] = useState([]);
   const [selectedCreators, setSelectedCreators] = useState([]);
-  const [openingQuery, setOpeningQuery] = useState("");
-  const [creatorQuery, setCreatorQuery] = useState("");
-  const [openingFocus, setOpeningFocus] = useState(false);
-  const [creatorFocus, setCreatorFocus] = useState(false);
+  // (사용자 요청) 오프닝 검색창 + 생성자 검색창 2개를 하나로 합친다 — 검색어 하나로 오프닝 이름과
+  // 생성자 아이디를 동시에 찾고, 결과 드롭다운 안에서 무엇이 오프닝이고 무엇이 생성자인지만
+  // 태그 색(브론즈=오프닝/초록=생성자)과 접두사(@)로 구분해 보여준다.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocus, setSearchFocus] = useState(false);
+  // (사용자 요청) 두 검색창을 하나로 합쳐 생긴 여백에 들어갈 정렬 기준 — 일일 퍼즐(캐러셀)은 이
+  // 정렬과 무관한 별도 기능이라 건드리지 않고, 그 아래 미해결/해결됨 목록에만 적용한다.
+  const [puzzleSortBy, setPuzzleSortBy] = useState("recent"); // "recent"(최신순) | "rating"(레이팅순)
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
   const [numFocus, setNumFocus] = useState(false);
@@ -17837,14 +17852,26 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const openingKeyOf = (p) => (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "기타";
   const openingOptions = useMemo(() => [...new Set(playablePuzzles.map(openingKeyOf))].sort((a, b) => a.localeCompare(b)), [playablePuzzles]);
   const creatorOptions = useMemo(() => [...new Set(playablePuzzles.map((p) => (creatorUsernames || {})[puzzleNo(p.id)]).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [playablePuzzles, creatorUsernames]);
-  const openingSuggestions = useMemo(() => {
-    const q = openingQuery.trim().toLowerCase();
-    return openingOptions.filter((o) => !selectedOpenings.includes(o) && (!q || o.toLowerCase().includes(q))).slice(0, 8);
-  }, [openingOptions, openingQuery, selectedOpenings]);
-  const creatorSuggestions = useMemo(() => {
-    const q = creatorQuery.trim().toLowerCase();
-    return creatorOptions.filter((c) => !selectedCreators.includes(c) && (!q || c.toLowerCase().includes(q))).slice(0, 8);
-  }, [creatorOptions, creatorQuery, selectedCreators]);
+  // (사용자 요청) 도감 탭 오프닝 트리 검색(검색어가 이름 맨 앞에 오는 결과 우선, 그 다음 중간에
+  // 포함되는 결과)과 같은 랭킹 방식을 그대로 따라 쓴다 — 다만 여긴 오프닝뿐 아니라 생성자까지
+  // 한 종류 더 섞인 "한 검색창"이라, "맨 앞 일치 우선 → 포함 일치" 순위는 그대로 유지하되 그
+  // 등급(맨 앞/포함) 안에서는 오프닝을 먼저, 생성자를 나중에 늘어놓아(이름순 정렬은 그대로) 같은
+  // 등급 안에서도 어느 게 오프닝이고 어느 게 생성자인지 한눈에 구분되게 한다. 도감처럼 되돌려줄
+  // "수순 길이/채택률" 같은 신뢰도 신호가 오프닝·생성자 둘 다에 없어 이름순 정렬로 대신한다.
+  const searchOptions = useMemo(() => [
+    ...openingOptions.map((o) => ({ type: "opening", value: o })),
+    ...creatorOptions.map((c) => ({ type: "creator", value: c })),
+  ], [openingOptions, creatorOptions]);
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const isSelected = (it) => it.type === "opening" ? selectedOpenings.includes(it.value) : selectedCreators.includes(it.value);
+    const filtered = searchOptions.filter((it) => !isSelected(it) && it.value.toLowerCase().includes(q));
+    const cmp = (a, b) => (a.type === b.type ? 0 : (a.type === "opening" ? -1 : 1)) || a.value.localeCompare(b.value);
+    const starts = filtered.filter((it) => it.value.toLowerCase().startsWith(q)).sort(cmp);
+    const contains = filtered.filter((it) => !it.value.toLowerCase().startsWith(q)).sort(cmp);
+    return [...starts, ...contains].slice(0, 10);
+  }, [searchOptions, searchQuery, selectedOpenings, selectedCreators]);
   // (버그 수정) 이 조기 반환이 위 useMemo 4개보다 앞에 있었다 — 퍼즐 목록 화면(active=null)에서는
   // 그 훅들이 매 렌더 호출되다가, 퍼즐을 열어(active가 생겨) 이 분기를 타는 순간 그 훅 호출이
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
@@ -17854,17 +17881,26 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const matchesOpeningFilter = (p) => selectedOpenings.length === 0 || selectedOpenings.includes(openingKeyOf(p));
   const matchesCreatorFilter = (p) => selectedCreators.length === 0 || selectedCreators.includes((creatorUsernames || {})[puzzleNo(p.id)]);
   const themed = playablePuzzles.filter((p) => (filter === "all" || themesOf(p).includes(filter)) && matchesOpeningFilter(p) && matchesCreatorFilter(p));
-  const byOpening = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 오프닝순 정렬
-  const open = themed.filter((p) => !solved.has(p.id)).sort(byOpening);
-  const cleared = themed.filter((p) => solved.has(p.id)).sort(byOpening);
-  // (v0.2.2 UI#3) 퍼즐을 최상위 오프닝(King's Pawn/Queen's Pawn/English/Reti 등)별로 묶어,
-  // 각 오프닝을 점선 영역 + 가로 스크롤 행으로 보여준다(첨부 스케치 형태).
-  const groupByTopOpening = (list) => { const m = new Map(); for (const p of list) { const k = (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "기타"; if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return [...m.entries()]; };
-  const openByOpening = groupByTopOpening(open);
-  // (19차 UI3, v0.2.6 버그 수정) 해결 완료 퍼즐도 미해결과 동일한 기준(최상위 오프닝)으로 묶고,
-  // 같은 점선 영역 안에 표시한다 — 예전엔 이 섹션만 점선 테두리 없이 그냥 나열돼 미해결 목록과
-  // 시각적으로 통일감이 없었다.
-  const clearedByOpening = groupByTopOpening(cleared);
+  // (사용자 요청) 오프닝별 묶음 대신, 새로 생긴 정렬 박스(최신순/레이팅순)를 실제로 체감할 수 있게
+  // 평평한 한 줄 정렬 목록으로 바꾼다 — "오프닝별로 묶기"와 "자유 정렬"은 서로 성격이 부딪힌다
+  // (묶여 있으면 전체 순서가 아니라 각 묶음 내부 순서만 바뀌어 정렬 박스를 눌러도 체감이 약함).
+  // "최신순"은 puzzles 배열에 실제로 쌓인 생성/추가 순서([...prev, pz]로 항상 끝에 덧붙여짐,
+  // onSavePuzzle 참고)를 그대로 쓴다 — 없는 타임스탬프를 새로 지어내는 대신, 이미 존재하는 진짜
+  // 시간 순서(로컬 puzzles/Supabase progress 저장 순서와 동일)를 재사용한다.
+  // "레이팅순"은 PuzzleCard가 카드 좌하단에 이미 보여주고 있는 ★avgRating과 완전히 같은 계산
+  // (puzzleRatingOf, 위 참고)을 재사용한다 — 화면에 이미 노출되어 검증된 난이도 지표라 새로
+  // 지어낼 필요가 없었다.
+  const puzzleOrderIndex = useMemo(() => { const m = new Map(); puzzles.forEach((p, i) => m.set(p.id, i)); return m; }, [puzzles]);
+  const puzzleRatingMap = useMemo(() => { const m = new Map(); for (const p of playablePuzzles) m.set(p.id, puzzleRatingOf(p)); return m; }, [playablePuzzles]);
+  const byOpeningFallback = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 동률일 때만 쓰는 보조 기준
+  const sortPuzzles = (list) => {
+    const arr = [...list];
+    if (puzzleSortBy === "rating") arr.sort((a, b) => (puzzleRatingMap.get(b.id) ?? -1) - (puzzleRatingMap.get(a.id) ?? -1) || byOpeningFallback(a, b));
+    else arr.sort((a, b) => (puzzleOrderIndex.get(b.id) ?? -1) - (puzzleOrderIndex.get(a.id) ?? -1) || byOpeningFallback(a, b));
+    return arr;
+  };
+  const open = sortPuzzles(themed.filter((p) => !solved.has(p.id)));
+  const cleared = sortPuzzles(themed.filter((p) => solved.has(p.id)));
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
   // (사용자 요청) 오프닝·생성자 필터가 걸려 있으면 테마 칩의 개수도 그 필터가 적용된 상태를 반영한다.
@@ -17964,27 +18000,31 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           </div>
         )}
         <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+          {/* (사용자 요청) "오프닝으로 필터" + "생성자로 필터" 2개 입력창을 검색어 하나로 합친다 —
+              드롭다운 한 곳에 오프닝(브론즈 태그)·생성자(초록 태그, @접두사) 결과가 함께 랭킹순으로
+              뜬다(도감 탭 오프닝 트리 검색과 같은 "맨 앞 일치 → 포함 일치" 순서, 위 searchSuggestions 참고). */}
           <div style={{ position: "relative", flex: "1 1 150px", minWidth: 130 }}>
-            <input value={openingQuery} onChange={(e) => setOpeningQuery(e.target.value)} onFocus={() => setOpeningFocus(true)} onBlur={() => setTimeout(() => setOpeningFocus(false), 150)}
-              placeholder="오프닝으로 필터" style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
-            {openingFocus && openingSuggestions.length > 0 && (
+            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocus(true)} onBlur={() => setTimeout(() => setSearchFocus(false), 150)}
+              placeholder="오프닝 · 생성자로 검색" style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
+            {searchFocus && searchSuggestions.length > 0 && (
               <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
-                {openingSuggestions.map((o) => (
-                  <button key={o} onMouseDown={(e) => e.preventDefault()} onClick={() => { setSelectedOpenings((s) => [...s, o]); setOpeningQuery(""); }} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>{o}</button>
+                {searchSuggestions.map((it) => (
+                  <button key={it.type + "-" + it.value} onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => { if (it.type === "opening") setSelectedOpenings((s) => [...s, it.value]); else setSelectedCreators((s) => [...s, it.value]); setSearchQuery(""); }}
+                    className="press" style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>
+                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: it.type === "opening" ? T.brassHi : "#1F6B1F", background: it.type === "opening" ? "rgba(196,154,80,.22)" : "rgba(60,138,60,.18)" }}>{it.type === "opening" ? "오프닝" : "생성자"}</span>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.type === "creator" ? "@" : ""}{it.value}</span>
+                  </button>
                 ))}
               </div>
             )}
           </div>
-          <div style={{ position: "relative", flex: "1 1 150px", minWidth: 130 }}>
-            <input value={creatorQuery} onChange={(e) => setCreatorQuery(e.target.value)} onFocus={() => setCreatorFocus(true)} onBlur={() => setTimeout(() => setCreatorFocus(false), 150)}
-              placeholder="생성자로 필터" style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
-            {creatorFocus && creatorSuggestions.length > 0 && (
-              <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
-                {creatorSuggestions.map((c) => (
-                  <button key={c} onMouseDown={(e) => e.preventDefault()} onClick={() => { setSelectedCreators((s) => [...s, c]); setCreatorQuery(""); }} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>@{c}</button>
-                ))}
-              </div>
-            )}
+          {/* (사용자 요청) 검색창 2개→1개로 합쳐 생긴 자리에 정렬 박스를 넣는다 — 집중분석(FocusPanel)의
+              평가치순/채택률순 세그먼트 토글과 같은 시각 스타일(pill 2개, 선택된 쪽만 T.ebony2 배경 +
+              T.brassHi 글자)을 이 탭의 필터 행에 맞춰 그대로 옮겨온다. */}
+          <div className="inline-flex" style={{ flex: "1 1 150px", minWidth: 130, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }} title="일일 퍼즐을 제외한 목록 정렬 기준">
+            <button onClick={() => setPuzzleSortBy("recent")} className="press" style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: puzzleSortBy === "recent" ? T.ebony2 : "transparent", color: puzzleSortBy === "recent" ? T.brassHi : T.inkSoft }}>최신순</button>
+            <button onClick={() => setPuzzleSortBy("rating")} className="press" style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: puzzleSortBy === "rating" ? T.ebony2 : "transparent", color: puzzleSortBy === "rating" ? T.brassHi : T.inkSoft }}>레이팅순</button>
           </div>
         </div>
       </div>
@@ -18033,29 +18073,20 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       )}
       {themed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 테마의 퍼즐이 아직 없어요.</div>
         : <div>
+            {/* (사용자 요청) 최상위 오프닝별 점선 묶음을 없애고 평평한(줄바꿈) 정렬 목록으로 바꿨다 —
+                "묶어서 보여주기"와 "자유 정렬(최신순/레이팅순)"은 서로 부딪히는 요구라(묶여 있으면
+                정렬 박스를 눌러도 각 묶음 안 순서만 바뀔 뿐 전체 순서는 그대로라 체감이 거의 없다),
+                정렬 박스가 실제로 의미 있게 동작하도록 오프닝 묶음 대신 그리드 하나로 통일한다. */}
             {open.length > 0 && <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div>
-              {/* (v0.2.2 UI#3) 오프닝별 점선 영역 + 가로 스크롤 행 — 첨부 스케치 형태 */}
-              {openByOpening.map(([op, list]) => (
-                <div key={op} style={{ marginBottom: 12, border: "1.5px dashed rgba(196,154,80,.45)", borderRadius: 14, padding: "8px 8px 10px" }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 4 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
-                  <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
-                    {list.map((p, i) => <FadeIn key={p.id} index={i} style={{ width: 230, minWidth: 230, flexShrink: 0 }}><PuzzleCard p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} {...puzzleCardProps(p)} /></FadeIn>)}
-                  </div>
-                </div>
-              ))}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
+                {open.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} {...puzzleCardProps(p)} /></FadeIn>)}
+              </div>
             </div>}
             {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
-              {/* (버그 수정) 미해결 목록과 달리 그리드(줄바꿈)로 나열돼 오프닝 하나가 여러 줄을
-                  차지했다 — 미해결 목록과 똑같이 오프닝별 점선 상자 안에서 한 줄로만(가로 스크롤) 표시한다. */}
-              {clearedByOpening.map(([op, list]) => (
-                <div key={op} style={{ marginBottom: 12, border: "1.5px dashed rgba(120,168,90,.45)", borderRadius: 14, padding: "8px 8px 10px" }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 6, paddingLeft: 4 }}>{op} <span style={{ opacity: .6 }}>· {list.length}</span></div>
-                  <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
-                    <AnimatePresence mode="popLayout">{list.map((p, i) => <FadeIn key={p.id} index={i} style={{ width: 230, minWidth: 230, flexShrink: 0 }}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence>
-                  </div>
-                </div>
-              ))}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
+                <AnimatePresence mode="popLayout">{cleared.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence>
+              </div>
             </div>}
           </div>}
     </div>
