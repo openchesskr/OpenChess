@@ -11985,7 +11985,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     );
   });
 });
-function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer, canAdd, bumpContent }) {
+function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer, canAdd, bumpContent, rightSlot }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (버그 수정) 블록마다 매번 클릭해 열어야만 수 체계 아이콘·평가치·채택률을 볼 수 있었다 — 각 노드가
   // 자기 형제 수들(부모 위치의 rawMoves) 안에서 assignTiers로 등급을 받도록, 부모를 방문할 때 그 자식들의
@@ -13093,17 +13093,18 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     if (pan.x !== frozenCard.pan.x || pan.y !== frozenCard.pan.y || zoom !== frozenCard.zoom) onToggleOpen(frozenCard.key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pan, zoom]);
-  return (
-    <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
-      // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
-      // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
-      style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
-      {!ready && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</div>
-      )}
-      <div className="no-pan" style={{ position: "absolute", top: 6, left: 6, zIndex: 61, width: 190, maxWidth: "calc(100% - 96px)", visibility: ready ? "visible" : "hidden" }}>
+  // (사용자 요청) 검색창+새로고침(가운데 되돌리기) 버튼을 모식도 캔버스 위에 떠 있던 오버레이에서
+  // 꺼내, 캔버스 "밖" 정상 흐름의 헤더 줄로 옮긴다 — 퍼즐 탭에서 방금 만든 검색창(오프닝·생성자
+  // 통합 검색, searchQuery 부근)과 같은 시각 스타일(어두운 인풋 + 양피지색 드롭다운, 같은 보더/라운드/
+  // 그림자)로 맞춘다. 오른쪽 빈자리에는 CollectionTab이 넘겨주는 도감 해금률(rightSlot)을 배치해
+  // "검색+새로고침(좌) / 해금률(우)"의 좌우 배치 줄이 되도록 한다. 팬/줌/검색 매칭 로직 자체는
+  // 그대로— 위치와 스타일만 바뀐다.
+  const searchHeader = (
+    <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
+      <div className="no-pan" style={{ position: "relative", zIndex: 70, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150 }}>
         <div style={{ display: "flex", gap: 4 }}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기" style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "5px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.ink, fontSize: 11.5 }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기"
+            style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
           {/* (기능) 검색·드래그·확대로 화면이 흐트러졌을 때, 첫 4수(e4/d4/c4/Nf3)가 보이는 정중앙
               기본 화면으로 한 번에 되돌리는 버튼 — 줌을 100%로, 팬은 나침반 중심으로 되돌리고
               userPannedRef를 풀어 이후 트리가 자라도 다시 자동으로 중앙을 따라가게 한다. */}
@@ -13114,25 +13115,38 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, top: 0, bottom: 640, left: 0, right: 640 };
             const vc = { x: rect.width / 2, y: rect.height / 2 };
             setPan({ x: vc.x - centerRef.current.x * SCHEMATIC_ZOOM_LABEL_BASE, y: vc.y - centerRef.current.y * SCHEMATIC_ZOOM_LABEL_BASE });
-          }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.95)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-            <RotateCcw size={13} />
+          }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <RotateCcw size={14} />
           </button>
         </div>
         {/* (버그 수정) "강조 해제" 버튼을 따로 둘 필요 없다는 피드백 — 화면을 손으로 옮기면
             (checkSelectionDrift) 확대 강조가 자동으로 풀리니, 검색 결과 드롭다운만 남긴다. */}
         {query.trim() && (
-          <div style={{ marginTop: 4, maxHeight: 280, overflowY: "auto", background: "#fff", borderRadius: 8, border: "1px solid #DCCBA8", boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)" }}>
+          <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 40, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 280, overflowY: "auto" }}>
             {matches.length === 0
               ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>일치하는 오프닝이 없어요.</div>
               : matches.map((it) => (
-                <button key={it.key} onClick={() => selectNode(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid #F0E6D2", cursor: "pointer" }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
+                <button key={it.key} onClick={() => selectNode(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
                   <div style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sansToPgnText(it.path)}</div>
                 </button>
               ))}
           </div>
         )}
       </div>
+      {rightSlot && <div style={{ flexShrink: 0 }}>{rightSlot}</div>}
+    </div>
+  );
+  return (
+    <div>
+    {searchHeader}
+    <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
+      // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
+      // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
+      style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
+      {!ready && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</div>
+      )}
       <div className="flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
         <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(zoom)}</button>
@@ -13231,6 +13245,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         </div>
       )}
     </div>
+    </div>
   );
 }
 function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, treeData, treeVersion, genPriorityRef }) {
@@ -13305,18 +13320,21 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
           </div>
         </div>
       ) : (<>
-      {/* (사용자 요청) 모식도 위 안내 문구를 지우고, 그 자리에 도감 해금률(소수점 둘째 자리까지)을
-          표시한다 — OpeningSchematic이 매 레이아웃 계산 때마다(트리가 자라는 동안 계속) 지금까지
-          펼쳐진 노드 중 몇 개가 해금됐는지를 onUnlockStats로 올려보내 준다. */}
-      <div style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 10px", fontWeight: 700 }}>
-        도감 해금률 {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}%
-        <span style={{ marginLeft: 6, fontFamily: SITE_FONT, color: T.inkSoft, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>
-      </div>
-      {/* (사용자 요청) 개발자의 이론 수 편집을 별도 분리된 영역(예전의 "이론 수 체계 편집" 패널·
-          SchematicEditor) 대신 이 모식도 안에서 바로 할 수 있도록, canAdd일 때만 편집 도구를
-          덧씌운다 — 수를 선택하면 그 카드 안에 자녀/형제 추가·삭제 도구가 나타나고, 모식도 하단에
-          저장/취소 버튼이 뜬다(OpeningSchematic 내부 구현 참고). */}
-      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent} />
+      {/* (사용자 요청) "검색+새로고침" 헤더 줄과 같은 자리에 도감 해금률을 우측 배치하고(좌:검색,
+          우:해금률), 예전의 작은 회색 캡션(11.5px)보다 "훨씬 더 크고 선명하게" — 굵고 큼직한
+          브라스/금색 강조 숫자로 보이도록 스타일을 키운다. 실제 렌더 위치는 OpeningSchematic이
+          캔버스 밖 헤더 줄에 rightSlot으로 꽂아 넣는다(검색창 옆 좌우 배치를 그 컴포넌트가 담당). */}
+      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
+        rightSlot={
+          <div style={{ textAlign: vertical ? "left" : "right" }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>
+              {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}<span style={{ fontSize: 14 }}>%</span>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>
+              도감 해금률 <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>
+            </div>
+          </div>
+        } />
       </>)}
     </div>
   );
