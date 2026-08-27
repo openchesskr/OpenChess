@@ -17880,7 +17880,15 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 없어요"를 띄웠다. 개발자(canEdit)는 이런 손상된 퍼즐을 찾아 삭제할 수 있어야 하므로 그대로
   // 다 보여주고, 일반 유저에게는 목록·개수 단계에서부터 아예 걸러낸다(이미 푼 퍼즐은 실제로 라인을
   // 완주했어야만 solved 상태가 되므로 걸러낼 필요가 없다).
-  const playablePuzzles = canEdit ? puzzles : puzzles.filter((p) => solved.has(p.id) || isPuzzlePlayable(p));
+  // (버그 수정, v0.4.0) 이 배열이 useMemo 없이 매 렌더 새로 .filter()된 탓에, 아래 puzzleOpeningNamesMap의
+  // 의존성 배열([playablePuzzles])이 매번 새 참조가 되어 그 useMemo가 사실상 전혀 캐시되지 못하고
+  // "매 렌더마다" 사용자가 가진 모든 퍼즐의 setupSans를 처음부터 다시 훑었다(openingNamesAlong 참고) —
+  // 퍼즐을 열어(active) PuzzleSolver로 화면이 넘어간 뒤에도 이 훅들은 (아래 "모든 훅 호출 뒤에 조기
+  // 반환" 규칙 때문에) 계속 매 렌더 실행되므로, 방금 연 일일 퍼즐이 로컬 목록에 추가된 순간부터
+  // 풀이 화면이 리렌더될 때마다(다른 상태 변화로 App 전체가 리렌더될 때마다) 이 무거운 재계산이
+  // 반복되어 — 쌓인 퍼즐 수가 많은 유저일수록 클릭 한 번이 눈에 띄는 버벅임/먹통으로 번졌다.
+  // puzzles·solved가 실제로 바뀔 때만 새 배열을 만들도록 memo화해 원래 의도대로 캐시가 동작하게 한다.
+  const playablePuzzles = useMemo(() => (canEdit ? puzzles : puzzles.filter((p) => solved.has(p.id) || isPuzzlePlayable(p))), [puzzles, canEdit, solved]);
   // (버그 수정) 카드 라벨용 표시 이름은 그대로 lastNamedOpening을 쓰고(아래 puzzleName 등에서
   // 이미 그렇게 쓰고 있음, 여긴 건드리지 않는다), openingKeyOf는 이제 검색·필터 UI 밖에서는
   // 쓰이지 않는다 — 필터 매칭 자체는 이제 openingNamesAlong(경로 전체를 따라가며 만나는 모든
@@ -17905,11 +17913,15 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   ], [openingOptions, creatorOptions]);
   // (기능) 퍼즐 하나하나마다 매 필터 판정 때 openingNamesAlong을 다시 계산하지 않도록, 퍼즐 id별로
   // 한 번만 계산해 캐시해 둔다 — themed/filteredForCount 둘 다 이 맵을 재사용한다.
+  // (성능, v0.4.0) active(풀이 화면 진입)일 때는 이 맵이 전혀 쓰이지 않는데도(아래 필터 UI 자체가
+  // 안 보임) 훅 순서 유지를 위해 이 useMemo는 여전히 매 렌더 실행된다 — 풀이 화면에서는 계산을
+  // 건너뛰어, 방금 연 퍼즐이 풀이 화면 리렌더마다 이 무거운 재계산을 유발하지 않게 한다.
   const puzzleOpeningNamesMap = useMemo(() => {
+    if (active) return new Map();
     const m = new Map();
     for (const p of playablePuzzles) m.set(p.id, p.setupSans ? openingNamesAlong(p.setupSans) : new Set());
     return m;
-  }, [playablePuzzles]);
+  }, [playablePuzzles, active]);
   const searchSuggestions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
