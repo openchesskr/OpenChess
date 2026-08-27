@@ -17932,7 +17932,17 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     const contains = filtered.filter((it) => !it.value.toLowerCase().startsWith(q)).sort(cmp);
     return [...starts, ...contains].slice(0, 10);
   }, [searchOptions, searchQuery, selectedOpenings, selectedCreators]);
-  // (버그 수정) 이 조기 반환이 위 useMemo 4개보다 앞에 있었다 — 퍼즐 목록 화면(active=null)에서는
+  // (버그 수정, v0.4.0) "정렬 박스"(최신순/레이팅순) 기능이 추가되며 이 두 useMemo가 조기 반환보다
+  // 뒤에 새로 끼워 넣어졌다 — 바로 위 주석이 설명하는 "조기 반환은 반드시 모든 훅 호출 뒤에 와야
+  // 한다"는 규칙을 다시 어긴 것으로, 결과는 동일하게 "Rendered fewer hooks than expected"였다.
+  // 목록 화면(active=null)에서는 이 훅들이 호출되다가 퍼즐을 하나라도 열면(active가 생기는 순간,
+  // 일일 퍼즐이든 일반 퍼즐이든 상관없이) 그 즉시 호출이 통째로 건너뛰어져 React가 이 컴포넌트
+  // 트리를 흰 화면으로 무너뜨렸다 — 이 앱엔 ErrorBoundary가 없어 그대로 방치되면 새로고침 전까지
+  // 그 화면이 하얗게 멈춘 채로 굳어, 사용자에게는 "클릭하는 순간 사이트가 먹통 됐다"로 보였다.
+  // 이 두 훅도 조기 반환보다 앞으로 옮긴다(아래 puzzleOrderIndex/puzzleRatingMap 사용부는 그대로 둠).
+  const puzzleOrderIndex = useMemo(() => { const m = new Map(); puzzles.forEach((p, i) => m.set(p.id, i)); return m; }, [puzzles]);
+  const puzzleRatingMap = useMemo(() => { const m = new Map(); for (const p of playablePuzzles) m.set(p.id, puzzleRatingOf(p)); return m; }, [playablePuzzles]);
+  // (버그 수정) 이 조기 반환이 위 useMemo들보다 앞에 있었다 — 퍼즐 목록 화면(active=null)에서는
   // 그 훅들이 매 렌더 호출되다가, 퍼즐을 열어(active가 생겨) 이 분기를 타는 순간 그 훅 호출이
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
   // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
@@ -17960,9 +17970,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 시간 순서(로컬 puzzles/Supabase progress 저장 순서와 동일)를 재사용한다.
   // "레이팅순"은 PuzzleCard가 카드 좌하단에 이미 보여주고 있는 ★avgRating과 완전히 같은 계산
   // (puzzleRatingOf, 위 참고)을 재사용한다 — 화면에 이미 노출되어 검증된 난이도 지표라 새로
-  // 지어낼 필요가 없었다.
-  const puzzleOrderIndex = useMemo(() => { const m = new Map(); puzzles.forEach((p, i) => m.set(p.id, i)); return m; }, [puzzles]);
-  const puzzleRatingMap = useMemo(() => { const m = new Map(); for (const p of playablePuzzles) m.set(p.id, puzzleRatingOf(p)); return m; }, [playablePuzzles]);
+  // 지어낼 필요가 없었다. (puzzleOrderIndex/puzzleRatingMap 자체는 훅 규칙 때문에 위(조기 반환보다
+  // 앞)로 옮겨져 있다.)
   const byOpeningFallback = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 동률일 때만 쓰는 보조 기준
   const sortPuzzles = (list) => {
     const arr = [...list];
