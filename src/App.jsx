@@ -4659,7 +4659,7 @@ function PuzzlePgnBox({ text, sans, startColor, onPick }) {
         ? <div ref={scrollRef} style={boxStyle}>{deco.length === 0 ? " " : deco.map((san, i) => (
             <span key={i}>
               {(i === 0 || plyIsWhite(i, startColor)) && <span>{plyMoveNum(i, startColor) + (plyIsWhite(i, startColor) ? "." : "...")} </span>}
-              <span onClick={() => onPick(sans.slice(0, i + 1))} style={{ cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, textDecorationColor: "rgba(120,102,70,.5)" }}>{san}</span>
+              <span onClick={() => onPick(sans.slice(0, i + 1))} style={{ cursor: "pointer" }}>{san}</span>
               {" "}
             </span>
           ))}</div>
