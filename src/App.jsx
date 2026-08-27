@@ -2546,6 +2546,30 @@ function effectiveOpeningNameAt(path) {
   const lastSan = path[path.length - 1];
   return nameOverride(parentKey, lastSan) ?? nd.opening.name;
 }
+// (기능) 퍼즐 탭 오프닝 검색을 도감(CollectionTab) 트리와 똑같이 "이 게임에 존재하는 모든 개별
+// 오프닝 이름"까지 검색 가능하게 하기 위한 전역 오프닝 이름 목록 — SNAP.tree의 모든 키(=모든
+// 포지션)를 훑어 effectiveOpeningNameAt(오버라이드 우선)으로 각 위치의 '진짜' 이름을 구하고, 같은
+// 이름이 여러 깊이에서 중복 등장하면(부모 이름을 그대로 물려받는 경우) 수순이 가장 짧은(=가장
+// 상위/유명한) 경로 하나만 남긴다 — 도감 탭의 matches useMemo(12840행 부근)가 쓰는 것과 동일한
+// 중복 제거·랭킹 규칙. SNAP.tree 자체는 런타임에 절대 바뀌지 않지만 CONTENT.names(개발자 오버라이드)는
+// bumpContent로 바뀔 수 있으므로, contentVer를 캐시 키로 써서 오버라이드가 실제로 바뀐 뒤에만
+// 다시 계산한다(그 전까진 매 렌더·키 입력마다 SNAP.tree 전체—수천 개 키—를 다시 훑지 않도록 캐싱).
+let _allOpeningEntriesCache = { ver: -1, list: null };
+function allOpeningEntries(contentVer) {
+  if (_allOpeningEntriesCache.ver === contentVer && _allOpeningEntriesCache.list) return _allOpeningEntriesCache.list;
+  const byName = new Map();
+  for (const key in SNAP.tree) {
+    if (key === "") continue;
+    const path = key.split(" ");
+    const name = effectiveOpeningNameAt(path);
+    if (!name) continue;
+    const cur = byName.get(name);
+    if (!cur || path.length < cur.path.length) byName.set(name, { name, path });
+  }
+  const list = [...byName.values()];
+  _allOpeningEntriesCache = { ver: contentVer, list };
+  return list;
+}
 function kwOverride(key, san) { const v = CONTENT.keywords[key + "|" + stripSuffix(san)]; return Array.isArray(v) ? v : null; }
 function isUnbooked(key, san) { return !!CONTENT.unbook[key + "|" + stripSuffix(san)]; }
 // (버그 수정) 어떤 포지션(keyStr: 수순을 공백으로 이은 키)의 특정 수(san)가 '이론'인지 판정한다.
@@ -13449,6 +13473,16 @@ function firstNamedOpening(sans) {
   for (let i = 1; i <= sans.length; i++) { const n = effectiveOpeningNameAt(sans.slice(0, i)); if (n) return n; }
   return null;
 }
+// (기능) firstNamedOpening/lastNamedOpening은 각각 "가장 처음"/"가장 마지막" 이름 하나만 골라
+// 반환한다 — 퍼즐 탭에서 세부 갈래 이름(예: "Sicilian Defense: Najdorf Variation, English Attack")
+// 으로 검색해도 그 퍼즐이 실제로 걸리려면, 수순 위에서 만나는 "모든" 오프닝 이름(더 상위의 얕은
+// 이름 포함)을 다 모아 둬야 한다 — 세부 갈래에 속한 퍼즐은 그보다 얕은 상위 오프닝 이름으로도
+// 여전히 찾아져야 하는 게 맞다(그 반대가 버그).
+function openingNamesAlong(sans) {
+  const set = new Set();
+  for (let i = 1; i <= sans.length; i++) { const n = effectiveOpeningNameAt(sans.slice(0, i)); if (n) set.add(n); }
+  return set;
+}
 // (버그 수정) 테마마다 다른 한국어 문구("~에서 탁월한 수 찾기" 등)를 붙였더니 이름이 길어져
 // 퍼즐 카드(최소폭 148px)에서 잘려 보였다 — 테마와 무관하게 항상 "<오프닝 이름>, <수 이름>"
 // 형식(예: "Italian Game, 4.Ng5")으로 통일해 훨씬 짧고 일관되게 만든다. 테마 구분은 이름이
@@ -17695,7 +17729,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
   const [filter, setFilter] = useState("all");
   // (사용자 요청) 퍼즐 탭 필터 — 오프닝/생성자를 여러 개 골라(다중 태그) 미해결/해결됨 목록을 그
   // 자리에서 좁혀 본다. 자동완성 후보는 지금 목록에 실제로 있는 값만(없는 값을 검색해 봐야 결과가
@@ -17847,10 +17881,17 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 다 보여주고, 일반 유저에게는 목록·개수 단계에서부터 아예 걸러낸다(이미 푼 퍼즐은 실제로 라인을
   // 완주했어야만 solved 상태가 되므로 걸러낼 필요가 없다).
   const playablePuzzles = canEdit ? puzzles : puzzles.filter((p) => solved.has(p.id) || isPuzzlePlayable(p));
-  // (사용자 요청) 필터용 오프닝 이름 — 카드·오프닝별 묶음(groupByTopOpening)과 완전히 같은 기준
-  // (최상위 오프닝)을 써서, 필터에 뜨는 이름과 카드에 실제로 보이는 이름이 항상 일치하게 한다.
+  // (버그 수정) 카드 라벨용 표시 이름은 그대로 lastNamedOpening을 쓰고(아래 puzzleName 등에서
+  // 이미 그렇게 쓰고 있음, 여긴 건드리지 않는다), openingKeyOf는 이제 검색·필터 UI 밖에서는
+  // 쓰이지 않는다 — 필터 매칭 자체는 이제 openingNamesAlong(경로 전체를 따라가며 만나는 모든
+  // 이름) 기준으로 바뀌었으므로(아래 matchesOpeningFilter), 이 값은 더는 필터 판정에 쓰지 않는다.
   const openingKeyOf = (p) => (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "기타";
-  const openingOptions = useMemo(() => [...new Set(playablePuzzles.map(openingKeyOf))].sort((a, b) => a.localeCompare(b)), [playablePuzzles]);
+  // (사용자 요청) 도감 탭에서 검색되는 모든 세부 갈래 이름까지 퍼즐 탭에서도 검색·필터할 수 있게,
+  // 기존 퍼즐에 실제로 붙어 있는 (최상위) 이름만 모으던 것 대신 SNAP.tree 전체에서 나올 수 있는
+  // "모든" 오프닝 이름(allOpeningEntries, 도감과 동일한 중복 제거·상위 경로 우선 규칙)을 후보로
+  // 쓴다 — 이러면 아직 그 이름의 퍼즐이 하나도 없는 세부 갈래도 검색·선택은 가능해진다(선택하면
+  // 그냥 빈 목록이 되는 게 맞는 동작, 아래 matchesOpeningFilter 참고).
+  const openingOptions = useMemo(() => allOpeningEntries(contentVer).map((e) => e.name).sort((a, b) => a.localeCompare(b)), [contentVer]);
   const creatorOptions = useMemo(() => [...new Set(playablePuzzles.map((p) => (creatorUsernames || {})[puzzleNo(p.id)]).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [playablePuzzles, creatorUsernames]);
   // (사용자 요청) 도감 탭 오프닝 트리 검색(검색어가 이름 맨 앞에 오는 결과 우선, 그 다음 중간에
   // 포함되는 결과)과 같은 랭킹 방식을 그대로 따라 쓴다 — 다만 여긴 오프닝뿐 아니라 생성자까지
@@ -17862,6 +17903,13 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     ...openingOptions.map((o) => ({ type: "opening", value: o })),
     ...creatorOptions.map((c) => ({ type: "creator", value: c })),
   ], [openingOptions, creatorOptions]);
+  // (기능) 퍼즐 하나하나마다 매 필터 판정 때 openingNamesAlong을 다시 계산하지 않도록, 퍼즐 id별로
+  // 한 번만 계산해 캐시해 둔다 — themed/filteredForCount 둘 다 이 맵을 재사용한다.
+  const puzzleOpeningNamesMap = useMemo(() => {
+    const m = new Map();
+    for (const p of playablePuzzles) m.set(p.id, p.setupSans ? openingNamesAlong(p.setupSans) : new Set());
+    return m;
+  }, [playablePuzzles]);
   const searchSuggestions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
@@ -17878,7 +17926,18 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
   // 아무거나 클릭만 하면 항상 재현됨). 조기 반환을 이 컴포넌트의 모든 훅 호출 뒤로 옮겨 해결한다.
   if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} />;
-  const matchesOpeningFilter = (p) => selectedOpenings.length === 0 || selectedOpenings.includes(openingKeyOf(p));
+  // (버그 수정) 예전엔 openingKeyOf(최상위 이름 하나)와 정확히 일치해야만 매칭됐다 — 세부 갈래
+  // 이름(예: "…Najdorf Variation, English Attack")을 선택하면, 그 이름이 퍼즐의 firstNamedOpening과
+  // 다르므로(항상 최상위 이름만 반환) 절대 매칭될 수 없었다. 이제는 그 퍼즐의 수순이 실제로 지나는
+  // "모든" 오프닝 이름(openingNamesAlong, 깊이 무관) 안에 선택된 이름이 있는지로 판정한다 — 세부
+  // 갈래를 선택하면 그 위치까지 도달하는 퍼즐만, 상위 이름을 선택하면 그 상위 이름을 지나는 모든
+  // (더 깊은 세부 갈래 포함) 퍼즐이 매칭된다. p.setupSans가 없는(레거시) 퍼즐은 p.opening(구
+  // 최상위 이름 하나)로 대체 판정한다.
+  const matchesOpeningFilter = (p) => {
+    if (selectedOpenings.length === 0) return true;
+    const names = puzzleOpeningNamesMap.get(p.id) || (p.setupSans ? openingNamesAlong(p.setupSans) : new Set());
+    return selectedOpenings.some((o) => names.has(o) || (!p.setupSans && p.opening === o));
+  };
   const matchesCreatorFilter = (p) => selectedCreators.length === 0 || selectedCreators.includes((creatorUsernames || {})[puzzleNo(p.id)]);
   const themed = playablePuzzles.filter((p) => (filter === "all" || themesOf(p).includes(filter)) && matchesOpeningFilter(p) && matchesCreatorFilter(p));
   // (사용자 요청) 오프닝별 묶음 대신, 새로 생긴 정렬 박스(최신순/레이팅순)를 실제로 체감할 수 있게
@@ -25616,7 +25675,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} />}
