@@ -2308,8 +2308,11 @@ function seedContent() {
 //   move       { prompt, answers:[...], note, sans? }           주관식 — 보드에 직접 수를 두면 통과
 //   play       { moves:[...], stepMs? }                         현재 위치에서 이어서 수순을 빠르게 재생(자동)
 //   pause      { ms }                                           잠시 대기(자동)
-//   board      { squares:[...], dim?, glow?, siren?, sans? }     보드 연출(칸 강조/음영/사이렌), 자동으로 다음 진행
-//   clear      { }                                               보드 연출 상태를 초기화
+//   board      { squares:[...], dim?, glow?, siren?, arrows?, sans? }  보드 연출(칸 강조/음영/사이렌/화살표), 자동으로 다음 진행
+//              arrows:[{ from, to, type:"attacker"|"defender" }, ...] — from/to는 칸 이름("e4") 문자열.
+//              공격 기물→피격 기물 방향 화살표를 그린다. "attacker"는 빨간 화살표(위협하는 기물), "defender"는
+//              초록 화살표(방어하는 기물) — Board의 threatAttacker/threatDefender 화살표 스타일을 그대로 재사용.
+//   clear      { }                                               보드 연출 상태(화살표 포함)를 초기화
 // 어떤 beat든 sans를 지정하면 그 자리에서 즉시(재생 없이) 그 위치로 전환된다.
 // 모든 필드는 개발자가 CMS(LessonEditor)로 직접 입력·수정·삭제할 수 있고, CONTENT.lessons에 저장되어
 // 전 유저에 반영된다.
@@ -16802,7 +16805,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
   const [pageIdx, setPageIdx] = useState(initialPage);
   const [beatIdx, setBeatIdx] = useState(0);
   const [runningSans, setRunningSans] = useState(() => (pages[initialPage] && pages[initialPage].startSans) || []);
-  const [fx, setFx] = useState({ dimKeep: null, siren: null, glow: null });
+  const [fx, setFx] = useState({ dimKeep: null, siren: null, glow: null, arrows: null });
   const [typedLen, setTypedLen] = useState(0);
   const [lastSay, setLastSay] = useState(null);   // 마지막 코치 대사 — play/pause/board 연출 중에도 말풍선을 비우지 않기 위해 유지
   const [mcPicked, setMcPicked] = useState(null);
@@ -16820,7 +16823,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
     if (idx < 0 || idx >= pages.length) return;
     setPageIdx(idx); setBeatIdx(0);
     setRunningSans((pages[idx] && pages[idx].startSans) || []);
-    setFx({ dimKeep: null, siren: null, glow: null });
+    setFx({ dimKeep: null, siren: null, glow: null, arrows: null });
     setLastSay(null); setTypedLen(0); setMcPicked(null); setMcFeedback(null); setMoveSel(null); setMoveWrongSq(null); setMoveDone(false);
   };
   const advanceBeat = () => {
@@ -16841,11 +16844,16 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
         dimKeep: beat.dim ? new Set((beat.squares || []).map((s) => (Array.isArray(s) ? s.join(",") : lessonSq(s).join(",")))) : null,
         siren: beat.siren ? (Array.isArray(beat.squares[0]) ? beat.squares[0] : lessonSq(beat.squares[0])) : null,
         glow: beat.glow ? (beat.squares || []).map((s) => (Array.isArray(s) ? s : lessonSq(s))) : null,
+        arrows: (beat.arrows && beat.arrows.length) ? beat.arrows.map((a) => ({
+          from: Array.isArray(a.from) ? a.from : lessonSq(a.from),
+          to: Array.isArray(a.to) ? a.to : lessonSq(a.to),
+          kind: a.type === "defender" ? "threatDefender" : "threatAttacker",
+        })) : null,
       });
       const t = setTimeout(advanceBeat, 150);
       return () => clearTimeout(t);
     }
-    if (beat.kind === "clear") { setFx({ dimKeep: null, siren: null, glow: null }); const t = setTimeout(advanceBeat, 100); return () => clearTimeout(t); }
+    if (beat.kind === "clear") { setFx({ dimKeep: null, siren: null, glow: null, arrows: null }); const t = setTimeout(advanceBeat, 100); return () => clearTimeout(t); }
     if (beat.kind === "play") {
       let cancelled = false;
       (async () => {
@@ -16939,6 +16947,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
         <Board board={board} flip={flip} size={boardSize} showEval={false} gridRef={setGridEl}
           interactive={!!beat && beat.kind === "move" && !moveDone}
           haloSquares={fx.glow || []}
+          arrows={fx.arrows || []}
           selected={moveSel} legalTargets={legalTargets} onSquareClick={onSquareClick}
           onPieceDrag={(sq) => { if (beat && beat.kind === "move" && !moveDone) { const p = board[sq[0]][sq[1]]; if (p && p.c === color) setMoveSel(sq); } }}
           onDrop={(sq) => { if (moveSel) attemptMove(moveSel, sq); }}
@@ -17058,7 +17067,7 @@ function defaultBeat(kind) {
     case "move": return { kind, prompt: "", answers: [], note: "" };
     case "play": return { kind, moves: [], stepMs: 420 };
     case "pause": return { kind, ms: 800 };
-    case "board": return { kind, squares: [] };
+    case "board": return { kind, squares: [], arrows: [] };
     case "clear": return { kind };
     default: return { kind: "say", speaker: "milku", text: "" };
   }
@@ -17166,6 +17175,25 @@ function BeatEditor({ beat, index, total, onChange, onRemove, onMoveUp, onMoveDo
             <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.dim} onChange={(e) => patch({ dim: e.target.checked })} /> dim(음영)</label>
             <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.glow} onChange={(e) => patch({ glow: e.target.checked })} /> glow(발광)</label>
             <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.siren} onChange={(e) => patch({ siren: e.target.checked })} /> siren(경고)</label>
+          </div>
+          {/* (기능) 공격/방어 화살표 — 행마다 from/to 칸과 공격(빨강)/방어(초록) 종류를 지정한다. */}
+          <div style={{ marginBottom: 4 }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 3 }}>
+              <span style={{ fontSize: 10.5, color: T.inkSoft }}>화살표 (arrows)</span>
+              <button type="button" onClick={() => patch({ arrows: [...(beat.arrows || []), { from: "", to: "", type: "attacker" }] })} className="press" title="화살표 추가" style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>
+            </div>
+            {(beat.arrows || []).map((a, ai) => (
+              <div key={ai} className="flex items-center gap-2" style={{ marginBottom: 3 }}>
+                <input value={a.from} onChange={(e) => patch({ arrows: beat.arrows.map((x, xi) => (xi === ai ? { ...x, from: e.target.value } : x)) })} placeholder="from (예: e4)" style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
+                <span style={{ fontSize: 11, color: T.inkSoft }}>→</span>
+                <input value={a.to} onChange={(e) => patch({ arrows: beat.arrows.map((x, xi) => (xi === ai ? { ...x, to: e.target.value } : x)) })} placeholder="to (예: d5)" style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
+                <select value={a.type || "attacker"} onChange={(e) => patch({ arrows: beat.arrows.map((x, xi) => (xi === ai ? { ...x, type: e.target.value } : x)) })} style={{ fontSize: 10.5, padding: "3px 5px", borderRadius: 6, border: "1px solid #C9B58C" }}>
+                  <option value="attacker">공격(빨강)</option>
+                  <option value="defender">방어(초록)</option>
+                </select>
+                <button type="button" onClick={() => patch({ arrows: beat.arrows.filter((_, xi) => xi !== ai) })} className="press" title="화살표 삭제" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
+              </div>
+            ))}
           </div>
         </>
       )}
