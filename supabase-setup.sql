@@ -762,13 +762,19 @@ create table if not exists public.move_notes (
   move_key text not null,
   uid uuid not null references auth.users(id) on delete cascade,
   author_username text not null default '',
-  body text not null check (char_length(body) between 1 and 100),
+  body text not null check (char_length(body) between 1 and 150),
   created_at timestamptz not null default now()
 );
 -- (v0.3.4 변경) 예전엔 여기 unique(move_key, uid)로 "1인 1개"를 DB 제약으로 강제했다 — 계정 등급별로
 -- 허용 개수가 달라지므로 고정 제약을 걷어내고, 그 자리를 아래 move_notes_moderate 트리거의 동적
 -- 개수 검사로 대신한다(기존에 이미 이 제약이 걸려 있던 배포본을 위한 정리).
 alter table public.move_notes drop constraint if exists move_notes_move_key_uid_key;
+-- (v0.4.0 변경, 사용자 요청) 글자 수 제한을 100자 → 150자로 늘림 — 이미 100자 제약으로 배포된
+-- 테이블에도 반영되도록 기존 체크 제약을 다시 건다(위 create table if not exists는 신규 생성 시에만
+-- 적용되므로 이미 있는 테이블은 이 alter가 아니면 그대로 100자에 묶여 101~150자 등록이 서버에서
+-- 조용히 거부된다).
+alter table public.move_notes drop constraint if exists move_notes_body_check;
+alter table public.move_notes add constraint move_notes_body_check check (char_length(body) between 1 and 150);
 create index if not exists idx_move_notes_key on public.move_notes(move_key, created_at);
 alter table public.move_notes enable row level security;
 
