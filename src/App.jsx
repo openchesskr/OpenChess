@@ -18071,7 +18071,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                   <button key={it.type + "-" + it.value} onMouseDown={(e) => e.preventDefault()}
                     onClick={() => { if (it.type === "opening") setSelectedOpenings((s) => [...s, it.value]); else setSelectedCreators((s) => [...s, it.value]); setSearchQuery(""); }}
                     className="press" style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>
-                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: it.type === "opening" ? T.brassHi : "#1F6B1F", background: it.type === "opening" ? "rgba(196,154,80,.22)" : "rgba(60,138,60,.18)" }}>{it.type === "opening" ? "오프닝" : "생성자"}</span>
+                    {/* (버그 수정) 밝은(양피지색) 드롭다운 행 배경 위에서 T.brassHi(어두운 배경용 밝은 금색)를
+                        써서 대비가 거의 없었다 — "생성자" 라벨처럼 밝은 배경에서도 잘 읽히는 진한 색으로. */}
+                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: it.type === "opening" ? "#8A6A2F" : "#1F6B1F", background: it.type === "opening" ? "rgba(196,154,80,.22)" : "rgba(60,138,60,.18)" }}>{it.type === "opening" ? "오프닝" : "생성자"}</span>
                     <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.type === "creator" ? "@" : ""}{it.value}</span>
                   </button>
                 ))}
