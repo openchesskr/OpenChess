@@ -16650,7 +16650,7 @@ function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
     <div style={{ position: "absolute", left: x, top: y, width: LESSON_COL_W, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
       <button onClick={() => state !== "locked" && onOpen(id)} disabled={state === "locked"} className={state === "locked" ? "" : "press"}
         title={lesson.title}
-        style={{ width: LESSON_NODE_D, height: LESSON_NODE_D, borderRadius: "50%", border: "3px solid " + s.border, background: s.bg, color: s.color,
+        style={{ width: LESSON_NODE_D, height: LESSON_NODE_D, borderRadius: 18, border: "3px solid " + s.border, background: s.bg, color: s.color,
           display: "flex", alignItems: "center", justifyContent: "center", cursor: state === "locked" ? "default" : "pointer",
           boxShadow: s.ring ? "0 0 0 5px " + s.ring + ", 0 3px 8px rgba(90,58,34,.25)" : "0 3px 8px rgba(90,58,34,.25)", flexShrink: 0 }}>
         {state === "locked" ? <Lock size={22} /> : state === "done" ? <Check size={26} /> : <Play size={22} fill={s.color} />}
