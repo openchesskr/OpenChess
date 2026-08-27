@@ -13261,6 +13261,32 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
+  // (v0.4.0 기능) 사용자 요청 — 도감 카드(openKey)도 브라우저 뒤로가기로 닫히게 한다. LessonMap과
+  // 같은 방식(자체 popstate 리스너 + history.state.screens 배열의 "dexcard" 마커)을 쓴다. openKey는
+  // 토글이라 null이 아닌 값 사이를 오갈 수 있는데(다른 노드를 바로 클릭), 그 경우엔 새 항목을 쌓지
+  // 않고 열려 있는 카드가 그대로 바뀐 걸로 취급한다 — null↔값 전환에서만 push/pop한다.
+  const prevOpenKeyRef = useRef(null);
+  useEffect(() => {
+    try {
+      const was = prevOpenKeyRef.current;
+      if (!was && openKey) {
+        const cur = (window.history.state && window.history.state.screens) || [];
+        if (!cur.includes("dexcard")) window.history.pushState({ ...(window.history.state || {}), screens: [...cur, "dexcard"] }, "", window.location.pathname);
+      } else if (was && !openKey) {
+        const cur = (window.history.state && window.history.state.screens) || [];
+        if (cur.includes("dexcard")) window.history.back();
+      }
+    } catch { }
+    prevOpenKeyRef.current = openKey;
+  }, [openKey]);
+  useEffect(() => {
+    const onPop = () => {
+      const screens = (window.history.state && window.history.state.screens) || [];
+      if (!screens.includes("dexcard")) setOpenKey(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 도감 해금률 — { unlocked, total }.
   const [unlockStats, setUnlockStats] = useState(null);
   return (
@@ -16902,6 +16928,32 @@ function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
 function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, contentVer }) {
   const [openKey, setOpenKey] = useState(null);
   const [editKey, setEditKey] = useState(null);
+  // (v0.4.0 기능) 사용자 요청 — 레슨 화면도 브라우저 뒤로가기로 닫히게 한다. App 최상위의 screens
+  // 배열을 그대로 재사용하되(별도 이름 "lesson"), 이 컴포넌트는 App과 별개로 독립적으로 마운트되므로
+  // App의 pushScreen/popScreen을 prop으로 받는 대신 여기서 자체 popstate 리스너를 둔다(프롬프트가
+  // 언급한 "스코프가 좁은 리스너를 따로 두는" 방식).
+  const prevOpenKeyRef = useRef(null);
+  useEffect(() => {
+    try {
+      const was = prevOpenKeyRef.current;
+      if (!was && openKey) {
+        const cur = (window.history.state && window.history.state.screens) || [];
+        if (!cur.includes("lesson")) window.history.pushState({ ...(window.history.state || {}), screens: [...cur, "lesson"] }, "", window.location.pathname);
+      } else if (was && !openKey) {
+        const cur = (window.history.state && window.history.state.screens) || [];
+        if (cur.includes("lesson")) window.history.back();
+      }
+    } catch { }
+    prevOpenKeyRef.current = openKey;
+  }, [openKey]);
+  useEffect(() => {
+    const onPop = () => {
+      const screens = (window.history.state && window.history.state.screens) || [];
+      if (!screens.includes("lesson")) setOpenKey(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const layout = useMemo(() => layoutLessonTree(CONTENT.lessons), [contentVer]);
   const ids = useMemo(() => Object.keys(CONTENT.lessons).filter((id) => layout.pos[id]), [layout]);
   // (v0.4.2) 카드가 넓은 직사각형이 되면서, 루트가 좌상단에 고정되고 갈래가 늘어날수록 우하단으로
@@ -25308,12 +25360,34 @@ export default function App() {
       if (total > 0 && solvedLineTagsOf(p, lineSolves[p.id]).size >= total && !solved.has(p.id)) onSolved(p.id);
     });
   }, [lineSolves, puzzles, solved, onSolved, contentVer]);
+  // (v0.4.0 기능) 사용자 요청 — 뒤로가기 전반 정비. 자체 URL 경로가 없는 오버레이(검색·친구·채팅·
+  // 프로필창·티어맵·집중 분석 등)는 현재 경로를 바꾸지 않고 history.state.screens 배열에 자기 이름을
+  // 얹는 방식으로 "화면 하나 = 히스토리 항목 하나"를 흉내낸다. 여는 곳에서 pushScreen(같은 이름이
+  // 이미 있으면 아무 것도 안 함 — 같은 오버레이가 중첩 push되는 것을 막음), 닫는 곳에서 popScreen을
+  // 불러 UI로 직접 닫든 뒤로가기로 닫든 히스토리와 상태가 항상 맞물리게 한다(popScreen은 지금 히스토리
+  // 항목이 실제로 그 이름을 갖고 있을 때만 history.back()을 호출하므로, 이미 뒤로가기로 빠진 뒤에
+  // 다시 호출돼도 한 번 더 뒤로 가버리는 일이 없다).
+  const pushScreen = useCallback((name) => {
+    try {
+      if (typeof window === "undefined") return;
+      const cur = (window.history.state && window.history.state.screens) || [];
+      if (cur.includes(name)) return;
+      window.history.pushState({ ...(window.history.state || {}), screens: [...cur, name] }, "", window.location.pathname);
+    } catch { }
+  }, []);
+  const popScreen = useCallback((name) => {
+    try {
+      if (typeof window === "undefined") return;
+      const cur = (window.history.state && window.history.state.screens) || [];
+      if (cur.includes(name)) window.history.back();
+    } catch { }
+  }, []);
   const switchTab = (k) => {
     if (k === "dex") { setNewUnlocks(0); setNewTitles(0); }
     setNavNonce((n) => n + 1);
     setTab(k);
     urlTabRef.current = k;
-    try { const p = TAB_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState(null, "", p); } catch { }
+    try { const p = TAB_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
     // 사용자가 직접 다른 탭을 골랐으니, 집중 분석을 닫을 때 도감으로 자동으로 되돌아가는 예약은 취소한다.
     setFocusReturnTab(null);
   };
@@ -25322,15 +25396,26 @@ export default function App() {
   // 새로 마운트돼(아래 render의 "숨겨 두기"가 무의미해짐) 애써 보존한 팬/줌/카드 상태가 사라지므로,
   // navNonce는 건드리지 않고 tab만 직접 되돌린다.
   const prevLearnFocusRef = useRef(learnFocus);
+  // (v0.4.0 기능) 사용자 요청 — 집중 분석도 뒤로가기 한 번으로 닫히게 한다. 여는 쪽(위 onOpenOpening/
+  // onOpenLearnFocus, 그리고 LearnTab 안 "분석" 버튼이 부르는 setFocus 전부 포함 — 이 effect가 최상위
+  // learnFocus 값의 null↔값 전환만 지켜보므로 진입 경로를 하나하나 따로 손댈 필요가 없다)는
+  // pushScreen("focus")로 히스토리 항목을 하나 쌓고, 닫히면(뒤로가기든 UI든) popScreen으로 짝을 맞춘다.
+  // 도감 탭에서 열었던 경우(focusReturnTab==="dex")는 원래부터 도감 탭으로 직접 되돌리는 별도 pushState
+  // 경로가 있어 그대로 두고(건드리면 그 특수 로직이 함께 꼬일 위험이 있음), 그 외의 경우에만 popScreen을 쓴다.
   useEffect(() => {
-    if (prevLearnFocusRef.current && !learnFocus && focusReturnTab === "dex") {
-      setTab("dex");
-      urlTabRef.current = "dex";
-      try { const p = TAB_PATH.dex; if (p && window.location.pathname !== p) window.history.pushState(null, "", p); } catch { }
-      setFocusReturnTab(null);
+    if (!prevLearnFocusRef.current && learnFocus) pushScreen("focus");
+    if (prevLearnFocusRef.current && !learnFocus) {
+      if (focusReturnTab === "dex") {
+        setTab("dex");
+        urlTabRef.current = "dex";
+        try { const p = TAB_PATH.dex; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
+        setFocusReturnTab(null);
+      } else {
+        popScreen("focus");
+      }
     }
     prevLearnFocusRef.current = learnFocus;
-  }, [learnFocus, focusReturnTab]);
+  }, [learnFocus, focusReturnTab, pushScreen, popScreen]);
   // (v0.3.4 기능) 사용자 요청 — /review(/(식별자))와 /(퍼즐 번호)-(라인 번호)는 이제 그 URL만으로
   // 실제로 복원 가능하다(아래 딥링크 resolver effect, openReview/onOpenPuzzle이 모두 정의된 뒤에
   // 둔다 — 그 함수들을 그대로 재사용한다). 예전엔 여기서 무조건 /learn으로 되돌렸다.
@@ -25339,12 +25424,20 @@ export default function App() {
     // (v0.2.0 기능) /review에서 브라우저 뒤로가기를 누르면(헤더의 뒤로 버튼이 아니라 실제 브라우저
     // 뒤로가기) reviewGame을 함께 정리해, 이전 화면으로 돌아갔는데 리뷰 오버레이만 계속 남아있는
     // 일이 없게 한다. (v0.3.4) 퍼즐 고유 URL(/(번호)-(라인))에서도 같은 이유로 puzzleActive를 정리한다.
+    // (v0.4.0) screens 배열에 없어진 오버레이(검색/친구/채팅/프로필창/티어맵/집중 분석)도 함께 닫는다.
     const onPop = () => {
       const p = window.location.pathname;
       if (!p.startsWith("/review")) setReviewGame(null);
       if (!/^\/puzzle\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
       const k = tabFromPath(p);
       if (k) { urlTabRef.current = k; setTab(k); }
+      const screens = (window.history.state && window.history.state.screens) || [];
+      setSearchOpen(screens.includes("search"));
+      setFriendsOpen(screens.includes("friends"));
+      setChatsOpen(screens.includes("chats"));
+      setProfileWinOpen(screens.includes("profile"));
+      setTierMapOpen(screens.includes("tiermap"));
+      setLearnFocus((f) => (f && !screens.includes("focus")) ? null : f);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -25365,6 +25458,35 @@ export default function App() {
     // (17차) 집중 분석에 들어간 오프닝도 "최근 오프닝" 풀에 추가 — 일일 퀘스트 후보로 사용됨.
     if (nm) setRecentOpenings((prev) => [nm, ...prev.filter((x) => x !== nm)].slice(0, 10));
   }, [tab]);
+  // (v0.4.0 기능) 퍼즐 카드/오늘의 퍼즐 팝업의 기보에서 수를 클릭하면 — onOpenGame(그냥 그 위치로만
+  // 이동)과 달리 onOpenOpening과 같은 방식으로 그 수 위치에서 곧장 집중 분석 모드로 들어간다. 이미
+  // 정확한 수순(sans)을 갖고 있으므로 findOpeningPathByName 같은 이름 검색은 필요 없고, onOpenOpening의
+  // 나머지 로직(마지막 수를 분리해 learnFocus 구성, 오프닝 이름/수 정보 조회)만 그대로 재사용한다.
+  const onOpenLearnFocus = useCallback((sans) => {
+    if (!sans || !sans.length) return;
+    setSearchOpen(false); setFriendsOpen(false);
+    setFocusReturnTab(null);
+    // (버그 수정) 퍼즐 풀이 화면(전용 URL "/puzzle/(번호)-(라인)")에서 기보의 수를 클릭하면, 이 함수
+    // 직후 pickToLearn이 onClose(PuzzleTab의 closeActive)도 함께 부른다 — closeActive는 "지금 주소가
+    // 그 퍼즐 URL 패턴이면" 무조건 history.back()을 호출하는데, 주소를 그대로 두면 아래 focus 전환
+    // effect가 막 쌓은 pushScreen("focus") 히스토리 항목이 그 back()에 곧바로 되감겨 사라져 버린다
+    // (집중 분석에 들어간 것처럼 보였다가 곧바로 원래 화면 밖으로 튕겨 나감). 그 충돌을 막기 위해,
+    // 지금 주소가 퍼즐 URL이면 먼저 "/learn"으로 바꿔치기(replaceState)해 둔다 — 이러면 뒤이은
+    // onClose()가 더는 퍼즐 URL로 인식하지 않아 back()을 부르지 않고, 새로 쌓이는 pushScreen("focus")
+    // 항목만 깨끗이 남는다.
+    try {
+      if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) {
+        window.history.replaceState({ screens: (window.history.state && window.history.state.screens) || [] }, "", TAB_PATH.learn);
+      }
+    } catch { }
+    setTab("learn");
+    const tSans = sans.slice(0, -1); const tSan = sans[sans.length - 1];
+    const pnode = snapNode(tSans); const mm = pnode && pnode.moves.find((x) => stripSuffix(x.san) === stripSuffix(tSan));
+    const node2 = snapNode(sans); const nm = (node2 && node2.opening) ? node2.opening.name : null;
+    setLearnSans(tSans);
+    setLearnFocus({ sans: tSans, san: tSan, m: mm || { san: tSan }, ply: tSans.length, isNew: false, name: nm });
+    if (nm) setRecentOpenings((prev) => [nm, ...prev.filter((x) => x !== nm)].slice(0, 10));
+  }, []);
   // (프로필) chess.com 최근 대국의 "보기" — 그 대국 기보를 분석 보드로 불러온다(끝 포지션에서 뒤로 넘겨보기 가능).
   const onOpenGame = useCallback((moves) => {
     if (!moves || !moves.length) return;
@@ -25573,19 +25695,19 @@ export default function App() {
         <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
               (v0.0.6 개편) 누르면 여정 지도(TierJourneyMap)가 열린다. */}
-          <TierBadge totalXp={totalXp} compact={narrowHeader} onClick={() => setTierMapOpen(true)} />
+          <TierBadge totalXp={totalXp} compact={narrowHeader} onClick={() => { setTierMapOpen(true); pushScreen("tiermap"); }} />
           {/* 검색·친구·채팅을 하나의 세그먼트로 묶는다 — 비로그인 상태에선 검색만 남아 평범한 버튼처럼 보인다.
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
               모서리 radius를 직접 주고 컨테이너는 overflow:visible로 둬 배지가 잘리지 않게 한다. */}
           <div className="flex items-center" style={{ borderRadius: 9, border: "1px solid " + T.brass, overflow: "visible", flexShrink: 0 }}>
-            <button onClick={() => setSearchOpen(true)} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
-            {user && <button onClick={() => setFriendsOpen(true)} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
             {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
-            {user && <button onClick={() => setChatsOpen(true)} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
@@ -25593,7 +25715,7 @@ export default function App() {
           {/* (버그 수정) 알림은 시급성이 다른 정보라 세그먼트에 묶지 않고 오른쪽에 따로 분리해 둔다. */}
           {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
           {user ? (
-            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => setProfileWinOpen(true)}
+            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => { setProfileWinOpen(true); pushScreen("profile"); }}
               mainQuestSummary={mainQuestOverallProgress(mainQuest)} solvedNos={[...solved].map((id) => puzzleNo(id))} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myUid={uid} />
           ) : (
             <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
@@ -25609,21 +25731,21 @@ export default function App() {
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
-      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={onOpenGame} />}
+      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={onOpenLearnFocus} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
-      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => setSearchOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => setFriendsOpen(false)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
         solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => setChatsOpen(false)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
-      {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => setTierMapOpen(false)} />}
+      {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
       {profileWinOpen && user && (
-        <ProfileWindow onClose={() => setProfileWinOpen(false)} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size}
+        <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} solvedCount={solved.size}
           onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
           mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
           earnedTitles={earnedTitles} onEquipTitle={equipTitle} isDev={isDev} isCodev={isCodev} devOn={devOn} codevOn={codevOn} chesscomStatus={chesscom.status} chesscom={chesscom} />
@@ -25716,7 +25838,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenGame} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} />}
