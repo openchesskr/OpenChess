@@ -85,7 +85,7 @@ function Reveal({ children, delay = 0, y = 16, once = false }) {
 
 // ============================================================ 마스코트 ============================================================
 // (v0.1.4 기능) "마스코트 이미지는 선이 깔끔한 이미지만 쓰고, 이모티콘(스티커)용 이미지는 쓰지 말 것"
-// 이라는 요청 — App.jsx가 학습 탭 등 실제 UI 전반에서 이미 쓰고 있는 MASCOT_ART(플랫 벡터 일러스트,
+// 이라는 요청 — App.jsx가 분석 탭 등 실제 UI 전반에서 이미 쓰고 있는 MASCOT_ART(플랫 벡터 일러스트,
 // 표정별 12종)를 그대로 재사용한다. public/emoji/*.png(스케치풍 스티커, 이모티콘 선택 창 전용)와는
 // 완전히 다른 자산 — App.jsx에 인라인 base64로 박혀 있던 걸 이 페이지(무거운 초기화가 없는 정적
 // 컴포넌트)에서도 가볍게 쓸 수 있도록 public/mascot/*.webp 파일로 그대로 추출해 둔 것을 가리킨다.
@@ -173,7 +173,7 @@ function FeatureRow({ Icon, eyebrow, title, desc, quote, shot, mascotChar, masco
 }
 
 const FEATURES = [
-  { Icon: GraduationCap, eyebrow: "학습", title: "엔진과 함께 배우기", shot: "/about/screenshot-study.webp", mascotChar: "milku", mascotExpr: "think", ccBadge: true,
+  { Icon: GraduationCap, eyebrow: "분석", title: "엔진과 함께 배우기", shot: "/about/screenshot-study.webp", mascotChar: "milku", mascotExpr: "think", ccBadge: true,
     desc: "Stockfish 엔진의 실시간 분석과 함께 수를 두며 배워요. chess.com 계정을 연동하면 내가 실제로 둔 대국을 그대로 불러와, 어디서 무엇을 놓쳤는지 짚어줍니다.",
     quote: "네가 둔 수, 하나하나 같이 복기해 줄게." },
   { Icon: Library, eyebrow: "도감", title: "오프닝 나침반", shot: "/about/screenshot-dex.webp", mascotChar: "milku", mascotExpr: "wink",
@@ -182,7 +182,7 @@ const FEATURES = [
   { Icon: Puzzle, eyebrow: "퍼즐", title: "내 실수로 만든 퍼즐", shot: "/about/screenshot-puzzle.webp", mascotChar: "kokoa", mascotExpr: "think",
     desc: "\"기물 희생하기\" · \"우위 점하기\" · \"실수 응징하기\" 세 테마로, 실전에서 나온 실수를 바탕으로 자동 생성되는 맞춤형 전술 퍼즐을 풀어보세요. 친구에게 퍼즐을 공유할 수도 있어요.",
     quote: "이 수, 정말 최선이었을까? 한번 찾아봐." },
-  { Icon: Target, eyebrow: "퀘스트", title: "매일 조금씩", shot: "/about/screenshot-quest.webp", mascotChar: "kokoa", mascotExpr: "celebrate",
+  { Icon: Target, eyebrow: "학습", title: "매일 조금씩", shot: "/about/screenshot-quest.webp", mascotChar: "kokoa", mascotExpr: "celebrate",
     desc: "매일 새로 갱신되는 일일 퀘스트와, 챕터별 퀴즈로 진행하는 메인 퀘스트를 완료하고 OC 나이트 코인을 모아보세요.",
     quote: "일일 퀘스트, 벌써 확인했어?" },
   { Icon: Wrench, eyebrow: "설정", title: "내게 맞게 조정하기", shot: "/about/screenshot-settings.webp", mascotChar: "milku", mascotExpr: "wink",
@@ -478,7 +478,7 @@ function StatsRow() {
   );
 }
 
-// (v0.1.4 기능) "chess.com 연계 통계·분석 기능도 소개해 달라"는 요청 — 실제로 학습 탭·도감 탭·설정
+// (v0.1.4 기능) "chess.com 연계 통계·분석 기능도 소개해 달라"는 요청 — 실제로 분석 탭·도감 탭·설정
 // 탭에 이미 있는 chess.com 연동 기능(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률)을
 // 별도 섹션으로 모아 chess.com 아이콘과 함께 소개한다.
 function CCStatTile({ label, sub, delay }) {

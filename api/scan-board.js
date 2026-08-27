@@ -58,7 +58,32 @@ function isPlausibleBoard(fenBoard) {
   return !!fenBoard && /[A-Za-z]/.test(fenBoard);
 }
 
-const SCAN_PROMPT = "이 이미지는 체스판 사진 또는 스크린샷이야. 이제부터 랭크 8(맨 위 가로줄)부터 랭크 1(맨 아래 가로줄)까지 한 줄씩, 각 줄은 파일 a부터 h까지 왼쪽에서 오른쪽 순서로, 정확히 64칸을 하나도 빠짐없이 훑어. 보드가 어느 방향으로 찍혔든(흑이 아래쪽이어도, 대각선이어도) 실제 체스 기물의 색과 종류를 기준으로 표준 방향(백 진영이 랭크 1)으로 좌표를 맞춰서 읽어. 각 칸에 대해: 기물이 있으면 그 종류와 색을 FEN 문자 하나로 적어(대문자 PNBRQK=백, 소문자 pnbrqk=흑 — 색이 밝은/흰 계열이면 백, 어둡고 진한 계열이면 흑), 기물이 없는 빈 칸이면 빈 문자열 \"\"로 적어. 절대로 빈 칸 개수를 세어 숫자로 뭉치지 마 — 반드시 64개 칸을 하나씩 전부 나열해. 예를 들어 초기 배치의 첫 줄(랭크8)은 [\"r\",\"n\",\"b\",\"q\",\"k\",\"b\",\"n\",\"r\"]이고 그다음 줄(랭크7)은 [\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\"]이야.";
+// (버그 수정, 사용자 제보) 실제 빈 칸인데 기물이 있다고 잘못 읽는 "과다 인식"(false positive) 문제 —
+// 좌표 라벨(a-h/1-8)·격자선·나무결 무늬·그림자·반사를 기물로 착각하는 경우가 많았다. 체스는 물리적으로
+// 불가능한 배치가 있다 — 한쪽 색이 킹 2개 이상이거나, 기물 총 16개 초과이거나, 폰이 8개 초과이면
+// 명백한 오독이다(킹 0개는 부분 배치/퍼즐일 수 있어 정상 취급). ranksToFenBoard가 만든 FEN 보드
+// 문자열을 검사해 이 제약을 어기면 역시 실패로 취급해 재시도를 유도한다.
+function isSanePieceCounts(fenBoard) {
+  if (!fenBoard) return false;
+  const counts = { white: { total: 0, king: 0, pawn: 0 }, black: { total: 0, king: 0, pawn: 0 } };
+  for (const ch of fenBoard) {
+    if (ch === "/" || (ch >= "1" && ch <= "8")) continue;
+    if (!FEN_LETTERS.has(ch)) return false;
+    const side = ch === ch.toUpperCase() ? counts.white : counts.black;
+    side.total++;
+    const lower = ch.toLowerCase();
+    if (lower === "k") side.king++;
+    if (lower === "p") side.pawn++;
+  }
+  for (const side of [counts.white, counts.black]) {
+    if (side.total > 16) return false;
+    if (side.king > 1) return false;
+    if (side.pawn > 8) return false;
+  }
+  return true;
+}
+
+const SCAN_PROMPT = "이 이미지는 체스판 사진 또는 스크린샷이야. 이제부터 랭크 8(맨 위 가로줄)부터 랭크 1(맨 아래 가로줄)까지 한 줄씩, 각 줄은 파일 a부터 h까지 왼쪽에서 오른쪽 순서로, 정확히 64칸을 하나도 빠짐없이 훑어. 보드가 어느 방향으로 찍혔든(흑이 아래쪽이어도, 대각선이어도) 실제 체스 기물의 색과 종류를 기준으로 표준 방향(백 진영이 랭크 1)으로 좌표를 맞춰서 읽어. 각 칸에 대해: 실제로 입체적인(3D) 체스 기물이 그 칸 위에 놓여 있다고 확신할 때만 기물의 종류와 색을 FEN 문자 하나로 적어(대문자 PNBRQK=백, 소문자 pnbrqk=흑 — 색이 밝은/흰 계열이면 백, 어둡고 진한 계열이면 흑). 그 외의 모든 경우, 즉 기물이 없는 빈 칸이면 빈 문자열 \"\"로 적어. 특히 다음은 기물이 아니니 절대 기물로 착각하지 마: 보드 가장자리에 인쇄된 좌표 라벨(a-h, 1-8 글자), 칸을 나누는 격자선, 나무결·대리석 같은 재질 무늬나 칸의 명암 패턴, 그림자, 유리·화면 반사, 옆 칸 기물이 이 칸까지 걸쳐 보이는 착시. 빈 칸인지 기물이 있는 칸인지 확신이 서지 않으면 반드시 기물이 있다고 추측하지 말고 빈 칸(\"\")으로 적어 — 기물을 놓치는 것보다 없는 기물을 만들어내는 게 훨씬 나쁜 실수야. 실제 체스 게임에서 보드 위 기물은 보통 32개 이하이고(항상 절반 넘게 비어 있음), 한쪽 색은 킹 최대 1개·폰 최대 8개·전체 최대 16개를 넘을 수 없어 — 만약 네가 세어본 기물 수가 이 범위를 넘는다면 어딘가에서 빈 칸을 기물로 잘못 읽은 것이니 다시 확인해. 절대로 빈 칸 개수를 세어 숫자로 뭉치지 마 — 반드시 64개 칸을 하나씩 전부 나열해. 예를 들어 초기 배치의 첫 줄(랭크8)은 [\"r\",\"n\",\"b\",\"q\",\"k\",\"b\",\"n\",\"r\"]이고 그다음 줄(랭크7)은 [\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\"]이야.";
 
 // (v0.3.9 기능) Gemini의 `responseSchema` 구조화 출력 — 프롬프트만으로 형식을 지시하던 OpenRouter
 // 시절과 달리, 고정된 단일 모델이라 스키마를 신뢰하고 강제할 수 있다. 그래도 8x8 구조 자체는
@@ -125,14 +150,17 @@ export default async function handler(req, res) {
 
   try {
     // (v0.3.8 기능) 첫 응답이 구조적으로 이상하거나(64칸 아님·잘못된 문자) 64칸이 전부 빈 칸으로만
-    // 읽혔으면(명백한 오독) 한 번 더 시도한다 — 같은 모델이라도 비전 인식은 호출마다 편차가 있어
-    // 재시도 한 번으로 종종 복구된다.
+    // 읽혔으면(명백한 오독) 다시 시도한다 — 같은 모델이라도 비전 인식은 호출마다 편차가 있어 재시도로
+    // 종종 복구된다. (버그 수정) 과다 인식(실제로 빈 칸인데 기물이 있다고 읽음)도 같은 재시도 경로로
+    // 잡는다 — isSanePieceCounts가 물리적으로 불가능한 기물 수(한쪽 킹 2개 이상, 폰 8개 초과, 총
+    // 16개 초과)를 감지하면 명백한 오독으로 보고 다시 시도한다. 판단 기준이 하나 늘어난 만큼 재시도
+    // 횟수를 2회에서 3회로 소폭 늘렸다(과도한 지연/비용 증가는 피하기 위해 최소한으로).
     let last = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       last = await callGemini(apiKey, safeMediaType, image);
-      if (isPlausibleBoard(last.fenBoard)) break;
+      if (isPlausibleBoard(last.fenBoard) && isSanePieceCounts(last.fenBoard)) break;
     }
-    if (!last || !isPlausibleBoard(last.fenBoard)) {
+    if (!last || !isPlausibleBoard(last.fenBoard) || !isSanePieceCounts(last.fenBoard)) {
       res.status(502).json({ error: "이미지에서 체스판을 인식하지 못했어요." });
       return;
     }
