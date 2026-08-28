@@ -46,6 +46,19 @@ v0.2.2에서 "최신 내용·스크린샷 갱신, 버전 기록 사이 상호작
 **문서 — 해결된 "남은 작업" 기록 정리**
 과거 버전에서 다음 버전으로 미뤄 뒀다가 이후 실제로 해결된 항목들의 기록을 정리했다. v0.2.4의 "퍼즐 라인 길이 검증 보강"과 v0.2.3의 "정확도 계산 보정 체계(레이팅대별 회귀 보정)"는 이미 해결되었다는 확인을 받아 해당 남은 작업 메모를 지웠다. v0.2.9의 "이미지 3장을 활용한 리뷰 로딩 3분할 애니메이션 — 이미지 미수신으로 보류" 항목도, 바로 다음 커밋에서 실제 이미지가 반영되며 완전히 해결된 상태라 중복되는 보류 메모를 지웠다(해결 내용은 바로 다음 절에 그대로 남아 있음). v0.2.2의 "`/about` 최신화" 남은 작업은 위 히어로 리디자인으로 해결되어 함께 지웠다.
 
+**기능 — 모든 퍼즐 FEN 호환성 + FEN 코드를 통한 사용자 임의 퍼즐 생성 (item 5)**
+사용자 요청 — "현재의 모든 퍼즐의 시작 포지션을 FEN으로 구현, FEN 코드를 통한 사용자의 임의 퍼즐 생성 구현(PGN→FEN은 자동, FEN→PGN은 생성자 및 개발자의 수동 입력)". 퍼즐은 지금까지 `setupSans`(표준 시작 위치부터의 SAN 수순)만으로 시작 위치를 표현했다 — 이번에 모든 퍼즐이 `fen` 필드도 함께 갖도록 확장했다.
+
+① **PGN→FEN 자동 변환**: `onSavePuzzle`(모든 퍼즐 저장의 단일 창구)이 `setupSans`가 있는 대국 기반 퍼즐엔 `sansToFen(setupSans)`로 계산한 FEN을 자동으로 채워 넣는다 — 별도 마이그레이션 스크립트 없이, 앞으로 저장되는 모든 퍼즐(과 재공유되는 기존 퍼즐)이 자연스럽게 FEN을 갖게 된다.
+
+② **FEN 기반 퍼즐 생성**: 학습 탭 보드 편집기(`BoardEditorModal`)에 "이 포지션으로 퍼즐 만들기" 버튼을 추가했다 — 대국 기록 없이 지금 보드에 올려 둔 배치를 그대로 시작 위치(fenRoot)로 삼아 `genPuzzleTree`를 돌려 전술 트리를 만든다. `setupSans`는 비워 두고(=FEN→PGN, 이 포지션 이전의 실제 수순은 FEN 자체가 담지 못하는 정보라 자동 복원이 불가능하다), 나중에 생성자·개발자가 원하면 수동으로 채워 넣을 수 있게 열어 뒀다.
+
+③ **퍼즐 생성·풀이 파이프라인 전체를 fenRoot 인식하게 확장**: `genPuzzleTree`·`puzzleCandidatesAt`·`evalPositionMulti`·`classifyMoveKindDetailed`·`posEvalToWhite`·`ownPriorMoveWasSacrifice`에 `fenRoot`를 threading해(item 4의 mecFacts 계열과 같은 패턴 — `boardFromSans`/`sansToFen` 대신 `boardOfRoot`/`fenOfRoot`) FEN 기반 퍼즐도 대국 기반 퍼즐과 똑같은 방식으로 전술 트리가 만들어지고 채점된다. `PuzzleSolver`(풀이 화면)도 `puzzle.setupSans`가 없고 `puzzle.fen`만 있으면 그 FEN을 루트로 재생하도록 고쳤다 — 보드·캐슬링 판정(`fenLegalDests`)·평가치·코치 카드(`mecFacts`)·수 체계 아이콘·레이팅 계산(`puzzleLineBaseRating`)까지 전부 fenRoot를 반영한다. `isPuzzleSequenceValid`(저장 시 서버 검증)도 `setup`이 비어 있어도 `fen`이 있으면(=FEN 기반 퍼즐) 통과시키도록 함께 고쳤다 — 이게 빠져 있었다면 FEN 기반 퍼즐은 저장 검증에서 항상 거부됐을 것이다.
+
+오프닝 채택률(리체스 Explorer)처럼 표준 시작 위치 전제 데이터가 필요한 보조 기능은 fenRoot일 때 건너뛴다(item 4와 같은 원칙). 퍼즐 카드 미리보기·오프닝 필터·공유 딥링크처럼 `setupSans` 전체 목록에 의존하는 나머지 주변 기능들은 기존 "레거시 퍼즐(setupSans 없음)" 처리 관례를 그대로 따라 FEN 전용 퍼즐에서 자연스럽게 비워진다 — 필요하면 다음 라운드에서 이어서 다듬는다.
+
+`npm run build` 통과, Playwright로 앱을 실제로 띄워 홈·퍼즐 탭에서 새 런타임 오류가 없는 것을 확인했다.
+
 ### OpenChess v0.4.0 — 2026/8/28
 
 **기능 — 탭 이름 개편 + 메인 퀘스트 전면 개편("레슨" 시스템)**
