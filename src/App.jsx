@@ -1175,20 +1175,20 @@ function puzzlePvEvToWhite(pv, moverWhite) {
 // 헬퍼 — genPuzzleTree의 expand()가 "이 위치의 평가"(종료 판정용)와 "이 위치의 후보 수 목록"(다음
 // 분기용)에 같은 위치를 두 번 엔진에 묻던 중복 호출을 하나로 합치기 위해 puzzleCandidatesAt에서
 // 분리했다(아래 puzzleCandidatesAt이 이미 계산해 둔 결과를 pvsIn으로 받으면 재호출하지 않는다).
-async function evalPositionMulti(engine, cur) {
-  try { return await engine.evaluateMulti(sansToFen(cur), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS); } catch { return null; }
+async function evalPositionMulti(engine, cur, fenRoot) {
+  try { return await engine.evaluateMulti(fenOfRoot(fenRoot, cur), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS); } catch { return null; }
 }
 // (20차 기능1) cur 위치의 후보 수들을 등급·채택률·평가치와 함께 수집 — genPuzzleTree와 개발자의
 // "한 수 추가" 기능(extendPuzzleLeaf)이 함께 쓰는 공용 헬퍼.
-async function puzzleCandidatesAt(engine, cur, pvsIn) {
-  const brd = boardFromSans(cur);
-  const moverWhite = cur.length % 2 === 0;
+async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
+  const brd = boardOfRoot(fenRoot, cur);
+  const moverWhite = plyIsWhite(cur.length, fenRoot ? fenRoot.turn : "w");
   const color = moverWhite ? "w" : "b";
   // (v0.2.6 버그 수정) 예전엔 여기서 얕은 depth(11)로 평가해 저장한 등급·평가치가, 나중에 게임
   // 리뷰와 같은 더 깊은 depth로 다시 매겨지면 서로 달라져(예: 최선의 수인데 평가치가 미묘하게
   // 바뀜) 보였다 — 게임 리뷰와 동일한 REVIEW_DEPTH·REVIEW_MOVETIME_MS로 평가해 한 번 저장해 두면
   // 이후 어디서 다시 봐도 항상 같은 값이 나온다.
-  const pvs = pvsIn || await evalPositionMulti(engine, cur);
+  const pvs = pvsIn || await evalPositionMulti(engine, cur, fenRoot);
   if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
   const bestCp = cpOfLine(pvs[0]);
   // (버그 수정) 이미 승부가 기운 위치(예: -600cp)에서 어차피 지는 형세를 못 바꾸는 희생 수까지
@@ -1196,7 +1196,7 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
   // 전 위치가 이미 결정 나 있고(decided) 지고 있던(losing) 경우에는 희생 태그를 주지 않는다.
   const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
   const adoptBy = {};
-  try { const lc = await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
+  try { const lc = fenRoot ? null : await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
   const cands = []; const seen = new Set();
   pvs.forEach((pv, i) => {
     if (!pv || !pv.uci) return;
@@ -1209,7 +1209,7 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
     // (v0.4.0 버그 수정) 다른 네 판정 경로(classifyMoveKindDetailed·analyzeGame·분석 탭·자유 탐색)와
     // 달리 이 퍼즐 후보 판정에만 "직전 자신의 수가 이미 희생이었다면 이어지는 콤보 수는 다시 탁월로
     // 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 사이트 전체가 같은 기준으로 탁월한 수를 매기도록 통일한다.
-    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color)) kind = "brilliant"; } catch { }
+    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color, fenRoot)) kind = "brilliant"; } catch { }
     // (v0.4.0 버그 수정) decided(위에서 계산만 해 두고 실제로는 쓰지 않던 변수)를 다른 네 판정
     // 경로와 같은 완화 규칙에 실제로 연결한다 — 이미 승부가 기운 위치(예: +6점)에서는 실수류 등급을
     // 한 단계씩 완화해야 하는데, 이 퍼즐 후보 판정에서만 그 완화가 빠져 있어 다른 후보 수들과 다른
@@ -1224,7 +1224,7 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
   if (topAdopt && topAdopt[1] >= 10 && sanSrc(brd, topAdopt[0], color)) {
     const san = decorateSan(brd, topAdopt[0], color);
     try {
-      const evc = await engine.evaluate(sansToFen([...cur, san]), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+      const evc = await engine.evaluate(fenOfRoot(fenRoot, [...cur, san]), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
       if (evc) {
         const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
         const loss = Math.max(0, bestCp - mvCp);
@@ -1232,11 +1232,11 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
         // (v0.4.0 버그 수정) 위 엔진 PV 후보들과 달리 이 실전 채택 수 보강 후보에는 탁월한 수 승격·
         // 완화 규칙이 통째로 빠져 있었다 — 같은 포지션의 같은 종류 수(예: 기물 희생)가 엔진 PV
         // 목록에 있었다면 탁월로 뜨는데 이 보강 후보로 들어오면 그냥 우수로 뜨는 불일치가 있었다.
-        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color)) kind = "brilliant"; } catch { }
+        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color, fenRoot)) kind = "brilliant"; } catch { }
         if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
         const under2 = /=/.test(san) && !/=Q/.test(san);
         if (under2 && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
-        cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san]), uci: puzzleUciOf(brd, san, color) });
+        cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san], fenRoot), uci: puzzleUciOf(brd, san, color) });
       }
     } catch { }
   }
@@ -1245,11 +1245,11 @@ async function puzzleCandidatesAt(engine, cur, pvsIn) {
 // (UX) onProgress(0~1) — 트리 확장 중 지금까지 만든 노드 수를 maxNodes 대비 대략적인 진행률로
 // 알려준다. 최종 노드 수는 미리 알 수 없어(재귀적으로 조건에 따라 가지치기) 정확한 %는 아니지만,
 // "퍼즐을 생성하는 중입니다" 게이지가 완전히 멈춰 있지 않고 자연스럽게 움직이는 정도로는 충분하다.
-async function genPuzzleTree(engine, preSans, opts, onProgress) {
+async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
     firstSan = null, maxNodes = 34, tagSeq = 0, puzzleType = "positional" } = opts || {};
-  const userColor = preSans.length % 2 === 0 ? "w" : "b";
-  const startMat = materialDiff(boardFromSans(preSans), userColor);
+  const userColor = plyIsWhite(preSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
+  const startMat = materialDiff(boardOfRoot(fenRoot, preSans), userColor);
   let nodeCount = 0;
   // (v0.3.0 성능) 예전엔 트리의 모든 노드를 단일 엔진(engine, FIFO 큐 하나)으로 순서대로 평가해,
   // 형제 가지(예: 상대 응수 최대 3갈래)가 서로 독립적인데도 하나씩 차례로만 계산됐다 — 라인이
@@ -1273,7 +1273,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   // 시작하므로 이 결과를 쓰지 않는다).
   let rootPvs = null;
   try {
-    rootPvs = await nextWorker().evaluateMulti(sansToFen(preSans), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS);
+    rootPvs = await nextWorker().evaluateMulti(fenOfRoot(fenRoot, preSans), REVIEW_DEPTH, 6, REVIEW_MOVETIME_MS);
     const se = rootPvs && rootPvs[0];
     if (se) startCp = se.mate != null ? (se.mate > 0 ? 100000 : -100000) : (se.cp || 0);
   } catch { }
@@ -1291,7 +1291,7 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   async function expand(cur, depth, sawUserCapture, forceMate, pvsIn) {
     if ((depth >= maxPlies && !forceMate) || nodeCount >= maxNodes) return [];
     const isUserTurn = depth % 2 === 0;
-    let cands = await puzzleCandidatesAt(nextWorker(), cur, pvsIn);
+    let cands = await puzzleCandidatesAt(nextWorker(), cur, pvsIn, fenRoot);
     if (!cands || !cands.length) return [];
     // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음).
     // (v0.3.0 버그 수정) 이 필터가 상대 응수(!isUserTurn)에도 그대로 걸려 있었다 — 트레이니의
@@ -1346,10 +1346,10 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
           // 평가했다 — 같은 포지션을 같은 depth·movetime으로 두 번 묻는 중복 호출이었다. 멀티PV로
           // 한 번만 묻고 1순위 줄(pvs2[0])을 종료 판정에 쓰고, 그대로 아래 expand()에 넘겨 다시
           // 묻지 않게 한다.
-          pvs2 = await evalPositionMulti(nextWorker(), cur2);
+          pvs2 = await evalPositionMulti(nextWorker(), cur2, fenRoot);
           const ev2 = pvs2 && pvs2[0];
           if (ev2) {
-            const evw = posEvalToWhite(ev2, cur2); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
+            const evw = posEvalToWhite(ev2, cur2, fenRoot); if (evw) node.ev = evw;   // 자식 포지션 직접 평가로 갱신(더 정확)
             if (ev2.mate != null && ev2.mate < 0) {
               // (v0.3.0 기능) 상대(둘 차례)가 강제 메이트당하는 수순을 찾았다고 여기서 곧장 끝내지
               // 않는다 — 실제 체크메이트(#)가 나오는 수까지 이 가지를 계속 확장해서, "이겼다"는
@@ -1359,8 +1359,8 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
               const userCp = -(ev2.cp || 0);                                 // 상대 관점 → 사용자 관점
               // (v0.3.0 기능) "실질적인 이득" = 절대 cp가 아니라 시작 대비 얻어낸 cp(cpGain) 기준.
               const cpGain = userCp - startCp;
-              const matGain = materialDiff(boardFromSans(cur2), userColor) - startMat;
-              const matOk = !requireMaterialRecovery || materialDiff(boardFromSans(cur2), userColor) >= Math.min(0, startMat);
+              const matGain = materialDiff(boardOfRoot(fenRoot, cur2), userColor) - startMat;
+              const matOk = !requireMaterialRecovery || materialDiff(boardOfRoot(fenRoot, cur2), userColor) >= Math.min(0, startMat);
               const capOk = !requireCapture || captured;
               // (신규) 퍼즐 종류에 따라 종료 기준이 다르다. "포지션 우위"(기본값)는 기존과 동일하게
               // cp 이득(cpGain >= target)에 더해 기물점수도 실제로 유리해졌을 때만(matGain > 0)
@@ -1380,13 +1380,13 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
               let materialLockOk = false;
               if (matGain >= MATERIAL_LOCK_MIN_GAIN && userCp >= MATERIAL_LOCK_MIN_CP) {
                 const futurePv = pvs2 && pvs2[0] && pvs2[0].pv;
-                const futureSans = futurePv ? pvUciToSans(cur2, futurePv, MATERIAL_LOCK_PLIES) : [];
+                const futureSans = futurePv ? pvUciToSans(cur2, futurePv, MATERIAL_LOCK_PLIES, fenRoot) : [];
                 if (futureSans.length >= MATERIAL_LOCK_PLIES) {
                   materialLockOk = true;
                   let sim = cur2;
                   for (const s of futureSans) {
                     sim = [...sim, s];
-                    if (materialDiff(boardFromSans(sim), userColor) - startMat < MATERIAL_LOCK_MIN_GAIN) { materialLockOk = false; break; }
+                    if (materialDiff(boardOfRoot(fenRoot, sim), userColor) - startMat < MATERIAL_LOCK_MIN_GAIN) { materialLockOk = false; break; }
                   }
                 }
               }
@@ -1408,15 +1408,15 @@ async function genPuzzleTree(engine, preSans, opts, onProgress) {
   let children;
   if (firstSan) {
     // 희생(탁월한 수) 테마: 첫 수는 지정된 탁월한 수로 고정하고 그 이후부터 분기한다
-    const brd = boardFromSans(preSans);
-    const color = preSans.length % 2 === 0 ? "w" : "b";
+    const brd = boardOfRoot(fenRoot, preSans);
+    const color = plyIsWhite(preSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
     if (!sanSrc(brd, stripSuffix(firstSan), color)) return null;
     const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
     const cur2 = [...preSans, firstSan];
     bumpNode(cur2);
-    try { const ev2 = await nextWorker().evaluate(sansToFen(cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2); } catch { }
+    try { const ev2 = await nextWorker().evaluate(fenOfRoot(fenRoot, cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2, fenRoot); } catch { }
     try {
-      const lc = await fetchLichess(preSans, false);
+      const lc = fenRoot ? null : await fetchLichess(preSans, false);
       const hit = lc && lc.moves && lc.moves.find((m) => stripSuffix(m.san) === stripSuffix(firstSan));
       if (hit) node.adopt = hit.adopt;
     } catch { }
@@ -2896,9 +2896,9 @@ function fmtEvalCp(cp, mate, plies) {
   const v = cp / 100; return (v >= 0 ? "+" : "") + v.toFixed(2);
 }
 // (20차) 포지션 평가(둘 차례 관점 {cp,mate}) → 백 관점 {cp}|{mate,win,plies} 객체. sansAfter = 그 포지션까지의 수순.
-function posEvalToWhite(ev, sansAfter) {
+function posEvalToWhite(ev, sansAfter, fenRoot) {
   if (!ev || (ev.cp == null && ev.mate == null)) return null;
-  const s = sansAfter.length % 2 === 0 ? 1 : -1;
+  const s = plyIsWhite(sansAfter.length, fenRoot ? fenRoot.turn : "w") ? 1 : -1;
   if (ev.mate != null) return { mate: ev.mate * s, win: (ev.mate > 0) === (s === 1) ? "w" : "b", plies: matePliesOf(ev.mate) };
   return { cp: (ev.cp || 0) * s };
 }
@@ -2915,17 +2915,17 @@ function tierOf(loss) {
 // (기능) classifyMoveKind는 kind 문자열 하나만 돌려주는 게 기존 세 호출부의 계약이라 그대로 두고,
 // 퍼즐 코치의 MEC 연동(mecFacts는 bestSan·beforeCp도 필요)을 위해 같은 계산을 공유하는 상세 버전을
 // 새로 둔다 — classifyMoveKind는 이 함수를 감싸 kind만 꺼내 쓰는 얇은 래퍼가 된다.
-async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12) {
+async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12, fenRoot) {
   if (!engine || engine.status !== "ready") return null;
-  const best = await engine.evaluate(sansToFen(prevSans), depth);
+  const best = await engine.evaluate(fenOfRoot(fenRoot, prevSans), depth);
   if (!best) return null;
   const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
-  const mw = prevSans.length % 2 === 0; const col = mw ? "w" : "b";
+  const col = plyIsWhite(prevSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
   // (20차) '최선의 수'(별)는 엔진 1순위 수를 그대로 뒀을 때만 부여한다 — 서로 다른 두 포지션 평가의
   // depth 노이즈로 loss가 우연히 ≤10이 된 차선 수까지 별이 붙던 문제(가짜 최선 수) 수정.
-  const bestSan = best.best ? uciToSan(boardFromSans(prevSans), best.best, col) : null;
+  const bestSan = best.best ? uciToSan(boardOfRoot(fenRoot, prevSans), best.best, col) : null;
   const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
-  const after = await engine.evaluate(sansToFen([...prevSans, san]), depth);
+  const after = await engine.evaluate(fenOfRoot(fenRoot, [...prevSans, san]), depth);
   if (!after) return null;
   const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
   const ourCp = -afterOpp;
@@ -2939,7 +2939,7 @@ async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12) {
   // 아무리 나빠져도, 두기 전이 팽팽했다면 그 수 자체가 승부를 가른 것이므로 완화 대상이 아니다.
   const decided = Math.abs(bestCp) > 200;
   const losing = bestCp <= -200;
-  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
+  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRoot, prevSans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, col, fenRoot)) kind = "brilliant";
   if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
   // (v0.4.0 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 analyzeGame·학습
   // 탭·자유 탐색에는 있는데 이 판정(MEC/퍼즐 코치가 함께 쓰는 상세 버전)에는 빠져 있었다 — 동일하게 적용한다.
@@ -2949,14 +2949,14 @@ async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12) {
   // 결과가 뒤집힐(패배) 정도는 아닌 경우. 후보일 때만 직전 포지션을 1회 추가 평가해 상대 손실을 확인한다.
   if (["inaccuracy", "mistake", "good"].includes(kind) && prevSans.length >= 1 && bestCp >= 120 && loss >= 100 && ourCp >= -30) {
     try {
-      const oppBest = await engine.evaluate(sansToFen(prevSans.slice(0, -1)), depth);
+      const oppBest = await engine.evaluate(fenOfRoot(fenRoot, prevSans.slice(0, -1)), depth);
       if (oppBest) { const oppBestCp = oppBest.mate != null ? (oppBest.mate > 0 ? 1e5 : -1e5) : oppBest.cp; if (oppBestCp + bestCp >= 100) kind = "miss"; }
     } catch { }
   }
   return { kind, bestSan: matched ? null : bestSan, beforeCp: bestCp };
 }
-async function classifyMoveKind(engine, prevSans, san, depth = 12) {
-  const r = await classifyMoveKindDetailed(engine, prevSans, san, depth);
+async function classifyMoveKind(engine, prevSans, san, depth = 12, fenRoot) {
+  const r = await classifyMoveKindDetailed(engine, prevSans, san, depth, fenRoot);
   return r ? r.kind : null;
 }
 // (19차 기능3 → v0.3.8 완전 교체) 정확도 계산에 필요한 승률 기대값 모델은 그대로 재사용한다(공개된
@@ -4854,7 +4854,7 @@ function EditorBoardGrid({ board, flipped, size, selected, onSquareClick, gridRe
     </div>
   );
 }
-function BoardEditorModal({ initialFen, onClose, onApply }) {
+function BoardEditorModal({ initialFen, onClose, onApply, onCreatePuzzle }) {
   const narrow = useNarrow(760);
   const startSnap = useMemo(() => {
     const p = (initialFen && parseFenFull(initialFen)) || parseFenFull(STANDARD_START_FEN);
@@ -5078,6 +5078,24 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     finally { setScanning(false); }
   };
   const handleDone = () => { const p = parseFenFull(fenText); if (p) onApply(p); };
+  // (v0.4.1 기능, item 5) "FEN 코드를 통한 사용자의 임의 퍼즐 생성" — 지금 보드에 올려 둔 배치를
+  // 그대로 새 퍼즐의 시작 포지션(fenRoot)으로 삼아, 대국 기록 없이도 이 위치에서 곧바로 전술 트리를
+  // 만든다. FEN→PGN(이 포지션 이전의 실제 수순)은 FEN 자체가 담지 못하는 정보라 자동 복원이
+  // 불가능하므로 비워 두고(생성자·개발자가 나중에 원하면 수동으로 채울 수 있게), PGN→FEN 자동
+  // 변환은 onSavePuzzle이 setupSans 있는 일반 퍼즐에 대해 이미 하고 있는 것과 대칭을 이룬다.
+  const [creatingPuzzle, setCreatingPuzzle] = useState(false);
+  const [createMsg, setCreateMsg] = useState("");
+  const doCreatePuzzle = async () => {
+    if (!onCreatePuzzle || creatingPuzzle) return;
+    const p = parseFenFull(fenText);
+    if (!p) { setCreateMsg("올바른 FEN 형식이 아니에요."); return; }
+    setCreatingPuzzle(true); setCreateMsg("전술 라인을 찾는 중...");
+    try {
+      const ok = await onCreatePuzzle(fenText);
+      setCreateMsg(ok ? "퍼즐이 만들어졌어요! 퍼즐 탭에서 확인해 보세요." : "이 포지션에서는 뚜렷한 전술 라인을 찾지 못했어요. 다른 배치로 시도해 보세요.");
+    } catch { setCreateMsg("퍼즐 생성에 실패했어요. 잠시 후 다시 시도해주세요."); }
+    finally { setCreatingPuzzle(false); }
+  };
   const boardSize = narrow ? Math.min(320, (typeof window !== "undefined" ? window.innerWidth : 360) - 64) : 400;
   const paletteSq = narrow ? Math.min(40, Math.floor((boardSize + 15) / 7) - 4) : 42;
 
@@ -5170,9 +5188,17 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     </div>
   );
   const footerButtons = (
-    <div className="flex gap-2">
-      <button onClick={onClose} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
-      <button onClick={handleDone} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>완료</button>
+    <div className="flex flex-col" style={{ gap: 8 }}>
+      {onCreatePuzzle && (
+        <button onClick={doCreatePuzzle} disabled={creatingPuzzle} className="press" style={{ padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: creatingPuzzle ? "rgba(196,154,80,.12)" : "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12.5, cursor: creatingPuzzle ? "default" : "pointer" }}>
+          {creatingPuzzle ? "전술 라인을 찾는 중..." : "이 포지션으로 퍼즐 만들기"}
+        </button>
+      )}
+      {createMsg && <div style={{ fontSize: 11, color: T.inkSoft, textAlign: "center" }}>{createMsg}</div>}
+      <div className="flex gap-2">
+        <button onClick={onClose} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+        <button onClick={handleDone} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>완료</button>
+      </div>
     </div>
   );
   const header = (
@@ -11361,6 +11387,18 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               initialFen={fenOfRoot(fenRoot, sans)}
               onClose={() => setEditorOpen(false)}
               onApply={(root) => { onLoadFen(root); setEditorOpen(false); }}
+              onCreatePuzzle={async (fenStr) => {
+                const puzzleFenRoot = parseFenFull(fenStr);
+                if (!puzzleFenRoot || !engine || engine.status !== "ready") return false;
+                const opts = puzzleThemeOpts("advantage");
+                const gen = await genPuzzleTree(engine, [], opts, undefined, puzzleFenRoot);
+                if (!gen) return false;
+                onSavePuzzle({
+                  id: "fen:" + fenStr, themes: ["advantage"], name: "FEN 포지션 퍼즐", fen: fenStr,
+                  setupSans: [], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true,
+                });
+                return true;
+              }}
             />
           )}
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
@@ -13547,13 +13585,13 @@ function livePuzzleName(p) {
 }
 // (기능2) 저장 직전 최종 안전장치: setup+solution 전체를 시작 위치부터 다시 재생하며 각 수가
 // "그 시점에 둘 차례인 쪽"의 합법수인지 검증한다. 하나라도 어긋나면(불법수·차례 뒤바뀜 등) 저장을 막는다.
-function isSanSequenceValid(setup, solution) {
+function isSanSequenceValid(setup, solution, fenRoot) {
   try {
-    if (!setup.length || !solution.length) return false;
-    let board = startBoard();
+    if ((!setup.length && !fenRoot) || !solution.length) return false;
+    let board = fenRoot ? fenRoot.board : startBoard();
     let ply = 0;
     for (const san of [...setup, ...solution]) {
-      const color = ply % 2 === 0 ? "w" : "b";
+      const color = plyIsWhite(ply, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
       const info = sanSrc(board, san, color);
       if (!info) return false;
       board = applySan(board, san, color);
@@ -13563,17 +13601,19 @@ function isSanSequenceValid(setup, solution) {
   } catch { return false; }
 }
 // (20차 기능1) 트리 퍼즐 검증 — 통과 불가(표시 전용) 가지를 포함한 모든 가지가 합법 수순이어야 한다.
-function isTreeSequenceValid(setup, tree) {
+// (v0.4.1 기능, item 5) fenRoot가 있으면(FEN 기반 사용자 생성 퍼즐) setup이 비어 있어도(=대국 없이
+// 그 FEN에서 곧바로 시작) 통과시키고, 표준 시작 위치 대신 fenRoot부터 재생해 검증한다.
+function isTreeSequenceValid(setup, tree, fenRoot) {
   try {
-    if (!setup.length || !tree || !(tree.children || []).length) return false;
-    let board = startBoard(); let ply = 0;
+    if ((!setup.length && !fenRoot) || !tree || !(tree.children || []).length) return false;
+    let board = fenRoot ? fenRoot.board : startBoard(); let ply = 0;
     for (const san of setup) {
-      const c = ply % 2 === 0 ? "w" : "b";
+      const c = plyIsWhite(ply, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
       if (!sanSrc(board, san, c)) return false;
       board = applySan(board, san, c); ply++;
     }
     const walk = (node, brd, p) => (node.children || []).every((k) => {
-      const c = p % 2 === 0 ? "w" : "b";
+      const c = plyIsWhite(p, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
       if (!k || !k.san || !sanSrc(brd, k.san, c)) return false;
       return walk(k, applySan(brd, k.san, c), p + 1);
     });
@@ -13584,9 +13624,10 @@ function isTreeSequenceValid(setup, tree) {
 // 없으면 기존 solution 하나만 검증한다.
 function isPuzzleSequenceValid(pz) {
   const setup = [...(pz.setupSans || []), pz.mistakeSan].filter(Boolean);
-  if (pz.tree) return isTreeSequenceValid(setup, pz.tree);
+  const fenRoot = (!pz.setupSans || !pz.setupSans.length) && pz.fen ? parseFenFull(pz.fen) : null;
+  if (pz.tree) return isTreeSequenceValid(setup, pz.tree, fenRoot);
   const lines = (pz.lines && pz.lines.length) ? pz.lines : [{ tag: "best", solution: pz.solution }];
-  return lines.every((l) => isSanSequenceValid(setup, l.solution || []));
+  return lines.every((l) => isSanSequenceValid(setup, l.solution || [], fenRoot));
 }
 /* ── (20차 기능1) 퍼즐 트리 유틸 ──
    구버전 퍼즐(lines/solution만 있는)도 공통 접두사를 병합해 동일한 트리 구조로 다룬다.
@@ -13669,14 +13710,14 @@ function nodesAlongLine(tree, sans) {
   }
   return nodes;
 }
-function puzzleLineBaseRating(setupSans, tree, line) {
+function puzzleLineBaseRating(setupSans, tree, line, fenRoot) {
   const sans = (line && line.sans) || [];
   if (!sans.length) return 100;
   const userMoves = Math.ceil(sans.length / 2);   // sans는 항상 사용자 수로 끝나는 홀수 길이
   let tensionTotal = 0, tensionPlies = 0;
   for (let i = 0; i < sans.length; i += 2) {   // 짝수 인덱스 = 사용자가 실제로 찾아야 하는 차례
-    const board = boardFromSans([...(setupSans || []), ...sans.slice(0, i)]);
-    const moverColor = ((setupSans || []).length + i) % 2 === 0 ? "w" : "b";
+    const board = boardOfRoot(fenRoot, [...(setupSans || []), ...sans.slice(0, i)]);
+    const moverColor = plyIsWhite((setupSans || []).length + i, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
     const t = tensionFacts(board, moverColor);
     tensionTotal += t.mine.length + t.theirs.length;
     tensionPlies++;
@@ -13735,7 +13776,8 @@ function puzzleRatingOf(p) {
   const allLines = treeLinesOf(tree);
   if (!allLines.length) return -1;
   const setupForRating = [...(p.setupSans || []), p.mistakeSan].filter(Boolean);
-  return puzzleAverageRating(allLines.map((l) => puzzleLineBaseRating(setupForRating, tree, l)));
+  const fenRootForRating = (!p.setupSans || !p.setupSans.length) && p.fen ? parseFenFull(p.fen) : null;
+  return puzzleAverageRating(allLines.map((l) => puzzleLineBaseRating(setupForRating, tree, l, fenRootForRating)));
 }
 // (버그 수정) genPuzzleTree가 결국 실패해 트리를 못 만들었는데도(과거 로직 결함·중간에 취소된
 // 생성 등) 그 실패한 결과가 그대로 저장돼, 실제로는 통과 가능한 라인이 0개인 "빈 퍼즐"이 목록에
@@ -14869,15 +14911,15 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupSans, setupLen, onPick, canEdit, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag }) {
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupSans, setupLen, onPick, canEdit, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag, fenRoot }) {
   // (기능) 라인 레이팅 — 각 라인 끝(리프)의 "라인 N" 옆에 그 라인의 기본 레이팅을 함께 보여준다.
   // 트리 구조가 실제로 바뀔 때만 다시 계산하면 되므로(정적 요소만 쓰는 puzzleLineBaseRating), tree·
   // allLines·setupSans가 바뀔 때만 새로 계산한다.
   const lineRatings = useMemo(() => {
     const m = new Map();
-    for (const l of allLines) m.set(l.tag, puzzleLineBaseRating(setupSans, tree, l));
+    for (const l of allLines) m.set(l.tag, puzzleLineBaseRating(setupSans, tree, l, fenRoot));
     return m;
-  }, [allLines, tree, setupSans]);
+  }, [allLines, tree, setupSans, fenRoot]);
   // (20차 기능3) 개발자 모드에서는 노드 옆에 추가(+)·삭제 버튼이 나란히 붙으므로, 그 폭만큼 칸 너비를
   // 넓혀야 정작 수 이름(SAN) 라벨이 짓눌려 말줄임표로 잘리지 않는다.
   // (v0.3.2 UI) 요청에 따라 블록 크기를 기존 대비 약 50% 키움(104→156, 118→177, 56→84, 46→69 등,
@@ -15457,7 +15499,15 @@ function PuzzleClearBanner({ trigger }) {
 function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn }) {
   const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
-  const userColor = setup.length % 2 === 0 ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
+  // (v0.4.1 기능, item 5) FEN 기반 사용자 생성 퍼즐 — setupSans(대국에서 이어지는 실제 수순)가 없고
+  // puzzle.fen(시작 포지션)만 있으면, 그 FEN을 루트로 재생한다. setupSans가 있는(기존 대국 기반)
+  // 퍼즐은 지금까지처럼 표준 시작 위치 재생을 그대로 쓴다 — boardOfRoot/fenOfRoot가 fenRoot 없을 때
+  // 기존 동작과 완전히 같으므로 구버전 퍼즐(setupSans도 fen도 없는 레거시 데이터)도 그대로 동작한다.
+  const fenRoot = useMemo(() => {
+    if (puzzle.setupSans && puzzle.setupSans.length) return null;
+    return puzzle.fen ? parseFenFull(puzzle.fen) : null;
+  }, [puzzle.id]);
+  const userColor = plyIsWhite(setup.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";   // 보드 방향 고정(상대 응수 때도 반전하지 않음)
   // 분기 트리: 개발자 길이 재조정(CONTENT.puzzleOverrides — 모든 유저 공통) > 저장된 tree > 구버전 lines/solution
   const [overrideTree, setOverrideTree] = useState(null);
   useEffect(() => { setOverrideTree(null); }, [puzzle.id]);
@@ -15496,7 +15546,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const totalLines = Math.max(1, allLines.length);
   // (기능) 퍼즐 레이팅 — 모든 라인의 기본 레이팅 평균(라인 레이팅 합 ÷ 라인 수). 카드 목록의
   // 배지와 동일하게 정적 요소만 쓰는 값이라 네트워크 없이 즉시 계산된다.
-  const avgRating = useMemo(() => puzzleAverageRating(allLines.map((l) => puzzleLineBaseRating(setup, tree, l))), [allLines, tree, setup]);
+  const avgRating = useMemo(() => puzzleAverageRating(allLines.map((l) => puzzleLineBaseRating(setup, tree, l, fenRoot))), [allLines, tree, setup, fenRoot]);
   const solvedTagSet = useMemo(() => { const valid = new Set(allLines.map((l) => l.tag)); return new Set((solvedTags || []).filter((t) => valid.has(t))); }, [solvedTags, allLines]);
   const [sessionSolved, setSessionSolved] = useState(() => new Set());
   const solvedNow = useMemo(() => new Set([...solvedTagSet, ...sessionSolved]), [solvedTagSet, sessionSolved]);
@@ -15596,10 +15646,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
   const targetLine = allLines.find((l) => l.tag === targetTag) || allLines[0] || null;
   const curNode = pathNodes.length ? pathNodes[pathNodes.length - 1] : tree;
   const curSans = useMemo(() => [...setup, ...pathNodes.map((n) => n.san)], [setup, pathNodes]);
-  const board = useMemo(() => boardFromSans(curSans), [curSans.join(" ")]);
-  const color = curSans.length % 2 === 0 ? "w" : "b";
+  const fenReplay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, curSans) : null), [curSans.join(" "), fenRoot]);
+  const board = useMemo(() => (fenRoot ? fenReplay.board : boardFromSans(curSans)), [curSans.join(" "), fenRoot, fenReplay]);
+  const color = plyIsWhite(curSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
   const oppColor = color === "w" ? "b" : "w";   // (v0.1.2 기능) 오답 응징 응수를 두는 상대 진영
-  const ep = epTarget(curSans);
+  const ep = fenRoot ? fenReplay.ep : epTarget(curSans);
   const isUserPly = pathNodes.length % 2 === 0;
   const passKids = (curNode.children || []).filter((k) => k.pass !== false);
   const done = pathNodes.length > 0 && pathNodes.length % 2 === 1 && passKids.length === 0;   // 리프(사용자 수)에 도달
@@ -15618,9 +15669,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     if (curNode.ev != null) return; // 이미 정적으로 기록된 값이 있으면 다시 평가하지 않는다
     if (!engine || engine.status !== "ready") return;
     let cancelled = false;
-    engine.evaluate(sansToFen(curSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS, "puzzle-eval").then((ev) => {
+    engine.evaluate(fenOfRoot(fenRoot, curSans), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS, "puzzle-eval").then((ev) => {
       if (cancelled || !ev) return;
-      const w = posEvalToWhite(ev, curSans);
+      const w = posEvalToWhite(ev, curSans, fenRoot);
       if (w) setSettledEval(w);
     });
     return () => { cancelled = true; };
@@ -15700,7 +15751,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     // tryUserMove를 불러 포지션에 아무 변화도 없는 "제자리 수"까지 오답으로 판정되고 있었다. 여기서
     // 한 번만 확실히 걸러 모든 호출 경로(클릭·드래그)를 동시에 보호한다.
     if (from[0] === to[0] && from[1] === to[1]) { setSel(null); return; }
-    if (!legalDests(board, from[0], from[1], color, ep).some(([r, c]) => r === to[0] && c === to[1])) return;
+    if (!(fenRoot ? fenLegalDests(from[0], from[1], color, board, fenReplay.rights, ep) : legalDests(board, from[0], from[1], color, ep)).some(([r, c]) => r === to[0] && c === to[1])) return;
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep); if (!san) return;
     playMoveSfx(san);   // (v0.1.4 기능) 정답/오답과 무관하게, 실제로 보드 위에 기물을 놓는 물리적 동작 자체에 대한 소리
     const hit = (curNode.children || []).find((c) => stripSuffix(c.san) === stripSuffix(san));
@@ -15708,7 +15759,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     if (hit && hit.pass !== false) { setSel(null); setPathNodes((p) => [...p, hit]); }
     else { setWrong({ board: applySan(board, san, color), at: to, from, san }); setSel(null); }   // 틀린 수는 잠시 뒤 상대 응징 응수를 보여준 뒤 자동으로 원위치(아래 effect)
   };
-  const onSquareClick = (sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (sel) { if (legalDests(board, sel[0], sel[1], color, ep).some(([r, c]) => r === sq[0] && c === sq[1])) { tryUserMove(sel, sq); return; } if (p && p.c === color) { setSel(sq); return; } setSel(null); } else if (p && p.c === color) setSel(sq); };
+  const onSquareClick = (sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (sel) { if ((fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)).some(([r, c]) => r === sq[0] && c === sq[1])) { tryUserMove(sel, sq); return; } if (p && p.c === color) { setSel(sq); return; } setSel(null); } else if (p && p.c === color) setSel(sq); };
   // (UX4→v0.1.2) 재시도 버튼 없이, 오답을 두면 자동으로 원위치로 되돌아간다 — 다만 곧장 되돌리지
   // 않고, 그 오답을 뒀을 때 상대가 어떻게 응징하는지 엔진 최선 응수를 한 번 보여준 뒤(가능한 경우만)
   // 응수→오답 순으로 슬라이드 애니메이션과 함께 두 단계로 되돌린다. 엔진을 못 쓰는 상황(liveOn 꺼짐 등)은
@@ -15736,7 +15787,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         }
         if (engine.status === "ready") {
           try {
-            const ev = await engine.evaluate(sansToFen([...curSans, wrong.san]), 12);
+            const ev = await engine.evaluate(fenOfRoot(fenRoot, [...curSans, wrong.san]), 12);
             const bestSan = ev && ev.best ? uciToSan(wrong.board, ev.best, oppColor) : null;
             const info = bestSan ? sanSrc(wrong.board, stripSuffix(bestSan), oppColor) : null;
             if (info && info.from && info.to) replyMove = { san: bestSan, from: info.from, to: info.to };
@@ -15825,12 +15876,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     else if (pathNodes.length === 0 && puzzle.setupSans && puzzle.mistakeSan) { prevSans = puzzle.setupSans; mvSan = puzzle.mistakeSan; }
     else return;
     if (!liveOn || !engine || engine.status !== "ready") return;
-    const moverColor = prevSans.length % 2 === 0 ? "w" : "b";
+    const moverColor = plyIsWhite(prevSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
     let cancelled = false;
-    classifyMoveKindDetailed(engine, prevSans, stripSuffix(mvSan)).then((r) => {
+    classifyMoveKindDetailed(engine, prevSans, stripSuffix(mvSan), 12, fenRoot).then((r) => {
       if (cancelled || !r) return;
       try {
-        const facts = mecFacts(prevSans, stripSuffix(mvSan), moverColor, r.kind, r.bestSan, r.beforeCp, null);
+        const facts = mecFacts(prevSans, stripSuffix(mvSan), moverColor, r.kind, r.bestSan, r.beforeCp, null, fenRoot);
         if (facts && facts.length) setMecBubble(facts[0]);
       } catch { }
     }).catch(() => {});
@@ -15890,17 +15941,17 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     // 최종 판정이 나온 뒤 한 번만 아이콘을 보여주도록 한다.
     else if (pathNodes.length === 0 && puzzle.setupSans && puzzle.mistakeSan) { prevSans = puzzle.setupSans; mvSan = puzzle.mistakeSan; isSetupMistake = true; }
     else { setMoveIcon(null); return; }
-    const moverColor = prevSans.length % 2 === 0 ? "w" : "b";
-    const info = sanSrc(boardFromSans(prevSans), stripSuffix(mvSan), moverColor);
+    const moverColor = plyIsWhite(prevSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
+    const info = sanSrc(boardOfRoot(fenRoot, prevSans), stripSuffix(mvSan), moverColor);
     if (!info || !info.to) { setMoveIcon(null); return; }
     const key = prevSans.join(",") + "|" + mvSan;
     if (knownKind) { setMoveIcon({ key, to: info.to, kind: knownKind }); return; }
     // (20차) 엔진을 못 쓰는 상황의 fallback을 'best'가 아닌 '아이콘 없음'으로 — 아무 수에나 최선 별이 붙지 않도록.
-    const fallback = isSetupMistake ? null : (isSacrifice(boardFromSans(prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null));
+    const fallback = isSetupMistake ? null : (isSacrifice(boardOfRoot(fenRoot, prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null));
     setMoveIcon(fallback ? { key, to: info.to, kind: fallback } : null);
     let cancelled = false;
     if (liveOn && engine && engine.status === "ready") {
-      classifyMoveKind(engine, prevSans, stripSuffix(mvSan)).then((k) => {
+      classifyMoveKind(engine, prevSans, stripSuffix(mvSan), 12, fenRoot).then((k) => {
         if (!cancelled && k) setMoveIcon({ key, to: info.to, kind: k });
       }).catch(() => {});
     }
@@ -15934,14 +15985,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
         const prev = [...setup, ...it.path.slice(0, -1)];
         const full = [...setup, ...it.path];
         const m = {};
-        if (!("adopt" in it.node)) {
+        if (!("adopt" in it.node) && !fenRoot) {
           try { const lc = await fetchLichess(prev, false); const hit = lc && lc.moves && lc.moves.find((x) => stripSuffix(x.san) === stripSuffix(it.node.san)); m.adopt = hit ? hit.adopt : null; } catch { m.adopt = null; }
         }
         if (liveOn && engine && engine.status === "ready") {
           // (v0.2.6 버그 수정) 구버전 퍼즐(kind/ev 미기록)을 배경에서 보강할 때도 얕은 depth(10)
           // 대신 게임 리뷰와 동일한 REVIEW_DEPTH로 평가해, 나중에 다시 봤을 때 값이 달라지지 않게 한다.
-          if (it.node.ev == null) { try { const ev = await engine.evaluate(sansToFen(full), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); const w = posEvalToWhite(ev, full); if (w) m.ev = w; } catch { } }
-          if (it.node.kind == null) { try { const k = await classifyMoveKind(engine, prev, stripSuffix(it.node.san), REVIEW_DEPTH); if (k) m.kind = k; } catch { } }
+          if (it.node.ev == null) { try { const ev = await engine.evaluate(fenOfRoot(fenRoot, full), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); const w = posEvalToWhite(ev, full, fenRoot); if (w) m.ev = w; } catch { } }
+          if (it.node.kind == null) { try { const k = await classifyMoveKind(engine, prev, stripSuffix(it.node.san), REVIEW_DEPTH, fenRoot); if (k) m.kind = k; } catch { } }
         }
         if (cancelled) return;
         if (Object.keys(m).length) setMeta((pm2) => ({ ...pm2, [key]: { ...pm2[key], ...m } }));
@@ -16020,8 +16071,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     if (!canEditPuzzle) return "편집 권한이 없어요.";
     let finalCand = cand;
     if (cand.manual) {
-      const board = boardFromSans([...setup, ...path]);
-      const color = (setup.length + path.length) % 2 === 0 ? "w" : "b";
+      const board = boardOfRoot(fenRoot, [...setup, ...path]);
+      const color = plyIsWhite(setup.length + path.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
       if (!sanSrc(board, cand.san, color)) return "불법 수입니다.";
       finalCand = { san: decorateSan(board, cand.san, color), kind: null, ev: null, adopt: null };
     }
@@ -16077,7 +16128,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
     try {
       const th = primaryTheme(puzzle);
       const opts = { ...puzzleThemeOpts(th, targetInput, puzzleTypeInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedTagSeq() };
-      const gen = await genPuzzleTree(engine, setup, opts);
+      const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
       if (!gen) { setRegenErr("이 기준으로는 트리를 만들 수 없어요(기준을 낮춰보세요)."); return; }
       try { await persistEdit(gen.tree, gen.lines, gen.seq, { target: targetInput, puzzleType: puzzleTypeInput }); }
       catch { setRegenErr("저장에 실패했어요. 잠시 후 다시 시도해주세요."); }
@@ -16208,7 +16259,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
               // 단계마다 독립된 연출만 보이도록 각 단계를 정확히 그 단계에서만 켠다 — 1단계: 도착
               // 칸만, 2단계: 기물 흔들림만, 3단계: 기물 흔들림+경로 반짝임(도착 칸 단독 표시는
               // 3단계에서 경로의 마지막 칸이 대신하므로 끈다).
-              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? legalDests(board, sel[0], sel[1], color, ep) : []} showEval={false} interactive={userToMove}
+              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove}
                   hintTo={hintLevel === 1 && hintInfo ? hintInfo.to : null} hintFrom={(hintLevel === 2 || hintLevel === 3) && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel === 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
@@ -16269,7 +16320,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, solve
                 : <Board board={board} flip={userColor === "b"} size={boardSize} showEval={false} interactive={false} />}
             </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
-            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupSans={setup} setupLen={setup.length} onPick={onPickNode} canEdit={canEditPuzzle} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} />
+            <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupSans={setup} setupLen={setup.length} onPick={onPickNode} canEdit={canEditPuzzle} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} fenRoot={fenRoot} />
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다.
                 (v0.3.4 기능) 사용자 요청 — 개발자/공동개발자뿐 아니라 이 퍼즐의 생성자 본인도(1시간
                 편집 주기 안에서) 이 도구 전체를 그대로 쓸 수 있다. 주기가 아직 안 지났으면 도구
@@ -16586,7 +16637,8 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
   const avgRating = useMemo(() => {
     if (broken) return null;
     const setupForRating = [...(p.setupSans || []), p.mistakeSan].filter(Boolean);
-    return puzzleAverageRating(allLinesFull.map((l) => puzzleLineBaseRating(setupForRating, puzzleTree, l)));
+    const fenRootForRating = (!p.setupSans || !p.setupSans.length) && p.fen ? parseFenFull(p.fen) : null;
+    return puzzleAverageRating(allLinesFull.map((l) => puzzleLineBaseRating(setupForRating, puzzleTree, l, fenRootForRating)));
   }, [allLinesFull, puzzleTree, broken, p.id]);
   const stars = isSolved ? 3 : starsOf(solvedLineTagsOf(p, solvedTags).size, totalLines);
   // (20차 UI1) 테마별 색감·기하학 패턴으로 카드 구별 — 해결 상태 배경(초록/아이보리)은 그대로 두고,
@@ -19300,6 +19352,8 @@ const CHANGELOG = [
       "/about 소개 페이지 첫 화면이 더 세련되게 새 단장했어요 — '기능 둘러보기' 버튼과, 원하는 소개로 바로 이동하는 칩 버튼이 추가됐어요.",
       "게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작한 경우에도, 대국 시작 위치와 완전히 같은 방식으로 수 체계 등급(최선의 수·탁월한 수·유일한 수 등)과 코치 설명이 정확히 매겨져요.",
       "오프닝 이름·마스터 대국 통계처럼 애초에 표준 시작 위치 전용인 정보만, FEN 포지션에서는 자연스럽게 표시되지 않아요.",
+      "학습 탭 보드 편집기에서 '이 포지션으로 퍼즐 만들기' 버튼으로, 대국 없이 원하는 배치만으로도 새 전술 퍼즐을 바로 만들 수 있어요.",
+      "모든 퍼즐이 시작 포지션을 FEN 코드로도 갖게 됐어요 — 앞으로 퍼즐을 더 다양한 방식으로 공유하고 다룰 수 있는 기반이에요.",
     ]
   },
   {
@@ -20545,6 +20599,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
         const data = await puzzleFetch(no);
         if (!data) throw new Error("퍼즐 데이터를 찾을 수 없음");
         const setup = [...(data.setupSans || []), data.mistakeSan].filter(Boolean);
+        const fenRoot = (!data.setupSans || !data.setupSans.length) && data.fen ? parseFenFull(data.fen) : null;
         const th = primaryTheme(data);
         // (regenerateWithTarget과 동일) 개발자가 이 퍼즐에 직접 지정해 둔 목표 cp·종류가 있으면
         // 그대로 이어받고, 없으면 테마 기본값을 쓴다 — "희생" 테마는 지금 트리가 고른 첫 수(탁월한
@@ -20553,7 +20608,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
         const curLines = treeLinesOf(puzzleTreeOf(data));
         const firstSan = th === "sacrifice" ? (curLines[0] && curLines[0].sans[0]) : null;
         const opts = { ...puzzleThemeOpts(th, ov.target, ov.puzzleType), firstSan, tagSeq: 0 };
-        const gen = await genPuzzleTree(engine, setup, opts);
+        const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
         if (!gen) throw new Error("이 기준으로는 트리를 만들 수 없음");
         await sbUpsert("puzzles", { no, data: { ...data, tree: gen.tree, lines: gen.lines } });
         // 재생성한 트리가 실제로 보이도록, 이 번호에 남아있을 수 있는 개발자 override(더 우선시됨)를 함께 지운다.
@@ -25110,8 +25165,12 @@ export default function App() {
   }, [user, logout]);
   const unlockOpening = useCallback((keyStr) => { let isNew = false; setUnlocked((p) => { if (p.has(keyStr)) return p; isNew = true; const n = new Set(p); const parts = keyStr.split(" ").filter(Boolean); for (let i = 1; i <= parts.length; i++) n.add(parts.slice(0, i).join(" ")); return n; }); if (isNew) setNewUnlocks((n) => n + 1); return isNew; }, []);
   const onLearned = useCallback((name) => { setToast({ name }); setTimeout(() => setToast(null), 2600); }, []);
-  const onSavePuzzle = useCallback((pz) => {
-    if (deletedPuzzles.has(pz.id) && !solved.has(pz.id)) return;
+  const onSavePuzzle = useCallback((pzIn) => {
+    if (deletedPuzzles.has(pzIn.id) && !solved.has(pzIn.id)) return;
+    // (v0.4.1 기능, item 5) 모든 퍼즐이 시작 포지션을 FEN으로도 갖도록 — 대국 기반(setupSans 있음)
+    // 퍼즐은 PGN(setupSans)에서 자동으로 FEN을 계산해 채워 넣는다(PGN→FEN 자동). FEN 기반으로
+    // 직접 생성된 퍼즐(setupSans 없음)은 생성 시점에 이미 pz.fen이 채워져 있으므로 그대로 둔다.
+    const pz = (pzIn.fen || !pzIn.setupSans || !pzIn.setupSans.length) ? pzIn : { ...pzIn, fen: sansToFen(pzIn.setupSans) };
     if (!isPuzzleSequenceValid(pz)) { console.warn("퍼즐 저장 거부(불법 수순):", pz.id); return; }
     setPuzzles((prev) => {
       const i = prev.findIndex((x) => x.id === pz.id);
