@@ -26,6 +26,17 @@
 
 ## 버전 기록
 
+### OpenChess v0.4.2 — 2026/8/28
+
+**기능 — FEN 리뷰/분석 등급·코치 설명 완전 동등화 (item 4)**
+사용자 요청 — "분석/리뷰 기능에서의 FEN 모드 호환성 완료(PGN과 차이 X)". 그동안 FEN 자유 탐색·평가치 바·엔진 라인·무승부 판정은 표준 대국 리뷰와 동등했지만, 실제 수 등급(최선의 수·탁월한 수·유일한 수 등)과 코치 카드가 참조하는 MEC(수 설명) 로직만은 `recaptureFact`를 비롯한 20개 넘는 하위 "Fact" 함수가 전부 `boardFromSans`(항상 표준 시작 위치를 재생)를 내부적으로 다시 호출하고 있어, 이 부분만 FEN 모드에서 부정확하거나(ReviewPage의 자유 탐색 수는 등급 자체가 아예 비어 있었음, LearnTab의 마지막 수 배지도 FEN 모드에서는 통째로 꺼져 있었음) 미묘하게 어긋날 수 있었다(analyzeGame 경로는 try/catch로 죽지는 않되 "유일한 수" 강등 같은 부가 보정이 가끔 안 걸리는 정도).
+
+`castleEpFacts`·`controlFacts`·`pieceMoveState`(피스 전개 이력 추적 — 시작 보드를 `fenRoot.board`로, 색상 판정을 `plyIsWhite`로 일반화)를 포함해 mecFacts가 의존하는 함수 전부에 `fenRoot`를 threading해, 내부의 모든 `boardFromSans`/`sansToFen` 호출을 이미 있던 fenRoot-aware 헬퍼(`boardOfRoot`/`fenOfRoot`)로 교체했다. `ownPriorMoveWasSacrifice`도 동일하게 고쳤다. 이어서 세 호출부를 실제로 fenRoot를 넘기도록 수정했다 — ① `ReviewPage`의 자유 탐색 채점 effect(더 이상 `fenRoot`일 때 `setExploreMove(null)`로 비워 버리지 않는다), ② `ReviewPage`의 코치 카드 `mecNotes`, ③ `LearnTab`의 "마지막 수 재평가" effect(`evalMoveKind`에도 fenRoot 파라미터를 추가) — 세 곳 모두 이제 표준 리뷰와 완전히 같은 코드 경로로 등급·코치 설명을 계산한다. `analyzeGame`(게임 리뷰 본편)의 `recaptureFact` 호출에도 fenRoot를 연결해, 부가 보정이 항상 정확히 걸리도록 했다.
+
+이론 수 판정(`isBookMoveAt`)만은 fenRoot일 때 건너뛴다 — 표준 시작 위치를 전제하는 이론 DB 자체가 임의의 FEN 포지션에는 대응되는 데이터가 없으므로(오프닝 이름·마스터 대국 통계와 같은 성격), 값을 지어내는 대신 자연스럽게 비워 두는 쪽이 맞다는 판단이다. 퍼즐 풀이 화면의 등급 판정(`classifyMoveKindDetailed` 등)은 손대지 않았다 — 퍼즐은 아직 FEN 시작 위치를 지원하지 않아(item 5, 다음 작업) 이번 범위에 해당하지 않는다.
+
+`npm run build` 통과를 확인했고, Playwright로 앱을 실제로 띄워 콘솔에 새 런타임 오류가 없는 것을 확인했다.
+
 ### OpenChess v0.4.1 — 2026/8/28
 
 **버그 수정 — 버전 표시가 v0.3.9에 멈춰 있던 문제**

@@ -2005,9 +2005,9 @@ function isSacrifice(board, sanRaw, color) {
 // 뿐 새로 찾아낸 탁월한 수가 아니므로 다시 브릴리언트로 태그하지 않는다. 예: 15...Qxd2(퀸 희생)
 // 다음의 16...Nf3+는 그 자체로도 SEE상 희생처럼 보이지만(나이트가 gxf3에 잡힘), 직전 수가 이미
 // 희생이었던 연장선이므로 중복으로 탁월 태그를 붙이지 않는다.
-function ownPriorMoveWasSacrifice(prevSans, color) {
+function ownPriorMoveWasSacrifice(prevSans, color, fenRoot) {
   if (!prevSans || prevSans.length < 2) return false;
-  try { return isSacrifice(boardFromSans(prevSans.slice(0, -2)), prevSans[prevSans.length - 2], color); } catch { return false; }
+  try { return isSacrifice(boardOfRoot(fenRoot, prevSans.slice(0, -2)), prevSans[prevSans.length - 2], color); } catch { return false; }
 }
 function kingPos(board, color) { for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p && p.c === color && p.t === "K") return [r, c]; } return null; }
 function isAttacked(board, tr, tc, byColor) {
@@ -3317,10 +3317,12 @@ function poolWorker(pool, idx, engine) {
 // 위치부터 둔 수순을 리뷰할 때도 재사용할 수 있도록 시작 위치를 선택적으로 받는다(parseFenFull이
 // 돌려주는 {board, turn, rights, ep} 형태). 안 넘기면(기존 모든 호출부) 예전과 완전히 같이 표준
 // 시작 위치·백선수를 가정한다 — 하위 호환. sanSrc/isSacrifice처럼 board를 직접 받는 판정은 이
-// 함수가 넘겨주는 실제 board(fenRoot부터 재생된)를 그대로 쓰므로 자동으로 올바르지만, recaptureFact
-// 처럼 sans 배열만 받아 내부적으로 boardFromSans(항상 표준 시작 가정)로 다시 재생하는 보조 판정
-// 함수 몇 개는 fenRoot 리뷰에서 잘못된 보드를 볼 수 있다 — try/catch로 감싸져 있어 죽지는 않고,
-// "유일한 수" 강등처럼 부가적인 등급 보정 하나가 가끔 안 걸리는 정도로만 영향을 준다.
+// 함수가 넘겨주는 실제 board(fenRoot부터 재생된)를 그대로 쓰므로 자동으로 올바르다. (v0.4.1
+// 기능) recaptureFact처럼 sans 배열만 받아 내부적으로 다시 보드를 재생하는 보조 판정 함수들도
+// boardOfRoot/fenOfRoot(fenRoot가 없으면 기존 표준 시작 위치 동작 그대로)로 바뀌어 fenRoot를
+// 정확히 반영한다 — "유일한 수" 강등 같은 부가 등급 보정도 이제 fenRoot 리뷰에서 정확히 걸린다.
+// isBookMoveAt(이론 수 판정)만은 표준 시작 위치 전제 DB 자체가 임의 FEN에 대응되지 않아 fenRoot일
+// 때 건너뛴다.
 async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, onMove, fenRoot) {
   // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
   fullSans = decorateLine(fullSans);
@@ -3452,7 +3454,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     // 등급 — (20차) '최선의 수'(별)는 엔진 1순위 수를 실제로 뒀을 때만(loss 노이즈로 차선 수에 별이 붙는 것 방지)
     let kind = tierOf(loss);
     if (kind === "best" && !matched) kind = "excellent";
-    if (isBookMoveAt(fullSans.slice(0, i).join(" "), fullSans[i])) kind = "book";
+    if (!fenRoot && isBookMoveAt(fullSans.slice(0, i).join(" "), fullSans[i])) kind = "book";
     else {
       // (버그 수정) '완화' 판정을 둔 뒤 평가(playedCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로
       // 한다 — 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
@@ -3479,7 +3481,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
       const gap = posEval[i].second == null ? 9999 : (bestCp - posEval[i].second);
       const secondStillWinningBig = posEval[i].second != null && posEval[i].second >= 200;
       let singleRecapture = false;
-      try { const rc = recaptureFact(fullSans.slice(0, i), fullSans[i], color); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+      try { const rc = recaptureFact(fullSans.slice(0, i), fullSans[i], color, fenRoot); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
       if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture && !badlyLosing && !secondStillWinningBig) kind = "only";
       // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데, 그 이점을 응징 못 해 평가치가
       // 의미있게 감소(loss≥100)하되, 결과가 뒤집힐(패배) 정도는 아닌 경우(playedCp≥-30).
@@ -6208,8 +6210,8 @@ function tensionFacts(board, color) {
 }
 // 캐슬링/앙파상 권리 — replaySans가 매 수마다 이미 누적 계산해 두는 rights/ep를 그대로 재사용한다
 // (sansToFen과 같은 캐시를 공유하므로 별도 재계산 비용이 거의 없다).
-function castleEpFacts(sans, color) {
-  const { rights, ep } = replaySans(sans);
+function castleEpFacts(sans, color, fenRoot) {
+  const { rights, ep } = fenRoot ? replayFromFen(fenRoot, sans) : replaySans(sans);
   const enemy = color === "w" ? "b" : "w";
   const mineHas = color === "w" ? (rights.K || rights.Q) : (rights.k || rights.q);
   const enemyHas = enemy === "w" ? (rights.K || rights.Q) : (rights.k || rights.q);
@@ -6237,14 +6239,14 @@ function callEvaluateMulti(engine, fen, depth, multipv, movetime, slot) {
 // 후보를 뒀다면 상대가 어떻게 응징하는지까지 보여준다. 2순위 수의 UCI 자체는 analyzeGame의
 // posEval에 저장돼 있지 않아(cp만 보존) 새로 MultiPV-2 평가가 필요하지만, 그다음 응징 라인은
 // 새 로직을 만들지 않고 punishmentFacts와 똑같이 genPunishLine을 재사용한다.
-async function onlyMoveRefutation(engine, sansBeforeMove, plies = 2) {
+async function onlyMoveRefutation(engine, sansBeforeMove, plies = 2, fenRoot) {
   if (!engine || typeof engine.evaluateMulti !== "function") return null;
   try {
     const color = sansBeforeMove.length % 2 === 0 ? "w" : "b";
     const lines = await callEvaluateMulti(engine, sansToFen(sansBeforeMove), 14, 2, 900, "review-only");
     const second = lines && lines[1];
     if (!second || !second.uci) return null;
-    const altSan = uciToSan(boardFromSans(sansBeforeMove), second.uci, color);
+    const altSan = uciToSan(boardOfRoot(fenRoot, sansBeforeMove), second.uci, color);
     if (!altSan) return null;
     const continuation = await genPunishLine(engine, [...sansBeforeMove, altSan], plies, 900, "review-only");
     if (!continuation.length) return null;
@@ -6276,9 +6278,9 @@ const MEC_OPENING_PLY_LIMIT = 24; // 한 진영 기준 12수 안팎 — 캐슬�
 // FEN 기반 — 이 수가 새로 만든 통제력. 이동한 기물이 도착 칸에서 실제로 공격 가능한 칸들을 훑어,
 // 상대 기물이면 위협(SEE상 순이득이 있을 때만 — 그냥 막혀 있는 공격은 위협이 아니다), 내 기물이면
 // "이 수 덕분에 새로 안전해졌는지"(이 수 전엔 뺏길 수 있었는데 지금은 아님)만 방어로 인정한다.
-function controlFacts(sansBeforeMove, san, color) {
+function controlFacts(sansBeforeMove, san, color, fenRoot) {
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle) return { threats: [], defends: [] };
   const after = applySan(before, san, color);
@@ -6309,14 +6311,14 @@ function controlFacts(sansBeforeMove, san, color) {
 // 함께 돌려줘(현재 각 칸에 놓인 기물의 id) 아래 MEC 판정이 "이 기물이 몇 번째로 움직이는 건지"를
 // 이 수를 두기 직전 상태 기준으로 바로 조회할 수 있게 한다. firstMovePly는 그 기물이 시작 칸을 처음
 // 떠난 수의 인덱스(그 시점 보드를 재구성해, "그때 곧장 지금 칸으로 갈 수 있었는지" 같은 판정에 쓴다).
-function pieceMoveState(sans) {
-  let board = startBoard();
+function pieceMoveState(sans, fenRoot) {
+  let board = fenRoot ? fenRoot.board : startBoard();
   const grid = {};
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = board[r][c]; if (p) grid[r + "," + c] = p.c + p.t + sqName(r, c); }
   const counts = {}, firstMovePly = {};
   const bump = (id, ply) => { if (!id) return; if (!counts[id] && ply != null) firstMovePly[id] = ply; counts[id] = (counts[id] || 0) + 1; };
   sans.forEach((s, i) => {
-    const color = i % 2 === 0 ? "w" : "b";
+    const color = plyIsWhite(i, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
     const info = sanSrc(board, s, color);
     if (!info) return;
     if (info.castle) {
@@ -6342,9 +6344,9 @@ function pieceMoveState(sans) {
 // 몰았다. 이제 "두 칸 갈 수 있었는데 한 칸만 간 바로 그 수"에만, 그리고 그 수 자체가 이미 나쁜 등급
 // (kind)이고 상대 기물을 쫓아내는 등 새 위협을 전혀 만들지 않았을 때만 붙인다 — 좋은 수거나 뭔가를
 // 얻어낸 수라면 애초에 "낭비"라고 부를 수 없다.
-function tempoWasteFact(sansBeforeMove, san, color, kind) {
+function tempoWasteFact(sansBeforeMove, san, color, kind, fenRoot) {
   if (MEC_GOOD_KINDS.includes(kind)) return null; // 좋은 수엔 낭비랄 게 없다
-  const board = boardFromSans(sansBeforeMove);
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || info.piece !== "P" || info.isCap || info.castle) return null;
   const [fr, fc] = info.from, [tr, tc] = info.to;
@@ -6353,7 +6355,7 @@ function tempoWasteFact(sansBeforeMove, san, color, kind) {
   const dir = color === "w" ? -1 : 1;
   const twoStepR = fr + 2 * dir;
   if (board[twoStepR] && board[twoStepR][fc]) return null; // 두 칸째가 애초에 막혀 있었으면 낭비가 아니다
-  const ctrl = controlFacts(sansBeforeMove, san, color);
+  const ctrl = controlFacts(sansBeforeMove, san, color, fenRoot);
   if (ctrl.threats.length) return null; // 상대 기물을 쫓아내는 등 새 위협을 만들었다면 낭비가 아니다
   return { kind: "tempo" };
 }
@@ -6363,12 +6365,12 @@ function tempoWasteFact(sansBeforeMove, san, color, kind) {
 // 시작 칸에서 곧장 한 수만에 갈 수 있는 자리였다면(=시작 칸을 처음 떠난 그 순간의 보드를 다시
 // 만들어 확인) — 상대에게 폰 한 수로 템포를 거저 내주며 같은 자리에 두 수를 들여 도착한 셈이다.
 // 좋은 수(kind가 이미 좋음)면 그럴 만한 이유가 있었을 가능성이 높으므로 지적하지 않는다.
-function pieceDetourFact(sansBeforeMove, san, color, kind) {
+function pieceDetourFact(sansBeforeMove, san, color, kind, fenRoot) {
   if (MEC_GOOD_KINDS.includes(kind)) return null;
-  const board = boardFromSans(sansBeforeMove);
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || info.castle || !["N", "B"].includes(info.piece)) return null;
-  const { grid, counts, firstMovePly } = pieceMoveState(sansBeforeMove);
+  const { grid, counts, firstMovePly } = pieceMoveState(sansBeforeMove, fenRoot);
   const id = grid[info.from[0] + "," + info.from[1]];
   if (!id || !counts[id]) return null; // 이 기물의 첫 이동이면 대상이 아니다
   const originSq = id.slice(2); // "wNb1" -> "b1"
@@ -6383,7 +6385,7 @@ function pieceDetourFact(sansBeforeMove, san, color, kind) {
   if (!chasedByPawn) return null;
   const ply = firstMovePly[id];
   if (ply == null) return null;
-  const originBoard = boardFromSans(sansBeforeMove.slice(0, ply));
+  const originBoard = boardOfRoot(fenRoot, sansBeforeMove.slice(0, ply));
   const directCap = !!originBoard[tr][tc];
   if (!canMove(originBoard, info.piece, color, originR, originC, tr, tc, directCap)) return null;
   return { kind: "detour", piece: info.piece };
@@ -6395,14 +6397,14 @@ function pieceDetourFact(sansBeforeMove, san, color, kind) {
 // 캡처라면 "기물을 교환한 것뿐"이라는 가장 직관적인 이유를 짚어준다. 되잡을 수 있는 내 기물이
 // 이 자리 하나뿐이면(대안이 없어 굳이 설명할 필요가 없을 만큼 명백한 수) onlyCandidate를 함께
 // 돌려준다 — "유일한 수" 등급 판정이 이런 수를 제외하는 데 재사용한다.
-function recaptureFact(sansBeforeMove, san, color) {
+function recaptureFact(sansBeforeMove, san, color, fenRoot) {
   if (!sansBeforeMove.length) return null;
   const enemy = color === "w" ? "b" : "w";
   const lastSan = sansBeforeMove[sansBeforeMove.length - 1];
-  const prevBoard = boardFromSans(sansBeforeMove.slice(0, -1));
+  const prevBoard = boardOfRoot(fenRoot, sansBeforeMove.slice(0, -1));
   const oppInfo = sanSrc(prevBoard, lastSan, enemy);
   if (!oppInfo || !oppInfo.isCap) return null;
-  const board = boardFromSans(sansBeforeMove);
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || !info.isCap || info.castle) return null;
   if (info.to[0] !== oppInfo.to[0] || info.to[1] !== oppInfo.to[1]) return null;
@@ -6412,9 +6414,9 @@ function recaptureFact(sansBeforeMove, san, color) {
   return { piece: info.piece, capturedPiece: captured.t, onlyCandidate };
 }
 // "반격" — 그냥 도망만 간 게 아니라 되받아친 것이다.
-function evasionFact(sansBeforeMove, san, color) {
+function evasionFact(sansBeforeMove, san, color, fenRoot) {
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle || info.piece === "P") return null;
   const [fr, fc] = info.from, [tr, tc] = info.to;
@@ -6441,8 +6443,8 @@ function evasionFact(sansBeforeMove, san, color) {
 // FEN 기반 — 폰끼리 교환. 이 수가 폰으로 폰을 잡는 수(앙파상 포함)라면, 잡은 뒤 내 폰이 중앙에
 // 더 가까워졌는지(같은 자리 유지 포함)로 좋은/나쁜 선택을 가른다 — "폰 교환은 사이드에서 중앙
 // 쪽으로 하라"는 원칙을 SEE 없이 파일 거리만으로 그대로 코드화한 것.
-function pawnTradeFact(sansBeforeMove, san, color) {
-  const board = boardFromSans(sansBeforeMove);
+function pawnTradeFact(sansBeforeMove, san, color, fenRoot) {
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || info.piece !== "P" || !info.isCap || info.castle) return null;
   const [tr, tc] = info.to;
@@ -6458,9 +6460,9 @@ function pawnTradeFact(sansBeforeMove, san, color) {
 // FEN 기반 — 상호 폰 긴장. 이 수(폰을 잡지 않는 전진)가 내 폰을 상대 폰과 서로 대각선으로 마주보게
 // 만들면(둘 다 서로를 잡을 수 있는 상태 — 아직 어느 쪽도 잡지 않은 순수 긴장) 그 자체를 사실로
 // 짚어준다. 폰의 대각선 캡처는 서로 마주보면 항상 상호적이라, 한쪽만 확인하면 된다.
-function pawnTensionFact(sansBeforeMove, san, color) {
+function pawnTensionFact(sansBeforeMove, san, color, fenRoot) {
   const enemy = color === "w" ? "b" : "w";
-  const board = boardFromSans(sansBeforeMove);
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || info.piece !== "P" || info.isCap || info.castle) return null;
   const after = applySan(board, san, color);
@@ -6485,10 +6487,10 @@ function mecPick(variants, seed) { return variants[((seed % variants.length) + v
 // 둔 수가 엔진 최선수가 아닐 때만 채워짐)이 바로 그 기물을 잡는 수라면, 잡는 게 객관적으로
 // 최선이었다는 사실까지 구체적으로 밝힌다.
 const MEC_GOOD_KINDS = ["brilliant", "best", "only", "excellent", "good", "book"];
-function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan) {
+function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan, fenRoot) {
   if (!MEC_GOOD_KINDS.includes(kind)) return null;
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info) return null;
   const hanging = [];
@@ -6518,9 +6520,9 @@ function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan) {
 // 팽팽하거나 살짝 밀리는 국면이 흔해서, 이기고 있는데도 "지고 있을 때는 교환을 피하는 게 좋다"는
 // 엉뚱한 문구가 나왔다. 이 수를 두기 직전 엔진 평가(beforeCp, mover 관점 — 양수면 이 수를 두는
 // 쪽이 유리)가 있으면 그걸로 유·불리를 가르고, 평가가 없을 때만(자유 탐색 등) materialDiff로 대체한다.
-function exchangeFact(sansBeforeMove, san, color, kind, beforeCp) {
+function exchangeFact(sansBeforeMove, san, color, kind, beforeCp, fenRoot) {
   if (!kind) return null;
-  const board = boardFromSans(sansBeforeMove);
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || !info.isCap || info.castle || info.piece === "P") return null;
   const captured = board[info.to[0]][info.to[1]];
@@ -6546,8 +6548,8 @@ function attacksSquareRaw(board, fr, fc, tr, tc, color) {
 // 순이득) 잡히게 된다. 이 수를 두기 전에는 Y가 이미 공짜로 잡히는 상태가 아니었어야(=이 수가 원인)
 // 하고, 이 수를 둔 뒤에는 실제로 합법적으로 잡을 수 있어야 한다. 대부분 이어지는 수가 최선의 수뿐인
 // 명확하고 강력한 전술이라, mecFacts에서 다른 어떤 사실보다 우선한다.
-function removeDefenderFact(sansBeforeMove, san, color) {
-  const before = boardFromSans(sansBeforeMove);
+function removeDefenderFact(sansBeforeMove, san, color, fenRoot) {
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || !info.isCap || info.castle) return null;
   const enemy = color === "w" ? "b" : "w";
@@ -6580,9 +6582,9 @@ function removeDefenderFact(sansBeforeMove, san, color) {
 // 요청"이다 — 잡히면 나도 똑같이 되잡을 수 있어 일방적인 위협이 아니라 대등한 제안이기 때문이다.
 // 그 칸이 아군에 보호받고 있으면(잡혀도 바로 되잡음) "교환 요청", 보호받지 못하면(그리고 이 수
 // 자체가 탁월한 수가 아니면) 그냥 "공짜로 내주는" 것이다.
-function exchangeOfferFact(sansBeforeMove, san, color, kind) {
+function exchangeOfferFact(sansBeforeMove, san, color, kind, fenRoot) {
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
   const after = applySan(before, san, color);
@@ -6604,16 +6606,16 @@ function exchangeOfferFact(sansBeforeMove, san, color, kind) {
 }
 // R2 — 교환 요청에 대한 응답. 상대의 직전 수가 exchangeOfferFact의 "교환 요청"이었고, 그 요청이
 // 걸린 내 기물을 이번 수로 잡으면 "수락", 그 기물을 다른 칸으로 옮겨 대치를 풀면 "거절"로 판정한다.
-function exchangeOfferResponseFact(sansBeforeMove, san, color) {
+function exchangeOfferResponseFact(sansBeforeMove, san, color, fenRoot) {
   if (!sansBeforeMove.length) return null;
   const enemy = color === "w" ? "b" : "w";
   const lastSan = sansBeforeMove[sansBeforeMove.length - 1];
   const prevSans = sansBeforeMove.slice(0, -1);
   let offer;
-  try { offer = exchangeOfferFact(prevSans, lastSan, enemy); } catch { return null; }
+  try { offer = exchangeOfferFact(prevSans, lastSan, enemy, fenRoot); } catch { return null; }
   if (!offer || !offer.offered) return null;
-  const board = boardFromSans(sansBeforeMove);
-  const oppInfo = sanSrc(boardFromSans(prevSans), lastSan, enemy);
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
+  const oppInfo = sanSrc(boardOfRoot(fenRoot, prevSans), lastSan, enemy);
   if (!oppInfo) return null;
   const [orr, occ] = oppInfo.to;
   const offerer = board[orr][occ];
@@ -6632,28 +6634,28 @@ function exchangeOfferResponseFact(sansBeforeMove, san, color) {
   return null;
 }
 // R3/R11 — 오프닝 단계 판정(나이트·비숍 네 개가 모두 홈 칸을 떠났고 캐슬링도 마쳤으면 종료).
-function isOpeningPhase(sansBeforeMove, color) {
-  const board = boardFromSans(sansBeforeMove);
+function isOpeningPhase(sansBeforeMove, color, fenRoot) {
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const homeRow = color === "w" ? 7 : 0;
   for (const [t, cols] of [["N", [1, 6]], ["B", [2, 5]]]) {
     for (const c of cols) { const p = board[homeRow][c]; if (p && p.c === color && p.t === t) return true; }
   }
-  const castled = sansBeforeMove.some((s, i) => (i % 2 === 0 ? "w" : "b") === color && /^O-O/.test(s));
+  const castled = sansBeforeMove.some((s, i) => (plyIsWhite(i, fenRoot ? fenRoot.turn : "w") ? "w" : "b") === color && /^O-O/.test(s));
   return !castled;
 }
 // R3/R11 — 재전개/재배치. 같은 나이트·비숍을 3번 이상(2번까지는 흔한 정상 전개로 보고 무시) 움직였는데
 // 그 수 자체가 좋은 수라면, 여러 번 움직인 이유(더 나은 자리를 찾아가는 것)를 짚어준다. 오프닝
 // 단계에서는 "재전개", 그 이후에는 "재배치"로 용어만 바꾼다. 상대 기물을 잡는 수는 목적이 캡처지
 // 자리 찾기가 아니므로 제외한다.
-function redeployFact(sansBeforeMove, san, color, kind) {
+function redeployFact(sansBeforeMove, san, color, kind, fenRoot) {
   if (!MEC_GOOD_KINDS.includes(kind)) return null;
-  const board = boardFromSans(sansBeforeMove);
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || info.castle || info.isCap || !["N", "B"].includes(info.piece)) return null;
-  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const { grid, counts } = pieceMoveState(sansBeforeMove, fenRoot);
   const id = grid[info.from[0] + "," + info.from[1]];
   if (!id || (counts[id] || 0) < 2) return null;
-  return { opening: isOpeningPhase(sansBeforeMove, color), piece: info.piece };
+  return { opening: isOpeningPhase(sansBeforeMove, color, fenRoot), piece: info.piece };
 }
 // (공용) attackerColor 진영이 지금 이 칸(r,c)을 실제로 공격(캡처 가능한 방식으로)하는 기물이 몇
 // 개인지 센다 — overprotectFact가 여러 과보호 후보 중 "상대 공격자가 많은 기물"부터 우선하는 데 쓴다.
@@ -6702,9 +6704,9 @@ function wouldThreatenIfEnemyReaches(board, r, c, pieceType, color) {
 // 기물로 바로 그 칸에 와서(다음 수) 내 기물을 새로 위협할 수 있었다면 "직접 예방 수"다. 시각화용으로
 // 상대가 그 칸에 들어왔을 진입 경로(attackerFrom→sq)와, 그걸 막은 내 응수 경로(이 수 자체의
 // from→to, sq와 동일)도 함께 돌려준다.
-function directPreventionFact(sansBeforeMove, san, color) {
+function directPreventionFact(sansBeforeMove, san, color, fenRoot) {
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle || info.isCap) return null;
   const [tr, tc] = info.to;
@@ -6718,9 +6720,9 @@ function directPreventionFact(sansBeforeMove, san, color) {
 // 상대가 안전하게 갈 수 있었지만(갔다면 내 기물을 위협했을 것) 이 폰 때문에 더 이상 안전하지
 // 않게 된 칸이 있다면 "간접 예방 수"다. 시각화용으로 상대의 진입 경로(attackerFrom→sq)와, 지금
 // 그 칸을 컨트롤하는 내 기물의 칸에서 그 칸까지의 경로(myFrom→sq, myFrom은 이 수의 도착 칸)도 돌려준다.
-function indirectPreventionFact(sansBeforeMove, san, color) {
+function indirectPreventionFact(sansBeforeMove, san, color, fenRoot) {
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle || info.piece !== "P" || info.isCap) return null;
   const [tr, tc] = info.to;
@@ -6745,9 +6747,9 @@ function indirectPreventionFact(sansBeforeMove, san, color) {
 // 제외)에 새로 공격자 하나를 추가했다면 그 자체로 "잠재 위협"이다. 미는 기물(비숍·룩·퀸)이면 첫
 // 번째로 막힌 상대 기물 뒤에 놓인 기물까지(한 겹만) 대상에 포함한다 — 앞의 기물이 사라지거나
 // 비키면 그 즉시 노출되는 배터리이기 때문이다.
-function latentThreatFact(sansBeforeMove, san, color) {
+function latentThreatFact(sansBeforeMove, san, color, fenRoot) {
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
   const after = applySan(before, san, color);
@@ -6794,16 +6796,16 @@ function latentThreatFact(sansBeforeMove, san, color) {
 // 공격자 0으로 동률) 기물 가치가 높다는 이유만으로 아직 한 번도 안 움직인 퀸을 "과보호 대상"으로
 // 짚는 경우가 있었다 — 누가 봐도 실제로 의미 있는 대상은 그 자리에서 진짜로 지켜지는 폰 쪽이었다.
 // 전개된 기물끼리는 여전히 공격자 수 내림차순, 그다음 기물 가치 내림차순으로 우선한다.
-function overprotectFact(sansBeforeMove, san, color) {
+function overprotectFact(sansBeforeMove, san, color, fenRoot) {
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle) return null;
   const after = applySan(before, san, color);
   const [tr, tc] = info.to;
   const mover = after[tr][tc];
   if (!mover) return null;
-  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const { grid, counts } = pieceMoveState(sansBeforeMove, fenRoot);
   const candidates = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     if (r === tr && c === tc) continue;
@@ -6822,8 +6824,8 @@ function overprotectFact(sansBeforeMove, san, color) {
 }
 // R14 — 오픈/세미오픈 파일. 룩이 이동한 파일에 폰이 아예 없으면 오픈 파일, 상대 폰만 남아 있으면
 // (내 폰은 없음) 세미오픈 파일이다.
-function openFileFact(sansBeforeMove, san, color) {
-  const before = boardFromSans(sansBeforeMove);
+function openFileFact(sansBeforeMove, san, color, fenRoot) {
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle || info.piece !== "R") return null;
   const after = applySan(before, san, color);
@@ -6846,8 +6848,8 @@ function fileIsOpenOrSemi(board, file, color) {
 // 위함. 룩이 같은 파일(세로)로 연결됐고 그 파일이 오픈/세미오픈 파일이면 "연결" 대신 "중첩"으로
 // 구분한다(가로로 연결되거나 파일이 막혀 있으면 그냥 "연결"). 이 수 자체가 룩·나이트를 움직인
 // 경우만 대상으로 한다 — 다른 기물이 사이 폰을 치워 우연히 연결이 생긴 경우는 다루지 않는다.
-function connectionFact(sansBeforeMove, san, color) {
-  const before = boardFromSans(sansBeforeMove);
+function connectionFact(sansBeforeMove, san, color, fenRoot) {
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info || info.castle) return null;
   const piece = info.piece;
@@ -6867,10 +6869,10 @@ function connectionFact(sansBeforeMove, san, color) {
 // R15 — 폰 희생. 이 수를 두기 전 내 폰 중 상대에게 안전하게 잡힐 수 있는 게 있었는데, 이 수가 그
 // 폰을 지키지도 옮기지도 잡지도 않고 그대로 두었고(이 수 자체는 좋은 수), 이 수를 둔 뒤에도 여전히
 // 안전하게 잡힐 수 있는 상태라면 "폰 희생"이다.
-function pawnSacrificeFact(sansBeforeMove, san, color, kind) {
+function pawnSacrificeFact(sansBeforeMove, san, color, kind, fenRoot) {
   if (!MEC_GOOD_KINDS.includes(kind)) return null;
   const enemy = color === "w" ? "b" : "w";
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info) return null;
   const hangingPawns = [];
@@ -6890,14 +6892,14 @@ function pawnSacrificeFact(sansBeforeMove, san, color, kind) {
 // R5 — 다음 수 캐슬링 예고. 캐슬링 권리가 있는 상태에서, 이 수를 두기 전엔 경로에 다른 기물이
 // 있어 아직 캐슬링이 불가능했는데 이 수로 그 경로가 완전히 비어 다음 수에 캐슬링이 가능해졌다면
 // 짚어준다.
-function nextMoveCastleFact(sansBeforeMove, san, color) {
-  const rightsInfo = castleEpFacts(sansBeforeMove, color);
+function nextMoveCastleFact(sansBeforeMove, san, color, fenRoot) {
+  const rightsInfo = castleEpFacts(sansBeforeMove, color, fenRoot);
   if (!rightsInfo.myCastleRights) return null;
-  const before = boardFromSans(sansBeforeMove);
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
   const kp = kingPos(before, color);
   const couldBefore = kp && legalDests(before, kp[0], kp[1], color, null).some(([r, c]) => c === 2 || c === 6);
   if (couldBefore) return null;
-  const after = boardFromSans([...sansBeforeMove, san]);
+  const after = boardOfRoot(fenRoot, [...sansBeforeMove, san]);
   const kp2 = kingPos(after, color);
   const canNow = kp2 && legalDests(after, kp2[0], kp2[1], color, null).some(([r, c]) => c === 2 || c === 6);
   return !!canNow;
@@ -6905,11 +6907,11 @@ function nextMoveCastleFact(sansBeforeMove, san, color) {
 // R6 — 전개. 폰·킹을 제외한 기물이 처음으로 홈 칸을 떠나는 수라면 "전개했다"는 표현을, 그 수의
 // 등급이 좋으면 "적절한 칸"이라는 표현까지 덧붙인 문장을 만든다. mecFacts가 최종적으로 고른 문장
 // 앞에 이 문장을 붙여, "전개 + 그 수가 만드는 실제 위협/방어"가 하나의 글로 이어지게 한다.
-function developmentNote(sansBeforeMove, san, color, kind) {
-  const board = boardFromSans(sansBeforeMove);
+function developmentNote(sansBeforeMove, san, color, kind, fenRoot) {
+  const board = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(board, san, color);
   if (!info || info.castle || info.piece === "P" || info.piece === "K") return null;
-  const { grid, counts } = pieceMoveState(sansBeforeMove);
+  const { grid, counts } = pieceMoveState(sansBeforeMove, fenRoot);
   const id = grid[info.from[0] + "," + info.from[1]];
   if (!id || counts[id]) return null; // 이 기물의 첫 이동일 때만
   const [tr, tc] = info.to;
@@ -7003,10 +7005,10 @@ const MEC_PHRASES = {
 // 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
 // 맨 앞 하나만 코멘트에 붙인다. kind·bestSan은 declinedCaptureFact(공짜 기물을 안 잡고도 좋은 수)
 // 판정에만 쓰이며, 넘기지 않으면(다른 호출부) 그 판정만 자연히 건너뛴다.
-function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut) {
+function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut, fenRoot) {
   const seed = sansBeforeMove.length;
-  const beforeBoard = boardFromSans(sansBeforeMove);
-  const board = boardFromSans([...sansBeforeMove, san]);
+  const beforeBoard = boardOfRoot(fenRoot, sansBeforeMove);
+  const board = boardOfRoot(fenRoot, [...sansBeforeMove, san]);
   const facts = [];
   // (사용자 요청) 체크메이트 — MEC의 어떤 규칙보다도 최우선으로 확인한다(바로 아래 수비자 제거보다도
   // 위). 게임이 그 자리에서 끝나는 궁극의 사실이라 다른 어떤 사실을 설명할 이유도 없다. 탁월한
@@ -7025,7 +7027,7 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   }
   // (신규) 수비자 제거 — 다른 어떤 사실보다 먼저 확인한다. 대부분 이어지는 수가 최선의 수뿐인
   // 명확하고 강력한 전술이라, 이게 있으면 다른 사실은 밀어내고 고정 문구 하나로 대체한다.
-  const removeDef = removeDefenderFact(sansBeforeMove, san, color);
+  const removeDef = removeDefenderFact(sansBeforeMove, san, color, fenRoot);
   if (removeDef) {
     if (threatOut) { threatOut.removeDefender = removeDef; threatOut.keyword = "수비자 제거"; }
     return [MEC_PHRASES.removeDefender(seed)];
@@ -7046,14 +7048,14 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   // 만든 교환 요청/공짜로 내줌)을, 그것도 아니면 이 수와 무관하게 이미 걸려 있던 tensionFacts.mine을
   // 쓴다. R3/R11(재전개/재배치)이 같은 수에 함께 적용되면(예: 교환 요청을 거절하며 원래 자리로
   // 재전개) 하나의 글로 잇는다 — 없으면 재전개/재배치 단독으로라도 이 자리를 채운다.
-  const offerResponse = exchangeOfferResponseFact(sansBeforeMove, san, color);
-  const redeploy = redeployFact(sansBeforeMove, san, color, kind);
+  const offerResponse = exchangeOfferResponseFact(sansBeforeMove, san, color, fenRoot);
+  const redeploy = redeployFact(sansBeforeMove, san, color, kind, fenRoot);
   const redeployPhrase = redeploy && (redeploy.opening ? MEC_PHRASES.redeployOpening(PIECE_KOR[redeploy.piece], seed) : MEC_PHRASES.redeployMidgame(PIECE_KOR[redeploy.piece], seed));
   if (offerResponse) {
     const base = offerResponse.accepted ? MEC_PHRASES.exchangeAccepted(PIECE_KOR[offerResponse.piece], seed) : MEC_PHRASES.exchangeDeclined(PIECE_KOR[offerResponse.piece], seed);
     facts.push(redeployPhrase ? base + " " + redeployPhrase : base);
   } else {
-    const offer = exchangeOfferFact(sansBeforeMove, san, color, kind);
+    const offer = exchangeOfferFact(sansBeforeMove, san, color, kind, fenRoot);
     if (offer) facts.push(offer.offered ? MEC_PHRASES.exchangeOffered(PIECE_KOR[offer.piece], seed) : MEC_PHRASES.exchangeFreeGive(PIECE_KOR[offer.piece], seed));
     else {
       const mine = fairTradeSq ? t.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t.mine;
@@ -7061,43 +7063,43 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
       else {
         // 되잡기 — 상대가 방금 잡은 자리를 그대로 되잡는 것뿐인 수는 별다른 위협·방어 사실 없이도
         // "왜 좋은 수인지"가 명확하므로, noObviousReason으로 떨어지기 전에 여기서 짚어준다.
-        const recap = recaptureFact(sansBeforeMove, san, color);
+        const recap = recaptureFact(sansBeforeMove, san, color, fenRoot);
         if (recap) facts.push(MEC_PHRASES.recapture(PIECE_KOR[recap.capturedPiece], seed));
         else if (redeployPhrase) facts.push(redeployPhrase);
       }
     }
   }
-  const evasion = evasionFact(sansBeforeMove, san, color);
+  const evasion = evasionFact(sansBeforeMove, san, color, fenRoot);
   if (evasion) facts.push(evasion.kind === "counter" ? MEC_PHRASES.counter(PIECE_KOR[evasion.piece], PIECE_KOR[evasion.target], seed) : MEC_PHRASES.evade(PIECE_KOR[evasion.piece], seed));
   // R4/R9 — 예방 수(직접 > 간접). 위에서 더 급한 전술적 사실(교환/회피)을 못 찾았을 때만 확인한다.
   // (기능) 시각화용 — 이 사실이 facts[0]으로 뽑히면 threatOut.prevent에 방어 대상 칸(halo), 상대
   // 진입 경로(attacker), 내 응수 경로(defender)를 담아 준다(ReviewPage의 클릭 애니메이션이 사용).
   if (!facts.length) {
-    const directPrev = directPreventionFact(sansBeforeMove, san, color);
+    const directPrev = directPreventionFact(sansBeforeMove, san, color, fenRoot);
     if (directPrev) {
       facts.push(MEC_PHRASES.preventDirect(FILES[directPrev.sq[1]] + (8 - directPrev.sq[0]), directPrev.piece, directPrev.targetPiece, seed));
       if (threatOut) { threatOut.prevent = { targetSq: directPrev.sq, attackerFrom: directPrev.attackerFrom, myFrom: directPrev.myFrom, myTo: directPrev.myTo }; threatOut.keyword = "예방 수"; }
     } else {
-      const indirectPrev = indirectPreventionFact(sansBeforeMove, san, color);
+      const indirectPrev = indirectPreventionFact(sansBeforeMove, san, color, fenRoot);
       if (indirectPrev) {
         facts.push(MEC_PHRASES.preventIndirect(FILES[indirectPrev.sq[1]] + (8 - indirectPrev.sq[0]), indirectPrev.piece, indirectPrev.targetPiece, seed));
         if (threatOut) { threatOut.prevent = { targetSq: indirectPrev.sq, attackerFrom: indirectPrev.attackerFrom, myFrom: indirectPrev.myFrom, myTo: indirectPrev.myTo }; threatOut.keyword = "예방 수"; }
       }
     }
   }
-  const pawnTrade = pawnTradeFact(sansBeforeMove, san, color);
+  const pawnTrade = pawnTradeFact(sansBeforeMove, san, color, fenRoot);
   if (pawnTrade) facts.push(MEC_PHRASES.pawnTrade(pawnTrade.fromSq, pawnTrade.capturedSq, pawnTrade.good, seed));
-  else if (pawnTensionFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.pawnTension(seed));
+  else if (pawnTensionFact(sansBeforeMove, san, color, fenRoot)) facts.push(MEC_PHRASES.pawnTension(seed));
   // 기물(폰 제외) 동가 교환의 전략적 타당성 — 유리할 때 교환은 원래 좋고, 불리할 때는 원래 피해야
   // 하지만 예외(최선 이상=불가피, 우수/좋음=그래도 괜찮음)를 인정한다. 기대와 등급이 어긋나면
   // "목적 없는 교환"이었다는 반대 프레이밍을 쓴다(R10 — 비숍쌍 유지·상대 폰 구조 약화 근거는 등급이
   // 이미 그 판단을 반영하고 있으므로, 여기서는 그 등급이 곧 "어느 근거가 우세했는지"의 증거로 쓰인다).
-  const exchange = exchangeFact(sansBeforeMove, san, color, kind, beforeCp);
+  const exchange = exchangeFact(sansBeforeMove, san, color, kind, beforeCp, fenRoot);
   if (exchange) {
     if (exchange.ahead) facts.push(exchange.good ? MEC_PHRASES.exchangeAheadGood(seed) : MEC_PHRASES.exchangeAheadBad(seed));
     else facts.push(exchange.good ? (exchange.strong ? MEC_PHRASES.exchangeBehindForced(seed) : MEC_PHRASES.exchangeBehindGood(seed)) : MEC_PHRASES.exchangeBehindBad(seed));
   }
-  const ctrl = controlFacts(sansBeforeMove, san, color);
+  const ctrl = controlFacts(sansBeforeMove, san, color, fenRoot);
   // (버그 수정) 상대 기물이 걸려 있어도, 그게 방금 이 수 자체가 새로 위협한 기물(ctrl.threats와
   // 같은 칸)이라면 "잡을 기회예요"(원래부터 있던 약점을 챙기는 뉘앙스)가 아니라 "노려요"(이 수가
   // 방금 만든 위협)라고 하는 게 맞다 — 상대 차례가 지나야 실제로 잡을 수 있는데 "잡을 기회"라고
@@ -7108,7 +7110,7 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   // 늘린 상태)을 확인한다.
   const justThreatenedSq = ctrl.threats.length ? ctrl.threats[0].sq.join(",") : null;
   const preexistingTheirs = t.theirs.filter((x) => x.sq.join(",") !== justThreatenedSq);
-  const declined = declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan);
+  const declined = declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan, fenRoot);
   if (ctrl.threats.length) {
     // R7 — 이 위협이 지금 이 수의 대표 사실(facts[0])로 뽑힐 참이면(=여기까지 아무것도 못 찾았으면)
     // 시각화용 공격자/수비자 정보를 threatOut에 담아 준다. sq가 상대 기물의 칸이므로, 내(color) 쪽이
@@ -7119,7 +7121,7 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
   else if (declined) facts.push(declined.wasBestCapture ? MEC_PHRASES.declinedBestCapture(PIECE_KOR[declined.piece], seed) : MEC_PHRASES.declinedCapture(PIECE_KOR[declined.piece], seed));
   else if (preexistingTheirs.length) facts.push(MEC_PHRASES.preexistingTheirs(PIECE_KOR[preexistingTheirs[0].piece], seed));
   else {
-    const latent = latentThreatFact(sansBeforeMove, san, color);
+    const latent = latentThreatFact(sansBeforeMove, san, color, fenRoot);
     if (latent) facts.push(MEC_PHRASES.latentThreat(PIECE_KOR[latent.piece], seed));
   }
   // R8 — 위협 대처(이미 걸려 있던 기물을 지키는 것, 기존 ctrl.defends) vs 과보호(걸리지 않은 기물을
@@ -7132,7 +7134,7 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
     facts.push(MEC_PHRASES.defend(PIECE_KOR[ctrl.defends[0].piece], seed));
   }
   else {
-    const overprotect = overprotectFact(sansBeforeMove, san, color);
+    const overprotect = overprotectFact(sansBeforeMove, san, color, fenRoot);
     if (overprotect) {
       // (기능) 이 사실이 facts[0]으로 뽑히면(=여기까지 아무것도 못 찾았으면) 시각화용 공격자/수비자
       // 정보를 threatOut에 담아 준다(R7과 같은 애니메이션을 과보호에도 재사용).
@@ -7140,35 +7142,35 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
       facts.push(MEC_PHRASES.overprotect(PIECE_KOR[overprotect.piece], seed));
     } else {
       // (기능) "연결"/"중첩" — 위협·과보호 어느 쪽도 아닐 때만 확인한다(더 급한 사실을 밀어내지 않도록).
-      const connection = connectionFact(sansBeforeMove, san, color);
+      const connection = connectionFact(sansBeforeMove, san, color, fenRoot);
       if (connection && moveInfo) {
         if (!facts.length && threatOut) { threatOut.connect = { sqA: moveInfo.to, sqB: connection.partnerSq }; threatOut.keyword = connection.stacked ? "중첩" : "연결"; }
         facts.push(connection.stacked ? MEC_PHRASES.stacked(seed) : MEC_PHRASES.connect(PIECE_KOR[moveInfo.piece], seed));
       }
     }
   }
-  if (tempoWasteFact(sansBeforeMove, san, color, kind)) facts.push(MEC_PHRASES.tempo(seed));
-  const detour = pieceDetourFact(sansBeforeMove, san, color, kind);
+  if (tempoWasteFact(sansBeforeMove, san, color, kind, fenRoot)) facts.push(MEC_PHRASES.tempo(seed));
+  const detour = pieceDetourFact(sansBeforeMove, san, color, kind, fenRoot);
   if (detour) facts.push(detour.kind === "returned" ? MEC_PHRASES.pieceReturned(PIECE_KOR[detour.piece], seed) : MEC_PHRASES.pieceDetour(PIECE_KOR[detour.piece], seed));
   // R14 — 오픈/세미오픈 파일.
-  const openFile = openFileFact(sansBeforeMove, san, color);
+  const openFile = openFileFact(sansBeforeMove, san, color, fenRoot);
   if (openFile) facts.push(openFile.open ? MEC_PHRASES.openFile(seed) : MEC_PHRASES.semiOpenFile(seed));
   // R15 — 폰 희생.
-  const pawnSac = pawnSacrificeFact(sansBeforeMove, san, color, kind);
+  const pawnSac = pawnSacrificeFact(sansBeforeMove, san, color, kind, fenRoot);
   if (pawnSac) facts.push(MEC_PHRASES.pawnSac(pawnSac.sq, seed));
   if (sansBeforeMove.length < MEC_OPENING_PLY_LIMIT) {
     if (/^O-O-O/.test(san)) facts.push(MEC_PHRASES.queensideNote(seed));
     else if (!/^O-O/.test(san)) {
-      const before = castleEpFacts(sansBeforeMove, color);
-      const after = castleEpFacts([...sansBeforeMove, san], color);
+      const before = castleEpFacts(sansBeforeMove, color, fenRoot);
+      const after = castleEpFacts([...sansBeforeMove, san], color, fenRoot);
       if (before.myCastleRights && !after.myCastleRights) facts.push(MEC_PHRASES.castleLost(seed));
       // R5 — 다음 수 캐슬링 예고(권리를 잃은 수가 아닐 때만 의미가 있다).
-      else if (nextMoveCastleFact(sansBeforeMove, san, color)) facts.push(MEC_PHRASES.nextCastle(seed));
+      else if (nextMoveCastleFact(sansBeforeMove, san, color, fenRoot)) facts.push(MEC_PHRASES.nextCastle(seed));
     }
   }
   // R6 — 전개. 이 기물의 첫 이동이면, 최종적으로 고른 문장(facts[0]) 앞에 "전개했다" 문장을 붙여
   // 하나의 글로 잇는다. 붙일 다른 사실이 없으면 전개 문장 하나만 남긴다.
-  const devNote = developmentNote(sansBeforeMove, san, color, kind);
+  const devNote = developmentNote(sansBeforeMove, san, color, kind, fenRoot);
   if (devNote) { if (facts.length) facts[0] = devNote + " " + facts[0]; else facts.push(devNote); }
   // R12 — 캐슬링은 판단 기준이 다르다. 좋은 수면 고정된 긍정 평가로 다른 사실을 전부 대체하고(퀸사이드면
   // 안전성 안내를 이어 붙인다), 나쁜 수인데 위에서 아무 원인도 못 찾았으면 "엔진에 의하면"으로 대체한다.
@@ -10268,25 +10270,25 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // 수를 게임 리뷰와 동일한 방식(analyzeGame의 채점 규칙)으로 라이브 분석한다. 공용 엔진 큐 대신 게임
   // 리뷰와 같은 독립 풀을 써서 분석 탭과 충돌하지 않게 한다. (exploreMove state는 playFree보다 먼저
   // 선언돼야 해 위쪽으로 옮겨졌다.)
-  // (v0.3.5 기능) 사용자 요청으로 FEN 리뷰도 이제 보드를 직접 조작하는 자유 탐색 자체는 지원하지만
-  // (위 legalTargets/tryMove의 fenLegalDests, 위 drawState의 gameEndState(fenRoot) 참고), 이 채점
-  // 로직(및 그 아래 코치 카드가 참조하는 mecFacts)은 여전히 fenRoot를 모른 채 boardFromSans 등으로
-  // 표준 시작 위치를 전제하고 있다 — recaptureFact 하나만 봐도 mecFacts 안에서 10개 넘는 하위
-  // "Fact" 함수가 전부 같은 가정을 깔고 있어, 전부 fenRoot 인식하게 고치는 건 이번 범위를 넘어선다
-  // (LearnTab의 기존 FEN 모드도 goFen에서 stampQ/evalMoveKind를 아예 건너뛰는 것과 같은 선). FEN
-  // 리뷰에서는 자유 탐색 수를 등급·코치 코멘트 없이(exploreMove를 null로 유지) 보드·평가치 막대·
-  // 엔진 상위 줄만으로 보여준다.
+  // (v0.3.5 기능) 사용자 요청으로 FEN 리뷰도 이제 보드를 직접 조작하는 자유 탐색 자체는 지원한다
+  // (위 legalTargets/tryMove의 fenLegalDests, 위 drawState의 gameEndState(fenRoot) 참고). (v0.4.1
+  // 기능) 이 채점 로직(및 그 아래 코치 카드가 참조하는 mecFacts)도 boardFromSans/sansToFen 대신
+  // boardOfRoot/fenOfRoot(둘 다 fenRoot가 없으면 기존 표준 시작 위치 동작 그대로)를 쓰도록 고쳐, FEN
+  // 리뷰의 자유 탐색 수에도 표준 리뷰와 완전히 같은 등급·코치 코멘트가 뜨게 됐다 — mecFacts 계열
+  // 함수 전부(recaptureFact 등 10개 넘는 하위 "Fact" 함수 포함)에 fenRoot를 threading했다. 이론
+  // 수(isBookMoveAt) 확인만은 FEN 모드에서 건너뛴다 — 표준 시작 위치를 전제하는 이론 DB 자체가
+  // 임의의 FEN에는 대응되지 않기 때문이다(LearnTab의 마지막 수 재평가 effect와 같은 처리).
   useEffect(() => {
-    if (!exploring || fenRoot) { setExploreMove(null); return; }
+    if (!exploring) { setExploreMove(null); return; }
     let cancelled = false;
     const prevSans = effSans.slice(0, -1);
     const san = effSans[effSans.length - 1];
-    const white = prevSans.length % 2 === 0;
+    const white = plyIsWhite(prevSans.length, fenRoot ? fenRoot.turn : "w");
     // (기능) 게임 리뷰 본편(analyzeGame)·분석 탭 후보 블록은 이론 수를 만나면 곧장 "이론" 등급으로
     // 확정하고 실시간 분석을 건너뛰는데, 자유 탐색 채점만 이 확인이 빠져 있어 이론 수를 둬도 매번
     // 실시간 재검색을 거쳐 평가치 기반 등급(최선/우수 등)으로 잘못 표시됐다. 같은 isBookMoveAt
     // 확인을 그대로 적용해, 자유 탐색 중에도 이론 수는 즉시 "이론" 아이콘으로 확정한다.
-    if (isBookMoveAt(prevSans.join(" "), san)) { setExploreMove({ san, white, kind: "book", best: null }); return; }
+    if (!fenRoot && isBookMoveAt(prevSans.join(" "), san)) { setExploreMove({ san, white, kind: "book", best: null }); return; }
     // (v0.2.4 버그 수정) playFree가 남겨 둔 "이 포지션|이 수" 기록 — 방금 화면에 보여준 추천을
     // 그대로 뒀다면 아래 재검색 결과와 무관하게 최선의 수로 확정한다(재검색은 movetime 상한 안에서
     // 타이밍에 따라 살짝 다른 1순위를 낼 수 있어, 방금 안내한 추천과 다른 수로 오판정되곤 했다).
@@ -10307,15 +10309,15 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
         // 판정"(analyzeGame, 실제로 둔 수의 채점)은 이 변경과 무관하다 — 이건 기보에 없는 자유 탐색
         // 수 전용 채점이라 애초에 analyzeGame과 별개다.
         const grade = async (movetime) => {
-          const pvs = await wBest.evaluateMulti(sansToFen(prevSans), MAX_SEARCH_DEPTH, 2, movetime, undefined, "review-best");
+          const pvs = await wBest.evaluateMulti(fenOfRoot(fenRoot, prevSans), MAX_SEARCH_DEPTH, 2, movetime, undefined, "review-best");
           if (cancelled) return;
           const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
           if (!p0) return;
           const bestCp = p0.mate != null ? (p0.mate > 0 ? 1e5 : -1e5) : p0.cp;
           const secondCp = p1 ? (p1.mate != null ? (p1.mate > 0 ? 1e5 : -1e5) : p1.cp) : null;
-          const bestSan = p0.uci ? uciToSan(boardFromSans(prevSans), p0.uci, col) : null;
+          const bestSan = p0.uci ? uciToSan(boardOfRoot(fenRoot, prevSans), p0.uci, col) : null;
           const matched = forced || (!!bestSan && stripSuffix(bestSan) === stripSuffix(san));
-          const after = await wAfter.evaluate(sansToFen(effSans), MAX_SEARCH_DEPTH, undefined, movetime, "review-after");
+          const after = await wAfter.evaluate(fenOfRoot(fenRoot, effSans), MAX_SEARCH_DEPTH, undefined, movetime, "review-after");
           if (cancelled || !after) return;
           const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
           const ourCp = -afterOpp;
@@ -10327,7 +10329,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           // 탁월한 수·유일한 수 승격을 막는다. 기존 decided&&losing은 실수 등급 완화에만 쓴다(값은
           // 우연히 같지만 서로 독립적으로 조정 가능한 별개 변수).
           const badlyLosing = bestCp <= -200;
-          try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !badlyLosing && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant"; } catch { }
+          try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRoot, prevSans), san, col) && ourCp >= -40 && !badlyLosing && !ownPriorMoveWasSacrifice(prevSans, col, fenRoot)) kind = "brilliant"; } catch { }
           if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
           // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 분석 탭(evalMoveKind
           // 호출부의 applyKind)에는 있는데 이 자유 탐색 판정에는 빠져 있었다 — 같은 규칙을 그대로 적용한다.
@@ -10337,7 +10339,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           // (버그 수정) analyzeGame과 동일 — 단순 되잡기(되잡을 수 있는 내 기물이 이 하나뿐)는 "유일한
           // 수"로 승격하지 않는다.
           let singleRecapture = false;
-          try { const rc = recaptureFact(prevSans, san, col); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+          try { const rc = recaptureFact(prevSans, san, col, fenRoot); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
           // (v0.3.9 버그 수정, 재조정) analyzeGame과 동일 — badlyLosing이거나 2순위(secondCp)가 이미 +2점 이상
           // 이어도 "유일한 수"를 매기지 않는다.
           const secondStillWinningBig = secondCp != null && secondCp >= 200;
@@ -10386,8 +10388,8 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
       const n = Math.abs(activeEvalDisp.mate);
       return [mecPick(["체크메이트로 몰아가는 강제 수순이에요, 메이트까지 " + n + "수 남았어요.", "이제부터는 체크메이트 수순이에요 — " + n + "수 뒤에 체크메이트예요.", "메이트 " + n + "수 전이에요, 체크메이트로 끝나는 강제 수순이에요."], effSans.length)];
     }
-    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current); } catch { return []; }
-  }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate]);
+    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot); } catch { return []; }
+  }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot]);
   const threatDetail = mecThreatOut.current.detail || null;
   // (기능) 예방 수(R4/R9)의 시각화 데이터 — mecThreatOut.current.prevent에 방어 대상 칸·상대 진입
   // 경로·내 응수 경로가 채워져 있으면(그 사실이 facts[0]으로 뽑혔을 때만), 그 칸에 금색 테두리를
@@ -10955,11 +10957,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 이유가 없었는데도 메인 엔진의 단일 큐로 순차 처리돼 총 대기 시간이 두 배로 들었다. 세션 내내
   // 재사용되는 공용 풀(getAnalysisPool)에서 워커 두 개를 받아 완전히 병렬로 평가한다 — depth(13)는
   // 그대로 두고, MOVETIME_MS(모듈 상수)만 더해 벽시계 시간을 절반 가까이 줄인다.
-  const evalMoveKind = useCallback(async (prevSans, san, onKind) => {
+  const evalMoveKind = useCallback(async (prevSans, san, onKind, fenRootParam) => {
     if (!liveOn || engine.status !== "ready") return null;
     const pool = await getAnalysisPool(engine.profile, engine.urls);
     const wBest = pool[0] || engine, wAfter = pool[1] || engine;
-    const mw = prevSans.length % 2 === 0; const col = mw ? "w" : "b";
+    const col = plyIsWhite(prevSans.length, fenRootParam ? fenRootParam.turn : "w") ? "w" : "b";
     let bestCp = null, matched = null;
     const computeKind = (after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp; // 상대 관점
@@ -10971,7 +10973,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       // 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
       const decided = Math.abs(bestCp) > 200;  // 이 수를 두기 전, 최선의 수 기준으로도 이미 승부가 기울어 있었는가
       const losing = bestCp <= -200;           // 그 상태에서 이 수를 둔 쪽이 불리했는가
-      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardFromSans(prevSans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, col)) kind = "brilliant";
+      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRootParam, prevSans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, col, fenRootParam)) kind = "brilliant";
       if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }   // 실수류 완화(양측)
       // (v0.4.0 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 다른 판정 경로에는
       // 있는데 FEN 모드 전용인 이 판정에만 빠져 있었다 — 동일하게 적용한다.
@@ -10980,16 +10982,16 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       return kind;
     };
     // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 — depth 노이즈로 차선 수에 별이 붙던 문제 수정.
-    const bestPromise = wBest.evaluate(sansToFen(prevSans), 13, undefined, MOVETIME_MS).then((best) => {
+    const bestPromise = wBest.evaluate(fenOfRoot(fenRootParam, prevSans), 13, undefined, MOVETIME_MS).then((best) => {
       if (!best) return null;
       bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;     // 둘 차례(=우리) 관점 최선
-      const bestSan = best.best ? uciToSan(boardFromSans(prevSans), best.best, col) : null;
+      const bestSan = best.best ? uciToSan(boardOfRoot(fenRootParam, prevSans), best.best, col) : null;
       matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
       return best;
     });
     // (성능) 진행 중 갱신(onKind)은 best가 아직 안 끝났으면 bestCp를 몰라 등급을 못 매기므로,
     // best가 끝날 때까지만 기다렸다가 적용한다 — 병렬로 시작해도 최종 확정 시점은 그대로다.
-    const afterPromise = wAfter.evaluate(sansToFen([...prevSans, san]), 13, onKind ? async (partial) => { await bestPromise; if (bestCp != null) onKind(computeKind(partial)); } : undefined, MOVETIME_MS);
+    const afterPromise = wAfter.evaluate(fenOfRoot(fenRootParam, [...prevSans, san]), 13, onKind ? async (partial) => { await bestPromise; if (bestCp != null) onKind(computeKind(partial)); } : undefined, MOVETIME_MS);
     const [best, after] = await Promise.all([bestPromise, afterPromise]);
     if (!best || !after) return null;
     return computeKind(after);
@@ -11013,14 +11015,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 되돌리기/앞으로 등 어떤 방식으로 도달하든 보드 도착칸 아이콘과 헤더 수 체계가 정확히 표시되도록 엔진으로 티어를 다시 평가한다.
   useEffect(() => {
     if (!sans.length) { setLastQ(null); return; }
-    // (버그 수정) FEN 모드는 표준 시작 위치를 가정하는 이론/등급 판정 대상이 아니다 — goFen이 이미
-    // lastQ를 건드리지 않으므로 여기서도 그대로 null(뱃지 없음)로 둔다. boardFromSans(prev)로 잘못된
-    // 표준 시작 위치를 재생해 우연히 같은 좌표에서 다른 기물을 잘못 매칭시키는 것도 방지한다.
-    if (fenRoot) { setLastQ(null); return; }
     const prev = sans.slice(0, -1);
     const lastSan = sans[sans.length - 1];
-    const brd = boardFromSans(prev);
-    const col = prev.length % 2 === 0 ? "w" : "b";
+    const brd = boardOfRoot(fenRoot, prev);
+    const col = plyIsWhite(prev.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
     const src = sanSrc(brd, lastSan, col);
     const to = src && src.to ? src.to : null;
     if (!to) { setLastQ(null); return; }
@@ -11028,13 +11026,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     // 이론 수(treeAdds/forceKind)는 후보 목록(useMergedMoves)에서는 이론으로 잘 보이다가도, 그 수를
     // 실제로 보드에서 두는 순간(여기)엔 다시 비이론으로 판정돼 평가치 아이콘("우수한 수" 등)으로
     // 바뀌어 보였다 — analyzeGame 등 다른 곳과 동일한 isBookMoveAt(스냅샷+개발자 추가+강제지정 전부
-    // 확인)으로 통일한다.
-    if (isBookMoveAt(prev.join(" "), lastSan)) { setLastQ({ to, kind: "book" }); return; } // 이론 수는 항상 책 아이콘(평가치 아이콘으로 덮어쓰지 않음)
+    // 확인)으로 통일한다. (FEN 모드는 표준 시작 위치를 전제하는 이론 DB 자체가 대응되지 않으므로
+    // 이 확인을 건너뛰고 바로 아래 엔진 등급 판정으로 넘어간다.)
+    if (!fenRoot && isBookMoveAt(prev.join(" "), lastSan)) { setLastQ({ to, kind: "book" }); return; } // 이론 수는 항상 책 아이콘(평가치 아이콘으로 덮어쓰지 않음)
     // (v0.2.2 버그 수정) 이 마지막 수가 후보 블록에 떠 있던(=사용자가 등급을 이미 본) 수라면, 블록이
     // 표시한 그 등급을 그대로 써서 보드·현재 수 블록의 아이콘을 다음 수 블록과 정확히 일치시킨다 —
     // evalMoveKind로 다시 계산하지 않아 두 곳이 어긋나지 않는다. 블록에 없던 수(사용자가 직접 둔
-    // 비이론 수 등)만 아래 재평가 경로로 넘어간다.
-    const pinned = pinnedKindRef.current[prev.join(" ") + "|" + stripSuffix(lastSan)];
+    // 비이론 수 등)만 아래 재평가 경로로 넘어간다. (FEN 모드는 후보 블록 자체가 없어 pinned가 항상
+    // 비어 있고, 자연히 아래 재평가 경로로만 간다.)
+    const pinned = !fenRoot && pinnedKindRef.current[prev.join(" ") + "|" + stripSuffix(lastSan)];
     if (pinned && pinned !== "pending") { setLastQ({ to, kind: pinned }); return; }
     setLastQ({ to, kind: "pending" });
     let cancelled = false;
@@ -11044,10 +11044,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         const under = /=/.test(lastSan) && !/=Q/.test(lastSan); if (under && !["inaccuracy", "mistake", "blunder"].includes(k)) k = "brilliant";
         setLastQ((q) => (q && q.to && q.to[0] === to[0] && q.to[1] === to[1]) ? { ...q, kind: k } : q);
       };
-      evalMoveKind(prev, lastSan, applyKind).then(applyKind);
+      evalMoveKind(prev, lastSan, applyKind, fenRoot).then(applyKind);
     }
     return () => { cancelled = true; };
-  }, [key, liveOn, engine.status]);
+  }, [key, liveOn, engine.status, fenRoot]);
 
   const go = useCallback((san, isExtra) => {
     if (gameDrawn) return;   // (v0.2.3 버그 수정) 스테일메이트·3회 동형 반복으로 이미 끝난 국면에서는 더 이상 수를 둘 수 없다
@@ -19294,6 +19294,12 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.4.2", date: "2026.8.28", dev: ["openchesskr"], items: [
+      "게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작한 경우에도, 대국 시작 위치와 완전히 같은 방식으로 수 체계 등급(최선의 수·탁월한 수·유일한 수 등)과 코치 설명이 정확히 매겨져요.",
+      "오프닝 이름·마스터 대국 통계처럼 애초에 표준 시작 위치 전용인 정보만, FEN 포지션에서는 자연스럽게 표시되지 않아요.",
+    ]
+  },
   {
     version: "0.4.1", date: "2026.8.28", dev: ["openchesskr"], items: [
       "화면 구석 버전 표시가 실제 배포된 버전보다 뒤처져 있던 문제를 고쳤어요.",
