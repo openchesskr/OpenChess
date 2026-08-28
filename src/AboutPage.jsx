@@ -904,28 +904,17 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
-    version: "0.4.2", date: "2026.8.28",
-    summary: "게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작한 경우에도, 대국 시작 위치와 완전히 같은 방식으로 수 체계 등급과 코치 설명이 정확히 매겨져요. 오프닝 이름·마스터 대국 통계처럼 애초에 표준 시작 위치 전용인 정보만 FEN 포지션에서는 자연스럽게 표시되지 않아요.",
-    mascot: {
-      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "이제 FEN으로 만든 포지션도 실제 대국 리뷰와 똑같이 꼼꼼하게 봐드릴게요!" },
-      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "다만 오프닝 이름처럼 표준 시작 위치가 필요한 정보만은 FEN 포지션에서 비워져 있어요." },
-    },
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: "FEN 리뷰 등급·코치 설명 완전 동등화" },
-    sections: [
-      { cat: "feature", items: [
-        "게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작해도, 대국 시작 위치와 똑같이 최선의 수·탁월한 수·유일한 수 같은 수 체계 등급과 코치 설명이 정확히 매겨져요.",
-      ] },
-    ],
-  },
-  {
     version: "0.4.1", date: "2026.8.28",
-    summary: "화면 구석에 표시되는 버전 번호가 실제 배포된 버전보다 한 단계 뒤처져 있던 문제를 고쳤어요. 지금 보고 계신 /about 소개 페이지의 첫 화면도 더 세련되게 새 단장했어요 — '기능 둘러보기' 버튼과, 학습·도감·퍼즐/티어/정확도 체계로 바로 이동하는 칩 버튼이 추가됐어요.",
+    summary: "화면 구석에 표시되는 버전 번호가 실제 배포된 버전보다 한 단계 뒤처져 있던 문제를 고쳤어요. 지금 보고 계신 /about 소개 페이지의 첫 화면도 더 세련되게 새 단장했어요 — '기능 둘러보기' 버튼과, 학습·도감·퍼즐/티어/정확도 체계로 바로 이동하는 칩 버튼이 추가됐어요. 게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작한 경우에도, 대국 시작 위치와 완전히 같은 방식으로 수 체계 등급과 코치 설명이 정확히 매겨져요.",
     mascot: {
       intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "이 페이지 맨 위 칩 버튼을 눌러보면 원하는 소개로 바로 이동할 수 있어요!" },
-      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "버전 번호도 이제 실제 배포된 최신 버전과 항상 맞춰서 보여드릴게요." },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "FEN으로 만든 포지션도 이제 실제 대국 리뷰와 똑같이 꼼꼼하게 봐드릴게요." },
     },
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: "/about 페이지 리디자인 + 버전 표시 버그 수정" },
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: "/about 페이지 리디자인 + 버전 표시 버그 수정 + FEN 리뷰 동등화" },
     sections: [
+      { cat: "feature", items: [
+        "게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작해도, 대국 시작 위치와 똑같이 최선의 수·탁월한 수·유일한 수 같은 수 체계 등급과 코치 설명이 정확히 매겨져요. 오프닝 이름·마스터 대국 통계처럼 애초에 표준 시작 위치 전용인 정보만 FEN 포지션에서는 자연스럽게 표시되지 않아요.",
+      ] },
       { cat: "ui", items: [
         "/about 페이지 첫 화면(히어로)이 더 세련된 디자인으로 새 단장했어요 — '기능 둘러보기' 버튼과, 학습·도감·퍼즐/티어/정확도 체계 소개로 바로 이동하는 칩 버튼이 추가됐어요.",
       ] },
