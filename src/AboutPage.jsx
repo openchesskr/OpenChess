@@ -183,7 +183,7 @@ const FEATURES = [
     desc: "\"기물 희생하기\" · \"우위 점하기\" · \"실수 응징하기\" 세 테마로, 실전에서 나온 실수를 바탕으로 자동 생성되는 맞춤형 전술 퍼즐을 풀어보세요. 친구에게 퍼즐을 공유할 수도 있어요.",
     quote: "이 수, 정말 최선이었을까? 한번 찾아봐." },
   { Icon: Target, eyebrow: "학습", title: "매일 조금씩", shot: "/about/screenshot-quest.webp", mascotChar: "kokoa", mascotExpr: "celebrate",
-    desc: "매일 새로 갱신되는 일일 퀘스트와, 챕터별 퀴즈로 진행하는 메인 퀘스트를 완료하고 OC 나이트 코인을 모아보세요.",
+    desc: "매일 새로 갱신되는 일일 퀘스트와, 갈래를 갖는 로드맵을 따라 순서대로 열리는 메인 퀘스트 '레슨'을 완료하고 OC 나이트 코인을 모아보세요.",
     quote: "일일 퀘스트, 벌써 확인했어?" },
   { Icon: Wrench, eyebrow: "설정", title: "내게 맞게 조정하기", shot: "/about/screenshot-settings.webp", mascotChar: "milku", mascotExpr: "wink",
     desc: "정확도가 가장 높은 Stockfish 16과, 가볍고 빠른 Stockfish 18 Lite 중 기기에 맞는 분석 엔진을 골라보세요. 로그인하면 진도가 계정에 저장돼 어느 기기에서든 이어서 즐길 수 있어요.",
@@ -635,7 +635,7 @@ function AsStep({ n, title, children, formula, chart, reverse }) {
 }
 function AccuracySystemSection() {
   return (
-    <section>
+    <section id="accuracy" style={{ scrollMarginTop: 24 }}>
       <Reveal>
         <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
           <Zap size={16} color={T.brassHi} />
@@ -718,19 +718,42 @@ function IntroPage() {
       </div>
 
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "40px 20px 72px" }}>
-      <section className="flex items-center flex-wrap" style={{ gap: 36, marginBottom: 8 }}>
+      <section className="flex items-center flex-wrap" style={{
+        gap: 36, marginBottom: 8, padding: "32px 32px 30px", borderRadius: 28,
+        background: "linear-gradient(160deg, rgba(46,27,16,.6), rgba(27,16,9,.15))",
+        border: "1px solid rgba(196,154,80,.22)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)",
+      }}>
         <div style={{ flex: "1 1 320px", minWidth: 280 }}>
-          <Reveal><div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+          <Reveal><div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
             <Sparkles size={14} color={T.brass} />
             <span style={{ fontSize: 12, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>무료 체스 오프닝 학습·연습 애플리케이션</span>
           </div></Reveal>
-          <Reveal delay={0.05}><h1 style={{ fontSize: 36, fontWeight: 900, color: T.ivoryHi, lineHeight: 1.28, margin: "0 0 16px" }}>오프닝을 배우고,<br />내 실수를 퍼즐로<br />복습하세요.</h1></Reveal>
-          <Reveal delay={0.1}><p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 26px", maxWidth: 440 }}>
-            엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수에서 자동 생성되는 전술 퍼즐, 퀘스트와 티어 시스템까지 — MILKU·KOKOA와 함께 체스를 더 깊이 익혀보세요.
+          <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(32px, 5vw, 44px)", fontWeight: 900, color: T.ivoryHi, lineHeight: 1.22, margin: "0 0 16px", letterSpacing: "-.01em" }}>
+            오프닝을 배우고,<br />내 실수를 <span style={{ color: T.brassHi }}>퍼즐</span>로<br />복습하세요.
+          </h1></Reveal>
+          <Reveal delay={0.1}><p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 24px", maxWidth: 440 }}>
+            엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수에서 자동 생성되는 전술 퍼즐, 로드맵형 레슨과 티어 시스템까지 — MILKU·KOKOA와 함께 체스를 더 깊이 익혀보세요.
           </p></Reveal>
-          <Reveal delay={0.15}><a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>
-            무료로 시작하기 <ArrowRight size={16} />
-          </a></Reveal>
+          <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 26 }}>
+            <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>
+              무료로 시작하기 <ArrowRight size={16} />
+            </a>
+            <a href="#features" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "13px 20px", borderRadius: 999, border: "1px solid rgba(196,154,80,.4)", color: T.ivory, fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+              기능 둘러보기
+            </a>
+          </div></Reveal>
+          <Reveal delay={0.2}><nav className="flex items-center flex-wrap" style={{ gap: 8 }}>
+            {[["#features", "학습·도감·퍼즐"], ["#tiers", "티어"], ["#accuracy", "정확도 체계"]].map(([href, label]) => (
+              <a key={href} href={href} style={{
+                fontSize: 11.5, fontWeight: 700, color: T.brass, letterSpacing: ".02em", textDecoration: "none",
+                padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(196,154,80,.28)",
+                background: "rgba(196,154,80,.06)", transition: "background .15s, color .15s",
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(196,154,80,.16)"; e.currentTarget.style.color = T.brassHi; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(196,154,80,.06)"; e.currentTarget.style.color = T.brass; }}
+              >{label}</a>
+            ))}
+          </nav></Reveal>
         </div>
         <motion.div initial={{ opacity: 0, scale: 0.7, rotate: -8 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
           style={{ flex: "0 0 auto", width: 260, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
@@ -755,7 +778,7 @@ function IntroPage() {
 
       <SectionDivider />
 
-      <section className="flex flex-col" style={{ gap: 52 }}>
+      <section id="features" className="flex flex-col" style={{ gap: 52, scrollMarginTop: 24 }}>
         {FEATURES.map((f, i) => (
           <React.Fragment key={f.title}>
             <FeatureRow {...f} reverse={i % 2 === 1} />
@@ -793,7 +816,7 @@ function IntroPage() {
 
       <SectionDivider />
 
-      <section>
+      <section id="tiers" style={{ scrollMarginTop: 24 }}>
         <Reveal>
           <div className="flex items-center gap-2" style={{ marginBottom: 6, justifyContent: "center" }}>
             <Crown size={16} color={T.brassHi} />
@@ -880,6 +903,76 @@ const CAT = {
   security: { label: "보안", Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.4.1", date: "2026.8.28",
+    summary: "화면 구석에 표시되는 버전 번호가 실제 배포된 버전보다 한 단계 뒤처져 있던 문제를 고쳤어요. 지금 보고 계신 /about 소개 페이지의 첫 화면도 더 세련되게 새 단장했어요 — '기능 둘러보기' 버튼과, 학습·도감·퍼즐/티어/정확도 체계로 바로 이동하는 칩 버튼이 추가됐어요.",
+    mascot: {
+      intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "이 페이지 맨 위 칩 버튼을 눌러보면 원하는 소개로 바로 이동할 수 있어요!" },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "버전 번호도 이제 실제 배포된 최신 버전과 항상 맞춰서 보여드릴게요." },
+    },
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: "/about 페이지 리디자인 + 버전 표시 버그 수정" },
+    sections: [
+      { cat: "ui", items: [
+        "/about 페이지 첫 화면(히어로)이 더 세련된 디자인으로 새 단장했어요 — '기능 둘러보기' 버튼과, 학습·도감·퍼즐/티어/정확도 체계 소개로 바로 이동하는 칩 버튼이 추가됐어요.",
+      ] },
+      { cat: "fix", items: [
+        "화면 구석과 /about 페이지에 표시되는 버전 번호가 실제 배포된 버전보다 뒤처져 있던 문제를 고쳤어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.4.0", date: "2026.8.28",
+    summary: "탭 이름이 바뀌었어요 — 기존 '학습' 탭은 '분석'으로, 기존 '퀘스트' 탭은 '학습'으로요. 그 '학습' 탭의 메인 퀘스트는 갈래를 갖는 나무 모양 로드맵을 따라 순서대로 열리는 '레슨' 시스템으로 완전히 새로워졌어요. 퍼즐 탭의 오프닝 검색과 도감 탭의 오프닝 트리 검색이 더 폭넓고 찾기 쉬워졌고, 수 설명에 나오는 수를 언급하면 자동으로 그 수까지 이동하는 링크가 걸려요. 퍼즐 카드·오늘의 퍼즐의 기보를 눌러도 바로 집중 분석으로 들어갈 수 있고, 검색·친구·채팅·프로필창 같은 화면도 브라우저 뒤로가기 한 번으로 자연스럽게 닫혀요. 수 등급 판정 방식을 여러 화면에서 하나로 통일했고, 퍼즐 탭에서 일일 퍼즐을 누르면 가끔 버벅이거나 화면이 멈춰 버리던 문제도 고쳤어요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "학습 탭을 열어보면 이제 나무처럼 갈래를 뻗어나가는 레슨 로드맵이 기다리고 있어요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "퍼즐이나 오늘의 퍼즐 기보를 눌러 보면, 바로 집중 분석으로 넘어갈 수 있다는 것도 잊지 마세요." },
+    },
+    highlight: { kind: "icon", Icon: Compass, color: T.brassHi, label: "메인 퀘스트 전면 개편 — 레슨 시스템" },
+    sections: [
+      { cat: "feature", items: [
+        "탭 이름이 바뀌었어요 — 기존 '학습' 탭은 '분석'으로, 기존 '퀘스트' 탭은 '학습'으로 이름이 바뀌었어요.",
+        "메인 퀘스트가 챕터 목록 대신, 갈래를 갖는 나무 모양 로드맵을 따라 순서대로 열리는 '레슨' 시스템으로 완전히 새로워졌어요. 레슨 하나가 여러 선행 레슨을 가질 수도 있어요.",
+        "퍼즐 탭의 오프닝 검색과 퍼즐 생성자 검색이 하나의 검색창으로 합쳐지고 정렬 옵션이 생겼어요. 도감 탭의 오프닝 트리 검색창도 더 찾기 쉬운 디자인으로 바뀌었어요.",
+        "수 설명 안에서 실제로 둘 수 있는 수를 언급하면 자동으로 그 수까지 이동하는 링크가 걸려요.",
+        "퍼즐 카드·오늘의 퍼즐 팝업의 기보에서 수를 누르면 바로 집중 분석 화면으로 들어갈 수 있어요.",
+        "검색·친구·채팅·프로필창 등 여러 화면을 브라우저 뒤로가기 한 번으로 자연스럽게 닫을 수 있게 됐어요.",
+      ] },
+      { cat: "fix", items: [
+        "수 등급 판정 방식을 여러 화면에서 하나로 통일해 더 일관되게 매겨져요. 탁월한 수 판정 중 일부 규칙도 다듬었어요.",
+        "퍼즐 탭에서 일일 퍼즐을 누르면 가끔 버벅이거나 화면이 멈춰 버리던 문제를 고쳤어요.",
+      ] },
+      { cat: "ui", items: [
+        "퍼즐 카드·일일 퍼즐 팝업의 기보 밑줄을 없앴고, 분석 탭 아이콘이 새로워졌어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.3.9", date: "2026.8.21",
+    summary: "게임 리뷰 화면이 데스크톱에서는 화면 전체를 넓게 쓰는 전용 레이아웃으로 바뀌었어요 — 체스보드가 훨씬 커지고, 진입 애니메이션의 그래프들도 큰 화면에 맞게 커졌어요. 리뷰 정확도 그래프는 계산 중 안내와 확정 토스트, 구간별 등급 표시를 새로 갖췄고, 부드럽게 이어지도록 다듬었어요. 체스판 위 드래그로 기물을 옮기는 조작감도 다시 손봤고, 더 강력한 Stockfish 18(정식) 분석 엔진이 추가됐어요. 오프닝 이름을 바꾸면 퍼즐 이름에도 곧바로 반영되고, 체스판 사진 스캔 기능도 다시 정상 동작해요.",
+    mascot: {
+      intro: { char: "milku", expr: "think", name: "MILKU 코치", align: "left", text: "데스크톱에서 게임 리뷰를 열어보면 체스보드가 훨씬 커진 걸 바로 느낄 수 있을 거예요!" },
+      outro: { char: "kokoa", expr: "wink", name: "KOKOA 코치", align: "right", text: "체스판 사진 스캔도 다시 잘 동작하니, 실전 보드를 찍어서 바로 분석해 보세요." },
+    },
+    highlight: { kind: "icon", Icon: Rocket, color: T.brassHi, label: "데스크톱 리뷰 레이아웃 개편" },
+    sections: [
+      { cat: "feature", items: [
+        "게임 리뷰 화면이 데스크톱에서는 화면 전체를 넓게 쓰는 전용 레이아웃으로 바뀌었어요 — 체스보드가 커지고, 진입 애니메이션의 그래프들도 큰 화면에 맞게 커졌어요. 평가치 그래프는 더 작아지고, 코치 설명이 그 위쪽으로 옮겨졌어요.",
+        "리뷰 정확도 그래프가 새로워졌어요 — 계산 중 안내와 확정 토스트, 구간별 등급 표시가 생겼고, 계산이 밀리면 더 빠르게 따라잡도록 부드럽게 다듬어졌어요.",
+        "체스판 위에서 기물을 드래그로 옮기는 조작감을 다시 손봤어요 — 방향과 속도를 함께 보고 어느 칸으로 옮기려는지 더 정확하게 알아채요.",
+        "더 강력한 Stockfish 18(정식) 분석 엔진이 추가되고 목록 맨 위로 올라왔어요.",
+      ] },
+      { cat: "fix", items: [
+        "오프닝 이름을 수정하면 그 오프닝에서 만들어진 퍼즐 이름에도 즉시 반영돼요.",
+        "도감 오프닝 트리에 이론 수를 추가하면 화면에 곧바로 반영돼요.",
+        "게임 리뷰를 닫았다가 같은 수순으로 다시 열어도 진입 애니메이션이 항상 처음부터 다시 재생돼요.",
+        "체스판 사진 스캔 기능이 다시 정상 동작해요.",
+        "일일 퀘스트의 chess.com 링크를 눌러도 앱이 안 열리던 문제를 고쳤어요.",
+      ] },
+      { cat: "ui", items: [
+        "사이트 전반의 글꼴을 IBM Plex Sans KR로 통일했어요. 설정 탭에 로그인 상태일 때 프로필 미리보기가 표시돼요.",
+      ] },
+    ],
+  },
   {
     version: "0.3.8", date: "2026.8.19",
     summary: "게임 리뷰가 복잡한 포지션을 더 깊이 분석하도록 시간을 늘려 정확도를 개선했어요. 리뷰에 들어갈 때 보여주는 화면도 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 아직 분석되지 않은 구간은 검게, 끝난 구간만 채워지며 그래프가 일정한 속도로 그려져요. 각 수가 정확도를 얼마나 올리거나 내렸는지 초록·빨강 숫자로 잠깐 나타났다 사라져요. 정확도 계산 방식 자체도 새로 설계했어요 — 대국이 길어질수록 수 하나의 영향이 자연히 옅어지고, 포지션이 무난했는지 날카로웠는지도 반영돼요. 체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률도 개선했고, 리뷰 화면을 새로고침해도 보던 수에서 이어서 볼 수 있어요. 모바일 리뷰의 엔진 라인·단계별 정확도 말풍선도 더 보기 편해졌고, 라인/퍼즐 클리어 배너는 전용 폰트로 새 단장했어요. 체크메이트로 끝난 대국의 마지막 수 아이콘이 멈춰 있던 문제도 고쳤고, 내 프로필 카드 아이디 표시를 정리했고, PUZZLE CLEAR 애니메이션은 더 역동적으로 바뀌었어요. 같은 대국을 다시 열 때마다 정확도가 미세하게 달라지던 문제도 고쳤어요. 설정 탭에서 리뷰 속도와 정확도 보정 방식도 직접 고를 수 있게 됐고, LINE/PUZZLE CLEAR 배너 디자인을 통일했어요. /about 페이지에는 이 정확도 체계를 수식·그래프로 소개하는 섹션도 새로 생겼어요. LINE CLEAR 애니메이션에 초록 체크 표시가 추가됐고, 내 프로필 카드는 헤더 드롭다운의 별도 창으로 옮겨져 OpenChess/chess.com 통계를 따로 볼 수 있어요. LINE CLEAR 자간·정렬을 다듬고 두 배너가 겹치지 않고 순서대로 재생되게 했고, 친구·검색 창에서 보는 프로필에도 OpenChess/chess.com 통계 분리 보기를 적용했어요. 통계 토글은 프로필 카드 우상단으로 옮겼고, 게임 리뷰 진입 화면의 백·흑 정확도 그래프에는 수마다 등급 아이콘이 담긴 원과 구간별 등급 색이 새로 생겼어요. 무난한 대국에 블런더가 하나만 있어도 정확도가 너무 많이 깎이던 계산 방식도 실제 chess.com 리뷰와 비교해 다시 다듬었어요. 설정 탭에는 LINE/PUZZLE CLEAR 애니메이션·코치 말풍선을 각각 켜고 끌 수 있는 '퍼즐 설정' 카드가 새로 생겼고, 이 설정은 로그인하면 계정에 저장돼요.",
