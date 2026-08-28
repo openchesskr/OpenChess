@@ -13792,6 +13792,52 @@ function puzzleRatingOf(p) {
   const fenRootForRating = (!p.setupSans || !p.setupSans.length) && p.fen ? parseFenFull(p.fen) : null;
   return puzzleAverageRating(allLines.map((l) => puzzleLineBaseRating(setupForRating, tree, l, fenRootForRating)));
 }
+// (v0.4.1 기능, item 3) 퍼즐 탭 노출 점수 — 사용자 요청으로 추천/미해결/해결 완료 3분할과 오프닝별
+// 가로 스크롤 거치대를 없애고, "난이도 적합도·약점 보완도·테마 적합도"를 점수화한 단일 피드로
+// 통합한다. 세 요소 다 0~100 척도로 맞춰 가중합하고, "해결 여부"는 주 기준이 아니라 약한 감점
+// 요소로만 반영한다(요청: "풀었는지 여부가 주 기준인 게 이상함").
+// ① 난이도 적합도 — 퍼즐 레이팅이 "지금 내 퍼즐 레이팅"(puzzleRating, item 3의 공개 Elo 레이팅)에
+// 가까울수록 높은 점수. 400점 차이면 0점이 되도록 선형 감쇠.
+function puzzleDifficultyFitScore(puzzleRating, myRating) {
+  if (puzzleRating < 0) return 0;
+  return Math.max(0, 100 - (Math.abs(puzzleRating - myRating) / 400) * 100);
+}
+// ② 약점 보완도 — 테마별 정답률(플레이 가능한 퍼즐 중 해결한 비율)이 낮을수록, 그 테마의 퍼즐일수록
+// 높은 점수. 정답률을 아직 잴 수 없는(그 테마를 하나도 안 풀어본) 경우는 중립(50점)으로 둬 과대
+// 추정하지 않는다.
+function themeSolveRates(playablePuzzles, solved) {
+  const totals = {}, solvedCounts = {};
+  for (const p of playablePuzzles) {
+    for (const th of themesOf(p)) {
+      totals[th] = (totals[th] || 0) + 1;
+      if (solved.has(p.id)) solvedCounts[th] = (solvedCounts[th] || 0) + 1;
+    }
+  }
+  const rates = {};
+  for (const th of Object.keys(totals)) rates[th] = solvedCounts[th] ? solvedCounts[th] / totals[th] : 0;
+  return rates;
+}
+function puzzleWeaknessScore(p, themeRates) {
+  const ths = themesOf(p);
+  if (!ths.length) return 50;
+  const known = ths.filter((t) => t in themeRates);
+  if (!known.length) return 50;
+  const avgRate = known.reduce((s, t) => s + themeRates[t], 0) / known.length;
+  return (1 - avgRate) * 100;
+}
+// ③ 테마 적합도 — 테마 칩으로 특정 테마를 선택했을 때만 의미가 있다(선택 안 하면 전부 중립 50점).
+function puzzleThemeFitScore(p, selectedTheme) {
+  if (!selectedTheme || selectedTheme === "all") return 50;
+  return themesOf(p).includes(selectedTheme) ? 100 : 0;
+}
+// 최종 노출 점수 = 세 요소 가중합(난이도 0.4 · 약점 0.35 · 테마 0.25) − 이미 푼 퍼즐 약한 감점(8점).
+function puzzleExposureScore(p, { myRating, themeRates, selectedTheme, puzzleRating, solved }) {
+  const diff = puzzleDifficultyFitScore(puzzleRating, myRating);
+  const weak = puzzleWeaknessScore(p, themeRates);
+  const theme = puzzleThemeFitScore(p, selectedTheme);
+  const solvedPenalty = solved.has(p.id) ? 8 : 0;
+  return 0.4 * diff + 0.35 * weak + 0.25 * theme - solvedPenalty;
+}
 // (버그 수정) genPuzzleTree가 결국 실패해 트리를 못 만들었는데도(과거 로직 결함·중간에 취소된
 // 생성 등) 그 실패한 결과가 그대로 저장돼, 실제로는 통과 가능한 라인이 0개인 "빈 퍼즐"이 목록에
 // 남아 있었다. PuzzleCard가 실제 라인 수 대신 Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시해
@@ -17873,8 +17919,12 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
   const [filter, setFilter] = useState("all");
+  // (v0.4.1 기능, item 3) 사용자 요청 — "내가 만든 퍼즐"·"풀고 있는 중"을 직관적으로 찾을 수 있게
+  // 테마 칩과 별개의 빠른 접근 칩을 둔다. quickFilter는 테마 필터와 AND로 함께 적용된다.
+  const [quickFilter, setQuickFilter] = useState("all"); // "all" | "mine" | "inprogress"
+  const [hideSolved, setHideSolved] = useState(false);
   // (사용자 요청) 퍼즐 탭 필터 — 오프닝/생성자를 여러 개 골라(다중 태그) 미해결/해결됨 목록을 그
   // 자리에서 좁혀 본다. 자동완성 후보는 지금 목록에 실제로 있는 값만(없는 값을 검색해 봐야 결과가
   // 0개인 게 뻔하므로) 보여준다.
@@ -17887,7 +17937,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const [searchFocus, setSearchFocus] = useState(false);
   // (사용자 요청) 두 검색창을 하나로 합쳐 생긴 여백에 들어갈 정렬 기준 — 일일 퍼즐(캐러셀)은 이
   // 정렬과 무관한 별도 기능이라 건드리지 않고, 그 아래 미해결/해결됨 목록에만 적용한다.
-  const [puzzleSortBy, setPuzzleSortBy] = useState("recent"); // "recent"(최신순) | "rating"(레이팅순)
+  // (v0.4.1 기능, item 3) 기본 정렬을 "추천순"(난이도 적합도·약점 보완도·테마 적합도 3요소 점수)으로
+  // 바꾼다 — 최신순/레이팅순은 여전히 수동으로 고를 수 있게 남겨 둔다.
+  const [puzzleSortBy, setPuzzleSortBy] = useState("score"); // "score"(추천순) | "recent"(최신순) | "rating"(레이팅순)
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
   const [numFocus, setNumFocus] = useState(false);
@@ -17903,24 +17955,23 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     const solvers = (puzzleSolvers && puzzleSolvers[no]) || [];
     return solvers.filter((u) => friendUids && friendUids.includes(u)).map((u) => (solverNames && solverNames[u]) || null).filter(Boolean);
   };
-  // (16차) 퍼즐 추천 — 일간/주간/월간 풀이 랭킹(중복 풀이 포함) 상위 퍼즐을 미해결/해결됨보다 위에 노출.
-  const [rankPeriod, setRankPeriod] = useState("day");
-  const [rankMap, setRankMap] = useState({});
+  // (v0.4.1 기능, item 3) 사용자 요청 — 추천/미해결/해결 완료 3분할을 없애고 단일 피드로 합친다.
+  // 예전 "추천 퍼즐" 섹션이 하던 일(내가 아직 안 열어본, 다른 사람들이 많이 푼 인기 퍼즐을 발견하게
+  // 해주는 것)은 그대로 필요하므로, 그 발견 메커니즘(주간 풀이 랭킹 + 서버 조회 + 내가 리포스트한
+  // 퍼즐)은 유지하되 별도 섹션이 아니라 아래 메인 피드의 후보 풀에 합류시킨다 — 일간/주간/월간
+  // 전환 UI와 "다른 추천 보기" 재셔플은 더 이상 필요 없어 없앴다(주간 하나로 고정).
+  const [rankMap, setRankMap] = useState(null);
   // (버그 수정) 랭킹에 오른 퍼즐이 "내가 예전에 열어봤거나 삭제해 본 적 있는 퍼즐"(puzzles/archivedPuzzles,
-  // 둘 다 로컬 계정 한정)에 없으면 추천 후보에서 통째로 빠졌다 — 대부분의 유저는 랭킹 1~12위 퍼즐을
-  // 전혀 열어본 적이 없으므로, 사실상 추천 퍼즐이 거의 항상 비어 보이는(제목조차 안 뜨는) 원인이었다.
-  // 번호만 있고 로컬에 없는 랭킹 퍼즐은 서버(Supabase, 전역 저장소)에서 직접 가져와 채운다.
+  // 둘 다 로컬 계정 한정)에 없으면 후보 풀에서 통째로 빠졌다 — 번호만 있고 로컬에 없는 랭킹 퍼즐은
+  // 서버(Supabase, 전역 저장소)에서 직접 가져와 채운다.
   const [rankPuzzles, setRankPuzzles] = useState({}); // no -> 퍼즐 데이터(서버에서 보강)
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let m = rankMap[rankPeriod];
-      if (!m) {
-        const rows = await puzzleRank(rankPeriod, 12);
-        if (cancelled) return;
-        m = {}; rows.forEach((r) => { m[r.no] = r.cnt; });
-        setRankMap((prev) => ({ ...prev, [rankPeriod]: m }));
-      }
+      const rows = await puzzleRank("week", 24);
+      if (cancelled) return;
+      const m = {}; rows.forEach((r) => { m[r.no] = r.cnt; });
+      setRankMap(m);
       const nos = Object.keys(m).filter((no) => !rankPuzzles[no]);
       if (!nos.length) return;
       const fetched = await Promise.all(nos.map((no) => puzzleFetch(no)));
@@ -17928,16 +17979,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       setRankPuzzles((prev) => { const n = { ...prev }; nos.forEach((no, i) => { if (fetched[i]) n[no] = fetched[i]; }); return n; });
     })();
     return () => { cancelled = true; };
-  }, [rankPeriod, rankMap]);
-  // (18차 UX9) 테마 칩을 선택하면 추천 퍼즐도 그 테마만 표시. (18차 UI4) 이미 해결한 퍼즐은
-  // 추천에서 빼고 아래 "해결 완료" 섹션에만 나오도록 분리한다.
-  // (20차 UX6) 추천 퍼즐은 "미해결" 목록과 별도 알고리즘 — 내 퍼즐 탭에서 삭제해도(친구/본인 미해결
-  // 이라도) 풀이자가 많으면 계속 후보로 남도록, 현재 puzzles뿐 아니라 삭제했던 퍼즐의 보존본
-  // (archivedPuzzles)까지 함께 후보 풀로 합친다. 추천 카드는 삭제 버튼 자체가 없어 여기서 지울 수 없다.
-  const [recSeed, setRecSeed] = useState(0);
-  // (v0.1.0) 내가 리포스트한 퍼즐 — 풀이수·좋아요 랭킹과 무관하게 추천 후보 풀에 함께 들어간다.
-  // "간헐적으로 등장"은 별도 로직 없이, 아래 recommended의 결정적 셔플+6개 슬라이스가 자연히
-  // 만들어준다(후보 풀이 6개보다 많으면 새로고침마다 섞여 나왔다 안 나왔다 함).
+  }, []);
+  // (v0.1.0) 내가 리포스트한 퍼즐 — 마찬가지로 발견 후보 풀에 합류시킨다.
   const [myRepostNos, setMyRepostNos] = useState([]);
   useEffect(() => {
     if (!myUid) { setMyRepostNos([]); return; }
@@ -17957,28 +18000,15 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     })();
     return () => { cancelled = true; };
   }, [myRepostNos]);
-  const recommendedPool = useMemo(() => {
-    const m = rankMap[rankPeriod] || {};
-    const byId = new Map();
-    for (const p of puzzles) byId.set(p.id, p);
-    for (const p of Object.values(archivedPuzzles || {})) if (!byId.has(p.id)) byId.set(p.id, p);
-    for (const no of Object.keys(m)) { const p = rankPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
-    for (const no of myRepostNos) { const p = myRepostPuzzles[no]; if (p && !byId.has(p.id)) byId.set(p.id, p); }
-    const passesFilter = (p) => (filter === "all" || themesOf(p).includes(filter)) && !solved.has(p.id) && isPuzzlePlayable(p);
-    const ranked = [...byId.values()].filter(passesFilter).map((p) => ({ p, cnt: m[puzzleNo(p.id)] || 0 })).filter((x) => x.cnt > 0).sort((a, b) => b.cnt - a.cnt).map((x) => x.p);
-    const rankedIds = new Set(ranked.map((p) => p.id));
-    const reposted = myRepostNos.map((no) => myRepostPuzzles[no]).filter((p) => p && passesFilter(p) && !rankedIds.has(p.id));
-    return [...ranked, ...reposted].slice(0, 16);
-  }, [puzzles, archivedPuzzles, rankMap, rankPeriod, filter, solved, rankPuzzles, myRepostNos, myRepostPuzzles]);
-  // (20차 UX6) "새로고침"을 누르면 후보 풀(최대 12개) 안에서 다른 6개를 결정적으로 다시 뽑아 보여준다.
-  const recommended = useMemo(() => {
-    if (recommendedPool.length <= 6) return recommendedPool;
-    const arr = [...recommendedPool];
-    let seed = (recSeed + 1) * 2654435761;
-    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
-    return arr.slice(0, 6);
-  }, [recommendedPool, recSeed]);
+  // 발견 후보(로컬에 없던 인기 퍼즐·리포스트한 퍼즐)만 따로 모아 뒀다가, 아래 메인 후보 풀에서
+  // 로컬 puzzles/archivedPuzzles와 합친다.
+  const discoveredPuzzles = useMemo(() => {
+    const out = [];
+    if (rankMap) for (const no of Object.keys(rankMap)) { const p = rankPuzzles[no]; if (p) out.push(p); }
+    for (const no of myRepostNos) { const p = myRepostPuzzles[no]; if (p) out.push(p); }
+    return out;
+  }, [rankMap, rankPuzzles, myRepostNos, myRepostPuzzles]);
+  const popularityOf = (p) => (rankMap && rankMap[puzzleNo(p.id)]) || 0;
   // (버그 수정) 이 useMemo가 예전엔 아래쪽(다른 지역 변수들 사이)에 있었다 — puzzle 목록 화면에서만
   // 쓰이는 값이라 그 자리가 자연스러워 보였지만, 바로 위 "if (active) return <PuzzleSolver .../>"
   // 조기 반환 때문에 퍼즐을 열어 둔 동안(active 있음)에는 이 훅 자체가 아예 호출되지 않다가, 닫으면
@@ -18032,7 +18062,14 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 풀이 화면이 리렌더될 때마다(다른 상태 변화로 App 전체가 리렌더될 때마다) 이 무거운 재계산이
   // 반복되어 — 쌓인 퍼즐 수가 많은 유저일수록 클릭 한 번이 눈에 띄는 버벅임/먹통으로 번졌다.
   // puzzles·solved가 실제로 바뀔 때만 새 배열을 만들도록 memo화해 원래 의도대로 캐시가 동작하게 한다.
-  const playablePuzzles = useMemo(() => (canEdit ? puzzles : puzzles.filter((p) => solved.has(p.id) || isPuzzlePlayable(p))), [puzzles, canEdit, solved]);
+  const localPlayablePuzzles = useMemo(() => (canEdit ? puzzles : puzzles.filter((p) => solved.has(p.id) || isPuzzlePlayable(p))), [puzzles, canEdit, solved]);
+  // (v0.4.1 기능, item 3) 발견 후보(주간 인기·내 리포스트)를 로컬 목록과 합쳐 단일 피드의 후보 풀로 쓴다 —
+  // 이미 로컬에 있는 퍼즐(id 겹침)은 중복으로 넣지 않는다.
+  const playablePuzzles = useMemo(() => {
+    const byId = new Map(localPlayablePuzzles.map((p) => [p.id, p]));
+    for (const p of discoveredPuzzles) if (!byId.has(p.id)) byId.set(p.id, p);
+    return [...byId.values()];
+  }, [localPlayablePuzzles, discoveredPuzzles]);
   // (버그 수정) 카드 라벨용 표시 이름은 그대로 lastNamedOpening을 쓰고(아래 puzzleName 등에서
   // 이미 그렇게 쓰고 있음, 여긴 건드리지 않는다), openingKeyOf는 이제 검색·필터 UI 밖에서는
   // 쓰이지 않는다 — 필터 매칭 자체는 이제 openingNamesAlong(경로 전체를 따라가며 만나는 모든
@@ -18105,26 +18142,34 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     return selectedOpenings.some((o) => names.has(o) || (!p.setupSans && p.opening === o));
   };
   const matchesCreatorFilter = (p) => selectedCreators.length === 0 || selectedCreators.includes((creatorUsernames || {})[puzzleNo(p.id)]);
-  const themed = playablePuzzles.filter((p) => (filter === "all" || themesOf(p).includes(filter)) && matchesOpeningFilter(p) && matchesCreatorFilter(p));
-  // (사용자 요청) 오프닝별 묶음 대신, 새로 생긴 정렬 박스(최신순/레이팅순)를 실제로 체감할 수 있게
-  // 평평한 한 줄 정렬 목록으로 바꾼다 — "오프닝별로 묶기"와 "자유 정렬"은 서로 성격이 부딪힌다
-  // (묶여 있으면 전체 순서가 아니라 각 묶음 내부 순서만 바뀌어 정렬 박스를 눌러도 체감이 약함).
-  // "최신순"은 puzzles 배열에 실제로 쌓인 생성/추가 순서([...prev, pz]로 항상 끝에 덧붙여짐,
-  // onSavePuzzle 참고)를 그대로 쓴다 — 없는 타임스탬프를 새로 지어내는 대신, 이미 존재하는 진짜
-  // 시간 순서(로컬 puzzles/Supabase progress 저장 순서와 동일)를 재사용한다.
-  // "레이팅순"은 PuzzleCard가 카드 좌하단에 이미 보여주고 있는 ★avgRating과 완전히 같은 계산
-  // (puzzleRatingOf, 위 참고)을 재사용한다 — 화면에 이미 노출되어 검증된 난이도 지표라 새로
-  // 지어낼 필요가 없었다. (puzzleOrderIndex/puzzleRatingMap 자체는 훅 규칙 때문에 위(조기 반환보다
-  // 앞)로 옮겨져 있다.)
+  // (v0.4.1 기능, item 3) 빠른 접근 칩 — "내가 만든 퍼즐"은 creatorUsernames(no -> 제작자 아이디)가
+  // myUsername과 같은 퍼즐, "풀고 있는 중"은 라인을 하나 이상 풀었지만(lineSolves에 기록 있음)
+  // 아직 전체 완주(solved)는 아닌 퍼즐로 판정한다.
+  const matchesQuickFilter = (p) => {
+    if (quickFilter === "mine") return !!myUsername && (creatorUsernames || {})[puzzleNo(p.id)] === myUsername;
+    if (quickFilter === "inprogress") return !solved.has(p.id) && !!(lineSolves && lineSolves[p.id] && lineSolves[p.id].length > 0);
+    return true;
+  };
+  const themed = playablePuzzles.filter((p) => (filter === "all" || themesOf(p).includes(filter)) && matchesOpeningFilter(p) && matchesCreatorFilter(p) && matchesQuickFilter(p) && (!hideSolved || !solved.has(p.id)));
+  // (v0.4.1 기능, item 3) 사용자 요청 — 미해결/해결 완료 두 목록으로 나누던 것을 없애고 하나의 정렬
+  // 목록으로 합친다. 기본("추천순")은 puzzleExposureScore(난이도 적합도·약점 보완도·테마 적합도
+  // 가중합, 위 참고)가 높은 순 — "해결 여부"는 그 점수 안의 약한 감점 요소로만 반영되고 더는 목록을
+  // 가르는 주 기준이 아니다. "최신순"/"레이팅순"은 그대로 수동으로 고를 수 있게 남겨 둔다.
   const byOpeningFallback = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 동률일 때만 쓰는 보조 기준
+  const themeRates = useMemo(() => themeSolveRates(playablePuzzles, solved), [playablePuzzles, solved]);
+  const myPuzzleRating = puzzleRating || 800;
   const sortPuzzles = (list) => {
     const arr = [...list];
     if (puzzleSortBy === "rating") arr.sort((a, b) => (puzzleRatingMap.get(b.id) ?? -1) - (puzzleRatingMap.get(a.id) ?? -1) || byOpeningFallback(a, b));
-    else arr.sort((a, b) => (puzzleOrderIndex.get(b.id) ?? -1) - (puzzleOrderIndex.get(a.id) ?? -1) || byOpeningFallback(a, b));
+    else if (puzzleSortBy === "recent") arr.sort((a, b) => (puzzleOrderIndex.get(b.id) ?? -1) - (puzzleOrderIndex.get(a.id) ?? -1) || byOpeningFallback(a, b));
+    else arr.sort((a, b) => {
+      const sa = puzzleExposureScore(a, { myRating: myPuzzleRating, themeRates, selectedTheme: filter, puzzleRating: puzzleRatingMap.get(a.id) ?? -1, solved });
+      const sb = puzzleExposureScore(b, { myRating: myPuzzleRating, themeRates, selectedTheme: filter, puzzleRating: puzzleRatingMap.get(b.id) ?? -1, solved });
+      return sb - sa || byOpeningFallback(a, b);
+    });
     return arr;
   };
-  const open = sortPuzzles(themed.filter((p) => !solved.has(p.id)));
-  const cleared = sortPuzzles(themed.filter((p) => solved.has(p.id)));
+  const feed = sortPuzzles(themed);
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
   // (사용자 요청) 오프닝·생성자 필터가 걸려 있으면 테마 칩의 개수도 그 필터가 적용된 상태를 반영한다.
@@ -18248,10 +18293,19 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           {/* (사용자 요청) 검색창 2개→1개로 합쳐 생긴 자리에 정렬 박스를 넣는다 — 집중분석(FocusPanel)의
               평가치순/채택률순 세그먼트 토글과 같은 시각 스타일(pill 2개, 선택된 쪽만 T.ebony2 배경 +
               T.brassHi 글자)을 이 탭의 필터 행에 맞춰 그대로 옮겨온다. */}
-          <div className="inline-flex" style={{ flex: "1 1 150px", minWidth: 130, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }} title="일일 퍼즐을 제외한 목록 정렬 기준">
+          <div className="inline-flex" style={{ flex: "1 1 200px", minWidth: 170, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }} title="일일 퍼즐을 제외한 목록 정렬 기준">
+            <button onClick={() => setPuzzleSortBy("score")} className="press" style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: puzzleSortBy === "score" ? T.ebony2 : "transparent", color: puzzleSortBy === "score" ? T.brassHi : T.inkSoft }}>추천순</button>
             <button onClick={() => setPuzzleSortBy("recent")} className="press" style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: puzzleSortBy === "recent" ? T.ebony2 : "transparent", color: puzzleSortBy === "recent" ? T.brassHi : T.inkSoft }}>최신순</button>
             <button onClick={() => setPuzzleSortBy("rating")} className="press" style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: puzzleSortBy === "rating" ? T.ebony2 : "transparent", color: puzzleSortBy === "rating" ? T.brassHi : T.inkSoft }}>레이팅순</button>
           </div>
+        </div>
+        {/* (v0.4.1 기능, item 3) 빠른 접근 칩 — "내가 관심 있고 풀고 있었던 퍼즐"과 "내가 직접 만든
+            퍼즐"을 직관적으로 찾을 수 있게, 테마 칩과 별개로 한 줄 더 둔다. */}
+        <div className="flex items-center gap-1.5" style={{ flexWrap: "wrap", marginTop: 8 }}>
+          {[["all", "전체"], ["mine", "내가 만든 퍼즐"], ["inprogress", "풀고 있는 중"]].map(([k, lb]) => { const on = quickFilter === k; return (
+            <button key={k} onClick={() => setQuickFilter(k)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid " + (on ? T.best : "#5A4630"), background: on ? "rgba(60,138,60,.22)" : "transparent", color: on ? "#BEEAB0" : T.inkSoft, cursor: "pointer" }}>{lb}</button>
+          ); })}
+          <button onClick={() => setHideSolved((v) => !v)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid " + (hideSolved ? T.brass : "#5A4630"), background: hideSolved ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: hideSolved ? "#241509" : T.inkSoft, cursor: "pointer", marginLeft: "auto" }}>{hideSolved ? "해결 완료 숨기는 중" : "해결 완료 숨기기"}</button>
         </div>
       </div>
       {/* (v0.2.2 UI#3) 수 체계(테마) 칩은 줄바꿈 없이 한 줄에 다 들어가도록 크기를 줄이고, 아주 좁은
@@ -18261,59 +18315,15 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           <button key={k} onClick={() => setFilter(k)} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb} <span style={{ opacity: .7 }}>{count(k)}</span></button>
         ); })}
       </div>
-      {/* (16차) 퍼즐 추천 — 미해결/해결됨 목록보다 위에 표시되는 일간/주간/월간 인기 퍼즐 랭킹 */}
-      {/* (버그 수정) 예전엔 recommended.length===0이면 이 블록 전체(일간/주간/월간 전환 버튼까지)가
-          사라졌다 — 그 기간에 아무도 퍼즐을 안 풀었을 뿐인데(예: 오늘 아직 아무도 없음) 사용자는
-          "추천 퍼즐 기능이 아예 없다/고장났다"로 오해할 수밖에 없었고, 더 넓은 기간(주간·월간)으로
-          바꿔볼 방법조차 안 보였다. SB_ON일 때는 항상 헤더+기간 전환 버튼을 보여주고, 그 기간에
-          추천할 게 없으면 목록 자리에 안내 문구만 띄운다. */}
-      {SB_ON && (
-        <div style={{ marginBottom: 18 }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>🔥 추천 퍼즐</div>
-            <div className="flex items-center gap-1">
-              {[["day", "일간"], ["week", "주간"], ["month", "월간"]].map(([k, lb]) => { const on = rankPeriod === k; return (
-                <button key={k} onClick={() => setRankPeriod(k)} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "4px 9px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
-              ); })}
-              {/* (20차 UX6) 지금 보이는 6개가 마음에 안 들면 후보 풀(최대 12개) 안에서 다른 6개로 새로고침 */}
-              {recommendedPool.length > 6 && <button onClick={() => setRecSeed((s) => s + 1)} className="press" title="다른 추천 보기" aria-label="추천 퍼즐 새로고침" style={{ width: 24, height: 24, borderRadius: 999, border: "1px solid #5A4630", background: "transparent", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><RotateCcw size={12} /></button>}
-            </div>
-          </div>
-          {recommended.length > 0 ? (
-            // (사용자 요청) 모바일뿐 아니라 데스크톱에서도 그리드로 줄바꿈되지 않고, 미해결 목록의
-            // 오프닝별 카드(openByOpening, 위 참고)와 같은 형태로 — 점선 테두리 안에 항상 한 줄
-            // 가로 스크롤로 보여준다.
-            <div style={{ border: "1.5px dashed rgba(196,154,80,.45)", borderRadius: 14, padding: "8px 8px 10px" }}>
-              <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
-                <AnimatePresence mode="popLayout">
-                  {recommended.map((p, i) => <FadeIn key={"rec-" + p.id} index={i} style={{ width: 230, minWidth: 230, flexShrink: 0 }}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}
-                </AnimatePresence>
-              </div>
-            </div>
-          ) : (
-            <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: "14px 16px", color: T.inkSoft, fontSize: 12.5 }}>
-              {rankMap[rankPeriod] ? "이 기간엔 아직 풀이 기록이 없어요 — 다른 기간을 눌러보세요." : "추천 목록을 불러오는 중…"}
-            </div>
-          )}
-        </div>
-      )}
-      {themed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 테마의 퍼즐이 아직 없어요.</div>
-        : <div>
-            {/* (사용자 요청) 최상위 오프닝별 점선 묶음을 없애고 평평한(줄바꿈) 정렬 목록으로 바꿨다 —
-                "묶어서 보여주기"와 "자유 정렬(최신순/레이팅순)"은 서로 부딪히는 요구라(묶여 있으면
-                정렬 박스를 눌러도 각 묶음 안 순서만 바뀔 뿐 전체 순서는 그대로라 체감이 거의 없다),
-                정렬 박스가 실제로 의미 있게 동작하도록 오프닝 묶음 대신 그리드 하나로 통일한다. */}
-            {open.length > 0 && <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>미해결 ({open.length})</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
-                {open.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={false} onClick={() => setActive(p)} onDelete={onDeletePuzzle} {...puzzleCardProps(p)} /></FadeIn>)}
-              </div>
-            </div>}
-            {cleared.length > 0 && <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.best, marginBottom: 8 }}>해결 완료 ({cleared.length})</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
-                <AnimatePresence mode="popLayout">{cleared.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={true} onClick={() => setActive(p)} onDelete={onDeletePuzzle} solveCount={solveCountFor(p)} solvedTags={lineSolves ? lineSolves[p.id] : null} friendSolverNames={friendNamesFor(p.id)} isLiked={likedPuzzles.has(p.id)} likeCount={(likeCounts && likeCounts[puzzleNo(p.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(p.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(p.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(p.id)]) || 0} onShare={onShare} /></FadeIn>)}</AnimatePresence>
-              </div>
-            </div>}
+      {/* (v0.4.1 기능, item 3) 사용자 요청 — 추천/미해결/해결 완료 3분할을 없애고 단일 정렬 피드로
+          통합한다. 기본 정렬("추천순")은 위 puzzleExposureScore(난이도 적합도·약점 보완도·테마
+          적합도 가중합)가 높은 순 — 예전 "🔥 추천 퍼즐" 섹션이 하던 발견 기능(인기·리포스트 퍼즐)은
+          discoveredPuzzles로 이 피드의 후보 풀에 그대로 합류돼 있다. */}
+      {feed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 조건에 맞는 퍼즐이 아직 없어요.</div>
+        : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
+            <AnimatePresence mode="popLayout">
+              {feed.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} onDelete={onDeletePuzzle} {...puzzleCardProps(p)} /></FadeIn>)}
+            </AnimatePresence>
           </div>}
     </div>
   );
@@ -19377,6 +19387,7 @@ const CHANGELOG = [
       "학습 탭 보드 편집기에서 '이 포지션으로 퍼즐 만들기' 버튼으로, 대국 없이 원하는 배치만으로도 새 전술 퍼즐을 바로 만들 수 있어요.",
       "모든 퍼즐이 시작 포지션을 FEN 코드로도 갖게 됐어요 — 앞으로 퍼즐을 더 다양한 방식으로 공유하고 다룰 수 있는 기반이에요.",
       "공개 퍼즐 레이팅이 새로 생겼어요 — 라인을 끝까지 풀면 오르고, 틀린 수를 두면 내려가요. 프로필 카드에서 티어 배지 옆에 확인할 수 있어요.",
+      "퍼즐 탭이 개편됐어요 — 추천/미해결/해결 완료 3분할과 오프닝별 가로 스크롤 거치대를 없애고, 난이도 적합도·약점 보완도·테마 적합도를 점수화한 단일 추천 피드로 합쳤어요. '내가 만든 퍼즐'·'풀고 있는 중' 빠른 접근 칩과 '해결 완료 숨기기' 토글로 원하는 퍼즐을 더 쉽게 찾을 수 있어요.",
     ]
   },
   {
@@ -25956,7 +25967,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} />}
