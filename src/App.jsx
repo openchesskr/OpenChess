@@ -5343,6 +5343,44 @@ function CircleBadge({ kind, big, descOnClick }) {
     </span>
   );
 }
+// (v0.4.1 기능, item 3 후속) 사용자 요청 — 퍼즐 레이팅 배지를 누르면 "퍼즐 레이팅 : n" 말풍선이 뜨게.
+// CircleBadge의 안전 영역 배치 로직(position:fixed + 화면 가장자리 margin 클램프 + 화면 위/아래
+// 절반에 따라 열리는 방향을 바꿔 항상 화면 중앙 쪽을 향함)을 그대로 재사용하는 범용 버전 —
+// 모바일 좁은 화면에서도 말풍선이 잘리지 않는다.
+function ClickInfoBadge({ children, text, width = 180 }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const anchorRef = useRef(null);
+  const toggle = (e) => {
+    e.stopPropagation();
+    setOpen((v) => {
+      const next = !v;
+      if (next && anchorRef.current) {
+        const rect = anchorRef.current.getBoundingClientRect();
+        const margin = 10;
+        const cx = rect.left + rect.width / 2;
+        const left = Math.max(margin, Math.min(cx - width / 2, window.innerWidth - width - margin));
+        const openDown = rect.top < window.innerHeight / 2;
+        setPos({ left, top: openDown ? rect.bottom + 8 : undefined, bottom: openDown ? undefined : window.innerHeight - rect.top + 8, tailX: cx - left, openDown });
+      }
+      return next;
+    });
+  };
+  return (
+    <span style={{ position: "relative", display: "inline-flex" }}>
+      <span ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>{children}</span>
+      {open && pos && (
+        <>
+          <span onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <span style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width, padding: "8px 11px", borderRadius: 9, background: T.ivoryHi, border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, fontSize: 12, fontWeight: 800, color: T.ink, textAlign: "center" }}>
+            {text}
+            <span style={{ position: "absolute", ...(pos.openDown ? { top: -6 } : { bottom: -6 }), left: pos.tailX, transform: "translateX(-50%) rotate(45deg)", width: 11, height: 11, background: T.ivoryHi, ...(pos.openDown ? { borderLeft: "1px solid " + T.brass, borderTop: "1px solid " + T.brass } : { borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass }) }} />
+          </span>
+        </>
+      )}
+    </span>
+  );
+}
 
 function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadgeClick }) {
   const kind = m.kind || "good";
@@ -14924,7 +14962,7 @@ function TierStatPill({ totalXp, size = 40, gaugeWidth = 92, gauge = true }) {
 // (v0.1.1) 다른 화면들과 달리 여기만 "아이언 5"처럼 티어를 텍스트로도 다시 보여준다(아라비아
 // 숫자 사용) — 이미지는 흰 원 배경 정중앙에 크게 둔다.
 // (v0.1.2) 다음 구간을 미리 보여주던 작은 배지들을 없앴다 — 여정 지도에서 이미 볼 수 있어 중복.
-function TierProgressStrip({ totalXp, onOpen }) {
+function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
   const { tier, xpInDivision, xpForNextDivision, division, maxed, gmStars } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
@@ -14947,6 +14985,15 @@ function TierProgressStrip({ totalXp, onOpen }) {
         </div>
         <div style={{ fontSize: 9.5, color: T.brassHi, opacity: .75, marginTop: 1 }}>{xpInDivision}/{xpForNextDivision} XP</div>
       </div>
+      {/* (사용자 요청) 퍼즐 레이팅을 티어를 표시하는 도형(TierLogoDisc) 우측에 표시 — 누르면 "퍼즐
+          레이팅 : n" 말풍선이 뜬다(모바일 안전 영역 클램프는 ClickInfoBadge가 담당). */}
+      {puzzleRating != null && (
+        <ClickInfoBadge text={"퍼즐 레이팅 : " + fmtFull(puzzleRating)}>
+          <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: "auto", padding: "5px 9px", borderRadius: 999, background: "rgba(196,154,80,.16)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+            <Puzzle size={11} /> {fmtFull(puzzleRating)}
+          </span>
+        </ClickInfoBadge>
+      )}
     </div>
   );
 }
@@ -16688,7 +16735,7 @@ function FitPuzzleName({ text }) {
     </div>
   );
 }
-function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
+function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, exposureScores }) {
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
   const hasPreview = p.setupSans && p.mistakeSan;
@@ -16744,6 +16791,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
           <span style={{ fontSize: 9, color: broken ? T.blunder : T.inkSoft, fontWeight: broken ? 800 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{broken ? "⚠ 손상된 퍼즐(라인 0개)" : themeLabelsOf(p) + " · 라인 " + totalLines + "개"}</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: SITE_FONT, fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
+        {/* (v0.4.1 기능, item 3 후속) 사용자 요청 — 노출 점수(추천순 정렬 기준)를 요소별로 카드에
+            표시한다 — 난이도 적합도·약점 보완도·테마 적합도 각각과 그 가중합(합계)을 함께 보여줘
+            "추천순이 왜 이 순서인지" 알고리즘이 더는 불투명하지 않게 한다. */}
+        {exposureScores && (
+          <div title="노출 점수 — 난이도 적합도(0.4)·약점 보완도(0.35)·테마 적합도(0.25) 가중합에서 이미 푼 퍼즐은 8점 감점" className="flex items-center" style={{ gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 8.5, fontWeight: 700, color: T.inkSoft }}>난{Math.round(exposureScores.diff)}</span>
+            <span style={{ fontSize: 8.5, fontWeight: 700, color: T.inkSoft }}>약{Math.round(exposureScores.weak)}</span>
+            <span style={{ fontSize: 8.5, fontWeight: 700, color: T.inkSoft }}>테{Math.round(exposureScores.theme)}</span>
+            <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>합{Math.round(exposureScores.total)}</span>
+          </div>
+        )}
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
             줄에 두면 폭이 좁아 말줄임으로 잘렸다 — 버튼과 분리해 별도 줄에 잘리지 않고 전부 보여준다. */}
         {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9.5, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.35, marginTop: 4, wordBreak: "keep-all" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
@@ -18123,6 +18181,11 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 이 두 훅도 조기 반환보다 앞으로 옮긴다(아래 puzzleOrderIndex/puzzleRatingMap 사용부는 그대로 둠).
   const puzzleOrderIndex = useMemo(() => { const m = new Map(); puzzles.forEach((p, i) => m.set(p.id, i)); return m; }, [puzzles]);
   const puzzleRatingMap = useMemo(() => { const m = new Map(); for (const p of playablePuzzles) m.set(p.id, puzzleRatingOf(p)); return m; }, [playablePuzzles]);
+  // (v0.4.1 기능, item 3, 버그 수정) 이 useMemo가 아래 "모든 훅 호출 뒤에 조기 반환" 규칙을 어기고
+  // 조기 반환보다 뒤(matchesOpeningFilter 근처)에 있었다 — 목록 화면에서는 호출되다가 퍼즐을 하나라도
+  // 열면(active) 그 즉시 호출이 건너뛰어져 "Rendered fewer hooks than expected"로 화면 전체가
+  // 먹통이 됐다(퍼즐을 아무거나 클릭하면 항상 재현됨). 위 puzzleRatingMap과 같은 자리로 옮긴다.
+  const themeRates = useMemo(() => themeSolveRates(playablePuzzles, solved), [playablePuzzles, solved]);
   // (버그 수정) 이 조기 반환이 위 useMemo들보다 앞에 있었다 — 퍼즐 목록 화면(active=null)에서는
   // 그 훅들이 매 렌더 호출되다가, 퍼즐을 열어(active가 생겨) 이 분기를 타는 순간 그 훅 호출이
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
@@ -18156,7 +18219,6 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 가중합, 위 참고)가 높은 순 — "해결 여부"는 그 점수 안의 약한 감점 요소로만 반영되고 더는 목록을
   // 가르는 주 기준이 아니다. "최신순"/"레이팅순"은 그대로 수동으로 고를 수 있게 남겨 둔다.
   const byOpeningFallback = (a, b) => (a.opening || "").localeCompare(b.opening || "") || (a.name || "").localeCompare(b.name || ""); // (UX4) 동률일 때만 쓰는 보조 기준
-  const themeRates = useMemo(() => themeSolveRates(playablePuzzles, solved), [playablePuzzles, solved]);
   const myPuzzleRating = puzzleRating || 800;
   const sortPuzzles = (list) => {
     const arr = [...list];
@@ -18170,7 +18232,18 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     return arr;
   };
   const feed = sortPuzzles(themed);
-  const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
+  // (v0.4.1 기능, item 3 후속) 사용자 요청 — 퍼즐 카드에 노출 점수를 요소별로 보이게. puzzleExposureScore가
+  // 내부에서 쓰는 세 하위 점수(난이도 적합도·약점 보완도·테마 적합도)를 그대로 다시 계산해 카드에 넘긴다.
+  const exposureScoresFor = (p) => {
+    const rating = puzzleRatingMap.get(p.id) ?? -1;
+    return {
+      diff: puzzleDifficultyFitScore(rating, myPuzzleRating),
+      weak: puzzleWeaknessScore(p, themeRates),
+      theme: puzzleThemeFitScore(p, filter),
+      total: puzzleExposureScore(p, { myRating: myPuzzleRating, themeRates, selectedTheme: filter, puzzleRating: rating, solved }),
+    };
+  };
+  const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare, exposureScores: exposureScoresFor(p) });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
   // (사용자 요청) 오프닝·생성자 필터가 걸려 있으면 테마 칩의 개수도 그 필터가 적용된 상태를 반영한다.
   const filteredForCount = playablePuzzles.filter((p) => matchesOpeningFilter(p) && matchesCreatorFilter(p));
@@ -18203,7 +18276,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       <div className="flex items-center gap-2"><Mascot name="kokoa" emotion="celebrate" size={70} /><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>퍼즐</h2></div>
       {/* (v0.0.6 추가) 퍼즐을 풀 때마다 오르는 티어를 늘 보이게 — 지금 구간은 크게, 다음 몇 단계는
           작게 미리 보여준다. 누르면 전체 여정 지도가 열린다. */}
-      <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} />
+      <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} puzzleRating={puzzleRating} />
       {/* (18차 UI5) 안내 문구 삭제, (18차 UI2) 일일 퀘스트는 학습 탭으로 이동 */}
       {/* (v0.2.7 개편) 오늘의 퍼즐을 오락실 슬롯머신 스타일 캐러셀로 — 좌우로 스크롤해 날짜(오늘부터
           테마가 처음 배정된 날짜까지 전체 기간)를 고르면 선택된 항목만 커지고 나머지는 어둡게 줄어든다. */}
@@ -19388,6 +19461,9 @@ const CHANGELOG = [
       "모든 퍼즐이 시작 포지션을 FEN 코드로도 갖게 됐어요 — 앞으로 퍼즐을 더 다양한 방식으로 공유하고 다룰 수 있는 기반이에요.",
       "공개 퍼즐 레이팅이 새로 생겼어요 — 라인을 끝까지 풀면 오르고, 틀린 수를 두면 내려가요. 프로필 카드에서 티어 배지 옆에 확인할 수 있어요.",
       "퍼즐 탭이 개편됐어요 — 추천/미해결/해결 완료 3분할과 오프닝별 가로 스크롤 거치대를 없애고, 난이도 적합도·약점 보완도·테마 적합도를 점수화한 단일 추천 피드로 합쳤어요. '내가 만든 퍼즐'·'풀고 있는 중' 빠른 접근 칩과 '해결 완료 숨기기' 토글로 원하는 퍼즐을 더 쉽게 찾을 수 있어요.",
+      "퍼즐 레이팅 배지를 누르면 '퍼즐 레이팅 : n' 말풍선이 떠요(모바일에서도 화면 밖으로 잘리지 않아요). 퍼즐 탭에서는 이 레이팅이 티어를 표시하는 도형 우측에도 함께 보여요.",
+      "퍼즐 카드에 노출 점수(추천순 정렬 기준)를 요소별로 보여줘요 — 난이도 적합도·약점 보완도·테마 적합도와 그 합계를 각각 확인할 수 있어요.",
+      "퍼즐 탭에서 퍼즐을 누르면 화면이 먹통 되던 문제를 고쳤어요.",
     ]
   },
   {
@@ -23400,10 +23476,14 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         <TierStatPill totalXp={pub.xp || 0} />
         {/* (v0.4.1 기능, item 3) 사용자 요청 — 체감 레이팅이 아니라 실제로 오르내리는 공개 퍼즐
             레이팅을 티어 배지 옆에 함께 노출한다. */}
+        {/* (사용자 요청) 배지를 누르면 "퍼즐 레이팅 : n" 말풍선이 뜨도록 — 모바일에서도 화면 밖으로
+            잘리지 않게 ClickInfoBadge(안전 영역 클램프)로 감싼다. */}
         {pub.puzzleRating != null && (
-          <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>
-            <Puzzle size={12} /> {fmtFull(pub.puzzleRating)}
-          </span>
+          <ClickInfoBadge text={"퍼즐 레이팅 : " + fmtFull(pub.puzzleRating)}>
+            <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>
+              <Puzzle size={12} /> {fmtFull(pub.puzzleRating)}
+            </span>
+          </ClickInfoBadge>
         )}
       </div>
       {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
