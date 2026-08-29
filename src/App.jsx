@@ -10227,6 +10227,213 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
     </div>
   );
 }
+/* ============================================================ PLAY — 봇 대국 (v0.4.2 기능) ============================================================ */
+// 사용자 요청 — 학습 탭 보드 밑 PLAY 버튼으로 지금 입력된 포지션부터 레이팅별 봇과 직접 대국할 수 있는
+// 전용 페이지(/play). 레이팅별 봇은 Stockfish 자체의 UCI_LimitStrength(최저 Elo가 1300대 안팎으로
+// 높아 그 아래 레이팅은 표현할 수 없다)에 기대는 대신, MultiPV 후보 수 목록을 온도(temperature) 기반
+// 가중 무작위로 골라 직접 구현한다 — 레이팅이 높을수록 온도가 낮아져(변별력 커짐) 항상 최선의 수에
+// 가깝게 두고, 낮을수록 약간 나쁜 후보 수(엔진이 찾은 2~5순위 수)도 자주 섞여 나온다. UCI의 score(cp)는
+// 항상 "지금 둘 차례" 쪽 관점이라 후보 수끼리 값을 그대로 비교할 수 있다.
+const PLAY_BOT_TIERS = [
+  { elo: 400, label: "400", desc: "체스를 막 배운 친구" },
+  { elo: 800, label: "800", desc: "초보" },
+  { elo: 1200, label: "1200", desc: "아마추어" },
+  { elo: 1600, label: "1600", desc: "클럽 플레이어" },
+  { elo: 2000, label: "2000", desc: "상급자" },
+  { elo: 2400, label: "2400", desc: "마스터" },
+  { elo: 2800, label: "2800", desc: "그랜드마스터" },
+];
+function botTemperature(elo) { return Math.max(4, 260 - elo * 0.09); }
+function botSearchParams(elo) {
+  // 레이팅이 높을수록 더 깊이·오래 탐색해 후보 목록 자체의 질도 함께 좋아진다.
+  const depth = Math.max(8, Math.min(18, Math.round(8 + elo / 250)));
+  const movetime = Math.max(300, Math.min(1200, Math.round(300 + elo / 4)));
+  return { depth, movetime };
+}
+async function pickBotMove(engine, fen, elo) {
+  const { depth, movetime } = botSearchParams(elo);
+  const lines = await engine.evaluateMulti(fen, depth, 5, movetime, undefined, undefined, "play-bot");
+  if (!lines || !lines.length) return null;
+  const scored = lines.map((l) => ({ uci: l.uci, cp: l.mate != null ? (l.mate > 0 ? 100000 - l.mate : -100000 - l.mate) : (l.cp || 0) }));
+  const best = Math.max(...scored.map((s) => s.cp));
+  const T = botTemperature(elo);
+  const weights = scored.map((s) => Math.exp(-(best - s.cp) / T));
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
+  let r = Math.random() * total;
+  for (let i = 0; i < scored.length; i++) { r -= weights[i]; if (r <= 0) return scored[i].uci; }
+  return scored[scored.length - 1].uci;
+}
+function PlayPage({ seed, onClose, engine, onOpenReview }) {
+  const fenRoot = (seed && seed.fenRoot) || null;
+  const seedSans = (seed && seed.sans) || [];
+  const [step, setStep] = useState("setup"); // "setup" | "playing"
+  const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
+  const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
+  const [activeColor, setActiveColor] = useState("w");
+  const [sans, setSans] = useState(seedSans);
+  const [sel, setSel] = useState(null);
+  const [drag, setDrag] = useState(null);
+  const [promoPrompt, setPromoPrompt] = useState(null);
+  const [botThinking, setBotThinking] = useState(false);
+  const [resigned, setResigned] = useState(false);
+  const narrow = useNarrow(720);
+  const boardSize = narrow ? Math.min(380, (typeof window !== "undefined" ? window.innerWidth : 380) - 32) : 420;
+
+  const board = useMemo(() => boardOfRoot(fenRoot, sans), [fenRoot, sans.join(" ")]);
+  const replay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, sans) : null), [fenRoot, sans.join(" ")]);
+  const ep = fenRoot ? replay.ep : epTarget(sans);
+  const toMoveColor = colorOfRoot(fenRoot, sans.length);
+  const endState = useMemo(() => gameEndState(sans, fenRoot), [sans.join(" "), fenRoot]);
+  const result = resigned ? { end: "resign", color: activeColor } : (endState.end ? endState : null);
+  const userToMove = step === "playing" && !result && toMoveColor === activeColor;
+
+  const go = useCallback((san) => {
+    if (result) return;
+    playMoveSfx(san);
+    setSans((prev) => [...prev, san]);
+    setSel(null); setDrag(null);
+  }, [result]);
+
+  const tryMove = useCallback((from, to) => {
+    if (!userToMove) return false;
+    if (from[0] === to[0] && from[1] === to[1]) return false;
+    const dests = fenRoot ? fenLegalDests(from[0], from[1], activeColor, board, replay.rights, ep) : legalDests(board, from[0], from[1], activeColor, ep);
+    if (!dests.some(([r, c]) => r === to[0] && c === to[1])) return false;
+    const pc = board[from[0]][from[1]];
+    if (pc && pc.t === "P" && ((activeColor === "w" && to[0] === 0) || (activeColor === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }
+    const san = buildSan(board, from[0], from[1], to[0], to[1], activeColor, ep);
+    if (!san) return false;
+    go(san);
+    return true;
+  }, [userToMove, board, activeColor, ep, go, fenRoot, replay]);
+
+  const completePromo = useCallback((piece) => {
+    if (!promoPrompt) return;
+    const { from, to } = promoPrompt; setPromoPrompt(null); setSel(null); setDrag(null);
+    const san = buildSan(board, from[0], from[1], to[0], to[1], activeColor, ep, piece);
+    if (san) go(san);
+  }, [promoPrompt, board, activeColor, ep, go]);
+
+  const onSquareClick = useCallback((sq) => {
+    if (!userToMove) return;
+    const p = board[sq[0]][sq[1]];
+    if (sel) { if (tryMove(sel, sq)) return; if (p && p.c === activeColor) { setSel(sq); return; } setSel(null); return; }
+    if (p && p.c === activeColor) setSel(sq);
+  }, [sel, board, activeColor, tryMove, userToMove]);
+  const onPieceDrag = useCallback((sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (p && p.c === activeColor) { setDrag(sq); setSel(sq); } }, [board, activeColor, userToMove]);
+  const onDrop = useCallback((sq) => { if (drag) { tryMove(drag, sq); setDrag(null); setSel(null); } }, [drag, tryMove]);
+
+  const legalTargets = userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], activeColor, board, replay.rights, ep) : legalDests(board, sel[0], sel[1], activeColor, ep)) : [];
+
+  // 봇 차례 — 유저 턴이 아니고 게임이 안 끝났으면 자동으로 둔다.
+  useEffect(() => {
+    if (step !== "playing" || result) return;
+    if (toMoveColor === activeColor) return;
+    if (!engine || engine.status !== "ready") return;
+    let cancelled = false;
+    setBotThinking(true);
+    const fen = fenOfRoot(fenRoot, sans);
+    const curSans = sans;
+    Promise.all([pickBotMove(engine, fen, botTier.elo), new Promise((r) => setTimeout(r, 450))]).then(([uci]) => {
+      if (cancelled) return;
+      setBotThinking(false);
+      if (!uci) return;
+      const epNow = fenRoot ? replayFromFen(fenRoot, curSans).ep : epTarget(curSans);
+      const bd = boardOfRoot(fenRoot, curSans);
+      const mvColor = colorOfRoot(fenRoot, curSans.length);
+      const san = uciToSan(bd, uci, mvColor, epNow);
+      if (san) go(san);
+    }).catch(() => { if (!cancelled) setBotThinking(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, result, toMoveColor, activeColor, engine && engine.status, sans.join(" "), botTier]);
+
+  const startGame = () => {
+    const finalColor = colorPick === "random" ? (Math.random() < 0.5 ? "w" : "b") : colorPick;
+    setActiveColor(finalColor);
+    setSans(seedSans);
+    setResigned(false);
+    setStep("playing");
+  };
+  const rematch = () => { setSans(seedSans); setResigned(false); setSel(null); setDrag(null); setStep("setup"); };
+
+  const flip = activeColor === "b";
+  const pgnText = sans.length ? sansToPgnText(sans, fenRoot ? fenRoot.turn : "w") : "";
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 34, height: 34, borderRadius: 10, background: T.ebony2, color: T.ivory, border: "1px solid #000", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><ArrowLeft size={17} /></button>
+          <div className="flex items-center gap-2"><Play size={16} color={T.brassHi} fill={T.brassHi} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>PLAY</span></div>
+          <span style={{ width: 34 }} />
+        </div>
+        {step === "setup" ? (
+          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>1. 어느 진영으로 두시겠어요?</div>
+            <div className="flex gap-2" style={{ marginBottom: 16 }}>
+              {[["w", "백"], ["b", "흑"], ["random", "랜덤"]].map(([k, lb]) => (
+                <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>2. 상대할 봇을 골라주세요</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
+              {PLAY_BOT_TIERS.map((t) => (
+                <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ width: 32, height: 32, borderRadius: "50%", background: botTier.elo === t.elo ? T.brass : "#EDE1C6", color: botTier.elo === t.elo ? "#241509" : T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={16} /></span>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span style={{ display: "block", fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13.5, color: T.ink }}>{t.label}</span>
+                    <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{t.desc}</span>
+                  </span>
+                  {botTier.elo === t.elo && <Check size={16} color={T.brass} />}
+                </button>
+              ))}
+            </div>
+            <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: (!engine || engine.status !== "ready") ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? "엔진을 준비하는 중..." : "대국 시작"}</button>
+          </div>
+        ) : (
+          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+              <div className="flex items-center gap-2">
+                <span style={{ width: 26, height: 26, borderRadius: "50%", background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Cpu size={14} /></span>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{botTier.label} 봇</span>
+              </div>
+              {botThinking && !result && <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft }}>생각하는 중...</span>}
+            </div>
+            <div style={{ width: "100%", maxWidth: boardSize, margin: "0 auto" }}>
+              <Board board={board} flip={flip} size={boardSize} selected={sel} legalTargets={legalTargets} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} interactive={userToMove} showEval={false} showCoords />
+            </div>
+            {promoPrompt && (
+              <div style={{ marginTop: 10, textAlign: "center" }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>승격할 기물 선택</div>
+                <div className="flex justify-center gap-2">
+                  {["Q", "R", "B", "N"].map((t) => (
+                    <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 46, height: 46, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><PieceGlyph type={t} color={activeColor} size={24} /></button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {result && (
+              <div style={{ marginTop: 14, textAlign: "center", padding: "12px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass }}>
+                <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>
+                  {result.end === "checkmate" ? (result.color === activeColor ? "패배 — 체크메이트" : "승리! 🎉 체크메이트") :
+                   result.end === "resign" ? "기권했어요" :
+                   result.end === "stalemate" ? "무승부 — 스테일메이트" : "무승부 — 3회 동형 반복"}
+                </div>
+              </div>
+            )}
+            {sans.length > 0 && <div style={{ marginTop: 12, fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT, maxHeight: 60, overflowY: "auto", wordBreak: "break-word" }}>{pgnText}</div>}
+            <div className="flex gap-2" style={{ marginTop: 14 }}>
+              {!result && <button onClick={() => setResigned(true)} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>기권</button>}
+              {result && onOpenReview && <button onClick={() => onOpenReview({ sans, fenRoot })} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.brass, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>대국 리뷰</button>}
+              <button onClick={rematch} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>다시 설정</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 // (v0.3.5 기능) 사용자 요청 — 게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(engine, App 루트의
 // useEngine(enginePref))을 그대로 prop으로 받아 쓴다(예전엔 항상 Stockfish 16으로 고정).
 function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
@@ -11049,7 +11256,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 분석 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
-function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenReview, dailyQuest, uid, user, noteCap, onQuestBadgeClick }) {
+function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -11709,6 +11916,16 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               <NavBtn onClick={fwd} disabled={!future.length || !!focus}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
+          {/* (사용자 요청) 지금 보드에 입력돼 있는 포지션(sans/fenRoot)부터 봉과 직접 대국을 시작하는
+              PLAY 버튼 — 보드 바로 아래 정중앙에 둔다. 전용 페이지(/play)를 새 히스토리 항목으로 연다. */}
+          {onOpenPlay && !focus && (
+            <div className="flex justify-center" style={{ marginTop: 14 }}>
+              <button onClick={() => onOpenPlay({ sans: [...sans], fenRoot })} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 22px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "1px solid #000", cursor: "pointer", boxShadow: "0 3px 0 #8A6A2F" }}>
+                <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Play size={12} color={T.brassHi} fill={T.brassHi} /></span>
+                PLAY
+              </button>
+            </div>
+          )}
         </div>
         {/* (18차 UX8) 집중분석은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다. */}
         {focus && (
@@ -20311,6 +20528,7 @@ const CHANGELOG = [
       "집중 분석 수 설명에서 수 번호 없이 적힌 SAN은 더 이상 링크로 잡히지 않아요(수 번호를 붙여야 링크가 돼요). 대괄호 안 인식용 수순은 150자 제한에 포함되지 않아요.",
       "집중 분석 모드에서 다른 수의 집중 분석으로 이동했다가 '←'를 누르면, 홈으로 나가는 대신 방금 있던 집중 분석으로 돌아가요.",
       "학습 탭(집중 분석 모드 포함) 수 블록의 키워드가 한 줄에 담기고, 다 안 들어가면 자동으로 천천히 오른쪽으로 스크롤됐다 처음으로 돌아가기를 반복해요.",
+      "학습 탭 메인 체스보드 아래에 PLAY 버튼이 생겼어요 — 지금 보드에 입력된 포지션부터 레이팅별 봇(400~2800)과 직접 대국할 수 있는 전용 페이지(openchess.kr/play)예요. 진입하면 먼저 백/흑(또는 랜덤)과 상대할 봇을 고르고 대국을 시작해요. 대국이 끝나면 그 기보를 그대로 리뷰할 수도 있어요.",
     ]
   },
   {
@@ -26504,6 +26722,7 @@ export default function App() {
     const onPop = () => {
       const p = window.location.pathname;
       if (!p.startsWith("/review")) setReviewGame(null);
+      if (!p.startsWith("/play")) setPlayGame(null);
       if (!/^\/puzzle\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
       const k = tabFromPath(p);
       if (k) { urlTabRef.current = k; setTab(k); }
@@ -26624,6 +26843,19 @@ export default function App() {
     try { if (window.location.pathname.startsWith("/review")) window.history.back(); } catch { }
   }, []);
   const onOpenGameAnalyze = useCallback((game) => openReview(game), [openReview]);
+  // (사용자 요청) PLAY — 봉과 직접 대국하는 전용 페이지(/play). 학습 탭 보드 밑 PLAY 버튼이 지금
+  // 보드에 입력된 포지션(sans·fenRoot)을 시드로 넘겨 이 페이지를 연다. /play로 직접 들어오면(주소창에
+  // 직접 입력·새로고침) seed 없이 표준 시작 위치로 연다(아래 딥링크 resolver에서 처리).
+  const [playGame, setPlayGame] = useState(null); // { sans, fenRoot } | null
+  const openPlay = useCallback((seed) => {
+    setSearchOpen(false); setFriendsOpen(false);
+    setPlayGame(seed || { sans: [], fenRoot: null });
+    try { if (!window.location.pathname.startsWith("/play")) window.history.pushState({ play: true }, "", "/play"); } catch { }
+  }, []);
+  const closePlay = useCallback(() => {
+    setPlayGame(null);
+    try { if (window.location.pathname.startsWith("/play")) window.history.back(); } catch { }
+  }, []);
   const onOpenPuzzle = useCallback(async (pzId, fallback) => {
     // (v0.1.0) 유저 검색·친구 프로필(공개 프로필의 "푼 퍼즐" 카드)에서도 이 함수로 진입하므로,
     // onOpenGame과 같은 방식으로 열려 있던 모달을 닫고 퍼즐 탭으로 이동시킨다.
@@ -26727,7 +26959,9 @@ export default function App() {
         } else {
           openReview(resolved.game);
         }
+        return;
       }
+      if (path === "/play") { setPlayGame({ sans: [], fenRoot: null }); return; }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loaded가 false→true로 바뀌는 최초 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없고, openReview/onOpenPuzzle 등은 매번 최신 클로저를 쓰면 충분해 deps에 넣지 않는다).
   }, [loaded]);
@@ -26820,6 +27054,7 @@ export default function App() {
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
+      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} />}
       {profileWinOpen && user && (
         <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size}
           onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
@@ -26903,8 +27138,12 @@ export default function App() {
             뿐, 같은 profile의 분석 풀 자체는 앱 전체에서 하나뿐이라 전혀 독립적이지 않았다. 리뷰가
             열려 있는 동안 이 두 탭에는 liveOn을 강제로 꺼서(!reviewGame) 분석 풀 전체를 리뷰 페이지에
             양보한다 — "분석 모달이 열려 있는 동안 분석 탭 실시간 평가를 멈춘다"던 예전 주석이 가리키던
-            의도가 ReviewPage로 교체되며 실제로는 빠져 있었다. */}
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} />}
+            의도가 ReviewPage로 교체되며 실제로는 빠져 있었다. (버그 수정) PLAY 페이지도 같은 이유로
+            !playGame을 추가했다 — PlayPage가 전체 화면으로 덮어도 밑에 있는 학습 탭 LearnTab은
+            언마운트되지 않고 계속 liveOn 실시간 평가를 돌려, useEngine의 단일 공유 워커 큐를 끝없이
+            채워 넣는 바람에 PlayPage의 봉 수 요청(engine.evaluateMulti)이 차례를 영영 못 받고 무한정
+            "생각하는 중..."에 멈춰 있던 문제(사용자 제보)의 원인이었다. */}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={openPlay} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} />}
         {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 분석으로 이동한 경우(focusReturnTab === "dex"),
             집중 분석이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
             분석을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다
@@ -26914,7 +27153,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} />}
