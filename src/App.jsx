@@ -631,16 +631,40 @@ function fenToBoard(fen) {
   return board;
 }
 function looksLikeFen(s) { return /^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}\b/.test((s || "").trim()); }
+// (성능, 사용자 요청) 이미지 스캔 인식 시간 단축 — 휴대폰 카메라 사진은 흔히 3000px 이상·수 MB인데,
+// 체스판 배치나 PGN/FEN 텍스트를 읽는 데는 그렇게 큰 해상도가 필요 없다. 업로드 전송량과 비전 모델의
+// 처리 시간(이미지가 클수록 더 많은 타일/토큰으로 나눠 처리됨)을 함께 줄이기 위해, 서버로 보내기 전에
+// 클라이언트에서 먼저 적당한 크기로 축소·재압축한다. 이미 충분히 작거나(축소해도 이득이 없음) 축소에
+// 실패하면(구형 브라우저 등) 원본 파일을 그대로 쓴다 — 인식 성공 여부에는 영향이 없고 속도만 개선된다.
+async function downscaleImageFile(file, maxSide = 1280, quality = 0.85) {
+  if (typeof createImageBitmap !== "function" || typeof document === "undefined") return null;
+  let bitmap;
+  try { bitmap = await createImageBitmap(file); } catch { return null; }
+  try {
+    const scale = maxSide / Math.max(bitmap.width, bitmap.height);
+    if (scale >= 1) return null; // 이미 충분히 작음 — 축소할 필요 없음
+    const w = Math.max(1, Math.round(bitmap.width * scale)), h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    return await new Promise((resolve) => canvas.toBlob((blob) => resolve(blob || null), "image/jpeg", quality));
+  } catch { return null; }
+  finally { if (bitmap.close) bitmap.close(); }
+}
 // (v0.4.2 기능) 사용자 요청 — 이미지 스캔이 체스판 배치뿐 아니라 PGN/FEN 텍스트 사진도 인식하도록
 // 서버(api/scan-board.js)가 확장됐다. 보드 편집기·퍼즐 만들기 마법사 양쪽에서 재사용하는 공용 호출
 // 함수 — 파일을 base64로 읽어 서버에 보내고, { type:"board", fen_board } 또는
 // { type:"text", recognized_text }를 그대로 돌려준다(실패 시 throw).
 async function scanImageFile(file) {
+  const shrunk = await downscaleImageFile(file);
+  const effectiveFile = shrunk || file;
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(effectiveFile);
   });
   const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl || "");
   if (!m) throw new Error("이미지를 읽지 못했어요.");
@@ -3721,6 +3745,47 @@ function deriveKeywords(m) {
   if (!ks.length) ks.push("NORMAL");
   return ks.slice(0, 3);
 }
+// (사용자 요청) 수 블록의 키워드 칩들을 두 줄 이상으로 줄바꿈하는 대신 한 줄에 담고, 다 안 들어가면
+// 가로 스크롤이 되도록 하되(줄바꿈 없음) 잘려 있다는 걸 알 수 있게 자동으로 천천히 오른쪽으로
+// 스크롤됐다가 끝에 닿으면 처음으로 돌아가길 반복한다 — 학습 탭 전체(집중 분석 모드 포함)에서
+// 키워드가 표시되는 자리에 공용으로 쓴다.
+function KeywordScroll({ kws, chipStyle }) {
+  const ref = useRef(null);
+  const [overflow, setOverflow] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setOverflow(el.scrollWidth > el.clientWidth + 1);
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [kws.join(",")]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !overflow) return;
+    let stopped = false, resumeTimer = null;
+    const id = setInterval(() => {
+      if (stopped) return;
+      const max = el.scrollWidth - el.clientWidth;
+      if (max <= 0) return;
+      if (el.scrollLeft >= max - 0.5) {
+        stopped = true;
+        resumeTimer = setTimeout(() => { el.scrollLeft = 0; stopped = false; }, 1400);
+        return;
+      }
+      el.scrollLeft += 0.6;
+    }, 30);
+    return () => { clearInterval(id); if (resumeTimer) clearTimeout(resumeTimer); };
+  }, [overflow, kws.join(",")]);
+  if (!kws.length) return null;
+  return (
+    <div ref={ref} className="hide-scrollbar" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "hidden" }}>
+      {kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg, whiteSpace: "nowrap", ...chipStyle }}>{k}</span>)}
+    </div>
+  );
+}
 // (사용자 요청, FEN 모드) startColor — 기본은 "w"(표준 시작 위치, 0번 수부터 백)라 기존 모든 호출부는
 // 그대로 동작한다. FEN으로 시작한 위치가 흑 차례라면 startColor="b"를 넘겨, 그 위치에서 처음 두는
 // 수(ply 0)부터 "1..."으로, 그다음 백의 응수를 "2."으로 표기한다(흑이 먼저 두면 백 차례에서 수
@@ -5544,9 +5609,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
             <div style={{ minWidth: 0, flex: 1, cursor: "pointer" }} onClick={onClick}>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-                {kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}
-              </div>
+              <div style={{ marginBottom: 6 }}><KeywordScroll kws={kws} /></div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply)}{m.disp || m.san}</span>
                 {m.name ? <span style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, wordBreak: "keep-all" }}>{m.name}</span> : m.isMain ? <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>Main Line</span> : null}
@@ -6211,30 +6274,45 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
     </div>
   );
 }
+// (사용자 요청) 방금 옮긴 기물이 상대의 무엇을 공격하는지 보여주던 금색(idea) 화살표를 없애고, 그
+// 기물이 상대에게 공격받는다는 빨간색(danger) 화살표만 남긴다 — 리뷰 기능과 같은 의미(위험 경고)만
+// 남기고, 서로 다른 두 색 화살표가 뒤섞여 복잡해 보이던 것을 정리했다.
 function brilliantArrows(sans, san) {
   const color = sans.length % 2 === 0 ? "w" : "b"; const enemy = color === "w" ? "b" : "w";
   const before = boardFromSans(sans); const info = sanSrc(before, san, color);
   if (!info || info.castle) return [];
   const after = boardFromSans([...sans, san]); const [tr, tc] = info.to; const out = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const p = after[r][c]; if (p && p.c === enemy && canMove(after, p.t, enemy, r, c, tr, tc, true)) out.push({ from: [r, c], to: [tr, tc], kind: "danger" }); }
-  const mover = after[tr][tc];
-  if (mover) for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const t = after[r][c]; if (t && t.c === enemy && t.t !== "P" && canMove(after, mover.t, color, tr, tc, r, c, true)) out.push({ from: [tr, tc], to: [r, c], kind: "idea" }); }
   return out.slice(0, 6);
 }
 // (기능) 탁월한 수(희생) 뒤 "기물 점수를 되찾을 수 있는지" 엔진 PV로 판단하던 로직을 지우는 대신,
 // color 진영의 기물 중 지금 상대에게 안전하게 잡힐 수 있는(SEE상 순손실이 나는) 기물 전부를 찾아,
 // 그 각각을 실제로 잡을 수 있는 상대 기물마다 화살표 하나씩을 만든다 — "이후 수순을 두면 기물을
 // 되찾는다"는 텍스트 설명 대신, 지금 당장 무엇이 위험한 상태인지를 보드 위에서 직접 보여준다.
+// (버그 수정, 사용자 제보) ① 폰 공격자 판정에서 전진 방향이 반대로 계산돼 있었다(예: 백 폰이 실제로는
+// 절대 잡을 수 없는, 자기 전진 방향과 반대쪽에서 잡는다고 표시됨) — canMove(P)와 이 파일의 다른
+// 올바른 폰 방향 계산들(예: seeSquare가 쓰는 lva)과 같은 dir 공식(백=-1, 흑=+1)으로 통일했다.
+// ② 사용자 요청 — 이 칸을 지키는 내 기물(수비자) 수가 실제로 그 칸을 노리는 상대 기물(공격자) 수보다
+// 적으면(수비자<공격자, 즉 다 막아도 결국 하나는 뚫려 진짜로 위험한 상태) 공격하는 모든 기물에서
+// 화살표를 그리고, 그렇지 않으면(수비자가 충분해 동가 이상 교환은 막히는 상태) 희생한 기물보다 값이
+// 낮은 공격자에서만 화살표를 그린다(더 싼 기물로 잡아도 이득이라는 뜻이라 여전히 위험하기 때문).
 function hangingPieceArrows(board, color) {
   const enemy = color === "w" ? "b" : "w";
   const out = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const p = board[r][c]; if (!p || p.c !== color || p.t === "K") continue;
     if (!(seeSquare(board, r, c, enemy) > 0 && canCaptureSquareLegally(board, r, c, enemy))) continue;
+    const attackers = [];
+    const dir = enemy === "w" ? -1 : 1;
     for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
       const ap = board[rr][cc]; if (!ap || ap.c !== enemy) continue;
-      const can = ap.t === "P" ? (Math.abs(cc - c) === 1 && (enemy === "w" ? rr === r - 1 : rr === r + 1)) : canMove(board, ap.t, enemy, rr, cc, r, c, true);
-      if (can) out.push({ from: [rr, cc], to: [r, c], kind: "danger" });
+      const can = ap.t === "P" ? (Math.abs(cc - c) === 1 && r - rr === dir) : canMove(board, ap.t, enemy, rr, cc, r, c, true);
+      if (can) attackers.push({ from: [rr, cc], val: VAL[ap.t] });
+    }
+    const defenders = countLegalCapturesOnSquare(board, r, c, color);
+    const showAll = defenders < attackers.length;
+    for (const a of attackers) {
+      if (showAll || a.val < VAL[p.t]) out.push({ from: a.from, to: [r, c], kind: "danger" });
     }
   }
   return out;
@@ -7892,7 +7970,11 @@ const MOVE_NOTE_MAX_LEN = 150;
 // 뽑고("모양"만 걸러내는 용도), 진짜로 그 위치에서 합법인지는 반드시 sanSrc(기존 수 적용 로직,
 // applySan/boardFromSans가 이미 쓰는 것과 같은 함수)로 재검증한다 — 그냥 SAN처럼 보이기만 하는
 // 우연의 일치 단어를 링크로 만들지 않기 위해서다.
-const SAN_TOKEN_RE = /\b(?:O-O-O|O-O|[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h]x[a-h][1-8]|[a-h][1-8])(?:=[QRBN])?[+#]?\b/g;
+// (버그 수정, 사용자 요청) 앞에 수 번호(예: "12.", "12...")가 없으면 그냥 문장 속 우연히 SAN처럼
+// 생긴 낱말(예: "e5"가 좌표가 아니라 그냥 지명·약어인 경우)까지 링크로 잡히는 오탐이 있었다 — 뒤에서
+// 볼(lookbehind) 수 번호 접두사가 바로 앞에 있을 때만 후보로 인정한다(대괄호 구문도 동일하게
+// renderMoveNoteBody에서 별도로 요구한다).
+const SAN_TOKEN_RE = /(?<=\d+\.(?:\.\.)?\s*)(?:O-O-O|O-O|[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h]x[a-h][1-8]|[a-h][1-8])(?:=[QRBN])?[+#]?\b/g;
 // moveKey는 "그 수 이전까지의 수순(공백 join) + '|' + 그 수 자체"로 만들어진다(mkKey 정의부 참고).
 // 이 함수는 반대로 moveKey에서 "이 설명이 달린 바로 그 위치"까지의 전체 수순(sans 배열, 그 수까지
 // 포함)을 복원한다 — 이후 이 위치를 기준으로 다음 수 합법성을 검사하고, 링크 클릭 시 enterFocusAt에
@@ -7947,12 +8029,16 @@ function renderMoveNoteBody(body, baseSans, onJump) {
   };
   const parts = [];
   const bracketRe = /\[\[([^[\]]+)\]\]/g;
+  // (사용자 요청) 대괄호 구문도 첫 수 앞에 수 번호(예: "12." · "12...")가 있어야만 인식한다 — 없으면
+  // 그냥 대괄호만 벗긴 일반 텍스트로 보여준다(기존 동작과 동일한 폴백).
+  const bracketNumRe = /^(\d+\.(?:\.\.)?)\s*(.*)$/;
   let last = 0, bm, k = 0;
   while ((bm = bracketRe.exec(text))) {
     if (bm.index > last) parts.push(...renderPlain(text.slice(last, bm.index), "p" + k));
     const seqStr = bm[1].trim();
-    const seq = seqStr.split(/\s+/).filter(Boolean);
-    const board = tryReplaySanSequence(baseSans, seq);
+    const numMatch = bracketNumRe.exec(seqStr);
+    const seq = numMatch ? numMatch[2].split(/\s+/).filter(Boolean) : [];
+    const board = numMatch ? tryReplaySanSequence(baseSans, seq) : null;
     if (board) {
       const prefixedSans = [...baseSans, ...seq.slice(0, -1)];
       const lastSan = seq[seq.length - 1];
@@ -7964,6 +8050,11 @@ function renderMoveNoteBody(body, baseSans, onJump) {
   }
   if (last < text.length) parts.push(...renderPlain(text.slice(last), "p" + k));
   return parts;
+}
+// (사용자 요청) 150자 제한을 셀 때, [[...]] 대괄호 안(인식용 수순)은 실제 설명 내용이 아니라 링크
+// 대상을 지정하는 구문일 뿐이므로 글자 수에 포함하지 않는다.
+function moveNoteEffectiveLen(text) {
+  return (text || "").replace(/\[\[[^[\]]*\]\]/g, "").length;
 }
 // 등록 전 1차 방어선(클라이언트) — 완전한 검열은 아니지만, 흔한 욕설·혐오 표현을 공백·구두점을 뺀
 // 뒤 부분 문자열로 잡아낸다("시 발"처럼 띄어써서 피하는 경우도 걸러짐). 진짜 강제력은 서버 트리거
@@ -7996,7 +8087,7 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
   const [busy, setBusy] = useState(false);
   const save = async () => {
     const t = draft.trim();
-    if (!t || t.length > MOVE_NOTE_MAX_LEN || containsBannedWord(t)) return;
+    if (!t || moveNoteEffectiveLen(t) > MOVE_NOTE_MAX_LEN || containsBannedWord(t)) return;
     setBusy(true);
     try { await sbPatch("move_notes", "id=eq." + n.id, { body: t }); onSaved(n.id, t); setEditing(false); } catch { } finally { setBusy(false); }
   };
@@ -8013,9 +8104,9 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
         </div>
         {editing ? (
           <div>
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, MOVE_NOTE_MAX_LEN))} rows={3} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
+            <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); }} rows={3} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
             <div className="flex items-center justify-between" style={{ marginTop: 4 }}>
-              <span style={{ fontSize: 10, color: T.inkSoft }}>{draft.length}/{MOVE_NOTE_MAX_LEN}</span>
+              <span style={{ fontSize: 10, color: T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
               <div className="flex gap-2">
                 <button disabled={busy} onClick={save} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>저장</button>
                 <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press" style={{ fontSize: 10.5, padding: "3px 9px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.inkSoft, cursor: "pointer" }}>취소</button>
@@ -8088,7 +8179,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
   const submit = async () => {
     const t = draft.trim();
     if (!t) return;
-    if (t.length > MOVE_NOTE_MAX_LEN) { setErr("글자 수가 너무 길어요(" + MOVE_NOTE_MAX_LEN + "자까지)."); return; }
+    if (moveNoteEffectiveLen(t) > MOVE_NOTE_MAX_LEN) { setErr("글자 수가 너무 길어요(" + MOVE_NOTE_MAX_LEN + "자까지)."); return; }
     if (containsBannedWord(t)) { setErr("부적절한 표현이 포함되어 있어요."); return; }
     setBusy(true); setErr("");
     try {
@@ -8136,14 +8227,14 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
         <p style={{ fontSize: 11, color: T.inkSoft }}>{cap > 1 ? "이미 이 수에 설명을 " + myNotes.length + "개 남겼어요(최대 " + cap + "개) — 위 카드에서 직접 수정하거나 지울 수 있어요." : "이미 이 수에 설명을 남겼어요 — 위 카드에서 직접 수정하거나 지울 수 있어요."}</p>
       ) : (
         <div>
-          <textarea value={draft} onChange={(e) => { setDraft(e.target.value.slice(0, MOVE_NOTE_MAX_LEN)); setErr(""); }} rows={2} placeholder="이 수에 대한 짧은 설명을 남겨보세요" style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
+          <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); setErr(""); }} rows={2} placeholder="이 수에 대한 짧은 설명을 남겨보세요" style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
           <div className="flex items-center justify-between" style={{ marginTop: 5 }}>
-            <span style={{ fontSize: 10, color: draft.length >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{draft.length}/{MOVE_NOTE_MAX_LEN}</span>
+            <span style={{ fontSize: 10, color: moveNoteEffectiveLen(draft) >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
             <button disabled={busy || !draft.trim()} onClick={submit} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: busy ? "default" : "pointer", opacity: busy || !draft.trim() ? 0.6 : 1 }}>등록</button>
           </div>
           {/* (v0.4.0 기능) 바로 다음 수는 SAN을 그냥 문장에 적기만 해도 자동으로 링크가 된다는 것과,
               더 뒤쪽 수로 링크를 걸려면 [[...]] 안에 이어지는 수순을 적어야 한다는 걸 안내한다. */}
-          <p style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 4, lineHeight: 1.4 }}>Tip: 문장에 "Nf3"처럼 바로 다음 수를 적으면 자동으로 그 수로 이동하는 링크가 돼요. 더 이어지는 수로 링크하려면 <code style={{ fontSize: 9.5 }}>[[e5 Nf3 Nc6 Bb5]]</code>처럼 대괄호 두 개 안에 이 위치부터 이어지는 수순을 공백으로 구분해 적어주세요.</p>
+          <p style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 4, lineHeight: 1.4 }}>Tip: 문장에 "12.Nf3"처럼 수 번호와 함께 바로 다음 수를 적으면 자동으로 그 수로 이동하는 링크가 돼요(수 번호 없이 "Nf3"만 적으면 링크가 안 돼요). 더 이어지는 수로 링크하려면 <code style={{ fontSize: 9.5 }}>[[12.e5 Nf3 Nc6 Bb5]]</code>처럼 대괄호 두 개 안에 수 번호와 함께 이 위치부터 이어지는 수순을 공백으로 구분해 적어주세요 — 대괄호 안 내용은 150자 제한에 포함되지 않아요.</p>
           {err && <p style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>{err}</p>}
         </div>
       )}
@@ -11014,7 +11105,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 줄과 평가치 박스를 표시하지 않는다.
   const legalMoveCount = useMemo(() => countLegalMoves(board, color, ep), [board, color, ep]);
   const forcedPosition = legalMoveCount > 0 && legalMoveCount <= 2;
-  const onLoadFen = (root) => { setFocus(null); setFenRoot(root); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
+  const onLoadFen = (root) => { setFocus(null); setFocusStack([]); setFenRoot(root); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
   const exitFenMode = () => { setFenRoot(null); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
   // (v0.3.5 기능) 사용자 요청 — 보드 편집기(BoardEditorModal) 열림 상태. 완료를 누르면 onLoadFen과
   // 같은 계약으로 그 포지션의 FEN 모드로 들어간다(NotationTools의 FEN 붙여넣기와 동일한 경로).
@@ -11370,10 +11461,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     return () => window.removeEventListener("keydown", onKey);
   }, [focus, back, fwd]);
 
+  // (사용자 요청) 집중 분석 화면 안에서 다른 수의 집중 분석으로 이동(onJump=enterFocusAt)했다가
+  // "<-"(뒤로가기)를 누르면, 홈(보드)으로 곧장 나가 버리는 대신 방금 있던 집중 분석으로 한 단계씩
+  // 되돌아가야 한다 — 지나온 집중 분석들을 스택으로 쌓아 둔다.
+  const [focusStack, setFocusStack] = useState([]);
   const enterFocus = (m) => {
     const childKey = [...sans, m.san].join(" ");
     const name = m.name || (snapNode([...sans, m.san]) || {}).opening?.name || m.san;
     const isNew = m.book ? unlockOpening(childKey, name) : false;   // (UX2) 비이론 수는 도감 해금/알림 없음
+    setFocusStack([]); // 보드에서 새로 들어가는 진입이라, 되돌아갈 이전 집중 분석이 없다.
     setFocus({ sans: [...sans], san: m.san, m, ply, isNew, name });
   };
   // (버그 수정) 집중분석 중 다른 수의 집중분석으로 이동(onJump)했다가 나가면, 보드가 원래 진입했던
@@ -11381,6 +11477,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 위치(수순)로 맞춘다.
   const exitFocus = () => {
     if (focus && focus.isNew) onLearned(focus.name);
+    // (사용자 요청) 스택에 이전 집중 분석이 남아 있으면 홈으로 나가지 않고 그 자리로 한 단계 되돌아간다.
+    if (focusStack.length) {
+      const prev = focusStack[focusStack.length - 1];
+      setFocusStack((s) => s.slice(0, -1));
+      setSans([...prev.sans, prev.san]); setFuture([]); setSel(null); setLastQ(null);
+      setFocus(prev);
+      return;
+    }
     if (focus) { setSans([...focus.sans, focus.san]); setFuture([]); setSel(null); setLastQ(null); }
     setFocus(null);
   };
@@ -11389,6 +11493,9 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     const name = (node2 && node2.opening) ? node2.opening.name : tSan;
     unlockOpening([...tSans, tSan].join(" "), name);
     const pnode = snapNode(tSans); const mm = pnode && pnode.moves.find((x) => stripSuffix(x.san) === stripSuffix(tSan));
+    // 이미 집중 분석 중이었다면(다른 집중 분석에서 링크를 눌러 옮겨온 것) 그 집중 분석을 스택에
+    // 쌓아 뒤로가기로 되돌아올 수 있게 한다. 집중 분석 밖(보드·PGN 등)에서의 진입이면 새 세션이다.
+    setFocusStack((s) => (focus ? [...s, focus] : []));
     setFocus({ sans: [...tSans], san: tSan, m: mm || { san: tSan }, ply: tSans.length, isNew: false, name });
   };
   // (기능) 집중분석의 마스터 대국을 클릭 — 집중분석을 종료하고 그 대국의 마지막 포지션으로 보드를 옮긴 뒤,
@@ -11400,7 +11507,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     // (18차 UX8) 전체 기보를 불러오되, 보드는 집중분석에서 보던 수까지만 진행된 상태로 열고
     // 이후 수들은 future로 보존 — 기보에는 전체 수순이 흐리게 표시되고 클릭/▶로 이어볼 수 있다.
     const upto = focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
-    setFocus(null); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
+    setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
   };
   // (v0.2.1 기능) 마스터 대국의 초록 리뷰 버튼 — "보기"(onOpenMasterGame)와 달리 분석 보드는 그대로
   // 두고, 그 대국의 전체 기보를 곧장 /review로 넘긴다. Lichess 마스터 DB의 white/black은 {name,rating}
@@ -11419,7 +11526,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     if (!gameSans || !gameSans.length) return;
     if (focus && focus.isNew) onLearned(focus.name);
     const upto = focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
-    setFocus(null); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
+    setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
   };
   // (v0.2.0 기능) "게임 리뷰" — 예전엔 대국을 분석 보드에 불러오며 즉석 분석 모드(AnalysisModal)를
   // 자동으로 열었는데, 이제 결과·상대·타임클래스 같은 대국 메타데이터까지 갖춘 전용 /review
@@ -11427,7 +11534,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const onOpenMyGameAnalyze = (g) => { onOpenReview && onOpenReview({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id }); };
   // (UI2) PGN 붙여넣기로 검증된 수순을 그대로 이어서 두도록 불러온다(FEN 모드였다면 표준 시작
   // 위치로 돌아가는 것이므로 함께 해제한다).
-  const onLoadPgn = (movesList) => { setFocus(null); setFenRoot(null); setSans(movesList); setFuture([]); setSel(null); setLastQ(null); };
+  const onLoadPgn = (movesList) => { setFocus(null); setFocusStack([]); setFenRoot(null); setSans(movesList); setFuture([]); setSel(null); setLastQ(null); };
 
   // (버그 수정) FEN 모드에서는 sans가 표준 시작 위치 기준 스냅샷과 무관하므로 조회하지 않는다 — 특히
   // sans=[]는 실제 표준 시작 위치와 구분되지 않아, 조회하면 이 위치와 무관한 이론 정보가 섞여 든다.
@@ -11672,9 +11779,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                       {curGames != null && <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{fmtFull(curGames)}회 진행</span>}
                     </div>
                     {curKws.length > 0 && (
-                      <div className="flex flex-wrap" style={{ gap: 6, marginTop: 10 }}>
-                        {curKws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em", padding: "2px 7px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}
-                      </div>
+                      <div style={{ marginTop: 10 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
                     )}
                     {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바 */}
                     {curStat && (
@@ -14305,6 +14410,17 @@ async function puzzleReassignCreator(no, targetUsername) {
   if (!SB_ON) return false;
   try { await sbRpc("puzzle_reassign_creator", { p_no: no, p_target_username: targetUsername || null }); return true; } catch { return false; }
 }
+// (버그 수정, v0.4.2) 사용자 제보 — "퍼즐 삭제 기능이 제대로 동작하지 않는다". 예전 onDeletePuzzle은
+// 로컬 상태(puzzles/archivedPuzzles/deletedPuzzles)만 지우고 서버에는 아무 요청도 보내지 않아, 이
+// 크라우드소싱 퍼즐(puzzles 테이블)은 서버에 그대로 남아 있었다 — 새로고침하거나 다른 유저가 열면
+// 다시 나타났다. public.puzzles는 이 파일의 다른 생성자 전용 변경들(puzzle_reassign_creator 등)과
+// 같은 이유로 authenticated에 delete grant 자체가 없어(SECURITY DEFINER RPC로만 허용), 설령 직접
+// DELETE를 시도했어도 항상 거부됐을 것이다. 새 RPC(puzzle_delete, supabase-setup.sql)가 서버에서
+// 생성자 본인·개발자·공동개발자인지 다시 검사한 뒤 실제로 행을 지운다.
+async function puzzleDeleteRemote(no) {
+  if (!SB_ON) return true; // 로컬 전용 환경(서버 미연동)에서는 로컬 삭제만으로 충분
+  try { await sbRpc("puzzle_delete", { p_no: no }); return true; } catch { return false; }
+}
 // (v0.3.4 기능) 개발자 전용 "전체 퍼즐 일괄 재생성" 도구용 — 존재하는 모든 퍼즐 번호를 페이지
 // 단위로 끝까지 모아 온다(PostgREST 기본 최대 반환 행 수 제한을 limit/offset 페이지네이션으로
 // 안전하게 우회 — 퍼즐은 유저가 계속 새로 공유하는 크라우드소싱 구조라 상한이 없다).
@@ -15761,6 +15877,16 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   // (사용자 요청) 퍼즐 생성자에 한해, 2페이지(모식도)에서 자신이 만든 퍼즐을 삭제할 수 있게 — 실수로
   // 지우지 않도록 확인 다이얼로그를 한 번 더 띄운다(대화·친구 삭제 확인과 같은 패턴).
   const [confirmDeletePuzzle, setConfirmDeletePuzzle] = useState(false);
+  // (버그 수정) onDeletePuzzle이 이제 서버 삭제 성공 여부를 boolean으로 돌려준다 — 실패(권한 없음·
+  // 네트워크 오류 등)하면 창을 닫지 않고 이 자리에 오류를 보여준다.
+  const [deletingPuzzle, setDeletingPuzzle] = useState(false);
+  const [deletePuzzleErr, setDeletePuzzleErr] = useState("");
+  const doDeletePuzzle = async () => {
+    setDeletingPuzzle(true); setDeletePuzzleErr("");
+    const ok = await onDeletePuzzle(puzzle.id);
+    if (!ok) { setDeletingPuzzle(false); setDeletePuzzleErr("퍼즐을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요."); return; }
+    setConfirmDeletePuzzle(false);
+  };
   const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   // (v0.4.1 기능, item 5) FEN 기반 사용자 생성 퍼즐 — setupSans(대국에서 이어지는 실제 수순)가 없고
@@ -16231,6 +16357,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     return () => { cancelled = true; };
   }, [pathNodes.length, wrong, reverting, reply, intro, targetTag, puzzle.id]);
   const lastQpz = (!intro && !reply && !reverting && !wrong) ? moveIcon : null;
+  // (사용자 요청) 퍼즐에서도 탁월한 수를 두면 리뷰·집중 분석과 똑같이, 그 수로 희생된(상대에게
+  // 안전하게 잡힐 수 있는) 기물이 공격받는다는 빨간색 화살표를 보여준다. lastQpz는 전환 중(응수
+  // 애니메이션·오답 연출 등)에는 이미 null이므로 그 상태를 그대로 게이트로 재사용한다. 방금 이동한
+  // 쪽(현재 둘 차례의 반대 진영, oppColor)의 기물을 대상으로 계산한다.
+  const puzzleDangerArrows = useMemo(() => {
+    if (!lastQpz || lastQpz.kind !== "brilliant") return [];
+    return hangingPieceArrows(board, oppColor);
+  }, [lastQpz, board, oppColor]);
   // (20차 기능1) 구버전 퍼즐 트리(kind/ev/adopt 미기록)는 배경에서 보강 — 모식도의 아이콘·평가치·채택률 표기용.
   // 아직 두지 않은(공개되지 않은) 노드는 계산하지 않는다 — 모식도에 어차피 보이지 않을뿐더러, 불필요한
   // 엔진·네트워크 호출로 미리 답을 계산해 두는 것 자체가 "아직 두지 않은 수를 다루지 않는다"는 원칙에 어긋난다.
@@ -16565,7 +16699,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               // 단계마다 독립된 연출만 보이도록 각 단계를 정확히 그 단계에서만 켠다 — 1단계: 도착
               // 칸만, 2단계: 기물 흔들림만, 3단계: 기물 흔들림+경로 반짝임(도착 칸 단독 표시는
               // 3단계에서 경로의 마지막 칸이 대신하므로 끈다).
-              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove}
+              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} arrows={puzzleDangerArrows} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove}
                   hintTo={hintLevel === 1 && hintInfo ? hintInfo.to : null} hintFrom={(hintLevel === 2 || hintLevel === 3) && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel === 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
@@ -16714,13 +16848,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       {/* (사용자 요청) 퍼즐 삭제 확인 — 대화·친구 삭제 확인 다이얼로그와 동일한 패턴, 실수로 지우지
           않도록 한 번 더 물어본다. */}
       {confirmDeletePuzzle && (
-        <div onClick={() => setConfirmDeletePuzzle(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={() => !deletingPuzzle && setConfirmDeletePuzzle(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>퍼즐 삭제</div>
             <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>이 퍼즐을 삭제할까요? 되돌릴 수 없고, 다른 사람들의 피드에서도 함께 사라져요.</p>
+            {deletePuzzleErr && <p style={{ fontSize: 12, color: T.blunder, marginTop: -8, marginBottom: 14, fontWeight: 700 }}>{deletePuzzleErr}</p>}
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmDeletePuzzle(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>취소</button>
-              <button onClick={() => { setConfirmDeletePuzzle(false); onDeletePuzzle(puzzle.id); }} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>삭제</button>
+              <button onClick={() => setConfirmDeletePuzzle(false)} disabled={deletingPuzzle} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: deletingPuzzle ? "default" : "pointer", opacity: deletingPuzzle ? 0.5 : 1 }}>취소</button>
+              <button onClick={doDeletePuzzle} disabled={deletingPuzzle} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: deletingPuzzle ? "default" : "pointer", opacity: deletingPuzzle ? 0.6 : 1 }}>{deletingPuzzle ? "삭제하는 중..." : "삭제"}</button>
             </div>
           </div>
         </div>
@@ -18670,7 +18805,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
   // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
   // 아무거나 클릭만 하면 항상 재현됨). 조기 반환을 이 컴포넌트의 모든 훅 호출 뒤로 옮겨 해결한다.
-  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={(id) => { onDeletePuzzle(id); closeActive(); }} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={async (id) => { const ok = await onDeletePuzzle(id); if (ok) closeActive(); return ok; }} />;
   // (버그 수정) 예전엔 openingKeyOf(최상위 이름 하나)와 정확히 일치해야만 매칭됐다 — 세부 갈래
   // 이름(예: "…Najdorf Variation, English Attack")을 선택하면, 그 이름이 퍼즐의 firstNamedOpening과
   // 다르므로(항상 최상위 이름만 반환) 절대 매칭될 수 없었다. 이제는 그 퍼즐의 수순이 실제로 지나는
@@ -19064,7 +19199,11 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       {feed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 조건에 맞는 퍼즐이 아직 없어요.</div>
         : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
             <AnimatePresence mode="popLayout">
-              {feed.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} onDelete={onDeletePuzzle} {...puzzleCardProps(p)} /></FadeIn>)}
+              {/* (버그 수정) 이 카드의 "✕" 삭제 버튼이 소유자 확인·확인 다이얼로그 없이 모든 로그인
+                  유저에게 그대로 노출돼 있었다(누구나 남의 퍼즐을 즉시 지울 수 있었음) — 퍼즐 삭제는
+                  퍼즐 풀이 화면 2페이지의 생성자 전용·확인 다이얼로그 경로로만 하도록 이 카드에서는
+                  onDelete를 넘기지 않는다. */}
+              {feed.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} {...puzzleCardProps(p)} /></FadeIn>)}
             </AnimatePresence>
           </div>}
       </>
@@ -20165,6 +20304,13 @@ const CHANGELOG = [
       "퍼즐 풀이 화면의 제작자 표시에서 '제작 · ' 문구가 빠지고 아이디만 보여요. PGN/FEN 표시와 퍼즐 레이팅 박스가 제작자 표시와 같은 줄로 내려오면서, 제목을 한 줄에 더 길게 볼 수 있어요.",
       "퍼즐 레이팅 말풍선이 잘못된 위치에 잠깐 나타났다 제자리로 돌아오던 문제(퍼즐 카드)와, 화면 경계에 잘리던 문제(퍼즐 풀이 화면)를 고쳤어요.",
       "퍼즐 만들기 마법사 1단계에서 PGN/FEN으로 인식되지 않는 입력에는 '잘못된 기보 형식입니다.'가 표시되고, 2단계로 넘어갈 수 없어요.",
+      "이미지 스캔 속도가 빨라졌어요 — 사진을 서버로 보내기 전에 적당한 크기로 먼저 줄여요.",
+      "집중 분석 모드에서 탁월한 수(희생)를 둘 때 금색 화살표가 없어지고, 희생된 기물이 공격받는다는 빨간색 화살표만 남았어요. 이 빨간색 화살표가 퍼즐에서도 똑같이 떠요.",
+      "게임 리뷰의 희생 경고 화살표에서, 폰이 자기 전진 방향과 반대쪽에서 잡는다고 잘못 표시되던 문제를 고쳤어요. 여러 기물이 동시에 희생됐을 때 정확히 위험한 공격자에서만 화살표가 뜨도록 판정도 정교해졌어요.",
+      "퍼즐 삭제가 실제로 서버에서도 지워지도록 고쳤어요(예전엔 새로고침하면 되살아났어요). 퍼즐 목록 카드에 있던, 아무나 남의 퍼즐을 지울 수 있던 삭제 버튼도 없앴어요 — 삭제는 퍼즐 풀이 화면에서 생성자 본인만, 확인 후에만 할 수 있어요.",
+      "집중 분석 수 설명에서 수 번호 없이 적힌 SAN은 더 이상 링크로 잡히지 않아요(수 번호를 붙여야 링크가 돼요). 대괄호 안 인식용 수순은 150자 제한에 포함되지 않아요.",
+      "집중 분석 모드에서 다른 수의 집중 분석으로 이동했다가 '←'를 누르면, 홈으로 나가는 대신 방금 있던 집중 분석으로 돌아가요.",
+      "학습 탭(집중 분석 모드 포함) 수 블록의 키워드가 한 줄에 담기고, 다 안 들어가면 자동으로 천천히 오른쪽으로 스크롤됐다 처음으로 돌아가기를 반복해요.",
     ]
   },
   {
@@ -26050,13 +26196,20 @@ export default function App() {
         .finally(finish);
     });
   }, [onSavePuzzle]);
-  const onDeletePuzzle = useCallback((id) => {
+  // (버그 수정) 서버(puzzles 테이블)에서 실제로 지워지는 걸 먼저 확인한 뒤에야 로컬 상태를 지운다 —
+  // 실패(권한 없음·네트워크 오류 등)하면 로컬에도 아무 변화가 없어야 "삭제됐다가 새로고침하면
+  // 되살아나는" 것처럼 보이지 않는다. 호출부(PuzzleSolver)가 성공 여부를 보고 안내할 수 있도록
+  // boolean을 그대로 돌려준다.
+  const onDeletePuzzle = useCallback(async (id) => {
+    const ok = await puzzleDeleteRemote(puzzleNo(id));
+    if (!ok) return false;
     setPuzzles((prev) => {
       const removed = prev.find((x) => x.id === id);
       if (removed) setArchivedPuzzles((a) => (a[id] ? a : { ...a, [id]: removed }));
       return prev.filter((x) => x.id !== id);
     });
     setDeletedPuzzles((p) => { const n = new Set(p); n.add(id); return n; });
+    return true;
   }, []);
   const onSolved = useCallback((id) => {
     const already = solved.has(id);
