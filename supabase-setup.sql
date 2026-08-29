@@ -1084,6 +1084,24 @@ begin
 end; $$;
 grant execute on function public.puzzle_reassign_creator(bigint, text) to authenticated;
 
+-- 퍼즐 삭제 (v0.4.2) — 생성자 본인 또는 개발자/공동개발자만. public.puzzles에는 authenticated
+-- role에 delete grant가 아예 없으므로(위 섹션 설명 참고 — 이 테이블의 민감한 변경은 전부 이
+-- SECURITY DEFINER RPC 계열로만 이뤄진다), 클라이언트가 REST DELETE를 직접 호출해도 늘 거부돼
+-- 왔다. 이 RPC가 그 유일한 창구다 — 호출자가 이 퍼즐의 생성자(creator_uid = auth.uid())이거나
+-- 개발자/공동개발자일 때만 실제로 행을 지운다.
+create or replace function public.puzzle_delete(p_no bigint)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_creator uuid;
+begin
+  select creator_uid into v_creator from public.puzzles where no = p_no for update;
+  if not found then return; end if;
+  if not public.is_content_editor(auth.uid()) and (v_creator is null or v_creator <> auth.uid()) then
+    raise exception 'not_authorized';
+  end if;
+  delete from public.puzzles where no = p_no;
+end; $$;
+grant execute on function public.puzzle_delete(bigint) to authenticated;
+
 -- ============================================================================
 -- 21) reviewed_games — 게임 리뷰 고유 URL의 chess.com 대국 캐시 (v0.3.4)
 -- ============================================================================
