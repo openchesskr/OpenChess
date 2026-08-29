@@ -18097,7 +18097,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       const next = !v;
       if (next && sortBtnRef.current) {
         const rect = sortBtnRef.current.getBoundingClientRect();
-        const margin = 10, menuW = 168;
+        const margin = 10, menuW = 240;
         const left = Math.max(margin, Math.min(rect.right - menuW, window.innerWidth - menuW - margin));
         setSortMenuPos({ left, top: rect.bottom + 6 });
       }
@@ -18540,28 +18540,38 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             {sortMenuOpen && sortMenuPos && (
               <>
                 <div onClick={() => setSortMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-                <div style={{ position: "fixed", left: sortMenuPos.left, top: sortMenuPos.top, width: 220, maxHeight: "min(70vh, 480px)", overflowY: "auto", borderRadius: 10, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 8px 20px -6px rgba(0,0,0,.5)", zIndex: 41 }}>
-                  <div style={{ padding: "8px 12px 4px", fontSize: 10, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: ".03em" }}>정렬</div>
-                  {PUZZLE_SORT_OPTIONS.map(([k, lb]) => (
-                    <button key={k} onClick={() => setPuzzleSortBy(k)} className="press" style={{ width: "100%", textAlign: "left", padding: "8px 12px", background: puzzleSortBy === k ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.15)", color: puzzleSortBy === k ? "#8A6A2F" : T.ink, fontWeight: puzzleSortBy === k ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      {lb} {puzzleSortBy === k && <Check size={13} />}
-                    </button>
-                  ))}
-                  <div style={{ padding: "8px 12px 4px", fontSize: 10, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: ".03em" }}>빠른 필터</div>
-                  {[["all", "전체"], ["mine", "내가 만든 퍼즐"], ["inprogress", "풀고 있는 중"]].map(([k, lb]) => (
-                    <button key={k} onClick={() => setQuickFilter(k)} className="press" style={{ width: "100%", textAlign: "left", padding: "8px 12px", background: quickFilter === k ? "rgba(60,138,60,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.15)", color: quickFilter === k ? "#1F6B1F" : T.ink, fontWeight: quickFilter === k ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      {lb} {quickFilter === k && <Check size={13} />}
-                    </button>
-                  ))}
-                  <div style={{ padding: "8px 12px 4px", fontSize: 10, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: ".03em" }}>테마</div>
-                  {chips.map(([k, lb]) => (
-                    <button key={k} onClick={() => setFilter(k)} className="press" style={{ width: "100%", textAlign: "left", padding: "8px 12px", background: filter === k ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.15)", color: filter === k ? "#8A6A2F" : T.ink, fontWeight: filter === k ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span>{lb} <span style={{ opacity: .6 }}>{count(k)}</span></span> {filter === k && <Check size={13} />}
-                    </button>
-                  ))}
-                  <button onClick={() => setHideSolved((v) => !v)} className="press" style={{ width: "100%", textAlign: "left", padding: "9px 12px", background: hideSolved ? "rgba(196,154,80,.16)" : "transparent", border: "none", color: hideSolved ? "#8A6A2F" : T.ink, fontWeight: hideSolved ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    해결 완료 숨기기 {hideSolved && <Check size={13} />}
-                  </button>
+                {/* (사용자 요청) 개발자의 "이름·키워드 편집" 박스와 같은 레이아웃 — 어두운 브라스 톤
+                    카드(진한 그러데이션 배경 + 브라스 테두리) 안에, 구획마다 작은 라벨 밑에
+                    KW_SINGLES 스타일의 줄바꿈 칩 그룹을 둔다. */}
+                <div style={{ position: "fixed", left: sortMenuPos.left, top: sortMenuPos.top, width: 240, maxHeight: "min(70vh, 480px)", overflowY: "auto", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.5)", zIndex: 41, padding: 12 }}>
+                  <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 12.5, marginBottom: 10 }}><Filter size={14} /> 정렬 · 필터</div>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>정렬</div>
+                    <div className="flex flex-wrap gap-1">
+                      {PUZZLE_SORT_OPTIONS.map(([k, lb]) => { const on = puzzleSortBy === k; return (
+                        <button key={k} onClick={() => setPuzzleSortBy(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
+                      ); })}
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>빠른 필터</div>
+                    <div className="flex flex-wrap gap-1">
+                      {[["all", "전체"], ["mine", "내가 만든 퍼즐"], ["inprogress", "풀고 있는 중"]].map(([k, lb]) => { const on = quickFilter === k; return (
+                        <button key={k} onClick={() => setQuickFilter(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.best : "rgba(255,255,255,.15)"), background: on ? "rgba(60,138,60,.28)" : "rgba(255,255,255,.06)", color: on ? "#BEEAB0" : T.ivory, cursor: "pointer" }}>{lb}</button>
+                      ); })}
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>테마</div>
+                    <div className="flex flex-wrap gap-1">
+                      {chips.map(([k, lb]) => { const on = filter === k; return (
+                        <button key={k} onClick={() => setFilter(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb} <span style={{ opacity: .65 }}>{count(k)}</span></button>
+                      ); })}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setHideSolved((v) => !v)} className="press" style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 7, border: "1px solid " + (hideSolved ? T.brass : "rgba(255,255,255,.2)"), background: hideSolved ? T.brass : "transparent", color: hideSolved ? "#241509" : T.ivory, cursor: "pointer" }}>{hideSolved ? "해결 완료 숨기는 중" : "해결 완료 숨기기"}</button>
+                  </div>
                 </div>
               </>
             )}
@@ -19649,6 +19659,7 @@ const CHANGELOG = [
       "퍼즐 탭의 퍼즐 레이팅 배지가 티어 도형에 바로 붙지 않고, 여백을 두고 우측에 표시돼요.",
       "퍼즐 만들기 기능이 분석 탭 보드 편집기 대신 퍼즐 탭으로 옮겨졌어요 — '퍼즐 풀기/퍼즐 만들기' 선택 박스로 전환하면, PGN·FEN 코드 입력 → 퍼즐 유형 선택(한 수순이 여러 전술을 동시에 만족할 수 있어 직접 골라요) → 생성된 라인 미리보기 순서로 진행해 퍼즐을 바로 만들 수 있어요. PGN을 직접 입력하는 대신, 유산 만들기처럼 내 chess.com 대국 중 하나를 골라 그 기보를 바로 채워 넣을 수도 있어요.",
       "퍼즐 탭의 정렬 UI가 정리됐어요 — 오프닝·생성자 검색창 폭을 줄이고, 그 옆에 깔때기 아이콘 버튼 하나로 정렬 기준(추천순·최신순·레이팅순)뿐 아니라 빠른 필터(전체·내가 만든 퍼즐·풀고 있는 중)·테마(전체·기물 희생하기·우위 점하기·실수 응징하기)·해결 완료 숨기기까지 한 드롭다운에서 고를 수 있어요.",
+      "정렬·필터 드롭다운이 개발자의 수 키워드 편집 박스와 같은 어두운 카드 레이아웃으로 바뀌었어요.",
     ]
   },
   {
