@@ -6,7 +6,7 @@ import {
   Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
+  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
   Camera, Image as ImageIcon, FolderOpen, Cloud,
 } from "lucide-react";
@@ -10243,32 +10243,64 @@ const PLAY_BOT_TIERS = [
   { elo: 2400, label: "2400", desc: "마스터" },
   { elo: 2800, label: "2800", desc: "그랜드마스터" },
 ];
-function botTemperature(elo) { return Math.max(4, 260 - elo * 0.09); }
+// (버그 수정, 사용자 제보) 2800 봇이 너무 나쁜 수를 자주 뒀다 — 예전엔 온도가 레이팅에 선형으로만
+// 줄어들어(elo 2800에서도 T=8), cp 손실이 30~40 정도인 후보도 꽤 자주 골라졌다. 400(T=220)~2800(T=5)
+// 사이를 지수적으로 보간해, 레이팅이 높아질수록 "약간 나쁜 수"를 급격히 덜 고르게 만든다(cp 손실이
+// 큰 후보는 사실상 배제되고, 거의 동등한 후보끼리만 남는다) — 그랜드마스터 등급에 걸맞게.
+function botTemperature(elo) {
+  const t = Math.max(0, Math.min(1, (elo - 400) / 2400));
+  const T0 = 220, T1 = 5;
+  return T0 * Math.pow(T1 / T0, t);
+}
 function botSearchParams(elo) {
   // 레이팅이 높을수록 더 깊이·오래 탐색해 후보 목록 자체의 질도 함께 좋아진다.
-  const depth = Math.max(8, Math.min(18, Math.round(8 + elo / 250)));
-  const movetime = Math.max(300, Math.min(1200, Math.round(300 + elo / 4)));
+  const depth = Math.max(8, Math.min(20, Math.round(8 + elo / 220)));
+  const movetime = Math.max(400, Math.min(1800, Math.round(400 + elo / 2.5)));
   return { depth, movetime };
 }
-async function pickBotMove(engine, fen, elo) {
+// (사용자 요청) 봇도 응수하기까지 최소한의 "생각하는 시간"을 갖도록 — 엔진 탐색 자체가 이미 걸리는
+// 시간과 별개로, 레이팅이 높을수록 조금 더 오래 고민하는 것처럼 느껴지도록 하한을 둔다.
+function botThinkDelayMs(elo) {
+  return Math.round(600 + Math.max(0, Math.min(1, elo / 2800)) * 1600); // 600ms(400) ~ 2200ms(2800)
+}
+// (버그 수정, 사용자 제보) 같은 포지션을 다시 만나면(반복 수순 등) 매번 똑같은 수만 고르는 경향이
+// 있었다 — moveMemory(이 대국 안에서 "이 FEN에서 이미 골랐던 수"를 세는 Map<fen, Map<uci, count>>)를
+// 받아, 이미 골랐던 적 있는 후보는 고를 때마다 가중치를 큰 폭으로 깎는다(전혀 못 고르게 막지는 않고,
+// 다른 대안이 없으면 여전히 고를 수 있다 — 외길 수순까지 막지 않기 위해서다).
+async function pickBotMove(engine, fen, elo, moveMemory) {
   const { depth, movetime } = botSearchParams(elo);
   const lines = await engine.evaluateMulti(fen, depth, 5, movetime, undefined, undefined, "play-bot");
   if (!lines || !lines.length) return null;
   const scored = lines.map((l) => ({ uci: l.uci, cp: l.mate != null ? (l.mate > 0 ? 100000 - l.mate : -100000 - l.mate) : (l.cp || 0) }));
   const best = Math.max(...scored.map((s) => s.cp));
   const T = botTemperature(elo);
-  const weights = scored.map((s) => Math.exp(-(best - s.cp) / T));
+  const usedHere = moveMemory ? moveMemory.get(fen) : null;
+  const weights = scored.map((s) => {
+    let w = Math.exp(-(best - s.cp) / T);
+    const times = usedHere ? (usedHere.get(s.uci) || 0) : 0;
+    if (times > 0) w *= Math.pow(0.12, times);
+    return w;
+  });
   const total = weights.reduce((a, b) => a + b, 0) || 1;
   let r = Math.random() * total;
-  for (let i = 0; i < scored.length; i++) { r -= weights[i]; if (r <= 0) return scored[i].uci; }
-  return scored[scored.length - 1].uci;
+  let chosen = scored[scored.length - 1].uci;
+  for (let i = 0; i < scored.length; i++) { r -= weights[i]; if (r <= 0) { chosen = scored[i].uci; break; } }
+  if (moveMemory) {
+    if (!moveMemory.has(fen)) moveMemory.set(fen, new Map());
+    const m = moveMemory.get(fen);
+    m.set(chosen, (m.get(chosen) || 0) + 1);
+  }
+  return chosen;
 }
-function PlayPage({ seed, onClose, engine, onOpenReview }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   const [step, setStep] = useState("setup"); // "setup" | "playing"
   const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
   const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
+  // (버그 수정) 이 대국 안에서 "이 포지션(FEN)에서 봇이 이미 골랐던 수"를 기억해 둔다 — pickBotMove가
+  // 반복 수순에서 항상 같은 수만 고르지 않도록 가중치를 낮추는 데 쓴다. 새 대국을 시작할 때마다 비운다.
+  const botMoveMemoryRef = useRef(new Map());
   const [activeColor, setActiveColor] = useState("w");
   const [sans, setSans] = useState(seedSans);
   const [sel, setSel] = useState(null);
@@ -10338,7 +10370,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
     setBotThinking(true);
     const fen = fenOfRoot(fenRoot, sans);
     const curSans = sans;
-    Promise.all([pickBotMove(engine, fen, botTier.elo), new Promise((r) => setTimeout(r, 450))]).then(([uci]) => {
+    Promise.all([pickBotMove(engine, fen, botTier.elo, botMoveMemoryRef.current), new Promise((r) => setTimeout(r, botThinkDelayMs(botTier.elo)))]).then(([uci]) => {
       if (cancelled) return;
       setBotThinking(false);
       if (!uci) return;
@@ -10358,9 +10390,10 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
     setSans(seedSans);
     setResigned(false);
     setViewPly(null);
+    botMoveMemoryRef.current = new Map();
     setStep("playing");
   };
-  const rematch = () => { setSans(seedSans); setResigned(false); setSel(null); setDrag(null); setViewPly(null); setStep("setup"); };
+  const rematch = () => { setSans(seedSans); setResigned(false); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setStep("setup"); };
 
   const flip = activeColor === "b";
   // (사용자 요청) chess.com 대국 화면처럼 상단에 수순 스트립(수 번호 + 백/흑 수, 누르면 그 시점으로
@@ -10384,13 +10417,23 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
   const stepBack = () => setViewPly((p) => Math.max(0, (p == null ? sans.length : p) - 1));
   const stepForward = () => setViewPly((p) => { if (p == null) return null; const n = p + 1; return n >= sans.length ? null : n; });
   const isLive = viewPly == null;
+  // (사용자 요청) 체스보드 아래 내 정보 줄에는 오픈체스 프로필 사진·아이디를 표시한다 — 로그인하지
+  // 않은 상태면 기본 프로필(아이콘)과 "Unnamed"로 대신한다.
+  const myPhoto = profile && profile.photo;
+  const myName = (profile && (profile.nickname || profile.displayId)) || username || null;
   const playerBar = (isBot) => (
     <div className="flex items-center justify-between" style={{ padding: "5px 2px" }}>
       <div className="flex items-center gap-2">
-        <span style={{ width: 28, height: 28, borderRadius: "50%", background: isBot ? "#EDE1C6" : T.brass, color: isBot ? T.inkSoft : "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
-          {isBot ? <Cpu size={14} /> : "나"}
-        </span>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{isBot ? botTier.label + " 봇" : "나"}</span>
+        {isBot ? (
+          <span style={{ width: 28, height: 28, borderRadius: "50%", background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={14} /></span>
+        ) : myPhoto ? (
+          <img src={myPhoto} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+        ) : (
+          <span style={{ width: 28, height: 28, borderRadius: "50%", background: myName ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#5A4630", color: myName ? "#241509" : T.ivory, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
+            {myName ? myName[0].toUpperCase() : <User size={14} />}
+          </span>
+        )}
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{isBot ? botTier.label + " 봇" : (myName || "Unnamed")}</span>
       </div>
       {isBot && <span style={{ fontSize: 11, fontWeight: 700, color: botThinking && !result ? T.brassHi : "rgba(244,238,226,.6)", fontFamily: SITE_FONT }}>{botThinking && !result ? "생각하는 중..." : "레이팅 " + botTier.elo}</span>}
     </div>
@@ -10401,7 +10444,8 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
       <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 34, height: 34, borderRadius: 10, background: T.ebony2, color: T.ivory, border: "1px solid #000", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><ArrowLeft size={17} /></button>
-          <div className="flex items-center gap-2"><Play size={16} color={T.brassHi} fill={T.brassHi} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>PLAY</span></div>
+          {/* (사용자 요청) 페이지 상단 정중앙에 헤더와 같은 오픈체스 로고를 표시한다. */}
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 28, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <span style={{ width: 34 }} />
         </div>
         {step === "setup" ? (
@@ -20583,6 +20627,10 @@ const CHANGELOG = [
       "집중 분석 모드에서 다른 수의 집중 분석으로 이동했다가 '←'를 누르면, 홈으로 나가는 대신 방금 있던 집중 분석으로 돌아가요.",
       "학습 탭(집중 분석 모드 포함) 수 블록의 키워드가 한 줄에 담기고, 다 안 들어가면 자동으로 천천히 오른쪽으로 스크롤됐다 처음으로 돌아가기를 반복해요.",
       "학습 탭 메인 체스보드 아래, 뒤집기·초기화·뒤로·앞으로 버튼과 같은 줄 가운데에 PLAY 버튼이 생겼어요 — 지금 보드에 입력된 포지션부터 레이팅별 봇(400~2800)과 직접 대국할 수 있는 전용 페이지(openchess.kr/play)예요. 진입하면 먼저 백/흑(또는 랜덤)과 상대할 봇을 고르고 대국을 시작해요. 대국 화면 맨 위에는 지금까지 둔 수순이 표시되고, 눌러서 그 시점 포지션을 되돌아볼 수 있어요. 대국이 끝나면 그 기보를 그대로 리뷰할 수도 있어요.",
+      "PLAY 페이지 상단에 오픈체스 로고가 표시돼요. 보드 아래 내 정보 줄에는 실제 오픈체스 프로필 사진·아이디가 보여요(로그인하지 않았으면 기본 프로필 아이콘과 'Unnamed'로 대신 표시돼요).",
+      "레이팅 2800 봇이 나쁜 수를 자주 두던 문제를 고쳤어요 — 레이팅이 높을수록 최선의 수에 훨씬 가깝게 두도록 강화했어요.",
+      "봇이 수를 두기 전에 잠깐 생각하는 시간을 가져요(레이팅이 높을수록 조금 더 오래 생각해요).",
+      "봇이 같은 포지션에서 매번 똑같은 수만 반복해서 두지 않도록, 이미 뒀던 수는 다음에 덜 고르게 했어요.",
     ]
   },
   {
@@ -27108,7 +27156,7 @@ export default function App() {
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
-      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} />}
+      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} />}
       {profileWinOpen && user && (
         <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size}
           onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
