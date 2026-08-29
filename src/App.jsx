@@ -17980,7 +17980,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
   const [filter, setFilter] = useState("all");
   // (v0.4.1 기능, item 3) 사용자 요청 — "내가 만든 퍼즐"·"풀고 있는 중"을 직관적으로 찾을 수 있게
   // 테마 칩과 별개의 빠른 접근 칩을 둔다. quickFilter는 테마 필터와 AND로 함께 적용된다.
@@ -17991,6 +17991,11 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 라인 미리보기(생성자 권한 박스) 세 단계를 차례로 보여주고, 셋 다 끝나야 "퍼즐 만들기" 버튼이 켜진다.
   const [puzzleMode, setPuzzleMode] = useState("solve"); // "solve" | "create"
   const [pcInput, setPcInput] = useState("");
+  // (사용자 요청) 1단계 PGN/FEN 입력에 chess.com 대국도 선택할 수 있게 — 유산(LegacyManageModal)의
+  // "chess.com 대국에서 선택" 패턴을 그대로 재사용한다(별도 창 없이 AccountChessStats를 펼치고,
+  // 각 대국 줄에 onSelectGame으로 "선택" 버튼만 놓인다).
+  const [showChesscomPicker, setShowChesscomPicker] = useState(false);
+  const chesscomReady = !!(chesscom && chesscom.status === "ready" && chesscom.games && chesscom.games.length);
   const [pcParsed, setPcParsed] = useState(null); // { kind:"fen", fenRoot, raw } | { kind:"pgn", setupSans, mistakeSan, raw }
   const [pcErr, setPcErr] = useState("");
   const [pcTheme, setPcTheme] = useState(null); // "sacrifice" | "advantage" | "punish"
@@ -18000,7 +18005,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const [pcCreating, setPcCreating] = useState(false);
   const resetPuzzleCreate = () => {
     setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
-    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false);
+    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false); setShowChesscomPicker(false);
   };
   // 1단계 — PGN 또는 FEN 코드를 입력받아 검증한다. PGN이면 마지막 수를 "실수(mistakeSan)"로,
   // 그 앞까지를 setupSans로 삼는다(기존 퍼즐 자동 생성 — 실수 응징하기/우위 점하기 — 과 같은 규칙).
@@ -18388,9 +18393,21 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               style={{ width: "100%", boxSizing: "border-box", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: SITE_FONT }} />
             {pcErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pcErr}</div>}
             {pcParsed && <div style={{ fontSize: 11.5, color: T.best, marginTop: 6, fontWeight: 700 }}>{pcParsed.kind === "fen" ? "FEN 포지션이 확인됐어요 — 이 위치 자체가 퍼즐 시작점이 돼요." : "기보가 확인됐어요 — 마지막 수(" + pcParsed.mistakeSan + ")를 다루는 퍼즐을 만들어요."}</div>}
-            <div style={{ marginTop: 8 }}>
+            <div className="flex items-center gap-2" style={{ marginTop: 8, flexWrap: "wrap" }}>
               <button onClick={parsePcInput} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
+              {/* (사용자 요청) 유산 만들기와 같은 방식 — PGN을 직접 타이핑하는 대신, 내 chess.com 대국
+                  중 하나를 골라 그 기보를 텍스트로 채워 넣는다(유산 만들기처럼 마지막 수까지 그대로
+                  가져오되, 어느 수를 "다루는 수"로 삼을지는 여기서 직접 지워 조정할 수 있다). */}
+              <button onClick={() => setShowChesscomPicker((v) => !v)} disabled={!chesscomReady} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid " + T.brass, background: showChesscomPicker ? "rgba(196,154,80,.14)" : "transparent", color: chesscomReady ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 12, cursor: chesscomReady ? "pointer" : "default", opacity: chesscomReady ? 1 : 0.5 }}>chess.com 대국에서 선택{!chesscomReady ? " (설정에서 chess.com 계정을 연동하면 이용할 수 있어요)" : ""}</button>
             </div>
+            {showChesscomPicker && chesscomReady && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
+                <AccountChessStats chesscom={chesscom} username={chesscomUsername} onSelectGame={(g) => {
+                  setPcInput(sansToPgnText(g.moves, "w")); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcGen(null); setPcGenErr("");
+                  setShowChesscomPicker(false);
+                }} />
+              </div>
+            )}
           </div>
           {/* 2단계 — 퍼즐 유형 선택(PGN 한 수가 여러 전술을 동시에 만족할 수 있어 직접 고른다) */}
           {pcParsed && (
@@ -18512,41 +18529,44 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               </div>
             )}
           </div>
-          {/* (사용자 요청) 정렬 기준(추천순/최신순/레이팅순) 3분할 세그먼트 박스를 없애고, 깔때기
-              아이콘 버튼 하나 + 드롭다운으로 대체한다. */}
+          {/* (사용자 요청) 정렬 기준(추천순/최신순/레이팅순) 3분할 세그먼트 박스와, 그 아래 있던 빠른
+              접근 칩(전체/내가 만든 퍼즐/풀고 있는 중)·테마 칩 행을 모두 없애고, 깔때기 아이콘 버튼
+              하나의 드롭다운 안에 정렬·빠른 필터·테마 세 구획으로 함께 담는다 — 산만하던 필터 줄
+              여러 개를 한 곳으로 모은다. */}
           <div style={{ position: "relative", flexShrink: 0 }}>
-            <button ref={sortBtnRef} onClick={toggleSortMenu} className="press" title="정렬 기준" aria-label="정렬 기준 선택" style={{ width: 34, height: 34, borderRadius: 9, background: sortMenuOpen ? T.ebony2 : "rgba(0,0,0,.25)", border: "1px solid " + T.brass, color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <button ref={sortBtnRef} onClick={toggleSortMenu} className="press" title="정렬·필터" aria-label="정렬·필터 선택" style={{ width: 34, height: 34, borderRadius: 9, background: sortMenuOpen ? T.ebony2 : "rgba(0,0,0,.25)", border: "1px solid " + T.brass, color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               <Filter size={15} />
             </button>
             {sortMenuOpen && sortMenuPos && (
               <>
                 <div onClick={() => setSortMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-                <div style={{ position: "fixed", left: sortMenuPos.left, top: sortMenuPos.top, width: 168, borderRadius: 10, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 8px 20px -6px rgba(0,0,0,.5)", zIndex: 41, overflow: "hidden" }}>
+                <div style={{ position: "fixed", left: sortMenuPos.left, top: sortMenuPos.top, width: 220, maxHeight: "min(70vh, 480px)", overflowY: "auto", borderRadius: 10, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 8px 20px -6px rgba(0,0,0,.5)", zIndex: 41 }}>
+                  <div style={{ padding: "8px 12px 4px", fontSize: 10, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: ".03em" }}>정렬</div>
                   {PUZZLE_SORT_OPTIONS.map(([k, lb]) => (
-                    <button key={k} onClick={() => { setPuzzleSortBy(k); setSortMenuOpen(false); }} className="press" style={{ width: "100%", textAlign: "left", padding: "9px 12px", background: puzzleSortBy === k ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.2)", color: puzzleSortBy === k ? "#8A6A2F" : T.ink, fontWeight: puzzleSortBy === k ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <button key={k} onClick={() => setPuzzleSortBy(k)} className="press" style={{ width: "100%", textAlign: "left", padding: "8px 12px", background: puzzleSortBy === k ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.15)", color: puzzleSortBy === k ? "#8A6A2F" : T.ink, fontWeight: puzzleSortBy === k ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       {lb} {puzzleSortBy === k && <Check size={13} />}
                     </button>
                   ))}
+                  <div style={{ padding: "8px 12px 4px", fontSize: 10, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: ".03em" }}>빠른 필터</div>
+                  {[["all", "전체"], ["mine", "내가 만든 퍼즐"], ["inprogress", "풀고 있는 중"]].map(([k, lb]) => (
+                    <button key={k} onClick={() => setQuickFilter(k)} className="press" style={{ width: "100%", textAlign: "left", padding: "8px 12px", background: quickFilter === k ? "rgba(60,138,60,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.15)", color: quickFilter === k ? "#1F6B1F" : T.ink, fontWeight: quickFilter === k ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      {lb} {quickFilter === k && <Check size={13} />}
+                    </button>
+                  ))}
+                  <div style={{ padding: "8px 12px 4px", fontSize: 10, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: ".03em" }}>테마</div>
+                  {chips.map(([k, lb]) => (
+                    <button key={k} onClick={() => setFilter(k)} className="press" style={{ width: "100%", textAlign: "left", padding: "8px 12px", background: filter === k ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.15)", color: filter === k ? "#8A6A2F" : T.ink, fontWeight: filter === k ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span>{lb} <span style={{ opacity: .6 }}>{count(k)}</span></span> {filter === k && <Check size={13} />}
+                    </button>
+                  ))}
+                  <button onClick={() => setHideSolved((v) => !v)} className="press" style={{ width: "100%", textAlign: "left", padding: "9px 12px", background: hideSolved ? "rgba(196,154,80,.16)" : "transparent", border: "none", color: hideSolved ? "#8A6A2F" : T.ink, fontWeight: hideSolved ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    해결 완료 숨기기 {hideSolved && <Check size={13} />}
+                  </button>
                 </div>
               </>
             )}
           </div>
         </div>
-        {/* (v0.4.1 기능, item 3) 빠른 접근 칩 — "내가 관심 있고 풀고 있었던 퍼즐"과 "내가 직접 만든
-            퍼즐"을 직관적으로 찾을 수 있게, 테마 칩과 별개로 한 줄 더 둔다. */}
-        <div className="flex items-center gap-1.5" style={{ flexWrap: "wrap", marginTop: 8 }}>
-          {[["all", "전체"], ["mine", "내가 만든 퍼즐"], ["inprogress", "풀고 있는 중"]].map(([k, lb]) => { const on = quickFilter === k; return (
-            <button key={k} onClick={() => setQuickFilter(k)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid " + (on ? T.best : "#5A4630"), background: on ? "rgba(60,138,60,.22)" : "transparent", color: on ? "#BEEAB0" : T.inkSoft, cursor: "pointer" }}>{lb}</button>
-          ); })}
-          <button onClick={() => setHideSolved((v) => !v)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid " + (hideSolved ? T.brass : "#5A4630"), background: hideSolved ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: hideSolved ? "#241509" : T.inkSoft, cursor: "pointer", marginLeft: "auto" }}>{hideSolved ? "해결 완료 숨기는 중" : "해결 완료 숨기기"}</button>
-        </div>
-      </div>
-      {/* (v0.2.2 UI#3) 수 체계(테마) 칩은 줄바꿈 없이 한 줄에 다 들어가도록 크기를 줄이고, 아주 좁은
-          화면에서만 가로 스크롤로 넘겨 본다. */}
-      <div className="flex gap-1.5" style={{ marginBottom: 14, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
-        {chips.map(([k, lb]) => { const on = filter === k; return (
-          <button key={k} onClick={() => setFilter(k)} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb} <span style={{ opacity: .7 }}>{count(k)}</span></button>
-        ); })}
       </div>
       {/* (v0.4.1 기능, item 3) 사용자 요청 — 추천/미해결/해결 완료 3분할을 없애고 단일 정렬 피드로
           통합한다. 기본 정렬("추천순")은 위 puzzleExposureScore(난이도 적합도·약점 보완도·테마
@@ -19627,8 +19647,8 @@ const CHANGELOG = [
       "FEN 기반으로 만든 퍼즐(대국 기록 없이 포지션만으로 만든 퍼즐)을 누를 때 화면이 먹통 되던 문제와, 그런 퍼즐이 카드 목록에서 체스보드 미리보기 없이 비어 보이던 문제를 고쳤어요.",
       "퍼즐 카드가 세로로 더 넉넉해지고, 미리보기 체스보드가 카드 폭에 맞춰 정사각형으로 훨씬 크게 보여요. 제목 길이와 무관하게 카드 비율이 항상 일정하게 유지돼요.",
       "퍼즐 탭의 퍼즐 레이팅 배지가 티어 도형에 바로 붙지 않고, 여백을 두고 우측에 표시돼요.",
-      "퍼즐 만들기 기능이 분석 탭 보드 편집기 대신 퍼즐 탭으로 옮겨졌어요 — '퍼즐 풀기/퍼즐 만들기' 선택 박스로 전환하면, PGN·FEN 코드 입력 → 퍼즐 유형 선택(한 수순이 여러 전술을 동시에 만족할 수 있어 직접 골라요) → 생성된 라인 미리보기 순서로 진행해 퍼즐을 바로 만들 수 있어요.",
-      "퍼즐 탭의 정렬 UI가 정리됐어요 — 오프닝·생성자 검색창 폭을 줄이고, 그 옆에 깔때기 아이콘 버튼 하나로 정렬 기준(추천순·최신순·레이팅순) 드롭다운을 열어요.",
+      "퍼즐 만들기 기능이 분석 탭 보드 편집기 대신 퍼즐 탭으로 옮겨졌어요 — '퍼즐 풀기/퍼즐 만들기' 선택 박스로 전환하면, PGN·FEN 코드 입력 → 퍼즐 유형 선택(한 수순이 여러 전술을 동시에 만족할 수 있어 직접 골라요) → 생성된 라인 미리보기 순서로 진행해 퍼즐을 바로 만들 수 있어요. PGN을 직접 입력하는 대신, 유산 만들기처럼 내 chess.com 대국 중 하나를 골라 그 기보를 바로 채워 넣을 수도 있어요.",
+      "퍼즐 탭의 정렬 UI가 정리됐어요 — 오프닝·생성자 검색창 폭을 줄이고, 그 옆에 깔때기 아이콘 버튼 하나로 정렬 기준(추천순·최신순·레이팅순)뿐 아니라 빠른 필터(전체·내가 만든 퍼즐·풀고 있는 중)·테마(전체·기물 희생하기·우위 점하기·실수 응징하기)·해결 완료 숨기기까지 한 드롭다운에서 고를 수 있어요.",
     ]
   },
   {
@@ -26212,7 +26232,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} />}
