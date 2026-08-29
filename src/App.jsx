@@ -7,7 +7,7 @@ import {
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
-  Pencil, RotateCw, RefreshCw, ScanLine, Save, Puzzle,
+  Pencil, RotateCw, RefreshCw, ScanLine, Save, Puzzle, Filter,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -4854,7 +4854,7 @@ function EditorBoardGrid({ board, flipped, size, selected, onSquareClick, gridRe
     </div>
   );
 }
-function BoardEditorModal({ initialFen, onClose, onApply, onCreatePuzzle }) {
+function BoardEditorModal({ initialFen, onClose, onApply }) {
   const narrow = useNarrow(760);
   const startSnap = useMemo(() => {
     const p = (initialFen && parseFenFull(initialFen)) || parseFenFull(STANDARD_START_FEN);
@@ -5078,24 +5078,6 @@ function BoardEditorModal({ initialFen, onClose, onApply, onCreatePuzzle }) {
     finally { setScanning(false); }
   };
   const handleDone = () => { const p = parseFenFull(fenText); if (p) onApply(p); };
-  // (v0.4.1 기능, item 5) "FEN 코드를 통한 사용자의 임의 퍼즐 생성" — 지금 보드에 올려 둔 배치를
-  // 그대로 새 퍼즐의 시작 포지션(fenRoot)으로 삼아, 대국 기록 없이도 이 위치에서 곧바로 전술 트리를
-  // 만든다. FEN→PGN(이 포지션 이전의 실제 수순)은 FEN 자체가 담지 못하는 정보라 자동 복원이
-  // 불가능하므로 비워 두고(생성자·개발자가 나중에 원하면 수동으로 채울 수 있게), PGN→FEN 자동
-  // 변환은 onSavePuzzle이 setupSans 있는 일반 퍼즐에 대해 이미 하고 있는 것과 대칭을 이룬다.
-  const [creatingPuzzle, setCreatingPuzzle] = useState(false);
-  const [createMsg, setCreateMsg] = useState("");
-  const doCreatePuzzle = async () => {
-    if (!onCreatePuzzle || creatingPuzzle) return;
-    const p = parseFenFull(fenText);
-    if (!p) { setCreateMsg("올바른 FEN 형식이 아니에요."); return; }
-    setCreatingPuzzle(true); setCreateMsg("전술 라인을 찾는 중...");
-    try {
-      const ok = await onCreatePuzzle(fenText);
-      setCreateMsg(ok ? "퍼즐이 만들어졌어요! 퍼즐 탭에서 확인해 보세요." : "이 포지션에서는 뚜렷한 전술 라인을 찾지 못했어요. 다른 배치로 시도해 보세요.");
-    } catch { setCreateMsg("퍼즐 생성에 실패했어요. 잠시 후 다시 시도해주세요."); }
-    finally { setCreatingPuzzle(false); }
-  };
   const boardSize = narrow ? Math.min(320, (typeof window !== "undefined" ? window.innerWidth : 360) - 64) : 400;
   const paletteSq = narrow ? Math.min(40, Math.floor((boardSize + 15) / 7) - 4) : 42;
 
@@ -5189,12 +5171,6 @@ function BoardEditorModal({ initialFen, onClose, onApply, onCreatePuzzle }) {
   );
   const footerButtons = (
     <div className="flex flex-col" style={{ gap: 8 }}>
-      {onCreatePuzzle && (
-        <button onClick={doCreatePuzzle} disabled={creatingPuzzle} className="press" style={{ padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: creatingPuzzle ? "rgba(196,154,80,.12)" : "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12.5, cursor: creatingPuzzle ? "default" : "pointer" }}>
-          {creatingPuzzle ? "전술 라인을 찾는 중..." : "이 포지션으로 퍼즐 만들기"}
-        </button>
-      )}
-      {createMsg && <div style={{ fontSize: 11, color: T.inkSoft, textAlign: "center" }}>{createMsg}</div>}
       <div className="flex gap-2">
         <button onClick={onClose} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
         <button onClick={handleDone} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>완료</button>
@@ -11420,23 +11396,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 disabled={(!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready"} />
             </div>
           </div>
+          {/* (사용자 요청) 퍼즐 만들기 기능은 이 보드 편집기(분석 탭 수정 버튼)가 아니라 퍼즐 탭에서만
+              가능하도록 옮겼다 — 여기서는 순수하게 포지션을 편집/적용하는 용도로만 쓴다. */}
           {editorOpen && (
             <BoardEditorModal
               initialFen={fenOfRoot(fenRoot, sans)}
               onClose={() => setEditorOpen(false)}
               onApply={(root) => { onLoadFen(root); setEditorOpen(false); }}
-              onCreatePuzzle={async (fenStr) => {
-                const puzzleFenRoot = parseFenFull(fenStr);
-                if (!puzzleFenRoot || !engine || engine.status !== "ready") return false;
-                const opts = puzzleThemeOpts("advantage");
-                const gen = await genPuzzleTree(engine, [], opts, undefined, puzzleFenRoot);
-                if (!gen) return false;
-                onSavePuzzle({
-                  id: "fen:" + fenStr, themes: ["advantage"], name: "FEN 포지션 퍼즐", fen: fenStr,
-                  setupSans: [], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true,
-                });
-                return true;
-              }}
             />
           )}
           <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
@@ -14971,7 +14937,10 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
     // (v0.1.2) 퍼즐 탭 티어 스트립 크기 축소(특히 높이) — 패딩·로고·글자·진행바를 모두 한 단계씩 줄임.
     <div onClick={onOpen} className="press flex items-center" style={{ marginBottom: 14, padding: "6px 14px", borderRadius: 999, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid " + T.brass, cursor: onOpen ? "pointer" : "default", gap: 2 }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={46} discSize={49} />
-      <div style={{ minWidth: 96, marginLeft: 9, marginRight: 4 }}>
+      {/* (사용자 요청) 퍼즐 레이팅 배지를 티어 도형 바로 옆이 아니라 여백을 두고 우측에 — 이 가운데
+          정보 칼럼에 flex:1을 줘 남는 공간을 모두 차지하게 해서, 배지가 티어 텍스트에 붙지 않고
+          스트립 우측 끝에 자연스러운 간격을 두고 자리하게 한다. */}
+      <div style={{ minWidth: 96, flex: 1, marginLeft: 9, marginRight: 4 }}>
         <div style={{ fontSize: 12.5, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
         {/* (사용자 요청) 그랜드마스터 별 개수가 티어 명칭 글자와 겹쳐 보이던 문제 — 명칭 줄이 아니라
             게이지 바와 같은 줄, 그 우측에 배치한다. */}
@@ -14989,7 +14958,7 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
           레이팅 : n" 말풍선이 뜬다(모바일 안전 영역 클램프는 ClickInfoBadge가 담당). */}
       {puzzleRating != null && (
         <ClickInfoBadge text={"퍼즐 레이팅 : " + fmtFull(puzzleRating)}>
-          <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: "auto", padding: "5px 9px", borderRadius: 999, background: "rgba(196,154,80,.16)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+          <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 10, padding: "5px 9px", borderRadius: 999, background: "rgba(196,154,80,.16)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
             <Puzzle size={11} /> {fmtFull(puzzleRating)}
           </span>
         </ClickInfoBadge>
@@ -16745,6 +16714,21 @@ function FitPuzzleName({ text }) {
   );
 }
 function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
+  // (사용자 요청) 미리보기 체스보드가 카드 폭에 딱 맞는 정사각형이 되도록, 고정 190px 대신 실제
+  // 렌더된 폭을 ResizeObserver로 재서 그 값을 그대로 보드 size로 쓴다(DailyPuzzleNoticeModal의
+  // boardWrapRef/boardW와 같은 패턴) — 카드가 넓어지면 보드도 그만큼 커지고, 항상 정사각형이다.
+  const boardWrapRef = useRef(null);
+  const [boardW, setBoardW] = useState(190);
+  useLayoutEffect(() => {
+    const el = boardWrapRef.current;
+    if (!el) return;
+    const measure = () => { if (el.clientWidth) setBoardW(el.clientWidth); };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
   const hasPreview = p.setupSans && p.mistakeSan;
@@ -16785,13 +16769,23 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
     /* (18차 UI7) 카드 크기 축소 + 도감 탭처럼 정사각형 비율 — 한 화면에 더 많은 퍼즐이 보이도록.
        (18차 UI4) overflow hidden + aspectRatio 고정으로 카드끼리 겹치던 문제도 함께 해결. */
     /* (19차 UI2) 정사각 고정을 풀고(오프닝 이름·"n명이 풀었습니다"가 잘리지 않도록) 내용 높이에 맞춰 늘어나게 한다. */
-    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, paddingBottom: 16, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ position: "absolute", top: -1, left: -1, right: -1, height: 3, borderRadius: "12px 12px 0 0", background: themeAccentBg(themes), zIndex: 2 }} />
       <PuzzleThemePattern themes={themes} opacity={isSolved ? 0.05 : 0.11} />
       {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={190} loopMs={2400} flip={flip} /></div>}
-        {!hasPreview && fenPreview && <div style={{ marginBottom: 6 }}><Board board={fenPreview.board} flip={fenFlip} size={190} showEval={false} showCoords={false} interactive={false} /></div>}
+        {/* (사용자 요청) 카드 비율을 세로로 늘리고, 체스보드가 들어갈 여백 자체를 정사각형(aspectRatio
+            1/1)으로 항상 예약해 둔다 — 미리보기가 있든 없든(레거시 퍼즐 등) 이 자리 크기는 그대로라
+            제목 길이와 무관하게 카드 비율이 흔들리지 않는다. 보드는 이 정사각형 자리를 꽉 채우도록
+            ResizeObserver로 잰 실제 폭(boardW)을 그대로 size로 써서, 예전 고정 190px보다 카드가
+            넓을 때 훨씬 크게 그려진다. */}
+        <div ref={boardWrapRef} style={{ marginBottom: 6, width: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, overflow: "hidden", background: hasPreview || fenPreview ? "transparent" : "rgba(0,0,0,.05)" }}>
+          {hasPreview
+            ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={boardW} loopMs={2400} flip={flip} />
+            : fenPreview
+              ? <Board board={fenPreview.board} flip={fenFlip} size={boardW} showEval={false} showCoords={false} interactive={false} />
+              : null}
+        </div>
         <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
           {/* (버그 수정) 이 라벨은 세부 갈래까지 다 붙은 p.opening(예: "Ruy Lopez, Berlin Defense,
               Rio de Janeiro Variation") 대신, 최상위 갈래 이름(firstNamedOpening)만 짧게 보여준다
@@ -17986,12 +17980,93 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
   const [filter, setFilter] = useState("all");
   // (v0.4.1 기능, item 3) 사용자 요청 — "내가 만든 퍼즐"·"풀고 있는 중"을 직관적으로 찾을 수 있게
   // 테마 칩과 별개의 빠른 접근 칩을 둔다. quickFilter는 테마 필터와 AND로 함께 적용된다.
   const [quickFilter, setQuickFilter] = useState("all"); // "all" | "mine" | "inprogress"
   const [hideSolved, setHideSolved] = useState(false);
+  // (사용자 요청) 퍼즐 만들기 기능을 학습 탭(분석 화면 보드 편집기) 대신 이 탭 안에서 — "퍼즐 풀기"/
+  // "퍼즐 만들기" 선택 박스로 모드를 전환한다. 만들기 모드는 PGN/FEN 입력 → 퍼즐 유형 선택 → 생성된
+  // 라인 미리보기(생성자 권한 박스) 세 단계를 차례로 보여주고, 셋 다 끝나야 "퍼즐 만들기" 버튼이 켜진다.
+  const [puzzleMode, setPuzzleMode] = useState("solve"); // "solve" | "create"
+  const [pcInput, setPcInput] = useState("");
+  const [pcParsed, setPcParsed] = useState(null); // { kind:"fen", fenRoot, raw } | { kind:"pgn", setupSans, mistakeSan, raw }
+  const [pcErr, setPcErr] = useState("");
+  const [pcTheme, setPcTheme] = useState(null); // "sacrifice" | "advantage" | "punish"
+  const [pcGenerating, setPcGenerating] = useState(false);
+  const [pcGen, setPcGen] = useState(null); // { tree, lines }
+  const [pcGenErr, setPcGenErr] = useState("");
+  const [pcCreating, setPcCreating] = useState(false);
+  const resetPuzzleCreate = () => {
+    setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
+    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false);
+  };
+  // 1단계 — PGN 또는 FEN 코드를 입력받아 검증한다. PGN이면 마지막 수를 "실수(mistakeSan)"로,
+  // 그 앞까지를 setupSans로 삼는다(기존 퍼즐 자동 생성 — 실수 응징하기/우위 점하기 — 과 같은 규칙).
+  const parsePcInput = () => {
+    const raw = pcInput.trim();
+    setPcErr(""); setPcParsed(null); setPcTheme(null); setPcGen(null); setPcGenErr("");
+    if (!raw) { setPcErr("PGN 또는 FEN을 입력하세요."); return; }
+    if (looksLikeFen(raw)) {
+      const fenRoot = parseFenFull(raw);
+      if (!fenRoot) { setPcErr("올바른 FEN 형식이 아니에요."); return; }
+      setPcParsed({ kind: "fen", fenRoot, raw });
+      return;
+    }
+    const moves = parsePgnMoves(raw);
+    if (!moves.length) { setPcErr("인식할 수 있는 기보가 없어요."); return; }
+    let board = startBoard(), ok = true;
+    for (let i = 0; i < moves.length; i++) {
+      const color = i % 2 === 0 ? "w" : "b";
+      if (!sanSrc(board, moves[i], color)) { ok = false; break; }
+      board = applySan(board, moves[i], color);
+    }
+    if (!ok) { setPcErr("기보에 불법적인 수가 포함되어 있어요."); return; }
+    if (moves.length < 2) { setPcErr("최소 2수 이상 입력하세요 — 마지막 수가 퍼즐이 다루는 수가 돼요."); return; }
+    setPcParsed({ kind: "pgn", setupSans: moves.slice(0, -1), mistakeSan: moves[moves.length - 1], raw });
+  };
+  // 2·3단계 — 퍼즐 유형을 고르면 곧바로 그 유형에 맞는 방식으로 전술 트리를 생성해 미리보기로 보여준다.
+  const pickPcTheme = async (theme) => {
+    if (!pcParsed || pcGenerating) return;
+    setPcTheme(theme); setPcGen(null); setPcGenErr("");
+    if (!engine || engine.status !== "ready") { setPcGenErr("엔진이 아직 준비되지 않았어요."); return; }
+    setPcGenerating(true);
+    try {
+      let gen;
+      if (pcParsed.kind === "fen") {
+        gen = await genPuzzleTree(engine, [], puzzleThemeOpts(theme), undefined, pcParsed.fenRoot);
+      } else if (theme === "sacrifice") {
+        // (기존 자동 생성 규칙과 동일) 희생 테마는 "마지막 수 자체"가 첫 수로 고정되며, 그 직전
+        // 위치부터 트리를 만든다 — 풀이자는 이 수를 스스로 찾아내야 한다.
+        gen = await genPuzzleTree(engine, pcParsed.setupSans, { ...puzzleThemeOpts("sacrifice"), firstSan: pcParsed.mistakeSan });
+      } else {
+        // 실수 응징하기/우위 점하기는 "마지막 수(실수)가 이미 두어진 뒤" 포지션부터 트리를 만든다.
+        gen = await genPuzzleTree(engine, [...pcParsed.setupSans, pcParsed.mistakeSan], puzzleThemeOpts(theme));
+      }
+      if (!gen || !gen.lines || !gen.lines.length) { setPcGenErr("이 포지션/수순에서는 뚜렷한 전술 라인을 찾지 못했어요. 다른 PGN·FEN이나 유형으로 시도해 보세요."); return; }
+      setPcGen(gen);
+    } catch { setPcGenErr("퍼즐 생성에 실패했어요. 잠시 후 다시 시도해주세요."); }
+    finally { setPcGenerating(false); }
+  };
+  const pcCanSubmit = !!(pcParsed && pcTheme && pcGen && !pcGenerating && !pcCreating);
+  // (사용자 요청) 3개 박스(PGN/FEN 입력·유형 선택·라인 미리보기)가 모두 끝나야 눌리는 "퍼즐 만들기"
+  // 버튼 — 저장과 동시에 방금 만든 퍼즐을 바로 열어(setActive) 결과를 확인·이어서 라인을 조정할 수
+  // 있게 한다(퍼즐 솔버 화면의 기존 "생성자 권한" 편집 도구를 그대로 이어서 쓸 수 있다).
+  const submitPuzzleCreate = () => {
+    if (!pcCanSubmit) return;
+    setPcCreating(true);
+    let pz;
+    if (pcParsed.kind === "fen") {
+      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: "FEN 포지션 퍼즐", fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true };
+    } else {
+      pz = { id: pcParsed.setupSans.join(" ") + "|" + pcParsed.mistakeSan, themes: [pcTheme], name: puzzleName(pcTheme, pcParsed.setupSans, pcParsed.mistakeSan), setupSans: pcParsed.setupSans, mistakeSan: pcParsed.mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true };
+    }
+    onSavePuzzle(pz);
+    resetPuzzleCreate();
+    setPuzzleMode("solve");
+    setActive(pz);
+  };
   // (사용자 요청) 퍼즐 탭 필터 — 오프닝/생성자를 여러 개 골라(다중 태그) 미해결/해결됨 목록을 그
   // 자리에서 좁혀 본다. 자동완성 후보는 지금 목록에 실제로 있는 값만(없는 값을 검색해 봐야 결과가
   // 0개인 게 뻔하므로) 보여준다.
@@ -18007,6 +18082,24 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // (v0.4.1 기능, item 3) 기본 정렬을 "추천순"(난이도 적합도·약점 보완도·테마 적합도 3요소 점수)으로
   // 바꾼다 — 최신순/레이팅순은 여전히 수동으로 고를 수 있게 남겨 둔다.
   const [puzzleSortBy, setPuzzleSortBy] = useState("score"); // "score"(추천순) | "recent"(최신순) | "rating"(레이팅순)
+  // (사용자 요청) 정렬 UI가 산만하다는 피드백 — 3분할 세그먼트 박스 대신, 오프닝/생성자 검색창 폭을
+  // 줄여 생긴 우측 여백에 깔때기(Filter) 아이콘 버튼 하나만 두고, 누르면 드롭다운으로 정렬 기준을 고른다.
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [sortMenuPos, setSortMenuPos] = useState(null);
+  const sortBtnRef = useRef(null);
+  const toggleSortMenu = () => {
+    setSortMenuOpen((v) => {
+      const next = !v;
+      if (next && sortBtnRef.current) {
+        const rect = sortBtnRef.current.getBoundingClientRect();
+        const margin = 10, menuW = 168;
+        const left = Math.max(margin, Math.min(rect.right - menuW, window.innerWidth - menuW - margin));
+        setSortMenuPos({ left, top: rect.bottom + 6 });
+      }
+      return next;
+    });
+  };
+  const PUZZLE_SORT_OPTIONS = [["score", "추천순"], ["recent", "최신순"], ["rating", "레이팅순"]];
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
   const [numFocus, setNumFocus] = useState(false);
@@ -18279,6 +18372,62 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       {/* (v0.2.7 개편) 오늘의 퍼즐을 오락실 슬롯머신 스타일 캐러셀로 — 좌우로 스크롤해 날짜(오늘부터
           테마가 처음 배정된 날짜까지 전체 기간)를 고르면 선택된 항목만 커지고 나머지는 어둡게 줄어든다. */}
       <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
+      {/* (사용자 요청) 퍼즐 만들기 기능을 학습 탭 보드 편집기 대신 이 탭에서 — "번호로 풀기" 검색
+          UI 바로 위 줄에 퍼즐 풀기/퍼즐 만들기 선택 박스를 둔다. */}
+      <div className="inline-flex" style={{ marginBottom: 10, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }}>
+        <button onClick={() => setPuzzleMode("solve")} className="press" style={{ padding: "7px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: puzzleMode === "solve" ? T.ebony2 : "transparent", color: puzzleMode === "solve" ? T.brassHi : T.inkSoft }}>퍼즐 풀기</button>
+        <button onClick={() => setPuzzleMode("create")} className="press" style={{ padding: "7px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: puzzleMode === "create" ? T.ebony2 : "transparent", color: puzzleMode === "create" ? T.brassHi : T.inkSoft }}>퍼즐 만들기</button>
+      </div>
+      {puzzleMode === "create" && (
+        <div style={{ marginBottom: 16 }}>
+          {/* 1단계 — PGN 또는 FEN 코드 입력 */}
+          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>1. PGN 또는 FEN 코드 입력</div>
+            <textarea value={pcInput} onChange={(e) => { setPcInput(e.target.value); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcGen(null); setPcGenErr(""); }} rows={3}
+              placeholder={"예: 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 ...(마지막 수가 퍼즐이 다루는 수가 돼요)\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"}
+              style={{ width: "100%", boxSizing: "border-box", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: SITE_FONT }} />
+            {pcErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pcErr}</div>}
+            {pcParsed && <div style={{ fontSize: 11.5, color: T.best, marginTop: 6, fontWeight: 700 }}>{pcParsed.kind === "fen" ? "FEN 포지션이 확인됐어요 — 이 위치 자체가 퍼즐 시작점이 돼요." : "기보가 확인됐어요 — 마지막 수(" + pcParsed.mistakeSan + ")를 다루는 퍼즐을 만들어요."}</div>}
+            <div style={{ marginTop: 8 }}>
+              <button onClick={parsePcInput} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
+            </div>
+          </div>
+          {/* 2단계 — 퍼즐 유형 선택(PGN 한 수가 여러 전술을 동시에 만족할 수 있어 직접 고른다) */}
+          {pcParsed && (
+            <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>2. 퍼즐 유형 선택</div>
+              <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+                {[["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]].map(([k, lb]) => (
+                  <button key={k} onClick={() => pickPcTheme(k)} disabled={pcGenerating} className="press" style={{ padding: "7px 14px", borderRadius: 999, border: "1px solid " + (pcTheme === k ? T.brass : "#C9B58C"), background: pcTheme === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pcTheme === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 12, cursor: pcGenerating ? "default" : "pointer" }}>{lb}</button>
+                ))}
+              </div>
+              {pcGenerating && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 8 }}>전술 라인을 찾는 중...</div>}
+              {pcGenErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 8 }}>{pcGenErr}</div>}
+            </div>
+          )}
+          {/* 3단계 — 생성된 라인 미리보기(생성자 권한 박스, 만든 뒤에도 이어서 조정할 수 있다) */}
+          {pcTheme && pcGen && (
+            <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>3. 퍼즐 라인 편집 (생성자 권한)</div>
+              <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{pcGen.lines.length}개의 라인을 찾았어요 — 아래에서 미리 확인하고, 만든 뒤에도 이 퍼즐을 열어 라인을 추가·삭제할 수 있어요(1시간에 한 번).</div>
+              <PuzzleSchematic tree={pcGen.tree} rootLabel={pcParsed.kind === "pgn" ? pcParsed.mistakeSan : null} meta={{}}
+                allLines={pcGen.lines} solvedNow={new Set()} curKeys={[]} exploredKeys={new Set()}
+                setupSans={pcParsed.kind === "pgn" ? [...pcParsed.setupSans, pcParsed.mistakeSan].filter(Boolean) : []}
+                setupLen={pcParsed.kind === "pgn" ? pcParsed.setupSans.length + 1 : 0}
+                onPick={() => {}} canEdit={false}
+                fenRoot={pcParsed.kind === "fen" ? pcParsed.fenRoot : null} />
+              <button onClick={() => pickPcTheme(pcTheme)} className="press" style={{ marginTop: 8, padding: "6px 12px", borderRadius: 9, background: "transparent", border: "1px solid #C9B58C", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>다시 생성</button>
+            </div>
+          )}
+          {/* 완료 — 취소·퍼즐 만들기 */}
+          <div className="flex gap-2">
+            <button onClick={() => { resetPuzzleCreate(); setPuzzleMode("solve"); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivory, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+            <button onClick={submitPuzzleCreate} disabled={!pcCanSubmit} className="press" style={{ flex: 2, padding: "10px 0", borderRadius: 10, border: "none", background: pcCanSubmit ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(196,154,80,.25)", color: pcCanSubmit ? "#241509" : "rgba(36,21,9,.5)", fontWeight: 800, fontSize: 13, cursor: pcCanSubmit ? "pointer" : "default" }}>{pcCreating ? "만드는 중..." : "퍼즐 만들기"}</button>
+          </div>
+        </div>
+      )}
+      {puzzleMode === "solve" && (
+      <>
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div className="flex items-center gap-2">
           <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="numeric" placeholder="번호 또는 날짜로 풀기 (예: 123456 · 20260729)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 13 }} />
@@ -18343,7 +18492,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           {/* (사용자 요청) "오프닝으로 필터" + "생성자로 필터" 2개 입력창을 검색어 하나로 합친다 —
               드롭다운 한 곳에 오프닝(브론즈 태그)·생성자(초록 태그, @접두사) 결과가 함께 랭킹순으로
               뜬다(도감 탭 오프닝 트리 검색과 같은 "맨 앞 일치 → 포함 일치" 순서, 위 searchSuggestions 참고). */}
-          <div style={{ position: "relative", flex: "1 1 150px", minWidth: 130 }}>
+          {/* (사용자 요청) 정렬 UI가 산만해 보인다는 피드백 — 검색창 폭을 줄이고(flex-basis 축소),
+              그렇게 생긴 오른쪽 여백에 깔때기(Filter) 아이콘 버튼 하나만 둔다. */}
+          <div style={{ position: "relative", flex: "1 1 110px", minWidth: 100 }}>
             <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocus(true)} onBlur={() => setTimeout(() => setSearchFocus(false), 150)}
               placeholder="오프닝 · 생성자로 검색" style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
             {searchFocus && searchSuggestions.length > 0 && (
@@ -18361,13 +18512,24 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               </div>
             )}
           </div>
-          {/* (사용자 요청) 검색창 2개→1개로 합쳐 생긴 자리에 정렬 박스를 넣는다 — 집중분석(FocusPanel)의
-              평가치순/채택률순 세그먼트 토글과 같은 시각 스타일(pill 2개, 선택된 쪽만 T.ebony2 배경 +
-              T.brassHi 글자)을 이 탭의 필터 행에 맞춰 그대로 옮겨온다. */}
-          <div className="inline-flex" style={{ flex: "1 1 200px", minWidth: 170, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }} title="일일 퍼즐을 제외한 목록 정렬 기준">
-            <button onClick={() => setPuzzleSortBy("score")} className="press" style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: puzzleSortBy === "score" ? T.ebony2 : "transparent", color: puzzleSortBy === "score" ? T.brassHi : T.inkSoft }}>추천순</button>
-            <button onClick={() => setPuzzleSortBy("recent")} className="press" style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: puzzleSortBy === "recent" ? T.ebony2 : "transparent", color: puzzleSortBy === "recent" ? T.brassHi : T.inkSoft }}>최신순</button>
-            <button onClick={() => setPuzzleSortBy("rating")} className="press" style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800, background: puzzleSortBy === "rating" ? T.ebony2 : "transparent", color: puzzleSortBy === "rating" ? T.brassHi : T.inkSoft }}>레이팅순</button>
+          {/* (사용자 요청) 정렬 기준(추천순/최신순/레이팅순) 3분할 세그먼트 박스를 없애고, 깔때기
+              아이콘 버튼 하나 + 드롭다운으로 대체한다. */}
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <button ref={sortBtnRef} onClick={toggleSortMenu} className="press" title="정렬 기준" aria-label="정렬 기준 선택" style={{ width: 34, height: 34, borderRadius: 9, background: sortMenuOpen ? T.ebony2 : "rgba(0,0,0,.25)", border: "1px solid " + T.brass, color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <Filter size={15} />
+            </button>
+            {sortMenuOpen && sortMenuPos && (
+              <>
+                <div onClick={() => setSortMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                <div style={{ position: "fixed", left: sortMenuPos.left, top: sortMenuPos.top, width: 168, borderRadius: 10, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 8px 20px -6px rgba(0,0,0,.5)", zIndex: 41, overflow: "hidden" }}>
+                  {PUZZLE_SORT_OPTIONS.map(([k, lb]) => (
+                    <button key={k} onClick={() => { setPuzzleSortBy(k); setSortMenuOpen(false); }} className="press" style={{ width: "100%", textAlign: "left", padding: "9px 12px", background: puzzleSortBy === k ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.2)", color: puzzleSortBy === k ? "#8A6A2F" : T.ink, fontWeight: puzzleSortBy === k ? 800 : 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      {lb} {puzzleSortBy === k && <Check size={13} />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
         {/* (v0.4.1 기능, item 3) 빠른 접근 칩 — "내가 관심 있고 풀고 있었던 퍼즐"과 "내가 직접 만든
@@ -18396,6 +18558,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               {feed.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} onDelete={onDeletePuzzle} {...puzzleCardProps(p)} /></FadeIn>)}
             </AnimatePresence>
           </div>}
+      </>
+      )}
     </div>
   );
 }
@@ -19455,13 +19619,16 @@ const CHANGELOG = [
       "/about 소개 페이지 첫 화면이 더 세련되게 새 단장했어요 — '기능 둘러보기' 버튼과, 원하는 소개로 바로 이동하는 칩 버튼이 추가됐어요.",
       "게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작한 경우에도, 대국 시작 위치와 완전히 같은 방식으로 수 체계 등급(최선의 수·탁월한 수·유일한 수 등)과 코치 설명이 정확히 매겨져요.",
       "오프닝 이름·마스터 대국 통계처럼 애초에 표준 시작 위치 전용인 정보만, FEN 포지션에서는 자연스럽게 표시되지 않아요.",
-      "학습 탭 보드 편집기에서 '이 포지션으로 퍼즐 만들기' 버튼으로, 대국 없이 원하는 배치만으로도 새 전술 퍼즐을 바로 만들 수 있어요.",
       "모든 퍼즐이 시작 포지션을 FEN 코드로도 갖게 됐어요 — 앞으로 퍼즐을 더 다양한 방식으로 공유하고 다룰 수 있는 기반이에요.",
       "공개 퍼즐 레이팅이 새로 생겼어요 — 라인을 끝까지 풀면 오르고, 틀린 수를 두면 내려가요. 프로필 카드에서 티어 배지 옆에 확인할 수 있어요.",
       "퍼즐 탭이 개편됐어요 — 추천/미해결/해결 완료 3분할과 오프닝별 가로 스크롤 거치대를 없애고, 난이도 적합도·약점 보완도·테마 적합도를 점수화한 단일 추천 피드로 합쳤어요. '내가 만든 퍼즐'·'풀고 있는 중' 빠른 접근 칩과 '해결 완료 숨기기' 토글로 원하는 퍼즐을 더 쉽게 찾을 수 있어요.",
       "퍼즐 레이팅 배지를 누르면 '퍼즐 레이팅 : n' 말풍선이 떠요(모바일에서도 화면 밖으로 잘리지 않아요). 퍼즐 탭에서는 이 레이팅이 티어를 표시하는 도형 우측에도 함께 보여요.",
       "퍼즐 탭에서 퍼즐을 누르면 화면이 먹통 되던 문제를 고쳤어요.",
       "FEN 기반으로 만든 퍼즐(대국 기록 없이 포지션만으로 만든 퍼즐)을 누를 때 화면이 먹통 되던 문제와, 그런 퍼즐이 카드 목록에서 체스보드 미리보기 없이 비어 보이던 문제를 고쳤어요.",
+      "퍼즐 카드가 세로로 더 넉넉해지고, 미리보기 체스보드가 카드 폭에 맞춰 정사각형으로 훨씬 크게 보여요. 제목 길이와 무관하게 카드 비율이 항상 일정하게 유지돼요.",
+      "퍼즐 탭의 퍼즐 레이팅 배지가 티어 도형에 바로 붙지 않고, 여백을 두고 우측에 표시돼요.",
+      "퍼즐 만들기 기능이 분석 탭 보드 편집기 대신 퍼즐 탭으로 옮겨졌어요 — '퍼즐 풀기/퍼즐 만들기' 선택 박스로 전환하면, PGN·FEN 코드 입력 → 퍼즐 유형 선택(한 수순이 여러 전술을 동시에 만족할 수 있어 직접 골라요) → 생성된 라인 미리보기 순서로 진행해 퍼즐을 바로 만들 수 있어요.",
+      "퍼즐 탭의 정렬 UI가 정리됐어요 — 오프닝·생성자 검색창 폭을 줄이고, 그 옆에 깔때기 아이콘 버튼 하나로 정렬 기준(추천순·최신순·레이팅순) 드롭다운을 열어요.",
     ]
   },
   {
@@ -26045,7 +26212,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} />}
