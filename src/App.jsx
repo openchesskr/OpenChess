@@ -10276,6 +10276,10 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
   const [promoPrompt, setPromoPrompt] = useState(null);
   const [botThinking, setBotThinking] = useState(false);
   const [resigned, setResigned] = useState(false);
+  // (사용자 요청) 대국 도중에도 지난 수를 눌러 그 시점 포지션을 되돌아볼 수 있게 — null이면 지금
+  // 진행 중인 실제 포지션(라이브), 숫자면 그 수까지 재생된 과거 포지션(읽기 전용)을 보여준다.
+  const [viewPly, setViewPly] = useState(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const narrow = useNarrow(720);
   const boardSize = narrow ? Math.min(380, (typeof window !== "undefined" ? window.innerWidth : 380) - 32) : 420;
 
@@ -10291,7 +10295,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
     if (result) return;
     playMoveSfx(san);
     setSans((prev) => [...prev, san]);
-    setSel(null); setDrag(null);
+    setSel(null); setDrag(null); setViewPly(null);
   }, [result]);
 
   const tryMove = useCallback((from, to) => {
@@ -10353,12 +10357,44 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
     setActiveColor(finalColor);
     setSans(seedSans);
     setResigned(false);
+    setViewPly(null);
     setStep("playing");
   };
-  const rematch = () => { setSans(seedSans); setResigned(false); setSel(null); setDrag(null); setStep("setup"); };
+  const rematch = () => { setSans(seedSans); setResigned(false); setSel(null); setDrag(null); setViewPly(null); setStep("setup"); };
 
   const flip = activeColor === "b";
-  const pgnText = sans.length ? sansToPgnText(sans, fenRoot ? fenRoot.turn : "w") : "";
+  // (사용자 요청) chess.com 대국 화면처럼 상단에 수순 스트립(수 번호 + 백/흑 수, 누르면 그 시점으로
+  // 되돌아본다)을 둔다. sans에 이미 buildSan/uciToSan이 매길 때 +/#가 반영돼 있어 별도 보정 없이
+  // 그대로 쓴다.
+  const startColor = fenRoot ? fenRoot.turn : "w";
+  const moveRows = useMemo(() => {
+    const rows = [];
+    for (let i = 0; i < sans.length; i++) {
+      if (plyIsWhite(i, startColor)) rows.push({ num: plyMoveNum(i, startColor), white: { ply: i + 1, san: sans[i] }, black: null });
+      else if (rows.length) rows[rows.length - 1].black = { ply: i + 1, san: sans[i] };
+      else rows.push({ num: plyMoveNum(i, startColor), white: null, black: { ply: i + 1, san: sans[i] } });
+    }
+    return rows;
+  }, [sans.join(" "), startColor]);
+  const highlightPly = viewPly != null ? viewPly : sans.length;
+  const displaySans = viewPly != null ? sans.slice(0, viewPly) : sans;
+  const displayBoard = useMemo(() => boardOfRoot(fenRoot, displaySans), [fenRoot, displaySans.join(" ")]);
+  const canGoBack = (viewPly == null ? sans.length : viewPly) > 0;
+  const canGoForward = viewPly != null;
+  const stepBack = () => setViewPly((p) => Math.max(0, (p == null ? sans.length : p) - 1));
+  const stepForward = () => setViewPly((p) => { if (p == null) return null; const n = p + 1; return n >= sans.length ? null : n; });
+  const isLive = viewPly == null;
+  const playerBar = (isBot) => (
+    <div className="flex items-center justify-between" style={{ padding: "5px 2px" }}>
+      <div className="flex items-center gap-2">
+        <span style={{ width: 28, height: 28, borderRadius: "50%", background: isBot ? "#EDE1C6" : T.brass, color: isBot ? T.inkSoft : "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
+          {isBot ? <Cpu size={14} /> : "나"}
+        </span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{isBot ? botTier.label + " 봇" : "나"}</span>
+      </div>
+      {isBot && <span style={{ fontSize: 11, fontWeight: 700, color: botThinking && !result ? T.brassHi : "rgba(244,238,226,.6)", fontFamily: SITE_FONT }}>{botThinking && !result ? "생각하는 중..." : "레이팅 " + botTier.elo}</span>}
+    </div>
+  );
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -10392,20 +10428,28 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
             <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: (!engine || engine.status !== "ready") ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? "엔진을 준비하는 중..." : "대국 시작"}</button>
           </div>
         ) : (
-          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-              <div className="flex items-center gap-2">
-                <span style={{ width: 26, height: 26, borderRadius: "50%", background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Cpu size={14} /></span>
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{botTier.label} 봇</span>
-              </div>
-              {botThinking && !result && <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft }}>생각하는 중...</span>}
+          <div>
+            {/* (사용자 요청) chess.com 대국 화면과 같은 구성 — 맨 위 수순 스트립(누르면 그 시점으로
+                되돌아본다), 상대(봇) 정보 줄, 보드, 내 정보 줄, 그 아래 결과/컨트롤. */}
+            <div className="hide-scrollbar" style={{ display: "flex", gap: 10, overflowX: "auto", padding: "9px 10px", background: "rgba(0,0,0,.28)", borderRadius: 10, marginBottom: 10, border: "1px solid rgba(255,255,255,.08)" }}>
+              {moveRows.length === 0
+                ? <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.4)", whiteSpace: "nowrap" }}>아직 둔 수가 없어요</span>
+                : moveRows.map((row) => (
+                  <div key={row.num} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: "rgba(244,238,226,.45)", fontFamily: SITE_FONT }}>{row.num}.</span>
+                    {row.white && <button onClick={() => setViewPly(row.white.ply)} className="press" style={{ border: "none", background: highlightPly === row.white.ply ? "rgba(196,154,80,.28)" : "transparent", color: highlightPly === row.white.ply ? T.brassHi : T.ivoryHi, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, padding: "2px 5px", borderRadius: 5, cursor: "pointer" }}>{row.white.san}</button>}
+                    {row.black && <button onClick={() => setViewPly(row.black.ply)} className="press" style={{ border: "none", background: highlightPly === row.black.ply ? "rgba(196,154,80,.28)" : "transparent", color: highlightPly === row.black.ply ? T.brassHi : T.ivoryHi, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, padding: "2px 5px", borderRadius: 5, cursor: "pointer" }}>{row.black.san}</button>}
+                  </div>
+                ))}
             </div>
-            <div style={{ width: "100%", maxWidth: boardSize, margin: "0 auto" }}>
-              <Board board={board} flip={flip} size={boardSize} selected={sel} legalTargets={legalTargets} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} interactive={userToMove} showEval={false} showCoords />
+            {playerBar(true)}
+            <div style={{ width: "100%", maxWidth: boardSize, margin: "6px auto" }}>
+              <Board board={displayBoard} flip={flip} size={boardSize} selected={isLive ? sel : null} legalTargets={isLive ? legalTargets : []} onSquareClick={isLive ? onSquareClick : undefined} onPieceDrag={isLive ? onPieceDrag : undefined} onDrop={isLive ? onDrop : undefined} interactive={isLive && userToMove} showEval={false} showCoords />
             </div>
+            {playerBar(false)}
             {promoPrompt && (
               <div style={{ marginTop: 10, textAlign: "center" }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>승격할 기물 선택</div>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>승격할 기물 선택</div>
                 <div className="flex justify-center gap-2">
                   {["Q", "R", "B", "N"].map((t) => (
                     <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 46, height: 46, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><PieceGlyph type={t} color={activeColor} size={24} /></button>
@@ -10414,7 +10458,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
               </div>
             )}
             {result && (
-              <div style={{ marginTop: 14, textAlign: "center", padding: "12px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass }}>
+              <div style={{ marginTop: 10, textAlign: "center", padding: "12px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass }}>
                 <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>
                   {result.end === "checkmate" ? (result.color === activeColor ? "패배 — 체크메이트" : "승리! 🎉 체크메이트") :
                    result.end === "resign" ? "기권했어요" :
@@ -10422,11 +10466,23 @@ function PlayPage({ seed, onClose, engine, onOpenReview }) {
                 </div>
               </div>
             )}
-            {sans.length > 0 && <div style={{ marginTop: 12, fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT, maxHeight: 60, overflowY: "auto", wordBreak: "break-word" }}>{pgnText}</div>}
-            <div className="flex gap-2" style={{ marginTop: 14 }}>
-              {!result && <button onClick={() => setResigned(true)} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>기권</button>}
-              {result && onOpenReview && <button onClick={() => onOpenReview({ sans, fenRoot })} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.brass, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>대국 리뷰</button>}
-              <button onClick={rematch} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>다시 설정</button>
+            {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
+            <div className="flex items-center justify-center gap-3" style={{ marginTop: 14 }}>
+              <div style={{ position: "relative" }}>
+                <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen}><Settings size={16} /></NavBtn>
+                {optionsOpen && (
+                  <>
+                    <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                    <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", width: 170, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 10, padding: 5, zIndex: 41, display: "flex", flexDirection: "column", gap: 1, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
+                      {!result && <button onClick={() => { setResigned(true); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>기권</button>}
+                      {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>대국 리뷰</button>}
+                      <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>다시 설정</button>
+                    </div>
+                  </>
+                )}
+              </div>
+              <NavBtn onClick={stepBack} disabled={!canGoBack}><ChevronLeft size={17} /></NavBtn>
+              <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
         )}
@@ -11911,21 +11967,19 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               <NavBtn onClick={() => setFlip((v) => !v)} active={flip}><ArrowUpDown size={17} /></NavBtn>
               <NavBtn onClick={reset} disabled={!sans.length || !!focus}><RotateCcw size={16} /></NavBtn>
             </div>
+            {/* (사용자 요청) 지금 보드에 입력돼 있는 포지션(sans/fenRoot)부터 봇과 직접 대국을 시작하는
+                PLAY 버튼 — 별도 줄 대신 나머지 네 버튼(뒤집기·초기화·뒤로·앞으로)과 같은 줄, 가운데에
+                작게 둔다. 전용 페이지(/play)를 새 히스토리 항목으로 연다. */}
+            {onOpenPlay && !focus && (
+              <button onClick={() => onOpenPlay({ sans: [...sans], fenRoot })} className="press" title="PLAY — 봇과 대국하기" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 40, padding: "0 12px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, border: "1px solid #000", boxShadow: "0 3px 0 #8A6A2F", cursor: "pointer", flexShrink: 0 }}>
+                <Play size={13} color="#241509" fill="#241509" />PLAY
+              </button>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <NavBtn onClick={back} disabled={!sans.length || !!focus}><ChevronLeft size={17} /></NavBtn>
               <NavBtn onClick={fwd} disabled={!future.length || !!focus}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
-          {/* (사용자 요청) 지금 보드에 입력돼 있는 포지션(sans/fenRoot)부터 봉과 직접 대국을 시작하는
-              PLAY 버튼 — 보드 바로 아래 정중앙에 둔다. 전용 페이지(/play)를 새 히스토리 항목으로 연다. */}
-          {onOpenPlay && !focus && (
-            <div className="flex justify-center" style={{ marginTop: 14 }}>
-              <button onClick={() => onOpenPlay({ sans: [...sans], fenRoot })} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 22px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "1px solid #000", cursor: "pointer", boxShadow: "0 3px 0 #8A6A2F" }}>
-                <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Play size={12} color={T.brassHi} fill={T.brassHi} /></span>
-                PLAY
-              </button>
-            </div>
-          )}
         </div>
         {/* (18차 UX8) 집중분석은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다. */}
         {focus && (
@@ -20528,7 +20582,7 @@ const CHANGELOG = [
       "집중 분석 수 설명에서 수 번호 없이 적힌 SAN은 더 이상 링크로 잡히지 않아요(수 번호를 붙여야 링크가 돼요). 대괄호 안 인식용 수순은 150자 제한에 포함되지 않아요.",
       "집중 분석 모드에서 다른 수의 집중 분석으로 이동했다가 '←'를 누르면, 홈으로 나가는 대신 방금 있던 집중 분석으로 돌아가요.",
       "학습 탭(집중 분석 모드 포함) 수 블록의 키워드가 한 줄에 담기고, 다 안 들어가면 자동으로 천천히 오른쪽으로 스크롤됐다 처음으로 돌아가기를 반복해요.",
-      "학습 탭 메인 체스보드 아래에 PLAY 버튼이 생겼어요 — 지금 보드에 입력된 포지션부터 레이팅별 봇(400~2800)과 직접 대국할 수 있는 전용 페이지(openchess.kr/play)예요. 진입하면 먼저 백/흑(또는 랜덤)과 상대할 봇을 고르고 대국을 시작해요. 대국이 끝나면 그 기보를 그대로 리뷰할 수도 있어요.",
+      "학습 탭 메인 체스보드 아래, 뒤집기·초기화·뒤로·앞으로 버튼과 같은 줄 가운데에 PLAY 버튼이 생겼어요 — 지금 보드에 입력된 포지션부터 레이팅별 봇(400~2800)과 직접 대국할 수 있는 전용 페이지(openchess.kr/play)예요. 진입하면 먼저 백/흑(또는 랜덤)과 상대할 봇을 고르고 대국을 시작해요. 대국 화면 맨 위에는 지금까지 둔 수순이 표시되고, 눌러서 그 시점 포지션을 되돌아볼 수 있어요. 대국이 끝나면 그 기보를 그대로 리뷰할 수도 있어요.",
     ]
   },
   {
