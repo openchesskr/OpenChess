@@ -78,12 +78,22 @@ v0.2.2에서 "최신 내용·스크린샷 갱신, 버전 기록 사이 상호작
 **버그 수정 — 퍼즐 탭에서 퍼즐을 누르면 먹통 되는 문제**
 사용자 신고 — "퍼즐 누르면 웹사이트 먹통 되는 문제". 바로 앞 커밋(단일 노출 점수 피드 개편)에서 추가한 `themeRates`(`themeSolveRates`) `useMemo`가, 이 컴포넌트가 이미 여러 번 겪었던 것과 똑같은 React Rules of Hooks 위반 — "모든 훅은 조기 반환(`if (active) return <PuzzleSolver .../>`)보다 앞에서 호출돼야 한다" — 을 어기고 그 조기 반환 뒤(`matchesOpeningFilter` 근처)에 끼워 넣어져 있었다. 목록 화면(active=null)에서는 이 훅이 호출되다가, 퍼즐을 하나라도 열면(active가 생기는 순간) 그 즉시 호출이 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출된다 — React가 "Rendered fewer hooks than expected"로 감지해 컴포넌트 트리 전체를 무너뜨렸다(이 앱엔 ErrorBoundary가 없어 새로고침 전까지 화면이 하얗게 멈춘 채 굳는다). `themeRates` useMemo를 다른 훅들과 같이 조기 반환보다 앞(`puzzleRatingMap` 옆)으로 옮겨 고쳤다.
 
-**UI — 퍼즐 레이팅 노출 확대 + 퍼즐 카드 노출 점수 요소별 표시**
+**UI — 퍼즐 레이팅 노출 확대**
 사용자 요청 — 프로필 카드의 퍼즐 레이팅 배지를 누르면 "퍼즐 레이팅 : n" 말풍선이 뜨도록, 그리고 모바일에서 화면 밖으로 잘리지 않게. `CircleBadge`(수 체계 아이콘 설명 말풍선)가 쓰던 안전 영역 배치 로직(`position:fixed` + 화면 가장자리 margin 클램프 + 화면 위/아래 절반에 따라 열리는 방향을 바꿔 항상 화면 중앙 쪽을 향함)을 범용 컴포넌트 `ClickInfoBadge`로 뽑아내, `PublicProfileStats`의 퍼즐 레이팅 배지와 `TierProgressStrip`(퍼즐 탭 상단 티어 스트립) 양쪽에 재사용했다. 퍼즐 탭에서는 이 레이팅을 요청대로 "티어를 표시하는 도형"(`TierLogoDisc`) 우측에도 새로 노출했다.
 
-퍼즐 카드에도 노출 점수(`puzzleExposureScore`)를 요소별로 보여 달라는 요청에 따라, 카드가 내부에서 다시 계산한 난이도 적합도·약점 보완도·테마 적합도 세 하위 점수와 그 가중합(합계)을 작은 배지 줄로 추가했다 — "추천순이 왜 이 순서인지" 더 이상 불투명하지 않다.
-
 `npm run build` 통과, Playwright로 앱을 실제로 띄워(모바일 폭 뷰포트 포함) 퍼즐 레이팅 배지·말풍선·티어 스트립이 의도한 대로 렌더링되는 것을 스크린샷으로 확인했다.
+
+**버그 수정(롤백) — 퍼즐 카드 노출 점수 요소별 표시**
+사용자 피드백 — 바로 앞 커밋에서 추가한 카드 하단의 노출 점수 배지 줄(난이도·약점·테마·합계)이 카드 비율을 이상하게 만든다는 신고를 받아, `PuzzleCard`의 해당 UI와 `PuzzleTab`의 `exposureScoresFor`/`exposureScores` 전달 로직을 모두 롤백했다. 노출 점수 자체(추천순 정렬 알고리즘)는 그대로 유지된다 — 카드에 요소별 수치를 보여주는 표시만 없앴다.
+
+**버그 수정 — FEN 기반 퍼즐 클릭 먹통 + 카드 미리보기 누락**
+사용자 신고 — "FEN 퍼즐 누르면 웹사이트 먹통 되는 문제, FEN 퍼즐에는 체스보드 미리보기가 표시되지 않는 문제". 두 문제 모두 근본 원인은 하나 — item 5(FEN 기반 퍼즐)로 만들어진 퍼즐은 `mistakeSan`(직전 실수 수)이 아예 없는데(대국 기록 없이 지금 포지션 자체가 시작점이므로), 두 곳에서 여전히 그 값이 항상 있다고 가정하고 있었다.
+
+① **클릭 먹통**: `PuzzleSolver`의 진입 애니메이션(`intro`)이 항상 `<AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} .../>`를 그렸다 — `san`이 `undefined`면 `AnimatedMove` 내부의 `sanSrc(before, undefined, color)`가 합법 수를 못 찾고, 그 대체 경로(`boardFromSans([...sans, undefined])`)가 존재하지 않는 수를 보드에 적용하려다 예외를 던져 컴포넌트 트리 전체가 무너졌다(이 앱엔 ErrorBoundary가 없어 화면이 그대로 하얗게 멈춘 채 굳는다). `mistakeSan`이 없는 퍼즐은 재생할 "직전 수" 자체가 없으므로, intro 애니메이션을 건너뛰고 바로 (fenRoot를 인식하는) 정상 보드를 보여주도록 조건을 `intro && puzzle.mistakeSan`으로 고쳤다.
+
+② **카드 미리보기 누락**: `PuzzleCard`의 `hasPreview = p.setupSans && p.mistakeSan`가 FEN 퍼즐에서는 항상 거짓이 되어 미리보기 영역 자체가 비어 있었다. FEN 퍼즐은 "직전 수"를 애니메이션할 수 없으므로, `mistakeSan`이 없고 `p.fen`이 있으면 그 FEN을 `parseFenFull`로 파싱한 정적 보드(`<Board .../>`, 애니메이션 없음)를 대신 보여주도록 했다 — 보드 방향(flip)도 setupSans 홀짝 대신 FEN에 실제로 담긴 차례(`turn`)로 판정한다.
+
+`npm run build` 통과, Playwright로 앱을 실제로 띄워 새 런타임 오류가 없는 것을 확인했다.
 
 ### OpenChess v0.4.0 — 2026/8/28
 

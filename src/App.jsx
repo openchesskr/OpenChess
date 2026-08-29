@@ -16353,7 +16353,16 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 별도 이벤트 체계라 이 영향을 안 받아 드래그로 두는 것만 됐다. SchematicEditor의 캔버스와
                 동일하게 "no-pan"을 줘서 이 영역 위의 포인터다운은 페이저가 아예 손대지 않게 한다. */}
             <div ref={boardRef} className="no-pan" style={{ width: "100%", maxWidth: 380, margin: "0 auto", scrollMarginBottom: 84 }}>
-            {intro
+            {/* (버그 수정) FEN 기반 사용자 생성 퍼즐(item 5)은 "직전 수(mistakeSan)"가 아예 없다 — 대국
+                기록 없이 지금 포지션 자체를 시작점으로 삼기 때문이다. 그런데도 intro 단계는 항상
+                AnimatedMove에 puzzle.mistakeSan을 그대로 넘겼다 — sanSrc(before, undefined, color)가
+                합법 수를 찾지 못해 실패하면 그 대체 경로가 boardFromSans([...sans, undefined])를
+                호출했고, 존재하지 않는 SAN(undefined)을 보드에 적용하려다 예외를 던져 이 컴포넌트
+                트리 전체가 무너졌다(ErrorBoundary가 없어 화면이 그대로 하얗게 멈춘 채 굳는다 — 퍼즐을
+                누르면 사이트가 먹통이 된 것처럼 보인 원인). mistakeSan이 없는 퍼즐은 애초에 재생할
+                "직전 수"가 없으므로, intro 애니메이션 자체를 건너뛰고 바로 정상 보드(fenRoot 인식,
+                아래 board)를 보여준다. */}
+            {intro && puzzle.mistakeSan
               ? <AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
               : reply
                 ? <AnimatedMove sans={reply.sans} san={reply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
@@ -16735,10 +16744,20 @@ function FitPuzzleName({ text }) {
     </div>
   );
 }
-function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, exposureScores }) {
+function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const flip = setupLen % 2 !== 0; // userColor 흑이면 반전
   const hasPreview = p.setupSans && p.mistakeSan;
+  // (버그 수정) FEN 기반 사용자 생성 퍼즐(item 5)은 setupSans가 비어 있고 mistakeSan 자체가 없어(대국
+  // 없이 지금 포지션 자체가 시작점) hasPreview가 항상 거짓이 되고, 카드에 미리보기가 아예 뜨지
+  // 않았다("FEN 퍼즐에는 체스보드 미리보기가 표시되지 않는 문제"). AnimatedMove는 "직전 수"를 하나
+  // 반드시 필요로 하므로 애니메이션 대신, FEN을 그대로 파싱한 정적 보드를 보여준다. flip은
+  // setupSans 기준 홀짝 대신 FEN에 실제로 담긴 차례(turn)로 판정한다.
+  const fenPreview = useMemo(() => {
+    if (hasPreview || !p.fen) return null;
+    try { return parseFenFull(p.fen); } catch { return null; }
+  }, [hasPreview, p.fen]);
+  const fenFlip = fenPreview ? fenPreview.turn === "b" : flip;
   // (20차 기능1) 트리 기준 라인 수와 별(라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3)
   // (버그 수정) Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시했었다 — 트리가 실제로는 텅 비어
   // 하나도 풀 수 없는 손상된 퍼즐도 정상 퍼즐처럼 보이게 만든 원인이었다(starsOf는 totalLines가
@@ -16772,6 +16791,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
       {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {hasPreview && <div style={{ marginBottom: 6 }}><AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={190} loopMs={2400} flip={flip} /></div>}
+        {!hasPreview && fenPreview && <div style={{ marginBottom: 6 }}><Board board={fenPreview.board} flip={fenFlip} size={190} showEval={false} showCoords={false} interactive={false} /></div>}
         <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 4 }}>
           {/* (버그 수정) 이 라벨은 세부 갈래까지 다 붙은 p.opening(예: "Ruy Lopez, Berlin Defense,
               Rio de Janeiro Variation") 대신, 최상위 갈래 이름(firstNamedOpening)만 짧게 보여준다
@@ -16791,17 +16811,6 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
           <span style={{ fontSize: 9, color: broken ? T.blunder : T.inkSoft, fontWeight: broken ? 800 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{broken ? "⚠ 손상된 퍼즐(라인 0개)" : themeLabelsOf(p) + " · 라인 " + totalLines + "개"}</span>
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: SITE_FONT, fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
-        {/* (v0.4.1 기능, item 3 후속) 사용자 요청 — 노출 점수(추천순 정렬 기준)를 요소별로 카드에
-            표시한다 — 난이도 적합도·약점 보완도·테마 적합도 각각과 그 가중합(합계)을 함께 보여줘
-            "추천순이 왜 이 순서인지" 알고리즘이 더는 불투명하지 않게 한다. */}
-        {exposureScores && (
-          <div title="노출 점수 — 난이도 적합도(0.4)·약점 보완도(0.35)·테마 적합도(0.25) 가중합에서 이미 푼 퍼즐은 8점 감점" className="flex items-center" style={{ gap: 6, marginTop: 3, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 8.5, fontWeight: 700, color: T.inkSoft }}>난{Math.round(exposureScores.diff)}</span>
-            <span style={{ fontSize: 8.5, fontWeight: 700, color: T.inkSoft }}>약{Math.round(exposureScores.weak)}</span>
-            <span style={{ fontSize: 8.5, fontWeight: 700, color: T.inkSoft }}>테{Math.round(exposureScores.theme)}</span>
-            <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>합{Math.round(exposureScores.total)}</span>
-          </div>
-        )}
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
             줄에 두면 폭이 좁아 말줄임으로 잘렸다 — 버튼과 분리해 별도 줄에 잘리지 않고 전부 보여준다. */}
         {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9.5, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.35, marginTop: 4, wordBreak: "keep-all" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
@@ -18232,18 +18241,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     return arr;
   };
   const feed = sortPuzzles(themed);
-  // (v0.4.1 기능, item 3 후속) 사용자 요청 — 퍼즐 카드에 노출 점수를 요소별로 보이게. puzzleExposureScore가
-  // 내부에서 쓰는 세 하위 점수(난이도 적합도·약점 보완도·테마 적합도)를 그대로 다시 계산해 카드에 넘긴다.
-  const exposureScoresFor = (p) => {
-    const rating = puzzleRatingMap.get(p.id) ?? -1;
-    return {
-      diff: puzzleDifficultyFitScore(rating, myPuzzleRating),
-      weak: puzzleWeaknessScore(p, themeRates),
-      theme: puzzleThemeFitScore(p, filter),
-      total: puzzleExposureScore(p, { myRating: myPuzzleRating, themeRates, selectedTheme: filter, puzzleRating: rating, solved }),
-    };
-  };
-  const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare, exposureScores: exposureScoresFor(p) });
+  const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare });
   const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
   // (사용자 요청) 오프닝·생성자 필터가 걸려 있으면 테마 칩의 개수도 그 필터가 적용된 상태를 반영한다.
   const filteredForCount = playablePuzzles.filter((p) => matchesOpeningFilter(p) && matchesCreatorFilter(p));
@@ -19462,8 +19460,8 @@ const CHANGELOG = [
       "공개 퍼즐 레이팅이 새로 생겼어요 — 라인을 끝까지 풀면 오르고, 틀린 수를 두면 내려가요. 프로필 카드에서 티어 배지 옆에 확인할 수 있어요.",
       "퍼즐 탭이 개편됐어요 — 추천/미해결/해결 완료 3분할과 오프닝별 가로 스크롤 거치대를 없애고, 난이도 적합도·약점 보완도·테마 적합도를 점수화한 단일 추천 피드로 합쳤어요. '내가 만든 퍼즐'·'풀고 있는 중' 빠른 접근 칩과 '해결 완료 숨기기' 토글로 원하는 퍼즐을 더 쉽게 찾을 수 있어요.",
       "퍼즐 레이팅 배지를 누르면 '퍼즐 레이팅 : n' 말풍선이 떠요(모바일에서도 화면 밖으로 잘리지 않아요). 퍼즐 탭에서는 이 레이팅이 티어를 표시하는 도형 우측에도 함께 보여요.",
-      "퍼즐 카드에 노출 점수(추천순 정렬 기준)를 요소별로 보여줘요 — 난이도 적합도·약점 보완도·테마 적합도와 그 합계를 각각 확인할 수 있어요.",
       "퍼즐 탭에서 퍼즐을 누르면 화면이 먹통 되던 문제를 고쳤어요.",
+      "FEN 기반으로 만든 퍼즐(대국 기록 없이 포지션만으로 만든 퍼즐)을 누를 때 화면이 먹통 되던 문제와, 그런 퍼즐이 카드 목록에서 체스보드 미리보기 없이 비어 보이던 문제를 고쳤어요.",
     ]
   },
   {
