@@ -5298,6 +5298,12 @@ function CircleBadge({ kind, big, descOnClick }) {
       return next;
     });
   };
+  useEffect(() => {
+    if (!descOpen) return;
+    const onScroll = () => setDescOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [descOpen]);
   return (
     <span style={{ position: "relative", flexShrink: 0, lineHeight: 0 }}>
       <span ref={anchorRef} onClick={descOnClick ? toggleDesc : undefined} style={{ width: sz, height: sz, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", border: "2px solid rgba(255,255,255,.55)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.4)", cursor: descOnClick ? "pointer" : "default" }}>{badgeIcon(kind, sz - 4)}</span>
@@ -5336,12 +5342,26 @@ function ClickInfoBadge({ children, text, content, width = 180, align = "center"
         const margin = 10;
         const cx = rect.left + rect.width / 2;
         const left = Math.max(margin, Math.min(cx - width / 2, window.innerWidth - width - margin));
-        const openDown = rect.top < window.innerHeight / 2;
+        // (버그 수정) 화면 위/아래 절반만 보고 방향을 정하면(예전 방식), 그 방향에 실제로 말풍선
+        // 높이만큼 공간이 있는지는 확인하지 않아 화면 아래쪽 끝에 가까운 배지는 여전히 잘렸다 —
+        // 위/아래 실제 남은 공간을 재서 더 넉넉한 쪽으로 연다.
+        const spaceBelow = window.innerHeight - rect.bottom - margin;
+        const spaceAbove = rect.top - margin;
+        const openDown = spaceBelow >= spaceAbove;
         setPos({ left, top: openDown ? rect.bottom + 8 : undefined, bottom: openDown ? undefined : window.innerHeight - rect.top + 8, tailX: cx - left, openDown });
       }
       return next;
     });
   };
+  // (사용자 요청) 열어 둔 채로 화면을 스크롤하면 기준 배지와의 연결이 끊어져(위치는 고정 그대로,
+  // 배지만 스크롤을 따라 움직임) 엉뚱한 자리에 "잔상"처럼 남아 보였다 — 스크롤이 시작되는 즉시
+  // 닫는다(중첩된 스크롤 컨테이너까지 잡아내도록 capture 단계에서 감지).
+  useEffect(() => {
+    if (!open) return;
+    const onScroll = () => setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [open]);
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
       <span ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>{children}</span>
@@ -5353,6 +5373,55 @@ function ClickInfoBadge({ children, text, content, width = 180, align = "center"
             <span style={{ position: "absolute", ...(pos.openDown ? { top: -6 } : { bottom: -6 }), left: pos.tailX, transform: "translateX(-50%) rotate(45deg)", width: 11, height: 11, background: T.ivoryHi, ...(pos.openDown ? { borderLeft: "1px solid " + T.brass, borderTop: "1px solid " + T.brass } : { borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass }) }} />
           </span>
         </>
+      )}
+    </span>
+  );
+}
+// (v0.4.1 기능, item 6) 사용자 요청 — 퍼즐/유산 만들기 2단계의 후보 수 버튼을 꾹 누르면(모바일) 또는
+// 마우스를 올려두면(데스크톱) 미니 체스보드 블록을 띄워 그 수를 애니메이션으로 재생한다. AnimatedMove가
+// loopMs 간격으로 스스로 반복 재생하므로, 이 컴포넌트는 마우스가 올라가 있거나(hover) 손가락을 떼지
+// 않은(long-press) 동안만 그 컴포넌트를 마운트해 두면 "올려둔 동안 반복 재생"이 자연히 만족된다.
+function MoveLongPressPreview({ priorSans, san, kind, children, flip, boardSize = 148 }) {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState(null);
+  const anchorRef = useRef(null);
+  const pressTimerRef = useRef(null);
+  const openPreview = () => {
+    if (anchorRef.current) {
+      const rect = anchorRef.current.getBoundingClientRect();
+      const margin = 10, w = boardSize + 24;
+      const left = Math.max(margin, Math.min(rect.left + rect.width / 2 - w / 2, window.innerWidth - w - margin));
+      const spaceBelow = window.innerHeight - rect.bottom - margin;
+      const spaceAbove = rect.top - margin;
+      const openDown = spaceBelow >= spaceAbove;
+      setPos({ left, top: openDown ? rect.bottom + 8 : undefined, bottom: openDown ? undefined : window.innerHeight - rect.top + 8 });
+    }
+    setShow(true);
+  };
+  const closePreview = () => setShow(false);
+  const onTouchStart = (e) => { pressTimerRef.current = setTimeout(openPreview, 400); };
+  const onTouchEnd = () => { clearTimeout(pressTimerRef.current); closePreview(); };
+  useEffect(() => {
+    if (!show) return;
+    const onScroll = () => closePreview();
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [show]);
+  useEffect(() => () => clearTimeout(pressTimerRef.current), []);
+  return (
+    <span ref={anchorRef} style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={openPreview} onMouseLeave={closePreview}
+      onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
+      onContextMenu={(e) => { if (show) e.preventDefault(); }}>
+      {children}
+      {show && pos && (
+        <div style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, zIndex: 60, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 9, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", pointerEvents: "none" }}>
+          <div className="flex items-center justify-center gap-2" style={{ marginBottom: 7 }}>
+            <span style={{ width: 17, height: 17, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 12)}</span>
+            <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 12, color: T.ivoryHi }}>{san}</span>
+          </div>
+          <AnimatedMove key={priorSans.length + san} sans={priorSans} san={san} size={boardSize} loopMs={1500} flip={!!flip} />
+        </div>
       )}
     </span>
   );
@@ -13840,9 +13909,13 @@ function puzzleWeaknessScore(p, themeRates) {
   return (1 - avgRate) * 100;
 }
 // ③ 테마 적합도 — 테마 칩으로 특정 테마를 선택했을 때만 의미가 있다(선택 안 하면 전부 중립 50점).
+// (사용자 요청) 테마 칩이 다중 선택을 지원하게 되면서 selectedTheme은 문자열 하나뿐 아니라
+// 배열(여러 개 선택)도 받을 수 있다 — 선택이 없으면(빈 배열·"all"·falsy) 중립, 하나라도 겹치면 적합.
 function puzzleThemeFitScore(p, selectedTheme) {
-  if (!selectedTheme || selectedTheme === "all") return 50;
-  return themesOf(p).includes(selectedTheme) ? 100 : 0;
+  const list = Array.isArray(selectedTheme) ? selectedTheme : (selectedTheme && selectedTheme !== "all" ? [selectedTheme] : []);
+  if (!list.length) return 50;
+  const ths = themesOf(p);
+  return list.some((t) => ths.includes(t)) ? 100 : 0;
 }
 // 최종 노출 점수 = 세 요소 가중합(난이도 0.4 · 약점 0.35 · 테마 0.25) − 이미 푼 퍼즐 약한 감점(8점).
 function puzzleExposureScore(p, { myRating, themeRates, selectedTheme, puzzleRating, solved }) {
@@ -15584,7 +15657,10 @@ function PuzzleClearBanner({ trigger }) {
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn, onDeletePuzzle }) {
+  // (사용자 요청) 퍼즐 생성자에 한해, 2페이지(모식도)에서 자신이 만든 퍼즐을 삭제할 수 있게 — 실수로
+  // 지우지 않도록 확인 다이얼로그를 한 번 더 띄운다(대화·친구 삭제 확인과 같은 패턴).
+  const [confirmDeletePuzzle, setConfirmDeletePuzzle] = useState(false);
   const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   // (v0.4.1 기능, item 5) FEN 기반 사용자 생성 퍼즐 — setupSans(대국에서 이어지는 실제 수순)가 없고
@@ -16279,8 +16355,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       {/* (사용자 요청) 퍼즐 레이팅 — 풀이 카드 우측 여백(닫기 버튼 바로 아래)에 표시. 카드(그리드
           블록)에 적용했던 PGN/FEN 배지·레이팅 말풍선을 이 풀이 카드에도 그대로 적용한다. */}
       <div style={{ position: "absolute", top: 48, right: 12, zIndex: 9, display: "flex", alignItems: "center", gap: 4 }}>
-        {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid rgba(196,154,80,.45)", background: "rgba(196,154,80,.1)" }}>PGN</span>}
-        {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid rgba(196,154,80,.45)", background: "rgba(196,154,80,.1)" }}>FEN</span>}
+        {/* (사용자 요청) 카드(그리드 블록)와 같은 파란 계열(T.only)로 통일. */}
+        {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
+        {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
         {myPuzzleRating != null ? (() => {
           const diff = avgRating - myPuzzleRating;
           const tier = puzzleDifficultyTier(diff);
@@ -16505,6 +16582,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 {reassignMsg && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 5 }}>{reassignMsg}</div>}
               </div>
             )}
+            {/* (사용자 요청) 퍼즐 생성자에 한해, 자신이 만든 퍼즐을 이 모식도(2페이지)에서 삭제할 수
+                있게 — 개발자와 달리 제작자는 라인 편집이 아니라 퍼즐 자체를 통째로 지울 수 있다. */}
+            {isMyPuzzle && onDeletePuzzle && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
+                <button onClick={() => setConfirmDeletePuzzle(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: "#F4A8A8", fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Trash2 size={14} /> 이 퍼즐 삭제</button>
+              </div>
+            )}
           </div>
         </div>
         {page === 1 && <button onClick={() => setPage(0)} aria-label="보드 보기" className="press" style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(20,12,6,.55)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={16} /></button>}
@@ -16528,6 +16612,20 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
         <button onClick={() => setPage(1)} aria-label="모식도 페이지" className="press" style={{ width: page === 1 ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === 1 ? T.brass : "rgba(0,0,0,.2)", transition: "width .25s ease, background .25s ease" }} />
       </div>
       </div>
+      {/* (사용자 요청) 퍼즐 삭제 확인 — 대화·친구 삭제 확인 다이얼로그와 동일한 패턴, 실수로 지우지
+          않도록 한 번 더 물어본다. */}
+      {confirmDeletePuzzle && (
+        <div onClick={() => setConfirmDeletePuzzle(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>퍼즐 삭제</div>
+            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>이 퍼즐을 삭제할까요? 되돌릴 수 없고, 다른 사람들의 피드에서도 함께 사라져요.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmDeletePuzzle(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>취소</button>
+              <button onClick={() => { setConfirmDeletePuzzle(false); onDeletePuzzle(puzzle.id); }} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -18046,13 +18144,21 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   );
 }
 function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
-  const [filter, setFilter] = useState("all");
+  // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
+  // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
+  const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
+  const toggleTheme = (k) => setSelectedThemes((s) => (k === "all" ? [] : s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
   // (v0.4.1 기능, item 3) 사용자 요청 — "내가 만든 퍼즐"·"풀고 있는 중"을 직관적으로 찾을 수 있게
-  // 테마 칩과 별개의 빠른 접근 칩을 둔다. quickFilter는 테마 필터와 AND로 함께 적용된다.
+  // 테마 칩과 별개의 빠른 접근 칩을 둔다. quickFilter는 테마 필터와 AND로 함께 적용된다(다중 선택
+  // 대상에서는 명시적으로 제외 — "내가 만든 퍼즐"과 "풀고 있는 중"을 동시에 켜면 뜻이 모호해진다).
   const [quickFilter, setQuickFilter] = useState("all"); // "all" | "mine" | "inprogress"
   // (사용자 요청) 정렬·필터 드롭다운에 전체/PGN/FEN 구분 추가 — PGN은 setupSans(대국 기보)가 있는
   // 퍼즐, FEN은 fen 필드가 있는 퍼즐(둘 다 있는 퍼즐이 대부분이다, 카드 배지와 같은 기준).
-  const [sourceFilter, setSourceFilter] = useState("all"); // "all" | "pgn" | "fen"
+  const [selectedSources, setSelectedSources] = useState([]); // 예: ["pgn","fen"]
+  const toggleSource = (k) => setSelectedSources((s) => (k === "all" ? [] : s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
+  // (사용자 요청) 드롭다운 맨 위에 전체/좋아요/리포스트 구획 추가 — 내가 좋아요·리포스트한 퍼즐만 골라 본다.
+  const [selectedEngagement, setSelectedEngagement] = useState([]); // 예: ["liked","reposted"]
+  const toggleEngagement = (k) => setSelectedEngagement((s) => (k === "all" ? [] : s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
   const [hideSolved, setHideSolved] = useState(false);
   // (사용자 요청) 퍼즐 만들기 기능을 학습 탭(분석 화면 보드 편집기) 대신 이 탭 안에서 — "퍼즐 풀기"/
   // "퍼즐 만들기" 선택 박스로 모드를 전환한다. 만들기 모드는 PGN/FEN 입력 → 퍼즐 유형 선택 → 생성된
@@ -18086,10 +18192,13 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // (사용자 요청) 같은 PGN·FEN으로 이미 만들어진 퍼즐이 있으면 2단계에서 막고, 알림을 띄운 뒤 처음
   // (1단계)으로 되돌린다.
   const [pcDupMsg, setPcDupMsg] = useState("");
+  // (사용자 요청) chess.com 대국 목록에서 고른 대국을 "선택됨"으로 표시하고, 같은 대국을 다시 누르면
+  // 선택이 풀리도록(입력 박스도 함께 비운다) 어떤 대국이 선택돼 있는지 기억해 둔다.
+  const [pcSelectedGameId, setPcSelectedGameId] = useState(null);
   const resetPuzzleCreate = () => {
     setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
     setPcAnalyzing(false); setPcAnalyzeProgress(0); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null);
-    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false);
+    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false); setPcSelectedGameId(null);
   };
   // 1단계 — PGN 또는 FEN 코드를 입력받아 검증한다.
   const parsePcInput = () => {
@@ -18227,11 +18336,27 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
         const rect = sortBtnRef.current.getBoundingClientRect();
         const margin = 10, menuW = 240;
         const left = Math.max(margin, Math.min(rect.right - menuW, window.innerWidth - menuW - margin));
-        setSortMenuPos({ left, top: rect.bottom + 6 });
+        // (버그 수정) 구획이 6개(전체/좋아요/리포스트·정렬·빠른 필터·테마·시작 포지션·해결 완료
+        // 숨기기)로 늘어나 드롭다운이 꽤 길어졌는데, 세로 위치는 "버튼 아래로"만 고정하고 실제
+        // 남은 공간을 재지 않아 버튼이 화면 아래쪽에 있으면 그대로 잘려 나갔다 — 위/아래 중 더
+        // 넓은 쪽으로 열고, 그 남은 공간에 맞춰 최대 높이(스크롤 가능)를 계산한다.
+        const spaceBelow = window.innerHeight - rect.bottom - margin;
+        const spaceAbove = rect.top - margin;
+        const openDown = spaceBelow >= spaceAbove;
+        const maxHeight = Math.max(160, Math.min(480, (openDown ? spaceBelow : spaceAbove) - 6));
+        setSortMenuPos({ left, top: openDown ? rect.bottom + 6 : undefined, bottom: openDown ? undefined : window.innerHeight - rect.top + 6, maxHeight });
       }
       return next;
     });
   };
+  // (사용자 요청) 열어 둔 채로 화면을 스크롤하면 버튼과의 연결이 끊어져 엉뚱한 자리에 떠 있는
+  // "잔상"처럼 보였다 — 스크롤이 시작되는 즉시 닫는다.
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+    const onScroll = () => setSortMenuOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [sortMenuOpen]);
   const PUZZLE_SORT_OPTIONS = [["score", "추천순"], ["recent", "최신순"], ["rating", "레이팅순"]];
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
@@ -18426,7 +18551,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
   // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
   // 아무거나 클릭만 하면 항상 재현됨). 조기 반환을 이 컴포넌트의 모든 훅 호출 뒤로 옮겨 해결한다.
-  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={(id) => { onDeletePuzzle(id); closeActive(); }} />;
   // (버그 수정) 예전엔 openingKeyOf(최상위 이름 하나)와 정확히 일치해야만 매칭됐다 — 세부 갈래
   // 이름(예: "…Najdorf Variation, English Attack")을 선택하면, 그 이름이 퍼즐의 firstNamedOpening과
   // 다르므로(항상 최상위 이름만 반환) 절대 매칭될 수 없었다. 이제는 그 퍼즐의 수순이 실제로 지나는
@@ -18448,13 +18573,20 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (quickFilter === "inprogress") return !solved.has(p.id) && !!(lineSolves && lineSolves[p.id] && lineSolves[p.id].length > 0);
     return true;
   };
-  // (사용자 요청) 전체/PGN/FEN 구분 — 카드 배지와 같은 기준(setupSans 유무 = PGN, fen 필드 유무 = FEN).
+  // (사용자 요청) 전체/PGN/FEN 구분(다중 선택) — 카드 배지와 같은 기준(setupSans 유무 = PGN, fen
+  // 필드 유무 = FEN). 하나라도 선택돼 있으면 그중 하나라도 해당하면 통과(OR), 선택이 없으면 전체 통과.
   const matchesSourceFilter = (p) => {
-    if (sourceFilter === "pgn") return !!(p.setupSans && p.setupSans.length);
-    if (sourceFilter === "fen") return !!p.fen;
-    return true;
+    if (!selectedSources.length) return true;
+    return selectedSources.some((s) => (s === "pgn" ? !!(p.setupSans && p.setupSans.length) : !!p.fen));
   };
-  const themed = playablePuzzles.filter((p) => (filter === "all" || themesOf(p).includes(filter)) && matchesOpeningFilter(p) && matchesCreatorFilter(p) && matchesQuickFilter(p) && matchesSourceFilter(p) && (!hideSolved || !solved.has(p.id)));
+  // (사용자 요청) 테마 칩 다중 선택 — 선택된 테마 중 하나라도 겹치면 통과.
+  const matchesThemeFilter = (p) => !selectedThemes.length || selectedThemes.some((t) => themesOf(p).includes(t));
+  // (사용자 요청) 드롭다운 맨 위 전체/좋아요/리포스트 구분(다중 선택).
+  const matchesEngagementFilter = (p) => {
+    if (!selectedEngagement.length) return true;
+    return selectedEngagement.some((e) => (e === "liked" ? likedPuzzles.has(p.id) : !!(repostedPuzzles && repostedPuzzles.has(p.id))));
+  };
+  const themed = playablePuzzles.filter((p) => matchesThemeFilter(p) && matchesOpeningFilter(p) && matchesCreatorFilter(p) && matchesQuickFilter(p) && matchesSourceFilter(p) && matchesEngagementFilter(p) && (!hideSolved || !solved.has(p.id)));
   // (v0.4.1 기능, item 3) 사용자 요청 — 미해결/해결 완료 두 목록으로 나누던 것을 없애고 하나의 정렬
   // 목록으로 합친다. 기본("추천순")은 puzzleExposureScore(난이도 적합도·약점 보완도·테마 적합도
   // 가중합, 위 참고)가 높은 순 — "해결 여부"는 그 점수 안의 약한 감점 요소로만 반영되고 더는 목록을
@@ -18466,8 +18598,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (puzzleSortBy === "rating") arr.sort((a, b) => (puzzleRatingMap.get(b.id) ?? -1) - (puzzleRatingMap.get(a.id) ?? -1) || byOpeningFallback(a, b));
     else if (puzzleSortBy === "recent") arr.sort((a, b) => (puzzleOrderIndex.get(b.id) ?? -1) - (puzzleOrderIndex.get(a.id) ?? -1) || byOpeningFallback(a, b));
     else arr.sort((a, b) => {
-      const sa = puzzleExposureScore(a, { myRating: myPuzzleRating, themeRates, selectedTheme: filter, puzzleRating: puzzleRatingMap.get(a.id) ?? -1, solved });
-      const sb = puzzleExposureScore(b, { myRating: myPuzzleRating, themeRates, selectedTheme: filter, puzzleRating: puzzleRatingMap.get(b.id) ?? -1, solved });
+      const sa = puzzleExposureScore(a, { myRating: myPuzzleRating, themeRates, selectedTheme: selectedThemes, puzzleRating: puzzleRatingMap.get(a.id) ?? -1, solved });
+      const sb = puzzleExposureScore(b, { myRating: myPuzzleRating, themeRates, selectedTheme: selectedThemes, puzzleRating: puzzleRatingMap.get(b.id) ?? -1, solved });
       return sb - sa || byOpeningFallback(a, b);
     });
     return arr;
@@ -18525,8 +18657,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           {/* 1단계 — PGN 또는 FEN 코드 입력 */}
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
             <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>1. PGN 또는 FEN 코드 입력</div>
-            <textarea value={pcInput} onChange={(e) => { setPcInput(e.target.value); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); }} rows={3}
-              placeholder={"예: 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 ...(마지막 수가 퍼즐이 다루는 수가 돼요)\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"}
+            <textarea value={pcInput} onChange={(e) => { setPcInput(e.target.value); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcSelectedGameId(null); }} rows={3}
+              placeholder={"예: 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 ...(다음 단계에서 유형에 맞는 수를 골라요)\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"}
               style={{ width: "100%", boxSizing: "border-box", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: SITE_FONT }} />
             {pcErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pcErr}</div>}
             {pcParsed && <div style={{ fontSize: 11.5, color: T.best, marginTop: 6, fontWeight: 700 }}>{pcParsed.kind === "fen" ? "FEN 포지션이 확인됐어요 — 이 위치 자체가 퍼즐 시작점이 돼요." : "기보가 확인됐어요(" + pcParsed.sans.length + "수) — 아래에서 퍼즐 유형을 고르면 그 유형에 맞는 수를 고를 수 있어요."}</div>}
@@ -18539,7 +18671,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                 고를 수 있다. */}
             {chesscomReady && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
-                <AccountChessStats chesscom={chesscom} username={chesscomUsername} onSelectGame={(g) => {
+                <AccountChessStats chesscom={chesscom} username={chesscomUsername} selectedGameId={pcSelectedGameId} onSelectGame={(g, gid) => {
+                  if (pcSelectedGameId != null && gid === pcSelectedGameId) {
+                    setPcSelectedGameId(null); setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
+                    return;
+                  }
+                  setPcSelectedGameId(gid);
                   setPcInput(sansToPgnText(g.moves, "w")); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
                 }} />
               </div>
@@ -18599,10 +18736,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                         ) : (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                             {qualifying.map((m) => (
-                              <button key={m.ply} onClick={() => pickPcMove(k, m)} disabled={pcGenerating} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, border: "1px solid " + (pcSelectedMove && pcSelectedMove.ply === m.ply && pcTheme === k ? T.brass : QCOLOR[m.kind]), background: pcSelectedMove && pcSelectedMove.ply === m.ply && pcTheme === k ? "rgba(196,154,80,.14)" : "#fff", cursor: pcGenerating ? "default" : "pointer" }}>
-                                <span style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 12)}</span>
-                                <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 12.5, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
-                              </button>
+                              <MoveLongPressPreview key={m.ply} priorSans={pcParsed.sans.slice(0, m.ply)} san={m.san} kind={m.kind}>
+                                <button onClick={() => pickPcMove(k, m)} disabled={pcGenerating} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, border: "1px solid " + (pcSelectedMove && pcSelectedMove.ply === m.ply && pcTheme === k ? T.brass : QCOLOR[m.kind]), background: pcSelectedMove && pcSelectedMove.ply === m.ply && pcTheme === k ? "rgba(196,154,80,.14)" : "#fff", cursor: pcGenerating ? "default" : "pointer" }}>
+                                  <span style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 12)}</span>
+                                  <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 12.5, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
+                                </button>
+                              </MoveLongPressPreview>
                             ))}
                           </div>
                         )}
@@ -18642,8 +18781,10 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       <>
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div className="flex items-center gap-2">
-          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="numeric" placeholder="번호 또는 날짜로 풀기 (예: 123456 · 20260729)" style={{ flex: 1, minWidth: 0, padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 13 }} />
-          <button onClick={solveByInput} className="press" style={{ padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>풀기</button>
+          {/* (사용자 요청) 번호로 풀기 검색창·풀기 버튼·오프닝/생성자 검색창·필터 버튼 네 요소의
+              높이를 36px로 통일한다. */}
+          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="numeric" placeholder="번호 또는 날짜로 풀기 (예: 123456 · 20260729)" style={{ flex: 1, minWidth: 0, height: 36, boxSizing: "border-box", padding: "0 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 13 }} />
+          <button onClick={solveByInput} className="press" style={{ height: 36, boxSizing: "border-box", padding: "0 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>풀기</button>
         </div>
         {/* (기능) 입력 중인 번호로 시작하는 퍼즐을 추천 — 모바일은 입력창 바로 아래 작은 드롭다운
             목록(포커스 중일 때만), 데스크톱은 그 자리에 실제 퍼즐 카드 블록으로 계속 갱신해서
@@ -18708,7 +18849,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               그렇게 생긴 오른쪽 여백에 깔때기(Filter) 아이콘 버튼 하나만 둔다. */}
           <div style={{ position: "relative", flex: "1 1 110px", minWidth: 100 }}>
             <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocus(true)} onBlur={() => setTimeout(() => setSearchFocus(false), 150)}
-              placeholder="오프닝 · 생성자로 검색" style={{ width: "100%", boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
+              placeholder="오프닝 · 생성자로 검색" style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
             {searchFocus && searchSuggestions.length > 0 && (
               <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
                 {searchSuggestions.map((it) => (
@@ -18729,7 +18870,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               하나의 드롭다운 안에 정렬·빠른 필터·테마 세 구획으로 함께 담는다 — 산만하던 필터 줄
               여러 개를 한 곳으로 모은다. */}
           <div style={{ position: "relative", flexShrink: 0 }}>
-            <button ref={sortBtnRef} onClick={toggleSortMenu} className="press" title="정렬·필터" aria-label="정렬·필터 선택" style={{ width: 34, height: 34, borderRadius: 9, background: sortMenuOpen ? T.ebony2 : "rgba(0,0,0,.25)", border: "1px solid " + T.brass, color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <button ref={sortBtnRef} onClick={toggleSortMenu} className="press" title="정렬·필터" aria-label="정렬·필터 선택" style={{ width: 36, height: 36, boxSizing: "border-box", borderRadius: 9, background: sortMenuOpen ? T.ebony2 : "rgba(0,0,0,.25)", border: "1px solid " + T.brass, color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               <Filter size={15} />
             </button>
             {sortMenuOpen && sortMenuPos && (
@@ -18738,8 +18879,18 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                 {/* (사용자 요청) 개발자의 "이름·키워드 편집" 박스와 같은 레이아웃 — 어두운 브라스 톤
                     카드(진한 그러데이션 배경 + 브라스 테두리) 안에, 구획마다 작은 라벨 밑에
                     KW_SINGLES 스타일의 줄바꿈 칩 그룹을 둔다. */}
-                <div style={{ position: "fixed", left: sortMenuPos.left, top: sortMenuPos.top, width: 240, maxHeight: "min(70vh, 480px)", overflowY: "auto", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.5)", zIndex: 41, padding: 12 }}>
+                <div style={{ position: "fixed", left: sortMenuPos.left, top: sortMenuPos.top, bottom: sortMenuPos.bottom, width: 240, maxHeight: sortMenuPos.maxHeight, overflowY: "auto", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.5)", zIndex: 41, padding: 12 }}>
                   <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 12.5, marginBottom: 10 }}><Filter size={14} /> 정렬 · 필터</div>
+                  {/* (사용자 요청) 맨 위에 전체/좋아요/리포스트 구획 추가. 아래 구획들과 마찬가지로
+                      다중 선택 가능("전체"를 누르면 선택을 모두 해제) — "빠른 필터"만 예외로 단일 선택. */}
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>전체 · 좋아요 · 리포스트</div>
+                    <div className="flex flex-wrap gap-1">
+                      {[["all", "전체"], ["liked", "좋아요"], ["reposted", "리포스트"]].map(([k, lb]) => { const on = k === "all" ? selectedEngagement.length === 0 : selectedEngagement.includes(k); return (
+                        <button key={k} onClick={() => toggleEngagement(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
+                      ); })}
+                    </div>
+                  </div>
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>정렬</div>
                     <div className="flex flex-wrap gap-1">
@@ -18756,20 +18907,21 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                       ); })}
                     </div>
                   </div>
+                  {/* (사용자 요청) 테마 칩 다중 선택. */}
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>테마</div>
                     <div className="flex flex-wrap gap-1">
-                      {chips.map(([k, lb]) => { const on = filter === k; return (
-                        <button key={k} onClick={() => setFilter(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb} <span style={{ opacity: .65 }}>{count(k)}</span></button>
+                      {chips.map(([k, lb]) => { const on = k === "all" ? selectedThemes.length === 0 : selectedThemes.includes(k); return (
+                        <button key={k} onClick={() => toggleTheme(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb} <span style={{ opacity: .65 }}>{count(k)}</span></button>
                       ); })}
                     </div>
                   </div>
-                  {/* (사용자 요청) 전체/PGN/FEN 구분 — 카드에 새로 붙은 PGN/FEN 배지와 같은 기준. */}
+                  {/* (사용자 요청) 전체/PGN/FEN 구분(다중 선택) — 카드에 새로 붙은 PGN/FEN 배지와 같은 기준. */}
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>시작 포지션</div>
                     <div className="flex flex-wrap gap-1">
-                      {[["all", "전체"], ["pgn", "PGN"], ["fen", "FEN"]].map(([k, lb]) => { const on = sourceFilter === k; return (
-                        <button key={k} onClick={() => setSourceFilter(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
+                      {[["all", "전체"], ["pgn", "PGN"], ["fen", "FEN"]].map(([k, lb]) => { const on = k === "all" ? selectedSources.length === 0 : selectedSources.includes(k); return (
+                        <button key={k} onClick={() => toggleSource(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
                       ); })}
                     </div>
                   </div>
@@ -19368,7 +19520,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
 // (사용자 요청) onSelectGame — 유산(Legacy) 관리 화면이 이 컴포넌트를 그대로 재사용하면서, "최근 대국"
 // 각 줄의 검색·리뷰 버튼 자리에 그 대신 "선택" 버튼 하나만 두기 위한 선택적 콜백. 넘기지 않으면(기존
 // 프로필·유저 검색 등) 지금까지와 완전히 동일하게 동작한다.
-function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame }) {
+function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame, selectedGameId }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -19589,9 +19741,8 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                   {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
                   {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                 </div>
-                {onSelectGame ? (
-                  <button onClick={() => onSelectGame(g)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800 }}>선택</button>
-                ) : onOpenGame && (
+                {onSelectGame ? (() => { const gid = g.id != null ? g.id : g.endTime; const isSel = selectedGameId != null && gid === selectedGameId;
+                  return <button onClick={() => onSelectGame(g, gid)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, background: isSel ? "linear-gradient(180deg,#3E7CC4,#2C5A94)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSel ? "#fff" : "#241509", border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800 }}>{isSel ? "선택됨" : "선택"}</button>; })() : onOpenGame && (
                   <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                     <button onClick={() => onOpenGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
                     {onOpenGameAnalyze && <BestMoveJumpButton onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username, white: g.white, black: g.black, id: g.id })} />}
@@ -19876,6 +20027,14 @@ const CHANGELOG = [
       "퍼즐 만들기 2단계가 개편됐어요 — 유형을 먼저 고르지 않아도, PGN을 확인하는 즉시 세 유형에 해당하는 수를 모두 미리 불러와 각 유형 아래에 나열해요. 박스 우상단에 기보 분석 진행률이 %로 실시간 표시돼요.",
       "퍼즐 만들기 3단계 미리보기에서는 아직 두지 않은 갈래를 가리지 않고 라인 전체를 그대로 보여줘요.",
       "퍼즐 만들기에서 같은 PGN·FEN으로 이미 만들어진 퍼즐이 있으면 2단계에서 생성을 막고, 알림 후 처음부터 다시 시작하게 안내해요.",
+      "퍼즐 탭의 '번호로 풀기' 검색창·풀기 버튼·오프닝/생성자 검색창·필터 버튼 높이가 모두 통일됐어요.",
+      "퍼즐 풀이 화면의 PGN/FEN 표시도 카드와 같은 파란색으로 통일됐어요.",
+      "정렬·필터 드롭다운 맨 위에 전체/좋아요/리포스트 구획이 추가됐고, 빠른 필터를 제외한 나머지(테마·시작 포지션·좋아요/리포스트)는 여러 개를 동시에 선택할 수 있어요.",
+      "정렬·필터 드롭다운과 말풍선들이 화면 가장자리에서 잘리거나 이상한 자리에 잔상처럼 남던 문제를 고쳤고, 열어 둔 채로 스크롤하면 자동으로 닫혀요.",
+      "퍼즐 만들기 1단계에서 chess.com 대국을 고르면 '선택됨'으로 표시되고 버튼 색이 바뀌어요 — 같은 대국을 다시 누르면 선택이 풀려요. 입력 박스의 예시 문구도 최신 방식(2단계에서 유형에 맞는 수를 고르는 방식)에 맞게 바뀌었어요.",
+      "유산 만들기 화면이 이번 버전의 퍼즐 만들기 마법사와 같은 레이아웃·디자인으로 바뀌었어요.",
+      "퍼즐·유산 만들기 2단계에서 후보 수를 꾹 누르면(모바일) 또는 마우스를 올려두면(데스크톱) 미니 체스보드로 그 수가 애니메이션으로 재생돼요 — 수 체계 아이콘도 함께 보여요. 데스크톱에서는 마우스를 올려두는 동안 계속 반복 재생돼요.",
+      "퍼즐 생성자는 자신이 만든 퍼즐을 퍼즐 풀이 화면 2페이지(모식도)에서 삭제할 수 있어요 — 삭제 전 확인 알림이 한 번 더 떠요.",
     ]
   },
   {
@@ -23759,14 +23918,21 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
   // (v0.3.4 UI) 채팅·프로필·검색·친구 창과 같은 모바일 전체 화면 패턴 — 이 창은 chess.com 대국
   // 선택 시 AccountChessStats(필터·대국 목록)까지 펼쳐지므로 좁은 화면에서 특히 필요했다.
   const narrow = useNarrow(640);
+  // (사용자 요청) 이번 버전에 새로 만든 퍼즐 만들기 마법사와 레이아웃·디자인을 통일한다 — 어두운
+  // 바탕 위에 단계마다 번호가 붙은 밝은 박스(T.paper 카드)를 얹는 형태로, 창 배경도 다른 전체 화면
+  // 마법사들과 같은 어두운 라디얼 그라데이션으로 바꾼다.
+  const stepNo = step === "source" || step === "paste" ? 1 : step === "analyzing" ? 1 : step === "pick" ? 2 : 3;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 460, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
-          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>유산 • {typeInfo.short}</span></div>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 460, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid " + T.brass, boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.12)", flexShrink: 0 }}>
+          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>유산 • {typeInfo.short}</span></div>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
+        {(step === "source" || step === "paste") && (
+          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{stepNo}. 대국 선택</div>
         {step === "source" && (
           <div>
             <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 12 }}>이 유산에 새길 대국을 골라 주세요 — {typeInfo.label}은(는) "{QLABEL[typeInfo.kind]}"로 채점된 수만 지정할 수 있어요.</p>
@@ -23803,8 +23969,10 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             </div>
           </div>
         )}
+          </div>
+        )}
         {step === "analyzing" && (
-          <div style={{ padding: "24px 0", textAlign: "center" }}>
+          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: "24px 13px", textAlign: "center" }}>
             <div style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 10 }}>대국을 분석하는 중이에요… ({Math.round(progress * 100)}%)</div>
             <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8", maxWidth: 260, margin: "0 auto" }}>
               <div style={{ width: (progress * 100) + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .3s ease" }} />
@@ -23818,7 +23986,8 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
           </div>
         )}
         {step === "pick" && result && (
-          <div>
+          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{stepNo}. 수 선택</div>
             {qualifying.length === 0 ? (
               <div style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "16px 0" }}>이 대국에는 "{QLABEL[typeInfo.kind]}"로 채점된 수가 없어요. 다른 대국을 시도해 보세요.</div>
             ) : (
@@ -23826,10 +23995,12 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
                 <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8 }}>"{QLABEL[typeInfo.kind]}"로 채점된 수 중 하나를 골라 주세요.</p>
                 <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
                   {qualifying.map((m) => (
-                    <button key={m.ply} onClick={() => { setMoveIndex(m.ply); setPlayCount(Math.min(5, Math.max(1, sans.length - m.ply))); setBeforeCount(Math.min(3, m.ply)); setStep("count"); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: "1px solid " + QCOLOR[m.kind], background: "#fff", cursor: "pointer", textAlign: "left" }}>
-                      <span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 14)}</span>
-                      <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
-                    </button>
+                    <MoveLongPressPreview key={m.ply} priorSans={sans.slice(0, m.ply)} san={m.san} kind={m.kind} flip={side === "b"}>
+                      <button onClick={() => { setMoveIndex(m.ply); setPlayCount(Math.min(5, Math.max(1, sans.length - m.ply))); setBeforeCount(Math.min(3, m.ply)); setStep("count"); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: "1px solid " + QCOLOR[m.kind], background: "#fff", cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}>
+                        <span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 14)}</span>
+                        <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
+                      </button>
+                    </MoveLongPressPreview>
                   ))}
                 </div>
               </>
@@ -23838,7 +24009,8 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
           </div>
         )}
         {step === "count" && moveIndex != null && sans && (
-          <div>
+          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{stepNo}. 재생 범위 설정</div>
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 4 }}>{moveNumber(moveIndex)}{sans[moveIndex]}</div>
             {/* (사용자 요청) 지정한 수 앞뒤로 몇 수 함께 보여줄지를 직접 입력이 아니라 1~7수 범위의
                 선택 박스로 고른다. */}
