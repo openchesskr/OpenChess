@@ -183,7 +183,7 @@ const FEATURES = [
     desc: "\"기물 희생하기\" · \"우위 점하기\" · \"실수 응징하기\" 세 테마로, 실전에서 나온 실수를 바탕으로 자동 생성되는 맞춤형 전술 퍼즐을 풀어보세요. 친구에게 퍼즐을 공유할 수도 있어요.",
     quote: "이 수, 정말 최선이었을까? 한번 찾아봐." },
   { Icon: Target, eyebrow: "학습", title: "매일 조금씩", shot: "/about/screenshot-quest.webp", mascotChar: "kokoa", mascotExpr: "celebrate",
-    desc: "매일 새로 갱신되는 일일 퀘스트와, 챕터별 퀴즈로 진행하는 메인 퀘스트를 완료하고 OC 나이트 코인을 모아보세요.",
+    desc: "매일 새로 갱신되는 일일 퀘스트와, 갈래를 갖는 로드맵을 따라 순서대로 열리는 메인 퀘스트 '레슨'을 완료하고 OC 나이트 코인을 모아보세요.",
     quote: "일일 퀘스트, 벌써 확인했어?" },
   { Icon: Wrench, eyebrow: "설정", title: "내게 맞게 조정하기", shot: "/about/screenshot-settings.webp", mascotChar: "milku", mascotExpr: "wink",
     desc: "정확도가 가장 높은 Stockfish 16과, 가볍고 빠른 Stockfish 18 Lite 중 기기에 맞는 분석 엔진을 골라보세요. 로그인하면 진도가 계정에 저장돼 어느 기기에서든 이어서 즐길 수 있어요.",
@@ -635,7 +635,7 @@ function AsStep({ n, title, children, formula, chart, reverse }) {
 }
 function AccuracySystemSection() {
   return (
-    <section>
+    <section id="accuracy" style={{ scrollMarginTop: 24 }}>
       <Reveal>
         <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
           <Zap size={16} color={T.brassHi} />
@@ -718,19 +718,42 @@ function IntroPage() {
       </div>
 
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "40px 20px 72px" }}>
-      <section className="flex items-center flex-wrap" style={{ gap: 36, marginBottom: 8 }}>
+      <section className="flex items-center flex-wrap" style={{
+        gap: 36, marginBottom: 8, padding: "32px 32px 30px", borderRadius: 28,
+        background: "linear-gradient(160deg, rgba(46,27,16,.6), rgba(27,16,9,.15))",
+        border: "1px solid rgba(196,154,80,.22)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)",
+      }}>
         <div style={{ flex: "1 1 320px", minWidth: 280 }}>
-          <Reveal><div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+          <Reveal><div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
             <Sparkles size={14} color={T.brass} />
             <span style={{ fontSize: 12, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>무료 체스 오프닝 학습·연습 애플리케이션</span>
           </div></Reveal>
-          <Reveal delay={0.05}><h1 style={{ fontSize: 36, fontWeight: 900, color: T.ivoryHi, lineHeight: 1.28, margin: "0 0 16px" }}>오프닝을 배우고,<br />내 실수를 퍼즐로<br />복습하세요.</h1></Reveal>
-          <Reveal delay={0.1}><p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 26px", maxWidth: 440 }}>
-            엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수에서 자동 생성되는 전술 퍼즐, 퀘스트와 티어 시스템까지 — MILKU·KOKOA와 함께 체스를 더 깊이 익혀보세요.
+          <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(32px, 5vw, 44px)", fontWeight: 900, color: T.ivoryHi, lineHeight: 1.22, margin: "0 0 16px", letterSpacing: "-.01em" }}>
+            오프닝을 배우고,<br />내 실수를 <span style={{ color: T.brassHi }}>퍼즐</span>로<br />복습하세요.
+          </h1></Reveal>
+          <Reveal delay={0.1}><p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 24px", maxWidth: 440 }}>
+            엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수에서 자동 생성되는 전술 퍼즐, 로드맵형 레슨과 티어 시스템까지 — MILKU·KOKOA와 함께 체스를 더 깊이 익혀보세요.
           </p></Reveal>
-          <Reveal delay={0.15}><a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>
-            무료로 시작하기 <ArrowRight size={16} />
-          </a></Reveal>
+          <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 26 }}>
+            <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>
+              무료로 시작하기 <ArrowRight size={16} />
+            </a>
+            <a href="#features" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "13px 20px", borderRadius: 999, border: "1px solid rgba(196,154,80,.4)", color: T.ivory, fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+              기능 둘러보기
+            </a>
+          </div></Reveal>
+          <Reveal delay={0.2}><nav className="flex items-center flex-wrap" style={{ gap: 8 }}>
+            {[["#features", "학습·도감·퍼즐"], ["#tiers", "티어"], ["#accuracy", "정확도 체계"]].map(([href, label]) => (
+              <a key={href} href={href} style={{
+                fontSize: 11.5, fontWeight: 700, color: T.brass, letterSpacing: ".02em", textDecoration: "none",
+                padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(196,154,80,.28)",
+                background: "rgba(196,154,80,.06)", transition: "background .15s, color .15s",
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(196,154,80,.16)"; e.currentTarget.style.color = T.brassHi; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(196,154,80,.06)"; e.currentTarget.style.color = T.brass; }}
+              >{label}</a>
+            ))}
+          </nav></Reveal>
         </div>
         <motion.div initial={{ opacity: 0, scale: 0.7, rotate: -8 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
           style={{ flex: "0 0 auto", width: 260, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
@@ -755,7 +778,7 @@ function IntroPage() {
 
       <SectionDivider />
 
-      <section className="flex flex-col" style={{ gap: 52 }}>
+      <section id="features" className="flex flex-col" style={{ gap: 52, scrollMarginTop: 24 }}>
         {FEATURES.map((f, i) => (
           <React.Fragment key={f.title}>
             <FeatureRow {...f} reverse={i % 2 === 1} />
@@ -793,7 +816,7 @@ function IntroPage() {
 
       <SectionDivider />
 
-      <section>
+      <section id="tiers" style={{ scrollMarginTop: 24 }}>
         <Reveal>
           <div className="flex items-center gap-2" style={{ marginBottom: 6, justifyContent: "center" }}>
             <Crown size={16} color={T.brassHi} />
@@ -880,6 +903,108 @@ const CAT = {
   security: { label: "보안", Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.4.1", date: "2026.8.28",
+    summary: "화면 구석에 표시되는 버전 번호가 실제 배포된 버전보다 한 단계 뒤처져 있던 문제를 고쳤어요. 지금 보고 계신 /about 소개 페이지의 첫 화면도 더 세련되게 새 단장했어요 — '기능 둘러보기' 버튼과, 학습·도감·퍼즐/티어/정확도 체계로 바로 이동하는 칩 버튼이 추가됐어요. 게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작한 경우에도, 대국 시작 위치와 완전히 같은 방식으로 수 체계 등급과 코치 설명이 정확히 매겨져요. 공개 퍼즐 레이팅도 새로 생겼어요. 퍼즐 탭도 개편됐어요 — 추천/미해결/해결 완료 3분할을 없애고, 난이도·약점·테마 적합도를 점수화한 단일 추천 피드로 합쳤고, 퍼즐 카드도 더 크고 비율이 안정적으로 바뀌었어요. 퍼즐 만들기 기능이 이제 이 퍼즐 탭 안에서 PGN·FEN 코드(또는 내 chess.com 대국 선택)만으로 가능해요. 레이팅별 봇과 직접 대국하는 PLAY 페이지도 새로 생겼어요 — 오픈체스 로고와 내 프로필이 표시되고, 봇이 잠깐 생각한 뒤 응수하며, 높은 레이팅 봇일수록 나쁜 수를 훨씬 덜 두고 같은 포지션에서 같은 수만 반복하지도 않아요.",
+    mascot: {
+      intro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "left", text: "이 페이지 맨 위 칩 버튼을 눌러보면 원하는 소개로 바로 이동할 수 있어요!" },
+      outro: { char: "kokoa", expr: "happy", name: "KOKOA 코치", align: "right", text: "퍼즐 탭 '퍼즐 만들기'에서 내 chess.com 대국을 골라 그대로 퍼즐을 만들 수 있어요!" },
+    },
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: "/about 페이지 리디자인 + 버전 표시 버그 수정 + FEN 퍼즐·리뷰 동등화 + 퍼즐 레이팅 + 퍼즐 탭 개편" },
+    sections: [
+      { cat: "feature", items: [
+        "게임 리뷰·분석 탭에서 FEN(임의 포지션)으로 시작해도, 대국 시작 위치와 똑같이 최선의 수·탁월한 수·유일한 수 같은 수 체계 등급과 코치 설명이 정확히 매겨져요. 오프닝 이름·마스터 대국 통계처럼 애초에 표준 시작 위치 전용인 정보만 FEN 포지션에서는 자연스럽게 표시되지 않아요.",
+        "모든 퍼즐이 시작 포지션을 FEN 코드로도 갖게 됐어요.",
+        "공개 퍼즐 레이팅이 새로 생겼어요 — 라인을 끝까지 풀면 오르고, 틀린 수를 두면 내려가요. 프로필 카드에서 티어 배지 옆에 확인할 수 있고, 누르면 '퍼즐 레이팅 : n' 말풍선이 떠요(모바일에서도 안 잘려요). 퍼즐 탭 상단 티어 도형 옆에 여백을 두고도 함께 보여요.",
+        "퍼즐 탭이 개편됐어요 — 추천/미해결/해결 완료 3분할과 오프닝별 가로 스크롤 거치대를 없애고, 난이도 적합도·약점 보완도·테마 적합도를 점수화한 단일 추천 피드로 합쳤어요.",
+        "퍼즐 만들기 기능이 분석 탭 보드 편집기 대신 퍼즐 탭으로 옮겨졌어요 — '퍼즐 풀기/퍼즐 만들기' 선택 박스로 전환하면, PGN·FEN 코드 입력 → 퍼즐 유형 선택 → 생성된 라인 미리보기 순서로 진행해 대국 없이도 직접 퍼즐을 만들 수 있어요. 연동돼 있으면 입력 박스 아래에 내 chess.com 대국 통계가 바로 나타나 그중 하나를 골라 기보를 채울 수 있고, PGN을 확인하면 곧바로 세 유형(기물 희생하기·우위 점하기·실수 응징하기)에 해당하는 수를 모두 미리 불러와 각 유형 아래에 나열해요(우상단에 분석 진행률이 %로 표시돼요). 3단계 미리보기에서는 라인 전체를 가림 없이 볼 수 있고, 같은 PGN·FEN으로 이미 만들어진 퍼즐이 있으면 만들기를 막고 알려줘요. 로그인하지 않은 상태에서는 이 기능을 쓸 수 없어요.",
+        "퍼즐 만들기에서 chess.com 대국을 고르면 '선택됨'으로 표시되고 버튼 색이 바뀌어요 — 같은 대국을 다시 누르면 선택이 풀려요.",
+        "유산 만들기 화면이 퍼즐 만들기 마법사와 같은 레이아웃·디자인으로 통일됐어요. 퍼즐·유산 만들기 모두 후보 수를 꾹 누르거나(모바일) 마우스를 올려두면(데스크톱) 미니 체스보드로 그 수가 애니메이션 재생돼요 — 수 체계 아이콘도 함께 보이고, 데스크톱에서는 마우스를 올려두는 동안 계속 반복 재생돼요.",
+        "퍼즐 생성자는 자신이 만든 퍼즐을 퍼즐 풀이 화면 2페이지(모식도)에서 삭제할 수 있어요 — 삭제 전 확인 알림이 한 번 더 떠요.",
+        "이미지 스캔이 체스판 사진뿐 아니라 PGN 기보·FEN 코드가 적힌 사진(책 지면, 스크린샷, 메모 등)도 인식해요. 스캔 버튼을 누르면 카메라로 촬영/갤러리에서 선택/내 파일에서 선택/Google Photo에서 선택 중 먼저 고를 수 있고, 퍼즐 만들기 마법사 1단계 입력 박스에도 이 스캔 버튼이 생겼어요. 사진을 서버로 보내기 전에 적당한 크기로 먼저 줄여 인식 속도도 빨라졌어요.",
+        "집중 분석 모드에서 탁월한 수(희생)를 둘 때 금색 화살표가 없어지고, 희생된 기물이 공격받는다는 빨간색 화살표만 남았어요. 이 빨간색 화살표가 퍼즐에서도 똑같이 떠요.",
+        "퍼즐 삭제가 실제로 서버에서도 지워지도록 고쳤어요 — 퍼즐 목록 카드에 있던, 아무나 남의 퍼즐을 지울 수 있던 삭제 버튼도 없앴고, 삭제는 퍼즐 풀이 화면에서 생성자 본인만 확인 후에 할 수 있어요.",
+        "집중 분석 모드에서 다른 수의 집중 분석으로 이동했다가 '←'를 누르면, 홈으로 나가는 대신 방금 있던 집중 분석으로 돌아가요.",
+        "PLAY — 학습 탭 메인 체스보드 아래, 뒤집기·초기화·뒤로·앞으로 버튼과 같은 줄에 PLAY 버튼으로, 지금 보드에 입력된 포지션부터 레이팅별 봇(400~2800)과 직접 대국할 수 있는 전용 페이지(openchess.kr/play)가 생겼어요. 진입하면 먼저 백/흑(또는 랜덤)과 상대할 봇을 고르고 대국을 시작해요. 대국 화면 맨 위에는 지금까지 둔 수순이 표시되고, 눌러서 그 시점 포지션을 되돌아볼 수 있어요. 대국이 끝나면 그 기보를 그대로 리뷰할 수도 있어요.",
+        "PLAY 페이지 상단에 오픈체스 로고가 표시되고, 보드 아래 내 정보 줄에는 실제 오픈체스 프로필 사진·아이디가 보여요(로그인하지 않았으면 기본 프로필 아이콘과 'Unnamed'로 대신 표시돼요). 봇도 수를 두기 전에 레이팅에 맞게 잠깐 생각하는 시간을 가지고, 같은 포지션에서 같은 수만 반복해서 두지 않도록 이미 뒀던 수는 다음에 덜 고르게 했어요.",
+      ] },
+      { cat: "ui", items: [
+        "/about 페이지 첫 화면(히어로)이 더 세련된 디자인으로 새 단장했어요 — '기능 둘러보기' 버튼과, 학습·도감·퍼즐/티어/정확도 체계 소개로 바로 이동하는 칩 버튼이 추가됐어요.",
+        "퍼즐 카드가 세로로 더 넉넉해지고, 미리보기 체스보드가 카드 폭에 맞춰 정사각형으로 훨씬 크게 보여요. 제목 길이와 무관하게 카드 비율이 항상 일정해요. 제목 글자도 조금 커졌고, 퍼즐 유형·라인 개수를 알려주던 텍스트는 지워졌어요.",
+        "퍼즐 탭 정렬 UI가 정리됐어요 — 검색창 옆 깔때기 아이콘 버튼 하나로 정렬 기준(추천순·최신순·레이팅순)뿐 아니라 '내가 만든 퍼즐'·'풀고 있는 중' 빠른 필터, 테마(기물 희생하기·우위 점하기·실수 응징하기), 전체/PGN/FEN 구분, 좋아요/리포스트, 해결 완료 숨기기까지 한 드롭다운에서 골라요(빠른 필터를 뺀 나머지는 여러 개를 동시에 선택할 수 있어요). 이 드롭다운은 개발자의 키워드 편집 박스와 같은 어두운 카드 레이아웃으로 그려져요.",
+        "PGN·FEN 정보가 있는 퍼즐은 카드의 레이팅 배지 왼쪽에 더 눈에 띄는 색으로 PGN·FEN 표시가 떠요(퍼즐을 실제로 푸는 화면에서도 같은 색이에요). 레이팅 배지를 누르면 이 퍼즐의 레이팅·내 레이팅(차이)·체감 난이도를 색으로 강조해 보여주는 말풍선이 떠요 — 목록 카드뿐 아니라 실제로 퍼즐을 푸는 화면에도 똑같이 적용돼요.",
+        "퍼즐 레이팅 아이콘이 하단 탭의 퍼즐 아이콘과 통일됐고, 퍼즐 카드의 좋아요·리포스트·공유 버튼이 조금 더 커졌어요.",
+        "'번호로 풀기' 검색창·풀기 버튼·오프닝/생성자 검색창·필터 버튼의 높이가 모두 통일됐어요.",
+        "퍼즐 풀이 화면의 제작자 표시에서 '제작 · ' 문구가 빠지고 아이디만 보여요. PGN/FEN 표시와 퍼즐 레이팅 박스가 제작자 표시와 같은 줄로 내려오면서, 제목을 한 줄에 더 길게 볼 수 있어요.",
+        "학습 탭(집중 분석 모드 포함) 수 블록의 키워드가 한 줄에 담기고, 다 안 들어가면 자동으로 천천히 오른쪽으로 스크롤됐다 처음으로 돌아가기를 반복해요.",
+      ] },
+      { cat: "fix", items: [
+        "화면 구석과 /about 페이지에 표시되는 버전 번호가 실제 배포된 버전보다 뒤처져 있던 문제를 고쳤어요.",
+        "퍼즐 탭에서 퍼즐을 누르면 화면이 먹통 되던 문제를 고쳤어요.",
+        "FEN 기반으로(대국 기록 없이 포지션만으로) 만든 퍼즐을 누르면 화면이 먹통 되던 문제와, 그런 퍼즐이 카드 목록에서 체스보드 미리보기 없이 비어 보이던 문제를 고쳤어요.",
+        "정렬·필터 드롭다운과 말풍선들이 화면 가장자리에서 잘리거나 이상한 자리에 잔상처럼 남던 문제를 고쳤고, 열어 둔 채로 스크롤하면 자동으로 닫혀요.",
+        "퍼즐 레이팅 말풍선이 잘못된 위치에 잠깐 나타났다 제자리로 돌아오던 문제(퍼즐 카드)와, 화면 경계에 잘리던 문제(퍼즐 풀이 화면)를 고쳤어요.",
+        "퍼즐 만들기 마법사 1단계에서 PGN/FEN으로 인식되지 않는 입력에는 '잘못된 기보 형식입니다.'가 표시되고, 2단계로 넘어갈 수 없어요.",
+        "게임 리뷰의 희생 경고 화살표에서, 폰이 자기 전진 방향과 반대쪽에서 잡는다고 잘못 표시되던 문제를 고쳤어요. 여러 기물이 동시에 희생됐을 때 정확히 위험한 공격자에서만 화살표가 뜨도록 판정도 정교해졌어요.",
+        "집중 분석 수 설명에서 수 번호 없이 적힌 SAN은 더 이상 링크로 잡히지 않아요. 대괄호 안 인식용 수순은 150자 제한에 포함되지 않아요.",
+        "PLAY 페이지에서 봇이 응답하지 않고 '생각하는 중...'에 멈춰 있던 문제를 고쳤어요.",
+        "레이팅 2800 봇이 나쁜 수를 자주 두던 문제를 고쳤어요 — 레이팅이 높을수록 최선의 수에 훨씬 가깝게 두도록 강화했어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.4.0", date: "2026.8.28",
+    summary: "탭 이름이 바뀌었어요 — 기존 '학습' 탭은 '분석'으로, 기존 '퀘스트' 탭은 '학습'으로요. 그 '학습' 탭의 메인 퀘스트는 갈래를 갖는 나무 모양 로드맵을 따라 순서대로 열리는 '레슨' 시스템으로 완전히 새로워졌어요. 퍼즐 탭의 오프닝 검색과 도감 탭의 오프닝 트리 검색이 더 폭넓고 찾기 쉬워졌고, 수 설명에 나오는 수를 언급하면 자동으로 그 수까지 이동하는 링크가 걸려요. 퍼즐 카드·오늘의 퍼즐의 기보를 눌러도 바로 집중 분석으로 들어갈 수 있고, 검색·친구·채팅·프로필창 같은 화면도 브라우저 뒤로가기 한 번으로 자연스럽게 닫혀요. 수 등급 판정 방식을 여러 화면에서 하나로 통일했고, 퍼즐 탭에서 일일 퍼즐을 누르면 가끔 버벅이거나 화면이 멈춰 버리던 문제도 고쳤어요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "great", name: "KOKOA 코치", align: "left", text: "학습 탭을 열어보면 이제 나무처럼 갈래를 뻗어나가는 레슨 로드맵이 기다리고 있어요!" },
+      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "퍼즐이나 오늘의 퍼즐 기보를 눌러 보면, 바로 집중 분석으로 넘어갈 수 있다는 것도 잊지 마세요." },
+    },
+    highlight: { kind: "icon", Icon: Compass, color: T.brassHi, label: "메인 퀘스트 전면 개편 — 레슨 시스템" },
+    sections: [
+      { cat: "feature", items: [
+        "탭 이름이 바뀌었어요 — 기존 '학습' 탭은 '분석'으로, 기존 '퀘스트' 탭은 '학습'으로 이름이 바뀌었어요.",
+        "메인 퀘스트가 챕터 목록 대신, 갈래를 갖는 나무 모양 로드맵을 따라 순서대로 열리는 '레슨' 시스템으로 완전히 새로워졌어요. 레슨 하나가 여러 선행 레슨을 가질 수도 있어요.",
+        "퍼즐 탭의 오프닝 검색과 퍼즐 생성자 검색이 하나의 검색창으로 합쳐지고 정렬 옵션이 생겼어요. 도감 탭의 오프닝 트리 검색창도 더 찾기 쉬운 디자인으로 바뀌었어요.",
+        "수 설명 안에서 실제로 둘 수 있는 수를 언급하면 자동으로 그 수까지 이동하는 링크가 걸려요.",
+        "퍼즐 카드·오늘의 퍼즐 팝업의 기보에서 수를 누르면 바로 집중 분석 화면으로 들어갈 수 있어요.",
+        "검색·친구·채팅·프로필창 등 여러 화면을 브라우저 뒤로가기 한 번으로 자연스럽게 닫을 수 있게 됐어요.",
+      ] },
+      { cat: "fix", items: [
+        "수 등급 판정 방식을 여러 화면에서 하나로 통일해 더 일관되게 매겨져요. 탁월한 수 판정 중 일부 규칙도 다듬었어요.",
+        "퍼즐 탭에서 일일 퍼즐을 누르면 가끔 버벅이거나 화면이 멈춰 버리던 문제를 고쳤어요.",
+      ] },
+      { cat: "ui", items: [
+        "퍼즐 카드·일일 퍼즐 팝업의 기보 밑줄을 없앴고, 분석 탭 아이콘이 새로워졌어요.",
+      ] },
+    ],
+  },
+  {
+    version: "0.3.9", date: "2026.8.21",
+    summary: "게임 리뷰 화면이 데스크톱에서는 화면 전체를 넓게 쓰는 전용 레이아웃으로 바뀌었어요 — 체스보드가 훨씬 커지고, 진입 애니메이션의 그래프들도 큰 화면에 맞게 커졌어요. 리뷰 정확도 그래프는 계산 중 안내와 확정 토스트, 구간별 등급 표시를 새로 갖췄고, 부드럽게 이어지도록 다듬었어요. 체스판 위 드래그로 기물을 옮기는 조작감도 다시 손봤고, 더 강력한 Stockfish 18(정식) 분석 엔진이 추가됐어요. 오프닝 이름을 바꾸면 퍼즐 이름에도 곧바로 반영되고, 체스판 사진 스캔 기능도 다시 정상 동작해요.",
+    mascot: {
+      intro: { char: "milku", expr: "think", name: "MILKU 코치", align: "left", text: "데스크톱에서 게임 리뷰를 열어보면 체스보드가 훨씬 커진 걸 바로 느낄 수 있을 거예요!" },
+      outro: { char: "kokoa", expr: "wink", name: "KOKOA 코치", align: "right", text: "체스판 사진 스캔도 다시 잘 동작하니, 실전 보드를 찍어서 바로 분석해 보세요." },
+    },
+    highlight: { kind: "icon", Icon: Rocket, color: T.brassHi, label: "데스크톱 리뷰 레이아웃 개편" },
+    sections: [
+      { cat: "feature", items: [
+        "게임 리뷰 화면이 데스크톱에서는 화면 전체를 넓게 쓰는 전용 레이아웃으로 바뀌었어요 — 체스보드가 커지고, 진입 애니메이션의 그래프들도 큰 화면에 맞게 커졌어요. 평가치 그래프는 더 작아지고, 코치 설명이 그 위쪽으로 옮겨졌어요.",
+        "리뷰 정확도 그래프가 새로워졌어요 — 계산 중 안내와 확정 토스트, 구간별 등급 표시가 생겼고, 계산이 밀리면 더 빠르게 따라잡도록 부드럽게 다듬어졌어요.",
+        "체스판 위에서 기물을 드래그로 옮기는 조작감을 다시 손봤어요 — 방향과 속도를 함께 보고 어느 칸으로 옮기려는지 더 정확하게 알아채요.",
+        "더 강력한 Stockfish 18(정식) 분석 엔진이 추가되고 목록 맨 위로 올라왔어요.",
+      ] },
+      { cat: "fix", items: [
+        "오프닝 이름을 수정하면 그 오프닝에서 만들어진 퍼즐 이름에도 즉시 반영돼요.",
+        "도감 오프닝 트리에 이론 수를 추가하면 화면에 곧바로 반영돼요.",
+        "게임 리뷰를 닫았다가 같은 수순으로 다시 열어도 진입 애니메이션이 항상 처음부터 다시 재생돼요.",
+        "체스판 사진 스캔 기능이 다시 정상 동작해요.",
+        "일일 퀘스트의 chess.com 링크를 눌러도 앱이 안 열리던 문제를 고쳤어요.",
+      ] },
+      { cat: "ui", items: [
+        "사이트 전반의 글꼴을 IBM Plex Sans KR로 통일했어요. 설정 탭에 로그인 상태일 때 프로필 미리보기가 표시돼요.",
+      ] },
+    ],
+  },
   {
     version: "0.3.8", date: "2026.8.19",
     summary: "게임 리뷰가 복잡한 포지션을 더 깊이 분석하도록 시간을 늘려 정확도를 개선했어요. 리뷰에 들어갈 때 보여주는 화면도 완전히 새로워졌어요 — 일러스트가 한 장씩 자연스럽게 넘어가고, 아직 분석되지 않은 구간은 검게, 끝난 구간만 채워지며 그래프가 일정한 속도로 그려져요. 각 수가 정확도를 얼마나 올리거나 내렸는지 초록·빨강 숫자로 잠깐 나타났다 사라져요. 정확도 계산 방식 자체도 새로 설계했어요 — 대국이 길어질수록 수 하나의 영향이 자연히 옅어지고, 포지션이 무난했는지 날카로웠는지도 반영돼요. 체스판 사진으로 포지션을 읽는 이미지 스캔의 인식률도 개선했고, 리뷰 화면을 새로고침해도 보던 수에서 이어서 볼 수 있어요. 모바일 리뷰의 엔진 라인·단계별 정확도 말풍선도 더 보기 편해졌고, 라인/퍼즐 클리어 배너는 전용 폰트로 새 단장했어요. 체크메이트로 끝난 대국의 마지막 수 아이콘이 멈춰 있던 문제도 고쳤고, 내 프로필 카드 아이디 표시를 정리했고, PUZZLE CLEAR 애니메이션은 더 역동적으로 바뀌었어요. 같은 대국을 다시 열 때마다 정확도가 미세하게 달라지던 문제도 고쳤어요. 설정 탭에서 리뷰 속도와 정확도 보정 방식도 직접 고를 수 있게 됐고, LINE/PUZZLE CLEAR 배너 디자인을 통일했어요. /about 페이지에는 이 정확도 체계를 수식·그래프로 소개하는 섹션도 새로 생겼어요. LINE CLEAR 애니메이션에 초록 체크 표시가 추가됐고, 내 프로필 카드는 헤더 드롭다운의 별도 창으로 옮겨져 OpenChess/chess.com 통계를 따로 볼 수 있어요. LINE CLEAR 자간·정렬을 다듬고 두 배너가 겹치지 않고 순서대로 재생되게 했고, 친구·검색 창에서 보는 프로필에도 OpenChess/chess.com 통계 분리 보기를 적용했어요. 통계 토글은 프로필 카드 우상단으로 옮겼고, 게임 리뷰 진입 화면의 백·흑 정확도 그래프에는 수마다 등급 아이콘이 담긴 원과 구간별 등급 색이 새로 생겼어요. 무난한 대국에 블런더가 하나만 있어도 정확도가 너무 많이 깎이던 계산 방식도 실제 chess.com 리뷰와 비교해 다시 다듬었어요. 설정 탭에는 LINE/PUZZLE CLEAR 애니메이션·코치 말풍선을 각각 켜고 끌 수 있는 '퍼즐 설정' 카드가 새로 생겼고, 이 설정은 로그인하면 계정에 저장돼요.",
