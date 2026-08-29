@@ -7,7 +7,7 @@ import {
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
-  Pencil, RotateCw, RefreshCw, ScanLine, Save, Puzzle, Filter,
+  Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -14969,7 +14969,7 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
       {puzzleRating != null && (
         <ClickInfoBadge text={"퍼즐 레이팅 : " + fmtFull(puzzleRating)}>
           <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 10, padding: "5px 9px", borderRadius: 999, background: "rgba(196,154,80,.16)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-            <Puzzle size={11} /> {fmtFull(puzzleRating)}
+            <MaterialIcon name="extension" size={11} /> {fmtFull(puzzleRating)}
           </span>
         </ClickInfoBadge>
       )}
@@ -14996,7 +14996,7 @@ const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", ad
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
-function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupSans, setupLen, onPick, canEdit, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag, fenRoot }) {
+function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupSans, setupLen, onPick, canEdit, revealAll, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag, fenRoot }) {
   // (기능) 라인 레이팅 — 각 라인 끝(리프)의 "라인 N" 옆에 그 라인의 기본 레이팅을 함께 보여준다.
   // 트리 구조가 실제로 바뀔 때만 다시 계산하면 되므로(정적 요소만 쓰는 puzzleLineBaseRating), tree·
   // allLines·setupSans가 바뀔 때만 새로 계산한다.
@@ -15039,7 +15039,10 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
     // (20차 기능3) 개발자(canEdit)는 편집을 위해 트리 전체를 항상 볼 수 있어야 한다 — 그렇지 않으면
     // 라인을 삭제/추가한 직후 자기가 방금 만든 결과(미완성 상태 포함)조차 안 보여 계속 편집할 수 없다.
     // 일반 유저에게만 "아직 두지 않은 수는 고스트로 가린다" 원칙을 적용한다.
-    const revealed = canEdit ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys, exploredKeys);
+    // (사용자 요청) 퍼즐 만들기 3단계 미리보기처럼 편집 권한(canEdit)은 없어도(add/delete 버튼은
+    // 필요 없음) 이미 생성자가 만든 트리 전체를 볼 자격은 있는 경우, revealAll로 고스트 처리만
+    // 건너뛰게 한다.
+    const revealed = (canEdit || revealAll) ? null : revealedPuzzleKeys(allLines, solvedNow, curKeys, exploredKeys);
     const items = []; const edges = [];
     const curKeyStr = curKeys.join(" ");
     // 실제로 둔 수(revealed)는 그대로 펼쳐 보이고, 아직 두지 않은 갈래는 "고스트"(내용은 가리되
@@ -16845,8 +16848,11 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         <div className="flex items-center justify-between" style={{ marginTop: 4, gap: 7, flexShrink: 0 }}>
             {/* (사용자 요청) PGN/FEN 정보 보유 배지 — 퍼즐 레이팅 박스와 같은 크기로 그 왼쪽에,
                 둘 다 있으면 둘 다 표시한다. */}
-            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid rgba(196,154,80,.45)", background: "rgba(196,154,80,.12)" }}>PGN</span>}
-            {p.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid rgba(196,154,80,.45)", background: "rgba(196,154,80,.12)" }}>FEN</span>}
+            {/* (사용자 요청) 배지가 브라스 톤 하나로 카드 전체(레이팅·테마 색 등)에 묻혀 잘 안 보인다는
+                피드백 — 이 카드에서 유일하게 쓰는 파란 계열(T.only, 수 체계 "유일한 수" 색)로 눈에
+                띄게 바꿨다. */}
+            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
+            {p.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
             {/* (사용자 요청) 퍼즐 레이팅 — 카드 좌하단에 표시, 누르면 이 퍼즐 레이팅·내 레이팅(차이)·
                 체감 난이도를 보여주는 말풍선이 뜬다(모바일 안전 영역은 ClickInfoBadge가 담당). */}
             {avgRating != null && (myPuzzleRating != null ? (
@@ -16869,25 +16875,26 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             ) : (
               <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>
             ))}
-            <div className="flex items-center" style={{ gap: 7, marginLeft: "auto" }}>
+            {/* (사용자 요청) 좋아요·리포스트·공유 버튼을 조금 더 크게 — 아이콘·글자 크기를 한 단계씩 키움. */}
+            <div className="flex items-center" style={{ gap: 9, marginLeft: "auto" }}>
             {/* (v0.1.0) 리포스트·공유 — 좋아요와 같은 자리에, 풀이수/좋아요와 무관한 별개 참여 지표로 노출 */}
-            {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-              <Repeat2 size={12} color={isReposted ? T.brilliant : T.inkSoft} />
-              <span style={{ fontSize: 9, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
+            {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Repeat2 size={15} color={isReposted ? T.brilliant : T.inkSoft} />
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
             </button>}
             {/* (v0.1.1) 공유 수는 눌러도 아무 동작 없는 순수 표시(집계)이고, 실제 공유 시트는 바로 옆의 별도 버튼이 연다 */}
-            <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-              <Send size={11} color={T.inkSoft} />
-              <span style={{ fontSize: 9, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
+            <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+              <Send size={13} color={T.inkSoft} />
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
             </span>
-            {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-              <Heart size={11} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
-              <span style={{ fontSize: 9, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+            {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
             </button>}
             {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
                 눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 11px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 9, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
-              <Send size={10} color={T.brass} />공유
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 12px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+              <Send size={12} color={T.brass} />공유
             </button>}
             </div>
         </div>
@@ -18056,18 +18063,19 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   useEffect(() => { if (!myUid && puzzleMode === "create") setPuzzleMode("solve"); }, [myUid, puzzleMode]);
   const [pcInput, setPcInput] = useState("");
   // (사용자 요청) 1단계 PGN/FEN 입력에 chess.com 대국도 선택할 수 있게 — 유산(LegacyManageModal)의
-  // "chess.com 대국에서 선택" 패턴을 그대로 재사용한다(별도 창 없이 AccountChessStats를 펼치고,
-  // 각 대국 줄에 onSelectGame으로 "선택" 버튼만 놓인다).
-  const [showChesscomPicker, setShowChesscomPicker] = useState(false);
+  // "chess.com 대국에서 선택" 패턴을 응용하되, 토글 버튼 없이 연동돼 있으면 항상 입력 박스 아래에
+  // chess.com 통계·최근 대국 목록을 펼쳐 둔다.
   const chesscomReady = !!(chesscom && chesscom.status === "ready" && chesscom.games && chesscom.games.length);
   const [pcParsed, setPcParsed] = useState(null); // { kind:"fen", fenRoot, raw } | { kind:"pgn", sans, raw }
   const [pcErr, setPcErr] = useState("");
   const [pcTheme, setPcTheme] = useState(null); // "sacrifice" | "advantage" | "punish"
   // (사용자 요청) PGN 마지막 수를 무조건 "다루는 수"로 삼던 것 대신, 유산 만들기처럼 그 유형(등급)에
-  // 실제로 해당하는 수들을 나열해 직접 고르게 한다. analyzeGame으로 전체 기보를 한 번 채점해 두고
-  // (테마를 바꿔도 다시 채점하지 않도록 캐시), 테마별 후보는 그 결과에서 등급으로 걸러낸다.
+  // 실제로 해당하는 수들을 나열해 직접 고르게 한다. 유형 버튼을 먼저 눌러야만 후보가 뜨던 것도
+  // 없애고, PGN이 확인되는 즉시 analyzeGame으로 전체 기보를 한 번 채점해(진행률을 %로 보여준다)
+  // 세 유형의 후보를 한꺼번에 미리 불러와 각 유형 아래에 나열한다.
   const PC_THEME_KINDS = { sacrifice: ["brilliant"], advantage: ["inaccuracy"], punish: ["mistake", "blunder"] };
   const [pcAnalyzing, setPcAnalyzing] = useState(false);
+  const [pcAnalyzeProgress, setPcAnalyzeProgress] = useState(0); // 0~1
   const [pcAnalyzeResult, setPcAnalyzeResult] = useState(null); // analyzeGame() 결과(moves 배열)
   const [pcAnalyzeErr, setPcAnalyzeErr] = useState("");
   const [pcSelectedMove, setPcSelectedMove] = useState(null); // { ply, san, kind }
@@ -18075,10 +18083,13 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const [pcGen, setPcGen] = useState(null); // { tree, lines }
   const [pcGenErr, setPcGenErr] = useState("");
   const [pcCreating, setPcCreating] = useState(false);
+  // (사용자 요청) 같은 PGN·FEN으로 이미 만들어진 퍼즐이 있으면 2단계에서 막고, 알림을 띄운 뒤 처음
+  // (1단계)으로 되돌린다.
+  const [pcDupMsg, setPcDupMsg] = useState("");
   const resetPuzzleCreate = () => {
     setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
-    setPcAnalyzing(false); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null);
-    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false); setShowChesscomPicker(false);
+    setPcAnalyzing(false); setPcAnalyzeProgress(0); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null);
+    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false);
   };
   // 1단계 — PGN 또는 FEN 코드를 입력받아 검증한다.
   const parsePcInput = () => {
@@ -18102,6 +18113,25 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (!ok) { setPcErr("기보에 불법적인 수가 포함되어 있어요."); return; }
     setPcParsed({ kind: "pgn", sans: moves, raw });
   };
+  // (사용자 요청) PGN이 확인되면 유형 버튼을 누르길 기다리지 않고 곧바로 전체 기보를 채점한다.
+  useEffect(() => {
+    if (!pcParsed || pcParsed.kind !== "pgn" || !engine || engine.status !== "ready") return;
+    let cancelled = false;
+    setPcAnalyzing(true); setPcAnalyzeProgress(0); setPcAnalyzeErr(""); setPcAnalyzeResult(null);
+    analyzeGame(pcParsed.sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setPcAnalyzeProgress(p); }, REVIEW_MOVETIME_MS)
+      .then((r) => { if (!cancelled) setPcAnalyzeResult(r); })
+      .catch(() => { if (!cancelled) setPcAnalyzeErr("기보 채점에 실패했어요. 잠시 후 다시 시도해주세요."); })
+      .finally(() => { if (!cancelled) setPcAnalyzing(false); });
+    return () => { cancelled = true; };
+  }, [pcParsed, engine && engine.status]);
+  // (사용자 요청) 같은 PGN(수순+수)이나 FEN으로 이미 만들어진 퍼즐이 있는지 검증 — 로컬(내 퍼즐·
+  // 보관함)과 서버(전체 사용자, puzzleFetch) 모두 확인한다.
+  const checkPcDuplicate = async (id) => {
+    if (puzzles.some((p) => p.id === id)) return true;
+    if (archivedPuzzles && archivedPuzzles[id]) return true;
+    try { const remote = await puzzleFetch(puzzleNo(id)); if (remote) return true; } catch { }
+    return false;
+  };
   // 실제 전술 트리 생성 — FEN 포지션이거나(그 자체가 시작점), PGN에서 고른 특정 수(setupSans+mistakeSan)일 때 호출한다.
   const runPcGenerate = async (theme, setupSans, mistakeSan, fenRoot) => {
     setPcGen(null); setPcGenErr("");
@@ -18124,26 +18154,32 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     } catch { setPcGenErr("퍼즐 생성에 실패했어요. 잠시 후 다시 시도해주세요."); }
     finally { setPcGenerating(false); }
   };
-  // 2단계 — 퍼즐 유형을 고른다. FEN 포지션은 그 자체가 시작점이라 곧바로 생성하고, PGN은 그 유형
-  // (등급)에 실제로 해당하는 수들을 고를 수 있게 목록을 보여준다(필요하면 그 기보 전체를 한 번만 채점).
-  const pickPcTheme = async (theme) => {
-    if (!pcParsed || pcGenerating) return;
+  // FEN 모드 — 유형을 고르면(고를 수 있는 후보 목록이 없으므로) 곧바로 그 포지션 자체로 생성한다.
+  const pickPcThemeFen = async (theme) => {
+    if (!pcParsed || pcParsed.kind !== "fen" || pcGenerating) return;
+    const id = "fen:" + pcParsed.raw;
+    if (await checkPcDuplicate(id)) {
+      setPcDupMsg("이미 같은 퍼즐이 존재하여 퍼즐 만들기가 취소됩니다.");
+      resetPuzzleCreate();
+      setTimeout(() => setPcDupMsg(""), 3200);
+      return;
+    }
     setPcTheme(theme); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
-    if (pcParsed.kind === "fen") { runPcGenerate(theme, [], "", pcParsed.fenRoot); return; }
-    if (pcAnalyzeResult || pcAnalyzing) return; // 이미 채점했거나 채점 중이면 재사용
-    if (!engine || engine.status !== "ready") { setPcAnalyzeErr("엔진이 아직 준비되지 않았어요."); return; }
-    setPcAnalyzing(true); setPcAnalyzeErr("");
-    try {
-      const r = await analyzeGame(pcParsed.sans, engine, REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
-      setPcAnalyzeResult(r);
-    } catch { setPcAnalyzeErr("기보 채점에 실패했어요. 잠시 후 다시 시도해주세요."); }
-    finally { setPcAnalyzing(false); }
+    runPcGenerate(theme, [], "", pcParsed.fenRoot);
   };
-  // 3단계로 넘어가는 수 선택 — PGN 후보 목록에서 하나를 고르면 그 수를 mistakeSan으로 삼아 생성한다.
-  const pickPcMove = (m) => {
-    if (!pcParsed || pcParsed.kind !== "pgn") return;
-    setPcSelectedMove(m);
-    runPcGenerate(pcTheme, pcParsed.sans.slice(0, m.ply), m.san, null);
+  // PGN 모드 — 유형별로 미리 나열된 후보 목록에서 하나를 고르면 그 수를 mistakeSan으로 삼아 생성한다.
+  const pickPcMove = async (theme, m) => {
+    if (!pcParsed || pcParsed.kind !== "pgn" || pcGenerating) return;
+    const setupSans = pcParsed.sans.slice(0, m.ply), mistakeSan = m.san;
+    const id = setupSans.join(" ") + "|" + mistakeSan;
+    if (await checkPcDuplicate(id)) {
+      setPcDupMsg("이미 같은 퍼즐이 존재하여 퍼즐 만들기가 취소됩니다.");
+      resetPuzzleCreate();
+      setTimeout(() => setPcDupMsg(""), 3200);
+      return;
+    }
+    setPcTheme(theme); setPcSelectedMove(m); setPcGen(null); setPcGenErr("");
+    runPcGenerate(theme, setupSans, mistakeSan, null);
   };
   const pcCanSubmit = !!(pcParsed && pcTheme && pcGen && !pcGenerating && !pcCreating);
   // (사용자 요청) 3개 박스(PGN/FEN 입력·유형 선택·라인 미리보기)가 모두 끝나야 눌리는 "퍼즐 만들기"
@@ -18494,72 +18530,94 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               style={{ width: "100%", boxSizing: "border-box", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: SITE_FONT }} />
             {pcErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pcErr}</div>}
             {pcParsed && <div style={{ fontSize: 11.5, color: T.best, marginTop: 6, fontWeight: 700 }}>{pcParsed.kind === "fen" ? "FEN 포지션이 확인됐어요 — 이 위치 자체가 퍼즐 시작점이 돼요." : "기보가 확인됐어요(" + pcParsed.sans.length + "수) — 아래에서 퍼즐 유형을 고르면 그 유형에 맞는 수를 고를 수 있어요."}</div>}
-            <div className="flex items-center gap-2" style={{ marginTop: 8, flexWrap: "wrap" }}>
+            {/* (사용자 요청) "확인" 버튼을 박스 우하단에 둔다. */}
+            <div className="flex justify-end" style={{ marginTop: 8 }}>
               <button onClick={parsePcInput} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
-              {/* (사용자 요청) 유산 만들기와 같은 방식 — PGN을 직접 타이핑하는 대신, 내 chess.com 대국
-                  중 하나를 골라 그 기보를 텍스트로 채워 넣는다(유산 만들기처럼 마지막 수까지 그대로
-                  가져오되, 어느 수를 "다루는 수"로 삼을지는 여기서 직접 지워 조정할 수 있다). */}
-              <button onClick={() => setShowChesscomPicker((v) => !v)} disabled={!chesscomReady} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid " + T.brass, background: showChesscomPicker ? "rgba(196,154,80,.14)" : "transparent", color: chesscomReady ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 12, cursor: chesscomReady ? "pointer" : "default", opacity: chesscomReady ? 1 : 0.5 }}>chess.com 대국에서 선택{!chesscomReady ? " (설정에서 chess.com 계정을 연동하면 이용할 수 있어요)" : ""}</button>
             </div>
-            {showChesscomPicker && chesscomReady && (
+            {/* (사용자 요청) "chess.com 대국에서 선택" 토글 버튼을 없애고, 연동돼 있으면 입력 박스 아래에
+                chess.com 통계·최근 대국 목록을 기본으로 펼쳐 둔다 — 유산 만들기처럼 그 자리에서 바로
+                고를 수 있다. */}
+            {chesscomReady && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
                 <AccountChessStats chesscom={chesscom} username={chesscomUsername} onSelectGame={(g) => {
                   setPcInput(sansToPgnText(g.moves, "w")); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
-                  setShowChesscomPicker(false);
                 }} />
               </div>
             )}
           </div>
-          {/* 2단계 — 퍼즐 유형 선택(PGN 한 수가 여러 전술을 동시에 만족할 수 있어 직접 고른다). 표시할
-              요소(테마 버튼의 등급 아이콘, PGN 후보 수 목록)가 많아져 기본 높이를 넉넉히 잡는다. */}
+          {/* (사용자 요청) 같은 PGN·FEN 퍼즐이 이미 있어 취소됐을 때 뜨는 알림 — 처음(1단계)으로
+              되돌아간 화면 위쪽에 잠깐 떴다가 사라진다. */}
+          {pcDupMsg && <div style={{ marginBottom: 10, padding: "10px 13px", borderRadius: 10, background: "rgba(200,69,59,.14)", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5 }}>{pcDupMsg}</div>}
+          {/* 2단계 — 퍼즐 유형 선택(PGN 한 수가 여러 전술을 동시에 만족할 수 있어 직접 고른다). 유형
+              버튼을 먼저 누르게 하지 않고, PGN이 확인되는 즉시 세 유형의 후보를 모두 미리 불러와
+              각 유형 아래에 나열한다 — 우상단에 채점 진행률(%)을 실시간으로 보여준다. 표시할 요소가
+              많아져 기본 높이를 넉넉히 잡는다. */}
           {pcParsed && (
-            <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10, minHeight: 220 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>2. 퍼즐 유형 선택</div>
-              <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
-                {[["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]].map(([k, lb]) => (
-                  <button key={k} onClick={() => pickPcTheme(k)} disabled={pcGenerating || pcAnalyzing} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 14px", borderRadius: 999, border: "1px solid " + (pcTheme === k ? T.brass : "#C9B58C"), background: pcTheme === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pcTheme === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 12, cursor: (pcGenerating || pcAnalyzing) ? "default" : "pointer" }}>
-                    {/* (사용자 요청) 퍼즐 유형에 따라 chess.com 수 아이콘 표시 — 실수 응징하기는 실수·
-                        블런더 두 등급을 함께 다루므로 두 아이콘을 살짝 겹쳐 보여준다. */}
-                    <span style={{ display: "inline-flex", alignItems: "center" }}>
-                      {PC_THEME_KINDS[k].map((kind, i) => (
-                        <span key={kind} style={{ width: 16, height: 16, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginLeft: i > 0 ? -6 : 0, border: "1.5px solid " + (pcTheme === k ? T.brass : T.paper), boxSizing: "content-box" }}>{badgeIcon(kind, 11)}</span>
-                      ))}
-                    </span>
-                    {lb}
-                  </button>
-                ))}
+            <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10, minHeight: 280 }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>2. 퍼즐 유형 선택</div>
+                {pcParsed.kind === "pgn" && (pcAnalyzing || pcAnalyzeResult) && (
+                  <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{Math.round((pcAnalyzeResult ? 1 : pcAnalyzeProgress) * 100)}% 분석됨</div>
+                )}
               </div>
-              {pcAnalyzing && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 10 }}>기보를 채점하는 중...</div>}
-              {pcAnalyzeErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 10 }}>{pcAnalyzeErr}</div>}
-              {/* (사용자 요청) PGN에서는 마지막 수를 무조건 쓰는 대신, 유산 만들기처럼 그 유형에 실제로
-                  해당하는 수 목록을 나열해 직접 고른다. */}
-              {pcTheme && pcParsed.kind === "pgn" && pcAnalyzeResult && (
-                <div style={{ marginTop: 10 }}>
-                  {(() => {
-                    const kinds = PC_THEME_KINDS[pcTheme];
-                    const qualifying = pcAnalyzeResult.moves.filter((m) => kinds.includes(m.kind));
-                    if (!qualifying.length) return <div style={{ fontSize: 11.5, color: T.inkSoft }}>이 기보에는 "{kinds.map((k) => QLABEL[k]).join("·")}"로 채점된 수가 없어요. 다른 PGN이나 유형으로 시도해 보세요.</div>;
-                    return (
-                      <>
-                        <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>"{kinds.map((k) => QLABEL[k]).join("·")}"로 채점된 수 중 하나를 골라 주세요.</p>
-                        <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                          {qualifying.map((m) => (
-                            <button key={m.ply} onClick={() => pickPcMove(m)} disabled={pcGenerating} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: "1px solid " + (pcSelectedMove && pcSelectedMove.ply === m.ply ? T.brass : QCOLOR[m.kind]), background: pcSelectedMove && pcSelectedMove.ply === m.ply ? "rgba(196,154,80,.14)" : "#fff", cursor: pcGenerating ? "default" : "pointer", textAlign: "left" }}>
-                              <span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 14)}</span>
-                              <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    );
-                  })()}
+              {pcParsed.kind === "fen" ? (
+                // FEN은 고를 후보 수 자체가 없다(포지션 자체가 시작점) — 유형을 고르면 곧바로 생성한다.
+                <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+                  {[["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]].map(([k, lb]) => (
+                    <button key={k} onClick={() => pickPcThemeFen(k)} disabled={pcGenerating} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 14px", borderRadius: 999, border: "1px solid " + (pcTheme === k ? T.brass : "#C9B58C"), background: pcTheme === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pcTheme === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 12, cursor: pcGenerating ? "default" : "pointer" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center" }}>
+                        {PC_THEME_KINDS[k].map((kind, i) => (
+                          <span key={kind} style={{ width: 16, height: 16, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginLeft: i > 0 ? -6 : 0, border: "1.5px solid " + (pcTheme === k ? T.brass : T.paper), boxSizing: "content-box" }}>{badgeIcon(kind, 11)}</span>
+                        ))}
+                      </span>
+                      {lb}
+                    </button>
+                  ))}
                 </div>
+              ) : (
+                <>
+                  {pcAnalyzeErr && <div style={{ fontSize: 11.5, color: T.blunder }}>{pcAnalyzeErr}</div>}
+                  {pcAnalyzing && !pcAnalyzeResult && <div style={{ fontSize: 11.5, color: T.inkSoft }}>기보를 채점하는 중...</div>}
+                  {/* (사용자 요청) 유형 버튼을 먼저 고르게 하지 않고, 세 유형 모두 후보를 한꺼번에
+                      나열한다 — 아이콘으로 각 유형이 어떤 등급을 다루는지 보여준다. */}
+                  {pcAnalyzeResult && [["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]].map(([k, lb]) => {
+                    const kinds = PC_THEME_KINDS[k];
+                    const qualifying = pcAnalyzeResult.moves.filter((m) => kinds.includes(m.kind));
+                    return (
+                      <div key={k} style={{ marginBottom: 12 }}>
+                        <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+                          <span style={{ display: "inline-flex", alignItems: "center" }}>
+                            {kinds.map((kind, i) => (
+                              <span key={kind} style={{ width: 16, height: 16, borderRadius: "50%", background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginLeft: i > 0 ? -6 : 0, border: "1.5px solid " + T.paper, boxSizing: "content-box" }}>{badgeIcon(kind, 11)}</span>
+                            ))}
+                          </span>
+                          <span style={{ fontWeight: 800, fontSize: 12, color: T.ink }}>{lb}</span>
+                          <span style={{ fontSize: 10.5, color: T.inkSoft }}>{qualifying.length}개</span>
+                        </div>
+                        {qualifying.length === 0 ? (
+                          <div style={{ fontSize: 11, color: T.inkSoft }}>이 기보에는 "{kinds.map((kk) => QLABEL[kk]).join("·")}"로 채점된 수가 없어요.</div>
+                        ) : (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                            {qualifying.map((m) => (
+                              <button key={m.ply} onClick={() => pickPcMove(k, m)} disabled={pcGenerating} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, border: "1px solid " + (pcSelectedMove && pcSelectedMove.ply === m.ply && pcTheme === k ? T.brass : QCOLOR[m.kind]), background: pcSelectedMove && pcSelectedMove.ply === m.ply && pcTheme === k ? "rgba(196,154,80,.14)" : "#fff", cursor: pcGenerating ? "default" : "pointer" }}>
+                                <span style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 12)}</span>
+                                <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 12.5, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
               )}
               {pcGenerating && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 10 }}>전술 라인을 찾는 중...</div>}
               {pcGenErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 10 }}>{pcGenErr}</div>}
             </div>
           )}
-          {/* 3단계 — 생성된 라인 미리보기(생성자 권한 박스, 만든 뒤에도 이어서 조정할 수 있다) */}
+          {/* 3단계 — 생성된 라인 미리보기(생성자 권한 박스, 만든 뒤에도 이어서 조정할 수 있다). 생성자는
+              이미 이 트리를 볼 권한이 있으므로(사용자 요청) 일반 풀이 화면과 달리 고스트 처리 없이
+              라인 전체를 그대로 보여준다(revealAll). */}
           {pcTheme && pcGen && (
             <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>3. 퍼즐 라인 편집 (생성자 권한)</div>
@@ -18568,9 +18626,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                 allLines={pcGen.lines} solvedNow={new Set()} curKeys={[]} exploredKeys={new Set()}
                 setupSans={pcParsed.kind === "pgn" && pcSelectedMove ? pcParsed.sans.slice(0, pcSelectedMove.ply + 1) : []}
                 setupLen={pcParsed.kind === "pgn" && pcSelectedMove ? pcSelectedMove.ply + 1 : 0}
-                onPick={() => {}} canEdit={false}
+                onPick={() => {}} canEdit={false} revealAll
                 fenRoot={pcParsed.kind === "fen" ? pcParsed.fenRoot : null} />
-              <button onClick={() => (pcParsed.kind === "fen" ? runPcGenerate(pcTheme, [], "", pcParsed.fenRoot) : pcSelectedMove && pickPcMove(pcSelectedMove))} className="press" style={{ marginTop: 8, padding: "6px 12px", borderRadius: 9, background: "transparent", border: "1px solid #C9B58C", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>다시 생성</button>
+              <button onClick={() => (pcParsed.kind === "fen" ? runPcGenerate(pcTheme, [], "", pcParsed.fenRoot) : pcSelectedMove && pickPcMove(pcTheme, pcSelectedMove))} className="press" style={{ marginTop: 8, padding: "6px 12px", borderRadius: 9, background: "transparent", border: "1px solid #C9B58C", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>다시 생성</button>
             </div>
           )}
           {/* 완료 — 취소·퍼즐 만들기 */}
@@ -19811,6 +19869,13 @@ const CHANGELOG = [
       "PGN·FEN 정보가 있는 퍼즐은 퍼즐 카드의 레이팅 배지 왼쪽에 각각 PGN·FEN 표시가 떠요(둘 다 있으면 둘 다 표시돼요). 퍼즐 풀이 카드(실제로 푸는 화면)에도 똑같이 표시돼요.",
       "퍼즐 카드의 레이팅 배지를 누르면 이 퍼즐의 레이팅·내 레이팅(그 차이)·체감 난이도(매우 쉬움~매우 어려움)를 보여주는 말풍선이 떠요(모바일에서도 안 잘려요). 차이와 난이도는 값에 따라 색이 달라져요. 퍼즐 풀이 카드의 레이팅 배지에도 똑같이 적용돼요.",
       "퍼즐 만들기에서 PGN의 마지막 수를 무조건 쓰는 대신, 유산 만들기처럼 고른 유형(기물 희생하기·우위 점하기·실수 응징하기)에 실제로 해당하는 수 목록에서 직접 골라 퍼즐을 만들 수 있어요. 유형 버튼에는 그에 맞는 chess.com 수 아이콘이 함께 표시돼요.",
+      "퍼즐 레이팅에 쓰이는 아이콘이 하단 탭의 퍼즐 아이콘과 통일됐어요.",
+      "퍼즐 카드의 PGN/FEN 표시가 더 잘 보이는 색으로 바뀌었어요.",
+      "퍼즐 카드의 좋아요·리포스트·공유 버튼이 조금 더 커졌어요.",
+      "퍼즐 만들기 1단계에서 'chess.com에서 선택' 버튼이 없어지고, 연동돼 있으면 입력 박스 아래에 chess.com 대국 통계가 바로 나타나요. '확인' 버튼은 박스 우하단으로 옮겨졌어요.",
+      "퍼즐 만들기 2단계가 개편됐어요 — 유형을 먼저 고르지 않아도, PGN을 확인하는 즉시 세 유형에 해당하는 수를 모두 미리 불러와 각 유형 아래에 나열해요. 박스 우상단에 기보 분석 진행률이 %로 실시간 표시돼요.",
+      "퍼즐 만들기 3단계 미리보기에서는 아직 두지 않은 갈래를 가리지 않고 라인 전체를 그대로 보여줘요.",
+      "퍼즐 만들기에서 같은 PGN·FEN으로 이미 만들어진 퍼즐이 있으면 2단계에서 생성을 막고, 알림 후 처음부터 다시 시작하게 안내해요.",
     ]
   },
   {
@@ -23828,7 +23893,7 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
         {pub.puzzleRating != null && (
           <ClickInfoBadge text={"퍼즐 레이팅 : " + fmtFull(pub.puzzleRating)}>
             <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>
-              <Puzzle size={12} /> {fmtFull(pub.puzzleRating)}
+              <MaterialIcon name="extension" size={12} /> {fmtFull(pub.puzzleRating)}
             </span>
           </ClickInfoBadge>
         )}
