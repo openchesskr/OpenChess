@@ -15581,7 +15581,7 @@ function PuzzleClearBanner({ trigger }) {
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn }) {
   const theme = primaryTheme(puzzle);
   const setup = useMemo(() => [...(puzzle.setupSans || []), puzzle.mistakeSan].filter(Boolean), [puzzle.id]);
   // (v0.4.1 기능, item 5) FEN 기반 사용자 생성 퍼즐 — setupSans(대국에서 이어지는 실제 수순)가 없고
@@ -16273,9 +16273,33 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       )}
       <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
-      {/* (사용자 요청) 퍼즐 레이팅 — 풀이 카드 우측 여백(닫기 버튼 바로 아래)에 표시. */}
-      <div title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ position: "absolute", top: 48, right: 12, zIndex: 9, padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</div>
-      <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 38, gap: 8 }}>
+      {/* (사용자 요청) 퍼즐 레이팅 — 풀이 카드 우측 여백(닫기 버튼 바로 아래)에 표시. 카드(그리드
+          블록)에 적용했던 PGN/FEN 배지·레이팅 말풍선을 이 풀이 카드에도 그대로 적용한다. */}
+      <div style={{ position: "absolute", top: 48, right: 12, zIndex: 9, display: "flex", alignItems: "center", gap: 4 }}>
+        {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid rgba(196,154,80,.45)", background: "rgba(196,154,80,.1)" }}>PGN</span>}
+        {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid rgba(196,154,80,.45)", background: "rgba(196,154,80,.1)" }}>FEN</span>}
+        {myPuzzleRating != null ? (() => {
+          const diff = avgRating - myPuzzleRating;
+          const tier = puzzleDifficultyTier(diff);
+          const deltaColor = diff <= -20 ? "#2E8B57" : diff >= 20 ? "#D9534F" : T.inkSoft;
+          return (
+            <ClickInfoBadge width={210} align="left" content={
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
+                <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
+                <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
+              </div>
+            }>
+              <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000) — 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
+            </ClickInfoBadge>
+          );
+        })() : (
+          <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
+        )}
+      </div>
+      {/* (사용자 요청) PGN/FEN 배지가 레이팅 박스 왼쪽에 추가로 붙어 그 자리가 넓어진 만큼, 제목
+          영역이 겹치지 않도록 오른쪽 여백을 넉넉히 늘렸다(38→130). */}
+      <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 130, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{livePuzzleName(puzzle)}</div>
@@ -18366,7 +18390,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
   // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
   // 아무거나 클릭만 하면 항상 재현됨). 조기 반환을 이 컴포넌트의 모든 훅 호출 뒤로 옮겨 해결한다.
-  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} />;
   // (버그 수정) 예전엔 openingKeyOf(최상위 이름 하나)와 정확히 일치해야만 매칭됐다 — 세부 갈래
   // 이름(예: "…Najdorf Variation, English Attack")을 선택하면, 그 이름이 퍼즐의 firstNamedOpening과
   // 다르므로(항상 최상위 이름만 반환) 절대 매칭될 수 없었다. 이제는 그 퍼즐의 수순이 실제로 지나는
@@ -19784,8 +19808,8 @@ const CHANGELOG = [
       "정렬·필터 드롭다운이 개발자의 수 키워드 편집 박스와 같은 어두운 카드 레이아웃으로 바뀌었어요.",
       "로그인하지 않은 상태에서는 퍼즐 만들기 기능을 쓸 수 없어요.",
       "정렬·필터 드롭다운에 전체/PGN/FEN 구분이 추가됐어요.",
-      "PGN·FEN 정보가 있는 퍼즐은 퍼즐 카드의 레이팅 배지 왼쪽에 각각 PGN·FEN 표시가 떠요(둘 다 있으면 둘 다 표시돼요).",
-      "퍼즐 카드의 레이팅 배지를 누르면 이 퍼즐의 레이팅·내 레이팅(그 차이)·체감 난이도(매우 쉬움~매우 어려움)를 보여주는 말풍선이 떠요(모바일에서도 안 잘려요). 차이와 난이도는 값에 따라 색이 달라져요.",
+      "PGN·FEN 정보가 있는 퍼즐은 퍼즐 카드의 레이팅 배지 왼쪽에 각각 PGN·FEN 표시가 떠요(둘 다 있으면 둘 다 표시돼요). 퍼즐 풀이 카드(실제로 푸는 화면)에도 똑같이 표시돼요.",
+      "퍼즐 카드의 레이팅 배지를 누르면 이 퍼즐의 레이팅·내 레이팅(그 차이)·체감 난이도(매우 쉬움~매우 어려움)를 보여주는 말풍선이 떠요(모바일에서도 안 잘려요). 차이와 난이도는 값에 따라 색이 달라져요. 퍼즐 풀이 카드의 레이팅 배지에도 똑같이 적용돼요.",
       "퍼즐 만들기에서 PGN의 마지막 수를 무조건 쓰는 대신, 유산 만들기처럼 고른 유형(기물 희생하기·우위 점하기·실수 응징하기)에 실제로 해당하는 수 목록에서 직접 골라 퍼즐을 만들 수 있어요. 유형 버튼에는 그에 맞는 chess.com 수 아이콘이 함께 표시돼요.",
     ]
   },
