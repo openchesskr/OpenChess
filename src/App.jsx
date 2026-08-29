@@ -8,6 +8,7 @@ import {
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
+  Camera, Image as ImageIcon, FolderOpen, Cloud,
 } from "lucide-react";
 
 /* ============================================================ 디자인 토큰 ============================================================ */
@@ -630,6 +631,28 @@ function fenToBoard(fen) {
   return board;
 }
 function looksLikeFen(s) { return /^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}\b/.test((s || "").trim()); }
+// (v0.4.2 기능) 사용자 요청 — 이미지 스캔이 체스판 배치뿐 아니라 PGN/FEN 텍스트 사진도 인식하도록
+// 서버(api/scan-board.js)가 확장됐다. 보드 편집기·퍼즐 만들기 마법사 양쪽에서 재사용하는 공용 호출
+// 함수 — 파일을 base64로 읽어 서버에 보내고, { type:"board", fen_board } 또는
+// { type:"text", recognized_text }를 그대로 돌려준다(실패 시 throw).
+async function scanImageFile(file) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl || "");
+  if (!m) throw new Error("이미지를 읽지 못했어요.");
+  const r = await fetch("/api/scan-board", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ image: m[2], mediaType: m[1] }),
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok || !data) throw new Error((data && data.error) || "이미지 인식에 실패했어요.");
+  return data;
+}
 // (사용자 요청) 분석 탭 메인 보드의 "FEN 모드" — 붙여넣은 FEN의 기물 배치뿐 아니라 차례·캐슬링
 // 권리·앙파상까지 전부 읽어 그 위치에서부터 실제로 이어서 둘 수 있게 한다. 표준 시작 위치를 가정하는
 // 공용 replaySans/boardFromSans(모듈 전역 캐시, 앱 전체가 표준 시작 위치를 전제로 공유)는 건드리지
@@ -5045,36 +5068,44 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setFenErr("");
     } catch { setFenErr("클립보드를 읽을 수 없어요."); }
   };
-  // (v0.3.5 기능 → v0.3.9 백엔드 재전환) 사용자 요청 — 이미지 스캔(사진 → FEN). 서버(api/scan-board.js,
-  // Gemini API)에 보드 배치만 물어보고, 캐슬링 권리·차례는 사용자가 이미 이 화면에서 설정해 둔 값을
-  // 그대로 둔다(사진만으로는 알 수 없는 정보라 서버도 이 값을 추측하지 않는다).
-  const scanInputRef = useRef(null);
+  // (v0.3.5 기능 → v0.3.9 백엔드 재전환 → v0.4.2 텍스트 인식 확장) 사용자 요청 — 이미지 스캔(사진 →
+  // FEN). 서버(api/scan-board.js, Gemini API)가 이제 체스판 배치 사진뿐 아니라 PGN/FEN 텍스트가 담긴
+  // 사진도 인식한다. 보드 배치 사진이면 여전히 캐슬링 권리·차례는 사용자가 이미 이 화면에서 설정해
+  // 둔 값을 그대로 두고, 텍스트(PGN 기보 또는 FEN 코드)면 FEN은 그대로 적용하고 PGN이면 그 수순을
+  // 끝까지 재생해 최종 포지션을 보드에 적용한다(보드 편집기는 배치만 다루므로 수순 자체는 저장하지
+  // 않는다).
   const [scanning, setScanning] = useState(false);
-  const onScanFile = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
+  const onScanFile = async (file) => {
     setScanning(true); setFenErr("");
     try {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl || "");
-      if (!m) { setFenErr("이미지를 읽지 못했어요."); return; }
-      const r = await fetch("/api/scan-board", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image: m[2], mediaType: m[1] }),
-      });
-      const data = await r.json().catch(() => null);
-      if (!r.ok || !data || !data.fen_board) { setFenErr((data && data.error) || "이미지에서 체스판을 인식하지 못했어요."); return; }
-      const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
-      if (!p) { setFenErr("인식된 배치를 적용할 수 없었어요."); return; }
-      pushSnap({ board: p.board });
-    } catch { setFenErr("이미지 스캔에 실패했어요."); }
+      const data = await scanImageFile(file);
+      if (data.type === "board" && data.fen_board) {
+        const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
+        if (!p) { setFenErr("인식된 배치를 적용할 수 없었어요."); return; }
+        pushSnap({ board: p.board });
+        return;
+      }
+      if (data.type === "text" && data.recognized_text) {
+        const raw = data.recognized_text.trim();
+        if (looksLikeFen(raw)) {
+          const p = parseFenFull(raw);
+          if (!p) { setFenErr("인식된 FEN 형식이 올바르지 않아요."); return; }
+          pushSnap({ board: p.board, turn: p.turn, rights: p.rights });
+          return;
+        }
+        const moves = parsePgnMoves(raw);
+        let board = startBoard(), ok = moves.length > 0;
+        for (let i = 0; i < moves.length && ok; i++) {
+          const color = i % 2 === 0 ? "w" : "b";
+          if (!sanSrc(board, moves[i], color)) { ok = false; break; }
+          board = applySan(board, moves[i], color);
+        }
+        if (!ok) { setFenErr("인식된 기보를 적용할 수 없었어요."); return; }
+        pushSnap({ board });
+        return;
+      }
+      setFenErr("이미지에서 체스판이나 기보를 인식하지 못했어요.");
+    } catch (e) { setFenErr((e && e.message) || "이미지 스캔에 실패했어요."); }
     finally { setScanning(false); }
   };
   const handleDone = () => { const p = parseFenFull(fenText); if (p) onApply(p); };
@@ -5159,8 +5190,8 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   );
   const scanAndHistoryRow = (
     <div className="flex items-center justify-between">
-      <input ref={scanInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onScanFile} />
-      <button onClick={() => scanInputRef.current && scanInputRef.current.click()} disabled={scanning} title="사진에서 체스판 배치 읽기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: scanning ? "rgba(255,255,255,.06)" : T.ebony2, color: scanning ? "rgba(244,238,226,.4)" : T.brassHi, fontWeight: 700, fontSize: 11.5, border: "1px solid " + (scanning ? "rgba(255,255,255,.15)" : "#000"), cursor: scanning ? "default" : "pointer" }}><ScanLine size={13} /> {scanning ? "인식하는 중..." : "이미지 스캔"}</button>
+      <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label="이미지 스캔" busyLabel="인식하는 중..."
+        buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: scanning ? "rgba(255,255,255,.06)" : T.ebony2, color: scanning ? "rgba(244,238,226,.4)" : T.brassHi, fontWeight: 700, fontSize: 11.5, border: "1px solid " + (scanning ? "rgba(255,255,255,.15)" : "#000"), cursor: scanning ? "default" : "pointer" }} />
       <div className="flex items-center" style={{ gap: 4 }}>
         <button onClick={rewind} disabled={!canUndo} title="처음으로" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsLeft size={15} /></button>
         <button onClick={undo} disabled={!canUndo} title="되돌리기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
@@ -5362,19 +5393,88 @@ function ClickInfoBadge({ children, text, content, width = 180, align = "center"
     window.addEventListener("scroll", onScroll, true);
     return () => window.removeEventListener("scroll", onScroll, true);
   }, [open]);
+  // (버그 수정, 사용자 제보) 이 배지가 framer-motion으로 애니메이션되는 조상(퍼즐 카드를 감싸는
+  // FadeIn의 motion.div 등 — 애니메이션 중이 아니어도 transform: translateY(0)처럼 항상 값이 남아
+  // 있어 CSS containing block을 만든다) 안에 있으면, position:fixed는 더 이상 뷰포트가 아니라 그
+  // 조상 기준으로 계산돼 말풍선이 엉뚱한 위치에 잠깐(그 조상의 transform이 자리 잡기 전까지) 나타나거나
+  // 그 조상의 overflow에 잘렸다. document.body로 포털을 띄워 어떤 조상의 transform·overflow와도
+  // 완전히 무관하게 항상 실제 뷰포트 기준으로 정확히 그려지도록 한다.
+  const popup = open && pos && (
+    <>
+      <span onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+      <span style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width, padding: "8px 11px", borderRadius: 9, background: T.ivoryHi, border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 9999, fontSize: 12, fontWeight: 800, color: T.ink, textAlign: align, display: "block" }}>
+        {content || text}
+        <span style={{ position: "absolute", ...(pos.openDown ? { top: -6 } : { bottom: -6 }), left: pos.tailX, transform: "translateX(-50%) rotate(45deg)", width: 11, height: 11, background: T.ivoryHi, ...(pos.openDown ? { borderLeft: "1px solid " + T.brass, borderTop: "1px solid " + T.brass } : { borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass }) }} />
+      </span>
+    </>
+  );
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
       <span ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>{children}</span>
-      {open && pos && (
-        <>
-          <span onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <span style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width, padding: "8px 11px", borderRadius: 9, background: T.ivoryHi, border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 41, fontSize: 12, fontWeight: 800, color: T.ink, textAlign: align, display: "block" }}>
-            {content || text}
-            <span style={{ position: "absolute", ...(pos.openDown ? { top: -6 } : { bottom: -6 }), left: pos.tailX, transform: "translateX(-50%) rotate(45deg)", width: 11, height: 11, background: T.ivoryHi, ...(pos.openDown ? { borderLeft: "1px solid " + T.brass, borderTop: "1px solid " + T.brass } : { borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass }) }} />
-          </span>
-        </>
-      )}
+      {popup && typeof document !== "undefined" && createPortal(popup, document.body)}
     </span>
+  );
+}
+// (v0.4.2 기능) 사용자 요청 — 이미지 스캔 버튼을 누르면 곧장 OS 파일 선택창을 띄우는 대신, 먼저
+// "카메라로 촬영/갤러리에서 선택/내 파일에서 선택/Google Photo에서 선택" 중 어디서 이미지를 가져올지
+// 고르게 한다. 모바일에서 <input type=file accept="image/*">가 브라우저·기기에 따라 곧장 Google
+// Photos 같은 특정 앱으로만 열리던 문제 — capture 속성 유무로 카메라와 일반 선택을 구분하고, 나머지
+// 세 선택지는(웹 표준상 OS 파일 선택창 자체가 무엇을 보여줄지는 웹 코드가 강제할 수 없어) 각각 독립된
+// <input type=file>로 열어, 최소한 "카메라 촬영"만은 항상 확실히 분리되고 나머지도 사용자가 원하는
+// 경로를 먼저 명시적으로 고른 뒤 OS 선택창이 뜨게 한다.
+function ImageSourceMenu({ onFile, disabled, label = "이미지 스캔", busy, busyLabel = "인식하는 중...", buttonStyle, iconOnly }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const camRef = useRef(null), galRef = useRef(null), fileRef = useRef(null), gphotoRef = useRef(null);
+  const openMenu = (e) => {
+    e.stopPropagation();
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const margin = 10, w = 208;
+      const left = Math.max(margin, Math.min(rect.left, window.innerWidth - w - margin));
+      const spaceBelow = window.innerHeight - rect.bottom - margin;
+      const spaceAbove = rect.top - margin;
+      const openDown = spaceBelow >= spaceAbove;
+      setPos({ left, top: openDown ? rect.bottom + 6 : undefined, bottom: openDown ? undefined : window.innerHeight - rect.top + 6 });
+    }
+    setOpen(true);
+  };
+  useEffect(() => {
+    if (!open) return;
+    const onScroll = () => setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [open]);
+  const pick = (ref) => { setOpen(false); ref.current && ref.current.click(); };
+  const onChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (file) onFile(file);
+  };
+  const menu = open && pos && (
+    <>
+      <span onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 80 }} />
+      <div style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width: 208, zIndex: 81, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 10, padding: 5, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", display: "flex", flexDirection: "column", gap: 1 }}>
+        {[["카메라로 촬영", Camera, camRef], ["갤러리에서 선택", ImageIcon, galRef], ["내 파일에서 선택", FolderOpen, fileRef], ["Google Photo에서 선택", Cloud, gphotoRef]].map(([lb, Icon, ref]) => (
+          <button key={lb} onClick={() => pick(ref)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
+            <Icon size={14} color={T.brassHi} />{lb}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+  return (
+    <>
+      <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={onChange} />
+      <input ref={galRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
+      <input ref={gphotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
+      <button ref={btnRef} onClick={openMenu} disabled={disabled} title={iconOnly ? label : undefined} className="press" style={buttonStyle}>
+        <ScanLine size={13} /> {!iconOnly && (busy ? busyLabel : label)}
+      </button>
+      {menu && typeof document !== "undefined" && createPortal(menu, document.body)}
+    </>
   );
 }
 // (v0.4.1 기능, item 6) 사용자 요청 — 퍼즐/유산 만들기 2단계의 후보 수 버튼을 꾹 누르면(모바일) 또는
@@ -16352,41 +16452,40 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       )}
       <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
-      {/* (사용자 요청) 퍼즐 레이팅 — 풀이 카드 우측 여백(닫기 버튼 바로 아래)에 표시. 카드(그리드
-          블록)에 적용했던 PGN/FEN 배지·레이팅 말풍선을 이 풀이 카드에도 그대로 적용한다. */}
-      <div style={{ position: "absolute", top: 48, right: 12, zIndex: 9, display: "flex", alignItems: "center", gap: 4 }}>
-        {/* (사용자 요청) 카드(그리드 블록)와 같은 파란 계열(T.only)로 통일. */}
-        {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
-        {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
-        {myPuzzleRating != null ? (() => {
-          const diff = avgRating - myPuzzleRating;
-          const tier = puzzleDifficultyTier(diff);
-          const deltaColor = diff <= -20 ? "#2E8B57" : diff >= 20 ? "#D9534F" : T.inkSoft;
-          return (
-            <ClickInfoBadge width={210} align="left" content={
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
-                <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
-                <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
-              </div>
-            }>
-              <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000) — 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
-            </ClickInfoBadge>
-          );
-        })() : (
-          <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
-        )}
-      </div>
-      {/* (사용자 요청) PGN/FEN 배지가 레이팅 박스 왼쪽에 추가로 붙어 그 자리가 넓어진 만큼, 제목
-          영역이 겹치지 않도록 오른쪽 여백을 넉넉히 늘렸다(38→130). */}
-      <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 130, gap: 8 }}>
+      {/* (사용자 요청) PGN/FEN 배지·퍼즐 레이팅 박스를 닫기 버튼 아래 별도 줄(절대 위치) 대신, 제작자
+          표시와 같은 줄로 내렸다 — 제목 영역이 더는 그 자리를 피해 오른쪽 여백을 넓게 잡을 필요가
+          없어져, 제목을 한 줄에 더 길게 보여줄 수 있다. */}
+      <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 40, gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{livePuzzleName(puzzle)}</div>
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
-          {/* (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 카드에 생성자를 표시. 생성자가 아직 없는(예:
-              이 기능이 생기기 전에 만들어졌거나 게스트가 최초 공유한) 퍼즐은 아무것도 보여주지 않는다. */}
-          {creatorInfo && creatorInfo.username && <div style={{ fontSize: 10.5, color: T.brass, fontWeight: 700, marginTop: 3 }}>제작 · @{creatorInfo.username}</div>}
+          {/* (사용자 요청) 제작자 표시의 "제작 · " 접두사를 없애고 아이디만 보여준다. 카드(그리드
+              블록)와 같은 파란 계열(T.only)의 PGN/FEN 배지, 퍼즐 레이팅 말풍선도 이 줄에 함께
+              둔다(모두 없을 수도 있는 요소라 flex-wrap으로 자연스럽게 줄바꿈된다). */}
+          <div className="flex items-center flex-wrap" style={{ gap: 6, marginTop: 4 }}>
+            {creatorInfo && creatorInfo.username && <span style={{ fontSize: 10.5, color: T.brass, fontWeight: 700 }}>@{creatorInfo.username}</span>}
+            {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
+            {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
+            {myPuzzleRating != null ? (() => {
+              const diff = avgRating - myPuzzleRating;
+              const tier = puzzleDifficultyTier(diff);
+              const deltaColor = diff <= -20 ? "#2E8B57" : diff >= 20 ? "#D9534F" : T.inkSoft;
+              return (
+                <ClickInfoBadge width={210} align="left" content={
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
+                    <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
+                    <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
+                  </div>
+                }>
+                  <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000) — 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
+                </ClickInfoBadge>
+              );
+            })() : (
+              <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
+            )}
+          </div>
           {/* (20차 기능1) 별: 라인 1개 이상 ★1 · 50% 이상 ★2 · 전부 ★3 */}
           <div className="flex items-center" style={{ gap: 7, marginTop: 5 }}>
             <LineStars total={3} solved={starsOf(solvedNow.size, totalLines)} />
@@ -16821,7 +16920,7 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose }) {
 // 못박고, 그 안에 실제로 다 안 들어가면(scrollHeight > clientHeight) 글자 크기를 0.5px씩
 // 줄여가며 다시 재는 식으로 맞춘다 — 이름이 아무리 길어도 카드 높이는 항상 똑같이 유지되고,
 // 유난히 긴 이름만 글자가 조금 작아진다(최소 7px 밑으로는 더 줄이지 않고 그대로 둔다).
-const PUZZLE_NAME_BASE_FS = 11, PUZZLE_NAME_LINE_H = 1.35, PUZZLE_NAME_MIN_FS = 7;
+const PUZZLE_NAME_BASE_FS = 12, PUZZLE_NAME_LINE_H = 1.35, PUZZLE_NAME_MIN_FS = 7;
 const PUZZLE_NAME_BOX_H = Math.round(PUZZLE_NAME_BASE_FS * PUZZLE_NAME_LINE_H * 2);
 function FitPuzzleName({ text }) {
   const ref = useRef(null);
@@ -16936,8 +17035,10 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             다 안 들어가는 이름만 글자 크기를 줄여서 맞춘다(위 정의부 참고) — 카드 높이는 항상
             균일하게 유지된다. */}
         <FitPuzzleName text={livePuzzleName(p)} />
+        {/* (사용자 요청) 퍼즐 유형·라인 개수를 알려주는 텍스트는 지운다 — 손상된(라인 0개) 퍼즐 경고만
+            남긴다(유용한 오류 표시라 지우지 않는다). */}
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
-          <span style={{ fontSize: 9, color: broken ? T.blunder : T.inkSoft, fontWeight: broken ? 800 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{broken ? "⚠ 손상된 퍼즐(라인 0개)" : themeLabelsOf(p) + " · 라인 " + totalLines + "개"}</span>
+          {broken ? <span style={{ fontSize: 9, color: T.blunder, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>⚠ 손상된 퍼즐(라인 0개)</span> : <span />}
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: SITE_FONT, fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
@@ -16974,25 +17075,25 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>
             ))}
             {/* (사용자 요청) 좋아요·리포스트·공유 버튼을 조금 더 크게 — 아이콘·글자 크기를 한 단계씩 키움. */}
-            <div className="flex items-center" style={{ gap: 9, marginLeft: "auto" }}>
+            <div className="flex items-center" style={{ gap: 10, marginLeft: "auto" }}>
             {/* (v0.1.0) 리포스트·공유 — 좋아요와 같은 자리에, 풀이수/좋아요와 무관한 별개 참여 지표로 노출 */}
-            {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-              <Repeat2 size={15} color={isReposted ? T.brilliant : T.inkSoft} />
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
+            {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Repeat2 size={17} color={isReposted ? T.brilliant : T.inkSoft} />
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
             </button>}
             {/* (v0.1.1) 공유 수는 눌러도 아무 동작 없는 순수 표시(집계)이고, 실제 공유 시트는 바로 옆의 별도 버튼이 연다 */}
-            <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-              <Send size={13} color={T.inkSoft} />
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
+            <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <Send size={15} color={T.inkSoft} />
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
             </span>
-            {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-              <Heart size={14} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
+            {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <Heart size={16} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
             </button>}
             {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
                 눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 12px", borderRadius: 7, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
-              <Send size={12} color={T.brass} />공유
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 13px", borderRadius: 8, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+              <Send size={13} color={T.brass} />공유
             </button>}
             </div>
         </div>
@@ -18195,6 +18296,21 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // (사용자 요청) chess.com 대국 목록에서 고른 대국을 "선택됨"으로 표시하고, 같은 대국을 다시 누르면
   // 선택이 풀리도록(입력 박스도 함께 비운다) 어떤 대국이 선택돼 있는지 기억해 둔다.
   const [pcSelectedGameId, setPcSelectedGameId] = useState(null);
+  // (사용자 요청) 1단계 입력 박스에 이미지 스캔 버튼 추가 — 체스판 사진이면 FEN으로, PGN·FEN 텍스트
+  // 사진이면 그 텍스트를 그대로 입력 박스에 채워 넣는다(그대로 "확인"을 눌러 검증하는 흐름은 동일).
+  const [pcScanning, setPcScanning] = useState(false);
+  const onPcScanFile = async (file) => {
+    setPcScanning(true); setPcErr("");
+    try {
+      const data = await scanImageFile(file);
+      let text = null;
+      if (data.type === "board" && data.fen_board) text = data.fen_board + " w KQkq - 0 1";
+      else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();
+      if (!text) { setPcErr("이미지에서 체스판이나 기보를 인식하지 못했어요."); return; }
+      setPcInput(text); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcSelectedGameId(null);
+    } catch (e) { setPcErr((e && e.message) || "이미지 스캔에 실패했어요."); }
+    finally { setPcScanning(false); }
+  };
   const resetPuzzleCreate = () => {
     setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
     setPcAnalyzing(false); setPcAnalyzeProgress(0); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null);
@@ -18205,21 +18321,24 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     const raw = pcInput.trim();
     setPcErr(""); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
     if (!raw) { setPcErr("PGN 또는 FEN을 입력하세요."); return; }
+    // (사용자 요청) PGN/FEN 기보로 인식되지 않는 입력은 사유와 무관하게 항상 같은 문구("잘못된
+    // 기보 형식입니다.")로 안내하고, pcParsed를 세우지 않아(2단계는 pcParsed가 있어야만 열림) 2단계로
+    // 넘어가지 못하게 막는다.
     if (looksLikeFen(raw)) {
       const fenRoot = parseFenFull(raw);
-      if (!fenRoot) { setPcErr("올바른 FEN 형식이 아니에요."); return; }
+      if (!fenRoot) { setPcErr("잘못된 기보 형식입니다."); return; }
       setPcParsed({ kind: "fen", fenRoot, raw });
       return;
     }
     const moves = parsePgnMoves(raw);
-    if (!moves.length) { setPcErr("인식할 수 있는 기보가 없어요."); return; }
+    if (!moves.length) { setPcErr("잘못된 기보 형식입니다."); return; }
     let board = startBoard(), ok = true;
     for (let i = 0; i < moves.length; i++) {
       const color = i % 2 === 0 ? "w" : "b";
       if (!sanSrc(board, moves[i], color)) { ok = false; break; }
       board = applySan(board, moves[i], color);
     }
-    if (!ok) { setPcErr("기보에 불법적인 수가 포함되어 있어요."); return; }
+    if (!ok) { setPcErr("잘못된 기보 형식입니다."); return; }
     setPcParsed({ kind: "pgn", sans: moves, raw });
   };
   // (사용자 요청) PGN이 확인되면 유형 버튼을 누르길 기다리지 않고 곧바로 전체 기보를 채점한다.
@@ -18662,8 +18781,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               style={{ width: "100%", boxSizing: "border-box", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: SITE_FONT }} />
             {pcErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pcErr}</div>}
             {pcParsed && <div style={{ fontSize: 11.5, color: T.best, marginTop: 6, fontWeight: 700 }}>{pcParsed.kind === "fen" ? "FEN 포지션이 확인됐어요 — 이 위치 자체가 퍼즐 시작점이 돼요." : "기보가 확인됐어요(" + pcParsed.sans.length + "수) — 아래에서 퍼즐 유형을 고르면 그 유형에 맞는 수를 고를 수 있어요."}</div>}
-            {/* (사용자 요청) "확인" 버튼을 박스 우하단에 둔다. */}
-            <div className="flex justify-end" style={{ marginTop: 8 }}>
+            {/* (사용자 요청) "확인" 버튼을 박스 우하단에 두고, 그 왼쪽에 이미지 스캔 버튼을 둔다 —
+                체스판 사진이나 PGN/FEN 텍스트 사진을 스캔하면 입력 박스가 채워지고, 그대로 "확인"을
+                눌러 검증한다. */}
+            <div className="flex justify-end items-center" style={{ marginTop: 8, gap: 8 }}>
+              <ImageSourceMenu onFile={onPcScanFile} disabled={pcScanning} busy={pcScanning} label="이미지 스캔" busyLabel="인식하는 중..."
+                buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, background: pcScanning ? "rgba(0,0,0,.06)" : "transparent", color: pcScanning ? T.inkSoft : T.ink, fontWeight: 700, fontSize: 12, border: "1px solid " + (pcScanning ? "#DCCBA8" : T.brass), cursor: pcScanning ? "default" : "pointer" }} />
               <button onClick={parsePcInput} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
             </div>
             {/* (사용자 요청) "chess.com 대국에서 선택" 토글 버튼을 없애고, 연동돼 있으면 입력 박스 아래에
@@ -20035,6 +20158,13 @@ const CHANGELOG = [
       "유산 만들기 화면이 이번 버전의 퍼즐 만들기 마법사와 같은 레이아웃·디자인으로 바뀌었어요.",
       "퍼즐·유산 만들기 2단계에서 후보 수를 꾹 누르면(모바일) 또는 마우스를 올려두면(데스크톱) 미니 체스보드로 그 수가 애니메이션으로 재생돼요 — 수 체계 아이콘도 함께 보여요. 데스크톱에서는 마우스를 올려두는 동안 계속 반복 재생돼요.",
       "퍼즐 생성자는 자신이 만든 퍼즐을 퍼즐 풀이 화면 2페이지(모식도)에서 삭제할 수 있어요 — 삭제 전 확인 알림이 한 번 더 떠요.",
+      "이미지 스캔이 체스판 사진뿐 아니라 PGN 기보·FEN 코드가 적힌 사진(책 지면, 스크린샷, 메모 등)도 인식해요.",
+      "이미지 스캔 버튼을 누르면 카메라로 촬영/갤러리에서 선택/내 파일에서 선택/Google Photo에서 선택 중 먼저 고를 수 있어요.",
+      "퍼즐 만들기 마법사 1단계 입력 박스에도 이미지 스캔 버튼이 생겼어요.",
+      "퍼즐 카드의 제목 글자가 조금 커졌고, 퍼즐 유형·라인 개수를 알려주던 텍스트는 지워졌어요. 좋아요·리포스트·공유 아이콘과 수치, 공유 버튼도 조금 더 커졌어요.",
+      "퍼즐 풀이 화면의 제작자 표시에서 '제작 · ' 문구가 빠지고 아이디만 보여요. PGN/FEN 표시와 퍼즐 레이팅 박스가 제작자 표시와 같은 줄로 내려오면서, 제목을 한 줄에 더 길게 볼 수 있어요.",
+      "퍼즐 레이팅 말풍선이 잘못된 위치에 잠깐 나타났다 제자리로 돌아오던 문제(퍼즐 카드)와, 화면 경계에 잘리던 문제(퍼즐 풀이 화면)를 고쳤어요.",
+      "퍼즐 만들기 마법사 1단계에서 PGN/FEN으로 인식되지 않는 입력에는 '잘못된 기보 형식입니다.'가 표시되고, 2단계로 넘어갈 수 없어요.",
     ]
   },
   {

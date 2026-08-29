@@ -83,7 +83,11 @@ function isSanePieceCounts(fenBoard) {
   return true;
 }
 
-const SCAN_PROMPT = "이 이미지는 체스판 사진 또는 스크린샷이야. 이제부터 랭크 8(맨 위 가로줄)부터 랭크 1(맨 아래 가로줄)까지 한 줄씩, 각 줄은 파일 a부터 h까지 왼쪽에서 오른쪽 순서로, 정확히 64칸을 하나도 빠짐없이 훑어. 보드가 어느 방향으로 찍혔든(흑이 아래쪽이어도, 대각선이어도) 실제 체스 기물의 색과 종류를 기준으로 표준 방향(백 진영이 랭크 1)으로 좌표를 맞춰서 읽어. 각 칸에 대해: 실제로 입체적인(3D) 체스 기물이 그 칸 위에 놓여 있다고 확신할 때만 기물의 종류와 색을 FEN 문자 하나로 적어(대문자 PNBRQK=백, 소문자 pnbrqk=흑 — 색이 밝은/흰 계열이면 백, 어둡고 진한 계열이면 흑). 그 외의 모든 경우, 즉 기물이 없는 빈 칸이면 빈 문자열 \"\"로 적어. 특히 다음은 기물이 아니니 절대 기물로 착각하지 마: 보드 가장자리에 인쇄된 좌표 라벨(a-h, 1-8 글자), 칸을 나누는 격자선, 나무결·대리석 같은 재질 무늬나 칸의 명암 패턴, 그림자, 유리·화면 반사, 옆 칸 기물이 이 칸까지 걸쳐 보이는 착시. 빈 칸인지 기물이 있는 칸인지 확신이 서지 않으면 반드시 기물이 있다고 추측하지 말고 빈 칸(\"\")으로 적어 — 기물을 놓치는 것보다 없는 기물을 만들어내는 게 훨씬 나쁜 실수야. 실제 체스 게임에서 보드 위 기물은 보통 32개 이하이고(항상 절반 넘게 비어 있음), 한쪽 색은 킹 최대 1개·폰 최대 8개·전체 최대 16개를 넘을 수 없어 — 만약 네가 세어본 기물 수가 이 범위를 넘는다면 어딘가에서 빈 칸을 기물로 잘못 읽은 것이니 다시 확인해. 절대로 빈 칸 개수를 세어 숫자로 뭉치지 마 — 반드시 64개 칸을 하나씩 전부 나열해. 예를 들어 초기 배치의 첫 줄(랭크8)은 [\"r\",\"n\",\"b\",\"q\",\"k\",\"b\",\"n\",\"r\"]이고 그다음 줄(랭크7)은 [\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\"]이야.";
+// (v0.4.2 기능) 사용자 요청 — 체스판 배치 사진뿐 아니라, PGN 기보나 FEN 코드가 텍스트로 인쇄·필기된
+// 사진(책 지면, 스크린샷, 메모 등)도 인식하게 확장한다. 먼저 이미지가 어느 쪽인지(kind: "board"=
+// 체스판 실물/다이어그램 사진, "text"=PGN·FEN이 문자로 적힌 이미지, "none"=둘 다 아님) 모델이 스스로
+// 판단하게 하고, 서버는 그 판단에 따라 완전히 다른 필드(ranks vs recognized_text)만 채우도록 한다.
+const SCAN_PROMPT = "이 이미지를 보고 다음 중 무엇인지 먼저 판단해: (A) 체스판 실물 사진 또는 체스판 다이어그램/스크린샷(기물이 배치된 8x8 격자가 보임), (B) PGN 기보(예: '1. e4 e5 2. Nf3 Nc6 ...')나 FEN 코드(예: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')가 인쇄되거나 손으로 적힌 텍스트가 담긴 이미지(책 지면, 스크린샷, 메모, 노트 등), (C) 둘 다 아님. kind 필드에 각각 \"board\"/\"text\"/\"none\"을 적어.\n\n(A)라면: 이제부터 랭크 8(맨 위 가로줄)부터 랭크 1(맨 아래 가로줄)까지 한 줄씩, 각 줄은 파일 a부터 h까지 왼쪽에서 오른쪽 순서로, 정확히 64칸을 하나도 빠짐없이 훑어 ranks 필드에 담아. 보드가 어느 방향으로 찍혔든(흑이 아래쪽이어도, 대각선이어도) 실제 체스 기물의 색과 종류를 기준으로 표준 방향(백 진영이 랭크 1)으로 좌표를 맞춰서 읽어. 각 칸에 대해: 실제로 입체적인(3D) 체스 기물이 그 칸 위에 놓여 있다고 확신할 때만 기물의 종류와 색을 FEN 문자 하나로 적어(대문자 PNBRQK=백, 소문자 pnbrqk=흑 — 색이 밝은/흰 계열이면 백, 어둡고 진한 계열이면 흑). 그 외의 모든 경우, 즉 기물이 없는 빈 칸이면 빈 문자열 \"\"로 적어. 특히 다음은 기물이 아니니 절대 기물로 착각하지 마: 보드 가장자리에 인쇄된 좌표 라벨(a-h, 1-8 글자), 칸을 나누는 격자선, 나무결·대리석 같은 재질 무늬나 칸의 명암 패턴, 그림자, 유리·화면 반사, 옆 칸 기물이 이 칸까지 걸쳐 보이는 착시. 빈 칸인지 기물이 있는 칸인지 확신이 서지 않으면 반드시 기물이 있다고 추측하지 말고 빈 칸(\"\")으로 적어. 실제 체스 게임에서 보드 위 기물은 보통 32개 이하이고, 한쪽 색은 킹 최대 1개·폰 최대 8개·전체 최대 16개를 넘을 수 없어 — 넘는다면 다시 확인해. 절대로 빈 칸 개수를 세어 숫자로 뭉치지 마 — 반드시 64개 칸을 하나씩 전부 나열해. 예를 들어 초기 배치의 첫 줄(랭크8)은 [\"r\",\"n\",\"b\",\"q\",\"k\",\"b\",\"n\",\"r\"]이고 그다음 줄(랭크7)은 [\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\",\"p\"]이야.\n\n(B)라면: 이미지에 보이는 PGN 또는 FEN 텍스트를 한 글자도 빠뜨리거나 지어내지 말고 정확히 그대로 옮겨 적어 recognized_text 필드에 담아(줄바꿈은 공백으로 이어 붙여도 돼). 수 번호·기물 기호·좌표 표기까지 원문 그대로.\n\n(C)라면 ranks·recognized_text 모두 비워 둬.";
 
 // (v0.3.9 기능) Gemini의 `responseSchema` 구조화 출력 — 프롬프트만으로 형식을 지시하던 OpenRouter
 // 시절과 달리, 고정된 단일 모델이라 스키마를 신뢰하고 강제할 수 있다. 그래도 8x8 구조 자체는
@@ -92,10 +96,12 @@ const SCAN_PROMPT = "이 이미지는 체스판 사진 또는 스크린샷이야
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
+    kind: { type: "STRING", enum: ["board", "text", "none"] },
     ranks: { type: "ARRAY", items: { type: "ARRAY", items: { type: "STRING" } } },
+    recognized_text: { type: "STRING" },
     confidence: { type: "STRING", enum: ["high", "medium", "low"] },
   },
-  required: ["ranks", "confidence"],
+  required: ["kind", "confidence"],
 };
 
 async function callGemini(apiKey, safeMediaType, image) {
@@ -130,12 +136,14 @@ async function callGemini(apiKey, safeMediaType, image) {
   }
   const candidate = data.candidates && data.candidates[0];
   if (!candidate || candidate.finishReason === "SAFETY" || candidate.finishReason === "PROHIBITED_CONTENT") {
-    return { fenBoard: null, confidence: null };
+    return { kind: null, fenBoard: null, text: null, confidence: null };
   }
   const textPart = candidate.content && candidate.content.parts && candidate.content.parts.find((p) => typeof p.text === "string");
   const parsed = extractJson(textPart && textPart.text);
-  const fenBoard = parsed && ranksToFenBoard(parsed.ranks);
-  return { fenBoard, confidence: parsed && parsed.confidence };
+  const kind = parsed && parsed.kind;
+  const fenBoard = kind === "board" ? (parsed && ranksToFenBoard(parsed.ranks)) : null;
+  const text = kind === "text" ? (parsed && typeof parsed.recognized_text === "string" ? parsed.recognized_text.trim() : null) : null;
+  return { kind, fenBoard, text, confidence: parsed && parsed.confidence };
 }
 
 export default async function handler(req, res) {
@@ -153,18 +161,23 @@ export default async function handler(req, res) {
     // 읽혔으면(명백한 오독) 다시 시도한다 — 같은 모델이라도 비전 인식은 호출마다 편차가 있어 재시도로
     // 종종 복구된다. (버그 수정) 과다 인식(실제로 빈 칸인데 기물이 있다고 읽음)도 같은 재시도 경로로
     // 잡는다 — isSanePieceCounts가 물리적으로 불가능한 기물 수(한쪽 킹 2개 이상, 폰 8개 초과, 총
-    // 16개 초과)를 감지하면 명백한 오독으로 보고 다시 시도한다. 판단 기준이 하나 늘어난 만큼 재시도
-    // 횟수를 2회에서 3회로 소폭 늘렸다(과도한 지연/비용 증가는 피하기 위해 최소한으로).
+    // 16개 초과)를 감지하면 명백한 오독으로 보고 다시 시도한다. (v0.4.2) kind가 "text"면 ranks
+    // 검증은 건너뛰고 recognized_text가 비어 있지 않은지만 확인한다.
     let last = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       last = await callGemini(apiKey, safeMediaType, image);
-      if (isPlausibleBoard(last.fenBoard) && isSanePieceCounts(last.fenBoard)) break;
+      if (last.kind === "text" && last.text) break;
+      if (last.kind === "board" && isPlausibleBoard(last.fenBoard) && isSanePieceCounts(last.fenBoard)) break;
     }
-    if (!last || !isPlausibleBoard(last.fenBoard) || !isSanePieceCounts(last.fenBoard)) {
-      res.status(502).json({ error: "이미지에서 체스판을 인식하지 못했어요." });
+    if (last && last.kind === "text" && last.text) {
+      res.status(200).json({ type: "text", recognized_text: last.text, confidence: last.confidence });
       return;
     }
-    res.status(200).json({ fen_board: last.fenBoard, confidence: last.confidence });
+    if (!last || last.kind !== "board" || !isPlausibleBoard(last.fenBoard) || !isSanePieceCounts(last.fenBoard)) {
+      res.status(502).json({ error: "이미지에서 체스판이나 PGN·FEN 텍스트를 인식하지 못했어요." });
+      return;
+    }
+    res.status(200).json({ type: "board", fen_board: last.fenBoard, confidence: last.confidence });
   } catch (e) {
     res.status(502).json({ error: String(e && e.message ? e.message : e) });
   }
