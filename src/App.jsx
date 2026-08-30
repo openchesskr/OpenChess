@@ -18738,6 +18738,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const PC_THEME_KINDS = { sacrifice: ["brilliant"], advantage: ["inaccuracy"], punish: ["mistake", "blunder"] };
   const [pcAnalyzing, setPcAnalyzing] = useState(false);
   const [pcAnalyzeProgress, setPcAnalyzeProgress] = useState(0); // 0~1
+  // (사용자 요청) 3단계(전술 라인 생성) 중에도 2단계 채점처럼 박스 우상단에 실시간 진행률(%)을
+  // 보여준다. genPuzzleTree의 onProgress(0~0.95는 트리 확장 중, 1은 완료)를 그대로 이 상태에 반영한다.
+  const [pcGenProgress, setPcGenProgress] = useState(0); // 0~1
   const [pcAnalyzeResult, setPcAnalyzeResult] = useState(null); // analyzeGame() 결과(moves 배열)
   const [pcAnalyzeErr, setPcAnalyzeErr] = useState("");
   const [pcSelectedMove, setPcSelectedMove] = useState(null); // { ply, san, kind }
@@ -18817,20 +18820,21 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   };
   // 실제 전술 트리 생성 — FEN 포지션이거나(그 자체가 시작점), PGN에서 고른 특정 수(setupSans+mistakeSan)일 때 호출한다.
   const runPcGenerate = async (theme, setupSans, mistakeSan, fenRoot) => {
-    setPcGen(null); setPcGenErr("");
+    setPcGen(null); setPcGenErr(""); setPcGenProgress(0);
     if (!engine || engine.status !== "ready") { setPcGenErr("엔진이 아직 준비되지 않았어요."); return; }
     setPcGenerating(true);
+    const onProgress = (p) => setPcGenProgress(p);
     try {
       let gen;
       if (fenRoot) {
-        gen = await genPuzzleTree(engine, [], puzzleThemeOpts(theme), undefined, fenRoot);
+        gen = await genPuzzleTree(engine, [], puzzleThemeOpts(theme), onProgress, fenRoot);
       } else if (theme === "sacrifice") {
         // (기존 자동 생성 규칙과 동일) 희생 테마는 "그 수 자체"가 첫 수로 고정되며, 그 직전
         // 위치부터 트리를 만든다 — 풀이자는 이 수를 스스로 찾아내야 한다.
-        gen = await genPuzzleTree(engine, setupSans, { ...puzzleThemeOpts("sacrifice"), firstSan: mistakeSan });
+        gen = await genPuzzleTree(engine, setupSans, { ...puzzleThemeOpts("sacrifice"), firstSan: mistakeSan }, onProgress);
       } else {
         // 실수 응징하기/우위 점하기는 "그 수(실수)가 이미 두어진 뒤" 포지션부터 트리를 만든다.
-        gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts(theme));
+        gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts(theme), onProgress);
       }
       if (!gen || !gen.lines || !gen.lines.length) { setPcGenErr("이 포지션/수순에서는 뚜렷한 전술 라인을 찾지 못했어요. 다른 PGN·FEN이나 유형으로 시도해 보세요."); return; }
       setPcGen(gen);
@@ -19271,7 +19275,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10, minHeight: 280 }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>2. 퍼즐 유형 선택</div>
-                {pcParsed.kind === "pgn" && (pcAnalyzing || pcAnalyzeResult) && (
+                {pcGenerating ? (
+                  <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{Math.round(pcGenProgress * 100)}% 분석됨</div>
+                ) : pcParsed.kind === "pgn" && (pcAnalyzing || pcAnalyzeResult) && (
                   <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{Math.round((pcAnalyzeResult ? 1 : pcAnalyzeProgress) * 100)}% 분석됨</div>
                 )}
               </div>
@@ -19339,10 +19345,13 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>3. 퍼즐 라인 편집 (생성자 권한)</div>
               <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{pcGen.lines.length}개의 라인을 찾았어요 — 아래에서 미리 확인하고, 만든 뒤에도 이 퍼즐을 열어 라인을 추가·삭제할 수 있어요(1시간에 한 번).</div>
-              <PuzzleSchematic tree={pcGen.tree} rootLabel={pcParsed.kind === "pgn" && pcSelectedMove ? pcSelectedMove.san : null} meta={{}}
+              {/* (버그 수정, 사용자 제보) 기물 희생하기 테마는 선택한 수 자체가 풀이자가 찾아야 할
+                  첫 수(firstSan)라 시작 포지션을 그 수 이전(직전 수까지)으로 둬야 하는데, 이 미리보기가
+                  다른 테마와 똑같이 선택한 수까지 이미 둔 위치를 시작 포지션으로 보여주고 있었다. */}
+              <PuzzleSchematic tree={pcGen.tree} rootLabel={pcParsed.kind === "pgn" && pcSelectedMove && pcTheme !== "sacrifice" ? pcSelectedMove.san : null} meta={{}}
                 allLines={pcGen.lines} solvedNow={new Set()} curKeys={[]} exploredKeys={new Set()}
-                setupSans={pcParsed.kind === "pgn" && pcSelectedMove ? pcParsed.sans.slice(0, pcSelectedMove.ply + 1) : []}
-                setupLen={pcParsed.kind === "pgn" && pcSelectedMove ? pcSelectedMove.ply + 1 : 0}
+                setupSans={pcParsed.kind === "pgn" && pcSelectedMove ? pcParsed.sans.slice(0, pcTheme === "sacrifice" ? pcSelectedMove.ply : pcSelectedMove.ply + 1) : []}
+                setupLen={pcParsed.kind === "pgn" && pcSelectedMove ? (pcTheme === "sacrifice" ? pcSelectedMove.ply : pcSelectedMove.ply + 1) : 0}
                 onPick={() => {}} canEdit={false} revealAll
                 fenRoot={pcParsed.kind === "fen" ? pcParsed.fenRoot : null} />
               <button onClick={() => (pcParsed.kind === "fen" ? runPcGenerate(pcTheme, [], "", pcParsed.fenRoot) : pcSelectedMove && pickPcMove(pcTheme, pcSelectedMove))} className="press" style={{ marginTop: 8, padding: "6px 12px", borderRadius: 9, background: "transparent", border: "1px solid #C9B58C", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>다시 생성</button>
