@@ -11,10 +11,9 @@
 // API 키는 Vercel 환경변수(GEMINI_API_KEY, aistudio.google.com/apikey에서 무료 발급)로만 존재 — 이
 // 값이 없으면 이 기능은 비활성 상태로 500을 반환하고, 클라이언트는 "서버에 아직 설정되지 않았어요"
 // 안내만 보여준다(다른 기능엔 영향 없음).
-// (버그 수정, 사용자 제보) gemini-2.5-flash가 신규 사용자에게 더 이상 제공되지 않는 모델로
-// 폐기(deprecated)되며 "models/gemini-2.5-flash is no longer available... use
-// models/gemini-3.6-flash" 오류로 이미지 스캔이 항상 실패했다 — 안내받은 후속 모델로 교체.
-const GEMINI_MODEL = "gemini-3.6-flash";
+// (버그 수정, 사용자 제보) "gemini-3.6-flash"는 실재하지 않는 모델 ID라 모든 호출이 404로 실패해
+// 이미지 스캔 버튼이 항상 동작하지 않았다 — 실제로 존재하는 안정 버전인 gemini-2.5-flash로 되돌린다.
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 // (v0.3.8 기능) 사용자 요청 — 인식률 개선. 예전엔 모델에게 곧장 압축된 FEN 문자열("rnbqkbnr/8/..."
 // 처럼 빈 칸 개수를 숫자로 뭉친 표기)을 만들어 달라고 했는데, 이 압축 과정 자체가 LLM이 흔히 틀리는
