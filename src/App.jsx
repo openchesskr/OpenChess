@@ -14582,8 +14582,8 @@ function GamePhaseBadge({ p, compact }) {
   const phase = useMemo(() => puzzlePhase(p), [p.id]);
   if (!phase) return null;
   return compact
-    ? <span title={GAME_PHASE_LABEL[phase] + " 국면에서 시작해요"} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
-    : <span title={GAME_PHASE_LABEL[phase] + " 국면에서 시작해요"} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
+    ? <span title={GAME_PHASE_LABEL[phase] + " 포지션에서 시작해요"} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
+    : <span title={GAME_PHASE_LABEL[phase] + " 포지션에서 시작해요"} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
 }
 // (기능2) 저장 직전 최종 안전장치: setup+solution 전체를 시작 위치부터 다시 재생하며 각 수가
 // "그 시점에 둘 차례인 쪽"의 합법수인지 검증한다. 하나라도 어긋나면(불법수·차례 뒤바뀜 등) 저장을 막는다.
@@ -20002,7 +20002,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                   </div>
                   {/* (신규 기능) 사용자 요청 — 오프닝/미들게임/엔드게임 국면 구분(다중 선택). */}
                   <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>국면</div>
+                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>포지션 단계</div>
                     <div className="flex flex-wrap gap-1">
                       {[["all", "전체"], ["opening", "오프닝"], ["middlegame", "미들게임"], ["endgame", "엔드게임"]].map(([k, lb]) => { const on = k === "all" ? selectedPhases.length === 0 : selectedPhases.includes(k); return (
                         <button key={k} onClick={() => togglePhase(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
@@ -21136,6 +21136,24 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.4.2", date: "2026.8.30", dev: ["openchesskr"], items: [
+      "이미지 스캔이 항상 실패하던 문제를 고쳤어요.",
+      "이미지 스캔에서 '내 파일에서 선택'을 눌렀을 때 Google Photo로 연결되던 문제를 고쳤어요 — 이제 실제 파일 탐색기가 열려요.",
+      "프로필 카드에서 칭호 표시가 사라졌어요(칭호를 새로 얻었을 때 뜨는 축하 팝업은 그대로예요).",
+      "말풍선·드롭다운이 모바일 화면 가장자리에서 잘리던 문제를 고쳤어요.",
+      "퍼즐 만들기 마법사에서 기물 희생하기 테마를 고르면, 3단계 미리보기가 선택한 수까지 이미 둔 위치 대신 그 직전 위치를 보여줘요 — 그 수는 직접 찾아야 하는 수라서요. 라인을 만드는 동안에도 진행률이 %로 실시간 표시돼요.",
+      "프로필 카드에서 chess.com 통계 보기를 고르면, 사진·아이디·소개가 chess.com 것으로 바뀌어요. 국적과 시간 규정별 레이팅도 이 자리에서 함께 보여요.",
+      "친구·프로필에 실시간 접속 여부(초록 점)와 최근 접속 시간이 떠요 — chess.com 최근 접속 시간도 함께 보여요. 친구가 대국 페이지가 아니라 어디에 있든 실시간으로 반영돼요.",
+      "/about 소개 페이지 첫 화면에 스크롤하면 튀어오르는 타이포그래피 문구가 추가됐어요.",
+      "/play 페이지에서 다른 OpenChess 사용자와 실시간으로 대국할 수 있어요 — 랜덤 매칭으로 지금 상대를 찾고 있는 사람과 바로 이어지거나, 친구 목록에서 골라 도전장을 보낼 수 있어요(친구 목록은 접속 중인 순서, 그중에서도 티어·경험치가 높은 순으로 보여요).",
+      "/play에서 봇 대국·실시간 대국 모두 타임 컨트롤(불릿·블리츠·래피드·클래식·무제한)을 고를 수 있어요. 실시간 대국은 더 이상 진영을 직접 고르지 않고 항상 무작위로 정해져요.",
+      "퍼즐을 만들 때 공개할지 나만 볼지 정할 수 있어요 — 만든 뒤에도 퍼즐 풀이 화면에서 바꿀 수 있어요.",
+      "퍼즐이 시작하는 포지션이 오프닝·미들게임·엔드게임 중 어디인지 배지로 표시돼요. 정렬·필터에서도 이 기준으로 골라볼 수 있어요.",
+      "퍼즐 카드·퍼즐 풀이 화면의 좋아요·리포스트·공유 버튼이 왼쪽 정렬로 통일됐어요.",
+      "학습 탭 PLAY 버튼 디자인이 옆의 다른 버튼들과 통일됐어요.",
+    ],
+  },
   {
     version: "0.4.1", date: "2026.8.28", dev: ["openchesskr"], items: [
       "화면 구석 버전 표시가 실제 배포된 버전보다 뒤처져 있던 문제를 고쳤어요.",
