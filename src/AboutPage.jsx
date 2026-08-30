@@ -700,6 +700,44 @@ function FloatImg({ src, alt, delay = 0 }) {
     </motion.div>
   );
 }
+// (신규 기능) 사용자 요청 — 첫 페이지 배너와 히어로 카드 사이의 비어 보이던 공간을, 큼직한 타이포
+// 그래피로 채운다. Pager는 각 페이지 내부(overflowY:auto)에서 스크롤되므로 window 기준
+// useScroll/scrollYProgress는 이 레이아웃에서 정확히 동작하지 않는다 — 페이지 전반에서 이미 검증된
+// whileInView(IntersectionObserver 기반이라 어느 요소가 스크롤되든 항상 정확) 패턴을 그대로 써서,
+// 단어마다 스크롤로 들어올 때 다른 방향·크기로 튀어오르게 한다(한 번만이 아니라 다시 스크롤해
+// 지나갈 때마다 반복 재생).
+function KineticWord({ children, index, accent }) {
+  return (
+    <motion.span
+      initial={{ opacity: 0, y: 40, scale: 0.82, rotate: index % 2 === 0 ? -4 : 4 }}
+      whileInView={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+      viewport={{ once: false, amount: 0.6 }}
+      transition={{ duration: 0.65, delay: index * 0.08, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{
+        display: "inline-block",
+        fontSize: "clamp(30px, 7.5vw, 68px)",
+        fontWeight: 900,
+        letterSpacing: "-.02em",
+        lineHeight: 1.08,
+        color: accent ? T.brassHi : T.ivoryHi,
+        textShadow: accent ? "0 2px 20px rgba(196,154,80,.4)" : "0 2px 14px rgba(0,0,0,.3)",
+      }}
+    >{children}</motion.span>
+  );
+}
+function KineticTagline() {
+  const words = [
+    { t: "생각하고,", accent: false },
+    { t: "분석하고,", accent: false },
+    { t: "성장하는", accent: true },
+    { t: "체스.", accent: true },
+  ];
+  return (
+    <div style={{ padding: "18px 4px 44px", textAlign: "center", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0 .32em" }}>
+      {words.map((w, i) => <KineticWord key={w.t} index={i} accent={w.accent}>{w.t}</KineticWord>)}
+    </div>
+  );
+}
 function IntroPage() {
   return (
     <div>
@@ -718,6 +756,7 @@ function IntroPage() {
       </div>
 
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "40px 20px 72px" }}>
+      <KineticTagline />
       <section className="flex items-center flex-wrap" style={{
         gap: 36, marginBottom: 8, padding: "32px 32px 30px", borderRadius: 28,
         background: "linear-gradient(160deg, rgba(46,27,16,.6), rgba(27,16,9,.15))",
