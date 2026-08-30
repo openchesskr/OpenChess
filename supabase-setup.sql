@@ -1349,3 +1349,35 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.pvp_finish(bigint, text) to authenticated;
+
+-- ============================================================================
+-- N+2) puzzles 공개/비공개 — 퍼즐 생성 마법사 4단계 + 퍼즐 풀이 카드 2페이지(생성자 권한 박스)에서
+-- 설정/수정한다.
+-- ============================================================================
+-- 기존 "puzzles read" 정책(using(true))은 비공개 퍼즐도 아무나 읽을 수 있게 두므로, 아래에서 이
+-- 컬럼을 감안해 다시 만든다. is_public은 data(jsonb, 누구나 update 가능)가 아니라 별도 컬럼으로
+-- 둔다 — data에 넣으면 위 puzzles update(data) grant가 열려 있어 아무나 남의 퍼즐을 비공개로
+-- 바꿀 수 있게 된다. 이 컬럼은 REST 직접 update grant를 주지 않고, 아래 puzzle_set_visibility
+-- RPC(SECURITY DEFINER)로만 바뀐다.
+alter table public.puzzles add column if not exists is_public boolean not null default true;
+drop policy if exists "puzzles read" on public.puzzles;
+create policy "puzzles read" on public.puzzles for select using (
+  is_public or auth.uid() = creator_uid or public.is_content_editor(auth.uid())
+);
+
+-- 생성자 본인(또는 개발자/공동개발자)만 공개 여부를 바꿀 수 있다 — puzzle_creator_save와 달리
+-- 1시간 편집 주기와 무관하게(내용을 바꾸는 게 아니라 노출 여부만 바꾸는 것이므로) 언제든 호출 가능.
+drop function if exists public.puzzle_set_visibility(bigint, boolean) cascade;
+create or replace function public.puzzle_set_visibility(p_no bigint, p_public boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_creator uuid;
+begin
+  if auth.uid() is null then raise exception 'auth required'; end if;
+  select creator_uid into v_creator from public.puzzles where no = p_no for update;
+  if not found then raise exception 'puzzle not found'; end if;
+  if v_creator is distinct from auth.uid() and not public.is_content_editor(auth.uid()) then
+    raise exception 'not authorized';
+  end if;
+  update public.puzzles set is_public = p_public where no = p_no;
+end; $$;
+grant execute on function public.puzzle_set_visibility(bigint, boolean) to authenticated;
