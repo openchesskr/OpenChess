@@ -1286,6 +1286,13 @@ end $$;
 -- 재접속 시 이미 진행 중인 내 대국이 있으면(새로고침 등으로 대기열 재합류를 눌렀을 때) 그 대국을
 -- 그대로 돌려준다.
 -- (신규 기능) 사용자 요청 — 타임 컨트롤 인자 추가, 같은 타임 컨트롤끼리만 짝짓는다.
+-- (버그 수정, 사용자 제보) 클라이언트가 대국을 끝까지 진행하지 못하고 사라지면(브라우저를 그냥
+-- 닫거나, 예전 버전에서 대국이 봇 모드로 잘못 시작돼 pvp_finish가 한 번도 불리지 않는 등) 그
+-- pvp_games 행은 status='active'로 영원히 남는다 — 위 "재접속 시 그대로 돌려준다" 로직이 이런
+-- 좀비 대국까지 무조건 즉시 돌려주는 바람에, 랜덤 매칭을 눌러도 대기 화면 한 번 못 보고 곧장 응답
+-- 없는 상대와 매칭된 것처럼 보이는 문제가 있었다. 최근(2분 이내)에 실제로 움직임이 있었던 대국만
+-- "재접속"으로 보고 그대로 돌려주고, 그보다 오래된 대국은 중단 처리한 뒤 정상적으로 대기열에
+-- 합류시킨다.
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
 create or replace function public.pvp_queue_join(p_time_control text default '600-0')
@@ -1296,7 +1303,10 @@ begin
   select * into v_game from public.pvp_games
     where status = 'active' and (white_uid = v_me or black_uid = v_me)
     order by created_at desc limit 1;
-  if found then return v_game; end if;
+  if found then
+    if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
+    update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
+  end if;
   delete from public.pvp_queue where uid = v_me;
   select uid into v_other from public.pvp_queue where uid <> v_me and time_control = p_time_control order by created_at asc limit 1 for update skip locked;
   if v_other is null then

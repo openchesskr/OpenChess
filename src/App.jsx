@@ -5517,12 +5517,21 @@ function ImageSourceMenu({ onFile, disabled, label = "이미지 스캔", busy, b
   const onChange = (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
-    if (file && file.type && file.type.startsWith("image/")) onFile(file);
+    if (!file) return;
+    // (버그 수정) "내 파일에서 선택"이 진짜 파일 탐색기를 열도록 accept에서 image/* MIME을 뺐더니,
+    // 기기에 따라 file.type이 비어 있거나(특히 .heic) 정확하지 않을 수 있다 — MIME이 이미지가
+    // 아니어도 확장자가 이미지 확장자면 그대로 인식하도록 fallback을 둔다.
+    const looksLikeImage = (file.type && file.type.startsWith("image/")) || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(file.name || "");
+    if (looksLikeImage) onFile(file);
   };
   const menu = open && pos && (
     <>
-      <span onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 80 }} />
-      <div style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width: 208, zIndex: 81, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 10, padding: 5, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", display: "flex", flexDirection: "column", gap: 1 }}>
+      {/* (버그 수정, 사용자 제보) 학습 탭 보드 편집기(BoardEditorModal, zIndex 95)처럼 이 메뉴보다
+          z-index가 높은 모달 안에서 열리면, document.body에 붙는 이 포털(기존 80/81)이 그 모달의
+          배경 뒤에 완전히 가려져 버튼을 눌러도 아무 반응이 없는 것처럼 보였다 — 이 앱에서 가장 높은
+          기존 z-index(툴팁의 9999)보다도 위로 올려, 어떤 모달 안에서 열리든 항상 맨 위에 보이게 한다. */}
+      <span onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10080 }} />
+      <div style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width: 208, zIndex: 10081, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 10, padding: 5, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", display: "flex", flexDirection: "column", gap: 1 }}>
         {[["카메라로 촬영", Camera, camRef], ["갤러리에서 선택", ImageIcon, galRef], ["내 파일에서 선택", FolderOpen, fileRef], ["Google Photo에서 선택", Cloud, gphotoRef]].map(([lb, Icon, ref]) => (
           <button key={lb} onClick={() => pick(ref)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
             <Icon size={14} color={T.brassHi} />{lb}
@@ -5535,12 +5544,13 @@ function ImageSourceMenu({ onFile, disabled, label = "이미지 스캔", busy, b
     <>
       <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={onChange} />
       <input ref={galRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
-      {/* (버그 수정, 사용자 제보) "내 파일에서 선택"이 갤러리/Google Photo와 똑같이 accept="image/*"만
-          쓰던 탓에, 이 값만 보고 특수 사진 선택기(Android Photo Picker 등)를 곧장 띄우는 브라우저에서는
-          갤러리·Google Photo를 눌렀을 때와 구분되지 않고 늘 같은 화면(주로 Google Photo)으로
-          연결됐다. 확장자를 함께 넣어 accept 목록을 "이미지 전용"에서 벗어나게 하면 그 특수 선택기
-          대신 진짜 파일 탐색기(기기 저장소)가 열린다. */}
-      <input ref={fileRef} type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.heic,.heif" style={{ display: "none" }} onChange={onChange} />
+      {/* (버그 수정, 사용자 제보) v0.4.2에서 확장자를 추가했지만 "image/*" MIME도 그대로 남겨 뒀던
+          탓에 실패했다 — Android Chrome은 accept 목록에 "image/*"가 하나라도 있으면 확장자를 몇 개를
+          더 나열해도 여전히 이미지 전용 인텐트(ACTION_PICK, 기본 처리 앱이 대개 Google Photo)로
+          연다. "내 파일에서 선택"이 진짜 파일 탐색기(기기 저장소)를 열게 하려면 accept에서
+          "image/*"를 완전히 빼고 확장자만 남겨야 한다 — 그래야 이미지 전용 인텐트가 아니라
+          일반 문서 선택 인텐트(ACTION_GET_CONTENT, 파일 탐색기)로 열린다. */}
+      <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.heic,.heif" style={{ display: "none" }} onChange={onChange} />
       <input ref={gphotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
       <button ref={btnRef} onClick={openMenu} disabled={disabled} title={iconOnly ? label : undefined} className="press" style={buttonStyle}>
         <ScanLine size={13} /> {!iconOnly && (busy ? busyLabel : label)}
@@ -10374,6 +10384,13 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 이후 다른 사람이 나를 찾아 매칭할 때까지는 realtime 구독(아래)으로 통보받는다.
   const applyPvpGame = useCallback((g) => {
     if (!g) return;
+    // (버그 수정, 사용자 제보) 친구 초대를 "수락"하는 쪽은 이 화면에서 "실시간 대국" 토글을 직접
+    // 누른 적이 없어 mode가 기본값 "bot"에 머물러 있었다 — 그 상태로 대국이 시작되면 봉 자동 응수
+    // effect(mode==="bot"에서만 동작)가 실제 상대의 수 대신 로컬 봇을 상대로 돌고, 내가 둔 수도
+    // 서버로 전송되지 않아(go()의 pvp_move 호출도 mode==="pvp" 조건) 완전히 다른 대국이 됐다.
+    // applyPvpGame은 대기열 매칭·초대 수락·재접속 등 pvp 대국이 클라이언트에 반영되는 유일한
+    // 통로이므로, 여기서 한 번에 mode를 "pvp"로 맞춰 모든 경로에서 이 문제가 재발하지 않게 한다.
+    setMode("pvp");
     setPvpGame(g); setPvpWaiting(false); pvpFinishedRef.current = false;
     setMyInvite(null); setIncomingInvite(null); setFriendDropdownOpen(false);
     const myColor = g.white_uid === myUid ? "w" : "b";
