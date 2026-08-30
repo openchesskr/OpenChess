@@ -271,6 +271,12 @@ alter table public.chat_messages add column if not exists legacy_slot text;
 -- 캐시가 필요 없다(chess.com 대국만 reviewed_games를 통해 복원되고, FEN/PGN은 식별자 자체가 데이터를
 -- 담고 있다 — resolveReviewIdentifier 참고).
 alter table public.chat_messages add column if not exists review_id text;
+-- (v0.4.3 기능) 실시간 대국 신청 카드 — puzzle_no/legacy_slot/review_id와 같은 패턴(이 시점엔 아직
+-- pvp_invites 테이블이 만들어지기 전이라, 같은 이유로 외래키 없이 값만 담는 컬럼으로 둔다). 설정돼
+-- 있으면 이 메시지는 그 id의 pvp_invites 행을 참조해 "실시간 대국을 신청했어요" 카드(수락/거절, 또는
+-- 보낸 쪽이면 응답 대기·취소)로 렌더링된다. 초대장 자체의 최신 상태(pending/accepted/declined/
+-- cancelled)는 이 컬럼이 아니라 pvp_invites 테이블에서 그때그때 조회한다(둘이 어긋나지 않게).
+alter table public.chat_messages add column if not exists pvp_invite_id bigint;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -1453,6 +1459,11 @@ begin
   select * into v_inv from public.pvp_invites where from_uid = v_me and to_uid = p_to_uid and status = 'pending' order by created_at desc limit 1;
   if found then return v_inv; end if;
   insert into public.pvp_invites(from_uid, to_uid, time_control) values (v_me, p_to_uid, p_time_control) returning * into v_inv;
+  -- (v0.4.3 기능, 사용자 요청) 전역 알람 박스와 같은 신청을 채팅에도 남긴다 — 이미 여기 친구
+  -- 사이임을 확인했고 이 함수 자체가 SECURITY DEFINER라 RLS(친구 사이만 채팅 가능)를 우회해도
+  -- 안전하다. 새로 만든 초대일 때만(위 "이미 보낸 pending 초대가 있으면" 조기 반환 이후) 보낸다 —
+  -- 안 그러면 같은 상대에게 대기열 폴백 등으로 여러 번 호출돼도 채팅에 중복으로 쌓이지 않는다.
+  insert into public.chat_messages(from_uid, to_uid, body, pvp_invite_id) values (v_me, p_to_uid, '실시간 대국을 신청했어요.', v_inv.id);
   return v_inv;
 end; $$;
 grant execute on function public.pvp_invite_friend(uuid, text) to authenticated;

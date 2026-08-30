@@ -10341,7 +10341,35 @@ async function pickBotMove(engine, fen, elo, moveMemory) {
   }
   return chosen;
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid }) {
+// (v0.4.3 기능, 사용자 요청) 실시간 대국 매칭 대기(랜덤 매칭 대기열, 친구 초대 응답 대기) 전용 화면 —
+// 그냥 문구 한 줄 대신, 레이더처럼 퍼지는 링 애니메이션(전역 스타일시트의 pvpRadarPulse keyframe)과
+// 경과 시간을 함께 보여준다. active가 꺼지면(매칭 성사·취소) elapsed는 자동으로 0으로 리셋된다.
+function MatchmakingWait({ active, label, onCancel }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!active) { setElapsed(0); return; }
+    const start = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return (
+    <div style={{ textAlign: "center", padding: "22px 0 16px" }}>
+      <div style={{ position: "relative", width: 72, height: 72, margin: "0 auto 16px" }}>
+        {[0, 0.6, 1.2].map((delay) => (
+          <span key={delay} style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid " + T.brass, animation: "pvpRadarPulse 1.8s ease-out infinite", animationDelay: delay + "s" }} />
+        ))}
+        <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 8px -2px rgba(0,0,0,.4)" }}>
+          <Search size={24} color="#241509" />
+        </span>
+      </div>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginBottom: 16 }}>{fmtClock(elapsed * 1000)}</div>
+      <button onClick={onCancel} className="press" style={{ padding: "9px 22px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+    </div>
+  );
+}
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   const [step, setStep] = useState("setup"); // "setup" | "playing"
@@ -10362,6 +10390,10 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const [pvpErr, setPvpErr] = useState("");
   const [opponentPub, setOpponentPub] = useState(null);
   const pvpFinishedRef = useRef(false); // 체크메이트/스테일메이트를 서버에 한 번만 보고하기 위한 가드
+  // (v0.4.3 기능, 사용자 요청) 대국 도중 페이지를 벗어나면(뒤로가기·탭 이동 등) 기권으로 처리하기
+  // 위해, 언마운트 시점에 최신 상태를 읽을 수 있도록 매 렌더마다 미러링해 둔다 — cleanup 함수는
+  // 클로저가 마운트 시점 값에 고정되므로 ref로만 "지금 이 순간"의 값을 알 수 있다.
+  const leaveCleanupRef = useRef({});
   // (신규 기능) 사용자 요청 — 봇/실시간 대국 모두 타임 컨트롤 선택. pvp에서는 매칭·초대 시점에
   // 서버(pvp_games.time_control)에 확정된 값을 그대로 따르도록 매칭 후 다시 맞춘다(아래 applyPvpGame).
   const [timeControl, setTimeControl] = useState(DEFAULT_TIME_CONTROL);
@@ -10372,7 +10404,6 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const [friendDropdownOpen, setFriendDropdownOpen] = useState(false);
   const [friendList, setFriendList] = useState([]); // [{uid, username, pub}]
   const [myInvite, setMyInvite] = useState(null); // 내가 보낸 도전장(pvp_invites 행) — 응답 대기 중
-  const [incomingInvite, setIncomingInvite] = useState(null); // 나에게 온 도전장 { ...row, fromPub }
   // (버그 수정) 이 대국 안에서 "이 포지션(FEN)에서 봇이 이미 골랐던 수"를 기억해 둔다 — pickBotMove가
   // 반복 수순에서 항상 같은 수만 고르지 않도록 가중치를 낮추는 데 쓴다. 새 대국을 시작할 때마다 비운다.
   const botMoveMemoryRef = useRef(new Map());
@@ -10425,8 +10456,21 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     } catch { setPvpErr("대기열 합류에 실패했어요. 잠시 후 다시 시도해주세요."); setPvpWaiting(false); }
   };
   const leavePvpQueue = async () => { setPvpWaiting(false); try { await sbRpc("pvp_queue_leave", {}); } catch { } };
-  // 페이지를 나갈 때 대기열에 남아 있지 않도록 정리한다.
-  useEffect(() => () => { if (myUid) sbRpc("pvp_queue_leave", {}).catch(() => {}); }, [myUid]);
+  // (v0.4.3 기능, 사용자 요청) 페이지를 나갈 때(뒤로가기·탭 전환 등으로 이 컴포넌트가 언마운트될 때)
+  // — 대기열에 있었으면 매칭 취소로 대기열에서 빼고, 실시간 대국이 결과 없이 진행 중이었으면 그
+  // 자리에서 기권으로 처리해 서버·상대 화면에 즉시 반영한다. leaveCleanupRef가 렌더마다 최신 상태를
+  // 담고 있으므로, deps를 [myUid]로 좁게 둬도(리마운트 없이) 언마운트 시점엔 항상 최신 값을 본다.
+  useEffect(() => () => {
+    if (!myUid) return;
+    const { mode: m, step: s, pvpGame: g, result: r, activeColor: c } = leaveCleanupRef.current;
+    if (m === "pvp" && s === "playing" && g && !r && !pvpFinishedRef.current) {
+      pvpFinishedRef.current = true;
+      const status = c === "w" ? "black_won" : "white_won";
+      sbRpc("pvp_finish", { p_game_id: g.id, p_status: status }).catch(() => {});
+      return;
+    }
+    sbRpc("pvp_queue_leave", {}).catch(() => {});
+  }, [myUid]);
   // 대기 중일 때 — 다른 사람이 나를 찾아 매칭해도 내가 만든 pvp_games 행은 아니므로, 내가 white/black
   // 어느 쪽으로 들어가든 realtime으로 알 수 있도록 두 컬럼 각각을 구독한다(소켓이 끊겼을 때를 대비해
   // pvp_queue_join을 다시 불러 재확인하는 느슨한 안전망도 둔다).
@@ -10485,12 +10529,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     });
     return withMeta;
   }, [friendList, friendPresence]);
-  const sendFriendInvite = async (toUid) => {
+  const sendFriendInvite = async (f) => {
     if (!myUid) return;
     setPvpErr("");
     try {
-      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: toUid, p_time_control: timeControl.key });
-      setMyInvite(inv); setFriendDropdownOpen(false);
+      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: timeControl.key });
+      // (v0.4.3) 대기 화면에 "@닉네임의 응답을 기다리는 중..."을 보여주기 위해, 서버 응답(원본 초대
+      // 행)에 클릭 시점에 이미 알고 있던 상대 표시 정보를 얹어 둔다 — 서버는 uid만 갖고 있다.
+      setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username });
+      setFriendDropdownOpen(false);
     } catch { setPvpErr("도전장을 보내지 못했어요."); }
   };
   const cancelFriendInvite = async () => {
@@ -10498,18 +10545,10 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     try { await sbRpc("pvp_invite_cancel", { p_invite_id: myInvite.id }); } catch { }
     setMyInvite(null);
   };
-  const respondInvite = async (accept) => {
-    if (!incomingInvite) return;
-    const id = incomingInvite.id;
-    setIncomingInvite(null);
-    try {
-      const inv = await sbRpc("pvp_invite_respond", { p_invite_id: id, p_accept: accept });
-      if (accept && inv && inv.game_id) {
-        const rows = await sbSelect("pvp_games?id=eq." + inv.game_id + "&select=*");
-        if (rows && rows[0]) applyPvpGame(rows[0]);
-      }
-    } catch { }
-  };
+  // (v0.4.3 개편) 받은 도전장에 응답하는 UI·구독은 App 루트의 전역 알람 박스(GlobalPvpInviteBanner)로
+  // 옮겼다 — "OpenChess에서 뭘 하고 있든" 보여야 해서 /play 페이지 안에서만 도는 이 컴포넌트 로컬
+  // 구독으로는 부족했다. 수락 시 App 루트가 openPlay(seed.resumePvpGame)로 이 페이지를 열고, 아래
+  // "seed.resumePvpGame 처리" effect가 곧장 applyPvpGame을 호출해 대국을 이어받는다.
   // 내가 보낸 도전장 — 상대가 수락/거절할 때까지 지켜본다.
   useRealtimeTable("pvp_invites", myInvite ? "id=eq." + myInvite.id : null, async (payload) => {
     let row = payload && payload.new;
@@ -10524,13 +10563,12 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       setMyInvite(null);
     }
   }, !!myInvite, 4000);
-  // 나에게 온 도전장 — /play 페이지를 보고 있는 동안만 받는다(다른 화면에 있으면 못 본다).
-  useRealtimeTable("pvp_invites", myUid ? "to_uid=eq." + myUid : null, async (payload) => {
-    const row = payload && payload.new;
-    if (!row || row.status !== "pending") return;
-    const profiles = await usersProfiles([row.from_uid]);
-    setIncomingInvite({ ...row, fromPub: (profiles[row.from_uid] || {}).pub || {}, fromUsername: (profiles[row.from_uid] || {}).username });
-  }, step === "setup" && !!myUid, 0);
+  // (v0.4.3 기능) 전역 알람 박스에서 도전장을 수락하면 App 루트가 openPlay(seed.resumePvpGame)로 이
+  // 페이지를 새로 연다 — 마운트 시 한 번, 이미 서버에서 확정된 그 대국을 곧장 적용한다.
+  useEffect(() => {
+    if (seed && seed.resumePvpGame) applyPvpGame(seed.resumePvpGame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const board = useMemo(() => boardOfRoot(fenRoot, sans), [fenRoot, sans.join(" ")]);
   const replay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, sans) : null), [fenRoot, sans.join(" ")]);
@@ -10544,6 +10582,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const flagResult = flagged ? { end: "flag", color: flagged } : null;
   const result = resigned ? { end: "resign", color: activeColor } : (endState.end ? endState : (flagResult || pvpResult));
   const userToMove = step === "playing" && !result && toMoveColor === activeColor;
+  leaveCleanupRef.current = { mode, step, pvpGame, result, activeColor };
 
   // (신규 기능) 체크메이트·스테일메이트·3회 동형 반복으로 대국이 끝나면, pvp 모드에서는 서버에도
   // 한 번만 결과를 보고해 상대 화면에도 즉시 반영되게 한다(둘 중 누구든 먼저 감지한 쪽이 보고 —
@@ -10757,19 +10796,8 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         </div>
         {step === "setup" ? (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-            {/* (신규 기능) 사용자 요청 — 다른 사람에게 온 도전장은 어느 화면에 있든 맨 위에 배너로
-                보여준다. */}
-            {incomingInvite && (
-              <div style={{ marginBottom: 14, padding: "11px 13px", borderRadius: 10, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass }}>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>
-                  @{incomingInvite.fromUsername || "누군가"}님이 대국을 신청했어요 ({(TIME_CONTROLS.find((t) => t.key === incomingInvite.time_control) || DEFAULT_TIME_CONTROL).label})
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => respondInvite(true)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>수락</button>
-                  <button onClick={() => respondInvite(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>거절</button>
-                </div>
-              </div>
-            )}
+            {/* (v0.4.3 개편) 받은 도전장 배너는 App 루트의 전역 알람 박스로 옮겨졌다(어느 화면에
+                있든 항상 뜨도록) — 이 페이지 안에서 별도로 그리지 않는다. */}
             {/* (v0.4.3 UI 개편) 사용자 요청(스케치 제공) — "봇/실시간" 탭과 "랜덤 매칭/친구와 플레이" 탭을
                 없애고, 타임 컨트롤을 4개 카테고리(불렛·블리츠·래피드·스탠다드) 3×4 그리드로 고른 뒤 곧장
                 "대국 상대 찾기"(랜덤 매칭) · "봇과 플레이하기" · "친구와 플레이하기" 세 가지 중 하나를
@@ -10793,15 +10821,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 <div style={{ height: 1, background: "#DCCBA8", margin: "0 0 14px" }} />
                 {pvpErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{pvpErr}</div>}
                 {mode === "pvp" && pvpWaiting ? (
-                  <div style={{ textAlign: "center", padding: "16px 0", marginBottom: 14 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 12 }}>상대를 찾는 중...</div>
-                    <button onClick={leavePvpQueue} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
-                  </div>
+                  <MatchmakingWait active={pvpWaiting} label="상대를 찾는 중..." onCancel={leavePvpQueue} />
                 ) : mode === "pvp" && myInvite ? (
-                  <div style={{ textAlign: "center", padding: "16px 0", marginBottom: 14 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 12 }}>상대의 응답을 기다리는 중...</div>
-                    <button onClick={cancelFriendInvite} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
-                  </div>
+                  <MatchmakingWait active={!!myInvite} label={"@" + (myInvite.toUsername || "상대") + "의 응답을 기다리는 중..."} onCancel={cancelFriendInvite} />
                 ) : (
                   <div className="flex gap-2" style={{ marginBottom: 10 }}>
                     <div style={{ padding: "11px 14px", borderRadius: 10, border: "1px solid #C9B58C", color: T.ink, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>{timeControl.label}</div>
@@ -10813,33 +10835,36 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 <button onClick={() => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setMode("bot"); setSetupPhase("bot"); }} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginBottom: 10 }}>
                   <Cpu size={16} /> 봇과 플레이하기
                 </button>
-                <div style={{ position: "relative" }}>
-                  <button onClick={() => { if (pvpWaiting) leavePvpQueue(); setMode("pvp"); setPvpSubMode("friend"); setPvpErr(""); setFriendDropdownOpen((v) => !v); }} disabled={!myUid} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + (myUid ? T.brass : "#C9B58C"), background: myUid ? "rgba(196,154,80,.12)" : "rgba(0,0,0,.04)", color: myUid ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13.5, cursor: myUid ? "pointer" : "default" }}>
-                    <User size={16} /> {!myUid ? "로그인 후 이용할 수 있어요" : "친구와 플레이하기"}
-                  </button>
-                  {friendDropdownOpen && (
-                    <>
-                      <span onClick={() => setFriendDropdownOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-                      <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", zIndex: 41, maxHeight: 280, overflowY: "auto", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", padding: 5 }}>
-                        {sortedFriendList.length === 0 ? (
-                          <div style={{ padding: "12px 10px", fontSize: 12, color: "rgba(244,238,226,.55)", textAlign: "center" }}>같이 대국할 친구가 없어요.</div>
-                        ) : sortedFriendList.map((f) => (
-                          <button key={f.uid} onClick={() => sendFriendInvite(f.uid)} className="press" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
-                            <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
-                              {f.pub.photo ? <img src={f.pub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
-                                : <span style={{ width: 28, height: 28, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{(f.pub.nickname || f.username || "?")[0].toUpperCase()}</span>}
-                              <OnlineDot lastSeenMs={f.lastSeenMs} overlay size={8} />
-                            </span>
-                            <span style={{ minWidth: 0, flex: 1 }}>
-                              <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
-                              <span style={{ display: "block", fontSize: 10, color: "rgba(244,238,226,.55)" }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
-                            </span>
-                          </button>
-                        ))}
+                {/* (v0.4.3 UI 개편, 사용자 요청) 친구 목록을 뜨는 드롭다운 대신 카드 자체를 아래로
+                    넓히는 인라인 목록으로 바꾼다 — 각 행에서 프로필(사진·이름) 부분을 누르면 그 친구의
+                    프로필 화면으로 이동하고(onOpenProfile), 오른쪽 "도전" 버튼을 눌러야 대국을
+                    신청한다(두 동작을 실수로 섞어 누르지 않도록 버튼을 분리). */}
+                <button onClick={() => { if (pvpWaiting) leavePvpQueue(); setMode("pvp"); setPvpSubMode("friend"); setPvpErr(""); setFriendDropdownOpen((v) => !v); }} disabled={!myUid} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: friendDropdownOpen ? "10px 10px 0 0" : 10, border: "1px solid " + (myUid ? T.brass : "#C9B58C"), background: myUid ? "rgba(196,154,80,.12)" : "rgba(0,0,0,.04)", color: myUid ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13.5, cursor: myUid ? "pointer" : "default" }}>
+                  <User size={16} /> {!myUid ? "로그인 후 이용할 수 있어요" : "친구와 플레이하기"}
+                  {myUid && <ChevronDown size={15} style={{ transform: friendDropdownOpen ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />}
+                </button>
+                {friendDropdownOpen && (
+                  <div style={{ border: "1px solid " + T.brass, borderTop: "none", borderRadius: "0 0 10px 10px", maxHeight: 280, overflowY: "auto" }}>
+                    {sortedFriendList.length === 0 ? (
+                      <div style={{ padding: "14px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>같이 대국할 친구가 없어요.</div>
+                    ) : sortedFriendList.map((f, i) => (
+                      <div key={f.uid} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i ? "1px solid rgba(0,0,0,.07)" : "none" }}>
+                        <button onClick={() => onOpenProfile && onOpenProfile(f.username)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                          <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
+                            {f.pub.photo ? <img src={f.pub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
+                              : <span style={{ width: 28, height: 28, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{(f.pub.nickname || f.username || "?")[0].toUpperCase()}</span>}
+                            <OnlineDot lastSeenMs={f.lastSeenMs} overlay size={8} />
+                          </span>
+                          <span style={{ minWidth: 0, flex: 1 }}>
+                            <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
+                            <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
+                          </span>
+                        </button>
+                        <button onClick={() => sendFriendInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>도전</button>
                       </div>
-                    </>
-                  )}
-                </div>
+                    ))}
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -17988,9 +18013,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: SITE_FONT, fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
         </div>
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
-            줄에 두면 폭이 좁아 말줄임으로 잘렸다 — 버튼과 분리해 별도 줄에 잘리지 않고 전부 보여준다. */}
-        {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9.5, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.35, marginTop: 4, wordBreak: "keep-all" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
-        <div className="flex items-center justify-between" style={{ marginTop: 4, gap: 7, rowGap: 4, flexWrap: "wrap", flexShrink: 0 }}>
+            줄에 두면 폭이 좁아 말줄임으로 잘렸다 — 버튼과 분리해 별도 줄에 잘리지 않고 전부 보여준다.
+            (v0.4.3 버그 수정, 사용자 제보) 이 줄이 있고 없고에 따라(풀이 정보가 있는 퍼즐만 이 줄이
+            생김) 같은 행의 카드끼리 높이가 들쭉날쭉해 보였다 — 텍스트가 없어도 이 줄 자체는 항상
+            렌더링해(visibility만 숨김) 자리를 예약하게 바꾼다. */}
+        {(() => { const t = solveCountText(solveCount, friendSolverNames); return (
+          <div style={{ fontSize: 9.5, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.35, marginTop: 4, wordBreak: "keep-all", minHeight: 13, visibility: t ? "visible" : "hidden" }}>{t || " "}</div>
+        ); })()}
+        {/* (v0.4.3 버그 수정, 사용자 제보) PGN/국면/FEN/레이팅 배지 개수가 카드마다 달라 이 줄이 1줄
+            또는 2줄로 들쭉날쭉하게 감싸졌다(rowGap으로 줄바꿈) — minHeight로 "배지가 2줄까지 감싸도
+            안전한" 높이를 항상 예약해 배지 수와 무관하게 카드 높이가 고정되게 한다. */}
+        <div className="flex items-center justify-between" style={{ marginTop: 4, gap: 7, rowGap: 4, flexWrap: "wrap", flexShrink: 0, minHeight: 40 }}>
             {/* (사용자 요청) PGN/FEN 정보 보유 배지 — 퍼즐 레이팅 박스와 같은 크기로 그 왼쪽에,
                 둘 다 있으면 둘 다 표시한다. (신규) 국면(오프닝/미들게임/엔드게임) 배지도 같은 자리에
                 항상 표시되므로, 배지가 늘어나도 잘리지 않도록 줄바꿈을 허용한다. */}
@@ -23559,7 +23592,59 @@ function ChatUserProfileModal({ username, onClose, myUid }) {
     </div>
   );
 }
-function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, fillNarrow, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+// (v0.4.3 기능, 사용자 요청) 친구에게 대국을 신청하면(pvp_invite_friend) 같은 내용을 채팅에도
+// 남긴다 — 전역 알람 박스(GlobalPvpInviteBanner)와 같은 디자인의 카드로, 상대(받은 쪽)는 여기서
+// 바로 수락/거절할 수 있고 보낸 쪽은 취소할 수 있다. 초대 상태는 이 메시지 행이 아니라 매번
+// pvp_invites를 다시 읽어(+실시간 구독) 확인하므로, 전역 알람 박스에서 먼저 응답해도 여기 카드가
+// 곧바로 같이 갱신된다.
+function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted }) {
+  const [inv, setInv] = useState(null);
+  const load = useCallback(async () => {
+    try { const rows = await sbSelect("pvp_invites?id=eq." + msg.pvp_invite_id + "&select=*"); setInv((rows && rows[0]) || null); } catch { }
+  }, [msg.pvp_invite_id]);
+  useEffect(() => { load(); }, [load]);
+  useRealtimeTable("pvp_invites", "id=eq." + msg.pvp_invite_id, (payload) => { if (payload && payload.new) setInv(payload.new); else load(); }, true, 8000);
+  const respond = async (accept) => {
+    try {
+      const r = await sbRpc("pvp_invite_respond", { p_invite_id: msg.pvp_invite_id, p_accept: accept });
+      if (r) setInv(r);
+      if (accept && r && r.game_id && onAccepted) {
+        const rows = await sbSelect("pvp_games?id=eq." + r.game_id + "&select=*");
+        if (rows && rows[0]) onAccepted(rows[0]);
+      }
+    } catch { }
+  };
+  const cancel = async () => {
+    try { await sbRpc("pvp_invite_cancel", { p_invite_id: msg.pvp_invite_id }); setInv((c) => (c ? { ...c, status: "cancelled" } : c)); } catch { }
+  };
+  const status = inv ? inv.status : "pending";
+  return (
+    <div style={{ display: "flex", justifyContent: "center" }}>
+      <div style={{ width: 240, padding: "11px 13px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 8px 20px -8px rgba(0,0,0,.5)" }}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 9 }}>
+          {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+            : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>{mine ? "실시간 대국을 신청했어요" : "실시간 대국을 신청받았어요"}</div>
+        </div>
+        {status === "pending" ? (
+          mine ? (
+            <button onClick={cancel} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>취소</button>
+          ) : (
+            <div className="flex gap-2">
+              <button onClick={() => respond(true)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>수락</button>
+              <button onClick={() => respond(false)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>거절</button>
+            </div>
+          )
+        ) : (
+          <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(244,238,226,.65)" }}>
+            {status === "accepted" ? "수락됐어요 — PLAY 탭에서 대국을 확인하세요." : status === "declined" ? "거절됐어요." : "취소됐어요."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, fillNarrow, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   // (UI) 사용자 요청 — 채팅에 공유된 퍼즐 블록도 퍼즐 탭(PuzzleCard)과 완전히 같은 UI를 쓴다.
   // puzzlePreviews에 담긴 pz는 puzzles.data(전체 퍼즐 레코드, id 포함)라 PuzzleCard가 그대로 쓸 수
   // 있고, 좋아요·리포스트·공유·풀이수는 전역 상태(위 props)에서 puzzle_no로 바로 조회한다.
@@ -23890,6 +23975,10 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
         {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>아직 대화가 없어요. 첫 메시지를 보내보세요!</div>}
         {msgs.map((m, i) => {
           const mine = m.from_uid === myUid;
+          // (v0.4.3 기능) 실시간 대국 신청 카드 — pvp_invite_friend가 함께 남긴 메시지.
+          if (m.pvp_invite_id != null) {
+            return <div key={m.id}><PvpInviteChatCard msg={m} mine={mine} otherUsername={otherUsername} otherPhoto={otherPhoto} onAccepted={onAcceptPvpInvite} /></div>;
+          }
           // (v0.1.0) 공유 보상 시스템 메시지 — 릴스 댓글창의 "선물" 알림처럼 좌우 정렬 없이 가운데 배지로 표시.
           // from_uid=이 메시지를 발생시킨 쪽(퍼즐을 푼 사람), to_uid=XP를 받은 쪽(공유한 사람) — 어느
           // 쪽에서 보든 뜻이 분명하도록 누가 풀었고 누가 받았는지를 매번 명시한다.
@@ -25593,7 +25682,7 @@ function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [rows, setRows] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [chatWith, setChatWith] = useState(null);
@@ -25699,7 +25788,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
         )}
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
+            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={onAcceptPvpInvite} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : (
@@ -25727,7 +25816,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
                         {muted && <BellOff size={10} style={{ color: T.inkSoft, flexShrink: 0 }} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.review_id != null ? "📊 리뷰를 공유했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
+                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.review_id != null ? "📊 리뷰를 공유했어요" : m.pvp_invite_id != null ? "⚔️ 실시간 대국을 신청했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
                     </span>
                     <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(m.created_at)}</span>
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}
@@ -26165,7 +26254,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenPuzzle, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, onOpenPuzzle, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -26278,7 +26367,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
+            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={onAcceptPvpInvite} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : sel ? (() => {
@@ -26657,6 +26746,64 @@ function NewPasswordModal({ recovery, onDone, onClose }) {
   );
 }
 
+// (v0.4.3 기능, 사용자 요청) 친구 대국 신청(pvp_invites) 전역 알람 박스 — App 루트에 항상 마운트해
+// 두어, 상대가 사이트 안에서 어느 탭·화면에 있든(로그인만 돼 있으면) 상단에 뜬다. 자동으로 사라지지
+// 않고 수락·거절하거나(내가) 상대가 취소할 때만(실시간 구독) 닫힌다. 여러 화면에서 각자 따로
+// 구독·응답하면 중복 팝업이나 엇갈린 상태가 생기므로, 응답 로직 전체를 여기 한 곳에만 둔다.
+function GlobalPvpInviteBanner({ myUid, onAccepted }) {
+  const [invite, setInvite] = useState(null); // { ...pvp_invites 행, fromPub, fromUsername }
+  const loadPending = useCallback(async () => {
+    if (!myUid) { setInvite(null); return; }
+    try {
+      const rows = await sbSelect("pvp_invites?to_uid=eq." + myUid + "&status=eq.pending&order=created_at.desc&limit=1");
+      const row = rows && rows[0];
+      if (!row) { setInvite(null); return; }
+      const profiles = await usersProfiles([row.from_uid]);
+      setInvite({ ...row, fromPub: (profiles[row.from_uid] || {}).pub || {}, fromUsername: (profiles[row.from_uid] || {}).username });
+    } catch { }
+  }, [myUid]);
+  useEffect(() => { loadPending(); }, [loadPending]);
+  // 새로 온 도전장 — 소켓이 끊겼을 때를 대비해 폴백(15초)으로도 다시 확인한다.
+  useRealtimeTable("pvp_invites", myUid ? "to_uid=eq." + myUid : null, () => loadPending(), !!myUid, 15000);
+  // 지금 보여주는 도전장 자체의 상태 변화(상대가 취소했거나, 다른 화면에서 이미 응답한 경우) 감시 —
+  // 상태가 더 이상 pending이 아니면 곧장 닫는다.
+  useRealtimeTable("pvp_invites", invite ? "id=eq." + invite.id : null, (payload) => {
+    const row = payload && payload.new;
+    if (row) { if (row.status !== "pending") setInvite(null); }
+    else loadPending();
+  }, !!invite, 6000);
+  if (!myUid || !invite) return null;
+  const respond = async (accept) => {
+    const id = invite.id;
+    setInvite(null);
+    try {
+      const inv = await sbRpc("pvp_invite_respond", { p_invite_id: id, p_accept: accept });
+      if (accept && inv && inv.game_id) {
+        const rows = await sbSelect("pvp_games?id=eq." + inv.game_id + "&select=*");
+        if (rows && rows[0] && onAccepted) onAccepted(rows[0]);
+      }
+    } catch { }
+  };
+  const tc = TIME_CONTROLS.find((t) => t.key === invite.time_control) || DEFAULT_TIME_CONTROL;
+  return (
+    <div style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 10090, width: "min(360px, calc(100vw - 24px))" }}>
+      <div style={{ padding: "12px 14px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 14px 34px -10px rgba(0,0,0,.65)" }}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
+          {invite.fromPub.photo ? <img src={invite.fromPub.photo} alt="" style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+            : <span style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(invite.fromPub.nickname || invite.fromUsername || "?")[0].toUpperCase()}</span>}
+          <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
+            @{invite.fromUsername || "누군가"}님이 대국을 신청했어요
+            <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{tc.label}{tc.cat ? " · " + tc.cat : ""}</span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => respond(true)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>수락</button>
+          <button onClick={() => respond(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>거절</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 export default function App() {
   const narrowHeader = useNarrow(480);
   // (16차) 주소창의 서브패스(/learn, /book, /puzzle, /setting)로 직접 들어온 경우 그 탭을 우선한다.
@@ -26810,6 +26957,11 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false); // (18차 UX7) 채팅 모아보기
+  // (v0.4.3 기능, 사용자 요청) /play의 "친구와 플레이하기" 목록에서 친구 프로필을 누르면 여기(App
+  // 루트)의 ChatUserProfileModal을 연다 — /play 자체는 경로(pathname)를 그대로 유지한 채 screens
+  // 배열에 "play-profile"만 얹어(위 pushScreen/popScreen, 아래 popstate 핸들러와 같은 패턴), 뒤로가기를
+  // 누르면 프로필 창만 닫히고 /play 화면은 그대로 남는다.
+  const [playProfileUsername, setPlayProfileUsername] = useState(null);
   const [tierMapOpen, setTierMapOpen] = useState(false); // (v0.0.6 개편) 티어 배지를 누르면 여는 여정 지도
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
   // (UI8) 메인 화면 친구 버튼에 보류 중인 요청 수를 배지로 표시 — 요청 탭을 열지 않아도 보이도록
@@ -27559,6 +27711,7 @@ export default function App() {
       setChatsOpen(screens.includes("chats"));
       setProfileWinOpen(screens.includes("profile"));
       setTierMapOpen(screens.includes("tiermap"));
+      if (!screens.includes("play-profile")) setPlayProfileUsername(null);
       setLearnFocus((f) => (f && !screens.includes("focus")) ? null : f);
     };
     window.addEventListener("popstate", onPop);
@@ -27798,7 +27951,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: "system-ui, -apple-system, 'Noto Sans KR', sans-serif" }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes miniAccDotPop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50} @keyframes lessonSiren{0%,100%{opacity:.35}50%{opacity:.85}} @keyframes lessonCaretBlink{0%,55%{opacity:1}56%,100%{opacity:0}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes miniAccDotPop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50} @keyframes lessonSiren{0%,100%{opacity:.35}50%{opacity:.85}} @keyframes lessonCaretBlink{0%,55%{opacity:1}56%,100%{opacity:0}} @keyframes pvpRadarPulse{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.9);opacity:0}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
@@ -27874,14 +28027,16 @@ export default function App() {
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
         solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
-      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} />}
+      {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
+      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={(u) => { setPlayProfileUsername(u); pushScreen("play-profile"); }} />}
+      {playProfileUsername && <ChatUserProfileModal username={playProfileUsername} onClose={() => { setPlayProfileUsername(null); popScreen("play-profile"); }} myUid={uid} />}
       {profileWinOpen && user && (
         <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size}
           onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
