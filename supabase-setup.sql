@@ -1324,16 +1324,26 @@ end; $$;
 grant execute on function public.pvp_move(bigint, text) to authenticated;
 
 -- 기권/무승부 등 대국 종료 — 참가자만, 진행 중인 대국만 종료할 수 있다.
+-- (보안 수정) 처음엔 참가자면 아무 상태나 넣을 수 있었다 — 예를 들어 지고 있는 쪽이
+-- pvp_finish(id, 'white_won')을 자기가 백이라는 이유만으로 그대로 호출해 실제로 이기지 않고도
+-- "내가 이겼다"고 서버에 우겨 넣을 수 있었다(권한 우회). 체크메이트/스테일메이트는 양쪽 클라이언트가
+-- 같은 sans 배열로 동일하게 계산하므로 결과가 협상 대상이 아니다 — 그래서 "내가 이겼다"를 스스로
+-- 선언하는 것만 막는다: 자신을 패자(또는 무승부·중단)로 보고하는 것만 허용하고, 승자 쪽 클라이언트의
+-- 중복 호출은 조용히 실패해도 무방하다(패자 쪽 호출 하나만 성공하면 충분 — 클라이언트는 이미 실패를
+-- 무시하도록 되어 있다). 무승부는 "제안"이 아니라 실제 수순에서 객관적으로 계산되는 상태라 양쪽 모두
+-- 그대로 허용한다.
 drop function if exists public.pvp_finish(bigint, text) cascade;
 create or replace function public.pvp_finish(p_game_id bigint, p_status text)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid(); v_game public.pvp_games;
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_my_win_status text;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   if p_status not in ('white_won','black_won','draw','aborted') then raise exception 'invalid status'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  v_my_win_status := case when v_me = v_game.white_uid then 'white_won' else 'black_won' end;
+  if p_status = v_my_win_status then raise exception 'cannot self-declare victory'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   update public.pvp_games set status = p_status, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
