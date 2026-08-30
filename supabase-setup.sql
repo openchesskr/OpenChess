@@ -1200,3 +1200,28 @@ begin
 end; $$;
 grant execute on function public.legacy_like_toggle(uuid, text) to authenticated;
 grant select, insert, update on public.reviewed_games to anon, authenticated;
+
+-- ============================================================================
+-- N) presence — OpenChess 실시간 접속 여부(Discord 스타일 초록 점) + 마지막 접속 시각
+-- ============================================================================
+-- 로그인해 있는 동안 클라이언트가 주기적으로(약 25초) touch_presence()를 호출해 이 행을 최신화한다.
+-- 프로필·친구 목록은 last_seen이 최근(약 90초 이내)이면 "온라인"으로, 아니면 "n분 전 접속"으로 보여준다.
+create table if not exists public.presence (
+  uid uuid primary key references auth.users(id) on delete cascade,
+  last_seen timestamptz not null default now()
+);
+alter table public.presence enable row level security;
+drop policy if exists "presence select all" on public.presence;
+create policy "presence select all" on public.presence for select using (true);
+grant select on public.presence to anon, authenticated;
+-- 쓰기는 이 RPC로만 허용한다(SECURITY DEFINER) — auth.uid()로 본인 행만 갱신 가능, 테이블 직접
+-- insert/update 권한은 아무에게도 주지 않는다.
+drop function if exists public.touch_presence() cascade;
+create or replace function public.touch_presence()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return; end if;
+  insert into public.presence(uid, last_seen) values (auth.uid(), now())
+  on conflict (uid) do update set last_seen = now();
+end; $$;
+grant execute on function public.touch_presence() to authenticated;

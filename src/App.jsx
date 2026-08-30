@@ -2692,7 +2692,9 @@ async function fetchChesscomProfile(username) {
       games = rec(s.chess_rapid) + rec(s.chess_blitz) + rec(s.chess_bullet);
     }
   } catch (_) { }
-  return { username: chesscomDisplayUsername(p, u), avatar: p.avatar || null, name: p.name || null, country: p.country ? p.country.split("/").pop() : null, rapid, blitz, bullet, games };
+  // (신규 기능) 사용자 요청 — chess.com 최근 접속 시간 표시. chess.com 공개 API가 player 응답에
+  // last_online(초 단위 유닉스 타임스탬프)을 그대로 제공한다.
+  return { username: chesscomDisplayUsername(p, u), avatar: p.avatar || null, name: p.name || null, country: p.country ? p.country.split("/").pop() : null, rapid, blitz, bullet, games, lastOnline: p.last_online ? p.last_online * 1000 : null };
 }
 function countryFlag(code) { if (!code || code.length !== 2) return ""; return code.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0))); }
 // (19차 기능6) chess.com 게임의 ECO URL(예: https://www.chess.com/openings/Italian-Game-...) → 사람이 읽는 오프닝 이름.
@@ -20443,12 +20445,16 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || myPub.chesscom}</div>
             {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
+            {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
           </div>
         </div>
       ) : (
         <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-          {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
-            : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(myPub.nickname || user || "?")[0].toUpperCase()}</span>}
+          <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+            {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
+              : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(myPub.nickname || user || "?")[0].toUpperCase()}</span>}
+            <OnlineDot lastSeenMs={Date.now()} overlay size={13} />
+          </span>
           <div style={{ minWidth: 0 }}>
             {/* (디자인) 칭호는 이름 위에 표시 */}
             <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{myPub.nickname || myPub.displayId || user}</div>
@@ -22640,6 +22646,52 @@ function relTime(iso) {
   if (d < 86400) return Math.floor(d / 3600) + "시간 전";
   return Math.floor(d / 86400) + "일 전";
 }
+// (신규 기능) 사용자 요청 — chess.com 최근 접속 시간·OpenChess 최근 접속/실시간 접속 여부를 친구·프로필
+// 화면에 Discord 스타일 초록 원으로 보여준다. ONLINE_WINDOW_MS(하트비트 주기 25초의 여유를 둔 90초)
+// 안에 마지막 접속이 있으면 "지금 온라인"으로 본다.
+const ONLINE_WINDOW_MS = 90000;
+function relTimeFromMs(ms) { return relTime(new Date(ms).toISOString()); }
+// 여러 uid의 presence(last_seen)를 한 번에 읽어온다 — RLS는 "select all"이라 로그인 상태면 누구나
+// 조회 가능(profiles와 동일한 공개 수준).
+async function fetchPresenceMap(uids) {
+  const list = [...new Set((uids || []).filter(Boolean))];
+  if (!SB_ON || !list.length) return {};
+  try {
+    const rows = await sbSelect("presence?uid=in.(" + list.join(",") + ")&select=uid,last_seen");
+    const out = {};
+    for (const r of rows || []) out[r.uid] = new Date(r.last_seen).getTime();
+    return out;
+  } catch { return {}; }
+}
+// uid 목록(친구 목록·프로필 등)의 온라인 여부를 주기적으로(20초) 다시 불러오는 훅.
+function usePresenceMap(uids) {
+  const [map, setMap] = useState({});
+  const key = (uids || []).filter(Boolean).join(",");
+  useEffect(() => {
+    if (!key) { setMap({}); return; }
+    let cancelled = false;
+    const load = () => fetchPresenceMap(key.split(",")).then((m) => { if (!cancelled) setMap(m); });
+    load();
+    const id = setInterval(load, 20000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [key]);
+  return map;
+}
+// Discord 스타일 초록 원 — 아바타 우하단에 겹쳐 쓰거나(overlaySize) 단독으로 쓸 수 있다.
+function OnlineDot({ lastSeenMs, size = 10, overlay }) {
+  const online = lastSeenMs && (Date.now() - lastSeenMs) < ONLINE_WINDOW_MS;
+  if (!online) return null;
+  const style = overlay
+    ? { position: "absolute", right: -1, bottom: -1, width: size, height: size, borderRadius: "50%", background: "#3BA55D", border: "2px solid " + T.paper, boxSizing: "content-box" }
+    : { display: "inline-block", width: size, height: size, borderRadius: "50%", background: "#3BA55D", flexShrink: 0 };
+  return <span style={style} aria-label="온라인" title="온라인" />;
+}
+// 접속 상태 텍스트 — 온라인이면 "온라인", 아니면 "n분 전 접속"(마지막 접속 시각을 모르면 빈 문자열).
+function presenceLabel(lastSeenMs) {
+  if (!lastSeenMs) return "";
+  if (Date.now() - lastSeenMs < ONLINE_WINDOW_MS) return "온라인";
+  return relTimeFromMs(lastSeenMs) + " 접속";
+}
 function notifText(n) {
   const p = n.payload || {};
   if (n.kind === "friend_request") return (p.fromUsername || "누군가") + "님이 친구 요청을 보냈습니다";
@@ -24802,6 +24854,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
   // (신규 기능) MyProfileCard와 동일하게, chess.com 통계 보기를 고르면 카드 상단 신원 표시도
   // chess.com 것으로 바꿔 보여준다.
   const [ccHeaderProf, setCcHeaderProf] = useState(null);
+  const selPresence = usePresenceMap(sel ? [sel.uid] : []);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
   // (버그 수정) 검색 버튼을 눌러야만 검색되던 것 — 입력할 때마다(살짝 debounce해) 자동으로
   // 실시간 검색되도록 한다. 검색 버튼은 그대로 두어 즉시 재검색하고 싶을 때도 쓸 수 있게 한다.
@@ -24880,16 +24933,21 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || pub.chesscom}</div>
                   {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
+                  {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
                 </div>
               </div>
             ) : (
               <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-                {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
-                  : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
+                <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+                  {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
+                    : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
+                  <OnlineDot lastSeenMs={selPresence[pub.uid]} overlay size={13} />
+                </span>
                 <div style={{ minWidth: 0 }}>
                   {/* (18차 UI11) 칭호는 텍스트 대신 칭호 이미지로 표시 — 이름 위에 표시 */}
                   <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</div>
                   {pub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.bio}</div>}
+                  {presenceLabel(selPresence[pub.uid]) && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>OpenChess {presenceLabel(selPresence[pub.uid])}</div>}
                 </div>
               </div>
             )}
@@ -24941,17 +24999,21 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
     </div>
   );
 }
-function FriendRow({ id, pub, right, onClick }) {
+function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
   const p = pub || {};
   const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, borderRadius: 10, border: isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: "#FBF5E8", boxShadow: isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none" }}>
       <button onClick={onClick} className="press" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", cursor: onClick ? "pointer" : "default", textAlign: "left", padding: 0 }}>
-        {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(isGM, 2) || {}) }} />
-          : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || id || "?")[0].toUpperCase()}</span>}
+        {/* (신규 기능) 사용자 요청 — 아바타 우하단에 Discord 스타일 초록 점으로 실시간 접속 여부 표시. */}
+        <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
+          {p.photo ? <img src={p.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", ...(gmPhotoRingStyle(isGM, 2) || {}) }} />
+            : <span style={{ width: 34, height: 34, borderRadius: 9, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || id || "?")[0].toUpperCase()}</span>}
+          <OnlineDot lastSeenMs={lastSeenMs} overlay size={9} />
+        </span>
         <div style={{ minWidth: 0 }}>
           <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || id}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
-          <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT }}>@{id}</div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT }}>@{id}{presenceLabel(lastSeenMs) && <span> · {presenceLabel(lastSeenMs)}</span>}</div>
         </div>
       </button>
       <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>{right}</div>
@@ -25588,6 +25650,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   const doReject = (uid) => guard(uid, async () => { await friendRemove(uid); await notifyResolveFriendRequest(meId, uid, "rejected"); })();
 
   const viewProfileUid = (uid) => { const pr = profiles[uid] || {}; setStatsView("oc"); setCcHeaderProf(null); setSel({ uid, username: pr.username || uid, pub: pr.pub || {} }); };
+  // (신규 기능) 사용자 요청 — 친구 목록·요청 목록에 표시할 실시간 접속 여부를 한 번에 불러온다.
+  const presenceMap = usePresenceMap([...friends, ...incoming, ...outgoing]);
+  const selPresence = usePresenceMap(sel ? [sel.uid] : []);
   useEffect(() => {
     let cancelled = false;
     const ccUsername = sel && sel.pub && sel.pub.chesscom;
@@ -25676,15 +25741,20 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || p.chesscom}</div>
                     {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
+                    {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
                   </div>
                 </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                  {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
-                    : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
+                  <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+                    {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
+                      : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
+                    <OnlineDot lastSeenMs={selPresence[sel.uid]} overlay size={13} />
+                  </span>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
                     {p.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
+                    {presenceLabel(selPresence[sel.uid]) && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>OpenChess {presenceLabel(selPresence[sel.uid])}</div>}
                   </div>
                 </div>
               )}
@@ -25708,7 +25778,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                     : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{friends.map((u, i) => (
                         // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
                         // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
-                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
+                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
                       ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
                   incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>
@@ -25716,13 +25786,13 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                         {incoming.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>받은 요청</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{incoming.map((u, i) => (
-                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doReject(u), "ghost", !!pending[u])}</>} /></FadeIn>
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doReject(u), "ghost", !!pending[u])}</>} /></FadeIn>
                           ))}</AnimatePresence></div>
                         </div>}
                         {outgoing.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>보낸 요청</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{outgoing.map((u, i) => (
-                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} onClick={() => viewProfileUid(u)} right={btn("취소", () => doRemove(u), "ghost", !!pending[u])} /></FadeIn>
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={btn("취소", () => doRemove(u), "ghost", !!pending[u])} /></FadeIn>
                           ))}</AnimatePresence></div>
                         </div>}
                       </div>
@@ -26161,6 +26231,18 @@ export default function App() {
   const [recovery, setRecovery] = useState(null);
   const [needUser, setNeedUser] = useState(null);   // 최초 구글 로그인 → 아이디 설정 대기
   const [authNotice, setAuthNotice] = useState("");   // 구글 콜백 오류 안내
+  // (신규 기능) 사용자 요청 — Discord 스타일 초록 점으로 실시간 접속 여부를 보여주기 위해, 로그인해
+  // 있는 동안 주기적으로 내 마지막 접속 시각(presence.last_seen)을 서버에 갱신한다. 화면이 백그라운드로
+  // 가려져 있을 때는 갱신을 멈춰(visibilitychange) "떠나 있는데 온라인으로 보이는" 오차를 줄인다.
+  useEffect(() => {
+    if (!uid || !SB_ON) return;
+    let cancelled = false;
+    const beat = () => { if (!cancelled && document.visibilityState !== "hidden") sbRpc("touch_presence", {}).catch(() => {}); };
+    beat();
+    const id = setInterval(beat, 25000);
+    document.addEventListener("visibilitychange", beat);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", beat); };
+  }, [uid]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false); // (18차 UX7) 채팅 모아보기
