@@ -10259,17 +10259,24 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
 // (신규 기능) 사용자 요청 — 봇/실시간 대국 모두 타임 컨트롤을 고를 수 있게. key는 pvp_queue/
 // pvp_games.time_control과 그대로 맞춘 "초기시간(초)-증가시간(초)" 형식(예: "600-0" = 10|0) — 같은
 // 문자열끼리만 대기열에서 짝짓는다. initialSec이 null이면 무제한(클럭 없음).
+// (v0.4.3 UI 개편) 사용자 요청 — chess.com처럼 불렛/블리츠/래피드/스탠다드 4개 카테고리로 묶어 3개씩
+// 나열한 그리드로 바꾼다(각 항목의 cat이 그 그룹 헤더).
 const TIME_CONTROLS = [
-  { key: "60-0", label: "1분", sub: "불릿", initialSec: 60, incSec: 0 },
-  { key: "180-0", label: "3분", sub: "블리츠", initialSec: 180, incSec: 0 },
-  { key: "180-2", label: "3|2", sub: "블리츠", initialSec: 180, incSec: 2 },
-  { key: "300-0", label: "5분", sub: "블리츠", initialSec: 300, incSec: 0 },
-  { key: "600-0", label: "10분", sub: "래피드", initialSec: 600, incSec: 0 },
-  { key: "900-10", label: "15|10", sub: "래피드", initialSec: 900, incSec: 10 },
-  { key: "1800-0", label: "30분", sub: "클래식", initialSec: 1800, incSec: 0 },
-  { key: "none", label: "무제한", sub: "", initialSec: null, incSec: 0 },
+  { key: "60-0", label: "1분", cat: "불렛", initialSec: 60, incSec: 0 },
+  { key: "120-0", label: "2분", cat: "불렛", initialSec: 120, incSec: 0 },
+  { key: "120-1", label: "2분+1초", cat: "불렛", initialSec: 120, incSec: 1 },
+  { key: "180-0", label: "3분", cat: "블리츠", initialSec: 180, incSec: 0 },
+  { key: "300-0", label: "5분", cat: "블리츠", initialSec: 300, incSec: 0 },
+  { key: "300-2", label: "5분+2초", cat: "블리츠", initialSec: 300, incSec: 2 },
+  { key: "600-0", label: "10분", cat: "래피드", initialSec: 600, incSec: 0 },
+  { key: "900-0", label: "15분", cat: "래피드", initialSec: 900, incSec: 0 },
+  { key: "900-10", label: "15분+10초", cat: "래피드", initialSec: 900, incSec: 10 },
+  { key: "1800-0", label: "30분", cat: "스탠다드", initialSec: 1800, incSec: 0 },
+  { key: "3600-0", label: "1시간", cat: "스탠다드", initialSec: 3600, incSec: 0 },
+  { key: "3600-30", label: "1시간+30초", cat: "스탠다드", initialSec: 3600, incSec: 30 },
 ];
-const DEFAULT_TIME_CONTROL = TIME_CONTROLS[4]; // 10분(래피드)
+const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"];
+const DEFAULT_TIME_CONTROL = TIME_CONTROLS[6]; // 10분(래피드)
 function fmtClock(ms) {
   if (ms == null) return "";
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -10346,6 +10353,10 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // (신규 기능) 사용자 요청 — 실시간 대국은 진영을 고르지 않고(서버가 항상 무작위 배정), 대신
   // "랜덤 매칭"(대기열)과 "친구와 플레이"(도전장) 중 하나를 고른다.
   const [pvpSubMode, setPvpSubMode] = useState("queue"); // "queue" | "friend"
+  // (v0.4.3 UI 개편) 사용자 요청 — 설정 화면을 "타임 컨트롤 고르기 → 대국 상대 찾기/봇과 플레이하기/
+  // 친구와 플레이하기 3택" 한 화면으로 합쳤다. "봇과 플레이하기"만 진영·봇 등급을 더 골라야 해서
+  // "choose"(3택 화면) → "bot"(진영·등급 선택 화면)으로 넘어가는 하위 단계를 따로 둔다.
+  const [setupPhase, setSetupPhase] = useState("choose"); // "choose" | "bot"
   const [pvpWaiting, setPvpWaiting] = useState(false);
   const [pvpGame, setPvpGame] = useState(null); // pvp_games 행(id, white_uid, black_uid, sans, status)
   const [pvpErr, setPvpErr] = useState("");
@@ -10666,7 +10677,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       if (myInvite) cancelFriendInvite();
       setIncomingInvite(null); setFriendDropdownOpen(false);
     }
-    setSans(seedSans); setResigned(false); setFlagged(null); setClock(null); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setStep("setup");
+    setSans(seedSans); setResigned(false); setFlagged(null); setClock(null); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setSetupPhase("choose"); setStep("setup");
   };
   const resign = () => {
     setResigned(true); setOptionsOpen(false);
@@ -10746,7 +10757,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         </div>
         {step === "setup" ? (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-            {/* (신규 기능) 사용자 요청 — 다른 사람에게 온 도전장은 어느 모드/화면에 있든 맨 위에 배너로
+            {/* (신규 기능) 사용자 요청 — 다른 사람에게 온 도전장은 어느 화면에 있든 맨 위에 배너로
                 보여준다. */}
             {incomingInvite && (
               <div style={{ marginBottom: 14, padding: "11px 13px", borderRadius: 10, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass }}>
@@ -10759,24 +10770,82 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 </div>
               </div>
             )}
-            {/* (신규 기능) 사용자 요청 — 타임 컨트롤을 맨 위에서 고른다(봇/실시간 대국 공통). */}
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>타임 컨트롤</div>
-            <div className="flex flex-wrap gap-2" style={{ marginBottom: 16 }}>
-              {TIME_CONTROLS.map((t) => (
-                <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 12px", borderRadius: 9, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
-                  {t.label}{t.sub && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, opacity: 0.75 }}>{t.sub}</span>}
-                </button>
-              ))}
-            </div>
-            {/* (신규 기능) 사용자 요청 — 봇과 대국하는 대신, 다른 OpenChess 사용자와 실시간으로 대국할
-                수 있게 한다. 대기열에 넣고(pvp_queue_join) 상대가 나타날 때까지 기다린다. */}
-            <div className="flex gap-2" style={{ marginBottom: 16 }}>
-              {[["bot", "봇과 대국"], ["pvp", "실시간 대국"]].map(([k, lb]) => (
-                <button key={k} onClick={() => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setMode(k); setPvpErr(""); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (mode === k ? T.brass : "#C9B58C"), background: mode === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: mode === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
-              ))}
-            </div>
-            {mode === "bot" ? (
+            {/* (v0.4.3 UI 개편) 사용자 요청(스케치 제공) — "봇/실시간" 탭과 "랜덤 매칭/친구와 플레이" 탭을
+                없애고, 타임 컨트롤을 4개 카테고리(불렛·블리츠·래피드·스탠다드) 3×4 그리드로 고른 뒤 곧장
+                "대국 상대 찾기"(랜덤 매칭) · "봇과 플레이하기" · "친구와 플레이하기" 세 가지 중 하나를
+                누르는 한 화면으로 합쳤다. "봇과 플레이하기"만 진영·봇 등급을 더 골라야 해서 그때만
+                setupPhase가 "bot"으로 넘어간다. */}
+            {setupPhase === "choose" ? (
               <>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>타임 컨트롤</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
+                  {TIME_CONTROL_CATS.map((cat) => (
+                    <div key={cat} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center" }}>{cat}</div>
+                      {TIME_CONTROLS.filter((t) => t.cat === cat).map((t) => (
+                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 3px", borderRadius: 8, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 10.5, lineHeight: 1.25, cursor: "pointer" }}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ height: 1, background: "#DCCBA8", margin: "0 0 14px" }} />
+                {pvpErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{pvpErr}</div>}
+                {mode === "pvp" && pvpWaiting ? (
+                  <div style={{ textAlign: "center", padding: "16px 0", marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 12 }}>상대를 찾는 중...</div>
+                    <button onClick={leavePvpQueue} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+                  </div>
+                ) : mode === "pvp" && myInvite ? (
+                  <div style={{ textAlign: "center", padding: "16px 0", marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 12 }}>상대의 응답을 기다리는 중...</div>
+                    <button onClick={cancelFriendInvite} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2" style={{ marginBottom: 10 }}>
+                    <div style={{ padding: "11px 14px", borderRadius: 10, border: "1px solid #C9B58C", color: T.ink, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>{timeControl.label}</div>
+                    <button onClick={() => { setMode("pvp"); setPvpSubMode("queue"); setPvpErr(""); joinPvpQueue(); }} disabled={!myUid} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: !myUid ? "default" : "pointer" }}>
+                      <Play size={14} fill="#241509" />{!myUid ? "로그인 후 이용할 수 있어요" : "대국 상대 찾기"}
+                    </button>
+                  </div>
+                )}
+                <button onClick={() => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setMode("bot"); setSetupPhase("bot"); }} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginBottom: 10 }}>
+                  <Cpu size={16} /> 봇과 플레이하기
+                </button>
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => { if (pvpWaiting) leavePvpQueue(); setMode("pvp"); setPvpSubMode("friend"); setPvpErr(""); setFriendDropdownOpen((v) => !v); }} disabled={!myUid} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + (myUid ? T.brass : "#C9B58C"), background: myUid ? "rgba(196,154,80,.12)" : "rgba(0,0,0,.04)", color: myUid ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13.5, cursor: myUid ? "pointer" : "default" }}>
+                    <User size={16} /> {!myUid ? "로그인 후 이용할 수 있어요" : "친구와 플레이하기"}
+                  </button>
+                  {friendDropdownOpen && (
+                    <>
+                      <span onClick={() => setFriendDropdownOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                      <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", zIndex: 41, maxHeight: 280, overflowY: "auto", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", padding: 5 }}>
+                        {sortedFriendList.length === 0 ? (
+                          <div style={{ padding: "12px 10px", fontSize: 12, color: "rgba(244,238,226,.55)", textAlign: "center" }}>같이 대국할 친구가 없어요.</div>
+                        ) : sortedFriendList.map((f) => (
+                          <button key={f.uid} onClick={() => sendFriendInvite(f.uid)} className="press" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
+                            <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
+                              {f.pub.photo ? <img src={f.pub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
+                                : <span style={{ width: 28, height: 28, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{(f.pub.nickname || f.username || "?")[0].toUpperCase()}</span>}
+                              <OnlineDot lastSeenMs={f.lastSeenMs} overlay size={8} />
+                            </span>
+                            <span style={{ minWidth: 0, flex: 1 }}>
+                              <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
+                              <span style={{ display: "block", fontSize: 10, color: "rgba(244,238,226,.55)" }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setSetupPhase("choose")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 14, padding: "6px 10px 6px 6px", borderRadius: 8, border: "none", background: "transparent", color: T.brass, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
+                  <ChevronLeft size={16} /> 뒤로
+                </button>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>어느 진영으로 두시겠어요?</div>
                 <div className="flex gap-2" style={{ marginBottom: 16 }}>
                   {[["w", "백"], ["b", "흑"], ["random", "랜덤"]].map(([k, lb]) => (
@@ -10797,58 +10866,6 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                   ))}
                 </div>
                 <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: (!engine || engine.status !== "ready") ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? "엔진을 준비하는 중..." : "대국 시작"}</button>
-              </>
-            ) : (
-              <>
-                {pvpErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{pvpErr}</div>}
-                {/* (신규 기능) 사용자 요청 — 실시간 대국은 진영을 고르지 않는다(서버가 항상 무작위 배정).
-                    대신 랜덤 매칭(대기열)과 친구와 플레이(도전장) 중 하나를 고른다. */}
-                {!pvpWaiting && !myInvite && (
-                  <div className="flex gap-2" style={{ marginBottom: 16 }}>
-                    {[["queue", "랜덤 매칭"], ["friend", "친구와 플레이"]].map(([k, lb]) => (
-                      <button key={k} onClick={() => { setPvpSubMode(k); setFriendDropdownOpen(false); setPvpErr(""); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (pvpSubMode === k ? T.brass : "#C9B58C"), background: pvpSubMode === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pvpSubMode === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
-                    ))}
-                  </div>
-                )}
-                {pvpWaiting ? (
-                  <div style={{ textAlign: "center", padding: "20px 0" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>상대를 찾는 중...</div>
-                    <button onClick={leavePvpQueue} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
-                  </div>
-                ) : myInvite ? (
-                  <div style={{ textAlign: "center", padding: "20px 0" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>상대의 응답을 기다리는 중...</div>
-                    <button onClick={cancelFriendInvite} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
-                  </div>
-                ) : pvpSubMode === "queue" ? (
-                  <button onClick={joinPvpQueue} disabled={!myUid} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대국 상대 찾기"}</button>
-                ) : (
-                  <div style={{ position: "relative" }}>
-                    <button onClick={() => setFriendDropdownOpen((v) => !v)} disabled={!myUid} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: !myUid ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>{!myUid ? "로그인 후 이용할 수 있어요" : "친구 목록에서 고르기"}{myUid && <ChevronDown size={15} />}</button>
-                    {friendDropdownOpen && (
-                      <>
-                        <span onClick={() => setFriendDropdownOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-                        <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", zIndex: 41, maxHeight: 280, overflowY: "auto", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", padding: 5 }}>
-                          {sortedFriendList.length === 0 ? (
-                            <div style={{ padding: "12px 10px", fontSize: 12, color: "rgba(244,238,226,.55)", textAlign: "center" }}>같이 대국할 친구가 없어요.</div>
-                          ) : sortedFriendList.map((f) => (
-                            <button key={f.uid} onClick={() => sendFriendInvite(f.uid)} className="press" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
-                              <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
-                                {f.pub.photo ? <img src={f.pub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
-                                  : <span style={{ width: 28, height: 28, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{(f.pub.nickname || f.username || "?")[0].toUpperCase()}</span>}
-                                <OnlineDot lastSeenMs={f.lastSeenMs} overlay size={8} />
-                              </span>
-                              <span style={{ minWidth: 0, flex: 1 }}>
-                                <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
-                                <span style={{ display: "block", fontSize: 10, color: "rgba(244,238,226,.55)" }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
               </>
             )}
           </div>
