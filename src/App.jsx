@@ -5578,21 +5578,26 @@ function MoveLongPressPreview({ priorSans, san, kind, children, flip, boardSize 
     return () => window.removeEventListener("scroll", onScroll, true);
   }, [show]);
   useEffect(() => () => clearTimeout(pressTimerRef.current), []);
+  // (버그 수정, 사용자 제보) position:fixed는 조상 중 transform이 걸린 요소(퍼즐 카드를 감싸는
+  // FadeIn의 motion.div 등)가 있으면 뷰포트가 아니라 그 조상 기준으로 계산돼, 모바일에서 화면
+  // 가장자리 계산이 어긋나거나 그 조상의 overflow에 잘려 보였다 — ClickInfoBadge와 동일하게
+  // document.body로 포털을 띄워 항상 실제 뷰포트 기준으로 정확히, 잘리지 않게 그린다.
+  const preview = show && pos && (
+    <div style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, zIndex: 9999, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 9, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", pointerEvents: "none" }}>
+      <div className="flex items-center justify-center gap-2" style={{ marginBottom: 7 }}>
+        <span style={{ width: 17, height: 17, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 12)}</span>
+        <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 12, color: T.ivoryHi }}>{san}</span>
+      </div>
+      <AnimatedMove key={priorSans.length + san} sans={priorSans} san={san} size={boardSize} loopMs={1500} flip={!!flip} />
+    </div>
+  );
   return (
     <span ref={anchorRef} style={{ position: "relative", display: "inline-flex" }}
       onMouseEnter={openPreview} onMouseLeave={closePreview}
       onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
       onContextMenu={(e) => { if (show) e.preventDefault(); }}>
       {children}
-      {show && pos && (
-        <div style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, zIndex: 60, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 9, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", pointerEvents: "none" }}>
-          <div className="flex items-center justify-center gap-2" style={{ marginBottom: 7 }}>
-            <span style={{ width: 17, height: 17, borderRadius: "50%", flexShrink: 0, background: QCOLOR[kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 12)}</span>
-            <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 12, color: T.ivoryHi }}>{san}</span>
-          </div>
-          <AnimatedMove key={priorSans.length + san} sans={priorSans} san={san} size={boardSize} loopMs={1500} flip={!!flip} />
-        </div>
-      )}
+      {preview && typeof document !== "undefined" && createPortal(preview, document.body)}
     </span>
   );
 }
@@ -19460,9 +19465,12 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             <button ref={sortBtnRef} onClick={toggleSortMenu} className="press" title="정렬·필터" aria-label="정렬·필터 선택" style={{ width: 36, height: 36, boxSizing: "border-box", borderRadius: 9, background: sortMenuOpen ? T.ebony2 : "rgba(0,0,0,.25)", border: "1px solid " + T.brass, color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               <Filter size={15} />
             </button>
-            {sortMenuOpen && sortMenuPos && (
+            {sortMenuOpen && sortMenuPos && typeof document !== "undefined" && createPortal(
               <>
                 <div onClick={() => setSortMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                {/* (버그 수정, 사용자 제보) position:fixed로만 띄우면 탭 전환 애니메이션(transform이 걸린
+                    조상)이 있을 때 뷰포트가 아니라 그 조상 기준으로 계산돼 모바일에서 잘려 보였다 —
+                    ClickInfoBadge 등과 동일하게 document.body로 포털을 띄운다. */}
                 {/* (사용자 요청) 개발자의 "이름·키워드 편집" 박스와 같은 레이아웃 — 어두운 브라스 톤
                     카드(진한 그러데이션 배경 + 브라스 테두리) 안에, 구획마다 작은 라벨 밑에
                     KW_SINGLES 스타일의 줄바꿈 칩 그룹을 둔다. */}
@@ -19516,7 +19524,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                     <button onClick={() => setHideSolved((v) => !v)} className="press" style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 7, border: "1px solid " + (hideSolved ? T.brass : "rgba(255,255,255,.2)"), background: hideSolved ? T.brass : "transparent", color: hideSolved ? "#241509" : T.ivory, cursor: "pointer" }}>{hideSolved ? "해결 완료 숨기는 중" : "해결 완료 숨기기"}</button>
                   </div>
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
         </div>
