@@ -14303,6 +14303,45 @@ function livePuzzleName(p) {
   if (p && p.setupSans && p.mistakeSan) return puzzleName(null, p.setupSans, p.mistakeSan);
   return p ? p.name : null;
 }
+// (신규 기능) 사용자 요청 — 퍼즐이 실제로 시작하는 포지션(오프닝 트리 이름과 무관하게, 그 국면 자체의
+// 기물 배치)을 오프닝/미들게임/엔드게임 3단계로 분류한다. fen이 있으면(모든 퍼즐이 이제 시작 위치를
+// FEN으로도 갖는다, v0.4.1 item5) 그 자리에서 fenRoot로 재생하고, 없는 옛 데이터는 setupSans부터
+// 표준 시작 위치를 재생한다 — PuzzleSolver의 fenRoot/setup 계산과 같은 방식.
+function puzzleStartBoard(p) {
+  const fenRoot = p && p.fen ? parseFenFull(p.fen) : null;
+  const sans = fenRoot ? (p.mistakeSan ? [p.mistakeSan] : []) : [...((p && p.setupSans) || []), p && p.mistakeSan].filter(Boolean);
+  return boardOfRoot(fenRoot, sans);
+}
+// 기물 점수(폰1·나이트3·비숍3·룩5·퀸9) + 남은 기물 수 + 폰들이 시작 랭크에서 얼마나 전진했는지를
+// 각각 0~1로 정규화해 평균 낸다 — 셋 다 높으면(기물 그대로, 폰도 안 움직임) 오프닝, 셋 다 낮으면
+// (기물 많이 빠지고 폰도 많이 전진) 엔드게임, 그 사이는 미들게임.
+const PUZZLE_PHASE_PIECE_VALUE = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
+function gamePhaseOf(board) {
+  let material = 0, count = 0, pawnAdvance = 0, pawnCount = 0;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = board[r][c]; if (!p) continue;
+    count++; material += PUZZLE_PHASE_PIECE_VALUE[p.t] || 0;
+    if (p.t === "P") { pawnCount++; pawnAdvance += Math.abs((p.c === "w" ? 6 : 1) - r); }
+  }
+  const materialFrac = Math.min(1, material / 78); // 78 = 시작 위치 총 기물 점수(폰 제외 각 진영 39점씩)
+  const countFrac = Math.min(1, count / 32);
+  const avgPawnAdvance = pawnCount ? pawnAdvance / pawnCount : 0;
+  const advanceFrac = 1 - Math.min(1, avgPawnAdvance / 4);
+  const score = (materialFrac + countFrac + advanceFrac) / 3;
+  if (score >= 0.72) return "opening";
+  if (score >= 0.4) return "middlegame";
+  return "endgame";
+}
+function puzzlePhase(p) { try { return gamePhaseOf(puzzleStartBoard(p)); } catch { return null; } }
+const GAME_PHASE_LABEL = { opening: "오프닝", middlegame: "미들게임", endgame: "엔드게임" };
+// PGN/FEN 배지와 완전히 같은 크기·색으로 국면 배지를 그린다(요청: "PGN 박스와 같은 크기의 박스").
+function GamePhaseBadge({ p, compact }) {
+  const phase = useMemo(() => puzzlePhase(p), [p.id]);
+  if (!phase) return null;
+  return compact
+    ? <span title={GAME_PHASE_LABEL[phase] + " 국면에서 시작해요"} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
+    : <span title={GAME_PHASE_LABEL[phase] + " 국면에서 시작해요"} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
+}
 // (기능2) 저장 직전 최종 안전장치: setup+solution 전체를 시작 위치부터 다시 재생하며 각 수가
 // "그 시점에 둘 차례인 쪽"의 합법수인지 검증한다. 하나라도 어긋나면(불법수·차례 뒤바뀜 등) 저장을 막는다.
 function isSanSequenceValid(setup, solution, fenRoot) {
@@ -14808,7 +14847,15 @@ async function puzzleShare(p) {
     const no = puzzleNo(p.id);
     const server = await puzzleFetch(no);
     const merged = server ? { ...p, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
-    await sbUpsert("puzzles", { no, data: merged });
+    const row = { no, data: merged };
+    // (신규 기능) 사용자 요청 — 퍼즐 만들기 마법사 4단계의 공개/비공개 설정. is_public은 별도
+    // 보호 컬럼(아래 puzzleSetVisibility 참고)이라 REST로 직접 update할 grant가 없으므로, 이미 있는
+    // 행을 병합(merge)하는 경로에서 이 값을 함께 보내면 그 update 자체가 권한 오류로 통째로
+    // 실패한다 — 그래서 이 행이 새로 생성되는 경우(server가 없을 때)에만, 그리고 명시적으로
+    // 비공개를 골랐을 때만 싣는다(진짜 새 insert에는 컬럼 단위 제약이 없다). 기존 퍼즐의 공개
+    // 여부를 나중에 바꾸는 건 puzzleSetVisibility(생성자 권한 박스)로만 한다.
+    if (!server && p.public === false) row.is_public = false;
+    await sbUpsert("puzzles", row);
     // (v0.3.4 기능) 사용자 요청 — 이 퍼즐(no)에 아직 생성자가 기록되지 않았다면(creator_uid is
     // null) 지금 이 공유를 실행한 로그인 유저를 생성자로 선점한다. puzzle_claim_creator는 이미
     // 생성자가 있으면 조용히 아무 일도 하지 않으므로(멱등), 같은 퍼즐을 나중에 또 만난 다른
@@ -14817,7 +14864,21 @@ async function puzzleShare(p) {
     sbRpc("puzzle_claim_creator", { p_no: no }).catch(() => { });
   } catch { }
 }
-async function puzzleFetch(no) { if (!SB_ON) return null; try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; } }
+async function puzzleFetch(no) {
+  if (!SB_ON) return null;
+  try {
+    const rows = await sbSelect("puzzles?no=eq." + no + "&select=data,is_public&limit=1");
+    const r = rows && rows[0];
+    return r ? { ...r.data, public: r.is_public !== false } : null;
+  } catch { return null; }
+}
+// (신규 기능) 사용자 요청 — 퍼즐 풀이 카드 2페이지(생성자 권한 박스)에서 공개/비공개를 나중에
+// 바꾼다. 실제 권한(생성자 본인 또는 개발자/공동개발자)은 서버(puzzle_set_visibility RPC)가 다시
+// 검사한다.
+async function puzzleSetVisibility(no, isPublic) {
+  if (!SB_ON) return false;
+  try { await sbRpc("puzzle_set_visibility", { p_no: no, p_public: isPublic }); return true; } catch { return false; }
+}
 // (v0.3.4 기능) 사용자 요청 — 퍼즐 풀이 카드에 생성자를 표시하고, 생성자 본인에게 그 퍼즐에 한해
 // 개발자와 같은 편집 권한(1시간 주기)을 주기 위한 조회. puzzleFetch와 별도로 둔 이유는, 이 창구가
 // 반환하는 필드(creator_uid 등)를 puzzle 본문 객체(data)에 섞어 넣지 않기 위해서다 — 섞이면 그
@@ -16958,6 +17019,22 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       try { await puzzleCreatorSave(puzzleNoForTag, tree, allLines.map((l) => ({ tag: l.tag, solution: l.sans })), { puzzleType: v }); } catch { }
     }
   };
+  // (신규 기능) 사용자 요청 — 생성자(또는 개발자/공동개발자)가 공개/비공개를 나중에 바꿀 수 있게.
+  // 라인 편집(1시간 주기)과 달리 내용을 바꾸는 게 아니라 노출 여부만 바꾸는 것이라 canEditPuzzle의
+  // 쿨다운과 무관하게 언제든 가능하다 — 대신 puzzleType 편집과 같은 자격(canEdit || isMyPuzzle)만 본다.
+  const canManageVisibility = canEdit || isMyPuzzle;
+  const [publicInput, setPublicInput] = useState(puzzle.public !== false);
+  useEffect(() => { setPublicInput(puzzle.public !== false); }, [puzzle.id, puzzle.public]);
+  const [visBusy, setVisBusy] = useState(false);
+  const saveVisibility = async (v) => {
+    if (!canManageVisibility || visBusy) return;
+    setVisBusy(true);
+    const prev = publicInput;
+    setPublicInput(v);
+    const ok = await puzzleSetVisibility(puzzleNoForTag, v);
+    if (!ok) setPublicInput(prev);
+    setVisBusy(false);
+  };
   const [regenBusy, setRegenBusy] = useState(false);
   const [regenErr, setRegenErr] = useState("");
   const saveDefaultTarget = async (v) => {
@@ -17043,6 +17120,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
             {creatorInfo && creatorInfo.username && <span style={{ fontSize: 10.5, color: T.brass, fontWeight: 700 }}>@{creatorInfo.username}</span>}
             {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
             {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
+            <GamePhaseBadge p={puzzle} />
             {myPuzzleRating != null ? (() => {
               const diff = avgRating - myPuzzleRating;
               const tier = puzzleDifficultyTier(diff);
@@ -17203,6 +17281,19 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
             </div>
             {/* (20차 기능1) 퍼즐 모식도 — 분기 트리·채택률 두께·수 체계 아이콘·평가치·해결 표시 */}
             <PuzzleSchematic tree={tree} rootLabel={puzzle.mistakeSan} meta={meta} allLines={allLines} solvedNow={solvedNow} curKeys={pathNodes.map((n) => stripSuffix(n.san))} exploredKeys={everRevealed} setupSans={setup} setupLen={setup.length} onPick={onPickNode} canEdit={canEditPuzzle} onAddMove={addMoveToLeaf} onDeleteMove={deleteMoveFromLeaf} onSuggestSiblings={suggestSiblings} onAddSibling={addSibling} celebrateTag={celebrate ? celebrate.tag : null} shakeTag={celebrate ? nextTag : null} fenRoot={fenRoot} />
+            {/* (신규 기능) 사용자 요청 — 생성자 권한 박스에서 공개/비공개를 나중에 바꿀 수 있게. 라인
+                편집(1시간 주기)과 달리 언제든 바꿀 수 있다. */}
+            {canManageVisibility && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{canEdit ? "개발자" : "제작자"} · 공개 설정</div>
+                <div className="flex items-center gap-2">
+                  {[[true, "공개"], [false, "비공개"]].map(([v, lb]) => (
+                    <button key={String(v)} onClick={() => saveVisibility(v)} disabled={visBusy} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: publicInput === v ? T.brass : "transparent", color: publicInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: visBusy ? "default" : "pointer", opacity: visBusy ? 0.6 : 1 }}>{lb}</button>
+                  ))}
+                </div>
+                {!publicInput && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 5 }}>비공개 상태예요 — 나(그리고 개발자)만 이 퍼즐을 볼 수 있어요.</div>}
+              </div>
+            )}
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다.
                 (v0.3.4 기능) 사용자 요청 — 개발자/공동개발자뿐 아니라 이 퍼즐의 생성자 본인도(1시간
                 편집 주기 안에서) 이 도구 전체를 그대로 쓸 수 있다. 주기가 아직 안 지났으면 도구
@@ -17621,14 +17712,16 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
             줄에 두면 폭이 좁아 말줄임으로 잘렸다 — 버튼과 분리해 별도 줄에 잘리지 않고 전부 보여준다. */}
         {solveCountText(solveCount, friendSolverNames) && <div style={{ fontSize: 9.5, color: "#2E6E2E", fontWeight: 700, lineHeight: 1.35, marginTop: 4, wordBreak: "keep-all" }}>{solveCountText(solveCount, friendSolverNames)}</div>}
-        <div className="flex items-center justify-between" style={{ marginTop: 4, gap: 7, flexShrink: 0 }}>
+        <div className="flex items-center justify-between" style={{ marginTop: 4, gap: 7, rowGap: 4, flexWrap: "wrap", flexShrink: 0 }}>
             {/* (사용자 요청) PGN/FEN 정보 보유 배지 — 퍼즐 레이팅 박스와 같은 크기로 그 왼쪽에,
-                둘 다 있으면 둘 다 표시한다. */}
+                둘 다 있으면 둘 다 표시한다. (신규) 국면(오프닝/미들게임/엔드게임) 배지도 같은 자리에
+                항상 표시되므로, 배지가 늘어나도 잘리지 않도록 줄바꿈을 허용한다. */}
             {/* (사용자 요청) 배지가 브라스 톤 하나로 카드 전체(레이팅·테마 색 등)에 묻혀 잘 안 보인다는
                 피드백 — 이 카드에서 유일하게 쓰는 파란 계열(T.only, 수 체계 "유일한 수" 색)로 눈에
                 띄게 바꿨다. */}
             {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
             {p.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
+            <GamePhaseBadge p={p} compact />
             {/* (사용자 요청) 퍼즐 레이팅 — 카드 좌하단에 표시, 누르면 이 퍼즐 레이팅·내 레이팅(차이)·
                 체감 난이도를 보여주는 말풍선이 뜬다(모바일 안전 영역은 ClickInfoBadge가 담당). */}
             {avgRating != null && (myPuzzleRating != null ? (
@@ -18834,6 +18927,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 퍼즐, FEN은 fen 필드가 있는 퍼즐(둘 다 있는 퍼즐이 대부분이다, 카드 배지와 같은 기준).
   const [selectedSources, setSelectedSources] = useState([]); // 예: ["pgn","fen"]
   const toggleSource = (k) => setSelectedSources((s) => (k === "all" ? [] : s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
+  // (신규 기능) 사용자 요청 — 오프닝/미들게임/엔드게임 국면 구분(다중 선택) 드롭다운.
+  const [selectedPhases, setSelectedPhases] = useState([]); // 예: ["opening","endgame"]
+  const togglePhase = (k) => setSelectedPhases((s) => (k === "all" ? [] : s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
   // (사용자 요청) 드롭다운 맨 위에 전체/좋아요/리포스트 구획 추가 — 내가 좋아요·리포스트한 퍼즐만 골라 본다.
   const [selectedEngagement, setSelectedEngagement] = useState([]); // 예: ["liked","reposted"]
   const toggleEngagement = (k) => setSelectedEngagement((s) => (k === "all" ? [] : s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
@@ -18870,6 +18966,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const [pcGen, setPcGen] = useState(null); // { tree, lines }
   const [pcGenErr, setPcGenErr] = useState("");
   const [pcCreating, setPcCreating] = useState(false);
+  // (신규 기능) 사용자 요청 — 4단계, 퍼즐 공개/비공개 설정. 기본은 공개(기존과 동일한 동작).
+  const [pcPublic, setPcPublic] = useState(true);
   // (사용자 요청) 같은 PGN·FEN으로 이미 만들어진 퍼즐이 있으면 2단계에서 막고, 알림을 띄운 뒤 처음
   // (1단계)으로 되돌린다.
   const [pcDupMsg, setPcDupMsg] = useState("");
@@ -18894,7 +18992,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const resetPuzzleCreate = () => {
     setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
     setPcAnalyzing(false); setPcAnalyzeProgress(0); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null);
-    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false); setPcSelectedGameId(null);
+    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false); setPcSelectedGameId(null); setPcPublic(true);
   };
   // 1단계 — PGN 또는 FEN 코드를 입력받아 검증한다.
   const parsePcInput = () => {
@@ -18999,10 +19097,10 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     setPcCreating(true);
     let pz;
     if (pcParsed.kind === "fen") {
-      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: "FEN 포지션 퍼즐", fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true };
+      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: "FEN 포지션 퍼즐", fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic };
     } else {
       const setupSans = pcParsed.sans.slice(0, pcSelectedMove.ply), mistakeSan = pcSelectedMove.san;
-      pz = { id: setupSans.join(" ") + "|" + mistakeSan, themes: [pcTheme], name: puzzleName(pcTheme, setupSans, mistakeSan), setupSans, mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true };
+      pz = { id: setupSans.join(" ") + "|" + mistakeSan, themes: [pcTheme], name: puzzleName(pcTheme, setupSans, mistakeSan), setupSans, mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic };
     }
     onSavePuzzle(pz);
     resetPuzzleCreate();
@@ -19279,6 +19377,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (!selectedSources.length) return true;
     return selectedSources.some((s) => (s === "pgn" ? !!(p.setupSans && p.setupSans.length) : !!p.fen));
   };
+  // (신규 기능) 사용자 요청 — 오프닝/미들게임/엔드게임 국면 구분(다중 선택).
+  const matchesPhaseFilter = (p) => !selectedPhases.length || selectedPhases.includes(puzzlePhase(p));
   // (사용자 요청) 테마 칩 다중 선택 — 선택된 테마 중 하나라도 겹치면 통과.
   const matchesThemeFilter = (p) => !selectedThemes.length || selectedThemes.some((t) => themesOf(p).includes(t));
   // (사용자 요청) 드롭다운 맨 위 전체/좋아요/리포스트 구분(다중 선택).
@@ -19286,7 +19386,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (!selectedEngagement.length) return true;
     return selectedEngagement.some((e) => (e === "liked" ? likedPuzzles.has(p.id) : !!(repostedPuzzles && repostedPuzzles.has(p.id))));
   };
-  const themed = playablePuzzles.filter((p) => matchesThemeFilter(p) && matchesOpeningFilter(p) && matchesCreatorFilter(p) && matchesQuickFilter(p) && matchesSourceFilter(p) && matchesEngagementFilter(p) && (!hideSolved || !solved.has(p.id)));
+  const themed = playablePuzzles.filter((p) => matchesThemeFilter(p) && matchesOpeningFilter(p) && matchesCreatorFilter(p) && matchesQuickFilter(p) && matchesSourceFilter(p) && matchesPhaseFilter(p) && matchesEngagementFilter(p) && (!hideSolved || !solved.has(p.id)));
   // (v0.4.1 기능, item 3) 사용자 요청 — 미해결/해결 완료 두 목록으로 나누던 것을 없애고 하나의 정렬
   // 목록으로 합친다. 기본("추천순")은 puzzleExposureScore(난이도 적합도·약점 보완도·테마 적합도
   // 가중합, 위 참고)가 높은 순 — "해결 여부"는 그 점수 안의 약한 감점 요소로만 반영되고 더는 목록을
@@ -19479,6 +19579,22 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               <button onClick={() => (pcParsed.kind === "fen" ? runPcGenerate(pcTheme, [], "", pcParsed.fenRoot) : pcSelectedMove && pickPcMove(pcTheme, pcSelectedMove))} className="press" style={{ marginTop: 8, padding: "6px 12px", borderRadius: 9, background: "transparent", border: "1px solid #C9B58C", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>다시 생성</button>
             </div>
           )}
+          {/* 4단계 — 사용자 요청: 이 퍼즐을 다른 사람에게도 보여줄지(공개) 나만 보이게 할지(비공개) 정한다.
+              기본은 공개(기존 동작과 동일). 만든 뒤에도 퍼즐 풀이 카드 2페이지(생성자 권한 박스)에서
+              바꿀 수 있다. */}
+          {pcTheme && pcGen && (
+            <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>4. 공개 설정</div>
+              <div className="flex gap-2">
+                {[[true, "공개", "다른 사람도 이 퍼즐을 보고 풀 수 있어요"], [false, "비공개", "나만 보고 풀 수 있어요"]].map(([v, lb, desc]) => (
+                  <button key={String(v)} onClick={() => setPcPublic(v)} className="press" style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: "1px solid " + (pcPublic === v ? T.brass : "#C9B58C"), background: pcPublic === v ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pcPublic === v ? "#241509" : T.ink, cursor: "pointer", textAlign: "left" }}>
+                    <span style={{ display: "block", fontWeight: 800, fontSize: 12.5 }}>{lb}</span>
+                    <span style={{ display: "block", fontSize: 10, marginTop: 2, opacity: 0.85 }}>{desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {/* 완료 — 취소·퍼즐 만들기 */}
           <div className="flex gap-2">
             <button onClick={() => { resetPuzzleCreate(); setPuzzleMode("solve"); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivory, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
@@ -19634,6 +19750,15 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                     <div className="flex flex-wrap gap-1">
                       {[["all", "전체"], ["pgn", "PGN"], ["fen", "FEN"]].map(([k, lb]) => { const on = k === "all" ? selectedSources.length === 0 : selectedSources.includes(k); return (
                         <button key={k} onClick={() => toggleSource(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
+                      ); })}
+                    </div>
+                  </div>
+                  {/* (신규 기능) 사용자 요청 — 오프닝/미들게임/엔드게임 국면 구분(다중 선택). */}
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>국면</div>
+                    <div className="flex flex-wrap gap-1">
+                      {[["all", "전체"], ["opening", "오프닝"], ["middlegame", "미들게임"], ["endgame", "엔드게임"]].map(([k, lb]) => { const on = k === "all" ? selectedPhases.length === 0 : selectedPhases.includes(k); return (
+                        <button key={k} onClick={() => togglePhase(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
                       ); })}
                     </div>
                   </div>
