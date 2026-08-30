@@ -5515,7 +5515,7 @@ function ImageSourceMenu({ onFile, disabled, label = "이미지 스캔", busy, b
   const onChange = (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
-    if (file) onFile(file);
+    if (file && file.type && file.type.startsWith("image/")) onFile(file);
   };
   const menu = open && pos && (
     <>
@@ -5533,7 +5533,12 @@ function ImageSourceMenu({ onFile, disabled, label = "이미지 스캔", busy, b
     <>
       <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={onChange} />
       <input ref={galRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
-      <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
+      {/* (버그 수정, 사용자 제보) "내 파일에서 선택"이 갤러리/Google Photo와 똑같이 accept="image/*"만
+          쓰던 탓에, 이 값만 보고 특수 사진 선택기(Android Photo Picker 등)를 곧장 띄우는 브라우저에서는
+          갤러리·Google Photo를 눌렀을 때와 구분되지 않고 늘 같은 화면(주로 Google Photo)으로
+          연결됐다. 확장자를 함께 넣어 accept 목록을 "이미지 전용"에서 벗어나게 하면 그 특수 선택기
+          대신 진짜 파일 탐색기(기기 저장소)가 열린다. */}
+      <input ref={fileRef} type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.heic,.heif" style={{ display: "none" }} onChange={onChange} />
       <input ref={gphotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
       <button ref={btnRef} onClick={openMenu} disabled={disabled} title={iconOnly ? label : undefined} className="press" style={buttonStyle}>
         <ScanLine size={13} /> {!iconOnly && (busy ? busyLabel : label)}
@@ -19612,7 +19617,6 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
         <div style={{ minWidth: 0 }}>
           {/* (UI2) 설정 탭에서는 칭호를 고를 수 없고, 장착된 칭호만 닉네임 위에 작게 표시 */}
           {/* (18차 UI11) 칭호 텍스트 대신 칭호 이미지로 표시 */}
-          {currentTitle && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={currentTitle} earned compact /></div>}
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{profile.nickname || "이름 미설정"}</div>
         </div>
       </div>
@@ -20409,7 +20413,6 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(myPub.nickname || user || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
           {/* (디자인) 칭호는 이름 위에 표시 */}
-          {myPub.title && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={myPub.title} earned compact /></div>}
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{myPub.nickname || myPub.displayId || user}</div>
           {/* (사용자 요청) 소개 — 닉네임 바로 밑에 표시한다. 이름·소개 사이에 있던 @아이디 줄은
               위 헤더 라벨로 옮겼으니, 그만큼 이름과 소개 사이 여백을 조금 늘린다. */}
@@ -21996,7 +21999,6 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             {profile.photo ? <img src={profile.photo} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(totalXp || 0).tier.key === "grandmaster") || {}) }} />
               : <span style={{ width: 56, height: 56, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 22, flexShrink: 0 }}>{(profile.nickname || user || "?")[0].toUpperCase()}</span>}
             <div style={{ minWidth: 0 }}>
-              {currentTitle && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={currentTitle} earned compact /></div>}
               <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{profile.nickname || profile.displayId || user}</div>
               {profile.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.bio}</div>}
             </div>
@@ -22771,7 +22773,6 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
             {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
               : <span style={{ width: 52, height: 52, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 21, flexShrink: 0 }}>{initial}</span>}
             <div style={{ minWidth: 0 }}>
-              {myPub.title && <div style={{ maxWidth: 180, marginBottom: 3 }}><TitleBadge id={myPub.title} earned compact /></div>}
               <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.nickname || myPub.displayId || user}</div>
               {myPub.bio && <div style={{ fontSize: 11, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
             </div>
@@ -22877,7 +22878,6 @@ function ChatUserProfileModal({ username, onClose, myUid }) {
                 <div style={{ minWidth: 0 }}>
                   <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</span>
                   <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: SITE_FONT }}>@{(pub.displayId || pub.username)}</div>
-                  {pub.title && <div style={{ maxWidth: 190, marginTop: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
                 </div>
               </div>
               <PublicProfileStats pub={pub} hideChesscom={false} ownerUid={pubUid} viewerUid={myUid} />
@@ -24829,7 +24829,6 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
                 : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
               <div style={{ minWidth: 0 }}>
                 {/* (18차 UI11) 칭호는 텍스트 대신 칭호 이미지로 표시 — 이름 위에 표시 */}
-                {pub.title && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={pub.title} earned compact /></div>}
                 <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</div>
                 {pub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.bio}</div>}
               </div>
@@ -25604,7 +25603,6 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
                   : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  {p.title && <div style={{ maxWidth: 190, marginBottom: 4 }}><TitleBadge id={p.title} earned compact /></div>}
                   <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
                   {p.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
                 </div>
