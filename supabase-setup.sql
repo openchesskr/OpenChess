@@ -1238,6 +1238,9 @@ create table if not exists public.pvp_queue (
 alter table public.pvp_queue enable row level security;
 -- (정책을 하나도 만들지 않는다 = anon/authenticated의 직접 접근을 전부 차단. RPC는 SECURITY DEFINER라
 -- RLS를 우회해 정상 동작한다.)
+-- (신규 기능) 사용자 요청 — 타임 컨트롤별로 대기열을 나눈다("초기시간(초)-증가시간(초)" 형식, 예:
+-- "600-0"=10|0). 같은 타임 컨트롤끼리만 짝짓는다.
+alter table public.pvp_queue add column if not exists time_control text not null default '600-0';
 
 -- 대국 기록. sans(둔 수순, SAN 배열)는 pvp_move RPC로만 늘어난다. 참가자 본인만 select 가능 —
 -- Realtime(postgres_changes) 구독도 이 RLS를 그대로 따르므로, 남의 대국 이벤트는 애초에 전달되지 않는다.
@@ -1255,6 +1258,10 @@ alter table public.pvp_games enable row level security;
 drop policy if exists "pvp games select own" on public.pvp_games;
 create policy "pvp games select own" on public.pvp_games for select using (auth.uid() = white_uid or auth.uid() = black_uid);
 grant select on public.pvp_games to authenticated;
+-- (신규 기능) 봇/실시간 대국 모두 타임 컨트롤을 고를 수 있게 — pvp_queue와 같은 "초-증가초" 형식.
+-- 매칭된 두 클라이언트가 서로 다른 값을 로컬에서 고르는 사고를 막기 위해, 실제 클럭은 이 서버
+-- 값(대기열이면 매칭 당시 time_control, 초대면 초대한 사람이 고른 값)을 그대로 따른다.
+alter table public.pvp_games add column if not exists time_control text not null default '600-0';
 -- 위 8) Realtime 섹션과 동일한 이유로, 매칭·수·대국 종료를 실시간으로 받으려면 이 테이블도
 -- supabase_realtime publication에 포함되어야 한다(신규 테이블이라 이 파일 앞부분의 8) 섹션이 실행될
 -- 때는 아직 존재하지 않으므로 여기서 별도로 등록한다).
@@ -1269,8 +1276,10 @@ end $$;
 -- 나를 대기열에 넣고 null을 반환한다(그 뒤 pvp_games에 대한 Realtime 구독으로 매칭을 통보받는다).
 -- 재접속 시 이미 진행 중인 내 대국이 있으면(새로고침 등으로 대기열 재합류를 눌렀을 때) 그 대국을
 -- 그대로 돌려준다.
+-- (신규 기능) 사용자 요청 — 타임 컨트롤 인자 추가, 같은 타임 컨트롤끼리만 짝짓는다.
 drop function if exists public.pvp_queue_join() cascade;
-create or replace function public.pvp_queue_join()
+drop function if exists public.pvp_queue_join(text) cascade;
+create or replace function public.pvp_queue_join(p_time_control text default '600-0')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_other uuid; v_game public.pvp_games; v_w uuid; v_b uuid;
 begin
@@ -1280,17 +1289,17 @@ begin
     order by created_at desc limit 1;
   if found then return v_game; end if;
   delete from public.pvp_queue where uid = v_me;
-  select uid into v_other from public.pvp_queue where uid <> v_me order by created_at asc limit 1 for update skip locked;
+  select uid into v_other from public.pvp_queue where uid <> v_me and time_control = p_time_control order by created_at asc limit 1 for update skip locked;
   if v_other is null then
-    insert into public.pvp_queue(uid) values (v_me);
+    insert into public.pvp_queue(uid, time_control) values (v_me, p_time_control);
     return null;
   end if;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
-  insert into public.pvp_games(white_uid, black_uid) values (v_w, v_b) returning * into v_game;
+  insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, p_time_control) returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.pvp_queue_join() to authenticated;
+grant execute on function public.pvp_queue_join(text) to authenticated;
 
 drop function if exists public.pvp_queue_leave() cascade;
 create or replace function public.pvp_queue_leave()
@@ -1381,3 +1390,87 @@ begin
   update public.puzzles set is_public = p_public where no = p_no;
 end; $$;
 grant execute on function public.puzzle_set_visibility(bigint, boolean) to authenticated;
+
+-- ============================================================================
+-- N+3) pvp_invites — /play "친구와 플레이" 초대(신청/수락/거절)
+-- ============================================================================
+-- 친구 목록 드롭다운에서 특정 친구를 골라 도전장을 보낸다. 수락되면 pvp_games 행을 새로 만들어
+-- game_id에 연결한다 — 이후 진행은 랜덤 매칭과 완전히 같은 pvp_games/pvp_move/pvp_finish 경로를 탄다.
+create table if not exists public.pvp_invites (
+  id bigserial primary key,
+  from_uid uuid not null references auth.users(id) on delete cascade,
+  to_uid uuid not null references auth.users(id) on delete cascade,
+  time_control text not null default '600-0',
+  status text not null default 'pending' check (status in ('pending','accepted','declined','cancelled')),
+  game_id bigint references public.pvp_games(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.pvp_invites enable row level security;
+drop policy if exists "pvp invites select own" on public.pvp_invites;
+create policy "pvp invites select own" on public.pvp_invites for select using (auth.uid() = from_uid or auth.uid() = to_uid);
+grant select on public.pvp_invites to authenticated;
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'pvp_invites') then
+    alter publication supabase_realtime add table public.pvp_invites;
+  end if;
+end $$;
+
+-- 친구에게 도전장 보내기 — 실제로 친구 사이인지(friend_edges, status='accepted')를 서버가 검사한다.
+-- 상대에게 이미 보낸 pending 초대가 있으면 새로 만들지 않고 그 초대를 그대로 돌려준다(중복 방지).
+drop function if exists public.pvp_invite_friend(uuid, text) cascade;
+create or replace function public.pvp_invite_friend(p_to_uid uuid, p_time_control text default '600-0')
+returns public.pvp_invites language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_are_friends boolean; v_inv public.pvp_invites;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if v_me = p_to_uid then raise exception 'cannot invite self'; end if;
+  select exists (
+    select 1 from public.friend_edges
+    where status = 'accepted' and ((from_uid = v_me and to_uid = p_to_uid) or (from_uid = p_to_uid and to_uid = v_me))
+  ) into v_are_friends;
+  if not v_are_friends then raise exception 'not friends'; end if;
+  select * into v_inv from public.pvp_invites where from_uid = v_me and to_uid = p_to_uid and status = 'pending' order by created_at desc limit 1;
+  if found then return v_inv; end if;
+  insert into public.pvp_invites(from_uid, to_uid, time_control) values (v_me, p_to_uid, p_time_control) returning * into v_inv;
+  return v_inv;
+end; $$;
+grant execute on function public.pvp_invite_friend(uuid, text) to authenticated;
+
+-- 초대 응답 — 받은 사람(to_uid)만 수락/거절할 수 있다. 수락하면 대국을 만들어 연결한다.
+drop function if exists public.pvp_invite_respond(bigint, boolean) cascade;
+create or replace function public.pvp_invite_respond(p_invite_id bigint, p_accept boolean)
+returns public.pvp_invites language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_inv public.pvp_invites; v_game public.pvp_games; v_w uuid; v_b uuid;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_inv from public.pvp_invites where id = p_invite_id for update;
+  if not found then raise exception 'invite not found'; end if;
+  if v_me <> v_inv.to_uid then raise exception 'not authorized'; end if;
+  if v_inv.status <> 'pending' then return v_inv; end if;
+  if not p_accept then
+    update public.pvp_invites set status = 'declined', updated_at = now() where id = p_invite_id returning * into v_inv;
+    return v_inv;
+  end if;
+  if random() < 0.5 then v_w := v_inv.from_uid; v_b := v_inv.to_uid; else v_w := v_inv.to_uid; v_b := v_inv.from_uid; end if;
+  insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, v_inv.time_control) returning * into v_game;
+  update public.pvp_invites set status = 'accepted', game_id = v_game.id, updated_at = now() where id = p_invite_id returning * into v_inv;
+  return v_inv;
+end; $$;
+grant execute on function public.pvp_invite_respond(bigint, boolean) to authenticated;
+
+-- 초대 취소 — 보낸 사람(from_uid)만, 아직 대기 중일 때만 취소할 수 있다.
+drop function if exists public.pvp_invite_cancel(bigint) cascade;
+create or replace function public.pvp_invite_cancel(p_invite_id bigint)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_from uuid; v_status text;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select from_uid, status into v_from, v_status from public.pvp_invites where id = p_invite_id for update;
+  if not found then return; end if;
+  if v_me <> v_from then raise exception 'not authorized'; end if;
+  if v_status <> 'pending' then return; end if;
+  update public.pvp_invites set status = 'cancelled', updated_at = now() where id = p_invite_id;
+end; $$;
+grant execute on function public.pvp_invite_cancel(bigint) to authenticated;

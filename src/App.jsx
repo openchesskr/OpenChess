@@ -10246,6 +10246,26 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
 // 가중 무작위로 골라 직접 구현한다 — 레이팅이 높을수록 온도가 낮아져(변별력 커짐) 항상 최선의 수에
 // 가깝게 두고, 낮을수록 약간 나쁜 후보 수(엔진이 찾은 2~5순위 수)도 자주 섞여 나온다. UCI의 score(cp)는
 // 항상 "지금 둘 차례" 쪽 관점이라 후보 수끼리 값을 그대로 비교할 수 있다.
+// (신규 기능) 사용자 요청 — 봇/실시간 대국 모두 타임 컨트롤을 고를 수 있게. key는 pvp_queue/
+// pvp_games.time_control과 그대로 맞춘 "초기시간(초)-증가시간(초)" 형식(예: "600-0" = 10|0) — 같은
+// 문자열끼리만 대기열에서 짝짓는다. initialSec이 null이면 무제한(클럭 없음).
+const TIME_CONTROLS = [
+  { key: "60-0", label: "1분", sub: "불릿", initialSec: 60, incSec: 0 },
+  { key: "180-0", label: "3분", sub: "블리츠", initialSec: 180, incSec: 0 },
+  { key: "180-2", label: "3|2", sub: "블리츠", initialSec: 180, incSec: 2 },
+  { key: "300-0", label: "5분", sub: "블리츠", initialSec: 300, incSec: 0 },
+  { key: "600-0", label: "10분", sub: "래피드", initialSec: 600, incSec: 0 },
+  { key: "900-10", label: "15|10", sub: "래피드", initialSec: 900, incSec: 10 },
+  { key: "1800-0", label: "30분", sub: "클래식", initialSec: 1800, incSec: 0 },
+  { key: "none", label: "무제한", sub: "", initialSec: null, incSec: 0 },
+];
+const DEFAULT_TIME_CONTROL = TIME_CONTROLS[4]; // 10분(래피드)
+function fmtClock(ms) {
+  if (ms == null) return "";
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60), s = total % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
 const PLAY_BOT_TIERS = [
   { elo: 400, label: "400", desc: "체스를 막 배운 친구" },
   { elo: 800, label: "800", desc: "초보" },
@@ -10313,11 +10333,25 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // (신규 기능) 사용자 요청 — /play에서 봇 대신 다른 OpenChess 사용자와 실시간으로 대국. mode가
   // "pvp"면 sans의 진실 공급원은 서버(pvp_games.sans)이고, 봇 자동 응수 effect는 아예 돌지 않는다.
   const [mode, setMode] = useState("bot"); // "bot" | "pvp"
+  // (신규 기능) 사용자 요청 — 실시간 대국은 진영을 고르지 않고(서버가 항상 무작위 배정), 대신
+  // "랜덤 매칭"(대기열)과 "친구와 플레이"(도전장) 중 하나를 고른다.
+  const [pvpSubMode, setPvpSubMode] = useState("queue"); // "queue" | "friend"
   const [pvpWaiting, setPvpWaiting] = useState(false);
   const [pvpGame, setPvpGame] = useState(null); // pvp_games 행(id, white_uid, black_uid, sans, status)
   const [pvpErr, setPvpErr] = useState("");
   const [opponentPub, setOpponentPub] = useState(null);
   const pvpFinishedRef = useRef(false); // 체크메이트/스테일메이트를 서버에 한 번만 보고하기 위한 가드
+  // (신규 기능) 사용자 요청 — 봇/실시간 대국 모두 타임 컨트롤 선택. pvp에서는 매칭·초대 시점에
+  // 서버(pvp_games.time_control)에 확정된 값을 그대로 따르도록 매칭 후 다시 맞춘다(아래 applyPvpGame).
+  const [timeControl, setTimeControl] = useState(DEFAULT_TIME_CONTROL);
+  const [clock, setClock] = useState(null); // { w: ms, b: ms } | null(무제한)
+  const [flagged, setFlagged] = useState(null); // "w" | "b" | null — 시간 초과로 진 쪽
+  const toMoveColorRef = useRef("w");
+  // (신규 기능) 친구와 플레이 — 친구 목록 드롭다운·도전장 상태.
+  const [friendDropdownOpen, setFriendDropdownOpen] = useState(false);
+  const [friendList, setFriendList] = useState([]); // [{uid, username, pub}]
+  const [myInvite, setMyInvite] = useState(null); // 내가 보낸 도전장(pvp_invites 행) — 응답 대기 중
+  const [incomingInvite, setIncomingInvite] = useState(null); // 나에게 온 도전장 { ...row, fromPub }
   // (버그 수정) 이 대국 안에서 "이 포지션(FEN)에서 봇이 이미 골랐던 수"를 기억해 둔다 — pickBotMove가
   // 반복 수순에서 항상 같은 수만 고르지 않도록 가중치를 낮추는 데 쓴다. 새 대국을 시작할 때마다 비운다.
   const botMoveMemoryRef = useRef(new Map());
@@ -10341,17 +10375,24 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const applyPvpGame = useCallback((g) => {
     if (!g) return;
     setPvpGame(g); setPvpWaiting(false); pvpFinishedRef.current = false;
+    setMyInvite(null); setIncomingInvite(null); setFriendDropdownOpen(false);
     const myColor = g.white_uid === myUid ? "w" : "b";
     setActiveColor(myColor);
     setSans(g.sans || []);
     setViewPly(null);
+    setResigned(false); setFlagged(null);
+    // (신규 기능) 친구 초대로 매칭된 경우 상대가 고른 타임 컨트롤을 그대로 따른다(내가 직접 대기열에
+    // 넣은 값과 다를 수 있음) — 서버가 확정한 g.time_control이 항상 우선.
+    const tc = TIME_CONTROLS.find((t) => t.key === g.time_control) || timeControl;
+    setTimeControl(tc);
+    setClock(tc.initialSec != null ? { w: tc.initialSec * 1000, b: tc.initialSec * 1000 } : null);
     setStep("playing");
-  }, [myUid]);
+  }, [myUid, timeControl]);
   const joinPvpQueue = async () => {
     if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
     setPvpErr(""); setPvpWaiting(true);
     try {
-      const g = await sbRpc("pvp_queue_join", {});
+      const g = await sbRpc("pvp_queue_join", { p_time_control: timeControl.key });
       if (g) applyPvpGame(g);
     } catch { setPvpErr("대기열 합류에 실패했어요. 잠시 후 다시 시도해주세요."); setPvpWaiting(false); }
   };
@@ -10383,6 +10424,86 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     return () => { cancelled = true; };
   }, [mode, pvpGame && pvpGame.id, myUid]);
 
+  // (신규 기능) 친구와 플레이 — 드롭다운을 열 때 친구 목록(수락된 friend_edges)을 불러온다.
+  useEffect(() => {
+    if (!friendDropdownOpen || !myUid) return;
+    let cancelled = false;
+    (async () => {
+      const edges = await friendEdges();
+      const ids = edges.filter((e) => e.status === "accepted").map((e) => (e.from_uid === myUid ? e.to_uid : e.from_uid));
+      if (!ids.length) { if (!cancelled) setFriendList([]); return; }
+      const profiles = await usersProfiles(ids);
+      if (!cancelled) setFriendList(ids.map((uid) => ({ uid, username: (profiles[uid] || {}).username, pub: (profiles[uid] || {}).pub || {} })));
+    })();
+    return () => { cancelled = true; };
+  }, [friendDropdownOpen, myUid]);
+  const friendPresence = usePresenceMap(friendDropdownOpen ? friendList.map((f) => f.uid) : []);
+  // (신규 기능) 사용자 요청 — 정렬은 최근 접속순, 그중 지금 접속 중인 친구가 여럿이면 퍼즐 티어(XP
+  // 기준 사이트 전역 티어) → XP 순으로 다시 정렬한다.
+  const sortedFriendList = useMemo(() => {
+    const withMeta = friendList.map((f) => {
+      const lastSeenMs = friendPresence[f.uid] || 0;
+      const online = !!lastSeenMs && (Date.now() - lastSeenMs) < ONLINE_WINDOW_MS;
+      const xp = f.pub.xp || 0;
+      return { ...f, lastSeenMs, online, xp, tierIndex: tierFromXp(xp).tierIndex };
+    });
+    withMeta.sort((a, b) => {
+      if (a.online !== b.online) return a.online ? -1 : 1;
+      if (a.online && b.online) {
+        if (b.tierIndex !== a.tierIndex) return b.tierIndex - a.tierIndex;
+        if (b.xp !== a.xp) return b.xp - a.xp;
+      }
+      return (b.lastSeenMs || 0) - (a.lastSeenMs || 0);
+    });
+    return withMeta;
+  }, [friendList, friendPresence]);
+  const sendFriendInvite = async (toUid) => {
+    if (!myUid) return;
+    setPvpErr("");
+    try {
+      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: toUid, p_time_control: timeControl.key });
+      setMyInvite(inv); setFriendDropdownOpen(false);
+    } catch { setPvpErr("도전장을 보내지 못했어요."); }
+  };
+  const cancelFriendInvite = async () => {
+    if (!myInvite) return;
+    try { await sbRpc("pvp_invite_cancel", { p_invite_id: myInvite.id }); } catch { }
+    setMyInvite(null);
+  };
+  const respondInvite = async (accept) => {
+    if (!incomingInvite) return;
+    const id = incomingInvite.id;
+    setIncomingInvite(null);
+    try {
+      const inv = await sbRpc("pvp_invite_respond", { p_invite_id: id, p_accept: accept });
+      if (accept && inv && inv.game_id) {
+        const rows = await sbSelect("pvp_games?id=eq." + inv.game_id + "&select=*");
+        if (rows && rows[0]) applyPvpGame(rows[0]);
+      }
+    } catch { }
+  };
+  // 내가 보낸 도전장 — 상대가 수락/거절할 때까지 지켜본다.
+  useRealtimeTable("pvp_invites", myInvite ? "id=eq." + myInvite.id : null, async (payload) => {
+    let row = payload && payload.new;
+    if (!row && myInvite) { try { const rows = await sbSelect("pvp_invites?id=eq." + myInvite.id + "&select=*"); row = rows && rows[0]; } catch { } }
+    if (!row) return;
+    if (row.status === "accepted" && row.game_id) {
+      const rows = await sbSelect("pvp_games?id=eq." + row.game_id + "&select=*");
+      if (rows && rows[0]) applyPvpGame(rows[0]);
+    } else if (row.status === "declined") {
+      setMyInvite(null); setPvpErr("상대가 도전장을 거절했어요.");
+    } else if (row.status === "cancelled") {
+      setMyInvite(null);
+    }
+  }, !!myInvite, 4000);
+  // 나에게 온 도전장 — /play 페이지를 보고 있는 동안만 받는다(다른 화면에 있으면 못 본다).
+  useRealtimeTable("pvp_invites", myUid ? "to_uid=eq." + myUid : null, async (payload) => {
+    const row = payload && payload.new;
+    if (!row || row.status !== "pending") return;
+    const profiles = await usersProfiles([row.from_uid]);
+    setIncomingInvite({ ...row, fromPub: (profiles[row.from_uid] || {}).pub || {}, fromUsername: (profiles[row.from_uid] || {}).username });
+  }, step === "setup" && !!myUid, 0);
+
   const board = useMemo(() => boardOfRoot(fenRoot, sans), [fenRoot, sans.join(" ")]);
   const replay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, sans) : null), [fenRoot, sans.join(" ")]);
   const ep = fenRoot ? replay.ep : epTarget(sans);
@@ -10392,7 +10513,8 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 기권했거나 먼저 체크메이트를 보고한 경우)도 결과로 취급한다.
   const pvpResult = mode === "pvp" && pvpGame && pvpGame.status !== "active"
     ? { end: "pvp", status: pvpGame.status } : null;
-  const result = resigned ? { end: "resign", color: activeColor } : (endState.end ? endState : pvpResult);
+  const flagResult = flagged ? { end: "flag", color: flagged } : null;
+  const result = resigned ? { end: "resign", color: activeColor } : (endState.end ? endState : (flagResult || pvpResult));
   const userToMove = step === "playing" && !result && toMoveColor === activeColor;
 
   // (신규 기능) 체크메이트·스테일메이트·3회 동형 반복으로 대국이 끝나면, pvp 모드에서는 서버에도
@@ -10404,6 +10526,49 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     const status = endState.end === "checkmate" ? (endState.color === "w" ? "black_won" : "white_won") : "draw";
     sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
   }, [mode, pvpGame && pvpGame.id, endState.end, endState.color]);
+
+  // (신규 기능) 타임 컨트롤 — 매 턴, 지금 둘 차례인 쪽의 시계를 실시간으로 줄인다. 서버가 시간을
+  // 재지 않으므로(권위 있는 클럭이 아니라 각 클라이언트가 로컬로 계산) 정확히 0.0초까지 양쪽이 완전히
+  // 일치하진 않지만, 대국 하나를 진행하는 동안 실용적으로 충분하다.
+  useEffect(() => { toMoveColorRef.current = toMoveColor; }, [toMoveColor]);
+  useEffect(() => {
+    if (step !== "playing" || result || !clock) return;
+    let lastTick = Date.now();
+    const id = setInterval(() => {
+      const now = Date.now();
+      const dt = now - lastTick;
+      lastTick = now;
+      setClock((c) => {
+        if (!c) return c;
+        const col = toMoveColorRef.current;
+        return { ...c, [col]: Math.max(0, c[col] - dt) };
+      });
+    }, 200);
+    return () => clearInterval(id);
+  }, [step, !!result, !!clock]);
+  // 수가 늘어날 때마다(내 수·봇 수·상대 수 무관) 방금 둔 쪽에 증가시간을 더한다.
+  const prevSansLenRef = useRef(sans.length);
+  useEffect(() => {
+    if (clock && sans.length > prevSansLenRef.current && timeControl.incSec) {
+      const moverColor = colorOfRoot(fenRoot, sans.length - 1);
+      setClock((c) => (c ? { ...c, [moverColor]: c[moverColor] + timeControl.incSec * 1000 } : c));
+    }
+    prevSansLenRef.current = sans.length;
+  }, [sans.length, clock != null, fenRoot, timeControl]);
+  // 시간 초과 감지 — 로컬(봇 대국)이든 pvp든 클럭이 0에 닿으면 그 즉시 진 것으로 처리한다.
+  useEffect(() => {
+    if (!clock || result || flagged) return;
+    if (clock.w <= 0) setFlagged("w");
+    else if (clock.b <= 0) setFlagged("b");
+  }, [clock, result, flagged]);
+  // pvp 모드에서는 시간 초과도 서버에 보고한다 — 체크메이트와 같은 가드(pvpFinishedRef)를 공유해
+  // 중복 보고를 막는다. 자신을 패자로 보고하는 쪽만 성공한다(pvp_finish의 자기 승리 선언 방지).
+  useEffect(() => {
+    if (mode !== "pvp" || !pvpGame || pvpFinishedRef.current || !flagged) return;
+    pvpFinishedRef.current = true;
+    const status = flagged === "w" ? "black_won" : "white_won";
+    sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
+  }, [mode, pvpGame && pvpGame.id, flagged]);
 
   const go = useCallback((san) => {
     if (result) return;
@@ -10472,14 +10637,19 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     const finalColor = colorPick === "random" ? (Math.random() < 0.5 ? "w" : "b") : colorPick;
     setActiveColor(finalColor);
     setSans(seedSans);
-    setResigned(false);
+    setResigned(false); setFlagged(null);
     setViewPly(null);
+    setClock(timeControl.initialSec != null ? { w: timeControl.initialSec * 1000, b: timeControl.initialSec * 1000 } : null);
     botMoveMemoryRef.current = new Map();
     setStep("playing");
   };
   const rematch = () => {
-    if (mode === "pvp") { leavePvpQueue(); setPvpGame(null); setOpponentPub(null); pvpFinishedRef.current = false; }
-    setSans(seedSans); setResigned(false); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setStep("setup");
+    if (mode === "pvp") {
+      leavePvpQueue(); setPvpGame(null); setOpponentPub(null); pvpFinishedRef.current = false;
+      if (myInvite) cancelFriendInvite();
+      setIncomingInvite(null); setFriendDropdownOpen(false);
+    }
+    setSans(seedSans); setResigned(false); setFlagged(null); setClock(null); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setStep("setup");
   };
   const resign = () => {
     setResigned(true); setOptionsOpen(false);
@@ -10534,7 +10704,17 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         )}
         <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{isTop ? (mode === "pvp" ? (oppName || "상대") : botTier.label + " 봇") : (myName || "Unnamed")}</span>
       </div>
-      {isTop && mode === "bot" && <span style={{ fontSize: 11, fontWeight: 700, color: botThinking && !result ? T.brassHi : "rgba(244,238,226,.6)", fontFamily: SITE_FONT }}>{botThinking && !result ? "생각하는 중..." : "레이팅 " + botTier.elo}</span>}
+      <div className="flex items-center gap-8">
+        {isTop && mode === "bot" && <span style={{ fontSize: 11, fontWeight: 700, color: botThinking && !result ? T.brassHi : "rgba(244,238,226,.6)", fontFamily: SITE_FONT }}>{botThinking && !result ? "생각하는 중..." : "레이팅 " + botTier.elo}</span>}
+        {/* (신규 기능) 사용자 요청 — 타임 컨트롤을 골랐으면 각 진영의 남은 시간을 시계처럼 보여준다. */}
+        {clock && (() => {
+          const barColor = isTop ? (activeColor === "w" ? "b" : "w") : activeColor;
+          const isTicking = !result && toMoveColor === barColor;
+          return (
+            <span style={{ fontSize: 13, fontWeight: 800, fontFamily: "ui-monospace,monospace", padding: "3px 9px", borderRadius: 7, background: isTicking ? "rgba(196,154,80,.28)" : "rgba(0,0,0,.25)", color: clock[barColor] <= 10000 ? "#F4A0A0" : (isTicking ? T.brassHi : "rgba(244,238,226,.7)") }}>{fmtClock(clock[barColor])}</span>
+          );
+        })()}
+      </div>
     </div>
   );
 
@@ -10549,21 +10729,43 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         </div>
         {step === "setup" ? (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+            {/* (신규 기능) 사용자 요청 — 다른 사람에게 온 도전장은 어느 모드/화면에 있든 맨 위에 배너로
+                보여준다. */}
+            {incomingInvite && (
+              <div style={{ marginBottom: 14, padding: "11px 13px", borderRadius: 10, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>
+                  @{incomingInvite.fromUsername || "누군가"}님이 대국을 신청했어요 ({(TIME_CONTROLS.find((t) => t.key === incomingInvite.time_control) || DEFAULT_TIME_CONTROL).label})
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => respondInvite(true)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>수락</button>
+                  <button onClick={() => respondInvite(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>거절</button>
+                </div>
+              </div>
+            )}
+            {/* (신규 기능) 사용자 요청 — 타임 컨트롤을 맨 위에서 고른다(봇/실시간 대국 공통). */}
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>타임 컨트롤</div>
+            <div className="flex flex-wrap gap-2" style={{ marginBottom: 16 }}>
+              {TIME_CONTROLS.map((t) => (
+                <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 12px", borderRadius: 9, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
+                  {t.label}{t.sub && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, opacity: 0.75 }}>{t.sub}</span>}
+                </button>
+              ))}
+            </div>
             {/* (신규 기능) 사용자 요청 — 봇과 대국하는 대신, 다른 OpenChess 사용자와 실시간으로 대국할
                 수 있게 한다. 대기열에 넣고(pvp_queue_join) 상대가 나타날 때까지 기다린다. */}
             <div className="flex gap-2" style={{ marginBottom: 16 }}>
               {[["bot", "봇과 대국"], ["pvp", "실시간 대국"]].map(([k, lb]) => (
-                <button key={k} onClick={() => { if (pvpWaiting) leavePvpQueue(); setMode(k); setPvpErr(""); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (mode === k ? T.brass : "#C9B58C"), background: mode === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: mode === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
-              ))}
-            </div>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>어느 진영으로 두시겠어요?</div>
-            <div className="flex gap-2" style={{ marginBottom: 16 }}>
-              {[["w", "백"], ["b", "흑"], ["random", "랜덤"]].map(([k, lb]) => (
-                <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
+                <button key={k} onClick={() => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setMode(k); setPvpErr(""); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (mode === k ? T.brass : "#C9B58C"), background: mode === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: mode === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
               ))}
             </div>
             {mode === "bot" ? (
               <>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>어느 진영으로 두시겠어요?</div>
+                <div className="flex gap-2" style={{ marginBottom: 16 }}>
+                  {[["w", "백"], ["b", "흑"], ["random", "랜덤"]].map(([k, lb]) => (
+                    <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
+                  ))}
+                </div>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>상대할 봇을 골라주세요</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
                   {PLAY_BOT_TIERS.map((t) => (
@@ -10582,13 +10784,53 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
             ) : (
               <>
                 {pvpErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{pvpErr}</div>}
+                {/* (신규 기능) 사용자 요청 — 실시간 대국은 진영을 고르지 않는다(서버가 항상 무작위 배정).
+                    대신 랜덤 매칭(대기열)과 친구와 플레이(도전장) 중 하나를 고른다. */}
+                {!pvpWaiting && !myInvite && (
+                  <div className="flex gap-2" style={{ marginBottom: 16 }}>
+                    {[["queue", "랜덤 매칭"], ["friend", "친구와 플레이"]].map(([k, lb]) => (
+                      <button key={k} onClick={() => { setPvpSubMode(k); setFriendDropdownOpen(false); setPvpErr(""); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (pvpSubMode === k ? T.brass : "#C9B58C"), background: pvpSubMode === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pvpSubMode === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
+                    ))}
+                  </div>
+                )}
                 {pvpWaiting ? (
                   <div style={{ textAlign: "center", padding: "20px 0" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>상대를 찾는 중...</div>
                     <button onClick={leavePvpQueue} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
                   </div>
-                ) : (
+                ) : myInvite ? (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>상대의 응답을 기다리는 중...</div>
+                    <button onClick={cancelFriendInvite} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+                  </div>
+                ) : pvpSubMode === "queue" ? (
                   <button onClick={joinPvpQueue} disabled={!myUid} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대국 상대 찾기"}</button>
+                ) : (
+                  <div style={{ position: "relative" }}>
+                    <button onClick={() => setFriendDropdownOpen((v) => !v)} disabled={!myUid} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: !myUid ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>{!myUid ? "로그인 후 이용할 수 있어요" : "친구 목록에서 고르기"}{myUid && <ChevronDown size={15} />}</button>
+                    {friendDropdownOpen && (
+                      <>
+                        <span onClick={() => setFriendDropdownOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                        <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", zIndex: 41, maxHeight: 280, overflowY: "auto", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", padding: 5 }}>
+                          {sortedFriendList.length === 0 ? (
+                            <div style={{ padding: "12px 10px", fontSize: 12, color: "rgba(244,238,226,.55)", textAlign: "center" }}>같이 대국할 친구가 없어요.</div>
+                          ) : sortedFriendList.map((f) => (
+                            <button key={f.uid} onClick={() => sendFriendInvite(f.uid)} className="press" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
+                              <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
+                                {f.pub.photo ? <img src={f.pub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
+                                  : <span style={{ width: 28, height: 28, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{(f.pub.nickname || f.username || "?")[0].toUpperCase()}</span>}
+                                <OnlineDot lastSeenMs={f.lastSeenMs} overlay size={8} />
+                              </span>
+                              <span style={{ minWidth: 0, flex: 1 }}>
+                                <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
+                                <span style={{ display: "block", fontSize: 10, color: "rgba(244,238,226,.55)" }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </>
             )}
@@ -10628,6 +10870,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>
                   {result.end === "checkmate" ? (result.color === activeColor ? "패배 — 체크메이트" : "승리! 🎉 체크메이트") :
                    result.end === "resign" ? "기권했어요" :
+                   result.end === "flag" ? (result.color === activeColor ? "패배 — 시간 초과" : "승리! 🎉 시간 초과") :
                    result.end === "pvp" ? (
                      result.status === "draw" ? "무승부" :
                      result.status === "aborted" ? "대국이 중단됐어요" :
@@ -12142,7 +12385,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                 PLAY 버튼 — 별도 줄 대신 나머지 네 버튼(뒤집기·초기화·뒤로·앞으로)과 같은 줄, 가운데에
                 작게 둔다. 전용 페이지(/play)를 새 히스토리 항목으로 연다. */}
             {onOpenPlay && !focus && (
-              <button onClick={() => onOpenPlay({ sans: [...sans], fenRoot })} className="press" title="PLAY — 봇과 대국하기" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 40, padding: "0 12px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, border: "1px solid #000", boxShadow: "0 3px 0 #8A6A2F", cursor: "pointer", flexShrink: 0 }}>
+              <button onClick={() => onOpenPlay({ sans: [...sans], fenRoot })} className="press" title="PLAY — 봇과 대국하기" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 40, padding: "0 12px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, border: "1px solid #000", boxShadow: "0 3px 0 #000", cursor: "pointer", flexShrink: 0 }}>
                 <Play size={13} color="#241509" fill="#241509" />PLAY
               </button>
             )}
