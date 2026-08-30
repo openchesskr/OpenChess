@@ -20250,7 +20250,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         <div className="flex items-center justify-between" style={{ flex: 1, minWidth: 0, gap: 8 }}>
           <div style={{ minWidth: 0 }}>
             <div className="flex items-center gap-2">
-              <ChesscomIcon size={16} />
+              {/* (사용자 요청) 닉네임 왼쪽의 chess.com 아이콘 표시를 없앤다. */}
               <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{(prof && prof.username) || username}</span>
               {prof && prof.country && <span style={{ fontSize: 12.5, fontWeight: 700, padding: "2px 8px", borderRadius: 7, background: "rgba(0,0,0,.06)", border: "1px solid #DCCBA8", color: T.ink, whiteSpace: "nowrap" }}>{countryFlag(prof.country)} {prof.country}</span>}
             </div>
@@ -20407,6 +20407,16 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
   const [sharingLegacy, setSharingLegacy] = useState(null);
   const myPub = { nickname: profile.nickname, photo: profile.photo, bio: profile.bio, chesscom: profile.chesscom, title: currentTitle, firstMoves: profile.firstMoves, xp: totalXp || 0, puzzleRating: puzzleRating || 800, solvedCount, displayId: profile.displayId, legacies: profile.legacies, legacyHistory: profile.legacyHistory };
   const { cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft } = chesscomUi;
+  // (신규 기능) 사용자 요청 — chess.com 통계 보기를 고르면 카드 상단 신원 표시(사진·아이디·소개)도
+  // OpenChess 것 대신 chess.com 것으로 완전히 바꿔 보여준다(같은 위치·같은 크기). chess.com은 자기소개
+  // 텍스트를 제공하지 않아, 그 자리엔 실명(name, 있을 때만)을 대신 보여준다.
+  const [ccHeaderProf, setCcHeaderProf] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!myPub.chesscom) { setCcHeaderProf(null); return; }
+    fetchChesscomProfile(myPub.chesscom).then((p) => { if (!cancelled) setCcHeaderProf(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [myPub.chesscom]);
   // (기능6) 프로필에서 메인 퀘스트 진척도·푼 퍼즐을 한눈에 볼 수 있게 표시.
   const mq = useMemo(() => mainQuestOverallProgress(mainQuest), [mainQuest]);
   const mqPct = mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
@@ -20426,17 +20436,28 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           {statsViewToggle(statsView, setStatsView)}
         </div>
       </div>
-      <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-        {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
-          : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(myPub.nickname || user || "?")[0].toUpperCase()}</span>}
-        <div style={{ minWidth: 0 }}>
-          {/* (디자인) 칭호는 이름 위에 표시 */}
-          <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{myPub.nickname || myPub.displayId || user}</div>
-          {/* (사용자 요청) 소개 — 닉네임 바로 밑에 표시한다. 이름·소개 사이에 있던 @아이디 줄은
-              위 헤더 라벨로 옮겼으니, 그만큼 이름과 소개 사이 여백을 조금 늘린다. */}
-          {myPub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
+      {statsView === "cc" && myPub.chesscom ? (
+        <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+          {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+            : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{((ccHeaderProf && ccHeaderProf.username) || myPub.chesscom)[0].toUpperCase()}</span>}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || myPub.chesscom}</div>
+            {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+          {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
+            : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(myPub.nickname || user || "?")[0].toUpperCase()}</span>}
+          <div style={{ minWidth: 0 }}>
+            {/* (디자인) 칭호는 이름 위에 표시 */}
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{myPub.nickname || myPub.displayId || user}</div>
+            {/* (사용자 요청) 소개 — 닉네임 바로 밑에 표시한다. 이름·소개 사이에 있던 @아이디 줄은
+                위 헤더 라벨로 옮겼으니, 그만큼 이름과 소개 사이 여백을 조금 늘린다. */}
+            {myPub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
+          </div>
+        </div>
+      )}
       {/* (사용자 요청) 위 선택 박스로 OpenChess 자체 통계(퀘스트·퍼즐)와 chess.com 통계를 완전히
           분리했다 — 예전엔 이 카드 하나에 둘 다 순서대로(OC 먼저, chess.com은 점선 아래) 쌓아
           보여줬지만, 이제 한 번에 한 쪽만 보인다. */}
@@ -24778,6 +24799,9 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
   // statsView를 들고 있다가 헤더 줄에서 그리고, 아래 내용 패널(ProfileStatsPanel)에는 값만 넘긴다.
   // 새 프로필을 열 때마다(open) "oc"로 되돌린다.
   const [statsView, setStatsView] = useState("oc");
+  // (신규 기능) MyProfileCard와 동일하게, chess.com 통계 보기를 고르면 카드 상단 신원 표시도
+  // chess.com 것으로 바꿔 보여준다.
+  const [ccHeaderProf, setCcHeaderProf] = useState(null);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
   // (버그 수정) 검색 버튼을 눌러야만 검색되던 것 — 입력할 때마다(살짝 debounce해) 자동으로
   // 실시간 검색되도록 한다. 검색 버튼은 그대로 두어 즉시 재검색하고 싶을 때도 쓸 수 있게 한다.
@@ -24806,7 +24830,14 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
     })();
     return () => { cancelled = true; };
   }, [me, myUid]);
-  const open = async (username) => { setReqState(null); setStatsView("oc"); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
+  const open = async (username) => { setReqState(null); setStatsView("oc"); setCcHeaderProf(null); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
+  useEffect(() => {
+    let cancelled = false;
+    const ccUsername = sel && sel.chesscom;
+    if (!ccUsername) { setCcHeaderProf(null); return; }
+    fetchChesscomProfile(ccUsername).then((p) => { if (!cancelled) setCcHeaderProf(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [sel && sel.chesscom]);
   const doReq = async () => {
     const pub = sel || {}; if (!me || !pub.username) return; setReqBusy(true);
     const r = await friendRequest(pub.username); setReqBusy(false);
@@ -24842,15 +24873,26 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
               <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(pub.displayId || pub.username)}{roleIcon(pub.username)}</span>
               {statsViewToggle(statsView, setStatsView)}
             </div>
-            <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-              {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
-                : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
-              <div style={{ minWidth: 0 }}>
-                {/* (18차 UI11) 칭호는 텍스트 대신 칭호 이미지로 표시 — 이름 위에 표시 */}
-                <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</div>
-                {pub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.bio}</div>}
+            {statsView === "cc" && pub.chesscom ? (
+              <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+                {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                  : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{((ccHeaderProf && ccHeaderProf.username) || pub.chesscom)[0].toUpperCase()}</span>}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || pub.chesscom}</div>
+                  {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+                {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
+                  : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
+                <div style={{ minWidth: 0 }}>
+                  {/* (18차 UI11) 칭호는 텍스트 대신 칭호 이미지로 표시 — 이름 위에 표시 */}
+                  <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</div>
+                  {pub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.bio}</div>}
+                </div>
+              </div>
+            )}
             <ProfileStatsPanel pub={pub} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pub.uid} viewerUid={myUid} />
             {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
@@ -25504,6 +25546,9 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   // statsView를 들고 있다가 헤더 줄에서 그리고, 아래 내용 패널(ProfileStatsPanel)에는 값만 넘긴다.
   // 새 프로필을 열 때마다(viewProfileUid) "oc"로 되돌린다.
   const [statsView, setStatsView] = useState("oc");
+  // (신규 기능) MyProfileCard와 동일하게, chess.com 통계 보기를 고르면 카드 상단 신원 표시도
+  // chess.com 것으로 바꿔 보여준다.
+  const [ccHeaderProf, setCcHeaderProf] = useState(null);
   // (v0.3.3 UI) 채팅·프로필·검색 창(v0.3.2)과 마찬가지로, 모바일에서는 이 친구 창도 카드가 아니라
   // 전체 화면으로 띄운다.
   const narrow = useNarrow(640);
@@ -25542,7 +25587,14 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
   // "거절" 버튼에서만 이 함수를 쓴다.
   const doReject = (uid) => guard(uid, async () => { await friendRemove(uid); await notifyResolveFriendRequest(meId, uid, "rejected"); })();
 
-  const viewProfileUid = (uid) => { const pr = profiles[uid] || {}; setStatsView("oc"); setSel({ uid, username: pr.username || uid, pub: pr.pub || {} }); };
+  const viewProfileUid = (uid) => { const pr = profiles[uid] || {}; setStatsView("oc"); setCcHeaderProf(null); setSel({ uid, username: pr.username || uid, pub: pr.pub || {} }); };
+  useEffect(() => {
+    let cancelled = false;
+    const ccUsername = sel && sel.pub && sel.pub.chesscom;
+    if (!ccUsername) { setCcHeaderProf(null); return; }
+    fetchChesscomProfile(ccUsername).then((p) => { if (!cancelled) setCcHeaderProf(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [sel && sel.pub && sel.pub.chesscom]);
 
   // 검색(추가) 탭
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
@@ -25617,14 +25669,25 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                   {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
-                  : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
-                  {p.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
+              {statsView === "cc" && p.chesscom ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                  {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                    : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{((ccHeaderProf && ccHeaderProf.username) || p.chesscom)[0].toUpperCase()}</span>}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || p.chesscom}</div>
+                    {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                  {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
+                    : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
+                    {p.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
+                  </div>
+                </div>
+              )}
               {/* (버그 수정) 채팅/친구 요청·수락·거절 버튼을 카드 맨 아래 대신 티어와 메인 퀘스트
                   진척도 사이(actions prop)에 둔다. */}
               <ProfileStatsPanel pub={p} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} ownerUid={sel.uid} viewerUid={meId} />
