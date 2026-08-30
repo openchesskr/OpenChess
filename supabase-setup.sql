@@ -1225,6 +1225,15 @@ begin
   on conflict (uid) do update set last_seen = now();
 end; $$;
 grant execute on function public.touch_presence() to authenticated;
+-- (신규 기능) 사용자 요청 — 친구가 /play가 아니라 어떤 화면에 있든 접속 상태가 실시간으로 뜨도록,
+-- presence 변경을 클라이언트가 postgres_changes로 즉시 받을 수 있게 publication에 등록한다(위 8),
+-- N+1) 섹션과 같은 이유 — 이 테이블은 그 두 섹션보다 나중에 추가돼 여기서 별도로 등록해야 한다).
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'presence') then
+    alter publication supabase_realtime add table public.presence;
+  end if;
+end $$;
 
 -- ============================================================================
 -- N+1) pvp_queue / pvp_games — /play 페이지의 OpenChess 사용자 간 실시간 대국(빠른 매칭)
