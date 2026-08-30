@@ -10304,12 +10304,20 @@ async function pickBotMove(engine, fen, elo, moveMemory) {
   }
   return chosen;
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   const [step, setStep] = useState("setup"); // "setup" | "playing"
   const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
   const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
+  // (신규 기능) 사용자 요청 — /play에서 봇 대신 다른 OpenChess 사용자와 실시간으로 대국. mode가
+  // "pvp"면 sans의 진실 공급원은 서버(pvp_games.sans)이고, 봇 자동 응수 effect는 아예 돌지 않는다.
+  const [mode, setMode] = useState("bot"); // "bot" | "pvp"
+  const [pvpWaiting, setPvpWaiting] = useState(false);
+  const [pvpGame, setPvpGame] = useState(null); // pvp_games 행(id, white_uid, black_uid, sans, status)
+  const [pvpErr, setPvpErr] = useState("");
+  const [opponentPub, setOpponentPub] = useState(null);
+  const pvpFinishedRef = useRef(false); // 체크메이트/스테일메이트를 서버에 한 번만 보고하기 위한 가드
   // (버그 수정) 이 대국 안에서 "이 포지션(FEN)에서 봇이 이미 골랐던 수"를 기억해 둔다 — pickBotMove가
   // 반복 수순에서 항상 같은 수만 고르지 않도록 가중치를 낮추는 데 쓴다. 새 대국을 시작할 때마다 비운다.
   const botMoveMemoryRef = useRef(new Map());
@@ -10327,20 +10335,83 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
   const narrow = useNarrow(720);
   const boardSize = narrow ? Math.min(380, (typeof window !== "undefined" ? window.innerWidth : 380) - 32) : 420;
 
+  // (신규 기능) 실시간 대국 매칭 — 대기열에 합류해 상대를 기다린다. 이미 나를 기다리던 상대가 있으면
+  // pvp_queue_join이 즉시 대국을 만들어 돌려주고, 없으면 내가 대기열에 들어가고 null을 받는다 —
+  // 이후 다른 사람이 나를 찾아 매칭할 때까지는 realtime 구독(아래)으로 통보받는다.
+  const applyPvpGame = useCallback((g) => {
+    if (!g) return;
+    setPvpGame(g); setPvpWaiting(false); pvpFinishedRef.current = false;
+    const myColor = g.white_uid === myUid ? "w" : "b";
+    setActiveColor(myColor);
+    setSans(g.sans || []);
+    setViewPly(null);
+    setStep("playing");
+  }, [myUid]);
+  const joinPvpQueue = async () => {
+    if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
+    setPvpErr(""); setPvpWaiting(true);
+    try {
+      const g = await sbRpc("pvp_queue_join", {});
+      if (g) applyPvpGame(g);
+    } catch { setPvpErr("대기열 합류에 실패했어요. 잠시 후 다시 시도해주세요."); setPvpWaiting(false); }
+  };
+  const leavePvpQueue = async () => { setPvpWaiting(false); try { await sbRpc("pvp_queue_leave", {}); } catch { } };
+  // 페이지를 나갈 때 대기열에 남아 있지 않도록 정리한다.
+  useEffect(() => () => { if (myUid) sbRpc("pvp_queue_leave", {}).catch(() => {}); }, [myUid]);
+  // 대기 중일 때 — 다른 사람이 나를 찾아 매칭해도 내가 만든 pvp_games 행은 아니므로, 내가 white/black
+  // 어느 쪽으로 들어가든 realtime으로 알 수 있도록 두 컬럼 각각을 구독한다(소켓이 끊겼을 때를 대비해
+  // pvp_queue_join을 다시 불러 재확인하는 느슨한 안전망도 둔다).
+  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active") applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
+  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active") applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
+  // 대국 중 — 상대(또는 내 클라이언트가 보낸) 수·종료 상태를 실시간으로 반영한다. sans는 이 행이
+  // 유일한 진실 공급원이라 그대로 덮어쓴다(내가 둔 수도 낙관적으로 먼저 반영해 두지만, 결국 같은
+  // 배열로 확정된다).
+  useRealtimeTable("pvp_games", pvpGame ? "id=eq." + pvpGame.id : null, async (payload) => {
+    let row = payload && payload.new;
+    if (!row) { try { const rows = await sbSelect("pvp_games?id=eq." + pvpGame.id + "&select=*"); row = rows && rows[0]; } catch { } }
+    if (!row) return;
+    setPvpGame(row);
+    setSans(row.sans || []);
+  }, mode === "pvp" && step === "playing" && !!pvpGame, 4000);
+  // 상대 프로필(닉네임·사진) — 매칭되면 한 번만 가져온다.
+  useEffect(() => {
+    if (mode !== "pvp" || !pvpGame || !myUid) { setOpponentPub(null); return; }
+    const oppUid = pvpGame.white_uid === myUid ? pvpGame.black_uid : pvpGame.white_uid;
+    if (!oppUid) return;
+    let cancelled = false;
+    usersProfiles([oppUid]).then((m) => { if (!cancelled) setOpponentPub((m && m[oppUid] && m[oppUid].pub) || {}); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [mode, pvpGame && pvpGame.id, myUid]);
+
   const board = useMemo(() => boardOfRoot(fenRoot, sans), [fenRoot, sans.join(" ")]);
   const replay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, sans) : null), [fenRoot, sans.join(" ")]);
   const ep = fenRoot ? replay.ep : epTarget(sans);
   const toMoveColor = colorOfRoot(fenRoot, sans.length);
   const endState = useMemo(() => gameEndState(sans, fenRoot), [sans.join(" "), fenRoot]);
-  const result = resigned ? { end: "resign", color: activeColor } : (endState.end ? endState : null);
+  // (신규 기능) pvp 모드에서는 내가 기권했을 때뿐 아니라, 서버가 이미 종료로 표시한 대국(상대가
+  // 기권했거나 먼저 체크메이트를 보고한 경우)도 결과로 취급한다.
+  const pvpResult = mode === "pvp" && pvpGame && pvpGame.status !== "active"
+    ? { end: "pvp", status: pvpGame.status } : null;
+  const result = resigned ? { end: "resign", color: activeColor } : (endState.end ? endState : pvpResult);
   const userToMove = step === "playing" && !result && toMoveColor === activeColor;
+
+  // (신규 기능) 체크메이트·스테일메이트·3회 동형 반복으로 대국이 끝나면, pvp 모드에서는 서버에도
+  // 한 번만 결과를 보고해 상대 화면에도 즉시 반영되게 한다(둘 중 누구든 먼저 감지한 쪽이 보고 —
+  // pvp_finish는 이미 종료된 대국이면 조용히 그대로 반환하므로 중복 호출해도 안전하다).
+  useEffect(() => {
+    if (mode !== "pvp" || !pvpGame || pvpFinishedRef.current || !endState.end) return;
+    pvpFinishedRef.current = true;
+    const status = endState.end === "checkmate" ? (endState.color === "w" ? "black_won" : "white_won") : "draw";
+    sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
+  }, [mode, pvpGame && pvpGame.id, endState.end, endState.color]);
 
   const go = useCallback((san) => {
     if (result) return;
     playMoveSfx(san);
     setSans((prev) => [...prev, san]);
     setSel(null); setDrag(null); setViewPly(null);
-  }, [result]);
+    if (mode === "pvp" && pvpGame) sbRpc("pvp_move", { p_game_id: pvpGame.id, p_san: san }).catch(() => {});
+  }, [result, mode, pvpGame]);
 
   const tryMove = useCallback((from, to) => {
     if (!userToMove) return false;
@@ -10375,6 +10446,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
 
   // 봇 차례 — 유저 턴이 아니고 게임이 안 끝났으면 자동으로 둔다.
   useEffect(() => {
+    if (mode !== "bot") return;
     if (step !== "playing" || result) return;
     if (toMoveColor === activeColor) return;
     if (!engine || engine.status !== "ready") return;
@@ -10394,7 +10466,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
     }).catch(() => { if (!cancelled) setBotThinking(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, result, toMoveColor, activeColor, engine && engine.status, sans.join(" "), botTier]);
+  }, [mode, step, result, toMoveColor, activeColor, engine && engine.status, sans.join(" "), botTier]);
 
   const startGame = () => {
     const finalColor = colorPick === "random" ? (Math.random() < 0.5 ? "w" : "b") : colorPick;
@@ -10405,7 +10477,17 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
     botMoveMemoryRef.current = new Map();
     setStep("playing");
   };
-  const rematch = () => { setSans(seedSans); setResigned(false); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setStep("setup"); };
+  const rematch = () => {
+    if (mode === "pvp") { leavePvpQueue(); setPvpGame(null); setOpponentPub(null); pvpFinishedRef.current = false; }
+    setSans(seedSans); setResigned(false); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setStep("setup");
+  };
+  const resign = () => {
+    setResigned(true); setOptionsOpen(false);
+    if (mode === "pvp" && pvpGame && myUid) {
+      const status = activeColor === "w" ? "black_won" : "white_won";
+      sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
+    }
+  };
 
   const flip = activeColor === "b";
   // (사용자 요청) chess.com 대국 화면처럼 상단에 수순 스트립(수 번호 + 백/흑 수, 누르면 그 시점으로
@@ -10433,10 +10515,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
   // 않은 상태면 기본 프로필(아이콘)과 "Unnamed"로 대신한다.
   const myPhoto = profile && profile.photo;
   const myName = (profile && (profile.nickname || profile.displayId)) || username || null;
-  const playerBar = (isBot) => (
+  // (신규 기능) pvp 모드에서 위쪽(상대) 줄에는 봇 대신 실제로 매칭된 상대의 OpenChess 프로필을 보여준다.
+  const oppName = (opponentPub && (opponentPub.nickname || opponentPub.displayId)) || null;
+  const playerBar = (isTop) => (
     <div className="flex items-center justify-between" style={{ padding: "5px 2px" }}>
       <div className="flex items-center gap-2">
-        {isBot ? (
+        {isTop && mode === "pvp" ? (
+          opponentPub && opponentPub.photo ? <img src={opponentPub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+            : <span style={{ width: 28, height: 28, borderRadius: "50%", background: oppName ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#5A4630", color: oppName ? "#241509" : T.ivory, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{oppName ? oppName[0].toUpperCase() : <User size={14} />}</span>
+        ) : isTop ? (
           <span style={{ width: 28, height: 28, borderRadius: "50%", background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={14} /></span>
         ) : myPhoto ? (
           <img src={myPhoto} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
@@ -10445,9 +10532,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
             {myName ? myName[0].toUpperCase() : <User size={14} />}
           </span>
         )}
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{isBot ? botTier.label + " 봇" : (myName || "Unnamed")}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{isTop ? (mode === "pvp" ? (oppName || "상대") : botTier.label + " 봇") : (myName || "Unnamed")}</span>
       </div>
-      {isBot && <span style={{ fontSize: 11, fontWeight: 700, color: botThinking && !result ? T.brassHi : "rgba(244,238,226,.6)", fontFamily: SITE_FONT }}>{botThinking && !result ? "생각하는 중..." : "레이팅 " + botTier.elo}</span>}
+      {isTop && mode === "bot" && <span style={{ fontSize: 11, fontWeight: 700, color: botThinking && !result ? T.brassHi : "rgba(244,238,226,.6)", fontFamily: SITE_FONT }}>{botThinking && !result ? "생각하는 중..." : "레이팅 " + botTier.elo}</span>}
     </div>
   );
 
@@ -10462,26 +10549,49 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
         </div>
         {step === "setup" ? (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>1. 어느 진영으로 두시겠어요?</div>
+            {/* (신규 기능) 사용자 요청 — 봇과 대국하는 대신, 다른 OpenChess 사용자와 실시간으로 대국할
+                수 있게 한다. 대기열에 넣고(pvp_queue_join) 상대가 나타날 때까지 기다린다. */}
+            <div className="flex gap-2" style={{ marginBottom: 16 }}>
+              {[["bot", "봇과 대국"], ["pvp", "실시간 대국"]].map(([k, lb]) => (
+                <button key={k} onClick={() => { if (pvpWaiting) leavePvpQueue(); setMode(k); setPvpErr(""); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (mode === k ? T.brass : "#C9B58C"), background: mode === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: mode === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>어느 진영으로 두시겠어요?</div>
             <div className="flex gap-2" style={{ marginBottom: 16 }}>
               {[["w", "백"], ["b", "흑"], ["random", "랜덤"]].map(([k, lb]) => (
                 <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
               ))}
             </div>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>2. 상대할 봇을 골라주세요</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
-              {PLAY_BOT_TIERS.map((t) => (
-                <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", cursor: "pointer", textAlign: "left" }}>
-                  <span style={{ width: 32, height: 32, borderRadius: "50%", background: botTier.elo === t.elo ? T.brass : "#EDE1C6", color: botTier.elo === t.elo ? "#241509" : T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={16} /></span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: "block", fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13.5, color: T.ink }}>{t.label}</span>
-                    <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{t.desc}</span>
-                  </span>
-                  {botTier.elo === t.elo && <Check size={16} color={T.brass} />}
-                </button>
-              ))}
-            </div>
-            <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: (!engine || engine.status !== "ready") ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? "엔진을 준비하는 중..." : "대국 시작"}</button>
+            {mode === "bot" ? (
+              <>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>상대할 봇을 골라주세요</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
+                  {PLAY_BOT_TIERS.map((t) => (
+                    <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", cursor: "pointer", textAlign: "left" }}>
+                      <span style={{ width: 32, height: 32, borderRadius: "50%", background: botTier.elo === t.elo ? T.brass : "#EDE1C6", color: botTier.elo === t.elo ? "#241509" : T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={16} /></span>
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ display: "block", fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13.5, color: T.ink }}>{t.label}</span>
+                        <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{t.desc}</span>
+                      </span>
+                      {botTier.elo === t.elo && <Check size={16} color={T.brass} />}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: (!engine || engine.status !== "ready") ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? "엔진을 준비하는 중..." : "대국 시작"}</button>
+              </>
+            ) : (
+              <>
+                {pvpErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{pvpErr}</div>}
+                {pvpWaiting ? (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>상대를 찾는 중...</div>
+                    <button onClick={leavePvpQueue} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+                  </div>
+                ) : (
+                  <button onClick={joinPvpQueue} disabled={!myUid} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대국 상대 찾기"}</button>
+                )}
+              </>
+            )}
           </div>
         ) : (
           <div>
@@ -10518,6 +10628,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
                 <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>
                   {result.end === "checkmate" ? (result.color === activeColor ? "패배 — 체크메이트" : "승리! 🎉 체크메이트") :
                    result.end === "resign" ? "기권했어요" :
+                   result.end === "pvp" ? (
+                     result.status === "draw" ? "무승부" :
+                     result.status === "aborted" ? "대국이 중단됐어요" :
+                     ((result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b")) ? "승리! 🎉 상대가 기권했어요" : "패배 — 상대가 승리했어요"
+                   ) :
                    result.end === "stalemate" ? "무승부 — 스테일메이트" : "무승부 — 3회 동형 반복"}
                 </div>
               </div>
@@ -10530,7 +10645,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username }) {
                   <>
                     <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                     <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", width: 170, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 10, padding: 5, zIndex: 41, display: "flex", flexDirection: "column", gap: 1, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
-                      {!result && <button onClick={() => { setResigned(true); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>기권</button>}
+                      {!result && <button onClick={resign} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>기권</button>}
                       {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>대국 리뷰</button>}
                       <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>다시 설정</button>
                     </div>
@@ -27317,7 +27432,7 @@ export default function App() {
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
-      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} />}
+      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} />}
       {profileWinOpen && user && (
         <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size}
           onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
