@@ -20608,7 +20608,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
 // (사용자 요청) onSelectGame — 유산(Legacy) 관리 화면이 이 컴포넌트를 그대로 재사용하면서, "최근 대국"
 // 각 줄의 검색·리뷰 버튼 자리에 그 대신 "선택" 버튼 하나만 두기 위한 선택적 콜백. 넘기지 않으면(기존
 // 프로필·유저 검색 등) 지금까지와 완전히 동일하게 동작한다.
-function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame, selectedGameId }) {
+function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame, selectedGameId, compact }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -20728,8 +20728,10 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   const recentOnly = !!onSelectGame;
   return (
     <div style={{ marginTop: 12 }}>
-      {/* 프로필 */}
-      {!recentOnly && (
+      {/* 프로필 — (사용자 요청) compact(카드 상단에 이미 chess.com 아바타·아이디를 보여주는 화면)일
+          때는 이 사진+아이디 줄이 중복이라 통째로 생략한다. 국적·시간 규정별 레이팅은 그 상단
+          헤더로 옮겨졌다(MyProfileCard/ProfileStatsPanel의 chess.com 헤더 블록 참고). */}
+      {!recentOnly && !compact && (
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         {prof && prof.avatar ? <img src={prof.avatar} alt="" style={{ width: 48, height: 48, borderRadius: 12, border: "1px solid #C9B58C" }} />
           : <span style={{ width: 48, height: 48, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 22 }}>{username[0].toUpperCase()}</span>}
@@ -20884,6 +20886,36 @@ function statsViewToggle(statsView, setStatsView) {
     </div>
   );
 }
+// (사용자 요청) chess.com 통계 보기의 카드 상단 신원 표시 — 사진·아이디는 여기 한 곳에서만 보여주고
+// (AccountChessStats 안의 중복 사진·아이디 줄은 compact 옵션으로 생략), 국적·시간 규정별 레이팅도
+// 이 자리로 끌어올려 함께 보여준다. MyProfileCard·UserSearchModal·FriendsModal이 모두 공유한다.
+function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername }) {
+  const name = (ccHeaderProf && ccHeaderProf.username) || fallbackUsername;
+  const hasRatings = ccHeaderProf && (ccHeaderProf.rapid != null || ccHeaderProf.blitz != null || ccHeaderProf.bullet != null);
+  return (
+    <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+      {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
+        : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26, flexShrink: 0 }}>{(name || "?")[0].toUpperCase()}</span>}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="flex items-center justify-between" style={{ gap: 8 }}>
+          <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 17, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+            {ccHeaderProf && ccHeaderProf.country && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 7, background: "rgba(0,0,0,.06)", border: "1px solid #DCCBA8", color: T.ink, whiteSpace: "nowrap", flexShrink: 0 }}>{countryFlag(ccHeaderProf.country)} {ccHeaderProf.country}</span>}
+          </div>
+          {hasRatings && (
+            <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "'IBM Plex Sans KR', sans-serif", textAlign: "right", flexShrink: 0 }}>
+              <div>래피드 : {ccHeaderProf.rapid ?? "—"}</div>
+              <div>블리츠 : {ccHeaderProf.blitz ?? "—"}</div>
+              <div>불릿 : {ccHeaderProf.bullet ?? "—"}</div>
+            </div>
+          )}
+        </div>
+        {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
+        {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
+      </div>
+    </div>
+  );
+}
 function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, engine }) {
   const [editOpen, setEditOpen] = useState(false);
   // (사용자 요청) 최상단 선택 박스 — OpenChess 자체 통계(퀘스트·퍼즐)와 chess.com 통계를 한 카드에
@@ -20926,15 +20958,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
         </div>
       </div>
       {statsView === "cc" && myPub.chesscom ? (
-        <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-          {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
-            : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{((ccHeaderProf && ccHeaderProf.username) || myPub.chesscom)[0].toUpperCase()}</span>}
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || myPub.chesscom}</div>
-            {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
-            {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
-          </div>
-        </div>
+        <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={myPub.chesscom} />
       ) : (
         <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
           <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
@@ -20948,6 +20972,8 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
             {/* (사용자 요청) 소개 — 닉네임 바로 밑에 표시한다. 이름·소개 사이에 있던 @아이디 줄은
                 위 헤더 라벨로 옮겼으니, 그만큼 이름과 소개 사이 여백을 조금 늘린다. */}
             {myPub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myPub.bio}</div>}
+            {/* (사용자 요청) 다른 사람 프로필과 마찬가지로 이름 밑에 OpenChess 최근 접속(내 프로필이라 항상 온라인) 표시. */}
+            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>OpenChess {presenceLabel(Date.now())}</div>
           </div>
         </div>
       )}
@@ -21003,7 +21029,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           )}
         </>
       ) : linked ? (
-        <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} reviewUnlocked={reviewUnlocked} />
+        <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} reviewUnlocked={reviewUnlocked} compact />
       ) : (
         // chess.com 미연동 상태에서 이 탭을 고르면 통계 대신 연동 안내 — 아래 편집 모달의 계정
         // 섹션으로 바로 이어지도록 편집 버튼을 함께 둔다.
@@ -23157,10 +23183,25 @@ function usePresenceMap(uids) {
   useEffect(() => {
     if (!key) { setMap({}); return; }
     let cancelled = false;
+    const idSet = new Set(key.split(","));
     const load = () => fetchPresenceMap(key.split(",")).then((m) => { if (!cancelled) setMap(m); });
     load();
-    const id = setInterval(load, 20000);
-    return () => { cancelled = true; clearInterval(id); };
+    const pollId = setInterval(load, 20000); // 소켓이 끊겼을 때를 대비한 느슨한 안전망
+    // (신규 기능) 사용자 요청 — 친구가 /play가 아니라 그냥 아무 OpenChess 화면에 접속해 있어도
+    // 실시간으로 온라인 표시가 뜨도록, 20초 폴링과 별개로 presence 테이블 변경을 즉시 구독한다.
+    // useRealtimeTable은 항상 filter(단일 컬럼 eq)가 있어야 하는데 여기선 "관심 있는 uid 여러 개"라
+    // 그 방식이 맞지 않아, 필터 없이(테이블 전체) 구독한 뒤 클라이언트에서 uid만 걸러낸다.
+    let channel = null;
+    if (sbClient) {
+      channel = sbClient.channel("rt:presence:" + (++rtChanSeq))
+        .on("postgres_changes", { event: "*", schema: "public", table: "presence" }, (payload) => {
+          const row = payload && payload.new;
+          if (!row || payload.eventType === "DELETE" || !idSet.has(row.uid)) return;
+          setMap((prev) => ({ ...prev, [row.uid]: new Date(row.last_seen).getTime() }));
+        })
+        .subscribe();
+    }
+    return () => { cancelled = true; clearInterval(pollId); if (channel) sbClient.removeChannel(channel); };
   }, [key]);
   return map;
 }
@@ -25278,7 +25319,7 @@ function ProfileStatsPanel({ pub, statsView, onOpenOpening, onOpenGame, onOpenGa
       {statsView === "oc" ? (
         <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} />
       ) : pub.chesscom ? (
-        <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact />
       ) : (
         <div style={{ textAlign: "center", padding: "22px 10px" }}>
           <ChesscomLogo height={28} />
@@ -25414,15 +25455,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
               {statsViewToggle(statsView, setStatsView)}
             </div>
             {statsView === "cc" && pub.chesscom ? (
-              <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-                {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
-                  : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{((ccHeaderProf && ccHeaderProf.username) || pub.chesscom)[0].toUpperCase()}</span>}
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || pub.chesscom}</div>
-                  {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
-                  {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
-                </div>
-              </div>
+              <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={pub.chesscom} />
             ) : (
               <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
                 <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
@@ -26222,15 +26255,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 </div>
               </div>
               {statsView === "cc" && p.chesscom ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                  {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C" }} />
-                    : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{((ccHeaderProf && ccHeaderProf.username) || p.chesscom)[0].toUpperCase()}</span>}
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{(ccHeaderProf && ccHeaderProf.username) || p.chesscom}</div>
-                    {ccHeaderProf && ccHeaderProf.name && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ccHeaderProf.name}</div>}
-                    {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
-                  </div>
-                </div>
+                <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={p.chesscom} />
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
                   <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
