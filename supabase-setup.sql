@@ -1540,3 +1540,31 @@ begin
   delete from auth.users where id = v_me;
 end; $$;
 grant execute on function public.delete_own_account() to authenticated;
+
+-- ============================================================================
+-- N+5) MID — 계정 하나마다 부여되는 9자리 영문 대문자+숫자 회원 번호
+-- ============================================================================
+-- profiles.id(uuid)는 그대로 "계정 하나 = 고유 UID"의 진짜 식별자로 두고, MID는 사람이 계정 센터
+-- 화면에서 보고 부르기 쉬운 짧은 번호일 뿐이다(로그인 수단과 무관 — 여러 OAuth를 연결해도 같은
+-- profiles 행이라 MID는 하나 그대로 유지된다).
+drop function if exists public.gen_mid() cascade;
+create or replace function public.gen_mid()
+returns text language plpgsql volatile set search_path = public as $$
+declare v_chars text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; v_code text; v_exists boolean;
+begin
+  loop
+    v_code := '';
+    for i in 1..9 loop
+      v_code := v_code || substr(v_chars, 1 + floor(random() * length(v_chars))::int, 1);
+    end loop;
+    select exists(select 1 from public.profiles where mid = v_code) into v_exists;
+    exit when not v_exists;
+  end loop;
+  return v_code;
+end; $$;
+-- 컬럼을 만들 때 이미 이 함수가 있어야 default로 걸 수 있으므로, 위에서 함수부터 만든 뒤 컬럼을
+-- 추가한다. 새로 가입하는 계정(handle_new_user 트리거·claim_username RPC 등 profiles를 insert하는
+-- 모든 경로)은 컬럼 default 덕분에 자동으로 MID를 받고, 이미 있던 계정은 아래 backfill로 한 번만
+-- 채운다.
+alter table public.profiles add column if not exists mid text unique default public.gen_mid() check (mid ~ '^[A-Z0-9]{9}$');
+update public.profiles set mid = public.gen_mid() where mid is null;

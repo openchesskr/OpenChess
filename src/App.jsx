@@ -14710,7 +14710,16 @@ function isTreeSequenceValid(setup, tree, fenRoot) {
 // (기능1) puzzle.tree(분기 트리)가 있으면 트리 전체를, puzzle.lines(다중 라인)가 있으면 그 라인 전부를,
 // 없으면 기존 solution 하나만 검증한다.
 function isPuzzleSequenceValid(pz) {
-  const setup = [...(pz.setupSans || []), pz.mistakeSan].filter(Boolean);
+  // (버그 수정, 사용자 제보) 희생 테마(sacrifice)는 "희생 수 자체"가 트리의 첫 수(firstSan)로 이미
+  // 들어가 있다 — runPcGenerate의 firstSan 분기·PuzzleSolver의 자동 생성 요청 등 트리를 만드는 모든
+  // 경로가 희생 테마일 때는 setupSans 위치(=그 수를 두기 직전 포지션)에서 시작해, 그 수 자체를 트리
+  // 첫 수로 넣는다(풀이자가 스스로 찾아내야 하므로). 그런데 이 함수는 항상 setup에 mistakeSan까지
+  // 재생해 버려서 — 희생 테마 트리는 "이미 둔 희생 수"를 트리에서 또 한 번 두려다 매번 불법 수로
+  // 걸려 저장이 거부됐다(퍼즐 만들기 화면엔 setActive로 곧장 보여줘 만들어진 것처럼 보이지만, 실제로는
+  // onSavePuzzle의 이 검증에 막혀 서버에 저장도, 로컬 목록 추가도 안 됨 — "손상된 퍼즐"·"내 퍼즐
+  // 목록에 없음"의 근본 원인). 희생 테마 + 트리 형식일 때만 mistakeSan을 setup에서 뺀다.
+  const isSacrificeTree = pz.tree && (pz.themes || []).includes("sacrifice");
+  const setup = isSacrificeTree ? (pz.setupSans || []) : [...(pz.setupSans || []), pz.mistakeSan].filter(Boolean);
   const fenRoot = (!pz.setupSans || !pz.setupSans.length) && pz.fen ? parseFenFull(pz.fen) : null;
   if (pz.tree) return isTreeSequenceValid(setup, pz.tree, fenRoot);
   const lines = (pz.lines && pz.lines.length) ? pz.lines : [{ tag: "best", solution: pz.solution }];
@@ -23130,6 +23139,17 @@ async function authRestore() {
   if (!uid) { clearSession(); return null; }
   return await loadAccount(uid);
 }
+// (v0.4.3 기능) authRestore와 같은 refresh_token 갱신이지만, 프로필·진도까지 다시 불러오는
+// loadAccount는 건너뛴다 — 액세스 토큰이 조용히 만료되기 전에 주기적으로 미리 갱신만 해 두는
+// 가벼운 백그라운드 유지용(App 루트의 REFRESH_INTERVAL_MS 타이머 전용).
+async function refreshAccessToken() {
+  if (!SB_ON) return false;
+  const refresh = loadRefresh();
+  if (!refresh) return false;
+  const r = await gotrue("token?grant_type=refresh_token", { refresh_token: refresh });
+  if (!r.ok) return false;
+  return !!applySession(r.data);
+}
 async function authLogout() {
   if (SB_ON && SB_TOKEN) { try { await fetch(SB_URL + "/auth/v1/logout", { method: "POST", headers: sbHeaders() }); } catch { } }
   clearSession();
@@ -26853,7 +26873,7 @@ const ACCOUNT_CENTER_PROVIDERS = [
   { key: "apple", label: "Apple", Icon: AppleLogo, chip: { background: "#000" } },
   { key: "facebook", label: "Facebook", Icon: FacebookLogo, chip: { background: "#1877F2" } },
 ];
-function AccountCenterModal({ onClose, username, onLogoutClick, onAccountDeleted }) {
+function AccountCenterModal({ onClose, myUid, username, onLogoutClick, onAccountDeleted }) {
   const [identities, setIdentities] = useState(null); // null=불러오는 중
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26862,6 +26882,21 @@ function AccountCenterModal({ onClose, username, onLogoutClick, onAccountDeleted
   const [deleteErr, setDeleteErr] = useState("");
   const load = useCallback(async () => { setIdentities(await getUserIdentities()); }, []);
   useEffect(() => { load(); }, [load]);
+  // (v0.4.3 기능, 사용자 요청) 계정마다 하나씩 부여되는 9자리 영문 대문자+숫자 회원 번호(MID) —
+  // profiles.mid는 가입 시(또는 이 컬럼이 새로 생긴 기존 계정은 최초 조회 시) 서버가 자동으로
+  // 채워 두므로, 여기서는 조회만 한다.
+  const [mid, setMid] = useState(null); // null=불러오는 중, ""=조회 실패
+  const [midCopied, setMidCopied] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!myUid) return;
+    (async () => {
+      try { const rows = await sbSelect("profiles?id=eq." + myUid + "&select=mid&limit=1"); if (!cancelled) setMid((rows && rows[0] && rows[0].mid) || ""); }
+      catch { if (!cancelled) setMid(""); }
+    })();
+    return () => { cancelled = true; };
+  }, [myUid]);
+  const copyMid = async () => { if (!mid) return; try { await navigator.clipboard.writeText(mid); setMidCopied(true); setTimeout(() => setMidCopied(false), 1500); } catch { } };
   const hasEmail = (identities || []).some((i) => i.provider === "email");
   const linkCount = (identities || []).length;
   const doLink = async (provider) => {
@@ -26895,7 +26930,21 @@ function AccountCenterModal({ onClose, username, onLogoutClick, onAccountDeleted
       >
         <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
         <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 4, paddingRight: 30 }}>계정 센터</div>
-        <div style={{ fontSize: 12, color: T.inkSoft, marginBottom: 14 }}>@{username}</div>
+        <div style={{ fontSize: 12, color: T.inkSoft, marginBottom: 10 }}>@{username}</div>
+
+        {/* (v0.4.3 기능, 사용자 요청) MID — 이 계정 고유의 9자리 영문+숫자 회원 번호. 로그인 수단이
+            바뀌어도(연결·해제와 무관) 이 계정(profiles 행) 하나에 항상 같은 값으로 고정돼 있다. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 12px", marginBottom: 14, borderRadius: 10, background: "rgba(196,154,80,.12)", border: "1px solid rgba(196,154,80,.35)" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 2 }}>MID</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace", letterSpacing: ".05em" }}>{mid == null ? "불러오는 중…" : (mid || "—")}</div>
+          </div>
+          {!!mid && (
+            <button onClick={copyMid} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+              <Copy size={12} />{midCopied ? "복사됨" : "복사"}
+            </button>
+          )}
+        </div>
 
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>로그인 수단</div>
         {identities == null ? (
@@ -27563,16 +27612,17 @@ export default function App() {
     setDismissedAnnounceVersion(null); setFriendUids([]); setPuzzleSolvers({}); setSolverNames({}); setShareReferral(null);
     setDailyPuzzleLastShownAt(0); setDailyPuzzleHideDate(null);
   }, []);
-  // (UX7) 일정 시간 활동이 없으면 자동 로그아웃 — 로그인 상태가 무기한 유지되던 보안 문제 수정
+  // (v0.4.3 변경, 사용자 요청) "같은 기기(로컬 환경)에서는 로그인이 자동으로 풀리지 않게 해달라" —
+  // 30분 유휴 자동 로그아웃(UX7)을 없앤다. 대신, 액세스 토큰(보통 발급 후 1시간 뒤 만료)이 오래
+  // 열어 둔 탭에서 조용히 만료돼 API 호출이 하나둘 실패하기 시작하는(겉으로는 "이유 없이 뭔가 안
+  // 되는" 것처럼 보이는, 사실상의 숨은 로그아웃) 일이 없도록, 만료 전에 refresh_token으로 미리
+  // 갱신하는 타이머로 대체한다 — 유휴 여부와 무관하게 탭이 열려 있는 한 계속 로그인 상태를 유지한다.
   useEffect(() => {
     if (!user) return;
-    const IDLE_LIMIT_MS = 30 * 60 * 1000; // 30분
-    let timer = setTimeout(logout, IDLE_LIMIT_MS);
-    const reset = () => { clearTimeout(timer); timer = setTimeout(logout, IDLE_LIMIT_MS); };
-    const events = ["mousedown", "keydown", "touchstart", "scroll"];
-    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
-    return () => { clearTimeout(timer); events.forEach((e) => window.removeEventListener(e, reset)); };
-  }, [user, logout]);
+    const REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50분마다(액세스 토큰 만료 전에 여유를 두고 갱신)
+    const id = setInterval(() => { refreshAccessToken().catch(() => { }); }, REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [user]);
   const unlockOpening = useCallback((keyStr) => { let isNew = false; setUnlocked((p) => { if (p.has(keyStr)) return p; isNew = true; const n = new Set(p); const parts = keyStr.split(" ").filter(Boolean); for (let i = 1; i <= parts.length; i++) n.add(parts.slice(0, i).join(" ")); return n; }); if (isNew) setNewUnlocks((n) => n + 1); return isNew; }, []);
   const onLearned = useCallback((name) => { setToast({ name }); setTimeout(() => setToast(null), 2600); }, []);
   const onSavePuzzle = useCallback((pzIn) => {
@@ -27593,9 +27643,16 @@ export default function App() {
         return prev;
       }
       puzzleShare(pz);
+      // (버그 수정, 사용자 제보) creatorUsernames(번호별 생성자 아이디, 퍼즐 탭 "내가 만든 퍼즐" 필터가
+      // 쓰는 맵)는 앱이 처음 뜰 때 딱 한 번만 서버에서 불러와 두고 이 세션 안에서는 다시 불러오지
+      // 않는다 — 그래서 방금 막 만든 퍼즐은 puzzle_claim_creator가 서버에 생성자를 기록해도, 이
+      // 세션의 로컬 맵에는 반영이 안 돼 "내가 만든 퍼즐" 필터가 못 찾았다. puzzleShare가 이 세션에서
+      // 처음 이 퍼즐을 서버로 올리는 것이므로(=대개 이 사용자가 곧 그 생성자), 서버 응답을 기다리지
+      // 않고 낙관적으로 바로 반영한다.
+      if (user) setCreatorUsernames((m) => (m[puzzleNo(pz.id)] ? m : { ...m, [puzzleNo(pz.id)]: user }));
       return [...prev, pz];
     });
-  }, [deletedPuzzles, solved]);
+  }, [deletedPuzzles, solved, user]);
   // (버그 수정) 퍼즐 생성 요청의 단일 창구 — id별로 딱 한 번만 시작하고(다른 컴포넌트가 같은 퍼즐을
   // 다시 요청해도 무시), 요청한 컴포넌트가 이후 언마운트되어도(탭 전환) 이 App은 항상 떠 있으므로
   // run()이 끝까지 실행되어 결과가 저장된다. run은 (onProgress) => Promise<퍼즐객체|null>.
@@ -28280,6 +28337,7 @@ export default function App() {
       <AnimatePresence>
         {accountCenterOpen && user && (
           <AccountCenterModal
+            myUid={uid}
             username={user}
             onClose={() => { setAccountCenterOpen(false); popScreen("account-center"); }}
             onLogoutClick={() => { setAccountCenterOpen(false); popScreen("account-center"); setConfirmLogout(true); }}
