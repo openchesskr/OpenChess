@@ -1504,3 +1504,39 @@ begin
   update public.pvp_invites set status = 'cancelled', updated_at = now() where id = p_invite_id;
 end; $$;
 grant execute on function public.pvp_invite_cancel(bigint) to authenticated;
+
+-- ============================================================================
+-- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
+-- ============================================================================
+-- Apple/Facebook 로그인 자체는 Supabase 대시보드 설정(Authentication → Providers)만으로 동작한다 —
+-- src/App.jsx가 이미 Google과 똑같은 방식(GoTrue /auth/v1/authorize?provider=... 리다이렉트)을
+-- provider 이름만 바꿔 그대로 재사용하므로 이 파일에서 추가로 만들 것은 없다. SETUP_OAUTH.md에 각
+-- 제공자 콘솔에서 클라이언트ID·시크릿을 발급받아 대시보드에 입력하는 절차를 정리해 뒀다.
+--
+-- "OAuth 간 호환성"(이메일/Google/Apple/Facebook 중 무엇으로 로그인해도 같은 계정 = 같은 UID)은
+-- Supabase Auth의 "Identity Linking"으로 해결한다 — auth.users 한 행에 auth.identities 여러 행이
+-- 붙는 구조라, profiles.id(=auth.users.id)가 이미 "계정 하나에 대응하는 고유 UID" 그 자체다. 계정
+-- 센터(AccountCenterModal)에서 로그인 상태로 다른 제공자를 추가 연결(manual linking, GoTrue
+-- "/user/identities/authorize")하거나 연결을 해제(DELETE "/user/identities/{id}")할 수 있다 —
+-- 이 두 엔드포인트도 Supabase가 이미 제공하므로 별도 SQL 함수가 필요 없다. 다만 대시보드에서
+-- Authentication → Providers → "Allow manual linking"을 켜야 계정 센터의 연결 기능이 동작한다
+-- (SETUP_OAUTH.md 참고).
+--
+-- 계정 탈퇴만 별도 SQL 함수가 필요하다 — auth.users 삭제는 REST(PostgREST)로 직접 열 수 없고
+-- (그 테이블은 애초에 REST에 노출되지 않는다), Admin API(서비스 롤 키)는 클라이언트에 절대 노출하면
+-- 안 되므로, "본인 행만" 지우는 SECURITY DEFINER 함수로 우회한다. 이 함수는 SQL Editor에서 만들면
+-- 소유자가 postgres(Supabase가 auth 스키마에 대한 권한을 이미 준 역할)가 되므로, authenticated로는
+-- 원래 불가능한 auth.users delete가 함수 안에서는 가능하다. profiles/pvp_games/chat_messages 등
+-- 이 프로젝트의 모든 사용자 데이터 테이블이 auth.users(id)를 on delete cascade로 참조하고 있으므로
+-- (일부 "작성자" 컬럼만 on delete set null로 콘텐츠 자체는 남긴다 — 예: puzzles.creator_uid), 이
+-- 한 번의 삭제로 계정과 관련 데이터가 함께 정리된다. 되돌릴 수 없다 — 클라이언트에서 반드시 확인
+-- 절차(아이디 입력 등)를 거친 뒤에만 호출해야 한다.
+drop function if exists public.delete_own_account() cascade;
+create or replace function public.delete_own_account()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  delete from auth.users where id = v_me;
+end; $$;
+grant execute on function public.delete_own_account() to authenticated;
