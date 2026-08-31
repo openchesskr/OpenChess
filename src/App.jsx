@@ -10277,6 +10277,32 @@ const TIME_CONTROLS = [
 ];
 const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"];
 const DEFAULT_TIME_CONTROL = TIME_CONTROLS[6]; // 10분(래피드)
+// (v0.4.3 기능, 사용자 요청) 채팅 /play 명령어(예: "/play 3", "/play 15+10")로 만들어진
+// pvp_games.time_control이 위 TIME_CONTROLS 프리셋에 없는 값이어도(예: "/play 7"처럼 프리셋에 없는
+// 분), PlayPage가 올바른 라벨·클럭으로 대국을 이어받을 수 있도록 "초-증가초" 키 문자열을 항상
+// 타임 컨트롤 객체로 되돌리는 공용 파서. 프리셋과 정확히 일치하면 그 프리셋을(라벨·카테고리가 있어
+// UI에 예쁘게 보이도록), 아니면 키 자체에서 계산한 임시 객체를 만들어 준다.
+function timeControlFromKey(key) {
+  const preset = TIME_CONTROLS.find((t) => t.key === key);
+  if (preset) return preset;
+  const m = /^(\d+)-(\d+)$/.exec(key || "");
+  if (!m) return DEFAULT_TIME_CONTROL;
+  const initialSec = parseInt(m[1], 10), incSec = parseInt(m[2], 10);
+  const min = Math.round(initialSec / 60);
+  return { key, label: min + "분" + (incSec ? "+" + incSec + "초" : ""), cat: "", initialSec, incSec };
+}
+// 채팅 "/play 3", "/play 15+10" 명령어의 인자 파싱 — 분(정수) 또는 "분+증가초" 형식만 인정한다.
+// 유효하지 않으면 null.
+function parsePlayCommandArg(raw) {
+  const s = (raw || "").trim();
+  const m = /^(\d{1,3})(?:\s*\+\s*(\d{1,3}))?$/.exec(s);
+  if (!m) return null;
+  const min = parseInt(m[1], 10);
+  if (!min || min < 1 || min > 180) return null;
+  const inc = m[2] ? parseInt(m[2], 10) : 0;
+  if (inc < 0 || inc > 180) return null;
+  return timeControlFromKey((min * 60) + "-" + inc);
+}
 function fmtClock(ms) {
   if (ms == null) return "";
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -10434,7 +10460,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     // 통로이므로, 여기서 한 번에 mode를 "pvp"로 맞춰 모든 경로에서 이 문제가 재발하지 않게 한다.
     setMode("pvp");
     setPvpGame(g); setPvpWaiting(false); pvpFinishedRef.current = false;
-    setMyInvite(null); setIncomingInvite(null); setFriendDropdownOpen(false);
+    setMyInvite(null); setFriendDropdownOpen(false);
     const myColor = g.white_uid === myUid ? "w" : "b";
     setActiveColor(myColor);
     setSans(g.sans || []);
@@ -10442,11 +10468,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     setResigned(false); setFlagged(null);
     // (신규 기능) 친구 초대로 매칭된 경우 상대가 고른 타임 컨트롤을 그대로 따른다(내가 직접 대기열에
     // 넣은 값과 다를 수 있음) — 서버가 확정한 g.time_control이 항상 우선.
-    const tc = TIME_CONTROLS.find((t) => t.key === g.time_control) || timeControl;
+    const tc = timeControlFromKey(g.time_control);
     setTimeControl(tc);
     setClock(tc.initialSec != null ? { w: tc.initialSec * 1000, b: tc.initialSec * 1000 } : null);
     setStep("playing");
-  }, [myUid, timeControl]);
+  }, [myUid]);
   const joinPvpQueue = async () => {
     if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
     setPvpErr(""); setPvpWaiting(true);
@@ -10714,7 +10740,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (mode === "pvp") {
       leavePvpQueue(); setPvpGame(null); setOpponentPub(null); pvpFinishedRef.current = false;
       if (myInvite) cancelFriendInvite();
-      setIncomingInvite(null); setFriendDropdownOpen(false);
+      setFriendDropdownOpen(false);
     }
     setSans(seedSans); setResigned(false); setFlagged(null); setClock(null); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setSetupPhase("choose"); setStep("setup");
   };
@@ -22845,7 +22871,12 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       <div style={card}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2"><HelpCircle size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>문의 / FAQ</span></div>
-          <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>열기</button>
+          <div className="flex items-center gap-2">
+            {/* (v0.4.3 기능, 사용자 요청) /about처럼 반응형 타이포그래피·애니메이션 중심으로 만든
+                별도 FAQ 페이지(/faq) — 이 카드에서 실제 페이지 이동(같은 탭 새 로드)으로 연결한다. */}
+            <a href="/faq" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>FAQ 보기</a>
+            <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>문의하기</button>
+          </div>
         </div>
         <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문을 확인하거나, 이메일로 직접 문의할 수 있어요.</p>
       </div>
@@ -23928,18 +23959,45 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       if (ok) { setText(""); load(); } else setCmdError("리뷰를 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
       return;
     }
+    // (v0.4.3 기능, 사용자 요청) "/play 3"(3분), "/play 15+10"(15분+10초 증가) 명령어로 채팅 상대에게
+    // 바로 실시간 대국을 신청한다 — /play 페이지의 "친구와 플레이하기"와 완전히 같은 RPC
+    // (pvp_invite_friend)를 부른다. 그 RPC가 이미 같은 내용을 채팅 메시지로도 남기므로(전역 알람
+    // 박스와 똑같은 PvpInviteChatCard로 렌더링됨), 여기서 따로 메시지를 만들 필요 없이 새로고침만
+    // 하면 된다. 채팅으로 대국을 신청할 수 있다는 건 이미 이 대화 상대가 accepted 친구라는
+    // 뜻이므로(그렇지 않으면 애초에 채팅 자체를 못 보냄), pvp_invite_friend의 "친구 사이인지" 검사도
+    // 항상 통과한다.
+    const playCmdMatch = body && body.match(/^\/play\s+(\S.*)$/i);
+    if (playCmdMatch) {
+      const tc = parsePlayCommandArg(playCmdMatch[1]);
+      if (!tc) { setCmdError("사용법: /play <분> 또는 /play <분>+<증가초> — 예: /play 3, /play 15+10"); return; }
+      setCmdError("");
+      setSending(true);
+      try {
+        await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: tc.key });
+        setText(""); load();
+      } catch { setCmdError("대국을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
+      setSending(false);
+      return;
+    }
+    // (v0.4.3 기능) "/help"는 메시지로 보내지 않는다 — 입력창 위 명령어 미리보기(아래 렌더)를 켜는
+    // 용도일 뿐이라, 눌러도 그냥 입력만 비운다.
+    if (body && /^\/help$/i.test(body)) { setText(""); return; }
     setSending(true);
     const ok = await chatSend(myUid, otherUid, body, emoji);
     setSending(false);
     if (ok) { setText(""); load(); }
   };
-  // (v0.2.6 기능) "/"로 시작하면 쓸 수 있는 명령어.
+  // (v0.2.6 기능) "/"로 시작하면 쓸 수 있는 명령어. (v0.4.3 UI 개편, 사용자 요청) 입력창 위 미리보기는
+  // 더 이상 "/"만 입력해도 뜨지 않고 정확히 "/help"를 입력했을 때만 뜬다(아래 렌더 조건 참고) — 이
+  // 목록 자체는 그대로 두고 그 표시 조건만 바꿨다.
   const CHAT_COMMANDS = [
     { cmd: "/puzzle -num 000000", desc: "그 번호의 퍼즐을 공유해요(또는 /puzzle 000000)" },
     { cmd: "/legacy N(1~6)", desc: "내 N번째 유산을 공유해요(1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)" },
     { cmd: "/review -recent", desc: "가장 최근에 플레이한 chess.com 대국의 리뷰를 공유해요" },
     { cmd: "/review -PGN <코드>", desc: "그 PGN 기보의 리뷰를 공유해요" },
     { cmd: "/review -FEN <코드>", desc: "그 FEN 포지션의 리뷰를 공유해요" },
+    { cmd: "/play <분>", desc: "상대에게 그 시간(분)의 실시간 대국을 신청해요 — 예: /play 3, /play 15+10(15분+10초 증가)" },
+    { cmd: "/help", desc: "이 명령어 목록을 보여줘요" },
   ];
   const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
   const cancelEdit = () => { setEditingId(null); setText(""); };
@@ -24307,8 +24365,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
             <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
           </div>
         )}
-        {/* (v0.2.6 기능) 입력창 첫 글자가 "/"면 사용 가능한 명령어를 입력창 위 별도 블록으로 보여준다. */}
-        {editingId == null && text.startsWith("/") && (
+        {/* (v0.2.6 기능 → v0.4.3 UI 개편, 사용자 요청) 예전엔 "/"만 입력해도 매번 명령어 목록이 떴다
+            — 입력창을 가려 거슬린다는 피드백으로, 정확히 "/help"를 입력했을 때만 보여주도록 바꿨다. */}
+        {editingId == null && /^\/help$/i.test(text.trim()) && (
           <div style={{ marginBottom: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass }}>
             <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>사용 가능한 명령어</div>
             {CHAT_COMMANDS.map((c) => (
