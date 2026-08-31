@@ -14710,18 +14710,19 @@ function isTreeSequenceValid(setup, tree, fenRoot) {
 // (기능1) puzzle.tree(분기 트리)가 있으면 트리 전체를, puzzle.lines(다중 라인)가 있으면 그 라인 전부를,
 // 없으면 기존 solution 하나만 검증한다.
 function isPuzzleSequenceValid(pz) {
-  // (버그 수정, 사용자 제보) 희생 테마(sacrifice)는 "희생 수 자체"가 트리의 첫 수(firstSan)로 이미
-  // 들어가 있다 — runPcGenerate의 firstSan 분기·PuzzleSolver의 자동 생성 요청 등 트리를 만드는 모든
-  // 경로가 희생 테마일 때는 setupSans 위치(=그 수를 두기 직전 포지션)에서 시작해, 그 수 자체를 트리
-  // 첫 수로 넣는다(풀이자가 스스로 찾아내야 하므로). 그런데 이 함수는 항상 setup에 mistakeSan까지
-  // 재생해 버려서 — 희생 테마 트리는 "이미 둔 희생 수"를 트리에서 또 한 번 두려다 매번 불법 수로
-  // 걸려 저장이 거부됐다(퍼즐 만들기 화면엔 setActive로 곧장 보여줘 만들어진 것처럼 보이지만, 실제로는
-  // onSavePuzzle의 이 검증에 막혀 서버에 저장도, 로컬 목록 추가도 안 됨 — "손상된 퍼즐"·"내 퍼즐
-  // 목록에 없음"의 근본 원인). 희생 테마 + 트리 형식일 때만 mistakeSan을 setup에서 뺀다.
-  const isSacrificeTree = pz.tree && (pz.themes || []).includes("sacrifice");
-  const setup = isSacrificeTree ? (pz.setupSans || []) : [...(pz.setupSans || []), pz.mistakeSan].filter(Boolean);
   const fenRoot = (!pz.setupSans || !pz.setupSans.length) && pz.fen ? parseFenFull(pz.fen) : null;
-  if (pz.tree) return isTreeSequenceValid(setup, pz.tree, fenRoot);
+  const setup = [...(pz.setupSans || []), pz.mistakeSan].filter(Boolean);
+  if (pz.tree) {
+    if (isTreeSequenceValid(setup, pz.tree, fenRoot)) return true;
+    // (v0.4.3 변경, 사용자 요청) 희생 테마(sacrifice) 데이터 형식이 바뀌었다 — mistakeSan은 이제
+    // 다른 테마와 같은 뜻("이미 두어진, 방금 응수된 직전 수" — 퍼즐 솔버 인트로가 이 수를 컴퓨터의
+    // 응수로 자동 재생한다)이고, 사용자가 실제로 찾아야 할 수(옛 mistakeSan이 가리키던 희생 수
+    // 그 자체)는 트리의 첫 수로만 존재한다. 이 변경 전에 만들어진 희생 테마 퍼즐(mistakeSan이 아직
+    // "희생 수 자체"인 구버전 데이터 — 예: 대국 분석에서 자동 생성된 퍼즐)도 계속 유효하게 인정하기
+    // 위해, 위 새 형식으로 실패하면 구버전 형식(mistakeSan을 setup에서 뺀 채로)으로 한 번 더 시도한다.
+    if ((pz.themes || []).includes("sacrifice")) return isTreeSequenceValid(pz.setupSans || [], pz.tree, fenRoot);
+    return false;
+  }
   const lines = (pz.lines && pz.lines.length) ? pz.lines : [{ tag: "best", solution: pz.solution }];
   return lines.every((l) => isSanSequenceValid(setup, l.solution || [], fenRoot));
 }
@@ -19448,8 +19449,17 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (pcParsed.kind === "fen") {
       pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: "FEN 포지션 퍼즐", fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic };
     } else {
-      const setupSans = pcParsed.sans.slice(0, pcSelectedMove.ply), mistakeSan = pcSelectedMove.san;
-      pz = { id: setupSans.join(" ") + "|" + mistakeSan, themes: [pcTheme], name: puzzleName(pcTheme, setupSans, mistakeSan), setupSans, mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic };
+      const fullSetupSans = pcParsed.sans.slice(0, pcSelectedMove.ply), sacSan = pcSelectedMove.san;
+      // (v0.4.3 변경, 사용자 요청) 희생 테마는 "선택한 수(희생 수) 직전 수"를 컴퓨터의 응수로 자동
+      // 재생하고, 사용자는 선택한 수 자체를 첫 수로 찾는다 — 저장할 때 mistakeSan을 선택한 수(희생
+      // 수) 대신 그 직전 수로 바꾼다(다른 테마와 같은 뜻: "이미 두어진, 방금 응수된 수" — 퍼즐 솔버
+      // 인트로가 이 수를 그대로 자동 재생한다). fullSetupSans는 [...setupSans, mistakeSan]과 정확히
+      // 같은 위치를 가리키므로(mistakeSan이 fullSetupSans의 마지막 수), 트리를 생성한 위치와
+      // 어긋나지 않는다. id·이름은 선택한 수(희생 수) 자체를 기준으로 그대로 둔다(정체성·표시용).
+      const isSacrifice = pcTheme === "sacrifice";
+      const setupSans = isSacrifice ? fullSetupSans.slice(0, -1) : fullSetupSans;
+      const mistakeSan = isSacrifice ? (fullSetupSans.length ? fullSetupSans[fullSetupSans.length - 1] : null) : sacSan;
+      pz = { id: fullSetupSans.join(" ") + "|" + sacSan, themes: [pcTheme], name: puzzleName(pcTheme, fullSetupSans, sacSan), setupSans, mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic };
     }
     onSavePuzzle(pz);
     resetPuzzleCreate();
