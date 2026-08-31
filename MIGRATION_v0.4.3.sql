@@ -5,12 +5,14 @@
 -- SQL만 모아 다시 실행할 수 있게 정리한 파일입니다. (물론 supabase-setup.sql 전체를 처음부터 다시
 -- 실행해도 결과는 같습니다 — 모든 문장이 create or replace/if not exists라 안전합니다.)
 --
--- 이번 버전에서 바뀐 것 3가지:
+-- 이번 버전에서 바뀐 것:
 --   1) chat_messages.pvp_invite_id 컬럼 추가 — 친구 대국 신청을 채팅 메시지로도 남기기 위함.
 --   2) pvp_queue_join()의 "재접속 시 이미 진행 중인 대국을 그대로 돌려준다" 로직이, 2분 넘게
 --      방치된(좀비) 대국까지 무조건 즉시 돌려주던 문제 수정.
 --   3) pvp_invite_friend()가 초대를 보낼 때 채팅 메시지도 함께 남기도록 확장.
 --   4) delete_own_account() 신규 — 계정 센터의 "계정 탈퇴".
+--   5) gen_mid() + profiles.mid 컬럼 신규 — 계정마다 고유한 9자리 영문 대문자+숫자 회원 번호(MID),
+--      계정 센터에 표시.
 --
 -- SQL Editor에 이 파일 전체를 붙여넣고 RUN 하세요.
 -- ============================================================================
@@ -78,3 +80,22 @@ begin
   delete from auth.users where id = v_me;
 end; $$;
 grant execute on function public.delete_own_account() to authenticated;
+
+-- 5) gen_mid() + profiles.mid — 계정마다 고유한 9자리 영문 대문자+숫자 회원 번호(MID)
+drop function if exists public.gen_mid() cascade;
+create or replace function public.gen_mid()
+returns text language plpgsql volatile set search_path = public as $$
+declare v_chars text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; v_code text; v_exists boolean;
+begin
+  loop
+    v_code := '';
+    for i in 1..9 loop
+      v_code := v_code || substr(v_chars, 1 + floor(random() * length(v_chars))::int, 1);
+    end loop;
+    select exists(select 1 from public.profiles where mid = v_code) into v_exists;
+    exit when not v_exists;
+  end loop;
+  return v_code;
+end; $$;
+alter table public.profiles add column if not exists mid text unique default public.gen_mid() check (mid ~ '^[A-Z0-9]{9}$');
+update public.profiles set mid = public.gen_mid() where mid is null;
