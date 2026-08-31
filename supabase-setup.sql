@@ -271,6 +271,12 @@ alter table public.chat_messages add column if not exists legacy_slot text;
 -- 캐시가 필요 없다(chess.com 대국만 reviewed_games를 통해 복원되고, FEN/PGN은 식별자 자체가 데이터를
 -- 담고 있다 — resolveReviewIdentifier 참고).
 alter table public.chat_messages add column if not exists review_id text;
+-- (v0.4.3 기능) 실시간 대국 신청 카드 — puzzle_no/legacy_slot/review_id와 같은 패턴(이 시점엔 아직
+-- pvp_invites 테이블이 만들어지기 전이라, 같은 이유로 외래키 없이 값만 담는 컬럼으로 둔다). 설정돼
+-- 있으면 이 메시지는 그 id의 pvp_invites 행을 참조해 "실시간 대국을 신청했어요" 카드(수락/거절, 또는
+-- 보낸 쪽이면 응답 대기·취소)로 렌더링된다. 초대장 자체의 최신 상태(pending/accepted/declined/
+-- cancelled)는 이 컬럼이 아니라 pvp_invites 테이블에서 그때그때 조회한다(둘이 어긋나지 않게).
+alter table public.chat_messages add column if not exists pvp_invite_id bigint;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -1286,6 +1292,13 @@ end $$;
 -- 재접속 시 이미 진행 중인 내 대국이 있으면(새로고침 등으로 대기열 재합류를 눌렀을 때) 그 대국을
 -- 그대로 돌려준다.
 -- (신규 기능) 사용자 요청 — 타임 컨트롤 인자 추가, 같은 타임 컨트롤끼리만 짝짓는다.
+-- (버그 수정, 사용자 제보) 클라이언트가 대국을 끝까지 진행하지 못하고 사라지면(브라우저를 그냥
+-- 닫거나, 예전 버전에서 대국이 봇 모드로 잘못 시작돼 pvp_finish가 한 번도 불리지 않는 등) 그
+-- pvp_games 행은 status='active'로 영원히 남는다 — 위 "재접속 시 그대로 돌려준다" 로직이 이런
+-- 좀비 대국까지 무조건 즉시 돌려주는 바람에, 랜덤 매칭을 눌러도 대기 화면 한 번 못 보고 곧장 응답
+-- 없는 상대와 매칭된 것처럼 보이는 문제가 있었다. 최근(2분 이내)에 실제로 움직임이 있었던 대국만
+-- "재접속"으로 보고 그대로 돌려주고, 그보다 오래된 대국은 중단 처리한 뒤 정상적으로 대기열에
+-- 합류시킨다.
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
 create or replace function public.pvp_queue_join(p_time_control text default '600-0')
@@ -1296,7 +1309,10 @@ begin
   select * into v_game from public.pvp_games
     where status = 'active' and (white_uid = v_me or black_uid = v_me)
     order by created_at desc limit 1;
-  if found then return v_game; end if;
+  if found then
+    if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
+    update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
+  end if;
   delete from public.pvp_queue where uid = v_me;
   select uid into v_other from public.pvp_queue where uid <> v_me and time_control = p_time_control order by created_at asc limit 1 for update skip locked;
   if v_other is null then
@@ -1443,6 +1459,11 @@ begin
   select * into v_inv from public.pvp_invites where from_uid = v_me and to_uid = p_to_uid and status = 'pending' order by created_at desc limit 1;
   if found then return v_inv; end if;
   insert into public.pvp_invites(from_uid, to_uid, time_control) values (v_me, p_to_uid, p_time_control) returning * into v_inv;
+  -- (v0.4.3 기능, 사용자 요청) 전역 알람 박스와 같은 신청을 채팅에도 남긴다 — 이미 여기 친구
+  -- 사이임을 확인했고 이 함수 자체가 SECURITY DEFINER라 RLS(친구 사이만 채팅 가능)를 우회해도
+  -- 안전하다. 새로 만든 초대일 때만(위 "이미 보낸 pending 초대가 있으면" 조기 반환 이후) 보낸다 —
+  -- 안 그러면 같은 상대에게 대기열 폴백 등으로 여러 번 호출돼도 채팅에 중복으로 쌓이지 않는다.
+  insert into public.chat_messages(from_uid, to_uid, body, pvp_invite_id) values (v_me, p_to_uid, '실시간 대국을 신청했어요.', v_inv.id);
   return v_inv;
 end; $$;
 grant execute on function public.pvp_invite_friend(uuid, text) to authenticated;
@@ -1483,3 +1504,67 @@ begin
   update public.pvp_invites set status = 'cancelled', updated_at = now() where id = p_invite_id;
 end; $$;
 grant execute on function public.pvp_invite_cancel(bigint) to authenticated;
+
+-- ============================================================================
+-- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
+-- ============================================================================
+-- Apple/Facebook 로그인 자체는 Supabase 대시보드 설정(Authentication → Providers)만으로 동작한다 —
+-- src/App.jsx가 이미 Google과 똑같은 방식(GoTrue /auth/v1/authorize?provider=... 리다이렉트)을
+-- provider 이름만 바꿔 그대로 재사용하므로 이 파일에서 추가로 만들 것은 없다. SETUP_OAUTH.md에 각
+-- 제공자 콘솔에서 클라이언트ID·시크릿을 발급받아 대시보드에 입력하는 절차를 정리해 뒀다.
+--
+-- "OAuth 간 호환성"(이메일/Google/Apple/Facebook 중 무엇으로 로그인해도 같은 계정 = 같은 UID)은
+-- Supabase Auth의 "Identity Linking"으로 해결한다 — auth.users 한 행에 auth.identities 여러 행이
+-- 붙는 구조라, profiles.id(=auth.users.id)가 이미 "계정 하나에 대응하는 고유 UID" 그 자체다. 계정
+-- 센터(AccountCenterModal)에서 로그인 상태로 다른 제공자를 추가 연결(manual linking, GoTrue
+-- "/user/identities/authorize")하거나 연결을 해제(DELETE "/user/identities/{id}")할 수 있다 —
+-- 이 두 엔드포인트도 Supabase가 이미 제공하므로 별도 SQL 함수가 필요 없다. 다만 대시보드에서
+-- Authentication → Providers → "Allow manual linking"을 켜야 계정 센터의 연결 기능이 동작한다
+-- (SETUP_OAUTH.md 참고).
+--
+-- 계정 탈퇴만 별도 SQL 함수가 필요하다 — auth.users 삭제는 REST(PostgREST)로 직접 열 수 없고
+-- (그 테이블은 애초에 REST에 노출되지 않는다), Admin API(서비스 롤 키)는 클라이언트에 절대 노출하면
+-- 안 되므로, "본인 행만" 지우는 SECURITY DEFINER 함수로 우회한다. 이 함수는 SQL Editor에서 만들면
+-- 소유자가 postgres(Supabase가 auth 스키마에 대한 권한을 이미 준 역할)가 되므로, authenticated로는
+-- 원래 불가능한 auth.users delete가 함수 안에서는 가능하다. profiles/pvp_games/chat_messages 등
+-- 이 프로젝트의 모든 사용자 데이터 테이블이 auth.users(id)를 on delete cascade로 참조하고 있으므로
+-- (일부 "작성자" 컬럼만 on delete set null로 콘텐츠 자체는 남긴다 — 예: puzzles.creator_uid), 이
+-- 한 번의 삭제로 계정과 관련 데이터가 함께 정리된다. 되돌릴 수 없다 — 클라이언트에서 반드시 확인
+-- 절차(아이디 입력 등)를 거친 뒤에만 호출해야 한다.
+drop function if exists public.delete_own_account() cascade;
+create or replace function public.delete_own_account()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  delete from auth.users where id = v_me;
+end; $$;
+grant execute on function public.delete_own_account() to authenticated;
+
+-- ============================================================================
+-- N+5) MID — 계정 하나마다 부여되는 9자리 영문 대문자+숫자 회원 번호
+-- ============================================================================
+-- profiles.id(uuid)는 그대로 "계정 하나 = 고유 UID"의 진짜 식별자로 두고, MID는 사람이 계정 센터
+-- 화면에서 보고 부르기 쉬운 짧은 번호일 뿐이다(로그인 수단과 무관 — 여러 OAuth를 연결해도 같은
+-- profiles 행이라 MID는 하나 그대로 유지된다).
+drop function if exists public.gen_mid() cascade;
+create or replace function public.gen_mid()
+returns text language plpgsql volatile set search_path = public as $$
+declare v_chars text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; v_code text; v_exists boolean;
+begin
+  loop
+    v_code := '';
+    for i in 1..9 loop
+      v_code := v_code || substr(v_chars, 1 + floor(random() * length(v_chars))::int, 1);
+    end loop;
+    select exists(select 1 from public.profiles where mid = v_code) into v_exists;
+    exit when not v_exists;
+  end loop;
+  return v_code;
+end; $$;
+-- 컬럼을 만들 때 이미 이 함수가 있어야 default로 걸 수 있으므로, 위에서 함수부터 만든 뒤 컬럼을
+-- 추가한다. 새로 가입하는 계정(handle_new_user 트리거·claim_username RPC 등 profiles를 insert하는
+-- 모든 경로)은 컬럼 default 덕분에 자동으로 MID를 받고, 이미 있던 계정은 아래 backfill로 한 번만
+-- 채운다.
+alter table public.profiles add column if not exists mid text unique default public.gen_mid() check (mid ~ '^[A-Z0-9]{9}$');
+update public.profiles set mid = public.gen_mid() where mid is null;
