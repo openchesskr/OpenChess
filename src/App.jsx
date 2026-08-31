@@ -22580,7 +22580,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
   );
 }
 function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn,
-  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom }) {
+  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter }) {
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
   const [codevBusy, setCodevBusy] = useState(false);
@@ -22636,7 +22636,11 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         <div style={card}>
           <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(profile.displayId || user)}{roleIcon(user)}</span>
-            <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>자세히 보기</button>
+            <div className="flex items-center gap-2">
+              {/* (v0.4.3 기능, 사용자 요청) 로그인 수단 연결/해제·로그아웃·계정 탈퇴 — 계정 센터. */}
+              <button onClick={onOpenAccountCenter} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>계정 센터</button>
+              <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>자세히 보기</button>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {profile.photo ? <img src={profile.photo} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(totalXp || 0).tier.key === "grandmaster") || {}) }} />
@@ -23439,7 +23443,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
 // (기능) 펼침 메뉴 안에는 설정 탭의 "내 프로필"과 동일한 미리보기(아바타·칭호·아이디·티어·퍼즐 수·
 // 자주 두는 첫 수 — PublicProfileStats 재사용)를 보여주고, 그 아래 로그아웃 버튼을 둔다. 아바타/이름/
 // 아이디를 누르면 메뉴를 닫고 설정 탭의 내 프로필로 이동한다.
-function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile, mainQuestSummary, solvedNos, onOpenPuzzle, mySolved, myLineSolves, myUid }) {
+function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, compact, onLogoutClick, onGoToProfile, onOpenAccountCenter, mainQuestSummary, solvedNos, onOpenPuzzle, mySolved, myLineSolves, myUid }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   useEffect(() => {
@@ -23491,6 +23495,9 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
             onOpenPuzzle={onOpenPuzzle && ((id, fallback) => { setOpen(false); onOpenPuzzle(id, fallback); })}
             mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={myUid} viewerUid={myUid}
           />
+          {/* (v0.4.3 기능, 사용자 요청) 로그인 수단 연결/해제·로그아웃·계정 탈퇴를 한 곳에서 다루는
+              계정 센터로 가는 입구. */}
+          <button onClick={() => { setOpen(false); onOpenAccountCenter(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: T.ebony2, border: "1px solid #000", color: T.ivory, fontWeight: 800, fontSize: 12.5, cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Settings size={14} />계정 센터</button>
           <button onClick={() => { setOpen(false); onLogoutClick(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
         </div>
       )}
@@ -26499,11 +26506,61 @@ function GoogleG() {
     </svg>
   );
 }
-/* Google OAuth 시작: GoTrue authorize 로 리다이렉트. 복귀 시 URL 해시에 세션 토큰이 담겨 돌아온다. */
-function authGoogleStart() {
+// (v0.4.3 기능, 사용자 요청) Apple/Facebook 로그인 버튼 아이콘 — Google과 같은 자리에 나란히 둔다.
+// 각 제공자 브랜드 가이드라인 색(Apple: 검정, Facebook: #1877F2)에 맞춘 단색 버튼.
+function AppleLogo() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 384 512" aria-hidden="true" fill="#fff">
+      <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z" />
+    </svg>
+  );
+}
+function FacebookLogo() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#fff" d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06c0 5 3.66 9.13 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.5 1.49-3.89 3.78-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.45 2.91h-2.33V22c4.78-.81 8.44-4.94 8.44-9.94z" />
+    </svg>
+  );
+}
+// (v0.4.3 기능) OAuth 시작 — Google 전용이던 것을 provider 인자로 일반화(구글/애플/페이스북 공통).
+// GoTrue authorize 로 리다이렉트. 복귀 시 URL 해시에 세션 토큰이 담겨 돌아온다.
+function authOAuthStart(provider) {
   if (!SB_ON) return;
   const redirect = window.location.origin + window.location.pathname;
-  window.location.href = SB_URL + "/auth/v1/authorize?provider=google&redirect_to=" + encodeURIComponent(redirect);
+  window.location.href = SB_URL + "/auth/v1/authorize?provider=" + provider + "&redirect_to=" + encodeURIComponent(redirect);
+}
+const OAUTH_PROVIDER_LABELS = { google: "Google", apple: "Apple", facebook: "Facebook" };
+/* (v0.4.3 기능) 계정 센터 — 로그인된 상태에서 현재 계정에 연결된 로그인 수단(identities) 목록.
+   GoTrue /auth/v1/user는 로그인 응답과 달리 이 계정에 실제로 연결된 identities 배열을 그대로 준다. */
+async function getUserIdentities() {
+  if (!SB_ON || !SB_TOKEN) return [];
+  try {
+    const r = await fetch(SB_URL + "/auth/v1/user", { headers: sbHeaders() });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return (j && j.identities) || [];
+  } catch { return []; }
+}
+/* 로그인된 상태에서 새 로그인 수단을 지금 계정에 추가로 연결한다(manual linking) — 일반 로그인용
+   /authorize와 달리 "지금 로그인된 사용자에게 연결"이라는 의도를 서버가 알아야 하므로, 그냥
+   href로 이동하는 대신 먼저 Authorization 헤더(현재 세션)를 실어 fetch로 리다이렉트 URL을 받아온
+   뒤 그 URL로 이동한다. Supabase 대시보드에서 "Allow manual linking"이 켜져 있어야 한다
+   (SETUP_OAUTH.md 참고) — 꺼져 있으면 여기서 오류가 난다. */
+async function linkIdentityRedirect(provider) {
+  if (!SB_ON || !SB_TOKEN) throw new Error("no session");
+  const redirect = window.location.origin + window.location.pathname;
+  const url = SB_URL + "/auth/v1/user/identities/authorize?provider=" + provider + "&redirect_to=" + encodeURIComponent(redirect);
+  const r = await fetch(url, { headers: sbHeaders() });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.url) throw new Error("link_failed");
+  window.location.href = j.url;
+}
+/* 연결된 로그인 수단 해제(마지막 하나는 서버가 거부한다 — 로그인 수단이 하나도 없는 계정을 막기
+   위한 GoTrue 자체 규칙). */
+async function unlinkIdentity(identityId) {
+  if (!SB_ON || !SB_TOKEN) throw new Error("no session");
+  const r = await fetch(SB_URL + "/auth/v1/user/identities/" + identityId, { method: "DELETE", headers: sbHeaders() });
+  if (!r.ok) throw new Error("unlink_failed");
 }
 /* OAuth 복귀 해시(access_token 있고 recovery 아님) 파싱 */
 function parseOAuthHash() {
@@ -26587,9 +26644,12 @@ function AuthModal({ onClose, onAuth, initialMode }) {
   const [email, setEmail] = useState(""); const [id, setId] = useState(""); const [pw, setPw] = useState("");
   const [chesscomId, setChesscomId] = useState(""); // (17차) 회원가입 시 선택 입력하는 chess.com 아이디
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false); const [sent, setSent] = useState(false);
-  const [pw2, setPw2] = useState(""); const [showPw, setShowPw] = useState(false); const [googleHint, setGoogleHint] = useState(false);
+  const [pw2, setPw2] = useState(""); const [showPw, setShowPw] = useState(false);
+  // (v0.4.3 기능) 구글 전용이던 힌트를 일반화 — 이 이메일이 실제로 가입된 다른 OAuth 제공자 이름을
+  // 그대로 담는다("google"|"apple"|"facebook"|null).
+  const [hintProvider, setHintProvider] = useState(null);
   const submit = async () => {
-    setErr(""); setGoogleHint(false);
+    setErr(""); setHintProvider(null);
     if (mode === "reset") {
       const who = email.trim();
       if (!who) { setErr("아이디 또는 이메일을 입력하세요."); return; }
@@ -26614,7 +26674,8 @@ function AuthModal({ onClose, onAuth, initialMode }) {
         if (!r || !r.ok) {
           if (r && r.error === "email_taken") {
             const provs = await accountProviders(em);
-            if (provs.indexOf("google") >= 0 && provs.indexOf("email") < 0) { setGoogleHint(true); setErr("이 이메일은 Google 계정으로 가입되어 있어요. 아래 ‘Google로 계속하기’로 로그인하세요."); setBusy(false); return; }
+            const other = ["google", "apple", "facebook"].find((p) => provs.indexOf(p) >= 0 && provs.indexOf("email") < 0);
+            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr("이 이메일은 " + lb + " 계정으로 가입되어 있어요. 아래 ‘" + lb + "로 계속하기’로 로그인하세요."); setBusy(false); return; }
             setErr("이미 가입된 이메일입니다. 로그인해 주세요."); setBusy(false); return;
           }
           setErr(r && r.error === "username_taken" ? "이미 사용 중인 아이디입니다."
@@ -26639,7 +26700,11 @@ function AuthModal({ onClose, onAuth, initialMode }) {
         if (!r || !r.ok) {
           if (r && r.error === "offline") { setErr("서버 연결이 필요합니다."); setBusy(false); return; }
           const probe = (r && r.email) || (isEmail ? em : "");
-          if (probe) { const provs = await accountProviders(probe); if (provs.indexOf("google") >= 0 && provs.indexOf("email") < 0) { setGoogleHint(true); setErr("이 계정은 Google로 가입되어 있어요. 아래 ‘Google로 계속하기’로 로그인하세요."); setBusy(false); return; } }
+          if (probe) {
+            const provs = await accountProviders(probe);
+            const other = ["google", "apple", "facebook"].find((p) => provs.indexOf(p) >= 0 && provs.indexOf("email") < 0);
+            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr("이 계정은 " + lb + "로 가입되어 있어요. 아래 ‘" + lb + "로 계속하기’로 로그인하세요."); setBusy(false); return; }
+          }
           setErr("아이디/이메일 또는 비밀번호가 올바르지 않습니다."); setBusy(false); return;
         }
         onAuth(r.account);
@@ -26699,17 +26764,122 @@ function AuthModal({ onClose, onAuth, initialMode }) {
               <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "비밀번호 숨기기" : "비밀번호 보이기"} title={showPw ? "비밀번호 숨기기" : "비밀번호 보이기"} style={{ position: "absolute", right: 6, top: 5, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer", color: T.inkSoft }}>{showPw ? <EyeOff size={17} /> : <Eye size={17} />}</button>
             </div>
             {mode === "signup" && <input type={showPw ? "text" : "password"} value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="비밀번호 확인" autoComplete="new-password" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />}
-            {err && <div style={{ fontSize: 12, color: googleHint ? T.ink : T.blunder, marginBottom: 8, lineHeight: 1.5, fontWeight: googleHint ? 700 : 400 }}>{err}</div>}
+            {err && <div style={{ fontSize: 12, color: hintProvider ? T.ink : T.blunder, marginBottom: 8, lineHeight: 1.5, fontWeight: hintProvider ? 700 : 400 }}>{err}</div>}
             <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", marginBottom: 10 }}>{busy ? "처리 중…" : (mode === "login" ? "로그인" : "가입하고 시작")}</button>
             <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 10px" }}><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /><span style={{ fontSize: 11, color: T.inkSoft }}>또는</span><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /></div>
-            <button onClick={authGoogleStart} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#fff", color: "#3c4043", fontWeight: 700, border: "1px solid #CDB98E", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><GoogleG /> Google로 계속하기</button>
+            {/* (v0.4.3 기능, 사용자 요청) Apple/Facebook 로그인 추가 — Google과 완전히 같은 방식(GoTrue
+                authorize 리다이렉트, provider 이름만 다름)이라 authOAuthStart(provider) 하나로 통일했다. */}
+            <button onClick={() => authOAuthStart("google")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#fff", color: "#3c4043", fontWeight: 700, border: "1px solid #CDB98E", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><GoogleG /> Google로 계속하기</button>
+            <button onClick={() => authOAuthStart("apple")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#000", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><AppleLogo /> Apple로 계속하기</button>
+            <button onClick={() => authOAuthStart("facebook")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#1877F2", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><FacebookLogo /> Facebook으로 계속하기</button>
             {mode === "login" && <div style={{ textAlign: "center", marginBottom: 8 }}><button onClick={() => { setMode("reset"); setErr(""); setSent(false); setPw(""); }} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>비밀번호를 잊으셨나요?</button></div>}
             <div style={{ textAlign: "center", fontSize: 12.5, color: T.inkSoft }}>
               {mode === "login" ? "계정이 없나요? " : "이미 계정이 있나요? "}
-              <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(""); setGoogleHint(false); setPw2(""); }} style={{ color: "#5A3A22", fontWeight: 800, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{mode === "login" ? "회원가입" : "로그인"}</button>
+              <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(""); setHintProvider(null); setPw2(""); }} style={{ color: "#5A3A22", fontWeight: 800, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{mode === "login" ? "회원가입" : "로그인"}</button>
             </div>
             <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.4 }}>이메일·비밀번호로 가입합니다. 아이디는 친구 검색·프로필에 공개로 표시되며, 진도(도감·해결한 퍼즐)는 계정에 저장됩니다.</p>
           </>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// (v0.4.3 기능, 사용자 요청) 계정 센터 — 로그인 수단(이메일/Google/Apple/Facebook) 연결·해제, 로그아웃,
+// 계정 탈퇴를 한 곳에서. profiles.id(=auth.users.id)가 이미 "계정 하나에 대응하는 고유 UID"라 —
+// 어떤 로그인 수단으로 들어와도 그 UID가 그대로 유지되며, 여기서 다른 수단을 추가로 연결(manual
+// linking)해 두면 다음부터 그 수단으로도 같은 계정으로 로그인된다.
+const ACCOUNT_CENTER_PROVIDERS = [
+  { key: "google", label: "Google", Icon: GoogleG, chip: { background: "#fff", border: "1px solid #CDB98E" } },
+  { key: "apple", label: "Apple", Icon: AppleLogo, chip: { background: "#000" } },
+  { key: "facebook", label: "Facebook", Icon: FacebookLogo, chip: { background: "#1877F2" } },
+];
+function AccountCenterModal({ onClose, username, onLogoutClick, onAccountDeleted }) {
+  const [identities, setIdentities] = useState(null); // null=불러오는 중
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteTyped, setDeleteTyped] = useState("");
+  const [deleteErr, setDeleteErr] = useState("");
+  const load = useCallback(async () => { setIdentities(await getUserIdentities()); }, []);
+  useEffect(() => { load(); }, [load]);
+  const hasEmail = (identities || []).some((i) => i.provider === "email");
+  const linkCount = (identities || []).length;
+  const doLink = async (provider) => {
+    setErr(""); setBusy(true);
+    try { await linkIdentityRedirect(provider); } catch { setErr("연결을 시작하지 못했어요. Supabase 프로젝트에서 이 로그인 방식과 계정 연결(manual linking)이 켜져 있는지 확인해주세요."); setBusy(false); }
+  };
+  const doUnlink = async (identity) => {
+    if (linkCount <= 1) { setErr("마지막 로그인 수단은 연결 해제할 수 없어요."); return; }
+    setErr(""); setBusy(true);
+    try { await unlinkIdentity(identity.identity_id); await load(); }
+    catch { setErr("연결 해제에 실패했어요."); }
+    finally { setBusy(false); }
+  };
+  const doDelete = async () => {
+    setDeleteErr(""); setBusy(true);
+    try { await sbRpc("delete_own_account", {}); onAccountDeleted(); }
+    catch { setDeleteErr("계정을 삭제하지 못했어요. 잠시 후 다시 시도해주세요."); setBusy(false); }
+  };
+  const row = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 4px" };
+  return (
+    <motion.div
+      onClick={onClose}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 86, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }}
+        transition={{ type: "spring", stiffness: 340, damping: 28 }}
+        style={{ position: "relative", width: "100%", maxWidth: 360, maxHeight: "85vh", overflowY: "auto", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}
+      >
+        <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 4, paddingRight: 30 }}>계정 센터</div>
+        <div style={{ fontSize: 12, color: T.inkSoft, marginBottom: 14 }}>@{username}</div>
+
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>로그인 수단</div>
+        {identities == null ? (
+          <div style={{ fontSize: 12, color: T.inkSoft, padding: "10px 4px" }}>불러오는 중…</div>
+        ) : (
+          <div style={{ borderTop: "1px solid rgba(0,0,0,.08)" }}>
+            {hasEmail && (
+              <div style={{ ...row, borderBottom: "1px solid rgba(0,0,0,.08)" }}>
+                <div className="flex items-center gap-2"><span style={{ width: 26, height: 26, borderRadius: "50%", background: T.ebony2, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Lock size={13} color={T.ivory} /></span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>이메일·비밀번호</span></div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: T.best }}>연결됨</span>
+              </div>
+            )}
+            {ACCOUNT_CENTER_PROVIDERS.map((p) => {
+              const idn = identities.find((i) => i.provider === p.key);
+              return (
+                <div key={p.key} style={{ ...row, borderBottom: "1px solid rgba(0,0,0,.08)" }}>
+                  <div className="flex items-center gap-2"><span style={{ width: 26, height: 26, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", ...p.chip }}><p.Icon /></span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{p.label}</span></div>
+                  {idn
+                    ? <button onClick={() => doUnlink(idn)} disabled={busy} className="press" style={{ padding: "5px 11px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, cursor: busy ? "default" : "pointer" }}>연결 해제</button>
+                    : <button onClick={() => doLink(p.key)} disabled={busy} className="press" style={{ padding: "5px 11px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, cursor: busy ? "default" : "pointer" }}>연결하기</button>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {err && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 8, lineHeight: 1.5 }}>{err}</div>}
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.4 }}>어떤 수단으로 로그인해도 같은 OpenChess 계정으로 연결돼요. 다른 기기·다른 로그인 방식을 함께 쓰려면 여기서 미리 연결해두세요.</p>
+
+        <div style={{ height: 1, background: "#C9B58C", margin: "16px 0" }} />
+        <button onClick={onLogoutClick} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 800, fontSize: 13, cursor: "pointer", marginBottom: 10 }}>로그아웃</button>
+
+        {!confirmDelete ? (
+          <button onClick={() => { setConfirmDelete(true); setDeleteTyped(""); setDeleteErr(""); }} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>계정 탈퇴</button>
+        ) : (
+          <div style={{ padding: "12px 13px", borderRadius: 10, background: "rgba(200,69,59,.1)", border: "1px solid " + T.blunder }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.6, marginBottom: 8 }}>정말 탈퇴할까요? 프로필·퍼즐·친구·채팅 등 이 계정의 모든 데이터가 영구적으로 삭제되며 되돌릴 수 없어요.</p>
+            <input value={deleteTyped} onChange={(e) => setDeleteTyped(e.target.value)} placeholder={"확인을 위해 \"" + username + "\" 입력"} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box", marginBottom: 8, fontSize: 12.5 }} />
+            {deleteErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{deleteErr}</div>}
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>취소</button>
+              <button onClick={doDelete} disabled={busy || deleteTyped !== username} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, fontSize: 12, cursor: (busy || deleteTyped !== username) ? "default" : "pointer", opacity: (busy || deleteTyped !== username) ? 0.55 : 1 }}>{busy ? "삭제하는 중…" : "영구 삭제"}</button>
+            </div>
+          </div>
         )}
       </motion.div>
     </motion.div>
@@ -27711,6 +27881,7 @@ export default function App() {
       setChatsOpen(screens.includes("chats"));
       setProfileWinOpen(screens.includes("profile"));
       setTierMapOpen(screens.includes("tiermap"));
+      setAccountCenterOpen(screens.includes("account-center"));
       if (!screens.includes("play-profile")) setPlayProfileUsername(null);
       setLearnFocus((f) => (f && !screens.includes("focus")) ? null : f);
     };
@@ -27779,6 +27950,9 @@ export default function App() {
   // (v0.3.9 기능) 사용자 요청 — 내 프로필 카드가 더는 설정 탭에 상시 표시되지 않고, 헤더 드롭다운의
   // 화살표 버튼으로 여는 별도 "프로필 창"(ProfileWindow)이 됐다.
   const [profileWinOpen, setProfileWinOpen] = useState(false);
+  // (v0.4.3 기능) 계정 센터(AccountCenterModal) — 다른 오버레이(프로필창·친구·채팅 등)와 같은
+  // screens 패턴으로 뒤로가기와 맞물린다.
+  const [accountCenterOpen, setAccountCenterOpen] = useState(false);
   // (v0.2.9 기능 → v0.3.5 리뷰 티켓 제거) 게임 리뷰는 이제 제한 없이 몇 번이든 열 수 있다. 다만
   // "리뷰한 대국만" 필터(AccountChessStats)가 여전히 reviewUnlocked를 쓰므로, 리뷰를 열 때마다
   // reviewGameKey로 그 대국을 계속 기록은 해 둔다(순수 이력, 더는 아무것도 막거나 소비하지 않는다).
@@ -28005,7 +28179,7 @@ export default function App() {
           {/* (버그 수정) 알림은 시급성이 다른 정보라 세그먼트에 묶지 않고 오른쪽에 따로 분리해 둔다. */}
           {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
           {user ? (
-            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => { setProfileWinOpen(true); pushScreen("profile"); }}
+            <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => { setProfileWinOpen(true); pushScreen("profile"); }} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }}
               mainQuestSummary={mainQuestOverallProgress(mainQuest)} solvedNos={[...solved].map((id) => puzzleNo(id))} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myUid={uid} />
           ) : (
             <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
@@ -28044,6 +28218,16 @@ export default function App() {
           earnedTitles={earnedTitles} onEquipTitle={equipTitle} isDev={isDev} isCodev={isCodev} devOn={devOn} codevOn={codevOn} chesscomStatus={chesscom.status} chesscom={chesscom} />
       )}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} onDone={() => setTierUpAnim(null)} />}
+      <AnimatePresence>
+        {accountCenterOpen && user && (
+          <AccountCenterModal
+            username={user}
+            onClose={() => { setAccountCenterOpen(false); popScreen("account-center"); }}
+            onLogoutClick={() => { setAccountCenterOpen(false); popScreen("account-center"); setConfirmLogout(true); }}
+            onAccountDeleted={() => { setAccountCenterOpen(false); popScreen("account-center"); logout(); }}
+          />
+        )}
+      </AnimatePresence>
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
@@ -28138,7 +28322,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
