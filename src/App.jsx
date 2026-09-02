@@ -10367,10 +10367,13 @@ async function pickBotMove(engine, fen, elo, moveMemory) {
   }
   return chosen;
 }
-// (v0.4.3 기능, 사용자 요청) 실시간 대국 매칭 대기(랜덤 매칭 대기열, 친구 초대 응답 대기) 전용 화면 —
-// 그냥 문구 한 줄 대신, 레이더처럼 퍼지는 링 애니메이션(전역 스타일시트의 pvpRadarPulse keyframe)과
-// 경과 시간을 함께 보여준다. active가 꺼지면(매칭 성사·취소) elapsed는 자동으로 0으로 리셋된다.
-function MatchmakingWait({ active, label, onCancel }) {
+// (v0.4.4 리디자인, 사용자 요청) 실시간 대국 매칭 대기(랜덤 매칭 대기열, 친구 초대 응답 대기) —
+// 설정 카드 안의 자그마한 인라인 블록 대신, 그 카드를 통째로 대체하는 별도의 전용 화면으로
+// 승격시켰다. "찾는 대상"(랜덤 상대는 나이트 기물, 친구 초대는 그 친구의 아바타)을 무대 중앙에 두고
+// framer-motion으로 계속 숨 쉬듯 움직이게 해(원의 팽창·기물의 상하 유영·가장자리를 도는 입자)
+// "가만히 멈춰 있는 로딩 화면"이 아니라 "지금도 상대를 찾고 있다"는 감각을 준다. active가 꺼지면
+// (매칭 성사·취소) elapsed는 자동으로 0으로 리셋된다.
+function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCancel }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!active) { setElapsed(0); return; }
@@ -10379,20 +10382,50 @@ function MatchmakingWait({ active, label, onCancel }) {
     const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
     return () => clearInterval(id);
   }, [active]);
+  const isInvite = variant === "invite";
+  const oppName = (opponent && opponent.name) || "상대";
   return (
-    <div style={{ textAlign: "center", padding: "22px 0 16px" }}>
-      <div style={{ position: "relative", width: 72, height: 72, margin: "0 auto 16px" }}>
-        {[0, 0.6, 1.2].map((delay) => (
-          <span key={delay} style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid " + T.brass, animation: "pvpRadarPulse 1.8s ease-out infinite", animationDelay: delay + "s" }} />
+    <motion.div
+      initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
+      transition={{ duration: 0.32, ease: MOTION_EASE }}
+      style={{ minHeight: "min(72vh, 560px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}
+    >
+      {/* (기물이 궤도를 도는 작은 빛 입자를 만나며 "탐색 중"임을 보여주는 3개의 궤도 점 —
+          한 바퀴 도는 데 서로 다른 시간이 걸려 절대 같은 자리에서 겹치지 않는다. */}
+      <div style={{ position: "relative", width: 168, height: 168, marginBottom: 22 }}>
+        {[0, 0.7, 1.4].map((delay) => (
+          <motion.span key={delay}
+            initial={{ scale: 0.5, opacity: 0.55 }}
+            animate={{ scale: [0.5, 1.5], opacity: [0.55, 0] }}
+            transition={{ duration: 2.1, repeat: Infinity, ease: "easeOut", delay }}
+            style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "1.5px solid " + T.brass }}
+          />
         ))}
-        <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 8px -2px rgba(0,0,0,.4)" }}>
-          <Search size={24} color="#241509" />
-        </span>
+        {[7.5, 9.5, 11.5].map((dur, i) => (
+          <motion.span key={i}
+            animate={{ rotate: 360 }} transition={{ duration: dur, repeat: Infinity, ease: "linear" }}
+            style={{ position: "absolute", inset: 0 }}
+          >
+            <span style={{ position: "absolute", top: 6 + i * 4, left: "50%", width: i === 1 ? 5 : 4, height: i === 1 ? 5 : 4, marginLeft: -2, borderRadius: "50%", background: i === 1 ? T.brilliant : T.brassHi, boxShadow: "0 0 6px " + (i === 1 ? T.brilliant : T.brassHi) }} />
+          </motion.span>
+        ))}
+        <motion.div
+          animate={{ y: [0, -6, 0] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+          style={{ position: "absolute", inset: 22, borderRadius: "50%", background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 22px -6px rgba(0,0,0,.6), inset 0 1px 2px rgba(255,255,255,.08)" }}
+        >
+          {isInvite ? (
+            opponent && opponent.photo ? <img src={opponent.photo} alt="" style={{ width: 74, height: 74, borderRadius: "50%", objectFit: "cover" }} />
+              : <span style={{ fontSize: 30, fontWeight: 800, color: T.brassHi }}>{oppName[0].toUpperCase()}</span>
+          ) : <PieceGlyph type="N" color="w" size={58} />}
+        </motion.div>
       </div>
-      <div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginBottom: 16 }}>{fmtClock(elapsed * 1000)}</div>
-      <button onClick={onCancel} className="press" style={{ padding: "9px 22px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
-    </div>
+      <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ivoryHi, marginBottom: 5, textAlign: "center" }}>
+        {isInvite ? "@" + oppName + "님의 응답을 기다리는 중" : "상대를 찾는 중"}
+      </div>
+      {timeControlLabel && <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(244,238,226,.55)", marginBottom: 14 }}>{timeControlLabel}</div>}
+      <div style={{ fontSize: 22, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".02em", marginBottom: 22 }}>{fmtClock(elapsed * 1000)}</div>
+      <button onClick={onCancel} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "1px solid rgba(196,154,80,.55)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+    </motion.div>
   );
 }
 function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile }) {
@@ -10426,8 +10459,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const [clock, setClock] = useState(null); // { w: ms, b: ms } | null(무제한)
   const [flagged, setFlagged] = useState(null); // "w" | "b" | null — 시간 초과로 진 쪽
   const toMoveColorRef = useRef("w");
-  // (신규 기능) 친구와 플레이 — 친구 목록 드롭다운·도전장 상태.
-  const [friendDropdownOpen, setFriendDropdownOpen] = useState(false);
+  // (v0.4.4 리디자인, 사용자 요청) 친구와 플레이 — 예전엔 버튼을 눌러야 펼쳐지는 드롭다운이었지만,
+  // 이제 로그인만 돼 있으면 항상 고정으로 보이는 로스터(명단)로 바꿨다 — 도전할 친구를 찾으려고
+  // 매번 펼쳤다 접을 필요 없이 설정 화면에 늘 떠 있다.
   const [friendList, setFriendList] = useState([]); // [{uid, username, pub}]
   const [myInvite, setMyInvite] = useState(null); // 내가 보낸 도전장(pvp_invites 행) — 응답 대기 중
   // (버그 수정) 이 대국 안에서 "이 포지션(FEN)에서 봇이 이미 골랐던 수"를 기억해 둔다 — pickBotMove가
@@ -10460,7 +10494,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     // 통로이므로, 여기서 한 번에 mode를 "pvp"로 맞춰 모든 경로에서 이 문제가 재발하지 않게 한다.
     setMode("pvp");
     setPvpGame(g); setPvpWaiting(false); pvpFinishedRef.current = false;
-    setMyInvite(null); setFriendDropdownOpen(false);
+    setMyInvite(null);
     const myColor = g.white_uid === myUid ? "w" : "b";
     setActiveColor(myColor);
     setSans(g.sans || []);
@@ -10522,9 +10556,10 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     return () => { cancelled = true; };
   }, [mode, pvpGame && pvpGame.id, myUid]);
 
-  // (신규 기능) 친구와 플레이 — 드롭다운을 열 때 친구 목록(수락된 friend_edges)을 불러온다.
+  // (v0.4.4 리디자인) 친구 로스터가 이제 항상 보이므로, 드롭다운을 여는 시점이 아니라 로그인 여부만
+  // 보고 곧장 불러온다(수락된 friend_edges).
   useEffect(() => {
-    if (!friendDropdownOpen || !myUid) return;
+    if (!myUid) return;
     let cancelled = false;
     (async () => {
       const edges = await friendEdges();
@@ -10534,8 +10569,8 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       if (!cancelled) setFriendList(ids.map((uid) => ({ uid, username: (profiles[uid] || {}).username, pub: (profiles[uid] || {}).pub || {} })));
     })();
     return () => { cancelled = true; };
-  }, [friendDropdownOpen, myUid]);
-  const friendPresence = usePresenceMap(friendDropdownOpen ? friendList.map((f) => f.uid) : []);
+  }, [myUid]);
+  const friendPresence = usePresenceMap(friendList.map((f) => f.uid));
   // (신규 기능) 사용자 요청 — 정렬은 최근 접속순, 그중 지금 접속 중인 친구가 여럿이면 퍼즐 티어(XP
   // 기준 사이트 전역 티어) → XP 순으로 다시 정렬한다.
   const sortedFriendList = useMemo(() => {
@@ -10562,8 +10597,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: timeControl.key });
       // (v0.4.3) 대기 화면에 "@닉네임의 응답을 기다리는 중..."을 보여주기 위해, 서버 응답(원본 초대
       // 행)에 클릭 시점에 이미 알고 있던 상대 표시 정보를 얹어 둔다 — 서버는 uid만 갖고 있다.
-      setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username });
-      setFriendDropdownOpen(false);
+      setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
     } catch { setPvpErr("도전장을 보내지 못했어요."); }
   };
   const cancelFriendInvite = async () => {
@@ -10771,7 +10805,6 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (mode === "pvp") {
       leavePvpQueue(); setPvpGame(null); setOpponentPub(null); pvpFinishedRef.current = false;
       if (myInvite) cancelFriendInvite();
-      setFriendDropdownOpen(false);
     }
     setSans(seedSans); setResigned(false); setFlagged(null); setClock(null); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setSetupPhase("choose"); setStep("setup");
   };
@@ -10852,6 +10885,18 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           <span style={{ width: 34 }} />
         </div>
         {step === "setup" ? (
+          /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
+             이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
+             (MatchmakingScreen)이다 — 지금 벌어지고 있는 일에 화면 전체가 반응하는 느낌을 준다. */
+          mode === "pvp" && (pvpWaiting || myInvite) ? (
+            <MatchmakingScreen
+              active={pvpWaiting || !!myInvite}
+              variant={myInvite ? "invite" : "queue"}
+              opponent={myInvite ? { name: myInvite.toUsername || "상대", photo: myInvite.toPhoto } : null}
+              timeControlLabel={timeControl.label}
+              onCancel={() => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); }}
+            />
+          ) : (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
             {/* (v0.4.3 개편) 받은 도전장 배너는 App 루트의 전역 알람 박스로 옮겨졌다(어느 화면에
                 있든 항상 뜨도록) — 이 페이지 안에서 별도로 그리지 않는다. */}
@@ -10877,39 +10922,43 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 </div>
                 <div style={{ height: 1, background: "#DCCBA8", margin: "0 0 14px" }} />
                 {pvpErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{pvpErr}</div>}
-                {mode === "pvp" && pvpWaiting ? (
-                  <MatchmakingWait active={pvpWaiting} label="상대를 찾는 중..." onCancel={leavePvpQueue} />
-                ) : mode === "pvp" && myInvite ? (
-                  <MatchmakingWait active={!!myInvite} label={"@" + (myInvite.toUsername || "상대") + "의 응답을 기다리는 중..."} onCancel={cancelFriendInvite} />
-                ) : (
-                  <div className="flex gap-2" style={{ marginBottom: 10 }}>
-                    <div style={{ padding: "11px 14px", borderRadius: 10, border: "1px solid #C9B58C", color: T.ink, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>{timeControl.label}</div>
-                    <button onClick={() => { setMode("pvp"); setPvpSubMode("queue"); setPvpErr(""); joinPvpQueue(); }} disabled={!myUid} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: !myUid ? "default" : "pointer" }}>
-                      <Play size={14} fill="#241509" />{!myUid ? "로그인 후 이용할 수 있어요" : "대국 상대 찾기"}
-                    </button>
-                  </div>
-                )}
-                <button onClick={() => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setMode("bot"); setSetupPhase("bot"); }} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginBottom: 10 }}>
+                <div className="flex gap-2" style={{ marginBottom: 10 }}>
+                  <div style={{ padding: "11px 14px", borderRadius: 10, border: "1px solid #C9B58C", color: T.ink, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>{timeControl.label}</div>
+                  <button onClick={() => { setMode("pvp"); setPvpSubMode("queue"); setPvpErr(""); joinPvpQueue(); }} disabled={!myUid} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: !myUid ? "default" : "pointer" }}>
+                    <Play size={14} fill="#241509" />{!myUid ? "로그인 후 이용할 수 있어요" : "대국 상대 찾기"}
+                  </button>
+                </div>
+                <button onClick={() => { setMode("bot"); setSetupPhase("bot"); }} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginBottom: 16 }}>
                   <Cpu size={16} /> 봇과 플레이하기
                 </button>
-                {/* (v0.4.3 UI 개편, 사용자 요청) 친구 목록을 뜨는 드롭다운 대신 카드 자체를 아래로
-                    넓히는 인라인 목록으로 바꾼다 — 각 행에서 프로필(사진·이름) 부분을 누르면 그 친구의
-                    프로필 화면으로 이동하고(onOpenProfile), 오른쪽 "도전" 버튼을 눌러야 대국을
-                    신청한다(두 동작을 실수로 섞어 누르지 않도록 버튼을 분리). */}
-                <button onClick={() => { if (pvpWaiting) leavePvpQueue(); setMode("pvp"); setPvpSubMode("friend"); setPvpErr(""); setFriendDropdownOpen((v) => !v); }} disabled={!myUid} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: friendDropdownOpen ? "10px 10px 0 0" : 10, border: "1px solid " + (myUid ? T.brass : "#C9B58C"), background: myUid ? "rgba(196,154,80,.12)" : "rgba(0,0,0,.04)", color: myUid ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13.5, cursor: myUid ? "pointer" : "default" }}>
-                  <User size={16} /> {!myUid ? "로그인 후 이용할 수 있어요" : "친구와 플레이하기"}
-                  {myUid && <ChevronDown size={15} style={{ transform: friendDropdownOpen ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />}
-                </button>
-                {friendDropdownOpen && (
-                  <div style={{ border: "1px solid " + T.brass, borderTop: "none", borderRadius: "0 0 10px 10px", maxHeight: 280, overflowY: "auto" }}>
+                {/* (v0.4.4 리디자인, 사용자 요청) 친구 목록을 눌러야 펼쳐지는 드롭다운이 아니라, 로그인만
+                    돼 있으면 항상 고정으로 보이는 로스터로 바꿨다 — 처음 한 번만 살짝 스태거되며
+                    나타나고(motion), 이후 실시간 접속 갱신으로 순서가 바뀌어도 다시 애니메이션되지
+                    않는다(행마다 key가 고정돼 있어 motion의 initial은 최초 마운트에만 적용됨). 각 행에서
+                    프로필(사진·이름) 부분을 누르면 그 친구의 프로필 화면으로 이동하고(onOpenProfile),
+                    오른쪽 "도전" 버튼을 눌러야 대국을 신청한다(두 동작을 실수로 섞어 누르지 않도록
+                    버튼을 분리). */}
+                <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+                  <User size={14} color={T.brass} />
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>친구와 플레이하기</span>
+                </div>
+                {!myUid ? (
+                  <div style={{ padding: "16px 10px", borderRadius: 10, border: "1px dashed #C9B58C", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용할 수 있어요.</div>
+                ) : (
+                  <div style={{ border: "1px solid #DCCBA8", borderRadius: 10, maxHeight: 280, overflowY: "auto", background: "rgba(255,255,255,.4)" }}>
                     {sortedFriendList.length === 0 ? (
-                      <div style={{ padding: "14px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>같이 대국할 친구가 없어요.</div>
+                      <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>같이 대국할 친구가 없어요.</div>
                     ) : sortedFriendList.map((f, i) => (
-                      <div key={f.uid} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i ? "1px solid rgba(0,0,0,.07)" : "none" }}>
+                      <motion.div key={f.uid} layout="position"
+                        initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.28, delay: Math.min(i, 8) * 0.045, ease: MOTION_EASE }}
+                        whileHover={{ backgroundColor: "rgba(196,154,80,.1)" }}
+                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i ? "1px solid rgba(0,0,0,.07)" : "none" }}>
                         <button onClick={() => onOpenProfile && onOpenProfile(f.username)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
                           <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
                             {f.pub.photo ? <img src={f.pub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
                               : <span style={{ width: 28, height: 28, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{(f.pub.nickname || f.username || "?")[0].toUpperCase()}</span>}
+                            {f.online && <motion.span animate={{ scale: [1, 1.5], opacity: [0.7, 0] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }} style={{ position: "absolute", right: -1, bottom: -1, width: 8, height: 8, borderRadius: "50%", background: T.brilliant }} />}
                             <OnlineDot lastSeenMs={f.lastSeenMs} overlay size={8} />
                           </span>
                           <span style={{ minWidth: 0, flex: 1 }}>
@@ -10918,7 +10967,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                           </span>
                         </button>
                         <button onClick={() => sendFriendInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>도전</button>
-                      </div>
+                      </motion.div>
                     ))}
                   </div>
                 )}
@@ -10951,6 +11000,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
               </>
             )}
           </div>
+          )
         ) : (
           <div>
             {/* (사용자 요청) chess.com 대국 화면과 같은 구성 — 맨 위 수순 스트립(누르면 그 시점으로
@@ -21337,6 +21387,9 @@ const CHANGELOG = [
       "계정 센터에 나만의 친구 초대 링크가 생겼어요 — 복사해서 보내면, 상대가 그 링크를 열었을 때(로그인 상태라면) 자동으로 친구 요청이 가고 화면 위에 '~님에게 친구 요청을 보냈습니다!' 팝업이 떠요.",
       "다른 유저의 프로필이 이제 고유한 주소(openchess.kr/user/회원번호)를 갖는 페이지로 열려요 — 검색·채팅·/play 친구 목록 어디서 열어도 같은 페이지고, 초대 링크를 누르면 곧장 이 페이지로 들어가요.",
       "데스크톱처럼 화면이 넓으면 프로필 페이지가 신원·통계를 두 칼럼으로 나란히 보여줘 한 화면에 더 많이 들어와요.",
+      "프로필 페이지가 더 생동감 있게 바뀌었어요 — 지금 접속 중인 사람은 사진 테두리에 은은한 파동이 계속 퍼지고, OpenChess/chess.com 통계 전환이 부드럽게 겹쳐 바뀌어요.",
+      "/play 매칭 대기 화면(랜덤 상대 찾는 중·친구 응답 기다리는 중)이 설정 카드 안의 작은 표시 대신, 화면 전체를 채우는 전용 화면으로 바뀌었어요 — 궤도를 도는 빛과 유영하는 나이트(또는 상대 사진)가 계속 움직여요.",
+      "/play에서 친구 목록이 이제 버튼을 눌러야 펼쳐지는 드롭다운이 아니라, 로그인만 하면 항상 그 자리에 떠 있어요.",
     ],
   },
   {
@@ -23825,14 +23878,19 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       {/* (사용자 요청) 친구 요청이 나갔을 때(초대 링크 자동 요청·수동 버튼 공통) 화면 위쪽에 잠깐
           떴다 사라지는 팝업 알림 — 카드 안쪽의 작은 inviteMsg 문구만으로는 눈에 잘 안 띈다는 피드백. */}
-      {reqPopup && (
-        <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 400, animation: "lockpop .4s ease", width: "calc(100% - 32px)", maxWidth: 340, pointerEvents: "none" }}>
-          <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 16px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
-            <span style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(196,154,80,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><UserPlus size={17} style={{ color: T.brassHi }} /></span>
-            <div style={{ fontSize: 12.5, fontWeight: 700 }}>{reqPopup}</div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {reqPopup && (
+          <motion.div
+            initial={{ opacity: 0, y: -14, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.96 }}
+            transition={{ duration: 0.3, ease: MOTION_EASE }}
+            style={{ position: "fixed", top: 16, left: "50%", x: "-50%", zIndex: 400, width: "calc(100% - 32px)", maxWidth: 340, pointerEvents: "none" }}>
+            <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 16px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
+              <span style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(196,154,80,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><UserPlus size={17} style={{ color: T.brassHi }} /></span>
+              <div style={{ fontSize: 12.5, fontWeight: 700 }}>{reqPopup}</div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5 }}>
         <div className="flex items-center gap-2">
           <button onClick={onClose} aria-label="뒤로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>
@@ -23847,8 +23905,11 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
           <p style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>불러오는 중…</p>
         ) : (
           <div style={{ display: "flex", flexDirection: wide ? "row" : "column", gap: wide ? 28 : 0, alignItems: "flex-start" }}>
-            {/* 왼쪽(데스크톱) / 상단(모바일) — 신원·MID·친구 요청 */}
-            <div style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
+            {/* 왼쪽(데스크톱) / 상단(모바일) — 신원·MID·친구 요청. 처음 진입할 때 한 번, 왼쪽에서
+                살짝 미끄러지며 나타난다(오른쪽 통계 열보다 살짝 먼저) — 페이지 전체가 한 번에
+                뚝 나타나는 대신 두 축(신원 → 활동)이 순서대로 눈에 들어오게 한다. */}
+            <motion.div initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, ease: MOTION_EASE }}
+              style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(pub.displayId || pubUsername)}{roleIcon(pubUsername)}</span>
                 {statsViewToggle(statsView, setStatsView)}
@@ -23858,6 +23919,16 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
               ) : (
                 <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
                   <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+                    {/* (사용자 요청) 지금 접속 중이면 아바타 테두리를 따라 은은하게 퍼지는 링을 계속
+                        내보낸다 — 친구 로스터의 접속 표시와 같은 시각 언어(teal)를 프로필 히어로에도 이어,
+                        "정적인 사진"이 아니라 "지금 여기 있는 사람"으로 느껴지게 한다. */}
+                    {!!selPresence[pubUid] && (Date.now() - selPresence[pubUid]) < ONLINE_WINDOW_MS && (
+                      <motion.span
+                        animate={{ scale: [1, 1.28], opacity: [0.55, 0] }}
+                        transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+                        style={{ position: "absolute", inset: -3, borderRadius: 18, border: "2px solid " + T.brilliant, pointerEvents: "none" }}
+                      />
+                    )}
                     {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
                       : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pubUsername || "?")[0].toUpperCase()}</span>}
                     <OnlineDot lastSeenMs={selPresence[pubUid]} overlay size={13} />
@@ -23876,14 +23947,21 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
                   reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
                     : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><Clock size={14} />친구 요청을 보냈습니다</span>
                       : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><UserCheck size={14} />이미 친구이거나 요청 중입니다</span>
-                        : <button onClick={doReq} disabled={reqBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5 }}><UserPlus size={14} />친구 요청</button>
+                        : <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.96 }} onClick={doReq} disabled={reqBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5 }}><UserPlus size={14} />친구 요청</motion.button>
                 ) : <p style={{ fontSize: 11.5, color: T.inkSoft }}>로그인하면 친구 요청을 보낼 수 있어요.</p>
               )}
-            </div>
-            {/* 오른쪽(데스크톱) / 하단(모바일) — 통계·활동 */}
-            <div style={{ flex: 1, minWidth: 0, width: "100%" }}>
-              <ProfileStatsPanel pub={pub} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pubUid} viewerUid={myUid} />
-            </div>
+            </motion.div>
+            {/* 오른쪽(데스크톱) / 하단(모바일) — 통계·활동. 왼쪽 열보다 살짝 늦게, 아래에서 위로
+                떠오르며 들어온다 — "신원을 먼저 확인하고, 그 사람의 활동이 뒤이어 펼쳐진다"는 순서. */}
+            <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.08, ease: MOTION_EASE }}
+              style={{ flex: 1, minWidth: 0, width: "100%" }}>
+              {/* (사용자 요청) OC/Chess.com 통계 토글이 뚝 바뀌는 대신 부드럽게 크로스페이드된다. */}
+              <AnimatePresence mode="wait">
+                <motion.div key={statsView} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22, ease: MOTION_EASE }}>
+                  <ProfileStatsPanel pub={pub} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pubUid} viewerUid={myUid} />
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
           </div>
         )}
       </div>
