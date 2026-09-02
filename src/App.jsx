@@ -10595,6 +10595,25 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (seed && seed.resumePvpGame) applyPvpGame(seed.resumePvpGame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // (버그 수정, 사용자 제보) 실시간 대국 도중 새로고침하거나(언마운트 cleanup이 걸리지 않는 하드
+  // 리로드·탭 종료) 잠시 다른 곳에 있다가 /play로 다시 돌아오면, 이 컴포넌트는 항상 처음(설정 화면,
+  // mode="bot")부터 새로 시작해 서버에는 여전히 "active"로 남아 있는 내 대국을 이어받을 방법이
+  // 없었다 — 상대는 계속 내 응수를 기다리며 클럭만 줄어들고, 나는 새 대국을 시작하거나 그냥 나갈
+  // 수밖에 없었다. seed로 이어받는 도전장 수락 경로와 별개로, 이 페이지에 들어올 때마다(그리고
+  // seed에 이미 재개할 대국이 없을 때만) 서버에서 내가 참가자인 진행 중(active) pvp_games 행이
+  // 있는지 한 번 확인해, 있으면 곧장 이어받는다.
+  useEffect(() => {
+    if (!myUid || (seed && seed.resumePvpGame)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await sbSelect("pvp_games?status=eq.active&or=(white_uid.eq." + myUid + ",black_uid.eq." + myUid + ")&order=updated_at.desc&limit=1");
+        if (!cancelled && rows && rows[0]) applyPvpGame(rows[0]);
+      } catch { }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myUid]);
 
   const board = useMemo(() => boardOfRoot(fenRoot, sans), [fenRoot, sans.join(" ")]);
   const replay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, sans) : null), [fenRoot, sans.join(" ")]);
@@ -10668,7 +10687,19 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     playMoveSfx(san);
     setSans((prev) => [...prev, san]);
     setSel(null); setDrag(null); setViewPly(null);
-    if (mode === "pvp" && pvpGame) sbRpc("pvp_move", { p_game_id: pvpGame.id, p_san: san }).catch(() => {});
+    // (버그 수정, 사용자 제보) pvp_move가 실패해도(네트워크 오류, 서버가 아직 이전 상태라 "내 차례가
+    // 아님"으로 걸린 경우 등) 예전엔 조용히 무시해 버렸다 — 이미 위에서 낙관적으로 sans에 내 수를
+    // 추가해 둔 상태라, 실제로는 서버에 반영되지 않은 수가 내 화면에만 영원히 남는다(상대는 여전히
+    // 내 차례를 기다리는데 내 클럭은 상대 차례처럼 계산되는 등 완전히 어긋난 상태로 굳는다). 실패하면
+    // 서버가 마지막으로 확정한 sans로 다시 맞춰 되돌린다.
+    if (mode === "pvp" && pvpGame) {
+      sbRpc("pvp_move", { p_game_id: pvpGame.id, p_san: san }).catch(async () => {
+        try {
+          const rows = await sbSelect("pvp_games?id=eq." + pvpGame.id + "&select=*");
+          if (rows && rows[0]) { setPvpGame(rows[0]); setSans(rows[0].sans || []); }
+        } catch { }
+      });
+    }
   }, [result, mode, pvpGame]);
 
   const tryMove = useCallback((from, to) => {
@@ -15184,6 +15215,12 @@ async function puzzleShare(p) {
   try {
     const no = puzzleNo(p.id);
     const server = await puzzleFetch(no);
+    // (버그 수정) no는 id의 해시값이라 서로 다른 id가 같은 no로 충돌할 수 있다 — 이 번호에 이미 다른
+    // 포지션의 퍼즐이 있다면(server.id가 지금 저장하려는 p.id와 다르면), 그대로 upsert하면 그
+    // 무관한 퍼즐의 data를 덮어써 버린다(서버에서 조용히 사라지는 데이터 손상). 이런 드문 충돌은
+    // 병합하지 않고 그냥 포기한다 — 이 퍼즐은 로컬 상태(setPuzzles)에는 이미 반영돼 있으니 이 세션
+    // 안에서 풀이는 계속 가능하고, 서버 공유·번호 공유만 못 하게 된다.
+    if (server && server.id && server.id !== p.id) { console.warn("퍼즐 번호 충돌(no=" + no + "), 서버 공유를 건너뜁니다:", p.id, "vs", server.id); return; }
     const merged = server ? { ...p, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
     const row = { no, data: merged };
     // (신규 기능) 사용자 요청 — 퍼즐 만들기 마법사 4단계의 공개/비공개 설정. is_public은 별도
@@ -16790,6 +16827,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   const solveStartRef = useRef(Date.now());
   const [intro, setIntro] = useState(true);   // (UX7) 진입/처음부터 시 직전 수를 1회 재생
   const [sel, setSel] = useState(null);
+  // (버그 수정, 사용자 제보) 퍼즐 풀이 화면에는 프로모션 선택 UI가 아예 없어 폰이 마지막 랭크에
+  // 닿으면 buildSan이 항상 퀸으로만 승격시켰다 — 언더프로모션(룩/비숍/나이트)으로만 통과되는 라인은
+  // 구조적으로 풀 수 없었다. ReviewPage·PlayPage와 같은 promoPrompt 패턴을 그대로 들여와, 폰이
+  // 마지막 랭크로 이동하는 수는 곧장 두지 않고 먼저 승격 기물을 고르게 한다.
+  const [promoPrompt, setPromoPrompt] = useState(null); // { from, to } | null
   const [wrong, setWrong] = useState(null);     // { board, at:[r,c], from:[r,c], san }
   // (v0.1.2 기능) 오답을 두면 곧장 원위치로 되돌리는 대신, 그 수를 뒀을 때 상대(컴퓨터)가 어떻게
   // 응징하는지 최선 응수를 한 번 보여준 뒤 되돌린다 — wrongReply가 그 응수({san,from,to}), revertStage가
@@ -16837,7 +16879,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     setSessionSolved(new Set());
     setEverRevealed(new Set());
     setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0);
-    setPage(0); setCelebrate(null);
+    setPage(0); setCelebrate(null); setPromoPrompt(null);
     solveStartRef.current = Date.now();
     const first = allLines.find((l) => !solvedTagSet.has(l.tag)) || allLines[0];
     setTargetTag(first ? first.tag : null);
@@ -16978,7 +17020,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     const next = matches.find((l) => !solvedNow.has(l.tag)) || matches[0];
     setTargetTag(next.tag);
   }, [pathNodes]);
-  const tryUserMove = (from, to) => {
+  const tryUserMove = (from, to, promo) => {
     if (!userToMove) return;
     // (버그 수정) buildSan은 그 수가 실제로 합법인지 확인하지 않고 좌표만으로 SAN을 만든다(예:
     // 기물을 원래 있던 칸에 그대로 놓으면 "제자리 수" 문자열이 그럴싸하게 만들어진다) — 클릭 경로
@@ -16987,7 +17029,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     // 한 번만 확실히 걸러 모든 호출 경로(클릭·드래그)를 동시에 보호한다.
     if (from[0] === to[0] && from[1] === to[1]) { setSel(null); return; }
     if (!(fenRoot ? fenLegalDests(from[0], from[1], color, board, fenReplay.rights, ep) : legalDests(board, from[0], from[1], color, ep)).some(([r, c]) => r === to[0] && c === to[1])) return;
-    const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep); if (!san) return;
+    // (버그 수정) 폰이 마지막 랭크로 이동하는 수는 promo가 아직 없으면 곧장 두지 않고 승격 기물을
+    // 먼저 고르게 한다 — completePromo가 고른 기물로 다시 이 함수를 호출한다.
+    const pc = board[from[0]][from[1]];
+    if (!promo && pc && pc.t === "P" && ((color === "w" && to[0] === 0) || (color === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return; }
+    const san = buildSan(board, from[0], from[1], to[0], to[1], color, ep, promo); if (!san) return;
     playMoveSfx(san);   // (v0.1.4 기능) 정답/오답과 무관하게, 실제로 보드 위에 기물을 놓는 물리적 동작 자체에 대한 소리
     const hit = (curNode.children || []).find((c) => stripSuffix(c.san) === stripSuffix(san));
     // (기능1) 유저 진영에서는 '통과 가능(최선·우수)' 수만 다음 단계로 — 모식도에 표시만 되는 유혹 수도 오답 처리
@@ -16998,6 +17044,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       // 상대로 삼아 Elo 패배로 즉시 반영한다(한 시도 안에서 여러 번 틀리면 그만큼 여러 번 깎인다).
       if (onPuzzleRatingEvent && avgRating) onPuzzleRatingEvent("loss", avgRating);
     }
+  };
+  const completePromo = (piece) => {
+    if (!promoPrompt) return;
+    const { from, to } = promoPrompt; setPromoPrompt(null);
+    tryUserMove(from, to, piece);
   };
   const onSquareClick = (sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (sel) { if ((fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)).some(([r, c]) => r === sq[0] && c === sq[1])) { tryUserMove(sel, sq); return; } if (p && p.c === color) { setSel(sq); return; } setSel(null); } else if (p && p.c === color) setSel(sq); };
   // (UX4→v0.1.2) 재시도 버튼 없이, 오답을 두면 자동으로 원위치로 되돌아간다 — 다만 곧장 되돌리지
@@ -17050,7 +17101,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     })();
     return () => { cancelled = true; timers.forEach(clearTimeout); };
   }, [wrong]);
-  const gotoLine = (tag) => { solveStartRef.current = Date.now(); setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); };
+  const gotoLine = (tag) => { solveStartRef.current = Date.now(); setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); setPromoPrompt(null); };
   const restart = () => gotoLine(targetTag);
   // (UI) 사용자 요청 — 퍼즐 화면 기보(PuzzlePgnBox)의 수를 누르면 그 기보가 입력된 분석 탭으로
   // 이동한다. 퍼즐 풀이 화면 자체는 더 이상 볼 이유가 없으므로 함께 닫는다.
@@ -17527,7 +17578,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 가로채어져 칸의 onClick(기물 선택)이 전혀 발동하지 않았다 — HTML5 네이티브 드래그 앤 드롭은
                 별도 이벤트 체계라 이 영향을 안 받아 드래그로 두는 것만 됐다. SchematicEditor의 캔버스와
                 동일하게 "no-pan"을 줘서 이 영역 위의 포인터다운은 페이저가 아예 손대지 않게 한다. */}
-            <div ref={boardRef} className="no-pan" style={{ width: "100%", maxWidth: 380, margin: "0 auto", scrollMarginBottom: 84 }}>
+            <div ref={boardRef} className="no-pan" style={{ width: "100%", maxWidth: 380, margin: "0 auto", scrollMarginBottom: 84, position: "relative" }}>
             {/* (버그 수정) FEN 기반 사용자 생성 퍼즐(item 5)은 "직전 수(mistakeSan)"가 아예 없다 — 대국
                 기록 없이 지금 포지션 자체를 시작점으로 삼기 때문이다. 그런데도 intro 단계는 항상
                 AnimatedMove에 puzzle.mistakeSan을 그대로 넘겼다 — sanSrc(before, undefined, color)가
@@ -17560,6 +17611,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               // 3단계에서 경로의 마지막 칸이 대신하므로 끈다).
               : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} arrows={puzzleDangerArrows} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove}
                   hintTo={hintLevel === 1 && hintInfo ? hintInfo.to : null} hintFrom={(hintLevel === 2 || hintLevel === 3) && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel === 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
+            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => setPromoPrompt(null)} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
@@ -18033,7 +18085,11 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               — 세부 갈래까지 포함한 전체 이름은 바로 아래 이름 줄에서 이미 다 보인다. 옛 퍼즐 등
               setupSans가 없어 계산이 안 되는 경우에만 저장된 p.opening으로 대체한다.
               한 줄로 고정하고 넘치면 말줄임(...)만 쓴다(행 높이가 들쭉날쭉해지는 걸 막기 위함). */}
-          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(p.setupSans && firstNamedOpening(p.setupSans)) || p.opening}</div>
+          <div className="flex items-center" style={{ gap: 5, minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(p.setupSans && firstNamedOpening(p.setupSans)) || p.opening}</div>
+            {/* (사용자 요청) PGN 정보 보유 배지를 오프닝 배지 바로 옆에 붙인다. */}
+            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
+          </div>
           <LineStars total={3} solved={stars} />
         </div>
         {/* (버그 수정) 오프닝 이름이 길면 한 줄 말줄임(...)으로 잘려 끝까지 안 보였다 — 그렇다고
@@ -18044,9 +18100,31 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         <FitPuzzleName text={livePuzzleName(p)} />
         {/* (사용자 요청) 퍼즐 유형·라인 개수를 알려주는 텍스트는 지운다 — 손상된(라인 0개) 퍼즐 경고만
             남긴다(유용한 오류 표시라 지우지 않는다). */}
+        {broken && <span style={{ fontSize: 9, color: T.blunder, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, marginTop: 4 }}>⚠ 손상된 퍼즐(라인 0개)</span>}
+        {/* (사용자 요청) 6자리 퍼즐 번호는 왼쪽, 퍼즐 레이팅은 같은 줄 오른쪽에 표시한다 — 예전엔
+            번호가 오른쪽에, 레이팅은 그 아래 배지 줄 한가운데 섞여 있었다. */}
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
-          {broken ? <span style={{ fontSize: 9, color: T.blunder, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>⚠ 손상된 퍼즐(라인 0개)</span> : <span />}
           <span style={{ fontSize: 9, color: themeAccent, fontFamily: SITE_FONT, fontWeight: 700, flexShrink: 0 }}>#{puzzleNo(p.id)}</span>
+          {avgRating != null && (myPuzzleRating != null ? (
+            (() => {
+              const diff = avgRating - myPuzzleRating;
+              const tier = puzzleDifficultyTier(diff);
+              const deltaColor = diff <= -20 ? "#2E8B57" : diff >= 20 ? "#D9534F" : T.inkSoft;
+              return (
+                <ClickInfoBadge width={210} align="right" content={
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
+                    <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
+                    <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
+                  </div>
+                }>
+                  <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도) — 눌러서 자세히" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>
+                </ClickInfoBadge>
+              );
+            })()
+          ) : (
+            <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>
+          ))}
         </div>
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
             줄에 두면 폭이 좁아 말줄임으로 잘렸다 — 버튼과 분리해 별도 줄에 잘리지 않고 전부 보여준다.
@@ -18059,43 +18137,17 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         {/* (v0.4.3 버그 수정, 사용자 제보) PGN/국면/FEN/레이팅 배지 개수가 카드마다 달라 이 줄이 1줄
             또는 2줄로 들쭉날쭉하게 감싸졌다(rowGap으로 줄바꿈) — minHeight로 "배지가 2줄까지 감싸도
             안전한" 높이를 항상 예약해 배지 수와 무관하게 카드 높이가 고정되게 한다. */}
-        <div className="flex items-center justify-between" style={{ marginTop: 4, gap: 7, rowGap: 4, flexWrap: "wrap", flexShrink: 0, minHeight: 40 }}>
-            {/* (사용자 요청) PGN/FEN 정보 보유 배지 — 퍼즐 레이팅 박스와 같은 크기로 그 왼쪽에,
-                둘 다 있으면 둘 다 표시한다. (신규) 국면(오프닝/미들게임/엔드게임) 배지도 같은 자리에
-                항상 표시되므로, 배지가 늘어나도 잘리지 않도록 줄바꿈을 허용한다. */}
-            {/* (사용자 요청) 배지가 브라스 톤 하나로 카드 전체(레이팅·테마 색 등)에 묻혀 잘 안 보인다는
-                피드백 — 이 카드에서 유일하게 쓰는 파란 계열(T.only, 수 체계 "유일한 수" 색)로 눈에
-                띄게 바꿨다. */}
-            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
-            {/* (사용자 요청) 국면(오프닝/미들게임/엔드게임) 배지를 PGN 배지 바로 옆에 붙인다 — FEN
-                배지는 그 뒤로 밀어, PGN·국면이 항상 서로 붙어 보이게 한다. */}
+        {/* (신규) 국면(오프닝/미들게임/엔드게임)·FEN 배지 — 오프닝·PGN과 같은 무리로 묶이도록 그
+            바로 아래 줄에 이어 붙인다. */}
+        <div className="flex items-center" style={{ marginTop: 4, gap: 5, rowGap: 4, flexWrap: "wrap", flexShrink: 0 }}>
             <GamePhaseBadge p={p} compact />
             {p.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
-            {/* (사용자 요청) 퍼즐 레이팅 — 카드 좌하단에 표시, 누르면 이 퍼즐 레이팅·내 레이팅(차이)·
-                체감 난이도를 보여주는 말풍선이 뜬다(모바일 안전 영역은 ClickInfoBadge가 담당). */}
-            {avgRating != null && (myPuzzleRating != null ? (
-              (() => {
-                const diff = avgRating - myPuzzleRating;
-                const tier = puzzleDifficultyTier(diff);
-                const deltaColor = diff <= -20 ? "#2E8B57" : diff >= 20 ? "#D9534F" : T.inkSoft;
-                return (
-                  <ClickInfoBadge width={210} align="left" content={
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
-                      <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
-                      <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
-                    </div>
-                  }>
-                    <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도) — 눌러서 자세히" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>
-                  </ClickInfoBadge>
-                );
-              })()
-            ) : (
-              <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>
-            ))}
-            {/* (사용자 요청) 좋아요 → 리포스트 → 공유 순으로, 카드 폭 전체를 차지하는 줄로 따로
-                떼어(width:100%, flex-wrap 컨테이너에서 항상 새 줄로 시작) 왼쪽 정렬한다. */}
-            <div className="flex items-center" style={{ gap: 10, width: "100%" }}>
+        </div>
+        {/* (사용자 요청) 좋아요·리포스트·공유 수는 왼쪽에 묶어 두고, 실제 공유하기 버튼만 카드 맨
+            아래 줄의 오른쪽 끝(우하단)에 오도록 justify-between으로 분리한다 — 예전엔 넷 다 같은
+            줄에 나란히 왼쪽 정렬돼 있어 공유 버튼이 카드 우하단이 아니라 그 옆에 붙어 있었다. */}
+        <div className="flex items-center justify-between" style={{ marginTop: 6, gap: 10, flexShrink: 0 }}>
+            <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
             {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
               <Heart size={16} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
               <span style={{ fontSize: 11.5, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
@@ -18110,12 +18162,12 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               <Send size={15} color={T.inkSoft} />
               <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>{shareCount || 0}</span>
             </span>
+            </div>
             {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
                 눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
             {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 13px", borderRadius: 8, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
               <Send size={13} color={T.brass} />공유
             </button>}
-            </div>
         </div>
       </div>
     </div>
@@ -19382,10 +19434,17 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   }, [pcParsed, engine && engine.status]);
   // (사용자 요청) 같은 PGN(수순+수)이나 FEN으로 이미 만들어진 퍼즐이 있는지 검증 — 로컬(내 퍼즐·
   // 보관함)과 서버(전체 사용자, puzzleFetch) 모두 확인한다.
+  // (버그 수정, 사용자 제보) puzzles 테이블의 행 번호(no)는 id 문자열의 해시값(puzzleNo, 6자리
+  // 공간)이라 서로 다른 두 포지션이 같은 번호로 우연히 충돌할 수 있다 — 예전엔 그 번호에 아무
+  // 행이나 있으면(내용을 비교하지 않고) 곧장 "이미 같은 퍼즐이 존재하여 퍼즐 만들기가
+  // 취소됩니다"로 막아 버려서, 사이트에 만들어진 퍼즐이 쌓일수록 실제로는 완전히 새로운
+  // PGN·FEN을 만들려는 시도까지 무작위로 거부되던 핵심 버그였다(퍼즐 만들기 기능 자체가
+  // 점점 안 되는 것처럼 보였다). 이제 그 번호의 행이 있어도 실제 내용(data.id)이 지금 만들려는
+  // id와 같을 때만 진짜 중복으로 판정한다 — 번호만 우연히 겹친 서로 다른 퍼즐은 통과시킨다.
   const checkPcDuplicate = async (id) => {
     if (puzzles.some((p) => p.id === id)) return true;
     if (archivedPuzzles && archivedPuzzles[id]) return true;
-    try { const remote = await puzzleFetch(puzzleNo(id)); if (remote) return true; } catch { }
+    try { const remote = await puzzleFetch(puzzleNo(id)); if (remote && remote.id === id) return true; } catch { }
     return false;
   };
   // 실제 전술 트리 생성 — FEN 포지션이거나(그 자체가 시작점), PGN에서 고른 특정 수(setupSans+mistakeSan)일 때 호출한다.
@@ -21248,6 +21307,17 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.4.4", date: "2026.9.2", dev: ["openchesskr"], items: [
+      "퍼즐 만들기가 실제로는 완전히 새로운 포지션인데도 '이미 존재하는 퍼즐'로 잘못 거부되던 핵심 문제를 고쳤어요.",
+      "퍼즐을 풀 때 폰이 마지막 줄에 닿으면 이제 승격할 기물(퀸/룩/비숍/나이트)을 직접 고를 수 있어요 — 예전엔 항상 퀸으로만 승격돼 언더프로모션이 필요한 라인은 풀 수 없었어요.",
+      "채팅 '/play 3' 같은 명령어가 입력해도 아무 반응이 없던 문제를 고쳤어요. 시간을 잘못 입력하면(예: 그냥 평범한 문장) 이제 명령어로 인식하지 않고 평범한 메시지로 전송돼요.",
+      "실시간 대국 도중 새로고침하거나 다른 화면에 있다가 /play로 돌아와도 진행 중이던 대국을 그대로 이어할 수 있어요.",
+      "실시간 대국에서 수를 뒀는데 서버에 반영되지 않고 화면만 어긋나던 문제를 고쳤어요.",
+      "계정 센터의 MID(회원 번호) 형식이 앞 영문 5자리 + 뒤 숫자 4자리로 고정됐어요(예: ABCDE1234).",
+      "퍼즐 카드에서 오프닝·PGN·국면·FEN 배지가 한 무리로 붙어 보이고, 6자리 번호는 왼쪽에 레이팅은 같은 줄 오른쪽에 표시돼요. 공유 버튼은 카드 우하단으로 옮겨졌어요.",
+    ],
+  },
   {
     version: "0.4.3", date: "2026.8.31", dev: ["openchesskr"], items: [
       "이메일 로그인 말고도 Apple·Facebook으로 로그인할 수 있어요.",
@@ -24015,14 +24085,18 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     // 하면 된다. 채팅으로 대국을 신청할 수 있다는 건 이미 이 대화 상대가 accepted 친구라는
     // 뜻이므로(그렇지 않으면 애초에 채팅 자체를 못 보냄), pvp_invite_friend의 "친구 사이인지" 검사도
     // 항상 통과한다.
+    // (버그 수정, 사용자 제보) 예전엔 "/play "로 시작하기만 하면(뒤에 오는 게 유효한 타임컨트롤이든
+    // 아니든) 명령어로 인식해 버려, "/play 아무개랑 하고 싶다" 같은 평범한 문장까지 전송을 막고
+    // "사용법: ..." 오류만 보여줬다 — 정작 유효한 "/play 3" 같은 입력은 실행되므로 "명령어가 안
+    // 된다"고 오인되는 원인 중 하나였다. 이제 뒤에 오는 인자가 실제로 유효한 타임컨트롤일 때만
+    // 명령어로 인식하고, 그렇지 않으면 애초에 명령어 취급을 하지 않고 평범한 텍스트로 흘려보낸다.
     const playCmdMatch = body && body.match(/^\/play\s+(\S.*)$/i);
-    if (playCmdMatch) {
-      const tc = parsePlayCommandArg(playCmdMatch[1]);
-      if (!tc) { setCmdError("사용법: /play <분> 또는 /play <분>+<증가초> — 예: /play 3, /play 15+10"); return; }
+    const playTc = playCmdMatch ? parsePlayCommandArg(playCmdMatch[1]) : null;
+    if (playTc) {
       setCmdError("");
       setSending(true);
       try {
-        await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: tc.key });
+        await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: playTc.key });
         setText(""); load();
       } catch { setCmdError("대국을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
       setSending(false);
@@ -26911,9 +26985,9 @@ function AccountCenterModal({ onClose, myUid, username, onLogoutClick, onAccount
   const [deleteErr, setDeleteErr] = useState("");
   const load = useCallback(async () => { setIdentities(await getUserIdentities()); }, []);
   useEffect(() => { load(); }, [load]);
-  // (v0.4.3 기능, 사용자 요청) 계정마다 하나씩 부여되는 9자리 영문 대문자+숫자 회원 번호(MID) —
-  // profiles.mid는 가입 시(또는 이 컬럼이 새로 생긴 기존 계정은 최초 조회 시) 서버가 자동으로
-  // 채워 두므로, 여기서는 조회만 한다.
+  // (v0.4.3 기능, 사용자 요청) 계정마다 하나씩 부여되는 9자리 회원 번호(MID, v0.4.4부터 앞 영문
+  // 대문자 5자리 + 뒤 숫자 4자리로 형식 고정 — 예: ABCDE1234) — profiles.mid는 가입 시(또는 이
+  // 컬럼이 새로 생긴 기존 계정은 최초 조회 시) 서버가 자동으로 채워 두므로, 여기서는 조회만 한다.
   const [mid, setMid] = useState(null); // null=불러오는 중, ""=조회 실패
   const [midCopied, setMidCopied] = useState(false);
   useEffect(() => {
