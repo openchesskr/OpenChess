@@ -10428,6 +10428,84 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
     </motion.div>
   );
 }
+// (v0.4.4 기능, 사용자 요청) 대국이 끝나면(승/패/무) chess.com 종료 팝업을 참고해 결과를 정리해
+// 보여준다 — 다만 OpenChess에는 chess.com 같은 실시간 레이팅·랭킹 집계가 없으므로, 없는 숫자를
+// 지어내는 대신 실제로 갖고 있는 정보(결과·사유·상대·타임 컨트롤)만으로 같은 무게감의 화면을
+// 구성한다. 코치 마스코트 말풍선이 chess.com 쪽의 호스트 코멘터리 자리를 대신한다.
+function playResultCopy(result, activeColor) {
+  if (!result) return null;
+  if (result.end === "checkmate") {
+    const won = result.color !== activeColor;
+    return won
+      ? { kind: "win", title: "승리!", subtitle: "체크메이트", text: "상대의 왕을 완벽하게 몰아붙였어요 — 체크메이트예요!", mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: "패배", subtitle: "체크메이트", text: "이번엔 체크메이트를 당했어요. 리뷰에서 갈림길이 어디였는지 함께 찾아봐요.", mascot: "milku", emotion: "sad" };
+  }
+  if (result.end === "resign") return { kind: "loss", title: "패배", subtitle: "기권", text: "기권했어요 — 다음 판엔 끝까지 싸워봐요!", mascot: "milku", emotion: "sad" };
+  if (result.end === "flag") {
+    const won = result.color !== activeColor;
+    return won
+      ? { kind: "win", title: "승리!", subtitle: "시간 초과", text: "시간 승부에서 이겼어요 — 클럭 관리도 실력이에요.", mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: "패배", subtitle: "시간 초과", text: "시간이 다 됐어요. 다음엔 클럭도 함께 신경 써봐요.", mascot: "milku", emotion: "sad" };
+  }
+  if (result.end === "pvp") {
+    if (result.status === "draw") return { kind: "draw", title: "무승부", subtitle: "합의된 결과", text: "팽팽한 승부였어요 — 무승부예요.", mascot: "milku", emotion: "think" };
+    if (result.status === "aborted") return { kind: "draw", title: "대국 중단", subtitle: "", text: "이 대국은 중단됐어요.", mascot: "milku", emotion: "think" };
+    const won = (result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b");
+    return won
+      ? { kind: "win", title: "승리!", subtitle: "상대의 기권", text: "상대가 기권했어요 — 승리를 가져갔어요!", mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: "패배", subtitle: "상대의 승리", text: "아쉽게 졌어요. 리뷰에서 무엇이 승부를 갈랐는지 살펴봐요.", mascot: "milku", emotion: "sad" };
+  }
+  if (result.end === "stalemate") return { kind: "draw", title: "무승부", subtitle: "스테일메이트", text: "둘 자리가 없어요 — 스테일메이트로 무승부예요.", mascot: "milku", emotion: "think" };
+  return { kind: "draw", title: "무승부", subtitle: "3회 동형 반복", text: "같은 포지션이 세 번 반복됐어요 — 무승부예요.", mascot: "milku", emotion: "think" };
+}
+function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch }) {
+  const copy = playResultCopy(result, activeColor);
+  if (!copy) return null;
+  const kindColor = copy.kind === "win" ? T.best : copy.kind === "loss" ? T.blunder : T.brassHi;
+  const checker = "repeating-conic-gradient(" + T.boardDark + " 0% 25%, " + T.boardLight + " 0% 50%) 0 0/36px 36px";
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(10,6,3,.68)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <motion.div onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, y: 18, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.97 }}
+        transition={{ type: "spring", stiffness: 320, damping: 26 }}
+        style={{ width: "100%", maxWidth: 360, borderRadius: 16, overflow: "hidden", background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -14px rgba(0,0,0,.7)" }}>
+        <div style={{ position: "relative", background: checker, padding: "20px 16px 16px", textAlign: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(20,12,6,.15), rgba(20,12,6,.55))" }} />
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 2, width: 26, height: 26, borderRadius: 8, background: "rgba(20,12,6,.55)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button>
+          <div style={{ position: "relative", zIndex: 1 }}>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", letterSpacing: "-.01em", textShadow: "0 2px 6px rgba(0,0,0,.5)" }}>{copy.title}</div>
+            {copy.subtitle && <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.85)", marginTop: 2 }}>{copy.subtitle}</div>}
+          </div>
+        </div>
+        <div style={{ padding: "16px 18px 18px" }}>
+          <div className="flex items-center justify-center" style={{ gap: 14, marginBottom: 12 }}>
+            <div style={{ textAlign: "center", minWidth: 0 }}>
+              {mode === "pvp" && opponentPub && opponentPub.photo ? <img src={opponentPub.photo} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }} />
+                : mode === "pvp" ? <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}>{(oppName || "?")[0].toUpperCase()}</span>
+                : <span style={{ width: 46, height: 46, borderRadius: 12, background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}><Cpu size={20} /></span>}
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mode === "pvp" ? (oppName || "상대") : botTier.label}</div>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>VS</span>
+            <div style={{ textAlign: "center", minWidth: 0 }}>
+              {myPhoto ? <img src={myPhoto} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "win" ? T.best : "#C9B58C") }} />
+                : <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "win" ? T.best : "#C9B58C") }}>{(myName || "U")[0].toUpperCase()}</span>}
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName || "Unnamed"}</div>
+            </div>
+          </div>
+          {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? " · " + timeControl.cat : ""}</div>}
+          <div style={{ marginBottom: 16 }}>
+            <MascotBubble text={copy.text} mascot={copy.mascot} emotion={copy.emotion} stacked />
+          </div>
+          {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8 }}>대국 리뷰 보기</button>}
+          <div className="flex gap-2">
+            <button onClick={onRematch} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>재대결</button>
+            <button onClick={onClose} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>닫기</button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
@@ -10642,7 +10720,18 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     (async () => {
       try {
         const rows = await sbSelect("pvp_games?status=eq.active&or=(white_uid.eq." + myUid + ",black_uid.eq." + myUid + ")&order=updated_at.desc&limit=1");
-        if (!cancelled && rows && rows[0]) applyPvpGame(rows[0]);
+        const g = rows && rows[0];
+        if (!g || cancelled) return;
+        // (버그 수정, 사용자 제보) 마지막 갱신이 오래전(2분 이상 — pvp_queue_join의 좀비 대국 판정과
+        // 같은 기준)이면 상대도 나도 이미 떠난 죽은 대국이다. 그런데도 무조건 이어받다 보니, 클럭이
+        // 진작 0을 지나 곧장 "패배" 화면으로 떨어지고 — /play를 열 때마다(심지어 "대국 상대 찾기"를
+        // 누르기도 전에) 이 죽은 대국을 계속 다시 붙잡아, 정작 새 매칭 화면에는 영영 들어갈 수 없게
+        // 만드는 원인이었다("오래전에 보낸 매칭이 여전히 잡히는" 신고와 정확히 일치). 이럴 땐 이어받는
+        // 대신 서버에 중단으로 보고해(참가자 본인이 'aborted'를 보고하는 것은 항상 허용된다) 정리하고,
+        // 평소처럼 설정 화면부터 새로 시작한다.
+        const staleMs = Date.now() - new Date(g.updated_at).getTime();
+        if (staleMs > 2 * 60 * 1000) { sbRpc("pvp_finish", { p_game_id: g.id, p_status: "aborted" }).catch(() => { }); return; }
+        applyPvpGame(g);
       } catch { }
     })();
     return () => { cancelled = true; };
@@ -10662,6 +10751,20 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const result = resigned ? { end: "resign", color: activeColor } : (endState.end ? endState : (flagResult || pvpResult));
   const userToMove = step === "playing" && !result && toMoveColor === activeColor;
   leaveCleanupRef.current = { mode, step, pvpGame, result, activeColor };
+  // (v0.4.4 기능, 사용자 요청) 대국이 끝나면 chess.com처럼 팝업으로 결과를 보여준다 — result가
+  // null에서 값이 생기는 그 순간에만 자동으로 연다(다시 설정하거나 재대결하면 result 자체가
+  // null로 돌아가므로 자연히 닫힌 채로 남는다). result는 매 렌더 새로 계산되는 객체라(클럭이
+  // 1초마다 리렌더시켜도 항상 새 참조) 객체 자체가 아니라 내용을 요약한 문자열 키로 "이미 이
+  // 결과를 열어 봤는지"를 비교해야, 사용자가 닫은 뒤 클럭 틱 같은 무관한 리렌더로 다시 열리지 않는다.
+  const resultKey = result ? result.end + ":" + (result.color || "") + ":" + (result.status || "") : null;
+  const [resultModalOpen, setResultModalOpen] = useState(false);
+  const shownResultKeyRef = useRef(null);
+  useEffect(() => {
+    if (!resultKey) { shownResultKeyRef.current = null; setResultModalOpen(false); return; }
+    if (shownResultKeyRef.current === resultKey) return;
+    shownResultKeyRef.current = resultKey;
+    setResultModalOpen(true);
+  }, [resultKey]);
 
   // (신규 기능) 체크메이트·스테일메이트·3회 동형 반복으로 대국이 끝나면, pvp 모드에서는 서버에도
   // 한 번만 결과를 보고해 상대 화면에도 즉시 반영되게 한다(둘 중 누구든 먼저 감지한 쪽이 보고 —
@@ -11046,6 +11149,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 </div>
               </div>
             )}
+            <AnimatePresence>
+              {resultModalOpen && result && (
+                <PlayResultModal result={result} activeColor={activeColor} mode={mode} botTier={botTier} opponentPub={opponentPub}
+                  myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null}
+                  onClose={() => setResultModalOpen(false)}
+                  onReview={onOpenReview ? () => { onOpenReview({ sans, fenRoot }); setResultModalOpen(false); } : null}
+                  onRematch={() => { rematch(); setResultModalOpen(false); }} />
+              )}
+            </AnimatePresence>
             {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
             <div className="flex items-center justify-center gap-3" style={{ marginTop: 14 }}>
               <div style={{ position: "relative" }}>
@@ -18151,11 +18263,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               — 세부 갈래까지 포함한 전체 이름은 바로 아래 이름 줄에서 이미 다 보인다. 옛 퍼즐 등
               setupSans가 없어 계산이 안 되는 경우에만 저장된 p.opening으로 대체한다.
               한 줄로 고정하고 넘치면 말줄임(...)만 쓴다(행 높이가 들쭉날쭉해지는 걸 막기 위함). */}
-          <div className="flex items-center" style={{ gap: 5, minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(p.setupSans && firstNamedOpening(p.setupSans)) || p.opening}</div>
-            {/* (사용자 요청) PGN 정보 보유 배지를 오프닝 배지 바로 옆에 붙인다. */}
-            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
-          </div>
+          <div style={{ fontSize: 9.5, color: isSolved ? T.best : T.brass, fontWeight: 800, minWidth: 0, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(p.setupSans && firstNamedOpening(p.setupSans)) || p.opening}</div>
           <LineStars total={3} solved={stars} />
         </div>
         {/* (버그 수정) 오프닝 이름이 길면 한 줄 말줄임(...)으로 잘려 끝까지 안 보였다 — 그렇다고
@@ -18203,9 +18311,11 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         {/* (v0.4.3 버그 수정, 사용자 제보) PGN/국면/FEN/레이팅 배지 개수가 카드마다 달라 이 줄이 1줄
             또는 2줄로 들쭉날쭉하게 감싸졌다(rowGap으로 줄바꿈) — minHeight로 "배지가 2줄까지 감싸도
             안전한" 높이를 항상 예약해 배지 수와 무관하게 카드 높이가 고정되게 한다. */}
-        {/* (신규) 국면(오프닝/미들게임/엔드게임)·FEN 배지 — 오프닝·PGN과 같은 무리로 묶이도록 그
-            바로 아래 줄에 이어 붙인다. */}
+        {/* (버그 수정, 사용자 제보) PGN 배지를 오프닝 이름 옆(제목 위, 별점과 한 줄)에 붙였더니 긴
+            오프닝 이름의 말줄임(...) 바로 옆에 떠 위치가 어색해 보였다 — PGN은 국면·FEN과 같은
+            "이 퍼즐의 시작 위치 정보" 배지이므로, 다시 그 둘과 한 무리로 묶어 이 줄에 표시한다. */}
         <div className="flex items-center" style={{ marginTop: 4, gap: 5, rowGap: 4, flexWrap: "wrap", flexShrink: 0 }}>
+            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
             <GamePhaseBadge p={p} compact />
             {p.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
         </div>
@@ -21390,6 +21500,9 @@ const CHANGELOG = [
       "프로필 페이지가 더 생동감 있게 바뀌었어요 — 지금 접속 중인 사람은 사진 테두리에 은은한 파동이 계속 퍼지고, OpenChess/chess.com 통계 전환이 부드럽게 겹쳐 바뀌어요.",
       "/play 매칭 대기 화면(랜덤 상대 찾는 중·친구 응답 기다리는 중)이 설정 카드 안의 작은 표시 대신, 화면 전체를 채우는 전용 화면으로 바뀌었어요 — 궤도를 도는 빛과 유영하는 나이트(또는 상대 사진)가 계속 움직여요.",
       "/play에서 친구 목록이 이제 버튼을 눌러야 펼쳐지는 드롭다운이 아니라, 로그인만 하면 항상 그 자리에 떠 있어요.",
+      "퍼즐 카드에서 PGN 표시가 오프닝 이름 옆 어색한 자리에 있던 것을, 국면·FEN 배지와 한 무리로 다시 묶었어요.",
+      "예전에 하다 만 실시간 대국이 계속 남아 있어서, /play에 들어갈 때마다(심지어 '대국 상대 찾기'를 누르기도 전에) 그 대국으로 끌려가 매칭 화면에 아예 들어갈 수 없던 문제를 고쳤어요.",
+      "대국이 끝나면 결과를 팝업으로 보여줘요 — 승/패/무 결과와 사유, 상대 정보, 코치의 한마디, 대국 리뷰·재대결 버튼을 한 화면에서 확인할 수 있어요.",
     ],
   },
   {
