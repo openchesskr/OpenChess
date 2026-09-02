@@ -16785,12 +16785,28 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   // (v0.3.4 기능) 사용자 요청 — 이 퍼즐의 생성자를 조회해 풀이 카드에 표시하고, 생성자 본인에게는
   // 개발자와 같은 편집 권한(1시간 주기)을 준다. 퍼즐을 열 때마다 서버에서 새로 가져온다 — 개발자가
   // 방금 재지정했을 수도 있고, 1시간 주기가 지났는지도 매번 최신값으로 판단해야 하기 때문이다.
+  // (버그 수정, 사용자 제보) 방금 만든 퍼즐은 submitPuzzleCreate가 onSavePuzzle(저장) 직후 곧바로
+  // setActive로 이 화면을 연다 — 그런데 실제 생성자 기록은 onSavePuzzle 안에서 fire-and-forget으로
+  // 실행되는 puzzleShare(퍼즐 행 upsert → puzzle_claim_creator RPC, 순차 네트워크 요청 2번)가 서버에
+  // 반영해야 비로소 조회된다. 이 화면이 마운트되며 딱 한 번만 조회하던 예전 코드는 그 두 요청이
+  // 끝나기 전에 항상 먼저 도착해 매번 "생성자 없음"(null)으로 확정돼 버렸고, 재시도가 없어 실제로
+  // 서버에 생성자가 기록된 뒤에도 화면에는 영원히 반영되지 않았다(그 퍼즐을 나갔다가 다시 들어와야만
+  // 보였다) — 방금 만든 퍼즐일수록 100% 재현됐다. 못 찾으면 짧은 간격으로 몇 번 더 재시도한다.
   const [creatorInfo, setCreatorInfo] = useState(null); // { uid, username, editedAt } | null
   const puzzleNoForTag = puzzleNo(puzzle.id);
   useEffect(() => {
     let cancelled = false;
+    let tries = 0;
     setCreatorInfo(null);
-    puzzleCreatorInfo(puzzleNoForTag).then((info) => { if (!cancelled) setCreatorInfo(info); });
+    const attempt = () => {
+      puzzleCreatorInfo(puzzleNoForTag).then((info) => {
+        if (cancelled) return;
+        if (info) { setCreatorInfo(info); return; }
+        tries++;
+        if (tries < 5) setTimeout(attempt, 1000 * tries);
+      });
+    };
+    attempt();
     return () => { cancelled = true; };
   }, [puzzleNoForTag]);
   const isMyPuzzle = !!(myUid && creatorInfo && creatorInfo.uid === myUid);
