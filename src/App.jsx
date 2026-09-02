@@ -21332,6 +21332,11 @@ const CHANGELOG = [
       "실시간 대국에서 수를 뒀는데 서버에 반영되지 않고 화면만 어긋나던 문제를 고쳤어요.",
       "계정 센터의 MID(회원 번호) 형식이 앞 영문 5자리 + 뒤 숫자 4자리로 고정됐어요(예: ABCDE1234).",
       "퍼즐 카드에서 오프닝·PGN·국면·FEN 배지가 한 무리로 붙어 보이고, 6자리 번호는 왼쪽에 레이팅은 같은 줄 오른쪽에 표시돼요. 공유 버튼은 카드 우하단으로 옮겨졌어요.",
+      "방금 만든 퍼즐을 열었을 때 생성자 표시가 비어 보이던 문제를 고쳤어요.",
+      "유저 검색창에서 '#MID'(예: #ABCDE1234)로도 유저를 찾을 수 있어요.",
+      "계정 센터에 나만의 친구 초대 링크가 생겼어요 — 복사해서 보내면, 상대가 그 링크를 열었을 때(로그인 상태라면) 자동으로 친구 요청이 가요.",
+      "다른 유저의 프로필이 이제 고유한 주소(openchess.kr/user/회원번호)를 갖는 페이지로 열려요 — 검색·채팅·/play 친구 목록 어디서 열어도 같은 페이지고, 초대 링크를 누르면 곧장 이 페이지로 들어가요.",
+      "데스크톱처럼 화면이 넓으면 프로필 페이지가 신원·통계를 두 칼럼으로 나란히 보여줘 한 화면에 더 많이 들어와요.",
     ],
   },
   {
@@ -23309,8 +23314,13 @@ async function authSetPassword(recovery, password) {
 async function progressSave(uid, progress) { if (!SB_ON || !uid) return; try { await sbUpsert("user_progress", { id: uid, progress }); } catch { } }
 // (기능2) 공개 프로필: 별도 테이블 profiles_public 에 클라이언트가 업서트/조회(계정 스키마와 독립). 미설정 시 무해하게 비활성.
 async function publishProfile(uid, username, pub) { if (!SB_ON || !uid) return; try { await sbUpsert("profiles", { id: uid, username: (username || "").toLowerCase(), pub }); } catch { } }
-async function userSearch(q) { if (!SB_ON || !q) return []; try { const rows = await sbSelect("profiles?username=ilike." + encodeURIComponent(q.toLowerCase() + "*") + "&select=id,username,pub&limit=20"); return rows || []; } catch { return []; } }
-async function userProfile(username) { if (!SB_ON || !username) return null; try { const rows = await sbSelect("profiles?username=eq." + encodeURIComponent(username.toLowerCase()) + "&select=id,username,pub&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }
+// (v0.4.4 기능, 사용자 요청) MID(영문 대문자 5자리+숫자 4자리 회원 번호) 형식 — 검색창·URL 양쪽에서
+// "#ABCDE1234"·"ABCDE1234" 모두 인식하도록 앞의 "#"은 선택으로 둔다.
+const MID_RE = /^#?([A-Za-z]{5}[0-9]{4})$/;
+async function userSearch(q) { if (!SB_ON || !q) return []; const midMatch = MID_RE.exec(q.trim()); if (midMatch) { const row = await userProfileByMid(midMatch[1]); return row ? [row] : []; } try { const rows = await sbSelect("profiles?username=ilike." + encodeURIComponent(q.toLowerCase() + "*") + "&select=id,username,pub&limit=20"); return rows || []; } catch { return []; } }
+async function userProfile(username) { if (!SB_ON || !username) return null; try { const rows = await sbSelect("profiles?username=eq." + encodeURIComponent(username.toLowerCase()) + "&select=id,username,pub,mid&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }
+// (v0.4.4 기능, 사용자 요청) MID로 프로필 조회 — #MID 검색과 /user/<MID> 프로필 페이지가 함께 쓴다.
+async function userProfileByMid(mid) { if (!SB_ON || !mid) return null; try { const rows = await sbSelect("profiles?mid=eq." + encodeURIComponent(mid.toUpperCase()) + "&select=id,username,pub,mid&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }
 // (기능) 유저 검색 기본 추천 — 아직 아무것도 입력하지 않았을 때 "친구의 친구"(friend_suggestions)와
 // "티어 리더보드"(leaderboard_top)를 보여준다. 둘 다 서버 RPC로 계산한다: 친구의 친구는 다른 사람의
 // friend_edges를 직접 읽어야 하는데 RLS가 본인이 관련된 행만 읽도록 막아 두어(supabase-setup.sql
@@ -23321,6 +23331,8 @@ async function friendSuggestions(limit) { if (!SB_ON) return []; try { const r =
 async function leaderboardTop(limit) { if (!SB_ON) return []; try { const r = await sbRpc("leaderboard_top", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 /* ---- 친구 시스템 (요청 → 수락). Auth 미사용·anon 접근이라 기존 profiles_public/puzzle_solve와 동일 보안 수준 ---- */
 async function friendRequest(toUsername) { if (!SB_ON || !toUsername) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request", { p_to_username: toUsername.toLowerCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
+// (v0.4.4 기능, 사용자 요청) MID 초대 링크(openchess.kr/user/<MID>?invite=friend)로 들어오면 자동으로 부른다.
+async function friendRequestByMid(mid) { if (!SB_ON || !mid) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request_by_mid", { p_mid: mid.toUpperCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
 async function friendAccept(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_accept", { p_other_uid: otherUid }); return true; } catch { return false; } }
 async function friendRemove(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_remove", { p_other_uid: otherUid }); return true; } catch { return false; } }
 /* (17차) 알림 — 친구 요청 수신/수락, 칭호 획득, 티어 승급 */
@@ -23729,38 +23741,126 @@ function renderMentionText(body) {
 }
 // (v0.2.6 기능) 채팅에서 상대 프로필 사진·멘션을 클릭했을 때 뜨는 간단한 프로필 보기 모달 —
 // UserSearchModal의 프로필 상세 화면과 같은 구성(PublicProfileStats 재사용)을 아이디 하나만으로 연다.
-function ChatUserProfileModal({ username, onClose, myUid }) {
+// (v0.4.4 기능, 사용자 요청) 다른 유저의 프로필 — 예전엔 검색·채팅·/play 친구 목록마다 각자
+// 오버레이 모달을 띄웠지만, 이제 openchess.kr/user/<MID> 고유 URL을 갖는 하나의 실제 페이지로
+// 통합했다. MID 초대 링크(계정 센터에서 복사)로 들어오면 자동으로 친구 요청까지 보낸다(autoInvite).
+// 데스크톱처럼 폭이 넉넉하면 신원/친구 요청을 왼쪽 고정 열에, 통계·활동을 오른쪽 넓은 열에 나란히
+// 배치해 한 화면에 더 많이 보이도록 한다 — 좁은 화면(모바일)에서는 세로로 쌓인다.
+function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves }) {
   const [pub, setPub] = useState(null);
   const [pubUid, setPubUid] = useState(null);
-  // (사용자 요청) 모바일에서는 이 프로필 창을 카드가 아니라 전체 화면으로 띄운다.
-  const narrow = useNarrow(640);
+  const [pubUsername, setPubUsername] = useState(null);
+  const [notFound, setNotFound] = useState(false);
+  const [statsView, setStatsView] = useState("oc");
+  const [ccHeaderProf, setCcHeaderProf] = useState(null);
+  const [reqState, setReqState] = useState(null); // null | "pending" | "accepted" | "exists"
+  const [reqBusy, setReqBusy] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState("");
+  const wide = !useNarrow(880);
+  const selPresence = usePresenceMap(pubUid ? [pubUid] : []);
+
   useEffect(() => {
-    let cc = false;
-    userProfile(username).then((r) => { if (!cc) { setPub(r ? { ...(r.pub || {}), username: r.username || username } : { username }); setPubUid(r ? r.id : null); } });
-    return () => { cc = true; };
-  }, [username]);
+    let cancelled = false;
+    setPub(null); setPubUid(null); setPubUsername(null); setNotFound(false);
+    setStatsView("oc"); setCcHeaderProf(null); setReqState(null); setInviteMsg("");
+    userProfileByMid(mid).then((r) => {
+      if (cancelled) return;
+      if (!r) { setNotFound(true); return; }
+      setPub(r.pub || {}); setPubUid(r.id); setPubUsername(r.username || "");
+    });
+    return () => { cancelled = true; };
+  }, [mid]);
+  useEffect(() => {
+    let cancelled = false;
+    const ccUsername = pub && pub.chesscom;
+    if (!ccUsername) { setCcHeaderProf(null); return; }
+    fetchChesscomProfile(ccUsername).then((p) => { if (!cancelled) setCcHeaderProf(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [pub && pub.chesscom]);
+  // (기능) 초대 링크(?invite=friend)로 들어왔고, 로그인한 상태에서 상대 uid가 확인되면 한 번만
+  // 자동으로 친구 요청을 보낸다 — 새로고침·재방문 시 매번 다시 보내지 않도록 mid가 바뀔 때만 다시 시도한다.
+  const autoInviteTriedRef = useRef(null);
+  useEffect(() => {
+    if (!autoInvite || !me || !myUid || !pubUid || autoInviteTriedRef.current === mid) return;
+    if (pubUid === myUid) return;
+    autoInviteTriedRef.current = mid;
+    (async () => {
+      const r = await friendRequestByMid(mid);
+      if (r && r.ok) {
+        const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
+        setReqState(status);
+        setInviteMsg(status === "accepted" ? "친구가 되었어요!" : status === "exists" ? "이미 친구이거나 요청을 보냈어요." : "자동으로 친구 요청을 보냈어요.");
+        if (status === "pending") notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid });
+      }
+    })();
+  }, [autoInvite, me, myUid, pubUid, mid]);
+  const doReq = async () => {
+    if (!me || reqBusy || !pubUid) return;
+    setReqBusy(true);
+    const r = await friendRequestByMid(mid);
+    setReqBusy(false);
+    if (r && r.ok) {
+      const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
+      setReqState(status);
+      if (status === "pending") notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid });
+    }
+  };
+  const isSelf = !!(myUid && pubUid && myUid === pubUid);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5 }}>
+        <div className="flex items-center gap-2">
+          <button onClick={onClose} aria-label="뒤로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>프로필</span>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        <div style={{ padding: 18, overflowY: "auto" }}>
-          {!pub ? <p style={{ fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</p> : (
-            <>
-              <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-                {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
-                  : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
-                <div style={{ minWidth: 0 }}>
-                  <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</span>
-                  <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: SITE_FONT }}>@{(pub.displayId || pub.username)}</div>
-                </div>
+        {!wide && <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>}
+      </div>
+      <div style={{ maxWidth: wide ? 920 : 480, margin: "0 auto", padding: wide ? "26px 24px 60px" : "18px 16px 60px" }}>
+        {notFound ? (
+          <p style={{ fontSize: 13, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>이 MID의 유저를 찾을 수 없어요.</p>
+        ) : !pub ? (
+          <p style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>불러오는 중…</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: wide ? "row" : "column", gap: wide ? 28 : 0, alignItems: "flex-start" }}>
+            {/* 왼쪽(데스크톱) / 상단(모바일) — 신원·MID·친구 요청 */}
+            <div style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(pub.displayId || pubUsername)}{roleIcon(pubUsername)}</span>
+                {statsViewToggle(statsView, setStatsView)}
               </div>
-              <PublicProfileStats pub={pub} hideChesscom={false} ownerUid={pubUid} viewerUid={myUid} />
-            </>
-          )}
-        </div>
+              {statsView === "cc" && pub.chesscom ? (
+                <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={pub.chesscom} />
+              ) : (
+                <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
+                  <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+                    {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
+                      : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pubUsername || "?")[0].toUpperCase()}</span>}
+                    <OnlineDot lastSeenMs={selPresence[pubUid]} overlay size={13} />
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pubUsername}</div>
+                    {pub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5 }}>{pub.bio}</div>}
+                    {presenceLabel(selPresence[pubUid]) && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>OpenChess {presenceLabel(selPresence[pubUid])}</div>}
+                  </div>
+                </div>
+              )}
+              <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginBottom: 14 }}>MID {mid}</div>
+              {inviteMsg && <div style={{ fontSize: 11.5, fontWeight: 700, color: T.best, marginBottom: 10, padding: "7px 10px", borderRadius: 8, background: "rgba(120,200,120,.15)", border: "1px solid rgba(120,200,120,.4)" }}>{inviteMsg}</div>}
+              {!isSelf && (
+                me ? (
+                  reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
+                    : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><Clock size={14} />친구 요청을 보냈습니다</span>
+                      : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><UserCheck size={14} />이미 친구이거나 요청 중입니다</span>
+                        : <button onClick={doReq} disabled={reqBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5 }}><UserPlus size={14} />친구 요청</button>
+                ) : <p style={{ fontSize: 11.5, color: T.inkSoft }}>로그인하면 친구 요청을 보낼 수 있어요.</p>
+              )}
+            </div>
+            {/* 오른쪽(데스크톱) / 하단(모바일) — 통계·활동 */}
+            <div style={{ flex: 1, minWidth: 0, width: "100%" }}>
+              <ProfileStatsPanel pub={pub} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pubUid} viewerUid={myUid} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -23817,7 +23917,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
     </div>
   );
 }
-function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, fillNarrow, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, onOpenUserProfile, fillNarrow, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   // (UI) 사용자 요청 — 채팅에 공유된 퍼즐 블록도 퍼즐 탭(PuzzleCard)과 완전히 같은 UI를 쓴다.
   // puzzlePreviews에 담긴 pz는 puzzles.data(전체 퍼즐 레코드, id 포함)라 PuzzleCard가 그대로 쓸 수
   // 있고, 좋아요·리포스트·공유·풀이수는 전역 상태(위 props)에서 puzzle_no로 바로 조회한다.
@@ -23858,8 +23958,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const [menuDy, setMenuDy] = useState(0);
   // (v0.1.4 기능) 퍼즐 카드의 "전달" 버튼으로 다른 친구에게 다시 공유할 때 띄우는 시트의 대상 퍼즐.
   const [forwardTarget, setForwardTarget] = useState(null);
-  // (v0.2.6 기능) 프로필 사진·멘션을 눌렀을 때 보여줄 프로필 모달 대상 아이디.
-  const [viewProfile, setViewProfile] = useState(null);
+  // (v0.2.6 기능 → v0.4.4 개편) 프로필 사진·멘션을 누르면 이제 로컬 모달 대신, App 루트가 넘겨준
+  // onOpenUserProfile(username)로 openchess.kr/user/<MID> 프로필 페이지를 연다.
+  const setViewProfile = (username) => onOpenUserProfile && onOpenUserProfile(username);
   // (v0.1.0) 퍼즐 공유 카드 미리보기 — puzzle_no가 설정된 메시지가 보이면 그 번호의 퍼즐 데이터를
   // 지연 조회해 캐싱한다(no -> 퍼즐 데이터 | null(찾을 수 없음), 아직 없으면 로딩 중으로 취급).
   const [puzzlePreviews, setPuzzlePreviews] = useState({});
@@ -24522,7 +24623,6 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
         </div>
       </div>
       {forwardTarget && <PuzzleShareSheet puzzle={forwardTarget} myUid={myUid} onClose={() => setForwardTarget(null)} onShared={() => setForwardTarget(null)} />}
-      {viewProfile && <ChatUserProfileModal username={viewProfile} onClose={() => setViewProfile(null)} myUid={myUid} />}
       <AnimatePresence>
         {viewLegacy && <LegacyRevealScreen typeInfo={viewLegacy.typeInfo} entry={viewLegacy.entry} onClose={() => setViewLegacy(null)} />}
       </AnimatePresence>
@@ -25718,17 +25818,8 @@ function userSearchRow(r, onClick, right, opts) {
     </button>
   );
 }
-function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves }) {
-  const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [sel, setSel] = useState(null); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
-  const [reqState, setReqState] = useState(null); const [reqBusy, setReqBusy] = useState(false);
-  // (사용자 요청, v0.3.9) 통계 분리 토글 — 카드 우상단(아이디 라벨과 같은 줄)에 두므로 이 모달이
-  // statsView를 들고 있다가 헤더 줄에서 그리고, 아래 내용 패널(ProfileStatsPanel)에는 값만 넘긴다.
-  // 새 프로필을 열 때마다(open) "oc"로 되돌린다.
-  const [statsView, setStatsView] = useState("oc");
-  // (신규 기능) MyProfileCard와 동일하게, chess.com 통계 보기를 고르면 카드 상단 신원 표시도
-  // chess.com 것으로 바꿔 보여준다.
-  const [ccHeaderProf, setCcHeaderProf] = useState(null);
-  const selPresence = usePresenceMap(sel ? [sel.uid] : []);
+function UserSearchModal({ onClose, me, myUid, onOpenUserProfile }) {
+  const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
   // (버그 수정) 검색 버튼을 눌러야만 검색되던 것 — 입력할 때마다(살짝 debounce해) 자동으로
   // 실시간 검색되도록 한다. 검색 버튼은 그대로 두어 즉시 재검색하고 싶을 때도 쓸 수 있게 한다.
@@ -25757,24 +25848,10 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
     })();
     return () => { cancelled = true; };
   }, [me, myUid]);
-  const open = async (username) => { setReqState(null); setStatsView("oc"); setCcHeaderProf(null); const r = await userProfile(username); const p = (r && r.pub) || {}; setSel({ ...p, username: (r && r.username) || username, uid: r && r.id }); };
-  useEffect(() => {
-    let cancelled = false;
-    const ccUsername = sel && sel.chesscom;
-    if (!ccUsername) { setCcHeaderProf(null); return; }
-    fetchChesscomProfile(ccUsername).then((p) => { if (!cancelled) setCcHeaderProf(p); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [sel && sel.chesscom]);
-  const doReq = async () => {
-    const pub = sel || {}; if (!me || !pub.username) return; setReqBusy(true);
-    const r = await friendRequest(pub.username); setReqBusy(false);
-    if (r && r.ok) {
-      setReqState(r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending"));
-      // (17차) 상대에게 친구 요청 알림
-      if (r.status === "pending" && pub.uid) notifyCreate(pub.uid, "friend_request", { fromUsername: me, fromUid: myUid });
-    }
-  };
-  const pub = sel || {};
+  // (v0.4.4 개편, 사용자 요청) 검색 결과를 누르면 이 모달 안에 자체 프로필 서브뷰를 그리는 대신,
+  // openchess.kr/user/<MID> 고유 페이지(UserProfilePage)로 이동한다 — App 루트의
+  // openUserProfileByUsername이 mid를 조회해 그 경로로 넘어간다.
+  const open = (username) => onOpenUserProfile && onOpenUserProfile(username);
   // (사용자 요청) 모바일에서는 이 검색 창을 카드가 아니라 전체 화면으로 띄운다.
   const narrow = useNarrow(640);
   return (
@@ -25783,84 +25860,44 @@ function UserSearchModal({ onClose, me, myUid, onOpenOpening, onOpenGame, onOpen
           밖으로 그냥 넘쳐 하단 내용을 볼 수 없었고, 스크롤하면 카드 뒤의 탭 본문이 대신 스크롤됐다 —
           카드 자체에 최대 높이와 세로 스크롤을 줘서 모달 안에서 스크롤이 끝나도록 한다. */}
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        {/* (19차 UX3) 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리한다. */}
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
-          <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-            {sel && <button onClick={() => setSel(null)} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>}
-            <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? "프로필" : "유저 검색"}</span>
-          </div>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>유저 검색</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
         </div>
-        {sel ? (
-          <div style={{ padding: 18, overflowY: "auto" }}>
-            {/* (사용자 요청, v0.3.9) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
-                이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. 통계 분리 토글도 MyProfileCard와 같이
-                이 줄 우상단 여백에 둔다. */}
-            <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(pub.displayId || pub.username)}{roleIcon(pub.username)}</span>
-              {statsViewToggle(statsView, setStatsView)}
-            </div>
-            {statsView === "cc" && pub.chesscom ? (
-              <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={pub.chesscom} />
-            ) : (
-              <div className="flex items-center gap-3" style={{ marginBottom: 14 }}>
-                <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
-                  {pub.photo ? <img src={pub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(pub.xp || 0).tier.key === "grandmaster") || {}) }} />
-                    : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(pub.nickname || pub.username || "?")[0].toUpperCase()}</span>}
-                  <OnlineDot lastSeenMs={selPresence[pub.uid]} overlay size={13} />
-                </span>
-                <div style={{ minWidth: 0 }}>
-                  {/* (18차 UI11) 칭호는 텍스트 대신 칭호 이미지로 표시 — 이름 위에 표시 */}
-                  <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pub.username}</div>
-                  {pub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.bio}</div>}
-                  {presenceLabel(selPresence[pub.uid]) && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>OpenChess {presenceLabel(selPresence[pub.uid])}</div>}
-                </div>
-              </div>
-            )}
-            <ProfileStatsPanel pub={pub} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pub.uid} viewerUid={myUid} />
-            {me && pub.username && pub.username.toLowerCase() !== me.toLowerCase() && (
-              <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
-                {reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} />친구가 되었습니다</span>
-                  : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><Clock size={14} />친구 요청을 보냈습니다</span>
-                    : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><UserCheck size={14} />이미 친구이거나 요청 중입니다</span>
-                      : <button onClick={doReq} disabled={reqBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5 }}><UserPlus size={14} />친구 요청</button>}
-              </div>
-            )}
+        <div style={{ padding: 16, overflowY: "auto" }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+            {/* (v0.4.4 기능, 사용자 요청) "#ABCDE1234"처럼 MID로도 검색할 수 있다 — userSearch가 이
+                입력 형태를 인식해 mid로 곧장 조회한다. */}
+            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="아이디 또는 #MID로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
+            <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
           </div>
-        ) : (
-          <div style={{ padding: 16, overflowY: "auto" }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-              <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="아이디로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
-              <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
-            </div>
-            {q.trim() ? (
-              busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
-                : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
-                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username))}</FadeIn>)}</AnimatePresence></div>
-            ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-              : (sugFriends.length === 0 && sugTop.length === 0) ? null
-                : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                    {sugFriends.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>알 수도 있는 사람</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {sugFriends.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
-                            <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>)}</FadeIn>)}
-                        </div>
+          {q.trim() ? (
+            busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
+              : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
+                : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username))}</FadeIn>)}</AnimatePresence></div>
+          ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+            : (sugFriends.length === 0 && sugTop.length === 0) ? null
+              : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                  {sugFriends.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>알 수도 있는 사람</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {sugFriends.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
+                          <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>)}</FadeIn>)}
                       </div>
-                    )}
-                    {sugTop.length > 0 && (
-                      <div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                          {sugTop.map((r, i) => <FadeIn key={r.id} index={i} style={{ width: "100%" }}>{userSearchRow(r, () => open(r.username),
-                            <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={32} gauge={false} /></span>,
-                            { rank: i + 1, isMe: r.id === myUid, compact: true })}</FadeIn>)}
-                        </div>
+                    </div>
+                  )}
+                  {sugTop.length > 0 && (
+                    <div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        {sugTop.map((r, i) => <FadeIn key={r.id} index={i} style={{ width: "100%" }}>{userSearchRow(r, () => open(r.username),
+                          <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={32} gauge={false} /></span>,
+                          { rank: i + 1, isMe: r.id === myUid, compact: true })}</FadeIn>)}
                       </div>
-                    )}
-                  </div>}
-          </div>
-        )}
+                    </div>
+                  )}
+                </div>}
+        </div>
       </div>
     </div>
   );
@@ -25887,7 +25924,7 @@ function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [rows, setRows] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [chatWith, setChatWith] = useState(null);
@@ -25993,7 +26030,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
         )}
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={onAcceptPvpInvite} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
+            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : (
@@ -26459,7 +26496,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, onOpenPuzzle, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, onOpenPuzzle, onOpenUserProfile, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -26572,7 +26609,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={onAcceptPvpInvite} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
+            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : sel ? (() => {
@@ -27016,6 +27053,11 @@ function AccountCenterModal({ onClose, myUid, username, onLogoutClick, onAccount
     return () => { cancelled = true; };
   }, [myUid]);
   const copyMid = async () => { if (!mid) return; try { await navigator.clipboard.writeText(mid); setMidCopied(true); setTimeout(() => setMidCopied(false), 1500); } catch { } };
+  // (v0.4.4 기능, 사용자 요청) MID 기반 친구 초대 링크 — 이 링크를 열면 /user/<MID> 프로필 페이지로
+  // 들어가고, 로그인한 상태로 열면 자동으로 나에게 친구 요청이 간다(UserProfilePage의 autoInvite).
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const inviteLink = mid ? window.location.origin + "/user/" + mid + "?invite=friend" : "";
+  const copyInviteLink = async () => { if (!inviteLink) return; try { await navigator.clipboard.writeText(inviteLink); setInviteCopied(true); setTimeout(() => setInviteCopied(false), 1500); } catch { } };
   const hasEmail = (identities || []).some((i) => i.provider === "email");
   const linkCount = (identities || []).length;
   const doLink = async (provider) => {
@@ -27061,6 +27103,19 @@ function AccountCenterModal({ onClose, myUid, username, onLogoutClick, onAccount
           {!!mid && (
             <button onClick={copyMid} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
               <Copy size={12} />{midCopied ? "복사됨" : "복사"}
+            </button>
+          )}
+        </div>
+        {/* (v0.4.4 기능, 사용자 요청) MID 초대 링크 — 눌러서 링크를 복사해 보내면, 받는 사람이 그
+            링크를 열었을 때(로그인 상태라면) 자동으로 나에게 친구 요청을 보낸다. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 12px", marginBottom: 14, borderRadius: 10, background: "rgba(196,154,80,.12)", border: "1px solid rgba(196,154,80,.35)" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 2 }}>친구 초대 링크</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inviteLink || "—"}</div>
+          </div>
+          {!!inviteLink && (
+            <button onClick={copyInviteLink} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+              <Share2 size={12} />{inviteCopied ? "복사됨" : "복사"}
             </button>
           )}
         </div>
@@ -27354,11 +27409,32 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false); // (18차 UX7) 채팅 모아보기
-  // (v0.4.3 기능, 사용자 요청) /play의 "친구와 플레이하기" 목록에서 친구 프로필을 누르면 여기(App
-  // 루트)의 ChatUserProfileModal을 연다 — /play 자체는 경로(pathname)를 그대로 유지한 채 screens
-  // 배열에 "play-profile"만 얹어(위 pushScreen/popScreen, 아래 popstate 핸들러와 같은 패턴), 뒤로가기를
-  // 누르면 프로필 창만 닫히고 /play 화면은 그대로 남는다.
-  const [playProfileUsername, setPlayProfileUsername] = useState(null);
+  // (v0.4.4 기능, 사용자 요청) 다른 유저 프로필 — 검색·채팅·/play 친구 목록 등 어디서 열든 이제
+  // openchess.kr/user/<MID> 고유 URL을 갖는 실제 페이지(UserProfilePage)로 연결된다. openUserProfile은
+  // mid를 이미 알 때(예: 초대 링크 딥링크), openUserProfileByUsername은 username만 있을 때(기존
+  // 대부분의 진입점) 쓴다 — 먼저 그 유저의 mid를 조회한 뒤 같은 경로를 탄다.
+  const [viewedProfileMid, setViewedProfileMid] = useState(null);
+  const [viewedProfileAutoInvite, setViewedProfileAutoInvite] = useState(false);
+  const openUserProfile = useCallback((mid, opts) => {
+    if (!mid) return;
+    const upperMid = mid.toUpperCase();
+    setSearchOpen(false); setFriendsOpen(false);
+    setViewedProfileMid(upperMid);
+    setViewedProfileAutoInvite(!!(opts && opts.invite));
+    try {
+      const path = "/user/" + upperMid;
+      if (window.location.pathname !== path) window.history.pushState({ userProfile: true }, "", path);
+    } catch { }
+  }, []);
+  const openUserProfileByUsername = useCallback(async (username) => {
+    if (!username) return;
+    const r = await userProfile(username);
+    if (r && r.mid) openUserProfile(r.mid);
+  }, [openUserProfile]);
+  const closeUserProfile = useCallback(() => {
+    setViewedProfileMid(null); setViewedProfileAutoInvite(false);
+    try { if (window.location.pathname.startsWith("/user/")) window.history.back(); } catch { }
+  }, []);
   const [tierMapOpen, setTierMapOpen] = useState(false); // (v0.0.6 개편) 티어 배지를 누르면 여는 여정 지도
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
   // (UI8) 메인 화면 친구 버튼에 보류 중인 요청 수를 배지로 표시 — 요청 탭을 열지 않아도 보이도록
@@ -28108,6 +28184,11 @@ export default function App() {
       if (!p.startsWith("/review")) setReviewGame(null);
       if (!p.startsWith("/play")) setPlayGame(null);
       if (!/^\/puzzle\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
+      // (v0.4.4 기능) /user/<MID> 프로필 페이지도 다른 고유 URL(리뷰·퍼즐)과 같은 방식으로 뒤로/앞으로
+      // 가기에 반응한다 — 그 경로를 벗어나면 닫고, 다시 그 경로로 돌아오면(앞으로 가기) 되살린다.
+      const userMatch = /^\/user\/([A-Za-z]{5}[0-9]{4})$/.exec(p);
+      setViewedProfileMid(userMatch ? userMatch[1].toUpperCase() : null);
+      if (!userMatch) setViewedProfileAutoInvite(false);
       const k = tabFromPath(p);
       if (k) { urlTabRef.current = k; setTab(k); }
       const screens = (window.history.state && window.history.state.screens) || [];
@@ -28117,7 +28198,6 @@ export default function App() {
       setProfileWinOpen(screens.includes("profile"));
       setTierMapOpen(screens.includes("tiermap"));
       setAccountCenterOpen(screens.includes("account-center"));
-      if (!screens.includes("play-profile")) setPlayProfileUsername(null);
       setLearnFocus((f) => (f && !screens.includes("focus")) ? null : f);
     };
     window.addEventListener("popstate", onPop);
@@ -28327,6 +28407,17 @@ export default function App() {
     if (typeof window === "undefined" || !loaded) return;
     const path = window.location.pathname;
     (async () => {
+      // (v0.4.4 기능, 사용자 요청) /user/<MID>(+ ?invite=friend) 딥링크 — 처음 이 주소로 들어와도
+      // (예: 친구 초대 링크를 처음 클릭) 그 프로필 페이지가 곧장 열린다.
+      const userMatch = /^\/user\/([A-Za-z]{5}[0-9]{4})$/.exec(path);
+      if (userMatch) {
+        const mid = userMatch[1].toUpperCase();
+        let invite = false;
+        try { invite = new URLSearchParams(window.location.search).get("invite") === "friend"; } catch { }
+        setViewedProfileMid(mid);
+        setViewedProfileAutoInvite(invite);
+        return;
+      }
       const puzzleMatch = /^\/puzzle\/(\d{6})-(\d+)$/.exec(path);
       if (puzzleMatch) {
         const no = parseInt(puzzleMatch[1], 10), lineNo = parseInt(puzzleMatch[2], 10);
@@ -28435,17 +28526,17 @@ export default function App() {
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
-      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+      {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenUserProfile={openUserProfileByUsername} />}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
         solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenUserProfile={openUserProfileByUsername} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
       {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
-      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={(u) => { setPlayProfileUsername(u); pushScreen("play-profile"); }} />}
-      {playProfileUsername && <ChatUserProfileModal username={playProfileUsername} onClose={() => { setPlayProfileUsername(null); popScreen("play-profile"); }} myUid={uid} />}
+      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} />}
+      {viewedProfileMid && <UserProfilePage mid={viewedProfileMid} autoInvite={viewedProfileAutoInvite} onClose={closeUserProfile} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} />}
       {profileWinOpen && user && (
         <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size}
           onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}

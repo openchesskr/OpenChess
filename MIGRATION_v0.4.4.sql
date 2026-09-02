@@ -12,6 +12,8 @@
 --   2) gen_mid() + profiles.mid 형식 변경 — "9자 아무 자리에나 영문/숫자가 섞인 9자리"에서
 --      "앞 영문 대문자 5자리 + 뒤 숫자 4자리"로 고정(예: ABCDE1234). 기존에 옛 형식으로 발급된
 --      MID는 새 형식으로 다시 발급된다.
+--   3) friend_request_by_mid(text) 신규 — MID로 친구 추가(초대 링크 자동 친구 추가, #MID 검색
+--      결과에서 친구 요청). friend_request(username)와 완전히 같은 로직이되 mid로 상대를 찾는다.
 --
 -- SQL Editor에 이 파일 전체를 붙여넣고 RUN 하세요.
 -- ============================================================================
@@ -64,3 +66,29 @@ alter table public.profiles drop constraint if exists profiles_mid_check;
 alter table public.profiles add column if not exists mid text unique default public.gen_mid();
 update public.profiles set mid = public.gen_mid() where mid is null or mid !~ '^[A-Z]{5}[0-9]{4}$';
 alter table public.profiles add constraint profiles_mid_check check (mid ~ '^[A-Z]{5}[0-9]{4}$');
+
+-- 3) friend_request_by_mid — MID로 친구 추가
+drop function if exists public.friend_request_by_mid(text) cascade;
+create or replace function public.friend_request_by_mid(p_mid text)
+returns text language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_to uuid; v_existing text;
+begin
+  if v_me is null then return 'unauth'; end if;
+  select id into v_to from public.profiles where mid = upper(p_mid);
+  if v_to is null then return 'notfound'; end if;
+  if v_to = v_me then return 'self'; end if;
+
+  select status into v_existing from public.friend_edges where from_uid = v_me and to_uid = v_to;
+  if v_existing is not null then return 'exists'; end if;
+
+  select status into v_existing from public.friend_edges where from_uid = v_to and to_uid = v_me;
+  if v_existing = 'accepted' then return 'exists'; end if;
+  if v_existing = 'pending' then
+    update public.friend_edges set status = 'accepted' where from_uid = v_to and to_uid = v_me;
+    return 'accepted';
+  end if;
+
+  insert into public.friend_edges(from_uid, to_uid, status) values (v_me, v_to, 'pending');
+  return 'pending';
+end; $$;
+grant execute on function public.friend_request_by_mid(text) to authenticated;

@@ -217,6 +217,34 @@ begin
 end; $$;
 grant execute on function public.friend_request(text) to authenticated;
 
+-- (v0.4.4 기능, 사용자 요청) MID(회원 번호)로 친구 추가 — friend_request와 완전히 같은 로직이지만
+-- username 대신 mid로 상대를 찾는다. 초대 링크(openchess.kr/user/<MID>?invite=friend)를 열면
+-- 클라이언트가 이 RPC를 자동으로 한 번 호출한다.
+drop function if exists public.friend_request_by_mid(text) cascade;
+create or replace function public.friend_request_by_mid(p_mid text)
+returns text language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_to uuid; v_existing text;
+begin
+  if v_me is null then return 'unauth'; end if;
+  select id into v_to from public.profiles where mid = upper(p_mid);
+  if v_to is null then return 'notfound'; end if;
+  if v_to = v_me then return 'self'; end if;
+
+  select status into v_existing from public.friend_edges where from_uid = v_me and to_uid = v_to;
+  if v_existing is not null then return 'exists'; end if;
+
+  select status into v_existing from public.friend_edges where from_uid = v_to and to_uid = v_me;
+  if v_existing = 'accepted' then return 'exists'; end if;
+  if v_existing = 'pending' then
+    update public.friend_edges set status = 'accepted' where from_uid = v_to and to_uid = v_me;
+    return 'accepted';
+  end if;
+
+  insert into public.friend_edges(from_uid, to_uid, status) values (v_me, v_to, 'pending');
+  return 'pending';
+end; $$;
+grant execute on function public.friend_request_by_mid(text) to authenticated;
+
 drop function if exists public.friend_accept(uuid) cascade;
 create or replace function public.friend_accept(p_other_uid uuid)
 returns boolean language plpgsql security definer set search_path = public as $$
