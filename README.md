@@ -46,6 +46,21 @@
 **UI — 퍼즐 카드 레이아웃 재정비**
 사용자 스케치 요청대로, 오프닝 배지를 PGN 배지 바로 옆에 붙이고(예전엔 서로 다른 줄에 떨어져 있었다), 국면·FEN 배지는 그 아래 줄에 이어 붙였다. 6자리 퍼즐 번호는 왼쪽, 퍼즐 레이팅은 같은 줄 오른쪽으로 다시 짝지었다(예전엔 번호가 오른쪽에, 레이팅은 배지 줄 한가운데 섞여 있었다). 좋아요·리포스트·공유 수는 왼쪽에 묶고, 실제 공유하기 버튼만 그 줄의 오른쪽 끝(카드 우하단)으로 분리했다.
 
+**버그 수정 — 방금 만든 퍼즐에 생성자가 표시되지 않던 문제**
+퍼즐 만들기(`submitPuzzleCreate`)는 저장과 동시에 그 퍼즐을 곧장 연다(`setActive`) — 실제 생성자 기록은 `onSavePuzzle` 안에서 fire-and-forget으로 도는 `puzzleShare`(행 upsert → `puzzle_claim_creator` RPC, 순차 네트워크 요청 2번)가 서버에 반영해야 조회된다. `PuzzleSolver`의 `creatorInfo` 조회는 마운트 시 딱 한 번만 시도해, 그 두 요청이 끝나기 전에 항상 먼저 도착해 매번 "생성자 없음"으로 확정되고 재시도가 없어 이후에도 영원히 반영되지 않았다 — 방금 만든 퍼즐마다 100% 재현됐다. 못 찾으면 짧은 간격(1·2·3·4초)으로 몇 번 더 재시도하도록 고쳤다.
+
+**기능 — MID 기반 유저 검색 + 친구 초대 링크 + 프로필 전용 페이지**
+사용자 요청 — "MID로 친구 추가·검색, 초대 링크로 자동 친구 추가, 프로필을 별도 페이지로". 유저 검색창(`userSearch`)이 `#ABCDE1234` 형식(정규식 `MID_RE`)을 인식하면 `username ilike` 검색 대신 `userProfileByMid`로 mid를 직접 조회한다 — `profiles` 테이블은 이미 `select using (true)`(전체 공개)라 별도 RLS 없이 REST로 바로 조회된다. 서버에 `friend_request_by_mid(text)` RPC를 새로 추가했다 — 기존 `friend_request(username)`과 완전히 같은 로직이되 `mid = upper(p_mid)`로 상대를 찾는다.
+
+계정 센터에 "친구 초대 링크"(`{origin}/user/{MID}?invite=friend`) 복사 버튼을 추가했다. 이 URL을 처음 여는 사람 입장에서 두 가지가 한 번에 일어난다 — ① 그 MID의 프로필 페이지가 열리고, ② 로그인한 상태면 `friendRequestByMid`가 한 번 자동 호출된다(같은 mid로 재방문해도 새로고침마다 중복 전송되지 않도록 `autoInviteTriedRef`로 세션당 1회만 시도).
+
+프로필 보기 자체를 검색·채팅·`/play` 친구 목록마다 각자 오버레이 모달로 띄우던 것(`ChatUserProfileModal`, `UserSearchModal`의 내부 `sel` 서브뷰)을 걷어내고, `openchess.kr/user/<MID>` 고유 URL을 갖는 하나의 실제 페이지(`UserProfilePage`)로 통합했다 — `/review`·`/puzzle/(번호)-(라인)`과 같은 패턴으로 여는 곳에서 `pushState`, 뒤로가기 `popstate` 핸들러와 마운트 시 딥링크 리졸버 effect 양쪽에서 경로를 해석한다. `ChatPanel`(채팅창의 "프로필 보기"·멘션 탭)과 `PlayPage`("친구와 플레이하기" 목록 프로필 클릭)는 이제 App 루트가 내려주는 `onOpenUserProfile`(username → mid 조회 → 페이지 이동)을 호출한다. 다만 `FriendsModal` 자체의 친구 목록 프로필 서브뷰(수락/거절/삭제 같은 인라인 액션이 함께 있는 화면)는 그대로 남겨 뒀다 — 그 액션들을 페이지 이동 없이 바로 처리하는 게 더 나은 흐름이라고 판단했다.
+
+`UserProfilePage`는 `useNarrow(880)` 기준으로 넓은 화면에서는 신원·MID·친구 요청 버튼을 왼쪽 고정 폭(300px) 열에, 통계·활동(`ProfileStatsPanel`)을 오른쪽 나머지 폭 열에 나란히 배치한다(사용자 요청 — "데스크톱은 비율이 남아도니까 한 화면에 더 많이 보이게"). 좁은 화면에서는 기존 모달과 같은 순서로 세로로 쌓인다.
+
+**문서 — v0.4.4 증분 SQL 마이그레이션**
+`MIGRATION_v0.4.4.sql`에 `pvp_invite_friend`·`gen_mid`/MID 형식 변경분에 이어, `friend_request_by_mid(text)` 신규 함수를 추가했다.
+
 `npm run build` 통과를 매 커밋마다 확인했다.
 
 ### OpenChess v0.4.3 — 2026/8/31
