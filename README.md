@@ -52,7 +52,7 @@
 **기능 — MID 기반 유저 검색 + 친구 초대 링크 + 프로필 전용 페이지**
 사용자 요청 — "MID로 친구 추가·검색, 초대 링크로 자동 친구 추가, 프로필을 별도 페이지로". 유저 검색창(`userSearch`)이 `#ABCDE1234` 형식(정규식 `MID_RE`)을 인식하면 `username ilike` 검색 대신 `userProfileByMid`로 mid를 직접 조회한다 — `profiles` 테이블은 이미 `select using (true)`(전체 공개)라 별도 RLS 없이 REST로 바로 조회된다. 서버에 `friend_request_by_mid(text)` RPC를 새로 추가했다 — 기존 `friend_request(username)`과 완전히 같은 로직이되 `mid = upper(p_mid)`로 상대를 찾는다.
 
-계정 센터에 "친구 초대 링크"(`{origin}/user/{MID}?invite=friend`) 복사 버튼을 추가했다. 이 URL을 처음 여는 사람 입장에서 두 가지가 한 번에 일어난다 — ① 그 MID의 프로필 페이지가 열리고, ② 로그인한 상태면 `friendRequestByMid`가 한 번 자동 호출된다(같은 mid로 재방문해도 새로고침마다 중복 전송되지 않도록 `autoInviteTriedRef`로 세션당 1회만 시도).
+계정 센터에 "친구 초대 링크"(`{origin}/user/{MID}?invite=friend`) 복사 버튼을 추가했다. 이 URL을 처음 여는 사람 입장에서 두 가지가 한 번에 일어난다 — ① 그 MID의 프로필 페이지가 열리고, ② 로그인한 상태면 `friendRequestByMid`가 한 번 자동 호출된다(같은 mid로 재방문해도 새로고침마다 중복 전송되지 않도록 `autoInviteTriedRef`로 세션당 1회만 시도). 요청이 실제로 나가면(자동이든 카드 안의 "친구 요청" 버튼이든) 화면 위쪽에 "~님에게 친구 요청을 보냈습니다!"(이미 친구면 "~님과 친구가 되었어요!") 팝업이 2.6초간 떴다 사라진다 — 카드 안쪽 작은 문구(`inviteMsg`)만으로는 눈에 잘 안 띈다는 피드백을 반영했다.
 
 프로필 보기 자체를 검색·채팅·`/play` 친구 목록마다 각자 오버레이 모달로 띄우던 것(`ChatUserProfileModal`, `UserSearchModal`의 내부 `sel` 서브뷰)을 걷어내고, `openchess.kr/user/<MID>` 고유 URL을 갖는 하나의 실제 페이지(`UserProfilePage`)로 통합했다 — `/review`·`/puzzle/(번호)-(라인)`과 같은 패턴으로 여는 곳에서 `pushState`, 뒤로가기 `popstate` 핸들러와 마운트 시 딥링크 리졸버 effect 양쪽에서 경로를 해석한다. `ChatPanel`(채팅창의 "프로필 보기"·멘션 탭)과 `PlayPage`("친구와 플레이하기" 목록 프로필 클릭)는 이제 App 루트가 내려주는 `onOpenUserProfile`(username → mid 조회 → 페이지 이동)을 호출한다. 다만 `FriendsModal` 자체의 친구 목록 프로필 서브뷰(수락/거절/삭제 같은 인라인 액션이 함께 있는 화면)는 그대로 남겨 뒀다 — 그 액션들을 페이지 이동 없이 바로 처리하는 게 더 나은 흐름이라고 판단했다.
 

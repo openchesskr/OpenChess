@@ -21334,7 +21334,7 @@ const CHANGELOG = [
       "퍼즐 카드에서 오프닝·PGN·국면·FEN 배지가 한 무리로 붙어 보이고, 6자리 번호는 왼쪽에 레이팅은 같은 줄 오른쪽에 표시돼요. 공유 버튼은 카드 우하단으로 옮겨졌어요.",
       "방금 만든 퍼즐을 열었을 때 생성자 표시가 비어 보이던 문제를 고쳤어요.",
       "유저 검색창에서 '#MID'(예: #ABCDE1234)로도 유저를 찾을 수 있어요.",
-      "계정 센터에 나만의 친구 초대 링크가 생겼어요 — 복사해서 보내면, 상대가 그 링크를 열었을 때(로그인 상태라면) 자동으로 친구 요청이 가요.",
+      "계정 센터에 나만의 친구 초대 링크가 생겼어요 — 복사해서 보내면, 상대가 그 링크를 열었을 때(로그인 상태라면) 자동으로 친구 요청이 가고 화면 위에 '~님에게 친구 요청을 보냈습니다!' 팝업이 떠요.",
       "다른 유저의 프로필이 이제 고유한 주소(openchess.kr/user/회원번호)를 갖는 페이지로 열려요 — 검색·채팅·/play 친구 목록 어디서 열어도 같은 페이지고, 초대 링크를 누르면 곧장 이 페이지로 들어가요.",
       "데스크톱처럼 화면이 넓으면 프로필 페이지가 신원·통계를 두 칼럼으로 나란히 보여줘 한 화면에 더 많이 들어와요.",
     ],
@@ -23756,6 +23756,16 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
   const [reqState, setReqState] = useState(null); // null | "pending" | "accepted" | "exists"
   const [reqBusy, setReqBusy] = useState(false);
   const [inviteMsg, setInviteMsg] = useState("");
+  // (버그 수정, 사용자 요청) 초대 링크로 들어와 자동으로 친구 요청이 나갔을 때, 카드 안쪽의 작은
+  // 문구(inviteMsg)만으로는 눈에 잘 안 띈다는 피드백 — 화면 위쪽에 잠깐 떴다 사라지는 팝업 알림도
+  // 함께 띄운다("~님에게 친구 요청을 보냈습니다!"). 수동으로 "친구 요청" 버튼을 눌렀을 때도 같은
+  // 팝업을 보여줘 두 경로의 피드백을 통일한다.
+  const [reqPopup, setReqPopup] = useState("");
+  useEffect(() => {
+    if (!reqPopup) return;
+    const t = setTimeout(() => setReqPopup(""), 2600);
+    return () => clearTimeout(t);
+  }, [reqPopup]);
   const wide = !useNarrow(880);
   const selPresence = usePresenceMap(pubUid ? [pubUid] : []);
 
@@ -23788,9 +23798,11 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
       const r = await friendRequestByMid(mid);
       if (r && r.ok) {
         const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
+        const name = (pub && pub.nickname) || pubUsername || "상대";
         setReqState(status);
         setInviteMsg(status === "accepted" ? "친구가 되었어요!" : status === "exists" ? "이미 친구이거나 요청을 보냈어요." : "자동으로 친구 요청을 보냈어요.");
-        if (status === "pending") notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid });
+        if (status === "pending") { notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid }); setReqPopup(name + "님에게 친구 요청을 보냈습니다!"); }
+        else if (status === "accepted") setReqPopup(name + "님과 친구가 되었어요!");
       }
     })();
   }, [autoInvite, me, myUid, pubUid, mid]);
@@ -23801,6 +23813,9 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     setReqBusy(false);
     if (r && r.ok) {
       const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
+      const name = (pub && pub.nickname) || pubUsername || "상대";
+      if (status === "pending") setReqPopup(name + "님에게 친구 요청을 보냈습니다!");
+      else if (status === "accepted") setReqPopup(name + "님과 친구가 되었어요!");
       setReqState(status);
       if (status === "pending") notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid });
     }
@@ -23808,6 +23823,16 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
   const isSelf = !!(myUid && pubUid && myUid === pubUid);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      {/* (사용자 요청) 친구 요청이 나갔을 때(초대 링크 자동 요청·수동 버튼 공통) 화면 위쪽에 잠깐
+          떴다 사라지는 팝업 알림 — 카드 안쪽의 작은 inviteMsg 문구만으로는 눈에 잘 안 띈다는 피드백. */}
+      {reqPopup && (
+        <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 400, animation: "lockpop .4s ease", width: "calc(100% - 32px)", maxWidth: 340, pointerEvents: "none" }}>
+          <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 16px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
+            <span style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(196,154,80,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><UserPlus size={17} style={{ color: T.brassHi }} /></span>
+            <div style={{ fontSize: 12.5, fontWeight: 700 }}>{reqPopup}</div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5 }}>
         <div className="flex items-center gap-2">
           <button onClick={onClose} aria-label="뒤로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>
