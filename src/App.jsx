@@ -7507,7 +7507,7 @@ function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut
 // (UI/UX) 집중분석을 별개의 전체 창으로 띄우지 않고, 기존에 쓰던 집중분석 UI를 그대로
 // 체스보드 하단(왼쪽 칼럼)에 배치한다 — 오른쪽 칼럼은 집중분석 중에도 항상 수 블록 목록을 보여준다.
 // 상태/부수효과(퍼즐 자동저장 등)는 하나의 훅(useFocusAnalysis)에 모아 중복 실행을 막는다.
-function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canAdd, bumpContent, puzzles, contentVer, requestPuzzleGen, puzzleGenProgress }) {
+function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpContent, puzzles, contentVer }) {
   const active = !!focus;
   const sans = active ? focus.sans : [];
   const san = active ? focus.san : "";
@@ -7664,54 +7664,30 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     })();
     return () => { cancelled = true; setAnalyzing(false); };
   }, [active, sansKey, san, engine && engine.status, chesscom && chesscom.status, stats && stats.total]);
-  // (버그 수정) 예전엔 생성 진행 중에 이 컴포넌트(집중 분석 화면)가 언마운트되면(예: 탭 전환) 이
-  // effect의 cleanup이 걸려 결과가 나와도 그냥 버려졌다 — 실제 엔진 계산은 App 최상단에 항상 떠 있는
-  // engine 큐에서 계속 진행되는데도(탭을 바꿔도 엔진 워커는 안 죽는다), "다 만들었으니 저장하라"는
-  // 신호만 컴포넌트 수명에 묶여 사라진 것. requestPuzzleGen(App 레벨, 항상 마운트)에 생성을 맡겨
-  // 이 컴포넌트가 사라져도 생성이 끝까지 진행되고 결과가 저장되도록 한다.
-  // (v0.1.0) 퍼즐 id는 이제 항상 "포지션(sansKey) + 그 위치에서 둔 수"로만 정해지고 테마 접두어를
-  // 붙이지 않는다 — 실수 응징하기/우위 점하기(그 수 자신의 위치)와 기물 희생하기(그 수 바로 다음
-  // 수를 공부할 때, "직전 수"로 재사용하는 그 같은 위치)가 우연히 같은 포지션을 가리키면 자연스럽게
-  // 같은 id로 수렴해 한 퍼즐로 합쳐지도록 하기 위함(아래 두 useEffect가 같은 id 공식을 공유).
-  useEffect(() => {
-    if (!active || !onSavePuzzle || !requestPuzzleGen) return;
-    // 실수/블런더 → 실수 응징하기, 부정확한 수 → 우위 점하기: 이 위치(sans 다음에 san) 자신이 정체성.
-    if (isPunishable || kind === "inaccuracy") {
-      const themeKey = isPunishable ? "punish" : "advantage";
-      const id = sansKey + "|" + san;
-      // (20차 기능1→v0.1.0) 이미 트리가 있으면 재생성하지 않는다(엔진 비용이 큼) — 다만 그 트리가
-      // 다른 테마(예: 기물 희생하기)로 먼저 만들어져 있었고 이 테마 태그가 아직 없다면, 재생성 없이
-      // 태그만 얹는다(같은 포지션이므로 이미 있는 트리도 이 테마 관점에서 그대로 유효한 풀이).
-      const existing = puzzles ? puzzles.find((p) => p.id === id) : null;
-      if (existing && existing.tree) { if (!themesOf(existing).includes(themeKey)) onSavePuzzle({ ...existing, themes: [...themesOf(existing), themeKey] }); return; }
-      if (isPunishable && curated) { onSavePuzzle({ id, themes: [themeKey], name: puzzleName("punish", [...sans], san), opening: curated.opening, setupSans: [...sans], mistakeSan: san, solution: curated.line, steps: curated.steps }); return; }
-      if (engine && engine.status === "ready") {
-        const op = title || "오프닝";
-        requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, [...sans, san], puzzleThemeOpts(themeKey), onProgress).then((gen) => gen && (
-          { id, themes: [themeKey], name: puzzleName(themeKey, [...sans], san), opening: op, setupSans: [...sans], mistakeSan: san, solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
-        )));
-      }
-      return;
+  // (v0.4.4 개편, 사용자 요청) "집중 분석에서 퍼즐을 만들 때도 바로 퍼즐 카드로 들어가지 말고 퍼즐
+  // 마법사 화면으로 이동해야 한다" — 예전엔 여기서 곧장 엔진으로 트리를 만들어 조용히 저장하고
+  // (auto:true), 다 되면 "퍼즐 풀기" 버튼이 바로 PuzzleSolver를 열었다. 이제 이 훅은 더 이상 엔진을
+  // 돌리거나 저장하지 않는다 — 대신 퍼즐 탭의 "퍼즐 만들기" 마법사가 그대로 받을 수 있는 PGN·목표
+  // 수·테마만 계산해 둔다(wizardSeed). 실제 생성·중복 확인·저장은 전부 마법사(그 안에서 이미
+  // "이미 존재하면 ~님이 이미 이 퍼즐을 만들었어요! + 퍼즐 풀기"로 처리하도록 고쳐 둔 바로 그 화면)가
+  // 맡는다 — 두 경로(집중 분석에서 진입/퍼즐 탭에서 직접 만들기)가 완전히 같은 코드를 탄다.
+  const wizardSeed = useMemo(() => {
+    if (!active) return null;
+    // 실수/블런더 → 실수 응징하기, 부정확한 수 → 우위 점하기, 탁월한 수 → 기물 희생하기: 세 경우
+    // 모두 마법사의 2단계 후보 목록(analyzeGame의 moves[i] — ply===i, san===fullSans[i])이 이 수(san)
+    // 자신을 인덱스 sans.length에서 후보로 찾아낼 수 있도록, san까지 포함한 PGN을 넘긴다(희생 테마는
+    // 마법사가 스스로 그 직전 수를 자동 응수로 떼어 낸다 — submitPuzzleCreate 참고).
+    if (isPunishable || kind === "inaccuracy" || (kind === "brilliant" && sans.length >= 1)) {
+      const theme = isPunishable ? "punish" : kind === "inaccuracy" ? "advantage" : "sacrifice";
+      return { pgn: sansToPgnText([...sans, san], "w"), targetPly: sans.length, theme };
     }
-    // 탁월한 수 → 기물 희생하기: 이 수(san) 자신이 아니라 "그 직전 수"가 만든 포지션이 정체성 —
-    // 그 직전 수가 따로 실수/부정확한 수로도 분류돼 있었다면 위 분기와 정확히 같은 id로 수렴한다.
-    if (kind === "brilliant" && sans.length >= 1 && engine && engine.status === "ready") {
-      const id = sans.slice(0, -1).join(" ") + "|" + sans[sans.length - 1];
-      const existing = puzzles ? puzzles.find((p) => p.id === id) : null;
-      if (existing && existing.tree) { if (!themesOf(existing).includes("sacrifice")) onSavePuzzle({ ...existing, themes: [...themesOf(existing), "sacrifice"] }); return; }
-      const op = title || "오프닝";
-      // (기능1) 희생 테마는 "희생 수 자체"가 첫 수(firstSan)로 고정되며, sans 위치(=studied 수 san이 두어지기 직전)에서 둔다.
-      requestPuzzleGen(id, (onProgress) => genPuzzleTree(engine, sans, { ...puzzleThemeOpts("sacrifice"), firstSan: san }, onProgress).then((gen) => gen && (
-        { id, themes: ["sacrifice"], name: puzzleName("sacrifice", sans.slice(0, -1), sans[sans.length - 1]), opening: op, setupSans: sans.slice(0, -1), mistakeSan: sans[sans.length - 1], solution: gen.lines[0].solution, lines: gen.lines, tree: gen.tree, steps: [], auto: true }
-      )));
-    }
-  }, [active, sansKey, san, kind, engine && engine.status, requestPuzzleGen]);
+    return null;
+  }, [active, sansKey, san, kind]);
   const baseId = active ? sansKey + "|" + san : "";
-  const priorId = active && sans.length >= 1 ? sans.slice(0, -1).join(" ") + "|" + sans[sans.length - 1] : null;
-  const expectedPuzzleId = active ? (kind === "brilliant" ? priorId : (kind === "inaccuracy" || ["mistake", "blunder"].includes(kind)) ? baseId : null) : null;
+  const expectedPuzzleId = active ? ((isPunishable || kind === "inaccuracy" || kind === "brilliant") ? baseId : null) : null;
+  // (참고용) 로컬에 이미 이 퍼즐이 있는지만 가볍게 확인 — 네트워크 호출 없이 버튼 문구를 미리
+  // 조금 더 정확히 보여주는 용도일 뿐, 진짜 중복 판정(서버 포함)은 마법사가 다시 한다.
   const existingPuzzle = (expectedPuzzleId && puzzles) ? puzzles.find((p) => p.id === expectedPuzzleId) : null;
-  // (UX) 아직 생성이 안 끝난 퍼즐의 진행률 — "퍼즐 풀기" 버튼 대신 진행 상황을 보여주는 데 쓴다.
-  const puzzleGenProgressVal = (expectedPuzzleId && !(existingPuzzle && existingPuzzle.tree) && puzzleGenProgress) ? puzzleGenProgress[expectedPuzzleId] : null;
   // (UI1) 집중 분석 중인 수를 이론 수로 등록 — 스냅샷의 기존 이론 수와 구분 없이 동일하게 취급됨(기능3)
   const posKey = sansKey;
   const addAsTheory = async () => {
@@ -7743,7 +7719,7 @@ function useFocusAnalysis(focus, { chesscom, onSavePuzzle, engine, canEdit, canA
     explainLong,
     showExpl, setShowExpl, editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
     openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
-    expectedPuzzleId, existingPuzzle, puzzleGenProgress: puzzleGenProgressVal, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
+    expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
     masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
@@ -8276,13 +8252,13 @@ function normalizePlayerKey(name) {
   const first = s.slice(comma + 1).trim();
   return last + "|" + (first ? first[0] : "");
 }
-function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
+function FocusPanel({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
   if (!fa.active) return null;
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, mkKey,
     explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
-    stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, expectedPuzzleId, existingPuzzle, puzzleGenProgress,
+    stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
     masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
@@ -8395,19 +8371,7 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
           {canEdit && isTheory && <button onClick={toggleUnbook} className="press" title="이론 수에서 삭제" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: "#F4A8A8", fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Trash2 size={14} /> 이론 수에서 삭제</button>}
         </div>
       </div>
-      {/* (v0.1.4 기능) "퍼즐이 생성되는 과정을 애니메이션으로 미리 보여달라"는 요청 — genPuzzleTree가
-          진행 중 실제로 탐색해 낸 수순(puzzleGenProgress.path)을 AnimatedMove로 그때그때 재생해,
-          정지된 진행 바 대신 퍼즐이 실제로 만들어지는 과정을 눈으로 볼 수 있게 한다. 새 수를 찾을
-          때마다 path가 늘어나며 그 마지막 수가 슬라이드되어 들어오는 걸 반복(loopMs 없이 1회씩)한다. */}
-      <AnimatePresence>
-        {expectedPuzzleId && !(existingPuzzle && existingPuzzle.tree) && puzzleGenProgress && puzzleGenProgress.path && puzzleGenProgress.path.length > 0 && (
-          <motion.div key="gen-preview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: MOTION_EASE }} style={{ marginBottom: 12 }}>
-            <AnimatedMove sans={puzzleGenProgress.path.slice(0, -1)} san={puzzleGenProgress.path[puzzleGenProgress.path.length - 1]} size={120} loopMs={0} />
-            <div style={{ textAlign: "center", fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>퍼즐을 만드는 중이에요 — 지금 찾아낸 수를 미리 보여드릴게요</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {/* 헤더: 아이콘 · 수/이름(크게) · 평가치·등급(수 이름 바로 옆) · 퍼즐 풀기 버튼(우측) */}
+      {/* 헤더: 아이콘 · 수/이름(크게) · 평가치·등급(수 이름 바로 옆) · 퍼즐 만들기 버튼(우측) */}
       {/* (사용자 요청) 평가치·등급 텍스트를 우측 끝(별도 칼럼)이 아니라 수 이름 바로 옆으로 옮기고,
           둘 다 같은 진한 색(QCOLOR를 검정과 섞어 더 짙게)·같은 폰트(사이트 기본 IBM Plex Sans KR,
           예전엔 평가치만 monospace라 서로 다른 폰트로 보였다)로 통일했다. 그렇게 비게 된 우측 자리엔
@@ -8425,17 +8389,15 @@ function FocusPanel({ fa, onBack, onOpenPuzzle, onJump, onOpenMasterGame, onOpen
             <div style={{ fontSize: 12, fontWeight: 800, color: T.ivory }}>{QLABEL[kind]}</div>
           </div>
         </div>
-        {expectedPuzzleId && onOpenPuzzle && (
-          existingPuzzle && existingPuzzle.tree ? (
-            <button onClick={() => onOpenPuzzle(expectedPuzzleId, existingPuzzle)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22", flexShrink: 0 }}><Play size={14} /> 퍼즐 풀기</button>
-          ) : (
-            <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 5, padding: "8px 13px", borderRadius: 10, background: T.ebony2, border: "1px solid #000", flexShrink: 0 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: T.brassHi, whiteSpace: "nowrap" }}>퍼즐 생성 중…</span>
-              <div style={{ width: 56, height: 6, borderRadius: 999, background: "rgba(255,255,255,.18)", overflow: "hidden", flexShrink: 0 }}>
-                <div style={{ width: Math.round(((puzzleGenProgress && puzzleGenProgress.p) || 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .25s ease" }} />
-              </div>
-            </div>
-          )
+        {/* (v0.4.4 개편, 사용자 요청) 예전엔 여기서 곧장 퍼즐을 만들어(auto:true) 준비되는 대로
+            "퍼즐 풀기"가 PuzzleSolver를 직접 열었다 — 이제는 항상 퍼즐 탭의 "퍼즐 만들기" 마법사로
+            이동한다. 같은 위치에 이미 누군가(나 자신 포함) 만든 퍼즐이 있으면 마법사가 곧장
+            "~님이 이미 이 퍼즐을 만들었어요!"와 "퍼즐 풀기"를 보여준다(퍼즐 탭에서 직접 만들 때와
+            완전히 같은 코드 경로). 로컬에 이미 있는 걸 알고 있으면 버튼 문구만 미리 맞춰 둔다. */}
+        {wizardSeed && onOpenPuzzleWizard && (
+          <button onClick={() => onOpenPuzzleWizard(wizardSeed)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22", flexShrink: 0 }}>
+            <Pencil size={14} /> {existingPuzzle && existingPuzzle.tree ? "퍼즐 풀기" : "퍼즐 만들기"}
+          </button>
         )}
       </div>
       {/* 미니보드(좌) + 해설(우) */}
@@ -12004,7 +11966,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 분석 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
-function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick }) {
+function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -12525,7 +12487,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     return () => { cc = true; };
   }, [key, liveOn]);
 
-  const fa = useFocusAnalysis(focus, { chesscom, onSavePuzzle, requestPuzzleGen, puzzleGenProgress, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
+  const fa = useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
 
   // (v0.2.6 버그 수정) 예전엔 이 "다음 수" 블록 목록(전체/마스터·채택률순/평가치순 선택 포함)이 항상
   // 오른쪽 칼럼에 그려져 있었지만, 집중분석(focus)이 켜지면 전체화면 오버레이(position:fixed,inset:0)가
@@ -12677,7 +12639,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzle={onOpenPuzzle} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
+              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
             </div>
           </div>
         )}
@@ -19492,7 +19454,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -19546,9 +19508,10 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const [pcCreating, setPcCreating] = useState(false);
   // (신규 기능) 사용자 요청 — 4단계, 퍼즐 공개/비공개 설정. 기본은 공개(기존과 동일한 동작).
   const [pcPublic, setPcPublic] = useState(true);
-  // (사용자 요청) 같은 PGN·FEN으로 이미 만들어진 퍼즐이 있으면 2단계에서 막고, 알림을 띄운 뒤 처음
-  // (1단계)으로 되돌린다.
-  const [pcDupMsg, setPcDupMsg] = useState("");
+  // (v0.4.4 개편, 사용자 요청) 같은 PGN·FEN으로 이미 만들어진 퍼즐이 있으면 예전엔 알림만 띄우고
+  // 처음(1단계)으로 되돌렸다 — 이제는 "누가 이미 만들었는지" 보여주고, 다시 만드는 대신 그 퍼즐을
+  // 곧장 풀 수 있게 한다({ puzzle, creatorUsername } | null).
+  const [pcExisting, setPcExisting] = useState(null);
   // (사용자 요청) chess.com 대국 목록에서 고른 대국을 "선택됨"으로 표시하고, 같은 대국을 다시 누르면
   // 선택이 풀리도록(입력 박스도 함께 비운다) 어떤 대국이 선택돼 있는지 기억해 둔다.
   const [pcSelectedGameId, setPcSelectedGameId] = useState(null);
@@ -19570,12 +19533,32 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const resetPuzzleCreate = () => {
     setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
     setPcAnalyzing(false); setPcAnalyzeProgress(0); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null);
-    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false); setPcSelectedGameId(null); setPcPublic(true);
+    setPcGenerating(false); setPcGen(null); setPcGenErr(""); setPcCreating(false); setPcSelectedGameId(null); setPcPublic(true); setPcExisting(null);
   };
+  // (v0.4.4 기능, 사용자 요청) 집중 분석에서 "퍼즐 만들기"로 넘어온 경우 — createSeed({pgn,targetPly,
+  // theme})가 들어오면 곧장 만들기 모드로 전환하고 그 PGN을 채워 넣는다. pcInput은 setState라 같은
+  // 틱에 다시 읽을 수 없으므로 parsePcInput에 override 인자를 넘겨 곧바로 파싱한다. 파싱→채점이 끝나면
+  // (pendingSeed 소비 effect가) 지정된 수를 자동으로 골라 checkPcDuplicate까지 이어서 실행한다.
+  const [pendingSeed, setPendingSeed] = useState(null);
+  useEffect(() => {
+    if (!createSeed) return;
+    resetPuzzleCreate();
+    setPuzzleMode("create");
+    setPcInput(createSeed.pgn);
+    parsePcInput(createSeed.pgn);
+    setPendingSeed(createSeed);
+    if (onConsumeCreateSeed) onConsumeCreateSeed();
+  }, [createSeed]);
+  useEffect(() => {
+    if (!pendingSeed || !pcAnalyzeResult || !pcParsed || pcParsed.kind !== "pgn") return;
+    const san = pcParsed.sans[pendingSeed.targetPly];
+    if (san != null) pickPcMove(pendingSeed.theme, { ply: pendingSeed.targetPly, san });
+    setPendingSeed(null);
+  }, [pendingSeed, pcAnalyzeResult, pcParsed]);
   // 1단계 — PGN 또는 FEN 코드를 입력받아 검증한다.
-  const parsePcInput = () => {
-    const raw = pcInput.trim();
-    setPcErr(""); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
+  const parsePcInput = (override) => {
+    const raw = (override !== undefined ? override : pcInput).trim();
+    setPcErr(""); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcExisting(null);
     if (!raw) { setPcErr("PGN 또는 FEN을 입력하세요."); return; }
     // (사용자 요청) PGN/FEN 기보로 인식되지 않는 입력은 사유와 무관하게 항상 같은 문구("잘못된
     // 기보 형식입니다.")로 안내하고, pcParsed를 세우지 않아(2단계는 pcParsed가 있어야만 열림) 2단계로
@@ -19617,11 +19600,13 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // PGN·FEN을 만들려는 시도까지 무작위로 거부되던 핵심 버그였다(퍼즐 만들기 기능 자체가
   // 점점 안 되는 것처럼 보였다). 이제 그 번호의 행이 있어도 실제 내용(data.id)이 지금 만들려는
   // id와 같을 때만 진짜 중복으로 판정한다 — 번호만 우연히 겹친 서로 다른 퍼즐은 통과시킨다.
+  // (v0.4.4 개편, 사용자 요청) 이제 중복 여부(boolean)만이 아니라 실제 퍼즐 데이터를 돌려준다 — 있으면
+  // 그 자리에서 곧장 "퍼즐 풀기"로 열 수 있어야 하기 때문이다.
   const checkPcDuplicate = async (id) => {
-    if (puzzles.some((p) => p.id === id)) return true;
-    if (archivedPuzzles && archivedPuzzles[id]) return true;
-    try { const remote = await puzzleFetch(puzzleNo(id)); if (remote && remote.id === id) return true; } catch { }
-    return false;
+    const local = puzzles.find((p) => p.id === id) || (archivedPuzzles && archivedPuzzles[id]);
+    if (local) return local;
+    try { const remote = await puzzleFetch(puzzleNo(id)); if (remote && remote.id === id) return remote; } catch { }
+    return null;
   };
   // 실제 전술 트리 생성 — FEN 포지션이거나(그 자체가 시작점), PGN에서 고른 특정 수(setupSans+mistakeSan)일 때 호출한다.
   const runPcGenerate = async (theme, setupSans, mistakeSan, fenRoot) => {
@@ -19650,13 +19635,13 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const pickPcThemeFen = async (theme) => {
     if (!pcParsed || pcParsed.kind !== "fen" || pcGenerating) return;
     const id = "fen:" + pcParsed.raw;
-    if (await checkPcDuplicate(id)) {
-      setPcDupMsg("이미 같은 퍼즐이 존재하여 퍼즐 만들기가 취소됩니다.");
-      resetPuzzleCreate();
-      setTimeout(() => setPcDupMsg(""), 3200);
+    setPcTheme(theme); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcExisting(null);
+    const dup = await checkPcDuplicate(id);
+    if (dup) {
+      const info = await puzzleCreatorInfo(puzzleNo(id)).catch(() => null);
+      setPcExisting({ puzzle: dup, creatorUsername: info && info.username });
       return;
     }
-    setPcTheme(theme); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
     runPcGenerate(theme, [], "", pcParsed.fenRoot);
   };
   // PGN 모드 — 유형별로 미리 나열된 후보 목록에서 하나를 고르면 그 수를 mistakeSan으로 삼아 생성한다.
@@ -19664,13 +19649,16 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (!pcParsed || pcParsed.kind !== "pgn" || pcGenerating) return;
     const setupSans = pcParsed.sans.slice(0, m.ply), mistakeSan = m.san;
     const id = setupSans.join(" ") + "|" + mistakeSan;
-    if (await checkPcDuplicate(id)) {
-      setPcDupMsg("이미 같은 퍼즐이 존재하여 퍼즐 만들기가 취소됩니다.");
-      resetPuzzleCreate();
-      setTimeout(() => setPcDupMsg(""), 3200);
+    setPcTheme(theme); setPcSelectedMove(m); setPcGen(null); setPcGenErr(""); setPcExisting(null);
+    // (v0.4.4 개편, 사용자 요청) 같은 포지션에 이미 다른 사람이 만든 퍼즐이 있으면, 다시 만드는 대신
+    // "~님이 이미 이 퍼즐을 만들었어요!"를 보여주고 곧장 풀 수 있게 한다 — 굳이 새로 생성할
+    // 필요가 없으므로 runPcGenerate(엔진 비용이 큼)를 아예 건너뛴다.
+    const dup = await checkPcDuplicate(id);
+    if (dup) {
+      const info = await puzzleCreatorInfo(puzzleNo(id)).catch(() => null);
+      setPcExisting({ puzzle: dup, creatorUsername: info && info.username });
       return;
     }
-    setPcTheme(theme); setPcSelectedMove(m); setPcGen(null); setPcGenErr("");
     runPcGenerate(theme, setupSans, mistakeSan, null);
   };
   const pcCanSubmit = !!(pcParsed && pcTheme && pcGen && !pcGenerating && !pcCreating);
@@ -20080,9 +20068,6 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               </div>
             )}
           </div>
-          {/* (사용자 요청) 같은 PGN·FEN 퍼즐이 이미 있어 취소됐을 때 뜨는 알림 — 처음(1단계)으로
-              되돌아간 화면 위쪽에 잠깐 떴다가 사라진다. */}
-          {pcDupMsg && <div style={{ marginBottom: 10, padding: "10px 13px", borderRadius: 10, background: "rgba(200,69,59,.14)", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5 }}>{pcDupMsg}</div>}
           {/* 2단계 — 퍼즐 유형 선택(PGN 한 수가 여러 전술을 동시에 만족할 수 있어 직접 고른다). 유형
               버튼을 먼저 누르게 하지 않고, PGN이 확인되는 즉시 세 유형의 후보를 모두 미리 불러와
               각 유형 아래에 나열한다 — 우상단에 채점 진행률(%)을 실시간으로 보여준다. 표시할 요소가
@@ -20152,12 +20137,19 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               )}
               {pcGenerating && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 10 }}>전술 라인을 찾는 중...</div>}
               {pcGenErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 10 }}>{pcGenErr}</div>}
+              {/* (v0.4.4 개편, 사용자 요청) 이미 같은 포지션의 퍼즐이 있으면(누가 만들었는지와 함께)
+                  여기서 바로 알려준다 — 아래 3·4단계(라인 생성·공개 설정)는 필요 없으므로 건너뛴다. */}
+              {pcExisting && (
+                <div style={{ marginTop: 10, padding: "10px 13px", borderRadius: 10, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass, color: T.ink, fontWeight: 700, fontSize: 12.5 }}>
+                  {pcExisting.creatorUsername ? "@" + pcExisting.creatorUsername + "님이 이미 이 퍼즐을 만들었어요!" : "이미 이 퍼즐이 존재해요!"}
+                </div>
+              )}
             </div>
           )}
           {/* 3단계 — 생성된 라인 미리보기(생성자 권한 박스, 만든 뒤에도 이어서 조정할 수 있다). 생성자는
               이미 이 트리를 볼 권한이 있으므로(사용자 요청) 일반 풀이 화면과 달리 고스트 처리 없이
               라인 전체를 그대로 보여준다(revealAll). */}
-          {pcTheme && pcGen && (
+          {!pcExisting && pcTheme && pcGen && (
             <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>3. 퍼즐 라인 편집 (생성자 권한)</div>
               <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{pcGen.lines.length}개의 라인을 찾았어요 — 아래에서 미리 확인하고, 만든 뒤에도 이 퍼즐을 열어 라인을 추가·삭제할 수 있어요(1시간에 한 번).</div>
@@ -20176,7 +20168,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           {/* 4단계 — 사용자 요청: 이 퍼즐을 다른 사람에게도 보여줄지(공개) 나만 보이게 할지(비공개) 정한다.
               기본은 공개(기존 동작과 동일). 만든 뒤에도 퍼즐 풀이 카드 2페이지(생성자 권한 박스)에서
               바꿀 수 있다. */}
-          {pcTheme && pcGen && (
+          {!pcExisting && pcTheme && pcGen && (
             <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>4. 공개 설정</div>
               <div className="flex gap-2">
@@ -20189,10 +20181,14 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               </div>
             </div>
           )}
-          {/* 완료 — 취소·퍼즐 만들기 */}
+          {/* 완료 — 취소·퍼즐 만들기(이미 있으면 대신 퍼즐 풀기) */}
           <div className="flex gap-2">
             <button onClick={() => { resetPuzzleCreate(); setPuzzleMode("solve"); }} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivory, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
-            <button onClick={submitPuzzleCreate} disabled={!pcCanSubmit} className="press" style={{ flex: 2, padding: "10px 0", borderRadius: 10, border: "none", background: pcCanSubmit ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(196,154,80,.25)", color: pcCanSubmit ? "#241509" : "rgba(36,21,9,.5)", fontWeight: 800, fontSize: 13, cursor: pcCanSubmit ? "pointer" : "default" }}>{pcCreating ? "만드는 중..." : "퍼즐 만들기"}</button>
+            {pcExisting ? (
+              <button onClick={() => { const pz = pcExisting.puzzle; resetPuzzleCreate(); setPuzzleMode("solve"); setActive(pz); }} className="press" style={{ flex: 2, padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>퍼즐 풀기</button>
+            ) : (
+              <button onClick={submitPuzzleCreate} disabled={!pcCanSubmit} className="press" style={{ flex: 2, padding: "10px 0", borderRadius: 10, border: "none", background: pcCanSubmit ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(196,154,80,.25)", color: pcCanSubmit ? "#241509" : "rgba(36,21,9,.5)", fontWeight: 800, fontSize: 13, cursor: pcCanSubmit ? "pointer" : "default" }}>{pcCreating ? "만드는 중..." : "퍼즐 만들기"}</button>
+            )}
           </div>
         </div>
       )}
@@ -21503,6 +21499,7 @@ const CHANGELOG = [
       "퍼즐 카드에서 PGN 표시가 오프닝 이름 옆 어색한 자리에 있던 것을, 국면·FEN 배지와 한 무리로 다시 묶었어요.",
       "예전에 하다 만 실시간 대국이 계속 남아 있어서, /play에 들어갈 때마다(심지어 '대국 상대 찾기'를 누르기도 전에) 그 대국으로 끌려가 매칭 화면에 아예 들어갈 수 없던 문제를 고쳤어요.",
       "대국이 끝나면 결과를 팝업으로 보여줘요 — 승/패/무 결과와 사유, 상대 정보, 코치의 한마디, 대국 리뷰·재대결 버튼을 한 화면에서 확인할 수 있어요.",
+      "집중 분석에서 실수·부정확한 수·탁월한 수를 찾아 '퍼즐 만들기'를 누르면 이제 곧장 퍼즐 카드로 들어가지 않고, 퍼즐 탭의 퍼즐 만들기 마법사로 이동해요 — 같은 위치에 이미 다른 사람이 만든 퍼즐이 있으면 '@아무개님이 이미 이 퍼즐을 만들었어요!'가 뜨고 버튼도 '퍼즐 만들기' 대신 '퍼즐 풀기'로 바뀌어요.",
     ],
   },
   {
@@ -28550,6 +28547,15 @@ export default function App() {
     if (!pz) pz = fallback || null;               // 서버에 아직 없으면 방금 만든 것
     if (pz) setPuzzleActive(pz);
   }, []);
+  // (v0.4.4 기능, 사용자 요청) 집중 분석에서 "퍼즐 만들기"를 누르면 바로 퍼즐 카드로 들어가는 대신
+  // 퍼즐 탭의 퍼즐 마법사 화면으로 이동시키고, 그 자리에서 곧장 원하는 수까지 자동으로 채워준다
+  // (PuzzleTab이 puzzleWizardSeed를 소비하고 나면 null로 되돌려 재진입 시 중복 실행을 막는다).
+  const [puzzleWizardSeed, setPuzzleWizardSeed] = useState(null);
+  const onOpenPuzzleWizard = useCallback((seed) => {
+    setSearchOpen(false); setFriendsOpen(false);
+    setTab("puzzle");
+    setPuzzleWizardSeed(seed);
+  }, []);
   // (v0.2.0 기능2) 오늘의 퍼즐 — 순수 함수라 매 렌더 다시 계산해도 무방(자정 지나 날짜가
   // 바뀌면 자연히 다음 퍼즐로 넘어간다). 알림 팝업의 "풀러 가기"에서도 그대로 재사용한다.
   const todayPuzzle = useDailyPuzzle(engine);
@@ -28852,7 +28858,7 @@ export default function App() {
             언마운트되지 않고 계속 liveOn 실시간 평가를 돌려, useEngine의 단일 공유 워커 큐를 끝없이
             채워 넣는 바람에 PlayPage의 봉 수 요청(engine.evaluateMulti)이 차례를 영영 못 받고 무한정
             "생각하는 중..."에 멈춰 있던 문제(사용자 제보)의 원인이었다. */}
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} onSavePuzzle={onSavePuzzle} requestPuzzleGen={requestPuzzleGen} puzzleGenProgress={puzzleGenProgress} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={openPlay} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={openPlay} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} />}
         {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 분석으로 이동한 경우(focusReturnTab === "dex"),
             집중 분석이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
             분석을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다
@@ -28862,7 +28868,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} />}
