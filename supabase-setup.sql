@@ -1443,7 +1443,15 @@ begin
 end $$;
 
 -- 친구에게 도전장 보내기 — 실제로 친구 사이인지(friend_edges, status='accepted')를 서버가 검사한다.
--- 상대에게 이미 보낸 pending 초대가 있으면 새로 만들지 않고 그 초대를 그대로 돌려준다(중복 방지).
+-- (v0.4.4 버그 수정, 사용자 제보) "상대에게 이미 보낸 pending 초대가 있으면 새로 만들지 않고 그
+-- 초대를 그대로 돌려준다"는 중복 방지 규칙이, 채팅 "/play n" 명령어를 사실상 먹통으로 만들고
+-- 있었다 — 이전에 보낸 초대가 하나라도 응답되지 않은 채 남아 있으면(상대가 놓쳤거나 그냥 무시한
+-- 경우가 흔하다) 그 뒤로는 이 함수가 행을 건드리지도, 채팅 메시지를 새로 남기지도 않고 옛 행을
+-- 그대로 돌려주기만 해서, 보낸 사람 입장에서는 "/play 3"을 입력해도(입력창은 비워지니 성공한 것
+-- 처럼 보이지만) 채팅에 아무것도 새로 남지 않고 받는 사람 화면에도 아무 변화가 없어 "명령어가 안
+-- 된다"는 것과 정확히 같은 증상으로 재현됐다. 이제 이미 pending 초대가 있어도 time_control과
+-- updated_at을 새 요청으로 갱신하고(받는 쪽 GlobalPvpInviteBanner는 이 테이블을 event:"*"로
+-- 구독하므로 update만으로도 다시 뜬다) 채팅에도 매번 새 카드를 남긴다 — 재요청이 항상 눈에 보이게.
 drop function if exists public.pvp_invite_friend(uuid, text) cascade;
 create or replace function public.pvp_invite_friend(p_to_uid uuid, p_time_control text default '600-0')
 returns public.pvp_invites language plpgsql security definer set search_path = public as $$
@@ -1457,12 +1465,15 @@ begin
   ) into v_are_friends;
   if not v_are_friends then raise exception 'not friends'; end if;
   select * into v_inv from public.pvp_invites where from_uid = v_me and to_uid = p_to_uid and status = 'pending' order by created_at desc limit 1;
-  if found then return v_inv; end if;
-  insert into public.pvp_invites(from_uid, to_uid, time_control) values (v_me, p_to_uid, p_time_control) returning * into v_inv;
+  if found then
+    update public.pvp_invites set time_control = p_time_control, updated_at = now() where id = v_inv.id returning * into v_inv;
+  else
+    insert into public.pvp_invites(from_uid, to_uid, time_control) values (v_me, p_to_uid, p_time_control) returning * into v_inv;
+  end if;
   -- (v0.4.3 기능, 사용자 요청) 전역 알람 박스와 같은 신청을 채팅에도 남긴다 — 이미 여기 친구
   -- 사이임을 확인했고 이 함수 자체가 SECURITY DEFINER라 RLS(친구 사이만 채팅 가능)를 우회해도
-  -- 안전하다. 새로 만든 초대일 때만(위 "이미 보낸 pending 초대가 있으면" 조기 반환 이후) 보낸다 —
-  -- 안 그러면 같은 상대에게 대기열 폴백 등으로 여러 번 호출돼도 채팅에 중복으로 쌓이지 않는다.
+  -- 안전하다. (v0.4.4) 기존 초대를 재사용하는 경우에도, 재요청이 실제로 상대에게 전달됐다는 걸
+  -- 보낸 사람이 채팅에서 확인할 수 있도록 매번 새 카드를 남긴다.
   insert into public.chat_messages(from_uid, to_uid, body, pvp_invite_id) values (v_me, p_to_uid, '실시간 대국을 신청했어요.', v_inv.id);
   return v_inv;
 end; $$;
@@ -1547,15 +1558,20 @@ grant execute on function public.delete_own_account() to authenticated;
 -- profiles.id(uuid)는 그대로 "계정 하나 = 고유 UID"의 진짜 식별자로 두고, MID는 사람이 계정 센터
 -- 화면에서 보고 부르기 쉬운 짧은 번호일 뿐이다(로그인 수단과 무관 — 여러 OAuth를 연결해도 같은
 -- profiles 행이라 MID는 하나 그대로 유지된다).
+-- (v0.4.4 버그 수정) MID 형식을 "9자 중 아무 자리에나 영문/숫자가 섞인 9자리"에서, 사람이 부르고
+-- 받아 적기 쉽도록 "앞 영문 대문자 5자리 + 뒤 숫자 4자리"로 고정했다(예: ABCDE1234).
 drop function if exists public.gen_mid() cascade;
 create or replace function public.gen_mid()
 returns text language plpgsql volatile set search_path = public as $$
-declare v_chars text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; v_code text; v_exists boolean;
+declare v_letters text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; v_digits text := '0123456789'; v_code text; v_exists boolean;
 begin
   loop
     v_code := '';
-    for i in 1..9 loop
-      v_code := v_code || substr(v_chars, 1 + floor(random() * length(v_chars))::int, 1);
+    for i in 1..5 loop
+      v_code := v_code || substr(v_letters, 1 + floor(random() * length(v_letters))::int, 1);
+    end loop;
+    for i in 1..4 loop
+      v_code := v_code || substr(v_digits, 1 + floor(random() * length(v_digits))::int, 1);
     end loop;
     select exists(select 1 from public.profiles where mid = v_code) into v_exists;
     exit when not v_exists;
@@ -1565,6 +1581,9 @@ end; $$;
 -- 컬럼을 만들 때 이미 이 함수가 있어야 default로 걸 수 있으므로, 위에서 함수부터 만든 뒤 컬럼을
 -- 추가한다. 새로 가입하는 계정(handle_new_user 트리거·claim_username RPC 등 profiles를 insert하는
 -- 모든 경로)은 컬럼 default 덕분에 자동으로 MID를 받고, 이미 있던 계정은 아래 backfill로 한 번만
--- 채운다.
-alter table public.profiles add column if not exists mid text unique default public.gen_mid() check (mid ~ '^[A-Z0-9]{9}$');
-update public.profiles set mid = public.gen_mid() where mid is null;
+-- 채운다. 체크 제약도 새 형식(영문 5+숫자 4)으로 다시 걸고, 옛 형식(무작위 9자)으로 이미 발급된
+-- MID는 새 형식으로 다시 발급한다.
+alter table public.profiles drop constraint if exists profiles_mid_check;
+alter table public.profiles add column if not exists mid text unique default public.gen_mid();
+update public.profiles set mid = public.gen_mid() where mid is null or mid !~ '^[A-Z]{5}[0-9]{4}$';
+alter table public.profiles add constraint profiles_mid_check check (mid ~ '^[A-Z]{5}[0-9]{4}$');
