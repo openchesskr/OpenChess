@@ -26,6 +26,37 @@
 
 ## 버전 기록
 
+### OpenChess v0.4.3 — 2026/8/31
+
+**기능 — Apple/Facebook 로그인 + 계정 센터(연결/해제·로그아웃·계정 탈퇴)**
+`authGoogleStart`를 `authOAuthStart(provider)`로 일반화하고 로그인 창에 Apple/Facebook 버튼을 각 브랜드 가이드라인 색상으로 추가했다. 이메일 중복·로그인 실패 시 "이미 다른 방식으로 가입됨" 힌트도 Google 전용에서 세 제공자 공통(`hintProvider`)으로 일반화했다. 계정 하나에 대응하는 고유 UID는 이미 `profiles.id`(=`auth.users.id`)가 맡고 있어, 여러 로그인 수단을 같은 계정에 연결하는 쪽은 새 SQL 없이 Supabase Auth의 identity linking(GoTrue `/user/identities/authorize`·`DELETE /user/identities/{id}`)을 그대로 사용했다(`getUserIdentities`/`linkIdentityRedirect`/`unlinkIdentity`). 헤더 프로필 메뉴·설정 탭 양쪽에서 진입 가능한 계정 센터(`AccountCenterModal`)를 새로 만들어 로그인 수단(이메일/Google/Apple/Facebook) 연결·해제, 로그아웃, 계정 탈퇴(아이디 입력 확인 후 영구 삭제)를 한 곳에서 처리하게 했다 — 다른 오버레이와 같은 `screens`/`pushScreen` 패턴이라 뒤로가기와 자연스럽게 맞물린다. 계정 탈퇴는 새 SQL 함수 `delete_own_account()`(SECURITY DEFINER, `auth.users`에서 본인 행 삭제)로 처리하며, 기존 스키마가 사용자 데이터 테이블 대부분을 `auth.users`에 `on delete cascade`로 걸어 둬서 관련 데이터가 함께 정리된다. Apple/Facebook 발급부터 Supabase Providers 설정, Manual/Automatic Linking 옵션, 콜백 URL까지 단계별로 정리한 `SETUP_OAUTH.md`도 추가했다.
+
+계정 센터에는 계정마다 고유한 9자리 영문 대문자+숫자 회원 번호(MID)와 복사 버튼도 함께 추가했다 — `profiles.mid` 컬럼(고유, 서버가 `gen_mid()`로 자동 생성)을 신설해 신규 가입은 컬럼 default로 자동 발급되고, 기존 계정은 1회 backfill했다.
+
+**기능 — `/play` 설정 화면을 스케치대로 재설계 + 매칭·초대 흐름 다듬기**
+사용자가 제공한 스케치대로 "봇/실시간 대국"·"랜덤 매칭/친구와 플레이" 두 탭 전환을 없애고, 타임 컨트롤을 불렛·블리츠·래피드·스탠다드 4개 카테고리 × 3개(불렛: 1분/2분/2분+1초, 블리츠: 3분/5분/5분+2초, 래피드: 10분/15분/15분+10초, 스탠다드: 30분/1시간/1시간+30초) 그리드에서 고른 뒤 [선택된 타임 컨트롤로 대국 상대 찾기]·[봇과 플레이하기]·[친구와 플레이하기] 세 액션 중 하나를 바로 누르는 한 화면 구성으로 바꿨다. "봇과 플레이하기"만 진영·봇 등급을 더 골라야 해서 그때만 뒤로가기가 있는 하위 화면(`setupPhase "bot"`)으로 넘어간다.
+
+매칭 대기 화면은 레이더 펄스 애니메이션 + 경과 시간을 보여주는 전용 컴포넌트(`MatchmakingWait`)로 바꿔 랜덤 매칭 대기·친구 도전 응답 대기 양쪽에서 공용으로 쓴다. `/play` 페이지를 벗어나면(언마운트) `leaveCleanupRef`로 언마운트 시점의 최신 상태를 읽어, 대기열에 있었으면 매칭 취소로 대기열에서 빼고 결과 없이 진행 중이던 실시간 대국이 있었으면 그 자리에서 기권으로 서버에 보고하도록 했다. "친구와 플레이하기"는 뜨는 드롭다운 대신 카드 자체를 아래로 넓히는 인라인 목록으로 바꿔, 각 행의 프로필(사진·이름)을 누르면 그 친구 프로필로 이동하고(뒤로가기 시 `/play`로 복귀) 별도 "도전" 버튼으로 대국 신청을 분리했다. 친구 대국 신청(`pvp_invites`) 전역 알람 박스(`GlobalPvpInviteBanner`)를 App 루트에 추가해 사이트 어느 화면에 있어도 상단에 뜨고, 수락·거절하거나 상대가 취소하기 전까지 사라지지 않는다. 같은 신청은 채팅 메시지로도 동시에 전송해(`chat_messages.pvp_invite_id`, `pvp_invite_friend` RPC) 같은 디자인의 카드(`PvpInviteChatCard`)로 대화방에도 남고, 채팅에서 `/play 3`·`/play 15+10`처럼 시간을 지정해 바로 신청할 수도 있게 했다(프리셋에 없는 분도 `timeControlFromKey` 헬퍼로 `PlayPage`가 올바른 라벨·클럭으로 이어받는다).
+
+**기능 — `/faq` 페이지 신설**
+`/about`과 같은 패턴(App의 무거운 초기화를 거치지 않는 별도 정적 페이지)으로 `/faq`를 새로 만들었다(`src/FaqPage.jsx`, `main.jsx` 경로 분기 추가). `/about`의 Reveal(스크롤 진입 애니메이션)·KineticWord/KineticTagline·SectionDivider·색 팔레트를 그대로 재사용해 같은 톤을 유지했고, 카테고리별 아코디언 FAQ와 하단 이메일 문의 링크(설정 탭과 같은 `openchesskr@gmail.com` mailto)를 담았다. 설정 탭의 "문의 / FAQ" 카드에 "FAQ 보기"(`/faq`로 이동) 버튼을 추가하고, 기존 "문의하기"(이메일)는 그대로 뒀다. 채팅 명령어 미리보기도 "/"만 입력해도 항상 뜨던 것을 정확히 "/help"를 입력했을 때만 뜨도록 바꾸고 `CHAT_COMMANDS` 목록에 `/play`·`/help` 항목을 추가했다.
+
+**UX — 유휴 자동 로그아웃 제거**
+사용자 요청으로 30분 유휴 자동 로그아웃을 없앴다 — 같은 기기에서는 더 이상 자동으로 로그아웃되지 않는다. 대신 액세스 토큰이 오래 열어 둔 탭에서 조용히 만료되는 일(사실상의 숨은 로그아웃)이 없도록, 50분마다 refresh_token으로 미리 갱신하는 타이머(`refreshAccessToken`)로 대체했다.
+
+**UI — 퍼즐 카드 높이 고정**
+"n명이 풀었습니다" 줄과 PGN/국면/FEN/레이팅 배지 줄이 있고 없고에 따라 카드 높이가 들쭉날쭉하던 문제를, 두 영역 모두 내용이 없어도 안전 높이를 항상 예약(`minHeight`)하도록 고쳐 같은 행의 카드 높이가 항상 고정되게 했다.
+
+**버그 수정 — 실시간 대국 매칭, 이미지 스캔, 퍼즐 생성**
+pvp 대국 진입 시(대기열 매칭·친구 초대 수락·재접속) `mode`가 `"pvp"`로 바뀌지 않던 버그를 고쳤다 — 친구 초대를 수락하는 쪽은 모드 토글을 직접 누른 적이 없어 기본값 `"bot"`에 머물러 실제 상대 대신 로컬 봇과 대국하고 내 수도 서버로 전송되지 않았다. `applyPvpGame`에서 한 번에 처리해 모든 진입 경로에서 재발하지 않게 했다. `pvp_queue_join`이 오래 방치된(2분 이상 업데이트 없는) `"active"` 대국을 무조건 재접속으로 보고 즉시 돌려주던 것도, 중단 처리 후 정상 매칭시키도록 고쳤다 — 좀비 대국 때문에 랜덤 매칭이 대기 화면 없이 곧장 응답 없는 상대에 물리던 문제의 근본 원인이었다. `ImageSourceMenu`(이미지 스캔 소스 선택 메뉴)의 z-index가 학습 탭 보드 편집기 모달보다 낮아 메뉴가 모달 뒤에 가려 클릭해도 반응이 없어 보이던 버그를, 앱에서 가장 높은 기존 z-index보다 위로 올려 고쳤다. "내 파일에서 선택"의 accept에 `image/*` MIME이 여전히 남아 있어(v0.4.2에서 확장자를 추가했음에도) Android가 계속 이미지 전용 인텐트(주로 Google Photo)로 열던 문제도, `image/*`를 완전히 빼 진짜 파일 탐색기가 열리도록 마저 고쳤다.
+
+퍼즐 만들기 마법사의 "기물 희생하기" 테마는 저장 시 트리 자체의 첫 수가 이미 `mistakeSan`(선택한 수)이라, 검증(`isPuzzleSequenceValid`)이 그 수를 두 번 두려다 매번 불법 수로 걸려 저장이 조용히 거부되고 있었다(화면엔 `setActive`로 곧장 보여줘 성공한 것처럼 보였을 뿐) — 희생 테마 + 트리 형식일 때만 `setup`에서 `mistakeSan`을 빼도록 고쳤다. 이어서 "선택한 수의 직전 수를 컴퓨터의 응수로, 선택한 수 자체를 사용자가 찾을 첫 수로" 만들어 달라는 요청에 맞춰, `submitPuzzleCreate`가 저장 시 `mistakeSan`을 선택한 수 대신 그 직전 수로 바꾸고 `setupSans`를 그만큼 줄이도록 데이터 형식을 바꿨다 — `mistakeSan`이 다른 테마와 같은 뜻("이미 두어진, 방금 응수된 수")이 되어 퍼즐 솔버·검증 등 `setup=[...setupSans, mistakeSan]`을 쓰는 모든 곳이 예외 없이 정확히 동작한다(솔버 인트로가 직전 수를 컴퓨터 응수로 자동 재생하고, 트리의 첫 수 = 선택한 수 자체를 사용자가 찾는다). `isPuzzleSequenceValid`는 새 형식으로 먼저 검증하고 실패하면 구버전 형식으로 한 번 더 시도해 하위 호환을 유지한다. 그 밖에 앱 로드 시 한 번만 채워지던 `creatorUsernames`(퍼즐 탭 "내가 만든 퍼즐" 필터용 생성자 맵)를 `onSavePuzzle`이 새 퍼즐 저장 시 로컬에도 낙관적으로 반영하도록 해, 방금 만든 퍼즐이 그 세션 안에서 바로 필터에 잡히지 않던 문제도 고쳤다. 지난 커밋에서 `incomingInvite` state를 전역으로 옮기며 지웠는데 호출부(`applyPvpGame`, `rematch`) 2곳에 `setIncomingInvite(null)` 호출이 남아 있어, 실시간 대국 적용·재대국 시마다 `ReferenceError`로 죽던 문제도 함께 고쳤다.
+
+**문서 — v0.4.3 증분 SQL 마이그레이션**
+이미 v0.4.2까지 적용된 프로젝트에 이번 버전에서 바뀐 SQL만 다시 실행할 수 있도록 `supabase-setup.sql`에서 관련 부분(`chat_messages.pvp_invite_id`, 좀비 대국 정리, `pvp_invite_friend` 채팅 알림, `delete_own_account`, `gen_mid`/`profiles.mid`)만 뽑아 `MIGRATION_v0.4.3.sql`로 정리했다.
+
+`npm run build` 통과를 매 커밋마다 확인했다.
+
 ### OpenChess v0.4.2 — 2026/8/30
 
 **보안 — pvp_finish 자기 승리 선언 차단**
