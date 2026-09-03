@@ -1324,9 +1324,16 @@ end $$;
 -- 닫거나, 예전 버전에서 대국이 봇 모드로 잘못 시작돼 pvp_finish가 한 번도 불리지 않는 등) 그
 -- pvp_games 행은 status='active'로 영원히 남는다 — 위 "재접속 시 그대로 돌려준다" 로직이 이런
 -- 좀비 대국까지 무조건 즉시 돌려주는 바람에, 랜덤 매칭을 눌러도 대기 화면 한 번 못 보고 곧장 응답
--- 없는 상대와 매칭된 것처럼 보이는 문제가 있었다. 최근(2분 이내)에 실제로 움직임이 있었던 대국만
--- "재접속"으로 보고 그대로 돌려주고, 그보다 오래된 대국은 중단 처리한 뒤 정상적으로 대기열에
--- 합류시킨다.
+-- 없는 상대와 매칭된 것처럼 보이는 문제가 있었다. 최근에 실제로 움직임이 있었던 대국만 "재접속"으로
+-- 보고 그대로 돌려주고, 그보다 오래된 대국은 중단 처리한 뒤 정상적으로 대기열에 합류시킨다.
+-- (버그 수정, 사용자 제보) 이 기준이 원래 2분이었는데, 체크메이트가 난 대국을 패자 쪽 클라이언트가
+-- 미처 보고하지 못하고 나가버린 경우(그 자체는 pvp_finish의 자기 승리 선언 금지 가드 때문에 승자
+-- 쪽이 대신 보고할 수 없다 — 조작된 수순으로 가짜 승리를 우겨 넣는 것과 서버 입장에서 구분할 수
+-- 없어 안전하게 허용할 방법이 없다, 보안 검토에서 지적됨)에도 그대로 적용돼, 승자가 "대국 상대
+-- 찾기"를 다시 누르면 최대 2분 동안 새 매칭 대신 이미 끝난 그 대국(즉시 "패배/승리" 결과 화면)으로
+-- 계속 돌아가곤 했다. 이 창이 실제로 막아야 하는 건 "방금 새로고침해서 돌아온, 여전히 진행 중인
+-- 내 대국을 실수로 중단시키는 것"뿐이고, 재접속은 보통 몇 초 안에 일어나므로 10초면 그 목적엔
+-- 충분하다 — 2분에서 10초로 줄여 좀비 대국이 다음 매칭을 막는 시간을 최소화한다.
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
 create or replace function public.pvp_queue_join(p_time_control text default '600-0')
@@ -1338,7 +1345,7 @@ begin
     where status = 'active' and (white_uid = v_me or black_uid = v_me)
     order by created_at desc limit 1;
   if found then
-    if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
+    if v_game.updated_at > now() - interval '10 seconds' then return v_game; end if;
     update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
   end if;
   delete from public.pvp_queue where uid = v_me;
