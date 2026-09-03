@@ -1334,6 +1334,14 @@ end $$;
 -- aborted로 만들어 패배를 회피하기에 충분히 짧은 시간이었다(원래 2분은 그렇게 하기엔 대국 시계상
 -- 손해가 너무 커서 사실상 쓸모없는 회피 수단이었다). 서버가 sans를 직접 재생해 "정말 조용한 것"과
 -- "정말 끝난 것"을 구분하지 않는 한 안전한 기준을 고를 수 없어 원래의 2분으로 되돌린다.
+-- (버그 수정, 사용자 제보) 대기 중(pvpWaiting)에는 클라이언트가 white_uid/black_uid 두 realtime
+-- 구독 각각의 5초 안전망 폴백으로 이 함수를 다시 부른다 — 둘 다 같은 조건에서 켜지므로 사실상 거의
+-- 동시에 같은 사용자가 이 함수를 두 번 동시 호출하는 셈이었다. 예전엔 "delete → insert" 방식이라,
+-- 두 호출이 겹치면(한쪽이 커밋되기 전에 다른 쪽이 이미 없는 걸 보고 각자 insert를 시도) uid 기본키
+-- 충돌로 한쪽 호출이 그대로 에러를 내며 실패했다(클라이언트에는 "대기열 합류에 실패했어요"로 보임 —
+-- 즉시 패배 버그를 고치고 나서야 대기 화면이 5초 넘게 유지되며 처음 드러난 문제). insert를
+-- "on conflict (uid) do update"로 바꿔, 같은 사용자가 거의 동시에 여러 번 불러도 항상 안전하게
+-- 자기 자리만 갱신하도록(경쟁 상태 자체가 없도록) 한다.
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
 create or replace function public.pvp_queue_join(p_time_control text default '600-0')
@@ -1348,12 +1356,13 @@ begin
     if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
     update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
   end if;
-  delete from public.pvp_queue where uid = v_me;
   select uid into v_other from public.pvp_queue where uid <> v_me and time_control = p_time_control order by created_at asc limit 1 for update skip locked;
   if v_other is null then
-    insert into public.pvp_queue(uid, time_control) values (v_me, p_time_control);
+    insert into public.pvp_queue(uid, time_control) values (v_me, p_time_control)
+      on conflict (uid) do update set time_control = excluded.time_control, created_at = now();
     return null;
   end if;
+  delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
   insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, p_time_control) returning * into v_game;
