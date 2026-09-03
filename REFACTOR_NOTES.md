@@ -235,3 +235,33 @@ App.jsx-local 값에 의존해 옮기면 역방향 import가 생기거나, JSX/�
 - lastNamedOpening/firstNamedOpening/openingNamesAlong/puzzleName/livePuzzleName — App.jsx-local
   effectiveOpeningNameAt(오프닝 콘텐츠 시스템, Phase 1-2 범위)에 의존해 이번 phase에서는 옮길 수
   없음.
+
+## Phase 4
+
+Phase 1-3는 순수 상수/함수만 옮겼다. Phase 4는 처음으로 실제 JSX 컴포넌트를 옮기는 단계라 위험도가
+한 단계 높다 — 그래서 지시문대로 "leaf" 컴포넌트(다른 큰 컴포넌트나 App.jsx-local state/closure를
+직접 참조하지 않고 props로만 받는 것)만, 그것도 각 추출마다 `npm run build` + 전체 grep 재검증을
+거치며 하나씩만 옮긴다. 대상 디렉터리는 `src/components/`(확장자 `.jsx`, AboutPage.jsx/FaqPage.jsx와
+동일한 관례).
+
+### src/components/pieces.jsx (commit TBD)
+- 이동: `SkinContext`(createContext, 보드/기물 스킨을 Provider 하나로 트리 전체에 흘려보내는 용도),
+  `PieceGlyph`, `TierPieceGlyph`, `TierLogoDisc` — 셋 다 theme.js의 순수 데이터(PIECE_* 상수,
+  PIECE_SKINS, tierPieceSrc 등)와 tierSystem.js의 `TIER_COLORS`만 참조하고, props/useContext/useId
+  외에 App.jsx-local 상태를 전혀 참조하지 않음을 grep으로 확인.
+- **SkinContext를 함께 옮긴 이유**: PieceGlyph가 `useContext(SkinContext)`로 기본 스킨을 읽는데, 이
+  Context는 Board/AnimatedMove/ReviewBoardIntroAnim/RevertSlide 등 App.jsx에 남은 컴포넌트도 같이
+  쓰고 Provider는 App() 최상위에 있다. Context 선언 자체는 순수 객체 생성(JSX 아님)이라 pieces.jsx로
+  옮기고, App.jsx는 `import { SkinContext } from "./components/pieces.jsx"`로 다시 가져와 Provider와
+  나머지 컴포넌트(Board 등)에서 그대로 쓰도록 배선만 바꿨다 — App.jsx → pieces.jsx 단방향, 순환 없음.
+- 남겨둔 것: Board/BoardWithMaterial/AnimatedMove/ReviewBoardIntroAnim/RevertSlide 등 SkinContext를
+  쓰는 다른 컴포넌트는 지시문상 이번 phase 대상이 아니거나(Board는 다음 항목에서 별도 검토) 아직
+  검토 전이라 App.jsx에 그대로 둠.
+- 위험도: 낮음. 이름 변경 없이 그대로 옮기고 import만 배선. `npm run build` 통과, App.jsx 안에
+  `SkinContext`/`PieceGlyph`/`TierPieceGlyph`/`TierLogoDisc` 재정의(그림자)가 없음을 grep으로 확인.
+- 증상이 보이면: 기물이 안 보이거나 잘못된 스킨(SVG 대신 이미지, 또는 그 반대)으로 렌더링되면
+  src/components/pieces.jsx의 PieceGlyph를, 티어 배지·프로필의 티어 기물 아이콘 크기/색이 이상하면
+  TierPieceGlyph/TierLogoDisc를 확인. 보드 전체가 엉뚱한 스킨(설정에서 바꾼 스킨이 반영 안 됨)으로
+  보이면 App.jsx의 `<SkinContext.Provider value={skinValue}>`가 여전히 이 파일의 SkinContext를
+  참조하는지(같은 모듈에서 온 동일 객체인지) 먼저 확인 — 만약 어딘가 SkinContext를 새로 재선언했다면
+  Provider와 소비자가 서로 다른 Context 객체를 참조하게 되어 기본값(classic)으로 항상 고정되어 버린다.
