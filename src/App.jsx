@@ -10434,10 +10434,13 @@ function OrbitingQualityIcons({ size = 288 }) {
   const reduced = usePrefersReducedMotion();
   const pool = useMemo(() => { const saved = loadLastGameQuality(); return buildOrbitPool(saved && saved.counts); }, []);
   const items = useMemo(() => {
+    // (버그 수정, 사용자 제보) 처음엔 각속도가 너무 낮아서(한 바퀴에 24~55초) 잠깐 보면 아예 멈춰
+    //있는 것처럼 보였다 — 궤도를 "돌고 있다"고 한눈에 알아볼 수 있게 확실히 빠르게 올렸다(한 바퀴에
+    // 약 6~13초).
     const rings = [
-      { rx: size * 0.27, speed: 0.26 },
-      { rx: size * 0.38, speed: 0.165 },
-      { rx: size * 0.48, speed: 0.115 },
+      { rx: size * 0.27, speed: 1.05 },
+      { rx: size * 0.38, speed: 0.68 },
+      { rx: size * 0.48, speed: 0.48 },
     ].map((r) => ({ ...r, ry: r.rx * 0.42 }));
     return pool.map((kind, i) => {
       const ring = rings[i % rings.length];
@@ -10484,7 +10487,7 @@ function OrbitingQualityIcons({ size = 288 }) {
       <svg width="100%" height="100%" viewBox={"0 0 " + size + " " + size} style={{ position: "absolute", inset: 0, transform: "rotate(-8deg)" }}>
         <g transform={"translate(" + size / 2 + "," + size / 2 + ")"}>
           {[0.27, 0.38, 0.48].map((f) => (
-            <ellipse key={f} rx={size * f} ry={size * f * 0.42} fill="none" stroke={T.brass} strokeWidth={1} opacity={0.22} />
+            <ellipse key={f} rx={size * f} ry={size * f * 0.42} fill="none" stroke={T.brassHi} strokeWidth={1.4} opacity={0.5} />
           ))}
         </g>
       </svg>
@@ -10526,12 +10529,15 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
           블런더 등)를 반영한 chess.com 스타일 아이콘들이 실제 천체처럼 얇은 타원 궤적을 따라 도는
           장면으로 발전시켰다 — OrbitingQualityIcons 정의부 주석 참고. */}
       <div style={{ position: "relative", width: 288, height: 288, marginBottom: 10 }}>
-        {[0, 0.7, 1.4].map((delay) => (
+        {/* (버그 수정, 사용자 제보) 예전엔 3개가 짧은 간격(0.7초)으로 겹쳐 커졌다 사라지길 반복해
+            "깜빡거린다"는 인상을 줬다 — 한 번에 하나씩만(2개를 크게 벌린 간격으로 교대), 더 천천히,
+            더 멀리(궤도 바깥쪽까지) 옅게 퍼져나가는 전파처럼 바꿨다. */}
+        {[0, 3].map((delay) => (
           <motion.span key={delay}
-            initial={{ scale: 0.5, opacity: 0.55 }}
-            animate={{ scale: [0.5, 1.5], opacity: [0.55, 0] }}
-            transition={{ duration: 2.1, repeat: Infinity, ease: "easeOut", delay }}
-            style={{ position: "absolute", inset: 108, borderRadius: "50%", border: "1.5px solid " + T.brass }}
+            initial={{ scale: 1, opacity: 0.4 }}
+            animate={{ scale: [1, 4], opacity: [0.4, 0] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "easeOut", delay }}
+            style={{ position: "absolute", inset: 108, borderRadius: "50%", border: "1px solid " + T.brassHi }}
           />
         ))}
         <OrbitingQualityIcons size={288} />
