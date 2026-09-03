@@ -107,3 +107,22 @@ App.jsx(원래 ~28,392줄)를 기능별 순수 모듈로 점진적으로 분리�
   옮기기 전과 동일한 표현식. 배포 base 경로가 바뀌었는데 마스터 대국 JSON을 못 찾는 증상이면 이
   값과 실제 배포 base 설정(vite.config)을 대조.
 - import 순서: lichessApi.js는 다른 src/lib 모듈에 의존하지 않는다(순수, 외부 fetch만 사용) — 순환 없음.
+
+### src/lib/chesscom.js
+- 이동: `chesscomChangeDaysLeft`(+ 비공개 `CHESSCOM_CHANGE_COOLDOWN_MS`), `chesscomDisplayUsername`,
+  `countryFlag`, `OPENING_NAME_TERMINATORS`(+ 비공개 `OPENING_NAME_EPONYMS`), `segmentOpeningWords`,
+  `ecoOpeningName`, `computeRatingChanges`, `CHESSCOM_CACHE_VERSION`, `chesscomCacheKey`,
+  `loadChesscomCache`, `saveChesscomCache`, `extractChesscomGameId` — 전부 순수 함수/상수.
+- 남겨둔 것(의도적): `fetchChesscomProfile`(네트워크 fetch, 지침 대상 아님)과 `useChessCom`(React
+  훅, 무거운 state/effect)은 App.jsx에 그대로 두고 이 새 모듈의 `chesscomDisplayUsername`,
+  `ecoOpeningName`, `loadChesscomCache`, `saveChesscomCache`, `extractChesscomGameId` 등을 import해서
+  쓰도록 배선만 바꿨다.
+- 위험도: 낮음. 전부 순수 함수 + localStorage 읽기/쓰기(캐시)뿐, 공유 mutable 싱글턴 없음. 유일하게
+  주의할 값은 `CHESSCOM_CACHE_VERSION`(현재 3) — localStorage 캐시 키에 박히는 값이라, 나중에 캐시
+  스키마를 또 바꿀 때 이 상수를 올리는 걸 잊으면(신규든 기존이든) 옛 스키마 캐시를 새 스키마로
+  오인해서 읽는 버그가 날 수 있다(이건 새로 생긴 위험이 아니라 원래도 있던 규칙 — 옮기면서 값·주석
+  그대로 유지).
+- 증상이 보이면: chess.com 대국 캐시가 이상하게 비거나(옛 스키마 오인) 오프닝 이름 표기가
+  깨지면(ecoOpeningName/segmentOpeningWords) src/lib/chesscom.js 확인. 대국 목록 자체가 안 뜨면
+  useChessCom(App.jsx에 남아 있음) 쪽을 먼저 볼 것 — 이 파일은 순수 변환 로직만 담당한다.
+- import 순서: chesscom.js는 다른 src/lib 모듈에 의존하지 않는다 — 순환 없음.
