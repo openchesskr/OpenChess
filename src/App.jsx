@@ -10403,6 +10403,14 @@ function buildOrbitPool(counts) {
   Object.entries(pool).forEach(([kind, n]) => { for (let i = 0; i < n; i++) items.push(kind); });
   return items;
 }
+// (버그 수정, 사용자 제보) prefers-reduced-motion이 켜진 브라우저에서는 아래 rAF 루프 자체를 아예
+// 돌리지 않았는데, 그러면 아이콘 div들이 transform 한 번 못 받고 CSS 기본값(그냥 left:50%/top:50%,
+// 즉 중앙 한 점) 그대로 전부 겹쳐 쌓인 채 멈춰 있었다 — "궤도"가 아니라 "중앙에 아이콘 뭉치가 겹쳐
+// 있는 것"으로 보였을 소지가 크다(제보된 "움직임이 0" · "중앙에 원이 간헐적으로 등장"과 정확히
+// 일치한다 — 겹쳐 쌓인 아이콘들 각자의 페이드 주기가 서로 다른 타이밍에 그 뭉치를 나타났다 사라지게
+// 했을 것이다). computeFrame을 렌더 시점에도 한 번 그대로 계산해 각 아이콘의 초기 style에 넣어 두면,
+// 애니메이션이 아예 안 도는 경우에도 최소한 궤도 위에 제대로 퍼져서 정지한 모습으로 보인다 —
+// prefers-reduced-motion이어도 이 정지 프레임은 항상 살아있다.
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -10416,12 +10424,32 @@ function usePrefersReducedMotion() {
   }, []);
   return reduced;
 }
+// 궤도 아이콘 하나의 위치·크기·불투명도·쌓임 순서를 시각 t(초)에서 계산 — rAF 루프와 최초 렌더(정지
+// 프레임) 양쪽에서 똑같이 쓴다.
+function orbitFrame(it, t) {
+  const theta = it.phase + t * it.speed;
+  const x = Math.cos(theta) * it.ring.rx;
+  const y = Math.sin(theta) * it.ring.ry;
+  const depth = (Math.sin(theta) + 1) / 2; // 0(뒤)~1(앞)
+  const scale = 0.62 + depth * 0.6;
+  const cyc = (((t / it.cycleDur + it.cyclePhase) % 1) + 1) % 1; // 0~1 반복
+  const fade = cyc < 0.08 ? cyc / 0.08 : cyc < 0.62 ? 1 : cyc < 0.72 ? 1 - (cyc - 0.62) / 0.1 : 0;
+  const opacity = Math.max(0, Math.min(1, fade)) * (0.45 + depth * 0.55);
+  return {
+    transform: "translate(-50%,-50%) translate(" + x.toFixed(1) + "px," + y.toFixed(1) + "px) scale(" + scale.toFixed(3) + ")",
+    opacity: opacity.toFixed(3),
+    zIndex: Math.round(depth * 100) + 10,
+  };
+}
 // (v0.4.5 기능, 사용자 요청) 매칭 대기 화면의 궤도 애니메이션 — 반지름이 다른 3개의 얇은 타원 궤적
 // 위를 chess.com 스타일 수 체계 아이콘들이 실제 천체처럼 공전한다. 아이콘이 많아질 수 있어 React
 // state가 아니라 requestAnimationFrame에서 DOM 스타일을 직접 갱신한다(리렌더 없이 매 프레임 갱신 —
 // 아이콘 수가 늘어나도 가볍다). 각 아이콘은:
 //   · 자기 궤도를 계속 돈다 — 안쪽 궤도일수록 더 빨리 돌게 해(각속도를 반지름의 -1.5제곱에 비례시킴)
 //     "가까울수록 빠르다"는 케플러 궤도의 감각을 단순하게 흉내낸다.
+//   · (버그 수정, 사용자 제보) 아이콘마다 공전 주기가 뚜렷하게 달라야 궤도가 여럿이라는 게 느껴진다는
+//     제보를 받아, 같은 궤도 안에서도 속도 배율을 0.55배~1.85배까지(예전엔 0.85~1.15배로 거의 안 티가
+//     났다) 크게 벌렸다 — 기준 각속도 자체도 훨씬 빠르게 올렸다(한 바퀴에 약 2~7초).
 //   · 타원 위 위치(sin θ)를 그대로 "지금 앞쪽/뒤쪽 어디에 있는지"로 써서, 크기·불투명도·쌓임 순서
 //     (z-index)를 위치 변화와 항상 정확히 같은 값에서 함께 계산한다 — 앞쪽에 있을 때 커지고 진해지고
 //     다른 아이콘과 중앙 아바타 위로 올라온다.
@@ -10434,13 +10462,10 @@ function OrbitingQualityIcons({ size = 288 }) {
   const reduced = usePrefersReducedMotion();
   const pool = useMemo(() => { const saved = loadLastGameQuality(); return buildOrbitPool(saved && saved.counts); }, []);
   const items = useMemo(() => {
-    // (버그 수정, 사용자 제보) 처음엔 각속도가 너무 낮아서(한 바퀴에 24~55초) 잠깐 보면 아예 멈춰
-    //있는 것처럼 보였다 — 궤도를 "돌고 있다"고 한눈에 알아볼 수 있게 확실히 빠르게 올렸다(한 바퀴에
-    // 약 6~13초).
     const rings = [
-      { rx: size * 0.27, speed: 1.05 },
-      { rx: size * 0.38, speed: 0.68 },
-      { rx: size * 0.48, speed: 0.48 },
+      { rx: size * 0.27, speed: 2.6 },
+      { rx: size * 0.38, speed: 1.7 },
+      { rx: size * 0.48, speed: 1.2 },
     ].map((r) => ({ ...r, ry: r.rx * 0.42 }));
     return pool.map((kind, i) => {
       const ring = rings[i % rings.length];
@@ -10448,13 +10473,23 @@ function OrbitingQualityIcons({ size = 288 }) {
       return {
         kind, ring,
         phase: ((i * 137.5) % 360) * (Math.PI / 180), // 황금각 간격 — 같은 궤도 안 아이콘들이 몰리지 않게
-        speed: ring.speed * (0.85 + 0.3 * (((i * 53) % 17) / 17)) * dir,
+        speed: ring.speed * (0.55 + 1.3 * (((i * 53) % 17) / 17)) * dir,
         cycleDur: 9 + ((i * 29) % 13), // 초 — 아이콘마다 다른 등장/소멸 주기
         cyclePhase: ((i * 61) % 100) / 100,
       };
     });
   }, [pool, size]);
+  // (버그 수정, 사용자 제보) 중앙 아바타 주변에서 반복되던 확장 원(framer-motion, 짧은 duration마다
+  // scale/opacity가 처음 값으로 뚝 끊겨 되돌아감)이 "매끄럽게 퍼지는 전파"가 아니라 "깜빡인다"는
+  // 인상을 줬다 — 루프가 다시 시작되는 순간 반지름·불투명도가 순간이동하듯 초기값으로 튀는 게 원인
+  // (loop boundary "pop"). 아이콘과 같은 rAF 루프 안에서, sin 곡선으로 처음과 끝이 항상 0에서
+  // 자연스럽게 만나는 반지름·불투명도를 직접 계산해 그리면(WAVE_RINGS) 튀는 지점 자체가 없다.
+  const WAVE_RINGS = useMemo(() => [
+    { period: 4.6, phase: 0, rMin: size * 0.125, rMax: size * 0.5, peakOpacity: 0.32 },
+    { period: 4.6, phase: 2.3, rMin: size * 0.125, rMax: size * 0.5, peakOpacity: 0.32 },
+  ], [size]);
   const elRefs = useRef([]);
+  const waveRefs = useRef([]);
   useEffect(() => {
     if (reduced || !items.length) return;
     let raf;
@@ -10464,26 +10499,35 @@ function OrbitingQualityIcons({ size = 288 }) {
       items.forEach((it, i) => {
         const el = elRefs.current[i];
         if (!el) return;
-        const theta = it.phase + t * it.speed;
-        const x = Math.cos(theta) * it.ring.rx;
-        const y = Math.sin(theta) * it.ring.ry;
-        const depth = (Math.sin(theta) + 1) / 2; // 0(뒤)~1(앞)
-        const scale = 0.62 + depth * 0.6;
-        const cyc = (((t / it.cycleDur + it.cyclePhase) % 1) + 1) % 1; // 0~1 반복
-        const fade = cyc < 0.08 ? cyc / 0.08 : cyc < 0.62 ? 1 : cyc < 0.72 ? 1 - (cyc - 0.62) / 0.1 : 0;
-        const opacity = Math.max(0, Math.min(1, fade)) * (0.45 + depth * 0.55);
-        el.style.transform = "translate(-50%,-50%) translate(" + x.toFixed(1) + "px," + y.toFixed(1) + "px) scale(" + scale.toFixed(3) + ")";
-        el.style.opacity = opacity.toFixed(3);
-        el.style.zIndex = String(Math.round(depth * 100) + 10);
+        const f = orbitFrame(it, t);
+        el.style.transform = f.transform;
+        el.style.opacity = f.opacity;
+        el.style.zIndex = String(f.zIndex);
+      });
+      WAVE_RINGS.forEach((w, i) => {
+        const el = waveRefs.current[i];
+        if (!el) return;
+        const cyc = (((t + w.phase) / w.period) % 1 + 1) % 1; // 0~1, 항상 0에서 시작해 0에서 끝남
+        const r = w.rMin + (w.rMax - w.rMin) * cyc;
+        const opacity = Math.sin(Math.PI * cyc) * w.peakOpacity; // 양 끝이 정확히 0 — 튀는 지점 없음
+        el.setAttribute("r", r.toFixed(1));
+        el.setAttribute("opacity", opacity.toFixed(3));
       });
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [items, reduced]);
+  }, [items, reduced, WAVE_RINGS]);
   if (!items.length) return null;
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      <svg width="100%" height="100%" viewBox={"0 0 " + size + " " + size} style={{ position: "absolute", inset: 0 }}>
+        <g transform={"translate(" + size / 2 + "," + size / 2 + ")"}>
+          {WAVE_RINGS.map((w, i) => (
+            <circle key={"wave" + i} ref={(el) => { waveRefs.current[i] = el; }} r={w.rMin} fill="none" stroke={T.brassHi} strokeWidth={1} opacity={0} />
+          ))}
+        </g>
+      </svg>
       <svg width="100%" height="100%" viewBox={"0 0 " + size + " " + size} style={{ position: "absolute", inset: 0, transform: "rotate(-8deg)" }}>
         <g transform={"translate(" + size / 2 + "," + size / 2 + ")"}>
           {[0.27, 0.38, 0.48].map((f) => (
@@ -10492,12 +10536,15 @@ function OrbitingQualityIcons({ size = 288 }) {
         </g>
       </svg>
       <div style={{ position: "absolute", inset: 0, transform: "rotate(-8deg)" }}>
-        {items.map((it, i) => (
-          <div key={i} ref={(el) => { elRefs.current[i] = el; }}
-            style={{ position: "absolute", left: "50%", top: "50%", width: 22, height: 22, willChange: "transform, opacity" }}>
-            <div style={{ transform: "rotate(8deg)" }}>{badgeIcon(it.kind, 22)}</div>
-          </div>
-        ))}
+        {items.map((it, i) => {
+          const f0 = orbitFrame(it, 0);
+          return (
+            <div key={i} ref={(el) => { elRefs.current[i] = el; }}
+              style={{ position: "absolute", left: "50%", top: "50%", width: 22, height: 22, willChange: "transform, opacity", transform: f0.transform, opacity: f0.opacity, zIndex: f0.zIndex }}>
+              <div style={{ transform: "rotate(8deg)" }}>{badgeIcon(it.kind, 22)}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -10529,17 +10576,10 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
           블런더 등)를 반영한 chess.com 스타일 아이콘들이 실제 천체처럼 얇은 타원 궤적을 따라 도는
           장면으로 발전시켰다 — OrbitingQualityIcons 정의부 주석 참고. */}
       <div style={{ position: "relative", width: 288, height: 288, marginBottom: 10 }}>
-        {/* (버그 수정, 사용자 제보) 예전엔 3개가 짧은 간격(0.7초)으로 겹쳐 커졌다 사라지길 반복해
-            "깜빡거린다"는 인상을 줬다 — 한 번에 하나씩만(2개를 크게 벌린 간격으로 교대), 더 천천히,
-            더 멀리(궤도 바깥쪽까지) 옅게 퍼져나가는 전파처럼 바꿨다. */}
-        {[0, 3].map((delay) => (
-          <motion.span key={delay}
-            initial={{ scale: 1, opacity: 0.4 }}
-            animate={{ scale: [1, 4], opacity: [0.4, 0] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeOut", delay }}
-            style={{ position: "absolute", inset: 108, borderRadius: "50%", border: "1px solid " + T.brassHi }}
-          />
-        ))}
+        {/* (버그 수정, 사용자 제보) 예전엔 여기서 framer-motion으로 확장 원을 반복시켰는데, 루프가
+            다시 시작될 때마다 반지름·불투명도가 초기값으로 순간이동해 "깜빡인다"는 인상을 줬다 —
+            OrbitingQualityIcons 안으로 옮겨 아이콘과 같은 rAF 루프에서 sin 곡선으로(양 끝이 항상
+            0에서 자연스럽게 만나도록) 그리는 전파 효과로 바꿨다(WAVE_RINGS 주석 참고). */}
         <OrbitingQualityIcons size={288} />
         <motion.div
           animate={{ y: [0, -6, 0] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
