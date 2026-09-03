@@ -314,3 +314,18 @@ Phase 1-3는 순수 상수/함수만 옮겼다. Phase 4는 처음으로 실제 J
   보이거나) alt 텍스트/계산 중 점 애니메이션이 이상하면 src/components/badges.jsx의 badgeIcon/
   PendingDots를 확인. 등급 한글 이름 표기(탁월한 수/최선의 수 등)가 깨지면 이 파일의 QLABEL과
   App.jsx의 import가 맞는지 확인.
+
+### src/components/keywordScroll.jsx (commit TBD)
+- 이동: `KW`(키워드 칩 색·설명 데이터), `KeywordScroll`(학습 탭 수 블록의 키워드 칩 가로 자동
+  스크롤) — useRef/useState/useLayoutEffect/useEffect 전부 컴포넌트 내부에 갇힌 자기완결 상태
+  (자동 스크롤 애니메이션 타이머, overflow 감지)이고 App.jsx-local 값을 참조하지 않음을 확인.
+- KW를 함께 옮긴 이유: App.jsx의 학습 콘텐츠 편집기(키워드 칩 선택 UI, `kwPartner`/`KW_PAIRS`/
+  `KW_SINGLES`와 한 세트)가 KW를 그대로 참조해 함께 쓴다 — 이 편집기 자체는 큰 편집 UI라 이번
+  phase 대상이 아니므로 App.jsx에 남기고, KW만 이 파일에서 export해 App.jsx가 다시 import한다.
+- 남겨둔 것: `KW_PAIRS`/`KW_SINGLES`/`kwPartner`/`deriveKeywords`(KW를 안 쓰고 다른 순수 로직이라
+  옮길 수도 있었지만, 이번엔 KeywordScroll 클러스터에만 집중해 함께 옮기지 않음 — 다음 phase 후보)는
+  App.jsx에 그대로 둠.
+- 위험도: 낮음. 완전한 순수 데이터 + 자기완결 컴포넌트, 이름 변경 없이 그대로 이동.
+- 증상이 보이면: 학습 탭 수 블록의 키워드 칩(NORMAL/TRICKY 등)이 안 보이거나 색이 이상하거나
+  자동 가로 스크롤이 멈춰 있으면 src/components/keywordScroll.jsx의 KeywordScroll/KW를 확인.
+  설정의 키워드 선택 편집기 쪽 색이 깨지면 App.jsx가 이 파일에서 KW를 제대로 import하고 있는지 확인.
