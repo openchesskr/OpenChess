@@ -296,3 +296,21 @@ Phase 1-3는 순수 상수/함수만 옮겼다. Phase 4는 처음으로 실제 J
   EngineLineRow를 확인. 사이트 전반 폰트가 갑자기 다른 서체로 보이면 이 파일의 SEQ_FONT/SITE_FONT
   값과, 이 값을 App.jsx가 실제로 이 파일에서 import하고 있는지(다른 값으로 재선언한 곳이 없는지)
   확인.
+
+### src/components/badges.jsx (commit TBD)
+- 이동: `QLABEL`(수 등급 한글 라벨), `badgeIcon`(등급별 원형 배지 이미지, 비공개 `BADGE_ICON_SRC`
+  포함), `PendingDots`(계산 중 3-dot 애니메이션, badgeIcon 내부와 App.jsx의 다른 곳(진행률 표시)
+  양쪽에서 씀) — 전부 순수 상수/함수, App.jsx-local state·closure 참조 없음을 grep으로 확인.
+  badgeIcon 호출부 25곳 전부 `kind`(문자열)·`size`(숫자)만 인자로 넘기는 것도 확인.
+- QLABEL을 함께 옮긴 이유: badgeIcon이 이미지 alt 텍스트에 QLABEL을 쓰는데, QLABEL은 App.jsx의
+  CircleBadge/ClickInfoBadge 등 이번 phase 대상이 아닌 다른 곳에서도 10곳 가까이 쓰인다 — lib 모듈이
+  App.jsx를 import할 수 없는 것과 같은 이유로(순환 참조), QLABEL 자체를 이 파일로 옮기고 SITE_FONT/
+  SEQ_FONT와 같은 패턴으로 App.jsx가 다시 import해서 나머지 호출부에 쓴다.
+- 남겨둔 것: `QDESC`/`QCOLOR`(같은 구역의 다른 수 체계 상수)는 이번엔 badgeIcon이 직접 쓰지 않아
+  손대지 않고 App.jsx에 그대로 둠 — 다음 phase에서 CircleBadge/ClickInfoBadge를 검토할 때 함께 다시
+  볼 후보.
+- 위험도: 낮음. 완전한 순수 함수/상수, 이름 변경 없이 그대로 이동.
+- 증상이 보이면: 게임 리뷰·퍼즐·분석 탭 어디서든 수 등급 원형 배지 이미지가 안 뜨거나(대신 빈 원만
+  보이거나) alt 텍스트/계산 중 점 애니메이션이 이상하면 src/components/badges.jsx의 badgeIcon/
+  PendingDots를 확인. 등급 한글 이름 표기(탁월한 수/최선의 수 등)가 깨지면 이 파일의 QLABEL과
+  App.jsx의 import가 맞는지 확인.
