@@ -79,3 +79,31 @@ App.jsx(원래 ~28,392줄)를 기능별 순수 모듈로 점진적으로 분리�
 - 신뢰도: 100% 확신은 아니고 ~95% — live binding으로 export된 `let` 변수라는 점이 이 리팩터링
   전체에서 유일하게 "패턴이 새로운" 부분이라 표시해둔다. 빌드는 통과했고(`npm run build`), 런타임
   동작(로그인 → sbHeaders에 최신 토큰이 실리는지)은 실제 로그인 플로우로 별도 수동 확인이 필요할 수 있음.
+
+### src/lib/lichessApi.js
+- 이동: LICHESS_API, WIKI_API, `lichessFetchWithRetry`(+ 그 안에서만 쓰던 모듈 비공개 `_sleep` 헬퍼),
+  `lichessSinceParam`, `LICHESS_STATS_WINDOW_MONTHS`, `MASTER_DATA_BASE`, `loadMasterGameData`
+  (+ 그 비공개 캐시 변수 `masterGameData`/`masterGameLoadPromise`), `staticMasterGamesFor`.
+- 남겨둔 것(의도적): `_lichessCache`(Map), `lichessFetchJson`/`lichessFetchText`,
+  `fetchLichess`/`fetchMasterTopGames`/`fetchDevMasterGames`/`fetchAllMasterGames` 등은 지침에 명시된
+  이동 대상이 아니라서 App.jsx에 그대로 두고, `lichessFetchWithRetry`만 새 모듈에서 import해서 쓰도록
+  배선만 바꿨다. `fetchDevMasterGames`는 supabaseClient.js의 `SB_ON`/`sbSelect`를 그대로 쓴다(순환 아님 —
+  App.jsx → supabaseClient.js, App.jsx → lichessApi.js 둘 다 단방향).
+- **위험도 높음 — 진짜 조심해야 할 지점**: `_lichessCooldownUntil`은 "여러 개의 동시 리체스 요청이
+  429(레이트리밋)를 공유해서 인지"하도록 만든 모듈 전역 단일(singleton) mutable 변수다. 지침대로
+  export하지 않고 `src/lib/lichessApi.js` 안에서만 선언·갱신되게 두었다 — 이 변수가 두 곳에 따로
+  생기면(예: 나중에 실수로 이 파일을 복사해 비슷한 함수를 또 만들거나, App.jsx에 같은 이름의 변수를
+  다시 선언하면) 쿨다운이 반씩 나뉘어 429 폭주 방지 로직이 무력화된다.
+  - **어디를 볼지**: src/lib/lichessApi.js의 `let _lichessCooldownUntil = 0`과 `lichessFetchWithRetry`.
+  - **어떤 증상이면 여기**: 리체스 API 호출이 공유 429 쿨다운을 더 이상 지키지 않는 것처럼 보이거나
+    (한쪽에서 429를 맞았는데 다른 동시 호출들이 기다리지 않고 계속 요청을 쏨), 콘솔에 리체스 429
+    에러가 다시 몰아치는 패턴이 보이면 이 파일에 `_lichessCooldownUntil`이 정확히 한 군데에만
+    선언돼 있는지, App.jsx나 다른 파일에서 같은 이름을 재선언하지 않았는지 확인.
+- `masterGameData`/`masterGameLoadPromise`도 마찬가지로 "정적 마스터 대국 JSON을 최초 1회만 fetch"를
+  보장하는 모듈 단일 캐시 — `loadMasterGameData` 밖에서 재선언되면 마스터 게임 데이터를 여러 번
+  중복 fetch하게 된다(기능은 깨지지 않지만 불필요한 네트워크 요청 증가). 증상: 마스터 대국 목록이
+  느리게 뜨거나 네트워크 탭에 master-games.json 요청이 여러 번 찍히면 이 지점 확인.
+- 환경 의존 값: `MASTER_DATA_BASE`는 `import.meta.env.BASE_URL`(Vite 빌드 base 경로)에서 읽는다 —
+  옮기기 전과 동일한 표현식. 배포 base 경로가 바뀌었는데 마스터 대국 JSON을 못 찾는 증상이면 이
+  값과 실제 배포 base 설정(vite.config)을 대조.
+- import 순서: lichessApi.js는 다른 src/lib 모듈에 의존하지 않는다(순수, 외부 fetch만 사용) — 순환 없음.
