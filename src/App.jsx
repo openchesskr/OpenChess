@@ -1517,13 +1517,29 @@ function lichessSinceParam(monthsBack) {
   d.setUTCMonth(d.getUTCMonth() - monthsBack);
   return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
 }
+// (버그 수정, 사용자 제보) useOpeningTreeAuto(도감 트리를 백그라운드에서 계속 채우는 훅)는 동시에
+// 최대 8개까지 리체스 조회를 띄운다 — 레이트리밋(429)에 걸리면 아래 lichessFetchWithRetry가 그
+// "호출 하나"에 대해서는 백오프하며 재시도하지만, 나머지 7개 동시 호출은 그 사실을 전혀 모른 채 각자
+// 독립적으로 계속 재시도해(최악의 경우 8칸 × 3회 = 24개 요청이 짧은 시간에 몰림) 429가 429를 부르며
+// 콘솔이 같은 에러로 도배되는 걸(사용자 제보 스크린샷) 확인했다 — 짧은 시간에 계속되는 실패한
+// 네트워크 요청·재시도 처리 자체가 메인 스레드를 붙잡아, 같은 시점에 매칭 대기 화면 궤도 애니메이션이
+// (레이트리밋과 무관한 기능인데도) 멈춰 보이는 데 일부 영향을 줬을 수 있다. 모든 호출이 공유하는
+// "쿨다운" 시각을 하나 두어, 어느 한 호출이든 429를 맞으면 그 뒤로 들어오는 모든 호출(동시에 떠 있는
+// 다른 7개 포함)이 그 쿨다운이 끝날 때까지 먼저 기다리게 한다 — 실패가 실패를 부르며 몰아치는 걸 막는다.
+let _lichessCooldownUntil = 0;
 async function lichessFetchWithRetry(url) {
+  // 다른 동시 호출이 이미 429를 맞아 쿨다운 중이면, 이 호출은 새로 요청을 던지기 전에 그 쿨다운이
+  // 끝날 때까지 먼저 기다린다 — 이미 레이트리밋된 상태에 요청을 더 얹지 않기 위함.
+  const wait0 = _lichessCooldownUntil - Date.now();
+  if (wait0 > 0) await _sleep(wait0);
   let res = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     res = await fetch(url);
-    if (res.status === 429) { // 레이트리밋: 백오프 후 재시도
+    if (res.status === 429) { // 레이트리밋: 백오프 후 재시도(공유 쿨다운도 함께 갱신)
       const ra = parseFloat(res.headers.get("Retry-After"));
-      await _sleep(Number.isFinite(ra) ? ra * 1000 : 1200 * (attempt + 1));
+      const wait = Number.isFinite(ra) ? ra * 1000 : 1200 * (attempt + 1);
+      _lichessCooldownUntil = Math.max(_lichessCooldownUntil, Date.now() + wait);
+      await _sleep(wait);
       continue;
     }
     break;
@@ -10403,27 +10419,16 @@ function buildOrbitPool(counts) {
   Object.entries(pool).forEach(([kind, n]) => { for (let i = 0; i < n; i++) items.push(kind); });
   return items;
 }
-// (버그 수정, 사용자 제보) prefers-reduced-motion이 켜진 브라우저에서는 아래 rAF 루프 자체를 아예
-// 돌리지 않았는데, 그러면 아이콘 div들이 transform 한 번 못 받고 CSS 기본값(그냥 left:50%/top:50%,
-// 즉 중앙 한 점) 그대로 전부 겹쳐 쌓인 채 멈춰 있었다 — "궤도"가 아니라 "중앙에 아이콘 뭉치가 겹쳐
-// 있는 것"으로 보였을 소지가 크다(제보된 "움직임이 0" · "중앙에 원이 간헐적으로 등장"과 정확히
-// 일치한다 — 겹쳐 쌓인 아이콘들 각자의 페이드 주기가 서로 다른 타이밍에 그 뭉치를 나타났다 사라지게
-// 했을 것이다). computeFrame을 렌더 시점에도 한 번 그대로 계산해 각 아이콘의 초기 style에 넣어 두면,
-// 애니메이션이 아예 안 도는 경우에도 최소한 궤도 위에 제대로 퍼져서 정지한 모습으로 보인다 —
-// prefers-reduced-motion이어도 이 정지 프레임은 항상 살아있다.
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    try {
-      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-      setReduced(mq.matches);
-      const onChange = () => setReduced(mq.matches);
-      if (mq.addEventListener) mq.addEventListener("change", onChange); else mq.addListener(onChange);
-      return () => { if (mq.removeEventListener) mq.removeEventListener("change", onChange); else mq.removeListener(onChange); };
-    } catch { return undefined; }
-  }, []);
-  return reduced;
-}
+// (버그 수정, 사용자 제보) 처음엔 prefers-reduced-motion이 켜진 브라우저에서 이 rAF 루프 자체를
+// 아예 돌리지 않게 했었다 — 그런데 실제로 이 사용자의 브라우저가 그 설정이 켜져 있었고(콘솔에서
+// window.matchMedia("(prefers-reduced-motion: reduce)").matches로 직접 확인), 정작 원하는 건
+// 이 궤도 애니메이션이 보이는 것이었다. 큰 화면 전체가 흔들리거나 시야를 채우는 모션(어지럼을 유발할
+// 수 있는 종류)이 아니라 좁은 영역 안에서 도는 작은 장식 아이콘 몇 개뿐이라, 이 애니메이션은 그
+// 설정과 무관하게 항상 재생하기로 하고 그 게이팅 자체를 없앴다(아래 usePrefersReducedMotion도 함께
+// 제거). 다만 애니메이션이 원인이 아니었더라도(예: 다른 문제로 rAF 자체가 멈추는 경우) 아이콘들이
+// transform을 한 번도 못 받아 CSS 기본값(그냥 left:50%/top:50%, 즉 중앙 한 점)에 전부 겹쳐 쌓인 채
+// 멈춰 보이는 문제 자체는 남아있을 수 있어, orbitFrame을 렌더 시점(t=0)에도 그대로 한 번 계산해 각
+// 아이콘의 초기 style에 넣어 둔다 — 최소한 궤도 위에 제대로 퍼진 모습으로 시작한다.
 // 궤도 아이콘 하나의 위치·크기·불투명도·쌓임 순서를 시각 t(초)에서 계산 — rAF 루프와 최초 렌더(정지
 // 프레임) 양쪽에서 똑같이 쓴다.
 function orbitFrame(it, t) {
@@ -10459,7 +10464,12 @@ function orbitFrame(it, t) {
 // localStorage(occ_last_game_quality)에 저장해 둔 개수를 반영한다 — 아직 없으면(첫 대국이거나 계산이
 // 안 끝났으면) buildOrbitPool의 기본값만으로 채워진다.
 function OrbitingQualityIcons({ size = 288 }) {
-  const reduced = usePrefersReducedMotion();
+  // (버그 수정, 사용자 제보) prefers-reduced-motion이 켜진 브라우저에서 이 애니메이션을 아예 끄고
+  // 있었는데, 사용자가 실제로 그 설정이 켜져 있던 경우였다 — 정작 원하는 건 이 궤도 애니메이션이
+  // 보이는 것이었다. 큰 화면 전체가 흔들리거나 시야를 채우는 모션(어지럼을 유발할 수 있는 종류)이
+  // 아니라 좁은 영역 안에서 도는 작은 장식 아이콘 몇 개뿐이라, 이 요소만은 그 설정과 무관하게 항상
+  // 재생한다(usePrefersReducedMotion 자체는 다른 곳에서 쓸 수 있게 남겨 두되 여기서는 더 이상
+  // 부르지 않는다).
   const pool = useMemo(() => { const saved = loadLastGameQuality(); return buildOrbitPool(saved && saved.counts); }, []);
   const items = useMemo(() => {
     const rings = [
@@ -10491,7 +10501,7 @@ function OrbitingQualityIcons({ size = 288 }) {
   const elRefs = useRef([]);
   const waveRefs = useRef([]);
   useEffect(() => {
-    if (reduced || !items.length) return;
+    if (!items.length) return;
     let raf;
     const start = performance.now();
     const tick = (now) => {
@@ -10517,7 +10527,7 @@ function OrbitingQualityIcons({ size = 288 }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [items, reduced, WAVE_RINGS]);
+  }, [items, WAVE_RINGS]);
   if (!items.length) return null;
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
@@ -21748,7 +21758,8 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 const CHANGELOG = [
   {
     version: "0.4.5", date: "2026.9.3", dev: ["openchesskr"], items: [
-      "매칭 대기 화면이 더 화려해졌어요 — 반지름이 다른 궤도 위를 체스 수 아이콘들이 실제 천체처럼 돌아요. 도는 아이콘 구성은 직전에 플레이한 대국을 반영해서, 탁월한 수·실수·블런더가 있었으면 그 개수만큼 함께 떠요.",
+      "매칭 대기 화면이 더 화려해졌어요 — 반지름이 다른 궤도 위를 체스 수 아이콘들이 실제 천체처럼 돌아요. 도는 아이콘 구성은 직전에 플레이한 대국을 반영해서, 탁월한 수·실수·블런더가 있었으면 그 개수만큼 함께 떠요. '동작 줄이기' 접근성 설정이 켜져 있으면 이 화면이 멈춰 보이던 문제도 고쳤어요.",
+      "도감 탭이 오프닝 정보를 백그라운드에서 계속 불러오다가 한꺼번에 너무 많이 요청해서 한동안 에러가 반복되던 문제를 고쳤어요.",
       "'대국 상대 찾기'를 눌렀을 때 상대를 찾는 대기 화면도 못 보고 곧장 '패배' 화면이 뜨던 문제를 고쳤어요 — 매칭될 상대가 아직 없을 때(대기열에만 합류했을 때) 서버가 돌려준 빈 응답을 실제 대국으로 잘못 열어버리던 게 원인이었어요.",
       "대기열에서 상대를 기다리던 중 몇 초 뒤 '대기열 합류에 실패했어요'라고 뜨던 문제를 고쳤어요.",
       "서로 같은 시점에 친구 요청을 보내 자동으로 친구가 됐을 때, 먼저 요청을 보냈던 쪽에게도 '친구가 되었다'는 알림이 가도록 고쳤어요.",
