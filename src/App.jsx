@@ -10891,12 +10891,18 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               <NavBtn onClick={() => setFlip((v) => !v)} active={flip}><ArrowUpDown size={17} /></NavBtn>
               <NavBtn onClick={reset} disabled={!sans.length || !!focus}><RotateCcw size={16} /></NavBtn>
             </div>
-            {/* (사용자 요청) 지금 보드에 입력돼 있는 포지션(sans/fenRoot)부터 봇과 직접 대국을 시작하는
-                PLAY 버튼 — 별도 줄 대신 나머지 네 버튼(뒤집기·초기화·뒤로·앞으로)과 같은 줄, 가운데에
-                작게 둔다. 전용 페이지(/play)를 새 히스토리 항목으로 연다. */}
+            {/* (사용자 요청) 지금 보드에 입력돼 있는 수순(sans)부터 봇과 직접 대국을 시작하는 PLAY
+                버튼 — 별도 줄 대신 나머지 네 버튼(뒤집기·초기화·뒤로·앞으로)과 같은 줄, 가운데에 작게
+                둔다. 전용 페이지(/play)를 새 히스토리 항목으로 연다. */}
+            {/* (버그 수정, 사용자 요청) 예전엔 fenRoot(보드 편집기로 만든 임의 포지션)까지 그대로
+                넘겨, FEN을 직접 편집한 포지션(앙파상 등 특수 규칙 정보가 깨지기 쉬운)으로도 곧장
+                봇 대국을 시작할 수 있었다 — 실제로 이 경로에서 앙파상이 불가능해지는 버그가 있었다.
+                근본적으로 "모든 /play 대국은 정상적인(표준 시작 위치에서 실제로 둔 수순으로 도달한)
+                포지션으로만" 시작하도록, fenRoot가 있는 동안(보드를 편집한 상태)은 이 버튼 자체를
+                비활성화한다 — 표준 시작 위치부터 둔 sans만 넘긴다. */}
             {onOpenPlay && !focus && (
-              <button onClick={() => onOpenPlay({ sans: [...sans], fenRoot })} className="press" title="PLAY — 봇과 대국하기" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 40, padding: "0 12px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, border: "1px solid #000", boxShadow: "0 3px 0 #000", cursor: "pointer", flexShrink: 0 }}>
-                <Play size={13} color="#241509" fill="#241509" />PLAY
+              <button onClick={() => !fenRoot && onOpenPlay({ sans: [...sans] })} disabled={!!fenRoot} className="press" title={fenRoot ? "PLAY — 포지션을 직접 편집한 동안은 대국을 시작할 수 없어요" : "PLAY — 봇과 대국하기"} style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 40, padding: "0 12px", borderRadius: 11, background: fenRoot ? T.ebony2 : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: fenRoot ? "rgba(244,238,226,.35)" : "#241509", fontWeight: 800, fontSize: 12, border: "1px solid #000", boxShadow: fenRoot ? "none" : "0 3px 0 #000", cursor: fenRoot ? "not-allowed" : "pointer", opacity: fenRoot ? 0.6 : 1, flexShrink: 0 }}>
+                <Play size={13} color={fenRoot ? "rgba(244,238,226,.35)" : "#241509"} fill={fenRoot ? "rgba(244,238,226,.35)" : "#241509"} />PLAY
               </button>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -19404,6 +19410,7 @@ const CHANGELOG = [
   {
     version: "0.4.6", date: "2026.9.3", dev: ["openchesskr"], items: [
       "보드 편집기(연필 아이콘)에서 FEN을 직접 입력하거나 붙여넣거나 이미지로 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요. 표준 시작 위치부터 자연스럽게 둔 수순에서는 원래도 정상이었어요.",
+      "이제 /play 대국은 항상 표준 시작 위치에서 실제로 둔 수순으로만 시작돼요 — 보드를 직접 편집한 상태에서는 PLAY 버튼이 비활성화돼요.",
     ],
   },
   {
