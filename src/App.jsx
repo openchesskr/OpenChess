@@ -10569,7 +10569,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     setPvpErr(""); setPvpWaiting(true);
     try {
       const g = await sbRpc("pvp_queue_join", { p_time_control: timeControl.key });
-      if (g) applyPvpGame(g);
+      // (버그 수정, 사용자 제보) pvp_queue_join은 매칭할 상대가 없으면(대기열에만 합류) SQL NULL을
+      // 반환하는데, PostgREST가 단일 row를 반환하는 함수의 NULL을 순수 JSON null이 아니라 "모든 필드가
+      // null인 객체"(예: {id:null, white_uid:null, ...})로 직렬화한다 — 이 객체는 `if (g)`로는 참(truthy)이라,
+      // 상대를 못 찾았을 뿐인데도 곧장 이 텅 빈 "대국"을 실제로 매칭된 대국처럼 열어버렸다. white_uid가
+      // null이라 내 uid와 같을 수 없으니 activeColor는 항상 "b"로, status는 "active"가 아닌 null이라
+      // pvpResult가 즉시 계산돼("승리도 무승부도 아니면 패배") 대기 화면 한 번 보지 못하고 곧장 "패배"
+      // 결과 팝업이 떴다 — 대기열이 비어 있을 때(같은 시간에 매칭될 다른 사람이 없을 때)마다 100% 재현.
+      // 실제 대국인지는 id가 실제로 있는지로 가려낸다.
+      if (g && g.id != null) applyPvpGame(g);
     } catch { setPvpErr("대기열 합류에 실패했어요. 잠시 후 다시 시도해주세요."); setPvpWaiting(false); }
   };
   const leavePvpQueue = async () => { setPvpWaiting(false); try { await sbRpc("pvp_queue_leave", {}); } catch { } };
@@ -10596,7 +10604,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 대국 중 — 상대(또는 내 클라이언트가 보낸) 수·종료 상태를 실시간으로 반영한다. sans는 이 행이
   // 유일한 진실 공급원이라 그대로 덮어쓴다(내가 둔 수도 낙관적으로 먼저 반영해 두지만, 결국 같은
   // 배열로 확정된다).
-  useRealtimeTable("pvp_games", pvpGame ? "id=eq." + pvpGame.id : null, async (payload) => {
+  useRealtimeTable("pvp_games", pvpGame && pvpGame.id != null ? "id=eq." + pvpGame.id : null, async (payload) => {
     let row = payload && payload.new;
     if (!row) { try { const rows = await sbSelect("pvp_games?id=eq." + pvpGame.id + "&select=*"); row = rows && rows[0]; } catch { } }
     if (!row) return;
@@ -21521,6 +21529,7 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 const CHANGELOG = [
   {
     version: "0.4.5", date: "2026.9.3", dev: ["openchesskr"], items: [
+      "'대국 상대 찾기'를 눌렀을 때 상대를 찾는 대기 화면도 못 보고 곧장 '패배' 화면이 뜨던 문제를 고쳤어요 — 매칭될 상대가 아직 없을 때(대기열에만 합류했을 때) 서버가 돌려준 빈 응답을 실제 대국으로 잘못 열어버리던 게 원인이었어요.",
       "서로 같은 시점에 친구 요청을 보내 자동으로 친구가 됐을 때, 먼저 요청을 보냈던 쪽에게도 '친구가 되었다'는 알림이 가도록 고쳤어요.",
       "실시간 대국 중 상대가 오래 생각하고 있을 뿐인데, 새로고침하거나 잠깐 다른 화면에 있다 돌아오면 그 대국이 자동으로 기권 처리되던 문제를 고쳤어요.",
       "대국이 끝난 뒤 결과 팝업의 '대국 리뷰 보기' 버튼을 눌러도 화면이 넘어가지 않던 문제를 고쳤어요. 이 버튼은 이제 리뷰 기능을 상징하는 연두색과 별 아이콘으로 눈에 더 잘 띄어요.",
