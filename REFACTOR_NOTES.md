@@ -126,3 +126,33 @@ App.jsx(원래 ~28,392줄)를 기능별 순수 모듈로 점진적으로 분리�
   깨지면(ecoOpeningName/segmentOpeningWords) src/lib/chesscom.js 확인. 대국 목록 자체가 안 뜨면
   useChessCom(App.jsx에 남아 있음) 쪽을 먼저 볼 것 — 이 파일은 순수 변환 로직만 담당한다.
 - import 순서: chesscom.js는 다른 src/lib 모듈에 의존하지 않는다 — 순환 없음.
+
+### src/lib/moveQuality.js
+- 이동: `materialDiff`(+ `PIECE_VAL_MAT`), `isDevelopingMove`(+ `MINOR_HOME_SQUARES`), `VAL`,
+  `enemyMinAttacker`, `ownDefenders`, `lva`, `seeSquare`, `pawnDefendsSquare`,
+  `canCaptureSquareLegally`, `countLegalCapturesOnSquare`, `hangingLossSq`, `attacksPricier`,
+  `attacksPricierIndependent`, `hasSaferSquare`, `attacksSquare`, `forkForcedTheOtherSide`,
+  `isSacrifice`, `ownPriorMoveWasSacrifice`, `matePliesOf`, `fmtEvalCp`, `posEvalToWhite`, `tierOf`,
+  `winPctFromCp`, `stdev`, `normalCdf`, `sharpLossMultiplier`, `newAccuracyFromAvgLoss`,
+  `newCumulativeAccuracy`, `NEW_ACC_PENALTY_MULT`, `MUST_NOT_INCREASE_KINDS` — 전부 순수 수 체계/
+  정확도 계산 로직. `chessRules.js`에서 `canMove`/`exposesKing`/`sanSrc`/`applySan`/`kingPos`/
+  `isAttacked`/`plyIsWhite`/`boardOfRoot`를 import해서 쓴다(단방향, 순환 없음).
+- 남겨둔 것(의도적): `SHARP_REF_MEAN`/`SHARP_REF_SD`/`NEW_ACC_DECAY`/`NEW_ACC_SHARP_LO`/
+  `NEW_ACC_SHARP_HI`/`NEW_ACC_CALIB`/`NEW_ACC_HARMONIC_FLOOR`는 moveQuality.js 안에서만 쓰여
+  export하지 않았다(단, `NEW_ACC_PENALTY_MULT`는 App.jsx의 다른 곳(gradeOne류 함수)에서도 쓰여
+  export함 — 이 하나만 예외). `classifyMoveKindDetailed`/`classifyMoveKind`/`classifyOwnMovesFast`
+  (엔진 비동기 호출 포함)와 `assignTiers`(App.jsx 전역 상태 `forceKindFor`/`isUnbooked`/`CONTENT`에
+  의존)는 지침대로 순수 로직이 아니거나 앱 상태에 얽혀 있어 App.jsx에 그대로 두고, 이 모듈에서
+  `tierOf`/`isSacrifice`/`ownPriorMoveWasSacrifice` 등을 import해서 쓴다.
+- 위험도: 낮음~중간. 전부 순수 함수·상수라 로직 자체의 위험은 낮지만, 이 모듈의 함수들(특히
+  `isSacrifice`/`tierOf`/`seeSquare`)은 App.jsx 안에서 게임 리뷰·퍼즐 채점·분석 탭·매칭 대기 화면
+  장식 등 최소 4곳 이상에서 서로 다른 맥락으로 재사용된다 — 값 자체는 옮기며 전혀 바꾸지 않았지만,
+  한 곳을 고치려다 이 공용 모듈을 건드리면 나머지 호출부에도 동시에 영향이 간다는 점을 기억해 둘 것
+  (이건 새로 생긴 위험이 아니라 원래도 있던 "공용 함수" 구조 — 옮기면서 새로 생긴 게 아니라 이제
+  한 파일에 모여 있어 더 잘 보이는 것뿐).
+- 증상이 보이면: 게임 리뷰·퍼즐·분석 탭에서 "탁월한 수"/등급(best/excellent/.../blunder) 판정이나
+  정확도(%) 계산이 어긋나면 src/lib/moveQuality.js를 1차로 확인. 그 등급을 실제로 화면에 붙이는
+  로직(assignTiers, classifyMoveKindDetailed 등)은 여전히 App.jsx에 있으니, "이 모듈이 반환하는 값
+  자체"와 "그 값을 조합해 최종 등급을 매기는 App.jsx 쪽 로직" 중 어디가 원인인지 나눠서 봐야 한다.
+- import 순서: moveQuality.js → chessRules.js 단방향 의존만 있고 다른 src/lib 모듈에는 의존하지
+  않는다 — 순환 없음.
