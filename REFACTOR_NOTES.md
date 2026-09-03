@@ -156,3 +156,82 @@ App.jsx(원래 ~28,392줄)를 기능별 순수 모듈로 점진적으로 분리�
   자체"와 "그 값을 조합해 최종 등급을 매기는 App.jsx 쪽 로직" 중 어디가 원인인지 나눠서 봐야 한다.
 - import 순서: moveQuality.js → chessRules.js 단방향 의존만 있고 다른 src/lib 모듈에는 의존하지
   않는다 — 순환 없음.
+
+## Phase 3
+
+Phase 1-2가 훑은 범위(1~9614줄쯤)를 넘어, 그 이후(약 9614~27707줄, 대부분 ReviewPage/LearnTab/
+OpeningSchematic/PuzzleSolver/SettingsTab 등 거대 JSX 컴포넌트로 채워진 구간)를 처음부터 끝까지 훑어
+순수 함수·상수만 3개 더 추출했다. git log 기준 커밋: `31533a8`, `62770f4`, `c478313`.
+
+**중요 발견 — 이번 phase 지시문이 후보로 짚었던 CONTENT/EXPLAIN/BRANCH/moveExplain 계열
+(seedContent, branchFor, explainFor, tensionFacts, mecFacts 등)은 실제로는 전부 1~9614줄 안쪽
+(Phase 1-2가 이미 훑은 범위)에 있었다** — grep으로 위치를 다시 확인해서 검증함. 이 phase의 "훑지 않은
+나머지"라는 전제와 어긋나는 부분이라 별도로 남겨 적는다. 새로 훑은 9614~27707줄 구간은 거의 전부가
+JSX 컴포넌트이고, 그 사이사이에 컴포넌트가 쓰는 순수 헬퍼/상수가 드문드문 섞여 있는 구조였다.
+
+### src/lib/schematicGeometry.js (commit 31533a8)
+- 이동: ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_BOX_W/H, SCHEMATIC_ZOOM_LABEL_BASE, schematicZoomLabel,
+  SCHEMATIC_ZOOM_STEP/MIN/MAX, snapSchematicZoom, PUZZLE_ZOOM_LABEL_BASE, puzzleZoomLabel,
+  PUZZLE_ZOOM_STEP/MIN/MAX, snapPuzzleZoom, anchoredZoomPan, SCHEMATIC_TOP_INSET, clampPanAxis,
+  schematicItemVisible, clampSchematicPan, SCHEMATIC_ELECTRIC, DEX_SELECT_FLOW_SPEED,
+  DEX_ELECTRIC_FLOW_SPEED, schematicCoord, schematicElbow — OpeningSchematic(도감 오프닝 트리)과
+  PuzzleSchematic(퍼즐 모식도)이 공유하는 확대/축소·팬·좌표 계산 순수 함수/상수 전부.
+- 남겨둔 것: 같은 구역에 있던 dexIsUnlocked/dexCapFor/DEX_MIN_DEPTH 등(useOpeningTreeAuto 훅과
+  얽혀 있어 경계가 애매함), centerOrderByAdopt, DexEdgesLayer/DexNodesLayer(React.memo 컴포넌트)는
+  전부 App.jsx에 그대로 둠 — 순수하긴 하지만 이번엔 가장 명확한 덩어리만 먼저 옮김.
+- 위험도: 낮음. 전부 좌표/배율 계산만 하는 순수 함수, 외부 의존성 없음(다른 src/lib 모듈도 import
+  안 함). OpeningSchematic·PuzzleSchematic 두 컴포넌트 모두 정의 지점 이후에서만 이 값들을 쓰는지
+  grep으로 확인 완료(선언보다 먼저 쓰는 곳 없음).
+- 증상이 보이면: 도감 오프닝 트리나 퍼즐 모식도에서 확대/축소 배율 표시(25~200%)가 이상하거나,
+  드래그 팬이 빈 공간에서 안 멈추고 계속 나가거나, 트리 연결선(elbow)이 엉뚱한 곳을 가리키면
+  src/lib/schematicGeometry.js 확인.
+
+### src/lib/puzzleRating.js (commit 62770f4)
+- 이동: isSanSequenceValid/isTreeSequenceValid/isPuzzleSequenceValid(퍼즐 저장 전 수순 합법성 검증),
+  RATING_MIN_SAMPLES/expectedSolveMsFromRating/applySolveTimeAdjustment/puzzleAverageRating(정적
+  기본 레이팅 보정·평균), PUZZLE_RATING_K/puzzleEloExpected/puzzleEloUpdate(공개 퍼즐 레이팅 Elo
+  갱신) — 전부 순수 함수/상수, chessRules.js에서 startBoard/plyIsWhite/sanSrc/applySan/parseFenFull만
+  단방향으로 import.
+- **남겨둔 것(중요 — 반드시 이유가 있음)**: 같은 구역에 있던 puzzleTreeOf는 App.jsx 전역의
+  `CONTENT.puzzleOverrides`를, puzzleLineBaseRating은 App.jsx 전역의 `tensionFacts`(moveExplain
+  계열, 1~9614줄 안쪽이라 이번 phase 범위 밖)를 참조한다 — 둘 다 App.jsx에만 남아 있는 값이라, 이
+  함수들을 lib으로 옮기면 lib → App.jsx 역방향 import(순환 참조)가 생겨버린다. puzzleRatingOf도
+  이 둘에 의존해 연쇄적으로 남겼다. **원칙: 새 lib 모듈은 절대 App.jsx를 import하지 않는다** — 이
+  경계에 걸리는 함수는 아무리 "퍼즐 로직"으로 보여도 옮기지 않고 그대로 둔다.
+- 위험도: 낮음. 전부 순수 함수, chessRules.js 외 다른 src/lib 모듈에 의존하지 않음(순환 없음).
+- 증상이 보이면: 퍼즐 저장 시 불법 수순인데도 저장되거나(반대로 정상 라인이 저장 거부되면)
+  isPuzzleSequenceValid 계열을, 퍼즐 레이팅(★평균/공개 Elo)이나 "풀이 시간 보정" 수치가 이상하면
+  src/lib/puzzleRating.js 확인. 단, 기본 레이팅 자체(난이도 점수 산출)가 이상하면 여전히 App.jsx의
+  puzzleLineBaseRating(위 사유로 안 옮김)을 먼저 볼 것.
+
+### src/lib/tierSystem.js (commit c478313)
+- 이동: TIERS(7단계 티어 정의), TIER_COLORS, tierGlowHex, tierGradientCss, gmPhotoRingStyle,
+  TIER_XP_REQ, GM_STAR_XP, DIVISIONS_PER_TIER, TIER_STATIONS, tierFromXp, xpForTierDivision,
+  DIVISION_ROMAN, tierDisplayLabel, tierDisplayLabelArabic, rollLineXp — 티어/XP 진행 시스템 전체
+  (계산·색·라벨), 외부 의존성 전혀 없는 완전히 독립된 블록.
+- 남겨둔 것: 이 값들을 실제로 그리는 컴포넌트(TierBadge, TierStatPill, TierProgressStrip,
+  TierJourneyMap, TierUpOverlay, TierLogoDisc 등)는 전부 JSX라 App.jsx에 그대로 둠. 이 컴포넌트들은
+  이제 새 모듈에서 TIER_COLORS 등을 import해서 쓴다.
+- 위험도: 낮음. 전부 순수 계산/상수, 다른 src/lib 모듈에 의존하지 않음. TIER_COLORS/tierFromXp 등은
+  정의 지점보다 훨씬 앞쪽 줄(예: 9382줄의 TierBadge 등)에서도 쓰이는데, 전부 컴포넌트 함수 본문
+  안에서만 참조되고(모듈 top-level 실행 시점에는 안 쓰임) import가 top-level에서 먼저 해석되므로
+  안전함을 확인함.
+- 증상이 보이면: 티어 배지·진행바·승급 팝업의 색이 잘못되거나, XP→티어 환산(예: 500XP인데 아직
+  아이언으로 나옴) 또는 개발자 패널의 "티어 직접 설정"이 어긋나면 src/lib/tierSystem.js 확인.
+
+### 이번 phase에서 의도적으로 건너뛴 것들(참고용)
+아래는 지시문이 후보로 짚었거나 훑는 중 발견했지만, CONTENT/EXPLAIN/BRANCH/tensionFacts 등
+App.jsx-local 값에 의존해 옮기면 역방향 import가 생기거나, JSX/훅을 포함해 애초에 대상이 아니었던
+것들 — 나중에 다시 검토할 때 참고.
+- puzzleTreeOf, puzzleLineBaseRating, puzzleRatingOf, isPuzzlePlayable, solvedLineTagsOf —
+  CONTENT.puzzleOverrides 또는 tensionFacts 의존(위 puzzleRating.js 항목 참고).
+- puzzleDifficultyFitScore/themeSolveRates/puzzleWeaknessScore/puzzleThemeFitScore/
+  puzzleExposureScore, themesOf/sortedThemesOf/primaryTheme/themeLabelsOf — 서로 얽혀 있어 이번엔
+  건드리지 않음(themesOf 자체는 순수하지만 나머지와 묶어서 봐야 의미가 있어 다음 기회로 미룸).
+- extendPuzzleLeaf/addSiblingBranch/removeLastMoveOfLine(퍼즐 트리 편집, 개발자 전용) — cloneTree/
+  findTreeNode/nextLeafTag/PUZZLE_PASS_KINDS에 의존하는 순수 함수라 다음 phase 후보로 남겨둠.
+- dexIsUnlocked/dexCapFor/DEX_MIN_DEPTH/DEX_ADOPT_CUTOFF/DEX_MAX_CHILDREN* — useOpeningTreeAuto
+  훅과 경계가 애매해 이번엔 보류.
+- lastNamedOpening/firstNamedOpening/openingNamesAlong/puzzleName/livePuzzleName — App.jsx-local
+  effectiveOpeningNameAt(오프닝 콘텐츠 시스템, Phase 1-2 범위)에 의존해 이번 phase에서는 옮길 수
+  없음.
