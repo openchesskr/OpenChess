@@ -160,7 +160,7 @@ export default function FaqPage() {
   // 페이지가 끝없이 길어지지 않는다).
   const [openKey, setOpenKey] = useState(null);
   return (
-    <div style={{ position: "relative", minHeight: "100vh", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'Noto Sans KR', sans-serif" }}>
+    <div style={{ position: "relative", minHeight: "100vh", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', sans-serif" }}>
       <Backdrop />
       <header style={{ position: "relative", zIndex: 2, borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 900, margin: "0 auto", padding: "14px 20px" }}>

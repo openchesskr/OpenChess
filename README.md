@@ -59,6 +59,9 @@
 **버그 수정 — PvP 재접속 시 정상 진행 중인 대국을 좀비로 오판해 강제 종료**
 `/play` 진입 시 서버에 남아 있는 내 `active` 대국을 이어받는 effect가, `updated_at`이 2분 이상 오래됐으면 무조건 "죽은 대국"으로 판정해 `pvp_finish(..., "aborted")`로 곧장 중단 처리했다. 그런데 `updated_at`은 실제로 수를 둘 때만(`pvp_move`) 갱신되고 별도 하트비트가 없어, 10|0보다 긴 시간제어(예: 60|30)에서 상대가 2분 넘게 정상적으로 생각 중일 때 내가 새로고침하거나 다른 화면에 있다 돌아오기만 해도 아직 아무도 떠나지 않은 대국을 내 클라이언트가 혼자 기권 처리해 버렸다. `pvp_queue_join`(대기열 합류 RPC)에도 같은 2분 기준의 좀비 판정이 이미 있어 실제 방치된 대국은 "대국 상대 찾기"를 누르는 시점에 정리되므로, 이 페이지 진입 시 수동 확인에서는 서버에 중단을 보고하지 않고 그냥 이어받지 않기만 하도록 좁혔다 — 대국은 `active`로 그대로 남아 상대가 있다면 계속 이어갈 수 있고, 진짜 좀비 정리는 기존 경로(`pvp_queue_join`)에 맡긴다.
 
+**UI — 사이트 전체 기본 폰트를 IBM Plex Sans KR로 통일**
+과거 버전 기록에서 이미 "사이트 전체 기본 폰트를 IBM Plex Sans KR로 바꿨다"고 안내한 적이 있었지만, 실제로는 몇 군데가 빠져 있었다. `App.jsx`의 앱 최상위 래퍼 `div`(`SkinContext.Provider` 바로 안쪽)가 `SITE_FONT` 상수를 참조하지 않고 `"system-ui, -apple-system, 'Noto Sans KR', sans-serif"`를 직접 지정하고 있어, `index.css`의 `html, body` 기본값(IBM Plex Sans KR)을 앱 전체 트리에서 덮어쓰고 있었던 게 가장 큰 원인이었다 — `SITE_FONT`를 쓰도록 고쳤다. 같은 값을 상수 대신 문자열로 중복 하드코딩해 둔 나머지 3곳(수 미리보기 툴팁, 대국 상세 정보 두 곳)도 `SITE_FONT`를 참조하도록 정리했다. `/about`·`/faq`는 `main.jsx`에서 `App`을 거치지 않는 별도 번들이라 `SITE_FONT` 상수를 공유하지 않는데, 이 두 페이지의 최상위 래퍼도 각각 `'Noto Sans KR', sans-serif`로 남아 있어 `'IBM Plex Sans KR', sans-serif`로 맞췄다. PGN/기보 표시용 `SEQ_FONT`(Merriweather), 시계·MID·평가값 등 고정폭 숫자 표시용 `ui-monospace,monospace`, 오프닝 트리 모식도의 오프닝 이름 라벨과 퍼즐 테마 카드 장식 글리프에 쓰이는 `Georgia,'Noto Serif KR',serif`(사용자 확인 결과 의도적 장식 요소로 유지)는 그대로 뒀다.
+
 **시스템 — package.json 버전 표기 정정**
 `package.json`의 `version`이 오래전 `0.3.8`에 멈춰 있었다(앱 내 표시 버전은 `AboutPage.jsx`의 `VERSION_HISTORY[0].version`에서 파생돼 실제로는 영향 없었음). 배포 버전에 맞춰 최신화했다.
 

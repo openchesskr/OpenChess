@@ -964,6 +964,7 @@ const VERSION_HISTORY = [
         "대국이 끝난 뒤 결과 팝업의 '대국 리뷰 보기' 버튼을 눌러도 화면이 넘어가지 않던 문제를 고쳤어요.",
         "체크메이트로 대국이 끝났는데 상대가 결과를 못 보고 나가버려서 '대국 상대 찾기'가 새 상대 대신 이미 끝난 그 대국으로 되돌아가던 문제를, 서버가 실제 체스 규칙으로 결과를 직접 검증하는 방식으로 고쳤어요.",
         "친구 찾기 검색창에서 #MID로도 검색할 수 있다는 걸 화면에서 알려주지 않던 문제를 고쳤어요.",
+        "일부 화면(앱 전체 배경, 소개·FAQ 페이지 등)이 사이트 기본 폰트인 IBM Plex Sans KR 대신 다른 글꼴로 보이던 문제를 고쳐 전체 화면의 글꼴이 일관되게 통일됐어요.",
       ] },
       { cat: "ui", items: [
         "'대국 리뷰 보기' 버튼이 리뷰 기능을 상징하는 연두색과 흰색 별 아이콘으로 바뀌었어요.",
@@ -2436,7 +2437,7 @@ export default function AboutPage() {
     // 페이지(1페이지) 높이에 맞춰 늘어나, 짧은 페이지 아래로 거대한 빈 공간이 남았다 — 페이저
     // 영역 자체를 뷰포트 나머지 높이로 고정하고, 각 페이지가 그 안에서 독립적으로 세로 스크롤되게
     // 해 페이지마다 실제 내용 길이와 무관하게 항상 딱 맞게 보이도록 한다.
-    <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'Noto Sans KR', sans-serif", overflow: "hidden" }}>
+    <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', sans-serif", overflow: "hidden" }}>
       <Backdrop />
       <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "14px 20px" }}>
