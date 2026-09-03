@@ -1326,14 +1326,14 @@ end $$;
 -- 좀비 대국까지 무조건 즉시 돌려주는 바람에, 랜덤 매칭을 눌러도 대기 화면 한 번 못 보고 곧장 응답
 -- 없는 상대와 매칭된 것처럼 보이는 문제가 있었다. 최근에 실제로 움직임이 있었던 대국만 "재접속"으로
 -- 보고 그대로 돌려주고, 그보다 오래된 대국은 중단 처리한 뒤 정상적으로 대기열에 합류시킨다.
--- (버그 수정, 사용자 제보) 이 기준이 원래 2분이었는데, 체크메이트가 난 대국을 패자 쪽 클라이언트가
--- 미처 보고하지 못하고 나가버린 경우(그 자체는 pvp_finish의 자기 승리 선언 금지 가드 때문에 승자
--- 쪽이 대신 보고할 수 없다 — 조작된 수순으로 가짜 승리를 우겨 넣는 것과 서버 입장에서 구분할 수
--- 없어 안전하게 허용할 방법이 없다, 보안 검토에서 지적됨)에도 그대로 적용돼, 승자가 "대국 상대
--- 찾기"를 다시 누르면 최대 2분 동안 새 매칭 대신 이미 끝난 그 대국(즉시 "패배/승리" 결과 화면)으로
--- 계속 돌아가곤 했다. 이 창이 실제로 막아야 하는 건 "방금 새로고침해서 돌아온, 여전히 진행 중인
--- 내 대국을 실수로 중단시키는 것"뿐이고, 재접속은 보통 몇 초 안에 일어나므로 10초면 그 목적엔
--- 충분하다 — 2분에서 10초로 줄여 좀비 대국이 다음 매칭을 막는 시간을 최소화한다.
+-- (시도했다가 되돌림, 보안 검토) 이 기준을 2분에서 10초로 줄여, 체크메이트가 난 대국을 패자 쪽이
+-- 미처 보고하지 못하고 나간 경우 승자가 "대국 상대 찾기"를 다시 눌러도 오래 막히지 않게 하려 했다.
+-- 하지만 이 기준은 대칭적이다 — "내 대국이 오래 조용하면 좀비로 보고 정리한다"는 규칙은 지금 지고
+-- 있는 쪽에게도 그대로 적용된다. 시간제어가 있는 대국에서는 상대 차례일 때 몇 초쯤 조용한 게 정상인데,
+-- 10초는 지고 있는 쪽이 그 몇 초를 그냥 기다렸다가 "대국 상대 찾기"를 눌러 자기 대국을 스스로
+-- aborted로 만들어 패배를 회피하기에 충분히 짧은 시간이었다(원래 2분은 그렇게 하기엔 대국 시계상
+-- 손해가 너무 커서 사실상 쓸모없는 회피 수단이었다). 서버가 sans를 직접 재생해 "정말 조용한 것"과
+-- "정말 끝난 것"을 구분하지 않는 한 안전한 기준을 고를 수 없어 원래의 2분으로 되돌린다.
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
 create or replace function public.pvp_queue_join(p_time_control text default '600-0')
@@ -1345,7 +1345,7 @@ begin
     where status = 'active' and (white_uid = v_me or black_uid = v_me)
     order by created_at desc limit 1;
   if found then
-    if v_game.updated_at > now() - interval '10 seconds' then return v_game; end if;
+    if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
     update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
   end if;
   delete from public.pvp_queue where uid = v_me;
