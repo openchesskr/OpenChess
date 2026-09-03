@@ -1324,9 +1324,24 @@ end $$;
 -- 닫거나, 예전 버전에서 대국이 봇 모드로 잘못 시작돼 pvp_finish가 한 번도 불리지 않는 등) 그
 -- pvp_games 행은 status='active'로 영원히 남는다 — 위 "재접속 시 그대로 돌려준다" 로직이 이런
 -- 좀비 대국까지 무조건 즉시 돌려주는 바람에, 랜덤 매칭을 눌러도 대기 화면 한 번 못 보고 곧장 응답
--- 없는 상대와 매칭된 것처럼 보이는 문제가 있었다. 최근(2분 이내)에 실제로 움직임이 있었던 대국만
--- "재접속"으로 보고 그대로 돌려주고, 그보다 오래된 대국은 중단 처리한 뒤 정상적으로 대기열에
--- 합류시킨다.
+-- 없는 상대와 매칭된 것처럼 보이는 문제가 있었다. 최근에 실제로 움직임이 있었던 대국만 "재접속"으로
+-- 보고 그대로 돌려주고, 그보다 오래된 대국은 중단 처리한 뒤 정상적으로 대기열에 합류시킨다.
+-- (시도했다가 되돌림, 보안 검토) 이 기준을 2분에서 10초로 줄여, 체크메이트가 난 대국을 패자 쪽이
+-- 미처 보고하지 못하고 나간 경우 승자가 "대국 상대 찾기"를 다시 눌러도 오래 막히지 않게 하려 했다.
+-- 하지만 이 기준은 대칭적이다 — "내 대국이 오래 조용하면 좀비로 보고 정리한다"는 규칙은 지금 지고
+-- 있는 쪽에게도 그대로 적용된다. 시간제어가 있는 대국에서는 상대 차례일 때 몇 초쯤 조용한 게 정상인데,
+-- 10초는 지고 있는 쪽이 그 몇 초를 그냥 기다렸다가 "대국 상대 찾기"를 눌러 자기 대국을 스스로
+-- aborted로 만들어 패배를 회피하기에 충분히 짧은 시간이었다(원래 2분은 그렇게 하기엔 대국 시계상
+-- 손해가 너무 커서 사실상 쓸모없는 회피 수단이었다). 서버가 sans를 직접 재생해 "정말 조용한 것"과
+-- "정말 끝난 것"을 구분하지 않는 한 안전한 기준을 고를 수 없어 원래의 2분으로 되돌린다.
+-- (버그 수정, 사용자 제보) 대기 중(pvpWaiting)에는 클라이언트가 white_uid/black_uid 두 realtime
+-- 구독 각각의 5초 안전망 폴백으로 이 함수를 다시 부른다 — 둘 다 같은 조건에서 켜지므로 사실상 거의
+-- 동시에 같은 사용자가 이 함수를 두 번 동시 호출하는 셈이었다. 예전엔 "delete → insert" 방식이라,
+-- 두 호출이 겹치면(한쪽이 커밋되기 전에 다른 쪽이 이미 없는 걸 보고 각자 insert를 시도) uid 기본키
+-- 충돌로 한쪽 호출이 그대로 에러를 내며 실패했다(클라이언트에는 "대기열 합류에 실패했어요"로 보임 —
+-- 즉시 패배 버그를 고치고 나서야 대기 화면이 5초 넘게 유지되며 처음 드러난 문제). insert를
+-- "on conflict (uid) do update"로 바꿔, 같은 사용자가 거의 동시에 여러 번 불러도 항상 안전하게
+-- 자기 자리만 갱신하도록(경쟁 상태 자체가 없도록) 한다.
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
 create or replace function public.pvp_queue_join(p_time_control text default '600-0')
@@ -1341,12 +1356,13 @@ begin
     if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
     update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
   end if;
-  delete from public.pvp_queue where uid = v_me;
   select uid into v_other from public.pvp_queue where uid <> v_me and time_control = p_time_control order by created_at asc limit 1 for update skip locked;
   if v_other is null then
-    insert into public.pvp_queue(uid, time_control) values (v_me, p_time_control);
+    insert into public.pvp_queue(uid, time_control) values (v_me, p_time_control)
+      on conflict (uid) do update set time_control = excluded.time_control, created_at = now();
     return null;
   end if;
+  delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
   insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, p_time_control) returning * into v_game;
@@ -1394,7 +1410,16 @@ grant execute on function public.pvp_move(bigint, text) to authenticated;
 -- 중복 호출은 조용히 실패해도 무방하다(패자 쪽 호출 하나만 성공하면 충분 — 클라이언트는 이미 실패를
 -- 무시하도록 되어 있다). 무승부는 "제안"이 아니라 실제 수순에서 객관적으로 계산되는 상태라 양쪽 모두
 -- 그대로 허용한다.
-drop function if exists public.pvp_finish(bigint, text) cascade;
+-- (시도했다가 되돌림, 보안 검토) 한때 이 가드에 p_objective 플래그를 추가해, 체크메이트를 당한 쪽의
+-- 클라이언트가 결과 보고 전에 탭을 닫아버리는 경우에도 "이긴 쪽"이 대신 결과를 확정할 수 있게 하려
+-- 했었다. 하지만 pvp_move가 SAN 합법성 자체를 검증하지 않는(위 설명대로 클라이언트가 이미 검증했다고
+-- "신뢰"만 하는) 구조라, p_objective=true는 결국 클라이언트가 "이 결과는 객관적이다"라고 스스로 주장하는
+-- 값에 불과했다 — 악의적인 클라이언트가 pvp_move로 조작된(불법인) 수순을 넣어 스스로 승리하는 가짜
+-- 체크메이트를 만든 뒤 pvp_finish(id, '내_승리', true)를 그대로 불러 즉시 승리를 우겨 넣을 수 있는,
+-- 이 가드가 애초에 막으려던 것과 정확히 같은 종류의 권한 우회였다(보안 리뷰에서 지적됨). 이 RPC
+-- 자체(브라우저가 anon/authenticated로 직접 호출)에는 그런 검증을 안전하게 넣을 방법이 없어 원래
+-- 가드로 되돌린다 — 대신 아래 pvp_finish_verified + api/pvp-finish.js가 진짜 해결책이다.
+drop function if exists public.pvp_finish(bigint, text, boolean) cascade;
 create or replace function public.pvp_finish(p_game_id bigint, p_status text)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_game public.pvp_games; v_my_win_status text;
@@ -1411,6 +1436,29 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.pvp_finish(bigint, text) to authenticated;
+
+-- (v0.4.5 기능, 사용자 요청) pvp_finish의 자기 승리 선언 금지 가드를 브라우저에서 직접 우회할 방법은
+-- 없지만("체크메이트 여부"를 클라이언트가 주장하는 값 그대로 믿을 수 없다는 게 핵심 문제), 서버 쪽
+-- (브라우저가 아닌) 신뢰할 수 있는 실행 환경이라면 sans를 실제 체스 규칙 엔진(chess.js)으로 재생해
+-- 그 결과가 진짜 맞는지 독립적으로 검증할 수 있다 — 그러면 "클라이언트 주장을 믿는다"는 문제 자체가
+-- 사라진다. api/pvp-finish.js(Vercel 서버리스 함수)가 그 검증을 chess.js로 수행한 뒤에만 이 함수를
+-- 호출한다. 이 함수는 자기 승리 선언 가드가 아예 없다 — 그래도 안전한 이유는 authenticated에는 실행
+-- 권한을 주지 않고 service_role에만 줘서, SUPABASE_SERVICE_ROLE_KEY(Vercel 서버 환경변수로만 존재,
+-- 브라우저 번들에는 절대 포함되지 않는다)를 쥔 그 서버리스 함수만 호출할 수 있기 때문이다 — 브라우저는
+-- 이 함수의 존재 자체를 REST API로 발견할 수는 있어도 PostgREST가 role 기준으로 실행을 거부한다.
+drop function if exists public.pvp_finish_verified(bigint, text) cascade;
+create or replace function public.pvp_finish_verified(p_game_id bigint, p_status text)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_game public.pvp_games;
+begin
+  if p_status not in ('white_won','black_won','draw') then raise exception 'invalid status'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  update public.pvp_games set status = p_status, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_finish_verified(bigint, text) to service_role;
 
 -- ============================================================================
 -- N+2) puzzles 공개/비공개 — 퍼즐 생성 마법사 4단계 + 퍼즐 풀이 카드 2페이지(생성자 권한 박스)에서
