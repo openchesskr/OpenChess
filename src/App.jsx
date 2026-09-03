@@ -10684,15 +10684,21 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         const rows = await sbSelect("pvp_games?status=eq.active&or=(white_uid.eq." + myUid + ",black_uid.eq." + myUid + ")&order=updated_at.desc&limit=1");
         const g = rows && rows[0];
         if (!g || cancelled) return;
-        // (버그 수정, 사용자 제보) 마지막 갱신이 오래전(2분 이상 — pvp_queue_join의 좀비 대국 판정과
-        // 같은 기준)이면 상대도 나도 이미 떠난 죽은 대국이다. 그런데도 무조건 이어받다 보니, 클럭이
-        // 진작 0을 지나 곧장 "패배" 화면으로 떨어지고 — /play를 열 때마다(심지어 "대국 상대 찾기"를
-        // 누르기도 전에) 이 죽은 대국을 계속 다시 붙잡아, 정작 새 매칭 화면에는 영영 들어갈 수 없게
-        // 만드는 원인이었다("오래전에 보낸 매칭이 여전히 잡히는" 신고와 정확히 일치). 이럴 땐 이어받는
-        // 대신 서버에 중단으로 보고해(참가자 본인이 'aborted'를 보고하는 것은 항상 허용된다) 정리하고,
-        // 평소처럼 설정 화면부터 새로 시작한다.
+        // (버그 수정, 사용자 제보) 마지막 갱신이 오래전이면 상대도 나도 이미 떠난 죽은 대국일 수 있다.
+        // 그런데도 무조건 이어받다 보니, 클럭이 진작 0을 지나 곧장 "패배" 화면으로 떨어지고 —
+        // /play를 열 때마다(심지어 "대국 상대 찾기"를 누르기도 전에) 이 죽은 대국을 계속 다시 붙잡아,
+        // 정작 새 매칭 화면에는 영영 들어갈 수 없게 만드는 원인이었다("오래전에 보낸 매칭이 여전히
+        // 잡히는" 신고와 정확히 일치).
+        // (버그 수정, 사용자 제보) 다만 여기서 곧장 pvp_finish(aborted)를 서버에 보고해 버리면, 상대가
+        // 그저 긴 시간제어(예: 60|30)에서 오래 생각 중일 뿐인 멀쩡한 대국까지 내 쪽 새로고침/재방문
+        // 한 번으로 강제 종료시켜 버렸다 — updated_at은 실제로 수를 둘 때만 갱신되고(pvp_move), 별도
+        // 하트비트가 없어 "오래 생각 중"과 "정말 떠난 죽은 대국"을 서버 쪽 시간만으로는 구분할 수
+        // 없기 때문이다. 그래서 이 페이지를 열 때(수동적으로) 발견한 오래된 대국은 중단 처리까지는
+        // 하지 않고 그냥 이어받지 않기만 한다 — 대국 자체는 서버에 active로 남아, 상대가 아직 있다면
+        // 계속 이어갈 수 있다. 실제 좀비 대국 정리는 "대국 상대 찾기"를 눌러 대기열에 합류할 때
+        // pvp_queue_join의 2분 기준 좀비 판정(사용자가 명시적으로 새 대국을 요청한 시점)에서만 한다.
         const staleMs = Date.now() - new Date(g.updated_at).getTime();
-        if (staleMs > 2 * 60 * 1000) { sbRpc("pvp_finish", { p_game_id: g.id, p_status: "aborted" }).catch(() => { }); return; }
+        if (staleMs > 2 * 60 * 1000) return;
         applyPvpGame(g);
       } catch { }
     })();
@@ -21480,6 +21486,12 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.4.5", date: "2026.9.3", dev: ["openchesskr"], items: [
+      "서로 같은 시점에 친구 요청을 보내 자동으로 친구가 됐을 때, 먼저 요청을 보냈던 쪽에게도 '친구가 되었다'는 알림이 가도록 고쳤어요.",
+      "실시간 대국 중 상대가 오래 생각하고 있을 뿐인데, 새로고침하거나 잠깐 다른 화면에 있다 돌아오면 그 대국이 자동으로 기권 처리되던 문제를 고쳤어요.",
+    ],
+  },
+  {
     version: "0.4.4", date: "2026.9.2", dev: ["openchesskr"], items: [
       "퍼즐 만들기가 실제로는 완전히 새로운 포지션인데도 '이미 존재하는 퍼즐'로 잘못 거부되던 핵심 문제를 고쳤어요.",
       "퍼즐을 풀 때 폰이 마지막 줄에 닿으면 이제 승격할 기물(퀸/룩/비숍/나이트)을 직접 고를 수 있어요 — 예전엔 항상 퀸으로만 승격돼 언더프로모션이 필요한 라인은 풀 수 없었어요.",
@@ -23965,7 +23977,7 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
         setReqState(status);
         setInviteMsg(status === "accepted" ? "친구가 되었어요!" : status === "exists" ? "이미 친구이거나 요청을 보냈어요." : "자동으로 친구 요청을 보냈어요.");
         if (status === "pending") { notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid }); setReqPopup(name + "님에게 친구 요청을 보냈습니다!"); }
-        else if (status === "accepted") setReqPopup(name + "님과 친구가 되었어요!");
+        else if (status === "accepted") { notifyCreate(pubUid, "friend_accepted", { byUsername: me }); notifyResolveFriendRequest(myUid, pubUid, "accepted"); setReqPopup(name + "님과 친구가 되었어요!"); }
       }
     })();
   }, [autoInvite, me, myUid, pubUid, mid]);
@@ -23981,6 +23993,7 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
       else if (status === "accepted") setReqPopup(name + "님과 친구가 되었어요!");
       setReqState(status);
       if (status === "pending") notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid });
+      else if (status === "accepted") { notifyCreate(pubUid, "friend_accepted", { byUsername: me }); notifyResolveFriendRequest(myUid, pubUid, "accepted"); }
     }
   };
   const isSelf = !!(myUid && pubUid && myUid === pubUid);
@@ -26757,7 +26770,12 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
   const guard = (uid, fn) => async () => { if (pending[uid]) return; setPending((p) => ({ ...p, [uid]: true })); try { await fn(); await load(); } finally { setPending((p) => { const n = { ...p }; delete n[uid]; return n; }); } };
   // (17차) 친구 요청 발송/수락 시 상대에게 알림을 남긴다.
-  const doRequestByName = (username, keyUid) => guard(keyUid || username, async () => { const r = await friendRequest(username); if (r && r.ok && r.status === "pending" && keyUid) notifyCreate(keyUid, "friend_request", { fromUsername: me, fromUid: meId }); })();
+  const doRequestByName = (username, keyUid) => guard(keyUid || username, async () => {
+    const r = await friendRequest(username);
+    if (!r || !r.ok || !keyUid) return;
+    if (r.status === "pending") notifyCreate(keyUid, "friend_request", { fromUsername: me, fromUid: meId });
+    else if (r.status === "accepted") { notifyCreate(keyUid, "friend_accepted", { byUsername: me }); await notifyResolveFriendRequest(meId, keyUid, "accepted"); }
+  })();
   const doAccept = (uid) => guard(uid, async () => { await friendAccept(uid); notifyCreate(uid, "friend_accepted", { byUsername: me }); await notifyResolveFriendRequest(meId, uid, "accepted"); })();
   const doRemove = (uid) => guard(uid, () => friendRemove(uid))();
   // (버그 수정) 친구 삭제·요청 취소와 같은 friendRemove를 쓰지만, "받은 요청 거절"만은 그 요청을

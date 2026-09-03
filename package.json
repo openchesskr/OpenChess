@@ -1,7 +1,7 @@
 {
   "name": "opening-lab",
   "private": true,
-  "version": "0.3.8",
+  "version": "0.4.5",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/copy-engine.mjs",
