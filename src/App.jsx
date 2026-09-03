@@ -521,6 +521,11 @@ function loadSfxPref() { try { return window.localStorage.getItem("occ_sfx_on") 
 function saveSfxPref(v) { try { window.localStorage.setItem("occ_sfx_on", v ? "1" : "0"); } catch { } }
 function loadSfxVolume() { try { const v = parseFloat(window.localStorage.getItem("occ_sfx_vol")); return isNaN(v) ? 0.6 : Math.min(1, Math.max(0, v)); } catch { return 0.6; } }
 function saveSfxVolume(v) { try { window.localStorage.setItem("occ_sfx_vol", String(v)); } catch { } }
+// (v0.4.5 기능, 사용자 요청) 매칭 대기 화면 궤도 아이콘이 "직전에 플레이한 대국"의 실제 수 체계를
+// 반영하도록, 그 대국이 끝날 때 classifyOwnMovesFast가 백그라운드로 계산한 개수를 여기 저장해 둔다
+// (새 대국이 끝날 때마다 덮어써 항상 "가장 최근" 하나만 유지 — 여러 대국을 누적할 필요는 없다).
+function loadLastGameQuality() { try { const raw = window.localStorage.getItem("occ_last_game_quality"); return raw ? JSON.parse(raw) : null; } catch { return null; } }
+function saveLastGameQuality(counts) { try { window.localStorage.setItem("occ_last_game_quality", JSON.stringify({ counts, at: Date.now() })); } catch { } }
 const SFX_SRC = { click: "/sfx/click.mp3", move: "/sfx/move.mp3", capture: "/sfx/capture.mp3", electric: "/sfx/freesound_community-circuit-bent-stylophone-75384.mp3" };
 // (v0.2.2) maxMs를 주면 그 시간이 지난 뒤 재생을 멈춘다 — 회로 전기음처럼 긴 음원의 앞부분만 쓸 때.
 function playSfx(name, maxMs) {
@@ -3019,6 +3024,46 @@ async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12, fenRo
 async function classifyMoveKind(engine, prevSans, san, depth = 12, fenRoot) {
   const r = await classifyMoveKindDetailed(engine, prevSans, san, depth, fenRoot);
   return r ? r.kind : null;
+}
+// (v0.4.5 기능, 사용자 요청) 매칭 대기 화면 궤도 아이콘용 — 방금 끝난 대국에서 내가 둔 수만 훑어
+// 탁월한 수·실수·블런더 개수만 집계한다. classifyMoveKindDetailed와 같은 판정 규칙(tierOf·희생
+// 판정)을 쓰지만, 전체 리뷰용이 아니라 화면 장식용이라 depth·movetime을 크게 낮추고(정확한 등급이
+// 아니라 "대충 몇 개나 있었는지" 감만 잡으면 충분) 상대(봇/상대편) 수는 건너뛰어 절반만 계산한다.
+// "유일한 수"는 2순위 후보(MultiPV)까지 함께 평가해야 판정 가능해 평가 횟수가 배로 늘어나므로,
+// 이 가벼운 버전에서는 집계하지 않는다(궤도 풀의 기본 채움 자리로만 처리됨). isCancelled()가 참을
+// 반환하면 그 자리에서 즉시 멈춘다(새 대국이 시작돼 이 계산이 더 이상 의미 없어졌을 때 곧장 포기해
+// 엔진을 다음 대국과 다투게 하지 않기 위함).
+async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled) {
+  const counts = { brilliant: 0, mistake: 0, blunder: 0 };
+  if (!engine || !sans || !sans.length) return counts;
+  const startColor = fenRoot ? fenRoot.turn : "w";
+  for (let i = 0; i < sans.length; i++) {
+    if (isCancelled && isCancelled()) break;
+    const color = plyIsWhite(i, startColor) ? "w" : "b";
+    if (color !== myColor) continue;
+    const prevSans = sans.slice(0, i);
+    const san = sans[i];
+    try {
+      const best = await engine.evaluate(fenOfRoot(fenRoot, prevSans), 10, undefined, 300);
+      if (!best || (isCancelled && isCancelled())) continue;
+      const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
+      const bestSan = best.best ? uciToSan(boardOfRoot(fenRoot, prevSans), best.best, color) : null;
+      const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
+      const after = await engine.evaluate(fenOfRoot(fenRoot, [...prevSans, san]), 10, undefined, 300);
+      if (!after) continue;
+      const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
+      const ourCp = -afterOpp;
+      const loss = matched ? 0 : bestCp - ourCp;
+      let kind = tierOf(loss);
+      const decided = Math.abs(bestCp) > 200;
+      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRoot, prevSans), san, color) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, color, fenRoot)) kind = "brilliant";
+      if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; }
+      if (kind === "brilliant") counts.brilliant++;
+      else if (kind === "mistake") counts.mistake++;
+      else if (kind === "blunder") counts.blunder++;
+    } catch { }
+  }
+  return counts;
 }
 // (19차 기능3 → v0.3.8 완전 교체) 정확도 계산에 필요한 승률 기대값 모델은 그대로 재사용한다(공개된
 // 승률 기대값 근사 — cp는 백 관점(양수=백 우세), 반환은 백의 기대 승률(0~100)). 이 함수 자체는
@@ -10341,6 +10386,119 @@ async function pickBotMove(engine, fen, elo, moveMemory) {
   }
   return chosen;
 }
+// (v0.4.5 기능, 사용자 요청) 매칭 대기 화면 궤도 아이콘 풀 — 기본값은 "무난하게 잘 둔 대국"다운
+// 구성(최선의 수·우수한 수·좋은 수 위주, 부정확한 수 한 개)으로 항상 채워 두고, 그 위에 직전 대국에서
+// 실제로 나온 탁월한 수·실수·블런더 개수만 있는 그대로 얹는다(화면이 너무 붐비지 않도록 각 항목 상한만
+// 둔다) — "유일한 수"는 classifyOwnMovesFast가 집계하지 않으므로(주석 참고) 항상 기본값의 빈자리로만
+// 존재한다.
+const ORBIT_DEFAULT_POOL = { best: 4, excellent: 3, good: 2, inaccuracy: 1 };
+function buildOrbitPool(counts) {
+  const pool = { ...ORBIT_DEFAULT_POOL };
+  if (counts) {
+    if (counts.brilliant) pool.brilliant = Math.min(counts.brilliant, 4);
+    if (counts.mistake) pool.mistake = Math.min(counts.mistake, 3);
+    if (counts.blunder) pool.blunder = Math.min(counts.blunder, 3);
+  }
+  const items = [];
+  Object.entries(pool).forEach(([kind, n]) => { for (let i = 0; i < n; i++) items.push(kind); });
+  return items;
+}
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    try {
+      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+      setReduced(mq.matches);
+      const onChange = () => setReduced(mq.matches);
+      if (mq.addEventListener) mq.addEventListener("change", onChange); else mq.addListener(onChange);
+      return () => { if (mq.removeEventListener) mq.removeEventListener("change", onChange); else mq.removeListener(onChange); };
+    } catch { return undefined; }
+  }, []);
+  return reduced;
+}
+// (v0.4.5 기능, 사용자 요청) 매칭 대기 화면의 궤도 애니메이션 — 반지름이 다른 3개의 얇은 타원 궤적
+// 위를 chess.com 스타일 수 체계 아이콘들이 실제 천체처럼 공전한다. 아이콘이 많아질 수 있어 React
+// state가 아니라 requestAnimationFrame에서 DOM 스타일을 직접 갱신한다(리렌더 없이 매 프레임 갱신 —
+// 아이콘 수가 늘어나도 가볍다). 각 아이콘은:
+//   · 자기 궤도를 계속 돈다 — 안쪽 궤도일수록 더 빨리 돌게 해(각속도를 반지름의 -1.5제곱에 비례시킴)
+//     "가까울수록 빠르다"는 케플러 궤도의 감각을 단순하게 흉내낸다.
+//   · 타원 위 위치(sin θ)를 그대로 "지금 앞쪽/뒤쪽 어디에 있는지"로 써서, 크기·불투명도·쌓임 순서
+//     (z-index)를 위치 변화와 항상 정확히 같은 값에서 함께 계산한다 — 앞쪽에 있을 때 커지고 진해지고
+//     다른 아이콘과 중앙 아바타 위로 올라온다.
+//   · 저마다 다른 주기로 서서히 나타났다 사라지길 반복해(개별 아이콘의 페이드 인/아웃 duty cycle),
+//     화면에 동시에 보이는 아이콘 개수 자체가 계속 바뀐다.
+// 궤도 풀은 직전에 끝난 대국(가장 최근의 pvp/봇 대국)에서 classifyOwnMovesFast가 백그라운드로 계산해
+// localStorage(occ_last_game_quality)에 저장해 둔 개수를 반영한다 — 아직 없으면(첫 대국이거나 계산이
+// 안 끝났으면) buildOrbitPool의 기본값만으로 채워진다.
+function OrbitingQualityIcons({ size = 288 }) {
+  const reduced = usePrefersReducedMotion();
+  const pool = useMemo(() => { const saved = loadLastGameQuality(); return buildOrbitPool(saved && saved.counts); }, []);
+  const items = useMemo(() => {
+    const rings = [
+      { rx: size * 0.27, speed: 0.26 },
+      { rx: size * 0.38, speed: 0.165 },
+      { rx: size * 0.48, speed: 0.115 },
+    ].map((r) => ({ ...r, ry: r.rx * 0.42 }));
+    return pool.map((kind, i) => {
+      const ring = rings[i % rings.length];
+      const dir = (i % 2 === 0) ? 1 : -1;
+      return {
+        kind, ring,
+        phase: ((i * 137.5) % 360) * (Math.PI / 180), // 황금각 간격 — 같은 궤도 안 아이콘들이 몰리지 않게
+        speed: ring.speed * (0.85 + 0.3 * (((i * 53) % 17) / 17)) * dir,
+        cycleDur: 9 + ((i * 29) % 13), // 초 — 아이콘마다 다른 등장/소멸 주기
+        cyclePhase: ((i * 61) % 100) / 100,
+      };
+    });
+  }, [pool, size]);
+  const elRefs = useRef([]);
+  useEffect(() => {
+    if (reduced || !items.length) return;
+    let raf;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = (now - start) / 1000;
+      items.forEach((it, i) => {
+        const el = elRefs.current[i];
+        if (!el) return;
+        const theta = it.phase + t * it.speed;
+        const x = Math.cos(theta) * it.ring.rx;
+        const y = Math.sin(theta) * it.ring.ry;
+        const depth = (Math.sin(theta) + 1) / 2; // 0(뒤)~1(앞)
+        const scale = 0.62 + depth * 0.6;
+        const cyc = (((t / it.cycleDur + it.cyclePhase) % 1) + 1) % 1; // 0~1 반복
+        const fade = cyc < 0.08 ? cyc / 0.08 : cyc < 0.62 ? 1 : cyc < 0.72 ? 1 - (cyc - 0.62) / 0.1 : 0;
+        const opacity = Math.max(0, Math.min(1, fade)) * (0.45 + depth * 0.55);
+        el.style.transform = "translate(-50%,-50%) translate(" + x.toFixed(1) + "px," + y.toFixed(1) + "px) scale(" + scale.toFixed(3) + ")";
+        el.style.opacity = opacity.toFixed(3);
+        el.style.zIndex = String(Math.round(depth * 100) + 10);
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [items, reduced]);
+  if (!items.length) return null;
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      <svg width="100%" height="100%" viewBox={"0 0 " + size + " " + size} style={{ position: "absolute", inset: 0, transform: "rotate(-8deg)" }}>
+        <g transform={"translate(" + size / 2 + "," + size / 2 + ")"}>
+          {[0.27, 0.38, 0.48].map((f) => (
+            <ellipse key={f} rx={size * f} ry={size * f * 0.42} fill="none" stroke={T.brass} strokeWidth={1} opacity={0.22} />
+          ))}
+        </g>
+      </svg>
+      <div style={{ position: "absolute", inset: 0, transform: "rotate(-8deg)" }}>
+        {items.map((it, i) => (
+          <div key={i} ref={(el) => { elRefs.current[i] = el; }}
+            style={{ position: "absolute", left: "50%", top: "50%", width: 22, height: 22, willChange: "transform, opacity" }}>
+            <div style={{ transform: "rotate(8deg)" }}>{badgeIcon(it.kind, 22)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 // (v0.4.4 리디자인, 사용자 요청) 실시간 대국 매칭 대기(랜덤 매칭 대기열, 친구 초대 응답 대기) —
 // 설정 카드 안의 자그마한 인라인 블록 대신, 그 카드를 통째로 대체하는 별도의 전용 화면으로
 // 승격시켰다. "찾는 대상"(랜덤 상대는 나이트 기물, 친구 초대는 그 친구의 아바타)을 무대 중앙에 두고
@@ -10364,28 +10522,22 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
       transition={{ duration: 0.32, ease: MOTION_EASE }}
       style={{ minHeight: "min(72vh, 560px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}
     >
-      {/* (기물이 궤도를 도는 작은 빛 입자를 만나며 "탐색 중"임을 보여주는 3개의 궤도 점 —
-          한 바퀴 도는 데 서로 다른 시간이 걸려 절대 같은 자리에서 겹치지 않는다. */}
-      <div style={{ position: "relative", width: 168, height: 168, marginBottom: 22 }}>
+      {/* (v0.4.5 리디자인, 사용자 요청) 3개의 작은 궤도 점 대신, 직전 대국의 수 체계(탁월한 수·실수·
+          블런더 등)를 반영한 chess.com 스타일 아이콘들이 실제 천체처럼 얇은 타원 궤적을 따라 도는
+          장면으로 발전시켰다 — OrbitingQualityIcons 정의부 주석 참고. */}
+      <div style={{ position: "relative", width: 288, height: 288, marginBottom: 10 }}>
         {[0, 0.7, 1.4].map((delay) => (
           <motion.span key={delay}
             initial={{ scale: 0.5, opacity: 0.55 }}
             animate={{ scale: [0.5, 1.5], opacity: [0.55, 0] }}
             transition={{ duration: 2.1, repeat: Infinity, ease: "easeOut", delay }}
-            style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "1.5px solid " + T.brass }}
+            style={{ position: "absolute", inset: 108, borderRadius: "50%", border: "1.5px solid " + T.brass }}
           />
         ))}
-        {[7.5, 9.5, 11.5].map((dur, i) => (
-          <motion.span key={i}
-            animate={{ rotate: 360 }} transition={{ duration: dur, repeat: Infinity, ease: "linear" }}
-            style={{ position: "absolute", inset: 0 }}
-          >
-            <span style={{ position: "absolute", top: 6 + i * 4, left: "50%", width: i === 1 ? 5 : 4, height: i === 1 ? 5 : 4, marginLeft: -2, borderRadius: "50%", background: i === 1 ? T.brilliant : T.brassHi, boxShadow: "0 0 6px " + (i === 1 ? T.brilliant : T.brassHi) }} />
-          </motion.span>
-        ))}
+        <OrbitingQualityIcons size={288} />
         <motion.div
           animate={{ y: [0, -6, 0] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
-          style={{ position: "absolute", inset: 22, borderRadius: "50%", background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 22px -6px rgba(0,0,0,.6), inset 0 1px 2px rgba(255,255,255,.08)" }}
+          style={{ position: "absolute", inset: 108, borderRadius: "50%", background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 22px -6px rgba(0,0,0,.6), inset 0 1px 2px rgba(255,255,255,.08)", zIndex: 200 }}
         >
           {isInvite ? (
             opponent && opponent.photo ? <img src={opponent.photo} alt="" style={{ width: 74, height: 74, borderRadius: "50%", objectFit: "cover" }} />
@@ -10506,6 +10658,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const [pvpErr, setPvpErr] = useState("");
   const [opponentPub, setOpponentPub] = useState(null);
   const pvpFinishedRef = useRef(false); // 체크메이트/스테일메이트를 서버에 한 번만 보고하기 위한 가드
+  // (v0.4.5 기능) 매칭 대기 화면 궤도 아이콘용 백그라운드 분석(classifyOwnMovesFast)을 새 대국이
+  // 시작될 때마다 취소하기 위한 토큰 — startGame/rematch/applyPvpGame에서 증가시킨다.
+  const qualityRunRef = useRef(0);
   // (v0.4.3 기능, 사용자 요청) 대국 도중 페이지를 벗어나면(뒤로가기·탭 이동 등) 기권으로 처리하기
   // 위해, 언마운트 시점에 최신 상태를 읽을 수 있도록 매 렌더마다 미러링해 둔다 — cleanup 함수는
   // 클로저가 마운트 시점 값에 고정되므로 ref로만 "지금 이 순간"의 값을 알 수 있다.
@@ -10550,7 +10705,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     // applyPvpGame은 대기열 매칭·초대 수락·재접속 등 pvp 대국이 클라이언트에 반영되는 유일한
     // 통로이므로, 여기서 한 번에 mode를 "pvp"로 맞춰 모든 경로에서 이 문제가 재발하지 않게 한다.
     setMode("pvp");
-    setPvpGame(g); setPvpWaiting(false); pvpFinishedRef.current = false;
+    setPvpGame(g); setPvpWaiting(false); pvpFinishedRef.current = false; qualityRunRef.current++;
     setMyInvite(null);
     const myColor = g.white_uid === myUid ? "w" : "b";
     setActiveColor(myColor);
@@ -10759,6 +10914,22 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     setResultModalOpen(true);
   }, [resultKey]);
 
+  // (v0.4.5 기능, 사용자 요청) 대국이 끝나면(봇·pvp 모두, 실제로 둔 수가 있을 때만) 매칭 대기 화면
+  // 궤도 아이콘용으로 방금 대국의 탁월한 수·실수·블런더 개수를 백그라운드로 계산해 둔다 — 화면을
+  // 막지 않도록 fire-and-forget으로 돌리고, 새 대국이 시작되면(qualityRunRef가 바뀌면) 다음 검사
+  // 시점에 곧장 멈춘다.
+  useEffect(() => {
+    if (!resultKey || !sans.length || !engine) return;
+    const myToken = ++qualityRunRef.current;
+    const snapshot = sans.slice();
+    const fr = fenRoot;
+    const myColor = activeColor;
+    classifyOwnMovesFast(snapshot, fr, myColor, engine, () => qualityRunRef.current !== myToken)
+      .then((counts) => { if (qualityRunRef.current === myToken) saveLastGameQuality(counts); })
+      .catch(() => { });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultKey]);
+
   // (신규 기능) 체크메이트·스테일메이트·3회 동형 반복으로 대국이 끝나면, pvp 모드에서는 서버에도
   // 한 번만 결과를 보고해 상대 화면에도 즉시 반영되게 한다.
   // (버그 수정, 사용자 요청) 예전엔 이걸 그냥 pvp_finish RPC로 직접 불렀는데, pvp_finish는 "자기
@@ -10903,6 +11074,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     setViewPly(null);
     setClock(timeControl.initialSec != null ? { w: timeControl.initialSec * 1000, b: timeControl.initialSec * 1000 } : null);
     botMoveMemoryRef.current = new Map();
+    qualityRunRef.current++;
     setStep("playing");
   };
   const rematch = () => {
@@ -10910,6 +11082,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       leavePvpQueue(); setPvpGame(null); setOpponentPub(null); pvpFinishedRef.current = false;
       if (myInvite) cancelFriendInvite();
     }
+    qualityRunRef.current++;
     setSans(seedSans); setResigned(false); setFlagged(null); setClock(null); setSel(null); setDrag(null); setViewPly(null); botMoveMemoryRef.current = new Map(); setSetupPhase("choose"); setStep("setup");
   };
   const resign = () => {
@@ -21529,6 +21702,7 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 const CHANGELOG = [
   {
     version: "0.4.5", date: "2026.9.3", dev: ["openchesskr"], items: [
+      "매칭 대기 화면이 더 화려해졌어요 — 반지름이 다른 궤도 위를 체스 수 아이콘들이 실제 천체처럼 돌아요. 도는 아이콘 구성은 직전에 플레이한 대국을 반영해서, 탁월한 수·실수·블런더가 있었으면 그 개수만큼 함께 떠요.",
       "'대국 상대 찾기'를 눌렀을 때 상대를 찾는 대기 화면도 못 보고 곧장 '패배' 화면이 뜨던 문제를 고쳤어요 — 매칭될 상대가 아직 없을 때(대기열에만 합류했을 때) 서버가 돌려준 빈 응답을 실제 대국으로 잘못 열어버리던 게 원인이었어요.",
       "대기열에서 상대를 기다리던 중 몇 초 뒤 '대기열 합류에 실패했어요'라고 뜨던 문제를 고쳤어요.",
       "서로 같은 시점에 친구 요청을 보내 자동으로 친구가 됐을 때, 먼저 요청을 보냈던 쪽에게도 '친구가 되었다'는 알림이 가도록 고쳤어요.",
