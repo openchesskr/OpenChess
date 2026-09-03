@@ -10737,11 +10737,20 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // (신규 기능) 체크메이트·스테일메이트·3회 동형 반복으로 대국이 끝나면, pvp 모드에서는 서버에도
   // 한 번만 결과를 보고해 상대 화면에도 즉시 반영되게 한다(둘 중 누구든 먼저 감지한 쪽이 보고 —
   // pvp_finish는 이미 종료된 대국이면 조용히 그대로 반환하므로 중복 호출해도 안전하다).
+  // (버그 수정, 사용자 제보) 위 "둘 중 누구든"은 실제로는 "패자만" 이었다 — pvp_finish가 자기 자신을
+  // 승자로 보고하는 걸 막다 보니, 이긴 쪽 클라이언트가 이 effect로 똑같이 보고를 시도해도 항상
+  // 조용히 실패했다. 진 쪽이 결과 화면을 보자마자 탭을 닫는 등으로 실제 보고가 끝내 한 번도 성공하지
+  // 못하면, 그 대국은 체크메이트가 실제로 일어난 뒤에도 서버엔 계속 active로 남아 있다가, 이긴 쪽이
+  // "대국 상대 찾기"를 다시 누를 때 새 매칭 대신 이미 끝난 그 대국으로 되돌아가(pvp_queue_join의
+  // 재접속 처리) 곧장 결과 화면(패배 쪽 입장에선 "즉시 패배")을 다시 마주하는 원인이었다. 체크메이트·
+  // 스테일메이트·3회 동형 반복은 서버가 이미 전적으로 신뢰하는 sans만으로 양쪽이 항상 동일하게
+  // 계산해내는 객관적 결과라(협상 대상인 기권·시간초과와 다르다), pvp_finish에 p_objective:true를
+  // 넘겨 자기 승리 선언 금지를 건너뛴다 — 이제 정말로 "둘 중 먼저 감지한 쪽"이 확정한다.
   useEffect(() => {
     if (mode !== "pvp" || !pvpGame || pvpFinishedRef.current || !endState.end) return;
     pvpFinishedRef.current = true;
     const status = endState.end === "checkmate" ? (endState.color === "w" ? "black_won" : "white_won") : "draw";
-    sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
+    sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status, p_objective: true }).catch(() => {});
   }, [mode, pvpGame && pvpGame.id, endState.end, endState.color]);
 
   // (신규 기능) 타임 컨트롤 — 매 턴, 지금 둘 차례인 쪽의 시계를 실시간으로 줄인다. 서버가 시간을
@@ -21489,6 +21498,7 @@ const CHANGELOG = [
     version: "0.4.5", date: "2026.9.3", dev: ["openchesskr"], items: [
       "서로 같은 시점에 친구 요청을 보내 자동으로 친구가 됐을 때, 먼저 요청을 보냈던 쪽에게도 '친구가 되었다'는 알림이 가도록 고쳤어요.",
       "실시간 대국 중 상대가 오래 생각하고 있을 뿐인데, 새로고침하거나 잠깐 다른 화면에 있다 돌아오면 그 대국이 자동으로 기권 처리되던 문제를 고쳤어요.",
+      "실시간 대국이 체크메이트로 끝났는데 상대가 결과 화면을 보자마자 나가버려서, 다음에 '대국 상대 찾기'를 누르면 새 상대 대신 이미 끝난 그 대국으로 되돌아가 곧장 결과 화면이 뜨던 문제를 고쳤어요.",
     ],
   },
   {

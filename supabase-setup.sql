@@ -1394,8 +1394,21 @@ grant execute on function public.pvp_move(bigint, text) to authenticated;
 -- 중복 호출은 조용히 실패해도 무방하다(패자 쪽 호출 하나만 성공하면 충분 — 클라이언트는 이미 실패를
 -- 무시하도록 되어 있다). 무승부는 "제안"이 아니라 실제 수순에서 객관적으로 계산되는 상태라 양쪽 모두
 -- 그대로 허용한다.
+-- (버그 수정, 사용자 제보) 위 "패자만 보고" 원칙이 실제로는 "체크메이트를 당한 쪽의 클라이언트가
+-- 살아서 이 RPC를 실제로 호출할 때까지" 라는 전제에 의존하고 있었다 — 진 사람이 결과 화면을 보자마자
+-- 탭을 닫거나(네트워크가 끊기거나) 하면 그 호출 자체가 영영 일어나지 않고, 이긴 쪽이 같은 체크메이트를
+-- 보고 똑같이 이 RPC를 불러도 "자기 승리 선언"으로 막혀 있어 아무도 이 대국을 끝내지 못했다 — 그
+-- 결과 그 pvp_games 행은 checkmate가 실제로 일어난 뒤에도 status='active'로 계속 남아, 이긴 쪽이
+-- 몇 분 안에 "대국 상대 찾기"를 다시 누르면(pvp_queue_join이 "최근에 갱신된 내 active 대국"으로
+-- 그대로 돌려줌) 새 매칭 대신 이미 끝난 그 대국으로 다시 끌려 들어가 곧장 결과 화면(패배 쪽이었다면
+-- "즉시 패배")을 다시 보게 됐다. sans는 이미 서버가 전적으로 신뢰하는 값이고(위 pvp_move 설명대로
+-- 합법성조차 검증하지 않는다) 체크메이트·스테일메이트·3회 동형 반복은 그 sans만으로 양쪽 클라이언트가
+-- 항상 동일하게 계산해내는 객관적 결과라, "지금 이 대국이 진짜 안 끝났는데 임의로 이겼다고 우기는"
+-- 것과는 신뢰 수준이 다르다. p_objective=true(체크메이트/스테일메이트/3회 동형 반복을 감지한 클라이언트
+-- 코드에서만 사용, 기권·시간초과 보고는 여전히 false)일 때는 자기 승리 선언 금지를 건너뛰어, 이기고
+-- 있는 쪽의 클라이언트가 먼저(또는 유일하게) 살아 있어도 그 결과를 확정할 수 있게 한다.
 drop function if exists public.pvp_finish(bigint, text) cascade;
-create or replace function public.pvp_finish(p_game_id bigint, p_status text)
+create or replace function public.pvp_finish(p_game_id bigint, p_status text, p_objective boolean default false)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_game public.pvp_games; v_my_win_status text;
 begin
@@ -1405,12 +1418,12 @@ begin
   if not found then raise exception 'game not found'; end if;
   if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
   v_my_win_status := case when v_me = v_game.white_uid then 'white_won' else 'black_won' end;
-  if p_status = v_my_win_status then raise exception 'cannot self-declare victory'; end if;
+  if p_status = v_my_win_status and not p_objective then raise exception 'cannot self-declare victory'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   update public.pvp_games set status = p_status, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.pvp_finish(bigint, text) to authenticated;
+grant execute on function public.pvp_finish(bigint, text, boolean) to authenticated;
 
 -- ============================================================================
 -- N+2) puzzles 공개/비공개 — 퍼즐 생성 마법사 4단계 + 퍼즐 풀이 카드 2페이지(생성자 권한 박스)에서
