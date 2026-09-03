@@ -3697,11 +3697,33 @@ function MoveLongPressPreview({ priorSans, san, kind, children, flip, boardSize 
   );
 }
 
+// (v0.4.5 기능, 사용자 요청) 수 블록의 리체스 대국 수(a/b)가 0부터 실제 값까지 빠르게 카운팅되며 올라가는
+// 연출 — b(포지션 전체 대국 수)가 먼저 끝나고 a(그 수의 대국 수)가 끝까지 이어서 세도록 duration을 다르게 둔다.
+function useCountUp(target, durationMs) {
+  const [display, setDisplay] = useState(target ?? 0);
+  const rafRef = useRef(null);
+  useEffect(() => {
+    if (target == null) return;
+    cancelAnimationFrame(rafRef.current);
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplay(Math.round(target * eased));
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, durationMs]);
+  return target == null ? null : display;
+}
 function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadgeClick }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);   // 비이론 수는 개발자가 추가한 키워드만 표기
   const evTxt = m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null);
+  const gamesDisp = useCountUp(m.games, 900);
+  const posGamesDisp = useCountUp(posGames, 500);
   return (
     <div style={{ borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지.
@@ -3727,7 +3749,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
             <div style={{ flex: 1, minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
               <div style={{ width: Math.min(100, m.adopt || 0) + "%", height: "100%", background: color, opacity: .85 }} />
             </div>
-            <span style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "62%" }}>{m.games != null ? fmtFull(m.games) + " / " + fmtFull(posGames) : "—"} · {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"}</span>
+            <span style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "62%" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : "—"} <span style={{ color: T.ink, fontWeight: 700 }}>{m.adopt != null ? m.adopt.toFixed(2) + "%" : "—"}</span></span>
           </div>
           {/* (UI) 도감 탭과 동일한 형식(백/무/흑 바 + %)으로 이 수의 승률 표기 */}
           {m.wdl && <div onClick={onClick} style={{ marginTop: 7, cursor: "pointer" }}><WinBar wdl={m.wdl} height={6} /></div>}
@@ -19383,6 +19405,7 @@ const CHANGELOG = [
       "체크메이트로 대국이 끝났는데 상대가 결과를 못 보고 나가버려서 '대국 상대 찾기'가 새 상대 대신 이미 끝난 그 대국으로 되돌아가던 문제를, 서버가 실제 체스 규칙으로 결과를 직접 검증하는 방식으로 제대로 고쳤어요.",
       "친구 찾기 검색창에서 #MID로도 검색할 수 있다는 걸 화면에서 알려주지 않던 문제를 고쳤어요.",
       "일부 화면에서 사이트 기본 폰트(IBM Plex Sans KR)가 아닌 다른 글꼴로 보이던 문제를 고쳤어요 — 이제 전체 화면(소개·FAQ 페이지 포함)이 일관된 글꼴을 써요.",
+      "학습 탭 수 블록의 리체스 대국 수 통계가 0부터 실제 값까지 빠르게 세어 올라가는 애니메이션으로 표시돼요. 채택률도 소수 둘째 자리까지 더 정밀하게, 더 진한 색으로 표시돼 대국 수와 눈에 띄게 구분돼요.",
     ],
   },
   {

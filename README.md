@@ -62,6 +62,18 @@
 **UI — 사이트 전체 기본 폰트를 IBM Plex Sans KR로 통일**
 과거 버전 기록에서 이미 "사이트 전체 기본 폰트를 IBM Plex Sans KR로 바꿨다"고 안내한 적이 있었지만, 실제로는 몇 군데가 빠져 있었다. `App.jsx`의 앱 최상위 래퍼 `div`(`SkinContext.Provider` 바로 안쪽)가 `SITE_FONT` 상수를 참조하지 않고 `"system-ui, -apple-system, 'Noto Sans KR', sans-serif"`를 직접 지정하고 있어, `index.css`의 `html, body` 기본값(IBM Plex Sans KR)을 앱 전체 트리에서 덮어쓰고 있었던 게 가장 큰 원인이었다 — `SITE_FONT`를 쓰도록 고쳤다. 같은 값을 상수 대신 문자열로 중복 하드코딩해 둔 나머지 3곳(수 미리보기 툴팁, 대국 상세 정보 두 곳)도 `SITE_FONT`를 참조하도록 정리했다. `/about`·`/faq`는 `main.jsx`에서 `App`을 거치지 않는 별도 번들이라 `SITE_FONT` 상수를 공유하지 않는데, 이 두 페이지의 최상위 래퍼도 각각 `'Noto Sans KR', sans-serif`로 남아 있어 `'IBM Plex Sans KR', sans-serif`로 맞췄다. PGN/기보 표시용 `SEQ_FONT`(Merriweather), 시계·MID·평가값 등 고정폭 숫자 표시용 `ui-monospace,monospace`, 오프닝 트리 모식도의 오프닝 이름 라벨과 퍼즐 테마 카드 장식 글리프에 쓰이는 `Georgia,'Noto Serif KR',serif`(사용자 확인 결과 의도적 장식 요소로 유지)는 그대로 뒀다.
 
+**UI — 학습 탭 수 블록의 리체스 통계에 카운팅 애니메이션 적용**
+사용자 요청 — `MoveTile`(학습 탭 오프닝 트리의 각 수 블록)이 보여주는 "그 수를 둔 대국 수 / 이 포지션 전체 대국 수" 표시가 값이 뜨자마자 바로 최종 숫자로 나타나던 것을, 0부터 실제 값까지 빠르게 올라가며 세는 카운트업 애니메이션으로 바꿨다. 새 훅 `useCountUp(target, durationMs)`가 `requestAnimationFrame` + ease-out 곡선으로 0→target을 세는데, 분모(포지션 전체 대국 수, "이 포지션 전체 대국 수"가 먼저 고정되는 편이 자연스러워서)는 500ms로 짧게, 분자(그 수를 둔 대국 수)는 900ms로 길게 둬서, 항상 분모가 먼저 카운팅을 끝내고 분자가 마지막까지 세다가 멈추도록 했다. 곁들여 "a / b · n%" 사이의 가운뎃점(·) 구분자를 없애고, 채택률(n%)을 소수 첫째 자리(`toFixed(1)`)에서 둘째 자리(`toFixed(2)`)로 정밀하게 표시했으며, 대국 수 표시(연한 `T.inkSoft`)와 시각적으로 구분되도록 채택률 글자색을 더 진한 `T.ink`로 바꿨다.
+
+**시스템 — App.jsx(약 29,200줄) 코드 구조 개편: 기능별 여러 파일로 분리**
+사용자 요청 — 단일 파일에 몰려 있던 코드를 파일명만으로 어떤 기능인지 알 수 있는 여러 모듈로 나눠, 다음 세션부터 특정 분야 작업을 빠르게 찾아갈 수 있게 했다. "절대 오류가 없어야 하고 실제 동작에 변화가 없어야 한다"는 요구에 맞춰, 이름·시그니처·값 변경 없이 그대로 옮기는 방식만 썼고, 파일 하나를 옮길 때마다 곧장 `npm run build`로 검증한 뒤에만 다음으로 넘어갔다. 위험도가 낮은(JSX·React 훅이 없는 순수 상수/로직) 부분부터 단계적으로 진행했다:
+- 1단계: `src/lib/theme.js`(테마·기물/보드 스킨·티어 배지 상수), `src/lib/prefs.js`(로컬스토리지 설정), `src/lib/chessRules.js`(FEN/SAN 순수 체스 규칙 엔진), `src/lib/pgn.js`(PGN 파싱/포맷).
+- 2단계: `src/lib/supabaseClient.js`(sbRpc 등 REST 래퍼, SB_TOKEN), `src/lib/lichessApi.js`(리체스 fetch·429 쿨다운·마스터 게임), `src/lib/chesscom.js`(체스닷컴 순수 헬퍼), `src/lib/moveQuality.js`(자재값·SEE·희생 판정·정확도 모델).
+- 3단계: `src/lib/schematicGeometry.js`(모식도 팬·줌 좌표 계산), `src/lib/puzzleRating.js`(퍼즐 수순 검증·Elo 레이팅), `src/lib/tierSystem.js`(7단계 티어/XP 시스템).
+- 4단계(첫 JSX 컴포넌트 분리, 더 신중하게 진행): `src/components/pieces.jsx`(기물·티어 배지 컴포넌트), `src/components/engineLines.jsx`(평가 배지·바·3줄 엔진 분석), `src/components/badges.jsx`(수 품질 배지 아이콘), `src/components/keywordScroll.jsx`(오프닝 키워드 칩), `src/components/uiPrimitives.jsx`(페이지네이션·네비 버튼류) — props/파라미터만으로 동작하고 다른 큰 컴포넌트나 페이지 상태에 숨은 의존성이 없는 "리프(leaf) 컴포넌트"만 골라 옮겼다.
+
+결과적으로 App.jsx는 약 29,194줄 → 약 26,800줄로 줄었다. PlayPage·ReviewPage·PuzzleSolver 등 상태를 많이 갖는 거대 페이지 컴포넌트는 이번 개편에서 건드리지 않고 그대로 App.jsx에 남겨뒀다(다음 단계 후보). 각 단계에서 무엇을 옮겼는지, 무엇을 왜 남겨뒀는지, 오류가 날 경우 어디부터 봐야 하는지는 저장소 루트의 `REFACTOR_NOTES.md`에 상세히 기록해 뒀다 — 이후 세션에서 관련 버그를 발견하면 이 파일에서 디버깅 경로를 먼저 확인할 것.
+
 **시스템 — package.json 버전 표기 정정**
 `package.json`의 `version`이 오래전 `0.3.8`에 멈춰 있었다(앱 내 표시 버전은 `AboutPage.jsx`의 `VERSION_HISTORY[0].version`에서 파생돼 실제로는 영향 없었음). 배포 버전에 맞춰 최신화했다.
 
