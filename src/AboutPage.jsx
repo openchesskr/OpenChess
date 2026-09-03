@@ -944,15 +944,18 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.4.6", date: "2026.9.3",
-    summary: "보드 편집기에서 FEN을 직접 입력·붙여넣기·이미지 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요. 표준 시작 위치부터 자연스럽게 둔 수순에서는 원래도 정상이었어요.",
+    summary: "보드 편집기에서 FEN을 직접 입력·붙여넣기·이미지 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요. 표준 시작 위치부터 자연스럽게 둔 수순에서는 원래도 정상이었어요. 아예 이제 /play는 항상 똑같은 표준 시작 위치에서만 시작돼요.",
     mascot: {
-      intro: { char: "milku", expr: "think", name: "MILKU 코치", align: "left", text: "보드 편집기로 만든 포지션에서도 이제 앙파상이 제대로 돼요!" },
+      intro: { char: "milku", expr: "think", name: "MILKU 코치", align: "left", text: "이제 /play는 언제나 똑같은 시작 위치에서 출발해요!" },
       outro: { char: "kokoa", expr: "wink", name: "KOKOA 코치", align: "right", text: "승격할 기물도 언제나 내 맘대로 골라요 — 퀸이든 나이트든!" },
     },
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: "보드 편집기 앙파상 버그 수정" },
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: "보드 편집기 앙파상 버그 수정 + /play 표준 시작 위치 고정" },
     sections: [
       { cat: "fix", items: [
         "보드 편집기(연필 아이콘)에서 FEN을 직접 입력하거나 붙여넣거나 이미지로 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요.",
+      ] },
+      { cat: "security", items: [
+        "/play는 이제 항상 똑같은 표준 시작 위치에서만 시작돼요 — 보드를 직접 편집했거나 FEN/PGN을 불러와 다른 포지션·수순이 돼 있으면 PLAY 버튼이 비활성화돼요.",
       ] },
     ],
   },
