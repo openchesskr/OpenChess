@@ -329,3 +329,15 @@ Phase 1-3는 순수 상수/함수만 옮겼다. Phase 4는 처음으로 실제 J
 - 증상이 보이면: 학습 탭 수 블록의 키워드 칩(NORMAL/TRICKY 등)이 안 보이거나 색이 이상하거나
   자동 가로 스크롤이 멈춰 있으면 src/components/keywordScroll.jsx의 KeywordScroll/KW를 확인.
   설정의 키워드 선택 편집기 쪽 색이 깨지면 App.jsx가 이 파일에서 KW를 제대로 import하고 있는지 확인.
+
+### src/components/uiPrimitives.jsx (commit TBD)
+- 이동: `BestMoveJumpButton`(대국 목록의 초록 별 "분석으로 보기" 버튼), `ListPager`(대국 목록 공용
+  페이지 넘김), `NavBtn`(분석 탭 하단 내비게이션 아이콘 버튼) — 셋 다 props만 받고, T(theme.js)·
+  SITE_FONT(engineLines.jsx)·lucide 아이콘 외에는 App.jsx-local 값을 참조하지 않음을 grep으로 확인.
+  호출부 13곳(BestMoveJumpButton 6곳, ListPager 3곳, NavBtn 7곳 — 일부 중복 라인 포함) 전부 props만
+  넘기는 것도 확인.
+- 위험도: 낮음. 완전한 순수 presentational 컴포넌트(내부 상태 없음), 이름 변경 없이 그대로 이동.
+- 증상이 보이면: 마스터 대국·내 대국·chess.com 최근 대국 목록에서 "분석으로 보기" 초록 별 버튼이
+  안 보이거나 클릭이 안 먹으면 BestMoveJumpButton을, 페이지 번호/화살표 넘김이 안 되면 ListPager를,
+  분석 탭 하단 되돌리기·앞으로가기·설정 버튼(둥근 정사각 아이콘 버튼) 스타일이 깨지면 NavBtn을
+  src/components/uiPrimitives.jsx에서 확인.
