@@ -2980,10 +2980,13 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
 // 붙여넣기와 똑같은 계약(onLoadFen(parseFenFull 결과))으로 그 포지션의 FEN 모드로 들어간다.
 const EDITOR_PALETTE_PIECES = ["K", "Q", "R", "B", "N", "P"];
 function editorEmptyBoard() { return Array.from({ length: 8 }, () => Array(8).fill(null)); }
-// 캐슬링 권리 없이 앙파상도 없는 순수 "지금 배치+차례"만 담은 FEN — 에디터는 앙파상을 다루지 않는다.
-function editorFenOf(board, turn, rights) {
+// (버그 수정) 예전엔 앙파상을 아예 다루지 않아, FEN을 직접 입력·붙여넣기·이미지 스캔해도 그 안의
+// 앙파상 타깃 필드가 항상 "-"로 버려졌다 — 그렇게 만든 포지션으로 곧장 PLAY를 열면(seed.fenRoot로
+// 그대로 전달됨) 원래는 가능해야 할 앙파상 캡처가 그 즉시 불가능해졌다. ep를 받아 그대로 필드에
+// 반영한다 — 기물 배치를 직접 편집(팔레트/드래그)하면 호출부가 ep를 null로 넘겨 무효화한다.
+function editorFenOf(board, turn, rights, ep) {
   const castle = (rights.K ? "K" : "") + (rights.Q ? "Q" : "") + (rights.k ? "k" : "") + (rights.q ? "q" : "");
-  return boardToFen(board, 0, castle || "-", "-", turn);
+  return boardToFen(board, 0, castle || "-", ep ? sqName(ep[0], ep[1]) : "-", turn);
 }
 // 보드 칸을 클릭으로 채우는 8x8 그리드 — 실제 대국 보드(Board)와 달리 기물 이동 규칙이 전혀 없고
 // 좌표 라벨만 곁들인 순수 렌더링 그리드다.
@@ -3031,13 +3034,13 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const narrow = useNarrow(760);
   const startSnap = useMemo(() => {
     const p = (initialFen && parseFenFull(initialFen)) || parseFenFull(STANDARD_START_FEN);
-    return { board: p.board, turn: p.turn, rights: p.rights };
+    return { board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null };
   }, [initialFen]);
   // (기능) 되감기/빨리감기(◀◀▶▶)·되돌리기/다시하기(↶↷) — 스냅샷 배열 하나 + 인덱스로 관리해
   // board/turn/rights 세 state를 따로 두고 동기화하다 어긋나는 사고를 원천 차단한다.
   const [hist, setHist] = useState({ list: [startSnap], idx: 0 });
   const snap = hist.list[hist.idx];
-  const { board, turn, rights } = snap;
+  const { board, turn, rights, ep } = snap;
   const pushSnap = (patch) => setHist((h) => {
     const next = { ...h.list[h.idx], ...patch };
     const list = [...h.list.slice(0, h.idx + 1), next];
@@ -3051,14 +3054,17 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const [flipped, setFlipped] = useState(false);
   const [tool, setTool] = useState(null); // null | "delete" | { piece, color }
   const [pickedSq, setPickedSq] = useState(null); // 팔레트 없이 보드 위 기물을 직접 집어 옮기는 중인 칸
-  const placeAt = (r, c, piece) => { const b = board.map((row) => row.slice()); b[r][c] = piece; pushSnap({ board: b }); };
+  // (버그 수정) 기물 배치를 직접 편집하면 그 전에 남아있던 ep(앙파상 타깃)는 더 이상 유효하지
+  // 않다 — 편집으로 만들어진 배치가 "방금 그 폰이 두 칸을 전진해서" 나온 게 아닐 수 있으므로,
+  // board를 바꾸는 모든 편집 동작은 ep를 명시적으로 null로 되돌린다.
+  const placeAt = (r, c, piece) => { const b = board.map((row) => row.slice()); b[r][c] = piece; pushSnap({ board: b, ep: null }); };
   const onSqClick = (r, c) => {
     if (tool) { placeAt(r, c, tool === "delete" ? null : { c: tool.color, t: tool.piece }); return; }
     if (pickedSq) {
       if (pickedSq[0] === r && pickedSq[1] === c) { setPickedSq(null); return; }
       const b = board.map((row) => row.slice());
       b[r][c] = b[pickedSq[0]][pickedSq[1]]; b[pickedSq[0]][pickedSq[1]] = null;
-      pushSnap({ board: b }); setPickedSq(null);
+      pushSnap({ board: b, ep: null }); setPickedSq(null);
       return;
     }
     if (board[r][c]) setPickedSq([r, c]);
@@ -3180,11 +3186,11 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
         if (target && (target[0] !== d.from[0] || target[1] !== d.from[1])) {
           const b = board.map((row) => row.slice());
           b[target[0]][target[1]] = d.piece; b[d.from[0]][d.from[1]] = null;
-          pushSnap({ board: b });
+          pushSnap({ board: b, ep: null });
         } else if (!target) { // 보드 밖으로 드롭 = 기물 삭제
           const b = board.map((row) => row.slice());
           b[d.from[0]][d.from[1]] = null;
-          pushSnap({ board: b });
+          pushSnap({ board: b, ep: null });
         }
         setPickedSq(null);
       } else if (d.source === "palette" && target) {
@@ -3194,18 +3200,18 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   };
   const onDragPointerUp = (e) => endDrag(e, true);
   const onDragPointerCancel = (e) => endDrag(e, false);
-  const doReset = () => { const p = parseFenFull(STANDARD_START_FEN); pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setTool(null); setPickedSq(null); };
-  const doClear = () => { const p = parseFenFull(EDITOR_EMPTY_FEN); pushSnap({ board: p.board, turn: p.turn, rights: { K: false, Q: false, k: false, q: false } }); setTool(null); setPickedSq(null); };
+  const doReset = () => { const p = parseFenFull(STANDARD_START_FEN); pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: null }); setTool(null); setPickedSq(null); };
+  const doClear = () => { const p = parseFenFull(EDITOR_EMPTY_FEN); pushSnap({ board: p.board, turn: p.turn, rights: { K: false, Q: false, k: false, q: false }, ep: null }); setTool(null); setPickedSq(null); };
   const setTurnV = (t) => pushSnap({ turn: t });
   const toggleRight = (k) => pushSnap({ rights: { ...rights, [k]: !rights[k] } });
-  const fenText = useMemo(() => editorFenOf(board, turn, rights), [board, turn, rights]);
+  const fenText = useMemo(() => editorFenOf(board, turn, rights, ep), [board, turn, rights, ep]);
   const [fenInput, setFenInput] = useState(fenText);
   const [fenErr, setFenErr] = useState("");
   useEffect(() => { setFenInput(fenText); }, [fenText]);
   const applyFenInput = () => {
     const p = parseFenFull(fenInput.trim());
     if (!p) { setFenErr("올바른 FEN 형식이 아니에요."); return; }
-    pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setFenErr("");
+    pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null }); setFenErr("");
   };
   const [copied, setCopied] = useState(false);
   const copyFen = async () => { try { await navigator.clipboard.writeText(fenText); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { } };
@@ -3215,7 +3221,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       if (!looksLikeFen(raw)) { setFenErr("클립보드에 올바른 FEN이 없어요."); return; }
       const p = parseFenFull(raw);
       if (!p) { setFenErr("올바른 FEN 형식이 아니에요."); return; }
-      pushSnap({ board: p.board, turn: p.turn, rights: p.rights }); setFenErr("");
+      pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null }); setFenErr("");
     } catch { setFenErr("클립보드를 읽을 수 없어요."); }
   };
   // (v0.3.5 기능 → v0.3.9 백엔드 재전환 → v0.4.2 텍스트 인식 확장) 사용자 요청 — 이미지 스캔(사진 →
@@ -3232,7 +3238,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       if (data.type === "board" && data.fen_board) {
         const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
         if (!p) { setFenErr("인식된 배치를 적용할 수 없었어요."); return; }
-        pushSnap({ board: p.board });
+        pushSnap({ board: p.board, ep: null });
         return;
       }
       if (data.type === "text" && data.recognized_text) {
@@ -3240,18 +3246,20 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
         if (looksLikeFen(raw)) {
           const p = parseFenFull(raw);
           if (!p) { setFenErr("인식된 FEN 형식이 올바르지 않아요."); return; }
-          pushSnap({ board: p.board, turn: p.turn, rights: p.rights });
+          pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null });
           return;
         }
         const moves = parsePgnMoves(raw);
-        let board = startBoard(), ok = moves.length > 0;
+        let board = startBoard(), moveEp = null, ok = moves.length > 0;
         for (let i = 0; i < moves.length && ok; i++) {
           const color = i % 2 === 0 ? "w" : "b";
-          if (!sanSrc(board, moves[i], color)) { ok = false; break; }
+          const info = sanSrc(board, moves[i], color);
+          if (!info) { ok = false; break; }
+          moveEp = epTargetFromMoveInfo(info);
           board = applySan(board, moves[i], color);
         }
         if (!ok) { setFenErr("인식된 기보를 적용할 수 없었어요."); return; }
-        pushSnap({ board });
+        pushSnap({ board, ep: moveEp });
         return;
       }
       setFenErr("이미지에서 체스판이나 기보를 인식하지 못했어요.");
@@ -19393,6 +19401,11 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.4.6", date: "2026.9.3", dev: ["openchesskr"], items: [
+      "보드 편집기(연필 아이콘)에서 FEN을 직접 입력하거나 붙여넣거나 이미지로 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요. 표준 시작 위치부터 자연스럽게 둔 수순에서는 원래도 정상이었어요.",
+    ],
+  },
   {
     version: "0.4.5", date: "2026.9.3", dev: ["openchesskr"], items: [
       "매칭 대기 화면이 더 화려해졌어요 — 반지름이 다른 궤도 위를 체스 수 아이콘들이 실제 천체처럼 돌아요. 도는 아이콘 구성은 직전에 플레이한 대국을 반영해서, 탁월한 수·실수·블런더가 있었으면 그 개수만큼 함께 떠요. '동작 줄이기' 접근성 설정이 켜져 있으면 이 화면이 멈춰 보이던 문제도 고쳤어요.",
