@@ -265,3 +265,34 @@ Phase 1-3는 순수 상수/함수만 옮겼다. Phase 4는 처음으로 실제 J
   보이면 App.jsx의 `<SkinContext.Provider value={skinValue}>`가 여전히 이 파일의 SkinContext를
   참조하는지(같은 모듈에서 온 동일 객체인지) 먼저 확인 — 만약 어딘가 SkinContext를 새로 재선언했다면
   Provider와 소비자가 서로 다른 Context 객체를 참조하게 되어 기본값(classic)으로 항상 고정되어 버린다.
+
+### src/components/engineLines.jsx (commit TBD)
+- 이동: `SEQ_FONT`/`SITE_FONT`(사이트 전역 폰트 상수), `mateWhiteWins`(메이트 승자 판별, App.jsx의
+  moverEval/whiteEval도 계속 씀), `EvalBadge`, `EvalBar`(+ 비공개 `BOARD_FRAME_INSET`), 분석 탭 엔진
+  MultiPV 3줄 표시 계열 전체: `EngineLineSkeleton`, `EngineLineBlank`, `TypedMoveLine`(+ 비공개 모듈
+  캐시 `engineLineMaxTextCache`), `dedupeEngineLines`, `EngineLineRow`, `EngineLines`. 비공개 helper
+  `pvContinuationText`/`evalDisplayText`/`evalBarText`도 이 컴포넌트들 안에서만 쓰여 export 없이 같이
+  옮김(호출부가 App.jsx 쪽에 하나도 없음을 grep으로 확인).
+- **SEQ_FONT/SITE_FONT를 함께 옮긴 이유**: 두 상수 다 원래 App.jsx 안에서 EvalBadge/EvalBar/
+  EngineLineRow보다 한참 뒤(약 570줄 뒤)에 선언돼 있었는데도 문제없이 동작했던 건, 함수 선언은
+  호이스팅되고 실제 실행(렌더)은 모듈 전체가 평가된 다음에야 시작되기 때문이다 — 이 phase에서
+  컴포넌트를 별 파일로 옮기며 그 순서 의존을 없애기 위해 두 상수를 정의 시점 그대로 comment까지
+  포함해 이 파일로 옮기고, App.jsx는 site-wide로 쓰던 나머지 142곳(SITE_FONT)·12곳(SEQ_FONT)에서
+  이 파일로부터 다시 import하도록 배선만 바꿨다.
+- **mateWhiteWins를 export한 이유**: App.jsx에 남은 `moverEval`/`whiteEval`(리뷰/분석 탭의 다른
+  평가치 계산 경로, 이번 phase 대상 아님)이 여전히 이 함수를 쓴다 — lib 모듈들과 같은 패턴으로,
+  이름 변경 없이 그대로 export해 App.jsx가 다시 import하도록 배선.
+- 남겨둔 것: `fmtFull`/`moverEval`/`whiteEval`/`whiteEvalObj`/`hasRealEval`/`assignTiers` 등 같은
+  구역에 있던 나머지 평가치 헬퍼는 App.jsx-local `forceKindFor`/`isUnbooked`/`recaptureFact` 등에
+  의존하거나 이번 phase의 "leaf 컴포넌트만" 원칙 밖이라 App.jsx에 그대로 둠.
+- 위험도: 낮음~중간. 순수 로직 자체는 그대로지만 EngineLineRow는 useRef+useEffect(ResizeObserver,
+  setInterval)로 스크롤 페이드를 자체 관리하는 등 상태가 있는 컴포넌트다 — 그 상태가 전부 컴포넌트
+  내부에 갇혀 있고(props로만 외부와 통신) App.jsx-local 클로저를 참조하지 않음을 grep + 코드 읽기로
+  확인. 호출부 17곳(EvalBadge/EvalBar/EngineLines/dedupeEngineLines 전체) 전부 props만 넘기는 것도
+  확인.
+- 증상이 보이면: 분석 탭·리뷰 페이지의 평가치 배지(숫자 박스)나 평가 막대(세로/가로)가 안 보이거나
+  색이 반대로(백인데 검게) 나오면 EvalBadge/EvalBar를, 엔진 멀티PV 3줄(수순 목록)이 하나도 안 뜨거나
+  중복된 줄이 겹쳐 보이면(dedupeEngineLines) src/components/engineLines.jsx의 EngineLines/
+  EngineLineRow를 확인. 사이트 전반 폰트가 갑자기 다른 서체로 보이면 이 파일의 SEQ_FONT/SITE_FONT
+  값과, 이 값을 App.jsx가 실제로 이 파일에서 import하고 있는지(다른 값으로 재선언한 곳이 없는지)
+  확인.
