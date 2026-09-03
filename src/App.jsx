@@ -15532,7 +15532,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       setReassignMsg(targetUsername ? "생성자를 @" + targetUsername + "님에게 양도했어요." : "생성자를 개발자 명의로 회수했어요.");
       setReassignInput("");
       setCreatorInfo(await puzzleCreatorInfo(puzzleNoForTag));
-    } else setReassignMsg("실패했어요 — 아이디를 확인해주세요.");
+    } else setReassignMsg("실패했어요 — 아이디를 확인하거나, 이 퍼즐이 아직 서버에 공유되지 않았을 수 있어요.");
     setReassignBusy(false);
   };
   // (20차 기능3) allLines(완결된 라인)가 0개여도, 트리 자체에 내용이 있으면(개발자가 삭제로 잠시
@@ -15812,7 +15812,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
             )}
             {/* (사용자 요청) 퍼즐 생성자에 한해, 자신이 만든 퍼즐을 이 모식도(2페이지)에서 삭제할 수
                 있게 — 개발자와 달리 제작자는 라인 편집이 아니라 퍼즐 자체를 통째로 지울 수 있다. */}
-            {isMyPuzzle && onDeletePuzzle && (
+            {/* (버그 수정, 사용자 요청) "개발자 권한으로 임의의 퍼즐을 삭제할 수 있어야 한다"는
+                요청 — 서버 RPC(puzzle_delete)는 이미 is_content_editor(개발자/공동개발자)면 생성자와
+                무관하게 삭제를 허용하는데, 이 버튼이 isMyPuzzle(=생성자 본인)일 때만 렌더링돼 개발자가
+                자기 퍼즐이 아닌 퍼즐에서는 삭제 버튼 자체를 볼 수 없었다 — canEdit(개발자/공동개발자)도
+                함께 조건에 추가한다. */}
+            {(isMyPuzzle || canEdit) && onDeletePuzzle && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
                 <button onClick={() => setConfirmDeletePuzzle(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: "#F4A8A8", fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}><Trash2 size={14} /> 이 퍼즐 삭제</button>
               </div>
@@ -16207,9 +16212,11 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         {/* (버그 수정, 사용자 제보) PGN 배지를 오프닝 이름 옆(제목 위, 별점과 한 줄)에 붙였더니 긴
             오프닝 이름의 말줄임(...) 바로 옆에 떠 위치가 어색해 보였다 — PGN은 국면·FEN과 같은
             "이 퍼즐의 시작 위치 정보" 배지이므로, 다시 그 둘과 한 무리로 묶어 이 줄에 표시한다. */}
+        {/* (버그 수정, 사용자 요청) 순서를 PGN·국면·FEN에서 국면(오프닝/미들게임/엔드게임)·PGN·FEN
+            순으로 바꿨다 — 그 퍼즐이 "어느 국면"인지가 가장 먼저 눈에 들어와야 할 정보라 맨 왼쪽에 둔다. */}
         <div className="flex items-center" style={{ marginTop: 4, gap: 5, rowGap: 4, flexWrap: "wrap", flexShrink: 0 }}>
-            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
             <GamePhaseBadge p={p} compact />
+            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
             {p.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
         </div>
         {/* (사용자 요청) 좋아요·리포스트·공유 수는 왼쪽에 묶어 두고, 실제 공유하기 버튼만 카드 맨
@@ -19416,6 +19423,16 @@ const CHANGELOG = [
     version: "0.4.6", date: "2026.9.3", dev: ["openchesskr"], items: [
       "보드 편집기(연필 아이콘)에서 FEN을 직접 입력하거나 붙여넣거나 이미지로 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요. 표준 시작 위치부터 자연스럽게 둔 수순에서는 원래도 정상이었어요.",
       "이제 /play 대국은 항상 똑같은 표준 시작 위치에서만 시작돼요 — 보드를 직접 편집했거나 FEN/PGN을 불러와 다른 수순·포지션이 돼 있으면 PLAY 버튼이 비활성화돼요.",
+      "친구 초대 링크 박스가 개선됐어요 — 링크 전체가 항상 보이고, 복사 버튼 아래 공유 버튼이 추가됐고(브라우저 공유 시트가 떠요), 친구 모달 '추가' 탭에서도 초대 링크를 바로 보낼 수 있어요. 로그아웃 상태로 초대 링크를 열면 설정 탭으로 이동해 로그인이 필요하다고 알려줘요.",
+      "이미지 스캔 기능이 특정 모델 이름이 바뀌어도 자동으로 다른 모델로 넘어가 계속 작동하도록 고쳤어요.",
+      "프로필 사진의 접속 표시 링이 반복될 때마다 부자연스럽게 깜빡이던 문제를 고쳤어요.",
+      "MID가 프로필 사진 바로 아래 '#ABCDE1234' 형태로 표시돼요.",
+      "'푼 퍼즐' 카드에 좋아요·리포스트·공유 버튼이 없던 문제와, 카드를 눌러도 그 퍼즐로 이동하지 않던 문제를 고쳤어요. '더 보기' 대신 가로로 스크롤해서 전체를 볼 수 있어요.",
+      "상단 버튼들과 설정 탭 프로필 카드 버튼들의 높이가 서로 미묘하게 다르던 것을 통일했어요.",
+      "채팅에도 프로필 사진의 초록색 접속 표시가 보여요.",
+      "채팅창 고정은 이제 한 번에 하나만 가능해요.",
+      "퍼즐 카드의 국면(오프닝/미들게임/엔드게임)·PGN·FEN 배지 순서를 바꿨어요.",
+      "개발자가 자기가 만들지 않은 퍼즐도 삭제할 수 있도록 고쳤고, 퍼즐 생성자 양도·회수 기능이 조용히 실패하던 문제를 고쳤어요.",
     ],
   },
   {
@@ -20920,8 +20937,11 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(profile.displayId || user)}{roleIcon(user)}</span>
             <div className="flex items-center gap-2">
               {/* (v0.4.3 기능, 사용자 요청) 로그인 수단 연결/해제·로그아웃·계정 탈퇴 — 계정 센터. */}
-              <button onClick={onOpenAccountCenter} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>계정 센터</button>
-              <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>자세히 보기</button>
+              {/* (버그 수정, 사용자 요청) 두 버튼이 패딩·폰트 크기는 같았지만 테두리가 하나만
+                  1px solid이고 다른 하나는 none이라, border-box 기준으로 실제 렌더 높이가 2px
+                  차이났다 — height를 똑같이 고정해 border 유무와 무관하게 항상 같은 높이가 되게 한다. */}
+              <button onClick={onOpenAccountCenter} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>계정 센터</button>
+              <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>자세히 보기</button>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -21766,7 +21786,11 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
   const goToProfile = () => { setOpen(false); onGoToProfile(); };
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
-      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, padding: compact ? "3px 5px" : "4px 10px 4px 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
+      {/* (버그 수정, 사용자 요청) 검색·친구·채팅·알림 버튼은 모두 고정 높이(27/34px)인데, 이 버튼만
+          세로 패딩으로 높이가 정해져 있어 border까지 합치면 그 버튼들보다 미묘하게 더 컸다(내용물
+          — 아바타·닉네임·화살표 — 세로 정렬은 그대로 alignItems:center가 맡으므로, 높이만 옆
+          버튼들과 똑같이 고정해도 레이아웃은 그대로다). */}
+      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
         {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster", 2) || {}) }} />
           : <span style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: compact ? 10.5 : 12, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initial}</span>}
         {!compact && <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
@@ -22132,6 +22156,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   // 늘어나려면 부모도 그만큼의 높이를 flex로 마련해 둬야 하므로, 그런 부모를 보장하지 않는 다른
   // 호출부(FriendsModal의 미니 채팅 뷰 등)는 이 prop을 넘기지 않아 기존 고정 높이 레이아웃을 그대로 쓴다.
   const narrow = fillNarrow;
+  const otherPresence = usePresenceMap(otherUid ? [otherUid] : []);
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -22464,8 +22489,13 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
           ←·상대 프로필 사진·아이디를 좌상단에 순서대로 배치한다. */}
       <div className="flex items-center gap-2" style={{ marginBottom: 12, flexShrink: 0 }}>
         <button onClick={onBack} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>
-        {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 28, height: 28, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
-          : <span style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+        {/* (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅창에도 —
+            지금 이 대화 상대 한 명의 접속 여부만 필요하므로 usePresenceMap([otherUid])로 가볍게 구독. */}
+        <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+          {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 28, height: 28, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
+            : <span style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+          <OnlineDot lastSeenMs={otherPresence[otherUid]} overlay size={10} />
+        </span>
         <span style={{ fontSize: 14, fontWeight: 800, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{otherUsername}</span>
       </div>
       <div ref={listRef} style={{ height: narrow ? undefined : 320, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
@@ -24096,6 +24126,8 @@ function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
 function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [rows, setRows] = useState(null);
+  // (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅 목록에도.
+  const chatPresence = usePresenceMap(useMemo(() => (rows || []).map((r) => r.uid), [rows]));
   const [profiles, setProfiles] = useState({});
   const [chatWith, setChatWith] = useState(null);
   // (사용자 요청) 모바일에서는 이 채팅 창을 카드가 아니라 전체 화면으로 띄운다.
@@ -24159,10 +24191,19 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
   };
   const onRowUp = () => { clearTimeout(pressTimerRef.current); };
   const onRowContext = (uid) => (e) => { e.preventDefault(); clearTimeout(pressTimerRef.current); openCtx(uid, e.currentTarget); };
+  // (버그 수정, 사용자 요청) 채팅창 고정은 동시에 최대 1개만 — 새로 고정하면 그전에 고정돼 있던
+  // 다른 대화는 자동으로 고정 해제한다. 로컬 rows뿐 아니라 서버(chatConvSetPref)에도 그 대화의
+  // pinned:false를 함께 반영해, 새로고침해도 "고정된 대화가 둘"인 상태로 되돌아오지 않게 한다.
   const togglePin = async (uid, pinned) => {
     setCtxFor(null);
     const next = !pinned;
-    setRows((prev) => { const list = (prev || []).map((r) => r.uid === uid ? { ...r, pinned: next } : r); list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)); return list; });
+    const prevPinnedUid = next ? ((rows || []).find((r) => r.pinned && r.uid !== uid) || {}).uid : null;
+    setRows((prev) => {
+      const list = (prev || []).map((r) => r.uid === uid ? { ...r, pinned: next } : (prevPinnedUid && r.uid === prevPinnedUid ? { ...r, pinned: false } : r));
+      list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+      return list;
+    });
+    if (prevPinnedUid) await chatConvSetPref(myUid, prevPinnedUid, { pinned: false });
     await chatConvSetPref(myUid, uid, { pinned: next });
   };
   const toggleMute = async (uid, muted) => {
@@ -24218,8 +24259,11 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
                     onTouchStart={onRowDown(uid)} onTouchEnd={onRowUp}
                     onContextMenu={onRowContext(uid)}
                     className="press text-left" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: ctxFor === uid ? "rgba(196,154,80,.14)" : "transparent", cursor: "pointer" }}>
-                    {pub.photo ? <img src={pub.photo} alt="" style={{ width: 40, height: 40, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
-                      : <span style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
+                    <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+                      {pub.photo ? <img src={pub.photo} alt="" style={{ width: 40, height: 40, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
+                        : <span style={{ width: 40, height: 40, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, flexShrink: 0 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
+                      <OnlineDot lastSeenMs={chatPresence[uid]} overlay size={12} />
+                    </span>
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <span className="flex items-center gap-1">
                         {/* (v0.3.4 기능) 고정한 대화는 이름 옆에 핀 아이콘. */}

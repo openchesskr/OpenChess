@@ -1103,11 +1103,19 @@ grant execute on function public.puzzle_creator_save(bigint, jsonb, jsonb, int, 
 -- src/App.jsx와 동일한 값) 명의로 회수하고, 값이 있으면 그 아이디의 유저에게 생성 권한을 양도한다
 -- (둘 다 원래 생성자의 그 퍼즐 편집권을 박탈하는 효과 — 대상이 바뀌므로). 새 생성자의 1시간 편집
 -- 주기는 재지정 시점에 초기화된다(creator_edited_at을 null로).
+-- (버그 수정, 사용자 제보) "양도·회수 기능이 작동하지 않는다" — 이 함수가 존재하지 않는 no에
+-- update를 걸어도 영향받은 행이 0개일 뿐 에러 없이 조용히 끝났다(puzzle_delete는 미리
+-- "select ... for update"로 존재를 확인하는데, 이 함수만 그 확인이 빠져 있었다). 클라이언트는
+-- 예외가 안 났으니 "성공"으로 표시했지만 실제로는 아무것도 바뀌지 않았다 — 아직 전역 puzzles
+-- 테이블에 없는(공유되지 않은) 퍼즐에서 이 기능을 쓰면 100% 재현됐다. select ... for update로
+-- 먼저 존재를 확인해, 없으면 puzzle_delete와 동일하게 명확히 예외를 던진다.
 create or replace function public.puzzle_reassign_creator(p_no bigint, p_target_username text default null)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_uid uuid; v_uname text;
+declare v_uid uuid; v_uname text; v_exists boolean;
 begin
   if not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
+  select true into v_exists from public.puzzles where no = p_no for update;
+  if not v_exists then raise exception 'puzzle_not_found'; end if;
   if p_target_username is null or btrim(p_target_username) = '' then
     select id, username into v_uid, v_uname from public.profiles where username = 'openchesskr';
   else
