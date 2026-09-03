@@ -10458,7 +10458,12 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
           <div style={{ marginBottom: 16 }}>
             <MascotBubble text={copy.text} mascot={copy.mascot} emotion={copy.emotion} stacked />
           </div>
-          {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8 }}>대국 리뷰 보기</button>}
+          {/* (리디자인, 사용자 요청) 예전엔 재대결·닫기 아래 버튼들과 마찬가지로 금색(T.brass) 계열이라,
+              "이 버튼을 누르면 다른 화면(리뷰)으로 넘어간다"는 신호가 색만 봐서는 드러나지 않았다 —
+              리뷰 기능 자체를 상징하는 색(T.best, "최선의 수" 등급에 쓰이는 연두색)과 흰색 별 아이콘을
+              그대로 가져와, 이 버튼이 대국 결과 팝업이 아니라 리뷰 기능으로 이어진다는 걸 색만으로도
+              알 수 있게 한다. 레이아웃(패딩·radius·굵기)은 아래 재대결/닫기 버튼과 동일하게 유지. */}
+          {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Star size={15} fill="#fff" color="#fff" />대국 리뷰 보기</button>}
           <div className="flex gap-2">
             <button onClick={onRematch} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>재대결</button>
             <button onClick={onClose} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>닫기</button>
@@ -10735,22 +10740,19 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   }, [resultKey]);
 
   // (신규 기능) 체크메이트·스테일메이트·3회 동형 반복으로 대국이 끝나면, pvp 모드에서는 서버에도
-  // 한 번만 결과를 보고해 상대 화면에도 즉시 반영되게 한다(둘 중 누구든 먼저 감지한 쪽이 보고 —
-  // pvp_finish는 이미 종료된 대국이면 조용히 그대로 반환하므로 중복 호출해도 안전하다).
-  // (버그 수정, 사용자 제보) 위 "둘 중 누구든"은 실제로는 "패자만" 이었다 — pvp_finish가 자기 자신을
-  // 승자로 보고하는 걸 막다 보니, 이긴 쪽 클라이언트가 이 effect로 똑같이 보고를 시도해도 항상
-  // 조용히 실패했다. 진 쪽이 결과 화면을 보자마자 탭을 닫는 등으로 실제 보고가 끝내 한 번도 성공하지
-  // 못하면, 그 대국은 체크메이트가 실제로 일어난 뒤에도 서버엔 계속 active로 남아 있다가, 이긴 쪽이
-  // "대국 상대 찾기"를 다시 누를 때 새 매칭 대신 이미 끝난 그 대국으로 되돌아가(pvp_queue_join의
-  // 재접속 처리) 곧장 결과 화면(패배 쪽 입장에선 "즉시 패배")을 다시 마주하는 원인이었다. 체크메이트·
-  // 스테일메이트·3회 동형 반복은 서버가 이미 전적으로 신뢰하는 sans만으로 양쪽이 항상 동일하게
-  // 계산해내는 객관적 결과라(협상 대상인 기권·시간초과와 다르다), pvp_finish에 p_objective:true를
-  // 넘겨 자기 승리 선언 금지를 건너뛴다 — 이제 정말로 "둘 중 먼저 감지한 쪽"이 확정한다.
+  // 한 번만 결과를 보고해 상대 화면에도 즉시 반영되게 한다(패자 쪽 클라이언트가 이 report를 성공시켜야
+  // 실제로 반영된다 — pvp_finish는 자기 자신을 승자로 보고하는 것을 막으므로, 이 effect가 승자 쪽
+  // 클라이언트에서 실행돼도 조용히 실패한다. 그 자체가 의도된 보안 장치라 되돌릴 수 없다 — 서버는
+  // pvp_move로 들어온 SAN의 합법성조차 검증하지 않으므로, "이 결과는 객관적이다"라는 클라이언트 주장을
+  // 그대로 믿고 자기 승리 선언 금지를 건너뛰게 하면 조작된 수순으로 스스로 승리를 우겨 넣을 수 있다 —
+  // 한때 p_objective 플래그로 이 우회를 시도했다가 보안 리뷰에서 지적돼 되돌렸다. 패자 쪽이 결과
+  // 보고 전에 탭을 닫는 등으로 이 보고가 끝내 실패하면 그 pvp_games 행은 status='active'로 남지만,
+  // pvp_queue_join의 기존 2분 기준 좀비 판정이 결국 정리해 준다).
   useEffect(() => {
     if (mode !== "pvp" || !pvpGame || pvpFinishedRef.current || !endState.end) return;
     pvpFinishedRef.current = true;
     const status = endState.end === "checkmate" ? (endState.color === "w" ? "black_won" : "white_won") : "draw";
-    sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status, p_objective: true }).catch(() => {});
+    sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
   }, [mode, pvpGame && pvpGame.id, endState.end, endState.color]);
 
   // (신규 기능) 타임 컨트롤 — 매 턴, 지금 둘 차례인 쪽의 시계를 실시간으로 줄인다. 서버가 시간을
@@ -11794,7 +11796,16 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   const blackAvatar = useChesscomAvatar(avatarUsernameFor(game, "b"));
   const whitePInfo = hasPlayerData ? { ...reviewPlayerInfo(game, "w"), side: "w", avatar: whiteAvatar } : null;
   const blackPInfo = hasPlayerData ? { ...reviewPlayerInfo(game, "b"), side: "b", avatar: blackAvatar } : null;
-  const wrap = { position: "fixed", inset: 0, zIndex: 300, background: RV.bg, overflowY: "auto", WebkitOverflowScrolling: "touch" };
+  // (버그 수정, 사용자 제보) PlayPage의 "대국 리뷰 보기" 버튼을 누르면 openReview가 reviewGame을
+  // 정상적으로 세팅하고 주소도 /review/(식별자)로 정확히 바뀌는데도, 화면은 계속 PlayPage(대국 화면)에
+  // 머물러 있는 것처럼 보였다 — 실제로는 ReviewPage도 함께 마운트돼 있었지만 PlayPage 뒤에 완전히
+  // 가려져 있었을 뿐이다. App 루트가 {reviewGame && <ReviewPage/>}를 {playGame && <PlayPage/>}보다
+  // "먼저"(더 위쪽 JSX 순서로) 렌더링하는데, 두 오버레이의 position:fixed 최상위 wrap이 하필 같은
+  // zIndex:300을 쓰고 있었다 — 같은 z-index끼리는 CSS 스택 순서가 DOM 순서로 정해지므로, 나중에
+  // 그려지는 PlayPage가 항상 ReviewPage 위를 덮어버렸다(리뷰를 여는 경로 자체가 항상 PlayPage 위에서
+  // 시작되므로 100% 재현). DOM 순서를 맞바꾸는 대신(다른 진입 경로들의 겹침 순서까지 건드릴 위험),
+  // 리뷰만 그 어떤 페이지보다도 위에 뜨는 게 항상 맞는 의도이므로 여기 zIndex만 확실히 더 높게 올린다.
+  const wrap = { position: "fixed", inset: 0, zIndex: 310, background: RV.bg, overflowY: "auto", WebkitOverflowScrolling: "touch" };
   // (v0.2.1) 모바일 뒤로가기 — 리뷰 진행 화면에서는 /review를 닫지 않고 Analysis(요약) 창으로 먼저
   // 돌아가고, 요약 창에서 한 번 더 눌러야 /review가 닫힌다. 데스크톱은 요약 단계가 없어 곧장 닫는다.
   const handleBack = () => { if (narrow && phase === "review") { setPhase("summary"); setExploreSans([]); setExploreFuture([]); setShowingLine(false); } else onClose(); };
@@ -21498,7 +21509,7 @@ const CHANGELOG = [
     version: "0.4.5", date: "2026.9.3", dev: ["openchesskr"], items: [
       "서로 같은 시점에 친구 요청을 보내 자동으로 친구가 됐을 때, 먼저 요청을 보냈던 쪽에게도 '친구가 되었다'는 알림이 가도록 고쳤어요.",
       "실시간 대국 중 상대가 오래 생각하고 있을 뿐인데, 새로고침하거나 잠깐 다른 화면에 있다 돌아오면 그 대국이 자동으로 기권 처리되던 문제를 고쳤어요.",
-      "실시간 대국이 체크메이트로 끝났는데 상대가 결과 화면을 보자마자 나가버려서, 다음에 '대국 상대 찾기'를 누르면 새 상대 대신 이미 끝난 그 대국으로 되돌아가 곧장 결과 화면이 뜨던 문제를 고쳤어요.",
+      "대국이 끝난 뒤 결과 팝업의 '대국 리뷰 보기' 버튼을 눌러도 화면이 넘어가지 않던 문제를 고쳤어요. 이 버튼은 이제 리뷰 기능을 상징하는 연두색과 별 아이콘으로 눈에 더 잘 띄어요.",
     ],
   },
   {
