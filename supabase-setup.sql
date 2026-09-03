@@ -1407,11 +1407,9 @@ grant execute on function public.pvp_move(bigint, text) to authenticated;
 -- "신뢰"만 하는) 구조라, p_objective=true는 결국 클라이언트가 "이 결과는 객관적이다"라고 스스로 주장하는
 -- 값에 불과했다 — 악의적인 클라이언트가 pvp_move로 조작된(불법인) 수순을 넣어 스스로 승리하는 가짜
 -- 체크메이트를 만든 뒤 pvp_finish(id, '내_승리', true)를 그대로 불러 즉시 승리를 우겨 넣을 수 있는,
--- 이 가드가 애초에 막으려던 것과 정확히 같은 종류의 권한 우회였다(보안 리뷰에서 지적됨). 서버가 sans를
--- 실제로 재생해 체크메이트 여부를 직접 검증하지 않는 한 안전하게 만들 방법이 없어 되돌린다 — 패자
--- 쪽 클라이언트가 결과 보고 전에 사라지는 문제(그 pvp_games 행이 status='active'로 남아, 승자가
--- "대국 상대 찾기"를 다시 누르면 새 매칭 대신 그 대국으로 재접속되는 현상)는 여전히 남아 있지만,
--- pvp_queue_join의 기존 2분 기준 좀비 판정이 결국 그 행을 aborted로 정리해 준다(최대 2분 지연).
+-- 이 가드가 애초에 막으려던 것과 정확히 같은 종류의 권한 우회였다(보안 리뷰에서 지적됨). 이 RPC
+-- 자체(브라우저가 anon/authenticated로 직접 호출)에는 그런 검증을 안전하게 넣을 방법이 없어 원래
+-- 가드로 되돌린다 — 대신 아래 pvp_finish_verified + api/pvp-finish.js가 진짜 해결책이다.
 drop function if exists public.pvp_finish(bigint, text, boolean) cascade;
 create or replace function public.pvp_finish(p_game_id bigint, p_status text)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
@@ -1429,6 +1427,29 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.pvp_finish(bigint, text) to authenticated;
+
+-- (v0.4.5 기능, 사용자 요청) pvp_finish의 자기 승리 선언 금지 가드를 브라우저에서 직접 우회할 방법은
+-- 없지만("체크메이트 여부"를 클라이언트가 주장하는 값 그대로 믿을 수 없다는 게 핵심 문제), 서버 쪽
+-- (브라우저가 아닌) 신뢰할 수 있는 실행 환경이라면 sans를 실제 체스 규칙 엔진(chess.js)으로 재생해
+-- 그 결과가 진짜 맞는지 독립적으로 검증할 수 있다 — 그러면 "클라이언트 주장을 믿는다"는 문제 자체가
+-- 사라진다. api/pvp-finish.js(Vercel 서버리스 함수)가 그 검증을 chess.js로 수행한 뒤에만 이 함수를
+-- 호출한다. 이 함수는 자기 승리 선언 가드가 아예 없다 — 그래도 안전한 이유는 authenticated에는 실행
+-- 권한을 주지 않고 service_role에만 줘서, SUPABASE_SERVICE_ROLE_KEY(Vercel 서버 환경변수로만 존재,
+-- 브라우저 번들에는 절대 포함되지 않는다)를 쥔 그 서버리스 함수만 호출할 수 있기 때문이다 — 브라우저는
+-- 이 함수의 존재 자체를 REST API로 발견할 수는 있어도 PostgREST가 role 기준으로 실행을 거부한다.
+drop function if exists public.pvp_finish_verified(bigint, text) cascade;
+create or replace function public.pvp_finish_verified(p_game_id bigint, p_status text)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_game public.pvp_games;
+begin
+  if p_status not in ('white_won','black_won','draw') then raise exception 'invalid status'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  update public.pvp_games set status = p_status, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_finish_verified(bigint, text) to service_role;
 
 -- ============================================================================
 -- N+2) puzzles 공개/비공개 — 퍼즐 생성 마법사 4단계 + 퍼즐 풀이 카드 2페이지(생성자 권한 박스)에서
