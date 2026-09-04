@@ -19223,28 +19223,19 @@ function statsViewToggle(statsView, setStatsView, scale = 1) {
 // 이 자리로 끌어올려 함께 보여준다. MyProfileCard·UserSearchModal·FriendsModal이 모두 공유한다.
 function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
   const name = (ccHeaderProf && ccHeaderProf.username) || fallbackUsername;
-  const hasRatings = ccHeaderProf && (ccHeaderProf.rapid != null || ccHeaderProf.blitz != null || ccHeaderProf.bullet != null);
   return (
     // (사용자 요청) alignItems를 center에서 start로 바꿔, 아래쪽 줄(실명·마지막 접속)이 있고 없고에
     // 따라 이 열 전체 높이가 바뀌어도 이름 줄(첫 줄)의 y좌표는 항상 아바타 상단에 고정된다 — 예전엔
     // items-center라 내용이 짧을 때(실명·접속시각 없음) 이름이 아바타 중앙으로 밀려 내려왔다.
+    // (사용자 요청) 국적 표시 박스를 없앴고, 이름 줄에 함께 있던 래피드/블리츠/불릿 레이팅도 뺐다
+    // (그 정보는 이제 오른쪽 통계 열에서 티어/퍼즐 레이팅 자리를 대신한다) — 그 결과 닉네임·소개·
+    // 최근 접속 세 줄의 폰트 크기·marginTop·minHeight가 OpenChess 신원 블록과 값 그대로 완전히
+    // 같아져 y좌표가 완전히 통일된다. 아이디도 더는 레이팅 칸과 폭을 나눠 쓰지 않아 덜 잘린다.
     <div className="flex items-start gap-3" style={{ marginBottom: noMargin ? 0 : 14 }}>
       {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
         : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26, flexShrink: 0 }}>{(name || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="flex items-center justify-between" style={{ gap: 8 }}>
-          <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-            <span style={{ fontSize: 17, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-            {ccHeaderProf && ccHeaderProf.country && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 7, background: "rgba(0,0,0,.06)", border: "1px solid #DCCBA8", color: T.ink, whiteSpace: "nowrap", flexShrink: 0 }}>{countryFlag(ccHeaderProf.country)} {ccHeaderProf.country}</span>}
-          </div>
-          {hasRatings && (
-            <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, textAlign: "right", flexShrink: 0 }}>
-              <div>래피드 : {ccHeaderProf.rapid ?? "—"}</div>
-              <div>블리츠 : {ccHeaderProf.blitz ?? "—"}</div>
-              <div>불릿 : {ccHeaderProf.bullet ?? "—"}</div>
-            </div>
-          )}
-        </div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
         {/* (사용자 요청) 실명 줄도 프로필 카드의 소개(bio)와 같은 이유로 항상 자리를 차지해 둔다. */}
         <div style={{ fontSize: 12, color: T.ink, marginTop: 5, minHeight: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(ccHeaderProf && ccHeaderProf.name) || ""}</div>
         {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
@@ -19521,6 +19512,11 @@ const CHANGELOG = [
       "학습 탭 수 블록·현재 수 블록의 채택률(%) 텍스트가 항상 블록 오른쪽 끝에 정렬되고, 회수(a/b)처럼 세어 올라가는 애니메이션이 적용돼요. 같은 포지션의 리체스 통계를 서버(프록시)에서도 캐싱해, 채택률 애니메이션이 시작되기까지 걸리던 5~10초 지연을 크게 줄였어요.",
       "학습 탭에 처음 들어갈 때 화면 왼쪽 위가 순간적으로 확대되는 것처럼 보이던 버그와, 그때 상단 검색·친구·채팅 버튼의 위아래 윤곽선이 흐릿해 보이던 버그를 함께 고쳤어요.",
       "설정 탭 개발진 블록에서 개발자 아이디를 누르면 그 아이디의 프로필로 이동해요.",
+      "상단 헤더 세 버튼의 테두리를 outline 방식으로 다시 바꿔, 검색·친구·채팅 버튼 묶음의 테두리가 안 보이던 문제(안쪽 버튼들이 배경을 완전히 덮어 가려졌던 게 원인)를 고쳤어요. 그랜드마스터 계정의 프로필 버튼에서 아바타 테두리 광채가 버튼 바깥으로 번져 유독 높이가 달라 보이던 문제도 함께 고쳤어요.",
+      "/user 페이지 순위 배지를 없앴어요. chess.com 통계의 닉네임·소개·최근 접속 텍스트 y좌표를 OpenChess 통계와 완전히 통일했고, 국적 표시 박스를 없앴고, 아이디가 덜 잘리도록 더 길게 표시돼요.",
+      "/user 페이지에서 티어 아이콘을 눌러도 티어 여정 화면이 안 보이던 문제를 고쳤어요(화면 자체는 열렸지만 /user 페이지보다 항상 아래에 그려지고 있었어요).",
+      "/user 페이지에서 티어·퍼즐 레이팅은 이제 OpenChess 통계에서만 보이고, chess.com 통계를 보는 동안엔 같은 자리에 래피드/블리츠/불릿 레이팅이 대신 보여요.",
+      "설정 탭 개발진 블록에 표시되는 아이디가 저장된 소문자 계정 아이디(g13sus4) 대신 실제 표시용 아이디(G13sus4)로 나와요.",
     ],
   },
   {
@@ -20961,6 +20957,23 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
   const [codevBusy, setCodevBusy] = useState(false);
+  // (사용자 요청) CONTENT.codev는 계정 고유 아이디(username, 항상 소문자 정규화 — 예: "g13sus4")를
+  // 저장하는데, 정작 그 사람이 실제로 쓰는 표시용 대소문자 표기(displayId — 예: "G13sus4")는 따로
+  // 있다. 개발진 블록에는 저장된 소문자 그대로가 아니라, 그 계정에 실제로 연결된 displayId로
+  // 표시한다(아직 못 불러왔거나 없으면 원래 아이디로 폴백).
+  const [codevDisplayIds, setCodevDisplayIds] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const ids = CONTENT.codev || [];
+    if (!ids.length) { setCodevDisplayIds({}); return; }
+    Promise.all(ids.map((id) => userProfile(id))).then((rows) => {
+      if (cancelled) return;
+      const m = {};
+      rows.forEach((r, i) => { if (r && r.pub && r.pub.displayId) m[ids[i]] = r.pub.displayId; });
+      setCodevDisplayIds(m);
+    });
+    return () => { cancelled = true; };
+  }, [contentVer]);
   const [inquiryOpen, setInquiryOpen] = useState(false);
   const [devLogOpen, setDevLogOpen] = useState(false);
   // (v0.3.9 기능) 사용자 요청 — 로그아웃 상태에서 뜨는 "계정" 박스와 같은 자리에, 로그인 상태에서는
@@ -21205,7 +21218,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
           : (CONTENT.codev || []).map((id) => (
             <div key={id} className="flex items-center justify-between" style={{ marginBottom: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
-                <button onClick={() => onOpenUserProfile && onOpenUserProfile(id)} className="press" style={{ background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: onOpenUserProfile ? "pointer" : "default" }}>{id}</button>{" "}
+                <button onClick={() => onOpenUserProfile && onOpenUserProfile(id)} className="press" style={{ background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: onOpenUserProfile ? "pointer" : "default" }}>{codevDisplayIds[id] || id}</button>{" "}
                 <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 500 }}>공동 개발자</span>
               </span>
               {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>해제</button>}
@@ -21591,9 +21604,6 @@ async function userProfileByMid(mid) { if (!SB_ON || !mid) return null; try { co
 // 크기와 다르게 정렬될 수 있어 서버에서 숫자로 캐스팅해 정렬해야 한다.
 async function friendSuggestions(limit) { if (!SB_ON) return []; try { const r = await sbRpc("friend_suggestions", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 async function leaderboardTop(limit) { if (!SB_ON) return []; try { const r = await sbRpc("leaderboard_top", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
-// (사용자 요청) /user 페이지에 표시할 "이 유저의 티어 리더보드 순위" — leaderboard_top(상위 N만)과
-// 달리 특정 한 명의 정확한 순위를 알아야 하므로 별도 RPC(profile_rank)를 쓴다.
-async function profileRank(uid) { if (!SB_ON || !uid) return null; try { const r = await sbRpc("profile_rank", { p_id: uid }); const n = Array.isArray(r) ? r[0] : r; return typeof n === "number" ? n : (n != null ? Number(n) : null); } catch { return null; } }
 /* ---- 친구 시스템 (요청 → 수락). Auth 미사용·anon 접근이라 기존 profiles_public/puzzle_solve와 동일 보안 수준 ---- */
 async function friendRequest(toUsername) { if (!SB_ON || !toUsername) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request", { p_to_username: toUsername.toLowerCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
 // (v0.4.4 기능, 사용자 요청) MID 초대 링크(openchess.kr/user/<MID>?invite=friend)로 들어오면 자동으로 부른다.
@@ -21841,7 +21851,7 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
       {/* (사용자 요청, 3차 재수정) border+box-sizing 조합도 완전히 못 맞춰 — border를 없애고 레이아웃
           크기에 전혀 관여하지 않는 inset box-shadow로 테두리를 대신한다(옆 세그먼트·프로필 버튼과
           동일한 처리). */}
-      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "none", boxShadow: "inset 0 0 0 1px " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "none", outline: "1px solid " + T.brass, outlineOffset: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
@@ -21915,8 +21925,13 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
           border 속성 자체를 없애고, 레이아웃 크기에 전혀 관여하지 않는 inset box-shadow로 테두리를
           대신 그린다. 이제 실제 렌더 높이는 오직 height 값(다른 두 버튼과 동일한 27/34)에만 좌우돼
           border 유무·box-sizing과 완전히 무관하게 항상 정확히 같다. */}
-      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "none", boxShadow: "inset 0 0 0 1px " + T.brass, cursor: "pointer" }}>
-        {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster", 2) || {}) }} />
+      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "none", outline: "1px solid " + T.brass, outlineOffset: 0, cursor: "pointer" }}>
+        {/* (버그 수정) 그랜드마스터 사진 테두리(gmPhotoRingStyle)는 border+바깥쪽 glow box-shadow를
+            더하는데, 이 아바타는 다른 곳(56~64px)과 달리 22/27px로 아주 작아 그 9px 블러 glow가
+            버튼 테두리 밖으로 넘쳐 나가 이 버튼만 유독 위아래로 더 커 보이는 원인이었다(그랜드마스터
+            계정에서만 재현). box-sizing:border-box로 테두리를 더해도 아바타 전체 크기가 그대로
+            22/27이 되게 고정하고, 이 작은 크기에서는 안 어울리는 바깥쪽 glow를 없앤다. */}
+        {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, objectFit: "cover", boxSizing: "border-box", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster", 2) || {}), boxShadow: "none" }} />
           : <span style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: compact ? 10.5 : 12, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initial}</span>}
         {!compact && <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
         <ChevronDown size={compact ? 12 : 14} style={{ color: T.brassHi, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
@@ -22043,9 +22058,6 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     const t = setTimeout(() => setReqPopup(""), 2600);
     return () => clearTimeout(t);
   }, [reqPopup]);
-  // (사용자 요청) /user 페이지의 OpenChess 프로필 보기에 작게 티어 리더보드 순위를 표시한다.
-  const [pubRank, setPubRank] = useState(null);
-  useEffect(() => { setPubRank(null); if (pubUid) profileRank(pubUid).then(setPubRank); }, [pubUid]);
   const wide = !useNarrow(880);
   const selPresence = usePresenceMap(pubUid ? [pubUid] : []);
 
@@ -22143,15 +22155,7 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
                 {/* (사용자 요청, 재조정) /user 페이지 전용 토글 크기 — 이전 1.75배와 0.5배의 중간값. */}
                 {statsViewToggle(statsView, setStatsView, 1.1)}
               </div>
-              {/* (사용자 요청) 순위는 이제 숫자(또는 1~3등 배지) 하나만, 이름 바로 위에, 2배 크기로 —
-                  "티어 리더보드" 같은 부가 텍스트나 사진 옆 배치는 없앤다. */}
-              {statsView === "oc" && pubRank != null && (
-                <div style={{ marginBottom: 6 }}>
-                  {pubRank <= 3
-                    ? <img src={"/rank-" + pubRank + ".png"} alt={pubRank + "위"} style={{ height: 32, width: "auto" }} />
-                    : <span style={{ fontSize: 21, fontWeight: 900, color: T.inkSoft, fontFamily: SITE_FONT }}>{pubRank}위</span>}
-                </div>
-              )}
+              {/* (사용자 요청) 순위 배지는 삭제했다. */}
               {/* (사용자 요청) 신원 블록(사진+이름) 오른쪽에, 사진과 y좌표를 맞춰(alignItems:flex-start)
                   친구 요청 버튼 영역을 별도 칸으로 오른쪽 정렬한다. */}
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
@@ -22215,7 +22219,9 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
               {/* (사용자 요청) 데스크톱 레이아웃에서는 티어·퍼즐 레이팅을 오른쪽 통계 열(토글에 따라
                   바뀌는 패널)이 아니라 이 왼쪽 열, 유저 정보 바로 아래에 항상 표시한다 — 오른쪽
                   패널(ProfileStatsPanel)에는 hideTierRow로 같은 내용이 중복 렌더링되지 않게 한다. */}
-              {wide && <TierRatingRow pub={pub} />}
+              {/* (사용자 요청) 티어·퍼즐 레이팅은 OpenChess 통계에서만, chess.com 통계에서는 그 자리에
+                  대신 래피드/블리츠/불릿 레이팅을 보여준다. */}
+              {wide && (statsView === "oc" ? <TierRatingRow pub={pub} /> : <ChesscomRatingRow ccHeaderProf={ccHeaderProf} />)}
             </motion.div>
             {/* 오른쪽(데스크톱) / 하단(모바일) — 통계·활동. 왼쪽 열보다 살짝 늦게, 아래에서 위로
                 떠오르며 들어온다 — "신원을 먼저 확인하고, 그 사람의 활동이 뒤이어 펼쳐진다"는 순서. */}
@@ -24170,6 +24176,26 @@ function TierRatingRow({ pub }) {
     </div>
   );
 }
+// (사용자 요청) chess.com 통계를 보는 동안엔 티어·퍼즐 레이팅(OpenChess 전용 지표) 대신, 같은 자리에
+// 래피드/블리츠/불릿 레이팅을 보여준다 — TierRatingRow와 같은 줄 높이·배지 모양을 그대로 쓴다.
+function ChesscomRatingRow({ ccHeaderProf }) {
+  if (!ccHeaderProf) return null;
+  const items = [
+    { label: "래피드", v: ccHeaderProf.rapid },
+    { label: "블리츠", v: ccHeaderProf.blitz },
+    { label: "불릿", v: ccHeaderProf.bullet },
+  ].filter((x) => x.v != null);
+  if (!items.length) return null;
+  return (
+    <div className="flex items-center gap-2" style={{ marginBottom: 8, flexWrap: "wrap" }}>
+      {items.map((x) => (
+        <span key={x.label} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>
+          {x.label} {x.v}
+        </span>
+      ))}
+    </div>
+  );
+}
 function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
@@ -24858,16 +24884,20 @@ function TierJourneyMap({ totalXp, onClose }) {
   // 가진 조상을 기준으로 계산돼 — 여정 화면이 전체 화면을 덮지 못하고 그 조상 박스 안에만 갇혀,
   // 그 조상 바깥의 /user 페이지 요소(헤더 등)가 오히려 위에 보이는 것처럼 나타났다. document.body로
   // 포털을 띄우면 어떤 조상의 transform과도 무관하게 항상 실제 뷰포트 기준 최상단에 그려진다.
+  // (버그 수정, 사용자 재제보) portal은 DOM 트리 위치는 body 최상위로 옮기지만 zIndex 자체는 그대로
+  // 옮겨 오지 않는다 — 예전 zIndex(83)는 /user 페이지(UserProfilePage, zIndex 300)보다 한참 낮아서,
+  // /user 페이지 안에서 티어 아이콘을 눌러 이 화면을 열어도 실제로는 열리긴 하지만 /user 페이지의
+  // 불투명한 배경 "뒤"에 그려져 화면엔 아무 변화가 없는 것처럼 보였다("표시되지 않는다"). 이 화면은
+  // 앱에서 가장 위에 뜨는 전체화면 오버레이로 의도된 것이므로, 지금까지 쓰인 어떤 모달·페이지
+  // zIndex(최대 500)보다도 확실히 높은 값으로 올려 어디서 열든 항상 맨 위에 그려지게 한다.
   return createPortal((
-    // (사용자 요청) 여정 지도가 어떤 화면에서도 뷰포트를 꽉 채우는 비율로 보이도록, 스크롤 컨테이너
-    // 자신을 뷰포트 크기 그대로 두고(기존과 동일) 안쪽 콘텐츠 폭 상한만 훨씬 넉넉하게 늘린다.
-    <div ref={scrollRef} style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+    <div ref={scrollRef} style={{ position: "fixed", inset: 0, zIndex: 950, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
       {/* (v0.2.3 버그 수정) 닫기 버튼이 스크롤되는 콘텐츠 안에 있어, 아래로 스크롤해 특정 티어를 보고
           있을 때는 맨 위로 다시 올라와야만 닫을 수 있었다 — 뷰포트 우상단에 고정해 어느 스크롤
           위치에서도 항상 누를 수 있게 한다.
           (사용자 요청) 하늘색→보라색처럼 뚝 끊기지 않고 스크롤을 따라 서서히 바뀌는 색(bc, y좌표
           기준 인접 티어 색 사이 보간값)으로 테두리·은은한 배경·글로우를 물들인다. */}
-      <button onClick={onClose} className="press" style={{ position: "fixed", top: 18, right: 16, zIndex: 84, width: 38, height: 38, borderRadius: 11, border: "2px solid " + bc, background: hexAlpha(bc, .22), color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 0 16px " + hexAlpha(bc, .5), transition: "background .2s linear, border-color .2s linear, box-shadow .2s linear" }}>
+      <button onClick={onClose} className="press" style={{ position: "fixed", top: 18, right: 16, zIndex: 951, width: 38, height: 38, borderRadius: 11, border: "2px solid " + bc, background: hexAlpha(bc, .22), color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 0 16px " + hexAlpha(bc, .5), transition: "background .2s linear, border-color .2s linear, box-shadow .2s linear" }}>
         <X size={18} />
       </button>
       <div style={{ maxWidth: "min(94vw, 760px)", margin: "0 auto", padding: "18px 16px 60px" }}>
@@ -27094,14 +27124,14 @@ export default function App() {
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
               모서리 radius를 직접 주고 컨테이너는 overflow:visible로 둬 배지가 잘리지 않게 한다. */}
-          {/* (사용자 요청, 3차 재수정) box-sizing:border-box를 세 요소 모두에 맞춰도 여전히 어긋나
-              보였다 — 근본 원인은 `border` 속성 자체가 브라우저·자식 레이아웃에 따라 미묘하게 다르게
-              계산될 여지가 있다는 점이었다. border를 아예 없애고, 레이아웃 크기에 전혀 관여하지 않는
-              `boxShadow: inset 0 0 0 1px`으로 테두리를 대신 그린다 — 이러면 세 요소의 실제 렌더
-              높이가 오직 각자의 `height` 값(모두 narrowHeader?27:34로 동일)에만 좌우되어, border
-              유무·box-sizing과 완전히 무관하게 항상 정확히 같아진다. 안쪽 버튼들도 더는 높이를
-              줄일 필요가 없어 34/27로 되돌린다. */}
-          <div className="flex items-center" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, boxShadow: "inset 0 0 0 1px " + T.brass, overflow: "visible", flexShrink: 0 }}>
+          {/* (사용자 요청, 4차 재수정) inset box-shadow는 레이아웃 크기엔 관여하지 않지만, 이 컨테이너처럼
+              안쪽 버튼들이 테두리까지 정확히 꽉 채우는 경우 box-shadow가 배경보다 먼저(자식보다 뒤에)
+              그려져 자식들의 불투명한 배경에 완전히 가려 아예 안 보였다(사용자 제보 — "윤곽선이
+              사라졌다"). outline은 border-box 바깥쪽에 그려져 자식이 절대 덮을 수 없고, box-shadow와
+              마찬가지로 레이아웃 크기(너비/높이)에도 전혀 관여하지 않는다 — 세 요소(이 세그먼트·
+              알림·프로필) 모두 outline으로 통일해, 항상 보이면서 높이는 각자의 `height` 값에만 좌우돼
+              완전히 같아지게 한다. */}
+          <div className="flex items-center" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, outline: "1px solid " + T.brass, outlineOffset: 0, overflow: "visible", flexShrink: 0 }}>
             <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
             {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
