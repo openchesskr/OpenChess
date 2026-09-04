@@ -34,18 +34,38 @@ const GOLD_DISC = {
 };
 // (v0.1.3 UI) App.jsx TierLogoDisc와 동일한 흰색 십각형 배지 — 이 페이지의 티어 스트립·승급 데모도
 // 실제 사이트와 같은 모양으로 보여준다(같은 rx/ry 비율의 십각형 좌표 계산도 그대로 옮겨 적음).
-const TIER_DECAGON_PTS = (() => {
+// (사용자 요청) App.jsx/pieces.jsx의 TIER_DECAGON_PATH와 동일한 라운딩 알고리즘 — 이 페이지는
+// App.jsx의 다른 모듈을 가져오지 않는 독립된 정적 페이지라 좌표 계산을 그대로 옮겨 적은 것처럼,
+// 라운딩 계산도 그대로 옮겨 적는다(각 꼭짓점을 인접한 두 변을 따라 cornerRadius만큼 안쪽으로 들어간
+// 두 점 사이를, 원래 꼭짓점을 제어점으로 삼는 2차 베지어 곡선으로 이어 붙인다).
+function roundedPolygonPath(pts, r) {
+  const n = pts.length;
+  const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  let d = "";
+  for (let i = 0; i < n; i++) {
+    const prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n];
+    const dPrev = dist(cur, prev), dNext = dist(cur, next);
+    const rr = Math.min(r, dPrev / 2, dNext / 2);
+    const a = [cur[0] + (prev[0] - cur[0]) / dPrev * rr, cur[1] + (prev[1] - cur[1]) / dPrev * rr];
+    const b = [cur[0] + (next[0] - cur[0]) / dNext * rr, cur[1] + (next[1] - cur[1]) / dNext * rr];
+    d += (i === 0 ? "M " : "L ") + a[0].toFixed(2) + "," + a[1].toFixed(2) + " ";
+    d += "Q " + cur[0].toFixed(2) + "," + cur[1].toFixed(2) + " " + b[0].toFixed(2) + "," + b[1].toFixed(2) + " ";
+  }
+  return d + "Z";
+}
+const TIER_DECAGON_PATH = (() => {
   const rx = 46, ry = 50;
-  return Array.from({ length: 10 }, (_, i) => {
+  const pts = Array.from({ length: 10 }, (_, i) => {
     const a = -Math.PI / 2 + i * (Math.PI / 5);
-    return (50 + rx * Math.cos(a)).toFixed(2) + "," + (50 + ry * Math.sin(a)).toFixed(2);
-  }).join(" ");
+    return [50 + rx * Math.cos(a), 50 + ry * Math.sin(a)];
+  });
+  return roundedPolygonPath(pts, 6);
 })();
 function TierBadgeShape({ size, children }) {
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-        <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+        <path d={TIER_DECAGON_PATH} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" strokeLinejoin="round" />
       </svg>
       <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>{children}</div>
     </div>
@@ -944,7 +964,7 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.4.6", date: "2026.9.3",
-    summary: "/play 앙파상 버그를 고치고 항상 표준 시작 위치에서만 시작되도록 했어요. 친구 초대 링크가 더 편해졌고, '푼 퍼즐' 카드에 좋아요·리포스트·공유 버튼이 생겼어요. 채팅에 접속 표시가 추가되고 고정은 1개로 제한됐고, 이미지 스캔·개발자 퍼즐 관리 버그도 함께 고쳤어요. 상단 버튼 정렬·헤더 색·오프닝 이름 표기를 다듬었고, 퍼즐 탭 말풍선이 더는 잘리지 않으며 '인기순' 정렬이 새로 생겼어요.",
+    summary: "/play 앙파상 버그를 고치고 항상 표준 시작 위치에서만 시작되도록 했어요. 친구 초대 링크가 더 편해졌고, '푼 퍼즐' 카드에 좋아요·리포스트·공유 버튼이 생겼어요. 채팅에 접속 표시가 추가되고 고정은 1개로 제한됐고, 이미지 스캔·개발자 퍼즐 관리 버그도 함께 고쳤어요. 학습 탭 수 블록·키워드 말풍선·도감 카드가 다듬어졌고, 유저 검색과 프로필 카드의 티어 이미지도 개선됐으며 퍼즐 탭에 '인기순' 정렬이 새로 생겼어요.",
     mascot: {
       intro: { char: "milku", expr: "think", name: "MILKU 코치", align: "left", text: "이제 /play는 언제나 똑같은 시작 위치에서 출발해요!" },
       outro: { char: "kokoa", expr: "wink", name: "KOKOA 코치", align: "right", text: "친구 초대 링크로 공유하기도, '푼 퍼즐'에 좋아요 누르기도 훨씬 편해졌어요!" },
@@ -969,13 +989,19 @@ const VERSION_HISTORY = [
         "친구 초대 링크 박스가 개선됐어요 — 링크 전체가 항상 보이고, 복사 버튼 아래 공유 버튼(브라우저 공유 시트)이 추가됐고, 친구 모달 '추가' 탭에서도 초대 링크를 바로 보낼 수 있어요. 로그아웃 상태로 초대 링크를 열면 설정 탭으로 이동해 로그인이 필요하다고 알려줘요.",
         "채팅에도 프로필 사진의 초록색 접속 표시가 보여요.",
         "퍼즐 정렬에 '인기순'이 추가됐어요 — 좋아요·리포스트·공유 수를 사람 단위로 결합해 점수를 매기고, 한 사람이 여러 활동을 함께 했거나(2개 이상, 3개 모두면 더 강하게) 같은 퍼즐을 반복해서 공유할수록 그 활동들의 가중치가 커져요.",
+        "학습 탭 수 블록·현재 수 블록·집중 분석 모드·도감의 수 키워드(NORMAL·TOP LEVEL 등)를 누르면 그 뜻을 보여주는 말풍선이 화면 정중앙 안전 영역에 떠요 — 모바일에서도 안 잘려요.",
+        "유저 검색이 '#MID'를 9자 전부 입력해야만 찾아지던 것에서, 입력 중인 접두어만으로도 실시간으로 후보 목록을 보여주도록 바뀌었어요(문자열-MID 유사도 1순위, 동률이면 XP 순). 검색어로 찾은 결과도 기본 추천 목록과 같은 블록 UI(우측 티어 아이콘 포함)를 써요.",
       ] },
       { cat: "ui", items: [
         "MID가 프로필 사진 바로 아래 '#ABCDE1234' 형태로 표시돼요.",
         "'푼 퍼즐'을 '더 보기' 대신 가로로 스크롤해서 전체를 볼 수 있어요.",
         "상단 버튼들과 설정 탭 프로필 카드 버튼들의 높이가 서로 미묘하게 다르던 것을 통일했고, y좌표도 정확히 맞춰 정렬했어요.",
         "퍼즐 카드의 국면(오프닝/미들게임/엔드게임)·PGN·FEN 배지 순서를 바꿨어요.",
-        "상단 헤더 색이 그 아래 배경과 톤이 비슷해 경계가 흐릿했던 것을, 더 밝은 톤과 금색 경계선으로 뚜렷하게 구분했어요.",
+        "상단 헤더에 하단 본문과 구분되는 금색 경계선을 추가했어요.",
+        "학습 탭 수 블록의 채택률 게이지 바 폭을 살짝 줄이고, 그 여백만큼 회수(a/b)와 채택률(n%) 텍스트 사이 간격을 넓혔어요. 최상단 '현재 수' 블록에도 일반 수 블록과 같은 통계 애니메이션·소수점 둘째 자리 채택률을 적용했어요.",
+        "도감 탭 오프닝 모식도에서 수 블록을 클릭하면 뜨는 상세 카드 크기가 2배로 커졌어요.",
+        "설정 탭 개발진 블록에서 개발자 이름 옆 왕관 아이콘을 없앴고, 유저 검색 결과의 개발자·공동 개발자 표시가 이모티콘 대신 아이콘(왕관/렌치)으로 바뀌었어요. 검색 리더보드의 '나' 표시는 그랜드마스터 왕관 아이콘보다 오른쪽에 와요.",
+        "검색·프로필 카드의 십각형 티어 이미지가 더 크게 표시되고, 모든 십각형 티어 이미지의 뾰족한 꼭짓점이 둥글게 다듬어졌어요. 프로필 카드의 티어 이미지를 누르면 그 프로필의 티어·XP를 반영한 티어 여정 화면이 떠요.",
       ] },
     ],
   },
