@@ -50,7 +50,7 @@ import {
 } from "./lib/lichessApi.js";
 import {
   chesscomChangeDaysLeft, chesscomDisplayUsername, countryFlag,
-  OPENING_NAME_TERMINATORS, segmentOpeningWords, ecoOpeningName, computeRatingChanges,
+  OPENING_NAME_TERMINATORS, segmentOpeningWords, computeRatingChanges,
   CHESSCOM_CACHE_VERSION, chesscomCacheKey, loadChesscomCache, saveChesscomCache, extractChesscomGameId,
 } from "./lib/chesscom.js";
 import {
@@ -1498,7 +1498,13 @@ function useChessCom(username) {
               // 원본 API 응답(g.white/g.black)엔 원래 양쪽 다 있었는데, 예전엔 내 쪽(side)만 남기고
               // 상대 쪽은 이 루프를 벗어나며 그대로 버려졌다. 프로필의 대국 기록과 /review 양쪽에서
               // 상대 이름·레이팅까지 보여주려면 이 시점에 양쪽을 그대로 저장해 둬야 한다.
-              games.push({ moves: parsePgnSans(g.pgn), color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: ecoOpeningName(g.eco), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
+              // (사용자 요청) chess.com이 ECO URL에서 붙인 자체 오프닝 이름(ecoOpeningName)은 우리
+              // 오프닝 트리(openingNameOf — 가장 많이 둔 오프닝·오프닝별 승률·일일 퀘스트·칭호
+              // 집계가 모두 쓰는 기준, 위 ccFamilyCounts와 같은 이유)와 세분화 깊이·표기가 달라 같은
+              // 대국이 리뷰 화면(오프닝 배너)에서만 다른 이름으로 보였다 — 저장 시점부터 openingNameOf로
+              // 통일해, 이후 이 opening 필드를 쓰는 모든 화면(리뷰 오프닝 배너 등)이 같은 이름을 쓰게 한다.
+              const ccMoves = parsePgnSans(g.pgn);
+              games.push({ moves: ccMoves, color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: openingNameOf(ccMoves), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
                 white: { username: (g.white && g.white.username) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
                 black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
                 id: extractChesscomGameId(g.url), // (v0.3.4 기능) 게임 리뷰 고유 URL의 chess.com 식별자
@@ -3520,55 +3526,29 @@ function CircleBadge({ kind, big, descOnClick }) {
 // 모바일 좁은 화면에서도 말풍선이 잘리지 않는다.
 function ClickInfoBadge({ children, text, content, width = 180, align = "center" }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState(null);
-  const anchorRef = useRef(null);
-  const toggle = (e) => {
-    e.stopPropagation();
-    setOpen((v) => {
-      const next = !v;
-      if (next && anchorRef.current) {
-        const rect = anchorRef.current.getBoundingClientRect();
-        const margin = 10;
-        const cx = rect.left + rect.width / 2;
-        const left = Math.max(margin, Math.min(cx - width / 2, window.innerWidth - width - margin));
-        // (버그 수정) 화면 위/아래 절반만 보고 방향을 정하면(예전 방식), 그 방향에 실제로 말풍선
-        // 높이만큼 공간이 있는지는 확인하지 않아 화면 아래쪽 끝에 가까운 배지는 여전히 잘렸다 —
-        // 위/아래 실제 남은 공간을 재서 더 넉넉한 쪽으로 연다.
-        const spaceBelow = window.innerHeight - rect.bottom - margin;
-        const spaceAbove = rect.top - margin;
-        const openDown = spaceBelow >= spaceAbove;
-        setPos({ left, top: openDown ? rect.bottom + 8 : undefined, bottom: openDown ? undefined : window.innerHeight - rect.top + 8, tailX: cx - left, openDown });
-      }
-      return next;
-    });
-  };
-  // (사용자 요청) 열어 둔 채로 화면을 스크롤하면 기준 배지와의 연결이 끊어져(위치는 고정 그대로,
-  // 배지만 스크롤을 따라 움직임) 엉뚱한 자리에 "잔상"처럼 남아 보였다 — 스크롤이 시작되는 즉시
-  // 닫는다(중첩된 스크롤 컨테이너까지 잡아내도록 capture 단계에서 감지).
+  const toggle = (e) => { e.stopPropagation(); setOpen((v) => !v); };
+  // (사용자 요청) 예전엔 클릭한 배지의 위/아래·좌우로 붙여 열고 화면 가장자리에서만 안쪽으로
+  // 당겨 보정했는데, 배지가 화면 아주 가장자리(특히 모바일 좁은 화면의 카드 구석)에 있으면 그
+  // 보정만으로는 여전히 살짝 잘리는 경우가 있었다. 앵커 위치와 완전히 무관하게 항상 뷰포트
+  // 정중앙의 안전 영역(상하좌우 16px 여백 확보, 그 안에서 넘치면 자체 스크롤)에 띄우면 배지가
+  // 화면 어디에 있든, 화면이 아무리 좁든 구조적으로 잘릴 수가 없다.
   useEffect(() => {
     if (!open) return;
     const onScroll = () => setOpen(false);
     window.addEventListener("scroll", onScroll, true);
     return () => window.removeEventListener("scroll", onScroll, true);
   }, [open]);
-  // (버그 수정, 사용자 제보) 이 배지가 framer-motion으로 애니메이션되는 조상(퍼즐 카드를 감싸는
-  // FadeIn의 motion.div 등 — 애니메이션 중이 아니어도 transform: translateY(0)처럼 항상 값이 남아
-  // 있어 CSS containing block을 만든다) 안에 있으면, position:fixed는 더 이상 뷰포트가 아니라 그
-  // 조상 기준으로 계산돼 말풍선이 엉뚱한 위치에 잠깐(그 조상의 transform이 자리 잡기 전까지) 나타나거나
-  // 그 조상의 overflow에 잘렸다. document.body로 포털을 띄워 어떤 조상의 transform·overflow와도
-  // 완전히 무관하게 항상 실제 뷰포트 기준으로 정확히 그려지도록 한다.
-  const popup = open && pos && (
+  const popup = open && (
     <>
-      <span onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-      <span style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width, padding: "8px 11px", borderRadius: 9, background: T.ivoryHi, border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.55)", zIndex: 9999, fontSize: 12, fontWeight: 800, color: T.ink, textAlign: align, display: "block" }}>
+      <span onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(10,6,3,.2)" }} />
+      <span style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", width: "min(" + width + "px, calc(100vw - 32px))", maxHeight: "calc(100vh - 32px)", overflowY: "auto", padding: "10px 13px", borderRadius: 10, background: T.ivoryHi, border: "1px solid " + T.brass, boxShadow: "0 12px 28px -6px rgba(0,0,0,.6)", zIndex: 9999, fontSize: 12, fontWeight: 800, color: T.ink, textAlign: align, display: "block" }}>
         {content || text}
-        <span style={{ position: "absolute", ...(pos.openDown ? { top: -6 } : { bottom: -6 }), left: pos.tailX, transform: "translateX(-50%) rotate(45deg)", width: 11, height: 11, background: T.ivoryHi, ...(pos.openDown ? { borderLeft: "1px solid " + T.brass, borderTop: "1px solid " + T.brass } : { borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass }) }} />
       </span>
     </>
   );
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
-      <span ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>{children}</span>
+      <span onClick={toggle} style={{ cursor: "pointer", display: "inline-flex" }}>{children}</span>
       {popup && typeof document !== "undefined" && createPortal(popup, document.body)}
     </span>
   );
@@ -12958,8 +12938,11 @@ function gamePhaseOf(board) {
   const avgPawnAdvance = pawnCount ? pawnAdvance / pawnCount : 0;
   const advanceFrac = 1 - Math.min(1, avgPawnAdvance / 4);
   const score = (materialFrac + countFrac + advanceFrac) / 3;
-  if (score >= 0.72) return "opening";
-  if (score >= 0.4) return "middlegame";
+  // (사용자 요청) 미들게임으로 봐야 할 퍼즐이 오프닝으로 표시되는 문제 — 오프닝 기준(상단 경계)을
+  // 0.72→0.82로 높여 더 초반 국면만 오프닝으로 남기고, 미들게임 기준(하단 경계)을 0.4→0.28로 낮춰
+  // 그만큼 넓어진 구간을 전부 미들게임이 흡수하게 한다(엔드게임 경계는 그대로 유지).
+  if (score >= 0.82) return "opening";
+  if (score >= 0.28) return "middlegame";
   return "endgame";
 }
 function puzzlePhase(p) { try { return gamePhaseOf(puzzleStartBoard(p)); } catch { return null; } }
@@ -13344,6 +13327,16 @@ async function puzzleRepostToggle(no, uid) {
 }
 async function puzzleRepostCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,reposts"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.reposts; }); return m; } catch { return {}; } }
 async function puzzleShareCounts() { if (!SB_ON) return {}; try { const rows = await sbSelect("puzzles?select=no,shares"); const m = {}; (rows || []).forEach((x) => { m[x.no] = x.shares; }); return m; } catch { return {}; } }
+// (사용자 요청) 퍼즐 탭 "인기순" 정렬용 — 좋아요/리포스트/공유를 사람 단위로 결합한 인기 점수
+// (puzzle_popularity_all RPC, 위 7-1번 섹션 근처 참고)를 전체 퍼즐에 대해 한 번에 받아 온다.
+async function puzzlePopularityScores() {
+  if (!SB_ON) return {};
+  try {
+    const rows = await sbRpc("puzzle_popularity_all", {});
+    const m = {}; (Array.isArray(rows) ? rows : []).forEach((x) => { m[x.no] = Number(x.score) || 0; });
+    return m;
+  } catch { return {}; }
+}
 // (v0.1.0) 내가 리포스트한 퍼즐 번호 목록 — 추천 퍼즐에 간헐적으로 끼워 넣기 위해 사용.
 async function puzzleRepostsByUser(uid) { if (!SB_ON || !uid) return []; try { const rows = await sbSelect("puzzle_reposts?uid=eq." + uid + "&select=no"); return (rows || []).map((r) => r.no); } catch { return []; } }
 // (v0.1.0) 퍼즐 공유 — 인스타그램 릴스 공유처럼 친구와의 대화창에 퍼즐 미리보기 카드(puzzle_no 설정된
@@ -16183,7 +16176,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
               const tier = puzzleDifficultyTier(diff);
               const deltaColor = diff <= -20 ? "#2E8B57" : diff >= 20 ? "#D9534F" : T.inkSoft;
               return (
-                <ClickInfoBadge width={210} align="right" content={
+                <ClickInfoBadge width={210} align="left" content={
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
                     <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
@@ -17392,7 +17385,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -17641,7 +17634,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 정렬과 무관한 별도 기능이라 건드리지 않고, 그 아래 미해결/해결됨 목록에만 적용한다.
   // (v0.4.1 기능, item 3) 기본 정렬을 "추천순"(난이도 적합도·약점 보완도·테마 적합도 3요소 점수)으로
   // 바꾼다 — 최신순/레이팅순은 여전히 수동으로 고를 수 있게 남겨 둔다.
-  const [puzzleSortBy, setPuzzleSortBy] = useState("score"); // "score"(추천순) | "recent"(최신순) | "rating"(레이팅순)
+  const [puzzleSortBy, setPuzzleSortBy] = useState("score"); // "score"(추천순) | "recent"(최신순) | "rating"(레이팅순) | "popular"(인기순)
   // (사용자 요청) 정렬 UI가 산만하다는 피드백 — 3분할 세그먼트 박스 대신, 오프닝/생성자 검색창 폭을
   // 줄여 생긴 우측 여백에 깔때기(Filter) 아이콘 버튼 하나만 두고, 누르면 드롭다운으로 정렬 기준을 고른다.
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -17675,7 +17668,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     window.addEventListener("scroll", onScroll, true);
     return () => window.removeEventListener("scroll", onScroll, true);
   }, [sortMenuOpen]);
-  const PUZZLE_SORT_OPTIONS = [["score", "추천순"], ["recent", "최신순"], ["rating", "레이팅순"]];
+  const PUZZLE_SORT_OPTIONS = [["score", "추천순"], ["recent", "최신순"], ["rating", "레이팅순"], ["popular", "인기순"]];
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
   const [numFocus, setNumFocus] = useState(false);
@@ -17917,6 +17910,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     const arr = [...list];
     if (puzzleSortBy === "rating") arr.sort((a, b) => (puzzleRatingMap.get(b.id) ?? -1) - (puzzleRatingMap.get(a.id) ?? -1) || byOpeningFallback(a, b));
     else if (puzzleSortBy === "recent") arr.sort((a, b) => (puzzleOrderIndex.get(b.id) ?? -1) - (puzzleOrderIndex.get(a.id) ?? -1) || byOpeningFallback(a, b));
+    // (사용자 요청) 인기순 — popularityScores(puzzle_popularity_all RPC, 좋아요·리포스트·공유를
+    // 사람 단위로 결합한 점수)가 높은 순.
+    else if (puzzleSortBy === "popular") arr.sort((a, b) => ((popularityScores && popularityScores[puzzleNo(b.id)]) || 0) - ((popularityScores && popularityScores[puzzleNo(a.id)]) || 0) || byOpeningFallback(a, b));
     else arr.sort((a, b) => {
       const sa = puzzleExposureScore(a, { myRating: myPuzzleRating, themeRates, selectedTheme: selectedThemes, puzzleRating: puzzleRatingMap.get(a.id) ?? -1, solved });
       const sb = puzzleExposureScore(b, { myRating: myPuzzleRating, themeRates, selectedTheme: selectedThemes, puzzleRating: puzzleRatingMap.get(b.id) ?? -1, solved });
@@ -19433,6 +19429,12 @@ const CHANGELOG = [
       "채팅창 고정은 이제 한 번에 하나만 가능해요.",
       "퍼즐 카드의 국면(오프닝/미들게임/엔드게임)·PGN·FEN 배지 순서를 바꿨어요.",
       "개발자가 자기가 만들지 않은 퍼즐도 삭제할 수 있도록 고쳤고, 퍼즐 생성자 양도·회수 기능이 조용히 실패하던 문제를 고쳤어요.",
+      "상단 버튼들(검색·친구·채팅 묶음·알림·프로필)의 y좌표가 미묘하게 어긋나 보이던 것을 정확히 정렬했어요.",
+      "chess.com 대국 리뷰의 오프닝 이름이 사이트 다른 곳(가장 많이 둔 오프닝·칭호 등)과 다르게 표시되던 문제를 고쳤어요 — 이제 모두 같은 기준으로 통일돼요.",
+      "상단 헤더 색이 그 아래 배경과 톤이 비슷해 경계가 흐릿했던 것을, 더 밝은 톤과 금색 경계선으로 뚜렷하게 구분했어요.",
+      "퍼즐 탭의 클릭형 말풍선(레이팅·난이도 등)이 화면 가장자리에서 살짝 잘리던 경우가 있었는데, 이제 항상 화면 정중앙의 안전 영역에 떠서 모바일·데스크톱 어디서나 잘리지 않아요. 난이도 말풍선의 글씨는 항상 왼쪽 정렬이에요.",
+      "퍼즐의 국면(오프닝/미들게임/엔드게임) 판정 기준을 조정했어요 — 미들게임으로 봐야 할 퍼즐이 오프닝으로 잘못 표시되던 문제를 줄였어요.",
+      "퍼즐 정렬에 '인기순'이 추가됐어요 — 좋아요·리포스트·공유 수를 사람 단위로 결합해 점수를 매기고, 한 사람이 여러 활동을 함께 했거나(2개 이상, 3개 모두면 더 강하게) 같은 퍼즐을 반복해서 공유할수록 그 활동들의 가중치가 커져요.",
     ],
   },
   {
@@ -25574,6 +25576,7 @@ export default function App() {
   const [likeCounts, setLikeCounts] = useState({});                 // (기능) 번호별 전역 좋아요수
   const [repostCounts, setRepostCounts] = useState({});             // (v0.1.0) 번호별 전역 리포스트수
   const [shareCounts, setShareCounts] = useState({});               // (v0.1.0) 번호별 전역 공유수
+  const [popularityScores, setPopularityScores] = useState({});     // (사용자 요청) 번호별 인기 점수 — 퍼즐 탭 "인기순" 정렬용
   const [creatorUsernames, setCreatorUsernames] = useState({});      // (사용자 요청) 퍼즐 탭 필터용 — 번호별 생성자 아이디
   const [friendUids, setFriendUids] = useState([]);                // (16차) 수락된 친구 uid 목록
   const [puzzleSolvers, setPuzzleSolvers] = useState({});          // (16차) { [puzzleNo]: uid[] } — 그 퍼즐을 푼 사람들
@@ -25908,6 +25911,7 @@ export default function App() {
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
     try { const rcounts = await puzzleRepostCounts(); if (rcounts && Object.keys(rcounts).length) setRepostCounts(rcounts); } catch { }
     try { const scounts = await puzzleShareCounts(); if (scounts && Object.keys(scounts).length) setShareCounts(scounts); } catch { }
+    try { const pscores = await puzzlePopularityScores(); if (pscores && Object.keys(pscores).length) setPopularityScores(pscores); } catch { }
     try { const creators = await puzzleCreatorUsernames(); if (creators && Object.keys(creators).length) setCreatorUsernames(creators); } catch { }
     setLoaded(true);
   })(); }, []);
@@ -26743,7 +26747,11 @@ export default function App() {
       {/* (17차) 헤더가 maxWidth 제약 없이 뷰포트 전체 폭을 썼던 탓에, 아래 본문(maxWidth:1080)과 달리
           넓은 데스크탑 화면에서는 우측 버튼들이 본문 오른쪽 경계를 훌쩍 넘어 화면 맨 끝에 몰려 보였다.
           본문과 동일한 maxWidth 컨테이너로 헤더 내용을 감싸 정렬을 맞춘다. */}
-      <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
+      {/* (사용자 요청) 예전엔 헤더 배경(#3A2516→#2A1810)이 그 아래 배경(GeoBackdrop, #34230F→#150C06)과
+          톤이 거의 같아 헤더와 본문 영역의 경계가 흐릿하게 이어져 보였다 — 헤더 위쪽을 눈에 띄게 더
+          밝은 톤(#5A3A20)으로 올리고, 경계선도 검정 대신 금색(T.brass)으로 바꿔 상단 헤더가 하단
+          본문 영역과 시각적으로 뚜렷하게 구분되도록 한다. */}
+      <header style={{ borderBottom: "1px solid " + T.brass, background: "linear-gradient(180deg,#5A3A20,#2A1810)" }}>
       {/* (버그 수정) 계정 정보 줄과 아이콘 줄을 따로 두고 줄바꿈에 맡겼더니 헤더가 항상 2줄로 보였다 —
           티어 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
           space-between으로 중앙 공백을 그룹 사이 여백으로 흡수한다. 모바일에서는 아이디 텍스트를
@@ -26772,7 +26780,12 @@ export default function App() {
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
               모서리 radius를 직접 주고 컨테이너는 overflow:visible로 둬 배지가 잘리지 않게 한다. */}
-          <div className="flex items-center" style={{ borderRadius: 9, border: "1px solid " + T.brass, overflow: "visible", flexShrink: 0 }}>
+          {/* (사용자 요청) 이 세그먼트를 감싸는 테두리(1px)가 안쪽 버튼들의 고정 높이(27/34px) 위에
+              그대로 더해져, 옆의 알림·프로필 버튼(둘 다 정확히 27/34px)보다 이 세그먼트 전체가 2px
+              더 커 보였다 — box-sizing:border-box로 테두리를 높이 안에 포함시켜, 헤더에 나란히 선
+              모든 버튼(검색·친구·채팅 세그먼트, 알림, 프로필)의 y좌표(세로 중심)가 정확히 같은
+              높이에서 정렬되게 한다. */}
+          <div className="flex items-center" style={{ height: narrowHeader ? 27 : 34, boxSizing: "border-box", borderRadius: 9, border: "1px solid " + T.brass, overflow: "visible", flexShrink: 0 }}>
             <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
             {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
@@ -26929,7 +26942,7 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} />}

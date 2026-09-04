@@ -613,6 +613,72 @@ end; $$;
 grant execute on function public.puzzle_share_reward(bigint, bigint) to authenticated;
 
 -- ============================================================================
+-- 7-2) puzzle_popularity_all — 퍼즐 탭 "인기순" 정렬용 인기 점수 (사용자 요청)
+-- ============================================================================
+-- 좋아요·리포스트·공유 각각의 전역 합계(puzzles.likes/reposts/shares)를 그대로 더하는 대신, "사람"
+-- 단위로 결합한다 — 한 사람이 한 퍼즐에 좋아요·리포스트·공유 중 2가지를 함께 했으면 그 활동들에
+-- 더 큰 가중치(combo_mult)를, 3가지 모두 했으면 2가지보다 더 강한 가중치를 준다. 또한 같은 사람이
+-- 그 퍼즐을 여러 번 공유할수록(share_cnt) 그 사람의 좋아요·리포스트·공유 기여분 전부가 함께
+-- 커진다(repeat_mult) — 무한정 커지지 않도록 로그로 완만하게 증가시킨다.
+-- puzzle_likes/puzzle_reposts는 이미 누구나 읽을 수 있지만(위 7번 섹션 "likes read"/"reposts read"),
+-- 공유는 별도 집계 테이블이 없어 친구 간 chat_messages(puzzle_no 설정)를 사람 단위로 묶어야 한다 —
+-- chat_messages의 select 정책("chat select own")은 본인이 보낸/받은 것만 허용해 클라이언트가 남의
+-- 공유 내역을 직접 집계할 수 없으므로, SECURITY DEFINER로 RLS를 우회해 "사람당 이 퍼즐 공유 횟수"라는
+-- 집계값만(메시지 본문 등 내용은 전혀 노출하지 않고) 계산해 돌려준다. puzzleSolveCounts/
+-- puzzleLikeCounts 등과 같은 "전체를 한 번에" 패턴 — 개별 퍼즐마다 왕복하지 않고 한 번의 호출로
+-- 모든 퍼즐의 점수를 받아 온다.
+drop function if exists public.puzzle_popularity_all() cascade;
+create or replace function public.puzzle_popularity_all()
+returns table(no bigint, score numeric)
+language sql stable security definer set search_path = public as $$
+  with share_agg as (
+    select puzzle_no as no, from_uid as uid, count(*)::int as cnt
+    from public.chat_messages
+    where puzzle_no is not null and from_uid is not null
+    group by puzzle_no, from_uid
+  ),
+  users as (
+    select no, uid from public.puzzle_likes
+    union
+    select no, uid from public.puzzle_reposts
+    union
+    select no, uid from share_agg
+  ),
+  per_user as (
+    select
+      u.no, u.uid,
+      exists(select 1 from public.puzzle_likes pl where pl.no = u.no and pl.uid = u.uid) as liked,
+      exists(select 1 from public.puzzle_reposts pr where pr.no = u.no and pr.uid = u.uid) as reposted,
+      coalesce(sa.cnt, 0) as share_cnt
+    from users u
+    left join share_agg sa on sa.no = u.no and sa.uid = u.uid
+  ),
+  weighted as (
+    select
+      no,
+      liked, reposted, share_cnt,
+      -- 좋아요/리포스트/공유(1회 이상) 중 이 사람이 몇 가지를 함께 했는지 — 1개=1.0배(가중치 없음),
+      -- 2개=1.35배, 3개 모두=1.8배(2개보다 더 강하게).
+      (case (
+        (case when liked then 1 else 0 end) + (case when reposted then 1 else 0 end) + (case when share_cnt > 0 then 1 else 0 end)
+      ) when 3 then 1.8 when 2 then 1.35 else 1.0 end) as combo_mult,
+      -- 같은 사람이 이 퍼즐을 반복 공유할수록(share_cnt) 이 사람의 좋아요·리포스트·공유 기여분
+      -- 전부가 함께 커진다 — 로그로 완만하게(1회=1.0배, 늘어날수록 서서히 증가).
+      (1 + ln(1 + share_cnt) * 0.35) as repeat_mult
+    from per_user
+  )
+  select
+    no,
+    sum(
+      ((case when liked then 3.0 else 0 end) + (case when reposted then 5.0 else 0 end) + least(share_cnt, 20) * 2.0)
+      * combo_mult * repeat_mult
+    ) as score
+  from weighted
+  group by no;
+$$;
+grant execute on function public.puzzle_popularity_all() to anon, authenticated;
+
+-- ============================================================================
 -- 8) Realtime — 알림/채팅/친구요청 배지가 폴링 대신 실시간으로 갱신되려면(src/App.jsx의
 --    useRealtimeTable, v0.0.5) 아래 3개 테이블이 supabase_realtime publication에 포함돼 있어야
 --    한다. 신규 프로젝트는 기본적으로 포함돼 있지 않으므로 반드시 실행할 것 — 빠지면 클라이언트는
