@@ -754,6 +754,19 @@ returns table(id uuid, username text, pub jsonb) language sql stable as $$
 $$;
 grant execute on function public.leaderboard_top(int) to anon, authenticated;
 
+-- (사용자 요청) /user 페이지에 "이 유저의 티어 리더보드 순위"를 작게 표시하기 위한 RPC — 위
+-- leaderboard_top(상위 N명만)과 달리 특정 한 명의 정확한 순위를 구해야 한다. leaderboard_top과
+-- 같은 정렬 기준(XP 내림차순, 동률이면 아이디순)으로 매긴 순위를 window 함수로 계산한다.
+drop function if exists public.profile_rank(uuid) cascade;
+create or replace function public.profile_rank(p_id uuid)
+returns bigint language sql stable as $$
+  select rank from (
+    select id, row_number() over (order by coalesce((pub->>'xp')::bigint, 0) desc, username asc) as rank
+    from public.profiles
+  ) ranked where id = p_id;
+$$;
+grant execute on function public.profile_rank(uuid) to anon, authenticated;
+
 -- ============================================================================
 -- 12) master_games_dev — 개발자가 수동으로 추가하는 마스터 대국 (v0.2.3)
 -- ============================================================================

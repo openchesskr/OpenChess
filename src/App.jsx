@@ -5,7 +5,7 @@ import {
   Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
+  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
   Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench,
 } from "lucide-react";
@@ -12868,6 +12868,17 @@ function blendHex(a, b) {
   const mix = (shift) => Math.round((((pa >> shift) & 255) + ((pb >> shift) & 255)) / 2);
   return "#" + [16, 8, 0].map((s) => mix(s).toString(16).padStart(2, "0")).join("");
 }
+// (사용자 요청) blendHex(항상 50:50)과 달리 임의의 비율(t, 0~1)로 두 색을 섞는다 — 티어 여정 지도의
+// 닫기 버튼이 스크롤 위치에 따라 인접한 두 티어 색 사이를 서서히(그라데이션을 따라) 오갈 때 쓴다.
+function hexLerp(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const mix = (shift) => Math.round((((pa >> shift) & 255) * (1 - t)) + (((pb >> shift) & 255) * t));
+  return "#" + [16, 8, 0].map((s) => Math.max(0, Math.min(255, mix(s))).toString(16).padStart(2, "0")).join("");
+}
+function hexAlpha(hex, a) {
+  const p = parseInt(hex.slice(1), 16);
+  return "rgba(" + ((p >> 16) & 255) + "," + ((p >> 8) & 255) + "," + (p & 255) + "," + a + ")";
+}
 function themeAccentsOf(themes) { return (themes && themes.length ? themes : ["punish"]).slice(0, 2).map((t) => (PUZZLE_THEME_STYLE[t] || PUZZLE_THEME_STYLE.punish).accent); }
 function themeAccentColor(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? blendHex(c[0], c[1]) : c[0]; }
 function themeAccentBg(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? "linear-gradient(90deg, " + c[0] + " 50%, " + c[1] + " 50%)" : c[0]; }
@@ -19178,17 +19189,20 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
 // 먼저 차지해 아이디·이름이 아래로 밀렸다. 아이디 라벨과 같은 줄, 그 줄 오른쪽 여백(우상단)에 들어갈
 // 만큼 작은 아이콘 두 개로 줄여 그 자리로 옮긴다. MyProfileCard(내 프로필 카드)와 친구·검색 프로필
 // 상세(ProfileStatsPanel을 쓰는 곳)가 이 헬퍼 하나를 공유해 완전히 같은 모양을 쓴다.
-function statsViewToggle(statsView, setStatsView) {
+// (사용자 요청) /user 페이지에서만 이 토글을 75% 더 크게(scale=1.75) 보여준다 — 다른 화면(내 프로필
+// 카드·친구 모달 등)은 기존 크기 그대로 scale=1 기본값을 쓴다.
+function statsViewToggle(statsView, setStatsView, scale = 1) {
+  const s = (n) => Math.round(n * scale);
   return (
-    <div className="flex items-center" style={{ padding: 2, borderRadius: 9, background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: 2, flexShrink: 0 }}>
-      <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: 30, height: 26, borderRadius: 7, border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+    <div className="flex items-center" style={{ padding: s(2), borderRadius: s(9), background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: s(2), flexShrink: 0 }}>
+      <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
         {/* (사용자 요청) favicon.png는 나이트 그림 둘레에 여백이 넓게 있어(실제 그림 높이가 캔버스의 약
             86%) chess.com 폰 아이콘(캔버스 전체를 꽉 채움)과 같은 픽셀 크기로 두면 훨씬 작아 보인다 —
             실제 눈에 보이는 그림 높이가 비슷해지도록 이 아이콘만 조금 더 크게 잡는다(17px vs 15px). */}
-        <img src="/favicon.png" alt="OpenChess" style={{ width: 17, height: 17, objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
+        <img src="/favicon.png" alt="OpenChess" style={{ width: s(17), height: s(17), objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
       </button>
-      <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: 30, height: 26, borderRadius: 7, border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-        <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: 15, height: 15, objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
+      <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+        <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: s(15), height: s(15), objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
       </button>
     </div>
   );
@@ -19325,7 +19339,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
               <div style={{ height: 7, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
                 <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
               </div>
-              {mq.totalItems > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>문제 {mq.doneItems}/{mq.totalItems}개 정답</div>}
+              {/* (사용자 요청) "문제 a/b개 정답" 텍스트 삭제 — 위 진행 바로 충분히 전달된다. */}
             </div>
           )}
           {puzzles && solved && (
@@ -19471,6 +19485,13 @@ const CHANGELOG = [
       "설정 탭 개발진 블록에서 개발자 이름 옆 왕관 아이콘을 없앴고, 유저 검색 결과의 개발자·공동 개발자 표시가 이모티콘(👑/🔧) 대신 아이콘(왕관/렌치)으로 바뀌었어요. 검색 리더보드의 '나' 표시는 그랜드마스터 왕관 아이콘보다 오른쪽에 와요.",
       "유저 검색에서 검색어로 찾은 결과도 기본 추천 목록과 완전히 같은 블록 UI(우측 티어 아이콘 포함)를 써요. '#MID' 검색이 이제 전체 9자를 다 입력해야만 되던 것에서, 입력 중인 접두어만으로도 계속 실시간으로 후보 목록을 보여줘요(문자열-MID 유사도 1순위, 동률이면 XP 순).",
       "검색·프로필 카드의 십각형 티어 이미지가 더 크게 표시되고, 모든 십각형 티어 이미지의 뾰족한 꼭짓점이 둥글게 다듬어졌어요. 프로필 카드의 티어 이미지를 누르면 그 프로필의 티어·XP를 반영한 티어 여정 화면이 떠요(항상 내 티어가 아니라 보고 있는 그 프로필 기준).",
+      "티어 여정 화면이 어떤 화면에서도 뷰포트를 꽉 채우는 비율로 보이고, 정거장·기물 이미지가 더 커졌어요. 안내 문구 위 이정표 아이콘을 없앴고, 닫기 버튼이 지금 스크롤로 보고 있는 티어 배경에 맞춰 색이 서서히(하늘색→보라색처럼 뚝 끊기지 않고) 바뀌어요 — 그랜드마스터 구간은 프로필 테두리와 같은 색을, 나머지는 그 티어 이미지에서 뽑은 색을 써요.",
+      "채팅창 상단 프로필 사진·아이디가 1.5배 커졌고(그만큼 대화 영역 높이는 줄였어요), 눌러서 그 유저 프로필로 이동할 수 있어요(뒤로가기로 채팅창에 그대로 돌아와요). 아이디 표기가 대소문자를 구분해 보여요. 찾을 수 없거나 손상된 퍼즐 공유는 대화 기록에서 자동으로 정리돼요.",
+      "채팅의 리뷰 공유 카드를 프로필 카드 '최근 대국' 행과 같은 비율로 다시 그렸어요 — chess.com 대국은 진영 색 막대·승패·상대 정보를 그대로, PGN/FEN은 PGN·FEN 여부와 코드(PGN은 처음 몇 수만), PGN이면 인식되는 오프닝까지 표시해요.",
+      "/help 명령어가 입력창 위에 미리보기로만 뜨던 것을 없애고, 실제로 보내면 다른 명령어처럼 대화 기록에 명령어 목록 카드로 남아요.",
+      "실시간 대국 신청 카드가 일반 메시지처럼 보낸 사람 기준으로 좌/우 정렬되고, 문구도 내가 신청했으면 '~님에게', 상대가 신청했으면 '~님이'로 구분돼요.",
+      "/user 페이지에서만 OpenChess/chess.com 전환 토글이 75% 커졌고, OpenChess 프로필 보기에는 작게 티어 리더보드 순위(1~3등은 배지)가 아이디 줄과 여백을 두고 표시돼요.",
+      "설정 탭 프로필 카드에서 '문제 a/b개 정답' 텍스트를 없앴어요.",
     ],
   },
   {
@@ -21533,6 +21554,9 @@ async function userProfileByMid(mid) { if (!SB_ON || !mid) return null; try { co
 // 크기와 다르게 정렬될 수 있어 서버에서 숫자로 캐스팅해 정렬해야 한다.
 async function friendSuggestions(limit) { if (!SB_ON) return []; try { const r = await sbRpc("friend_suggestions", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 async function leaderboardTop(limit) { if (!SB_ON) return []; try { const r = await sbRpc("leaderboard_top", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
+// (사용자 요청) /user 페이지에 표시할 "이 유저의 티어 리더보드 순위" — leaderboard_top(상위 N만)과
+// 달리 특정 한 명의 정확한 순위를 알아야 하므로 별도 RPC(profile_rank)를 쓴다.
+async function profileRank(uid) { if (!SB_ON || !uid) return null; try { const r = await sbRpc("profile_rank", { p_id: uid }); const n = Array.isArray(r) ? r[0] : r; return typeof n === "number" ? n : (n != null ? Number(n) : null); } catch { return null; } }
 /* ---- 친구 시스템 (요청 → 수락). Auth 미사용·anon 접근이라 기존 profiles_public/puzzle_solve와 동일 보안 수준 ---- */
 async function friendRequest(toUsername) { if (!SB_ON || !toUsername) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request", { p_to_username: toUsername.toLowerCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
 // (v0.4.4 기능, 사용자 요청) MID 초대 링크(openchess.kr/user/<MID>?invite=friend)로 들어오면 자동으로 부른다.
@@ -21975,6 +21999,9 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     const t = setTimeout(() => setReqPopup(""), 2600);
     return () => clearTimeout(t);
   }, [reqPopup]);
+  // (사용자 요청) /user 페이지의 OpenChess 프로필 보기에 작게 티어 리더보드 순위를 표시한다.
+  const [pubRank, setPubRank] = useState(null);
+  useEffect(() => { setPubRank(null); if (pubUid) profileRank(pubUid).then(setPubRank); }, [pubUid]);
   const wide = !useNarrow(880);
   const selPresence = usePresenceMap(pubUid ? [pubUid] : []);
 
@@ -22069,8 +22096,19 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(pub.displayId || pubUsername)}{roleIcon(pubUsername)}</span>
-                {statsViewToggle(statsView, setStatsView)}
+                {/* (사용자 요청) /user 페이지에서만 이 토글을 75% 더 크게. */}
+                {statsViewToggle(statsView, setStatsView, 1.75)}
               </div>
+              {/* (사용자 요청) OpenChess 프로필 보기에서만, 위 @id 줄과 확실한 여백을 두고 작게 티어
+                  리더보드 순위를 표시 — 1~3등은 검색 리더보드와 같은 순위 배지 이미지를 작게. */}
+              {statsView === "oc" && pubRank != null && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8, marginBottom: 14 }}>
+                  {pubRank <= 3
+                    ? <img src={"/rank-" + pubRank + ".png"} alt={pubRank + "위"} style={{ height: 16, width: "auto" }} />
+                    : <span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, fontFamily: SITE_FONT }}>{pubRank}위</span>}
+                  <span style={{ fontSize: 10, color: T.inkSoft }}>티어 리더보드</span>
+                </div>
+              )}
               {statsView === "cc" && pub.chesscom ? (
                 <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={pub.chesscom} />
               ) : (
@@ -22164,13 +22202,15 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
     try { await sbRpc("pvp_invite_cancel", { p_invite_id: msg.pvp_invite_id }); setInv((c) => (c ? { ...c, status: "cancelled" } : c)); } catch { }
   };
   const status = inv ? inv.status : "pending";
+  // (사용자 요청) 실시간 대국 신청 카드도 일반 메시지처럼 보낸 사람 기준으로 좌/우 정렬하고, 누가
+  // 보냈는지가 문장 앞머리에서 바로 드러나도록 한다 — 내가 보냈으면 "OO님에게", 상대가 보냈으면 "OO님이".
   return (
-    <div style={{ display: "flex", justifyContent: "center" }}>
+    <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
       <div style={{ width: 240, padding: "11px 13px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 8px 20px -8px rgba(0,0,0,.5)" }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 9 }}>
           {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>{mine ? "실시간 대국을 신청했어요" : "실시간 대국을 신청받았어요"}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>{mine ? otherUsername + "님에게 실시간 대국을 신청했어요" : otherUsername + "님이 실시간 대국을 신청했어요"}</div>
         </div>
         {status === "pending" ? (
           mine ? (
@@ -22245,7 +22285,20 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     (async () => {
       const fetched = await Promise.all(nos.map((no) => puzzleFetch(no)));
       if (cancelled) return;
-      setPuzzlePreviews((prev) => { const n = { ...prev }; nos.forEach((no, i) => { n[no] = fetched[i] || null; }); return n; });
+      // (사용자 요청) 찾을 수 없거나(fetch 결과 없음) 라인이 하나도 없어 풀 수 없는(손상된) 퍼즐
+      // 공유 카드는 대화 기록에서 자동으로 지운다 — 내가 보낸 메시지는 실제로 삭제하고(그 메시지의
+      // 삭제 권한은 보낸 사람 본인에게만 있으므로, chat_messages RLS "chat delete own"), 상대가
+      // 보낸 메시지는 서버에서 지울 권한이 없어 이 대화창에서만 조용히 숨긴다(둘 다 화면에는 안
+      // 보이게 되는 결과는 같다).
+      const broken = new Set();
+      nos.forEach((no, i) => { if (!fetched[i] || !isPuzzlePlayable(fetched[i])) broken.add(no); });
+      if (broken.size) {
+        const brokenMsgs = msgs.filter((m) => m.puzzle_no != null && broken.has(m.puzzle_no));
+        setMsgs((prev) => prev.filter((m) => !(m.puzzle_no != null && broken.has(m.puzzle_no))));
+        brokenMsgs.filter((m) => m.from_uid === myUid).forEach((m) => { chatDeleteMessage(m.id).catch(() => {}); });
+      }
+      if (cancelled) return;
+      setPuzzlePreviews((prev) => { const n = { ...prev }; nos.forEach((no, i) => { n[no] = (fetched[i] && isPuzzlePlayable(fetched[i])) ? fetched[i] : null; }); return n; });
     })();
     return () => { cancelled = true; };
   }, [msgs]);
@@ -22493,9 +22546,17 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       setSending(false);
       return;
     }
-    // (v0.4.3 기능) "/help"는 메시지로 보내지 않는다 — 입력창 위 명령어 미리보기(아래 렌더)를 켜는
-    // 용도일 뿐이라, 눌러도 그냥 입력만 비운다.
-    if (body && /^\/help$/i.test(body)) { setText(""); return; }
+    // (사용자 요청) "/help"는 이제 다른 명령어(/puzzle·/legacy·/review·/play)와 똑같이 실제로
+    // 전송된다 — 대화 기록에 그 결과(명령어 목록 카드)가 그대로 남아, 나중에 다시 스크롤해 올려도
+    // 무엇을 보냈는지 알 수 있다(예전엔 입력창 위에만 잠깐 뜨고 사라졌다). 렌더링은 아래 메시지
+    // 목록에서 m.body === "/help"를 감지해 카드로 그린다(다른 명령어들과 같은 패턴).
+    if (body && /^\/help$/i.test(body)) {
+      setSending(true);
+      const ok = await chatSend(myUid, otherUid, body, emoji);
+      setSending(false);
+      if (ok) { setText(""); load(); }
+      return;
+    }
     setSending(true);
     const ok = await chatSend(myUid, otherUid, body, emoji);
     setSending(false);
@@ -22547,21 +22608,44 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       <div className="flex items-center gap-2" style={{ marginBottom: 12, flexShrink: 0 }}>
         <button onClick={onBack} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>
         {/* (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅창에도 —
-            지금 이 대화 상대 한 명의 접속 여부만 필요하므로 usePresenceMap([otherUid])로 가볍게 구독. */}
-        <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
-          {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 28, height: 28, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
-            : <span style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
-          <OnlineDot lastSeenMs={otherPresence[otherUid]} overlay size={10} />
-        </span>
-        <span style={{ fontSize: 14, fontWeight: 800, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{otherUsername}</span>
+            지금 이 대화 상대 한 명의 접속 여부만 필요하므로 usePresenceMap([otherUid])로 가볍게 구독.
+            (사용자 요청) 사진·아이디 크기를 1.5배(28→42, 14→21)로 키우고, 둘 다 누르면 그 유저의
+            프로필로 이동한다(onOpenUserProfile이 이미 pushState로 히스토리를 쌓아 두므로 뒤로가기를
+            누르면 popstate 핸들러가 이 채팅창 위의 프로필 오버레이만 닫고 채팅창으로 자연스럽게
+            돌아온다 — 별도 배선 불필요). */}
+        <button onClick={() => setViewProfile(otherUsername)} aria-label={otherUsername + " 프로필 보기"} className="press" style={{ position: "relative", display: "inline-flex", flexShrink: 0, background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+          {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 42, height: 42, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
+            : <span style={{ width: 42, height: 42, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 17, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+          <OnlineDot lastSeenMs={otherPresence[otherUid]} overlay size={13} />
+        </button>
+        <button onClick={() => setViewProfile(otherUsername)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", minWidth: 0, textAlign: "left" }}>
+          <span style={{ fontSize: 21, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{otherUsername}</span>
+        </button>
       </div>
-      <div ref={listRef} style={{ height: narrow ? undefined : 320, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+      {/* (사용자 요청) 위 사진·아이디가 1.5배 커진 만큼(28→42px, 대략 14px 차이), 그 여백을 대화 목록
+          높이에서 그대로 빼 전체 카드 크기는 늘어나지 않도록 한다. */}
+      <div ref={listRef} style={{ height: narrow ? undefined : 306, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
         {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>아직 대화가 없어요. 첫 메시지를 보내보세요!</div>}
         {msgs.map((m, i) => {
           const mine = m.from_uid === myUid;
           // (v0.4.3 기능) 실시간 대국 신청 카드 — pvp_invite_friend가 함께 남긴 메시지.
           if (m.pvp_invite_id != null) {
             return <div key={m.id}><PvpInviteChatCard msg={m} mine={mine} otherUsername={otherUsername} otherPhoto={otherPhoto} onAccepted={onAcceptPvpInvite} /></div>;
+          }
+          // (사용자 요청) "/help"를 실제로 보내면(위 send()) 입력창 위 임시 미리보기 대신 대화
+          // 기록에 명령어 목록 카드로 남는다 — 다른 명령어(퍼즐·유산·리뷰 공유, 대국 신청)와 같은
+          // 패턴으로, 보낸 사람 기준 좌/우 정렬만 되고 텍스트 말풍선은 아니다.
+          if (m.body && /^\/help$/i.test(m.body.trim())) {
+            return (
+              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
+                <div style={{ width: 260, padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
+                  <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 4 }}>사용 가능한 명령어</div>
+                  {CHAT_COMMANDS.map((c) => (
+                    <div key={c.cmd} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+                  ))}
+                </div>
+              </div>
+            );
           }
           // (v0.1.0) 공유 보상 시스템 메시지 — 릴스 댓글창의 "선물" 알림처럼 좌우 정렬 없이 가운데 배지로 표시.
           // from_uid=이 메시지를 발생시킨 쪽(퍼즐을 푼 사람), to_uid=XP를 받은 쪽(공유한 사람) — 어느
@@ -22690,16 +22774,50 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                   </div>
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
-                  <div style={{ width: 180, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
-                    <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                      {rp === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>불러오는 중…</div>
-                        : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>리뷰를 불러올 수 없어요.</div>
-                        : <>
-                            <BarChart3 size={26} color={T.brass} />
-                            <div style={{ fontSize: 11, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{rp.label}</div>
-                          </>}
-                      <button onClick={() => onOpenSharedReview && onOpenSharedReview(m)} disabled={!rp} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", fontWeight: 800, fontSize: 11.5, border: "none", cursor: rp ? "pointer" : "default" }}>리뷰 보기</button>
-                    </div>
+                  {/* (사용자 요청) 리뷰 공유 카드를 프로필 카드의 "최근 대국" 행(QuestClearGameRow와
+                      같은 요소 — 좌측 진영 색 막대, 우측 검색 버튼)과 같은 비율로 다시 그린다.
+                      chess.com 대국(선수 정보 있음)은 그 행과 완전히 같은 내용(승/패/무·타임클래스·
+                      상대 닉네임·레이팅)을, PGN/FEN 대국은 1번째 줄에 "PGN"/"FEN" 라벨, 2번째 줄에
+                      그 코드(PGN은 처음 6수만) — PGN이면 그 아래 인식되는 오프닝 이름(OpenChess
+                      수 체계, openingNameOf)까지 표시한다. 우측 버튼(리뷰 보기)의 동작은 그대로 둔다. */}
+                  <div style={{ width: 220, borderRadius: 14, padding: "9px 10px", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none", display: "flex", alignItems: "center", gap: 8 }}>
+                    {rp === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>불러오는 중…</div>
+                      : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>리뷰를 불러올 수 없어요.</div>
+                      : (() => {
+                          const g = rp.game;
+                          const hasPD = !!(g.white || g.black || g.color);
+                          if (hasPD) {
+                            const won = g.result === "win", lost = g.result === "loss";
+                            const oppSide = g.color === "w" ? g.black : g.white;
+                            return (
+                              <>
+                                <span style={{ width: 4, alignSelf: "stretch", minHeight: 32, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
+                                <div style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
+                                  <div style={{ fontSize: 11, color: T.ink }}>
+                                    <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
+                                    {g.timeClass && <span style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                                  </div>
+                                  {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}> ({oppSide.rating})</span>}</div>}
+                                </div>
+                              </>
+                            );
+                          }
+                          const isFenOnly = g.fenRoot && (!g.sans || !g.sans.length);
+                          const opening = (!isFenOnly && g.sans && g.sans.length) ? openingNameOf(g.sans) : null;
+                          const startColor = g.fenRoot ? (parseFenFull(g.fenRoot) || {}).turn : undefined;
+                          const codeText = isFenOnly ? g.fenRoot : (sansToPgnText(g.sans.slice(0, 6), startColor) || "");
+                          return (
+                            <>
+                              <span style={{ width: 4, alignSelf: "stretch", minHeight: 32, flexShrink: 0, borderRadius: 3, background: "linear-gradient(180deg,#DCCBA8,#B59A6E)", border: "1px solid #B59A6E" }} />
+                              <div style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
+                                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass }}>{isFenOnly ? "FEN" : "PGN"}</div>
+                                <div style={{ fontSize: 10, color: T.ink, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{codeText}</div>
+                                {opening && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opening}</div>}
+                              </div>
+                            </>
+                          );
+                        })()}
+                    <button onClick={() => onOpenSharedReview && onOpenSharedReview(m)} disabled={!rp} aria-label="리뷰 보기" title="리뷰 보기" className="press" style={{ width: 26, height: 26, borderRadius: 7, flexShrink: 0, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", border: "none", cursor: rp ? "pointer" : "default", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={12} /></button>
                   </div>
                 </div>
                 </div>
@@ -22884,16 +23002,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
             <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
           </div>
         )}
-        {/* (v0.2.6 기능 → v0.4.3 UI 개편, 사용자 요청) 예전엔 "/"만 입력해도 매번 명령어 목록이 떴다
-            — 입력창을 가려 거슬린다는 피드백으로, 정확히 "/help"를 입력했을 때만 보여주도록 바꿨다. */}
-        {editingId == null && /^\/help$/i.test(text.trim()) && (
-          <div style={{ marginBottom: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>사용 가능한 명령어</div>
-            {CHAT_COMMANDS.map((c) => (
-              <div key={c.cmd} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
-            ))}
-          </div>
-        )}
+        {/* (사용자 요청) "/help"를 입력만 해도 입력창 위에 뜨던 미리보기를 없앴다 — 실제로
+            전송했을 때만(위 send()) 대화 기록에 명령어 목록 카드로 남는다(아래 메시지 목록의
+            m.body === "/help" 분기). */}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <div className="flex items-center gap-2">
           <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
@@ -24333,7 +24444,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
                   <FadeIn key={uid} index={i}>
                   <div style={{ position: "relative" }}>
                   <button
-                    onClick={() => { if (pressFiredRef.current) { pressFiredRef.current = false; return; } setChatWith({ uid, username: pr.username || "", photo: pub.photo || null }); }}
+                    onClick={() => { if (pressFiredRef.current) { pressFiredRef.current = false; return; } setChatWith({ uid, username: pub.displayId || pr.username || "", photo: pub.photo || null }); }}
                     onMouseDown={onRowDown(uid)} onMouseUp={onRowUp} onMouseLeave={onRowUp}
                     onTouchStart={onRowDown(uid)} onTouchEnd={onRowUp}
                     onContextMenu={onRowContext(uid)}
@@ -24445,14 +24556,14 @@ function TierStationReveal({ tilt, children }) {
     </motion.div>
   );
 }
-function TierJourneyPath({ totalXp }) {
+function TierJourneyPath({ totalXp, scrollContainerRef, onColorChange }) {
   const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  // (v0.1.2) v0.1.1에서 키웠던 정거장 원이 지나치게 커 보인다는 피드백으로 다시 축소.
-  const STATION_H = 96, STATION_GAP = 52;
+  // (사용자 요청) 여정 지도 전체를 조금씩 더 크게 — 정거장 원·간격·기물 이미지를 전부 비례해서 키운다.
+  const STATION_H = 116, STATION_GAP = 62;
   // (v0.1.4 기능) "그랜드마스터는 마지막 단계라는 걸 보여주기 위해 선을 더 길게, 중앙 직선으로
   // 이어지게" — 그랜드마스터 직전 간격만 크게 벌리고(GM_EXTRA_GAP), 맨 위(그랜드마스터 자신) 위로도
   // 여백(GM_TOP_PAD)을 더 둬 오로라 배경 밴드가 위로 넉넉히 확장될 공간을 만든다.
-  const GM_EXTRA_GAP = 200, GM_TOP_PAD = 160;
+  const GM_EXTRA_GAP = 230, GM_TOP_PAD = 180;
   // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
   // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
   const currentRef = useRef(null);
@@ -24505,6 +24616,40 @@ function TierJourneyPath({ totalXp }) {
     }
     return bands;
   }, []);
+  // (사용자 요청) 닫기 버튼 색이 지금 화면에 보이는 티어 배경에 따라 하늘색→보라색처럼 바로 바뀌지
+  // 않고, y좌표 스크롤을 따라 인접한 두 티어 색 사이를 서서히 섞으며 바뀌도록 한다. 각 티어 밴드의
+  // 세로 중앙 지점을 "색상 정지점"으로 삼아(색 자체는 TIER_COLORS — 실제 티어 이미지에서 뽑아낸
+  // 대표색, 그랜드마스터만 프로필 테두리에 쓰는 홀로그램 그러데이션의 첫 색을 그대로 씀), 지금
+  // 스크롤 위치가 그 두 지점 사이 어디쯤인지 비율로 계산해 hexLerp로 선형 보간한다.
+  const colorStops = useMemo(() => (
+    tierBands.map((b) => ({
+      y: b.top + b.height / 2,
+      hex: b.key === "grandmaster" ? TIER_COLORS.grandmaster.stops[0] : tierGlowHex(b.key),
+    })).sort((a, c) => a.y - c.y)
+  ), [tierBands]);
+  useEffect(() => {
+    const el = scrollContainerRef && scrollContainerRef.current;
+    if (!el || !colorStops.length || !onColorChange) return;
+    // 닫기 버튼이 뷰포트 상단 근처(top:18)에 고정돼 있으므로, "지금 버튼 자리에 어떤 배경이
+    // 보이는지"를 스크롤 위치 + 이 오프셋으로 근사한다.
+    const REF_OFFSET = 80;
+    const compute = () => {
+      const y = el.scrollTop + REF_OFFSET;
+      let hex = colorStops[0].hex;
+      if (y <= colorStops[0].y) hex = colorStops[0].hex;
+      else if (y >= colorStops[colorStops.length - 1].y) hex = colorStops[colorStops.length - 1].hex;
+      else {
+        for (let i = 0; i < colorStops.length - 1; i++) {
+          const a = colorStops[i], b = colorStops[i + 1];
+          if (y >= a.y && y <= b.y) { hex = hexLerp(a.hex, b.hex, (y - a.y) / (b.y - a.y)); break; }
+        }
+      }
+      onColorChange(hex);
+    };
+    compute();
+    el.addEventListener("scroll", compute, { passive: true });
+    return () => el.removeEventListener("scroll", compute);
+  }, [colorStops, scrollContainerRef, onColorChange]);
   return (
     // (기능) 노드·연결선이 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를 공유해, 컨테이너
     // 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다.
@@ -24600,7 +24745,7 @@ function TierJourneyPath({ totalXp }) {
                   {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
                       이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 도형 정중앙에 오도록 배치한다. */}
                   <div style={{ position: "relative", zIndex: 1 }}>
-                    <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={92} />
+                    <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={112} />
                   </div>
                 </div>
                 {/* (버그 수정) "이미 지나온 티어" 초록 체크 배지가 정적이라 눈에 잘 안 띄었다 —
@@ -24617,8 +24762,8 @@ function TierJourneyPath({ totalXp }) {
               </TierStationReveal>
             </div>
             {state === "current" && (
-              <div style={{ position: "absolute", left: cx, top: top + STATION_H + 4, width: 120, transform: "translateX(-50%)", textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: T.ivory, opacity: .8 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>
+              <div style={{ position: "absolute", left: cx, top: top + STATION_H + 5, width: 140, transform: "translateX(-50%)", textAlign: "center" }}>
+                <div style={{ fontSize: 12, color: T.ivory, opacity: .8 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>
               </div>
             )}
           </React.Fragment>
@@ -24631,24 +24776,25 @@ function TierJourneyPath({ totalXp }) {
 // "집중분석"(App.jsx 상단부) 전체화면 오버레이와 같은 몰입형 레이아웃(어두운 방사형 그러데이션
 // 배경)으로 감싼다.
 function TierJourneyMap({ totalXp, onClose }) {
+  const scrollRef = useRef(null);
+  // (사용자 요청) 닫기 버튼 색이 지금 스크롤로 보고 있는 티어 배경에 반응한다 — 처음 계산되기 전
+  // (마운트 직후 1프레임)에는 기존 금색 테두리로 시작해, 계산되는 즉시 그 색으로 자연스럽게 바뀐다.
+  const [btnColor, setBtnColor] = useState(null);
+  const bc = btnColor || T.brass;
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+    // (사용자 요청) 여정 지도가 어떤 화면에서도 뷰포트를 꽉 채우는 비율로 보이도록, 스크롤 컨테이너
+    // 자신을 뷰포트 크기 그대로 두고(기존과 동일) 안쪽 콘텐츠 폭 상한만 훨씬 넉넉하게 늘린다.
+    <div ref={scrollRef} style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
       {/* (v0.2.3 버그 수정) 닫기 버튼이 스크롤되는 콘텐츠 안에 있어, 아래로 스크롤해 특정 티어를 보고
           있을 때는 맨 위로 다시 올라와야만 닫을 수 있었다 — 뷰포트 우상단에 고정해 어느 스크롤
-          위치에서도 항상 누를 수 있게 한다. */}
-      <button onClick={onClose} className="press" style={{ position: "fixed", top: 18, right: 16, zIndex: 84, width: 34, height: 34, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(20,12,5,.75)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <X size={17} />
+          위치에서도 항상 누를 수 있게 한다.
+          (사용자 요청) 하늘색→보라색처럼 뚝 끊기지 않고 스크롤을 따라 서서히 바뀌는 색(bc, y좌표
+          기준 인접 티어 색 사이 보간값)으로 테두리·은은한 배경·글로우를 물들인다. */}
+      <button onClick={onClose} className="press" style={{ position: "fixed", top: 18, right: 16, zIndex: 84, width: 38, height: 38, borderRadius: 11, border: "2px solid " + bc, background: hexAlpha(bc, .22), color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 0 16px " + hexAlpha(bc, .5), transition: "background .2s linear, border-color .2s linear, box-shadow .2s linear" }}>
+        <X size={18} />
       </button>
-      <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
-        {/* (v0.1.4 UI) "티어 여정"·"퍼즐을 풀어..." 안내 문구를 없애고, 그 자리에 이정표 아이콘만
-            남긴다 — 아래 지도 자체가 이미 지금까지의 여정을 보여주므로 문구 없이도 뜻이 통한다. */}
-        <div className="flex items-center justify-between" style={{ marginBottom: 18 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Milestone size={20} color={T.brassHi} />
-          </div>
-          <div style={{ width: 34, height: 34, flexShrink: 0 }} />
-        </div>
-        <TierJourneyPath totalXp={totalXp} />
+      <div style={{ maxWidth: "min(94vw, 760px)", margin: "0 auto", padding: "18px 16px 60px" }}>
+        <TierJourneyPath totalXp={totalXp} scrollContainerRef={scrollRef} onColorChange={setBtnColor} />
       </div>
     </div>
   );
@@ -24945,7 +25091,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                   {statsViewToggle(statsView, setStatsView)}
-                  {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
+                  {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: p.displayId || sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
                 </div>
               </div>
               {statsView === "cc" && p.chesscom ? (
@@ -24984,7 +25130,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                     : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{friends.map((u, i) => (
                         // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
                         // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
-                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
+                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: ((profiles[u] || {}).pub || {}).displayId || uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
                       ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
                   incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>
