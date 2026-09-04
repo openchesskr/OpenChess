@@ -19496,7 +19496,7 @@ const CHANGELOG = [
       "/help 명령어가 입력창 위에 미리보기로만 뜨던 것을 없애고, 실제로 보내면 다른 명령어처럼 대화 기록에 명령어 목록 카드로 남아요.",
       "실시간 대국 신청 카드가 일반 메시지처럼 보낸 사람 기준으로 좌/우 정렬되고, 문구도 내가 신청했으면 '~님에게', 상대가 신청했으면 '~님이'로 구분돼요.",
       "설정 탭 프로필 카드에서 '문제 a/b개 정답' 텍스트를 없앴어요.",
-      "상단 헤더 우측 세 버튼(검색·친구·채팅 묶음/알림/프로필)의 세로 위치뿐 아니라 실제 높이까지 정확히 같아졌어요.",
+      "상단 헤더 우측 세 버튼(검색·친구·채팅 묶음/알림/프로필)의 세로 위치와 실제 높이가 픽셀 단위로 완전히 같아졌어요 — 프로필·알림 버튼이 옆 버튼보다 살짝 위로 걸쳐 보이던 문제까지 마저 고쳤어요.",
       "/user 페이지 전용 OpenChess/chess.com 전환 토글 크기를 절반으로 줄였어요. 순위는 숫자(또는 1~3등 배지)만 이름 바로 위에 2배 크기로 표시되고, 데스크톱에서는 티어·퍼즐 레이팅이 오른쪽 통계 패널 대신 왼쪽 유저 정보 바로 아래 항상 표시돼요. 왼쪽·오른쪽 열 사이 여백이 3배로 넓어졌고, 친구 요청 버튼이 프로필 사진과 같은 높이에서 오른쪽 정렬로 표시돼요.",
       "/user 페이지와 프로필 카드에서, 소개(bio)나 실명이 없어도 이름의 세로 위치가 흔들리지 않고 항상 고정돼요.",
       "채팅에서 마우스를 그냥 스쳐 지나가도(클릭 없이) '@아이디' 멘션 프로필로 이동해 버리던 버그를 고쳤어요.",
@@ -21810,7 +21810,11 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
   const clearAll = () => { if (!myUid) return; setItems([]); notifyDeleteAll(myUid).then((ok) => { if (!ok) refresh(); }); };
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      {/* (사용자 요청, 재수정) 이 버튼은 height를 border-box가 아닌 기본(content-box)로 계산해,
+          1px 테두리 위아래가 더해져 실제 렌더 높이가 34/27이 아니라 36/29였다 — 옆 세그먼트(이미
+          border-box로 정확히 34/27)보다 위아래로 1px씩 더 삐져나와 있었다. box-sizing:border-box를
+          줘 테두리를 높이 안에 포함시킨다. */}
+      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, boxSizing: "border-box", borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
@@ -21879,8 +21883,12 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
       {/* (버그 수정, 사용자 요청) 검색·친구·채팅·알림 버튼은 모두 고정 높이(27/34px)인데, 이 버튼만
           세로 패딩으로 높이가 정해져 있어 border까지 합치면 그 버튼들보다 미묘하게 더 컸다(내용물
           — 아바타·닉네임·화살표 — 세로 정렬은 그대로 alignItems:center가 맡으므로, 높이만 옆
-          버튼들과 똑같이 고정해도 레이아웃은 그대로다). */}
-      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
+          버튼들과 똑같이 고정해도 레이아웃은 그대로다).
+          (사용자 재요청, 재수정) height만 고정해도 기본 box-sizing(content-box)에서는 1px 테두리
+          위아래가 그 높이 위에 더해져 실제 렌더 높이가 여전히 옆 버튼들보다 2px 더 컸다(정중앙은
+          같아도 위아래로 더 삐져나와 시각적으로 더 위/아래로 걸쳐 보였다) — box-sizing:border-box를
+          추가해 테두리를 높이 안에 포함시킨다. */}
+      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, boxSizing: "border-box", padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
         {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster", 2) || {}) }} />
           : <span style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: compact ? 10.5 : 12, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initial}</span>}
         {!compact && <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
