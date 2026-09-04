@@ -5,7 +5,7 @@ import {
   Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
+  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
   Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench,
 } from "lucide-react";
@@ -2373,6 +2373,7 @@ function useBoardSize(max = 360) {
   const [size, setSize] = useState(Math.min(max, 320));
   const elRef = useRef(null);
   const roRef = useRef(null);
+  const debounceRef = useRef(null);
   // (버그·모바일) Board 래퍼는 격자 바깥에 프레임(안쪽 여백 20 + 패딩 20 + 테두리 ~2 ≈ 42px)을 더한다.
   // 이 프레임을 빼지 않으면 board+프레임이 컨테이너를 넘쳐(모바일 가로 오버플로) 보드 오른쪽이 잘려 보였다.
   const measure = useCallback(() => {
@@ -2380,18 +2381,29 @@ function useBoardSize(max = 360) {
     const el = elRef.current; if (!el) return;
     const w = el.clientWidth; if (w > 0) setSize(Math.max(160, Math.floor((Math.min(max, w) - FRAME) / 8) * 8));
   }, [max]);
+  // (버그 수정, 사용자 제보) 분석 탭에서 수를 둘 때마다 보드가 미세하게 커졌다 작아졌다 했다 — 한 수를
+  // 두면 캡션·수 블록·정확도 표시 등 보드 옆·아래 요소들이 거의 같은 렌더 사이클 안에서 잇따라 자기
+  // 크기를 바꾸는데, 그 각각의 중간 단계마다 ResizeObserver가 따로 콜백을 발화시켜(레이아웃이 완전히
+  // 안정되기 전의) 일시적인 폭을 읽어버리는 경우가 있었다 — 이 폭이 8px 격자 경계 바로 근처에 있으면
+  // Math.floor 결과가 그 중간 프레임 한 번만 다르게 나와, 눈에는 보드가 수를 둘 때마다 잠깐씩 크기가
+  // "조금씩" 바뀌는 것처럼 보였다. ResizeObserver 콜백을 즉시 반영하지 않고 짧게 모아(debounce) 레이아웃이
+  // 완전히 가라앉은 뒤의 최종 폭 하나만 반영하면 이 중간 프레임들이 걸러진다.
+  const scheduleMeasure = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(measure, 100);
+  }, [measure]);
   const setRef = useCallback((el) => {
     if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
     elRef.current = el;
     if (el) {
-      measure();
-      if (typeof ResizeObserver !== "undefined") { roRef.current = new ResizeObserver(measure); roRef.current.observe(el); }
+      measure(); // 첫 측정은 지연 없이 바로 반영해, 처음 그려질 때부터 정확한 크기로 보이게 한다.
+      if (typeof ResizeObserver !== "undefined") { roRef.current = new ResizeObserver(scheduleMeasure); roRef.current.observe(el); }
     }
-  }, [measure]);
+  }, [measure, scheduleMeasure]);
   useEffect(() => {
-    window.addEventListener("resize", measure);
-    return () => { window.removeEventListener("resize", measure); if (roRef.current) roRef.current.disconnect(); };
-  }, [measure]);
+    window.addEventListener("resize", scheduleMeasure);
+    return () => { window.removeEventListener("resize", scheduleMeasure); if (roRef.current) roRef.current.disconnect(); if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [scheduleMeasure]);
   return [size, setRef];
 }
 
@@ -8675,7 +8687,7 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
     </div>
   );
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   const [step, setStep] = useState("setup"); // "setup" | "playing"
@@ -8951,6 +8963,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     shownResultKeyRef.current = resultKey;
     setResultModalOpen(true);
   }, [resultKey]);
+  // (사용자 요청) 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인 동안은, 뒤로가기·페이지 나가기
+  // 요청이 오면(App 루트가 popstate/닫기 버튼에서 이 값을 읽는다) 곧장 나가는 대신 "정말 기권할지"
+  // 확인 알림을 한 번 띄운다 — App 루트는 컴포넌트 트리 밖(브라우저 popstate)에서도 이 값을 읽어야
+  // 하므로 상태가 아니라 ref로 올려 보낸다.
+  useEffect(() => {
+    const active = mode === "pvp" && step === "playing" && !!pvpGame && !resultKey;
+    onPvpActiveChange && onPvpActiveChange(active);
+    return () => { onPvpActiveChange && onPvpActiveChange(false); };
+  }, [mode, step, pvpGame, resultKey, onPvpActiveChange]);
 
   // (v0.4.5 기능, 사용자 요청) 대국이 끝나면(봇·pvp 모두, 실제로 둔 수가 있을 때만) 매칭 대기 화면
   // 궤도 아이콘용으로 방금 대국의 탁월한 수·실수·블런더 개수를 백그라운드로 계산해 둔다 — 화면을
@@ -9130,6 +9151,20 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
     }
   };
+  // (사용자 요청) 실시간 대국 — 상대에게 합의 무승부를 제안한다. 서버는 draw_offered_by만 표시로
+  // 기록해 두고, 상대가 실제로 수락(pvp_draw_accept)해야만 대국이 끝난다 — 한쪽이 일방적으로 무승부를
+  // 강제할 수 없다(pvp_finish의 status='draw' 직접 호출은 스테일메이트 등 "객관적으로 계산되는" 무승부
+  // 전용이라 여기 쓰지 않는다).
+  const offerDraw = () => {
+    setOptionsOpen(false);
+    if (mode === "pvp" && pvpGame && myUid) sbRpc("pvp_draw_offer", { p_game_id: pvpGame.id }).then(setPvpGame).catch(() => {});
+  };
+  const respondDraw = (accept) => {
+    if (mode === "pvp" && pvpGame && myUid) sbRpc(accept ? "pvp_draw_accept" : "pvp_draw_decline", { p_game_id: pvpGame.id }).then(setPvpGame).catch(() => {});
+  };
+  // 내가 이미 제안해 상대 응답을 기다리는 중인지 / 상대가 방금 나에게 제안했는지.
+  const drawOfferedByMe = mode === "pvp" && pvpGame && pvpGame.draw_offered_by && pvpGame.draw_offered_by === myUid;
+  const drawOfferedByOpp = mode === "pvp" && pvpGame && pvpGame.draw_offered_by && pvpGame.draw_offered_by !== myUid && !result;
 
   const flip = activeColor === "b";
   // (사용자 요청) chess.com 대국 화면처럼 상단에 수순 스트립(수 번호 + 백/흑 수, 누르면 그 시점으로
@@ -9378,9 +9413,20 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                   <>
                     <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                     <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", width: 170, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 10, padding: 5, zIndex: 41, display: "flex", flexDirection: "column", gap: 1, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
+                      {/* (사용자 요청) 실시간 대국(봇 아님) 중에는 기권 위에 무승부 제안 버튼을 둔다 — 이미
+                          제안해 응답을 기다리는 중이면 "제안 취소"로 바뀐다. */}
+                      {!result && mode === "pvp" && (
+                        <button onClick={drawOfferedByMe ? () => respondDraw(false) : offerDraw} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
+                          <Handshake size={14} />{drawOfferedByMe ? "무승부 제안 취소" : "무승부 제안"}
+                        </button>
+                      )}
                       {!result && <button onClick={resign} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>기권</button>}
                       {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>대국 리뷰</button>}
-                      <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>다시 설정</button>
+                      {/* (사용자 요청) 봇이 아닌 실시간 상대와 대국을 하는 도중에는 "다시 설정"이 뜨지 않게
+                          한다 — 상대는 그대로 둔 채 설정만 바꿔 새로 시작할 방법이 없어(재도전은 별도
+                          흐름) 대국 중엔 이 버튼이 의미가 없고, 실수로 눌러 진행 중인 대국을 잃을 위험만
+                          있다. 대국이 끝난 뒤에는(리뷰·새 대국 시작 용도로) 그대로 둔다. */}
+                      {(mode !== "pvp" || result) && <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>다시 설정</button>}
                     </div>
                   </>
                 )}
@@ -9391,6 +9437,21 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           </div>
         )}
       </div>
+      {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
+          바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
+      <AnimatePresence>
+        {drawOfferedByOpp && (
+          <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }} transition={{ duration: 0.22, ease: MOTION_EASE }}
+            style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 320, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "linear-gradient(180deg,#3A2516,#241509)", borderTop: "1px solid " + T.brass, boxShadow: "0 -10px 24px -8px rgba(0,0,0,.6)" }}>
+            <div style={{ maxWidth: 460, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+              <Handshake size={18} color={T.brassHi} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + "가 무승부를 제안했어요"}</span>
+              <button onClick={() => respondDraw(false)} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
+              <button onClick={() => respondDraw(true)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -19467,6 +19528,14 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.4.7", date: "2026.9.4", dev: ["openchesskr", "G13sus4"], items: [
+      "분석 탭 체스보드가 수를 둘 때마다 화면 비율이 미세하게 흔들리던 문제를 고쳤어요 — 크기가 항상 고정돼요.",
+      "/play에서 봇이 아닌 실시간 상대와 대국할 때는 '다시 설정' 버튼이 뜨지 않아요.",
+      "실시간 대국에 무승부 제안 버튼이 생겼어요 — 기권 위에서 상대에게 합의 무승부를 제안할 수 있고, 제안받은 쪽에는 화면 아래에 수락/거절 알림이 떠요.",
+      "실시간 대국 중 뒤로가기나 페이지 나가기로 화면을 벗어나려 하면, 곧장 기권 처리되는 대신 정말 나갈지 한 번 물어봐요.",
+    ]
+  },
+  {
     version: "0.4.6", date: "2026.9.4", dev: ["openchesskr", "G13sus4"], items: [
       "보드 편집기(연필 아이콘)에서 FEN을 직접 입력하거나 붙여넣거나 이미지로 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요. 표준 시작 위치부터 자연스럽게 둔 수순에서는 원래도 정상이었어요.",
       "이제 /play 대국은 항상 똑같은 표준 시작 위치에서만 시작돼요 — 보드를 직접 편집했거나 FEN/PGN을 불러와 다른 수순·포지션이 돼 있으면 PLAY 버튼이 비활성화돼요.",
@@ -26770,7 +26839,20 @@ export default function App() {
     const onPop = () => {
       const p = window.location.pathname;
       if (!p.startsWith("/review")) setReviewGame(null);
-      if (!p.startsWith("/play")) setPlayGame(null);
+      if (!p.startsWith("/play")) {
+        // (사용자 요청) /play에서 실시간 상대와 결과 없이 대국 중이면, 뒤로가기로 이 화면을 벗어나려
+        // 할 때 곧장 나가는 대신 "정말 기권할지" 확인 알림을 한 번 띄운다 — pvpPlayActiveRef는
+        // PlayPage가 onPvpActiveChange로 최신 값을 계속 올려 보내 둔 것. 이미 그 확인을 거쳐
+        // "나가기"를 눌렀을 때만(pendingPlayExitRef가 "confirmed") 그대로 통과시킨다.
+        if (pvpPlayActiveRef.current && pendingPlayExitRef.current !== "confirmed") {
+          try { window.history.pushState({ ...(window.history.state || {}), play: true }, "", "/play"); } catch { }
+          pendingPlayExitRef.current = "nav";
+          setPlayExitConfirmOpen(true);
+          return;
+        }
+        pendingPlayExitRef.current = null;
+        setPlayGame(null);
+      }
       if (!/^\/puzzle\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
       // (v0.4.4 기능) /user/<MID> 프로필 페이지도 다른 고유 URL(리뷰·퍼즐)과 같은 방식으로 뒤로/앞으로
       // 가기에 반응한다 — 그 경로를 벗어나면 닫고, 다시 그 경로로 돌아오면(앞으로 가기) 되살린다.
@@ -26918,6 +27000,27 @@ export default function App() {
   const closePlay = useCallback(() => {
     setPlayGame(null);
     try { if (window.location.pathname.startsWith("/play")) window.history.back(); } catch { }
+  }, []);
+  // (사용자 요청) /play에서 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인지 — PlayPage가 렌더마다
+  // 최신값을 알려준다(popstate 핸들러가 컴포넌트 밖에서도 읽어야 해서 상태 대신 ref로 둔다).
+  const pvpPlayActiveRef = useRef(false);
+  const onPvpActiveChange = useCallback((v) => { pvpPlayActiveRef.current = v; }, []);
+  // "nav"면 브라우저 뒤로가기가 이미 주소를 옮긴 걸 pushState로 되돌려 둔 상태(확인 후 history.back()으로
+  // 마저 나간다), "button"이면 헤더의 닫기 버튼을 눌러 들어온 요청(확인 후 closePlay()를 그대로 부른다).
+  const pendingPlayExitRef = useRef(null);
+  const [playExitConfirmOpen, setPlayExitConfirmOpen] = useState(false);
+  const requestClosePlay = useCallback(() => {
+    if (pvpPlayActiveRef.current) { pendingPlayExitRef.current = "button"; setPlayExitConfirmOpen(true); return; }
+    closePlay();
+  }, [closePlay]);
+  const confirmPlayExit = useCallback(() => {
+    setPlayExitConfirmOpen(false);
+    if (pendingPlayExitRef.current === "nav") { pendingPlayExitRef.current = "confirmed"; try { window.history.back(); } catch { } }
+    else { pendingPlayExitRef.current = null; closePlay(); }
+  }, [closePlay]);
+  const cancelPlayExit = useCallback(() => {
+    setPlayExitConfirmOpen(false);
+    pendingPlayExitRef.current = null;
   }, []);
   const onOpenPuzzle = useCallback(async (pzId, fallback) => {
     // (v0.1.0) 유저 검색·친구 프로필(공개 프로필의 "푼 퍼즐" 카드)에서도 이 함수로 진입하므로,
@@ -27177,7 +27280,24 @@ export default function App() {
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
       {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
-      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} />}
+      {playGame && <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} />}
+      {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
+          대신 정말 기권 처리해도 되는지 한 번 확인한다. */}
+      <AnimatePresence>
+        {playExitConfirmOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(10,6,3,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <motion.div initial={{ opacity: 0, y: 12, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .97 }} transition={{ duration: 0.2, ease: MOTION_EASE }}
+              style={{ width: "100%", maxWidth: 320, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: 20, textAlign: "center", boxShadow: "0 20px 50px -12px rgba(0,0,0,.7)" }}>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ivoryHi, marginBottom: 6 }}>대국을 나가시겠어요?</div>
+              <div style={{ fontSize: 12.5, color: "rgba(244,238,226,.7)", marginBottom: 18, lineHeight: 1.5 }}>지금 나가면 기권으로 처리돼요.</div>
+              <div className="flex gap-2">
+                <button onClick={cancelPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>계속 두기</button>
+                <button onClick={confirmPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#E05C5C,#B23A3A)", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>나가기(기권)</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {viewedProfileMid && <UserProfilePage mid={viewedProfileMid} autoInvite={viewedProfileAutoInvite} onClose={closeUserProfile} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
       {profileWinOpen && user && (
         <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size}

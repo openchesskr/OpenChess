@@ -1418,6 +1418,10 @@ grant select on public.pvp_games to authenticated;
 -- 매칭된 두 클라이언트가 서로 다른 값을 로컬에서 고르는 사고를 막기 위해, 실제 클럭은 이 서버
 -- 값(대기열이면 매칭 당시 time_control, 초대면 초대한 사람이 고른 값)을 그대로 따른다.
 alter table public.pvp_games add column if not exists time_control text not null default '600-0';
+-- (v0.4.7 기능, 사용자 요청) 합의 무승부 제안 — null이면 제안 없음, 값이 있으면 그 uid가 상대에게
+-- 무승부를 제안해 응답을 기다리는 중이라는 뜻. 어느 한쪽이 일방적으로 무승부를 선언할 수는 없고
+-- (아래 pvp_draw_accept 참고), 수를 두면(pvp_move) 자동으로 취소된다.
+alter table public.pvp_games add column if not exists draw_offered_by uuid references auth.users(id) on delete set null;
 -- 위 8) Realtime 섹션과 동일한 이유로, 매칭·수·대국 종료를 실시간으로 받으려면 이 테이블도
 -- supabase_realtime publication에 포함되어야 한다(신규 테이블이라 이 파일 앞부분의 8) 섹션이 실행될
 -- 때는 아직 존재하지 않으므로 여기서 별도로 등록한다).
@@ -1508,7 +1512,9 @@ begin
   v_white_turn := (v_ply % 2) = 0;
   v_expected := case when v_white_turn then v_game.white_uid else v_game.black_uid end;
   if v_me <> v_expected then raise exception 'not your turn'; end if;
-  update public.pvp_games set sans = sans || to_jsonb(p_san), updated_at = now()
+  -- (v0.4.7 기능) 수를 두면 대기 중이던 무승부 제안은 자동으로 취소된다(표준적인 체스 클라이언트
+  -- 동작과 동일 — 제안을 무시하고 그냥 다음 수를 두면 그 제안은 무효가 된다).
+  update public.pvp_games set sans = sans || to_jsonb(p_san), draw_offered_by = null, updated_at = now()
     where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
@@ -1549,6 +1555,58 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.pvp_finish(bigint, text) to authenticated;
+
+-- (v0.4.7 기능, 사용자 요청) 합의 무승부 — 위 pvp_finish는 자기 승리 선언만 막을 뿐 'draw'는 누구든
+-- 그대로 통과시키므로(스테일메이트·3회 동형 반복처럼 "객관적으로 계산되는" 무승부 전용), 그걸 그대로
+-- 써서 한쪽이 일방적으로 무승부를 강제하게 둘 수는 없다. 대신 제안(draw_offered_by만 기록)과 실제
+-- 종료(상대만 수락 가능)를 분리한 별도 RPC 세 개를 둔다.
+drop function if exists public.pvp_draw_offer(bigint) cascade;
+create or replace function public.pvp_draw_offer(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  update public.pvp_games set draw_offered_by = v_me, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_draw_offer(bigint) to authenticated;
+
+-- 상대가 제안한 무승부를 수락한다 — 내가 방금 스스로 제안한 것(draw_offered_by = 나)은 수락할 수 없다.
+drop function if exists public.pvp_draw_accept(bigint) cascade;
+create or replace function public.pvp_draw_accept(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  if v_game.draw_offered_by is null or v_game.draw_offered_by = v_me then raise exception 'no pending draw offer from opponent'; end if;
+  update public.pvp_games set status = 'draw', draw_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_draw_accept(bigint) to authenticated;
+
+-- 무승부 제안을 거절하거나(상대가 부름) 스스로 취소한다(제안한 쪽이 다시 부름) — 참가자면 누가
+-- 불러도 그냥 제안을 지운다.
+drop function if exists public.pvp_draw_decline(bigint) cascade;
+create or replace function public.pvp_draw_decline(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  update public.pvp_games set draw_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_draw_decline(bigint) to authenticated;
 
 -- (v0.4.5 기능, 사용자 요청) pvp_finish의 자기 승리 선언 금지 가드를 브라우저에서 직접 우회할 방법은
 -- 없지만("체크메이트 여부"를 클라이언트가 주장하는 값 그대로 믿을 수 없다는 게 핵심 문제), 서버 쪽
