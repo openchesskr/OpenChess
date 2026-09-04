@@ -967,6 +967,32 @@ as $$
   limit least(coalesce(p_limit, 8), 20);
 $$;
 grant execute on function public.search_puzzles_prefix(text, int) to anon, authenticated;
+
+-- ============================================================================
+-- 16-1) profiles_search_by_mid_prefix — 유저 검색 "#MID" 실시간 후보 목록 (사용자 요청)
+-- ============================================================================
+-- 예전엔 "#ABCDE1234"를 9자 전부 입력해 정확히 일치할 때만(MID_RE 정규식 통과) 조회됐다 — 입력
+-- 도중에는 아무 후보도 보여주지 못했다. 이제 접두어만 입력해도(예: "#ABC") 그 접두어로 시작하는
+-- MID를 가진 프로필을 계속 실시간으로 보여준다. 정렬 기준은 사용자 요청대로 (1) 입력 문자열과
+-- MID의 유사도(pg_trgm의 similarity — 트라이그램 기반 문자열 유사도) 내림차순, (2) 동률이면 XP
+-- 내림차순. profiles는 이미 누구나 읽을 수 있어(위 1번 섹션 "profiles select all") SECURITY
+-- DEFINER가 필요 없다(search_puzzles_prefix·leaderboard_top과 동일한 판단).
+create extension if not exists pg_trgm;
+drop function if exists public.profiles_search_by_mid_prefix(text, int) cascade;
+create or replace function public.profiles_search_by_mid_prefix(p_query text, p_limit int default 20)
+returns table(id uuid, username text, pub jsonb, mid text)
+language sql stable
+as $$
+  select id, username, pub, mid
+  from public.profiles
+  where p_query is not null and p_query <> '' and mid ilike upper(p_query) || '%'
+  order by similarity(mid, upper(p_query)) desc, coalesce((pub->>'xp')::bigint, 0) desc
+  limit least(coalesce(p_limit, 20), 30);
+$$;
+grant execute on function public.profiles_search_by_mid_prefix(text, int) to anon, authenticated;
+-- 접두어(prefix) LIKE 검색을 인덱스로 태우기 위한 표현식 인덱스 — search_puzzles_prefix와 같은 이유
+-- (계정이 계속 쌓이는 테이블에서 매번 순차 스캔이 되는 것을 방지).
+create index if not exists idx_profiles_mid_text_pattern on public.profiles (mid text_pattern_ops);
 -- (v0.3.1 성능) 위 no::text like 'prefix%' 조건에 맞는 인덱스가 없어, puzzles 테이블이 계속
 -- 쌓이는 구조(대국을 둘 때마다·집중 학습에서 실수를 만날 때마다 새 퍼즐이 자동 생성·공유됨)라
 -- 검색창에 숫자를 입력할 때마다 매번 테이블 전체를 훑는 순차 스캔이 됐다 — "퍼즐 검색으로 퍼즐을

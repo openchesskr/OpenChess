@@ -7,14 +7,14 @@ import {
   ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, BarChart3, Heart, Send, Repeat2, Milestone, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
-  Camera, Image as ImageIcon, FolderOpen, Cloud,
+  Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench,
 } from "lucide-react";
 import {
   T, FILES, MOTION_EASE, BOARD_GLOSS, DRAG_SCROLL_MULT,
   PIECE_BASE_R, PIECE_BASE_L, PIECE_MID, PIECE_LINES, PIECE_ACCENT, PIECE_CROSS,
   PIECE_HEIGHT_FACTOR, PIECE_NATURAL_TOP_Y, PIECE_BASE_RATIO, PIECE_IMG_SETS,
   BOARD_SKINS, boardSquareBg, PIECE_SKINS, pieceShadow,
-  TIER_IMAGE, TIER_BG_IMAGE, tierPieceSrc, TIER_IMG_NATIVE_H, TIER_DECAGON_PTS,
+  TIER_IMAGE, TIER_BG_IMAGE, tierPieceSrc, TIER_IMG_NATIVE_H, TIER_DECAGON_PATH,
 } from "./lib/theme.js";
 import {
   REVIEW_SPEED_PREF_KEY, loadReviewSpeedPref, saveReviewSpeedPref,
@@ -85,7 +85,7 @@ import {
   EngineLineSkeleton, EngineLineBlank, TypedMoveLine, dedupeEngineLines, EngineLineRow, EngineLines,
 } from "./components/engineLines.jsx";
 import { QLABEL, badgeIcon, PendingDots } from "./components/badges.jsx";
-import { KW, KeywordScroll } from "./components/keywordScroll.jsx";
+import { KW, KeywordScroll, KeywordChip } from "./components/keywordScroll.jsx";
 import { BestMoveJumpButton, ListPager, NavBtn } from "./components/uiPrimitives.jsx";
 
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
@@ -3734,10 +3734,15 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
             <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}><Play size={11} /> 분석</button>
           </div>
           <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, cursor: "pointer" }}>
-            <div style={{ flex: 1, minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
+            {/* (사용자 요청) 게이지 바 폭을 살짝 줄이고(flex:1 → 55%), 그렇게 확보한 여백을 옆 텍스트의
+                "a/b"와 "n%" 사이 간격(gap 10)으로 돌려 두 수치가 서로 붙어 보이지 않게 한다. */}
+            <div style={{ flex: "0 1 55%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
               <div style={{ width: Math.min(100, m.adopt || 0) + "%", height: "100%", background: color, opacity: .85 }} />
             </div>
-            <span style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "62%" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : "—"} <span style={{ color: T.ink, fontWeight: 700 }}>{m.adopt != null ? m.adopt.toFixed(2) + "%" : "—"}</span></span>
+            <span style={{ display: "flex", alignItems: "baseline", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : "—"}</span>
+              <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0 }}>{m.adopt != null ? m.adopt.toFixed(2) + "%" : "—"}</span>
+            </span>
           </div>
           {/* (UI) 도감 탭과 동일한 형식(백/무/흑 바 + %)으로 이 수의 승률 표기 */}
           {m.wdl && <div onClick={onClick} style={{ marginTop: 7, cursor: "pointer" }}><WinBar wdl={m.wdl} height={6} /></div>}
@@ -10736,6 +10741,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     }).catch(() => { });
     return () => { cc = true; };
   }, [key, liveOn]);
+  // (사용자 요청) v0.4.5/0.4.6에서 일반 수 블록(MoveTile)에만 적용됐던 리체스 통계 개선(0에서
+  // 실제 값까지 세어 올라가는 애니메이션, 채택률 소수 둘째 자리 표기, 더 진한 강조색)을 이 "현재
+  // 수 블록"에도 완전히 동일하게 적용한다.
+  const curGamesCountDisp = useCountUp(curStat ? curStat.games : null, 900);
+  const curPosTotalDisp = useCountUp(curStat ? curStat.posTotal : null, 500);
 
   const fa = useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
 
@@ -10965,14 +10975,20 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                     {curKws.length > 0 && (
                       <div style={{ marginTop: 10 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
                     )}
-                    {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바 */}
+                    {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
+                        (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭 축소 + 텍스트 간격
+                        확보, 회수는 0부터 세어 올라가는 애니메이션, 채택률은 소수 둘째 자리까지
+                        진한 강조색으로 표기한다. */}
                     {curStat && (
                       <>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-                          <div style={{ flex: 1, minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
+                          <div style={{ flex: "0 1 55%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
                             <div style={{ width: Math.min(100, curStat.adopt || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
                           </div>
-                          <span style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "62%" }}>{curStat.games != null ? fmtFull(curStat.games) + (curStat.posTotal != null ? " / " + fmtFull(curStat.posTotal) : "") : "—"} · {curStat.adopt != null ? curStat.adopt.toFixed(1) + "%" : "—"}</span>
+                          <span style={{ display: "flex", alignItems: "baseline", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden" }}>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : "—"}</span>
+                            <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0 }}>{curStat.adopt != null ? curStat.adopt.toFixed(2) + "%" : "—"}</span>
+                          </span>
                         </div>
                         {curStat.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
                       </>
@@ -11202,7 +11218,8 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
         {evTxt && <span style={{ fontFamily: SITE_FONT, fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
         <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
       </div>
-      {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg }}>{k}</span>)}</div>}
+      {/* (사용자 요청) 도감의 수 키워드도 수 블록·현재 수 블록과 완전히 같은 클릭형 안전 영역 말풍선을 쓴다. */}
+      {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => <KeywordChip key={k} k={k} />)}</div>}
       {/* (사용자 요청) 오프닝 이름을 누르면 그 기보가 입력된 분석 탭으로 바로 이동한다(예전엔
           집중 분석 모드로 이동했었다). */}
       {label && (onOpenLearn
@@ -12433,21 +12450,30 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const oc = coord(openItem);
     const nodeX = rect.left + pan.x + zoom * oc.x, nodeY = rect.top + pan.y + zoom * oc.y;
     const nodeW = boxW * zoom, nodeH = boxH * zoom;
-    const cardScale = vertical ? 0.65 : 1;
+    // (사용자 요청) 도감 오프닝 모식도에서 수 블록을 클릭하면 뜨는 상세 카드(DexMoveBlock)의 크기를
+    // 2배로 키운다 — 이 카드는 이미 transform:scale(cardScale)로 균일하게 커지고 작아지도록 만들어져
+    // 있었으므로(세로 모식도에서만 0.65배로 살짝 줄이던 것), 그 배율에 2를 곱하기만 하면 폰트·이미지·
+    // 여백까지 전부 비율 그대로 2배가 된다.
+    const cardScale = (vertical ? 0.65 : 1) * 2;
     const vw = typeof window !== "undefined" ? window.innerWidth : 480;
     const vh = typeof window !== "undefined" ? window.innerHeight : 800;
     const CARD_W = Math.max(240, Math.min(300, vw - 32));
     const cardH = 460 * cardScale;
+    // 실제 화면에 렌더링되는(scale 적용 후) 카드 폭 — 화면 경계 클램프는 이 값을 기준으로 해야
+    // 커진 카드가 뷰포트 밖으로 잘리지 않는다.
+    const renderedW = CARD_W * cardScale;
     const BOTTOM_SAFE = 66 + 40;
     const nodeCX = nodeX + nodeW / 2, nodeCY = nodeY + nodeH / 2;
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
     let left, top, tailPos;
     if (vertical) {
-      left = clamp(nodeCX - CARD_W / 2, 8, Math.max(8, vw - CARD_W - 8));
+      left = clamp(nodeCX - renderedW / 2, 8, Math.max(8, vw - renderedW - 8));
       top = clamp(nodeY + nodeH + 11, 8, Math.max(8, vh - BOTTOM_SAFE - cardH));
+      // tailPos는 transform-origin(스케일 전 카드 자신의 로컬 좌표계) 기준이라 CARD_W(스케일 전
+      // 폭) 범위 그대로 둔다 — renderedW가 아니다.
       tailPos = clamp(nodeCX - left, 20, CARD_W - 20);
     } else {
-      left = clamp(nodeX + nodeW + 11, 8, Math.max(8, vw - CARD_W - 8));
+      left = clamp(nodeX + nodeW + 11, 8, Math.max(8, vw - renderedW - 8));
       top = clamp(nodeCY - cardH / 2, 8, Math.max(8, vh - BOTTOM_SAFE - cardH));
       tailPos = clamp(nodeCY - top, 20, cardH - 20);
     }
@@ -14125,7 +14151,7 @@ function TierBadge({ totalXp, compact, onClick }) {
 // 금색 게이지 바로 진척도를 보여준다. 프로필 카드·검색 리더보드가 같은 컴포넌트를 재사용한다(size로 조절).
 // (v0.2.2 UI#7 후속) gauge=false면 게이지 바 없이 십각형 로고만 — 검색 리더보드처럼 요소 x좌표를
 // 고정해야 하는 곳에서 쓴다.
-function TierStatPill({ totalXp, size = 40, gaugeWidth = 92, gauge = true }) {
+function TierStatPill({ totalXp, size = 40, gaugeWidth = 92, gauge = true, onClick }) {
   const info = tierFromXp(totalXp);
   const { tier, xpInDivision, xpForNextDivision, division, maxed, gmStars } = info;
   const pct = Math.max(0, Math.min(100, Math.round((xpInDivision / xpForNextDivision) * 100)));
@@ -14134,7 +14160,11 @@ function TierStatPill({ totalXp, size = 40, gaugeWidth = 92, gauge = true }) {
   const isGM = tier.key === "grandmaster";
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }} title={fmtFull(xpInDivision) + "/" + fmtFull(xpForNextDivision) + " XP"}>
-      <TierLogoDisc tierKey={tier.key} division={division} size={size} discSize={size + 2} />
+      {/* (사용자 요청) 프로필 카드에서 십각형 티어 이미지를 누르면 그 프로필의 티어 여정 화면이 뜬다 —
+          onClick이 있을 때만 클릭 가능한 버튼으로 감싼다(다른 용도로 쓰이는 자리는 그대로 정적). */}
+      {onClick
+        ? <button onClick={onClick} className="press" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "inline-flex" }}><TierLogoDisc tierKey={tier.key} division={division} size={size} discSize={size + 2} /></button>
+        : <TierLogoDisc tierKey={tier.key} division={division} size={size} discSize={size + 2} />}
       {gauge && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
           <span style={{ display: "inline-block", width: gaugeWidth, maxWidth: "38vw", height: 8, borderRadius: 999, background: "rgba(0,0,0,.12)", border: "1px solid #DCCBA8", overflow: "hidden", flexShrink: 0 }}>
@@ -19431,10 +19461,16 @@ const CHANGELOG = [
       "개발자가 자기가 만들지 않은 퍼즐도 삭제할 수 있도록 고쳤고, 퍼즐 생성자 양도·회수 기능이 조용히 실패하던 문제를 고쳤어요.",
       "상단 버튼들(검색·친구·채팅 묶음·알림·프로필)의 y좌표가 미묘하게 어긋나 보이던 것을 정확히 정렬했어요.",
       "chess.com 대국 리뷰의 오프닝 이름이 사이트 다른 곳(가장 많이 둔 오프닝·칭호 등)과 다르게 표시되던 문제를 고쳤어요 — 이제 모두 같은 기준으로 통일돼요.",
-      "상단 헤더 색이 그 아래 배경과 톤이 비슷해 경계가 흐릿했던 것을, 더 밝은 톤과 금색 경계선으로 뚜렷하게 구분했어요.",
+      "상단 헤더에 하단 본문과 구분되는 금색 경계선을 추가했어요.",
       "퍼즐 탭의 클릭형 말풍선(레이팅·난이도 등)이 화면 가장자리에서 살짝 잘리던 경우가 있었는데, 이제 항상 화면 정중앙의 안전 영역에 떠서 모바일·데스크톱 어디서나 잘리지 않아요. 난이도 말풍선의 글씨는 항상 왼쪽 정렬이에요.",
       "퍼즐의 국면(오프닝/미들게임/엔드게임) 판정 기준을 조정했어요 — 미들게임으로 봐야 할 퍼즐이 오프닝으로 잘못 표시되던 문제를 줄였어요.",
       "퍼즐 정렬에 '인기순'이 추가됐어요 — 좋아요·리포스트·공유 수를 사람 단위로 결합해 점수를 매기고, 한 사람이 여러 활동을 함께 했거나(2개 이상, 3개 모두면 더 강하게) 같은 퍼즐을 반복해서 공유할수록 그 활동들의 가중치가 커져요.",
+      "학습 탭 수 블록의 채택률 게이지 바 폭을 살짝 줄이고, 그 여백만큼 회수(a/b)와 채택률(n%) 텍스트 사이 간격을 넓혔어요. 최상단 '현재 수' 블록에도 일반 수 블록과 완전히 같은 통계 애니메이션(세어 올라가는 회수)·소수점 둘째 자리 채택률을 적용했어요.",
+      "학습 탭 수 블록·현재 수 블록·집중 분석 모드·도감에 표시되는 수 키워드(NORMAL·TOP LEVEL 등)를 누르면 그 뜻을 보여주는 말풍선이 화면 정중앙 안전 영역에 떠요(모바일에서도 안 잘려요) — 예전엔 PC에서 마우스를 올려야만 보이는 브라우저 기본 툴팁이라 모바일에서는 볼 방법이 없었어요.",
+      "도감 탭 오프닝 모식도에서 수 블록을 클릭하면 뜨는 상세 카드 크기가 2배로 커졌어요.",
+      "설정 탭 개발진 블록에서 개발자 이름 옆 왕관 아이콘을 없앴고, 유저 검색 결과의 개발자·공동 개발자 표시가 이모티콘(👑/🔧) 대신 아이콘(왕관/렌치)으로 바뀌었어요. 검색 리더보드의 '나' 표시는 그랜드마스터 왕관 아이콘보다 오른쪽에 와요.",
+      "유저 검색에서 검색어로 찾은 결과도 기본 추천 목록과 완전히 같은 블록 UI(우측 티어 아이콘 포함)를 써요. '#MID' 검색이 이제 전체 9자를 다 입력해야만 되던 것에서, 입력 중인 접두어만으로도 계속 실시간으로 후보 목록을 보여줘요(문자열-MID 유사도 1순위, 동률이면 XP 순).",
+      "검색·프로필 카드의 십각형 티어 이미지가 더 크게 표시되고, 모든 십각형 티어 이미지의 뾰족한 꼭짓점이 둥글게 다듬어졌어요. 프로필 카드의 티어 이미지를 누르면 그 프로필의 티어·XP를 반영한 티어 여정 화면이 떠요(항상 내 티어가 아니라 보고 있는 그 프로필 기준).",
     ],
   },
   {
@@ -21110,7 +21146,8 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>개발진</div>
         <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 800, color: T.cocoa || "#5A3A22" }}><Crown size={15} style={{ color: T.brass }} /> {DEV_ACCOUNT}</span>
+          {/* (사용자 요청) 개발자 이름 왼쪽의 왕관 아이콘을 없앤다. */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 800, color: T.cocoa || "#5A3A22" }}>{DEV_ACCOUNT}</span>
           <span style={{ fontSize: 11, color: T.inkSoft }}>개발자</span>
         </div>
         {(CONTENT.codev || []).length === 0 ? <div style={{ fontSize: 12, color: T.inkSoft }}>등록된 공동 개발자가 없습니다.</div>
@@ -21466,7 +21503,25 @@ async function publishProfile(uid, username, pub) { if (!SB_ON || !uid) return; 
 // (v0.4.4 기능, 사용자 요청) MID(영문 대문자 5자리+숫자 4자리 회원 번호) 형식 — 검색창·URL 양쪽에서
 // "#ABCDE1234"·"ABCDE1234" 모두 인식하도록 앞의 "#"은 선택으로 둔다.
 const MID_RE = /^#?([A-Za-z]{5}[0-9]{4})$/;
-async function userSearch(q) { if (!SB_ON || !q) return []; const midMatch = MID_RE.exec(q.trim()); if (midMatch) { const row = await userProfileByMid(midMatch[1]); return row ? [row] : []; } try { const rows = await sbSelect("profiles?username=ilike." + encodeURIComponent(q.toLowerCase() + "*") + "&select=id,username,pub&limit=20"); return rows || []; } catch { return []; } }
+// (사용자 요청) "#"로 시작하면(아직 9자 전체를 다 입력하지 않았어도) 입력 중인 문자열에 따라 계속
+// 실시간으로 갱신되는 후보 목록을 보여준다 — 서버 RPC(profiles_search_by_mid_prefix)가 그 접두어로
+// 시작하는 MID들을 유사도(similarity, pg_trgm) 내림차순으로, 동률이면 XP 내림차순으로 정렬해 돌려준다.
+async function userSearchByMidPrefix(partial, limit) {
+  if (!SB_ON || !partial) return [];
+  try { const rows = await sbRpc("profiles_search_by_mid_prefix", { p_query: partial, p_limit: limit || 20 }); return Array.isArray(rows) ? rows : []; }
+  catch { return []; }
+}
+async function userSearch(q) {
+  if (!SB_ON || !q) return [];
+  const trimmed = q.trim();
+  if (trimmed.startsWith("#")) {
+    const partial = trimmed.slice(1);
+    return partial ? await userSearchByMidPrefix(partial) : [];
+  }
+  const midMatch = MID_RE.exec(trimmed);
+  if (midMatch) { const row = await userProfileByMid(midMatch[1]); return row ? [row] : []; }
+  try { const rows = await sbSelect("profiles?username=ilike." + encodeURIComponent(q.toLowerCase() + "*") + "&select=id,username,pub&limit=20"); return rows || []; } catch { return []; }
+}
 async function userProfile(username) { if (!SB_ON || !username) return null; try { const rows = await sbSelect("profiles?username=eq." + encodeURIComponent(username.toLowerCase()) + "&select=id,username,pub,mid&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }
 // (v0.4.4 기능, 사용자 요청) MID로 프로필 조회 — #MID 검색과 /user/<MID> 프로필 페이지가 함께 쓴다.
 async function userProfileByMid(mid) { if (!SB_ON || !mid) return null; try { const rows = await sbSelect("profiles?mid=eq." + encodeURIComponent(mid.toUpperCase()) + "&select=id,username,pub,mid&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }
@@ -23917,10 +23972,16 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
+  // (사용자 요청) 프로필 카드의 십각형 티어 이미지를 누르면 티어 여정 화면이 뜬다 — 이 카드가 지금
+  // "누구의" 프로필을 보여주고 있든(내 프로필·다른 유저 프로필 모두 이 컴포넌트를 공유) 항상 그
+  // pub.xp(이 카드가 표시하는 프로필의 XP)를 기준으로 열려야 하고, 내 XP(전역 상태)로 열려서는 안 된다.
+  const [tierMapOpen, setTierMapOpen] = useState(false);
   return (
     <div style={{ marginBottom: 12 }}>
+      {tierMapOpen && <TierJourneyMap totalXp={pub.xp || 0} onClose={() => setTierMapOpen(false)} />}
       <div className="flex items-center gap-2" style={{ marginBottom: 8, flexWrap: "wrap" }}>
-        <TierStatPill totalXp={pub.xp || 0} />
+        {/* (사용자 요청) 십각형 티어 이미지를 좀 더 크게(40→52) 표시한다. */}
+        <TierStatPill totalXp={pub.xp || 0} size={52} onClick={() => setTierMapOpen(true)} />
         {/* (v0.4.1 기능, item 3) 사용자 요청 — 체감 레이팅이 아니라 실제로 오르내리는 공개 퍼즐
             레이팅을 티어 배지 옆에 함께 노출한다. */}
         {/* (사용자 요청) 배지를 누르면 "퍼즐 레이팅 : n" 말풍선이 뜨도록 — 모바일에서도 화면 밖으로
@@ -23991,6 +24052,14 @@ function ProfileStatsPanel({ pub, statsView, onOpenOpening, onOpenGame, onOpenGa
 // 작던 문제. 표시 높이를 1위>2위>3위로 뚜렷이 차등해(왕관 높이만큼 1위를 더 크게), 3위도 충분히
 // 보이게 키운다.
 const RANK_MEDAL_H = { normal: { 1: 54, 2: 44, 3: 40 }, compact: { 1: 48, 2: 39, 3: 35 } };
+// (사용자 요청) 검색 결과의 개발자/공동 개발자 표시를 이모티콘(👑/🔧) 대신 아이콘 컴포넌트로 —
+// 개발자는 왕관, 공동 개발자는 도구(렌치) 아이콘으로 구분한다.
+function SearchRoleIcon({ username }) {
+  if (!username) return null;
+  if (username === DEV_ACCOUNT) return <Crown size={12} style={{ color: T.brass, flexShrink: 0 }} />;
+  if (Array.isArray(CONTENT.codev) && CONTENT.codev.includes(username)) return <Wrench size={11} style={{ color: T.brass, flexShrink: 0 }} />;
+  return null;
+}
 function userSearchRow(r, onClick, right, opts) {
   const p = r.pub || {};
   const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
@@ -24010,11 +24079,15 @@ function userSearchRow(r, onClick, right, opts) {
       )}
       {p.photo ? <img src={p.photo} alt="" style={{ width: avatar, height: avatar, borderRadius: 9, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(isGM, 2) || {}) }} /> : <span style={{ width: avatar, height: avatar, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>나</span>}{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
+        {/* (사용자 요청) "나" 표시는 그랜드마스터 왕관 아이콘보다 오른쪽에 온다. */}
+        <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>나</span>}</div>
         {/* (사용자 요청) 소개 — 닉네임 바로 밑, @핸들 위. 촘촘한 리더보드(compact)에서는 줄 수를
             늘리지 않도록 생략한다. */}
         {!compact && p.bio && <div style={{ fontSize: 11, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
-        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}{roleIcon(r.username)}</div>
+        <div className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden" }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}</span>
+          <SearchRoleIcon username={r.username} />
+        </div>
       </div>
       {right}
     </button>
@@ -24076,7 +24149,11 @@ function UserSearchModal({ onClose, me, myUid, onOpenUserProfile }) {
           {q.trim() ? (
             busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
               : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
-                : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username))}</FadeIn>)}</AnimatePresence></div>
+                // (사용자 요청) 검색어로 찾은 결과도 기본(추천) 목록과 완전히 같은 블록 UI를 쓴다 —
+              // 리더보드 행과 똑같이 우측에 티어 십각형 아이콘을, isMe 옵션으로 "나" 표시까지 그대로 준다.
+              : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
+                  <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={40} gauge={false} /></span>,
+                  { isMe: r.id === myUid })}</FadeIn>)}</AnimatePresence></div>
           ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
             : (sugFriends.length === 0 && sugTop.length === 0) ? null
               : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -24093,7 +24170,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenUserProfile }) {
                     <div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                         {sugTop.map((r, i) => <FadeIn key={r.id} index={i} style={{ width: "100%" }}>{userSearchRow(r, () => open(r.username),
-                          <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={32} gauge={false} /></span>,
+                          <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={40} gauge={false} /></span>,
                           { rank: i + 1, isMe: r.id === myUid, compact: true })}</FadeIn>)}
                       </div>
                     </div>
@@ -24518,7 +24595,7 @@ function TierJourneyPath({ totalXp }) {
                   filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" + (state === "current" ? " drop-shadow(0 0 8px " + ringColor + ")" : ""),
                 }}>
                   <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-                    <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" />
+                    <path d={TIER_DECAGON_PATH} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" strokeLinejoin="round" />
                   </svg>
                   {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
                       이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 도형 정중앙에 오도록 배치한다. */}
@@ -26747,11 +26824,9 @@ export default function App() {
       {/* (17차) 헤더가 maxWidth 제약 없이 뷰포트 전체 폭을 썼던 탓에, 아래 본문(maxWidth:1080)과 달리
           넓은 데스크탑 화면에서는 우측 버튼들이 본문 오른쪽 경계를 훌쩍 넘어 화면 맨 끝에 몰려 보였다.
           본문과 동일한 maxWidth 컨테이너로 헤더 내용을 감싸 정렬을 맞춘다. */}
-      {/* (사용자 요청) 예전엔 헤더 배경(#3A2516→#2A1810)이 그 아래 배경(GeoBackdrop, #34230F→#150C06)과
-          톤이 거의 같아 헤더와 본문 영역의 경계가 흐릿하게 이어져 보였다 — 헤더 위쪽을 눈에 띄게 더
-          밝은 톤(#5A3A20)으로 올리고, 경계선도 검정 대신 금색(T.brass)으로 바꿔 상단 헤더가 하단
-          본문 영역과 시각적으로 뚜렷하게 구분되도록 한다. */}
-      <header style={{ borderBottom: "1px solid " + T.brass, background: "linear-gradient(180deg,#5A3A20,#2A1810)" }}>
+      {/* (사용자 요청, 롤백) 헤더 배경색을 밝게 올렸던 시도는 되돌리고, 하단 본문과의 경계 구분은
+          금색(T.brass) 경계선만으로 남긴다 — 배경 자체는 원래 톤(#3A2516→#2A1810) 그대로. */}
+      <header style={{ borderBottom: "1px solid " + T.brass, background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
       {/* (버그 수정) 계정 정보 줄과 아이콘 줄을 따로 두고 줄바꿈에 맡겼더니 헤더가 항상 2줄로 보였다 —
           티어 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
           space-between으로 중앙 공백을 그룹 사이 여백으로 흡수한다. 모바일에서는 아이디 텍스트를
