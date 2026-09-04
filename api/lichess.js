@@ -34,6 +34,13 @@ export default async function handler(req, res) {
     const body = await upstream.text();
     res.status(upstream.status);
     res.setHeader("content-type", upstream.headers.get("content-type") || "application/json");
+    // (사용자 요청, 성능 개선) Lichess Opening Explorer 자체가 포지션 통계를 즉석에서 집계하느라
+    // 5~10초씩 걸리는 경우가 많아, 채택률 카운팅 애니메이션이 그만큼 늦게 시작되던 근본 원인이었다.
+    // 같은 포지션(수순)은 어느 사용자가 조회하든 응답이 사실상 동일하므로, 이 프록시 응답에
+    // Vercel Edge Network가 캐싱할 수 있도록 헤더를 붙인다 — 최초 한 번만 느리고, 그 뒤로는 같은
+    // 포지션을 누가 조회하든(수 블록 목록이 흔히 찾는 초반 오프닝일수록 효과가 큼) 엣지에서 즉시
+    // 응답해 애니메이션이 거의 지연 없이 시작된다.
+    if (upstream.ok) res.setHeader("Cache-Control", "public, max-age=0, s-maxage=86400, stale-while-revalidate=604800");
     res.send(body);
   } catch (e) {
     res.status(502).json({ error: String(e) });

@@ -613,6 +613,72 @@ end; $$;
 grant execute on function public.puzzle_share_reward(bigint, bigint) to authenticated;
 
 -- ============================================================================
+-- 7-2) puzzle_popularity_all — 퍼즐 탭 "인기순" 정렬용 인기 점수 (사용자 요청)
+-- ============================================================================
+-- 좋아요·리포스트·공유 각각의 전역 합계(puzzles.likes/reposts/shares)를 그대로 더하는 대신, "사람"
+-- 단위로 결합한다 — 한 사람이 한 퍼즐에 좋아요·리포스트·공유 중 2가지를 함께 했으면 그 활동들에
+-- 더 큰 가중치(combo_mult)를, 3가지 모두 했으면 2가지보다 더 강한 가중치를 준다. 또한 같은 사람이
+-- 그 퍼즐을 여러 번 공유할수록(share_cnt) 그 사람의 좋아요·리포스트·공유 기여분 전부가 함께
+-- 커진다(repeat_mult) — 무한정 커지지 않도록 로그로 완만하게 증가시킨다.
+-- puzzle_likes/puzzle_reposts는 이미 누구나 읽을 수 있지만(위 7번 섹션 "likes read"/"reposts read"),
+-- 공유는 별도 집계 테이블이 없어 친구 간 chat_messages(puzzle_no 설정)를 사람 단위로 묶어야 한다 —
+-- chat_messages의 select 정책("chat select own")은 본인이 보낸/받은 것만 허용해 클라이언트가 남의
+-- 공유 내역을 직접 집계할 수 없으므로, SECURITY DEFINER로 RLS를 우회해 "사람당 이 퍼즐 공유 횟수"라는
+-- 집계값만(메시지 본문 등 내용은 전혀 노출하지 않고) 계산해 돌려준다. puzzleSolveCounts/
+-- puzzleLikeCounts 등과 같은 "전체를 한 번에" 패턴 — 개별 퍼즐마다 왕복하지 않고 한 번의 호출로
+-- 모든 퍼즐의 점수를 받아 온다.
+drop function if exists public.puzzle_popularity_all() cascade;
+create or replace function public.puzzle_popularity_all()
+returns table(no bigint, score numeric)
+language sql stable security definer set search_path = public as $$
+  with share_agg as (
+    select puzzle_no as no, from_uid as uid, count(*)::int as cnt
+    from public.chat_messages
+    where puzzle_no is not null and from_uid is not null
+    group by puzzle_no, from_uid
+  ),
+  users as (
+    select no, uid from public.puzzle_likes
+    union
+    select no, uid from public.puzzle_reposts
+    union
+    select no, uid from share_agg
+  ),
+  per_user as (
+    select
+      u.no, u.uid,
+      exists(select 1 from public.puzzle_likes pl where pl.no = u.no and pl.uid = u.uid) as liked,
+      exists(select 1 from public.puzzle_reposts pr where pr.no = u.no and pr.uid = u.uid) as reposted,
+      coalesce(sa.cnt, 0) as share_cnt
+    from users u
+    left join share_agg sa on sa.no = u.no and sa.uid = u.uid
+  ),
+  weighted as (
+    select
+      no,
+      liked, reposted, share_cnt,
+      -- 좋아요/리포스트/공유(1회 이상) 중 이 사람이 몇 가지를 함께 했는지 — 1개=1.0배(가중치 없음),
+      -- 2개=1.35배, 3개 모두=1.8배(2개보다 더 강하게).
+      (case (
+        (case when liked then 1 else 0 end) + (case when reposted then 1 else 0 end) + (case when share_cnt > 0 then 1 else 0 end)
+      ) when 3 then 1.8 when 2 then 1.35 else 1.0 end) as combo_mult,
+      -- 같은 사람이 이 퍼즐을 반복 공유할수록(share_cnt) 이 사람의 좋아요·리포스트·공유 기여분
+      -- 전부가 함께 커진다 — 로그로 완만하게(1회=1.0배, 늘어날수록 서서히 증가).
+      (1 + ln(1 + share_cnt) * 0.35) as repeat_mult
+    from per_user
+  )
+  select
+    no,
+    sum(
+      ((case when liked then 3.0 else 0 end) + (case when reposted then 5.0 else 0 end) + least(share_cnt, 20) * 2.0)
+      * combo_mult * repeat_mult
+    ) as score
+  from weighted
+  group by no;
+$$;
+grant execute on function public.puzzle_popularity_all() to anon, authenticated;
+
+-- ============================================================================
 -- 8) Realtime — 알림/채팅/친구요청 배지가 폴링 대신 실시간으로 갱신되려면(src/App.jsx의
 --    useRealtimeTable, v0.0.5) 아래 3개 테이블이 supabase_realtime publication에 포함돼 있어야
 --    한다. 신규 프로젝트는 기본적으로 포함돼 있지 않으므로 반드시 실행할 것 — 빠지면 클라이언트는
@@ -687,6 +753,19 @@ returns table(id uuid, username text, pub jsonb) language sql stable as $$
   limit p_limit;
 $$;
 grant execute on function public.leaderboard_top(int) to anon, authenticated;
+
+-- (사용자 요청) /user 페이지에 "이 유저의 티어 리더보드 순위"를 작게 표시하기 위한 RPC — 위
+-- leaderboard_top(상위 N명만)과 달리 특정 한 명의 정확한 순위를 구해야 한다. leaderboard_top과
+-- 같은 정렬 기준(XP 내림차순, 동률이면 아이디순)으로 매긴 순위를 window 함수로 계산한다.
+drop function if exists public.profile_rank(uuid) cascade;
+create or replace function public.profile_rank(p_id uuid)
+returns bigint language sql stable as $$
+  select rank from (
+    select id, row_number() over (order by coalesce((pub->>'xp')::bigint, 0) desc, username asc) as rank
+    from public.profiles
+  ) ranked where id = p_id;
+$$;
+grant execute on function public.profile_rank(uuid) to anon, authenticated;
 
 -- ============================================================================
 -- 12) master_games_dev — 개발자가 수동으로 추가하는 마스터 대국 (v0.2.3)
@@ -901,6 +980,32 @@ as $$
   limit least(coalesce(p_limit, 8), 20);
 $$;
 grant execute on function public.search_puzzles_prefix(text, int) to anon, authenticated;
+
+-- ============================================================================
+-- 16-1) profiles_search_by_mid_prefix — 유저 검색 "#MID" 실시간 후보 목록 (사용자 요청)
+-- ============================================================================
+-- 예전엔 "#ABCDE1234"를 9자 전부 입력해 정확히 일치할 때만(MID_RE 정규식 통과) 조회됐다 — 입력
+-- 도중에는 아무 후보도 보여주지 못했다. 이제 접두어만 입력해도(예: "#ABC") 그 접두어로 시작하는
+-- MID를 가진 프로필을 계속 실시간으로 보여준다. 정렬 기준은 사용자 요청대로 (1) 입력 문자열과
+-- MID의 유사도(pg_trgm의 similarity — 트라이그램 기반 문자열 유사도) 내림차순, (2) 동률이면 XP
+-- 내림차순. profiles는 이미 누구나 읽을 수 있어(위 1번 섹션 "profiles select all") SECURITY
+-- DEFINER가 필요 없다(search_puzzles_prefix·leaderboard_top과 동일한 판단).
+create extension if not exists pg_trgm;
+drop function if exists public.profiles_search_by_mid_prefix(text, int) cascade;
+create or replace function public.profiles_search_by_mid_prefix(p_query text, p_limit int default 20)
+returns table(id uuid, username text, pub jsonb, mid text)
+language sql stable
+as $$
+  select id, username, pub, mid
+  from public.profiles
+  where p_query is not null and p_query <> '' and mid ilike upper(p_query) || '%'
+  order by similarity(mid, upper(p_query)) desc, coalesce((pub->>'xp')::bigint, 0) desc
+  limit least(coalesce(p_limit, 20), 30);
+$$;
+grant execute on function public.profiles_search_by_mid_prefix(text, int) to anon, authenticated;
+-- 접두어(prefix) LIKE 검색을 인덱스로 태우기 위한 표현식 인덱스 — search_puzzles_prefix와 같은 이유
+-- (계정이 계속 쌓이는 테이블에서 매번 순차 스캔이 되는 것을 방지).
+create index if not exists idx_profiles_mid_text_pattern on public.profiles (mid text_pattern_ops);
 -- (v0.3.1 성능) 위 no::text like 'prefix%' 조건에 맞는 인덱스가 없어, puzzles 테이블이 계속
 -- 쌓이는 구조(대국을 둘 때마다·집중 학습에서 실수를 만날 때마다 새 퍼즐이 자동 생성·공유됨)라
 -- 검색창에 숫자를 입력할 때마다 매번 테이블 전체를 훑는 순차 스캔이 됐다 — "퍼즐 검색으로 퍼즐을
@@ -1103,11 +1208,19 @@ grant execute on function public.puzzle_creator_save(bigint, jsonb, jsonb, int, 
 -- src/App.jsx와 동일한 값) 명의로 회수하고, 값이 있으면 그 아이디의 유저에게 생성 권한을 양도한다
 -- (둘 다 원래 생성자의 그 퍼즐 편집권을 박탈하는 효과 — 대상이 바뀌므로). 새 생성자의 1시간 편집
 -- 주기는 재지정 시점에 초기화된다(creator_edited_at을 null로).
+-- (버그 수정, 사용자 제보) "양도·회수 기능이 작동하지 않는다" — 이 함수가 존재하지 않는 no에
+-- update를 걸어도 영향받은 행이 0개일 뿐 에러 없이 조용히 끝났다(puzzle_delete는 미리
+-- "select ... for update"로 존재를 확인하는데, 이 함수만 그 확인이 빠져 있었다). 클라이언트는
+-- 예외가 안 났으니 "성공"으로 표시했지만 실제로는 아무것도 바뀌지 않았다 — 아직 전역 puzzles
+-- 테이블에 없는(공유되지 않은) 퍼즐에서 이 기능을 쓰면 100% 재현됐다. select ... for update로
+-- 먼저 존재를 확인해, 없으면 puzzle_delete와 동일하게 명확히 예외를 던진다.
 create or replace function public.puzzle_reassign_creator(p_no bigint, p_target_username text default null)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_uid uuid; v_uname text;
+declare v_uid uuid; v_uname text; v_exists boolean;
 begin
   if not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
+  select true into v_exists from public.puzzles where no = p_no for update;
+  if not v_exists then raise exception 'puzzle_not_found'; end if;
   if p_target_username is null or btrim(p_target_username) = '' then
     select id, username into v_uid, v_uname from public.profiles where username = 'openchesskr';
   else
