@@ -3687,22 +3687,23 @@ function MoveLongPressPreview({ priorSans, san, kind, children, flip, boardSize 
 
 // (v0.4.5 기능, 사용자 요청) 수 블록의 리체스 대국 수(a/b)가 0부터 실제 값까지 빠르게 카운팅되며 올라가는
 // 연출 — b(포지션 전체 대국 수)가 먼저 끝나고 a(그 수의 대국 수)가 끝까지 이어서 세도록 duration을 다르게 둔다.
-function useCountUp(target, durationMs) {
+function useCountUp(target, durationMs, decimals = 0) {
   const [display, setDisplay] = useState(target ?? 0);
   const rafRef = useRef(null);
   useEffect(() => {
     if (target == null) return;
     cancelAnimationFrame(rafRef.current);
     const start = performance.now();
+    const p = Math.pow(10, decimals);
     const tick = (now) => {
       const t = Math.min(1, (now - start) / durationMs);
       const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay(Math.round(target * eased));
+      setDisplay(Math.round(target * eased * p) / p);
       if (t < 1) rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [target, durationMs]);
+  }, [target, durationMs, decimals]);
   return target == null ? null : display;
 }
 function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadgeClick }) {
@@ -3712,6 +3713,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
   const evTxt = m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null);
   const gamesDisp = useCountUp(m.games, 900);
   const posGamesDisp = useCountUp(posGames, 500);
+  const adoptDisp = useCountUp(m.adopt, 900, 2);
   return (
     <div style={{ borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지.
@@ -3739,9 +3741,11 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
             <div style={{ flex: "0 1 55%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
               <div style={{ width: Math.min(100, m.adopt || 0) + "%", height: "100%", background: color, opacity: .85 }} />
             </div>
-            <span style={{ display: "flex", alignItems: "baseline", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden" }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : "—"}</span>
-              <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0 }}>{m.adopt != null ? m.adopt.toFixed(2) + "%" : "—"}</span>
+            {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬 — 게임 수 텍스트가 길어져도
+                justify-content: space-between으로 %는 항상 오른쪽 끝에 고정된다. */}
+            <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : "—"}</span>
+              <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{m.adopt != null ? adoptDisp.toFixed(2) + "%" : "—"}</span>
             </span>
           </div>
           {/* (UI) 도감 탭과 동일한 형식(백/무/흑 바 + %)으로 이 수의 승률 표기 */}
@@ -10746,6 +10750,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 수 블록"에도 완전히 동일하게 적용한다.
   const curGamesCountDisp = useCountUp(curStat ? curStat.games : null, 900);
   const curPosTotalDisp = useCountUp(curStat ? curStat.posTotal : null, 500);
+  const curAdoptDisp = useCountUp(curStat ? curStat.adopt : null, 900, 2);
 
   const fa = useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
 
@@ -10985,9 +10990,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                           <div style={{ flex: "0 1 55%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
                             <div style={{ width: Math.min(100, curStat.adopt || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
                           </div>
-                          <span style={{ display: "flex", alignItems: "baseline", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden" }}>
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : "—"}</span>
-                            <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0 }}>{curStat.adopt != null ? curStat.adopt.toFixed(2) + "%" : "—"}</span>
+                          {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
+                          <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : "—"}</span>
+                            <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : "—"}</span>
                           </span>
                         </div>
                         {curStat.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
@@ -17248,8 +17254,13 @@ function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, ha
       {/* (v0.4.0 UI) 사용자 요청 — 이 탭의 하단 탭바 이름이 "퀘스트"에서 "학습"으로 바뀌어, 탭 안
           제목도 같은 이름으로 맞춘다(퀘스트 내용·기능 자체는 그대로). */}
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>학습</h2></div>
-      <FadeIn index={0}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /></FadeIn>
-      <FadeIn index={1}><LessonMap mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
+      {/* (버그 수정) FadeIn의 기본 layout(FLIP 애니메이션)을 켠 채로 두면, dailyQuest가 비동기로
+          늦게 채워져 이 카드가 마운트 직후 거의 0높이에서 실제 높이로 커질 때 framer-motion이 그
+          변화를 transform으로 보간해 화면 왼쪽 위(탭에서 가장 먼저 보이는 자리)가 순간적으로
+          확대되는 것처럼 보였다 — 이 두 블록은 재정렬·리사이즈를 애니메이션으로 보여줄 필요가
+          없는 단순 비동기 데이터 채움이므로 layout을 끈다. */}
+      <FadeIn index={0} layout={false}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /></FadeIn>
+      <FadeIn index={1} layout={false}><LessonMap mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
     </div>
   );
 }
@@ -19465,7 +19476,7 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.4.6", date: "2026.9.3", dev: ["openchesskr"], items: [
+    version: "0.4.6", date: "2026.9.4", dev: ["openchesskr", "G13sus4"], items: [
       "보드 편집기(연필 아이콘)에서 FEN을 직접 입력하거나 붙여넣거나 이미지로 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요. 표준 시작 위치부터 자연스럽게 둔 수순에서는 원래도 정상이었어요.",
       "이제 /play 대국은 항상 똑같은 표준 시작 위치에서만 시작돼요 — 보드를 직접 편집했거나 FEN/PGN을 불러와 다른 수순·포지션이 돼 있으면 PLAY 버튼이 비활성화돼요.",
       "친구 초대 링크 박스가 개선됐어요 — 링크 전체가 항상 보이고, 복사 버튼 아래 공유 버튼이 추가됐고(브라우저 공유 시트가 떠요), 친구 모달 '추가' 탭에서도 초대 링크를 바로 보낼 수 있어요. 로그아웃 상태로 초대 링크를 열면 설정 탭으로 이동해 로그인이 필요하다고 알려줘요.",
@@ -19501,6 +19512,15 @@ const CHANGELOG = [
       "/user 페이지와 프로필 카드에서, 소개(bio)나 실명이 없어도 이름의 세로 위치가 흔들리지 않고 항상 고정돼요.",
       "채팅에서 마우스를 그냥 스쳐 지나가도(클릭 없이) '@아이디' 멘션 프로필로 이동해 버리던 버그를 고쳤어요.",
       "채팅 리뷰 공유 카드의 검색 버튼을 누르면 학습 탭으로 이동해 그 기보가 보드에 바로 입력되고, 옆의 초록색 버튼(프로필 카드와 같은 모양)을 누르면 실제 리뷰 페이지로 이동해요.",
+      "상단 헤더 세 버튼의 테두리를 그리는 방식을 바꿔(border 대신 inset box-shadow), 프로필 버튼이 나머지 둘보다 살짝 위로 걸쳐 보이던 정렬 문제를 완전히 고쳤어요.",
+      "채팅 리뷰 공유 카드의 금색 버튼을 누르면 채팅창이 닫히고 학습(분석) 탭으로 이동해요.",
+      "/user 페이지에서 티어 이미지를 클릭했을 때 티어 여정 화면이 뒤(아래)에 깔려 보이던 버그를 고쳤어요.",
+      "분석 탭 주소가 /learn으로, 학습 탭 주소가 /quest로 서로 뒤바뀌어 있던 것을 바로잡아, 분석은 /analysis, 학습은 /learn으로 표시돼요.",
+      "/user 페이지 전용 OpenChess/chess.com 전환 토글 크기를 조금 더 키웠어요(이전 두 크기의 중간).",
+      "친구 추가 탭에서 검색 박스가 친구 초대 링크 박스보다 위에 오도록 순서를 바꿨어요.",
+      "학습 탭 수 블록·현재 수 블록의 채택률(%) 텍스트가 항상 블록 오른쪽 끝에 정렬되고, 회수(a/b)처럼 세어 올라가는 애니메이션이 적용돼요. 같은 포지션의 리체스 통계를 서버(프록시)에서도 캐싱해, 채택률 애니메이션이 시작되기까지 걸리던 5~10초 지연을 크게 줄였어요.",
+      "학습 탭에 처음 들어갈 때 화면 왼쪽 위가 순간적으로 확대되는 것처럼 보이던 버그와, 그때 상단 검색·친구·채팅 버튼의 위아래 윤곽선이 흐릿해 보이던 버그를 함께 고쳤어요.",
+      "설정 탭 개발진 블록에서 개발자 아이디를 누르면 그 아이디의 프로필로 이동해요.",
     ],
   },
   {
@@ -19776,7 +19796,7 @@ const CHANGELOG = [
     ]
   },
   {
-    version: "0.3.3", date: "2026.8.12", dev: ["openchesskr", "g13sus4"], items: [
+    version: "0.3.3", date: "2026.8.12", dev: ["openchesskr", "G13sus4"], items: [
       "모바일에서 도감 탭 오프닝 트리를 열면 심하게 버벅이던 문제를 고쳤어요 — 화면에 실제로 보이는 부분만 그리도록 바꿔 훨씬 가벼워졌어요.",
       "추천 퍼즐을 이제 데스크톱에서도 모바일처럼 한 줄 가로 스크롤로 볼 수 있어요.",
       "체스보드에서 기물을 드래그로 옮길 때 더 빠르고 조금 부정확하게 옮겨도 잘 인식되도록 했어요(단순히 누르기만 하는 동작과는 여전히 구분돼요).",
@@ -19852,7 +19872,7 @@ const CHANGELOG = [
     ]
   },
   {
-    version: "0.3.1", date: "2026.8.10", dev: ["openchesskr", "g13sus4"], items: [
+    version: "0.3.1", date: "2026.8.10", dev: ["openchesskr", "G13sus4"], items: [
       "집중학습의 \"마스터 대국\" 목록이 어떤 포지션이든 딱 5판만 뜨던 문제를 고쳤어요 — 이제 실제로 매칭되는 대국 수만큼(오프닝 초반은 최대 500판, 깊이 들어갈수록 그보다 적게) 보여드리고, 처음 20개를 보여준 뒤 페이지를 넘기면 나머지를 계속 볼 수 있어요.",
       "chess.com 통계에서 이제 리뷰(분석)해 본 대국만 따로 모아 볼 수 있는 체크박스가 생겼어요 — 켜면 최근 대국 목록은 물론 전적·가장 많이 둔 오프닝·오프닝별 승률까지 전부 그 대국들만으로 다시 보여드려요.",
       "마스터 통계에서 정렬·페이지 버튼이 가끔 눌러도 반응 없던 문제를 고쳤어요. 이름도 \"마스터 통계\"로 바꾸고, 선수 이름으로 검색하면 자동완성도 떠요(같은 선수의 다른 표기는 하나로 묶어서 보여드려요).",
@@ -19905,7 +19925,7 @@ const CHANGELOG = [
     ]
   },
   {
-    version: "0.2.8", date: "2026.8.2", dev: ["openchesskr", "g13sus4"], items: [
+    version: "0.2.8", date: "2026.8.2", dev: ["openchesskr", "G13sus4"], items: [
       "퍼즐 풀이 화면의 평가치 막대가 중간에 0.00으로 멈춰버리던 문제를 고쳤어요 — 이제 실시간 검색 값이 끝까지 살아 있어요.",
       "퍼즐 풀이 화면의 코치 말풍선도 게임 리뷰와 똑같이, 방금 둔 수가 실제로 뭘 위협·방어·예방·전개했는지 구체적으로 짚어줘요.",
       "일일 퍼즐 캐러셀의 카드 모양이 스크롤 중에 갑자기 바뀌던 문제를 고쳤어요 — 이제 모든 날짜가 같은 모양의 카드로, 선택된 날짜만 커지고 진해져요.",
@@ -19963,7 +19983,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "0.2.7", date: "2026.7.29", dev: ["openchesskr", "g13sus4"], items: [
+    version: "0.2.7", date: "2026.7.29", dev: ["openchesskr", "G13sus4"], items: [
       "일일 퍼즐 화면을 좌우로 스크롤하는 캐러셀로 완전히 새로 만들었어요 — 가운데로 스크롤해 고른 날짜의 퍼즐은 크게 보이고, 다른 날짜들은 작고 흐리게 물러나요. 컴퓨터에서는 마우스로 눌러 끌어도 넘길 수 있고, 선택되지 않은 카드도 예전보다 덜 어둡게 잘 보이도록 밝기를 조정했어요. 선택된 퍼즐 밑에는 그날 몇 명이 풀었는지도 바로 보여줘요.",
       "일일 퍼즐 이름도 이제 다른 퍼즐들과 똑같은 방식(예: 'Italian Game, 4.Ng5')으로 보여줘요 — 예전처럼 이름 뒤에 '— 오늘의 퍼즐'이 따로 붙지 않아요.",
       "엔진이 아직 준비되지 않았을 때 잠깐 대신 보여주던, 실제로 나온 적 없는 일일 퍼즐(폴즈메이트 등 미리 정해둔 짧은 퍼즐 4개)을 완전히 없앴어요 — 이제는 진짜 일일 퍼즐이 준비될 때까지 기다렸다가 보여줘요.",
@@ -20937,7 +20957,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
   );
 }
 function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn,
-  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick }) {
+  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
   const [codevBusy, setCodevBusy] = useState(false);
@@ -21176,14 +21196,18 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>개발진</div>
         <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-          {/* (사용자 요청) 개발자 이름 왼쪽의 왕관 아이콘을 없앤다. */}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 800, color: T.cocoa || "#5A3A22" }}>{DEV_ACCOUNT}</span>
+          {/* (사용자 요청) 개발자 이름 왼쪽의 왕관 아이콘을 없앤다. (사용자 요청) 이름을 누르면 그
+              아이디의 프로필로 이동한다. */}
+          <button onClick={() => onOpenUserProfile && onOpenUserProfile(DEV_ACCOUNT)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 800, color: T.cocoa || "#5A3A22", background: "none", border: "none", padding: 0, cursor: onOpenUserProfile ? "pointer" : "default" }}>{DEV_ACCOUNT}</button>
           <span style={{ fontSize: 11, color: T.inkSoft }}>개발자</span>
         </div>
         {(CONTENT.codev || []).length === 0 ? <div style={{ fontSize: 12, color: T.inkSoft }}>등록된 공동 개발자가 없습니다.</div>
           : (CONTENT.codev || []).map((id) => (
             <div key={id} className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{id} <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 500 }}>공동 개발자</span></span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
+                <button onClick={() => onOpenUserProfile && onOpenUserProfile(id)} className="press" style={{ background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: onOpenUserProfile ? "pointer" : "default" }}>{id}</button>{" "}
+                <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 500 }}>공동 개발자</span>
+              </span>
               {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>해제</button>}
             </div>
           ))}
@@ -21385,8 +21409,12 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
 // 메인 퀘스트를 강화하기 위한 개편의 첫 단계).
 const TABS = [{ key: "learn", label: "분석", Icon: null }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
-const TAB_PATH = { learn: "/learn", dex: "/book", puzzle: "/puzzle", quest: "/quest", store: "/store", set: "/setting" };
-const PATH_TAB = { "/learn": "learn", "/book": "dex", "/puzzle": "puzzle", "/quest": "quest", "/store": "store", "/setting": "set" };
+// (사용자 요청) 탭 내부 키("learn"=분석, "quest"=학습)와 실제로 화면에 뜨는 URL 경로가 서로
+// 뒤바뀌어 있었다 — 분석 탭이 /learn으로, 학습 탭이 /quest로 보였다. 내부 키 이름은 그대로 두고
+// (다른 코드 전반에서 이미 광범위하게 참조하므로), 경로만 각 탭의 실제 한국어 라벨과 일치하도록
+// 바로잡는다: 분석("learn" 키) → /analysis, 학습("quest" 키) → /learn.
+const TAB_PATH = { learn: "/analysis", dex: "/book", puzzle: "/puzzle", quest: "/learn", store: "/store", set: "/setting" };
+const PATH_TAB = { "/analysis": "learn", "/book": "dex", "/puzzle": "puzzle", "/learn": "quest", "/store": "store", "/setting": "set" };
 function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
 
 /* ============================================================ 계정 (회원가입/로그인) ============================================================ */
@@ -21810,11 +21838,10 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
   const clearAll = () => { if (!myUid) return; setItems([]); notifyDeleteAll(myUid).then((ok) => { if (!ok) refresh(); }); };
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      {/* (사용자 요청, 재수정) 이 버튼은 height를 border-box가 아닌 기본(content-box)로 계산해,
-          1px 테두리 위아래가 더해져 실제 렌더 높이가 34/27이 아니라 36/29였다 — 옆 세그먼트(이미
-          border-box로 정확히 34/27)보다 위아래로 1px씩 더 삐져나와 있었다. box-sizing:border-box를
-          줘 테두리를 높이 안에 포함시킨다. */}
-      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, boxSizing: "border-box", borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      {/* (사용자 요청, 3차 재수정) border+box-sizing 조합도 완전히 못 맞춰 — border를 없애고 레이아웃
+          크기에 전혀 관여하지 않는 inset box-shadow로 테두리를 대신한다(옆 세그먼트·프로필 버튼과
+          동일한 처리). */}
+      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "none", boxShadow: "inset 0 0 0 1px " + T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
@@ -21884,11 +21911,11 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
           세로 패딩으로 높이가 정해져 있어 border까지 합치면 그 버튼들보다 미묘하게 더 컸다(내용물
           — 아바타·닉네임·화살표 — 세로 정렬은 그대로 alignItems:center가 맡으므로, 높이만 옆
           버튼들과 똑같이 고정해도 레이아웃은 그대로다).
-          (사용자 재요청, 재수정) height만 고정해도 기본 box-sizing(content-box)에서는 1px 테두리
-          위아래가 그 높이 위에 더해져 실제 렌더 높이가 여전히 옆 버튼들보다 2px 더 컸다(정중앙은
-          같아도 위아래로 더 삐져나와 시각적으로 더 위/아래로 걸쳐 보였다) — box-sizing:border-box를
-          추가해 테두리를 높이 안에 포함시킨다. */}
-      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, boxSizing: "border-box", padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
+          (사용자 재요청, 3차 재수정) box-sizing:border-box를 더해도 여전히 옆 버튼들보다 커 보였다 —
+          border 속성 자체를 없애고, 레이아웃 크기에 전혀 관여하지 않는 inset box-shadow로 테두리를
+          대신 그린다. 이제 실제 렌더 높이는 오직 height 값(다른 두 버튼과 동일한 27/34)에만 좌우돼
+          border 유무·box-sizing과 완전히 무관하게 항상 정확히 같다. */}
+      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "none", boxShadow: "inset 0 0 0 1px " + T.brass, cursor: "pointer" }}>
         {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster", 2) || {}) }} />
           : <span style={{ width: compact ? 22 : 27, height: compact ? 22 : 27, borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: compact ? 10.5 : 12, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initial}</span>}
         {!compact && <span style={{ color: T.brassHi, fontSize: 13, fontWeight: 800, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
@@ -22113,8 +22140,8 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(pub.displayId || pubUsername)}{roleIcon(pubUsername)}</span>
-                {/* (사용자 요청, 재조정) /user 페이지 전용 토글을 절반 크기로 줄인다. */}
-                {statsViewToggle(statsView, setStatsView, 0.5)}
+                {/* (사용자 요청, 재조정) /user 페이지 전용 토글 크기 — 이전 1.75배와 0.5배의 중간값. */}
+                {statsViewToggle(statsView, setStatsView, 1.1)}
               </div>
               {/* (사용자 요청) 순위는 이제 숫자(또는 1~3등 배지) 하나만, 이름 바로 위에, 2배 크기로 —
                   "티어 리더보드" 같은 부가 텍스트나 사진 옆 배치는 없앤다. */}
@@ -24826,7 +24853,12 @@ function TierJourneyMap({ totalXp, onClose }) {
   // (마운트 직후 1프레임)에는 기존 금색 테두리로 시작해, 계산되는 즉시 그 색으로 자연스럽게 바뀐다.
   const [btnColor, setBtnColor] = useState(null);
   const bc = btnColor || T.brass;
-  return (
+  // (버그 수정, 사용자 제보) /user 페이지 왼쪽 열처럼 framer-motion의 motion.div(항상 인라인
+  // transform을 갖는다) 안에서 이 화면을 열면, position:fixed가 뷰포트가 아니라 그 transform을
+  // 가진 조상을 기준으로 계산돼 — 여정 화면이 전체 화면을 덮지 못하고 그 조상 박스 안에만 갇혀,
+  // 그 조상 바깥의 /user 페이지 요소(헤더 등)가 오히려 위에 보이는 것처럼 나타났다. document.body로
+  // 포털을 띄우면 어떤 조상의 transform과도 무관하게 항상 실제 뷰포트 기준 최상단에 그려진다.
+  return createPortal((
     // (사용자 요청) 여정 지도가 어떤 화면에서도 뷰포트를 꽉 채우는 비율로 보이도록, 스크롤 컨테이너
     // 자신을 뷰포트 크기 그대로 두고(기존과 동일) 안쪽 콘텐츠 폭 상한만 훨씬 넉넉하게 늘린다.
     <div ref={scrollRef} style={{ position: "fixed", inset: 0, zIndex: 83, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
@@ -24842,7 +24874,7 @@ function TierJourneyMap({ totalXp, onClose }) {
         <TierJourneyPath totalXp={totalXp} scrollContainerRef={scrollRef} onColorChange={setBtnColor} />
       </div>
     </div>
-  );
+  ), document.body);
 }
 // (v0.2.9 디자인) 티어 승급 팝업의 "폭죽" — 카드 여섯 곳(TIER_FIREWORK_SPOTS)에서 시차를 두고 하나씩
 // 순서대로 터진다. 매 지점의 파티클 각도·거리·크기(TIER_FIREWORK_PARTICLES)는 고정 배열이라 폭죽
@@ -25195,11 +25227,12 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                       </div>
                 ) : (
                   <div>
-                    {!!myMid && <InviteLinkBox mid={myMid} />}
+                    {/* (사용자 요청) 검색 박스를 친구 링크 박스보다 위에 표시한다. */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                       <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} placeholder="아이디 또는 #MID로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
                       <button onClick={runSearch} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
                     </div>
+                    {!!myMid && <InviteLinkBox mid={myMid} />}
                     {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
                       : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
                         : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r, i) => {
@@ -26776,7 +26809,9 @@ export default function App() {
   // (프로필) chess.com 최근 대국의 "보기" — 그 대국 기보를 분석 보드로 불러온다(끝 포지션에서 뒤로 넘겨보기 가능).
   const onOpenGame = useCallback((moves) => {
     if (!moves || !moves.length) return;
-    setSearchOpen(false); setFriendsOpen(false); // 타 유저 프로필 모달에서 열었을 때 모달을 닫고 보드로 이동
+    // (사용자 요청) 채팅 리뷰 카드의 검색 버튼 등 채팅 모아보기 모달(ChatsModal) 안에서 이 함수가
+    // 불렸을 때도, 검색·친구 모달과 마찬가지로 닫고 학습 탭으로 이동한다.
+    setSearchOpen(false); setFriendsOpen(false); setChatsOpen(false); // 타 유저 프로필 모달·채팅에서 열었을 때 모달을 닫고 보드로 이동
     setTab("learn"); setLearnFocus(null); setLearnSans(moves); setLearnFuture([]);
     // 이 경로도 분석 탭에 남는 게 목적이므로, 혹시 남아 있을 도감 자동 복귀 예약은 취소한다
     // (그대로 두면 방금 부른 learnFocus(null)이 도감으로 되돌아가는 신호로 잘못 해석될 수 있다).
@@ -26989,7 +27024,7 @@ export default function App() {
       if (puzzleMatch) {
         const no = parseInt(puzzleMatch[1], 10), lineNo = parseInt(puzzleMatch[2], 10);
         const data = await puzzleFetch(no);
-        if (!data) { try { window.history.replaceState(null, "", "/learn"); } catch { } return; }
+        if (!data) { try { window.history.replaceState(null, "", "/analysis"); } catch { } return; }
         setPuzzleTargetLine({ no, lineNo });
         setTab("puzzle");
         setPuzzleActive(data);
@@ -26998,10 +27033,10 @@ export default function App() {
       if (path === "/review" || path.startsWith("/review/")) {
         const idRaw = path === "/review" ? null : path.slice("/review/".length);
         const resolved = idRaw ? await resolveReviewIdentifier(idRaw) : null;
-        if (!resolved) { try { window.history.replaceState(null, "", "/learn"); } catch { } return; }
+        if (!resolved) { try { window.history.replaceState(null, "", "/analysis"); } catch { } return; }
         if (resolved.kind === "chesscom") {
           const cached = await reviewedGameFetch(resolved.ccId);
-          if (!cached) { try { window.history.replaceState(null, "", "/learn"); } catch { } return; }
+          if (!cached) { try { window.history.replaceState(null, "", "/analysis"); } catch { } return; }
           openReview(cached);
         } else {
           openReview(resolved.game);
@@ -27059,24 +27094,21 @@ export default function App() {
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
               모서리 radius를 직접 주고 컨테이너는 overflow:visible로 둬 배지가 잘리지 않게 한다. */}
-          {/* (사용자 요청) 이 세그먼트를 감싸는 테두리(1px)가 안쪽 버튼들의 고정 높이(27/34px) 위에
-              그대로 더해져, 옆의 알림·프로필 버튼(둘 다 정확히 27/34px)보다 이 세그먼트 전체가 2px
-              더 커 보였다 — box-sizing:border-box로 테두리를 높이 안에 포함시켜, 헤더에 나란히 선
-              모든 버튼(검색·친구·채팅 세그먼트, 알림, 프로필)의 y좌표(세로 중심)가 정확히 같은
-              높이에서 정렬되게 한다. */}
-          {/* (사용자 요청, 재수정) box-sizing:border-box는 이 컨테이너 자신의 렌더 높이만 34/27로
-              맞출 뿐, 안쪽 버튼들이 여전히 34/27 높이를 그대로 요구해 컨테이너의 콘텐츠 영역(테두리
-              2px를 뺀 32/25)보다 커서 버튼이 테두리 위아래로 1px씩 삐져나왔다 — 세 버튼(이 세그먼트·
-              알림·프로필)의 y좌표뿐 아니라 실제 렌더 높이(y축 폭)까지 완전히 같아지도록, 안쪽 버튼
-              높이를 테두리 두께(2px)만큼 줄여(34→32, 27→25) 컨테이너 콘텐츠 영역에 정확히 맞춘다. */}
-          <div className="flex items-center" style={{ height: narrowHeader ? 27 : 34, boxSizing: "border-box", borderRadius: 9, border: "1px solid " + T.brass, overflow: "visible", flexShrink: 0 }}>
-            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 25 : 32, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
-            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 25 : 32, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          {/* (사용자 요청, 3차 재수정) box-sizing:border-box를 세 요소 모두에 맞춰도 여전히 어긋나
+              보였다 — 근본 원인은 `border` 속성 자체가 브라우저·자식 레이아웃에 따라 미묘하게 다르게
+              계산될 여지가 있다는 점이었다. border를 아예 없애고, 레이아웃 크기에 전혀 관여하지 않는
+              `boxShadow: inset 0 0 0 1px`으로 테두리를 대신 그린다 — 이러면 세 요소의 실제 렌더
+              높이가 오직 각자의 `height` 값(모두 narrowHeader?27:34로 동일)에만 좌우되어, border
+              유무·box-sizing과 완전히 무관하게 항상 정확히 같아진다. 안쪽 버튼들도 더는 높이를
+              줄일 필요가 없어 34/27로 되돌린다. */}
+          <div className="flex items-center" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, boxShadow: "inset 0 0 0 1px " + T.brass, overflow: "visible", flexShrink: 0 }}>
+            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
             {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
-            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 25 : 32, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
@@ -27229,7 +27261,7 @@ export default function App() {
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
