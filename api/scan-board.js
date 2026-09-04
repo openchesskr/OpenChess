@@ -11,9 +11,24 @@
 // API 키는 Vercel 환경변수(GEMINI_API_KEY, aistudio.google.com/apikey에서 무료 발급)로만 존재 — 이
 // 값이 없으면 이 기능은 비활성 상태로 500을 반환하고, 클라이언트는 "서버에 아직 설정되지 않았어요"
 // 안내만 보여준다(다른 기능엔 영향 없음).
-// (버그 수정, 사용자 제보) "gemini-3.6-flash"는 실재하지 않는 모델 ID라 모든 호출이 404로 실패해
-// 이미지 스캔 버튼이 항상 동작하지 않았다 — 실제로 존재하는 안정 버전인 gemini-2.5-flash로 되돌린다.
-const GEMINI_MODEL = "gemini-2.5-flash";
+// (버그 수정, 사용자 제보) 이 모델 ID를 상수 하나로 고정해 뒀던 게 문제의 근원이었다 — 한 번은
+// "gemini-3.6-flash"가 실재하지 않는 ID라 모든 호출이 404로 실패했고, gemini-2.5-flash로 되돌리자
+// 이번엔 반대로 Gemini가 "2.5는 곧 사라지니 3.6을 쓰라"는 응답을 돌려주기 시작했다 — 이 앱이 배포된
+// 채로 있는 동안 실제로 어떤 모델 ID가 유효한지는 Google 쪽 사정으로 계속 바뀔 수 있어, 클라이언트나
+// 코드가 미리 알 방법이 없다. 하나를 고정해 두는 대신, 아래 두 후보를 순서대로 시도해 실제로 API가
+// 받아주는(모델 자체가 없다는 오류가 아닌) 첫 번째 모델을 쓴다 — 3.6이 이 시점에 아직 없거나 지역
+// 제한에 걸려도 2.5로, 반대로 2.5가 나중에 완전히 폐기돼도 3.6으로 자동으로 넘어간다.
+const GEMINI_MODEL_CANDIDATES = ["gemini-3.6-flash", "gemini-2.5-flash"];
+// 서버리스 함수 인스턴스가 요청 사이에 재사용되는 동안(Vercel 웜 스타트)은 한 번 통한 모델을 기억해
+// 매 요청마다 후보를 처음부터 다시 순회하지 않는다 — 콜드 스타트되면 다시 null로 시작.
+let cachedWorkingModel = null;
+// Gemini가 "이 모델은 없다/더 이상 못 쓴다"는 뜻으로 돌려주는 오류 메시지의 공통 패턴 — 이런 오류일
+// 때만 다음 후보 모델로 넘어간다. 그 외 오류(요청 형식·과금·일시 장애 등)는 모델을 바꿔도 어차피
+// 똑같이 실패하므로 곧장 그대로 던진다.
+function isModelUnavailableError(err) {
+  const msg = ((err && err.message) || "").toLowerCase();
+  return /not found|not supported|is not available|deprecated|invalid model|unknown model|no longer|unrecognized model/.test(msg);
+}
 
 // (v0.3.8 기능) 사용자 요청 — 인식률 개선. 예전엔 모델에게 곧장 압축된 FEN 문자열("rnbqkbnr/8/..."
 // 처럼 빈 칸 개수를 숫자로 뭉친 표기)을 만들어 달라고 했는데, 이 압축 과정 자체가 LLM이 흔히 틀리는
@@ -103,9 +118,9 @@ const RESPONSE_SCHEMA = {
   required: ["kind", "confidence"],
 };
 
-async function callGemini(apiKey, safeMediaType, image) {
+async function callGeminiWithModel(model, apiKey, safeMediaType, image) {
   const geminiRes = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent?key=" + apiKey,
+    "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -143,6 +158,27 @@ async function callGemini(apiKey, safeMediaType, image) {
   const fenBoard = kind === "board" ? (parsed && ranksToFenBoard(parsed.ranks)) : null;
   const text = kind === "text" ? (parsed && typeof parsed.recognized_text === "string" ? parsed.recognized_text.trim() : null) : null;
   return { kind, fenBoard, text, confidence: parsed && parsed.confidence };
+}
+// GEMINI_MODEL_CANDIDATES를 순서대로 시도해, "모델을 찾을 수 없다"는 오류가 아닌 첫 응답(성공이든
+// 다른 종류의 실패든)을 그대로 쓴다. 한 번 통한 모델은 cachedWorkingModel에 남겨 다음 호출부터는
+// 그 모델을 먼저 시도한다.
+async function callGemini(apiKey, safeMediaType, image) {
+  const order = cachedWorkingModel
+    ? [cachedWorkingModel, ...GEMINI_MODEL_CANDIDATES.filter((m) => m !== cachedWorkingModel)]
+    : GEMINI_MODEL_CANDIDATES;
+  let lastErr = null;
+  for (const model of order) {
+    try {
+      const result = await callGeminiWithModel(model, apiKey, safeMediaType, image);
+      cachedWorkingModel = model;
+      return result;
+    } catch (e) {
+      lastErr = e;
+      if (!isModelUnavailableError(e)) throw e; // 모델 문제가 아니면 다른 모델로 바꿔도 소용없다
+      if (cachedWorkingModel === model) cachedWorkingModel = null; // 캐시해 둔 모델이 방금 실패했다면 캐시를 비운다
+    }
+  }
+  throw lastErr || new Error("사용 가능한 Gemini 모델을 찾지 못했어요.");
 }
 
 export default async function handler(req, res) {

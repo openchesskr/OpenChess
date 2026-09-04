@@ -3,7 +3,7 @@ import {
   PIECE_BASE_R, PIECE_BASE_L, PIECE_MID, PIECE_LINES, PIECE_ACCENT, PIECE_CROSS,
   PIECE_HEIGHT_FACTOR, PIECE_NATURAL_TOP_Y, PIECE_BASE_RATIO, PIECE_IMG_SETS,
   PIECE_SKINS, pieceShadow,
-  tierPieceSrc, TIER_IMG_NATIVE_H, TIER_DECAGON_PTS,
+  tierPieceSrc, TIER_IMG_NATIVE_H, TIER_DECAGON_PATH,
 } from "../lib/theme.js";
 import { TIER_COLORS } from "../lib/tierSystem.js";
 
@@ -117,7 +117,8 @@ export function TierLogoDisc({ tierKey, division, size, discSize, muted = false 
             </linearGradient>
           </defs>
         )}
-        <polygon points={TIER_DECAGON_PTS} fill="#FFFFFF" stroke={isGM ? "url(#" + gradId + ")" : "#D8CFB8"} strokeWidth={isGM ? 3 : 2} />
+        {/* (사용자 요청) 십각형 꼭짓점을 라운딩한 path로 그린다(polygon 대신). */}
+        <path d={TIER_DECAGON_PATH} fill="#FFFFFF" stroke={isGM ? "url(#" + gradId + ")" : "#D8CFB8"} strokeWidth={isGM ? 3 : 2} strokeLinejoin="round" />
       </svg>
       <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <TierPieceGlyph tierKey={tierKey} division={division} size={size} />

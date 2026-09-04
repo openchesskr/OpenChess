@@ -208,3 +208,29 @@ export const TIER_DECAGON_PTS = (() => {
     return (50 + rx * Math.cos(a)).toFixed(2) + "," + (50 + ry * Math.sin(a)).toFixed(2);
   }).join(" ");
 })();
+// (사용자 요청) 티어 십각형의 뾰족한 꼭짓점을 라운딩한 SVG path — 각 꼭짓점마다 인접한 두 변을 따라
+// cornerRadius만큼 안쪽으로 들어간 두 점을, 원래 꼭짓점을 제어점으로 삼는 2차 베지어 곡선으로 이어
+// 붙인다(각 변의 절반 길이를 넘지 않도록 반지름을 제한해 어떤 값을 넣어도 이웃 곡선과 겹치지 않는다).
+function roundedPolygonPath(pts, r) {
+  const n = pts.length;
+  const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  let d = "";
+  for (let i = 0; i < n; i++) {
+    const prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n];
+    const dPrev = dist(cur, prev), dNext = dist(cur, next);
+    const rr = Math.min(r, dPrev / 2, dNext / 2);
+    const a = [cur[0] + (prev[0] - cur[0]) / dPrev * rr, cur[1] + (prev[1] - cur[1]) / dPrev * rr];
+    const b = [cur[0] + (next[0] - cur[0]) / dNext * rr, cur[1] + (next[1] - cur[1]) / dNext * rr];
+    d += (i === 0 ? "M " : "L ") + a[0].toFixed(2) + "," + a[1].toFixed(2) + " ";
+    d += "Q " + cur[0].toFixed(2) + "," + cur[1].toFixed(2) + " " + b[0].toFixed(2) + "," + b[1].toFixed(2) + " ";
+  }
+  return d + "Z";
+}
+export const TIER_DECAGON_PATH = (() => {
+  const rx = 46, ry = 50;
+  const pts = Array.from({ length: 10 }, (_, i) => {
+    const a = -Math.PI / 2 + i * (Math.PI / 5);
+    return [50 + rx * Math.cos(a), 50 + ry * Math.sin(a)];
+  });
+  return roundedPolygonPath(pts, 6);
+})();

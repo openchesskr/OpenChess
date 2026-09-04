@@ -1,4 +1,5 @@
 import React, { useRef, useState, useLayoutEffect, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 // KW는 이 컴포넌트뿐 아니라 App.jsx의 학습 콘텐츠 편집기(키워드 칩 선택 UI)에서도 함께 쓰여 여기서
 // export하고 App.jsx가 다시 import해서 쓴다(SITE_FONT/QLABEL과 같은 패턴).
@@ -23,6 +24,40 @@ export const KW = {
   "OPEN": { bg: "#FBE3CE", fg: "#A85A1E", desc: "개방적인 포지션을 지향" },
   "CLOSED": { bg: "#D7DEE8", fg: "#3E4C66", desc: "폐쇄적인 포지션을 지향" },
 };
+// (사용자 요청) 수 키워드 칩(NORMAL/TOP LEVEL 등)을 누르면 그 뜻(KW[k].desc)을 보여주는 말풍선 —
+// 예전엔 브라우저 기본 title 호버 툴팁뿐이라 모바일에서는 사실상 볼 방법이 없었다. 퍼즐 카드의
+// 레이팅·난이도 말풍선(App.jsx ClickInfoBadge)과 완전히 같은 방식으로, 앵커 위치와 무관하게 항상
+// 뷰포트 정중앙의 안전 영역(상하좌우 16px 여백)에 띄워 화면 크기·칩 위치와 무관하게 절대 잘리지
+// 않는다. 수 블록·현재 수 블록(둘 다 이 KeywordScroll을 공유)·집중 분석 모드(같은 목록을 그대로
+// 옮겨 보여줌)·학습 탭 도감(DexMoveBlock, App.jsx에서 이 컴포넌트를 직접 import해 재사용)이 모두
+// 이 칩 하나를 공유해 자동으로 같은 동작을 갖는다.
+export function KeywordChip({ k, style }) {
+  const info = KW[k];
+  const [open, setOpen] = useState(false);
+  const toggle = (e) => { e.stopPropagation(); setOpen((v) => !v); };
+  useEffect(() => {
+    if (!open) return;
+    const onScroll = () => setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [open]);
+  if (!info) return null;
+  return (
+    <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+      <span onClick={toggle} style={{ cursor: "pointer", fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: info.bg, color: info.fg, whiteSpace: "nowrap", ...style }}>{k}</span>
+      {open && typeof document !== "undefined" && createPortal(
+        <>
+          <span onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(10,6,3,.2)" }} />
+          <span style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", width: "min(240px, calc(100vw - 32px))", maxHeight: "calc(100vh - 32px)", overflowY: "auto", padding: "10px 13px", borderRadius: 10, background: "#F7F0DE", border: "1px solid " + info.fg, boxShadow: "0 12px 28px -6px rgba(0,0,0,.6)", zIndex: 9999, fontSize: 12, fontWeight: 700, color: "#2B2013", textAlign: "left" }}>
+            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".04em", color: info.fg, marginBottom: 4 }}>{k}</div>
+            {info.desc}
+          </span>
+        </>,
+        document.body
+      )}
+    </span>
+  );
+}
 // (사용자 요청) 수 블록의 키워드 칩들을 두 줄 이상으로 줄바꿈하는 대신 한 줄에 담고, 다 안 들어가면
 // 가로 스크롤이 되도록 하되(줄바꿈 없음) 잘려 있다는 걸 알 수 있게 자동으로 천천히 오른쪽으로
 // 스크롤됐다가 끝에 닿으면 처음으로 돌아가길 반복한다 — 학습 탭 전체(집중 분석 모드 포함)에서
@@ -60,7 +95,7 @@ export function KeywordScroll({ kws, chipStyle }) {
   if (!kws.length) return null;
   return (
     <div ref={ref} className="hide-scrollbar" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "hidden" }}>
-      {kws.map((k) => KW[k] && <span key={k} title={KW[k].desc} style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: KW[k].bg, color: KW[k].fg, whiteSpace: "nowrap", ...chipStyle }}>{k}</span>)}
+      {kws.map((k) => <KeywordChip key={k} k={k} style={chipStyle} />)}
     </div>
   );
 }
