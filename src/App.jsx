@@ -8402,6 +8402,10 @@ const TIME_CONTROLS = [
 ];
 const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"];
 const DEFAULT_TIME_CONTROL = TIME_CONTROLS[6]; // 10분(래피드)
+// (v0.4.8, v0.5.0 예정인 보드 위 오리지널 미니게임 PvP 대비 선행 정리) pvp_queue/pvp_games/pvp_invites의
+// game_type 컬럼과 짝을 맞추는 상수 — PlayPage는 지금 체스 대국만 만들고 이어받으므로 항상 이 값을
+// 쓴다. 나중에 미니게임 전용 플레이 화면이 생기면 그쪽은 자신의 game_type을 쓰게 될 것.
+const PVP_GAME_TYPE = "chess";
 // (v0.4.3 기능, 사용자 요청) 채팅 /play 명령어(예: "/play 3", "/play 15+10")로 만들어진
 // pvp_games.time_control이 위 TIME_CONTROLS 프리셋에 없는 값이어도(예: "/play 7"처럼 프리셋에 없는
 // 분), PlayPage가 올바른 라벨·클럭으로 대국을 이어받을 수 있도록 "초-증가초" 키 문자열을 항상
@@ -8875,7 +8879,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
     setPvpErr(""); setPvpWaiting(true);
     try {
-      const g = await sbRpc("pvp_queue_join", { p_time_control: timeControl.key });
+      const g = await sbRpc("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
       // (버그 수정, 사용자 제보) pvp_queue_join은 매칭할 상대가 없으면(대기열에만 합류) SQL NULL을
       // 반환하는데, PostgREST가 단일 row를 반환하는 함수의 NULL을 순수 JSON null이 아니라 "모든 필드가
       // null인 객체"(예: {id:null, white_uid:null, ...})로 직렬화한다 — 이 객체는 `if (g)`로는 참(truthy)이라,
@@ -8906,8 +8910,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 대기 중일 때 — 다른 사람이 나를 찾아 매칭해도 내가 만든 pvp_games 행은 아니므로, 내가 white/black
   // 어느 쪽으로 들어가든 realtime으로 알 수 있도록 두 컬럼 각각을 구독한다(소켓이 끊겼을 때를 대비해
   // pvp_queue_join을 다시 불러 재확인하는 느슨한 안전망도 둔다).
-  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active") applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
-  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active") applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
+  // (v0.4.8, v0.5.0 대비) game_type이 PVP_GAME_TYPE("chess")이 아닌 행은 무시한다 — 나중에 미니게임이
+  // 같은 pvp_games 테이블에 자기 대국을 만들면, 그 매칭 이벤트가 이 체스 대기 화면을 잘못 끌고 가지
+  // 않도록 하는 안전망(지금은 모든 행이 'chess'뿐이라 실질적인 동작 변화는 없다).
+  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active" && (payload.new.game_type || "chess") === PVP_GAME_TYPE) applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
+  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active" && (payload.new.game_type || "chess") === PVP_GAME_TYPE) applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
   // 대국 중 — 상대(또는 내 클라이언트가 보낸) 수·종료 상태를 실시간으로 반영한다. sans는 이 행이
   // 유일한 진실 공급원이라 그대로 덮어쓴다(내가 둔 수도 낙관적으로 먼저 반영해 두지만, 결국 같은
   // 배열로 확정된다).
@@ -8966,7 +8973,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (!myUid) return;
     setPvpErr("");
     try {
-      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: timeControl.key });
+      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
       // (v0.4.3) 대기 화면에 "@닉네임의 응답을 기다리는 중..."을 보여주기 위해, 서버 응답(원본 초대
       // 행)에 클릭 시점에 이미 알고 있던 상대 표시 정보를 얹어 둔다 — 서버는 uid만 갖고 있다.
       setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
@@ -23044,7 +23051,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       setCmdError("");
       setSending(true);
       try {
-        await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: playTc.key });
+        await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: playTc.key, p_game_type: PVP_GAME_TYPE });
         setText(""); load();
       } catch { setCmdError("대국을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
       setSending(false);
