@@ -10499,11 +10499,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // (v0.3.5 기능) 사용자 요청 — 보드 편집기(BoardEditorModal) 열림 상태. 완료를 누르면 onLoadFen과
   // 같은 계약으로 그 포지션의 FEN 모드로 들어간다(NotationTools의 FEN 붙여넣기와 동일한 경로).
   const [editorOpen, setEditorOpen] = useState(false);
-  // (v0.3.5 기능) 사용자 요청 — FEN 모드의 리뷰(분석)는 아직 지원하지 않는다(위 채점 로직이 표준
-  // 시작 위치만 전제하는 한계와 같은 이유). v0.3.4에서 일단 열어 뒀던 "FEN 모드에서도 리뷰 열기"를
-  // 되돌리고, 리뷰 버튼을 누르면 안내 토스트만 잠깐 띄운다.
-  const [fenReviewNotice, setFenReviewNotice] = useState(false);
-  useEffect(() => { if (!fenReviewNotice) return; const t = setTimeout(() => setFenReviewNotice(false), 1800); return () => clearTimeout(t); }, [fenReviewNotice]);
+  // (v0.4.8 기능) FEN 모드 리뷰 — v0.3.5에서 "표준 시작 위치만 전제하는 채점 로직" 때문에 막아
+  // 두었던 것을 되돌린다. ReviewPage는 이미 v0.3.4~v0.3.5에 걸쳐 game.fenRoot를 받아 legalDests
+  // (fenLegalDests)·gameEndState·평가·코치 카드까지 전부 그 위치 기준으로 정확히 계산하도록 완성돼
+  // 있었다(9691행 이하 참고) — 다만 이 진입점(리뷰 버튼)만 여전히 막힌 채 남아 있어 실제로는 완성된
+  // 기능을 쓸 수 없었다.
   // (v0.2.3 기능 → v0.3.5) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히
   // 더 이상의 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수
   // 있는" 수가 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더
@@ -11029,15 +11029,6 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           최소 폭(min-content)만큼 억지로 넓어져 모바일에서 보드가 화면 밖으로 밀려나는 원인이었다. */}
       <div style={{ minWidth: 0 }}>
         <div style={{ position: "relative", background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
-          {/* (v0.3.5 기능) 사용자 요청 — FEN 모드에서 리뷰 버튼을 누르면 뜨는 짧은 안내 토스트. */}
-          <AnimatePresence>
-            {fenReviewNotice && (
-              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-                style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 20, padding: "8px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 12, fontWeight: 800, boxShadow: "0 8px 20px -6px rgba(0,0,0,.6)", whiteSpace: "nowrap" }}>
-                업데이트를 기대해 주세요!
-              </motion.div>
-            )}
-          </AnimatePresence>
           {/* (사용자 요청) FEN 모드 안내 — 표준 시작 위치 기반 기능(분석·이론 후보·집중 분석 등)은
               이 위치와 무관하므로, 눈에 띄는 배지 + 종료 버튼만 간단히 둔다. */}
           {fenRoot && (
@@ -11060,10 +11051,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               {/* (18차 UI5) 와이파이 아이콘 + "라이브" 상태 텍스트 삭제 */}
               {/* (v0.2.0 기능) 기보 위 리뷰 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
                   띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
-                  (v0.3.4 기능 → v0.3.5 되돌림) 사용자 요청 — FEN 모드에서는 리뷰를 아예 열지 못하게
-                  막고(위 fenReviewNotice), 대신 이 위치에서도 평가치 바·엔진 라인은 작동한다(아래 fenEval). */}
+                  (v0.4.8 기능) FEN 모드에서도 그대로 리뷰를 연다 — ReviewPage가 이미 fenRoot를 온전히
+                  지원하므로, 붙여넣은 포지션의 원본 FEN 문자열(fenRoot.raw)만 함께 넘기면 된다. */}
               <BestMoveJumpButton title="기보 분석(리뷰)" size={26}
-                onClick={() => { if (fenRoot) { setFenReviewNotice(true); return; } onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: null }); }}
+                onClick={() => onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: fenRoot ? fenRoot.raw : null })}
                 disabled={(!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready"} />
             </div>
           </div>
