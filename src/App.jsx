@@ -4,7 +4,7 @@ import { motion, AnimatePresence, useAnimationControls } from "framer-motion";
 import {
   Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
-  ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
+  ChevronRight as Crumb, Star, ThumbsUp, ThumbsDown, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
   Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench,
@@ -6160,7 +6160,20 @@ function containsBannedWord(text) {
   const norm = normalizeForFilter(text);
   return BANNED_WORD_LIST.some((w) => norm.includes(normalizeForFilter(w)));
 }
-function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump }) {
+// (사용자 요청) 수 설명에 유튜브 댓글처럼 좋아요/싫어요를 달 수 있게 — move_note_vote RPC 하나가
+// 토글(같은 값을 다시 누르면 취소, 다른 값이면 전환)까지 서버에서 처리하고, 그 결과(내 새 투표 상태·
+// 갱신된 좋아요/싫어요 수)를 그 자리에서 돌려준다.
+async function moveNoteVote(noteId, value) {
+  try { const rows = await sbRpc("move_note_vote", { p_note_id: noteId, p_value: value }); return (Array.isArray(rows) ? rows[0] : rows) || null; }
+  catch { return null; }
+}
+// 정렬 옵션 — MoveExplainBlock의 noteSort 값과 PostgREST order 절 매핑을 한곳에 묶어 둔다.
+const MOVE_NOTE_SORTS = {
+  popular: { label: "인기순", order: "score.desc,created_at.asc" },
+  date: { label: "날짜순", order: "created_at.asc" },
+  recent: { label: "최신순", order: "created_at.desc" },
+};
+function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump, onVote }) {
   // (사용자 요청) 예전엔 작성자 본인도 스스로 못 고치고 개발자(canModerate)만 편집·삭제할 수
   // 있었다 — 이제 자기 글은 본인이 자유롭게 고치고 지울 수 있고, 개발자/공동개발자는 그대로
   // 모든 글에 대해 편집 권한을 유지한다(RLS도 함께 맞춤, supabase-setup.sql 15번 섹션 참고).
@@ -6200,10 +6213,24 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
           <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{renderMoveNoteBody(n.body, ownSans, onJump)}</p>
         )}
       </div>
-      {!editing && canEditThis && (
-        <div className="flex gap-2" style={{ marginTop: 6, justifyContent: "flex-end" }}>
-          <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
-          <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
+      {!editing && (
+        <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
+          {/* (사용자 요청) 유튜브 댓글처럼 좋아요/싫어요 — 같은 걸 다시 누르면 취소, 반대를 누르면
+              그쪽으로 바뀐다. 로그인하지 않았으면(uid 없음) 카운트만 보이고 누를 수 없다. */}
+          <div className="flex items-center gap-2">
+            <button onClick={() => uid && onVote(n.id, 1)} disabled={!uid} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", padding: 0, cursor: uid ? "pointer" : "default", color: n.my_vote === 1 ? T.brass : T.inkSoft }}>
+              <ThumbsUp size={12} fill={n.my_vote === 1 ? T.brass : "none"} /><span style={{ fontSize: 10.5, fontWeight: 700 }}>{n.likes || 0}</span>
+            </button>
+            <button onClick={() => uid && onVote(n.id, -1)} disabled={!uid} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", padding: 0, cursor: uid ? "pointer" : "default", color: n.my_vote === -1 ? T.blunder : T.inkSoft }}>
+              <ThumbsDown size={12} fill={n.my_vote === -1 ? T.blunder : "none"} /><span style={{ fontSize: 10.5, fontWeight: 700 }}>{n.dislikes || 0}</span>
+            </button>
+          </div>
+          {canEditThis && (
+            <div className="flex gap-2">
+              <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
+              <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -6219,17 +6246,59 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // (사용자 요청) 수 설명 정렬 — 인기순(좋아요-싫어요 점수)/날짜순(오래된 순)/최신순. 기존 기본
+  // 동작(오래된 순)을 그대로 유지하기 위해 기본값은 "date"로 둔다.
+  const [noteSort, setNoteSort] = useState("date");
   const scrollerRef = useRef(null);
   const pauseUntilRef = useRef(0);
+  const scrollDebounceRef = useRef(null);
+  // (버그 수정, 사용자 제보) 정렬을 바꿔 카드 순서가 재배치되는 순간, 이 스크롤 컨테이너에서
+  // 브라우저가 자체적으로(scroll-snap 재계산 등 정확한 원인은 특정하지 못했지만 실기기·헤드리스
+  // 브라우저 모두에서 재현됨) 원치 않는 scroll 이벤트를 흘려보내는 경우가 있었다 — 그 이벤트가
+  // onManualScroll의 "사용자가 직접 스크롤했다"는 판단(120ms 디바운스 후 그 스크롤 위치로 idx를
+  // 되맞춤)을 건드려, 방금 0으로 되돌려 둔 idx를 다시 엉뚱한 값으로 덮어써 버렸다(카드 내용은
+  // 새 순서로 바뀌는데 캐러셀 위치만 어긋나 보이는 원인). moveKey·noteSort가 바뀐 직후 짧은
+  // 유예 시간 동안은 onManualScroll이 무엇을 보든 idx를 건드리지 않게 막아, 그 사이 어떤 스크롤
+  // 이벤트가 오더라도 우리가 이미 정한 idx(0)가 안전하게 유지되게 한다.
+  const suppressScrollSyncUntilRef = useRef(0);
   // (v0.4.0 기능) 이 설명이 달린 바로 그 위치까지의 전체 수순 — 본문에 언급된 SAN을 그 위치 기준으로
   // 합법성 검사하고, 링크 클릭 시 그 위치에서부터 집중분석으로 이동하기 위해 필요하다.
   const ownSans = useMemo(() => ownSansFromMoveKey(moveKey), [moveKey]);
   const load = useCallback(async () => {
     if (!moveKey) { setNotes([]); return; }
-    try { setNotes(await sbSelect("move_notes?select=*&move_key=eq." + encodeURIComponent(moveKey) + "&order=created_at.asc")); }
+    // (사용자 요청) 좋아요/싫어요 집계·내 투표 상태가 함께 딸려오는 뷰(move_notes_with_votes)를
+    // move_notes 대신 읽는다 — 글 등록/수정/삭제는 여전히 move_notes 테이블에 직접 한다.
+    try { setNotes(await sbSelect("move_notes_with_votes?select=*&move_key=eq." + encodeURIComponent(moveKey) + "&order=" + MOVE_NOTE_SORTS[noteSort].order)); }
     catch { setNotes([]); }
-  }, [moveKey]);
-  useEffect(() => { setNotes(null); setIdx(0); setDraft(""); setErr(""); load(); }, [moveKey, load]);
+  }, [moveKey, noteSort]);
+  // (사용자 요청) moveKey가 바뀌면(다른 수로 이동) 완전히 새로 시작하고, noteSort만 바뀌면(같은 수,
+  // 정렬만 전환) 작성 중이던 글(draft)까지 지울 필요는 없이 목록만 다시 정렬해 불러온다 — 두 경우를
+  // 하나의 effect에서 prevMoveKeyRef로 구분한다(따로 두면 load의 deps가 noteSort까지 포함해 매번
+  // 새 함수가 되므로, moveKey 전용 effect가 load를 deps에 넣을 때 정렬 변경에도 불필요하게 같이
+  // 돌며 draft/err를 지워버린다).
+  const prevMoveKeyRef = useRef(moveKey);
+  useEffect(() => {
+    const moveKeyChanged = prevMoveKeyRef.current !== moveKey;
+    prevMoveKeyRef.current = moveKey;
+    if (moveKeyChanged) { setNotes(null); setDraft(""); setErr(""); }
+    setIdx(0);
+    // (버그 수정, 사용자 제보) 정렬을 바꾸면 카드 순서가 재배치되면서 이 스크롤 컨테이너에
+    // 브라우저가 자체적으로 scroll 이벤트를 흘려보내는 경우가 있었다(scroll-snap 재계산 등) —
+    // 그게 onManualScroll의 120ms 디바운스를 건드려, 방금 위에서 0으로 되돌린 idx를 그 사이에
+    // 엉뚱한 값으로 다시 덮어써 버렸다(카드 내용은 새 순서로 바뀌었는데 캐러셀 인덱스만 어긋나
+    // 보이는 원인). 이 재정렬 시점에 걸려 있을 수 있는 그 디바운스 타이머를 확실히 지우고,
+    // suppressScrollSyncUntilRef로 짧은 유예 시간 동안 onManualScroll이 idx를 건드리지 못하게 막는다.
+    // (실측) 그 브라우저 자체 스크롤 이동은 이 효과가 도는 시점으로부터 대략 300~400ms 사이에
+    // 벌어진다 — idx는 지켰지만 실제 스크롤 위치가 여전히 어긋나 있을 수 있으므로, 그 구간을
+    // 지나 두 번(350ms·550ms) 강제로 맨 위(scrollTop 0)로 되돌려 최종 위치를 확정한다.
+    if (scrollDebounceRef.current) { clearTimeout(scrollDebounceRef.current); scrollDebounceRef.current = null; }
+    pauseUntilRef.current = Date.now() + 600;
+    suppressScrollSyncUntilRef.current = Date.now() + 600;
+    load();
+    const t1 = setTimeout(() => { if (scrollerRef.current) scrollerRef.current.scrollTop = 0; }, 350);
+    const t2 = setTimeout(() => { if (scrollerRef.current) scrollerRef.current.scrollTop = 0; }, 550);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [moveKey, load]);
   useEffect(() => {
     if (!notes || notes.length < 2) return;
     const iv = setInterval(() => { if (Date.now() >= pauseUntilRef.current) setIdx((i) => (i + 1) % notes.length); }, 5000);
@@ -6241,11 +6310,12 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
     el.scrollTo({ top: idx * el.clientHeight, behavior: "smooth" });
   }, [idx]);
   const jump = (i) => { pauseUntilRef.current = Date.now() + 6000; setIdx(i); };
-  const scrollDebounceRef = useRef(null);
   const onManualScroll = () => {
+    if (Date.now() < suppressScrollSyncUntilRef.current) return;
     pauseUntilRef.current = Date.now() + 6000;
     if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
     scrollDebounceRef.current = setTimeout(() => {
+      if (Date.now() < suppressScrollSyncUntilRef.current) return;
       const el = scrollerRef.current;
       if (!el || !el.clientHeight) return;
       const i = Math.round(el.scrollTop / el.clientHeight);
@@ -6272,6 +6342,15 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
     setBusy(false);
   };
   const hasNotes = notes && notes.length > 0;
+  // (사용자 요청) 좋아요/싫어요 투표 — 서버(move_note_vote)가 토글까지 처리하고 갱신된 집계·내 투표
+  // 상태를 돌려주므로 그대로 반영한다. 정렬이 "인기순"이어도 투표 직후 바로 재정렬하지는 않는다 —
+  // 지금 보고 있는 카드가 갑자기 다른 자리로 튀거나 캐러셀 인덱스가 어긋나는 걸 피하기 위해서고,
+  // 다음에 이 수를 다시 열면(load가 다시 불림) 새 순서로 자연스럽게 반영된다.
+  const onVote = async (noteId, value) => {
+    const res = await moveNoteVote(noteId, value);
+    if (!res) return;
+    setNotes((prev) => prev ? prev.map((x) => (x.id === noteId ? { ...x, my_vote: res.my_vote, likes: res.likes, dislikes: res.dislikes } : x)) : prev);
+  };
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -6283,13 +6362,30 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
           </div>
         )}
       </div>
+      {/* (사용자 요청) 인기순(좋아요-싫어요)/날짜순(오래된 순)/최신순 정렬 선택 — 설명이 2개 이상일
+          때만 의미가 있으므로 그때만 보여준다. */}
+      {hasNotes && notes.length > 1 && (
+        <div className="flex items-center gap-1" style={{ marginBottom: 8 }}>
+          {Object.entries(MOVE_NOTE_SORTS).map(([key, s]) => (
+            <button key={key} onClick={() => setNoteSort(key)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, border: "1px solid " + (noteSort === key ? T.brass : "#DCCBA8"), background: noteSort === key ? T.brass : "transparent", color: noteSort === key ? "#241509" : T.inkSoft, cursor: "pointer" }}>{s.label}</button>
+          ))}
+        </div>
+      )}
       {notes === null ? (
         <p style={{ fontSize: 11.5, color: T.inkSoft }}>불러오는 중…</p>
       ) : hasNotes ? (
         <>
-          <div ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
+          {/* (버그 수정, 사용자 제보) 정렬을 바꾸면 카드 순서가 재배치되는데, 각 카드 키(n.id)는
+              그대로라 리액트가 기존 DOM 노드를 새로 만들지 않고 그 자리에서 순서만 바꾼다 — 이
+              스크롤 컨테이너는 scroll-snap-type이 걸려 있어, 자식이 재배치되는 순간 브라우저가
+              스냅 위치를 다시 계산하며 스크롤을 슬쩍 움직였다(idx는 이미 0으로 되돌려 뒀는데도
+              화면은 엉뚱한 카드에 멎어 있고, 그 스크롤이 onManualScroll을 "사용자가 직접
+              스크롤한 것"으로 오인시켜 idx 상태 자체까지 어긋나 보였다). key를 noteSort로 주면
+              정렬이 바뀔 때마다 이 컨테이너 자체를 통째로 새로 만들어, scrollTop이 항상
+              0에서 시작하는 새 DOM으로 시작하므로 위 문제가 애초에 생길 자리가 없다. */}
+          <div key={noteSort} ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
             {notes.map((n) => (
-              <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump}
+              <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump} onVote={onVote}
                 onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
                 onDeleted={(id) => setNotes((prev) => { const next = prev.filter((x) => x.id !== id); setIdx((i) => Math.min(i, Math.max(0, next.length - 1))); return next; })} />
             ))}
@@ -19589,6 +19685,7 @@ const CHANGELOG = [
       "채팅 이모티콘 박스가 화면 전체 폭을 채우도록 커졌고, MILKU·KOKOA 12개씩을 페이지 넘김 없이 한 판(6×4, 위 두 줄 MILKU·아래 두 줄 KOKOA)에서 바로 골라요.",
       "OC 나이트 코인 아이콘을 새 이미지로 바꿨어요.",
       "대국 결과 팝업의 '재대결' 버튼이 이제 실제로 작동해요 — 봇 대국은 같은 조건으로 곧장 다시 시작되고, 실시간 대국은 상대에게 재대결 신청이 가서 수락하면 새 대국이 시작돼요.",
+      "수 설명에 유튜브 댓글처럼 좋아요·싫어요를 달 수 있어요. 인기순(좋아요-싫어요)·날짜순(오래된 순)·최신순 중 골라 정렬할 수도 있어요.",
     ]
   },
   {

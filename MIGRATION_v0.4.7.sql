@@ -16,6 +16,8 @@
 --      아닐 수 있음)에게도 걸 수 있도록 pvp_invites 대신 방금 끝난 그 대국 행 자체에 제안 상태를
 --      기록한다. 제안/수락을 한 함수로 합쳐, 상대가 이미 제안해 둔 상태에서 내가 다시 부르면 그
 --      자리에서 곧바로(진영을 맞바꿔) 새 대국을 만든다.
+--   5) move_note_votes 테이블 신규, move_notes_with_votes 뷰 신규, move_note_vote(bigint, smallint)
+--      신규 — "수 설명"(move_notes)에 좋아요/싫어요를 달고, 그 집계로 인기순 정렬을 만든다.
 --
 -- SQL Editor에 이 파일 전체를 붙여넣고 RUN 하세요.
 -- ============================================================================
@@ -131,4 +133,61 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.pvp_rematch_decline(bigint) to authenticated;
+
+-- ============================================================================
+-- 추가 — 수 설명(move_notes) 좋아요/싫어요 + 인기순 정렬
+-- ============================================================================
+create table if not exists public.move_note_votes (
+  note_id bigint not null references public.move_notes(id) on delete cascade,
+  uid uuid not null references auth.users(id) on delete cascade,
+  value smallint not null check (value in (1, -1)),
+  created_at timestamptz not null default now(),
+  primary key (note_id, uid)
+);
+alter table public.move_note_votes enable row level security;
+drop policy if exists "move note votes read" on public.move_note_votes;
+drop policy if exists "move note votes write" on public.move_note_votes;
+create policy "move note votes read" on public.move_note_votes for select using (true);
+create policy "move note votes write" on public.move_note_votes for all using (auth.uid() = uid) with check (auth.uid() = uid);
+grant select on public.move_note_votes to anon, authenticated;
+grant insert, update, delete on public.move_note_votes to authenticated;
+
+create or replace view public.move_notes_with_votes as
+select
+  mn.*,
+  coalesce(v.likes, 0) as likes,
+  coalesce(v.dislikes, 0) as dislikes,
+  coalesce(v.likes, 0) - coalesce(v.dislikes, 0) as score,
+  (select mv.value from public.move_note_votes mv where mv.note_id = mn.id and mv.uid = auth.uid()) as my_vote
+from public.move_notes mn
+left join (
+  select note_id,
+    count(*) filter (where value = 1) as likes,
+    count(*) filter (where value = -1) as dislikes
+  from public.move_note_votes
+  group by note_id
+) v on v.note_id = mn.id;
+grant select on public.move_notes_with_votes to anon, authenticated;
+
+drop function if exists public.move_note_vote(bigint, smallint) cascade;
+create or replace function public.move_note_vote(p_note_id bigint, p_value smallint)
+returns table(my_vote smallint, likes bigint, dislikes bigint) language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_existing smallint;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_value not in (1, -1) then raise exception 'invalid value'; end if;
+  select value into v_existing from public.move_note_votes where note_id = p_note_id and uid = v_me;
+  if v_existing is not null and v_existing = p_value then
+    delete from public.move_note_votes where note_id = p_note_id and uid = v_me;
+  else
+    insert into public.move_note_votes(note_id, uid, value) values (p_note_id, v_me, p_value)
+      on conflict (note_id, uid) do update set value = excluded.value, created_at = now();
+  end if;
+  return query
+    select
+      (select mv.value from public.move_note_votes mv where mv.note_id = p_note_id and mv.uid = v_me),
+      (select count(*) from public.move_note_votes where note_id = p_note_id and value = 1),
+      (select count(*) from public.move_note_votes where note_id = p_note_id and value = -1);
+end; $$;
+grant execute on function public.move_note_vote(bigint, smallint) to authenticated;
 

@@ -959,6 +959,70 @@ grant select on public.move_notes to anon, authenticated;
 grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
 
+-- (v0.4.7 기능, 사용자 요청) 수 설명에 유튜브 댓글처럼 좋아요·싫어요를 달고, 그걸로 "인기순" 정렬을
+-- 만든다. 1인 1글당 1행(좋아요/싫어요 중 하나만, puzzle_likes와 같은 패턴이지만 값이 두 가지라
+-- like/dislike 두 테이블 대신 value 컬럼 하나로 합친다) — 같은 값을 다시 누르면 취소, 다른 값을
+-- 누르면 그 값으로 바뀐다(좋아요→싫어요 전환 등, 유튜브와 동일한 동작).
+create table if not exists public.move_note_votes (
+  note_id bigint not null references public.move_notes(id) on delete cascade,
+  uid uuid not null references auth.users(id) on delete cascade,
+  value smallint not null check (value in (1, -1)),
+  created_at timestamptz not null default now(),
+  primary key (note_id, uid)
+);
+alter table public.move_note_votes enable row level security;
+drop policy if exists "move note votes read" on public.move_note_votes;
+drop policy if exists "move note votes write" on public.move_note_votes;
+create policy "move note votes read" on public.move_note_votes for select using (true);
+create policy "move note votes write" on public.move_note_votes for all using (auth.uid() = uid) with check (auth.uid() = uid);
+grant select on public.move_note_votes to anon, authenticated;
+grant insert, update, delete on public.move_note_votes to authenticated;
+
+-- 좋아요·싫어요 집계 + 내 투표 상태를 얹은 조회 전용 뷰 — 목록 화면(MoveExplainBlock)은 move_notes
+-- 대신 이 뷰를 읽는다(글 등록·수정·삭제는 그대로 move_notes 테이블에 직접 한다). my_vote는
+-- auth.uid()로 호출한 사람 기준이라 사람마다 다른 값이 자연스럽게 나온다(RLS와 같은 방식으로 세션의
+-- JWT를 그대로 읽음). score(좋아요-싫어요)는 "인기순" 정렬에 쓴다.
+create or replace view public.move_notes_with_votes as
+select
+  mn.*,
+  coalesce(v.likes, 0) as likes,
+  coalesce(v.dislikes, 0) as dislikes,
+  coalesce(v.likes, 0) - coalesce(v.dislikes, 0) as score,
+  (select mv.value from public.move_note_votes mv where mv.note_id = mn.id and mv.uid = auth.uid()) as my_vote
+from public.move_notes mn
+left join (
+  select note_id,
+    count(*) filter (where value = 1) as likes,
+    count(*) filter (where value = -1) as dislikes
+  from public.move_note_votes
+  group by note_id
+) v on v.note_id = mn.id;
+grant select on public.move_notes_with_votes to anon, authenticated;
+
+-- 좋아요/싫어요 토글 — puzzle_like_toggle과 같은 패턴으로, 이 호출 뒤의 집계값을 그 자리에서
+-- 돌려줘 클라이언트가 별도 재조회 없이 화면을 갱신할 수 있게 한다.
+drop function if exists public.move_note_vote(bigint, smallint) cascade;
+create or replace function public.move_note_vote(p_note_id bigint, p_value smallint)
+returns table(my_vote smallint, likes bigint, dislikes bigint) language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_existing smallint;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_value not in (1, -1) then raise exception 'invalid value'; end if;
+  select value into v_existing from public.move_note_votes where note_id = p_note_id and uid = v_me;
+  if v_existing is not null and v_existing = p_value then
+    delete from public.move_note_votes where note_id = p_note_id and uid = v_me;
+  else
+    insert into public.move_note_votes(note_id, uid, value) values (p_note_id, v_me, p_value)
+      on conflict (note_id, uid) do update set value = excluded.value, created_at = now();
+  end if;
+  return query
+    select
+      (select mv.value from public.move_note_votes mv where mv.note_id = p_note_id and mv.uid = v_me),
+      (select count(*) from public.move_note_votes where note_id = p_note_id and value = 1),
+      (select count(*) from public.move_note_votes where note_id = p_note_id and value = -1);
+end; $$;
+grant execute on function public.move_note_vote(bigint, smallint) to authenticated;
+
 -- ============================================================================
 -- 16) search_puzzles_prefix — 퍼즐 탭 "번호로 풀기" 검색 추천어용 (v0.3.1)
 -- ============================================================================
