@@ -19687,6 +19687,7 @@ const CHANGELOG = [
       "대국 결과 팝업의 '재대결' 버튼이 이제 실제로 작동해요 — 봇 대국은 같은 조건으로 곧장 다시 시작되고, 실시간 대국은 상대에게 재대결 신청이 가서 수락하면 새 대국이 시작돼요.",
       "수 설명에 유튜브 댓글처럼 좋아요·싫어요를 달 수 있어요. 인기순(좋아요-싫어요)·날짜순(오래된 순)·최신순 중 골라 정렬할 수도 있어요.",
       "개발자·공동 개발자의 퍼즐 생성자 양도가, 대상 아이디에 대문자가 하나라도 섞여 있으면 항상 조용히 실패하던 문제를 고쳤어요.",
+      "개발자 도구에 '퍼즐 컨트롤 센터'가 생겼어요 — 손상된(아무도 풀 수 없는) 퍼즐을 한 번에 검사해 모두 말소하거나, 번호를 직접 입력해 그 퍼즐 하나만 재생성·삭제할 수 있어요.",
     ]
   },
   {
@@ -21098,6 +21099,27 @@ function usePuzzleRegenRun() {
   }, []);
   return puzzleRegenRun;
 }
+// (v0.4.7 기능, 사용자 요청) 배치 재생성 루프와 아래 "퍼즐 컨트롤 센터"의 번호 지정 재생성이 완전히
+// 같은 로직(fetch → genPuzzleTree → upsert → 남아있는 override 정리)을 쓰도록 공용 함수로 뽑았다.
+// 실패하면 던지고, 성공하면 이 번호의 개발자 override를 함께 지웠는지(그래서 bumpContent가
+// 필요한지)만 알려준다 — 실제 upsert·CONTENT 변형은 이 함수가 전담한다.
+async function regenerateOnePuzzle(engine, no) {
+  const data = await puzzleFetch(no);
+  if (!data) throw new Error("퍼즐 데이터를 찾을 수 없음");
+  const setup = [...(data.setupSans || []), data.mistakeSan].filter(Boolean);
+  const fenRoot = (!data.setupSans || !data.setupSans.length) && data.fen ? parseFenFull(data.fen) : null;
+  const th = primaryTheme(data);
+  const ov = (CONTENT.puzzleOverrides || {})[no] || {};
+  const curLines = treeLinesOf(puzzleTreeOf(data));
+  const firstSan = th === "sacrifice" ? (curLines[0] && curLines[0].sans[0]) : null;
+  const opts = { ...puzzleThemeOpts(th, ov.target, ov.puzzleType), firstSan, tagSeq: 0 };
+  const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
+  if (!gen) throw new Error("이 기준으로는 트리를 만들 수 없음");
+  await sbUpsert("puzzles", { no, data: { ...data, tree: gen.tree, lines: gen.lines } });
+  let overridesTouched = false;
+  if (CONTENT.puzzleOverrides && CONTENT.puzzleOverrides[no]) { delete CONTENT.puzzleOverrides[no]; overridesTouched = true; }
+  return { overridesTouched };
+}
 function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
   const run = usePuzzleRegenRun();
   const { status, total, doneCount, curNo, failed } = run;
@@ -21115,23 +21137,8 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
       if (run.stop) { run.status = "stopped"; puzzleRegenNotify(); return; }
       run.curNo = no; puzzleRegenNotify();
       try {
-        const data = await puzzleFetch(no);
-        if (!data) throw new Error("퍼즐 데이터를 찾을 수 없음");
-        const setup = [...(data.setupSans || []), data.mistakeSan].filter(Boolean);
-        const fenRoot = (!data.setupSans || !data.setupSans.length) && data.fen ? parseFenFull(data.fen) : null;
-        const th = primaryTheme(data);
-        // (regenerateWithTarget과 동일) 개발자가 이 퍼즐에 직접 지정해 둔 목표 cp·종류가 있으면
-        // 그대로 이어받고, 없으면 테마 기본값을 쓴다 — "희생" 테마는 지금 트리가 고른 첫 수(탁월한
-        // 수)를 그대로 고정해야 같은 전술 위치가 유지된다.
-        const ov = (CONTENT.puzzleOverrides || {})[no] || {};
-        const curLines = treeLinesOf(puzzleTreeOf(data));
-        const firstSan = th === "sacrifice" ? (curLines[0] && curLines[0].sans[0]) : null;
-        const opts = { ...puzzleThemeOpts(th, ov.target, ov.puzzleType), firstSan, tagSeq: 0 };
-        const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
-        if (!gen) throw new Error("이 기준으로는 트리를 만들 수 없음");
-        await sbUpsert("puzzles", { no, data: { ...data, tree: gen.tree, lines: gen.lines } });
-        // 재생성한 트리가 실제로 보이도록, 이 번호에 남아있을 수 있는 개발자 override(더 우선시됨)를 함께 지운다.
-        if (CONTENT.puzzleOverrides && CONTENT.puzzleOverrides[no]) { delete CONTENT.puzzleOverrides[no]; overridesTouched = true; }
+        const { overridesTouched: t } = await regenerateOnePuzzle(engine, no);
+        if (t) overridesTouched = true;
       } catch (e) {
         run.failed = [...run.failed, { no, error: (e && e.message) || String(e) }];
       }
@@ -21172,6 +21179,136 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
           {failed.map((f) => <div key={f.no} style={{ fontSize: 10, color: T.blunder }}>#{f.no} — {f.error}</div>)}
         </div>
       )}
+    </div>
+  );
+}
+// (v0.4.7 기능, 사용자 요청) "전체 퍼즐 일괄 재생성"을 좀 더 다듬어 달라 — 손상된(라인 0개, 또는
+// 아예 데이터를 못 찾는) 퍼즐을 한 번에 찾아 말소하고, 특정 번호 하나를 콕 집어 재생성·삭제할 수
+// 있는 작은 관제 도구를 같은 카드 그룹에 추가한다. 스캔·삭제 진행 상태도 위 배치 재생성과 같은
+// 패턴(모듈 스코프 싱글턴 + 리스너)으로 둬서, 도중에 설정 탭을 재마운트해도(navNonce) 이어서 보인다.
+const puzzleScanRun = { status: "idle", total: 0, checked: 0, corrupted: [], deleteDone: 0, deleteFailed: [], stop: false, listeners: new Set() };
+function puzzleScanNotify() { for (const fn of puzzleScanRun.listeners) fn(); }
+function usePuzzleScanRun() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const fn = () => bump((n) => n + 1);
+    puzzleScanRun.listeners.add(fn);
+    return () => puzzleScanRun.listeners.delete(fn);
+  }, []);
+  return puzzleScanRun;
+}
+function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
+  const run = usePuzzleScanRun();
+  const { status, total, checked, corrupted, deleteDone, deleteFailed } = run;
+  const scanning = status === "listing" || status === "scanning";
+  const deleting = status === "deleting";
+  const scan = async () => {
+    if (scanning || deleting) return;
+    run.stop = false;
+    run.corrupted = []; run.checked = 0; run.total = 0; run.deleteDone = 0; run.deleteFailed = [];
+    run.status = "listing"; puzzleScanNotify();
+    const nos = await puzzleListAllNos();
+    run.total = nos.length; puzzleScanNotify();
+    run.status = "scanning"; puzzleScanNotify();
+    for (const no of nos) {
+      if (run.stop) { run.status = "stopped"; puzzleScanNotify(); return; }
+      // (isPuzzlePlayable과 동일 기준) 데이터를 아예 못 찾거나(공유 후 다른 곳에서 지워짐 등), 라인이
+      // 0개라 아무도 풀 수 없는 퍼즐을 "손상"으로 본다.
+      const data = await puzzleFetch(no);
+      if (!data || !isPuzzlePlayable(data)) run.corrupted = [...run.corrupted, no];
+      run.checked += 1; puzzleScanNotify();
+    }
+    run.status = "scanned"; puzzleScanNotify();
+  };
+  const stopScan = () => { run.stop = true; };
+  const deleteAll = async () => {
+    if (status !== "scanned" || !corrupted.length || deleting) return;
+    run.stop = false;
+    run.status = "deleting"; run.deleteDone = 0; run.deleteFailed = []; puzzleScanNotify();
+    for (const no of corrupted) {
+      if (run.stop) { run.status = "stopped"; puzzleScanNotify(); return; }
+      const ok = await puzzleDeleteRemote(no);
+      if (!ok) run.deleteFailed = [...run.deleteFailed, no];
+      run.deleteDone += 1; puzzleScanNotify();
+    }
+    run.status = "deleted"; puzzleScanNotify();
+  };
+  const [ctlNo, setCtlNo] = useState("");
+  const [ctlBusy, setCtlBusy] = useState(false);
+  const [ctlMsg, setCtlMsg] = useState(null); // { ok, text }
+  const parsedNo = parseInt(ctlNo, 10);
+  const validNo = Number.isFinite(parsedNo) && String(parsedNo) === ctlNo.trim() && parsedNo > 0;
+  const doRegenOne = async () => {
+    if (!validNo || ctlBusy) return;
+    setCtlBusy(true); setCtlMsg(null);
+    try {
+      const { overridesTouched } = await regenerateOnePuzzle(engine, parsedNo);
+      if (overridesTouched && bumpContent) { try { await bumpContent(); } catch { } }
+      setCtlMsg({ ok: true, text: "#" + parsedNo + " 재생성 완료" });
+    } catch (e) { setCtlMsg({ ok: false, text: "#" + parsedNo + " 재생성 실패 — " + ((e && e.message) || String(e)) }); }
+    setCtlBusy(false);
+  };
+  const doDeleteOne = async () => {
+    if (!validNo || ctlBusy) return;
+    setCtlBusy(true); setCtlMsg(null);
+    const ok = await puzzleDeleteRemote(parsedNo);
+    setCtlMsg(ok ? { ok: true, text: "#" + parsedNo + " 삭제 완료" } : { ok: false, text: "#" + parsedNo + " 삭제 실패(존재하지 않거나 권한 없음)" });
+    setCtlBusy(false);
+  };
+  const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
+  const darkBtnStyle = { padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" };
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 퍼즐 컨트롤 센터</div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>손상된(라인이 하나도 없어 아무도 풀 수 없는) 퍼즐을 찾아 한 번에 지우거나, 특정 번호 하나를 직접 재생성·삭제할 수 있어요.</p>
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>손상된 퍼즐 검사·말소</div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10, flexWrap: "wrap" }}>
+        {scanning || deleting
+          ? <button onClick={stopScan} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
+          : <button onClick={scan} className="press" style={btnStyle}>{status === "idle" ? "손상된 퍼즐 검사" : "다시 검사"}</button>}
+        {status === "scanned" && corrupted.length > 0 && (
+          <button onClick={deleteAll} disabled={deleting} className="press" style={{ ...darkBtnStyle, opacity: deleting ? .6 : 1 }}>손상된 퍼즐 {corrupted.length}개 모두 말소</button>
+        )}
+      </div>
+      {status !== "idle" && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
+            {status === "listing" ? "퍼즐 목록을 불러오는 중…"
+              : status === "scanning" ? "검사 중… — " + checked + " / " + total + " (손상 " + corrupted.length + "건 발견)"
+              : status === "scanned" ? (corrupted.length ? "검사 완료 — 손상된 퍼즐 " + corrupted.length + "개 발견" : "검사 완료 — 손상된 퍼즐 없음")
+              : status === "deleting" ? "말소 중… — " + deleteDone + " / " + corrupted.length
+              : status === "deleted" ? "말소 완료 — " + deleteDone + "개 지움" + (deleteFailed.length ? " (실패 " + deleteFailed.length + "건)" : "")
+              : status === "stopped" ? "중단됨" : ""}
+          </div>
+          {(scanning || deleting) && total > 0 && (
+            <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
+              <div style={{ width: (100 * (deleting ? deleteDone / (corrupted.length || 1) : checked / total)) + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .3s ease" }} />
+            </div>
+          )}
+        </div>
+      )}
+      {status === "scanned" && corrupted.length > 0 && (
+        <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 10, color: T.blunder }}>
+          {corrupted.map((no) => "#" + no).join(", ")}
+        </div>
+      )}
+      {deleteFailed.length > 0 && (
+        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>
+          말소 실패: {deleteFailed.map((no) => "#" + no).join(", ")}
+        </div>
+      )}
+
+      <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>번호로 재생성·삭제</div>
+      <div className="flex gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
+        <input value={ctlNo} onChange={(e) => { setCtlNo(e.target.value.replace(/[^0-9]/g, "")); setCtlMsg(null); }} placeholder="퍼즐 번호(no)" inputMode="numeric" style={{ padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, boxSizing: "border-box", flex: "1 1 120px" }} />
+        <button onClick={doRegenOne} disabled={!validNo || ctlBusy || !engine || engine.status !== "ready"} className="press" style={{ ...btnStyle, opacity: (!validNo || ctlBusy || !engine || engine.status !== "ready") ? .5 : 1 }}>{ctlBusy ? "처리 중…" : "재생성"}</button>
+        <button onClick={doDeleteOne} disabled={!validNo || ctlBusy} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder, opacity: (!validNo || ctlBusy) ? .5 : 1 }}>삭제</button>
+      </div>
+      {(!engine || engine.status !== "ready") && <p style={{ fontSize: 10.5, color: T.blunder, marginBottom: 4 }}>재생성은 엔진이 준비돼야 할 수 있어요(삭제는 바로 가능해요).</p>}
+      {ctlMsg && <p style={{ fontSize: 11, color: ctlMsg.ok ? T.best : T.blunder, fontWeight: 700 }}>{ctlMsg.text}</p>}
     </div>
   );
 }
@@ -21516,6 +21653,8 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
           <DailyPuzzleDevPanel card={{}} />
           <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
           <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={{}} />
+          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+          <PuzzleControlCenterPanel engine={engine} bumpContent={bumpContent} card={{}} />
         </div>
       )}
 
