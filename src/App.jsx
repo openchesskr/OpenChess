@@ -19533,6 +19533,10 @@ const CHANGELOG = [
       "/play에서 봇이 아닌 실시간 상대와 대국할 때는 '다시 설정' 버튼이 뜨지 않아요.",
       "실시간 대국에 무승부 제안 버튼이 생겼어요 — 기권 위에서 상대에게 합의 무승부를 제안할 수 있고, 제안받은 쪽에는 화면 아래에 수락/거절 알림이 떠요.",
       "실시간 대국 중 뒤로가기나 페이지 나가기로 화면을 벗어나려 하면, 곧장 기권 처리되는 대신 정말 나갈지 한 번 물어봐요.",
+      "상단 헤더 검색·친구·채팅·알림·프로필 버튼의 테두리가 일부 환경에서 잘려 보이던 문제를 고쳤고, 프로필 버튼의 y좌표를 알림 버튼과 정확히 맞췄어요.",
+      "수 키워드(TOP LEVEL 등)를 눌렀을 때 뜨는 말풍선이 화면 정중앙 대신, 그 키워드를 가리키는 꼬리와 함께 바로 옆에 떠요.",
+      "이미 친구인 상대의 프로필에서는 '친구 요청' 버튼이 더 이상 뜨지 않아요.",
+      "친구 요청 관련 문구가 길어져도 /user 페이지의 다른 요소들이 밀리지 않도록 고쳤어요.",
     ]
   },
   {
@@ -21917,10 +21921,11 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
   const clearAll = () => { if (!myUid) return; setItems([]); notifyDeleteAll(myUid).then((ok) => { if (!ok) refresh(); }); };
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      {/* (사용자 요청, 3차 재수정) border+box-sizing 조합도 완전히 못 맞춰 — border를 없애고 레이아웃
-          크기에 전혀 관여하지 않는 inset box-shadow로 테두리를 대신한다(옆 세그먼트·프로필 버튼과
-          동일한 처리). */}
-      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "none", outline: "1px solid " + T.brass, outlineOffset: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      {/* (버그 수정, 사용자 재제보) outline은 브라우저마다 border-radius를 따라 둥글게 그려지는지가
+          달라 "테두리가 잘려 보인다"는 제보가 반복됐다 — border-box 사이징의 진짜 border로 바꿔
+          어느 브라우저에서도 항상 같은 모양으로 그려지게 한다(옆 세그먼트·프로필 버튼과 동일 처리).
+          box-sizing:border-box라 border를 더해도 바깥 치수(width/height)는 그대로 27/34로 남는다. */}
+      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, boxSizing: "border-box", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
@@ -21986,15 +21991,13 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
   const goToProfile = () => { setOpen(false); onGoToProfile(); };
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
-      {/* (버그 수정, 사용자 요청) 검색·친구·채팅·알림 버튼은 모두 고정 높이(27/34px)인데, 이 버튼만
-          세로 패딩으로 높이가 정해져 있어 border까지 합치면 그 버튼들보다 미묘하게 더 컸다(내용물
-          — 아바타·닉네임·화살표 — 세로 정렬은 그대로 alignItems:center가 맡으므로, 높이만 옆
-          버튼들과 똑같이 고정해도 레이아웃은 그대로다).
-          (사용자 재요청, 3차 재수정) box-sizing:border-box를 더해도 여전히 옆 버튼들보다 커 보였다 —
-          border 속성 자체를 없애고, 레이아웃 크기에 전혀 관여하지 않는 inset box-shadow로 테두리를
-          대신 그린다. 이제 실제 렌더 높이는 오직 height 값(다른 두 버튼과 동일한 27/34)에만 좌우돼
-          border 유무·box-sizing과 완전히 무관하게 항상 정확히 같다. */}
-      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "none", outline: "1px solid " + T.brass, outlineOffset: 0, cursor: "pointer" }}>
+      {/* (버그 수정, 사용자 재제보) outline은 브라우저마다 border-radius를 따라 둥글게 그려지는지가
+          달라 "테두리가 잘려 보인다"는 제보가 반복됐고, 알림 버튼과 y좌표가 미묘하게 어긋나 보인다는
+          제보도 함께 있었다 — border-box 사이징의 진짜 border로 통일한다. box-sizing:border-box라
+          border를 더해도 바깥 높이는 여전히 다른 두 버튼과 똑같은 27/34로 고정되고, 내용물(아바타·
+          닉네임·화살표)의 세로 정렬은 그대로 alignItems:center가 맡으므로 border 유무와 무관하게
+          항상 옆 버튼들과 정확히 같은 y좌표에 놓인다. */}
+      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, boxSizing: "border-box", padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
         {/* (버그 수정) 그랜드마스터 사진 테두리(gmPhotoRingStyle)는 border+바깥쪽 glow box-shadow를
             더하는데, 이 아바타는 다른 곳(56~64px)과 달리 22/27px로 아주 작아 그 9px 블러 glow가
             버튼 테두리 밖으로 넘쳐 나가 이 버튼만 유독 위아래로 더 커 보이는 원인이었다(그랜드마스터
@@ -22148,6 +22151,22 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     fetchChesscomProfile(ccUsername).then((p) => { if (!cancelled) setCcHeaderProf(p); }).catch(() => {});
     return () => { cancelled = true; };
   }, [pub && pub.chesscom]);
+  // (버그 수정, 사용자 제보) reqState는 예전엔 이 화면에서 직접 요청을 보냈을 때(수동 버튼·자동
+  // 초대)만 채워지고, 이미 친구이거나 이미 요청을 보내 둔 상대의 프로필을 열었을 때는 계속 null로
+  // 남아 있어 "친구 요청" 버튼이 매번 다시 떴다 — friend_edges에서 나와 이 상대 사이의 기존 관계를
+  // 조회해 초기값을 채운다. 사용자가 방금 이 화면에서 직접 요청을 보내 reqState가 이미 채워졌다면
+  // (autoInvite 효과와의 경합) 덮어쓰지 않는다.
+  useEffect(() => {
+    if (!myUid || !pubUid || myUid === pubUid) return;
+    let cancelled = false;
+    friendEdges().then((edges) => {
+      if (cancelled) return;
+      const edge = edges.find((e) => (e.from_uid === myUid && e.to_uid === pubUid) || (e.from_uid === pubUid && e.to_uid === myUid));
+      if (!edge) return;
+      setReqState((prev) => (prev === null ? (edge.status === "accepted" ? "accepted" : "exists") : prev));
+    });
+    return () => { cancelled = true; };
+  }, [myUid, pubUid]);
   // (기능) 초대 링크(?invite=friend)로 들어왔고, 로그인한 상태에서 상대 uid가 확인되면 한 번만
   // 자동으로 친구 요청을 보낸다 — 새로고침·재방문 시 매번 다시 보내지 않도록 mid가 바뀔 때만 다시 시도한다.
   const autoInviteTriedRef = useRef(null);
@@ -22273,14 +22292,19 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
                     </div>
                   )}
                 </div>
-                <div style={{ flexShrink: 0 }}>
+                {/* (버그 수정, 사용자 제보) 이 칸이 flexShrink:0 + 내부 문구들이 전부 whiteSpace:nowrap
+                    이라, "이미 친구이거나 요청 중입니다"처럼 긴 문구가 뜨면 그 문구의 전체 폭만큼
+                    이 칸이 넓어지면서 flex:1인 왼쪽 신원 블록을 그만큼 눌러 이름·소개가 부자연스럽게
+                    줄바꿈되곤 했다 — 이 칸에 항상 같은 최대 폭을 주고, 그 폭 안에서는 문구가 줄바꿈
+                    되도록(whiteSpace:nowrap 제거) 바꿔 어떤 상태가 떠도 옆 블록을 밀어내지 않는다. */}
+                <div style={{ flexShrink: 0, maxWidth: 132, textAlign: "right" }}>
                   {!isSelf && (
                     me ? (
-                      reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink, whiteSpace: "nowrap" }}><UserCheck size={14} />친구가 되었습니다</span>
-                        : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap" }}><Clock size={14} />친구 요청을 보냈습니다</span>
-                          : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap" }}><UserCheck size={14} />이미 친구이거나 요청 중입니다</span>
+                      reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} style={{ flexShrink: 0 }} />친구가 되었습니다</span>
+                        : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><Clock size={14} style={{ flexShrink: 0 }} />친구 요청을 보냈습니다</span>
+                          : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><UserCheck size={14} style={{ flexShrink: 0 }} />이미 친구이거나 요청 중입니다</span>
                             : <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.96 }} onClick={doReq} disabled={reqBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5, whiteSpace: "nowrap" }}><UserPlus size={14} />친구 요청</motion.button>
-                    ) : <p style={{ fontSize: 11.5, color: T.inkSoft, whiteSpace: "nowrap" }}>로그인하면<br />친구 요청을 보낼 수 있어요.</p>
+                    ) : <p style={{ fontSize: 11.5, color: T.inkSoft }}>로그인하면 친구 요청을 보낼 수 있어요.</p>
                   )}
                 </div>
               </div>
@@ -27227,21 +27251,22 @@ export default function App() {
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
               모서리 radius를 직접 주고 컨테이너는 overflow:visible로 둬 배지가 잘리지 않게 한다. */}
-          {/* (사용자 요청, 4차 재수정) inset box-shadow는 레이아웃 크기엔 관여하지 않지만, 이 컨테이너처럼
-              안쪽 버튼들이 테두리까지 정확히 꽉 채우는 경우 box-shadow가 배경보다 먼저(자식보다 뒤에)
-              그려져 자식들의 불투명한 배경에 완전히 가려 아예 안 보였다(사용자 제보 — "윤곽선이
-              사라졌다"). outline은 border-box 바깥쪽에 그려져 자식이 절대 덮을 수 없고, box-shadow와
-              마찬가지로 레이아웃 크기(너비/높이)에도 전혀 관여하지 않는다 — 세 요소(이 세그먼트·
-              알림·프로필) 모두 outline으로 통일해, 항상 보이면서 높이는 각자의 `height` 값에만 좌우돼
-              완전히 같아지게 한다. */}
-          <div className="flex items-center" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, outline: "1px solid " + T.brass, outlineOffset: 0, overflow: "visible", flexShrink: 0 }}>
-            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
-            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          {/* (버그 수정, 사용자 재제보) outline은 border-radius를 따라 둥글게 그려지는지가 브라우저마다
+              달라(구버전 WebKit 계열은 outline이 각진 사각형으로 그려져 둥근 모서리 밖으로 삐져나오거나,
+              반대로 옆 버튼 배경에 가려 잘려 보인다) 실기기에서 다시 "테두리가 잘린다"는 제보가 있었다.
+              outline 대신 진짜 border를 쓰되 box-sizing:border-box로 바깥 치수(height)는 그대로 두고
+              안쪽 내용만 border 두께(1px)만큼 줄어들게 한다 — 자식 버튼들은 고정 height 대신
+              alignItems:"stretch"로 그 줄어든 안쪽 높이에 저절로 맞춰지므로, border를 절대 덮어 가리지
+              않는다(이제 자식에 height를 따로 지정하지 않는다). 어느 브라우저에서도 border는 항상
+              같은 방식으로 그려지므로 이 문제가 구조적으로 재발하지 않는다. */}
+          <div className="flex" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, border: "1px solid " + T.brass, boxSizing: "border-box", alignItems: "stretch", overflow: "visible", flexShrink: 0 }}>
+            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
             {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
-            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
