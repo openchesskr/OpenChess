@@ -19673,7 +19673,7 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.4.7", date: "2026.9.4", dev: ["openchesskr", "G13sus4"], items: [
+    version: "0.4.7", date: "2026.9.5", dev: ["openchesskr", "G13sus4"], items: [
       "분석 탭 체스보드가 수를 둘 때마다 화면 비율이 미세하게 흔들리던 문제를 고쳤어요 — 크기가 항상 고정돼요.",
       "/play에서 봇이 아닌 실시간 상대와 대국할 때는 '다시 설정' 버튼이 뜨지 않아요.",
       "실시간 대국에 무승부 제안 버튼이 생겼어요 — 기권 위에서 상대에게 합의 무승부를 제안할 수 있고, 제안받은 쪽에는 화면 아래에 수락/거절 알림이 떠요.",
