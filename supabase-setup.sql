@@ -959,6 +959,70 @@ grant select on public.move_notes to anon, authenticated;
 grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
 
+-- (v0.4.7 기능, 사용자 요청) 수 설명에 유튜브 댓글처럼 좋아요·싫어요를 달고, 그걸로 "인기순" 정렬을
+-- 만든다. 1인 1글당 1행(좋아요/싫어요 중 하나만, puzzle_likes와 같은 패턴이지만 값이 두 가지라
+-- like/dislike 두 테이블 대신 value 컬럼 하나로 합친다) — 같은 값을 다시 누르면 취소, 다른 값을
+-- 누르면 그 값으로 바뀐다(좋아요→싫어요 전환 등, 유튜브와 동일한 동작).
+create table if not exists public.move_note_votes (
+  note_id bigint not null references public.move_notes(id) on delete cascade,
+  uid uuid not null references auth.users(id) on delete cascade,
+  value smallint not null check (value in (1, -1)),
+  created_at timestamptz not null default now(),
+  primary key (note_id, uid)
+);
+alter table public.move_note_votes enable row level security;
+drop policy if exists "move note votes read" on public.move_note_votes;
+drop policy if exists "move note votes write" on public.move_note_votes;
+create policy "move note votes read" on public.move_note_votes for select using (true);
+create policy "move note votes write" on public.move_note_votes for all using (auth.uid() = uid) with check (auth.uid() = uid);
+grant select on public.move_note_votes to anon, authenticated;
+grant insert, update, delete on public.move_note_votes to authenticated;
+
+-- 좋아요·싫어요 집계 + 내 투표 상태를 얹은 조회 전용 뷰 — 목록 화면(MoveExplainBlock)은 move_notes
+-- 대신 이 뷰를 읽는다(글 등록·수정·삭제는 그대로 move_notes 테이블에 직접 한다). my_vote는
+-- auth.uid()로 호출한 사람 기준이라 사람마다 다른 값이 자연스럽게 나온다(RLS와 같은 방식으로 세션의
+-- JWT를 그대로 읽음). score(좋아요-싫어요)는 "인기순" 정렬에 쓴다.
+create or replace view public.move_notes_with_votes as
+select
+  mn.*,
+  coalesce(v.likes, 0) as likes,
+  coalesce(v.dislikes, 0) as dislikes,
+  coalesce(v.likes, 0) - coalesce(v.dislikes, 0) as score,
+  (select mv.value from public.move_note_votes mv where mv.note_id = mn.id and mv.uid = auth.uid()) as my_vote
+from public.move_notes mn
+left join (
+  select note_id,
+    count(*) filter (where value = 1) as likes,
+    count(*) filter (where value = -1) as dislikes
+  from public.move_note_votes
+  group by note_id
+) v on v.note_id = mn.id;
+grant select on public.move_notes_with_votes to anon, authenticated;
+
+-- 좋아요/싫어요 토글 — puzzle_like_toggle과 같은 패턴으로, 이 호출 뒤의 집계값을 그 자리에서
+-- 돌려줘 클라이언트가 별도 재조회 없이 화면을 갱신할 수 있게 한다.
+drop function if exists public.move_note_vote(bigint, smallint) cascade;
+create or replace function public.move_note_vote(p_note_id bigint, p_value smallint)
+returns table(my_vote smallint, likes bigint, dislikes bigint) language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_existing smallint;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_value not in (1, -1) then raise exception 'invalid value'; end if;
+  select value into v_existing from public.move_note_votes where note_id = p_note_id and uid = v_me;
+  if v_existing is not null and v_existing = p_value then
+    delete from public.move_note_votes where note_id = p_note_id and uid = v_me;
+  else
+    insert into public.move_note_votes(note_id, uid, value) values (p_note_id, v_me, p_value)
+      on conflict (note_id, uid) do update set value = excluded.value, created_at = now();
+  end if;
+  return query
+    select
+      (select mv.value from public.move_note_votes mv where mv.note_id = p_note_id and mv.uid = v_me),
+      (select count(*) from public.move_note_votes where note_id = p_note_id and value = 1),
+      (select count(*) from public.move_note_votes where note_id = p_note_id and value = -1);
+end; $$;
+grant execute on function public.move_note_vote(bigint, smallint) to authenticated;
+
 -- ============================================================================
 -- 16) search_puzzles_prefix — 퍼즐 탭 "번호로 풀기" 검색 추천어용 (v0.3.1)
 -- ============================================================================
@@ -1214,6 +1278,10 @@ grant execute on function public.puzzle_creator_save(bigint, jsonb, jsonb, int, 
 -- 예외가 안 났으니 "성공"으로 표시했지만 실제로는 아무것도 바뀌지 않았다 — 아직 전역 puzzles
 -- 테이블에 없는(공유되지 않은) 퍼즐에서 이 기능을 쓰면 100% 재현됐다. select ... for update로
 -- 먼저 존재를 확인해, 없으면 puzzle_delete와 동일하게 명확히 예외를 던진다.
+-- (버그 수정, 사용자 제보) "여전히 양도가 안 된다" — profiles.username은 가입 시(handle_new_user)
+-- 항상 소문자로 저장되고 다른 모든 아이디 조회(claim_username·friend_request·email_for_username
+-- 등)도 lower()로 비교하는데, 이 함수만 btrim만 하고 대소문자를 그대로 비교했다 — 대문자가 하나라도
+-- 섞인 아이디(실제 아이디 대부분)를 입력하면 항상 user_not_found로 조용히 실패했다.
 create or replace function public.puzzle_reassign_creator(p_no bigint, p_target_username text default null)
 returns void language plpgsql security definer set search_path = public as $$
 declare v_uid uuid; v_uname text; v_exists boolean;
@@ -1224,7 +1292,7 @@ begin
   if p_target_username is null or btrim(p_target_username) = '' then
     select id, username into v_uid, v_uname from public.profiles where username = 'openchesskr';
   else
-    select id, username into v_uid, v_uname from public.profiles where username = btrim(p_target_username);
+    select id, username into v_uid, v_uname from public.profiles where username = lower(btrim(p_target_username));
     if v_uid is null then raise exception 'user_not_found'; end if;
   end if;
   update public.puzzles set creator_uid = v_uid, creator_username = v_uname, creator_edited_at = null where no = p_no;
@@ -1418,6 +1486,16 @@ grant select on public.pvp_games to authenticated;
 -- 매칭된 두 클라이언트가 서로 다른 값을 로컬에서 고르는 사고를 막기 위해, 실제 클럭은 이 서버
 -- 값(대기열이면 매칭 당시 time_control, 초대면 초대한 사람이 고른 값)을 그대로 따른다.
 alter table public.pvp_games add column if not exists time_control text not null default '600-0';
+-- (v0.4.7 기능, 사용자 요청) 합의 무승부 제안 — null이면 제안 없음, 값이 있으면 그 uid가 상대에게
+-- 무승부를 제안해 응답을 기다리는 중이라는 뜻. 어느 한쪽이 일방적으로 무승부를 선언할 수는 없고
+-- (아래 pvp_draw_accept 참고), 수를 두면(pvp_move) 자동으로 취소된다.
+alter table public.pvp_games add column if not exists draw_offered_by uuid references auth.users(id) on delete set null;
+-- (v0.4.7 기능, 사용자 요청) 재대결 제안 — draw_offered_by와 같은 패턴. rematch_game_id는 제안이
+-- 수락돼 실제로 새 대국이 만들어지면 그 새 행의 id를 가리킨다 — 양쪽 클라이언트 모두 이 (끝난) 대국
+-- 행을 실시간 구독하고 있으므로, rematch_game_id가 채워지는 순간을 보고 자동으로 새 대국으로
+-- 넘어간다(별도 알림 폴링 없이).
+alter table public.pvp_games add column if not exists rematch_offered_by uuid references auth.users(id) on delete set null;
+alter table public.pvp_games add column if not exists rematch_game_id bigint references public.pvp_games(id) on delete set null;
 -- 위 8) Realtime 섹션과 동일한 이유로, 매칭·수·대국 종료를 실시간으로 받으려면 이 테이블도
 -- supabase_realtime publication에 포함되어야 한다(신규 테이블이라 이 파일 앞부분의 8) 섹션이 실행될
 -- 때는 아직 존재하지 않으므로 여기서 별도로 등록한다).
@@ -1508,7 +1586,9 @@ begin
   v_white_turn := (v_ply % 2) = 0;
   v_expected := case when v_white_turn then v_game.white_uid else v_game.black_uid end;
   if v_me <> v_expected then raise exception 'not your turn'; end if;
-  update public.pvp_games set sans = sans || to_jsonb(p_san), updated_at = now()
+  -- (v0.4.7 기능) 수를 두면 대기 중이던 무승부 제안은 자동으로 취소된다(표준적인 체스 클라이언트
+  -- 동작과 동일 — 제안을 무시하고 그냥 다음 수를 두면 그 제안은 무효가 된다).
+  update public.pvp_games set sans = sans || to_jsonb(p_san), draw_offered_by = null, updated_at = now()
     where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
@@ -1549,6 +1629,110 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.pvp_finish(bigint, text) to authenticated;
+
+-- (v0.4.7 기능, 사용자 요청) 합의 무승부 — 위 pvp_finish는 자기 승리 선언만 막을 뿐 'draw'는 누구든
+-- 그대로 통과시키므로(스테일메이트·3회 동형 반복처럼 "객관적으로 계산되는" 무승부 전용), 그걸 그대로
+-- 써서 한쪽이 일방적으로 무승부를 강제하게 둘 수는 없다. 대신 제안(draw_offered_by만 기록)과 실제
+-- 종료(상대만 수락 가능)를 분리한 별도 RPC 세 개를 둔다.
+drop function if exists public.pvp_draw_offer(bigint) cascade;
+create or replace function public.pvp_draw_offer(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  update public.pvp_games set draw_offered_by = v_me, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_draw_offer(bigint) to authenticated;
+
+-- 상대가 제안한 무승부를 수락한다 — 내가 방금 스스로 제안한 것(draw_offered_by = 나)은 수락할 수 없다.
+drop function if exists public.pvp_draw_accept(bigint) cascade;
+create or replace function public.pvp_draw_accept(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  if v_game.draw_offered_by is null or v_game.draw_offered_by = v_me then raise exception 'no pending draw offer from opponent'; end if;
+  update public.pvp_games set status = 'draw', draw_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_draw_accept(bigint) to authenticated;
+
+-- 무승부 제안을 거절하거나(상대가 부름) 스스로 취소한다(제안한 쪽이 다시 부름) — 참가자면 누가
+-- 불러도 그냥 제안을 지운다.
+drop function if exists public.pvp_draw_decline(bigint) cascade;
+create or replace function public.pvp_draw_decline(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  update public.pvp_games set draw_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_draw_decline(bigint) to authenticated;
+
+-- (v0.4.7 기능, 사용자 요청) 재대결 — 결과 팝업의 "재대결" 버튼. 무승부 제안과 달리 게임이 이미
+-- 끝난(status<>'active') 뒤에 걸리고, 수락되면 진짜로 새 pvp_games 행을 만들어 이어 붙인다. 두
+-- 참가자가 서로 도전할 필요 없이(랜덤 매칭 상대는 친구가 아닐 수 있어 pvp_invite_friend를 쓸 수
+-- 없다) 방금 그 대국 자체에 제안 상태(rematch_offered_by)를 기록해 두는 방식.
+-- (동시성) "제안"과 "수락"을 굳이 분리하지 않고 이 함수 하나로 합친다 — 이미 상대가 먼저 제안해
+-- 두었다면 내가 다시 부르는 순간 그 자리에서 곧바로 새 대국을 만든다(=수락). 두 사람이 "재대결"을
+-- 정확히 동시에 눌러도 이 함수 전체가 그 대국 행에 대한 for update 잠금 안에서 실행되므로, 먼저
+-- 잠금을 얻은 호출이 rematch_offered_by를 자신으로 세우고, 그 다음 잠금을 얻은 호출은 이미 상대로
+-- 채워진 값을 보고 즉시 새 대국을 만든다 — 두 클라이언트 중 누가 실시간 이벤트를 먼저 받는지와
+-- 무관하게 항상 정확히 한 번만 새 대국이 만들어진다. 이미 만들어진 뒤(rematch_game_id가 있음)의
+-- 중복 호출(재클릭·경합)은 그 기존 대국을 그대로 돌려준다.
+drop function if exists public.pvp_rematch_offer(bigint) cascade;
+create or replace function public.pvp_rematch_offer(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_new public.pvp_games; v_w uuid; v_b uuid;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status = 'active' then raise exception 'game still active'; end if;
+  if v_game.rematch_game_id is not null then
+    select * into v_new from public.pvp_games where id = v_game.rematch_game_id;
+    return v_new;
+  end if;
+  if v_game.rematch_offered_by is null or v_game.rematch_offered_by = v_me then
+    update public.pvp_games set rematch_offered_by = v_me, updated_at = now() where id = p_game_id returning * into v_game;
+    return v_game;
+  end if;
+  -- 상대가 이미 제안해 둔 상태에서 내가 불렀다 = 수락. 진영은 뒤바꿔(맞바꿈) 새 대국을 만든다.
+  if random() < 0.5 then v_w := v_game.white_uid; v_b := v_game.black_uid; else v_w := v_game.black_uid; v_b := v_game.white_uid; end if;
+  insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, v_game.time_control) returning * into v_new;
+  update public.pvp_games set rematch_offered_by = null, rematch_game_id = v_new.id, updated_at = now() where id = p_game_id;
+  return v_new;
+end; $$;
+grant execute on function public.pvp_rematch_offer(bigint) to authenticated;
+
+-- 재대결 제안을 거절하거나(상대가 부름) 스스로 취소한다(제안한 쪽이 다시 부름).
+drop function if exists public.pvp_rematch_decline(bigint) cascade;
+create or replace function public.pvp_rematch_decline(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  update public.pvp_games set rematch_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_rematch_decline(bigint) to authenticated;
 
 -- (v0.4.5 기능, 사용자 요청) pvp_finish의 자기 승리 선언 금지 가드를 브라우저에서 직접 우회할 방법은
 -- 없지만("체크메이트 여부"를 클라이언트가 주장하는 값 그대로 믿을 수 없다는 게 핵심 문제), 서버 쪽
