@@ -4,8 +4,8 @@ import { motion, AnimatePresence, useAnimationControls } from "framer-motion";
 import {
   Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
-  ChevronRight as Crumb, Star, ThumbsUp, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2,
+  ChevronRight as Crumb, Star, ThumbsUp, ThumbsDown, Check, Play, ArrowLeft, RotateCcw, Search, X,
+  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
   Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench,
 } from "lucide-react";
@@ -2373,6 +2373,7 @@ function useBoardSize(max = 360) {
   const [size, setSize] = useState(Math.min(max, 320));
   const elRef = useRef(null);
   const roRef = useRef(null);
+  const debounceRef = useRef(null);
   // (버그·모바일) Board 래퍼는 격자 바깥에 프레임(안쪽 여백 20 + 패딩 20 + 테두리 ~2 ≈ 42px)을 더한다.
   // 이 프레임을 빼지 않으면 board+프레임이 컨테이너를 넘쳐(모바일 가로 오버플로) 보드 오른쪽이 잘려 보였다.
   const measure = useCallback(() => {
@@ -2380,18 +2381,29 @@ function useBoardSize(max = 360) {
     const el = elRef.current; if (!el) return;
     const w = el.clientWidth; if (w > 0) setSize(Math.max(160, Math.floor((Math.min(max, w) - FRAME) / 8) * 8));
   }, [max]);
+  // (버그 수정, 사용자 제보) 분석 탭에서 수를 둘 때마다 보드가 미세하게 커졌다 작아졌다 했다 — 한 수를
+  // 두면 캡션·수 블록·정확도 표시 등 보드 옆·아래 요소들이 거의 같은 렌더 사이클 안에서 잇따라 자기
+  // 크기를 바꾸는데, 그 각각의 중간 단계마다 ResizeObserver가 따로 콜백을 발화시켜(레이아웃이 완전히
+  // 안정되기 전의) 일시적인 폭을 읽어버리는 경우가 있었다 — 이 폭이 8px 격자 경계 바로 근처에 있으면
+  // Math.floor 결과가 그 중간 프레임 한 번만 다르게 나와, 눈에는 보드가 수를 둘 때마다 잠깐씩 크기가
+  // "조금씩" 바뀌는 것처럼 보였다. ResizeObserver 콜백을 즉시 반영하지 않고 짧게 모아(debounce) 레이아웃이
+  // 완전히 가라앉은 뒤의 최종 폭 하나만 반영하면 이 중간 프레임들이 걸러진다.
+  const scheduleMeasure = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(measure, 100);
+  }, [measure]);
   const setRef = useCallback((el) => {
     if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
     elRef.current = el;
     if (el) {
-      measure();
-      if (typeof ResizeObserver !== "undefined") { roRef.current = new ResizeObserver(measure); roRef.current.observe(el); }
+      measure(); // 첫 측정은 지연 없이 바로 반영해, 처음 그려질 때부터 정확한 크기로 보이게 한다.
+      if (typeof ResizeObserver !== "undefined") { roRef.current = new ResizeObserver(scheduleMeasure); roRef.current.observe(el); }
     }
-  }, [measure]);
+  }, [measure, scheduleMeasure]);
   useEffect(() => {
-    window.addEventListener("resize", measure);
-    return () => { window.removeEventListener("resize", measure); if (roRef.current) roRef.current.disconnect(); };
-  }, [measure]);
+    window.addEventListener("resize", scheduleMeasure);
+    return () => { window.removeEventListener("resize", scheduleMeasure); if (roRef.current) roRef.current.disconnect(); if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [scheduleMeasure]);
   return [size, setRef];
 }
 
@@ -6148,7 +6160,20 @@ function containsBannedWord(text) {
   const norm = normalizeForFilter(text);
   return BANNED_WORD_LIST.some((w) => norm.includes(normalizeForFilter(w)));
 }
-function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump }) {
+// (사용자 요청) 수 설명에 유튜브 댓글처럼 좋아요/싫어요를 달 수 있게 — move_note_vote RPC 하나가
+// 토글(같은 값을 다시 누르면 취소, 다른 값이면 전환)까지 서버에서 처리하고, 그 결과(내 새 투표 상태·
+// 갱신된 좋아요/싫어요 수)를 그 자리에서 돌려준다.
+async function moveNoteVote(noteId, value) {
+  try { const rows = await sbRpc("move_note_vote", { p_note_id: noteId, p_value: value }); return (Array.isArray(rows) ? rows[0] : rows) || null; }
+  catch { return null; }
+}
+// 정렬 옵션 — MoveExplainBlock의 noteSort 값과 PostgREST order 절 매핑을 한곳에 묶어 둔다.
+const MOVE_NOTE_SORTS = {
+  popular: { label: "인기순", order: "score.desc,created_at.asc" },
+  date: { label: "날짜순", order: "created_at.asc" },
+  recent: { label: "최신순", order: "created_at.desc" },
+};
+function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump, onVote }) {
   // (사용자 요청) 예전엔 작성자 본인도 스스로 못 고치고 개발자(canModerate)만 편집·삭제할 수
   // 있었다 — 이제 자기 글은 본인이 자유롭게 고치고 지울 수 있고, 개발자/공동개발자는 그대로
   // 모든 글에 대해 편집 권한을 유지한다(RLS도 함께 맞춤, supabase-setup.sql 15번 섹션 참고).
@@ -6188,10 +6213,24 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
           <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{renderMoveNoteBody(n.body, ownSans, onJump)}</p>
         )}
       </div>
-      {!editing && canEditThis && (
-        <div className="flex gap-2" style={{ marginTop: 6, justifyContent: "flex-end" }}>
-          <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
-          <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
+      {!editing && (
+        <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
+          {/* (사용자 요청) 유튜브 댓글처럼 좋아요/싫어요 — 같은 걸 다시 누르면 취소, 반대를 누르면
+              그쪽으로 바뀐다. 로그인하지 않았으면(uid 없음) 카운트만 보이고 누를 수 없다. */}
+          <div className="flex items-center gap-2">
+            <button onClick={() => uid && onVote(n.id, 1)} disabled={!uid} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", padding: 0, cursor: uid ? "pointer" : "default", color: n.my_vote === 1 ? T.brass : T.inkSoft }}>
+              <ThumbsUp size={12} fill={n.my_vote === 1 ? T.brass : "none"} /><span style={{ fontSize: 10.5, fontWeight: 700 }}>{n.likes || 0}</span>
+            </button>
+            <button onClick={() => uid && onVote(n.id, -1)} disabled={!uid} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", padding: 0, cursor: uid ? "pointer" : "default", color: n.my_vote === -1 ? T.blunder : T.inkSoft }}>
+              <ThumbsDown size={12} fill={n.my_vote === -1 ? T.blunder : "none"} /><span style={{ fontSize: 10.5, fontWeight: 700 }}>{n.dislikes || 0}</span>
+            </button>
+          </div>
+          {canEditThis && (
+            <div className="flex gap-2">
+              <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>편집</button>
+              <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -6207,17 +6246,59 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // (사용자 요청) 수 설명 정렬 — 인기순(좋아요-싫어요 점수)/날짜순(오래된 순)/최신순. 기존 기본
+  // 동작(오래된 순)을 그대로 유지하기 위해 기본값은 "date"로 둔다.
+  const [noteSort, setNoteSort] = useState("date");
   const scrollerRef = useRef(null);
   const pauseUntilRef = useRef(0);
+  const scrollDebounceRef = useRef(null);
+  // (버그 수정, 사용자 제보) 정렬을 바꿔 카드 순서가 재배치되는 순간, 이 스크롤 컨테이너에서
+  // 브라우저가 자체적으로(scroll-snap 재계산 등 정확한 원인은 특정하지 못했지만 실기기·헤드리스
+  // 브라우저 모두에서 재현됨) 원치 않는 scroll 이벤트를 흘려보내는 경우가 있었다 — 그 이벤트가
+  // onManualScroll의 "사용자가 직접 스크롤했다"는 판단(120ms 디바운스 후 그 스크롤 위치로 idx를
+  // 되맞춤)을 건드려, 방금 0으로 되돌려 둔 idx를 다시 엉뚱한 값으로 덮어써 버렸다(카드 내용은
+  // 새 순서로 바뀌는데 캐러셀 위치만 어긋나 보이는 원인). moveKey·noteSort가 바뀐 직후 짧은
+  // 유예 시간 동안은 onManualScroll이 무엇을 보든 idx를 건드리지 않게 막아, 그 사이 어떤 스크롤
+  // 이벤트가 오더라도 우리가 이미 정한 idx(0)가 안전하게 유지되게 한다.
+  const suppressScrollSyncUntilRef = useRef(0);
   // (v0.4.0 기능) 이 설명이 달린 바로 그 위치까지의 전체 수순 — 본문에 언급된 SAN을 그 위치 기준으로
   // 합법성 검사하고, 링크 클릭 시 그 위치에서부터 집중분석으로 이동하기 위해 필요하다.
   const ownSans = useMemo(() => ownSansFromMoveKey(moveKey), [moveKey]);
   const load = useCallback(async () => {
     if (!moveKey) { setNotes([]); return; }
-    try { setNotes(await sbSelect("move_notes?select=*&move_key=eq." + encodeURIComponent(moveKey) + "&order=created_at.asc")); }
+    // (사용자 요청) 좋아요/싫어요 집계·내 투표 상태가 함께 딸려오는 뷰(move_notes_with_votes)를
+    // move_notes 대신 읽는다 — 글 등록/수정/삭제는 여전히 move_notes 테이블에 직접 한다.
+    try { setNotes(await sbSelect("move_notes_with_votes?select=*&move_key=eq." + encodeURIComponent(moveKey) + "&order=" + MOVE_NOTE_SORTS[noteSort].order)); }
     catch { setNotes([]); }
-  }, [moveKey]);
-  useEffect(() => { setNotes(null); setIdx(0); setDraft(""); setErr(""); load(); }, [moveKey, load]);
+  }, [moveKey, noteSort]);
+  // (사용자 요청) moveKey가 바뀌면(다른 수로 이동) 완전히 새로 시작하고, noteSort만 바뀌면(같은 수,
+  // 정렬만 전환) 작성 중이던 글(draft)까지 지울 필요는 없이 목록만 다시 정렬해 불러온다 — 두 경우를
+  // 하나의 effect에서 prevMoveKeyRef로 구분한다(따로 두면 load의 deps가 noteSort까지 포함해 매번
+  // 새 함수가 되므로, moveKey 전용 effect가 load를 deps에 넣을 때 정렬 변경에도 불필요하게 같이
+  // 돌며 draft/err를 지워버린다).
+  const prevMoveKeyRef = useRef(moveKey);
+  useEffect(() => {
+    const moveKeyChanged = prevMoveKeyRef.current !== moveKey;
+    prevMoveKeyRef.current = moveKey;
+    if (moveKeyChanged) { setNotes(null); setDraft(""); setErr(""); }
+    setIdx(0);
+    // (버그 수정, 사용자 제보) 정렬을 바꾸면 카드 순서가 재배치되면서 이 스크롤 컨테이너에
+    // 브라우저가 자체적으로 scroll 이벤트를 흘려보내는 경우가 있었다(scroll-snap 재계산 등) —
+    // 그게 onManualScroll의 120ms 디바운스를 건드려, 방금 위에서 0으로 되돌린 idx를 그 사이에
+    // 엉뚱한 값으로 다시 덮어써 버렸다(카드 내용은 새 순서로 바뀌었는데 캐러셀 인덱스만 어긋나
+    // 보이는 원인). 이 재정렬 시점에 걸려 있을 수 있는 그 디바운스 타이머를 확실히 지우고,
+    // suppressScrollSyncUntilRef로 짧은 유예 시간 동안 onManualScroll이 idx를 건드리지 못하게 막는다.
+    // (실측) 그 브라우저 자체 스크롤 이동은 이 효과가 도는 시점으로부터 대략 300~400ms 사이에
+    // 벌어진다 — idx는 지켰지만 실제 스크롤 위치가 여전히 어긋나 있을 수 있으므로, 그 구간을
+    // 지나 두 번(350ms·550ms) 강제로 맨 위(scrollTop 0)로 되돌려 최종 위치를 확정한다.
+    if (scrollDebounceRef.current) { clearTimeout(scrollDebounceRef.current); scrollDebounceRef.current = null; }
+    pauseUntilRef.current = Date.now() + 600;
+    suppressScrollSyncUntilRef.current = Date.now() + 600;
+    load();
+    const t1 = setTimeout(() => { if (scrollerRef.current) scrollerRef.current.scrollTop = 0; }, 350);
+    const t2 = setTimeout(() => { if (scrollerRef.current) scrollerRef.current.scrollTop = 0; }, 550);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [moveKey, load]);
   useEffect(() => {
     if (!notes || notes.length < 2) return;
     const iv = setInterval(() => { if (Date.now() >= pauseUntilRef.current) setIdx((i) => (i + 1) % notes.length); }, 5000);
@@ -6229,11 +6310,12 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
     el.scrollTo({ top: idx * el.clientHeight, behavior: "smooth" });
   }, [idx]);
   const jump = (i) => { pauseUntilRef.current = Date.now() + 6000; setIdx(i); };
-  const scrollDebounceRef = useRef(null);
   const onManualScroll = () => {
+    if (Date.now() < suppressScrollSyncUntilRef.current) return;
     pauseUntilRef.current = Date.now() + 6000;
     if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
     scrollDebounceRef.current = setTimeout(() => {
+      if (Date.now() < suppressScrollSyncUntilRef.current) return;
       const el = scrollerRef.current;
       if (!el || !el.clientHeight) return;
       const i = Math.round(el.scrollTop / el.clientHeight);
@@ -6260,6 +6342,15 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
     setBusy(false);
   };
   const hasNotes = notes && notes.length > 0;
+  // (사용자 요청) 좋아요/싫어요 투표 — 서버(move_note_vote)가 토글까지 처리하고 갱신된 집계·내 투표
+  // 상태를 돌려주므로 그대로 반영한다. 정렬이 "인기순"이어도 투표 직후 바로 재정렬하지는 않는다 —
+  // 지금 보고 있는 카드가 갑자기 다른 자리로 튀거나 캐러셀 인덱스가 어긋나는 걸 피하기 위해서고,
+  // 다음에 이 수를 다시 열면(load가 다시 불림) 새 순서로 자연스럽게 반영된다.
+  const onVote = async (noteId, value) => {
+    const res = await moveNoteVote(noteId, value);
+    if (!res) return;
+    setNotes((prev) => prev ? prev.map((x) => (x.id === noteId ? { ...x, my_vote: res.my_vote, likes: res.likes, dislikes: res.dislikes } : x)) : prev);
+  };
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -6271,13 +6362,30 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
           </div>
         )}
       </div>
+      {/* (사용자 요청) 인기순(좋아요-싫어요)/날짜순(오래된 순)/최신순 정렬 선택 — 설명이 2개 이상일
+          때만 의미가 있으므로 그때만 보여준다. */}
+      {hasNotes && notes.length > 1 && (
+        <div className="flex items-center gap-1" style={{ marginBottom: 8 }}>
+          {Object.entries(MOVE_NOTE_SORTS).map(([key, s]) => (
+            <button key={key} onClick={() => setNoteSort(key)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, border: "1px solid " + (noteSort === key ? T.brass : "#DCCBA8"), background: noteSort === key ? T.brass : "transparent", color: noteSort === key ? "#241509" : T.inkSoft, cursor: "pointer" }}>{s.label}</button>
+          ))}
+        </div>
+      )}
       {notes === null ? (
         <p style={{ fontSize: 11.5, color: T.inkSoft }}>불러오는 중…</p>
       ) : hasNotes ? (
         <>
-          <div ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
+          {/* (버그 수정, 사용자 제보) 정렬을 바꾸면 카드 순서가 재배치되는데, 각 카드 키(n.id)는
+              그대로라 리액트가 기존 DOM 노드를 새로 만들지 않고 그 자리에서 순서만 바꾼다 — 이
+              스크롤 컨테이너는 scroll-snap-type이 걸려 있어, 자식이 재배치되는 순간 브라우저가
+              스냅 위치를 다시 계산하며 스크롤을 슬쩍 움직였다(idx는 이미 0으로 되돌려 뒀는데도
+              화면은 엉뚱한 카드에 멎어 있고, 그 스크롤이 onManualScroll을 "사용자가 직접
+              스크롤한 것"으로 오인시켜 idx 상태 자체까지 어긋나 보였다). key를 noteSort로 주면
+              정렬이 바뀔 때마다 이 컨테이너 자체를 통째로 새로 만들어, scrollTop이 항상
+              0에서 시작하는 새 DOM으로 시작하므로 위 문제가 애초에 생길 자리가 없다. */}
+          <div key={noteSort} ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
             {notes.map((n) => (
-              <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump}
+              <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump} onVote={onVote}
                 onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
                 onDeleted={(id) => setNotes((prev) => { const next = prev.filter((x) => x.id !== id); setIdx((i) => Math.min(i, Math.max(0, next.length - 1))); return next; })} />
             ))}
@@ -8622,7 +8730,7 @@ function playResultCopy(result, activeColor) {
   if (result.end === "stalemate") return { kind: "draw", title: "무승부", subtitle: "스테일메이트", text: "둘 자리가 없어요 — 스테일메이트로 무승부예요.", mascot: "milku", emotion: "think" };
   return { kind: "draw", title: "무승부", subtitle: "3회 동형 반복", text: "같은 포지션이 세 번 반복됐어요 — 무승부예요.", mascot: "milku", emotion: "think" };
 }
-function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch }) {
+function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch, rematchOfferedByMe, rematchOfferedByOpp }) {
   const copy = playResultCopy(result, activeColor);
   if (!copy) return null;
   const kindColor = copy.kind === "win" ? T.best : copy.kind === "loss" ? T.blunder : T.brassHi;
@@ -8667,7 +8775,13 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
               알 수 있게 한다. 레이아웃(패딩·radius·굵기)은 아래 재대결/닫기 버튼과 동일하게 유지. */}
           {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Star size={15} fill="#fff" color="#fff" />대국 리뷰 보기</button>}
           <div className="flex gap-2">
-            <button onClick={onRematch} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>재대결</button>
+            {/* (사용자 요청) 봇 대국은 눌러면 곧장 같은 조건으로 재시작한다. 실시간 대국은 상대에게
+                제안을 보내야 하므로, 내가 이미 보내 응답을 기다리는 중이면 취소(재클릭으로 토글)로,
+                상대가 먼저 보내 뒀으면 "수락"으로 라벨이 바뀐다 — onRematch 하나가 서버 쪽에서
+                제안/수락을 함께 처리하므로(pvp_rematch_offer) 클릭 핸들러 자체는 항상 그대로다. */}
+            <button onClick={rematchOfferedByMe ? onClose : onRematch} className="press" disabled={rematchOfferedByMe} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: rematchOfferedByMe ? "rgba(196,154,80,.05)" : "rgba(196,154,80,.12)", color: rematchOfferedByMe ? T.inkSoft : T.ink, fontWeight: 800, fontSize: 12.5, cursor: rematchOfferedByMe ? "default" : "pointer" }}>
+              {mode !== "pvp" ? "재대결" : rematchOfferedByMe ? "상대 응답 기다리는 중…" : rematchOfferedByOpp ? "재대결 수락" : "재대결 신청"}
+            </button>
             <button onClick={onClose} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>닫기</button>
           </div>
         </div>
@@ -8675,7 +8789,7 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
     </div>
   );
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   const [step, setStep] = useState("setup"); // "setup" | "playing"
@@ -8951,6 +9065,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     shownResultKeyRef.current = resultKey;
     setResultModalOpen(true);
   }, [resultKey]);
+  // (사용자 요청) 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인 동안은, 뒤로가기·페이지 나가기
+  // 요청이 오면(App 루트가 popstate/닫기 버튼에서 이 값을 읽는다) 곧장 나가는 대신 "정말 기권할지"
+  // 확인 알림을 한 번 띄운다 — App 루트는 컴포넌트 트리 밖(브라우저 popstate)에서도 이 값을 읽어야
+  // 하므로 상태가 아니라 ref로 올려 보낸다.
+  useEffect(() => {
+    const active = mode === "pvp" && step === "playing" && !!pvpGame && !resultKey;
+    onPvpActiveChange && onPvpActiveChange(active);
+    return () => { onPvpActiveChange && onPvpActiveChange(false); };
+  }, [mode, step, pvpGame, resultKey, onPvpActiveChange]);
 
   // (v0.4.5 기능, 사용자 요청) 대국이 끝나면(봇·pvp 모두, 실제로 둔 수가 있을 때만) 매칭 대기 화면
   // 궤도 아이콘용으로 방금 대국의 탁월한 수·실수·블런더 개수를 백그라운드로 계산해 둔다 — 화면을
@@ -9130,6 +9253,48 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
     }
   };
+  // (사용자 요청) 실시간 대국 — 상대에게 합의 무승부를 제안한다. 서버는 draw_offered_by만 표시로
+  // 기록해 두고, 상대가 실제로 수락(pvp_draw_accept)해야만 대국이 끝난다 — 한쪽이 일방적으로 무승부를
+  // 강제할 수 없다(pvp_finish의 status='draw' 직접 호출은 스테일메이트 등 "객관적으로 계산되는" 무승부
+  // 전용이라 여기 쓰지 않는다).
+  const offerDraw = () => {
+    setOptionsOpen(false);
+    if (mode === "pvp" && pvpGame && myUid) sbRpc("pvp_draw_offer", { p_game_id: pvpGame.id }).then(setPvpGame).catch(() => {});
+  };
+  const respondDraw = (accept) => {
+    if (mode === "pvp" && pvpGame && myUid) sbRpc(accept ? "pvp_draw_accept" : "pvp_draw_decline", { p_game_id: pvpGame.id }).then(setPvpGame).catch(() => {});
+  };
+  // 내가 이미 제안해 상대 응답을 기다리는 중인지 / 상대가 방금 나에게 제안했는지.
+  const drawOfferedByMe = mode === "pvp" && pvpGame && pvpGame.draw_offered_by && pvpGame.draw_offered_by === myUid;
+  const drawOfferedByOpp = mode === "pvp" && pvpGame && pvpGame.draw_offered_by && pvpGame.draw_offered_by !== myUid && !result;
+  // (사용자 요청) 결과 팝업의 "재대결" — 봇 대국은 같은 조건(진영·봉 등급·타임 컨트롤)으로 설정
+  // 화면을 거치지 않고 곧장 다시 시작한다. 실시간 대국은 랜덤 매칭 상대가 친구가 아닐 수도 있어
+  // pvp_invite_friend를 못 쓰므로, 방금 끝난 그 대국 행 자체에 제안 상태를 기록해 뒀다가(서버 함수가
+  // 제안/수락을 한 번에 처리 — 위 supabase-setup.sql 참고) 양쪽이 실시간 구독 중인 그 행에
+  // rematch_game_id가 채워지는 순간 아래 effect가 자동으로 새 대국으로 옮겨 탄다.
+  const requestRematch = () => {
+    if (mode === "pvp") {
+      if (pvpGame && myUid) sbRpc("pvp_rematch_offer", { p_game_id: pvpGame.id }).then(setPvpGame).catch(() => {});
+      return;
+    }
+    setResultModalOpen(false);
+    startGame();
+  };
+  const declineRematch = () => {
+    if (mode === "pvp" && pvpGame && myUid) sbRpc("pvp_rematch_decline", { p_game_id: pvpGame.id }).then(setPvpGame).catch(() => {});
+  };
+  const rematchOfferedByMe = mode === "pvp" && pvpGame && pvpGame.rematch_offered_by === myUid;
+  const rematchOfferedByOpp = mode === "pvp" && pvpGame && pvpGame.rematch_offered_by && pvpGame.rematch_offered_by !== myUid;
+  useEffect(() => {
+    if (mode !== "pvp" || !pvpGame || !pvpGame.rematch_game_id) return;
+    let cancelled = false;
+    sbSelect("pvp_games?id=eq." + pvpGame.rematch_game_id + "&select=*").then((rows) => {
+      if (cancelled || !rows || !rows[0]) return;
+      setResultModalOpen(false);
+      applyPvpGame(rows[0]);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [mode, pvpGame && pvpGame.rematch_game_id]);
 
   const flip = activeColor === "b";
   // (사용자 요청) chess.com 대국 화면처럼 상단에 수순 스트립(수 번호 + 백/흑 수, 누르면 그 시점으로
@@ -9367,7 +9532,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                   myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null}
                   onClose={() => setResultModalOpen(false)}
                   onReview={onOpenReview ? () => { onOpenReview({ sans, fenRoot }); setResultModalOpen(false); } : null}
-                  onRematch={() => { rematch(); setResultModalOpen(false); }} />
+                  onRematch={requestRematch} rematchOfferedByMe={rematchOfferedByMe} rematchOfferedByOpp={rematchOfferedByOpp} />
               )}
             </AnimatePresence>
             {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
@@ -9378,9 +9543,20 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                   <>
                     <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                     <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", width: 170, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 10, padding: 5, zIndex: 41, display: "flex", flexDirection: "column", gap: 1, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
+                      {/* (사용자 요청) 실시간 대국(봇 아님) 중에는 기권 위에 무승부 제안 버튼을 둔다 — 이미
+                          제안해 응답을 기다리는 중이면 "제안 취소"로 바뀐다. */}
+                      {!result && mode === "pvp" && (
+                        <button onClick={drawOfferedByMe ? () => respondDraw(false) : offerDraw} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
+                          <Handshake size={14} />{drawOfferedByMe ? "무승부 제안 취소" : "무승부 제안"}
+                        </button>
+                      )}
                       {!result && <button onClick={resign} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>기권</button>}
                       {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>대국 리뷰</button>}
-                      <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>다시 설정</button>
+                      {/* (사용자 요청) 봇이 아닌 실시간 상대와 대국을 하는 도중에는 "다시 설정"이 뜨지 않게
+                          한다 — 상대는 그대로 둔 채 설정만 바꿔 새로 시작할 방법이 없어(재도전은 별도
+                          흐름) 대국 중엔 이 버튼이 의미가 없고, 실수로 눌러 진행 중인 대국을 잃을 위험만
+                          있다. 대국이 끝난 뒤에는(리뷰·새 대국 시작 용도로) 그대로 둔다. */}
+                      {(mode !== "pvp" || result) && <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>다시 설정</button>}
                     </div>
                   </>
                 )}
@@ -9391,6 +9567,36 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           </div>
         )}
       </div>
+      {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
+          바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
+      <AnimatePresence>
+        {drawOfferedByOpp && (
+          <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }} transition={{ duration: 0.22, ease: MOTION_EASE }}
+            style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 320, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "linear-gradient(180deg,#3A2516,#241509)", borderTop: "1px solid " + T.brass, boxShadow: "0 -10px 24px -8px rgba(0,0,0,.6)" }}>
+            <div style={{ maxWidth: 460, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+              <Handshake size={18} color={T.brassHi} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + "가 무승부를 제안했어요"}</span>
+              <button onClick={() => respondDraw(false)} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
+              <button onClick={() => respondDraw(true)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* (사용자 요청) 상대가 재대결을 신청하면(결과 팝업을 이미 닫았어도) 뷰포트 맨 아래에 알림 띠로
+          띄운다 — 무승부 제안 알림과 완전히 같은 자리·구조를 쓴다. */}
+      <AnimatePresence>
+        {rematchOfferedByOpp && !drawOfferedByOpp && (
+          <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }} transition={{ duration: 0.22, ease: MOTION_EASE }}
+            style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 320, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "linear-gradient(180deg,#3A2516,#241509)", borderTop: "1px solid " + T.brass, boxShadow: "0 -10px 24px -8px rgba(0,0,0,.6)" }}>
+            <div style={{ maxWidth: 460, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+              <Repeat2 size={18} color={T.brassHi} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + "가 재대결을 신청했어요"}</span>
+              <button onClick={declineRematch} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
+              <button onClick={requestRematch} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -19467,6 +19673,24 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.4.7", date: "2026.9.5", dev: ["openchesskr", "G13sus4"], items: [
+      "분석 탭 체스보드가 수를 둘 때마다 화면 비율이 미세하게 흔들리던 문제를 고쳤어요 — 크기가 항상 고정돼요.",
+      "/play에서 봇이 아닌 실시간 상대와 대국할 때는 '다시 설정' 버튼이 뜨지 않아요.",
+      "실시간 대국에 무승부 제안 버튼이 생겼어요 — 기권 위에서 상대에게 합의 무승부를 제안할 수 있고, 제안받은 쪽에는 화면 아래에 수락/거절 알림이 떠요.",
+      "실시간 대국 중 뒤로가기나 페이지 나가기로 화면을 벗어나려 하면, 곧장 기권 처리되는 대신 정말 나갈지 한 번 물어봐요.",
+      "상단 헤더 검색·친구·채팅·알림·프로필 버튼의 테두리가 일부 환경에서 잘려 보이던 문제를 고쳤고, 프로필 버튼의 y좌표를 알림 버튼과 정확히 맞췄어요.",
+      "수 키워드(TOP LEVEL 등)를 눌렀을 때 뜨는 말풍선이 화면 정중앙 대신, 그 키워드를 가리키는 꼬리와 함께 바로 옆에 떠요.",
+      "이미 친구인 상대의 프로필에서는 '친구 요청' 버튼이 더 이상 뜨지 않아요.",
+      "친구 요청 관련 문구가 길어져도 /user 페이지의 다른 요소들이 밀리지 않도록 고쳤어요.",
+      "채팅 이모티콘 박스가 화면 전체 폭을 채우도록 커졌고, MILKU·KOKOA 12개씩을 페이지 넘김 없이 한 판(6×4, 위 두 줄 MILKU·아래 두 줄 KOKOA)에서 바로 골라요.",
+      "OC 나이트 코인 아이콘을 새 이미지로 바꿨어요.",
+      "대국 결과 팝업의 '재대결' 버튼이 이제 실제로 작동해요 — 봇 대국은 같은 조건으로 곧장 다시 시작되고, 실시간 대국은 상대에게 재대결 신청이 가서 수락하면 새 대국이 시작돼요.",
+      "수 설명에 유튜브 댓글처럼 좋아요·싫어요를 달 수 있어요. 인기순(좋아요-싫어요)·날짜순(오래된 순)·최신순 중 골라 정렬할 수도 있어요.",
+      "개발자·공동 개발자의 퍼즐 생성자 양도가, 대상 아이디에 대문자가 하나라도 섞여 있으면 항상 조용히 실패하던 문제를 고쳤어요.",
+      "개발자 도구에 '퍼즐 컨트롤 센터'가 생겼어요 — 손상된(아무도 풀 수 없는) 퍼즐을 한 번에 검사해 모두 말소하거나, 번호를 직접 입력해 그 퍼즐 하나만 재생성·삭제할 수 있어요.",
+    ]
+  },
+  {
     version: "0.4.6", date: "2026.9.4", dev: ["openchesskr", "G13sus4"], items: [
       "보드 편집기(연필 아이콘)에서 FEN을 직접 입력하거나 붙여넣거나 이미지로 스캔해 앙파상이 가능한 위치를 만들어도, 그 위치로 /play를 열면 앙파상 캡처가 항상 불가능하던 문제를 고쳤어요. 표준 시작 위치부터 자연스럽게 둔 수순에서는 원래도 정상이었어요.",
       "이제 /play 대국은 항상 똑같은 표준 시작 위치에서만 시작돼요 — 보드를 직접 편집했거나 FEN/PGN을 불러와 다른 수순·포지션이 돼 있으면 PLAY 버튼이 비활성화돼요.",
@@ -20875,6 +21099,27 @@ function usePuzzleRegenRun() {
   }, []);
   return puzzleRegenRun;
 }
+// (v0.4.7 기능, 사용자 요청) 배치 재생성 루프와 아래 "퍼즐 컨트롤 센터"의 번호 지정 재생성이 완전히
+// 같은 로직(fetch → genPuzzleTree → upsert → 남아있는 override 정리)을 쓰도록 공용 함수로 뽑았다.
+// 실패하면 던지고, 성공하면 이 번호의 개발자 override를 함께 지웠는지(그래서 bumpContent가
+// 필요한지)만 알려준다 — 실제 upsert·CONTENT 변형은 이 함수가 전담한다.
+async function regenerateOnePuzzle(engine, no) {
+  const data = await puzzleFetch(no);
+  if (!data) throw new Error("퍼즐 데이터를 찾을 수 없음");
+  const setup = [...(data.setupSans || []), data.mistakeSan].filter(Boolean);
+  const fenRoot = (!data.setupSans || !data.setupSans.length) && data.fen ? parseFenFull(data.fen) : null;
+  const th = primaryTheme(data);
+  const ov = (CONTENT.puzzleOverrides || {})[no] || {};
+  const curLines = treeLinesOf(puzzleTreeOf(data));
+  const firstSan = th === "sacrifice" ? (curLines[0] && curLines[0].sans[0]) : null;
+  const opts = { ...puzzleThemeOpts(th, ov.target, ov.puzzleType), firstSan, tagSeq: 0 };
+  const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
+  if (!gen) throw new Error("이 기준으로는 트리를 만들 수 없음");
+  await sbUpsert("puzzles", { no, data: { ...data, tree: gen.tree, lines: gen.lines } });
+  let overridesTouched = false;
+  if (CONTENT.puzzleOverrides && CONTENT.puzzleOverrides[no]) { delete CONTENT.puzzleOverrides[no]; overridesTouched = true; }
+  return { overridesTouched };
+}
 function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
   const run = usePuzzleRegenRun();
   const { status, total, doneCount, curNo, failed } = run;
@@ -20892,23 +21137,8 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
       if (run.stop) { run.status = "stopped"; puzzleRegenNotify(); return; }
       run.curNo = no; puzzleRegenNotify();
       try {
-        const data = await puzzleFetch(no);
-        if (!data) throw new Error("퍼즐 데이터를 찾을 수 없음");
-        const setup = [...(data.setupSans || []), data.mistakeSan].filter(Boolean);
-        const fenRoot = (!data.setupSans || !data.setupSans.length) && data.fen ? parseFenFull(data.fen) : null;
-        const th = primaryTheme(data);
-        // (regenerateWithTarget과 동일) 개발자가 이 퍼즐에 직접 지정해 둔 목표 cp·종류가 있으면
-        // 그대로 이어받고, 없으면 테마 기본값을 쓴다 — "희생" 테마는 지금 트리가 고른 첫 수(탁월한
-        // 수)를 그대로 고정해야 같은 전술 위치가 유지된다.
-        const ov = (CONTENT.puzzleOverrides || {})[no] || {};
-        const curLines = treeLinesOf(puzzleTreeOf(data));
-        const firstSan = th === "sacrifice" ? (curLines[0] && curLines[0].sans[0]) : null;
-        const opts = { ...puzzleThemeOpts(th, ov.target, ov.puzzleType), firstSan, tagSeq: 0 };
-        const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
-        if (!gen) throw new Error("이 기준으로는 트리를 만들 수 없음");
-        await sbUpsert("puzzles", { no, data: { ...data, tree: gen.tree, lines: gen.lines } });
-        // 재생성한 트리가 실제로 보이도록, 이 번호에 남아있을 수 있는 개발자 override(더 우선시됨)를 함께 지운다.
-        if (CONTENT.puzzleOverrides && CONTENT.puzzleOverrides[no]) { delete CONTENT.puzzleOverrides[no]; overridesTouched = true; }
+        const { overridesTouched: t } = await regenerateOnePuzzle(engine, no);
+        if (t) overridesTouched = true;
       } catch (e) {
         run.failed = [...run.failed, { no, error: (e && e.message) || String(e) }];
       }
@@ -20949,6 +21179,136 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
           {failed.map((f) => <div key={f.no} style={{ fontSize: 10, color: T.blunder }}>#{f.no} — {f.error}</div>)}
         </div>
       )}
+    </div>
+  );
+}
+// (v0.4.7 기능, 사용자 요청) "전체 퍼즐 일괄 재생성"을 좀 더 다듬어 달라 — 손상된(라인 0개, 또는
+// 아예 데이터를 못 찾는) 퍼즐을 한 번에 찾아 말소하고, 특정 번호 하나를 콕 집어 재생성·삭제할 수
+// 있는 작은 관제 도구를 같은 카드 그룹에 추가한다. 스캔·삭제 진행 상태도 위 배치 재생성과 같은
+// 패턴(모듈 스코프 싱글턴 + 리스너)으로 둬서, 도중에 설정 탭을 재마운트해도(navNonce) 이어서 보인다.
+const puzzleScanRun = { status: "idle", total: 0, checked: 0, corrupted: [], deleteDone: 0, deleteFailed: [], stop: false, listeners: new Set() };
+function puzzleScanNotify() { for (const fn of puzzleScanRun.listeners) fn(); }
+function usePuzzleScanRun() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const fn = () => bump((n) => n + 1);
+    puzzleScanRun.listeners.add(fn);
+    return () => puzzleScanRun.listeners.delete(fn);
+  }, []);
+  return puzzleScanRun;
+}
+function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
+  const run = usePuzzleScanRun();
+  const { status, total, checked, corrupted, deleteDone, deleteFailed } = run;
+  const scanning = status === "listing" || status === "scanning";
+  const deleting = status === "deleting";
+  const scan = async () => {
+    if (scanning || deleting) return;
+    run.stop = false;
+    run.corrupted = []; run.checked = 0; run.total = 0; run.deleteDone = 0; run.deleteFailed = [];
+    run.status = "listing"; puzzleScanNotify();
+    const nos = await puzzleListAllNos();
+    run.total = nos.length; puzzleScanNotify();
+    run.status = "scanning"; puzzleScanNotify();
+    for (const no of nos) {
+      if (run.stop) { run.status = "stopped"; puzzleScanNotify(); return; }
+      // (isPuzzlePlayable과 동일 기준) 데이터를 아예 못 찾거나(공유 후 다른 곳에서 지워짐 등), 라인이
+      // 0개라 아무도 풀 수 없는 퍼즐을 "손상"으로 본다.
+      const data = await puzzleFetch(no);
+      if (!data || !isPuzzlePlayable(data)) run.corrupted = [...run.corrupted, no];
+      run.checked += 1; puzzleScanNotify();
+    }
+    run.status = "scanned"; puzzleScanNotify();
+  };
+  const stopScan = () => { run.stop = true; };
+  const deleteAll = async () => {
+    if (status !== "scanned" || !corrupted.length || deleting) return;
+    run.stop = false;
+    run.status = "deleting"; run.deleteDone = 0; run.deleteFailed = []; puzzleScanNotify();
+    for (const no of corrupted) {
+      if (run.stop) { run.status = "stopped"; puzzleScanNotify(); return; }
+      const ok = await puzzleDeleteRemote(no);
+      if (!ok) run.deleteFailed = [...run.deleteFailed, no];
+      run.deleteDone += 1; puzzleScanNotify();
+    }
+    run.status = "deleted"; puzzleScanNotify();
+  };
+  const [ctlNo, setCtlNo] = useState("");
+  const [ctlBusy, setCtlBusy] = useState(false);
+  const [ctlMsg, setCtlMsg] = useState(null); // { ok, text }
+  const parsedNo = parseInt(ctlNo, 10);
+  const validNo = Number.isFinite(parsedNo) && String(parsedNo) === ctlNo.trim() && parsedNo > 0;
+  const doRegenOne = async () => {
+    if (!validNo || ctlBusy) return;
+    setCtlBusy(true); setCtlMsg(null);
+    try {
+      const { overridesTouched } = await regenerateOnePuzzle(engine, parsedNo);
+      if (overridesTouched && bumpContent) { try { await bumpContent(); } catch { } }
+      setCtlMsg({ ok: true, text: "#" + parsedNo + " 재생성 완료" });
+    } catch (e) { setCtlMsg({ ok: false, text: "#" + parsedNo + " 재생성 실패 — " + ((e && e.message) || String(e)) }); }
+    setCtlBusy(false);
+  };
+  const doDeleteOne = async () => {
+    if (!validNo || ctlBusy) return;
+    setCtlBusy(true); setCtlMsg(null);
+    const ok = await puzzleDeleteRemote(parsedNo);
+    setCtlMsg(ok ? { ok: true, text: "#" + parsedNo + " 삭제 완료" } : { ok: false, text: "#" + parsedNo + " 삭제 실패(존재하지 않거나 권한 없음)" });
+    setCtlBusy(false);
+  };
+  const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
+  const darkBtnStyle = { padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" };
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 퍼즐 컨트롤 센터</div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>손상된(라인이 하나도 없어 아무도 풀 수 없는) 퍼즐을 찾아 한 번에 지우거나, 특정 번호 하나를 직접 재생성·삭제할 수 있어요.</p>
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>손상된 퍼즐 검사·말소</div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10, flexWrap: "wrap" }}>
+        {scanning || deleting
+          ? <button onClick={stopScan} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
+          : <button onClick={scan} className="press" style={btnStyle}>{status === "idle" ? "손상된 퍼즐 검사" : "다시 검사"}</button>}
+        {status === "scanned" && corrupted.length > 0 && (
+          <button onClick={deleteAll} disabled={deleting} className="press" style={{ ...darkBtnStyle, opacity: deleting ? .6 : 1 }}>손상된 퍼즐 {corrupted.length}개 모두 말소</button>
+        )}
+      </div>
+      {status !== "idle" && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
+            {status === "listing" ? "퍼즐 목록을 불러오는 중…"
+              : status === "scanning" ? "검사 중… — " + checked + " / " + total + " (손상 " + corrupted.length + "건 발견)"
+              : status === "scanned" ? (corrupted.length ? "검사 완료 — 손상된 퍼즐 " + corrupted.length + "개 발견" : "검사 완료 — 손상된 퍼즐 없음")
+              : status === "deleting" ? "말소 중… — " + deleteDone + " / " + corrupted.length
+              : status === "deleted" ? "말소 완료 — " + deleteDone + "개 지움" + (deleteFailed.length ? " (실패 " + deleteFailed.length + "건)" : "")
+              : status === "stopped" ? "중단됨" : ""}
+          </div>
+          {(scanning || deleting) && total > 0 && (
+            <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
+              <div style={{ width: (100 * (deleting ? deleteDone / (corrupted.length || 1) : checked / total)) + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .3s ease" }} />
+            </div>
+          )}
+        </div>
+      )}
+      {status === "scanned" && corrupted.length > 0 && (
+        <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 10, color: T.blunder }}>
+          {corrupted.map((no) => "#" + no).join(", ")}
+        </div>
+      )}
+      {deleteFailed.length > 0 && (
+        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>
+          말소 실패: {deleteFailed.map((no) => "#" + no).join(", ")}
+        </div>
+      )}
+
+      <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>번호로 재생성·삭제</div>
+      <div className="flex gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
+        <input value={ctlNo} onChange={(e) => { setCtlNo(e.target.value.replace(/[^0-9]/g, "")); setCtlMsg(null); }} placeholder="퍼즐 번호(no)" inputMode="numeric" style={{ padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, boxSizing: "border-box", flex: "1 1 120px" }} />
+        <button onClick={doRegenOne} disabled={!validNo || ctlBusy || !engine || engine.status !== "ready"} className="press" style={{ ...btnStyle, opacity: (!validNo || ctlBusy || !engine || engine.status !== "ready") ? .5 : 1 }}>{ctlBusy ? "처리 중…" : "재생성"}</button>
+        <button onClick={doDeleteOne} disabled={!validNo || ctlBusy} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder, opacity: (!validNo || ctlBusy) ? .5 : 1 }}>삭제</button>
+      </div>
+      {(!engine || engine.status !== "ready") && <p style={{ fontSize: 10.5, color: T.blunder, marginBottom: 4 }}>재생성은 엔진이 준비돼야 할 수 있어요(삭제는 바로 가능해요).</p>}
+      {ctlMsg && <p style={{ fontSize: 11, color: ctlMsg.ok ? T.best : T.blunder, fontWeight: 700 }}>{ctlMsg.text}</p>}
     </div>
   );
 }
@@ -21293,6 +21653,8 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
           <DailyPuzzleDevPanel card={{}} />
           <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
           <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={{}} />
+          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+          <PuzzleControlCenterPanel engine={engine} bumpContent={bumpContent} card={{}} />
         </div>
       )}
 
@@ -21848,10 +22210,11 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
   const clearAll = () => { if (!myUid) return; setItems([]); notifyDeleteAll(myUid).then((ok) => { if (!ok) refresh(); }); };
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      {/* (사용자 요청, 3차 재수정) border+box-sizing 조합도 완전히 못 맞춰 — border를 없애고 레이아웃
-          크기에 전혀 관여하지 않는 inset box-shadow로 테두리를 대신한다(옆 세그먼트·프로필 버튼과
-          동일한 처리). */}
-      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "none", outline: "1px solid " + T.brass, outlineOffset: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      {/* (버그 수정, 사용자 재제보) outline은 브라우저마다 border-radius를 따라 둥글게 그려지는지가
+          달라 "테두리가 잘려 보인다"는 제보가 반복됐다 — border-box 사이징의 진짜 border로 바꿔
+          어느 브라우저에서도 항상 같은 모양으로 그려지게 한다(옆 세그먼트·프로필 버튼과 동일 처리).
+          box-sizing:border-box라 border를 더해도 바깥 치수(width/height)는 그대로 27/34로 남는다. */}
+      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, boxSizing: "border-box", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
@@ -21917,15 +22280,13 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
   const goToProfile = () => { setOpen(false); onGoToProfile(); };
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
-      {/* (버그 수정, 사용자 요청) 검색·친구·채팅·알림 버튼은 모두 고정 높이(27/34px)인데, 이 버튼만
-          세로 패딩으로 높이가 정해져 있어 border까지 합치면 그 버튼들보다 미묘하게 더 컸다(내용물
-          — 아바타·닉네임·화살표 — 세로 정렬은 그대로 alignItems:center가 맡으므로, 높이만 옆
-          버튼들과 똑같이 고정해도 레이아웃은 그대로다).
-          (사용자 재요청, 3차 재수정) box-sizing:border-box를 더해도 여전히 옆 버튼들보다 커 보였다 —
-          border 속성 자체를 없애고, 레이아웃 크기에 전혀 관여하지 않는 inset box-shadow로 테두리를
-          대신 그린다. 이제 실제 렌더 높이는 오직 height 값(다른 두 버튼과 동일한 27/34)에만 좌우돼
-          border 유무·box-sizing과 완전히 무관하게 항상 정확히 같다. */}
-      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "none", outline: "1px solid " + T.brass, outlineOffset: 0, cursor: "pointer" }}>
+      {/* (버그 수정, 사용자 재제보) outline은 브라우저마다 border-radius를 따라 둥글게 그려지는지가
+          달라 "테두리가 잘려 보인다"는 제보가 반복됐고, 알림 버튼과 y좌표가 미묘하게 어긋나 보인다는
+          제보도 함께 있었다 — border-box 사이징의 진짜 border로 통일한다. box-sizing:border-box라
+          border를 더해도 바깥 높이는 여전히 다른 두 버튼과 똑같은 27/34로 고정되고, 내용물(아바타·
+          닉네임·화살표)의 세로 정렬은 그대로 alignItems:center가 맡으므로 border 유무와 무관하게
+          항상 옆 버튼들과 정확히 같은 y좌표에 놓인다. */}
+      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, boxSizing: "border-box", padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
         {/* (버그 수정) 그랜드마스터 사진 테두리(gmPhotoRingStyle)는 border+바깥쪽 glow box-shadow를
             더하는데, 이 아바타는 다른 곳(56~64px)과 달리 22/27px로 아주 작아 그 9px 블러 glow가
             버튼 테두리 밖으로 넘쳐 나가 이 버튼만 유독 위아래로 더 커 보이는 원인이었다(그랜드마스터
@@ -21976,34 +22337,32 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
 }
 // (17차) 이모티콘 24종(MILKU/KOKOA 각 12종) — 정사각형으로 잘라 public/emoji에 미리 저장해둔 것을 사용.
 // (20차 UI3) 한 번에 24개를 다 보여주면 아이콘이 너무 작아 잘 안 보이던 문제 — MILKU/KOKOA를
-// 각각 한 페이지씩 좌우로 넘겨보도록 나눠, 페이지당 12개만 훨씬 크게 표시한다.
+// 각각 한 페이지씩 좌우로 넘겨보도록 나눠, 페이지당 12개만 훨씬 크게 표시했었다.
+// (버그 수정, 사용자 요청) 이 박스가 이제 뷰포트 전체 폭을 쓰도록 넓어져 24개를 한 번에 큼직하게
+// 보여줄 자리가 충분해졌다 — 페이지 넘기기를 없애고, 6열×4행 한 판에 위 두 줄(6×2=12)은 MILKU,
+// 아래 두 줄은 KOKOA가 오도록 순서 그대로 나열한다(grid가 행 우선으로 채우므로 별도 계산 없이
+// MILKU 12개 다음 KOKOA 12개를 그대로 이어 붙이면 된다).
 const EMOJI_GROUPS = [
   { label: "MILKU", codes: Array.from({ length: 12 }, (_, i) => "milku_" + (i + 1)) },
   { label: "KOKOA", codes: Array.from({ length: 12 }, (_, i) => "kokoa_" + (i + 1)) },
 ];
 const EMOJI_CODES = EMOJI_GROUPS.flatMap((g) => g.codes);
-function EmojiPicker({ onPick, onClose }) {
-  const [page, setPage] = useState(0);
-  const group = EMOJI_GROUPS[page];
-  const goto = (p) => setPage((p + EMOJI_GROUPS.length) % EMOJI_GROUPS.length);
+// (버그 수정, 사용자 요청) 예전엔 채팅 패널 안쪽 기준 position:absolute라 채팅 패널 자체 폭(데스크톱
+// 플로팅 카드 등)에 갇혀 있었다 — position:fixed + left:0/right:0으로 어떤 조상의 폭과도 무관하게
+// 항상 뷰포트 전체 폭을 채우게 한다. bottom은 ChatPanel이 이모티콘 버튼의 실제 화면 좌표를 열 때
+// 한 번 재서 넘겨준 값(pos.bottom)을 그대로 써 버튼 바로 위에 붙는다.
+function EmojiPicker({ pos, onPick, onClose }) {
   return (
-    <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: 46, left: 0, width: 260, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", padding: 8, zIndex: 95 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <button onClick={() => goto(page - 1)} aria-label="이전 이모티콘 세트" className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brass }}>{group.label}</span>
-        <button onClick={() => goto(page + 1)} aria-label="다음 이모티콘 세트" className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-        {group.codes.map((code) => (
-          <button key={code} onClick={() => { onPick(code); onClose(); }} className="press" style={{ padding: 3, border: "none", background: "transparent", cursor: "pointer", borderRadius: 8 }}>
-            <img src={"/emoji/" + code + ".png"} alt={code} style={{ width: "100%", display: "block" }} />
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center justify-center gap-2" style={{ marginTop: 6 }}>
-        {EMOJI_GROUPS.map((g, i) => (
-          <button key={i} onClick={() => setPage(i)} aria-label={g.label + " 페이지"} className="press" style={{ width: page === i ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === i ? T.brass : "rgba(0,0,0,.2)", transition: "width .2s ease, background .2s ease" }} />
-        ))}
+    <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", left: 0, right: 0, bottom: pos.bottom, background: T.paper, borderTop: "1px solid #DCCBA8", borderBottom: "1px solid #DCCBA8", boxShadow: "0 -12px 30px -8px rgba(0,0,0,.5), 0 12px 30px -8px rgba(0,0,0,.5)", padding: "10px 16px", zIndex: 95 }}>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, textAlign: "center", marginBottom: 8 }}>MILKU&amp;KOKOA</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
+          {EMOJI_CODES.map((code) => (
+            <button key={code} onClick={() => { onPick(code); onClose(); }} className="press" style={{ padding: 4, border: "none", background: "transparent", cursor: "pointer", borderRadius: 8 }}>
+              <img src={"/emoji/" + code + ".png"} alt={code} style={{ width: "100%", display: "block" }} />
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -22079,6 +22438,22 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     fetchChesscomProfile(ccUsername).then((p) => { if (!cancelled) setCcHeaderProf(p); }).catch(() => {});
     return () => { cancelled = true; };
   }, [pub && pub.chesscom]);
+  // (버그 수정, 사용자 제보) reqState는 예전엔 이 화면에서 직접 요청을 보냈을 때(수동 버튼·자동
+  // 초대)만 채워지고, 이미 친구이거나 이미 요청을 보내 둔 상대의 프로필을 열었을 때는 계속 null로
+  // 남아 있어 "친구 요청" 버튼이 매번 다시 떴다 — friend_edges에서 나와 이 상대 사이의 기존 관계를
+  // 조회해 초기값을 채운다. 사용자가 방금 이 화면에서 직접 요청을 보내 reqState가 이미 채워졌다면
+  // (autoInvite 효과와의 경합) 덮어쓰지 않는다.
+  useEffect(() => {
+    if (!myUid || !pubUid || myUid === pubUid) return;
+    let cancelled = false;
+    friendEdges().then((edges) => {
+      if (cancelled) return;
+      const edge = edges.find((e) => (e.from_uid === myUid && e.to_uid === pubUid) || (e.from_uid === pubUid && e.to_uid === myUid));
+      if (!edge) return;
+      setReqState((prev) => (prev === null ? (edge.status === "accepted" ? "accepted" : "exists") : prev));
+    });
+    return () => { cancelled = true; };
+  }, [myUid, pubUid]);
   // (기능) 초대 링크(?invite=friend)로 들어왔고, 로그인한 상태에서 상대 uid가 확인되면 한 번만
   // 자동으로 친구 요청을 보낸다 — 새로고침·재방문 시 매번 다시 보내지 않도록 mid가 바뀔 때만 다시 시도한다.
   const autoInviteTriedRef = useRef(null);
@@ -22204,14 +22579,19 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
                     </div>
                   )}
                 </div>
-                <div style={{ flexShrink: 0 }}>
+                {/* (버그 수정, 사용자 제보) 이 칸이 flexShrink:0 + 내부 문구들이 전부 whiteSpace:nowrap
+                    이라, "이미 친구이거나 요청 중입니다"처럼 긴 문구가 뜨면 그 문구의 전체 폭만큼
+                    이 칸이 넓어지면서 flex:1인 왼쪽 신원 블록을 그만큼 눌러 이름·소개가 부자연스럽게
+                    줄바꿈되곤 했다 — 이 칸에 항상 같은 최대 폭을 주고, 그 폭 안에서는 문구가 줄바꿈
+                    되도록(whiteSpace:nowrap 제거) 바꿔 어떤 상태가 떠도 옆 블록을 밀어내지 않는다. */}
+                <div style={{ flexShrink: 0, maxWidth: 132, textAlign: "right" }}>
                   {!isSelf && (
                     me ? (
-                      reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink, whiteSpace: "nowrap" }}><UserCheck size={14} />친구가 되었습니다</span>
-                        : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap" }}><Clock size={14} />친구 요청을 보냈습니다</span>
-                          : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap" }}><UserCheck size={14} />이미 친구이거나 요청 중입니다</span>
+                      reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} style={{ flexShrink: 0 }} />친구가 되었습니다</span>
+                        : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><Clock size={14} style={{ flexShrink: 0 }} />친구 요청을 보냈습니다</span>
+                          : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><UserCheck size={14} style={{ flexShrink: 0 }} />이미 친구이거나 요청 중입니다</span>
                             : <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.96 }} onClick={doReq} disabled={reqBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5, whiteSpace: "nowrap" }}><UserPlus size={14} />친구 요청</motion.button>
-                    ) : <p style={{ fontSize: 11.5, color: T.inkSoft, whiteSpace: "nowrap" }}>로그인하면<br />친구 요청을 보낼 수 있어요.</p>
+                    ) : <p style={{ fontSize: 11.5, color: T.inkSoft }}>로그인하면 친구 요청을 보낼 수 있어요.</p>
                   )}
                 </div>
               </div>
@@ -22321,6 +22701,21 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  // (사용자 요청) 이모티콘 박스가 이제 뷰포트 전체 폭을 채우는 position:fixed라, 이 채팅 패널
+  // 자체가 화면 어디에 떠 있든(데스크톱 플로팅 카드 포함) 이모티콘 버튼 바로 위에 딱 붙도록 그
+  // 버튼의 실제 화면 좌표를 열 때 한 번 재서 bottom 값을 넘긴다.
+  const pickerAnchorRef = useRef(null);
+  const [pickerPos, setPickerPos] = useState(null);
+  const togglePicker = () => {
+    setPickerOpen((v) => {
+      const next = !v;
+      if (next && pickerAnchorRef.current) {
+        const rect = pickerAnchorRef.current.getBoundingClientRect();
+        setPickerPos({ bottom: window.innerHeight - rect.top + 8 });
+      }
+      return next;
+    });
+  };
   const [sending, setSending] = useState(false);
   // (v0.2.7 버그 수정) "/puzzle 000000" 명령어가 존재하지 않는 번호를 그대로 공유 카드로 보내버려,
   // 받는 쪽에는 빈/깨진 미리보기만 남는 문제가 있었다 — 전송 전 그 번호가 실제로 존재하는지 확인해,
@@ -23071,7 +23466,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
         </AnimatePresence>
       </div>
       <div style={{ position: "relative", flexShrink: 0 }}>
-        {pickerOpen && <EmojiPicker onPick={(code) => send(null, code)} onClose={() => setPickerOpen(false)} />}
+        {pickerOpen && pickerPos && <EmojiPicker pos={pickerPos} onPick={(code) => send(null, code)} onClose={() => setPickerOpen(false)} />}
         {editingId != null && (
           <div className="flex items-center justify-between" style={{ marginBottom: 6, padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}>
             <span style={{ fontSize: 10.5, color: T.brass, fontWeight: 800 }}>메시지 수정 중</span>
@@ -23083,7 +23478,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
             m.body === "/help" 분기). */}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <div className="flex items-center gap-2">
-          <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
+          <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
           <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? "수정" : "전송"}</button>
         </div>
@@ -26770,7 +27165,20 @@ export default function App() {
     const onPop = () => {
       const p = window.location.pathname;
       if (!p.startsWith("/review")) setReviewGame(null);
-      if (!p.startsWith("/play")) setPlayGame(null);
+      if (!p.startsWith("/play")) {
+        // (사용자 요청) /play에서 실시간 상대와 결과 없이 대국 중이면, 뒤로가기로 이 화면을 벗어나려
+        // 할 때 곧장 나가는 대신 "정말 기권할지" 확인 알림을 한 번 띄운다 — pvpPlayActiveRef는
+        // PlayPage가 onPvpActiveChange로 최신 값을 계속 올려 보내 둔 것. 이미 그 확인을 거쳐
+        // "나가기"를 눌렀을 때만(pendingPlayExitRef가 "confirmed") 그대로 통과시킨다.
+        if (pvpPlayActiveRef.current && pendingPlayExitRef.current !== "confirmed") {
+          try { window.history.pushState({ ...(window.history.state || {}), play: true }, "", "/play"); } catch { }
+          pendingPlayExitRef.current = "nav";
+          setPlayExitConfirmOpen(true);
+          return;
+        }
+        pendingPlayExitRef.current = null;
+        setPlayGame(null);
+      }
       if (!/^\/puzzle\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
       // (v0.4.4 기능) /user/<MID> 프로필 페이지도 다른 고유 URL(리뷰·퍼즐)과 같은 방식으로 뒤로/앞으로
       // 가기에 반응한다 — 그 경로를 벗어나면 닫고, 다시 그 경로로 돌아오면(앞으로 가기) 되살린다.
@@ -26918,6 +27326,27 @@ export default function App() {
   const closePlay = useCallback(() => {
     setPlayGame(null);
     try { if (window.location.pathname.startsWith("/play")) window.history.back(); } catch { }
+  }, []);
+  // (사용자 요청) /play에서 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인지 — PlayPage가 렌더마다
+  // 최신값을 알려준다(popstate 핸들러가 컴포넌트 밖에서도 읽어야 해서 상태 대신 ref로 둔다).
+  const pvpPlayActiveRef = useRef(false);
+  const onPvpActiveChange = useCallback((v) => { pvpPlayActiveRef.current = v; }, []);
+  // "nav"면 브라우저 뒤로가기가 이미 주소를 옮긴 걸 pushState로 되돌려 둔 상태(확인 후 history.back()으로
+  // 마저 나간다), "button"이면 헤더의 닫기 버튼을 눌러 들어온 요청(확인 후 closePlay()를 그대로 부른다).
+  const pendingPlayExitRef = useRef(null);
+  const [playExitConfirmOpen, setPlayExitConfirmOpen] = useState(false);
+  const requestClosePlay = useCallback(() => {
+    if (pvpPlayActiveRef.current) { pendingPlayExitRef.current = "button"; setPlayExitConfirmOpen(true); return; }
+    closePlay();
+  }, [closePlay]);
+  const confirmPlayExit = useCallback(() => {
+    setPlayExitConfirmOpen(false);
+    if (pendingPlayExitRef.current === "nav") { pendingPlayExitRef.current = "confirmed"; try { window.history.back(); } catch { } }
+    else { pendingPlayExitRef.current = null; closePlay(); }
+  }, [closePlay]);
+  const cancelPlayExit = useCallback(() => {
+    setPlayExitConfirmOpen(false);
+    pendingPlayExitRef.current = null;
   }, []);
   const onOpenPuzzle = useCallback(async (pzId, fallback) => {
     // (v0.1.0) 유저 검색·친구 프로필(공개 프로필의 "푼 퍼즐" 카드)에서도 이 함수로 진입하므로,
@@ -27124,21 +27553,22 @@ export default function App() {
               (버그 수정) 컨테이너에 overflow:hidden을 걸어 양 끝을 둥글게 깎으면 친구·채팅 배지(음수
               오프셋으로 버튼 밖에 튀어나오는 원)까지 함께 잘려 안 보인다 — 대신 양 끝 버튼에만 바깥쪽
               모서리 radius를 직접 주고 컨테이너는 overflow:visible로 둬 배지가 잘리지 않게 한다. */}
-          {/* (사용자 요청, 4차 재수정) inset box-shadow는 레이아웃 크기엔 관여하지 않지만, 이 컨테이너처럼
-              안쪽 버튼들이 테두리까지 정확히 꽉 채우는 경우 box-shadow가 배경보다 먼저(자식보다 뒤에)
-              그려져 자식들의 불투명한 배경에 완전히 가려 아예 안 보였다(사용자 제보 — "윤곽선이
-              사라졌다"). outline은 border-box 바깥쪽에 그려져 자식이 절대 덮을 수 없고, box-shadow와
-              마찬가지로 레이아웃 크기(너비/높이)에도 전혀 관여하지 않는다 — 세 요소(이 세그먼트·
-              알림·프로필) 모두 outline으로 통일해, 항상 보이면서 높이는 각자의 `height` 값에만 좌우돼
-              완전히 같아지게 한다. */}
-          <div className="flex items-center" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, outline: "1px solid " + T.brass, outlineOffset: 0, overflow: "visible", flexShrink: 0 }}>
-            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
-            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          {/* (버그 수정, 사용자 재제보) outline은 border-radius를 따라 둥글게 그려지는지가 브라우저마다
+              달라(구버전 WebKit 계열은 outline이 각진 사각형으로 그려져 둥근 모서리 밖으로 삐져나오거나,
+              반대로 옆 버튼 배경에 가려 잘려 보인다) 실기기에서 다시 "테두리가 잘린다"는 제보가 있었다.
+              outline 대신 진짜 border를 쓰되 box-sizing:border-box로 바깥 치수(height)는 그대로 두고
+              안쪽 내용만 border 두께(1px)만큼 줄어들게 한다 — 자식 버튼들은 고정 height 대신
+              alignItems:"stretch"로 그 줄어든 안쪽 높이에 저절로 맞춰지므로, border를 절대 덮어 가리지
+              않는다(이제 자식에 height를 따로 지정하지 않는다). 어느 브라우저에서도 border는 항상
+              같은 방식으로 그려지므로 이 문제가 구조적으로 재발하지 않는다. */}
+          <div className="flex" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, border: "1px solid " + T.brass, boxSizing: "border-box", alignItems: "stretch", overflow: "visible", flexShrink: 0 }}>
+            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
             {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
-            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, height: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
@@ -27177,7 +27607,24 @@ export default function App() {
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
       {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
-      {playGame && <PlayPage seed={playGame} onClose={closePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} />}
+      {playGame && <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} />}
+      {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
+          대신 정말 기권 처리해도 되는지 한 번 확인한다. */}
+      <AnimatePresence>
+        {playExitConfirmOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(10,6,3,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <motion.div initial={{ opacity: 0, y: 12, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .97 }} transition={{ duration: 0.2, ease: MOTION_EASE }}
+              style={{ width: "100%", maxWidth: 320, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: 20, textAlign: "center", boxShadow: "0 20px 50px -12px rgba(0,0,0,.7)" }}>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ivoryHi, marginBottom: 6 }}>대국을 나가시겠어요?</div>
+              <div style={{ fontSize: 12.5, color: "rgba(244,238,226,.7)", marginBottom: 18, lineHeight: 1.5 }}>지금 나가면 기권으로 처리돼요.</div>
+              <div className="flex gap-2">
+                <button onClick={cancelPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>계속 두기</button>
+                <button onClick={confirmPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#E05C5C,#B23A3A)", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>나가기(기권)</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {viewedProfileMid && <UserProfilePage mid={viewedProfileMid} autoInvite={viewedProfileAutoInvite} onClose={closeUserProfile} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
       {profileWinOpen && user && (
         <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size}

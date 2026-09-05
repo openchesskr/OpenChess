@@ -25,16 +25,42 @@ export const KW = {
   "CLOSED": { bg: "#D7DEE8", fg: "#3E4C66", desc: "폐쇄적인 포지션을 지향" },
 };
 // (사용자 요청) 수 키워드 칩(NORMAL/TOP LEVEL 등)을 누르면 그 뜻(KW[k].desc)을 보여주는 말풍선 —
-// 예전엔 브라우저 기본 title 호버 툴팁뿐이라 모바일에서는 사실상 볼 방법이 없었다. 퍼즐 카드의
-// 레이팅·난이도 말풍선(App.jsx ClickInfoBadge)과 완전히 같은 방식으로, 앵커 위치와 무관하게 항상
-// 뷰포트 정중앙의 안전 영역(상하좌우 16px 여백)에 띄워 화면 크기·칩 위치와 무관하게 절대 잘리지
-// 않는다. 수 블록·현재 수 블록(둘 다 이 KeywordScroll을 공유)·집중 분석 모드(같은 목록을 그대로
-// 옮겨 보여줌)·학습 탭 도감(DexMoveBlock, App.jsx에서 이 컴포넌트를 직접 import해 재사용)이 모두
-// 이 칩 하나를 공유해 자동으로 같은 동작을 갖는다.
+// 예전엔 브라우저 기본 title 호버 툴팁뿐이라 모바일에서는 사실상 볼 방법이 없었다.
+// (버그 수정, 사용자 재제보) 한때 앵커 위치와 무관하게 항상 뷰포트 정중앙에 띄웠는데, 그러면 지금
+// 어느 키워드를 눌러 연 말풍선인지 시각적으로 알기 어려웠다 — 수 체계 설명 말풍선(App.jsx의
+// CircleBadge)과 같은 방식으로, 클릭한 칩 바로 위/아래에 그 칩을 향한 꼬리와 함께 뜨도록 바꾼다.
+// position:fixed로 앵커의 실제 화면 좌표를 계산해 어떤 조상의 overflow와도 무관하게 항상 온전히
+// 그려지고, 화면 가장자리에서는 안쪽으로 당겨지되 꼬리(tailX)는 그 보정과 무관하게 항상 실제 칩
+// 중심을 가리킨다.
+const KEYWORD_DESC_W = 220;
 export function KeywordChip({ k, style }) {
   const info = KW[k];
   const [open, setOpen] = useState(false);
-  const toggle = (e) => { e.stopPropagation(); setOpen((v) => !v); };
+  const [pos, setPos] = useState(null); // { left, top, bottom, tailX, openDown }
+  const anchorRef = useRef(null);
+  const toggle = (e) => {
+    e.stopPropagation();
+    setOpen((v) => {
+      const next = !v;
+      if (next && anchorRef.current) {
+        const rect = anchorRef.current.getBoundingClientRect();
+        const margin = 10;
+        const cx = rect.left + rect.width / 2;
+        const left = Math.max(margin, Math.min(cx - KEYWORD_DESC_W / 2, window.innerWidth - KEYWORD_DESC_W - margin));
+        // 화면 위쪽 절반의 칩이면 말풍선을 아래로, 아래쪽 절반이면 위로 열어 항상 화면 중앙 쪽을
+        // 향하게 한다(세로로 잘리지 않도록).
+        const openDown = rect.top < window.innerHeight / 2;
+        setPos({
+          left,
+          top: openDown ? rect.bottom + 9 : undefined,
+          bottom: openDown ? undefined : window.innerHeight - rect.top + 9,
+          tailX: cx - left,
+          openDown,
+        });
+      }
+      return next;
+    });
+  };
   useEffect(() => {
     if (!open) return;
     const onScroll = () => setOpen(false);
@@ -44,13 +70,16 @@ export function KeywordChip({ k, style }) {
   if (!info) return null;
   return (
     <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
-      <span onClick={toggle} style={{ cursor: "pointer", fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: info.bg, color: info.fg, whiteSpace: "nowrap", ...style }}>{k}</span>
-      {open && typeof document !== "undefined" && createPortal(
+      <span ref={anchorRef} onClick={toggle} style={{ cursor: "pointer", fontSize: 9, fontWeight: 800, letterSpacing: ".04em", padding: "2px 6px", borderRadius: 4, background: info.bg, color: info.fg, whiteSpace: "nowrap", ...style }}>{k}</span>
+      {open && pos && typeof document !== "undefined" && createPortal(
         <>
-          <span onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(10,6,3,.2)" }} />
-          <span style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", width: "min(240px, calc(100vw - 32px))", maxHeight: "calc(100vh - 32px)", overflowY: "auto", padding: "10px 13px", borderRadius: 10, background: "#F7F0DE", border: "1px solid " + info.fg, boxShadow: "0 12px 28px -6px rgba(0,0,0,.6)", zIndex: 9999, fontSize: 12, fontWeight: 700, color: "#2B2013", textAlign: "left" }}>
+          <span onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
+          <span style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width: KEYWORD_DESC_W, maxWidth: "calc(100vw - 20px)", padding: "10px 13px", borderRadius: 10, background: "#F7F0DE", border: "1px solid " + info.fg, boxShadow: "0 12px 28px -6px rgba(0,0,0,.6)", zIndex: 9999, fontSize: 12, fontWeight: 700, color: "#2B2013", textAlign: "left" }}>
             <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".04em", color: info.fg, marginBottom: 4 }}>{k}</div>
             {info.desc}
+            {/* 말풍선 꼬리 — tailX(뷰포트 기준 팝업 left로부터 기준 칩 중심까지 거리)를 그대로 써서,
+                팝업이 화면 가장자리에서 얼마나 밀렸든 항상 기준 칩을 가리킨다. */}
+            <span style={{ position: "absolute", ...(pos.openDown ? { top: -7 } : { bottom: -7 }), left: pos.tailX, transform: "translateX(-50%) rotate(45deg)", width: 12, height: 12, background: "#F7F0DE", ...(pos.openDown ? { borderLeft: "1px solid " + info.fg, borderTop: "1px solid " + info.fg } : { borderRight: "1px solid " + info.fg, borderBottom: "1px solid " + info.fg }) }} />
           </span>
         </>,
         document.body
