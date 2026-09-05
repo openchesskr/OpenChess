@@ -8634,7 +8634,7 @@ function playResultCopy(result, activeColor) {
   if (result.end === "stalemate") return { kind: "draw", title: "무승부", subtitle: "스테일메이트", text: "둘 자리가 없어요 — 스테일메이트로 무승부예요.", mascot: "milku", emotion: "think" };
   return { kind: "draw", title: "무승부", subtitle: "3회 동형 반복", text: "같은 포지션이 세 번 반복됐어요 — 무승부예요.", mascot: "milku", emotion: "think" };
 }
-function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch }) {
+function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch, rematchOfferedByMe, rematchOfferedByOpp }) {
   const copy = playResultCopy(result, activeColor);
   if (!copy) return null;
   const kindColor = copy.kind === "win" ? T.best : copy.kind === "loss" ? T.blunder : T.brassHi;
@@ -8679,7 +8679,13 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
               알 수 있게 한다. 레이아웃(패딩·radius·굵기)은 아래 재대결/닫기 버튼과 동일하게 유지. */}
           {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Star size={15} fill="#fff" color="#fff" />대국 리뷰 보기</button>}
           <div className="flex gap-2">
-            <button onClick={onRematch} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>재대결</button>
+            {/* (사용자 요청) 봇 대국은 눌러면 곧장 같은 조건으로 재시작한다. 실시간 대국은 상대에게
+                제안을 보내야 하므로, 내가 이미 보내 응답을 기다리는 중이면 취소(재클릭으로 토글)로,
+                상대가 먼저 보내 뒀으면 "수락"으로 라벨이 바뀐다 — onRematch 하나가 서버 쪽에서
+                제안/수락을 함께 처리하므로(pvp_rematch_offer) 클릭 핸들러 자체는 항상 그대로다. */}
+            <button onClick={rematchOfferedByMe ? onClose : onRematch} className="press" disabled={rematchOfferedByMe} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: rematchOfferedByMe ? "rgba(196,154,80,.05)" : "rgba(196,154,80,.12)", color: rematchOfferedByMe ? T.inkSoft : T.ink, fontWeight: 800, fontSize: 12.5, cursor: rematchOfferedByMe ? "default" : "pointer" }}>
+              {mode !== "pvp" ? "재대결" : rematchOfferedByMe ? "상대 응답 기다리는 중…" : rematchOfferedByOpp ? "재대결 수락" : "재대결 신청"}
+            </button>
             <button onClick={onClose} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>닫기</button>
           </div>
         </div>
@@ -9165,6 +9171,34 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 내가 이미 제안해 상대 응답을 기다리는 중인지 / 상대가 방금 나에게 제안했는지.
   const drawOfferedByMe = mode === "pvp" && pvpGame && pvpGame.draw_offered_by && pvpGame.draw_offered_by === myUid;
   const drawOfferedByOpp = mode === "pvp" && pvpGame && pvpGame.draw_offered_by && pvpGame.draw_offered_by !== myUid && !result;
+  // (사용자 요청) 결과 팝업의 "재대결" — 봇 대국은 같은 조건(진영·봉 등급·타임 컨트롤)으로 설정
+  // 화면을 거치지 않고 곧장 다시 시작한다. 실시간 대국은 랜덤 매칭 상대가 친구가 아닐 수도 있어
+  // pvp_invite_friend를 못 쓰므로, 방금 끝난 그 대국 행 자체에 제안 상태를 기록해 뒀다가(서버 함수가
+  // 제안/수락을 한 번에 처리 — 위 supabase-setup.sql 참고) 양쪽이 실시간 구독 중인 그 행에
+  // rematch_game_id가 채워지는 순간 아래 effect가 자동으로 새 대국으로 옮겨 탄다.
+  const requestRematch = () => {
+    if (mode === "pvp") {
+      if (pvpGame && myUid) sbRpc("pvp_rematch_offer", { p_game_id: pvpGame.id }).then(setPvpGame).catch(() => {});
+      return;
+    }
+    setResultModalOpen(false);
+    startGame();
+  };
+  const declineRematch = () => {
+    if (mode === "pvp" && pvpGame && myUid) sbRpc("pvp_rematch_decline", { p_game_id: pvpGame.id }).then(setPvpGame).catch(() => {});
+  };
+  const rematchOfferedByMe = mode === "pvp" && pvpGame && pvpGame.rematch_offered_by === myUid;
+  const rematchOfferedByOpp = mode === "pvp" && pvpGame && pvpGame.rematch_offered_by && pvpGame.rematch_offered_by !== myUid;
+  useEffect(() => {
+    if (mode !== "pvp" || !pvpGame || !pvpGame.rematch_game_id) return;
+    let cancelled = false;
+    sbSelect("pvp_games?id=eq." + pvpGame.rematch_game_id + "&select=*").then((rows) => {
+      if (cancelled || !rows || !rows[0]) return;
+      setResultModalOpen(false);
+      applyPvpGame(rows[0]);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [mode, pvpGame && pvpGame.rematch_game_id]);
 
   const flip = activeColor === "b";
   // (사용자 요청) chess.com 대국 화면처럼 상단에 수순 스트립(수 번호 + 백/흑 수, 누르면 그 시점으로
@@ -9402,7 +9436,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                   myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null}
                   onClose={() => setResultModalOpen(false)}
                   onReview={onOpenReview ? () => { onOpenReview({ sans, fenRoot }); setResultModalOpen(false); } : null}
-                  onRematch={() => { rematch(); setResultModalOpen(false); }} />
+                  onRematch={requestRematch} rematchOfferedByMe={rematchOfferedByMe} rematchOfferedByOpp={rematchOfferedByOpp} />
               )}
             </AnimatePresence>
             {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
@@ -9448,6 +9482,21 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
               <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + "가 무승부를 제안했어요"}</span>
               <button onClick={() => respondDraw(false)} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
               <button onClick={() => respondDraw(true)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* (사용자 요청) 상대가 재대결을 신청하면(결과 팝업을 이미 닫았어도) 뷰포트 맨 아래에 알림 띠로
+          띄운다 — 무승부 제안 알림과 완전히 같은 자리·구조를 쓴다. */}
+      <AnimatePresence>
+        {rematchOfferedByOpp && !drawOfferedByOpp && (
+          <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }} transition={{ duration: 0.22, ease: MOTION_EASE }}
+            style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 320, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "linear-gradient(180deg,#3A2516,#241509)", borderTop: "1px solid " + T.brass, boxShadow: "0 -10px 24px -8px rgba(0,0,0,.6)" }}>
+            <div style={{ maxWidth: 460, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+              <Repeat2 size={18} color={T.brassHi} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + "가 재대결을 신청했어요"}</span>
+              <button onClick={declineRematch} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
+              <button onClick={requestRematch} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
             </div>
           </motion.div>
         )}
@@ -19538,6 +19587,8 @@ const CHANGELOG = [
       "이미 친구인 상대의 프로필에서는 '친구 요청' 버튼이 더 이상 뜨지 않아요.",
       "친구 요청 관련 문구가 길어져도 /user 페이지의 다른 요소들이 밀리지 않도록 고쳤어요.",
       "채팅 이모티콘 박스가 화면 전체 폭을 채우도록 커졌고, MILKU·KOKOA 12개씩을 페이지 넘김 없이 한 판(6×4, 위 두 줄 MILKU·아래 두 줄 KOKOA)에서 바로 골라요.",
+      "OC 나이트 코인 아이콘을 새 이미지로 바꿨어요.",
+      "대국 결과 팝업의 '재대결' 버튼이 이제 실제로 작동해요 — 봇 대국은 같은 조건으로 곧장 다시 시작되고, 실시간 대국은 상대에게 재대결 신청이 가서 수락하면 새 대국이 시작돼요.",
     ]
   },
   {

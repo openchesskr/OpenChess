@@ -11,6 +11,11 @@
 --      함께 null로 되돌린다.
 --   3) pvp_draw_offer(bigint) / pvp_draw_accept(bigint) / pvp_draw_decline(bigint) 신규 — 무승부
 --      "제안"과 "수락"을 분리해, 한쪽이 일방적으로 무승부를 강제할 수 없게 한다(상대만 수락 가능).
+--   4) pvp_games.rematch_offered_by(uuid) / rematch_game_id(bigint) 신규, pvp_rematch_offer(bigint)
+--      / pvp_rematch_decline(bigint) 신규 — 대국 결과 팝업의 "재대결" 버튼. 랜덤 매칭 상대(친구가
+--      아닐 수 있음)에게도 걸 수 있도록 pvp_invites 대신 방금 끝난 그 대국 행 자체에 제안 상태를
+--      기록한다. 제안/수락을 한 함수로 합쳐, 상대가 이미 제안해 둔 상태에서 내가 다시 부르면 그
+--      자리에서 곧바로(진영을 맞바꿔) 새 대국을 만든다.
 --
 -- SQL Editor에 이 파일 전체를 붙여넣고 RUN 하세요.
 -- ============================================================================
@@ -81,3 +86,49 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.pvp_draw_decline(bigint) to authenticated;
+
+-- ============================================================================
+-- 추가 — 재대결(rematch) 제안/수락
+-- ============================================================================
+alter table public.pvp_games add column if not exists rematch_offered_by uuid references auth.users(id) on delete set null;
+alter table public.pvp_games add column if not exists rematch_game_id bigint references public.pvp_games(id) on delete set null;
+
+drop function if exists public.pvp_rematch_offer(bigint) cascade;
+create or replace function public.pvp_rematch_offer(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_new public.pvp_games; v_w uuid; v_b uuid;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status = 'active' then raise exception 'game still active'; end if;
+  if v_game.rematch_game_id is not null then
+    select * into v_new from public.pvp_games where id = v_game.rematch_game_id;
+    return v_new;
+  end if;
+  if v_game.rematch_offered_by is null or v_game.rematch_offered_by = v_me then
+    update public.pvp_games set rematch_offered_by = v_me, updated_at = now() where id = p_game_id returning * into v_game;
+    return v_game;
+  end if;
+  if random() < 0.5 then v_w := v_game.white_uid; v_b := v_game.black_uid; else v_w := v_game.black_uid; v_b := v_game.white_uid; end if;
+  insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, v_game.time_control) returning * into v_new;
+  update public.pvp_games set rematch_offered_by = null, rematch_game_id = v_new.id, updated_at = now() where id = p_game_id;
+  return v_new;
+end; $$;
+grant execute on function public.pvp_rematch_offer(bigint) to authenticated;
+
+drop function if exists public.pvp_rematch_decline(bigint) cascade;
+create or replace function public.pvp_rematch_decline(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  update public.pvp_games set rematch_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_rematch_decline(bigint) to authenticated;
+

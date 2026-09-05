@@ -1422,6 +1422,12 @@ alter table public.pvp_games add column if not exists time_control text not null
 -- 무승부를 제안해 응답을 기다리는 중이라는 뜻. 어느 한쪽이 일방적으로 무승부를 선언할 수는 없고
 -- (아래 pvp_draw_accept 참고), 수를 두면(pvp_move) 자동으로 취소된다.
 alter table public.pvp_games add column if not exists draw_offered_by uuid references auth.users(id) on delete set null;
+-- (v0.4.7 기능, 사용자 요청) 재대결 제안 — draw_offered_by와 같은 패턴. rematch_game_id는 제안이
+-- 수락돼 실제로 새 대국이 만들어지면 그 새 행의 id를 가리킨다 — 양쪽 클라이언트 모두 이 (끝난) 대국
+-- 행을 실시간 구독하고 있으므로, rematch_game_id가 채워지는 순간을 보고 자동으로 새 대국으로
+-- 넘어간다(별도 알림 폴링 없이).
+alter table public.pvp_games add column if not exists rematch_offered_by uuid references auth.users(id) on delete set null;
+alter table public.pvp_games add column if not exists rematch_game_id bigint references public.pvp_games(id) on delete set null;
 -- 위 8) Realtime 섹션과 동일한 이유로, 매칭·수·대국 종료를 실시간으로 받으려면 이 테이블도
 -- supabase_realtime publication에 포함되어야 한다(신규 테이블이라 이 파일 앞부분의 8) 섹션이 실행될
 -- 때는 아직 존재하지 않으므로 여기서 별도로 등록한다).
@@ -1607,6 +1613,58 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.pvp_draw_decline(bigint) to authenticated;
+
+-- (v0.4.7 기능, 사용자 요청) 재대결 — 결과 팝업의 "재대결" 버튼. 무승부 제안과 달리 게임이 이미
+-- 끝난(status<>'active') 뒤에 걸리고, 수락되면 진짜로 새 pvp_games 행을 만들어 이어 붙인다. 두
+-- 참가자가 서로 도전할 필요 없이(랜덤 매칭 상대는 친구가 아닐 수 있어 pvp_invite_friend를 쓸 수
+-- 없다) 방금 그 대국 자체에 제안 상태(rematch_offered_by)를 기록해 두는 방식.
+-- (동시성) "제안"과 "수락"을 굳이 분리하지 않고 이 함수 하나로 합친다 — 이미 상대가 먼저 제안해
+-- 두었다면 내가 다시 부르는 순간 그 자리에서 곧바로 새 대국을 만든다(=수락). 두 사람이 "재대결"을
+-- 정확히 동시에 눌러도 이 함수 전체가 그 대국 행에 대한 for update 잠금 안에서 실행되므로, 먼저
+-- 잠금을 얻은 호출이 rematch_offered_by를 자신으로 세우고, 그 다음 잠금을 얻은 호출은 이미 상대로
+-- 채워진 값을 보고 즉시 새 대국을 만든다 — 두 클라이언트 중 누가 실시간 이벤트를 먼저 받는지와
+-- 무관하게 항상 정확히 한 번만 새 대국이 만들어진다. 이미 만들어진 뒤(rematch_game_id가 있음)의
+-- 중복 호출(재클릭·경합)은 그 기존 대국을 그대로 돌려준다.
+drop function if exists public.pvp_rematch_offer(bigint) cascade;
+create or replace function public.pvp_rematch_offer(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_new public.pvp_games; v_w uuid; v_b uuid;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status = 'active' then raise exception 'game still active'; end if;
+  if v_game.rematch_game_id is not null then
+    select * into v_new from public.pvp_games where id = v_game.rematch_game_id;
+    return v_new;
+  end if;
+  if v_game.rematch_offered_by is null or v_game.rematch_offered_by = v_me then
+    update public.pvp_games set rematch_offered_by = v_me, updated_at = now() where id = p_game_id returning * into v_game;
+    return v_game;
+  end if;
+  -- 상대가 이미 제안해 둔 상태에서 내가 불렀다 = 수락. 진영은 뒤바꿔(맞바꿈) 새 대국을 만든다.
+  if random() < 0.5 then v_w := v_game.white_uid; v_b := v_game.black_uid; else v_w := v_game.black_uid; v_b := v_game.white_uid; end if;
+  insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, v_game.time_control) returning * into v_new;
+  update public.pvp_games set rematch_offered_by = null, rematch_game_id = v_new.id, updated_at = now() where id = p_game_id;
+  return v_new;
+end; $$;
+grant execute on function public.pvp_rematch_offer(bigint) to authenticated;
+
+-- 재대결 제안을 거절하거나(상대가 부름) 스스로 취소한다(제안한 쪽이 다시 부름).
+drop function if exists public.pvp_rematch_decline(bigint) cascade;
+create or replace function public.pvp_rematch_decline(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  update public.pvp_games set rematch_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.pvp_rematch_decline(bigint) to authenticated;
 
 -- (v0.4.5 기능, 사용자 요청) pvp_finish의 자기 승리 선언 금지 가드를 브라우저에서 직접 우회할 방법은
 -- 없지만("체크메이트 여부"를 클라이언트가 주장하는 값 그대로 믿을 수 없다는 게 핵심 문제), 서버 쪽
