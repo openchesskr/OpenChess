@@ -19537,6 +19537,7 @@ const CHANGELOG = [
       "수 키워드(TOP LEVEL 등)를 눌렀을 때 뜨는 말풍선이 화면 정중앙 대신, 그 키워드를 가리키는 꼬리와 함께 바로 옆에 떠요.",
       "이미 친구인 상대의 프로필에서는 '친구 요청' 버튼이 더 이상 뜨지 않아요.",
       "친구 요청 관련 문구가 길어져도 /user 페이지의 다른 요소들이 밀리지 않도록 고쳤어요.",
+      "채팅 이모티콘 박스가 화면 전체 폭을 채우도록 커졌고, MILKU·KOKOA 12개씩을 페이지 넘김 없이 한 판(6×4, 위 두 줄 MILKU·아래 두 줄 KOKOA)에서 바로 골라요.",
     ]
   },
   {
@@ -22048,34 +22049,32 @@ function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzleRating,
 }
 // (17차) 이모티콘 24종(MILKU/KOKOA 각 12종) — 정사각형으로 잘라 public/emoji에 미리 저장해둔 것을 사용.
 // (20차 UI3) 한 번에 24개를 다 보여주면 아이콘이 너무 작아 잘 안 보이던 문제 — MILKU/KOKOA를
-// 각각 한 페이지씩 좌우로 넘겨보도록 나눠, 페이지당 12개만 훨씬 크게 표시한다.
+// 각각 한 페이지씩 좌우로 넘겨보도록 나눠, 페이지당 12개만 훨씬 크게 표시했었다.
+// (버그 수정, 사용자 요청) 이 박스가 이제 뷰포트 전체 폭을 쓰도록 넓어져 24개를 한 번에 큼직하게
+// 보여줄 자리가 충분해졌다 — 페이지 넘기기를 없애고, 6열×4행 한 판에 위 두 줄(6×2=12)은 MILKU,
+// 아래 두 줄은 KOKOA가 오도록 순서 그대로 나열한다(grid가 행 우선으로 채우므로 별도 계산 없이
+// MILKU 12개 다음 KOKOA 12개를 그대로 이어 붙이면 된다).
 const EMOJI_GROUPS = [
   { label: "MILKU", codes: Array.from({ length: 12 }, (_, i) => "milku_" + (i + 1)) },
   { label: "KOKOA", codes: Array.from({ length: 12 }, (_, i) => "kokoa_" + (i + 1)) },
 ];
 const EMOJI_CODES = EMOJI_GROUPS.flatMap((g) => g.codes);
-function EmojiPicker({ onPick, onClose }) {
-  const [page, setPage] = useState(0);
-  const group = EMOJI_GROUPS[page];
-  const goto = (p) => setPage((p + EMOJI_GROUPS.length) % EMOJI_GROUPS.length);
+// (버그 수정, 사용자 요청) 예전엔 채팅 패널 안쪽 기준 position:absolute라 채팅 패널 자체 폭(데스크톱
+// 플로팅 카드 등)에 갇혀 있었다 — position:fixed + left:0/right:0으로 어떤 조상의 폭과도 무관하게
+// 항상 뷰포트 전체 폭을 채우게 한다. bottom은 ChatPanel이 이모티콘 버튼의 실제 화면 좌표를 열 때
+// 한 번 재서 넘겨준 값(pos.bottom)을 그대로 써 버튼 바로 위에 붙는다.
+function EmojiPicker({ pos, onPick, onClose }) {
   return (
-    <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: 46, left: 0, width: 260, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", padding: 8, zIndex: 95 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <button onClick={() => goto(page - 1)} aria-label="이전 이모티콘 세트" className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brass }}>{group.label}</span>
-        <button onClick={() => goto(page + 1)} aria-label="다음 이모티콘 세트" className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-        {group.codes.map((code) => (
-          <button key={code} onClick={() => { onPick(code); onClose(); }} className="press" style={{ padding: 3, border: "none", background: "transparent", cursor: "pointer", borderRadius: 8 }}>
-            <img src={"/emoji/" + code + ".png"} alt={code} style={{ width: "100%", display: "block" }} />
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center justify-center gap-2" style={{ marginTop: 6 }}>
-        {EMOJI_GROUPS.map((g, i) => (
-          <button key={i} onClick={() => setPage(i)} aria-label={g.label + " 페이지"} className="press" style={{ width: page === i ? 16 : 7, height: 7, borderRadius: 999, padding: 0, border: "none", cursor: "pointer", background: page === i ? T.brass : "rgba(0,0,0,.2)", transition: "width .2s ease, background .2s ease" }} />
-        ))}
+    <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", left: 0, right: 0, bottom: pos.bottom, background: T.paper, borderTop: "1px solid #DCCBA8", borderBottom: "1px solid #DCCBA8", boxShadow: "0 -12px 30px -8px rgba(0,0,0,.5), 0 12px 30px -8px rgba(0,0,0,.5)", padding: "10px 16px", zIndex: 95 }}>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: T.brass, textAlign: "center", marginBottom: 8 }}>MILKU&amp;KOKOA</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
+          {EMOJI_CODES.map((code) => (
+            <button key={code} onClick={() => { onPick(code); onClose(); }} className="press" style={{ padding: 4, border: "none", background: "transparent", cursor: "pointer", borderRadius: 8 }}>
+              <img src={"/emoji/" + code + ".png"} alt={code} style={{ width: "100%", display: "block" }} />
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -22414,6 +22413,21 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  // (사용자 요청) 이모티콘 박스가 이제 뷰포트 전체 폭을 채우는 position:fixed라, 이 채팅 패널
+  // 자체가 화면 어디에 떠 있든(데스크톱 플로팅 카드 포함) 이모티콘 버튼 바로 위에 딱 붙도록 그
+  // 버튼의 실제 화면 좌표를 열 때 한 번 재서 bottom 값을 넘긴다.
+  const pickerAnchorRef = useRef(null);
+  const [pickerPos, setPickerPos] = useState(null);
+  const togglePicker = () => {
+    setPickerOpen((v) => {
+      const next = !v;
+      if (next && pickerAnchorRef.current) {
+        const rect = pickerAnchorRef.current.getBoundingClientRect();
+        setPickerPos({ bottom: window.innerHeight - rect.top + 8 });
+      }
+      return next;
+    });
+  };
   const [sending, setSending] = useState(false);
   // (v0.2.7 버그 수정) "/puzzle 000000" 명령어가 존재하지 않는 번호를 그대로 공유 카드로 보내버려,
   // 받는 쪽에는 빈/깨진 미리보기만 남는 문제가 있었다 — 전송 전 그 번호가 실제로 존재하는지 확인해,
@@ -23164,7 +23178,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
         </AnimatePresence>
       </div>
       <div style={{ position: "relative", flexShrink: 0 }}>
-        {pickerOpen && <EmojiPicker onPick={(code) => send(null, code)} onClose={() => setPickerOpen(false)} />}
+        {pickerOpen && pickerPos && <EmojiPicker pos={pickerPos} onPick={(code) => send(null, code)} onClose={() => setPickerOpen(false)} />}
         {editingId != null && (
           <div className="flex items-center justify-between" style={{ marginBottom: 6, padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}>
             <span style={{ fontSize: 10.5, color: T.brass, fontWeight: 800 }}>메시지 수정 중</span>
@@ -23176,7 +23190,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
             m.body === "/help" 분기). */}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <div className="flex items-center gap-2">
-          <button onClick={() => setPickerOpen((v) => !v)} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
+          <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
           <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? "수정" : "전송"}</button>
         </div>
