@@ -18,6 +18,8 @@
 --      자리에서 곧바로(진영을 맞바꿔) 새 대국을 만든다.
 --   5) move_note_votes 테이블 신규, move_notes_with_votes 뷰 신규, move_note_vote(bigint, smallint)
 --      신규 — "수 설명"(move_notes)에 좋아요/싫어요를 달고, 그 집계로 인기순 정렬을 만든다.
+--   6) puzzle_reassign_creator() 버그 수정 — 대상 아이디를 대소문자 그대로 비교해, 대문자가 하나라도
+--      섞인 아이디(대부분의 실제 아이디)로는 항상 user_not_found로 조용히 실패하던 문제.
 --
 -- SQL Editor에 이 파일 전체를 붙여넣고 RUN 하세요.
 -- ============================================================================
@@ -190,4 +192,27 @@ begin
       (select count(*) from public.move_note_votes where note_id = p_note_id and value = -1);
 end; $$;
 grant execute on function public.move_note_vote(bigint, smallint) to authenticated;
+
+-- ============================================================================
+-- 추가 — 퍼즐 생성자 양도가 대문자 섞인 아이디에서 항상 실패하던 버그 수정
+-- ============================================================================
+-- profiles.username은 가입 시 항상 소문자로 저장되고 다른 모든 아이디 조회(claim_username·
+-- friend_request 등)도 lower()로 비교하는데, puzzle_reassign_creator만 대소문자를 그대로 비교해
+-- 대문자가 하나라도 섞인 아이디를 입력하면 항상 user_not_found로 조용히 실패했다.
+create or replace function public.puzzle_reassign_creator(p_no bigint, p_target_username text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_uid uuid; v_uname text; v_exists boolean;
+begin
+  if not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
+  select true into v_exists from public.puzzles where no = p_no for update;
+  if not v_exists then raise exception 'puzzle_not_found'; end if;
+  if p_target_username is null or btrim(p_target_username) = '' then
+    select id, username into v_uid, v_uname from public.profiles where username = 'openchesskr';
+  else
+    select id, username into v_uid, v_uname from public.profiles where username = lower(btrim(p_target_username));
+    if v_uid is null then raise exception 'user_not_found'; end if;
+  end if;
+  update public.puzzles set creator_uid = v_uid, creator_username = v_uname, creator_edited_at = null where no = p_no;
+end; $$;
+grant execute on function public.puzzle_reassign_creator(bigint, text) to authenticated;
 

@@ -1278,6 +1278,10 @@ grant execute on function public.puzzle_creator_save(bigint, jsonb, jsonb, int, 
 -- 예외가 안 났으니 "성공"으로 표시했지만 실제로는 아무것도 바뀌지 않았다 — 아직 전역 puzzles
 -- 테이블에 없는(공유되지 않은) 퍼즐에서 이 기능을 쓰면 100% 재현됐다. select ... for update로
 -- 먼저 존재를 확인해, 없으면 puzzle_delete와 동일하게 명확히 예외를 던진다.
+-- (버그 수정, 사용자 제보) "여전히 양도가 안 된다" — profiles.username은 가입 시(handle_new_user)
+-- 항상 소문자로 저장되고 다른 모든 아이디 조회(claim_username·friend_request·email_for_username
+-- 등)도 lower()로 비교하는데, 이 함수만 btrim만 하고 대소문자를 그대로 비교했다 — 대문자가 하나라도
+-- 섞인 아이디(실제 아이디 대부분)를 입력하면 항상 user_not_found로 조용히 실패했다.
 create or replace function public.puzzle_reassign_creator(p_no bigint, p_target_username text default null)
 returns void language plpgsql security definer set search_path = public as $$
 declare v_uid uuid; v_uname text; v_exists boolean;
@@ -1288,7 +1292,7 @@ begin
   if p_target_username is null or btrim(p_target_username) = '' then
     select id, username into v_uid, v_uname from public.profiles where username = 'openchesskr';
   else
-    select id, username into v_uid, v_uname from public.profiles where username = btrim(p_target_username);
+    select id, username into v_uid, v_uname from public.profiles where username = lower(btrim(p_target_username));
     if v_uid is null then raise exception 'user_not_found'; end if;
   end if;
   update public.puzzles set creator_uid = v_uid, creator_username = v_uname, creator_edited_at = null where no = p_no;
