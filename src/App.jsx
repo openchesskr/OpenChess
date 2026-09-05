@@ -13247,6 +13247,50 @@ function treeLinesOf(tree) {
   walk(tree, []);
   return out;
 }
+// (v0.4.7 기능, 사용자 재제보) "퍼즐 컨트롤 센터"의 손상 검사가 라인 개수(0개)만 보다 보니, 트리·라인
+// 구조 자체는 있지만 그 안의 수순이 실제로는 그 자리에서 둘 수 없는(예: setupSans·mistakeSan이 그
+// 위치에 안 맞거나, 데이터가 뒤섞여 모든 라인의 수순이 불법인) 진짜 손상된 퍼즐(#569827 등)을
+// "정상"으로 잘못 판정했다. isPuzzlePlayable·starsOf 등 앱 전역에서 쓰이는 기존 판정 기준은 그대로
+// 두고(수십 곳에 걸친 핵심 판정이라 범위를 넓히면 회귀 위험이 크다), 이 관제 도구의 손상 판정만
+// DailyPuzzleDevPanel의 PGN 검증과 같은 방식(sanSrc/applySan으로 실제 재생)으로 setupSans→
+// mistakeSan→각 라인 수순을 끝까지 실제로 둬 보고, 그중 단 하나의 라인도 처음부터 끝까지 합법적으로
+// 재생되지 않으면 손상으로 본다.
+function puzzleReplayOk(data) {
+  if (!data) return false;
+  let board, turn;
+  if (data.fen && (!data.setupSans || !data.setupSans.length)) {
+    const root = parseFenFull(data.fen);
+    if (!root) return false;
+    board = root.board; turn = root.turn;
+  } else {
+    board = startBoard(); turn = "w";
+  }
+  const setup = data.setupSans || [];
+  let ply = 0;
+  for (; ply < setup.length; ply++) {
+    const color = plyIsWhite(ply, turn) ? "w" : "b";
+    if (!sanSrc(board, setup[ply], color)) return false;
+    board = applySan(board, setup[ply], color);
+  }
+  if (data.mistakeSan) {
+    const color = plyIsWhite(ply, turn) ? "w" : "b";
+    if (!sanSrc(board, data.mistakeSan, color)) return false;
+    board = applySan(board, data.mistakeSan, color);
+    ply++;
+  }
+  const lines = treeLinesOf(puzzleTreeOf(data));
+  if (!lines.length) return false;
+  const rootPly = ply;
+  return lines.some((line) => {
+    let b = board;
+    for (let i = 0; i < line.sans.length; i++) {
+      const color = plyIsWhite(rootPly + i, turn) ? "w" : "b";
+      if (!sanSrc(b, line.sans[i], color)) return false;
+      b = applySan(b, line.sans[i], color);
+    }
+    return true;
+  });
+}
 // (기능) 퍼즐 레이팅 — 100(가장 쉬움)~3000(가장 어려움) 범위로 라인 하나의 난이도를 점수화한다.
 // 정적 요소(이 함수들)만으로 계산되는 "기본 레이팅"과, 실제 사용자들이 그 라인을 푸는 데 걸린 시간을
 // 반영해 가감하는 "보정"(applySolveTimeAdjustment, 아래)을 분리해 뒀다 — 서버(Supabase)가 연결되지
@@ -21212,10 +21256,11 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
     run.status = "scanning"; puzzleScanNotify();
     for (const no of nos) {
       if (run.stop) { run.status = "stopped"; puzzleScanNotify(); return; }
-      // (isPuzzlePlayable과 동일 기준) 데이터를 아예 못 찾거나(공유 후 다른 곳에서 지워짐 등), 라인이
-      // 0개라 아무도 풀 수 없는 퍼즐을 "손상"으로 본다.
+      // 데이터를 아예 못 찾거나(공유 후 다른 곳에서 지워짐 등), 라인이 0개거나, 라인은 있어도 그
+      // 어떤 라인도 실제로 합법적으로 끝까지 재생되지 않는(setupSans·mistakeSan·수순이 뒤섞인) 퍼즐을
+      // "손상"으로 본다(puzzleReplayOk — 단순 라인 개수만 보던 isPuzzlePlayable보다 엄격하다).
       const data = await puzzleFetch(no);
-      if (!data || !isPuzzlePlayable(data)) run.corrupted = [...run.corrupted, no];
+      if (!data || !puzzleReplayOk(data)) run.corrupted = [...run.corrupted, no];
       run.checked += 1; puzzleScanNotify();
     }
     run.status = "scanned"; puzzleScanNotify();
