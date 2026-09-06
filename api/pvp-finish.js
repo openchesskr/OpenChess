@@ -1,6 +1,10 @@
 // Vercel 서버리스 함수: pvp 대국이 체크메이트/스테일메이트/3회 동형 반복으로 끝났다는 클라이언트의
 // 신고를, chess.js로 sans를 직접 재생해 검증한 뒤에만 서버(Supabase)에 확정한다.
 //
+// (v0.4.8, v0.5.0 예정인 보드 위 오리지널 미니게임 PvP 대비 선행 정리) 검증 로직을 game_type별
+// 함수로 뽑아 VERIFIERS에 등록해 두었다 — 체스가 아닌 게임 타입이 추가되면 그 타입 전용 검증 함수를
+// 만들어 여기 등록하기만 하면 되고, 아래 handler 본문은 손댈 필요가 없다. 지금은 'chess'뿐이다.
+//
 // (배경, v0.4.5) pvp_finish RPC는 "자기 자신을 승자로 선언하는" 호출을 막는다 — pvp_move가 SAN
 // 합법성 자체를 검증하지 않으므로(클라이언트가 이미 검증했다고 신뢰), 이 가드가 없으면 클라이언트가
 // 조작된 수순을 넣고 스스로 승리를 우겨 넣을 수 있다(supabase-setup.sql의 pvp_finish 주석 참고). 그
@@ -16,6 +20,22 @@
 // role에는 권한을 주지 않아 브라우저가 직접 호출할 수 없다. 이 함수만 SUPABASE_SERVICE_ROLE_KEY로
 // 호출할 수 있다)로 확정한다.
 import { Chess } from "chess.js";
+
+// game_type "chess" 전용 검증 — sans를 처음부터 직접 재생해, 하나라도 chess.js 기준 불법이면
+// 검증 실패(null)로 거부하고, 실제로 종료된 위치라면 그 결과("white_won"|"black_won"|"draw")를
+// 독립적으로 계산해 돌려준다. 아직 끝나지 않은 위치도 null.
+function verifyChessResult(sans) {
+  const chess = new Chess();
+  for (const san of sans || []) {
+    try { chess.move(san); } catch { return null; }
+  }
+  if (chess.isCheckmate()) return chess.turn() === "w" ? "black_won" : "white_won";
+  if (chess.isStalemate() || chess.isThreefoldRepetition() || chess.isDraw()) return "draw";
+  return null;
+}
+
+// game_type -> (sans) => 계산된 result | null. 새 게임 타입을 추가할 때 여기 등록한다.
+const VERIFIERS = { chess: verifyChessResult };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 지원합니다." }); return; }
@@ -42,7 +62,7 @@ export default async function handler(req, res) {
     if (!myUid) { res.status(401).json({ error: "로그인이 필요해요." }); return; }
 
     // 2) 대국 조회 — service role로(RLS와 무관하게 sans까지 전부 읽는다).
-    const gameRes = await fetch(SUPABASE_URL + "/rest/v1/pvp_games?id=eq." + gameId + "&select=id,white_uid,black_uid,sans,status", {
+    const gameRes = await fetch(SUPABASE_URL + "/rest/v1/pvp_games?id=eq." + gameId + "&select=id,white_uid,black_uid,sans,status,game_type", {
       headers: { apikey: SERVICE_KEY, Authorization: "Bearer " + SERVICE_KEY },
     });
     if (!gameRes.ok) { res.status(502).json({ error: "대국을 불러오지 못했어요." }); return; }
@@ -52,16 +72,12 @@ export default async function handler(req, res) {
     if (myUid !== game.white_uid && myUid !== game.black_uid) { res.status(403).json({ error: "이 대국의 참가자가 아니에요." }); return; }
     if (game.status !== "active") { res.status(200).json({ ok: true, alreadyFinished: true }); return; }
 
-    // 3) sans를 처음부터 직접 재생 — 하나라도 chess.js 기준 불법이면 검증 실패로 거부한다.
-    const chess = new Chess();
-    for (const san of game.sans || []) {
-      try { chess.move(san); } catch { res.status(400).json({ error: "기보를 재생할 수 없어요." }); return; }
-    }
-
-    // 4) 실제로 종료된 위치인지, 종료됐다면 무엇으로 끝났는지 독립적으로 계산한다.
-    let computed = null;
-    if (chess.isCheckmate()) computed = chess.turn() === "w" ? "black_won" : "white_won";
-    else if (chess.isStalemate() || chess.isThreefoldRepetition() || chess.isDraw()) computed = "draw";
+    // 3) game_type에 맞는 검증기로 실제로 종료된 위치인지, 종료됐다면 무엇으로 끝났는지 독립적으로
+    // 계산한다(sans 재생이 불법이면 검증기가 null을 돌려준다 — "아직 끝나지 않음"과 구분하지 않고
+    // 둘 다 거부한다).
+    const verify = VERIFIERS[game.game_type || "chess"];
+    if (!verify) { res.status(400).json({ error: "지원하지 않는 게임 타입이에요." }); return; }
+    const computed = verify(game.sans || []);
     if (!computed) { res.status(400).json({ error: "아직 끝나지 않은 대국이에요." }); return; }
     if (computed !== status) { res.status(400).json({ error: "요청한 결과가 실제 계산 결과와 달라요." }); return; }
 

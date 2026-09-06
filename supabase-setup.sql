@@ -1465,6 +1465,9 @@ alter table public.pvp_queue enable row level security;
 -- (신규 기능) 사용자 요청 — 타임 컨트롤별로 대기열을 나눈다("초기시간(초)-증가시간(초)" 형식, 예:
 -- "600-0"=10|0). 같은 타임 컨트롤끼리만 짝짓는다.
 alter table public.pvp_queue add column if not exists time_control text not null default '600-0';
+-- (v0.4.8 기능) v0.5.0 예정인 보드 위 오리지널 미니게임 PvP를 대비 — 같은 game_type끼리만 짝짓는다.
+-- 지금은 'chess'뿐이라 실질적인 매칭 동작은 바뀌지 않는다.
+alter table public.pvp_queue add column if not exists game_type text not null default 'chess';
 
 -- 대국 기록. sans(둔 수순, SAN 배열)는 pvp_move RPC로만 늘어난다. 참가자 본인만 select 가능 —
 -- Realtime(postgres_changes) 구독도 이 RLS를 그대로 따르므로, 남의 대국 이벤트는 애초에 전달되지 않는다.
@@ -1496,6 +1499,13 @@ alter table public.pvp_games add column if not exists draw_offered_by uuid refer
 -- 넘어간다(별도 알림 폴링 없이).
 alter table public.pvp_games add column if not exists rematch_offered_by uuid references auth.users(id) on delete set null;
 alter table public.pvp_games add column if not exists rematch_game_id bigint references public.pvp_games(id) on delete set null;
+-- (v0.4.8 기능) v0.5.0 예정인 보드 위 오리지널 미니게임 PvP를 대비 — 매칭/초대/재대결이 만드는 새
+-- 대국이 모두 이 값을 물려받게 해서, 나중에 새 게임 타입이 추가돼도 서로 다른 타입끼리 잘못 매칭되지
+-- 않게 한다. 지금은 모든 행이 'chess'뿐이라 실질적인 동작 변화는 없다.
+alter table public.pvp_games add column if not exists game_type text not null default 'chess';
+comment on column public.pvp_games.sans is
+  '수순 토큰 배열 — game_type이 ''chess''일 때만 SAN 문자열이다. 다른 game_type이 추가되면 그 타입
+   전용 인코딩을 담는 불투명한 배열로 취급할 것(하위 호환을 위해 컬럼명은 그대로 둔다).';
 -- 위 8) Realtime 섹션과 동일한 이유로, 매칭·수·대국 종료를 실시간으로 받으려면 이 테이블도
 -- supabase_realtime publication에 포함되어야 한다(신규 테이블이라 이 파일 앞부분의 8) 섹션이 실행될
 -- 때는 아직 존재하지 않으므로 여기서 별도로 등록한다).
@@ -1535,7 +1545,8 @@ end $$;
 -- 자기 자리만 갱신하도록(경쟁 상태 자체가 없도록) 한다.
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
-create or replace function public.pvp_queue_join(p_time_control text default '600-0')
+-- (v0.4.8 기능) p_game_type 인자 추가 — 같은 time_control이면서 같은 game_type인 상대끼리만 짝짓는다.
+create or replace function public.pvp_queue_join(p_time_control text default '600-0', p_game_type text default 'chess')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_other uuid; v_game public.pvp_games; v_w uuid; v_b uuid;
 begin
@@ -1547,19 +1558,21 @@ begin
     if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
     update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
   end if;
-  select uid into v_other from public.pvp_queue where uid <> v_me and time_control = p_time_control order by created_at asc limit 1 for update skip locked;
+  select uid into v_other from public.pvp_queue
+    where uid <> v_me and time_control = p_time_control and game_type = p_game_type
+    order by created_at asc limit 1 for update skip locked;
   if v_other is null then
-    insert into public.pvp_queue(uid, time_control) values (v_me, p_time_control)
-      on conflict (uid) do update set time_control = excluded.time_control, created_at = now();
+    insert into public.pvp_queue(uid, time_control, game_type) values (v_me, p_time_control, p_game_type)
+      on conflict (uid) do update set time_control = excluded.time_control, game_type = excluded.game_type, created_at = now();
     return null;
   end if;
   delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, p_time_control) returning * into v_game;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, p_time_control, p_game_type) returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.pvp_queue_join(text) to authenticated;
+grant execute on function public.pvp_queue_join(text, text) to authenticated;
 
 drop function if exists public.pvp_queue_leave() cascade;
 create or replace function public.pvp_queue_leave()
@@ -1713,7 +1726,7 @@ begin
   end if;
   -- 상대가 이미 제안해 둔 상태에서 내가 불렀다 = 수락. 진영은 뒤바꿔(맞바꿈) 새 대국을 만든다.
   if random() < 0.5 then v_w := v_game.white_uid; v_b := v_game.black_uid; else v_w := v_game.black_uid; v_b := v_game.white_uid; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, v_game.time_control) returning * into v_new;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, v_game.time_control, v_game.game_type) returning * into v_new;
   update public.pvp_games set rematch_offered_by = null, rematch_game_id = v_new.id, updated_at = now() where id = p_game_id;
   return v_new;
 end; $$;
@@ -1801,6 +1814,9 @@ create table if not exists public.pvp_invites (
   time_control text not null default '600-0',
   status text not null default 'pending' check (status in ('pending','accepted','declined','cancelled')),
   game_id bigint references public.pvp_games(id) on delete set null,
+  -- (v0.4.8 기능) 수락 시 만들어지는 대국이 물려받을 game_type — v0.5.0 예정인 보드 위 오리지널
+  -- 미니게임 PvP를 대비한 선행 정리. 지금은 'chess'뿐이다.
+  game_type text not null default 'chess',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -1826,7 +1842,8 @@ end $$;
 -- updated_at을 새 요청으로 갱신하고(받는 쪽 GlobalPvpInviteBanner는 이 테이블을 event:"*"로
 -- 구독하므로 update만으로도 다시 뜬다) 채팅에도 매번 새 카드를 남긴다 — 재요청이 항상 눈에 보이게.
 drop function if exists public.pvp_invite_friend(uuid, text) cascade;
-create or replace function public.pvp_invite_friend(p_to_uid uuid, p_time_control text default '600-0')
+-- (v0.4.8 기능) p_game_type 인자 추가 — 수락 시 만들어지는 대국이 이 값을 물려받는다.
+create or replace function public.pvp_invite_friend(p_to_uid uuid, p_time_control text default '600-0', p_game_type text default 'chess')
 returns public.pvp_invites language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_are_friends boolean; v_inv public.pvp_invites;
 begin
@@ -1839,9 +1856,9 @@ begin
   if not v_are_friends then raise exception 'not friends'; end if;
   select * into v_inv from public.pvp_invites where from_uid = v_me and to_uid = p_to_uid and status = 'pending' order by created_at desc limit 1;
   if found then
-    update public.pvp_invites set time_control = p_time_control, updated_at = now() where id = v_inv.id returning * into v_inv;
+    update public.pvp_invites set time_control = p_time_control, game_type = p_game_type, updated_at = now() where id = v_inv.id returning * into v_inv;
   else
-    insert into public.pvp_invites(from_uid, to_uid, time_control) values (v_me, p_to_uid, p_time_control) returning * into v_inv;
+    insert into public.pvp_invites(from_uid, to_uid, time_control, game_type) values (v_me, p_to_uid, p_time_control, p_game_type) returning * into v_inv;
   end if;
   -- (v0.4.3 기능, 사용자 요청) 전역 알람 박스와 같은 신청을 채팅에도 남긴다 — 이미 여기 친구
   -- 사이임을 확인했고 이 함수 자체가 SECURITY DEFINER라 RLS(친구 사이만 채팅 가능)를 우회해도
@@ -1850,7 +1867,7 @@ begin
   insert into public.chat_messages(from_uid, to_uid, body, pvp_invite_id) values (v_me, p_to_uid, '실시간 대국을 신청했어요.', v_inv.id);
   return v_inv;
 end; $$;
-grant execute on function public.pvp_invite_friend(uuid, text) to authenticated;
+grant execute on function public.pvp_invite_friend(uuid, text, text) to authenticated;
 
 -- 초대 응답 — 받은 사람(to_uid)만 수락/거절할 수 있다. 수락하면 대국을 만들어 연결한다.
 drop function if exists public.pvp_invite_respond(bigint, boolean) cascade;
@@ -1868,7 +1885,7 @@ begin
     return v_inv;
   end if;
   if random() < 0.5 then v_w := v_inv.from_uid; v_b := v_inv.to_uid; else v_w := v_inv.to_uid; v_b := v_inv.from_uid; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control) values (v_w, v_b, v_inv.time_control) returning * into v_game;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, v_inv.time_control, v_inv.game_type) returning * into v_game;
   update public.pvp_invites set status = 'accepted', game_id = v_game.id, updated_at = now() where id = p_invite_id returning * into v_inv;
   return v_inv;
 end; $$;

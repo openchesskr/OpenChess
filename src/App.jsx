@@ -8402,6 +8402,10 @@ const TIME_CONTROLS = [
 ];
 const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"];
 const DEFAULT_TIME_CONTROL = TIME_CONTROLS[6]; // 10분(래피드)
+// (v0.4.8, v0.5.0 예정인 보드 위 오리지널 미니게임 PvP 대비 선행 정리) pvp_queue/pvp_games/pvp_invites의
+// game_type 컬럼과 짝을 맞추는 상수 — PlayPage는 지금 체스 대국만 만들고 이어받으므로 항상 이 값을
+// 쓴다. 나중에 미니게임 전용 플레이 화면이 생기면 그쪽은 자신의 game_type을 쓰게 될 것.
+const PVP_GAME_TYPE = "chess";
 // (v0.4.3 기능, 사용자 요청) 채팅 /play 명령어(예: "/play 3", "/play 15+10")로 만들어진
 // pvp_games.time_control이 위 TIME_CONTROLS 프리셋에 없는 값이어도(예: "/play 7"처럼 프리셋에 없는
 // 분), PlayPage가 올바른 라벨·클럭으로 대국을 이어받을 수 있도록 "초-증가초" 키 문자열을 항상
@@ -8875,7 +8879,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
     setPvpErr(""); setPvpWaiting(true);
     try {
-      const g = await sbRpc("pvp_queue_join", { p_time_control: timeControl.key });
+      const g = await sbRpc("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
       // (버그 수정, 사용자 제보) pvp_queue_join은 매칭할 상대가 없으면(대기열에만 합류) SQL NULL을
       // 반환하는데, PostgREST가 단일 row를 반환하는 함수의 NULL을 순수 JSON null이 아니라 "모든 필드가
       // null인 객체"(예: {id:null, white_uid:null, ...})로 직렬화한다 — 이 객체는 `if (g)`로는 참(truthy)이라,
@@ -8906,8 +8910,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 대기 중일 때 — 다른 사람이 나를 찾아 매칭해도 내가 만든 pvp_games 행은 아니므로, 내가 white/black
   // 어느 쪽으로 들어가든 realtime으로 알 수 있도록 두 컬럼 각각을 구독한다(소켓이 끊겼을 때를 대비해
   // pvp_queue_join을 다시 불러 재확인하는 느슨한 안전망도 둔다).
-  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active") applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
-  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active") applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
+  // (v0.4.8, v0.5.0 대비) game_type이 PVP_GAME_TYPE("chess")이 아닌 행은 무시한다 — 나중에 미니게임이
+  // 같은 pvp_games 테이블에 자기 대국을 만들면, 그 매칭 이벤트가 이 체스 대기 화면을 잘못 끌고 가지
+  // 않도록 하는 안전망(지금은 모든 행이 'chess'뿐이라 실질적인 동작 변화는 없다).
+  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active" && (payload.new.game_type || "chess") === PVP_GAME_TYPE) applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
+  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, (payload) => { if (payload && payload.new && payload.new.status === "active" && (payload.new.game_type || "chess") === PVP_GAME_TYPE) applyPvpGame(payload.new); else if (!payload) joinPvpQueue(); }, mode === "pvp" && pvpWaiting && !!myUid, 5000);
   // 대국 중 — 상대(또는 내 클라이언트가 보낸) 수·종료 상태를 실시간으로 반영한다. sans는 이 행이
   // 유일한 진실 공급원이라 그대로 덮어쓴다(내가 둔 수도 낙관적으로 먼저 반영해 두지만, 결국 같은
   // 배열로 확정된다).
@@ -8966,7 +8973,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (!myUid) return;
     setPvpErr("");
     try {
-      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: timeControl.key });
+      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
       // (v0.4.3) 대기 화면에 "@닉네임의 응답을 기다리는 중..."을 보여주기 위해, 서버 응답(원본 초대
       // 행)에 클릭 시점에 이미 알고 있던 상대 표시 정보를 얹어 둔다 — 서버는 uid만 갖고 있다.
       setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
@@ -10492,11 +10499,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // (v0.3.5 기능) 사용자 요청 — 보드 편집기(BoardEditorModal) 열림 상태. 완료를 누르면 onLoadFen과
   // 같은 계약으로 그 포지션의 FEN 모드로 들어간다(NotationTools의 FEN 붙여넣기와 동일한 경로).
   const [editorOpen, setEditorOpen] = useState(false);
-  // (v0.3.5 기능) 사용자 요청 — FEN 모드의 리뷰(분석)는 아직 지원하지 않는다(위 채점 로직이 표준
-  // 시작 위치만 전제하는 한계와 같은 이유). v0.3.4에서 일단 열어 뒀던 "FEN 모드에서도 리뷰 열기"를
-  // 되돌리고, 리뷰 버튼을 누르면 안내 토스트만 잠깐 띄운다.
-  const [fenReviewNotice, setFenReviewNotice] = useState(false);
-  useEffect(() => { if (!fenReviewNotice) return; const t = setTimeout(() => setFenReviewNotice(false), 1800); return () => clearTimeout(t); }, [fenReviewNotice]);
+  // (v0.4.8 기능) FEN 모드 리뷰 — v0.3.5에서 "표준 시작 위치만 전제하는 채점 로직" 때문에 막아
+  // 두었던 것을 되돌린다. ReviewPage는 이미 v0.3.4~v0.3.5에 걸쳐 game.fenRoot를 받아 legalDests
+  // (fenLegalDests)·gameEndState·평가·코치 카드까지 전부 그 위치 기준으로 정확히 계산하도록 완성돼
+  // 있었다(9691행 이하 참고) — 다만 이 진입점(리뷰 버튼)만 여전히 막힌 채 남아 있어 실제로는 완성된
+  // 기능을 쓸 수 없었다.
   // (v0.2.3 기능 → v0.3.5) 스테일메이트·3회 동형 반복 판정 — 체크메이트는 legalDests가 이미 자연히
   // 더 이상의 수를 막으므로 별도 처리가 필요 없지만, 3회 동형 반복은 규칙상 여전히 "합법적으로 둘 수
   // 있는" 수가 남아 있어 게이팅이 없으면 계속 둘 수 있었다. drawState.end가 stalemate/threefold면 더
@@ -11022,15 +11029,6 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           최소 폭(min-content)만큼 억지로 넓어져 모바일에서 보드가 화면 밖으로 밀려나는 원인이었다. */}
       <div style={{ minWidth: 0 }}>
         <div style={{ position: "relative", background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
-          {/* (v0.3.5 기능) 사용자 요청 — FEN 모드에서 리뷰 버튼을 누르면 뜨는 짧은 안내 토스트. */}
-          <AnimatePresence>
-            {fenReviewNotice && (
-              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-                style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 20, padding: "8px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 12, fontWeight: 800, boxShadow: "0 8px 20px -6px rgba(0,0,0,.6)", whiteSpace: "nowrap" }}>
-                업데이트를 기대해 주세요!
-              </motion.div>
-            )}
-          </AnimatePresence>
           {/* (사용자 요청) FEN 모드 안내 — 표준 시작 위치 기반 기능(분석·이론 후보·집중 분석 등)은
               이 위치와 무관하므로, 눈에 띄는 배지 + 종료 버튼만 간단히 둔다. */}
           {fenRoot && (
@@ -11053,10 +11051,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               {/* (18차 UI5) 와이파이 아이콘 + "라이브" 상태 텍스트 삭제 */}
               {/* (v0.2.0 기능) 기보 위 리뷰 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
                   띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
-                  (v0.3.4 기능 → v0.3.5 되돌림) 사용자 요청 — FEN 모드에서는 리뷰를 아예 열지 못하게
-                  막고(위 fenReviewNotice), 대신 이 위치에서도 평가치 바·엔진 라인은 작동한다(아래 fenEval). */}
+                  (v0.4.8 기능) FEN 모드에서도 그대로 리뷰를 연다 — ReviewPage가 이미 fenRoot를 온전히
+                  지원하므로, 붙여넣은 포지션의 원본 FEN 문자열(fenRoot.raw)만 함께 넘기면 된다. */}
               <BestMoveJumpButton title="기보 분석(리뷰)" size={26}
-                onClick={() => { if (fenRoot) { setFenReviewNotice(true); return; } onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: null }); }}
+                onClick={() => onOpenReview && onOpenReview({ sans: [...sans, ...future], fenRoot: fenRoot ? fenRoot.raw : null })}
                 disabled={(!fenRoot && [...sans, ...future].length < 1) || engine.status !== "ready"} />
             </div>
           </div>
@@ -13246,6 +13244,50 @@ function treeLinesOf(tree) {
   };
   walk(tree, []);
   return out;
+}
+// (v0.4.7 기능, 사용자 재제보) "퍼즐 컨트롤 센터"의 손상 검사가 라인 개수(0개)만 보다 보니, 트리·라인
+// 구조 자체는 있지만 그 안의 수순이 실제로는 그 자리에서 둘 수 없는(예: setupSans·mistakeSan이 그
+// 위치에 안 맞거나, 데이터가 뒤섞여 모든 라인의 수순이 불법인) 진짜 손상된 퍼즐(#569827 등)을
+// "정상"으로 잘못 판정했다. isPuzzlePlayable·starsOf 등 앱 전역에서 쓰이는 기존 판정 기준은 그대로
+// 두고(수십 곳에 걸친 핵심 판정이라 범위를 넓히면 회귀 위험이 크다), 이 관제 도구의 손상 판정만
+// DailyPuzzleDevPanel의 PGN 검증과 같은 방식(sanSrc/applySan으로 실제 재생)으로 setupSans→
+// mistakeSan→각 라인 수순을 끝까지 실제로 둬 보고, 그중 단 하나의 라인도 처음부터 끝까지 합법적으로
+// 재생되지 않으면 손상으로 본다.
+function puzzleReplayOk(data) {
+  if (!data) return false;
+  let board, turn;
+  if (data.fen && (!data.setupSans || !data.setupSans.length)) {
+    const root = parseFenFull(data.fen);
+    if (!root) return false;
+    board = root.board; turn = root.turn;
+  } else {
+    board = startBoard(); turn = "w";
+  }
+  const setup = data.setupSans || [];
+  let ply = 0;
+  for (; ply < setup.length; ply++) {
+    const color = plyIsWhite(ply, turn) ? "w" : "b";
+    if (!sanSrc(board, setup[ply], color)) return false;
+    board = applySan(board, setup[ply], color);
+  }
+  if (data.mistakeSan) {
+    const color = plyIsWhite(ply, turn) ? "w" : "b";
+    if (!sanSrc(board, data.mistakeSan, color)) return false;
+    board = applySan(board, data.mistakeSan, color);
+    ply++;
+  }
+  const lines = treeLinesOf(puzzleTreeOf(data));
+  if (!lines.length) return false;
+  const rootPly = ply;
+  return lines.some((line) => {
+    let b = board;
+    for (let i = 0; i < line.sans.length; i++) {
+      const color = plyIsWhite(rootPly + i, turn) ? "w" : "b";
+      if (!sanSrc(b, line.sans[i], color)) return false;
+      b = applySan(b, line.sans[i], color);
+    }
+    return true;
+  });
 }
 // (기능) 퍼즐 레이팅 — 100(가장 쉬움)~3000(가장 어려움) 범위로 라인 하나의 난이도를 점수화한다.
 // 정적 요소(이 함수들)만으로 계산되는 "기본 레이팅"과, 실제 사용자들이 그 라인을 푸는 데 걸린 시간을
@@ -19673,6 +19715,15 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.4.8", date: "2026.9.6", dev: ["openchesskr", "G13sus4"], items: [
+      "학습 탭에서 FEN을 붙여넣어 만든 포지션도 이제 대국 리뷰(/review)를 열 수 있어요 — 그 포지션 그대로 채점·코치 카드가 정확하게 표시돼요.",
+      "채팅에 공유되는 리뷰 카드의 chess.com 대국 표시를 /user 프로필의 chess.com 통계 행과 완전히 같은 모양으로 맞췄어요 — 무승부 종류·대국 날짜·오프닝 이름도 함께 보여요.",
+      "채팅으로 '블라인드 대국'을 둘 수 있어요 — \"1.e4\"처럼 수순 번호가 붙은 SAN을 보내면 대국이 시작되고, 그 뒤로는 차례에 맞는 합법적인 수만 인식해요. 체크메이트·스테일메이트·3회 동형 반복이면 자동으로, /resign(기권)·/draw(합의 무승부)로도 결과가 채팅에 기록되고 대국이 끝나면 모드도 자동으로 꺼져요.",
+      "블라인드 대국 중에는 백그라운드에서 지금 포지션을 depth를 계속 높여가며 분석해 둬요 — /eval을 입력하면 그 순간까지 계산된 평가치와 depth(예: +0.31(depth=25))를 채팅에 남겨요.",
+      "채팅 입력창에 '/'만 입력해도 다시 위에 사용 가능한 명령어 안내가 떠요.",
+    ]
+  },
+  {
     version: "0.4.7", date: "2026.9.5", dev: ["openchesskr", "G13sus4"], items: [
       "분석 탭 체스보드가 수를 둘 때마다 화면 비율이 미세하게 흔들리던 문제를 고쳤어요 — 크기가 항상 고정돼요.",
       "/play에서 봇이 아닌 실시간 상대와 대국할 때는 '다시 설정' 버튼이 뜨지 않아요.",
@@ -21212,10 +21263,11 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
     run.status = "scanning"; puzzleScanNotify();
     for (const no of nos) {
       if (run.stop) { run.status = "stopped"; puzzleScanNotify(); return; }
-      // (isPuzzlePlayable과 동일 기준) 데이터를 아예 못 찾거나(공유 후 다른 곳에서 지워짐 등), 라인이
-      // 0개라 아무도 풀 수 없는 퍼즐을 "손상"으로 본다.
+      // 데이터를 아예 못 찾거나(공유 후 다른 곳에서 지워짐 등), 라인이 0개거나, 라인은 있어도 그
+      // 어떤 라인도 실제로 합법적으로 끝까지 재생되지 않는(setupSans·mistakeSan·수순이 뒤섞인) 퍼즐을
+      // "손상"으로 본다(puzzleReplayOk — 단순 라인 개수만 보던 isPuzzlePlayable보다 엄격하다).
       const data = await puzzleFetch(no);
-      if (!data || !isPuzzlePlayable(data)) run.corrupted = [...run.corrupted, no];
+      if (!data || !puzzleReplayOk(data)) run.corrupted = [...run.corrupted, no];
       run.checked += 1; puzzleScanNotify();
     }
     run.status = "scanned"; puzzleScanNotify();
@@ -22674,7 +22726,62 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
     </div>
   );
 }
-function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, fillNarrow, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+// (v0.4.8 기능) 사용자 요청 — 채팅으로 SAN 기보를 입력해 "블라인드 대국"을 진행한다. 서버에 별도
+// 상태를 두지 않고, 대화 기록(msgs) 자체가 유일한 진실 공급원이다 — 두 참가자 모두 항상 같은 msgs를
+// 보므로(realtime 구독), 이 함수 하나로 각자 독립적으로 계산해도 항상 같은 결론에 도달한다.
+//
+// "1.e4"처럼 수순 접두사(백은 "N.", 흑은 "N...")가 붙은 SAN 하나만 담긴 메시지가 나타나면 그
+// 시점부터 대국이 시작되고(그 메시지를 보낸 사람이 백), 그 뒤로는 다음 차례에 맞는 접두사+SAN
+// 메시지만 실제 수로 인식한다 — 그 사이 다른 잡담 메시지는 그냥 건너뛴다(수가 아니므로 무시).
+// 체크메이트·스테일메이트·3회 동형 반복이면 gameEndState로 자동 종료되고, /resign·/draw 명령어로도
+// 끝난다. 대국이 끝난 뒤 새로운 "1.xxx" 메시지가 나타나면 그 시점부터 새 대국이 다시 시작된다(=
+// 블라인드 대국 모드가 자동으로 꺼졌다 다시 켜지는 것과 같은 효과).
+function blindMoveToken(body, ply) {
+  const s = (body || "").trim();
+  const num = Math.floor(ply / 2) + 1;
+  const prefix = num + (ply % 2 === 0 ? "." : "...");
+  if (!s.startsWith(prefix)) return null;
+  const rest = s.slice(prefix.length).trim();
+  if (!rest || /\s/.test(rest)) return null;
+  if (!/^[a-hKQRBNO][a-h1-8xKQRBNO\-+#=]*$/.test(rest)) return null;
+  return stripSuffix(rest);
+}
+function deriveBlindGame(msgs) {
+  let sans = null, active = false, result = null, whiteFromUid = null;
+  for (const m of msgs) {
+    if (m.pvp_invite_id != null || m.puzzle_no != null || m.legacy_slot != null || m.review_id != null || m.share_reward) continue;
+    const body = (m.body || "").trim();
+    if (!body) continue;
+    if (!active) {
+      const tok = blindMoveToken(body, 0);
+      if (tok && sanSrc(startBoard(), tok, "w")) { sans = [tok]; active = true; result = null; whiteFromUid = m.from_uid; }
+      continue;
+    }
+    if (/^\/resign\s*$/i.test(body)) { active = false; result = { kind: "resign", loserUid: m.from_uid }; continue; }
+    if (/^\/draw\s*$/i.test(body)) { active = false; result = { kind: "draw" }; continue; }
+    const ply = sans.length;
+    const tok = blindMoveToken(body, ply);
+    if (!tok) continue;
+    const color = ply % 2 === 0 ? "w" : "b";
+    const board = boardFromSans(sans);
+    if (!sanSrc(board, tok, color)) continue;
+    sans.push(tok);
+    const end = gameEndState(sans).end;
+    if (end === "checkmate") { active = false; result = { kind: "checkmate", winnerColor: color }; }
+    else if (end === "stalemate") { active = false; result = { kind: "stalemate" }; }
+    else if (end === "threefold") { active = false; result = { kind: "threefold" }; }
+  }
+  return { active, sans: sans || [], result, whiteFromUid };
+}
+// /eval 명령어 표시 형식 — 예: "+0.31(depth=25)", 메이트는 "#3(depth=25)"/"-#3(depth=25)".
+function formatBlindEval(ev) {
+  if (!ev) return "아직 분석 중이에요…";
+  const depth = ev.depth != null ? ev.depth : "?";
+  if (ev.mate != null) return (ev.mate > 0 ? "#" : "-#") + Math.abs(ev.mate) + "(depth=" + depth + ")";
+  const cp = ev.cp || 0;
+  return (cp >= 0 ? "+" : "") + (cp / 100).toFixed(2) + "(depth=" + depth + ")";
+}
+function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, fillNarrow, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   // (UI) 사용자 요청 — 채팅에 공유된 퍼즐 블록도 퍼즐 탭(PuzzleCard)과 완전히 같은 UI를 쓴다.
   // puzzlePreviews에 담긴 pz는 puzzles.data(전체 퍼즐 레코드, id 포함)라 PuzzleCard가 그대로 쓸 수
   // 있고, 좋아요·리포스트·공유·풀이수는 전역 상태(위 props)에서 puzzle_no로 바로 조회한다.
@@ -22699,6 +22806,46 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
   const narrow = fillNarrow;
   const otherPresence = usePresenceMap(otherUid ? [otherUid] : []);
   const [msgs, setMsgs] = useState([]);
+  // (v0.4.8 기능) 지금 이 대화의 블라인드 대국 상태 — deriveBlindGame 참고(대화 기록 자체가 유일한
+  // 진실 공급원이라 서버에 별도로 저장하지 않는다).
+  const blindGame = useMemo(() => deriveBlindGame(msgs), [msgs]);
+  // (v0.4.8 기능) 블라인드 대국이 진행 중인 동안 지금 포지션을 depth를 계속 높여가며 백그라운드로
+  // 분석해 둔다(학습 탭 FEN 모드 실시간 평가와 같은 패턴 — 전용 워커 풀에서 movetime을 점점 늘려가며
+  // 반복 호출해 Stockfish의 progressive depth를 그대로 흘려보낸다) — /eval 명령어는 매번 새로
+  // 계산을 시작하는 대신, 그 순간까지 이렇게 미리 계산해 둔 값을 그대로 보여준다. state로 두면 매
+  // depth 갱신마다 리렌더가 일어나므로(화면에 실시간으로 보여줄 필요는 없다, /eval을 직접 칠 때만
+  // 필요) ref로만 들고 있는다.
+  const blindEvalRef = useRef(null);
+  useEffect(() => {
+    blindEvalRef.current = null;
+    if (!blindGame.active || !engine || engine.status !== "ready") return;
+    let cancelled = false;
+    const sans = blindGame.sans;
+    const fen = sansToFen(sans);
+    const sideMult = sans.length % 2 === 0 ? 1 : -1; // 항상 백 관점(+가 백에게 유리)으로 보여준다.
+    const onLines = (raw) => {
+      if (cancelled || !raw || !raw[0]) return;
+      const top = raw[0];
+      if (top.cp == null && top.mate == null) return;
+      const prev = blindEvalRef.current;
+      if (top.depth != null && prev && prev.depth != null && top.depth < prev.depth) return;
+      blindEvalRef.current = { cp: top.cp != null ? top.cp * sideMult : null, mate: top.mate != null ? top.mate * sideMult : null, depth: top.depth };
+    };
+    (async () => {
+      try {
+        const pool = await getAnalysisPool(engine.profile, engine.urls);
+        const w = poolWorker(pool, 0, engine);
+        let mt = 700;
+        for (let i = 0; i < 100 && !cancelled; i++) {
+          const pvs = await w.evaluateMulti(fen, MAX_SEARCH_DEPTH, 1, mt, onLines, "blind-eval");
+          if (cancelled) return;
+          onLines(pvs);
+          mt = Math.min(mt * 2, 8000);
+        }
+      } catch { }
+    })();
+    return () => { cancelled = true; };
+  }, [blindGame.active, blindGame.sans.join(" "), engine && engine.status, engine && engine.profile]);
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   // (사용자 요청) 이모티콘 박스가 이제 뷰포트 전체 폭을 채우는 position:fixed라, 이 채팅 패널
@@ -22903,6 +23050,70 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       return;
     }
     if (!body && !emoji) return;
+    // (v0.4.8 기능) 사용자 요청 — "1.e4"처럼 수순 접두사가 붙은 SAN 하나만 담긴 메시지로 블라인드
+    // 대국을 시작한다. 이미 진행 중이면(blindGame.active) 새로 시작하지 않고 그냥 평범한 텍스트로
+    // 흘려보낸다(그래도 규칙상 맞지 않는 순서라 deriveBlindGame이 그냥 무시하므로 안전하다).
+    if (body && !blindGame.active) {
+      const startTok = blindMoveToken(body, 0);
+      if (startTok && sanSrc(startBoard(), startTok, "w")) {
+        setCmdError(""); setSending(true);
+        const ok = await chatSend(myUid, otherUid, body, null);
+        if (ok) { await chatSend(myUid, otherUid, "블라인드 대국이 시작되었어요.", null); setText(""); load(); }
+        else setCmdError("메시지를 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
+        setSending(false);
+        return;
+      }
+    }
+    // (v0.4.8 기능) 블라인드 대국이 진행 중일 때만 /resign·/draw·/eval을 명령어로 인식한다 — 진행
+    // 중이 아니면 이 셋은 그냥 평범한 텍스트로 전송된다.
+    if (blindGame.active) {
+      const uidForColor = (color) => { const w = blindGame.whiteFromUid; const b = w === myUid ? otherUid : myUid; return color === "w" ? w : b; };
+      const nameFor = (uid) => uid === myUid ? (myUsername || "나") : otherUsername;
+      if (/^\/resign\s*$/i.test(body)) {
+        setCmdError(""); setSending(true);
+        const ok = await chatSend(myUid, otherUid, body, null);
+        if (ok) { await chatSend(myUid, otherUid, nameFor(myUid) + "님이 기권했어요. " + nameFor(otherUid) + "님의 승리예요.", null); setText(""); load(); }
+        else setCmdError("명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
+        setSending(false);
+        return;
+      }
+      if (/^\/draw\s*$/i.test(body)) {
+        setCmdError(""); setSending(true);
+        const ok = await chatSend(myUid, otherUid, body, null);
+        if (ok) { await chatSend(myUid, otherUid, "합의 무승부로 대국이 종료됐어요.", null); setText(""); load(); }
+        else setCmdError("명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
+        setSending(false);
+        return;
+      }
+      if (/^\/eval\s*$/i.test(body)) {
+        setCmdError(""); setSending(true);
+        const ok = await chatSend(myUid, otherUid, formatBlindEval(blindEvalRef.current), null);
+        if (ok) { setText(""); load(); }
+        else setCmdError("명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
+        setSending(false);
+        return;
+      }
+      // 진행 중인 대국의 다음 차례에 맞는 접두사+SAN 메시지만 실제 수로 인식한다.
+      const ply = blindGame.sans.length;
+      const mvTok = blindMoveToken(body, ply);
+      if (mvTok) {
+        const color = ply % 2 === 0 ? "w" : "b";
+        const board = boardFromSans(blindGame.sans);
+        if (sanSrc(board, mvTok, color)) {
+          setCmdError(""); setSending(true);
+          const ok = await chatSend(myUid, otherUid, body, null);
+          if (ok) {
+            const end = gameEndState([...blindGame.sans, mvTok]).end;
+            setText(""); load();
+            if (end === "checkmate") await chatSend(myUid, otherUid, "체크메이트! " + nameFor(uidForColor(color)) + "님의 승리예요.", null);
+            else if (end === "stalemate") await chatSend(myUid, otherUid, "스테일메이트로 무승부예요.", null);
+            else if (end === "threefold") await chatSend(myUid, otherUid, "3회 동형 반복으로 무승부예요.", null);
+          } else setCmdError("메시지를 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
+          setSending(false);
+          return;
+        }
+      }
+    }
     // (v0.2.6 기능) "/puzzle 000000" 또는 "/puzzle -num 000000" 명령어 — 텍스트 대신 그 번호의
     // 퍼즐을 공유 카드로 보낸다(기존 공유 버튼과 같은 puzzleShareSend 재사용).
     const cmdMatch = body && body.match(/^\/puzzle\s+(?:-num\s+)?(\d{1,7})\s*$/i);
@@ -22999,7 +23210,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
       setCmdError("");
       setSending(true);
       try {
-        await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: playTc.key });
+        await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: playTc.key, p_game_type: PVP_GAME_TYPE });
         setText(""); load();
       } catch { setCmdError("대국을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
       setSending(false);
@@ -23021,9 +23232,9 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     setSending(false);
     if (ok) { setText(""); load(); }
   };
-  // (v0.2.6 기능) "/"로 시작하면 쓸 수 있는 명령어. (v0.4.3 UI 개편, 사용자 요청) 입력창 위 미리보기는
-  // 더 이상 "/"만 입력해도 뜨지 않고 정확히 "/help"를 입력했을 때만 뜬다(아래 렌더 조건 참고) — 이
-  // 목록 자체는 그대로 두고 그 표시 조건만 바꿨다.
+  // (v0.2.6 기능 → v0.4.8 되돌림) "/"로 시작하면 쓸 수 있는 명령어. v0.4.3에서 "/"만 입력해도
+  // 뜨던 입력창 위 미리보기를 없애고 "/help"를 입력했을 때만 뜨게 했었는데, 사용자 요청으로 다시
+  // "/"만 입력해도(아래 렌더 조건 참고) 뜨도록 되돌린다.
   const CHAT_COMMANDS = [
     { cmd: "/puzzle -num 000000", desc: "그 번호의 퍼즐을 공유해요(또는 /puzzle 000000)" },
     { cmd: "/legacy N(1~6)", desc: "내 N번째 유산을 공유해요(1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)" },
@@ -23033,6 +23244,16 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
     { cmd: "/play <분>", desc: "상대에게 그 시간(분)의 실시간 대국을 신청해요 — 예: /play 3, /play 15+10(15분+10초 증가)" },
     { cmd: "/help", desc: "이 명령어 목록을 보여줘요" },
   ];
+  // (v0.4.8 기능) 블라인드 대국 관련 안내 — 시작 방법은 항상 보여주고, /resign·/draw·/eval은
+  // 실제로 그 모드가 켜져 있을 때만 명령어로 동작하므로 진행 중일 때만 목록에 덧붙인다.
+  const BLIND_COMMANDS = blindGame.active
+    ? [
+        { cmd: "N.SAN / N...SAN", desc: "지금 차례에 맞는 수를 그대로 입력하면 블라인드 대국이 진행돼요 — 예: 2.Nf3, 2...Nc6" },
+        { cmd: "/resign", desc: "기권해요" },
+        { cmd: "/draw", desc: "합의 무승부로 대국을 끝내요" },
+        { cmd: "/eval", desc: "지금 포지션의 평가치와 분석 depth를 보내요 — 예: +0.31(depth=25)" },
+      ]
+    : [{ cmd: "1.e4", desc: "이런 형식(수순 접두사+SAN)의 메시지를 보내면 블라인드 대국이 시작돼요" }];
   const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
   const cancelEdit = () => { setEditingId(null); setText(""); };
   // (v0.3.4 버그 수정) 예전엔 삭제 버튼을 누르면 곧장 목록에서 지우고, 서버 삭제가 실패했을 때만
@@ -23233,12 +23454,14 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                   </div>
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
-                  {/* (사용자 요청) 리뷰 공유 카드를 프로필 카드의 "최근 대국" 행(QuestClearGameRow와
-                      같은 요소 — 좌측 진영 색 막대, 우측 검색 버튼)과 같은 비율로 다시 그린다.
-                      chess.com 대국(선수 정보 있음)은 그 행과 완전히 같은 내용(승/패/무·타임클래스·
-                      상대 닉네임·레이팅)을, PGN/FEN 대국은 1번째 줄에 "PGN"/"FEN" 라벨, 2번째 줄에
-                      그 코드(PGN은 처음 6수만) — PGN이면 그 아래 인식되는 오프닝 이름(OpenChess
-                      수 체계, openingNameOf)까지 표시한다. 우측 버튼(리뷰 보기)의 동작은 그대로 둔다. */}
+                  {/* (사용자 요청) 리뷰 공유 카드의 chess.com 대국 표시를 /user 프로필의 chess.com
+                      통계(AccountChessStats)가 그리는 "최근 대국" 행과 완전히 동일하게 맞춘다 — 진영
+                      색 막대 크기(5px/최소 30px), 결과·타임클래스·날짜·무승부 종류·상대 닉네임(굵게)·
+                      레이팅·오프닝 이름까지 같은 글꼴 크기·배치로 표시한다(레이팅 변동(rc)만 예외 —
+                      이 카드는 유저의 전체 대국 목록 맥락이 없어 계산할 수 없다). PGN/FEN 대국은
+                      1번째 줄에 "PGN"/"FEN" 라벨, 2번째 줄에 그 코드(PGN은 처음 6수만) — PGN이면
+                      그 아래 인식되는 오프닝 이름(OpenChess 수 체계, openingNameOf)까지 표시한다.
+                      우측 버튼(리뷰 보기)의 동작은 그대로 둔다. */}
                   <div style={{ width: 248, borderRadius: 14, padding: "9px 10px", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none", display: "flex", alignItems: "center", gap: 6 }}>
                     {rp === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>불러오는 중…</div>
                       : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>리뷰를 불러올 수 없어요.</div>
@@ -23248,15 +23471,18 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                           if (hasPD) {
                             const won = g.result === "win", lost = g.result === "loss";
                             const oppSide = g.color === "w" ? g.black : g.white;
+                            const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
                             return (
                               <>
-                                <span style={{ width: 4, alignSelf: "stretch", minHeight: 32, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
+                                <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                                 <div style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
-                                  <div style={{ fontSize: 11, color: T.ink }}>
+                                  <div style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
-                                    {g.timeClass && <span style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                                    {!won && !lost && g.sans && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.sans)})</span>}
+                                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtD(g.endTime) + ")" : ""}</span>}
                                   </div>
-                                  {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}> ({oppSide.rating})</span>}</div>}
+                                  {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
+                                  {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.opening}</div>}
                                 </div>
                               </>
                             );
@@ -23267,7 +23493,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                           const codeText = isFenOnly ? g.fenRoot : (sansToPgnText(g.sans.slice(0, 6), startColor) || "");
                           return (
                             <>
-                              <span style={{ width: 4, alignSelf: "stretch", minHeight: 32, flexShrink: 0, borderRadius: 3, background: "linear-gradient(180deg,#DCCBA8,#B59A6E)", border: "1px solid #B59A6E" }} />
+                              <span style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: "linear-gradient(180deg,#DCCBA8,#B59A6E)", border: "1px solid #B59A6E" }} />
                               <div style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
                                 <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass }}>{isFenOnly ? "FEN" : "PGN"}</div>
                                 <div style={{ fontSize: 10, color: T.ink, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{codeText}</div>
@@ -23277,10 +23503,11 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                           );
                         })()}
                     {/* (사용자 요청) 금색 검색 버튼 — 학습 탭으로 이동해 그 기보를 보드에 그대로
-                        입력한다(리뷰 페이지 대신). 초록색 리뷰 버튼(프로필 카드의 BestMoveJumpButton과
-                        완전히 같은 크기·모양)을 오른쪽에 추가해, 그 버튼만 실제 리뷰 페이지로 이동한다. */}
-                    <button onClick={() => onOpenSharedReviewOnBoard && onOpenSharedReviewOnBoard(m)} disabled={!rp} aria-label="학습 탭에서 보기" title="학습 탭에서 보기" className="press" style={{ width: 26, height: 26, borderRadius: 7, flexShrink: 0, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", border: "none", cursor: rp ? "pointer" : "default", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={12} /></button>
-                    <BestMoveJumpButton size={26} disabled={!rp} title="리뷰 보기" onClick={() => onOpenSharedReview && onOpenSharedReview(m)} />
+                        입력한다(리뷰 페이지 대신). 초록색 리뷰 버튼을 오른쪽에 추가해, 그 버튼만
+                        실제 리뷰 페이지로 이동한다. 두 버튼 모두 /user의 chess.com 최근 대국 행과
+                        같은 크기(30x30, 아이콘 13px)로 맞춘다. */}
+                    <button onClick={() => onOpenSharedReviewOnBoard && onOpenSharedReviewOnBoard(m)} disabled={!rp} aria-label="학습 탭에서 보기" title="학습 탭에서 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", border: "none", cursor: rp ? "pointer" : "default", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                    <BestMoveJumpButton size={30} disabled={!rp} title="리뷰 보기" onClick={() => onOpenSharedReview && onOpenSharedReview(m)} />
                   </div>
                 </div>
                 </div>
@@ -23473,9 +23700,19 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
             <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
           </div>
         )}
-        {/* (사용자 요청) "/help"를 입력만 해도 입력창 위에 뜨던 미리보기를 없앴다 — 실제로
-            전송했을 때만(위 send()) 대화 기록에 명령어 목록 카드로 남는다(아래 메시지 목록의
-            m.body === "/help" 분기). */}
+        {/* (v0.4.8 되돌림, 사용자 요청) 입력창에 "/"만 입력해도(정확히 "/help"까지 칠 필요 없이)
+            바로 위에 명령어 안내 박스가 뜬다. "/help"를 실제로 보내면 예전처럼 대화 기록에도 그
+            명령어 목록 카드로 남는다(위 m.body === "/help" 분기) — 이 미리보기는 그와 별개로 입력
+            중에만 잠깐 보이는 도움말이다. 블라인드 대국 시작법/명령어(BLIND_COMMANDS)는 항상 이
+            목록 맨 위에 먼저 보여준다. */}
+        {text.startsWith("/") && (
+          <div style={{ width: "100%", boxSizing: "border-box", padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", marginBottom: 6 }}>
+            <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 4 }}>사용 가능한 명령어</div>
+            {[...BLIND_COMMANDS, ...CHAT_COMMANDS].map((c, i) => (
+              <div key={i} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+            ))}
+          </div>
+        )}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <div className="flex items-center gap-2">
           <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
@@ -24807,7 +25044,7 @@ function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   const [rows, setRows] = useState(null);
   // (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅 목록에도.
   const chatPresence = usePresenceMap(useMemo(() => (rows || []).map((r) => r.uid), [rows]));
@@ -24924,7 +25161,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
         )}
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={myUid} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
+            <ChatPanel myUid={myUid} myUsername={me} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} engine={engine}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : (
@@ -25437,7 +25674,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenPuzzle, onOpenUserProfile, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenPuzzle, onOpenUserProfile, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -25568,7 +25805,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={meId} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames}
+            <ChatPanel myUid={meId} myUsername={me} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} engine={engine}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : sel ? (() => {
@@ -27599,9 +27836,9 @@ export default function App() {
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenUserProfile={openUserProfileByUsername} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
         solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenUserProfile={openUserProfileByUsername} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenUserProfile={openUserProfileByUsername} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
