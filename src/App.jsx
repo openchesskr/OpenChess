@@ -23276,12 +23276,14 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                   </div>
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
-                  {/* (사용자 요청) 리뷰 공유 카드를 프로필 카드의 "최근 대국" 행(QuestClearGameRow와
-                      같은 요소 — 좌측 진영 색 막대, 우측 검색 버튼)과 같은 비율로 다시 그린다.
-                      chess.com 대국(선수 정보 있음)은 그 행과 완전히 같은 내용(승/패/무·타임클래스·
-                      상대 닉네임·레이팅)을, PGN/FEN 대국은 1번째 줄에 "PGN"/"FEN" 라벨, 2번째 줄에
-                      그 코드(PGN은 처음 6수만) — PGN이면 그 아래 인식되는 오프닝 이름(OpenChess
-                      수 체계, openingNameOf)까지 표시한다. 우측 버튼(리뷰 보기)의 동작은 그대로 둔다. */}
+                  {/* (사용자 요청) 리뷰 공유 카드의 chess.com 대국 표시를 /user 프로필의 chess.com
+                      통계(AccountChessStats)가 그리는 "최근 대국" 행과 완전히 동일하게 맞춘다 — 진영
+                      색 막대 크기(5px/최소 30px), 결과·타임클래스·날짜·무승부 종류·상대 닉네임(굵게)·
+                      레이팅·오프닝 이름까지 같은 글꼴 크기·배치로 표시한다(레이팅 변동(rc)만 예외 —
+                      이 카드는 유저의 전체 대국 목록 맥락이 없어 계산할 수 없다). PGN/FEN 대국은
+                      1번째 줄에 "PGN"/"FEN" 라벨, 2번째 줄에 그 코드(PGN은 처음 6수만) — PGN이면
+                      그 아래 인식되는 오프닝 이름(OpenChess 수 체계, openingNameOf)까지 표시한다.
+                      우측 버튼(리뷰 보기)의 동작은 그대로 둔다. */}
                   <div style={{ width: 248, borderRadius: 14, padding: "9px 10px", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none", display: "flex", alignItems: "center", gap: 6 }}>
                     {rp === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>불러오는 중…</div>
                       : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>리뷰를 불러올 수 없어요.</div>
@@ -23291,15 +23293,18 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                           if (hasPD) {
                             const won = g.result === "win", lost = g.result === "loss";
                             const oppSide = g.color === "w" ? g.black : g.white;
+                            const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
                             return (
                               <>
-                                <span style={{ width: 4, alignSelf: "stretch", minHeight: 32, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
+                                <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                                 <div style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
-                                  <div style={{ fontSize: 11, color: T.ink }}>
+                                  <div style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
-                                    {g.timeClass && <span style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}</span>}
+                                    {!won && !lost && g.sans && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.sans)})</span>}
+                                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtD(g.endTime) + ")" : ""}</span>}
                                   </div>
-                                  {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}> ({oppSide.rating})</span>}</div>}
+                                  {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
+                                  {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.opening}</div>}
                                 </div>
                               </>
                             );
@@ -23310,7 +23315,7 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                           const codeText = isFenOnly ? g.fenRoot : (sansToPgnText(g.sans.slice(0, 6), startColor) || "");
                           return (
                             <>
-                              <span style={{ width: 4, alignSelf: "stretch", minHeight: 32, flexShrink: 0, borderRadius: 3, background: "linear-gradient(180deg,#DCCBA8,#B59A6E)", border: "1px solid #B59A6E" }} />
+                              <span style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: "linear-gradient(180deg,#DCCBA8,#B59A6E)", border: "1px solid #B59A6E" }} />
                               <div style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
                                 <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass }}>{isFenOnly ? "FEN" : "PGN"}</div>
                                 <div style={{ fontSize: 10, color: T.ink, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{codeText}</div>
@@ -23320,10 +23325,11 @@ function ChatPanel({ myUid, otherUid, otherUsername, otherPhoto, onBack, onOpenS
                           );
                         })()}
                     {/* (사용자 요청) 금색 검색 버튼 — 학습 탭으로 이동해 그 기보를 보드에 그대로
-                        입력한다(리뷰 페이지 대신). 초록색 리뷰 버튼(프로필 카드의 BestMoveJumpButton과
-                        완전히 같은 크기·모양)을 오른쪽에 추가해, 그 버튼만 실제 리뷰 페이지로 이동한다. */}
-                    <button onClick={() => onOpenSharedReviewOnBoard && onOpenSharedReviewOnBoard(m)} disabled={!rp} aria-label="학습 탭에서 보기" title="학습 탭에서 보기" className="press" style={{ width: 26, height: 26, borderRadius: 7, flexShrink: 0, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", border: "none", cursor: rp ? "pointer" : "default", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={12} /></button>
-                    <BestMoveJumpButton size={26} disabled={!rp} title="리뷰 보기" onClick={() => onOpenSharedReview && onOpenSharedReview(m)} />
+                        입력한다(리뷰 페이지 대신). 초록색 리뷰 버튼을 오른쪽에 추가해, 그 버튼만
+                        실제 리뷰 페이지로 이동한다. 두 버튼 모두 /user의 chess.com 최근 대국 행과
+                        같은 크기(30x30, 아이콘 13px)로 맞춘다. */}
+                    <button onClick={() => onOpenSharedReviewOnBoard && onOpenSharedReviewOnBoard(m)} disabled={!rp} aria-label="학습 탭에서 보기" title="학습 탭에서 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", border: "none", cursor: rp ? "pointer" : "default", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                    <BestMoveJumpButton size={30} disabled={!rp} title="리뷰 보기" onClick={() => onOpenSharedReview && onOpenSharedReview(m)} />
                   </div>
                 </div>
                 </div>
