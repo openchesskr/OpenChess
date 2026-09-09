@@ -2379,7 +2379,12 @@ function useBoardSize(max = 360) {
   const measure = useCallback(() => {
     const FRAME = 42;
     const el = elRef.current; if (!el) return;
-    const w = el.clientWidth; if (w > 0) setSize(Math.max(160, Math.floor((Math.min(max, w) - FRAME) / 8) * 8));
+    const w = el.clientWidth; if (w <= 0) return;
+    const next = Math.max(160, Math.floor((Math.min(max, w) - FRAME) / 8) * 8);
+    // (버그 수정, 사용자 재제보) 값이 실제로 달라질 때만 setState한다 — 같은 값으로 다시 커밋해도
+    // 화면에는 아무 차이가 없지만, 그 자체가 하위 트리를 한 번 더 리렌더시켜 또 다른 ResizeObserver
+    // 콜백을 유발할 수 있다(연쇄 반응의 씨앗을 남기지 않기 위함).
+    setSize((prev) => (prev === next ? prev : next));
   }, [max]);
   // (버그 수정, 사용자 제보) 분석 탭에서 수를 둘 때마다 보드가 미세하게 커졌다 작아졌다 했다 — 한 수를
   // 두면 캡션·수 블록·정확도 표시 등 보드 옆·아래 요소들이 거의 같은 렌더 사이클 안에서 잇따라 자기
@@ -2388,9 +2393,14 @@ function useBoardSize(max = 360) {
   // Math.floor 결과가 그 중간 프레임 한 번만 다르게 나와, 눈에는 보드가 수를 둘 때마다 잠깐씩 크기가
   // "조금씩" 바뀌는 것처럼 보였다. ResizeObserver 콜백을 즉시 반영하지 않고 짧게 모아(debounce) 레이아웃이
   // 완전히 가라앉은 뒤의 최종 폭 하나만 반영하면 이 중간 프레임들이 걸러진다.
+  // (버그 재보고 → 재조정) 하단 수 블록에 수 키워드 칩이 많이 뜨는 포지션일수록 이 흔들림이 다시
+  // 보인다는 재제보 — 그런 포지션은 DOM이 더 크고 리렌더 단계도 더 늘어나(키워드 칩·통계 fetch
+  // 도착 등이 서로 다른 시점에 겹쳐 들어옴) 100ms 안에 레이아웃이 다 가라앉지 못하고 debounce
+  // 타이머가 만료돼 중간값을 커밋한 뒤 뒤늦게 최종값으로 한 번 더 바뀌는(=눈에 보이는 흔들림) 경우가
+  // 있었다 — 여유를 더 둔다.
   const scheduleMeasure = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(measure, 100);
+    debounceRef.current = setTimeout(measure, 220);
   }, [measure]);
   const setRef = useCallback((el) => {
     if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
@@ -2664,7 +2674,10 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const onPiecePointerCancel = (e) => endPiecePointerDrag(e, false);
   return (
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
-      {showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}
+      {/* (사용자 요청) showEval이 꺼지면(퍼즐 강제 포지션 등) 이 자리가 통째로 사라져 그 아래
+          엔진 라인·그리드가 위로 들썩였다 — 막대를 숨기는 대신 같은 높이(18px 막대 + 8px
+          여백)의 빈 자리를 남겨 showEval이 바뀌어도 아래 요소들의 좌표가 그대로 고정되게 한다. */}
+      {showEval ? <EvalBar cp={evalCp} width={inner} depth={evalDepth} /> : <div style={{ height: 26 }} aria-hidden="true" />}
       {/* (v0.1.3 기능) 분석 탭 메인 보드에서 평가치 바와 보드 사이에 엔진 상위 3줄을 끼워 넣기
           위한 자리 — Board는 여러 화면에서 재사용되므로 이 슬롯을 안 쓰는 곳은 그대로다. */}
       {belowEval}
@@ -3727,7 +3740,7 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, statsLoading, questBadge
   const posGamesDisp = useCountUp(posGames, 500);
   const adoptDisp = useCountUp(m.adopt, 900, 2);
   return (
-    <div style={{ borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
+    <div style={{ minWidth: 0, borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지.
           (사용자 요청) 누르면 즉시 학습 탭으로 이동해 해당 퀘스트를 하이라이트한다. */}
       {questBadge && (onQuestBadgeClick
@@ -10470,7 +10483,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const matchedQuestOpeningName = (path) => { const hit = questPaths.find((qp) => qp.path.length >= path.length && path.every((s, i) => qp.path[i] === s)); return hit ? hit.name : null; };
   const [flip, setFlip] = useState(false);
   // (디자인) 분석 탭 메인 보드를 조금 더 키운다.
-  const [boardSize, boardRef] = useBoardSize(400);
+  // (사용자 요청) 보드 컨테이너의 CSS 상한(360px, 데스크톱 2단 레이아웃에서만 유지)을 모바일에서는
+  // 풀어 카드 폭 그대로 커지게 했으므로, 이 훅 내부 상한도 그만큼 넉넉히 올려 실제 측정된 폭을
+  // 다시 400px로 잘라버리지 않도록 한다 — 데스크톱은 여전히 CSS lg:max-w-360가 먼저 재는
+  // 폭 자체를 360 근처로 묶어 두므로 이 값이 커져도 영향이 없다.
+  const [boardSize, boardRef] = useBoardSize(720);
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null);   // (기능5) 프로모션 선택 대기 {from,to}
@@ -11086,7 +11103,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               onApply={(root) => { onLoadFen(root); setEditorOpen(false); }}
             />
           )}
-          <div ref={boardRef} style={{ width: "100%", maxWidth: 360, margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
+          {/* (사용자 요청) 예전엔 이 폭을 모바일에서도 항상 360px로 묶어 둬, 화면이 그보다 넓은
+              기기에서는 보드 좌우로 불필요한 여백만 남았다 — lg(2단 레이아웃으로 바뀌는 지점)
+              미만에서는 카드 폭 그대로(100%) 쓰고, lg 이상(보드+다음 수 목록이 좌우로 나란히 놓이는
+              데스크톱)에서만 기존처럼 360px로 다시 묶어 옆 칼럼과 균형을 맞춘다. */}
+          <div ref={boardRef} className="lg:max-w-360" style={{ width: "100%", margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
             <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition}
               belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} />} />
             {promoPrompt && (
@@ -11233,7 +11254,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           )}
         </div>
       </div>
-      <div>
+      {/* (사용자 요청, 방어적 보강) 왼쪽 보드 칼럼(위 minWidth:0 주석 참고)과 똑같이, 이 오른쪽
+          그리드 아이템도 minWidth:0을 명시한다 — 다음 수 블록 안의 긴 오프닝 이름·회수 텍스트 등이
+          늘어나도 이 grid 트랙 자체가 콘텐츠의 최소 폭만큼 억지로 넓어지지 않게 막아, 그로 인해
+          같은 열(모바일 단일 컬럼)에 있는 보드 칸 폭이 수를 둘 때마다 미세하게 흔들리는 걸 예방한다. */}
+      <div style={{ minWidth: 0 }}>
         {/* (v0.2.6 버그 수정) 집중분석(focus) 중엔 이 오른쪽 칼럼이 전체화면 오버레이에 완전히 가려
             보이지 않았다 — nextMovesContent를 FocusPanel 안(미니보드 하단 페이지 2)으로 넘겨 거기서
             보여주므로, 여기서는 focus가 꺼져 있을 때만 렌더링해 중복 렌더를 피한다. */}
@@ -19741,6 +19766,9 @@ const CHANGELOG = [
       "분석 탭에서 후보 수 중 실제로 가장 많이 두어진 수들은 클릭하기 전에 미리 리체스 통계를 백그라운드에서 당겨와 둬요 — 실제로 그 수를 눌렀을 때 통계가 훨씬 빠르게(대부분 즉시) 표시돼요.",
       "분석 탭 현재 수 블록·다음 수 블록의 회수(a/b) 표기가 숫자가 길어지면 잘려 보이고 채택률(%) 오른쪽 여백이 부족하던 문제를 고쳤어요 — 왼쪽 채택률 게이지 바를 더 줄이고, 그만큼 확보한 자리에 회수 전체와 % 여백을 다 보여줘요.",
       "분석 탭에서 리체스 통계가 아직 도착하기 전에는 회수·채택률 자리에 3-dot bounce 인디케이터가 떠서 로딩 중임을 바로 알 수 있어요.",
+      "분석 탭 메인 체스보드가 모바일에서 항상 360px로 묶여 있어 화면이 넓은 기기일수록 좌우 여백만 남던 문제를 고쳤어요 — 보드+엔진 라인+평가치 막대 영역이 화면 폭에 맞춰 더 크게 표시돼요.",
+      "분석 탭에서 평가치 막대나 엔진 라인이 잠깐 사라질 때 그 아래 보드가 위로 들썩이던 문제를 고쳤어요 — 이제 보이지 않는 동안에도 같은 자리를 계속 차지해요.",
+      "분석 탭에서 수를 둘 때 하단 수 블록에 키워드가 많이 뜨는 포지션일수록 보드 크기가 미세하게 흔들리던 문제를 고쳤어요.",
     ]
   },
   {

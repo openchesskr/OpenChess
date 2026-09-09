@@ -56,4 +56,8 @@ button, input, select, textarea { font-family: inherit; }
   .lg\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lg\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* (사용자 요청) 분석 탭 메인 보드 컨테이너 — lg 미만(모바일)에서는 폭 제한 없이 카드 폭
+     그대로 커지고, lg 이상(보드+다음 수 목록이 좌우 2단으로 나뉘는 데스크톱)에서만 360px로
+     묶어 옆 칼럼과 균형을 맞춘다. */
+  .lg\:max-w-360 { max-width: 360px; }
 }

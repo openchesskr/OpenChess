@@ -292,13 +292,16 @@ export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPla
 export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large, font }) {
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
-  if (!hasLines && !pending) return null;
+  // (사용자 요청) 예전엔 lines도 없고 pending도 아니면(liveOn이 꺼졌거나 아직 첫 fetch 전) 이
+  // 컴포넌트가 통째로 null을 반환해 이 자리가 0 높이가 됐고, 그 아래 보드 그리드가 위로 들썩이는
+  // 원인 중 하나였다 — 이제는 그 경우에도 반환하지 않고, 아래에서 항상 3줄 높이를 반환한다(내용만
+  // pending 여부에 따라 점 애니메이션/빈 칸으로 갈린다).
   // (v0.2.2 버그 수정) 실시간 스트리밍 도중 멀티PV 슬롯이 1개→2개→3개로 순차적으로 채워지면서
   // engineLines 배열 길이가 잠깐 1~2로 줄었다가 다시 3으로 늘어, 그때마다 이 블록의 높이가 바뀌어
   // 분석 탭 체스보드(belowEval 아래)가 위아래로 들썩였다 — 실제 줄 수와 무관하게 항상 3줄 높이를
   // 차지하도록, 모자란 슬롯은 스켈레톤으로 채워 넣는다.
-  // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면(forced)에서는 어차피 스켈레톤이 계속 채워질
-  // 리 없으므로(엔진이 그 이상 줄을 낼 수 없음), 남은 자리를 로딩 스켈레톤 대신 빈 칸으로 둔다.
+  // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면(forced)이거나 애초에 분석 중이 아니면(!pending)
+  // 어차피 스켈레톤이 계속 채워질 리 없으므로, 남은 자리를 로딩 스켈레톤 대신 빈 칸으로 둔다.
   const missing = Math.max(0, 3 - (lines ? lines.length : 0));
   // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
   // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
@@ -331,9 +334,9 @@ export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, 
               <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} large={large} font={font} />
             );
           })}
-          {Array.from({ length: missing }, (_, i) => forced ? <EngineLineBlank key={"pad" + i} large={large} /> : <EngineLineSkeleton key={"pad" + i} large={large} />)}
+          {Array.from({ length: missing }, (_, i) => (forced || !pending) ? <EngineLineBlank key={"pad" + i} large={large} /> : <EngineLineSkeleton key={"pad" + i} large={large} />)}
         </>
-        : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} large={large} />)}
+        : [0, 1, 2].map((i) => pending ? <EngineLineSkeleton key={i} large={large} /> : <EngineLineBlank key={i} large={large} />)}
     </div>
   );
 }
