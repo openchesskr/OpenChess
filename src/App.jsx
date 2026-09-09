@@ -3748,15 +3748,16 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
             <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}><Play size={11} /> 분석</button>
           </div>
           <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, cursor: "pointer" }}>
-            {/* (사용자 요청) 게이지 바 폭을 살짝 줄이고(flex:1 → 55%), 그렇게 확보한 여백을 옆 텍스트의
-                "a/b"와 "n%" 사이 간격(gap 10)으로 돌려 두 수치가 서로 붙어 보이지 않게 한다. */}
-            <div style={{ flex: "0 1 55%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
+            {/* (사용자 요청) "a/b" 회수 표기가 자릿수가 많아지면 잘려 보이던 문제를 고치기 위해
+                게이지 바 폭을 한 번 더 줄이고(55% → 34%), 그렇게 확보한 여백을 옆 텍스트 쪽으로
+                돌려 "a/b"가 더 이상 말줄임(…) 없이 전체 값을 항상 다 보여주도록 한다. */}
+            <div style={{ flex: "0 1 34%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
               <div style={{ width: Math.min(100, m.adopt || 0) + "%", height: "100%", background: color, opacity: .85 }} />
             </div>
             {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬 — 게임 수 텍스트가 길어져도
                 justify-content: space-between으로 %는 항상 오른쪽 끝에 고정된다. */}
             <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : "—"}</span>
+              <span style={{ whiteSpace: "nowrap" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : "—"}</span>
               <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{m.adopt != null ? adoptDisp.toFixed(2) + "%" : "—"}</span>
             </span>
           </div>
@@ -3983,6 +3984,14 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         // Lichess가 응답한 비이론 수는 전부 유지(임의 캡 금지) — 수 체계와 무관하게 표시되는 모든 수가 통계를 가져야 함
         const out = [...books, ...nonbook];
         setMoves(withExtra(out));
+        // (성능, 사용자 요청) 지금 후보 수 중 실제로 가장 많이 두어진(games 상위) 4개는 사용자가
+        // 다음으로 클릭할 확률이 특히 높다 — 클릭을 기다리지 않고 그 다음 포지션의 리체스 통계를
+        // 지금 미리 백그라운드에서 당겨와 lichessApi.js의 10분 캐시(_lichessCache)에 채워 둔다.
+        // 실제로 그 수를 누르면 이 effect가 다시 돌 때 캐시 히트라 네트워크 왕복 없이 즉시 표시되고,
+        // 안 눌려도 그냥 버려지는 요청 하나일 뿐이라 손해가 없다(같은 URL이면 중복 요청도 캐시가 막음).
+        [...out].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 4).forEach((m) => {
+          fetchLichess([...sans, m.san], isMaster).catch(() => { });
+        });
       } catch (_) { /* 차단 시 스냅샷 유지 */ }
     })();
     return () => { cancelled = true; };
@@ -11185,18 +11194,19 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                       <div style={{ marginTop: 10 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
                     )}
                     {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
-                        (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭 축소 + 텍스트 간격
-                        확보, 회수는 0부터 세어 올라가는 애니메이션, 채택률은 소수 둘째 자리까지
+                        (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 한 번 더 줄여(34%)
+                        "a/b" 회수 표기가 말줄임 없이 항상 전체 값으로 보이도록 여백을 확보하고,
+                        회수는 0부터 세어 올라가는 애니메이션, 채택률은 소수 둘째 자리까지
                         진한 강조색으로 표기한다. */}
                     {curStat && (
                       <>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-                          <div style={{ flex: "0 1 55%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
+                          <div style={{ flex: "0 1 34%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
                             <div style={{ width: Math.min(100, curStat.adopt || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
                           </div>
                           {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
                           <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : "—"}</span>
+                            <span style={{ whiteSpace: "nowrap" }}>{curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : "—"}</span>
                             <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : "—"}</span>
                           </span>
                         </div>
@@ -19714,6 +19724,13 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.4.9", date: "2026.9.9", dev: ["openchesskr", "G13sus4"], items: [
+      "about 페이지 버전 기록에서 빠져 있던 v0.4.8 항목을 채워 넣었어요.",
+      "분석 탭에서 후보 수 중 실제로 가장 많이 두어진 수들은 클릭하기 전에 미리 리체스 통계를 백그라운드에서 당겨와 둬요 — 실제로 그 수를 눌렀을 때 통계가 훨씬 빠르게(대부분 즉시) 표시돼요.",
+      "분석 탭 현재 수 블록·다음 수 블록의 회수(a/b) 표기가 숫자가 길어지면 잘려 보이던 문제를 고쳤어요 — 왼쪽 채택률 게이지 바를 더 줄이고, 그만큼 확보한 자리에 회수 전체를 항상 다 보여줘요.",
+    ]
+  },
   {
     version: "0.4.8", date: "2026.9.6", dev: ["openchesskr", "G13sus4"], items: [
       "학습 탭에서 FEN을 붙여넣어 만든 포지션도 이제 대국 리뷰(/review)를 열 수 있어요 — 그 포지션 그대로 채점·코치 카드가 정확하게 표시돼요.",
