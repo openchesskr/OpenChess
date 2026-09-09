@@ -2674,10 +2674,12 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const onPiecePointerCancel = (e) => endPiecePointerDrag(e, false);
   return (
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
-      {/* (사용자 요청) showEval이 꺼지면(퍼즐 강제 포지션 등) 이 자리가 통째로 사라져 그 아래
-          엔진 라인·그리드가 위로 들썩였다 — 막대를 숨기는 대신 같은 높이(18px 막대 + 8px
-          여백)의 빈 자리를 남겨 showEval이 바뀌어도 아래 요소들의 좌표가 그대로 고정되게 한다. */}
-      {showEval ? <EvalBar cp={evalCp} width={inner} depth={evalDepth} /> : <div style={{ height: 26 }} aria-hidden="true" />}
+      {/* (사용자 재제보 — "보드 좌표를 아예 고정하라") showEval이 꺼지면(퍼즐 강제 포지션 등) 이
+          자리가 통째로 사라져 그 아래 엔진 라인·그리드가 위로 들썩였다 — 켜져 있든 꺼져 있든 항상
+          같은 고정 높이(막대 18px + 테두리 2px + 여백 8px = 28px)의 틀로 감싸고 overflow:hidden을
+          둬, 그 안에 무엇이 렌더되든(진짜 막대 또는 아무것도 없음) 이 틀 자체의 세로 공간은 픽셀
+          단위로 절대 변하지 않게 한다. */}
+      <div style={{ height: 28, overflow: "hidden" }}>{showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}</div>
       {/* (v0.1.3 기능) 분석 탭 메인 보드에서 평가치 바와 보드 사이에 엔진 상위 3줄을 끼워 넣기
           위한 자리 — Board는 여러 화면에서 재사용되므로 이 슬롯을 안 쓰는 곳은 그대로다. */}
       {belowEval}
@@ -11103,13 +11105,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               onApply={(root) => { onLoadFen(root); setEditorOpen(false); }}
             />
           )}
-          {/* (사용자 요청) 예전엔 이 폭을 모바일에서도 항상 360px로 묶어 둬, 화면이 그보다 넓은
-              기기에서는 보드 좌우로 불필요한 여백만 남았다 — lg(2단 레이아웃으로 바뀌는 지점)
-              미만에서는 카드 폭 그대로(100%) 쓰고, lg 이상(보드+다음 수 목록이 좌우로 나란히 놓이는
-              데스크톱)에서만 기존처럼 360px로 다시 묶어 옆 칼럼과 균형을 맞춘다. */}
-          <div ref={boardRef} className="lg:max-w-360" style={{ width: "100%", margin: "0 auto", position: "relative", scrollMarginBottom: 84 }}>
+          {/* (사용자 요청) "잘리지 않을 정도로 최대한 크게" — 예전엔 이 폭을 모바일에서도 항상
+              360px로 묶어 둬, 화면이 그보다 넓은 기기에서는 보드 좌우로 불필요한 여백만 남았다.
+              lg(2단 레이아웃으로 바뀌는 지점) 미만에서는 카드 폭(100%)에 카드 자신의 좌우 패딩(14px
+              씩)만큼 음수 마진으로 "흘러넘쳐" 카드 테두리까지 꽉 채우고, lg 이상(보드+다음 수 목록이
+              좌우로 나란히 놓이는 데스크톱)에서만 흘러넘침 없이 기존처럼 360px로 묶어 옆 칼럼과
+              균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
+          <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
             <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition}
-              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} />} />
+              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} large />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
@@ -11125,10 +11129,12 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               </div>
             )}
           </div>
+          {/* (사용자 요청) 보드가 커진 만큼 그 아래 버튼들(뒤집기·초기화·PLAY·뒤로·앞으로)도 함께
+              키워 균형을 맞춘다 — NavBtn 기본 40px 대신 46px, 아이콘도 한 단계씩 키운다. */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <NavBtn onClick={() => setFlip((v) => !v)} active={flip}><ArrowUpDown size={17} /></NavBtn>
-              <NavBtn onClick={reset} disabled={!sans.length || !!focus}><RotateCcw size={16} /></NavBtn>
+              <NavBtn size={46} onClick={() => setFlip((v) => !v)} active={flip}><ArrowUpDown size={19} /></NavBtn>
+              <NavBtn size={46} onClick={reset} disabled={!sans.length || !!focus}><RotateCcw size={18} /></NavBtn>
             </div>
             {/* (사용자 요청) 봇과 직접 대국을 시작하는 PLAY 버튼 — 별도 줄 대신 나머지 네 버튼(뒤집기·
                 초기화·뒤로·앞으로)과 같은 줄, 가운데에 작게 둔다. 전용 페이지(/play)를 새 히스토리
@@ -11142,14 +11148,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             {onOpenPlay && !focus && (() => {
               const atStart = !fenRoot && sans.length === 0;
               return (
-                <button onClick={() => atStart && onOpenPlay({ sans: [] })} disabled={!atStart} className="press" title={atStart ? "PLAY — 봇과 대국하기" : "PLAY — 표준 시작 위치일 때만 대국을 시작할 수 있어요"} style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 40, padding: "0 12px", borderRadius: 11, background: atStart ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : T.ebony2, color: atStart ? "#241509" : "rgba(244,238,226,.35)", fontWeight: 800, fontSize: 12, border: "1px solid #000", boxShadow: atStart ? "0 3px 0 #000" : "none", cursor: atStart ? "pointer" : "not-allowed", opacity: atStart ? 1 : 0.6, flexShrink: 0 }}>
-                  <Play size={13} color={atStart ? "#241509" : "rgba(244,238,226,.35)"} fill={atStart ? "#241509" : "rgba(244,238,226,.35)"} />PLAY
+                <button onClick={() => atStart && onOpenPlay({ sans: [] })} disabled={!atStart} className="press" title={atStart ? "PLAY — 봇과 대국하기" : "PLAY — 표준 시작 위치일 때만 대국을 시작할 수 있어요"} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 46, padding: "0 14px", borderRadius: 11, background: atStart ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : T.ebony2, color: atStart ? "#241509" : "rgba(244,238,226,.35)", fontWeight: 800, fontSize: 13, border: "1px solid #000", boxShadow: atStart ? "0 3px 0 #000" : "none", cursor: atStart ? "pointer" : "not-allowed", opacity: atStart ? 1 : 0.6, flexShrink: 0 }}>
+                  <Play size={15} color={atStart ? "#241509" : "rgba(244,238,226,.35)"} fill={atStart ? "#241509" : "rgba(244,238,226,.35)"} />PLAY
                 </button>
               );
             })()}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <NavBtn onClick={back} disabled={!sans.length || !!focus}><ChevronLeft size={17} /></NavBtn>
-              <NavBtn onClick={fwd} disabled={!future.length || !!focus}><ChevronRight size={17} /></NavBtn>
+              <NavBtn size={46} onClick={back} disabled={!sans.length || !!focus}><ChevronLeft size={19} /></NavBtn>
+              <NavBtn size={46} onClick={fwd} disabled={!future.length || !!focus}><ChevronRight size={19} /></NavBtn>
             </div>
           </div>
         </div>
@@ -19766,9 +19772,9 @@ const CHANGELOG = [
       "분석 탭에서 후보 수 중 실제로 가장 많이 두어진 수들은 클릭하기 전에 미리 리체스 통계를 백그라운드에서 당겨와 둬요 — 실제로 그 수를 눌렀을 때 통계가 훨씬 빠르게(대부분 즉시) 표시돼요.",
       "분석 탭 현재 수 블록·다음 수 블록의 회수(a/b) 표기가 숫자가 길어지면 잘려 보이고 채택률(%) 오른쪽 여백이 부족하던 문제를 고쳤어요 — 왼쪽 채택률 게이지 바를 더 줄이고, 그만큼 확보한 자리에 회수 전체와 % 여백을 다 보여줘요.",
       "분석 탭에서 리체스 통계가 아직 도착하기 전에는 회수·채택률 자리에 3-dot bounce 인디케이터가 떠서 로딩 중임을 바로 알 수 있어요.",
-      "분석 탭 메인 체스보드가 모바일에서 항상 360px로 묶여 있어 화면이 넓은 기기일수록 좌우 여백만 남던 문제를 고쳤어요 — 보드+엔진 라인+평가치 막대 영역이 화면 폭에 맞춰 더 크게 표시돼요.",
-      "분석 탭에서 평가치 막대나 엔진 라인이 잠깐 사라질 때 그 아래 보드가 위로 들썩이던 문제를 고쳤어요 — 이제 보이지 않는 동안에도 같은 자리를 계속 차지해요.",
-      "분석 탭에서 수를 둘 때 하단 수 블록에 키워드가 많이 뜨는 포지션일수록 보드 크기가 미세하게 흔들리던 문제를 고쳤어요.",
+      "분석 탭 메인 체스보드가 모바일에서 항상 360px로 묶여 있어 화면이 넓은 기기일수록 좌우 여백만 남던 문제를 고쳤어요 — 이제 카드 테두리까지 꽉 채우는 크기로 커지고, 그 아래 뒤집기·초기화·PLAY·뒤로·앞으로 버튼과 엔진 라인 글씨도 함께 커졌어요.",
+      "분석 탭에서 평가치 막대나 엔진 라인이 잠깐 사라질 때 그 아래 보드가 위로 들썩이던 문제를 고쳤어요 — 이제 두 자리 모두 항상 같은 높이로 고정돼, 보이든 안 보이든 보드 좌표가 절대 움직이지 않아요.",
+      "분석 탭에서 엔진 라인이 새로 생기거나 순위가 바뀔 때 보드가 미세하게 흔들리던 문제, 특히 하단 수 블록에 키워드가 많이 뜨는 포지션일수록 심하던 문제를 고쳤어요 — 엔진 라인 각 줄의 높이를 픽셀 단위로 고정하고, 다음 수 목록의 텍스트가 보드 칸 폭에 영향을 주지 않도록 막았어요.",
     ]
   },
   {

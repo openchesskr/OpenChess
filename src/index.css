@@ -60,4 +60,11 @@ button, input, select, textarea { font-family: inherit; }
      그대로 커지고, lg 이상(보드+다음 수 목록이 좌우 2단으로 나뉘는 데스크톱)에서만 360px로
      묶어 옆 칼럼과 균형을 맞춘다. */
   .lg\:max-w-360 { max-width: 360px; }
+  /* 위 보드 컨테이너가 모바일에서만 카드 패딩(14px)만큼 음수 마진으로 흘러넘치는데(인라인
+     style="width:calc(100% + 28px); margin:0 -14px"), lg 이상에서는 이 흘러넘침을 되돌려
+     기존처럼 카드 패딩 안쪽에 얌전히 들어오게 한다(인라인 style보다 나중에 로드되는 클래스라
+     우선순위 문제 없이 덮어씀 — 같은 속성을 다시 선언하면 스타일시트 규칙이 인라인 style을
+     이기지는 못하므로, 이 규칙 자체가 아니라 위 lg:max-w-360과 함께 항상 같이 붙는 이 클래스가
+     JS 없이 폭을 되돌리도록 !important로 인라인 style을 덮는다). */
+  .board-bleed { width: 100% !important; margin: 0 auto !important; }
 }
