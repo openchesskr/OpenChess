@@ -3718,7 +3718,7 @@ function useCountUp(target, durationMs, decimals = 0) {
   }, [target, durationMs, decimals]);
   return target == null ? null : display;
 }
-function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadgeClick }) {
+function MoveTile({ m, ply, onClick, onFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);   // 비이론 수는 개발자가 추가한 키워드만 표기
@@ -3748,17 +3748,18 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, questBadge, onQuestBadge
             <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}><Play size={11} /> 분석</button>
           </div>
           <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, cursor: "pointer" }}>
-            {/* (사용자 요청) "a/b" 회수 표기가 자릿수가 많아지면 잘려 보이던 문제를 고치기 위해
-                게이지 바 폭을 한 번 더 줄이고(55% → 34%), 그렇게 확보한 여백을 옆 텍스트 쪽으로
-                돌려 "a/b"가 더 이상 말줄임(…) 없이 전체 값을 항상 다 보여주도록 한다. */}
-            <div style={{ flex: "0 1 34%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
+            {/* (사용자 요청) "a/b" 회수 표기가 자릿수가 많아지면 잘려 보이던 문제, 그리고 채택률(%)
+                오른쪽 여백이 부족하던 문제를 함께 고치기 위해 게이지 바 폭을 다시 한번 줄였다
+                (55% → 34% → 20%) — 확보한 여백은 옆 텍스트 쪽(회수 전체 표시 + % 오른쪽 여백)으로 돌아간다. */}
+            <div style={{ flex: "0 1 20%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
               <div style={{ width: Math.min(100, m.adopt || 0) + "%", height: "100%", background: color, opacity: .85 }} />
             </div>
             {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬 — 게임 수 텍스트가 길어져도
-                justify-content: space-between으로 %는 항상 오른쪽 끝에 고정된다. */}
+                justify-content: space-between으로 %는 항상 오른쪽 끝에 고정된다. 통계가 아직 도착
+                전(statsLoading)이면 "—" 대신 3-dot bounce 인디케이터로 로딩 중임을 보여준다. */}
             <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-              <span style={{ whiteSpace: "nowrap" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : "—"}</span>
-              <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{m.adopt != null ? adoptDisp.toFixed(2) + "%" : "—"}</span>
+              <span style={{ whiteSpace: "nowrap" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : statsLoading ? <PendingDots size={10} /> : "—"}</span>
+              <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{m.adopt != null ? adoptDisp.toFixed(2) + "%" : statsLoading ? <PendingDots size={10} /> : "—"}</span>
             </span>
           </div>
           {/* (UI) 도감 탭과 동일한 형식(백/무/흑 바 + %)으로 이 수의 승률 표기 */}
@@ -3853,6 +3854,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const color = ply % 2 === 0 ? "w" : "b";
   const [moves, setMoves] = useState([]);
   const [posGames, setPosGames] = useState(node ? node.posGames : null);
+  const [statsLoading, setStatsLoading] = useState(false); // (사용자 요청) 리체스 회수/채택률 fetch가 아직 안 끝났음을 알려주는 플래그
   const [posEval, setPosEval] = useState(null);
   const [engineLines, setEngineLines] = useState([]); // (v0.1.3 기능) 엔진 상위 3줄(MultiPV) 전체 수순
   // (버그 수정) 수를 둘 때마다 engineLines를 곧장 []로 비웠다가 재계산이 끝나면 다시 채웠는데, 그
@@ -3930,6 +3932,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       return list;
     };
     setMoves(withExtra(base.map((m) => ({ ...m })))); setPosGames(node ? node.posGames : null); setPosEval(null); setEngineNote(""); setMasterEmpty(false);
+    // (사용자 요청) 리체스 통계(회수/채택률) fetch가 실제로 도착하기 전까지는 각 수 블록·현재 수
+    // 블록이 이 플래그를 보고 "—" 대신 3-dot bounce 인디케이터를 보여준다.
+    setStatsLoading(liveOn);
     if (!liveOn) return;
     (async () => {
       try {
@@ -3993,6 +3998,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           fetchLichess([...sans, m.san], isMaster).catch(() => { });
         });
       } catch (_) { /* 차단 시 스냅샷 유지 */ }
+      finally { if (!cancelled) setStatsLoading(false); }
     })();
     return () => { cancelled = true; };
   }, [key, liveOn, extraKey, contentVer, isMaster]);
@@ -4311,7 +4317,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // 잘못 쓰지 않도록, 아직 이 포지션 결과가 아니면 지금 포지션 기준으로 실시간 갱신되는
   // posEval/fallbackEval을 대신 쓴다.
   const barEval = (!linesPending && engineLines.length) ? engineLines[0].ev : (fallbackEval != null ? fallbackEval : posEval);
-  return { moves: tiled, posGames, engineNote, posEval: barEval, engineLines, linesPending, curDepth, node };
+  return { moves: tiled, posGames, statsLoading, engineNote, posEval: barEval, engineLines, linesPending, curDepth, node };
 }
 
 /* ============================================================ 집중 분석 모드 ============================================================ */
@@ -10584,8 +10590,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     })();
     return () => { cancelled = true; };
   }, [fenRoot, key, liveOn, engine.status, engine.profile]);
-  const { moves, posGames, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
-    ? { moves: [], posGames: null, engineNote: null, ...fenEval }
+  const { moves, posGames, statsLoading, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
+    ? { moves: [], posGames: null, statsLoading: false, engineNote: null, ...fenEval }
     : mergedMoves;
   // (v0.2.2) 후보 블록에 지금 떠 있는 각 수의 확정 등급(pending 제외)을 pin — 아래 마지막 수 재평가
   // effect가 이 값을 그대로 재사용해 블록과 보드·현재 수 블록의 수 체계 아이콘을 일치시킨다. 등급은
@@ -10957,14 +10963,18 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
   const [curStat, setCurStat] = useState(null);
+  // (사용자 요청) 이 fetch가 아직 끝나지 않은 동안 통계 블록 자체를 숨기는 대신 3-dot bounce
+  // 인디케이터로 로딩 중임을 보여준다 — MoveTile의 statsLoading과 같은 목적.
+  const [curStatLoading, setCurStatLoading] = useState(false);
   useEffect(() => {
     let cc = false; setCurStat(null);
-    if (!lastSan || !liveOn) return;
+    if (!lastSan || !liveOn) { setCurStatLoading(false); return; }
+    setCurStatLoading(true);
     fetchLichess(sans.slice(0, -1)).then((r) => {
       if (cc || !r) return;
       const mm = r.moves.find((x) => stripSuffix(x.san) === stripSuffix(lastSan));
       if (mm) setCurStat({ wdl: mm.wdl, adopt: mm.adopt, games: mm.games, posTotal: r.posTotal });
-    }).catch(() => { });
+    }).catch(() => { }).finally(() => { if (!cc) setCurStatLoading(false); });
     return () => { cc = true; };
   }, [key, liveOn]);
   // (사용자 요청) v0.4.5/0.4.6에서 일반 수 블록(MoveTile)에만 적용됐던 리체스 통계 개선(0에서
@@ -11018,7 +11028,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
                 React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
                 감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
-            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} onQuestBadgeClick={onQuestBadgeClick ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} statsLoading={statsLoading} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} onQuestBadgeClick={onQuestBadgeClick ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
             {nb.length > 3 && (
               <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                 <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -11194,23 +11204,24 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                       <div style={{ marginTop: 10 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
                     )}
                     {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
-                        (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 한 번 더 줄여(34%)
-                        "a/b" 회수 표기가 말줄임 없이 항상 전체 값으로 보이도록 여백을 확보하고,
-                        회수는 0부터 세어 올라가는 애니메이션, 채택률은 소수 둘째 자리까지
-                        진한 강조색으로 표기한다. */}
-                    {curStat && (
+                        (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 다시 한번 줄여(20%)
+                        "a/b" 회수 표기와 채택률(%) 오른쪽 여백을 모두 확보하고, 회수는 0부터 세어
+                        올라가는 애니메이션, 채택률은 소수 둘째 자리까지 진한 강조색으로 표기한다.
+                        fetch가 아직 안 끝났으면(curStatLoading) 블록을 숨기는 대신 3-dot bounce
+                        인디케이터를 보여준다. */}
+                    {(curStat || curStatLoading) && (
                       <>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-                          <div style={{ flex: "0 1 34%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
-                            <div style={{ width: Math.min(100, curStat.adopt || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
+                          <div style={{ flex: "0 1 20%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
+                            <div style={{ width: Math.min(100, (curStat && curStat.adopt) || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
                           </div>
                           {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
                           <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-                            <span style={{ whiteSpace: "nowrap" }}>{curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : "—"}</span>
-                            <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : "—"}</span>
+                            <span style={{ whiteSpace: "nowrap" }}>{curStat && curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
+                            <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
                           </span>
                         </div>
-                        {curStat.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
+                        {curStat && curStat.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
                       </>
                     )}
                   </div>
@@ -19728,7 +19739,8 @@ const CHANGELOG = [
     version: "0.4.9", date: "2026.9.9", dev: ["openchesskr", "G13sus4"], items: [
       "about 페이지 버전 기록에서 빠져 있던 v0.4.8 항목을 채워 넣었어요.",
       "분석 탭에서 후보 수 중 실제로 가장 많이 두어진 수들은 클릭하기 전에 미리 리체스 통계를 백그라운드에서 당겨와 둬요 — 실제로 그 수를 눌렀을 때 통계가 훨씬 빠르게(대부분 즉시) 표시돼요.",
-      "분석 탭 현재 수 블록·다음 수 블록의 회수(a/b) 표기가 숫자가 길어지면 잘려 보이던 문제를 고쳤어요 — 왼쪽 채택률 게이지 바를 더 줄이고, 그만큼 확보한 자리에 회수 전체를 항상 다 보여줘요.",
+      "분석 탭 현재 수 블록·다음 수 블록의 회수(a/b) 표기가 숫자가 길어지면 잘려 보이고 채택률(%) 오른쪽 여백이 부족하던 문제를 고쳤어요 — 왼쪽 채택률 게이지 바를 더 줄이고, 그만큼 확보한 자리에 회수 전체와 % 여백을 다 보여줘요.",
+      "분석 탭에서 리체스 통계가 아직 도착하기 전에는 회수·채택률 자리에 3-dot bounce 인디케이터가 떠서 로딩 중임을 바로 알 수 있어요.",
     ]
   },
   {
