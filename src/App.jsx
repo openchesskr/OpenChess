@@ -11113,7 +11113,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
           <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
             <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition}
-              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} large />} />
+              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
@@ -19772,7 +19772,7 @@ const CHANGELOG = [
       "분석 탭에서 후보 수 중 실제로 가장 많이 두어진 수들은 클릭하기 전에 미리 리체스 통계를 백그라운드에서 당겨와 둬요 — 실제로 그 수를 눌렀을 때 통계가 훨씬 빠르게(대부분 즉시) 표시돼요.",
       "분석 탭 현재 수 블록·다음 수 블록의 회수(a/b) 표기가 숫자가 길어지면 잘려 보이고 채택률(%) 오른쪽 여백이 부족하던 문제를 고쳤어요 — 왼쪽 채택률 게이지 바를 더 줄이고, 그만큼 확보한 자리에 회수 전체와 % 여백을 다 보여줘요.",
       "분석 탭에서 리체스 통계가 아직 도착하기 전에는 회수·채택률 자리에 3-dot bounce 인디케이터가 떠서 로딩 중임을 바로 알 수 있어요.",
-      "분석 탭 메인 체스보드가 모바일에서 항상 360px로 묶여 있어 화면이 넓은 기기일수록 좌우 여백만 남던 문제를 고쳤어요 — 이제 카드 테두리까지 꽉 채우는 크기로 커지고, 그 아래 뒤집기·초기화·PLAY·뒤로·앞으로 버튼과 엔진 라인 글씨도 함께 커졌어요.",
+      "분석 탭 메인 체스보드가 모바일에서 항상 360px로 묶여 있어 화면이 넓은 기기일수록 좌우 여백만 남던 문제를 고쳤어요 — 이제 카드 테두리까지 꽉 채우는 크기로 커지고, 그 아래 뒤집기·초기화·PLAY·뒤로·앞으로 버튼도 함께 커졌어요.",
       "분석 탭에서 평가치 막대나 엔진 라인이 잠깐 사라질 때 그 아래 보드가 위로 들썩이던 문제를 고쳤어요 — 이제 두 자리 모두 항상 같은 높이로 고정돼, 보이든 안 보이든 보드 좌표가 절대 움직이지 않아요.",
       "분석 탭에서 엔진 라인이 새로 생기거나 순위가 바뀔 때 보드가 미세하게 흔들리던 문제, 특히 하단 수 블록에 키워드가 많이 뜨는 포지션일수록 심하던 문제를 고쳤어요 — 엔진 라인 각 줄의 높이를 픽셀 단위로 고정하고, 다음 수 목록의 텍스트가 보드 칸 폭에 영향을 주지 않도록 막았어요.",
     ]
