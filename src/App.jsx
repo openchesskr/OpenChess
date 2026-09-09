@@ -2676,10 +2676,16 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
       {/* (사용자 재제보 — "보드 좌표를 아예 고정하라") showEval이 꺼지면(퍼즐 강제 포지션 등) 이
           자리가 통째로 사라져 그 아래 엔진 라인·그리드가 위로 들썩였다 — 켜져 있든 꺼져 있든 항상
-          같은 고정 높이(막대 18px + 테두리 2px + 여백 8px = 28px)의 틀로 감싸고 overflow:hidden을
-          둬, 그 안에 무엇이 렌더되든(진짜 막대 또는 아무것도 없음) 이 틀 자체의 세로 공간은 픽셀
-          단위로 절대 변하지 않게 한다. */}
-      <div style={{ height: 28, overflow: "hidden" }}>{showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}</div>
+          같은 고정 높이(막대 18px + 테두리 2px + 여백 8px = 28px)의 틀로 감싸, 그 안에 무엇이
+          렌더되든(진짜 막대 또는 아무것도 없음) 이 틀 자체가 차지하는 세로 공간은 픽셀 단위로
+          절대 변하지 않게 한다.
+          (버그 수정, 사용자 재제보) 처음엔 여기에 overflow:hidden도 함께 줬는데, EvalBar 안의
+          "n수 후까지 탐색 중.." 도움말 말풍선(tipOpen)은 이 24px 높이 틀보다 위로 튀어나오도록
+          position:absolute, bottom:24로 떠 있는 오버레이라 — overflow:hidden이 이 틀 밖으로
+          나가는 그 말풍선까지 통째로 잘라내 버려, 눌러도 안 뜨는 것처럼 보이는 회귀 버그였다.
+          이 틀의 목적은 "높이를 고정해 아래 요소가 안 흔들리게" 뿐이므로 overflow는 visible로
+          두고 height만 고정한다(높이 고정 자체는 overflow와 무관하게 동작한다). */}
+      <div style={{ height: 28 }}>{showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}</div>
       {/* (v0.1.3 기능) 분석 탭 메인 보드에서 평가치 바와 보드 사이에 엔진 상위 3줄을 끼워 넣기
           위한 자리 — Board는 여러 화면에서 재사용되므로 이 슬롯을 안 쓰는 곳은 그대로다. */}
       {belowEval}
