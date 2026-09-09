@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useId, useContext, createContext } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useContext, createContext } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useAnimationControls } from "framer-motion";
 import {
@@ -13047,86 +13047,13 @@ function themesOf(p) {
 function sortedThemesOf(p) { const set = new Set(themesOf(p)); return THEME_PRIORITY.filter((t) => set.has(t)); }
 function primaryTheme(p) { return sortedThemesOf(p)[0] || "punish"; }
 function themeLabelsOf(p) { return sortedThemesOf(p).map((t) => THEME_LABEL[t]).join(" · "); }
-/* (v0.1.0) 퍼즐 테마별 카드 색감·심볼 — 실제 수 체계 배지(BADGE_ICON_SRC, "!!"/"?!"/"?"/"??")와 같은
-   색·기호 언어를 그대로 가져와 테마 배경 패턴에 녹인다.
-   · 기물 희생하기 = 탁월한 수(brilliant)와 같은 민트색 + "!!" — 위험을 감수한 화려한 수라는 점이 같다.
-   · 우위 점하기 = 부정확한 수(inaccuracy)와 같은 노란색 + "?!"을 짓밟듯 훼손된(끊어진 윤곽선+부스러기) 모습으로 —
-     상대의 애매한 수를 짓밟고 우위를 다진다는 느낌.
-   · 실수 응징하기 = 블런더의 빨강→실수의 주황 그라데이션 + "?"·"??"이 심하게 파괴됐지만(균열선) 형체는
-     알아볼 수 있게 — 정확한 일격으로 실수를 응징한다는 느낌. */
-// 기물 희생하기: 탁월한 수 배지와 같은 굵은 스템+사각 점 두 벌을 나란히 놓아 "!!" 형태를 만든다.
-function exclaimPair(cx, cy, size, rot, fill) {
-  const w = size * 0.22, gap = size * 0.16;
-  return (
-    <g key={cx + "-" + cy} transform={"translate(" + cx + " " + cy + ") rotate(" + rot + ")"}>
-      <rect x={-w - gap / 2} y={-size * 0.5} width={w} height={size * 0.62} rx={w * 0.4} fill={fill} />
-      <rect x={-w - gap / 2} y={size * 0.24} width={w} height={w} rx={w * 0.35} fill={fill} />
-      <rect x={gap / 2} y={-size * 0.5} width={w} height={size * 0.62} rx={w * 0.4} fill={fill} />
-      <rect x={gap / 2} y={size * 0.24} width={w} height={w} rx={w * 0.35} fill={fill} />
-    </g>
-  );
-}
-// 우위 점하기: "?!"를 채움 없이 끊어진(점선) 윤곽선만으로 그려 갉아 먹힌 듯한 부식감을 내고,
-// 주변에 떨어져 나온 짧은 부스러기 획을 몇 개 흩어 훼손된 흔적을 더한다.
-function corrodedGlyph(cx, cy, size, rot, stroke) {
-  return (
-    <g key={cx + "-" + cy} transform={"translate(" + cx + " " + cy + ") rotate(" + rot + ")"}>
-      <text textAnchor="middle" dominantBaseline="middle" fontSize={size} fontWeight="900" fontFamily="Georgia,'Noto Serif KR',serif"
-        fill="none" stroke={stroke} strokeWidth={size * 0.05} strokeDasharray={size * 0.05 + " " + size * 0.09} strokeLinecap="round">?!</text>
-      <line x1={size * 0.48} y1={-size * 0.18} x2={size * 0.6} y2={-size * 0.1} stroke={stroke} strokeWidth={size * 0.035} strokeLinecap="round" opacity="0.7" />
-      <line x1={-size * 0.42} y1={size * 0.32} x2={-size * 0.32} y2={size * 0.42} stroke={stroke} strokeWidth={size * 0.03} strokeLinecap="round" opacity="0.6" />
-    </g>
-  );
-}
-// 실수 응징하기: 글자는 온전히 두고 그 위에 어긋난 균열선을 그어 "심하게 파괴됐지만 형체는 알아볼
-// 수 있는" 인상을 준다 — 카드 배경색을 몰라도(균열선이 배경을 지우는 대신 어두운 선으로 얹히므로) 항상 통한다.
-function crackedGlyph(text, cx, cy, size, rot, fill) {
-  const half = size / 2;
-  return (
-    <g key={text + cx + cy} transform={"translate(" + cx + " " + cy + ") rotate(" + rot + ")"}>
-      <text textAnchor="middle" dominantBaseline="middle" fontSize={size} fontWeight="900" fontFamily="Georgia,'Noto Serif KR',serif" fill={fill}>{text}</text>
-      <path d={"M " + (-half * 0.7) + "," + (-half * 0.5) + " L " + (-half * 0.1) + "," + (half * 0.05) + " L " + (half * 0.35) + "," + (-half * 0.25) + " L " + (half * 0.75) + "," + (half * 0.4)}
-        fill="none" stroke="#2A1000" strokeWidth={size * 0.05} strokeLinecap="round" opacity="0.55" />
-      <path d={"M " + (-half * 0.5) + "," + (half * 0.7) + " L " + (half * 0.05) + "," + (half * 0.15) + " L " + (half * 0.6) + "," + (half * 0.65)}
-        fill="none" stroke="#2A1000" strokeWidth={size * 0.045} strokeLinecap="round" opacity="0.5" />
-    </g>
-  );
-}
+// (사용자 요청) 퍼즐 테마별 카드 색감 — 예전엔 이 색과 함께 테마마다 다른 SVG "수 아이콘 기호"
+// (기물 희생하기="!!", 우위 점하기="?!", 실수 응징하기="?"·"??")를 카드 배경 장식으로도 그렸는데,
+// 그 장식(PuzzleThemePattern 등)을 완전히 없앴다 — 이제 이 색은 카드 상단 얇은 띠에만 쓰인다.
 const PUZZLE_THEME_STYLE = {
-  sacrifice: {
-    accent: T.brilliant,
-    pattern: () => (
-      <>
-        {exclaimPair(20, 26, 30, -10, T.brilliant)}
-        {exclaimPair(58, 68, 26, 7, T.brilliant)}
-        {exclaimPair(82, 22, 22, -5, T.brilliant)}
-      </>
-    ),
-  },
-  advantage: {
-    accent: T.inaccuracy,
-    pattern: () => (
-      <>
-        {corrodedGlyph(28, 64, 46, -9, T.inaccuracy)}
-        {corrodedGlyph(74, 26, 34, 8, T.inaccuracy)}
-      </>
-    ),
-  },
-  punish: {
-    accent: T.blunder,
-    pattern: (gradId) => (
-      <>
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={T.blunder} />
-            <stop offset="100%" stopColor={T.mistake} />
-          </linearGradient>
-        </defs>
-        {crackedGlyph("??", 68, 30, 30, -8, "url(#" + gradId + ")")}
-        {crackedGlyph("?", 24, 70, 38, 7, "url(#" + gradId + ")")}
-      </>
-    ),
-  },
+  sacrifice: { accent: T.brilliant },
+  advantage: { accent: T.inaccuracy },
+  punish: { accent: T.blunder },
 };
 // (v0.1.1) 태그 2개짜리 퍼즐(예: 실수 응징하기 + 기물 희생하기)의 색을 "반씩 섞어" 표현하기 위한
 // 헬퍼. 두 색의 RGB 평균(#no 텍스트처럼 단일 색이 필요한 자리)과, 절반씩 하드 스플릿한 그라데이션
@@ -13150,33 +13077,6 @@ function hexAlpha(hex, a) {
 function themeAccentsOf(themes) { return (themes && themes.length ? themes : ["punish"]).slice(0, 2).map((t) => (PUZZLE_THEME_STYLE[t] || PUZZLE_THEME_STYLE.punish).accent); }
 function themeAccentColor(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? blendHex(c[0], c[1]) : c[0]; }
 function themeAccentBg(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? "linear-gradient(90deg, " + c[0] + " 50%, " + c[1] + " 50%)" : c[0]; }
-function PuzzleThemePattern({ themes, opacity = 0.1 }) {
-  // (v0.1.0) 실수 응징하기 그라데이션 fill이 url(#id)로 참조되므로, 카드 여러 개가 한 화면에 있어도
-  // 서로 다른 <svg>끼리 id가 겹치지 않도록 useId로 인스턴스별 고유 id를 만든다(콜론은 CSS/URL
-  // 참조에서 그대로 못 쓰이는 경우가 있어 제거).
-  const gradIdA = "pth-" + useId().replace(/:/g, "");
-  const gradIdB = "pth2-" + useId().replace(/:/g, "");
-  const list = (themes && themes.length ? themes : ["punish"]).slice(0, 2);
-  const stA = PUZZLE_THEME_STYLE[list[0]] || PUZZLE_THEME_STYLE.punish;
-  if (list.length < 2) {
-    return (
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity, pointerEvents: "none" }}>
-        {stA.pattern(gradIdA)}
-      </svg>
-    );
-  }
-  // (v0.1.1) 태그가 2개면 색을 평균 내 새 색을 만드는 대신, 두 테마 각자의 진짜 색·기호를 화면
-  // 좌/우 절반에 나눠 그대로 보여준다 — "두 테마의 색을 반씩 섞어서" 요청을 그라데이션 평균보다
-  // 더 뚜렷하게(두 테마 모두 해당한다는 게 한눈에 보이도록) 표현한다. 두 패턴 다 균일 배율로만
-  // 축소해(가로만 눌러 찌그러뜨리지 않고) 각자 절반 칸의 중심으로 옮긴다.
-  const stB = PUZZLE_THEME_STYLE[list[1]] || PUZZLE_THEME_STYLE.punish;
-  return (
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity, pointerEvents: "none" }}>
-      <g transform="translate(0,25) scale(0.5)">{stA.pattern(gradIdA)}</g>
-      <g transform="translate(50,25) scale(0.5)">{stB.pattern(gradIdB)}</g>
-    </svg>
-  );
-}
 // (UI4) 퍼즐 이름 규칙: 직전 수들 중 '가장 마지막으로 이름이 있는 수'의 오프닝 이름을 기준으로 짓는다.
 function lastNamedOpening(sans) {
   let nm = null;
@@ -15521,8 +15421,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   const gotoLine = (tag) => { solveStartRef.current = Date.now(); setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); setPromoPrompt(null); };
   const restart = () => gotoLine(targetTag);
   // (UI) 사용자 요청 — 퍼즐 화면 기보(PuzzlePgnBox)의 수를 누르면 그 기보가 입력된 분석 탭으로
-  // 이동한다. 퍼즐 풀이 화면 자체는 더 이상 볼 이유가 없으므로 함께 닫는다.
-  const pickToLearn = onOpenLearn ? (sans) => { onOpenLearn(sans); onClose(); } : undefined;
+  // 이동한다. 예전엔 여기서 퍼즐 풀이 화면 자체를 닫았는데(onClose), 집중 분석을 나갈 때 "들어왔던
+  // 경로로 돌아가기"가 되려면 이 퍼즐 화면이 배경에 그대로 살아 있어야 한다(도감 탭과 같은 방식) —
+  // 더 이상 onClose를 부르지 않고, 대신 App.jsx의 onOpenLearnFocus가 focusReturnTab="puzzle"을
+  // 남겨 집중 분석을 닫을 때 이 화면으로(같은 퍼즐·같은 라인 그대로) 되돌아오게 한다.
+  const pickToLearn = onOpenLearn ? (sans) => { onOpenLearn(sans); } : undefined;
   // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
   // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
   // 대신 모식도 페이지에 새로 생긴 미니보드에서 그 수를 애니메이션으로 재생해 바로 복기할 수 있게 한다.
@@ -16486,7 +16389,6 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
     /* (19차 UI2) 정사각 고정을 풀고(오프닝 이름·"n명이 풀었습니다"가 잘리지 않도록) 내용 높이에 맞춰 늘어나게 한다. */
     <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, paddingBottom: 16, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ position: "absolute", top: -1, left: -1, right: -1, height: 3, borderRadius: "12px 12px 0 0", background: themeAccentBg(themes), zIndex: 2 }} />
-      <PuzzleThemePattern themes={themes} opacity={isSolved ? 0.05 : 0.11} />
       {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {/* (사용자 요청) 카드 비율을 세로로 늘리고, 체스보드가 들어갈 여백 자체를 정사각형(aspectRatio
@@ -16536,12 +16438,14 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
                     <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
                   </div>
                 }>
-                  <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도) — 눌러서 자세히" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>
+                  {/* (사용자 요청) 퍼즐 풀이 카드(PuzzleSolver)의 레이팅 배지와 완전히 같은 디자인 —
+                      "★" 글자 기호 대신 배경·테두리가 있는 알약형 배지로 표시한다. */}
+                  <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도) — 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
                 </ClickInfoBadge>
               );
             })()
           ) : (
-            <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT, flexShrink: 0 }}>★{avgRating}</span>
+            <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
           ))}
         </div>
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
@@ -19781,6 +19685,10 @@ const CHANGELOG = [
       "분석 탭 메인 체스보드가 모바일에서 항상 360px로 묶여 있어 화면이 넓은 기기일수록 좌우 여백만 남던 문제를 고쳤어요 — 이제 카드 테두리까지 꽉 채우는 크기로 커지고, 그 아래 뒤집기·초기화·PLAY·뒤로·앞으로 버튼도 함께 커졌어요.",
       "분석 탭에서 평가치 막대나 엔진 라인이 잠깐 사라질 때 그 아래 보드가 위로 들썩이던 문제를 고쳤어요 — 이제 두 자리 모두 항상 같은 높이로 고정돼, 보이든 안 보이든 보드 좌표가 절대 움직이지 않아요.",
       "분석 탭에서 엔진 라인이 새로 생기거나 순위가 바뀔 때 보드가 미세하게 흔들리던 문제, 특히 하단 수 블록에 키워드가 많이 뜨는 포지션일수록 심하던 문제를 고쳤어요 — 엔진 라인 각 줄의 높이를 픽셀 단위로 고정하고, 다음 수 목록의 텍스트가 보드 칸 폭에 영향을 주지 않도록 막았어요.",
+      "분석 탭에서 평가치 막대의 '탐색 상태' 도움말 말풍선이 안 뜨던 문제를 고쳤어요.",
+      "일일 퍼즐 팝업·퍼즐 풀이 카드의 기보에서 수를 눌러 집중 분석으로 이동했다가 나가면, 이제 들어왔던 화면(그 팝업 또는 풀던 퍼즐)으로 정확히 되돌아가요 — 예전엔 항상 학습 탭 첫 화면으로 나가졌어요.",
+      "퍼즐 카드의 레이팅 표기를 퍼즐 풀이 카드와 완전히 같은 배지 디자인으로 통일했어요.",
+      "퍼즐 테마(기물 희생하기·우위 점하기·실수 응징하기)마다 카드 배경에 다르게 떠 있던 장식용 수 기호(!!·?!·?·??)를 없앴어요.",
     ]
   },
   {
@@ -20739,9 +20647,13 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLea
                 {titleRow}
                 {solveRow}
                 {/* 기보 — 시작 위치부터 이 포지션까지의 수순을 한 줄로, 길면 드래그해 스크롤.
-                    (UI) 사용자 요청 — 임의의 수를 누르면 그 기보가 입력된 분석 탭으로 이동한다. */}
+                    (UI) 사용자 요청 — 임의의 수를 누르면 그 기보가 입력된 분석 탭으로 이동한다.
+                    (사용자 요청) 예전엔 여기서도 close()(=onClose, "오늘 하루 다시 보지 않기" 여부까지
+                    반영해 이 팝업을 완전히 닫음)를 함께 불렀는데, 그러면 집중 분석을 나가도 이 팝업이
+                    다시 뜨지 않았다 — 이제는 닫지 않고 App.jsx 쪽에서 learnFocus가 켜진 동안만 이
+                    컴포넌트 자체를 숨겨 두므로, 여기서는 onOpenLearn만 부른다. */}
                 <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 9, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
-                  <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => { onOpenLearn(puzzleSans.slice(0, ply)); close(); } : undefined} />
+                  <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => onOpenLearn(puzzleSans.slice(0, ply)) : undefined} />
                 </div>
                 <div style={{ marginBottom: 20 }}>
                   <MascotBubble text={(livePuzzleName(puzzle) || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" stacked />
@@ -27434,24 +27346,26 @@ export default function App() {
     // 사용자가 직접 다른 탭을 골랐으니, 집중 분석을 닫을 때 도감으로 자동으로 되돌아가는 예약은 취소한다.
     setFocusReturnTab(null);
   };
-  // (사용자 요청) 집중 분석이 도감 탭에서 시작됐다면(focusReturnTab === "dex"), 학습이 닫히는(learnFocus가
-  // null로 바뀌는) 순간 도감 탭으로 돌아간다 — switchTab을 쓰면 navNonce가 올라 CollectionTab이 강제로
-  // 새로 마운트돼(아래 render의 "숨겨 두기"가 무의미해짐) 애써 보존한 팬/줌/카드 상태가 사라지므로,
-  // navNonce는 건드리지 않고 tab만 직접 되돌린다.
+  // (사용자 요청) 집중 분석이 도감 탭·퍼즐 탭(일일 퍼즐 팝업 포함)에서 시작됐다면(focusReturnTab에
+  // 그 탭 이름이 담김), 학습이 닫히는(learnFocus가 null로 바뀌는) 순간 그 탭으로 되돌아간다 —
+  // switchTab을 쓰면 navNonce가 올라 CollectionTab/PuzzleTab이 강제로 새로 마운트돼(아래 render의
+  // "숨겨 두기"가 무의미해짐) 애써 보존한 팬/줌/카드나 풀이 중이던 퍼즐 상태가 사라지므로, navNonce는
+  // 건드리지 않고 tab만 직접 되돌린다.
   const prevLearnFocusRef = useRef(learnFocus);
   // (v0.4.0 기능) 사용자 요청 — 집중 분석도 뒤로가기 한 번으로 닫히게 한다. 여는 쪽(위 onOpenOpening/
   // onOpenLearnFocus, 그리고 LearnTab 안 "분석" 버튼이 부르는 setFocus 전부 포함 — 이 effect가 최상위
   // learnFocus 값의 null↔값 전환만 지켜보므로 진입 경로를 하나하나 따로 손댈 필요가 없다)는
   // pushScreen("focus")로 히스토리 항목을 하나 쌓고, 닫히면(뒤로가기든 UI든) popScreen으로 짝을 맞춘다.
-  // 도감 탭에서 열었던 경우(focusReturnTab==="dex")는 원래부터 도감 탭으로 직접 되돌리는 별도 pushState
-  // 경로가 있어 그대로 두고(건드리면 그 특수 로직이 함께 꼬일 위험이 있음), 그 외의 경우에만 popScreen을 쓴다.
+  // 특정 탭에서 열었던 경우(focusReturnTab에 그 탭 이름이 담김 — "dex"·"puzzle"뿐 아니라 일일 퍼즐
+  // 팝업처럼 "떠 있던 탭 이름을 그대로 기억"하는 경우도 포함)는 그 탭으로 직접 되돌리는 별도 pushState
+  // 경로를 쓰고, 그 외(focusReturnTab이 null)에는 popScreen(브라우저 히스토리로 그냥 되돌아가기)을 쓴다.
   useEffect(() => {
     if (!prevLearnFocusRef.current && learnFocus) pushScreen("focus");
     if (prevLearnFocusRef.current && !learnFocus) {
-      if (focusReturnTab === "dex") {
-        setTab("dex");
-        urlTabRef.current = "dex";
-        try { const p = TAB_PATH.dex; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
+      if (focusReturnTab) {
+        setTab(focusReturnTab);
+        urlTabRef.current = focusReturnTab;
+        try { const p = TAB_PATH[focusReturnTab]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
         setFocusReturnTab(null);
       } else {
         popScreen("focus");
@@ -27525,23 +27439,18 @@ export default function App() {
   // 이동)과 달리 onOpenOpening과 같은 방식으로 그 수 위치에서 곧장 집중 분석 모드로 들어간다. 이미
   // 정확한 수순(sans)을 갖고 있으므로 findOpeningPathByName 같은 이름 검색은 필요 없고, onOpenOpening의
   // 나머지 로직(마지막 수를 분리해 learnFocus 구성, 오프닝 이름/수 정보 조회)만 그대로 재사용한다.
-  const onOpenLearnFocus = useCallback((sans) => {
+  // (사용자 요청) 집중 분석을 나갈 때 "들어왔던 경로로" 돌아가도록, 호출부가 넘겨주는 source로
+  // focusReturnTab에 되돌아갈 탭을 남겨 둔다(onOpenOpening의 dex 처리와 같은 방식) — 퍼즐 풀이 카드
+  // (source="puzzle")는 항상 퍼즐 탭으로, 일일 퍼즐 팝업(source="dailypuzzle")은 그 팝업이 지금 떠
+  // 있던 탭 그대로(팝업은 tab과 무관하게 어느 화면 위에도 뜰 수 있음)로 돌아간다. 그 외(도감 오프닝
+  // 트리 등은 onOpenOpening이 따로 처리)는 기존처럼 null로 둬 popScreen(브라우저 뒤로가기)에 맡긴다.
+  // (예전엔 여기서 "퍼즐 URL이면 /learn으로 바꿔치기"하는 history 우회가 있었는데, 그건 pickToLearn이
+  // 곧바로 PuzzleTab.closeActive를 불러 URL을 되감아 버리던 것과의 충돌을 막기 위함이었다 — 이제
+  // pickToLearn이 더 이상 그 close를 부르지 않으므로 이 우회 자체가 필요 없어져 걷어냈다.)
+  const onOpenLearnFocus = useCallback((sans, source) => {
     if (!sans || !sans.length) return;
     setSearchOpen(false); setFriendsOpen(false);
-    setFocusReturnTab(null);
-    // (버그 수정) 퍼즐 풀이 화면(전용 URL "/puzzle/(번호)-(라인)")에서 기보의 수를 클릭하면, 이 함수
-    // 직후 pickToLearn이 onClose(PuzzleTab의 closeActive)도 함께 부른다 — closeActive는 "지금 주소가
-    // 그 퍼즐 URL 패턴이면" 무조건 history.back()을 호출하는데, 주소를 그대로 두면 아래 focus 전환
-    // effect가 막 쌓은 pushScreen("focus") 히스토리 항목이 그 back()에 곧바로 되감겨 사라져 버린다
-    // (집중 분석에 들어간 것처럼 보였다가 곧바로 원래 화면 밖으로 튕겨 나감). 그 충돌을 막기 위해,
-    // 지금 주소가 퍼즐 URL이면 먼저 "/learn"으로 바꿔치기(replaceState)해 둔다 — 이러면 뒤이은
-    // onClose()가 더는 퍼즐 URL로 인식하지 않아 back()을 부르지 않고, 새로 쌓이는 pushScreen("focus")
-    // 항목만 깨끗이 남는다.
-    try {
-      if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) {
-        window.history.replaceState({ screens: (window.history.state && window.history.state.screens) || [] }, "", TAB_PATH.learn);
-      }
-    } catch { }
+    setFocusReturnTab(source === "puzzle" ? "puzzle" : source === "dailypuzzle" ? tab : null);
     setTab("learn");
     const tSans = sans.slice(0, -1); const tSan = sans[sans.length - 1];
     const pnode = snapNode(tSans); const mm = pnode && pnode.moves.find((x) => stripSuffix(x.san) === stripSuffix(tSan));
@@ -27549,7 +27458,7 @@ export default function App() {
     setLearnSans(tSans);
     setLearnFocus({ sans: tSans, san: tSan, m: mm || { san: tSan }, ply: tSans.length, isNew: false, name: nm });
     if (nm) setRecentOpenings((prev) => [nm, ...prev.filter((x) => x !== nm)].slice(0, 10));
-  }, []);
+  }, [tab]);
   // (프로필) chess.com 최근 대국의 "보기" — 그 대국 기보를 분석 보드로 불러온다(끝 포지션에서 뒤로 넘겨보기 가능).
   const onOpenGame = useCallback((moves) => {
     if (!moves || !moves.length) return;
@@ -27899,7 +27808,10 @@ export default function App() {
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
-      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={onOpenLearnFocus} />}
+      {/* (사용자 요청) 기보의 수를 눌러 집중 분석으로 들어갈 때는 이 팝업을 완전히 닫지(closePuzzleNotice)
+          않는다 — 대신 learnFocus가 켜져 있는 동안만 화면에서 숨겨 두고, 집중 분석을 나가면(learnFocus가
+          다시 null이 되면) puzzleNoticeOpen이 그대로 true였으므로 이 팝업이 저절로 다시 나타난다. */}
+      {puzzleNoticeOpen && todayPuzzle && !learnFocus && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={(sans) => onOpenLearnFocus(sans, "dailypuzzle")} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
@@ -28041,7 +27953,15 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={onOpenLearnFocus} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} />}
+        {/* (사용자 요청) 퍼즐 탭에서 퍼즐 풀이 카드의 기보를 눌러 집중 분석으로 이동한 경우
+            (focusReturnTab === "puzzle"), 도감 탭과 같은 방식으로 집중 분석이 열려 있는 동안에도 이
+            탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중 분석을 닫고 돌아왔을 때 풀이 중이던
+            퍼즐·라인이 그대로 남아 있다. */}
+        {(tab === "puzzle" || focusReturnTab === "puzzle") && (
+          <div style={tab === "puzzle" ? undefined : { display: "none" }}>
+            <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} />
+          </div>
+        )}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
