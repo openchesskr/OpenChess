@@ -22639,7 +22639,7 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
                 <div style={{ flexShrink: 0, maxWidth: 132, textAlign: "right" }}>
                   {!isSelf && (
                     me ? (
-                      reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} style={{ flexShrink: 0 }} />친구가 되었습니다</span>
+                      reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} style={{ flexShrink: 0 }} /></span>
                         : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><Clock size={14} style={{ flexShrink: 0 }} />친구 요청을 보냈습니다</span>
                           : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><UserCheck size={14} style={{ flexShrink: 0 }} />이미 친구이거나 요청 중입니다</span>
                             : <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.96 }} onClick={doReq} disabled={reqBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5, whiteSpace: "nowrap" }}><UserPlus size={14} />친구 요청</motion.button>
@@ -22747,31 +22747,47 @@ function blindMoveToken(body, ply) {
   return stripSuffix(rest);
 }
 function deriveBlindGame(msgs) {
-  let sans = null, active = false, result = null, whiteFromUid = null;
+  // (버그 수정, 사용자 제보) 예전엔 방금 수를 둔 바로 그 사람이 연달아 또 수를 인식시킬 수 있었다
+  // (다음 차례 접두사+SAN 형식만 맞으면 보낸 사람이 누구인지는 전혀 확인하지 않았기 때문) — 그래서
+  // 한 사람이 양쪽 수를 혼자 다 입력해도 정상 진행된 것처럼 보였다. lastMoveUid로 직전 수를 둔
+  // 사람을 기억해, 같은 사람이 연달아 보낸 메시지는 수로 인식하지 않는다(상대가 실제로 수를 갱신할
+  // 때까지 내 채팅은 SAN으로 해석되지 않는다).
+  let sans = null, active = false, result = null, whiteFromUid = null, lastMoveUid = null;
+  // (버그 수정, 사용자 제보) /draw가 누가 보내든 곧바로 대국을 끝내버려, 상대의 동의 없이도 원하는
+  // 쪽이 즉시 무승부로 끝낼 수 있었다 — 이제 첫 /draw는 "제안"으로만 기록되고(drawOfferUid),
+  // 상대방이 "다시" /draw를 보내야(즉 제안자가 아닌 사람이 보내야) 비로소 무승부로 끝난다. 같은
+  // 사람이 다시 /draw를 보내는 건 중복 제안이라 아무 효과가 없고, 누군가 실제 수를 두면 그 사이
+  // 걸려 있던 제안은 자동으로 취소된다(수를 두는 것으로 거절한 셈).
+  let drawOfferUid = null;
   for (const m of msgs) {
     if (m.pvp_invite_id != null || m.puzzle_no != null || m.legacy_slot != null || m.review_id != null || m.share_reward) continue;
     const body = (m.body || "").trim();
     if (!body) continue;
     if (!active) {
       const tok = blindMoveToken(body, 0);
-      if (tok && sanSrc(startBoard(), tok, "w")) { sans = [tok]; active = true; result = null; whiteFromUid = m.from_uid; }
+      if (tok && sanSrc(startBoard(), tok, "w")) { sans = [tok]; active = true; result = null; whiteFromUid = m.from_uid; lastMoveUid = m.from_uid; drawOfferUid = null; }
       continue;
     }
     if (/^\/resign\s*$/i.test(body)) { active = false; result = { kind: "resign", loserUid: m.from_uid }; continue; }
-    if (/^\/draw\s*$/i.test(body)) { active = false; result = { kind: "draw" }; continue; }
+    if (/^\/draw\s*$/i.test(body)) {
+      if (drawOfferUid && drawOfferUid !== m.from_uid) { active = false; result = { kind: "draw" }; }
+      else { drawOfferUid = m.from_uid; }
+      continue;
+    }
     const ply = sans.length;
     const tok = blindMoveToken(body, ply);
     if (!tok) continue;
+    if (m.from_uid === lastMoveUid) continue;
     const color = ply % 2 === 0 ? "w" : "b";
     const board = boardFromSans(sans);
     if (!sanSrc(board, tok, color)) continue;
-    sans.push(tok);
+    sans.push(tok); lastMoveUid = m.from_uid; drawOfferUid = null;
     const end = gameEndState(sans).end;
     if (end === "checkmate") { active = false; result = { kind: "checkmate", winnerColor: color }; }
     else if (end === "stalemate") { active = false; result = { kind: "stalemate" }; }
     else if (end === "threefold") { active = false; result = { kind: "threefold" }; }
   }
-  return { active, sans: sans || [], result, whiteFromUid };
+  return { active, sans: sans || [], result, whiteFromUid, drawOfferUid };
 }
 // /eval 명령어 표시 형식 — 예: "+0.31(depth=25)", 메이트는 "#3(depth=25)"/"-#3(depth=25)".
 function formatBlindEval(ev) {
@@ -23078,9 +23094,17 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         return;
       }
       if (/^\/draw\s*$/i.test(body)) {
+        // (버그 수정, 사용자 제보) /draw는 이제 상대의 동의가 있어야 끝난다 — 내가 이미 제안해 둔
+        // 상태에서 다시 보내면 중복 제안이라 아무 일도 안 일어나므로 미리 막고, 상대가 먼저
+        // 제안해 둔 상태에서 내가 보내면 그게 동의라 대국이 끝난다는 문구로 안내한다.
+        if (blindGame.drawOfferUid === myUid) { setCmdError("이미 무승부를 제안했어요. 상대방의 응답을 기다려 주세요."); return; }
         setCmdError(""); setSending(true);
+        const isAccepting = blindGame.drawOfferUid === otherUid;
         const ok = await chatSend(myUid, otherUid, body, null);
-        if (ok) { await chatSend(myUid, otherUid, "합의 무승부로 대국이 종료됐어요.", null); setText(""); load(); }
+        if (ok) {
+          await chatSend(myUid, otherUid, isAccepting ? "합의 무승부로 대국이 종료됐어요." : nameFor(myUid) + "님이 무승부를 제안했어요. /draw로 동의하면 대국이 끝나요.", null);
+          setText(""); load();
+        }
         else setCmdError("명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
         setSending(false);
         return;
@@ -23100,6 +23124,10 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         const color = ply % 2 === 0 ? "w" : "b";
         const board = boardFromSans(blindGame.sans);
         if (sanSrc(board, mvTok, color)) {
+          // (버그 수정, 사용자 제보) 지금 차례가 내 색이 아니면(=상대가 둘 차례) 서버로 보내도 어차피
+          // deriveBlindGame이 수로 인식하지 않으므로, 보내기 전에 미리 막아 조용히 무시되는 대신
+          // 명확히 안내한다.
+          if (uidForColor(color) !== myUid) { setCmdError("상대방이 응수할 차례예요."); return; }
           setCmdError(""); setSending(true);
           const ok = await chatSend(myUid, otherUid, body, null);
           if (ok) {
@@ -23670,7 +23698,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                 )}
                 <span style={{ display: "inline-block", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
-                    : <span style={{ display: "inline-block", maxWidth: "100%", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word" }}>{renderMentionText(m.body)}</span>}
+                    : <span style={{ display: "inline-block", maxWidth: "min(50vw, 320px)", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{renderMentionText(m.body)}</span>}
                 </span>
               </div>
               </div>
