@@ -15421,11 +15421,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   const gotoLine = (tag) => { solveStartRef.current = Date.now(); setTargetTag(tag); setPathNodes([]); setWrong(null); setReply(null); setSel(null); setIntro(true); setHintLevel(0); setPage(0); setCelebrate(null); setPromoPrompt(null); };
   const restart = () => gotoLine(targetTag);
   // (UI) 사용자 요청 — 퍼즐 화면 기보(PuzzlePgnBox)의 수를 누르면 그 기보가 입력된 분석 탭으로
-  // 이동한다. 예전엔 여기서 퍼즐 풀이 화면 자체를 닫았는데(onClose), 집중 분석을 나갈 때 "들어왔던
-  // 경로로 돌아가기"가 되려면 이 퍼즐 화면이 배경에 그대로 살아 있어야 한다(도감 탭과 같은 방식) —
-  // 더 이상 onClose를 부르지 않고, 대신 App.jsx의 onOpenLearnFocus가 focusReturnTab="puzzle"을
-  // 남겨 집중 분석을 닫을 때 이 화면으로(같은 퍼즐·같은 라인 그대로) 되돌아오게 한다.
-  const pickToLearn = onOpenLearn ? (sans) => { onOpenLearn(sans); } : undefined;
+  // 이동한다. 퍼즐 풀이 화면 자체는 더 이상 볼 이유가 없으므로 함께 닫는다 — 집중 분석을 나갈 때
+  // "들어왔던 경로로 돌아가기"는 App.jsx의 onOpenLearnFocus가 나가기 전 puzzleActive를 따로
+  // 기억해 뒀다가, 집중 분석을 닫으면 그 퍼즐을 다시 열어주는 방식으로 처리한다(이 화면을 안
+  // 닫고 숨겨만 두는 방식은 실제로 시도했다가 진입 자체가 막히는 회귀가 있어 되돌림).
+  const pickToLearn = onOpenLearn ? (sans) => { onOpenLearn(sans); onClose(); } : undefined;
   // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
   // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
   // 대신 모식도 페이지에 새로 생긴 미니보드에서 그 수를 애니메이션으로 재생해 바로 복기할 수 있게 한다.
@@ -20648,12 +20648,10 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLea
                 {solveRow}
                 {/* 기보 — 시작 위치부터 이 포지션까지의 수순을 한 줄로, 길면 드래그해 스크롤.
                     (UI) 사용자 요청 — 임의의 수를 누르면 그 기보가 입력된 분석 탭으로 이동한다.
-                    (사용자 요청) 예전엔 여기서도 close()(=onClose, "오늘 하루 다시 보지 않기" 여부까지
-                    반영해 이 팝업을 완전히 닫음)를 함께 불렀는데, 그러면 집중 분석을 나가도 이 팝업이
-                    다시 뜨지 않았다 — 이제는 닫지 않고 App.jsx 쪽에서 learnFocus가 켜진 동안만 이
-                    컴포넌트 자체를 숨겨 두므로, 여기서는 onOpenLearn만 부른다. */}
+                    집중 분석을 나가면 이 팝업이 다시 뜨는 것은 App.jsx의 onOpenLearnFocus가 닫기
+                    전에 기억해 뒀다가 focus를 나갈 때 다시 열어주는 방식으로 처리한다. */}
                 <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 9, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
-                  <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => onOpenLearn(puzzleSans.slice(0, ply)) : undefined} />
+                  <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => { onOpenLearn(puzzleSans.slice(0, ply)); close(); } : undefined} />
                 </div>
                 <div style={{ marginBottom: 20 }}>
                   <MascotBubble text={(livePuzzleName(puzzle) || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" stacked />
@@ -26502,6 +26500,12 @@ export default function App() {
   // (팬·줌·펼친 카드·트리 레이아웃 캐시)를 그대로 보존한다. 사용자가 직접 다른 탭을 눌러 이동하면
   // (switchTab) 이 예약은 취소된다 — 도감으로 "자동으로" 돌아가는 건 이 흐름 하나뿐이어야 하므로.
   const [focusReturnTab, setFocusReturnTab] = useState(null);
+  // (사용자 요청) 퍼즐 풀이 카드/일일 퍼즐 팝업의 기보를 눌러 집중 분석으로 들어가면 그 화면은
+  // 닫힌다(onClose) — 집중 분석을 나갈 때 "같은 화면으로" 돌아가려면 무엇을 다시 열어야 하는지
+  // 닫히기 직전에 기억해 둬야 한다. ref로 두는 이유는 이 값 자체가 화면에 그려지지 않고, 리렌더를
+  // 일으킬 필요도 없기 때문(집중 분석을 나가는 단 한 번의 effect에서만 읽고 곧장 비운다).
+  const savedPuzzleRef = useRef(null);
+  const reopenDailyNoticeRef = useRef(false);
   const [puzzleActive, setPuzzleActive] = useState(null);   // (UX4) 탭 이동에도 퍼즐 창 유지
   // (v0.3.4 기능) 딥링크(/(퍼즐 번호)-(라인 번호))로 지정된 라인 — { no, lineNo } | null.
   const [puzzleTargetLine, setPuzzleTargetLine] = useState(null);
@@ -27366,6 +27370,11 @@ export default function App() {
         setTab(focusReturnTab);
         urlTabRef.current = focusReturnTab;
         try { const p = TAB_PATH[focusReturnTab]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
+        // (사용자 요청) 퍼즐 풀이 카드/일일 퍼즐 팝업에서 들어왔다면, onOpenLearnFocus가 닫기 전에
+        // savedPuzzleRef/reopenDailyNoticeRef에 남겨 둔 것을 여기서 되살린다 — 탭만 되돌리는 것만으로는
+        // 그 화면(닫혔던 퍼즐 풀이 창·팝업)이 다시 뜨지 않으므로 명시적으로 다시 연다.
+        if (savedPuzzleRef.current) { setPuzzleActive(savedPuzzleRef.current); savedPuzzleRef.current = null; }
+        if (reopenDailyNoticeRef.current) { setPuzzleNoticeOpen(true); reopenDailyNoticeRef.current = false; }
         setFocusReturnTab(null);
       } else {
         popScreen("focus");
@@ -27439,18 +27448,32 @@ export default function App() {
   // 이동)과 달리 onOpenOpening과 같은 방식으로 그 수 위치에서 곧장 집중 분석 모드로 들어간다. 이미
   // 정확한 수순(sans)을 갖고 있으므로 findOpeningPathByName 같은 이름 검색은 필요 없고, onOpenOpening의
   // 나머지 로직(마지막 수를 분리해 learnFocus 구성, 오프닝 이름/수 정보 조회)만 그대로 재사용한다.
-  // (사용자 요청) 집중 분석을 나갈 때 "들어왔던 경로로" 돌아가도록, 호출부가 넘겨주는 source로
-  // focusReturnTab에 되돌아갈 탭을 남겨 둔다(onOpenOpening의 dex 처리와 같은 방식) — 퍼즐 풀이 카드
-  // (source="puzzle")는 항상 퍼즐 탭으로, 일일 퍼즐 팝업(source="dailypuzzle")은 그 팝업이 지금 떠
-  // 있던 탭 그대로(팝업은 tab과 무관하게 어느 화면 위에도 뜰 수 있음)로 돌아간다. 그 외(도감 오프닝
-  // 트리 등은 onOpenOpening이 따로 처리)는 기존처럼 null로 둬 popScreen(브라우저 뒤로가기)에 맡긴다.
-  // (예전엔 여기서 "퍼즐 URL이면 /learn으로 바꿔치기"하는 history 우회가 있었는데, 그건 pickToLearn이
-  // 곧바로 PuzzleTab.closeActive를 불러 URL을 되감아 버리던 것과의 충돌을 막기 위함이었다 — 이제
-  // pickToLearn이 더 이상 그 close를 부르지 않으므로 이 우회 자체가 필요 없어져 걷어냈다.)
+  // (사용자 요청) 집중 분석을 나갈 때 "들어왔던 경로로" 돌아가도록, 호출부가 넘겨주는 source에 따라
+  // 지금 열려 있던 화면을 나가기 전에 기억해 둔다 — 퍼즐 풀이 카드(source="puzzle")는 지금의
+  // puzzleActive를 savedPuzzleRef에, 일일 퍼즐 팝업(source="dailypuzzle")은 reopenDailyNoticeRef를
+  // 세워 둔다. 둘 다 focusReturnTab에는 되돌아갈 탭 이름만 남기고(퍼즐은 항상 "puzzle", 팝업은 그
+  // 팝업이 지금 떠 있던 탭 그대로 — 팝업은 tab과 무관하게 어느 화면 위에도 뜰 수 있음), 실제 복원은
+  // 아래 learnFocus 종료 effect가 focusReturnTab을 보고 한 번에 처리한다. 그 외(도감 오프닝 트리
+  // 등은 onOpenOpening이 따로 처리)는 기존처럼 null로 둬 popScreen(브라우저 뒤로가기)에 맡긴다.
   const onOpenLearnFocus = useCallback((sans, source) => {
     if (!sans || !sans.length) return;
     setSearchOpen(false); setFriendsOpen(false);
-    setFocusReturnTab(source === "puzzle" ? "puzzle" : source === "dailypuzzle" ? tab : null);
+    if (source === "puzzle") { savedPuzzleRef.current = puzzleActive; setFocusReturnTab("puzzle"); }
+    else if (source === "dailypuzzle") { reopenDailyNoticeRef.current = true; setFocusReturnTab(tab); }
+    else setFocusReturnTab(null);
+    // (버그 수정) 퍼즐 풀이 화면(전용 URL "/puzzle/(번호)-(라인)")에서 기보의 수를 클릭하면, 이 함수
+    // 직후 pickToLearn이 onClose(PuzzleTab의 closeActive)도 함께 부른다 — closeActive는 "지금 주소가
+    // 그 퍼즐 URL 패턴이면" 무조건 history.back()을 호출하는데, 주소를 그대로 두면 아래 focus 전환
+    // effect가 막 쌓은 pushScreen("focus") 히스토리 항목이 그 back()에 곧바로 되감겨 사라져 버린다
+    // (집중 분석에 들어간 것처럼 보였다가 곧바로 원래 화면 밖으로 튕겨 나감). 그 충돌을 막기 위해,
+    // 지금 주소가 퍼즐 URL이면 먼저 "/learn"으로 바꿔치기(replaceState)해 둔다 — 이러면 뒤이은
+    // onClose()가 더는 퍼즐 URL로 인식하지 않아 back()을 부르지 않고, 새로 쌓이는 pushScreen("focus")
+    // 항목만 깨끗이 남는다.
+    try {
+      if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) {
+        window.history.replaceState({ screens: (window.history.state && window.history.state.screens) || [] }, "", TAB_PATH.learn);
+      }
+    } catch { }
     setTab("learn");
     const tSans = sans.slice(0, -1); const tSan = sans[sans.length - 1];
     const pnode = snapNode(tSans); const mm = pnode && pnode.moves.find((x) => stripSuffix(x.san) === stripSuffix(tSan));
@@ -27458,7 +27481,7 @@ export default function App() {
     setLearnSans(tSans);
     setLearnFocus({ sans: tSans, san: tSan, m: mm || { san: tSan }, ply: tSans.length, isNew: false, name: nm });
     if (nm) setRecentOpenings((prev) => [nm, ...prev.filter((x) => x !== nm)].slice(0, 10));
-  }, [tab]);
+  }, [tab, puzzleActive]);
   // (프로필) chess.com 최근 대국의 "보기" — 그 대국 기보를 분석 보드로 불러온다(끝 포지션에서 뒤로 넘겨보기 가능).
   const onOpenGame = useCallback((moves) => {
     if (!moves || !moves.length) return;
@@ -27808,10 +27831,10 @@ export default function App() {
       </AnimatePresence>
       {recovery && <NewPasswordModal recovery={recovery} onDone={(acc) => { setRecovery(null); if (acc) onAuth(acc); }} onClose={() => setRecovery(null)} />}
       {announceOpen && <AnnouncementModal onClose={() => { setAnnounceOpen(false); setDismissedAnnounceVersion(APP_VERSION); }} />}
-      {/* (사용자 요청) 기보의 수를 눌러 집중 분석으로 들어갈 때는 이 팝업을 완전히 닫지(closePuzzleNotice)
-          않는다 — 대신 learnFocus가 켜져 있는 동안만 화면에서 숨겨 두고, 집중 분석을 나가면(learnFocus가
-          다시 null이 되면) puzzleNoticeOpen이 그대로 true였으므로 이 팝업이 저절로 다시 나타난다. */}
-      {puzzleNoticeOpen && todayPuzzle && !learnFocus && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={(sans) => onOpenLearnFocus(sans, "dailypuzzle")} />}
+      {/* (사용자 요청) 기보의 수를 눌러 집중 분석으로 들어가면 이 팝업은 닫히지만(onOpenLearnFocus가
+          호출 전에 기억해 둠), 집중 분석을 나가면 App.jsx가 puzzleNoticeOpen을 다시 true로 되돌려
+          같은 팝업이 그대로 다시 뜬다. */}
+      {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={(sans) => onOpenLearnFocus(sans, "dailypuzzle")} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
@@ -27953,15 +27976,11 @@ export default function App() {
             <CollectionTab key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} titleCounts={titleCounts} ccTitleCounts={ccTitleCounts} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
-        {/* (사용자 요청) 퍼즐 탭에서 퍼즐 풀이 카드의 기보를 눌러 집중 분석으로 이동한 경우
-            (focusReturnTab === "puzzle"), 도감 탭과 같은 방식으로 집중 분석이 열려 있는 동안에도 이
-            탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중 분석을 닫고 돌아왔을 때 풀이 중이던
-            퍼즐·라인이 그대로 남아 있다. */}
-        {(tab === "puzzle" || focusReturnTab === "puzzle") && (
-          <div style={tab === "puzzle" ? undefined : { display: "none" }}>
-            <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} />
-          </div>
-        )}
+        {/* (사용자 요청) 퍼즐 풀이 카드의 기보를 눌러 집중 분석으로 이동하면 이 화면은 닫히지만
+            (onOpenLearn → PuzzleSolver의 pickToLearn이 onClose도 함께 부름), App.jsx의
+            onOpenLearnFocus가 닫히기 전 puzzleActive를 기억해 뒀다가 집중 분석을 나가면 그 퍼즐을
+            같은 라인 그대로 다시 열어준다. */}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
