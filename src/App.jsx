@@ -13314,8 +13314,14 @@ function puzzleLineBaseRating(setupSans, tree, line, fenRoot) {
   const onlyBrilliant = nodes.filter((n) => n.kind === "only" || n.kind === "brilliant").length;
   const avgTension = tensionPlies ? tensionTotal / tensionPlies : 0;
   const swing = stdDevOf(evs);
-  const lengthPoints = Math.min(600, Math.max(0, userMoves - 1) * 150);
-  const tensionPoints = Math.min(700, avgTension * 140);
+  // (버그 수정, 사용자 제보) 3수·1갈래짜리 쉽고 직관적인 퍼즐이 1700점 가까이 나온 사례를 역산해보니
+  // tensionPoints(캡 700)가 거의 항상 캡에 그대로 걸려 있었다 — tensionFacts가 "서로 잡고 잡힐 수
+  // 있는 기물 수"를 세는데, 이 값은 실제 계산 난이도보다 그냥 보드에 기물이 많은 미들게임일수록
+  // (퍼즐 자체의 난이도와 무관하게) 커지는 경향이 있었다. 기물 수에 좌우되는 tension의 비중은
+  // 낮추고(캡·배율 모두 축소), 대신 실제로 사용자가 직접 찾아야 하는 수의 개수인 lengthPoints의
+  // 비중을 조금 높였다(배율·캡 모두 확대) — 길이가 곧 난이도라는 체감에 더 가깝다.
+  const lengthPoints = Math.min(750, Math.max(0, userMoves - 1) * 190);
+  const tensionPoints = Math.min(500, avgTension * 90);
   const qualityPoints = Math.min(900, onlyBrilliant * 300);
   const swingPoints = Math.min(700, (swing / 40) * 100);
   // (v0.3.9 버그 수정) 사용자 신고 — 실제로 생성되는 퍼즐 중 1300점을 넘는 게 하나도 없다. 위 네
