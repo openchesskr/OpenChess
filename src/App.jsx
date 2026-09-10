@@ -716,7 +716,10 @@ async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) {
       if (!passables.length) return [];
       // 통과 가능한 대안 수 분기는 퍼즐의 핵심인 첫 수(depth 0)에서만 — 깊은 수에서까지 사용자 대안으로
       // 분기하면 "상대 응수가 다른" 라인 대신 "내 수만 다른" 라인이 늘어나 대응력 훈련 목적이 흐려진다.
-      chosen = passables.slice(0, canBranch && depth === 0 ? 2 : 1);
+      // (버그 수정, 사용자 제보) FEN 기반 사용자 생성 퍼즐은 첫 수에서까지 이렇게 2갈래로 갈라지면
+      // "정답이 두 개"인 것처럼 보여 혼란스럽다 — FEN 퍼즐(fenRoot 있음)은 항상 최선 수 1갈래로만
+      // 진행하고, 기존 방식(자동 생성 퍼즐, 표준 시작 위치)은 그대로 둔다.
+      chosen = passables.slice(0, canBranch && depth === 0 && !fenRoot ? 2 : 1);
       // (버그 수정) 예전엔 여기서 "유혹 수"(실전에서 자주 두어지지만 통과할 수 없는 수)를 모식도에
       // 막힌 가지로 보여주려고 일부러 끼워 넣었는데, 실제로는 사용자가 그 가지를 시도해 보면(고스트를
       // 눌러 두어 보게 되므로) 어디로도 이어지지 않는 리프가 그대로 모식도에 남아 "풀 수 없는 라인이
@@ -4348,13 +4351,18 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
 }
 
 /* ============================================================ 집중 분석 모드 ============================================================ */
-function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, flip = false, badge = null }) {
+function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, flip = false, badge = null, fenRoot = null }) {
   const skCtx = useContext(SkinContext);
   const sk = BOARD_SKINS[skCtx.boardSkin] || BOARD_SKINS.classic;
   const cell = Math.floor(size / 8);
   const inner = cell * 8;
-  const before = useMemo(() => boardFromSans(sans), [sans.join(" ")]);
-  const color = sans.length % 2 === 0 ? "w" : "b";
+  // (버그 수정, 사용자 제보) FEN 기반 사용자 생성 퍼즐에서 컴퓨터가 응수할 때 보드에 갑자기 전체
+  // 기물이 표시되는 버그 — 이 컴포넌트는 원래 표준 시작 위치만 전제해 sans를 boardFromSans로
+  // 재생했는데, FEN 퍼즐의 sans는 "이 FEN부터 둔 수순"이라 표준 시작 위치 기준으로 재생하면 전혀
+  // 다른(대개 원래 기물이 그대로 남아 있는 표준 초기 배치에 가까운) 보드가 나왔다. fenRoot가 있으면
+  // boardOfRoot로, 없으면 기존처럼 boardFromSans로 재생한다.
+  const before = useMemo(() => (fenRoot ? boardOfRoot(fenRoot, sans) : boardFromSans(sans)), [sans.join(" "), fenRoot]);
+  const color = fenRoot ? (plyIsWhite(sans.length, fenRoot.turn) ? "w" : "b") : (sans.length % 2 === 0 ? "w" : "b");
   const geo = useMemo(() => sanSrc(before, san, color), [before, san, color]);
   const [cyc, setCyc] = useState(0);     // 재생 사이클
   const [slid, setSlid] = useState(false);
@@ -4371,7 +4379,7 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
     return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
   }, [cyc, san, sans.join(" ")]);
   useEffect(() => { if (!loopMs) return; const id = setInterval(() => setCyc((c) => c + 1), loopMs); return () => clearInterval(id); }, [loopMs, san, sans.join(" ")]);
-  if (!geo || !geo.from) return <Board board={boardFromSans([...sans, san])} flip={flip} size={size} showEval={false} showCoords={false} interactive={false} />;
+  if (!geo || !geo.from) return <Board board={fenRoot ? boardOfRoot(fenRoot, [...sans, san]) : boardFromSans([...sans, san])} flip={flip} size={size} showEval={false} showCoords={false} interactive={false} />;
   const fr = geo.from, to = geo.to; const mp = before[fr[0]][fr[1]];
   const dv = (r, c) => (flip ? [7 - r, 7 - c] : [r, c]);   // 보드좌표 → 표시좌표
   const tx = (vr, vc) => (flip ? [7 - vr, 7 - vc] : [vr, vc]);
@@ -15997,9 +16005,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 "직전 수"가 없으므로, intro 애니메이션 자체를 건너뛰고 바로 정상 보드(fenRoot 인식,
                 아래 board)를 보여준다. */}
             {intro && puzzle.mistakeSan
-              ? <AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
+              ? <AnimatedMove sans={puzzle.setupSans || []} san={puzzle.mistakeSan} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} fenRoot={fenRoot} />
               : reply
-                ? <AnimatedMove sans={reply.sans} san={reply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} />
+                ? <AnimatedMove sans={reply.sans} san={reply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge={moveIcon && moveIcon.kind !== "pending" ? moveIcon.kind : null} fenRoot={fenRoot} />
               // (v0.1.2 기능) 되돌리기도 두 단계 — 먼저 방금 보여준 상대 응징 응수를 되돌리고("reply"),
               // 그다음 사용자의 오답 자체를 원위치로 되돌린다("wrong").
               : revertStage === "reply"
@@ -16011,7 +16019,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               // (v0.1.3 기능) 이 응수는 정의상 항상 그 자리에서 엔진이 찾아낸 최선 수이므로(아래 wrong
               // effect의 evaluate 결과), 별도 등급 판정 없이 바로 "최선의 수" 배지를 붙인다.
               : wrongReply
-                ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" />
+                ? <AnimatedMove sans={[...curSans, wrong.san]} san={wrongReply.san} size={boardSize} loopMs={0} flip={userColor === "b"} badge="best" fenRoot={fenRoot} />
               // (v0.2.7 버그 수정) 예전엔 hintLevel이 올라갈수록(>=) 이전 단계 애니메이션까지 계속 함께
               // 남아 있어(3단계에서 도착 칸 반짝임+기물 흔들림+경로 반짝임이 한꺼번에 겹쳐 보였다),
               // 단계마다 독립된 연출만 보이도록 각 단계를 정확히 그 단계에서만 켠다 — 1단계: 도착
@@ -16448,6 +16456,15 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
     try { return parseFenFull(p.fen); } catch { return null; }
   }, [hasPreview, p.fen]);
   const fenFlip = fenPreview ? fenPreview.turn === "b" : flip;
+  // (버그 수정, 사용자 제보) FEN 기반 퍼즐도 mistakeSan(상대의 직전 수)이 있으면 hasPreview가
+  // 참이 되어 AnimatedMove로 애니메이션되는데, 그 컴포넌트는 fenRoot 없이는 표준 시작 위치를
+  // 전제해 완전히 다른(대개 표준 초기 배치 그대로인) 보드가 잠깐 표시됐다 — PuzzleSolver의 컴퓨터
+  // 응수 애니메이션과 같은 원인·같은 해법. setupSans가 실제로 비어 있는(FEN 퍼즐) 경우에만 fenRoot를
+  // 계산해 넘긴다.
+  const cardFenRoot = useMemo(() => {
+    if (!hasPreview || (p.setupSans && p.setupSans.length) || !p.fen) return null;
+    try { return parseFenFull(p.fen); } catch { return null; }
+  }, [hasPreview, p.setupSans, p.fen]);
   // (20차 기능1) 트리 기준 라인 수와 별(라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3)
   // (버그 수정) Math.max(1, ...)로 항상 최소 "라인 1개"라고 표시했었다 — 트리가 실제로는 텅 비어
   // 하나도 풀 수 없는 손상된 퍼즐도 정상 퍼즐처럼 보이게 만든 원인이었다(starsOf는 totalLines가
@@ -16486,7 +16503,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             넓을 때 훨씬 크게 그려진다. */}
         <div ref={boardWrapRef} style={{ marginBottom: 6, width: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, overflow: "hidden", background: hasPreview || fenPreview ? "transparent" : "rgba(0,0,0,.05)" }}>
           {hasPreview
-            ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={boardW} loopMs={2400} flip={flip} />
+            ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={boardW} loopMs={2400} flip={cardFenRoot ? cardFenRoot.turn === "w" : flip} fenRoot={cardFenRoot} />
             : fenPreview
               ? <Board board={fenPreview.board} flip={fenFlip} size={boardW} showEval={false} showCoords={false} interactive={false} />
               : null}
