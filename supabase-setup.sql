@@ -1299,6 +1299,41 @@ begin
 end; $$;
 grant execute on function public.puzzle_reassign_creator(bigint, text) to authenticated;
 
+-- (v0.4.9 기능, 사용자 요청) FEN 기반 사용자 생성 퍼즐의 이름 변경 — 오프닝 트리에서 이름을 따오는
+-- 일반 퍼즐과 달리 FEN 퍼즐은 이름을 지을 오프닝이 없어 생성자가 직접 짓는데, 그 이름을 나중에
+-- 고칠 방법이 없었다. 권한·쿨다운 모델은 puzzle_creator_save와 동일(생성자 본인은 1시간에 한 번,
+-- 개발자/공동개발자는 언제든), 검열 기준은 move_notes_moderate 트리거와 동일한 금칙어 목록을 그대로
+-- 재사용한다(수 설명과 같은 기준).
+create or replace function public.puzzle_set_name(p_no bigint, p_name text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_creator uuid; v_last timestamptz; v_is_editor boolean; v_norm text; v_word text; v_name text;
+  v_words text[] := array[
+    '시발','씨발','씨팔','시팔','개새끼','개새기','병신','븅신','좆','좃','자지','보지','걸레년',
+    '미친놈','미친년','닥쳐','꺼져','죽어라','죽여버','강간','섹스','야동','포르노',
+    'fuck','shit','bitch','asshole','cunt','nigger','nigga','faggot','rape','porn'
+  ];
+begin
+  v_name := btrim(p_name);
+  if v_name = '' or char_length(v_name) > 60 then raise exception 'invalid_name'; end if;
+  v_norm := lower(regexp_replace(v_name, '[^0-9a-zA-Zㄱ-ㆎ가-힣]', '', 'g'));
+  foreach v_word in array v_words loop
+    if v_norm like '%' || v_word || '%' then raise exception 'name_moderation_blocked'; end if;
+  end loop;
+  select creator_uid, creator_edited_at into v_creator, v_last from public.puzzles where no = p_no for update;
+  if not found then raise exception 'puzzle_not_found'; end if;
+  v_is_editor := public.is_content_editor(auth.uid());
+  if not v_is_editor then
+    if v_creator is null or v_creator <> auth.uid() then raise exception 'not_puzzle_creator'; end if;
+    if v_last is not null and now() < v_last + interval '1 hour' then raise exception 'edit_cooldown'; end if;
+  end if;
+  update public.puzzles set
+    data = data || jsonb_build_object('name', v_name),
+    creator_edited_at = case when v_is_editor then creator_edited_at else now() end
+  where no = p_no;
+end; $$;
+grant execute on function public.puzzle_set_name(bigint, text) to authenticated;
+
 -- 퍼즐 삭제 (v0.4.2) — 생성자 본인 또는 개발자/공동개발자만. public.puzzles에는 authenticated
 -- role에 delete grant가 아예 없으므로(위 섹션 설명 참고 — 이 테이블의 민감한 변경은 전부 이
 -- SECURITY DEFINER RPC 계열로만 이뤄진다), 클라이언트가 REST DELETE를 직접 호출해도 늘 거부돼

@@ -10486,7 +10486,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 분석 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
-function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick }) {
+function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -10548,6 +10548,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const forcedPosition = legalMoveCount > 0 && legalMoveCount <= 2;
   const onLoadFen = (root) => { setFocus(null); setFocusStack([]); setFenRoot(root); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
   const exitFenMode = () => { setFenRoot(null); setSans([]); setFuture([]); setSel(null); setLastQ(null); };
+  // (v0.4.9 기능, 사용자 요청) FEN 기반 퍼즐 풀이 카드에서 FEN 코드를 눌러 학습 탭으로 넘어오면, 그
+  // FEN 포지션을 곧바로 NotationTools의 FEN 붙여넣기·보드 편집기 완료와 똑같은 계약(onLoadFen)으로
+  // 불러온다 — App.jsx가 top-level learnFenSeed를 이 prop으로 흘려보내고, 한 번 소비한 뒤에는
+  // onConsumeFenSeed로 비워 재마운트·재렌더에서 같은 시드가 중복 적용되지 않게 한다.
+  useEffect(() => {
+    if (fenSeed) { onLoadFen(fenSeed); onConsumeFenSeed && onConsumeFenSeed(); }
+  }, [fenSeed]);
   // (v0.3.5 기능) 사용자 요청 — 보드 편집기(BoardEditorModal) 열림 상태. 완료를 누르면 onLoadFen과
   // 같은 계약으로 그 포지션의 FEN 모드로 들어간다(NotationTools의 FEN 붙여넣기와 동일한 경로).
   const [editorOpen, setEditorOpen] = useState(false);
@@ -13727,6 +13734,13 @@ async function puzzleReassignCreator(no, targetUsername) {
   if (!SB_ON) return false;
   try { await sbRpc("puzzle_reassign_creator", { p_no: no, p_target_username: targetUsername || null }); return true; } catch { return false; }
 }
+// (v0.4.9 기능, 사용자 요청) FEN 기반 사용자 생성 퍼즐의 이름 변경 — 생성자 본인 또는 개발자/공동
+// 개발자만. 검열(금칙어) 기준은 학습 탭 "수 설명"과 동일하게 서버(puzzle_set_name RPC)가 최종
+// 판정한다 — 클라이언트 containsBannedWord 검사는 서버 왕복 전에 미리 걸러주는 1차 방어선일 뿐이다.
+async function puzzleSetName(no, name) {
+  if (!SB_ON) return false;
+  try { await sbRpc("puzzle_set_name", { p_no: no, p_name: name }); return true; } catch { return false; }
+}
 // (버그 수정, v0.4.2) 사용자 제보 — "퍼즐 삭제 기능이 제대로 동작하지 않는다". 예전 onDeletePuzzle은
 // 로컬 상태(puzzles/archivedPuzzles/deletedPuzzles)만 지우고 서버에는 아무 요청도 보내지 않아, 이
 // 크라우드소싱 퍼즐(puzzles 테이블)은 서버에 그대로 남아 있었다 — 새로고침하거나 다른 유저가 열면
@@ -15070,7 +15084,7 @@ function PuzzleClearBanner({ trigger }) {
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn, onDeletePuzzle, onOpenProfile }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn, onDeletePuzzle, onOpenProfile, onOpenLearnFen }) {
   // (사용자 요청) 퍼즐 생성자에 한해, 2페이지(모식도)에서 자신이 만든 퍼즐을 삭제할 수 있게 — 실수로
   // 지우지 않도록 확인 다이얼로그를 한 번 더 띄운다(대화·친구 삭제 확인과 같은 패턴).
   const [confirmDeletePuzzle, setConfirmDeletePuzzle] = useState(false);
@@ -15129,6 +15143,29 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     return () => { cancelled = true; };
   }, [puzzleNoForTag]);
   const isMyPuzzle = !!(myUid && creatorInfo && creatorInfo.uid === myUid);
+  // (v0.4.9 기능, 사용자 요청) FEN 기반 사용자 생성 퍼즐(오프닝 트리에서 이름을 따올 수 없어 생성자가
+  // 직접 지은 이름)은 생성자 본인 또는 개발자/공동개발자가 이름을 나중에 고칠 수 있다 — 검열 기준은
+  // 학습 탭 "수 설명"과 동일(containsBannedWord가 서버 puzzle_set_name RPC 전 1차 방어선).
+  const canRenamePuzzle = !!fenRoot && (isMyPuzzle || canEdit);
+  const [nameOverride, setNameOverride] = useState(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [nameErr, setNameErr] = useState("");
+  const [nameBusy, setNameBusy] = useState(false);
+  useEffect(() => { setNameOverride(null); setEditingName(false); setNameErr(""); }, [puzzle.id]);
+  const displayPuzzleName = nameOverride != null ? nameOverride : livePuzzleName(puzzle);
+  const startEditName = () => { setNameInput(displayPuzzleName || ""); setNameErr(""); setEditingName(true); };
+  const saveEditName = async () => {
+    const v = nameInput.trim();
+    if (!v) { setNameErr("이름을 입력해 주세요."); return; }
+    if (v.length > 60) { setNameErr("이름은 60자 이내로 입력해 주세요."); return; }
+    if (containsBannedWord(v)) { setNameErr("부적절한 표현이 포함되어 있어요."); return; }
+    setNameBusy(true);
+    const ok = await puzzleSetName(puzzleNoForTag, v);
+    setNameBusy(false);
+    if (ok) { setNameOverride(v); setEditingName(false); }
+    else setNameErr("저장하지 못했어요 — 잠시 후 다시 시도해 주세요(1시간에 한 번만 바꿀 수 있어요).");
+  };
   const [nowTick, setNowTick] = useState(Date.now());
   useEffect(() => {
     if (!isMyPuzzle || canEdit) return; // 개발자는 주기 표시가 필요 없다(항상 편집 가능)
@@ -15835,7 +15872,26 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       <div className="flex items-start justify-between" style={{ marginBottom: 4, paddingRight: 40, gap: 8 }}>
         <div style={{ minWidth: 0, width: "100%" }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{livePuzzleName(puzzle)}</div>
+          {/* (사용자 요청) FEN 기반 퍼즐은 오프닝 트리에서 이름을 따올 수 없어 생성자가 직접 지은
+              이름을 그대로 쓰는데, 생성자 본인 또는 개발자/공동개발자는 이름 오른쪽 펜 버튼으로
+              나중에 고칠 수 있다(검열 기준은 학습 탭 "수 설명"과 동일). */}
+          {editingName ? (
+            <div style={{ marginTop: 2 }}>
+              <div className="flex items-center" style={{ gap: 6 }}>
+                <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} maxLength={60} autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") saveEditName(); if (e.key === "Escape") setEditingName(false); }}
+                  style={{ flex: 1, minWidth: 0, padding: "5px 8px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 14, fontWeight: 800, boxSizing: "border-box" }} />
+                <button onClick={saveEditName} disabled={nameBusy} className="press" style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: T.brass, color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer", opacity: nameBusy ? .6 : 1, flexShrink: 0 }}>{nameBusy ? "저장 중…" : "저장"}</button>
+                <button onClick={() => setEditingName(false)} className="press" style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>취소</button>
+              </div>
+              {nameErr && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, marginTop: 4 }}>{nameErr}</p>}
+            </div>
+          ) : (
+            <div className="flex items-center" style={{ gap: 5 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{displayPuzzleName}</div>
+              {canRenamePuzzle && <button onClick={startEditName} aria-label="퍼즐 이름 수정" title="퍼즐 이름 수정" className="press" style={{ flexShrink: 0, padding: 0, background: "none", border: "none", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center" }}><Pencil size={13} /></button>}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
           {/* (사용자 요청) 제작자 아이디는 눌러서 그 사람의 프로필로 이동할 수 있도록 버튼으로 바꾸고
               글자도 더 크게 키웠다(닫으면 history.back()으로 이 퍼즐 화면에 그대로 돌아온다 —
@@ -15918,8 +15974,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 <div key={"bubble-" + bubbleText} style={{ animation: "lockpop .35s ease" }}><MascotBubble text={bubbleText} ply={0} mascot={pm[0]} emotion={pm[1]} /></div>
               </div>
             )}
-            {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 */}
-            <PuzzlePgnBox sans={curSans} onPick={pickToLearn} />
+            {/* (기능1) 두었던 수가 하나씩 기보로 표기되도록 — (사용자 요청) FEN 기반 사용자 생성
+                퍼즐은 이어지는 대국 기보가 없으므로, 같은 자리에 시작 포지션의 FEN 코드를 대신
+                보여주고 누르면(기보 클릭과 마찬가지로) 학습 탭으로 이동해 그 FEN 포지션을 그대로
+                보드 위에 불러온다. */}
+            {fenRoot
+              ? <div onClick={() => { if (onOpenLearnFen && puzzle.fen) { onOpenLearnFen(puzzle.fen); onClose(); } }} style={{ cursor: onOpenLearnFen ? "pointer" : "default" }}><PuzzlePgnBox text={puzzle.fen} /></div>
+              : <PuzzlePgnBox sans={curSans} onPick={pickToLearn} />}
             {/* (버그 수정) 바깥 페이저(보드↔모식도 스와이프)의 onPagerPointerDown이 이 보드 위에서 눌러도
                 예외 없이 setPointerCapture를 걸어, 클릭의 대상이 실제 눌린 칸이 아니라 페이저 쪽으로
                 가로채어져 칸의 onClick(기물 선택)이 전혀 발동하지 않았다 — HTML5 네이티브 드래그 앤 드롭은
@@ -17674,7 +17735,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenLearnFen }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -18151,7 +18212,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
   // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
   // 아무거나 클릭만 하면 항상 재현됨). 조기 반환을 이 컴포넌트의 모든 훅 호출 뒤로 옮겨 해결한다.
-  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={async (id) => { const ok = await onDeletePuzzle(id); if (ok) closeActive(); return ok; }} onOpenProfile={onOpenProfile} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={async (id) => { const ok = await onDeletePuzzle(id); if (ok) closeActive(); return ok; }} onOpenProfile={onOpenProfile} onOpenLearnFen={onOpenLearnFen} />;
   // (버그 수정) 예전엔 openingKeyOf(최상위 이름 하나)와 정확히 일치해야만 매칭됐다 — 세부 갈래
   // 이름(예: "…Najdorf Variation, English Attack")을 선택하면, 그 이름이 퍼즐의 firstNamedOpening과
   // 다르므로(항상 최상위 이름만 반환) 절대 매칭될 수 없었다. 이제는 그 퍼즐의 수순이 실제로 지나는
@@ -26810,6 +26871,17 @@ export default function App() {
   const [learnSans, setLearnSans] = useState([]);
   const [learnFuture, setLearnFuture] = useState([]);
   const [learnExtra, setLearnExtra] = useState({});
+  // (v0.4.9 기능, 사용자 요청) FEN 기반 퍼즐의 "기보" 자리에 표시되는 FEN 코드를 눌러 학습 탭으로
+  // 이동할 때, 그 FEN 포지션을 곧바로 불러오도록 LearnTab에 한 번 흘려보내는 시드 — LearnTab이
+  // 마운트된 뒤 이 값을 소비(onLoadFen)하자마자 다시 null로 비운다(onOpenLearnFen 참고).
+  const [learnFenSeed, setLearnFenSeed] = useState(null);
+  const onOpenLearnFen = useCallback((fen) => {
+    const root = fen ? parseFenFull(fen) : null;
+    if (!root) return;
+    setSearchOpen(false); setFriendsOpen(false);
+    setTab("learn"); setLearnFocus(null); setLearnSans([]); setLearnFuture([]); setFocusReturnTab(null);
+    setLearnFenSeed(root);
+  }, []);
   const [enginePref, setEnginePrefState] = useState(loadEnginePref);
   const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
   const engine = useEngine(enginePref);
@@ -28023,7 +28095,7 @@ export default function App() {
             언마운트되지 않고 계속 liveOn 실시간 평가를 돌려, useEngine의 단일 공유 워커 큐를 끝없이
             채워 넣는 바람에 PlayPage의 봉 수 요청(engine.evaluateMulti)이 차례를 영영 못 받고 무한정
             "생각하는 중..."에 멈춰 있던 문제(사용자 제보)의 원인이었다. */}
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={openPlay} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={openPlay} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={learnFenSeed} onConsumeFenSeed={() => setLearnFenSeed(null)} />}
         {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 분석으로 이동한 경우(focusReturnTab === "dex"),
             집중 분석이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
             분석을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다
@@ -28037,7 +28109,7 @@ export default function App() {
             (onOpenLearn → PuzzleSolver의 pickToLearn이 onClose도 함께 부름), App.jsx의
             onOpenLearnFocus가 닫히기 전 puzzleActive를 기억해 뒀다가 집중 분석을 나가면 그 퍼즐을
             같은 라인 그대로 다시 열어준다. */}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenLearnFen={onOpenLearnFen} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
