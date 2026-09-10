@@ -2504,7 +2504,7 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
 // 금색 대각선 그라데이션으로 바꾸고, 아래 HINT_GOLD_GLOW(외곽 발광 box-shadow)를 더해 훨씬 강하게 빛나 보이게 한다.
 const HINT_GOLD_GRADIENT = "linear-gradient(135deg, rgba(255,229,150,.98), rgba(216,163,58,.97))";
 const HINT_GOLD_GLOW = "0 0 16px 5px rgba(255,196,64,.9), inset 0 0 10px rgba(255,255,255,.55)";
-function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress, gridRef: externalGridRef }) {
+function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress, gridRef: externalGridRef, reserveEvalGap = false }) {
   const haloSet = useMemo(() => new Set((haloSquares || []).map(([r, c]) => r + "," + c)), [haloSquares]);
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
@@ -2674,18 +2674,24 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const onPiecePointerCancel = (e) => endPiecePointerDrag(e, false);
   return (
     <div className="mx-auto select-none" style={{ width: inner + 20, maxWidth: "100%", boxSizing: "border-box", padding: 10, borderRadius: 12, background: "linear-gradient(160deg,#3A2516,#241509)", boxShadow: "0 18px 40px -18px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.06)", border: "1px solid #000" }}>
-      {/* (사용자 재제보 — "보드 좌표를 아예 고정하라") showEval이 꺼지면(퍼즐 강제 포지션 등) 이
-          자리가 통째로 사라져 그 아래 엔진 라인·그리드가 위로 들썩였다 — 켜져 있든 꺼져 있든 항상
-          같은 고정 높이(막대 18px + 테두리 2px + 여백 8px = 28px)의 틀로 감싸, 그 안에 무엇이
-          렌더되든(진짜 막대 또는 아무것도 없음) 이 틀 자체가 차지하는 세로 공간은 픽셀 단위로
-          절대 변하지 않게 한다.
-          (버그 수정, 사용자 재제보) 처음엔 여기에 overflow:hidden도 함께 줬는데, EvalBar 안의
-          "n수 후까지 탐색 중.." 도움말 말풍선(tipOpen)은 이 24px 높이 틀보다 위로 튀어나오도록
-          position:absolute, bottom:24로 떠 있는 오버레이라 — overflow:hidden이 이 틀 밖으로
-          나가는 그 말풍선까지 통째로 잘라내 버려, 눌러도 안 뜨는 것처럼 보이는 회귀 버그였다.
-          이 틀의 목적은 "높이를 고정해 아래 요소가 안 흔들리게" 뿐이므로 overflow는 visible로
-          두고 height만 고정한다(높이 고정 자체는 overflow와 무관하게 동작한다). */}
-      <div style={{ height: 28 }}>{showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}</div>
+      {/* (사용자 재제보 — "보드 좌표를 아예 고정하라") 분석 탭 메인 보드처럼 showEval이 forcedPosition에
+          따라 켜졌다 꺼졌다 하는 자리에서는, 꺼질 때 이 자리가 통째로 사라져 그 아래 엔진 라인·
+          그리드가 위로 들썩였다 — 그런 호출부만 reserveEvalGap=true로 켜서, 켜져 있든 꺼져 있든 항상
+          같은 고정 높이(막대 18px + 테두리 2px + 여백 8px = 28px)의 틀로 감싼다.
+          (버그 수정, 사용자 재제보) 이 reserveEvalGap을 처음엔 모든 Board() 호출부에 무조건 적용했는데,
+          Board는 퍼즐 카드 미리보기처럼 showEval이 늘 false로 고정된(따라서 흔들릴 일 자체가 없는)
+          곳에도 두루 쓰인다 — 그런 곳까지 이 빈 28px 틀을 강제로 넣었더니, 평가치 막대 없이 보드
+          그리드만 있어야 할 자리 위에 쓸데없는 여백이 생겨 보드가 카드 안에서 아래로 치우쳐(정중앙이
+          아니게) 보이는 새 회귀를 만들었다. reserveEvalGap을 기본 false로 두고 꺼짐이 실제로 흔들림을
+          일으킬 수 있는 호출부에서만 명시적으로 켠다.
+          (버그 수정, 사용자 재제보) 이 틀에 overflow:hidden도 함께 줬을 때는, EvalBar 안의 "n수 후까지
+          탐색 중.." 도움말 말풍선(tipOpen)이 이 24px 높이 틀보다 위로 튀어나오도록 position:absolute,
+          bottom:24로 떠 있는 오버레이라 — overflow:hidden이 그 말풍선까지 통째로 잘라내 눌러도 안 뜨는
+          것처럼 보이는 회귀였다. 이 틀의 목적은 "높이를 고정해 아래 요소가 안 흔들리게" 뿐이므로
+          overflow는 visible로 두고 height만 고정한다(높이 고정 자체는 overflow와 무관하게 동작한다). */}
+      {reserveEvalGap
+        ? <div style={{ height: 28 }}>{showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />}</div>
+        : (showEval && <EvalBar cp={evalCp} width={inner} depth={evalDepth} />)}
       {/* (v0.1.3 기능) 분석 탭 메인 보드에서 평가치 바와 보드 사이에 엔진 상위 3줄을 끼워 넣기
           위한 자리 — Board는 여러 화면에서 재사용되므로 이 슬롯을 안 쓰는 곳은 그대로다. */}
       {belowEval}
@@ -11118,7 +11124,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               좌우로 나란히 놓이는 데스크톱)에서만 흘러넘침 없이 기존처럼 360px로 묶어 옆 칼럼과
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
           <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
-            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition}
+            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap
               belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} />} />
             {promoPrompt && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
