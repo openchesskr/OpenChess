@@ -15826,7 +15826,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       {/* (사용자 요청) PGN/FEN 배지·퍼즐 레이팅 박스를 닫기 버튼 아래 별도 줄(절대 위치) 대신, 제작자
           표시와 같은 줄로 내렸다 — 제목 영역이 더는 그 자리를 피해 오른쪽 여백을 넓게 잡을 필요가
           없어져, 제목을 한 줄에 더 길게 보여줄 수 있다. */}
-      <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 40, gap: 8 }}>
+      <div className="flex items-start justify-between" style={{ marginBottom: 4, paddingRight: 40, gap: 8 }}>
         <div style={{ minWidth: 0, width: "100%" }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{livePuzzleName(puzzle)}</div>
@@ -15834,36 +15834,41 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
           {/* (사용자 요청) 제작자 아이디는 눌러서 그 사람의 프로필로 이동할 수 있도록 버튼으로 바꾸고
               글자도 더 크게 키웠다(닫으면 history.back()으로 이 퍼즐 화면에 그대로 돌아온다 —
               UserProfilePage가 이 화면을 언마운트하지 않고 위에 겹쳐 뜨는 오버레이라 별도의 "돌아갈
-              경로" 저장이 필요 없다). PGN/FEN 배지·퍼즐 레이팅 말풍선은 오른쪽 정렬하기 위해 별도
-              줄로 뺐다(모두 없을 수도 있는 요소라 flex-wrap으로 자연스럽게 줄바꿈된다). */}
+              경로" 저장이 필요 없다). */}
           {creatorInfo && creatorInfo.username && (
             <button onClick={() => onOpenProfile && onOpenProfile(creatorInfo.username)} className="press" style={{ display: "block", marginTop: 4, background: "none", border: "none", padding: 0, cursor: onOpenProfile ? "pointer" : "default", fontSize: 13, color: T.brass, fontWeight: 800, textAlign: "left" }}>
               @{creatorInfo.username}
             </button>
           )}
-          <div className="flex items-center flex-wrap" style={{ gap: 6, marginTop: 4, justifyContent: "flex-end" }}>
-            {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
-            {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
-            <GamePhaseBadge p={puzzle} />
-            {myPuzzleRating != null ? (() => {
-              const diff = avgRating - myPuzzleRating;
-              const tier = puzzleDifficultyTier(diff);
-              const deltaColor = diff <= -20 ? "#2E8B57" : diff >= 20 ? "#D9534F" : T.inkSoft;
-              return (
-                <ClickInfoBadge width={210} align="left" content={
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
-                    <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
-                    <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
-                  </div>
-                }>
-                  <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000) — 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
-                </ClickInfoBadge>
-              );
-            })() : (
-              <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
-            )}
-          </div>
+        </div>
+      </div>
+      {/* (사용자 요청) 이 배지 줄은 위 제목 영역의 paddingRight:40(닫기 버튼을 피하기 위한 여백)
+          제약에서 벗어난 별도 줄로 둔다 — 닫기 버튼은 이 줄보다 위쪽에만 있어 안 겹치므로, 카드
+          오른쪽 끝까지 거의 여백 없이 붙을 수 있다. */}
+      <div className="flex items-center flex-wrap" style={{ gap: 6, marginBottom: 10, justifyContent: "flex-end" }}>
+        {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
+        {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
+        <GamePhaseBadge p={puzzle} />
+        {myPuzzleRating != null ? (() => {
+          const diff = avgRating - myPuzzleRating;
+          const tier = puzzleDifficultyTier(diff);
+          const deltaColor = diff <= -20 ? "#2E8B57" : diff >= 20 ? "#D9534F" : T.inkSoft;
+          return (
+            <ClickInfoBadge width={210} align="left" content={
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
+                <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
+                <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
+              </div>
+            }>
+              <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000) — 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
+            </ClickInfoBadge>
+          );
+        })() : (
+          <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
+        )}
+      </div>
+      <div style={{ marginBottom: 10 }}>
           {/* (20차 기능1) 별: 라인 1개 이상 ★1 · 50% 이상 ★2 · 전부 ★3 */}
           <div className="flex items-center" style={{ gap: 7, marginTop: 5, flexWrap: "wrap", rowGap: 6 }}>
             <LineStars total={3} solved={starsOf(solvedNow.size, totalLines)} />
@@ -15893,7 +15898,6 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               </button>}
             </div>
           </div>
-        </div>
       </div>
       {/* (20차 기능2) 보드 페이지 ↔ 모식도 페이지 좌우 넘기기. 모식도가 보드 위쪽을 다 차지해 한눈에
           안 들어오던 문제를 없애기 위해 별도 페이지로 분리하고, 드래그(스와이프)·화살표·점 인디케이터로 넘긴다. */}
