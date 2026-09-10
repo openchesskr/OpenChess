@@ -15827,7 +15827,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
           표시와 같은 줄로 내렸다 — 제목 영역이 더는 그 자리를 피해 오른쪽 여백을 넓게 잡을 필요가
           없어져, 제목을 한 줄에 더 길게 보여줄 수 있다. */}
       <div className="flex items-start justify-between" style={{ marginBottom: 10, paddingRight: 40, gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, width: "100%" }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, lineHeight: 1.35 }}>{livePuzzleName(puzzle)}</div>
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
