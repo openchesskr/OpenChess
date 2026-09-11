@@ -26917,6 +26917,17 @@ export default function App() {
     const root = fen ? parseFenFull(fen) : null;
     if (!root) return;
     setSearchOpen(false); setFriendsOpen(false);
+    // (버그 수정, 사용자 제보) 퍼즐 풀이 화면(전용 URL "/puzzle/(번호)-(라인)")에서 FEN 코드를
+    // 누르면, 이 함수 직후 PuzzleSolver가 onClose(PuzzleTab의 closeActive)도 함께 부른다 —
+    // closeActive는 "지금 주소가 그 퍼즐 URL 패턴이면" 무조건 history.back()을 호출하는데, 주소를
+    // 그대로 두면 그 back()이 방금 바꾼 setTab("learn")을 popstate 핸들러가 다시 "puzzle"로
+    // 되돌려버려 처음 눌렀을 땐 그대로 퍼즐 탭에 남아 있는 것처럼 보였다(onOpenLearnFocus의 같은
+    // 문제를 고쳤던 것과 동일한 원인 — 그때와 같은 방식으로, 먼저 "/learn"으로 바꿔치기해 둔다).
+    try {
+      if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) {
+        window.history.replaceState({ screens: (window.history.state && window.history.state.screens) || [] }, "", TAB_PATH.learn);
+      }
+    } catch { }
     setTab("learn"); setLearnFocus(null); setLearnSans([]); setLearnFuture([]); setFocusReturnTab(null);
     setLearnFenSeed(root);
   }, []);
