@@ -14058,31 +14058,26 @@ function dailyQuestQuestsValid(quests) {
   return Array.isArray(quests) && quests.length > 0 && quests.every((q) => q && (q.type === "play5" || q.type === "win3" || (q.type === "opening" && typeof q.opening === "string" && q.opening.trim().length > 0)));
 }
 /* ============================================================ 일일 퍼즐 ============================================================ */
-// (v0.2.4 기능) 리체스 퍼즐 DB 기반 오늘의 퍼즐 — 개발자가 2주 단위로 배정한 오프닝 태그
-// (daily_puzzle_themes)에 해당하는 후보 풀(scripts/build-daily-puzzles.mjs가 만들어 두는
-// public/daily-puzzles/<opening_tag>.json)에서 날짜를 시드로 결정적으로 하나 뽑는다. 리체스
-// 퍼즐 자체는 정답이 한 줄뿐이지만, 이 앱은 실제 엔진으로 genPuzzleTree를 돌려 상대의 다른
-// 응수까지 포함한 여러 라인을 만들고, 그중 한 줄을 다시 날짜 시드로 뽑아 "XXXXXX-N"(N=그 줄의
-// 순번) 형태의 id를 부여한다. 개발자가 daily_puzzles_dev에 그 날짜의 PGN을 직접 등록해 뒀으면
-// (미래 날짜 예약용) 테마 풀 대신 그 포지션을 쓴다.
-const DAILY_PUZZLES_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-const dailyThemePoolCache = new Map(); // opening_tag -> Promise<후보[]>
-function loadDailyThemePool(tag) {
-  if (!dailyThemePoolCache.has(tag)) {
-    dailyThemePoolCache.set(tag, fetch(DAILY_PUZZLES_BASE + "daily-puzzles/" + tag + ".json").then((r) => (r.ok ? r.json() : [])).catch(() => []));
-  }
-  return dailyThemePoolCache.get(tag);
-}
-let dailyThemeRowsCache = null; // Promise<{starts_on,opening_tag,label}[]> — 세션 내내 재사용
-function loadDailyThemeRows() {
-  if (!dailyThemeRowsCache) dailyThemeRowsCache = sbSelect("daily_puzzle_themes?select=starts_on,opening_tag,label&order=starts_on.asc").catch(() => []);
-  return dailyThemeRowsCache;
-}
-// 그 날짜(KST)에 적용되는 테마 = starts_on이 그 날짜 이하인 행 중 가장 최근 것.
-function themeForDate(dateStr, rows) {
-  let cur = null;
-  for (const r of rows || []) { if (r.starts_on <= dateStr) cur = r; else break; }
-  return cur;
+// (v0.5.0 기능, 사용자 요청 — 기존 v0.2.4 리체스 오프닝 테마 로테이션 방식 폐기) 예전엔 개발자가
+// 2주 단위로 오프닝 태그(daily_puzzle_themes)를 수동 등록하고, 그 태그에 맞는 리체스 퍼즐 JSON을
+// scripts/build-daily-puzzles.mjs로 미리 만들어 public/daily-puzzles/에 배포해 둬야 했다 — 태그
+// 문자열 오타 하나로 그 날부터 오늘의 퍼즐이 통째로 안 뜨는 등 관리 부담·실수 위험이 컸다.
+// 이제는 커뮤니티가 만들어 puzzles 테이블에 올린 퍼즐 중 인기 점수(puzzle_popularity_all, 좋아요·
+// 리포스트·공유를 결합한 기존 "인기순" 정렬 지표를 그대로 재사용)가 가장 높은 것을, Supabase
+// pg_cron이 매일 밤 KST 23:50(다음 날 자정 10분 전)에 서버에서 자동으로 하나 뽑아
+// daily_puzzle_picks(supabase-setup.sql 23번 섹션)에 확정해 둔다 — 인기 점수는 계속 바뀌므로,
+// 특정 시각에 한 번 스냅샷을 떠 둬야 그날 하루 모든 유저에게 항상 같은 결과가 보장된다. 이
+// 클라이언트는 그 결과만 읽어 오면 되고(fetchDailyPuzzlePick), 이미 창작 시점에 genPuzzleTree로
+// 만들어진 여러 응수 라인이 퍼즐 데이터(puzzles.data.lines)에 그대로 들어 있으므로 로컬 엔진을
+// 다시 돌릴 필요도 없다 — 날짜를 시드로 그 라인 중 하나를 결정적으로 골라 "XXXXXX-N" id를 부여
+// (기존과 동일한 규칙, dailyLineId). 개발자가 daily_puzzles_dev에 그 날짜의 PGN을 직접 등록해
+// 뒀으면(미래 날짜 예약·이벤트용 비상 수단으로 남겨 둠) 자동 선정 대신 그 포지션을 쓴다.
+async function fetchDailyPuzzlePick(dateStr) {
+  if (!SB_ON) return null;
+  try {
+    const rows = await sbSelect("daily_puzzle_picks?date=eq." + dateStr + "&select=puzzle_no&limit=1");
+    return rows && rows[0] ? rows[0].puzzle_no : null;
+  } catch { return null; }
 }
 async function fetchDailyPuzzleOverride(dateStr) {
   try {
@@ -14098,35 +14093,34 @@ function dailyLineId(baseSans, lineIdx) { return puzzleNo(baseSans.join(" ")) + 
 // 있었으나, 실제로는 나온 적 없는 퍼즐이 "오늘의 퍼즐"로 뜨는 게 부적절해 완전히 제거했다 — 호출부는
 // null이면 그 날짜의 퍼즐이 아직 로딩 중/미배정 상태인 것으로 취급한다).
 async function resolveDailyPuzzle(dateStr, engine) {
-  let setupSans, mistakeSan, opening;
-  // (성능) 개발자 오버라이드 조회(sbSelect)와 테마 배정 조회(loadDailyThemeRows)는 서로 무관한 네트워크
-  // 요청인데 예전엔 오버라이드가 먼저 끝나야 테마 조회를 시작했다 — 동시에 쏴서 왕복 하나만큼 줄인다.
-  const [override, rows] = await Promise.all([fetchDailyPuzzleOverride(dateStr), loadDailyThemeRows()]);
+  // (성능) 개발자 오버라이드 조회(sbSelect)와 커뮤니티 선정 결과 조회는 서로 무관한 네트워크 요청이라
+  // 동시에 쏴서 왕복 하나만큼 줄인다 — 오버라이드가 있으면 그걸 우선한다(비상/예약용).
+  const [override, pickNo] = await Promise.all([fetchDailyPuzzleOverride(dateStr), fetchDailyPuzzlePick(dateStr)]);
   if (override) {
-    setupSans = (override.sans || []).slice(0, override.puzzle_ply);
-    mistakeSan = (override.sans || [])[override.puzzle_ply];
-    opening = override.opening || "개발자 지정 퍼즐";
-  } else {
-    const theme = themeForDate(dateStr, rows);
-    if (!theme) return null; // 아직 테마가 하나도 배정 안 된 날짜
-    const pool = await loadDailyThemePool(theme.opening_tag);
-    if (!pool || !pool.length) return null;
-    const rnd = seedRand("daily:" + dateStr);
-    const src = pool[Math.floor(rnd() * pool.length)];
-    setupSans = src.setupSans; mistakeSan = src.mistakeSan;
-    opening = theme.label || theme.opening_tag;
+    const setupSans = (override.sans || []).slice(0, override.puzzle_ply);
+    const mistakeSan = (override.sans || [])[override.puzzle_ply];
+    const opening = override.opening || "개발자 지정 퍼즐";
+    if (!mistakeSan || !engine || engine.status !== "ready") return null;
+    let gen = null;
+    try { gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts("punish")); } catch { gen = null; }
+    if (!gen || !gen.lines || !gen.lines.length) return null;
+    const rnd2 = seedRand("daily-line:" + dateStr);
+    const lineIdx = Math.floor(rnd2() * gen.lines.length);
+    const id = dailyLineId(setupSans, lineIdx);
+    // (v0.2.7) 다른 퍼즐과 똑같이 "<오프닝 이름>, <수 이름>" 형식의 이름을 쓴다 — 예전엔 "<오프닝> —
+    // 오늘의 퍼즐"이라는 별도 이름을 붙였으나, 목록·풀이 화면에서 일반 퍼즐과 구분 없이 보이도록 통일한다.
+    const name = puzzleName("punish", setupSans, mistakeSan);
+    return { id, themes: ["punish"], name, opening, setupSans, mistakeSan, solution: gen.lines[lineIdx].solution, lines: gen.lines, tree: gen.tree, steps: [], isDaily: true, date: dateStr };
   }
-  if (!mistakeSan || !engine || engine.status !== "ready") return null;
-  let gen = null;
-  try { gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts("punish")); } catch { gen = null; }
-  if (!gen || !gen.lines || !gen.lines.length) return null;
+  if (!pickNo) return null; // 아직 그 날짜 몫이 확정되지 않음(pg_cron이 KST 23:50에 확정) — 로딩/미배정으로 취급
+  const p = await puzzleFetch(pickNo);
+  // (성능) 창작 시점에 이미 genPuzzleTree로 여러 응수 라인이 만들어져 puzzles.data에 그대로 저장돼
+  // 있으므로, 로컬 엔진을 다시 돌릴 필요가 없다 — 날짜를 시드로 그 라인 중 하나만 결정적으로 고른다.
+  if (!p || !p.lines || !p.lines.length) return null;
   const rnd2 = seedRand("daily-line:" + dateStr);
-  const lineIdx = Math.floor(rnd2() * gen.lines.length);
-  const id = dailyLineId(setupSans, lineIdx);
-  // (v0.2.7) 다른 퍼즐과 똑같이 "<오프닝 이름>, <수 이름>" 형식의 이름을 쓴다 — 예전엔 "<오프닝> —
-  // 오늘의 퍼즐"이라는 별도 이름을 붙였으나, 목록·풀이 화면에서 일반 퍼즐과 구분 없이 보이도록 통일한다.
-  const name = puzzleName("punish", setupSans, mistakeSan);
-  return { id, themes: ["punish"], name, opening, setupSans, mistakeSan, solution: gen.lines[lineIdx].solution, lines: gen.lines, tree: gen.tree, steps: [], isDaily: true, date: dateStr };
+  const lineIdx = Math.floor(rnd2() * p.lines.length);
+  const id = dailyLineId(p.setupSans, lineIdx);
+  return { id, themes: p.themes || ["punish"], name: p.name, opening: p.opening, setupSans: p.setupSans, mistakeSan: p.mistakeSan, solution: p.lines[lineIdx].solution, lines: p.lines, tree: p.tree, steps: [], isDaily: true, date: dateStr };
 }
 // (v0.3.1 성능) 캐러셀이 느렸던 원인 — resolveDailyPuzzle은 로컬 체스 엔진으로 genPuzzleTree를
 // 실제로 돌리는(수백 ms~수 초) 무거운 계산인데, 날짜별 결과는 시드가 고정돼 있어 전 세계 모든
@@ -14158,14 +14152,19 @@ function resolveDailyPuzzleCached(dateStr, engine) {
   if (dailyPuzzleResolveCache.has(dateStr)) return dailyPuzzleResolveCache.get(dateStr);
   const p = fetchDailyPuzzleCache(dateStr).then((cached) => {
     if (cached) { puzzleShare(cached); return cached; }
-    if (!engine || engine.status !== "ready") { dailyPuzzleResolveCache.delete(dateStr); return null; }
-    // (v0.2.7 기능) 일반 퍼즐이 onSavePuzzle에서 처음 만들어질 때 puzzleShare로 puzzles 테이블에
-    // 업로드되는 것과 똑같이, 오늘의 퍼즐도 계산되는 즉시 같은 puzzleNo(id) 번호로 업로드해 둔다 —
-    // 그래야 채팅 "/puzzle 000000" 공유, 퍼즐 탭 "번호로 풀기" 등 다른 퍼즐과 동일한 경로로 오늘의
-    // 퍼즐도 찾을 수 있다(같은 날짜는 모든 유저에게 항상 같은 id로 결정적으로 계산되므로, 이미
-    // 누군가 올려 둔 데이터를 덮어써도 내용은 동일하다 — puzzleShare의 upsert가 이를 그대로 처리).
+    // (v0.5.0 변경) 커뮤니티 선정 경로(daily_puzzle_picks)는 창작 시점에 이미 만들어진 라인을 그대로
+    // 쓰므로 로컬 엔진이 필요 없다 — 개발자 오버라이드(daily_puzzles_dev, 드문 경로)만 여전히
+    // genPuzzleTree를 돌려야 해서 엔진을 필요로 한다. 엔진이 아직 준비되지 않아 null이 나온 경우는
+    // "그 날짜엔 정말 데이터가 없는 것"과 구분할 수 없으니 캐시를 확정하지 않고 다음 요청 때 다시
+    // 시도한다(엔진이 준비된 뒤 다시 null이면 그때는 진짜로 그 날짜 데이터가 없는 것으로 확정된다).
     return resolveDailyPuzzle(dateStr, engine).then((pz) => {
+      // (v0.2.7 기능) 일반 퍼즐이 onSavePuzzle에서 처음 만들어질 때 puzzleShare로 puzzles 테이블에
+      // 업로드되는 것과 똑같이, 오늘의 퍼즐도 계산되는 즉시 같은 puzzleNo(id) 번호로 업로드해 둔다 —
+      // 그래야 채팅 "/puzzle 000000" 공유, 퍼즐 탭 "번호로 풀기" 등 다른 퍼즐과 동일한 경로로 오늘의
+      // 퍼즐도 찾을 수 있다(같은 날짜는 모든 유저에게 항상 같은 id로 결정적으로 계산되므로, 이미
+      // 누군가 올려 둔 데이터를 덮어써도 내용은 동일하다 — puzzleShare의 upsert가 이를 그대로 처리).
       if (pz) { puzzleShare(pz); saveDailyPuzzleCache(dateStr, pz); }
+      else if (!engine || engine.status !== "ready") dailyPuzzleResolveCache.delete(dateStr);
       return pz;
     });
   });
@@ -14179,26 +14178,34 @@ function useDailyPuzzle(engine, dateStr) {
   const [resolved, setResolved] = useState(null); // {date, puzzle}
   useEffect(() => {
     let cancelled = false;
-    if (!engine || engine.status !== "ready") return;
+    // (v0.5.0 변경) 대부분의 경로(커뮤니티 선정)는 엔진이 필요 없어져, 엔진 준비를 기다리지 않고
+    // 곧바로 시도한다 — 드문 개발자 오버라이드 경로만 엔진이 필요한데, resolveDailyPuzzleCached가
+    // 그 경우엔 캐시를 확정하지 않으므로 엔진이 나중에 준비되면(의존성 배열의 engine.status 변화로)
+    // 이 effect가 다시 실행되어 자연히 재시도된다.
     resolveDailyPuzzleCached(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); });
     return () => { cancelled = true; };
   }, [t, engine && engine.status]);
   return (resolved && resolved.date === t) ? resolved.puzzle : null;
 }
-// (v0.2.7) 캐러셀에 보여줄 날짜 목록 — 개발자가 처음 오프닝 테마를 배정한 날짜(daily_puzzle_themes의
-// 가장 이른 starts_on)부터 오늘까지 전체 기간을, 오늘이 맨 앞(배열 인덱스 0)에 오도록 최신순으로
-// 만든다. 아직 테마가 하나도 배정되지 않았으면 오늘 하루만 담는다.
+// (v0.2.7) 캐러셀에 보여줄 날짜 목록 — 커뮤니티 선정이 처음 확정된 날짜(daily_puzzle_picks의 가장
+// 이른 date)부터 오늘까지 전체 기간을, 오늘이 맨 앞(배열 인덱스 0)에 오도록 최신순으로 만든다.
+// 아직 확정된 날짜가 하나도 없으면 오늘 하루만 담는다.
 // (기능) 사용자 요청으로 스와이프 가능한 범위를 최근 7일로 제한한다 — 그 이전 날짜는 "번호로
 // 풀기" 입력창에 YYYY/MM/DD로 직접 입력해 찾는다(더 밑 solveByInput 참고).
 const DAILY_CAROUSEL_MAX_DAYS = 7;
+let earliestDailyPickCache = null; // Promise<string|null> — 세션 내내 재사용
+function loadEarliestDailyPickDate() {
+  if (!earliestDailyPickCache) earliestDailyPickCache = sbSelect("daily_puzzle_picks?select=date&order=date.asc&limit=1").then((rows) => (rows && rows[0] ? rows[0].date : null)).catch(() => null);
+  return earliestDailyPickCache;
+}
 function useDailyPuzzleDates() {
   const [dates, setDates] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    loadDailyThemeRows().then((rows) => {
+    loadEarliestDailyPickDate().then((earliestRow) => {
       if (cancelled) return;
       const today = todayStr();
-      const earliest = (rows && rows.length && rows[0].starts_on < today) ? rows[0].starts_on : today;
+      const earliest = (earliestRow && earliestRow < today) ? earliestRow : today;
       const startMs = Date.parse(earliest + "T00:00:00Z");
       const todayMs = Date.parse(today + "T00:00:00Z");
       const spanDays = Math.min(DAILY_CAROUSEL_MAX_DAYS - 1, Math.max(0, Math.round((todayMs - startMs) / 86400000)));
@@ -18331,7 +18338,6 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       if (!m || mm < 1 || mm > 12 || dd < 1 || dd > 31) { setNumMsg("날짜는 YYYYMMDD 형식으로 입력하세요(예: 20260729)."); return; }
       const dateStr = m[1] + "-" + m[2] + "-" + m[3];
       if (dateStr > todayStr()) { setNumMsg("아직 오지 않은 날짜예요."); return; }
-      if (!engine || engine.status !== "ready") { setNumMsg("엔진이 아직 준비되지 않았어요."); return; }
       setNumMsg("불러오는 중…");
       const pz = await resolveDailyPuzzleCached(dateStr, engine);
       if (pz) { setNumMsg(""); setNumInput(""); setActive(pz); } else setNumMsg(dateStr + " 날짜의 일일 퍼즐을 찾을 수 없습니다.");
@@ -21145,28 +21151,25 @@ function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, card }) {
     </div>
   );
 }
-// (v0.2.4 기능) 오늘의 퍼즐(리체스 기반) 개발자 관리 — ①2주 단위 오프닝 테마 로테이션 지정,
-// ②미래 날짜 퍼즐을 PGN으로 직접 지정. 둘 다 master_games_dev와 같은 패턴(is_content_editor
-// 서버 RLS로 이중 검증되는 Supabase 테이블)을 쓴다.
+// (v0.2.4 기능 → v0.5.0 개편) 오늘의 퍼즐 개발자 관리 — ①커뮤니티 인기 퍼즐 자동 선정(daily_puzzle_picks,
+// pg_cron) 현황 확인 + 테스트용 즉시 실행, ②미래 날짜 퍼즐을 PGN으로 직접 지정(비상/예약용, 그대로 유지).
+// 둘 다 master_games_dev와 같은 패턴(is_content_editor 서버 RLS로 이중 검증되는 Supabase 테이블/함수)을 쓴다.
+// (예전 "2주 오프닝 테마" 수동 로테이션 UI는 폐기됐다 — 태그 문자열을 파일명과 정확히 맞춰야 하는
+// 관리 부담·오타 위험 때문에 자동 선정 방식으로 교체됐다.)
 function DailyPuzzleDevPanel({ card }) {
-  const [themes, setThemes] = useState(null); // null=로딩 중
-  const [themeErr, setThemeErr] = useState("");
-  const [startsOn, setStartsOn] = useState("");
-  const [tag, setTag] = useState("");
-  const [label, setLabel] = useState("");
-  const [themeBusy, setThemeBusy] = useState(false);
-  const loadThemes = useCallback(async () => {
-    try { setThemes(await sbSelect("daily_puzzle_themes?select=id,starts_on,opening_tag,label&order=starts_on.desc&limit=20")); }
-    catch { setThemes([]); }
+  const [picks, setPicks] = useState(null); // null=로딩 중
+  const [pickErr, setPickErr] = useState("");
+  const [pickBusy, setPickBusy] = useState(false);
+  const loadPicks = useCallback(async () => {
+    try { setPicks(await sbSelect("daily_puzzle_picks?select=date,puzzle_no,score&order=date.desc&limit=10")); }
+    catch { setPicks([]); }
   }, []);
-  useEffect(() => { loadThemes(); }, [loadThemes]);
-  const addTheme = async () => {
-    const s = startsOn.trim(), t = tag.trim();
-    if (!s || !t) { setThemeErr("적용 시작일과 오프닝 태그를 모두 입력하세요."); return; }
-    setThemeBusy(true); setThemeErr("");
-    try { await sbInsert("daily_puzzle_themes", { starts_on: s, opening_tag: t, label: label.trim() || null }); setStartsOn(""); setTag(""); setLabel(""); await loadThemes(); }
-    catch (e) { setThemeErr("저장 실패: " + e.message); }
-    setThemeBusy(false);
+  useEffect(() => { loadPicks(); }, [loadPicks]);
+  const runPickNow = async () => {
+    setPickBusy(true); setPickErr("");
+    try { await sbRpc("daily_puzzle_pick_run", {}); await loadPicks(); }
+    catch (e) { setPickErr("실행 실패: " + e.message); }
+    setPickBusy(false);
   };
   const [pzDate, setPzDate] = useState("");
   const [pzOpening, setPzOpening] = useState("");
@@ -21203,23 +21206,18 @@ function DailyPuzzleDevPanel({ card }) {
   return (
     <div style={card}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>일일 퍼즐 (개발자)</div>
-      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>리체스 퍼즐 기반 일일 퍼즐의 오프닝 테마 로테이션과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>2주 오프닝 테마</div>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>커뮤니티 인기 퍼즐 중 매일 밤 KST 23:50에 자동으로 확정되는 다음 날 몫과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>최근 확정 내역</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 110, overflowY: "auto" }}>
-        {(themes || []).map((t) => (
-          <div key={t.id} className="flex items-center justify-between" style={{ fontSize: 11, color: T.inkSoft }}>
-            <span>{t.starts_on} 부터</span><span style={{ fontWeight: 700, color: T.ink }}>{t.label || t.opening_tag}</span>
+        {(picks || []).map((p) => (
+          <div key={p.date} className="flex items-center justify-between" style={{ fontSize: 11, color: T.inkSoft }}>
+            <span>{p.date}</span><span style={{ fontWeight: 700, color: T.ink }}>퍼즐 #{p.puzzle_no} · 인기 점수 {Number(p.score || 0).toFixed(1)}</span>
           </div>
         ))}
-        {themes && themes.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>등록된 테마가 없어요(당분간 기본 큐레이션 퍼즐로 대체돼요).</span>}
+        {picks && picks.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>아직 확정된 내역이 없어요(자정 전 자동 실행을 기다리거나, 아래에서 지금 바로 실행해볼 수 있어요).</span>}
       </div>
-      <div className="flex gap-2" style={{ marginBottom: 4, flexWrap: "wrap" }}>
-        <input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} style={{ ...inputStyle, flex: "1 1 130px" }} />
-        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="오프닝 태그(예: Italian_Game)" style={{ ...inputStyle, flex: "2 1 160px" }} />
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="표시 이름(선택)" style={{ ...inputStyle, flex: "1 1 100px" }} />
-      </div>
-      {themeErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{themeErr}</p>}
-      <button onClick={addTheme} disabled={themeBusy} className="press" style={{ ...btnStyle, marginBottom: 14, opacity: themeBusy ? .6 : 1 }}>테마 추가</button>
+      {pickErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{pickErr}</p>}
+      <button onClick={runPickNow} disabled={pickBusy} className="press" style={{ ...btnStyle, marginBottom: 14, opacity: pickBusy ? .6 : 1 }}>지금 바로 다음 날 몫 선정 실행(테스트용)</button>
       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>미래 날짜 퍼즐 직접 지정 (PGN)</div>
       <div className="flex gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
         <input type="date" value={pzDate} onChange={(e) => setPzDate(e.target.value)} style={{ ...inputStyle, flex: "1 1 130px" }} />
