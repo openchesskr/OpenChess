@@ -10542,6 +10542,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 수순"이 아니라 "이 FEN부터 둔 수순"을 의미하도록 재해석된다 — 표준 시작을 가정하는 공용
   // replaySans/boardFromSans(모듈 전역 캐시)는 건드리지 않고, 이 컴포넌트 안에서만 로컬로 재생한다.
   const [fenRoot, setFenRoot] = useState(null);
+  const [fenCopied, setFenCopied] = useState(null); // "fen" | "pgn" | null — 복사 버튼 체크 표시용
   const key = sans.join(" ");
   const stdBoard = useMemo(() => boardFromSans(sans), [key]);
   const fenReplay = useMemo(() => (fenRoot ? replayFromFen(fenRoot, sans) : null), [key, fenRoot]);
@@ -11106,6 +11107,26 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             <div className="flex items-center justify-between" style={{ marginBottom: 10, padding: "7px 11px", borderRadius: 9, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass }}>
               <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi }}>FEN 모드 — 붙여넣은 포지션부터 자유롭게 두는 중이에요</span>
               <button onClick={exitFenMode} className="press" style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>종료</button>
+            </div>
+          )}
+          {/* (사용자 요청) FEN 모드에서는 상단 기보(SequenceBar)가 "이 포지션부터 둔 수순"만 보여줄 뿐
+              어느 FEN에서 시작했는지는 화면 어디에도 남지 않았다 — 시작 포지션의 FEN 코드와, 그
+              위치부터 이어지는 PGN 기보를 각각 복사할 수 있는 줄을 기보 바로 위에 둔다. */}
+          {fenRoot && (
+            <div style={{ marginBottom: 10, padding: "8px 11px", borderRadius: 9, background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", display: "flex", flexDirection: "column", gap: 6 }}>
+              {[
+                { label: "FEN", key: "fen", value: fenRoot.raw },
+                { label: "PGN", key: "pgn", value: sansToPgnText(sans, fenRoot.turn) || "(시작 위치)" },
+              ].map((row) => (
+                <div key={row.key} className="flex items-center gap-2">
+                  <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, flexShrink: 0, width: 28 }}>{row.label}</span>
+                  <code style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 11, color: T.ivoryHi, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>{row.value}</code>
+                  <button onClick={async () => { try { await navigator.clipboard.writeText(row.value); setFenCopied(row.key); setTimeout(() => setFenCopied((c) => (c === row.key ? null : c)), 1500); } catch { } }}
+                    title={row.label + " 복사"} className="press" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    {fenCopied === row.key ? <Check size={11} /> : <Copy size={11} />}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
           <div className="mb-3 flex items-center justify-between gap-2">
