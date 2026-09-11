@@ -198,14 +198,20 @@ const ENGINE_PROFILES = {
   },
   // (8z5dbt 세션 기능) 셋 중 가장 강력한 엔진 — Stockfish 18의 정식(비-Lite) 대형 신경망 빌드. npm
   // 패키지가 이 빌드는 조각내지 않고 wasm 파일 하나(~113MB)로만 배포해서, Vercel의 배포 파일당
-  // 100MB 제한을 넘는다 — scripts/copy-engine.mjs가 빌드 시점에 100MB 미만 조각(-part-N.wasm)으로
-  // 직접 쪼개 두고, boot-single.js/boot-mt.js가 그 조각들을 워커 안에서 fetch로 받아 이어붙인 뒤
-  // self.fetch를 바꿔치기해서 로더의 원래 wasm 요청 자리에 끼워 넣는다(로더 자체엔 조각 재조립
-  // 기능이 없어 17.1의 self.location.hash 방식은 못 씀 — 부트 스크립트가 조각 목록을 직접 들고 있다).
+  // 100MB 제한을 넘는다 — 예전엔 scripts/copy-engine.mjs가 빌드 시점에 100MB 미만 조각(-part-N.wasm)
+  // 으로 직접 쪼개 public/engine/18에 커밋해 뒀지만(약 216MB), 이러면 매 배포마다 그 216MB가 통째로
+  // 다시 패키징돼 Vercel Deployment Storage(무료 한도 10GB) 한도를 순식간에 넘겨버렸다.
+  // (v0.4.9 기능, 사용자 요청) scripts/upload-engine18-blob.mjs로 한 번만 Vercel Blob에 조각·부트
+  // 스크립트를 업로드해 두고, 여기서는 그 절대 URL만 참조한다 — public/engine/18은 더 이상 git에
+  // 커밋되지 않는다(.gitignore). boot-single.js/boot-mt.js는 self.location이 아니라 업로드 시점에
+  // 확정된 절대 URL만 참조하도록 다시 생성돼 있어서(App.jsx의 외부 URL 워커 생성 경로 — 467줄
+  // 부근 — 가 blob: 오브젝트 URL로 감싸 self.location을 실제 파일 위치와 다르게 만들기 때문), 이
+  // 절대 URL을 그대로 써도 문제없이 동작한다. 스톡피시18 npm 버전을 올릴 때만 그 업로드 스크립트를
+  // 다시 돌리고 아래 두 URL을 새로 받은 값으로 갱신하면 된다.
   full18: {
     id: "full18", label: "Stockfish 18",
-    urls: [ENGINE_BASE + "engine/18/boot-single.js"],
-    mtUrl: ENGINE_BASE + "engine/18/boot-mt.js",
+    urls: ["https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-single.js"],
+    mtUrl: "https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-mt.js",
     parts: 2,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
   },
 };
