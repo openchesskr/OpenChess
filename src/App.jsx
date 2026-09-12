@@ -22151,6 +22151,11 @@ async function notifyMarkReadMany(rows) {
 // (18차 UX4) 친구 요청 알림의 수락/거절 결과를 payload에 기록 — 버튼을 없애고 "수락함/거절함"으로 표기하기 위함.
 // (버그 수정) 성공 여부를 돌려줘, 실패 시 호출부가 낙관적으로 붙인 "수락함/거절함" 표시를 되돌릴 수 있게 한다.
 async function notifySetResult(row, result) { if (!SB_ON || row.id == null) return true; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), result } }); return true; } catch { return false; } }
+// (v0.5.0 기능, 사용자 요청) 커뮤니티 인기 퍼즐이 오늘의 퍼즐로 선정되면 그 제작자에게 알림이 가고,
+// 알림 창의 "받기" 버튼을 눌러야 보상(OC 나이트 코인)이 지급된 것으로 표시된다 — notifySetResult와
+// 같은 패턴으로 payload에 claimed:true만 남긴다(실제 코인 지급은 다른 보상들과 동일하게 클라이언트
+// progress에 반영, App.jsx의 onClaimNotif 참고).
+async function notifySetClaimed(row) { if (!SB_ON || row.id == null) return true; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), claimed: true } }); return true; } catch { return false; } }
 // (버그 수정) 친구 요청을 알림 창의 수락/거절 버튼이 아니라 "친구" 모달(요청 탭·프로필 서브뷰)에서
 // 처리해도, 그 요청을 알렸던 notifications 행 자체는 손대지 않아 알림 창엔 계속 수락/거절 버튼이
 // (이미 처리된 뒤에도) 남아 있었다. 어느 경로로 처리하든 그 알림도 함께 "수락함/거절함"으로 정리한다.
@@ -22291,27 +22296,31 @@ function notifText(n) {
   if (n.kind === "friend_accepted") return (p.byUsername || "상대") + "님이 친구 요청을 수락했습니다";
   if (n.kind === "title_earned") return "새 칭호 획득: " + (titleLabel(p.titleId) || p.titleId);
   if (n.kind === "tier_up") return "티어 " + p.tierLabel + "(으)로 승급했습니다!";
+  if (n.kind === "daily_puzzle_selected") return "내가 만든 퍼즐이 오늘의 퍼즐로 선정됐어요!";
   return "알림";
 }
 function notifIcon(kind) {
   if (kind === "friend_request" || kind === "friend_accepted") return <Users size={15} style={{ color: T.brass }} />;
   if (kind === "title_earned") return <Star size={15} style={{ color: T.brassHi }} />;
   if (kind === "tier_up") return <Sparkles size={15} style={{ color: T.brassHi }} />;
+  if (kind === "daily_puzzle_selected") return <Target size={15} style={{ color: T.brassHi }} />;
   return <Info size={15} style={{ color: T.inkSoft }} />;
 }
-function NotificationBell({ myUid, onAccept, onReject, compact }) {
+function NotificationBell({ myUid, onAccept, onReject, onClaim, compact }) {
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   // (18차 UX4) 읽음/응답 처리한 알림이 30초 폴링(서버 반영 지연)으로 다시 미확인으로 되살아나지 않도록
   // 로컬에서 확정한 상태를 refresh 결과 위에 덮어쓴다.
   const localReadRef = useRef(new Set());
   const localResultRef = useRef({});
+  const localClaimedRef = useRef(new Set()); // (v0.5.0) "받기" 버튼을 누른 daily_puzzle_selected 알림
   const wrapRef = useRef(null);
-  const applyLocal = (rows) => rows.map((n) => ({
-    ...n,
-    read: n.read || localReadRef.current.has(n.id),
-    payload: localResultRef.current[n.id] ? { ...(n.payload || {}), result: localResultRef.current[n.id] } : n.payload,
-  }));
+  const applyLocal = (rows) => rows.map((n) => {
+    let payload = n.payload;
+    if (localResultRef.current[n.id]) payload = { ...(payload || {}), result: localResultRef.current[n.id] };
+    if (localClaimedRef.current.has(n.id)) payload = { ...(payload || {}), claimed: true };
+    return { ...n, read: n.read || localReadRef.current.has(n.id), payload };
+  });
   const refresh = useCallback(async () => { if (!myUid) return; setItems(applyLocal(await notifyList(myUid))); }, [myUid]);
   useEffect(() => { refresh(); }, [refresh]);
   // (v0.0.5 성능) 30초 폴링 대신 내 알림(to_uid=나) 변경을 Realtime으로 즉시 반영, 소켓이 끊겼을 때를
@@ -22366,6 +22375,15 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
     notifySetResult(n, result).then((ok) => { if (!ok) { delete localResultRef.current[n.id]; refresh(); } });
     if (result === "accepted") { onAccept && onAccept(n); } else { onReject && onReject(n); }
   };
+  // (v0.5.0 기능, 사용자 요청) daily_puzzle_selected 알림의 "받기" 버튼 — 낙관적으로 즉시 claimed 처리하고
+  // 실패하면 되돌린다(respond와 동일 패턴). 실제 코인 지급은 onClaim(App.jsx)이 담당한다.
+  const claim = (n) => {
+    if (n.payload && n.payload.claimed) return;
+    localClaimedRef.current.add(n.id);
+    setItems((prev) => prev.map((x) => x.id === n.id ? { ...x, read: true, payload: { ...(x.payload || {}), claimed: true } } : x));
+    notifySetClaimed(n).then((ok) => { if (!ok) { localClaimedRef.current.delete(n.id); refresh(); } });
+    onClaim && onClaim(n);
+  };
   // (19차 UI1) 알림 개별/전체 삭제 — 낙관적으로 목록에서 즉시 제거하고 서버에도 DELETE 반영.
   const removeOne = (n) => { setItems((prev) => prev.filter((x) => x.id !== n.id)); notifyDelete(n).then((ok) => { if (!ok) refresh(); }); };
   const clearAll = () => { if (!myUid) return; setItems([]); notifyDeleteAll(myUid).then((ok) => { if (!ok) refresh(); }); };
@@ -22403,6 +22421,11 @@ function NotificationBell({ myUid, onAccept, onReject, compact }) {
                         <button onClick={() => respond(n, "accepted")} className="press" style={{ padding: "4px 10px", borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, border: "none", cursor: "pointer" }}>수락</button>
                         <button onClick={() => respond(n, "rejected")} className="press" style={{ padding: "4px 10px", borderRadius: 7, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, border: "1px solid #C9B58C", cursor: "pointer" }}>거절</button>
                       </div>
+                    ))}
+                    {n.kind === "daily_puzzle_selected" && ((n.payload && n.payload.claimed) ? (
+                      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: T.best }}>받았어요!</div>
+                    ) : (
+                      <button onClick={() => claim(n)} className="press flex items-center gap-1" style={{ marginTop: 6, padding: "4px 10px", borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, border: "none", cursor: "pointer" }}>+{(n.payload && n.payload.reward) || 0} <CoinIcon size={13} /> 받기</button>
                     ))}
                   </div>
                   <button onClick={() => removeOne(n)} aria-label="알림 삭제" className="press" style={{ flexShrink: 0, width: 20, height: 20, marginTop: 1, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, lineHeight: 1 }}>×</button>
@@ -26857,6 +26880,13 @@ export default function App() {
     await friendRemove(fromUid);
     setPendingFriendCount((c) => Math.max(0, c - 1));
   }, []);
+  // (v0.5.0 기능, 사용자 요청) daily_puzzle_selected 알림의 "받기" 버튼 — 실제 지급은 이 앱의 다른
+  // 보상(일일 퀘스트·티어 승급 등)과 동일하게 클라이언트 progress(ocCoins)에 바로 반영한다(서버는
+  // 알림 자체만 SECURITY DEFINER로 만들어 줄 뿐, 코인 액수 자체는 검증하지 않는 기존 구조 그대로).
+  const onClaimNotif = useCallback((n) => {
+    const amount = (n.payload && n.payload.reward) || 0;
+    if (amount > 0) setOcCoins((c) => c + amount);
+  }, []);
   const [authMode, setAuthMode] = useState("login");
   const [confirmLogout, setConfirmLogout] = useState(false);
   // (v0.1.4 기능) 앤티크한 체스 분위기의 잔잔한 배경음악(드뷔시 "달빛", 퍼블릭 도메인) — <audio> 엘리먼트
@@ -27994,7 +28024,7 @@ export default function App() {
             </button>}
           </div>
           {/* (버그 수정) 알림은 시급성이 다른 정보라 세그먼트에 묶지 않고 오른쪽에 따로 분리해 둔다. */}
-          {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} compact={narrowHeader} />}
+          {user && <NotificationBell myUid={uid} onAccept={onAcceptNotif} onReject={onRejectNotif} onClaim={onClaimNotif} compact={narrowHeader} />}
           {user ? (
             <HeaderProfileMenu user={user} profile={profile} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact={narrowHeader} onLogoutClick={() => setConfirmLogout(true)} onGoToProfile={() => { setProfileWinOpen(true); pushScreen("profile"); }} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }}
               mainQuestSummary={mainQuestOverallProgress(mainQuest)} solvedNos={[...solved].map((id) => puzzleNo(id))} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} myUid={uid}

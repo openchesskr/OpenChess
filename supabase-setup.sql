@@ -2046,7 +2046,8 @@ grant select on public.daily_puzzle_picks to anon, authenticated;
 -- 소유자 권한으로 실행돼 auth.uid()가 null이라 이 검사에 걸리지 않는다.
 create or replace function public.daily_puzzle_pick_run()
 returns void language plpgsql security definer set search_path = public as $$
-declare v_date date; v_no bigint; v_score numeric;
+declare v_date date; v_no bigint; v_score numeric; v_creator uuid; v_rows int;
+  v_reward constant int := 30; -- (사용자 요청) 오늘의 퍼즐로 선정된 제작자에게 지급하는 OC 나이트 코인 보상
 begin
   if auth.uid() is not null and not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
   v_date := ((now() at time zone 'Asia/Seoul')::date + 1);
@@ -2062,6 +2063,19 @@ begin
   if v_no is null then return; end if;
   insert into public.daily_puzzle_picks(date, puzzle_no, score) values (v_date, v_no, v_score)
   on conflict (date) do nothing;
+  get diagnostics v_rows = row_count; -- on conflict do nothing 시 실제로 삽입되지 않은 행은 세지 않는다
+  if v_rows = 0 then return; end if; -- 동시 실행 등으로 다른 확정이 먼저 반영된 경우 알림도 보내지 않는다
+  -- (사용자 요청) 선정된 퍼즐의 제작자에게 알림 + 보상을 준다 — 이 함수가 SECURITY DEFINER(테이블
+  -- 소유자 권한)로 실행되므로 notifications의 "notif insert auth" RLS(본인 관련 kind만 클라이언트가
+  -- 직접 insert 가능)를 그대로 우회해 다른 사람(제작자)에게도 알림을 만들 수 있다 — puzzle_delete 등
+  -- 다른 SECURITY DEFINER 함수들과 같은 패턴. claimed:false로 시작해, 클라이언트의 "받기" 버튼을
+  -- 눌러야 보상이 지급된 것으로 표시된다(실제 코인 지급 자체는 이 앱의 다른 보상과 동일하게
+  -- 클라이언트 progress에 반영 — user_progress 전체가 이미 클라이언트 신뢰 구조임, 20번 섹션 참고).
+  select creator_uid into v_creator from public.puzzles where no = v_no;
+  if v_creator is not null then
+    insert into public.notifications(to_uid, kind, payload)
+    values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', v_date, 'reward', v_reward, 'claimed', false));
+  end if;
 end; $$;
 grant execute on function public.daily_puzzle_pick_run() to authenticated;
 
