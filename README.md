@@ -27,6 +27,13 @@
 
 ## 버전 기록
 
+### OpenChess v0.4.10 — 2026/9/12
+
+**버그 수정 — 퍼즐 삭제·FEN 퍼즐 이름 변경이 안 되던 문제**
+사용자 제보. 원인은 `src/lib/supabaseClient.js`의 `sbRpc`에 있었다 — `puzzle_delete`·`puzzle_set_name`은 SQL에서 `returns void`로 선언돼 있는데, PostgREST는 void 반환 함수 RPC 호출에 본문 없는 `204 No Content`로 응답한다(공식 동작). `sbRpc`는 응답이 `ok`(204도 포함)이기만 하면 무조건 `await r.json()`을 호출했는데, 빈 본문에 대한 `.json()` 파싱은 항상 `SyntaxError`를 던진다 — 그 예외가 `puzzleDeleteRemote`/`puzzleSetName` 호출부의 `try/catch`에 걸려, 서버 쪽 작업(삭제·이름 변경)은 실제로 이미 성공했을 수 있는데도 클라이언트는 매번 실패로 판정하고 있었다.
+
+`sbRpc`가 응답 상태 204거나 본문이 비어 있으면 파싱을 건너뛰고 `null`을 돌려주도록 고쳤다. 같은 구조(`returns void`)를 쓰는 다른 RPC들 — `puzzle_reassign_creator`·`puzzle_creator_save`·`puzzle_set_visibility`·`chat_edit_message`·`chat_clear_conversation`·`pvp_queue_leave`·`pvp_invite_cancel`·`delete_own_account` 등 — 도 전부 같은 결함을 안고 있었고, 이번 한 줄 수정으로 함께 정상화됐다. SQL 변경은 없다(순수 클라이언트 버그).
+
 ### OpenChess v0.4.9 — 2026/9/9
 
 **버그 수정 — about 페이지 버전 기록에서 v0.4.8 항목 누락**

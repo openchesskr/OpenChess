@@ -14,7 +14,20 @@ export const sbClient = SB_ON ? createClient(SB_URL, SB_KEY, { auth: { persistSe
 // RLS가 auth.uid() 기준이라 Realtime 소켓도 같은 access_token으로 인증해야 내 알림/채팅만 필터링되어 온다 —
 // 로그인·로그아웃·토큰 갱신이 일어나는 모든 지점에서 SB_TOKEN을 직접 대입하지 않고 이 함수를 거치게 한다.
 export function setSbToken(token) { SB_TOKEN = token || null; if (sbClient) sbClient.realtime.setAuth(SB_TOKEN || SB_KEY); }
-export async function sbRpc(fn, args) { const r = await fetch(SB_URL + "/rest/v1/rpc/" + fn, { method: "POST", headers: sbHeaders(), body: JSON.stringify(args || {}) }); if (!r.ok) throw new Error("rpc " + r.status); return await r.json(); }
+// (버그 수정, 사용자 제보) "퍼즐 삭제·FEN 퍼즐 이름 변경이 안 된다" — puzzle_delete/puzzle_set_name은
+// SQL에서 `returns void`로 선언돼 있어, PostgREST가 이 RPC 호출에 본문 없는 204 No Content로
+// 응답한다(공식 동작 — void 반환 함수는 204). 그런데 이 함수는 응답이 ok(204도 포함)이기만 하면
+// 항상 r.json()을 호출했는데, 빈 본문에 대한 json() 파싱은 항상 SyntaxError를 던진다 — 그 예외가
+// 호출부의 try/catch에 걸려 서버 작업(삭제·이름 변경 등)은 실제로 성공했더라도 클라이언트는 매번
+// 실패로 판정했다. void를 반환하는 다른 RPC(puzzle_reassign_creator·puzzle_creator_save 등) 전부
+// 같은 구조적 결함을 안고 있었다 — 204거나 본문이 비어 있으면 파싱을 건너뛰고 null을 돌려준다.
+export async function sbRpc(fn, args) {
+  const r = await fetch(SB_URL + "/rest/v1/rpc/" + fn, { method: "POST", headers: sbHeaders(), body: JSON.stringify(args || {}) });
+  if (!r.ok) throw new Error("rpc " + r.status);
+  if (r.status === 204) return null;
+  const text = await r.text();
+  return text ? JSON.parse(text) : null;
+}
 export async function sbSelect(path) { const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: sbHeaders() }); if (!r.ok) throw new Error("sel " + r.status); return await r.json(); }
 export async function sbUpsert(table, row) { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHeaders(), Prefer: "resolution=merge-duplicates" }, body: JSON.stringify(row) }); if (!r.ok) throw new Error("up " + r.status); }
 export async function sbInsert(table, row) { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: sbHeaders(), body: JSON.stringify(row) }); if (!r.ok) throw new Error("ins " + r.status); }
