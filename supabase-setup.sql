@@ -2041,9 +2041,19 @@ create policy "daily puzzle picks read" on public.daily_puzzle_picks for select 
 grant select on public.daily_puzzle_picks to anon, authenticated;
 
 -- 매일 밤 KST 23:50에 다음 날짜(KST 기준) 몫을 확정한다. 이미 그 날짜가 확정돼 있으면(같은
--- 날 재실행 등) 아무 일도 하지 않는다(멱등). 개발자/공동개발자는 설정 탭 패널에서 테스트를
+-- 날 재실행 등) 새로 뽑지는 않는다(멱등). 개발자/공동개발자는 설정 탭 패널에서 테스트를
 -- 위해 이 함수를 직접 호출할 수 있고, 그 외 로그인 유저는 호출할 수 없다 — pg_cron은 postgres
 -- 소유자 권한으로 실행돼 auth.uid()가 null이라 이 검사에 걸리지 않는다.
+-- (버그 수정, 사용자 제보) "오늘의 퍼즐로 뽑혔는데 제작자에게 알림이 안 온다" — 예전엔 그 날짜가
+-- 이미 확정돼 있으면 맨 위에서 곧장 return해 버려, 알림을 시도하는 순간은 그 퍼즐이 처음 뽑히는
+-- 그 한 번뿐이었다. 그런데 그 순간 creator_uid가 아직 null이면(비로그인 게스트가 만들었거나,
+-- puzzle_claim_creator가 puzzleShare의 fire-and-forget 호출이라 아직 서버에 반영되기 전이면)
+-- 조용히 알림을 건너뛰고, 이후 그 제작자가 로그인해 창작자로 확정돼도(creator_uid가 나중에
+-- 채워져도) 그 날짜는 이미 확정된 뒤라 다시는 알림을 시도할 기회가 없었다 — 카드에는 제작자
+-- 아이디가 멀쩡히 보이는데 알림만 영영 안 오는 것으로 보였을 것이다. 이제 이미 확정된 날짜라도
+-- "그 퍼즐의 지금 creator_uid에게 아직 이 알림이 없으면" 되짚어 보내도록 해, 매일 밤(또는 개발자가
+-- 즉시 실행할 때마다) 놓친 알림이 있으면 스스로 복구한다(같은 퍼즐·같은 kind로 이미 알림이 있으면
+-- 다시 만들지 않아 중복 알림 걱정은 없다).
 create or replace function public.daily_puzzle_pick_run()
 returns void language plpgsql security definer set search_path = public as $$
 declare v_date date; v_no bigint; v_score numeric; v_creator uuid; v_rows int;
@@ -2051,20 +2061,23 @@ declare v_date date; v_no bigint; v_score numeric; v_creator uuid; v_rows int;
 begin
   if auth.uid() is not null and not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
   v_date := ((now() at time zone 'Asia/Seoul')::date + 1);
-  if exists (select 1 from public.daily_puzzle_picks where date = v_date) then return; end if;
-  select p.no, s.score into v_no, v_score
-  from public.puzzles p
-  join public.puzzle_popularity_all() s on s.no = p.no
-  where p.is_public
-    and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
-    and p.no not in (select puzzle_no from public.daily_puzzle_picks where puzzle_no is not null)
-  order by s.score desc, p.no asc
-  limit 1;
+  select puzzle_no into v_no from public.daily_puzzle_picks where date = v_date;
+  if v_no is null then
+    select p.no, s.score into v_no, v_score
+    from public.puzzles p
+    join public.puzzle_popularity_all() s on s.no = p.no
+    where p.is_public
+      and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
+      and p.no not in (select puzzle_no from public.daily_puzzle_picks where puzzle_no is not null)
+    order by s.score desc, p.no asc
+    limit 1;
+    if v_no is null then return; end if;
+    insert into public.daily_puzzle_picks(date, puzzle_no, score) values (v_date, v_no, v_score)
+    on conflict (date) do nothing;
+    get diagnostics v_rows = row_count; -- 동시 실행 등으로 이미 다른 확정이 먼저 반영됐으면(0) 그 확정된 값을 대신 읽는다
+    if v_rows = 0 then select puzzle_no into v_no from public.daily_puzzle_picks where date = v_date; end if;
+  end if;
   if v_no is null then return; end if;
-  insert into public.daily_puzzle_picks(date, puzzle_no, score) values (v_date, v_no, v_score)
-  on conflict (date) do nothing;
-  get diagnostics v_rows = row_count; -- on conflict do nothing 시 실제로 삽입되지 않은 행은 세지 않는다
-  if v_rows = 0 then return; end if; -- 동시 실행 등으로 다른 확정이 먼저 반영된 경우 알림도 보내지 않는다
   -- (사용자 요청) 선정된 퍼즐의 제작자에게 알림 + 보상을 준다 — 이 함수가 SECURITY DEFINER(테이블
   -- 소유자 권한)로 실행되므로 notifications의 "notif insert auth" RLS(본인 관련 kind만 클라이언트가
   -- 직접 insert 가능)를 그대로 우회해 다른 사람(제작자)에게도 알림을 만들 수 있다 — puzzle_delete 등
@@ -2072,7 +2085,10 @@ begin
   -- 눌러야 보상이 지급된 것으로 표시된다(실제 코인 지급 자체는 이 앱의 다른 보상과 동일하게
   -- 클라이언트 progress에 반영 — user_progress 전체가 이미 클라이언트 신뢰 구조임, 20번 섹션 참고).
   select creator_uid into v_creator from public.puzzles where no = v_no;
-  if v_creator is not null then
+  if v_creator is not null and not exists (
+    select 1 from public.notifications
+    where to_uid = v_creator and kind = 'daily_puzzle_selected' and (payload ->> 'no')::bigint = v_no
+  ) then
     insert into public.notifications(to_uid, kind, payload)
     values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', v_date, 'reward', v_reward, 'claimed', false));
   end if;
