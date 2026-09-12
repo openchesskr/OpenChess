@@ -8855,7 +8855,7 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
     </div>
   );
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   const [step, setStep] = useState("setup"); // "setup" | "playing"
@@ -9666,6 +9666,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           </motion.div>
         )}
       </AnimatePresence>
+      {/* (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 화면 밑에 기존 상점 UI를 그대로 이어
+          붙인다(이 fixed 오버레이 자신의 스크롤 영역 안이라, 대국 설정 화면을 내려서 스크롤하면
+          보인다). 분석 탭 PLAY 버튼 등 storeProps 없이 여는 다른 진입 경로는 아무 것도 렌더링하지
+          않아 지금까지와 완전히 동일하다. */}
+      {storeProps && (
+        <div style={{ maxWidth: 460, margin: "0 auto", padding: "0 16px 60px", borderTop: "1px solid rgba(196,154,80,.25)", marginTop: 8, paddingTop: 22 }}>
+          <StoreTab {...storeProps} />
+        </div>
+      )}
     </div>
   );
 }
@@ -19818,6 +19827,7 @@ const CHANGELOG = [
     version: "0.5.0", date: "2026.9.12", dev: ["openchesskr", "G13sus4"], items: [
       "퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 문제를 고쳤어요 — 같은 원인으로 조용히 실패하고 있던 계정 탈퇴·채팅 메시지 수정/대화 지우기·실시간 대국 대기열 취소 등 다른 몇몇 기능도 함께 정상화됐어요.",
       "내가 만든 퍼즐이 오늘의 퍼즐로 선정됐는데도 알림이 오지 않던 문제를 고쳤어요.",
+      "'상점' 탭이 '플레이' 탭으로 바뀌었어요 — 분석 탭의 PLAY 버튼과 똑같이 대국 설정 화면으로 곧장 들어가고, 그 화면을 아래로 내리면 기존 상점(스킨) 화면이 그대로 이어져요.",
     ]
   },
   {
@@ -22004,14 +22014,16 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
 // (v0.4.0 UI) 사용자 요청 — 탭 이름 개편: 기존 "학습" 탭은 "분석"으로, 기존 "퀘스트" 탭은
 // "학습"으로 이름만 바꾼다(내부 key·라우팅·기능은 그대로 유지 — 이 학습 탭(구 퀘스트 탭)의
 // 메인 퀘스트를 강화하기 위한 개편의 첫 단계).
-const TABS = [{ key: "learn", label: "분석", Icon: null }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
+// (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 내부 키("store")·경로 매핑 구조는 그대로 두고
+// 라벨·아이콘만 바꾼다(아래 TAB_PATH/PATH_TAB에서 경로도 /store → /play로 함께 바뀐다).
+const TABS = [{ key: "learn", label: "분석", Icon: null }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "store", label: "플레이", Icon: Play }, { key: "set", label: "설정", Icon: Settings }];
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 // (사용자 요청) 탭 내부 키("learn"=분석, "quest"=학습)와 실제로 화면에 뜨는 URL 경로가 서로
 // 뒤바뀌어 있었다 — 분석 탭이 /learn으로, 학습 탭이 /quest로 보였다. 내부 키 이름은 그대로 두고
 // (다른 코드 전반에서 이미 광범위하게 참조하므로), 경로만 각 탭의 실제 한국어 라벨과 일치하도록
 // 바로잡는다: 분석("learn" 키) → /analysis, 학습("quest" 키) → /learn.
-const TAB_PATH = { learn: "/analysis", dex: "/book", puzzle: "/puzzle", quest: "/learn", store: "/store", set: "/setting" };
-const PATH_TAB = { "/analysis": "learn", "/book": "dex", "/puzzle": "puzzle", "/learn": "quest", "/store": "store", "/setting": "set" };
+const TAB_PATH = { learn: "/analysis", dex: "/book", puzzle: "/puzzle", quest: "/learn", store: "/play", set: "/setting" };
+const PATH_TAB = { "/analysis": "learn", "/book": "dex", "/puzzle": "puzzle", "/learn": "quest", "/play": "store", "/setting": "set" };
 function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
 
 /* ============================================================ 계정 (회원가입/로그인) ============================================================ */
@@ -27864,6 +27876,11 @@ export default function App() {
     setPlayGame(null);
     try { if (window.location.pathname.startsWith("/play")) window.history.back(); } catch { }
   }, []);
+  // (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 탭으로 전환될 때마다 분석 탭의 PLAY 버튼과
+  // 완전히 같은 진입 경로(openPlay)로 대국 설정 화면을 연다. seed에 withStore를 실어 보내
+  // PlayPage가 그 화면 밑에 기존 상점 UI를 이어 붙이게 한다(분석 탭 등 다른 진입 경로는 이 플래그가
+  // 없어 지금까지와 완전히 동일하게 동작한다).
+  useLayoutEffect(() => { if (tab === "store") openPlay({ sans: [], fenRoot: null, withStore: true }); }, [tab, openPlay]);
   // (사용자 요청) /play에서 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인지 — PlayPage가 렌더마다
   // 최신값을 알려준다(popstate 핸들러가 컴포넌트 밖에서도 읽어야 해서 상태 대신 ref로 둔다).
   const pvpPlayActiveRef = useRef(false);
@@ -28148,7 +28165,7 @@ export default function App() {
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
       {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
-      {playGame && <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} />}
+      {playGame && <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} />}
       {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
           대신 정말 기권 처리해도 되는지 한 번 확인한다. */}
       <AnimatePresence>
