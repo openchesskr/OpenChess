@@ -8893,9 +8893,13 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
 // 아직 진짜 게임이 없어 이 파이프라인이 실제로 끝까지 동작하는지 증명할 방법이 없었다 — 그래서
 // SquareReflexGame(칸 반응속도 테스트)이라는 아주 단순한 예시 게임 하나를 "테스트용" 표시와 함께
 // 미리 연결해 뒀다. 실제 미니게임이 정해지면 이 예시는 지우고 그 자리에 진짜 게임을 넣으면 된다.
+// (v0.5.0, 사용자 설계) 좌표 인지 게임(coord-race)은 사용자가 설계한 4개 실시간 PvP 미니게임 중
+// 구현이 가장 단순한 첫 번째로, 실제 규칙을 갖춘 첫 게임이다 — pvp:true 항목은 MinigameShell(단일
+// 플레이 전용 점수·보상 틀) 대신 그 컴포넌트가 매칭·대전·종료 전체를 직접 책임진다(아래
+// PlaySpecialGames 참고).
 const PLAY_SPECIAL_GAMES = [
+  { key: "coord-race", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, status: "ready", pvp: true, Component: CoordRaceGame },
   { key: "square-reflex", name: "칸 반응속도 (테스트용)", desc: "빛나는 칸을 최대한 빨리 눌러 점수를 쌓아 보세요 — 실제 미니게임이 정해지기 전까지 이 자리를 대신하는 예시 게임이에요.", Icon: Target, status: "ready", Component: SquareReflexGame, example: true },
-  { key: "slot2", name: "미니게임 준비 중", status: "soon" },
   { key: "slot3", name: "미니게임 준비 중", status: "soon" },
 ];
 // 게임별 최고 기록 — 게임 key로 네임스페이스를 나눠 localStorage에 저장한다(로그인 여부와 무관하게
@@ -8962,10 +8966,15 @@ function MinigameShell({ game, coins, onAwardCoins, onExit }) {
     </div>
   );
 }
-function PlaySpecialGames({ coins, onAwardCoins }) {
+function PlaySpecialGames({ coins, onAwardCoins, myUid }) {
   const [activeKey, setActiveKey] = useState(null);
   const active = PLAY_SPECIAL_GAMES.find((g) => g.key === activeKey) || null;
-  if (active) return <MinigameShell game={active} coins={coins} onAwardCoins={onAwardCoins} onExit={() => setActiveKey(null)} />;
+  if (active) {
+    // (v0.5.0) pvp:true 게임(좌표 인지 게임 등)은 승·패·무만 있고 "최고 기록·점수 보상" 개념이 없어
+    // MinigameShell을 거치지 않고 게임 컴포넌트가 매칭·대전·종료·헤더까지 전부 직접 그린다.
+    if (active.pvp) { const Game = active.Component; return <Game myUid={myUid} onExit={() => setActiveKey(null)} />; }
+    return <MinigameShell game={active} coins={coins} onAwardCoins={onAwardCoins} onExit={() => setActiveKey(null)} />;
+  }
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
@@ -9041,6 +9050,167 @@ function SquareReflexGame({ onFinish }) {
             style={{ aspectRatio: "1", borderRadius: 8, border: "1px solid " + (i === target ? T.brass : "#C9B58C"), background: i === target ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#FBF5E8", cursor: "pointer", padding: 0 }} />
         ))}
       </div>
+    </div>
+  );
+}
+// ---- 좌표 인지 게임(coord) — 사용자 설계 1호 실시간 PvP 미니게임. 무작위 좌표가 나타나면 상대보다
+// 먼저 그 칸을 클릭해야 점수를 가져간다(15라운드, 라운드당 4초 제한, 더 많이 맞힌 쪽 승리·동점은
+// 무승부 — 규칙·서버 권위 판정은 supabase-setup.sql의 coord_reveal_next/coord_click/coord_finish
+// 참고). 매칭은 기존 체스 PvP와 같은 pvp_queue_join/pvp_queue_leave RPC를 game_type만 "coord"로
+// 바꿔 그대로 재사용한다 — 친구 초대는 아직 연결하지 않았다(랜덤 매칭만, 나중에 필요해지면 체스와
+// 같은 pvp_invite_friend를 그대로 재사용하면 된다).
+const COORD_GAME_TYPE = "coord";
+const COORD_TOTAL_ROUNDS = 15;
+const COORD_ROUND_MS = 4000;
+const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
+// 대전 중 화면 — 매칭이 끝난 뒤(game이 확정된 뒤)만 렌더링된다. pvp_games 행 하나를 실시간
+// 구독하며, sans(라운드 기록 배열)만 보고 내 점수·상대 점수·지금 라운드를 그때그때 다시 계산한다 —
+// 이 컴포넌트 자신은 점수를 세는(mutate) 상태를 갖지 않고 항상 서버 값을 그대로 반영만 한다.
+function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
+  const [game, setGame] = useState(initialGame);
+  const advanceLockRef = useRef(false);
+  useEffect(() => { onStatusChange && onStatusChange(game.status); }, [game.status, onStatusChange]);
+  useRealtimeTable("pvp_games", "id=eq." + initialGame.id, useCallback((payload) => {
+    if (payload && payload.new) setGame(payload.new);
+    else if (!payload) { sbSelect("pvp_games?id=eq." + initialGame.id + "&select=*").then((rows) => { if (rows && rows[0]) setGame(rows[0]); }).catch(() => { }); }
+  }, [initialGame.id]), true, 3000);
+  const isWhite = myUid === game.white_uid;
+  const rounds = game.sans || [];
+  const roundIdx = Math.max(0, rounds.length - 1);
+  const round = rounds[roundIdx] || null;
+  const myScore = rounds.filter((r) => r.winner === (isWhite ? "w" : "b")).length;
+  const oppScore = rounds.filter((r) => r.winner === (isWhite ? "b" : "w")).length;
+  const finished = game.status !== "active";
+  // 라운드 자동 진행 — 서버가 기록한 revealedAt/resolvedAt 시각을 기준으로 로컬 타이머를 걸어, 시간이
+  // 다 됐거나(무승부 라운드) 이미 승자가 정해졌으면(짧게 결과를 보여준 뒤) coord_reveal_next로 다음
+  // 라운드를 요청한다. 두 참가자의 클라이언트가 거의 동시에 불러도 서버 쪽 행 잠금이 안전하게 막아준다.
+  useEffect(() => {
+    if (finished) return;
+    if (rounds.length === 0) { sbRpc("coord_reveal_next", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
+    if (!round) return;
+    const revealedAt = new Date(round.revealedAt).getTime();
+    const now = Date.now();
+    const delay = round.winner
+      ? Math.max(600, 900 - (now - new Date(round.resolvedAt || round.revealedAt).getTime()))
+      : Math.max(0, revealedAt + COORD_ROUND_MS - now) + 150;
+    const t = setTimeout(() => {
+      if (advanceLockRef.current) return;
+      advanceLockRef.current = true;
+      sbRpc("coord_reveal_next", { p_game_id: game.id }).then((g) => { advanceLockRef.current = false; if (g) setGame(g); }).catch(() => { advanceLockRef.current = false; });
+    }, delay);
+    return () => clearTimeout(t);
+  }, [game.id, rounds.length, round && round.winner, finished]);
+  // 총 라운드가 다 찼으면 결과를 확정한다 — coord_finish는 sans에 이미 서버가 기록해 둔 라운드
+  // 승자만 다시 세어 계산하므로, 누가(또는 양쪽 다) 불러도 결과는 항상 같다.
+  useEffect(() => {
+    if (finished || rounds.length < COORD_TOTAL_ROUNDS) return;
+    const last = rounds[rounds.length - 1];
+    if (last && (last.winner || last.resolvedAt)) sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
+  }, [game.id, rounds.length, finished]);
+  const onCell = (sq) => {
+    if (finished || !round || round.winner) return;
+    sbRpc("coord_click", { p_game_id: game.id, p_round: roundIdx, p_sq: sq }).then((g) => g && setGame(g)).catch(() => { });
+  };
+  if (finished) {
+    const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
+    const isDraw = game.status === "draw";
+    return (
+      <div style={{ textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {oppScore}</div>
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppScore}</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 4, maxWidth: 320, margin: "0 auto" }}>
+        {Array.from({ length: 8 }, (_, rIdx) => 8 - rIdx).flatMap((rank) => COORD_FILES.map((file) => {
+          const sq = file + rank;
+          const isTarget = !!(round && round.sq === sq && !round.winner);
+          return (
+            <button key={sq} onClick={() => onCell(sq)} className="press"
+              style={{ aspectRatio: "1", borderRadius: 6, border: "1px solid " + (isTarget ? T.brass : "#C9B58C"), background: isTarget ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#FBF5E8", cursor: "pointer", padding: 0 }} />
+          );
+        }))}
+      </div>
+    </div>
+  );
+}
+// 매칭 화면 + 대전 화면을 함께 갖는 최상위 컴포넌트 — PlaySpecialGames가 pvp:true 게임은 이 컴포넌트를
+// (MinigameShell 없이) 직접 렌더링한다. PvP는 점수/보상이 상대적(승·패·무)이라 단일 플레이 전용인
+// MinigameShell의 "최고 기록·점수 보상" 개념과 맞지 않아 헤더·종료 흐름을 이 컴포넌트가 직접 갖는다.
+function CoordRaceGame({ myUid, onExit }) {
+  const [game, setGame] = useState(null);
+  const [waiting, setWaiting] = useState(false);
+  const [err, setErr] = useState("");
+  const [liveStatus, setLiveStatus] = useState("active");
+  const [confirmForfeit, setConfirmForfeit] = useState(false);
+  const waitingRef = useRef(false);
+  useEffect(() => { waitingRef.current = waiting; }, [waiting]);
+  // 매칭 대기 중 이 화면을 벗어나면(뒤로가기 등) 대기열에 남지 않도록 정리한다.
+  useEffect(() => () => { if (waitingRef.current) sbRpc("pvp_queue_leave", {}).catch(() => { }); }, []);
+  const join = useCallback(async () => {
+    if (!myUid) { setErr("로그인 후 이용할 수 있어요."); return; }
+    setErr(""); setWaiting(true);
+    try {
+      const g = await sbRpc("pvp_queue_join", { p_time_control: "0-0", p_game_type: COORD_GAME_TYPE });
+      if (g) { setGame(g); setWaiting(false); }
+    } catch { setErr("매칭에 실패했어요. 다시 시도해 주세요."); setWaiting(false); }
+  }, [myUid]);
+  const leave = () => { setWaiting(false); sbRpc("pvp_queue_leave", {}).catch(() => { }); };
+  const onMatch = useCallback((payload) => {
+    if (payload && payload.new && payload.new.status === "active" && payload.new.game_type === COORD_GAME_TYPE) { setGame(payload.new); setWaiting(false); }
+    else if (!payload) join();
+  }, [join]);
+  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
+  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
+  const requestExit = () => { if (game && liveStatus === "active") setConfirmForfeit(true); else onExit(); };
+  const doForfeit = async () => {
+    setConfirmForfeit(false);
+    if (game) { try { await sbRpc("coord_forfeit", { p_game_id: game.id }); } catch { } }
+    onExit();
+  };
+  return (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+        <button onClick={requestExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>좌표 인지 게임</div>
+        <span style={{ width: 30, flexShrink: 0 }} />
+      </div>
+      {!game ? (
+        <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
+          <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭하세요.<br />15라운드를 먼저 더 많이 맞히는 쪽이 승리해요.</p>
+          {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err}</p>}
+          {waiting ? (
+            <div>
+              <div className="flex items-center justify-center" style={{ marginBottom: 14 }}><PendingDots size={12} /></div>
+              <button onClick={leave} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>취소</button>
+            </div>
+          ) : (
+            <button onClick={join} className="press" style={{ padding: "11px 28px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>대전 상대 찾기</button>
+          )}
+        </div>
+      ) : (
+        <CoordRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
+      )}
+      {confirmForfeit && (
+        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
+            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>진행 중인 대전을 포기하게 되고, 상대가 승리해요.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmForfeit(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>계속하기</button>
+              <button onClick={doForfeit} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>나가기</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -9633,7 +9803,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
           <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
         </div>
-        {pageMode === "special" && <PlaySpecialGames coins={specialProps && specialProps.coins} onAwardCoins={specialProps && specialProps.onAwardCoins} />}
+        {pageMode === "special" && <PlaySpecialGames coins={specialProps && specialProps.coins} onAwardCoins={specialProps && specialProps.onAwardCoins} myUid={myUid} />}
         {pageMode === "normal" && (step === "setup" ? (
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
@@ -20040,6 +20210,7 @@ const CHANGELOG = [
       "플레이 페이지 맨 위에 '일반/스페셜' 토글이 생겼어요 — 스페셜에는 앞으로 추가될 미니게임들이 모일 자리예요.",
       "분석 탭 수 블록의 리체스 채택률(%)이 반올림돼 실제보다 부정확하게 보이던 문제를 고쳤어요 — 이제 소수점 둘째 자리까지 실제 값에 더 가깝게 표시돼요.",
       "플레이 페이지 스페셜 탭에 미니게임을 실제로 즐길 수 있는 틀(목록·최고 기록·코인 보상·다시하기)이 생겼어요 — 진짜 미니게임이 정해지기 전까지는 테스트용 예시 게임 '칸 반응속도'로 미리 만나볼 수 있어요.",
+      "스페셜 탭에 첫 실시간 대전 미니게임 '좌표 인지 게임'이 추가됐어요 — 무작위 좌표가 뜨면 상대보다 먼저 클릭해 점수를 겨뤄요.",
     ]
   },
   {
