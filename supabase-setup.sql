@@ -1942,6 +1942,138 @@ end; $$;
 grant execute on function public.pvp_invite_cancel(bigint) to authenticated;
 
 -- ============================================================================
+-- N+3.5) 좌표 인지 게임(coord) — 플레이 페이지 "스페셜" 미니게임 PvP #1 (v0.5.0, 사용자 설계)
+-- ============================================================================
+-- 규칙: 무작위 좌표(칸)가 나타나면 두 참가자 중 먼저 그 칸을 클릭한 쪽이 그 라운드를 가져간다.
+-- 총 15라운드, 라운드마다 제한시간(4초) 안에 못 맞히면 아무도 못 가져간 채 다음 라운드로 넘어간다.
+-- 15라운드가 끝난 뒤 더 많이 맞힌 쪽이 승리(동점이면 무승부) — 사용자가 이 게임에는 별도 타이브레이커를
+-- 두지 않았다.
+--
+-- 매칭(대기열 합류·친구 초대)은 기존 pvp_queue_join/pvp_invite_friend(p_game_type='coord')를 그대로
+-- 재사용한다 — 그 두 함수는 game_type을 몰라도 되게 이미 일반화돼 있다(대국 행을 만들 뿐, 체스에
+-- 특화된 어떤 것도 하지 않는다). pvp_games.sans 컬럼(주석에 이미 "game_type별 불투명한 인코딩을
+-- 담는 배열로 취급할 것"이라 명시돼 있다)에 이 게임만의 라운드 기록을 담는다:
+--   [{ "sq": "e4", "revealedAt": <timestamptz>, "winner": "w"|"b"|null, "resolvedAt": <timestamptz>|null }, ...]
+-- 체스 전용인 pvp_move(턴 검증)·pvp_finish(자기 승리 선언 금지 가드)는 이 게임의 규칙과 맞지 않아
+-- 쓰지 않는다 — 대신 아래 세 함수만 쓴다. coord_finish는 클라이언트의 주장을 전혀 신뢰하지 않고
+-- sans에 이미 서버가 기록해 둔 라운드 결과만으로 승자를 다시 계산하므로(체스의 pvp_finish_verified
+-- 같은 별도 검증 서비스가 필요 없다), 어느 쪽이 불러도 "자기가 이겼다고 우기는" 조작이 불가능하다.
+create or replace function public.coord_reveal_next(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; v_last_idx int;
+  v_total_rounds constant int := 15;
+  v_round_ms constant int := 4000; -- 라운드당 클릭 제한시간(ms)
+  v_sq text;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'coord' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  if jsonb_array_length(v_rounds) > 0 then
+    v_last_idx := jsonb_array_length(v_rounds) - 1;
+    v_last := v_rounds -> v_last_idx;
+    -- 아직 승자가 없는 마지막 라운드가 제한시간 안이면(=진행 중) 너무 이른 호출이니 그대로 반환한다.
+    if (v_last ->> 'winner') is null and (v_last ->> 'revealedAt')::timestamptz + (v_round_ms || ' ms')::interval > now() then
+      return v_game;
+    end if;
+    -- 승자 없이 시간만 초과된 라운드는 무승부 라운드로 확정 표시한다.
+    if (v_last ->> 'winner') is null and (v_last ->> 'resolvedAt') is null then
+      v_rounds := jsonb_set(v_rounds, array[v_last_idx::text, 'resolvedAt'], to_jsonb(now()));
+    end if;
+  end if;
+  if jsonb_array_length(v_rounds) >= v_total_rounds then
+    update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+    return v_game;
+  end if;
+  v_sq := chr(97 + floor(random() * 8)::int) || (floor(random() * 8)::int + 1)::text;
+  v_rounds := v_rounds || jsonb_build_object('sq', v_sq, 'revealedAt', now(), 'winner', null, 'resolvedAt', null);
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.coord_reveal_next(bigint) to authenticated;
+
+-- 클릭 보고 — 이 라운드가 아직 안 끝났고 지금이 제한시간 안이며 좌표가 맞을 때만 승자로 기록한다.
+-- 서버 시각(now())만 신뢰하고 클라이언트가 보낸 시각은 절대 쓰지 않는다(시계 오차·조작 방지) —
+-- 두 참가자가 거의 동시에 호출해도 "for update" 행 잠금이 순서를 강제하므로, 먼저 커밋되는 호출
+-- 하나만 승자로 기록되고 그 뒤에 도착하는 호출은 이미 "winner is not null"이라 조용히 무시된다.
+create or replace function public.coord_click(p_game_id bigint, p_round int, p_sq text)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb;
+  v_round_ms constant int := 4000; v_mycolor text;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'coord' or v_game.status <> 'active' then return v_game; end if;
+  if v_me = v_game.white_uid then v_mycolor := 'w'; elsif v_me = v_game.black_uid then v_mycolor := 'b'; else raise exception 'not a participant'; end if;
+  v_rounds := v_game.sans;
+  if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
+  v_round := v_rounds -> p_round;
+  if (v_round ->> 'winner') is not null then return v_game; end if; -- 이미 끝난 라운드
+  if (v_round ->> 'revealedAt')::timestamptz + (v_round_ms || ' ms')::interval < now() then return v_game; end if; -- 시간 초과
+  if v_round ->> 'sq' <> p_sq then return v_game; end if; -- 오답(점수 없이 조용히 무시)
+  v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round || jsonb_build_object('winner', v_mycolor, 'resolvedAt', now()));
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.coord_click(bigint, int, text) to authenticated;
+
+-- 최종 승패 확정 — 총 라운드가 다 끝난 뒤에만 호출 가능하고, sans에 이미 기록된 라운드별 승자만 세어
+-- 승패를 계산한다(동점이면 무승부). 참가자 아무나 불러도 결과가 항상 같다.
+create or replace function public.coord_finish(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_w int := 0; v_b int := 0;
+  v_total_rounds constant int := 15; r jsonb;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'coord' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  if jsonb_array_length(v_rounds) < v_total_rounds then raise exception 'not finished yet'; end if;
+  for r in select * from jsonb_array_elements(v_rounds) loop
+    if r ->> 'winner' = 'w' then v_w := v_w + 1; elsif r ->> 'winner' = 'b' then v_b := v_b + 1; end if;
+  end loop;
+  update public.pvp_games set
+    status = case when v_w > v_b then 'white_won' when v_b > v_w then 'black_won' else 'draw' end,
+    result_reason = 'coord_score',
+    updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.coord_finish(bigint) to authenticated;
+
+-- 기권 — 진행 중인 대전을 벗어나려는(뒤로가기·닫기) 참가자가 확인 절차를 거친 뒤 부른다. 체스의
+-- pvp_finish와 같은 이유로 "자기 자신을 패자로" 보고하는 것만 허용한다(상대를 강제로 지게 만드는
+-- 방향은 없음 — 반대쪽이 자신을 패자로 선언할 방법이 없으므로 애초에 우회할 여지가 없다).
+create or replace function public.coord_forfeit(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'coord' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  update public.pvp_games set
+    status = case when v_me = v_game.white_uid then 'black_won' else 'white_won' end,
+    result_reason = 'coord_forfeit',
+    updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.coord_forfeit(bigint) to authenticated;
+
+-- ============================================================================
 -- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
 -- ============================================================================
 -- Apple/Facebook 로그인 자체는 Supabase 대시보드 설정(Authentication → Providers)만으로 동작한다 —
@@ -2041,9 +2173,19 @@ create policy "daily puzzle picks read" on public.daily_puzzle_picks for select 
 grant select on public.daily_puzzle_picks to anon, authenticated;
 
 -- 매일 밤 KST 23:50에 다음 날짜(KST 기준) 몫을 확정한다. 이미 그 날짜가 확정돼 있으면(같은
--- 날 재실행 등) 아무 일도 하지 않는다(멱등). 개발자/공동개발자는 설정 탭 패널에서 테스트를
+-- 날 재실행 등) 새로 뽑지는 않는다(멱등). 개발자/공동개발자는 설정 탭 패널에서 테스트를
 -- 위해 이 함수를 직접 호출할 수 있고, 그 외 로그인 유저는 호출할 수 없다 — pg_cron은 postgres
 -- 소유자 권한으로 실행돼 auth.uid()가 null이라 이 검사에 걸리지 않는다.
+-- (버그 수정, 사용자 제보) "오늘의 퍼즐로 뽑혔는데 제작자에게 알림이 안 온다" — 예전엔 그 날짜가
+-- 이미 확정돼 있으면 맨 위에서 곧장 return해 버려, 알림을 시도하는 순간은 그 퍼즐이 처음 뽑히는
+-- 그 한 번뿐이었다. 그런데 그 순간 creator_uid가 아직 null이면(비로그인 게스트가 만들었거나,
+-- puzzle_claim_creator가 puzzleShare의 fire-and-forget 호출이라 아직 서버에 반영되기 전이면)
+-- 조용히 알림을 건너뛰고, 이후 그 제작자가 로그인해 창작자로 확정돼도(creator_uid가 나중에
+-- 채워져도) 그 날짜는 이미 확정된 뒤라 다시는 알림을 시도할 기회가 없었다 — 카드에는 제작자
+-- 아이디가 멀쩡히 보이는데 알림만 영영 안 오는 것으로 보였을 것이다. 이제 이미 확정된 날짜라도
+-- "그 퍼즐의 지금 creator_uid에게 아직 이 알림이 없으면" 되짚어 보내도록 해, 매일 밤(또는 개발자가
+-- 즉시 실행할 때마다) 놓친 알림이 있으면 스스로 복구한다(같은 퍼즐·같은 kind로 이미 알림이 있으면
+-- 다시 만들지 않아 중복 알림 걱정은 없다).
 create or replace function public.daily_puzzle_pick_run()
 returns void language plpgsql security definer set search_path = public as $$
 declare v_date date; v_no bigint; v_score numeric; v_creator uuid; v_rows int;
@@ -2051,20 +2193,23 @@ declare v_date date; v_no bigint; v_score numeric; v_creator uuid; v_rows int;
 begin
   if auth.uid() is not null and not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
   v_date := ((now() at time zone 'Asia/Seoul')::date + 1);
-  if exists (select 1 from public.daily_puzzle_picks where date = v_date) then return; end if;
-  select p.no, s.score into v_no, v_score
-  from public.puzzles p
-  join public.puzzle_popularity_all() s on s.no = p.no
-  where p.is_public
-    and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
-    and p.no not in (select puzzle_no from public.daily_puzzle_picks where puzzle_no is not null)
-  order by s.score desc, p.no asc
-  limit 1;
+  select puzzle_no into v_no from public.daily_puzzle_picks where date = v_date;
+  if v_no is null then
+    select p.no, s.score into v_no, v_score
+    from public.puzzles p
+    join public.puzzle_popularity_all() s on s.no = p.no
+    where p.is_public
+      and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
+      and p.no not in (select puzzle_no from public.daily_puzzle_picks where puzzle_no is not null)
+    order by s.score desc, p.no asc
+    limit 1;
+    if v_no is null then return; end if;
+    insert into public.daily_puzzle_picks(date, puzzle_no, score) values (v_date, v_no, v_score)
+    on conflict (date) do nothing;
+    get diagnostics v_rows = row_count; -- 동시 실행 등으로 이미 다른 확정이 먼저 반영됐으면(0) 그 확정된 값을 대신 읽는다
+    if v_rows = 0 then select puzzle_no into v_no from public.daily_puzzle_picks where date = v_date; end if;
+  end if;
   if v_no is null then return; end if;
-  insert into public.daily_puzzle_picks(date, puzzle_no, score) values (v_date, v_no, v_score)
-  on conflict (date) do nothing;
-  get diagnostics v_rows = row_count; -- on conflict do nothing 시 실제로 삽입되지 않은 행은 세지 않는다
-  if v_rows = 0 then return; end if; -- 동시 실행 등으로 다른 확정이 먼저 반영된 경우 알림도 보내지 않는다
   -- (사용자 요청) 선정된 퍼즐의 제작자에게 알림 + 보상을 준다 — 이 함수가 SECURITY DEFINER(테이블
   -- 소유자 권한)로 실행되므로 notifications의 "notif insert auth" RLS(본인 관련 kind만 클라이언트가
   -- 직접 insert 가능)를 그대로 우회해 다른 사람(제작자)에게도 알림을 만들 수 있다 — puzzle_delete 등
@@ -2072,7 +2217,10 @@ begin
   -- 눌러야 보상이 지급된 것으로 표시된다(실제 코인 지급 자체는 이 앱의 다른 보상과 동일하게
   -- 클라이언트 progress에 반영 — user_progress 전체가 이미 클라이언트 신뢰 구조임, 20번 섹션 참고).
   select creator_uid into v_creator from public.puzzles where no = v_no;
-  if v_creator is not null then
+  if v_creator is not null and not exists (
+    select 1 from public.notifications
+    where to_uid = v_creator and kind = 'daily_puzzle_selected' and (payload ->> 'no')::bigint = v_no
+  ) then
     insert into public.notifications(to_uid, kind, payload)
     values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', v_date, 'reward', v_reward, 'claimed', false));
   end if;
