@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil,
+  Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -964,13 +964,17 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.5.0", date: "2026.9.12",
-    summary: "퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 버그를 근본 원인부터 고쳤어요. 알고 보니 서버가 '완료했다'는 응답을 빈 몸으로 보내는 요청 전부를, 앱이 그 빈 응답을 읽으려다 실패해서 무조건 '실패'로 잘못 판단하고 있었어요 — 같은 이유로 조용히 안 되고 있던 계정 탈퇴, 채팅 메시지 수정·대화 지우기, 실시간 대국 대기열/초대 취소 같은 기능들도 이번에 함께 고쳐졌어요. 내가 만든 퍼즐이 오늘의 퍼즐로 뽑혔는데도 알림이 안 오던 문제도 고쳤어요.",
+    summary: "'상점' 탭이 '플레이' 탭으로 개편됐어요 — 분석 탭의 PLAY 버튼과 똑같은 화면으로 곧장 들어가고, 그 화면을 아래로 내리면 기존 상점(스킨) 화면이 그대로 이어져요. 그리고 퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 버그를 근본 원인부터 고쳤어요 — 알고 보니 서버가 '완료했다'는 응답을 빈 몸으로 보내는 요청 전부를, 앱이 그 빈 응답을 읽으려다 실패해서 무조건 '실패'로 잘못 판단하고 있었어요. 같은 이유로 조용히 안 되고 있던 계정 탈퇴, 채팅 메시지 수정·대화 지우기, 실시간 대국 대기열/초대 취소 같은 기능들과, 내가 만든 퍼즐이 오늘의 퍼즐로 뽑혔는데도 알림이 안 오던 문제도 이번에 함께 고쳐졌어요.",
     mascot: {
-      intro: { char: "kokoa", expr: "think", name: "KOKOA 코치", align: "left", text: "퍼즐 삭제·이름 변경, 이제 진짜로 돼요!" },
-      outro: { char: "milku", expr: "wink", name: "MILKU 코치", align: "right", text: "오늘의 퍼즐 알림도 이제 안 놓쳐요!" },
+      intro: { char: "milku", expr: "great", name: "MILKU 코치", align: "left", text: "상점이 플레이 탭 안으로 들어왔어요!" },
+      outro: { char: "kokoa", expr: "wink", name: "KOKOA 코치", align: "right", text: "퍼즐 삭제·이름 변경, 이제 진짜로 돼요!" },
     },
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: "퍼즐 삭제·FEN 이름 변경·오늘의 퍼즐 알림 버그 수정" },
+    highlight: { kind: "icon", Icon: Play, color: T.brassHi, label: "상점 탭 → 플레이 탭 개편 + 퍼즐 삭제·FEN 이름 변경·오늘의 퍼즐 알림 버그 수정" },
     sections: [
+      { cat: "feature", items: [
+        "'상점' 탭이 '플레이' 탭으로 바뀌었어요 — 분석 탭의 PLAY 버튼을 누른 것과 완전히 같은 대국 설정 화면으로 곧장 들어가요.",
+        "그 대국 설정 화면을 아래로 내리면 기존 상점(체스보드·기물 스킨) 화면이 그대로 이어져 있어요.",
+      ] },
       { cat: "fix", items: [
         "퍼즐 삭제 버튼을 눌러도 지워지지 않던 문제를 고쳤어요.",
         "FEN으로 만든 퍼즐의 이름을 바꿔도 저장되지 않던 문제를 고쳤어요.",
