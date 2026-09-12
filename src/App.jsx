@@ -19815,7 +19815,7 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
-    version: "0.4.10", date: "2026.9.12", dev: ["openchesskr", "G13sus4"], items: [
+    version: "0.5.0", date: "2026.9.12", dev: ["openchesskr", "G13sus4"], items: [
       "퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 문제를 고쳤어요 — 같은 원인으로 조용히 실패하고 있던 계정 탈퇴·채팅 메시지 수정/대화 지우기·실시간 대국 대기열 취소 등 다른 몇몇 기능도 함께 정상화됐어요.",
     ]
   },
