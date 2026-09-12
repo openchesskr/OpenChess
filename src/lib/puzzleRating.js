@@ -74,10 +74,15 @@ export function applySolveTimeAdjustment(baseRating, avgMs, sampleCount) {
   const adj = Math.max(-400, Math.min(400, 300 * Math.log2(ratio)));
   return Math.max(100, Math.min(3000, Math.round(baseRating + adj)));
 }
-// 퍼즐 전체 레이팅 = 모든 라인 레이팅의 평균(라인 레이팅 합 ÷ 라인 수).
+// 퍼즐 전체 레이팅 = 모든 라인 레이팅의 평균(라인 레이팅 합 ÷ 라인 수) + 갈래(라인 수) 가산점.
+// (사용자 요청) 라인이 여러 갈래로 갈라지는 퍼즐은 실제로 익혀야 할 응수 경우의 수가 그만큼
+// 늘어나 체감 난이도가 올라가는데, 예전엔 단순 평균이라 이 효과가 전혀 반영되지 않았다 — 라인
+// 수가 늘수록 완만하게(로그 스케일, 최대 150점) 가산점을 더한다.
 export function puzzleAverageRating(lineRatings) {
   if (!lineRatings || !lineRatings.length) return 100;
-  return Math.round(lineRatings.reduce((a, b) => a + b, 0) / lineRatings.length);
+  const avg = lineRatings.reduce((a, b) => a + b, 0) / lineRatings.length;
+  const branchBonus = lineRatings.length > 1 ? Math.min(150, 60 * Math.log2(lineRatings.length)) : 0;
+  return Math.max(100, Math.min(3000, Math.round(avg + branchBonus)));
 }
 // (v0.4.1 기능, item 3) 사용자 요청 — "체감 레이팅"이 아니라 실제로 오르내리는 공개 퍼즐 레이팅.
 // 표준 Elo — 이 퍼즐(라인)의 레이팅을 상대로 놓고, 라인을 끝까지 풀면 승리(1), 틀린 수를 두면
