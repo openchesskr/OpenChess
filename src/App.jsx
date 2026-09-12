@@ -8867,9 +8867,44 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
     </div>
   );
 }
+// (v0.5.0 기능, 사용자 요청) 플레이 페이지 "스페셜" 토글 — 체스보드 위 오리지널 미니게임들을 모아
+// 보여줄 자리. 아직 구체적인 미니게임은 정해지지 않아 실제 게임 없이 레이아웃(카드 그리드)만 먼저
+// 만들어 둔다 — 나중에 게임이 정해지면 이 배열에 { key, name, desc } 항목만 추가하고 카드의
+// onClick(지금은 없음)에 그 게임 진입 로직을 연결하면 된다. 여러 개를 나란히 보여줄 수 있는지
+// 미리 확인해 두기 위해 자리(슬롯) 3개를 잠금 상태로 채워 둔다.
+const PLAY_SPECIAL_GAMES = [
+  { key: "slot1", name: "미니게임 준비 중" },
+  { key: "slot2", name: "미니게임 준비 중" },
+  { key: "slot3", name: "미니게임 준비 중" },
+];
+function PlaySpecialGames() {
+  return (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+        <Sparkles size={15} style={{ color: T.brass }} />
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>스페셜 미니게임</div>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 14 }}>체스보드 위에서 즐기는 오리지널 미니게임들을 이 자리에서 곧 만나볼 수 있어요.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
+        {PLAY_SPECIAL_GAMES.map((g) => (
+          <div key={g.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, aspectRatio: "1", borderRadius: 12, border: "1px dashed #C9B58C", background: "rgba(0,0,0,.03)", color: T.inkSoft, padding: 10, textAlign: "center" }}>
+            <Lock size={20} />
+            <span style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.3 }}>{g.name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
+  // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
+  // 대국 화면 그대로, "스페셜"은 앞으로 추가할 체스보드 위 오리지널 미니게임들을 모아 보여줄 자리다.
+  // 아직 실제 미니게임은 없어 레이아웃(카드 그리드)만 먼저 만들어 둔다 — 나중에 게임이 정해지면
+  // PLAY_SPECIAL_GAMES 배열에 항목만 추가하면 된다. step(setup/playing) 등 기존 상태는 이 토글과
+  // 무관하게 그대로 유지되므로, "일반"으로 다시 돌아오면 하던 대국이 그대로 이어진다.
+  const [pageMode, setPageMode] = useState("normal"); // "normal" | "special"
   const [step, setStep] = useState("setup"); // "setup" | "playing"
   const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
   const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
@@ -9445,7 +9480,13 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 28, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <span style={{ width: 34 }} />
         </div>
-        {step === "setup" ? (
+        {/* (v0.5.0 기능, 사용자 요청) "일반/스페셜" 토글 — 페이지 최상단(헤더 바로 아래)에 고정. */}
+        <div className="inline-flex" style={{ width: "100%", borderRadius: 11, background: "rgba(0,0,0,.28)", border: "1px solid rgba(196,154,80,.3)", padding: 4, gap: 4, marginBottom: 16 }}>
+          <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
+          <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
+        </div>
+        {pageMode === "special" && <PlaySpecialGames />}
+        {pageMode === "normal" && (step === "setup" ? (
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
              (MatchmakingScreen)이다 — 지금 벌어지고 있는 일에 화면 전체가 반응하는 느낌을 준다. */
@@ -9646,7 +9687,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
               <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
-        )}
+        ))}
       </div>
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
@@ -9681,8 +9722,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       {/* (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 화면 밑에 기존 상점 UI를 그대로 이어
           붙인다(이 fixed 오버레이 자신의 스크롤 영역 안이라, 대국 설정 화면을 내려서 스크롤하면
           보인다). 분석 탭 PLAY 버튼 등 storeProps 없이 여는 다른 진입 경로는 아무 것도 렌더링하지
-          않아 지금까지와 완전히 동일하다. */}
-      {storeProps && (
+          않아 지금까지와 완전히 동일하다. "스페셜" 토글일 때는 미니게임 그리드만 보여주고 상점은
+          숨긴다. */}
+      {storeProps && pageMode === "normal" && (
         <div style={{ maxWidth: 460, margin: "0 auto", padding: "0 16px 60px", borderTop: "1px solid rgba(196,154,80,.25)", marginTop: 8, paddingTop: 22 }}>
           <StoreTab {...storeProps} />
         </div>
@@ -19846,6 +19888,8 @@ const CHANGELOG = [
       "모바일에서 분석 탭의 엔진 라인(상위 3줄)이 안 뜨던 문제를 고쳤어요.",
       "도감 탭 오프닝 모식도의 흰 영역이 데스크톱에서 조금 더 넓어졌어요.",
       "하단 탭 순서를 분석·플레이·퍼즐·학습·도감·설정 순으로 바꿨어요.",
+      "분석 탭의 PLAY 버튼을 누르면 이제 플레이 탭을 누른 것과 똑같이 곧장 /play 페이지로 이동해요.",
+      "플레이 페이지 맨 위에 '일반/스페셜' 토글이 생겼어요 — 스페셜에는 앞으로 추가될 미니게임들이 모일 자리예요.",
     ]
   },
   {
@@ -27681,6 +27725,12 @@ export default function App() {
     // 사용자가 직접 다른 탭을 골랐으니, 집중 분석을 닫을 때 도감으로 자동으로 되돌아가는 예약은 취소한다.
     setFocusReturnTab(null);
   };
+  // (v0.5.0 개편, 사용자 요청) 분석 탭 PLAY 버튼 — 예전엔 openPlay를 곧장 호출해 "분석 탭 위에 겹쳐
+  // 뜨는 별도 화면"처럼 동작했다(뒤로가기·닫기를 누르면 분석 탭으로 돌아옴). 이제 플레이 탭과 완전히
+  // 같은 경로(switchTab("store"))로 실제 탭 전환을 일으켜, 다른 탭에서 플레이 탭을 누르는 것과
+  // 똑같이 "그냥 /play 페이지로 이동"하는 느낌을 준다 — 전환 뒤에는 아래 useLayoutEffect(tab==="store"
+  // 감지)가 openPlay를 이어서 호출해 대국 설정 화면을 띄운다.
+  const goToPlayTab = () => switchTab("store");
   // (사용자 요청) 집중 분석이 도감 탭·퍼즐 탭(일일 퍼즐 팝업 포함)에서 시작됐다면(focusReturnTab에
   // 그 탭 이름이 담김), 학습이 닫히는(learnFocus가 null로 바뀌는) 순간 그 탭으로 되돌아간다 —
   // switchTab을 쓰면 navNonce가 올라 CollectionTab/PuzzleTab이 강제로 새로 마운트돼(아래 render의
@@ -28303,7 +28353,7 @@ export default function App() {
             언마운트되지 않고 계속 liveOn 실시간 평가를 돌려, useEngine의 단일 공유 워커 큐를 끝없이
             채워 넣는 바람에 PlayPage의 봉 수 요청(engine.evaluateMulti)이 차례를 영영 못 받고 무한정
             "생각하는 중..."에 멈춰 있던 문제(사용자 제보)의 원인이었다. */}
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={openPlay} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={learnFenSeed} onConsumeFenSeed={() => setLearnFenSeed(null)} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={goToPlayTab} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={learnFenSeed} onConsumeFenSeed={() => setLearnFenSeed(null)} />}
         {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 분석으로 이동한 경우(focusReturnTab === "dex"),
             집중 분석이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
             분석을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다
