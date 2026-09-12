@@ -884,7 +884,13 @@ async function fetchLichess(sans, master) {
   const posTotal = (j.white || 0) + (j.draws || 0) + (j.black || 0);
   const moves = (j.moves || []).map((m) => {
     const tot = (m.white || 0) + (m.draws || 0) + (m.black || 0);
-    return { san: m.san, games: tot, adopt: posTotal ? +(100 * tot / posTotal).toFixed(1) : 0, name: m.opening ? m.opening.name : null, wdl: { w: m.white || 0, d: m.draws || 0, b: m.black || 0 } };
+    // (버그 수정, 사용자 제보) "채택률(%) 표시가 정확한 소수점 단위를 안 보여주고 반올림된 값만
+    // 나온다" — 화면(MoveTile)은 소수점 둘째 자리까지 보여주는데(useCountUp decimals=2), 정작 여기서
+    // 원본 비율을 미리 소수점 첫째 자리로 반올림해(.toFixed(1)) 저장해 뒀던 게 원인이다 — 예를 들어
+    // 실제 12.347%인 수가 여기서 먼저 12.3으로 반올림된 뒤 화면에 "12.30%"로 표시돼, 둘째 자리는
+    // 항상 의미 없는 0이었다. 반올림 없이 원래 비율을 그대로 저장해 화면에서 실제 소수점 둘째 자리까지
+    // 쓸 수 있게 한다(자르는 방식으로 표시하는 것은 아래 useCountUp에서 처리).
+    return { san: m.san, games: tot, adopt: posTotal ? (100 * tot / posTotal) : 0, name: m.opening ? m.opening.name : null, wdl: { w: m.white || 0, d: m.draws || 0, b: m.black || 0 } };
   });
   return { posTotal, opening: j.opening || null, moves, wdl: { w: j.white || 0, d: j.draws || 0, b: j.black || 0 }, master: !!master };
 }
@@ -3746,7 +3752,12 @@ function useCountUp(target, durationMs, decimals = 0) {
     const tick = (now) => {
       const t = Math.min(1, (now - start) / durationMs);
       const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay(Math.round(target * eased * p) / p);
+      // (버그 수정, 사용자 제보) 채택률(%) 등 소수점 표기가 반올림된 값으로 보였다 — 애니메이션이
+      // 끝나는 마지막 프레임(eased=1)의 값이 그대로 최종 표시값이 되는데, 여기서 Math.round를 쓰면
+      // 예를 들어 12.347%가 12.35%로 반올림돼 보였다. 반올림 대신 내림(버림)으로 잘라, 실제 값의
+      // 소수점 이하를 부풀리지 않는 근삿값(항상 실제 값 이하)을 보여준다. games처럼 decimals=0인
+      // 정수 카운터는 target 자체가 정수라 최종값에는 영향이 없다.
+      setDisplay(Math.floor(target * eased * p) / p);
       if (t < 1) rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -4303,7 +4314,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           const child = await fetchLichess([...sans, m.san], false);
           const g = child && child.posTotal != null ? child.posTotal : null;
           if (g != null && !cancelled && statMountedRef.current) {
-            setMoves((prev) => prev.map((x) => x.san === m.san ? { ...x, games: g, adopt: posGames ? +(100 * g / posGames).toFixed(1) : x.adopt } : x));
+            setMoves((prev) => prev.map((x) => x.san === m.san ? { ...x, games: g, adopt: posGames ? (100 * g / posGames) : x.adopt } : x));
           }
         } catch { }
       }
@@ -19890,6 +19901,7 @@ const CHANGELOG = [
       "하단 탭 순서를 분석·플레이·퍼즐·학습·도감·설정 순으로 바꿨어요.",
       "분석 탭의 PLAY 버튼을 누르면 이제 플레이 탭을 누른 것과 똑같이 곧장 /play 페이지로 이동해요.",
       "플레이 페이지 맨 위에 '일반/스페셜' 토글이 생겼어요 — 스페셜에는 앞으로 추가될 미니게임들이 모일 자리예요.",
+      "분석 탭 수 블록의 리체스 채택률(%)이 반올림돼 실제보다 부정확하게 보이던 문제를 고쳤어요 — 이제 소수점 둘째 자리까지 실제 값에 더 가깝게 표시돼요.",
     ]
   },
   {
