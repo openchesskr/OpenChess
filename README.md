@@ -34,6 +34,11 @@
 
 `sbRpc`가 응답 상태 204거나 본문이 비어 있으면 파싱을 건너뛰고 `null`을 돌려주도록 고쳤다. 같은 구조(`returns void`)를 쓰는 다른 RPC들 — `puzzle_reassign_creator`·`puzzle_creator_save`·`puzzle_set_visibility`·`chat_edit_message`·`chat_clear_conversation`·`pvp_queue_leave`·`pvp_invite_cancel`·`delete_own_account` 등 — 도 전부 같은 결함을 안고 있었고, 이번 한 줄 수정으로 함께 정상화됐다. SQL 변경은 없다(순수 클라이언트 버그).
 
+**버그 수정 — 오늘의 퍼즐로 선정돼도 제작자에게 알림이 안 오던 문제**
+사용자 제보. `daily_puzzle_pick_run()`은 그 날짜가 이미 확정돼 있으면 맨 위에서 곧장 `return`해, 알림을 시도하는 시점이 그 퍼즐이 처음 뽑히는 그 순간 단 한 번뿐이었다. 그런데 그 순간 `creator_uid`가 아직 null이면(비로그인 게스트가 만들었거나, `puzzle_claim_creator`가 `puzzleShare`의 fire-and-forget 호출이라 아직 서버에 반영되기 전이면) 조용히 알림을 건너뛰었고, 이후 그 제작자가 로그인해 창작자로 확정돼(`creator_uid`가 나중에 채워져) 퍼즐 카드에는 정상적으로 아이디가 표시돼도 그 날짜는 이미 확정된 뒤라 다시는 알림을 보낼 기회가 없었다.
+
+`daily_puzzle_pick_run()`이 이미 확정된 날짜를 만나도 곧장 반환하지 않고, 그 픽의 퍼즐에 지금 `creator_uid`가 있는데 아직 `daily_puzzle_selected` 알림이 없으면 그 자리에서 되짚어 보내도록 고쳤다(같은 퍼즐 번호로 이미 알림이 있으면 다시 만들지 않아 중복 걱정은 없다). pg_cron이 매일 밤 이 함수를 다시 호출하므로, 놓친 알림은 그다음 날 밤 자동으로 복구된다 — 개발자 패널의 "즉시 실행" 버튼으로 바로 확인해 볼 수도 있다.
+
 ### OpenChess v0.4.9 — 2026/9/9
 
 **버그 수정 — about 페이지 버전 기록에서 v0.4.8 항목 누락**
