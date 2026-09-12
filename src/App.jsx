@@ -8878,36 +8878,173 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
     </div>
   );
 }
+// ============================================================ 스페셜 미니게임 플랫폼 ============================================================
 // (v0.5.0 기능, 사용자 요청) 플레이 페이지 "스페셜" 토글 — 체스보드 위 오리지널 미니게임들을 모아
-// 보여줄 자리. 아직 구체적인 미니게임은 정해지지 않아 실제 게임 없이 레이아웃(카드 그리드)만 먼저
-// 만들어 둔다 — 나중에 게임이 정해지면 이 배열에 { key, name, desc } 항목만 추가하고 카드의
-// onClick(지금은 없음)에 그 게임 진입 로직을 연결하면 된다. 여러 개를 나란히 보여줄 수 있는지
-// 미리 확인해 두기 위해 자리(슬롯) 3개를 잠금 상태로 채워 둔다.
+// 보여줄 자리. 실제 미니게임의 규칙(사용자가 나중에 알려주기로 함)은 아직 정해지지 않았지만, 그와
+// 무관하게 항상 필요할 "플랫폼"(게임 목록 카드 그리드 → 게임 실행 화면 → 점수/보상 → 최고 기록
+// 저장 → 목록으로 복귀)은 미리 완성해 둔다. 실제 게임이 정해지면 할 일은 딱 두 가지뿐이다:
+// 1) 그 게임의 규칙을 구현한 컴포넌트를 하나 만든다 — props로 { onFinish(score) }만 받아, 게임이
+//    끝나는 순간 최종 점수로 onFinish를 한 번 호출하면 된다(그 외 UI는 이 컴포넌트가 전부 책임진다).
+// 2) 아래 PLAY_SPECIAL_GAMES 배열에 { key, name, desc, Icon, status:"ready", Component } 항목을
+//    추가한다(또는 기존 "준비 중" 슬롯의 status만 "ready"로 바꾸고 Component를 채운다).
+// 그러면 카드 그리드 노출·클릭 진입·최고 기록(localStorage, 게임별로 분리)·완료 시 OC 나이트 코인
+// 보상 지급·"다시하기"/"목록으로" 흐름이 전부 자동으로 연결된다.
+//
+// 아직 진짜 게임이 없어 이 파이프라인이 실제로 끝까지 동작하는지 증명할 방법이 없었다 — 그래서
+// SquareReflexGame(칸 반응속도 테스트)이라는 아주 단순한 예시 게임 하나를 "테스트용" 표시와 함께
+// 미리 연결해 뒀다. 실제 미니게임이 정해지면 이 예시는 지우고 그 자리에 진짜 게임을 넣으면 된다.
 const PLAY_SPECIAL_GAMES = [
-  { key: "slot1", name: "미니게임 준비 중" },
-  { key: "slot2", name: "미니게임 준비 중" },
-  { key: "slot3", name: "미니게임 준비 중" },
+  { key: "square-reflex", name: "칸 반응속도 (테스트용)", desc: "빛나는 칸을 최대한 빨리 눌러 점수를 쌓아 보세요 — 실제 미니게임이 정해지기 전까지 이 자리를 대신하는 예시 게임이에요.", Icon: Target, status: "ready", Component: SquareReflexGame, example: true },
+  { key: "slot2", name: "미니게임 준비 중", status: "soon" },
+  { key: "slot3", name: "미니게임 준비 중", status: "soon" },
 ];
-function PlaySpecialGames() {
+// 게임별 최고 기록 — 게임 key로 네임스페이스를 나눠 localStorage에 저장한다(로그인 여부와 무관하게
+// 이 기기에서 곧장 동작). 나중에 서버 랭킹이 필요해지면 이 훅의 내부 저장소만 Supabase 호출로
+// 바꾸면 되고, 호출부(MinigameShell)는 그대로 쓸 수 있다.
+function useMinigameBest(gameKey) {
+  const storageKey = "occ_minigame_best_" + gameKey;
+  const [best, setBest] = useState(() => {
+    try { const v = Number(window.localStorage.getItem(storageKey)); return Number.isFinite(v) ? v : 0; } catch { return 0; }
+  });
+  const record = useCallback((score) => {
+    setBest((prev) => {
+      if (score <= prev) return prev;
+      try { window.localStorage.setItem(storageKey, String(score)); } catch { }
+      return score;
+    });
+  }, [storageKey]);
+  return [best, record];
+}
+// 미니게임 하나를 실행하는 공용 틀 — 어떤 게임이든 이 틀 안에서 시작·진행·종료·보상·재시작을 똑같은
+// 방식으로 겪는다. 게임 컴포넌트(game.Component)는 진행 화면 UI만 그리고, 끝났을 때 onFinish(score)
+// 한 번만 불러주면 나머지(보상 지급·최고 기록 갱신·결과 화면)는 이 틀이 알아서 처리한다.
+function MinigameShell({ game, coins, onAwardCoins, onExit }) {
+  const [best, recordBest] = useMinigameBest(game.key);
+  const [result, setResult] = useState(null); // { score, reward, isBest } | null
+  const [sessionId, setSessionId] = useState(0); // 이 값을 바꿔 게임 컴포넌트를 완전히 새로 마운트(재시작)한다
+  // (설계) 보상 계산식은 게임마다 다를 수 있으므로, 나중에 진짜 게임이 생기면 이 한 줄만 그 게임에
+  // 맞게 바꾸면 된다 — 지금은 점수 2점당 코인 1개(최대 30개)라는 임시 기준을 둔다.
+  const rewardOf = (score) => Math.max(0, Math.min(30, Math.floor(score / 2)));
+  const handleFinish = useCallback((score) => {
+    const s = Number.isFinite(score) ? score : 0;
+    const isBest = s > best;
+    const reward = rewardOf(s);
+    recordBest(s);
+    if (reward > 0) onAwardCoins && onAwardCoins(reward);
+    setResult({ score: s, reward, isBest });
+  }, [best, recordBest, onAwardCoins]);
+  const retry = () => { setResult(null); setSessionId((n) => n + 1); };
+  const Game = game.Component;
+  return (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+        <button onClick={onExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>{game.name}</div>
+        <div title="최고 기록" style={{ fontSize: 11, fontWeight: 800, color: T.brass, flexShrink: 0, minWidth: 30, textAlign: "right" }}>{best}</div>
+      </div>
+      {!result && <Game key={sessionId} onFinish={handleFinish} />}
+      {result && (
+        <div style={{ textAlign: "center", padding: "24px 10px" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{result.isBest ? "신기록!" : "결과"}</div>
+          <div style={{ fontSize: 34, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 4 }}>{result.score}<span style={{ fontSize: 14, color: T.inkSoft, fontWeight: 700 }}> 점</span></div>
+          <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 18 }}>최고 기록 {best}점</div>
+          {result.reward > 0 && (
+            <div className="inline-flex items-center gap-1" style={{ marginBottom: 18, padding: "5px 12px", borderRadius: 999, background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass }}>
+              <CoinIcon size={16} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>+{result.reward}</span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button onClick={onExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+            <button onClick={retry} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>다시하기</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function PlaySpecialGames({ coins, onAwardCoins }) {
+  const [activeKey, setActiveKey] = useState(null);
+  const active = PLAY_SPECIAL_GAMES.find((g) => g.key === activeKey) || null;
+  if (active) return <MinigameShell game={active} coins={coins} onAwardCoins={onAwardCoins} onExit={() => setActiveKey(null)} />;
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
         <Sparkles size={15} style={{ color: T.brass }} />
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>스페셜 미니게임</div>
       </div>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 14 }}>체스보드 위에서 즐기는 오리지널 미니게임들을 이 자리에서 곧 만나볼 수 있어요.</p>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 14 }}>체스보드 위에서 즐기는 오리지널 미니게임들을 이 자리에서 만나보세요.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
-        {PLAY_SPECIAL_GAMES.map((g) => (
-          <div key={g.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, aspectRatio: "1", borderRadius: 12, border: "1px dashed #C9B58C", background: "rgba(0,0,0,.03)", color: T.inkSoft, padding: 10, textAlign: "center" }}>
-            <Lock size={20} />
-            <span style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.3 }}>{g.name}</span>
-          </div>
+        {PLAY_SPECIAL_GAMES.map((g) => {
+          const ready = g.status === "ready";
+          const GIcon = g.Icon || Lock;
+          return (
+            <button key={g.key} onClick={() => ready && setActiveKey(g.key)} disabled={!ready} className={ready ? "press" : undefined}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, aspectRatio: "1", borderRadius: 12, border: ready ? "1px solid " + T.brass : "1px dashed #C9B58C", background: ready ? "rgba(196,154,80,.1)" : "rgba(0,0,0,.03)", color: ready ? T.ink : T.inkSoft, padding: 10, textAlign: "center", cursor: ready ? "pointer" : "default", position: "relative" }}>
+              {g.example && <span style={{ position: "absolute", top: 6, right: 6, fontSize: 8, fontWeight: 800, color: T.brass, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 5px" }}>테스트용</span>}
+              <GIcon size={20} />
+              <span style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.3 }}>{g.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+// ---- 예시 게임: 칸 반응속도(SquareReflex) — 실제 미니게임이 정해지기 전까지 위 플랫폼이 실제로
+// 끝까지 동작하는지 증명하기 위한 자리채움용 게임. 규칙: 5×5 칸 중 무작위로 하나가 빛나면 그 칸을
+// 누른다 — 맞히면 점수 +1하고 다음 칸이 더 빨리 나타나며, 틀린 칸을 누르거나 시간 안에 못 누르면
+// 그 자리에서 종료된다. onFinish(score) 하나만 부모(MinigameShell)에 보고하면 되는, 이 플랫폼이
+// 요구하는 최소 인터페이스의 예시이기도 하다.
+const REFLEX_GRID = 5;
+const REFLEX_START_MS = 1000;
+const REFLEX_MIN_MS = 350;
+const REFLEX_STEP_MS = 40;
+function SquareReflexGame({ onFinish }) {
+  const [phase, setPhase] = useState("ready"); // "ready" | "playing"
+  const [score, setScore] = useState(0);
+  const [target, setTarget] = useState(null);
+  const timerRef = useRef(null);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+  const finish = (finalScore) => {
+    clearTimeout(timerRef.current);
+    setTarget(null);
+    setPhase("ready");
+    onFinish(finalScore);
+  };
+  const scheduleNext = (curScore) => {
+    const delay = Math.max(REFLEX_MIN_MS, REFLEX_START_MS - curScore * REFLEX_STEP_MS);
+    const idx = Math.floor(Math.random() * REFLEX_GRID * REFLEX_GRID);
+    setTarget(idx);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => finish(curScore), delay);
+  };
+  const start = () => { setScore(0); setPhase("playing"); scheduleNext(0); };
+  const onCell = (idx) => {
+    if (phase !== "playing") return;
+    if (idx === target) { const next = score + 1; setScore(next); scheduleNext(next); }
+    else finish(score);
+  };
+  if (phase === "ready") {
+    return (
+      <div style={{ textAlign: "center", padding: "26px 10px" }}>
+        <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>빛나는 칸이 나타나면 최대한 빨리 눌러 점수를 쌓으세요.<br />틀리거나 시간 안에 못 누르면 끝나요.</p>
+        <button onClick={start} className="press" style={{ padding: "11px 28px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>시작</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 10 }}>점수 {score}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(" + REFLEX_GRID + ",1fr)", gap: 6, maxWidth: 280, margin: "0 auto" }}>
+        {Array.from({ length: REFLEX_GRID * REFLEX_GRID }, (_, i) => (
+          <button key={i} onClick={() => onCell(i)} className="press"
+            style={{ aspectRatio: "1", borderRadius: 8, border: "1px solid " + (i === target ? T.brass : "#C9B58C"), background: i === target ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#FBF5E8", cursor: "pointer", padding: 0 }} />
         ))}
       </div>
     </div>
   );
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialProps }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -9496,7 +9633,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
           <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
         </div>
-        {pageMode === "special" && <PlaySpecialGames />}
+        {pageMode === "special" && <PlaySpecialGames coins={specialProps && specialProps.coins} onAwardCoins={specialProps && specialProps.onAwardCoins} />}
         {pageMode === "normal" && (step === "setup" ? (
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
@@ -19902,6 +20039,7 @@ const CHANGELOG = [
       "분석 탭의 PLAY 버튼을 누르면 이제 플레이 탭을 누른 것과 똑같이 곧장 /play 페이지로 이동해요.",
       "플레이 페이지 맨 위에 '일반/스페셜' 토글이 생겼어요 — 스페셜에는 앞으로 추가될 미니게임들이 모일 자리예요.",
       "분석 탭 수 블록의 리체스 채택률(%)이 반올림돼 실제보다 부정확하게 보이던 문제를 고쳤어요 — 이제 소수점 둘째 자리까지 실제 값에 더 가깝게 표시돼요.",
+      "플레이 페이지 스페셜 탭에 미니게임을 실제로 즐길 수 있는 틀(목록·최고 기록·코인 보상·다시하기)이 생겼어요 — 진짜 미니게임이 정해지기 전까지는 테스트용 예시 게임 '칸 반응속도'로 미리 만나볼 수 있어요.",
     ]
   },
   {
@@ -28247,7 +28385,7 @@ export default function App() {
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
       {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
-      {playGame && <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} />}
+      {playGame && <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialProps={{ coins: ocCoins, onAwardCoins: (amt) => setOcCoins((c) => c + amt) }} />}
       {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
           대신 정말 기권 처리해도 되는지 한 번 확인한다. */}
       <AnimatePresence>
