@@ -21030,6 +21030,48 @@ function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
     </motion.div>
   );
 }
+// (v0.5.0 기능, 사용자 요청) 내가 만든 퍼즐이 "오늘의 퍼즐"로 선정됐다는 알림은, 그 순간 접속해
+// 있지 않았어도 다음 접속 때 반드시 이 팝업으로 다시 보여준다 — 알림 벨 안에 조용히 앉아만 있으면
+// 놓치기 쉬우므로(DailyQuestClearedModal과 같은 이유), 서버에 claimed:false로 남아 있는 알림이
+// 있는 한 로드될 때마다 자동으로 뜨고, "받기"를 눌러야만(=X로 닫아도 다음 로드에 또 뜬다) 사라진다.
+function PuzzleSelectedModal({ n, onClaim }) {
+  const p = n.payload || {};
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
+      <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 6 }}
+        transition={{ type: "spring", stiffness: 340, damping: 24 }}
+        style={{ position: "relative", width: "100%", maxWidth: 340, margin: "auto", borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
+        <div style={{ position: "relative", padding: "30px 20px 24px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
+          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 220, height: 220, marginTop: -6, transform: "translate(-50%,-50%)", background: "repeating-conic-gradient(from 0deg, rgba(243,223,174,.35) 0deg 7deg, transparent 7deg 22deg)", borderRadius: "50%", opacity: 0.7, animationName: "questRaySpin", animationDuration: "16s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
+          {QUEST_CLEAR_CONFETTI.map((c, i) => (
+            <span key={"c" + i} aria-hidden="true" style={{ position: "absolute", left: c.left, top: -6, width: 6, height: 10, background: c.color, borderRadius: 1, transform: "rotate(" + c.rot + "deg)", animationName: "questConfettiFall", animationDuration: "1.6s", animationTimingFunction: "ease-in", animationDelay: c.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
+          ))}
+          {QUEST_CLEAR_SPARKLES.map((sp, i) => (
+            <Sparkles key={i} size={sp.size} style={{ position: "absolute", left: sp.left, top: sp.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: sp.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
+          ))}
+          <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
+            <Mascot name="milku" emotion="great" size={68} />
+          </div>
+        </div>
+        <div style={{ background: T.paper, padding: "18px 18px 20px", textAlign: "center" }}>
+          <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
+            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
+            <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
+            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>오늘의 퍼즐로 선정!</span>
+            <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
+            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
+          </div>
+          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 16px", lineHeight: 1.5 }}>내가 만든 퍼즐 #{p.no}이(가)<br />오늘의 퍼즐로 뽑혔어요.</p>
+          <button onClick={() => onClaim(n)} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
+            <span className="gm-board-shine" style={{ borderRadius: 11 }} />
+            +{p.reward || 0} <CoinIcon size={16} /> 받기
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
 // (기능) 문의/FAQ — 아직 등록된 FAQ는 없고(개발진이 추후 이 배열에 직접 채워 넣음), "문의하기"를
 // 누르면 메일 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
 const FAQ_ITEMS = [];
@@ -22156,6 +22198,16 @@ async function notifySetResult(row, result) { if (!SB_ON || row.id == null) retu
 // 같은 패턴으로 payload에 claimed:true만 남긴다(실제 코인 지급은 다른 보상들과 동일하게 클라이언트
 // progress에 반영, App.jsx의 onClaimNotif 참고).
 async function notifySetClaimed(row) { if (!SB_ON || row.id == null) return true; try { await sbPatch("notifications", "id=eq." + row.id, { read: true, payload: { ...(row.payload || {}), claimed: true } }); return true; } catch { return false; } }
+// (v0.5.0 기능, 사용자 요청) 접속해 있지 않을 때 온 daily_puzzle_selected 알림도 다음 접속 때 팝업으로
+// 다시 띄우기 위해, claimed:false로 아직 남아 있는 것만 골라 온다(가장 오래된 것 하나 — 여러 개
+// 쌓였어도 한 번에 하나씩만 보여주고, 받으면 checkPuzzleSelected가 다시 불려 다음 것을 보여준다).
+async function notifyUnclaimedPuzzlePick(uid) {
+  if (!SB_ON || !uid) return null;
+  try {
+    const rows = await sbSelect("notifications?to_uid=eq." + uid + "&kind=eq.daily_puzzle_selected&payload->>claimed=eq.false&order=created_at.asc&limit=1");
+    return rows && rows[0] ? rows[0] : null;
+  } catch { return null; }
+}
 // (버그 수정) 친구 요청을 알림 창의 수락/거절 버튼이 아니라 "친구" 모달(요청 탭·프로필 서브뷰)에서
 // 처리해도, 그 요청을 알렸던 notifications 행 자체는 손대지 않아 알림 창엔 계속 수락/거절 버튼이
 // (이미 처리된 뒤에도) 남아 있었다. 어느 경로로 처리하든 그 알림도 함께 "수락함/거절함"으로 정리한다.
@@ -26887,6 +26939,22 @@ export default function App() {
     const amount = (n.payload && n.payload.reward) || 0;
     if (amount > 0) setOcCoins((c) => c + amount);
   }, []);
+  // (v0.5.0 기능, 사용자 요청) 오늘의 퍼즐 선정 알림은 그 순간 접속해 있지 않았어도, 다음 접속 때
+  // claimed:false로 남아 있는 한 이 팝업(PuzzleSelectedModal)으로 계속 다시 뜬다 — 알림 벨을 직접
+  // 열어야만 보이는 것과 달리 로드되자마자 자동으로 띄워, 받기 전까지는 놓칠 수 없게 한다.
+  const [puzzleSelectedPopup, setPuzzleSelectedPopup] = useState(null); // 알림 행(가장 오래된 미수령분) 또는 null
+  const checkPuzzleSelected = useCallback(async () => {
+    if (!uid) { setPuzzleSelectedPopup(null); return; }
+    setPuzzleSelectedPopup(await notifyUnclaimedPuzzlePick(uid));
+  }, [uid]);
+  useEffect(() => { if (loaded) checkPuzzleSelected(); }, [checkPuzzleSelected, loaded]);
+  useRealtimeTable("notifications", uid ? "to_uid=eq." + uid : null, checkPuzzleSelected, !!uid, 120000);
+  const claimPuzzleSelectedPopup = useCallback(async (n) => {
+    onClaimNotif(n);
+    setPuzzleSelectedPopup(null);
+    await notifySetClaimed(n); // 서버 반영을 기다린 뒤에 재조회해야, 아직 claimed 처리 전인 같은 행을 또 받아오지 않는다
+    checkPuzzleSelected(); // 미수령분이 더 있으면 이어서 하나씩 보여준다
+  }, [onClaimNotif, checkPuzzleSelected]);
   const [authMode, setAuthMode] = useState("login");
   const [confirmLogout, setConfirmLogout] = useState(false);
   // (v0.1.4 기능) 앤티크한 체스 분위기의 잔잔한 배경음악(드뷔시 "달빛", 퍼블릭 도메인) — <audio> 엘리먼트
@@ -28049,6 +28117,7 @@ export default function App() {
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={(sans) => onOpenLearnFocus(sans, "dailypuzzle")} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
+      <AnimatePresence>{puzzleSelectedPopup && <PuzzleSelectedModal key={"puzzleSelectedModal" + puzzleSelectedPopup.id} n={puzzleSelectedPopup} onClaim={claimPuzzleSelectedPopup} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenUserProfile={openUserProfileByUsername} />}
