@@ -4102,10 +4102,22 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (v0.2.1) 엔진 상위 3줄을 최종 결과 한 번이 아니라 depth마다 실시간으로 갱신한다 — 평가치가 살아
       // 움직이고 수순이 점점 길어진다. 이 effect는 후보 수가 채워질 때마다 재실행되므로(cancelled가 금방
       // true가 됨) cancelled 대신 "지금 포지션 key가 그대로인가"로 가드해 탐색 내내 스트리밍을 유지한다.
-      const toLines3 = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
-        ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
-        sans: pvUciToSans(sans, pv.pv, 15),
-      }))).slice(0, 3);
+      // (버그 수정, 사용자 제보) "모바일에서 분석 탭 엔진 라인이 안 뜬다"(평가치 바는 정상) — 원인은
+      // pvUciToSans(SAN 변환)가 특정 PV에서 예외를 던지면 이 map() 전체가 중단돼, 그 뒤에 이어지는
+      // setEngineLines(lines)·setLinesPending(false)까지 통째로 실행되지 못했던 것. posEval(평가치
+      // 바)은 SAN 변환이 필요 없는 별도 경로(onEvalProgress)라 영향이 없어, "평가치는 뜨는데 엔진
+      // 3줄만 안 뜬다"는 증상과 정확히 일치한다. 모바일은 CPU가 느려 얕은 depth에서 멈추는 일이
+      // 잦고, 얕은 depth일수록 PV 끝부분에 이런 변환 실패를 유발하는 거친 수순이 섞이기 쉬워
+      // 모바일에서 특히 잘 재현됐을 것으로 보인다. 한 줄의 변환 실패가 나머지 줄·이후 로직 전체를
+      // 막지 않도록, 줄 단위로 감싸 실패한 줄만 걸러낸다.
+      const toLines3 = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => {
+        try {
+          return {
+            ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
+            sans: pvUciToSans(sans, pv.pv, 15),
+          };
+        } catch { return null; }
+      }).filter((l) => l && l.sans && l.sans.length)).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
       // (기능) 사용자 요청으로 MultiPV를 7→5로 더 낮춘다 — 순위가 늘어날수록 노드당 비용이 커져
@@ -12279,7 +12291,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       const el = boxRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const BOTTOM_SAFE = 66 + 16; // 하단 고정 내비게이션 + 여백
+      // (사용자 요청) 데스크톱에서 모식도 흰 영역을 조금 더 늘려 달라는 요청 — 하단 고정 내비게이션
+      // 높이(66px) 자체는 줄일 수 없지만, 그 위 여백은 모바일처럼 손가락으로 조작할 일이 없는
+      // 데스크톱(마우스 기준)에서는 더 좁혀도 된다. 모바일은 기존 16px 여백을 그대로 유지한다.
+      const BOTTOM_SAFE = 66 + (vertical ? 16 : 4); // 하단 고정 내비게이션 + 여백
       const avail = window.innerHeight - top - BOTTOM_SAFE;
       setPanelH(Math.max(360, Math.round(avail)));
     };
@@ -19828,6 +19843,9 @@ const CHANGELOG = [
       "퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 문제를 고쳤어요 — 같은 원인으로 조용히 실패하고 있던 계정 탈퇴·채팅 메시지 수정/대화 지우기·실시간 대국 대기열 취소 등 다른 몇몇 기능도 함께 정상화됐어요.",
       "내가 만든 퍼즐이 오늘의 퍼즐로 선정됐는데도 알림이 오지 않던 문제를 고쳤어요.",
       "'상점' 탭이 '플레이' 탭으로 바뀌었어요 — 분석 탭의 PLAY 버튼과 똑같이 대국 설정 화면으로 곧장 들어가고, 그 화면을 아래로 내리면 기존 상점(스킨) 화면이 그대로 이어져요.",
+      "모바일에서 분석 탭의 엔진 라인(상위 3줄)이 안 뜨던 문제를 고쳤어요.",
+      "도감 탭 오프닝 모식도의 흰 영역이 데스크톱에서 조금 더 넓어졌어요.",
+      "하단 탭 순서를 분석·플레이·퍼즐·학습·도감·설정 순으로 바꿨어요.",
     ]
   },
   {
@@ -22016,7 +22034,9 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
 // 메인 퀘스트를 강화하기 위한 개편의 첫 단계).
 // (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 내부 키("store")·경로 매핑 구조는 그대로 두고
 // 라벨·아이콘만 바꾼다(아래 TAB_PATH/PATH_TAB에서 경로도 /store → /play로 함께 바뀐다).
-const TABS = [{ key: "learn", label: "분석", Icon: null }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "store", label: "플레이", Icon: Play }, { key: "set", label: "설정", Icon: Settings }];
+// (사용자 요청) 하단 탭 순서를 분석/플레이/퍼즐/학습/도감/설정으로 재배치 — 내부 키·경로 매핑은
+// 그대로 두고 배열 순서만 바꾼다(렌더링이 이 배열을 그대로 순회하므로 그 외 변경 불필요).
+const TABS = [{ key: "learn", label: "분석", Icon: null }, { key: "store", label: "플레이", Icon: Play }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "dex", label: "도감", Icon: Library }, { key: "set", label: "설정", Icon: Settings }];
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 // (사용자 요청) 탭 내부 키("learn"=분석, "quest"=학습)와 실제로 화면에 뜨는 URL 경로가 서로
 // 뒤바뀌어 있었다 — 분석 탭이 /learn으로, 학습 탭이 /quest로 보였다. 내부 키 이름은 그대로 두고
