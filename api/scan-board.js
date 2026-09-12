@@ -97,6 +97,22 @@ function isSanePieceCounts(fenBoard) {
   return true;
 }
 
+// (버그 수정, 사용자 제보) 과다 인식의 반대 문제 — "확신이 안 서면 빈 칸으로 적어"라는 지시(과다
+// 인식 방지용) 자체가 반대 방향 실패를 유발했다. 조명이 나쁘거나 각도가 애매한 사진에서 몇몇 눈에
+// 잘 띄는 기물(양쪽 킹 포함)만 정확히 읽고 나머지 칸을 전부 "빈 칸"으로 오독하면, isSanePieceCounts
+// (총원 상한·킹 상한·폰 상한만 검사)는 통과해 버려 실제로는 몇 개 남지 않은 기물이 화면 한쪽에만
+// 몰려 있는 퍼즐이 그대로 저장됐다(사용자 제보 스크린샷 — 오프닝/미들게임 태그인데 기물이 7~8개뿐).
+// 사진으로 찍은 실제 오프닝·미들게임 포지션은 거의 항상 이보다 훨씬 많은 기물이 남아 있으므로,
+// 재시도 여부를 판단할 때만(최종 실패 시에는 막지 않음 — 진짜 기물이 적은 엔드게임 사진까지 영영
+// 막아버리지 않기 위해) "너무 적게 읽혔다"도 함께 확인해 남은 재시도 기회를 더 나은 결과에 쓴다.
+function countTotalPieces(fenBoard) {
+  if (!fenBoard) return 0;
+  let n = 0;
+  for (const ch of fenBoard) { if (FEN_LETTERS.has(ch)) n++; }
+  return n;
+}
+const RESCAN_MIN_PIECES = 10;
+
 // (v0.4.2 기능) 사용자 요청 — 체스판 배치 사진뿐 아니라, PGN 기보나 FEN 코드가 텍스트로 인쇄·필기된
 // 사진(책 지면, 스크린샷, 메모 등)도 인식하게 확장한다. 먼저 이미지가 어느 쪽인지(kind: "board"=
 // 체스판 실물/다이어그램 사진, "text"=PGN·FEN이 문자로 적힌 이미지, "none"=둘 다 아님) 모델이 스스로
@@ -198,21 +214,33 @@ export default async function handler(req, res) {
     // 잡는다 — isSanePieceCounts가 물리적으로 불가능한 기물 수(한쪽 킹 2개 이상, 폰 8개 초과, 총
     // 16개 초과)를 감지하면 명백한 오독으로 보고 다시 시도한다. (v0.4.2) kind가 "text"면 ranks
     // 검증은 건너뛰고 recognized_text가 비어 있지 않은지만 확인한다.
-    let last = null;
+    // (버그 수정, 사용자 제보) 예전엔 isSanePieceCounts를 "통과하는 첫 응답"에서 곧바로 멈췄는데, 그
+    // 검사는 상한선(총원·킹·폰이 넘치지 않는지)만 볼 뿐 "몇 개 안 읽혔다"는 반대쪽 실패는 걸러내지
+    // 못한다 — 몇몇 기물만 정확히 읽고 나머지를 전부 빈 칸으로 오독해도 통과해 버려, 기물 7~8개짜리
+    // 엉성한 보드가 그대로 저장되곤 했다. 이제 유효한 후보들 중 가장 많은 기물이 읽힌 것을 best로
+    // 계속 남겨 두고, 충분히 풍부하게(RESCAN_MIN_PIECES 이상) 읽힌 순간에만 재시도를 멈춘다 — 그래도
+    // 3번 다 그 문턱을 못 넘으면(사진 자체가 정말 기물이 적은 엔드게임이거나 난독 사진), 그중 가장
+    // 나았던 후보를 그대로 쓴다(사용자가 결과 화면에서 직접 확인·수정할 수 있으므로 완전히 막지는 않는다).
+    let last = null, best = null, bestCount = -1;
     for (let attempt = 0; attempt < 3; attempt++) {
       last = await callGemini(apiKey, safeMediaType, image);
       if (last.kind === "text" && last.text) break;
-      if (last.kind === "board" && isPlausibleBoard(last.fenBoard) && isSanePieceCounts(last.fenBoard)) break;
+      if (last.kind === "board" && isPlausibleBoard(last.fenBoard) && isSanePieceCounts(last.fenBoard)) {
+        const n = countTotalPieces(last.fenBoard);
+        if (n > bestCount) { best = last; bestCount = n; }
+        if (n >= RESCAN_MIN_PIECES) break;
+      }
     }
     if (last && last.kind === "text" && last.text) {
       res.status(200).json({ type: "text", recognized_text: last.text, confidence: last.confidence });
       return;
     }
-    if (!last || last.kind !== "board" || !isPlausibleBoard(last.fenBoard) || !isSanePieceCounts(last.fenBoard)) {
+    const finalBoard = best;
+    if (!finalBoard) {
       res.status(502).json({ error: "이미지에서 체스판이나 PGN·FEN 텍스트를 인식하지 못했어요." });
       return;
     }
-    res.status(200).json({ type: "board", fen_board: last.fenBoard, confidence: last.confidence });
+    res.status(200).json({ type: "board", fen_board: finalBoard.fenBoard, confidence: finalBoard.confidence });
   } catch (e) {
     res.status(502).json({ error: String(e && e.message ? e.message : e) });
   }

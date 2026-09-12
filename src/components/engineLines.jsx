@@ -168,9 +168,15 @@ export function EvalBar({ cp, width, depth, vertical, font }) {
 // (버그 수정) 계산 중인 줄 자리에 실제 줄과 똑같은 높이의 뼈대(스켈레톤)를 깔아, 수를 두면 이
 // 컴포넌트가 통째로 사라졌다 나타나며 아래 보드·기보를 들썩이게 하던 문제를 없앤다 — 3-dot
 // 바운스(EvalBar의 "탐색 중" 표시와 같은 애니메이션)로 지금 계산 중임을 보여준다.
+// (사용자 재제보 — "엔진 라인이 생성되며 보드가 여전히 흔들린다") 세 가지 줄 상태(스켈레톤·빈
+// 칸·실제 EngineLineRow)가 "같은 스타일이니 결과적으로 높이가 같겠지"에 기대는 대신, 셋 다 이
+// 고정 픽셀 값을 height로 직접 못박는다 — 폰트 렌더링·줄바꿈 등 브라우저마다 미묘하게 달라질 수
+// 있는 요인이 조금이라도 있으면 그 자체가 흔들림의 원인이 되므로, "대충 비슷한 높이"가 아니라
+// "항상 정확히 같은 숫자"로 만드는 게 유일하게 확실한 해법이다.
+export const ENGINE_LINE_ROW_H = { small: 20, large: 34 };
 export function EngineLineSkeleton({ large }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516" }}>
+    <div style={{ height: large ? ENGINE_LINE_ROW_H.large : ENGINE_LINE_ROW_H.small, boxSizing: "border-box", display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516" }}>
       <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: large ? 50 : 32, height: 13 }}>
         {[0, 1, 2].map((i) => <span key={i} style={{ width: 3, height: 3, marginLeft: i ? 3 : 0, borderRadius: "50%", background: T.brassHi, display: "inline-block", animation: "dotbounceSm 1.1s ease-in-out " + (i * 0.18) + "s infinite" }} />)}
       </span>
@@ -178,9 +184,10 @@ export function EngineLineSkeleton({ large }) {
   );
 }
 // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면에서 남는 엔진 라인 자리를 채우는 빈 칸.
-// 높이는 EngineLineSkeleton과 맞추되(레이아웃 들썩임 방지) 배경·테두리·점 애니메이션 없이 완전히 비워 둔다.
+// 높이는 다른 두 줄 상태와 ENGINE_LINE_ROW_H로 완전히 같은 숫자를 공유한다(레이아웃 들썩임 방지) —
+// 배경·테두리·점 애니메이션 없이 완전히 비워 둔다.
 export function EngineLineBlank({ large }) {
-  return <div style={{ height: large ? 30 : 16 }} aria-hidden="true" />;
+  return <div style={{ height: large ? ENGINE_LINE_ROW_H.large : ENGINE_LINE_ROW_H.small }} aria-hidden="true" />;
 }
 // (v0.2.1) 엔진 라인 수순을 한 번에 다 찍지 않고 한 수씩 "타이핑"되듯 드러낸다 — posKey(포지션)가
 // 바뀌면 처음부터 다시 타이핑하고, 같은 포지션에서 실시간 스트리밍으로 수순이 길어지면 이어서 드러낸다.
@@ -277,7 +284,7 @@ export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPla
     // 수(수의 정체성)로 잡아야, 순위가 바뀌어도 같은 컴포넌트 인스턴스가 유지되며 framer-motion이
     // 옛 위치→새 위치로의 이동을 자동으로(FLIP) 애니메이션할 수 있다.
     <motion.div layout transition={{ duration: 0.32, ease: MOTION_EASE }} className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
-      style={{ display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
+      style={{ height: large ? ENGINE_LINE_ROW_H.large : ENGINE_LINE_ROW_H.small, boxSizing: "border-box", display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
       <EvalBadge ev={l.ev} small={!large} font={font} />
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
         style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: large ? 13 : 10, color: T.ivory, fontFamily: font || SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
@@ -292,13 +299,16 @@ export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPla
 export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large, font }) {
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
-  if (!hasLines && !pending) return null;
+  // (사용자 요청) 예전엔 lines도 없고 pending도 아니면(liveOn이 꺼졌거나 아직 첫 fetch 전) 이
+  // 컴포넌트가 통째로 null을 반환해 이 자리가 0 높이가 됐고, 그 아래 보드 그리드가 위로 들썩이는
+  // 원인 중 하나였다 — 이제는 그 경우에도 반환하지 않고, 아래에서 항상 3줄 높이를 반환한다(내용만
+  // pending 여부에 따라 점 애니메이션/빈 칸으로 갈린다).
   // (v0.2.2 버그 수정) 실시간 스트리밍 도중 멀티PV 슬롯이 1개→2개→3개로 순차적으로 채워지면서
   // engineLines 배열 길이가 잠깐 1~2로 줄었다가 다시 3으로 늘어, 그때마다 이 블록의 높이가 바뀌어
   // 분석 탭 체스보드(belowEval 아래)가 위아래로 들썩였다 — 실제 줄 수와 무관하게 항상 3줄 높이를
   // 차지하도록, 모자란 슬롯은 스켈레톤으로 채워 넣는다.
-  // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면(forced)에서는 어차피 스켈레톤이 계속 채워질
-  // 리 없으므로(엔진이 그 이상 줄을 낼 수 없음), 남은 자리를 로딩 스켈레톤 대신 빈 칸으로 둔다.
+  // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면(forced)이거나 애초에 분석 중이 아니면(!pending)
+  // 어차피 스켈레톤이 계속 채워질 리 없으므로, 남은 자리를 로딩 스켈레톤 대신 빈 칸으로 둔다.
   const missing = Math.max(0, 3 - (lines ? lines.length : 0));
   // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
   // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
@@ -307,8 +317,15 @@ export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, 
   // div·줄(row) 모두에 minWidth:0을 줘 실제로 줄 폭만큼만 차지하고 나머지는 그 안에서만
   // 스크롤되도록(overflow-x:auto가 비로소 제대로 작동) 막는다. wrapper에도 overflow:hidden을
   // 더해, 혹시라도 새는 경우 이 컴포넌트 선에서 끝나고 위로 전파되지 않게 한다.
+  // (사용자 재제보) 항상 3줄을 그려도, 그 3줄의 세로 합이 "3 * 줄 높이 + 2 * gap"과 정확히 같다는
+  // 보장은 사실 브라우저의 flex 계산에 맡겨져 있었다 — 이제 각 줄 자체가 ENGINE_LINE_ROW_H로 고정된
+  // 높이를 갖게 됐으니, 이 바깥 틀에도 그 셋을 더한 값을 height로 직접 못박고 overflow:hidden으로
+  // 못을 박는다. 이러면 안의 내용이 무엇으로 바뀌든(계산 중 점 애니메이션 ↔ 실제 수순 ↔ 빈 칸)
+  // 이 컴포넌트가 차지하는 세로 공간 자체는 픽셀 단위로 완전히 고정되어, 그 아래(belowEval 다음의
+  // 보드 그리드)가 다시는 흔들릴 수 없다.
+  const rowH = large ? ENGINE_LINE_ROW_H.large : ENGINE_LINE_ROW_H.small;
   return (
-    <div style={{ width, minWidth: 0, margin: large ? "0 0 8px" : "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
+    <div style={{ width, minWidth: 0, height: rowH * 3 + 2 * 2, margin: large ? "0 0 8px" : "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
       {hasLines
         ? <>
           {lines.map((l, i) => {
@@ -331,9 +348,9 @@ export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, 
               <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} large={large} font={font} />
             );
           })}
-          {Array.from({ length: missing }, (_, i) => forced ? <EngineLineBlank key={"pad" + i} large={large} /> : <EngineLineSkeleton key={"pad" + i} large={large} />)}
+          {Array.from({ length: missing }, (_, i) => (forced || !pending) ? <EngineLineBlank key={"pad" + i} large={large} /> : <EngineLineSkeleton key={"pad" + i} large={large} />)}
         </>
-        : [0, 1, 2].map((i) => <EngineLineSkeleton key={i} large={large} />)}
+        : [0, 1, 2].map((i) => pending ? <EngineLineSkeleton key={i} large={large} /> : <EngineLineBlank key={i} large={large} />)}
     </div>
   );
 }

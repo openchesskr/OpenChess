@@ -1299,6 +1299,41 @@ begin
 end; $$;
 grant execute on function public.puzzle_reassign_creator(bigint, text) to authenticated;
 
+-- (v0.4.9 기능, 사용자 요청) FEN 기반 사용자 생성 퍼즐의 이름 변경 — 오프닝 트리에서 이름을 따오는
+-- 일반 퍼즐과 달리 FEN 퍼즐은 이름을 지을 오프닝이 없어 생성자가 직접 짓는데, 그 이름을 나중에
+-- 고칠 방법이 없었다. 권한·쿨다운 모델은 puzzle_creator_save와 동일(생성자 본인은 1시간에 한 번,
+-- 개발자/공동개발자는 언제든), 검열 기준은 move_notes_moderate 트리거와 동일한 금칙어 목록을 그대로
+-- 재사용한다(수 설명과 같은 기준).
+create or replace function public.puzzle_set_name(p_no bigint, p_name text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_creator uuid; v_last timestamptz; v_is_editor boolean; v_norm text; v_word text; v_name text;
+  v_words text[] := array[
+    '시발','씨발','씨팔','시팔','개새끼','개새기','병신','븅신','좆','좃','자지','보지','걸레년',
+    '미친놈','미친년','닥쳐','꺼져','죽어라','죽여버','강간','섹스','야동','포르노',
+    'fuck','shit','bitch','asshole','cunt','nigger','nigga','faggot','rape','porn'
+  ];
+begin
+  v_name := btrim(p_name);
+  if v_name = '' or char_length(v_name) > 60 then raise exception 'invalid_name'; end if;
+  v_norm := lower(regexp_replace(v_name, '[^0-9a-zA-Zㄱ-ㆎ가-힣]', '', 'g'));
+  foreach v_word in array v_words loop
+    if v_norm like '%' || v_word || '%' then raise exception 'name_moderation_blocked'; end if;
+  end loop;
+  select creator_uid, creator_edited_at into v_creator, v_last from public.puzzles where no = p_no for update;
+  if not found then raise exception 'puzzle_not_found'; end if;
+  v_is_editor := public.is_content_editor(auth.uid());
+  if not v_is_editor then
+    if v_creator is null or v_creator <> auth.uid() then raise exception 'not_puzzle_creator'; end if;
+    if v_last is not null and now() < v_last + interval '1 hour' then raise exception 'edit_cooldown'; end if;
+  end if;
+  update public.puzzles set
+    data = data || jsonb_build_object('name', v_name),
+    creator_edited_at = case when v_is_editor then creator_edited_at else now() end
+  where no = p_no;
+end; $$;
+grant execute on function public.puzzle_set_name(bigint, text) to authenticated;
+
 -- 퍼즐 삭제 (v0.4.2) — 생성자 본인 또는 개발자/공동개발자만. public.puzzles에는 authenticated
 -- role에 delete grant가 아예 없으므로(위 섹션 설명 참고 — 이 테이블의 민감한 변경은 전부 이
 -- SECURITY DEFINER RPC 계열로만 이뤄진다), 클라이언트가 REST DELETE를 직접 호출해도 늘 거부돼
@@ -1977,3 +2012,85 @@ alter table public.profiles drop constraint if exists profiles_mid_check;
 alter table public.profiles add column if not exists mid text unique default public.gen_mid();
 update public.profiles set mid = public.gen_mid() where mid is null or mid !~ '^[A-Z]{5}[0-9]{4}$';
 alter table public.profiles add constraint profiles_mid_check check (mid ~ '^[A-Z]{5}[0-9]{4}$');
+
+-- ============================================================================
+-- N+6) daily_puzzle_picks — 커뮤니티 인기 퍼즐 기반 "오늘의 퍼즐" 자동 선정 (v0.5.0, 사용자 요청)
+-- ============================================================================
+-- (기존 방식 폐기) 예전엔 개발자가 2주 단위로 오프닝 태그(daily_puzzle_themes)를 수동 등록하고,
+-- 그 태그에 맞는 리체스 퍼즐 후보 JSON을 scripts/build-daily-puzzles.mjs로 미리 만들어
+-- public/daily-puzzles/에 배포해 둬야 했다 — 태그 문자열 오타 하나로 그날부터 오늘의 퍼즐이
+-- 통째로 안 뜨는 등 관리 부담·실수 위험이 컸다(daily_puzzle_themes 테이블 자체는 더 이상 이
+-- 코드가 참조하지 않으니 원하면 나중에 직접 drop해도 무방하다).
+-- 대신 이미 커뮤니티가 만들어 puzzles 테이블에 올린 퍼즐 중, puzzle_popularity_all()(좋아요·
+-- 리포스트·공유를 사람 단위로 결합한 기존 "인기순" 정렬 지표, 위 7-2번 섹션)이 가장 높은 것을
+-- 매일 밤 KST 23:50(다음 날 자정 10분 전, pg_cron)에 자동으로 하나 뽑아 그날의 "오늘의 퍼즐"로
+-- 확정해 둔다 — 인기 점수는 계속 바뀌므로, 특정 시각에 한 번 스냅샷을 떠 둬야 그날 하루 모든
+-- 유저에게 항상 같은 결과가 보장된다(daily_puzzle_cache와 같은 이유). 이미 한 번 뽑힌 퍼즐은
+-- 다시 뽑히지 않는다(같은 퍼즐이 반복 등장하는 것을 막음). 후보 자격은 지금은 "공개 설정 +
+-- 실제 풀이 가능한 라인 데이터 보유"만 요구하고 그 외 품질 기준(최소 풀이 수 등)은 아직 두지
+-- 않는다 — 커뮤니티 퍼즐이 충분히 쌓이면 나중에 이 함수만 고쳐 기준을 추가하면 된다.
+create table if not exists public.daily_puzzle_picks (
+  date date primary key,
+  puzzle_no bigint references public.puzzles(no) on delete set null,
+  score numeric,
+  picked_at timestamptz not null default now()
+);
+alter table public.daily_puzzle_picks enable row level security;
+drop policy if exists "daily puzzle picks read" on public.daily_puzzle_picks;
+create policy "daily puzzle picks read" on public.daily_puzzle_picks for select using (true);
+grant select on public.daily_puzzle_picks to anon, authenticated;
+
+-- 매일 밤 KST 23:50에 다음 날짜(KST 기준) 몫을 확정한다. 이미 그 날짜가 확정돼 있으면(같은
+-- 날 재실행 등) 아무 일도 하지 않는다(멱등). 개발자/공동개발자는 설정 탭 패널에서 테스트를
+-- 위해 이 함수를 직접 호출할 수 있고, 그 외 로그인 유저는 호출할 수 없다 — pg_cron은 postgres
+-- 소유자 권한으로 실행돼 auth.uid()가 null이라 이 검사에 걸리지 않는다.
+create or replace function public.daily_puzzle_pick_run()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_date date; v_no bigint; v_score numeric; v_creator uuid; v_rows int;
+  v_reward constant int := 30; -- (사용자 요청) 오늘의 퍼즐로 선정된 제작자에게 지급하는 OC 나이트 코인 보상
+begin
+  if auth.uid() is not null and not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
+  v_date := ((now() at time zone 'Asia/Seoul')::date + 1);
+  if exists (select 1 from public.daily_puzzle_picks where date = v_date) then return; end if;
+  select p.no, s.score into v_no, v_score
+  from public.puzzles p
+  join public.puzzle_popularity_all() s on s.no = p.no
+  where p.is_public
+    and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
+    and p.no not in (select puzzle_no from public.daily_puzzle_picks where puzzle_no is not null)
+  order by s.score desc, p.no asc
+  limit 1;
+  if v_no is null then return; end if;
+  insert into public.daily_puzzle_picks(date, puzzle_no, score) values (v_date, v_no, v_score)
+  on conflict (date) do nothing;
+  get diagnostics v_rows = row_count; -- on conflict do nothing 시 실제로 삽입되지 않은 행은 세지 않는다
+  if v_rows = 0 then return; end if; -- 동시 실행 등으로 다른 확정이 먼저 반영된 경우 알림도 보내지 않는다
+  -- (사용자 요청) 선정된 퍼즐의 제작자에게 알림 + 보상을 준다 — 이 함수가 SECURITY DEFINER(테이블
+  -- 소유자 권한)로 실행되므로 notifications의 "notif insert auth" RLS(본인 관련 kind만 클라이언트가
+  -- 직접 insert 가능)를 그대로 우회해 다른 사람(제작자)에게도 알림을 만들 수 있다 — puzzle_delete 등
+  -- 다른 SECURITY DEFINER 함수들과 같은 패턴. claimed:false로 시작해, 클라이언트의 "받기" 버튼을
+  -- 눌러야 보상이 지급된 것으로 표시된다(실제 코인 지급 자체는 이 앱의 다른 보상과 동일하게
+  -- 클라이언트 progress에 반영 — user_progress 전체가 이미 클라이언트 신뢰 구조임, 20번 섹션 참고).
+  select creator_uid into v_creator from public.puzzles where no = v_no;
+  if v_creator is not null then
+    insert into public.notifications(to_uid, kind, payload)
+    values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', v_date, 'reward', v_reward, 'claimed', false));
+  end if;
+end; $$;
+grant execute on function public.daily_puzzle_pick_run() to authenticated;
+
+-- ============================================================================
+-- pg_cron 스케줄 등록 — 반드시 아래 순서를 지킬 것:
+--   1) Supabase 대시보드 → Database → Extensions 에서 "pg_cron"을 먼저 켠다(SQL로는 보통 켤 수
+--      없다 — shared_preload_libraries 설정이 필요해 인스턴스 차원에서 대시보드로만 켤 수 있음).
+--   2) 켠 뒤, 아래 select cron.schedule(...) 블록만 SQL Editor에서 다시 실행한다.
+-- 이름이 같은 스케줄을 다시 등록하면 cron.schedule이 그냥 갱신하므로, pg_cron이 이미 켜져 있는
+-- 상태에서는 이 파일 전체를 몇 번을 다시 실행해도 안전하다(멱등). 아직 pg_cron을 안 켰다면 이
+-- 블록만 오류가 나고 그 위의 나머지 문장들은 이미 다 반영된 상태이니, 1번을 하고 이 블록만 다시
+-- 돌리면 된다.
+-- ============================================================================
+select cron.schedule(
+  'daily_puzzle_pick_nightly',
+  '50 14 * * *', -- UTC 14:50 = KST 23:50
+  $$ select public.daily_puzzle_pick_run(); $$
+);
