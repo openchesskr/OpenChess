@@ -19815,6 +19815,11 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.4.10", date: "2026.9.12", dev: ["openchesskr", "G13sus4"], items: [
+      "퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 문제를 고쳤어요 — 같은 원인으로 조용히 실패하고 있던 계정 탈퇴·채팅 메시지 수정/대화 지우기·실시간 대국 대기열 취소 등 다른 몇몇 기능도 함께 정상화됐어요.",
+    ]
+  },
+  {
     version: "0.4.9", date: "2026.9.9", dev: ["openchesskr", "G13sus4"], items: [
       "about 페이지 버전 기록에서 빠져 있던 v0.4.8 항목을 채워 넣었어요.",
       "분석 탭에서 후보 수 중 실제로 가장 많이 두어진 수들은 클릭하기 전에 미리 리체스 통계를 백그라운드에서 당겨와 둬요 — 실제로 그 수를 눌렀을 때 통계가 훨씬 빠르게(대부분 즉시) 표시돼요.",
