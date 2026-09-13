@@ -9948,6 +9948,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     setTimeControl(tc);
     setClock(tc.initialSec != null ? { w: tc.initialSec * 1000, b: tc.initialSec * 1000 } : null);
     setStep("playing");
+    // (v0.5.1 버그 수정) 재접속·새로고침으로 이미 진행 중이던 대국을 이어받는 경우, 그사이(내가
+    // 화면을 벗어나 있던 동안) 상대가 시간 초과됐는데도 아무도 서버에 보고하지 못한 채 그대로
+    // active로 남아 있었을 수 있다 — 이어받는 즉시 서버 시계로 한 번 확인해 둔다(아직 시간이
+    // 남았으면 그냥 그대로, 이미 다 됐으면 곧장 결과가 확정돼 realtime으로 반영된다).
+    if (g.id != null) sbRpc("pvp_check_flag", { p_game_id: g.id }).catch(() => {});
   }, [myUid]);
   const joinPvpQueue = async () => {
     if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
@@ -10225,12 +10230,18 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     else if (clock.b <= 0) setFlagged("b");
   }, [clock, result, flagged]);
   // pvp 모드에서는 시간 초과도 서버에 보고한다 — 체크메이트와 같은 가드(pvpFinishedRef)를 공유해
-  // 중복 보고를 막는다. 자신을 패자로 보고하는 쪽만 성공한다(pvp_finish의 자기 승리 선언 방지).
+  // 중복 보고를 막는다.
+  // (v0.5.1 버그 수정) 예전엔 그냥 pvp_finish(자기 패배 자백만 허용)를 불렀는데, 진 쪽 클라이언트가
+  // 결과를 보고하기 전에 사라지면(탭을 닫는 등) 이긴 쪽의 이 호출은 "자기 승리 선언 금지" 가드에
+  // 막혀 조용히 실패해, 그 대국이 영원히 active로 남는 문제가 있었다(체크메이트의 옛 버전과 같은
+  // 종류의 좀비 버그 — README v0.4.5 참고). pvp_check_flag는 클라이언트가 주장하는 승패를 전혀 받지
+  // 않고 서버에 저장된 시계(pvp_move가 매 수마다 갱신하는 white_ms/black_ms/clock_synced_at)만으로
+  // "지금 정말 시간이 다 됐는지"를 스스로 계산하므로, 이긴 쪽·진 쪽 어느 클라이언트가 불러도(둘 다
+  // 사라지지만 않았다면 둘 다 거의 동시에 부른다) 안전하게 같은 결과로 확정된다.
   useEffect(() => {
     if (mode !== "pvp" || !pvpGame || pvpFinishedRef.current || !flagged) return;
     pvpFinishedRef.current = true;
-    const status = flagged === "w" ? "black_won" : "white_won";
-    sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
+    sbRpc("pvp_check_flag", { p_game_id: pvpGame.id }).catch(() => {});
   }, [mode, pvpGame && pvpGame.id, flagged]);
 
   const go = useCallback((san) => {
@@ -20839,6 +20850,11 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.5.1", date: "2026.9.13", dev: ["openchesskr", "G13sus4"], items: [
+      "실시간 대국에서 상대의 시간이 다 됐는데 상대가 결과를 보고하지 않고 화면을 나가버려도(인터넷이 끊기거나 탭을 닫는 등), 이제 내 승리가 확실하게 확정돼요 — 예전엔 이런 경우 대국이 끝나지 않은 것처럼 서버에 남아, 다음에 새 상대를 찾으면 그 끝난 대국으로 자꾸 되돌아가는 문제가 있었어요.",
+    ]
+  },
   {
     version: "0.5.0", date: "2026.9.12", dev: ["openchesskr", "G13sus4"], items: [
       "퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 문제를 고쳤어요 — 같은 원인으로 조용히 실패하고 있던 계정 탈퇴·채팅 메시지 수정/대화 지우기·실시간 대국 대기열 취소 등 다른 몇몇 기능도 함께 정상화됐어요.",
