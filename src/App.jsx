@@ -9062,19 +9062,33 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 이 컴포넌트 자신은 점수를 세는(mutate) 상태를 갖지 않고 항상 서버 값을 그대로 반영만 한다.
 // 8×8 좌표 그리드 — 순수 표시용. 실시간 PvP(CoordRaceBoard)와 봇 대전(CoordRaceBotBoard) 둘 다 이
 // 컴포넌트로 같은 보드를 그리고, 라운드 진행 로직(누가 어떻게 승자를 정하는지)만 서로 다르게 가져간다.
-function CoordRaceGrid({ targetSq, onCell }) {
+// (v0.5.0 리디자인, 사용자 요청) 목표 칸을 보드 위에서 빛나게 하는 대신, 그 좌표를 보드 아래
+// 텍스트("e4" 형식)로 크게 띄운다 — 실제 좌표를 읽고 찾아 누르는 것 자체가 이 게임의 핵심이라,
+// 칸이 미리 빛나 있으면 "인지" 없이 그 반짝임만 따라 누르는 반응 게임이 돼 버린다는 사용자 지적.
+// 보드 자체는 항상 평범한 기본 체스판 그대로다.
+function CoordRaceGrid({ onCell }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 4, maxWidth: 320, margin: "0 auto" }}>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
-        const isTarget = sq === targetSq;
         const light = (r + c) % 2 === 0;
         return (
           <button key={sq} onClick={() => onCell(sq)} className="press"
-            style={{ aspectRatio: "1", borderRadius: 6, border: "1px solid " + (isTarget ? T.brass : "#C9B58C"), cursor: "pointer", padding: 0, ...(isTarget ? { background: "linear-gradient(180deg," + T.brass + ",#A8842F)" } : boardSquareBg(BOARD_SKINS.classic, light, r, c)) }} />
+            style={{ aspectRatio: "1", borderRadius: 6, border: "1px solid #C9B58C", cursor: "pointer", padding: 0, ...boardSquareBg(BOARD_SKINS.classic, light, r, c) }} />
         );
       }))}
+    </div>
+  );
+}
+// 보드 아래 크게 띄우는 목표 좌표 텍스트 — 라운드가 끝나(승자가 정해져) 다음 좌표를 기다리는
+// 동안에는 자리만 차지하고 비워 둔다.
+function CoordTargetLabel({ targetSq }) {
+  return (
+    <div style={{ textAlign: "center", margin: "14px 0", minHeight: 44 }}>
+      {targetSq && (
+        <span style={{ display: "inline-block", padding: "6px 22px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, fontSize: 26, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".04em" }}>{targetSq}</span>
+      )}
     </div>
   );
 }
@@ -9143,8 +9157,10 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
       </div>
       {/* (v0.5.0 리디자인, 사용자 요청) 칸 배경을 임의의 단색 대신 분석 탭 등 사이트 전체가 쓰는
           기본(classic) 보드 스킨 그대로(boardSquareBg) 써서, 미니게임 보드도 다른 화면과 같은
-          체스판으로 보이게 한다. */}
-      <CoordRaceGrid targetSq={round && !round.winner ? round.sq : null} onCell={onCell} />
+          체스판으로 보이게 한다. 목표 칸은 더 이상 보드 위에서 빛나지 않고, 그 좌표를 보드 아래
+          텍스트로 띄운다 — 좌표를 실제로 읽고 찾아 누르는 것 자체가 이 게임의 핵심이다. */}
+      <CoordRaceGrid onCell={onCell} />
+      <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
     </div>
   );
 }
@@ -9210,7 +9226,8 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
         <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botScore}</div>
       </div>
-      <CoordRaceGrid targetSq={round && !round.winner ? round.sq : null} onCell={onCell} />
+      <CoordRaceGrid onCell={onCell} />
+      <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
     </div>
   );
 }
@@ -20713,6 +20730,7 @@ const CHANGELOG = [
       "스페셜 미니게임 목록에서 테스트용 예시 게임을 지우고, 한 줄에 게임 하나씩 아이콘·색으로 구분해 보여주도록 정리했어요.",
       "미니게임의 체스판·나이트가 분석 탭과 똑같은 기본 보드·기물 스킨으로 보이도록 바꿨어요 — 예전엔 칸 구분 없는 단색 배경에 나이트도 문자 기호(♞)로만 표시됐어요.",
       "좌표 인지 게임·나이트 경주 두 미니게임에도 체스처럼 '봇과 플레이하기'·'친구와 플레이하기'가 생겼어요.",
+      "좌표 인지 게임에서 목표 칸이 보드 위에서 빛나는 대신, 그 좌표를 보드 아래에 텍스트로 표시하도록 바꿨어요 — 좌표를 직접 읽고 찾아 눌러야 해요.",
     ]
   },
   {
