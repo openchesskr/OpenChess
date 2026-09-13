@@ -2218,6 +2218,12 @@ begin
   v_rounds := v_rounds || jsonb_build_object(
     'start', v_start, 'target', v_target, 'blocked', to_jsonb(v_blocked),
     'moveBudget', array_length(v_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now(),
+    -- (v0.5.0 기능, 사용자 요청) positions — 각자 "지금 나이트가 어디 있는지"를 담아 두면, 상대
+    -- 클라이언트가 이 값을 realtime으로 받아 상대 보드 위에서 나이트가 실제로 움직이는 모습을
+    -- 그 자리에서 보여줄 수 있다(knight_move_ping이 매 수마다 갱신). reports와 달리 이동 하나하나를
+    -- 검증하지 않는 순수 표시용 값이라(신뢰 모델은 위 설명과 동일), 최종 판정(knight_resolve_round)은
+    -- 여전히 reports만 본다.
+    'positions', jsonb_build_object('w', null, 'b', null),
     'reports', jsonb_build_object('w', null, 'b', null), 'winner', null, 'resolvedAt', null
   );
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
@@ -2253,6 +2259,34 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.knight_report(bigint, int, boolean, int, text) to authenticated;
+
+-- (v0.5.0 기능, 사용자 요청) 내 나이트 위치 실시간 중계 — 이동할 때마다(knight_report와 별개로) 호출해
+-- positions.<내색>만 갱신한다. 판정에는 전혀 관여하지 않는 순수 표시용이라(지금 위치를 검증 없이
+-- 그대로 믿고 상대 화면에 보여주기만 한다) 이미 라운드가 끝났거나 이미 보고를 마쳤어도 조용히
+-- 무시하면 그만이라 knight_report처럼 엄격한 "한 번만" 가드가 필요 없다 — 그냥 최신 위치로 덮어쓴다.
+create or replace function public.knight_move_ping(p_game_id bigint, p_round int, p_sq text, p_moves_used int)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'knight' or v_game.status <> 'active' then return v_game; end if;
+  if v_me = v_game.white_uid then v_mycolor := 'w'; elsif v_me = v_game.black_uid then v_mycolor := 'b'; else raise exception 'not a participant'; end if;
+  v_rounds := v_game.sans;
+  if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
+  v_round := v_rounds -> p_round;
+  if (v_round ->> 'winner') is not null then return v_game; end if; -- 이미 끝난 라운드는 위치를 더 알릴 필요 없다
+  if v_round -> 'positions' is null or jsonb_typeof(v_round -> 'positions') <> 'object' then
+    v_round := jsonb_set(v_round, array['positions'], jsonb_build_object('w', null, 'b', null));
+  end if;
+  v_round := jsonb_set(v_round, array['positions', v_mycolor], jsonb_build_object('sq', p_sq, 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'at', now()));
+  v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.knight_move_ping(bigint, int, text, int) to authenticated;
 
 -- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초 여유)이 지났을 때만 승자를 정한다. 한쪽만 보고했으면
 -- 보고한 쪽이 이기고(도달 여부 무관 — 시도조차 안 보고한 쪽보다 항상 우선), 둘 다 도달했으면 서버가
