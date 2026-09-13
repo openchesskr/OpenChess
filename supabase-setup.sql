@@ -1524,6 +1524,16 @@ grant select on public.pvp_games to authenticated;
 -- 매칭된 두 클라이언트가 서로 다른 값을 로컬에서 고르는 사고를 막기 위해, 실제 클럭은 이 서버
 -- 값(대기열이면 매칭 당시 time_control, 초대면 초대한 사람이 고른 값)을 그대로 따른다.
 alter table public.pvp_games add column if not exists time_control text not null default '600-0';
+-- (v0.5.1 기능) 시간 초과(플래그) 좀비 대국 근본 수정 — 체크메이트/스테일메이트는 pvp_finish_verified가
+-- sans만으로 서버가 독립 검증할 수 있지만, "시간이 다 됐다"는 sans만으로는 계산할 수 없다(실제 경과한
+-- 벽시계 시간이 필요). 그래서 각 진영의 남은 시간(ms)과 그 값이 마지막으로 맞춰진 시각을 서버에
+-- 권위 있게 들고 다니게 한다 — 매 수(pvp_move)마다 "그 사이 실제로 지난 시간"만큼 두는 쪽의 남은
+-- 시간에서 빼고 증가시간을 더해 갱신한다. 이러면 클라이언트의 로컬 시계를 전혀 신뢰하지 않고도(양쪽
+-- 다 사라져도) 서버 스스로 "지금 이 순간 정말 시간이 다 됐는지"를 계산할 수 있다 — 아래 pvp_check_flag
+-- 참고. 시계가 없는 게임(0-0, 코드/나이트 미니게임 매칭 등)은 둘 다 null로 남아 이 로직 전체를 건너뛴다.
+alter table public.pvp_games add column if not exists white_ms integer;
+alter table public.pvp_games add column if not exists black_ms integer;
+alter table public.pvp_games add column if not exists clock_synced_at timestamptz not null default now();
 -- (v0.4.7 기능, 사용자 요청) 합의 무승부 제안 — null이면 제안 없음, 값이 있으면 그 uid가 상대에게
 -- 무승부를 제안해 응답을 기다리는 중이라는 뜻. 어느 한쪽이 일방적으로 무승부를 선언할 수는 없고
 -- (아래 pvp_draw_accept 참고), 수를 두면(pvp_move) 자동으로 취소된다.
@@ -1578,9 +1588,76 @@ end $$;
 -- 즉시 패배 버그를 고치고 나서야 대기 화면이 5초 넘게 유지되며 처음 드러난 문제). insert를
 -- "on conflict (uid) do update"로 바꿔, 같은 사용자가 거의 동시에 여러 번 불러도 항상 안전하게
 -- 자기 자리만 갱신하도록(경쟁 상태 자체가 없도록) 한다.
+-- (v0.5.1 기능) 위 시계 컬럼을 채우는 헬퍼 — time_control("초기시간-증가시간")의 초기시간 부분을
+-- ms로 변환한다. 초기시간이 0이거나 형식이 이상하면(코드/나이트 미니게임의 "0-0" 등) null을 돌려줘
+-- "이 대국엔 서버 시계가 없다"는 뜻으로 쓴다.
+create or replace function public._pvp_initial_ms(p_time_control text)
+returns integer language sql immutable as $$
+  select case
+    when split_part(coalesce(p_time_control, ''), '-', 1) ~ '^[0-9]+$'
+      and split_part(p_time_control, '-', 1)::int > 0
+    then split_part(p_time_control, '-', 1)::int * 1000
+    else null
+  end;
+$$;
+
+-- (v0.5.1 기능) 시간 초과를 서버가 독립적으로 확정하는 핵심 로직 — pvp_move·pvp_check_flag·
+-- pvp_queue_join(재접속 시 좀비 판정)이 모두 이 함수 하나를 공유한다. 대국 행을 for update로 잠근 뒤,
+-- 지금 둘 차례인 진영의 남은 시간을 "마지막으로 시계를 맞춘 시각(clock_synced_at) 이후 실제로 지난
+-- 시간"만큼 깎아 계산해, 0 이하면 그 자리에서 상대 승리로 확정한다(클라이언트가 무엇을 주장하든
+-- 상관없이 서버에 저장된 타임스탬프만으로 계산하므로 어느 쪽이 불러도, 심지어 참가자가 아닌 시스템
+-- 경로가 불러도 안전하다). 아직 시간이 남아 있거나 애초에 서버 시계가 없는 대국(white_ms/black_ms가
+-- null)이면 대국을 그대로 돌려준다.
+create or replace function public._pvp_resolve_timeout(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_game public.pvp_games; v_ply int; v_white_turn boolean; v_elapsed_ms bigint; v_mover_ms int;
+begin
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found or v_game.status <> 'active' or v_game.white_ms is null or v_game.black_ms is null then
+    return v_game;
+  end if;
+  v_ply := jsonb_array_length(v_game.sans);
+  v_white_turn := (v_ply % 2) = 0;
+  v_mover_ms := case when v_white_turn then v_game.white_ms else v_game.black_ms end;
+  v_elapsed_ms := extract(epoch from (now() - v_game.clock_synced_at)) * 1000;
+  if v_mover_ms - v_elapsed_ms > 0 then return v_game; end if;
+  update public.pvp_games
+    set status = case when v_white_turn then 'black_won' else 'white_won' end,
+        result_reason = 'timeout', updated_at = now()
+    where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public._pvp_resolve_timeout(bigint) to authenticated;
+
+-- (v0.5.1 기능) 실시간 대국 화면이 주기적으로(그리고 자기 쪽 로컬 시계가 0에 닿는 순간) 불러 "정말
+-- 시간이 다 됐는지"를 서버에 확인·확정 요청한다. pvp_finish와 달리 자기 승리 선언 금지 가드가 없다 —
+-- 위 _pvp_resolve_timeout이 클라이언트가 넘긴 값을 전혀 쓰지 않고 서버에 저장된 시계만으로 계산하므로
+-- 이긴 쪽이 불러도, 진 쪽이 불러도 결과가 같다(악용 여지가 없다). 참가자 확인만 한다.
+drop function if exists public.pvp_check_flag(bigint) cascade;
+create or replace function public.pvp_check_flag(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  return public._pvp_resolve_timeout(p_game_id);
+end; $$;
+grant execute on function public.pvp_check_flag(bigint) to authenticated;
+
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
 -- (v0.4.8 기능) p_game_type 인자 추가 — 같은 time_control이면서 같은 game_type인 상대끼리만 짝짓는다.
+-- (v0.5.1 버그 수정) 재접속 시 "최근" 대국인지 판단하기 전에 먼저 _pvp_resolve_timeout으로 그 대국이
+-- 실제로 시간 초과되지 않았는지부터 서버 시계 기준으로 확정한다 — 예전엔 updated_at 2분 경과 여부라는
+-- 무딘 침묵 기준 하나로만 좀비를 판정해, 시간제어가 긴 대국(예: 60|30)에서 상대가 정상적으로 오래
+-- 생각 중이어도 좀비로 오판하거나(v0.4.5에서 좁혀 고침), 반대로 진짜 시간 초과가 났는데도 상대가
+-- 결과를 보고하지 못하고 사라지면(탭을 닫는 등) 승자가 다시 매칭을 시도할 때마다 계속 그 끝난 대국으로
+-- 되돌아가는(README v0.4.5 "다음 버전으로 미룬다"던 항목) 문제가 있었다. 이제 시간제어가 있는 대국은
+-- 침묵 시간을 추측하는 대신 서버 시계로 정말 끝났는지를 먼저 확정하므로, 그 즉시 status가 바뀌어
+-- 아래 "이미 active가 아니면" 분기를 타고 곧장 새 매칭으로 넘어간다. 시계가 없는 대국·아직 시간이
+-- 남은 대국에는 기존 2분 침묵 기준을 그대로 안전망으로 둔다.
 create or replace function public.pvp_queue_join(p_time_control text default '600-0', p_game_type text default 'chess')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_other uuid; v_game public.pvp_games; v_w uuid; v_b uuid;
@@ -1590,8 +1667,11 @@ begin
     where status = 'active' and (white_uid = v_me or black_uid = v_me)
     order by created_at desc limit 1;
   if found then
-    if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
-    update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
+    v_game := public._pvp_resolve_timeout(v_game.id);
+    if v_game.status = 'active' then
+      if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
+      update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
+    end if;
   end if;
   select uid into v_other from public.pvp_queue
     where uid <> v_me and time_control = p_time_control and game_type = p_game_type
@@ -1604,7 +1684,9 @@ begin
   delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, p_time_control, p_game_type) returning * into v_game;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at)
+    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now())
+    returning * into v_game;
   return v_game;
 end; $$;
 grant execute on function public.pvp_queue_join(text, text) to authenticated;
@@ -1620,15 +1702,27 @@ grant execute on function public.pvp_queue_leave() to authenticated;
 
 -- 수 두기 — 서버는 "지금이 내 차례인지"만 확인하고(합법성 자체는 클라이언트가 이미 검증한 SAN을
 -- 신뢰한다 — 앱 전반의 퍼즐·리뷰 채점과 같은 신뢰 모델), sans 배열에 이어 붙인다.
+-- (v0.5.1 버그 수정) 좀비 대국 근본 수정의 일부 — 수를 두기 전에 먼저 _pvp_resolve_timeout으로 내가
+-- 이미 시간 초과된 상태는 아닌지부터 서버 시계로 확인한다. 이 함수 호출 자체가 (시간 초과라면) 상태를
+-- 확정하는 update를 커밋하므로, 그 직후 곧장 raise exception으로 넘어가면 안 된다 — plpgsql에서 예외는
+-- "이 함수 호출 전체"를 하나의 (암시적) 트랜잭션으로 보고 롤백시키기 때문에, 방금 _pvp_resolve_timeout이
+-- 커밋해 둔 시간 초과 확정까지 함께 지워져 버려(실제로 재현 확인 — 시간 초과 후 아무 수나 다시 시도하면
+-- "game not active" 예외로 실패하는 건 맞지만 그 대국이 조용히 다시 active로 되돌아가 있었다) 결국 아무도
+-- 결과를 확정하지 못하는 좀비 대국이 그대로 남았다. 그래서 "이미 (내가 손대기 전부터) 끝나 있던 대국"과
+-- "방금 내가 확정한 시간 초과"를 구분한다 — 전자만 기존처럼 예외를 던지고(잃을 상태 변화가 없으므로
+-- 안전), 후자는 예외 없이 그 결과를 그대로 반환해 커밋을 보존한다.
 drop function if exists public.pvp_move(bigint, text) cascade;
 create or replace function public.pvp_move(p_game_id bigint, p_san text)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid(); v_game public.pvp_games; v_ply int; v_white_turn boolean; v_expected uuid;
+declare v_me uuid := auth.uid(); v_pre public.pvp_games; v_game public.pvp_games; v_ply int; v_white_turn boolean; v_expected uuid;
+        v_inc_sec int; v_elapsed_ms bigint; v_mover_ms int; v_remaining_ms int;
 begin
   if v_me is null then raise exception 'auth required'; end if;
-  select * into v_game from public.pvp_games where id = p_game_id for update;
+  select * into v_pre from public.pvp_games where id = p_game_id;
   if not found then raise exception 'game not found'; end if;
-  if v_game.status <> 'active' then raise exception 'game not active'; end if;
+  if v_pre.status <> 'active' then raise exception 'game not active'; end if;
+  v_game := public._pvp_resolve_timeout(p_game_id);
+  if v_game.status <> 'active' then return v_game; end if;
   if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
   v_ply := jsonb_array_length(v_game.sans);
   v_white_turn := (v_ply % 2) = 0;
@@ -1636,8 +1730,21 @@ begin
   if v_me <> v_expected then raise exception 'not your turn'; end if;
   -- (v0.4.7 기능) 수를 두면 대기 중이던 무승부 제안은 자동으로 취소된다(표준적인 체스 클라이언트
   -- 동작과 동일 — 제안을 무시하고 그냥 다음 수를 두면 그 제안은 무효가 된다).
-  update public.pvp_games set sans = sans || to_jsonb(p_san), draw_offered_by = null, updated_at = now()
-    where id = p_game_id returning * into v_game;
+  if v_game.white_ms is not null and v_game.black_ms is not null then
+    v_inc_sec := coalesce(nullif(split_part(v_game.time_control, '-', 2), '')::int, 0);
+    v_mover_ms := case when v_white_turn then v_game.white_ms else v_game.black_ms end;
+    v_elapsed_ms := extract(epoch from (now() - v_game.clock_synced_at)) * 1000;
+    v_remaining_ms := greatest(v_mover_ms - v_elapsed_ms, 0) + (v_inc_sec * 1000);
+    update public.pvp_games set
+        sans = sans || to_jsonb(p_san), draw_offered_by = null, updated_at = now(),
+        white_ms = case when v_white_turn then v_remaining_ms else v_game.white_ms end,
+        black_ms = case when v_white_turn then v_game.black_ms else v_remaining_ms end,
+        clock_synced_at = now()
+      where id = p_game_id returning * into v_game;
+  else
+    update public.pvp_games set sans = sans || to_jsonb(p_san), draw_offered_by = null, updated_at = now()
+      where id = p_game_id returning * into v_game;
+  end if;
   return v_game;
 end; $$;
 grant execute on function public.pvp_move(bigint, text) to authenticated;
@@ -1761,7 +1868,9 @@ begin
   end if;
   -- 상대가 이미 제안해 둔 상태에서 내가 불렀다 = 수락. 진영은 뒤바꿔(맞바꿈) 새 대국을 만든다.
   if random() < 0.5 then v_w := v_game.white_uid; v_b := v_game.black_uid; else v_w := v_game.black_uid; v_b := v_game.white_uid; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, v_game.time_control, v_game.game_type) returning * into v_new;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at)
+    values (v_w, v_b, v_game.time_control, v_game.game_type, public._pvp_initial_ms(v_game.time_control), public._pvp_initial_ms(v_game.time_control), now())
+    returning * into v_new;
   update public.pvp_games set rematch_offered_by = null, rematch_game_id = v_new.id, updated_at = now() where id = p_game_id;
   return v_new;
 end; $$;
@@ -1920,7 +2029,9 @@ begin
     return v_inv;
   end if;
   if random() < 0.5 then v_w := v_inv.from_uid; v_b := v_inv.to_uid; else v_w := v_inv.to_uid; v_b := v_inv.from_uid; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, v_inv.time_control, v_inv.game_type) returning * into v_game;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at)
+    values (v_w, v_b, v_inv.time_control, v_inv.game_type, public._pvp_initial_ms(v_inv.time_control), public._pvp_initial_ms(v_inv.time_control), now())
+    returning * into v_game;
   update public.pvp_invites set status = 'accepted', game_id = v_game.id, updated_at = now() where id = p_invite_id returning * into v_inv;
   return v_inv;
 end; $$;
