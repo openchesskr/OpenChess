@@ -9092,8 +9092,24 @@ function CoordRaceGrid({ onCell, flash, readOnly }) {
   );
 }
 // 두 보드(내 보드/상대 보드) 위에 붙는 작은 이름표.
-function CoordBoardLabel({ text }) {
+function MinigameBoardLabel({ text }) {
   return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{text}</div>;
+}
+// (v0.5.0 기능, 사용자 요청) 전체 진행 상황을 점 한 줄로 보여주는 "게임다운" 스코어보드 — 좌표 인지
+// 게임(15라운드)·나이트 경주(Bo5) 둘 다 이 컴포넌트를 재사용한다. results[i]는 그 라운드가 이미
+// 끝났으면 "me"(내 승리)·"opp"(상대/봇 승리)·"draw"(무승부), 아직이면 null — 지금 진행 중인
+// 라운드(= results 배열의 다음 자리)는 금색 테두리로 강조해 어디까지 왔는지 한눈에 보이게 한다.
+function MinigameScorePips({ results, total }) {
+  return (
+    <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap", marginBottom: 10 }}>
+      {Array.from({ length: total }, (_, i) => {
+        const r = results[i];
+        const bg = r === "me" ? T.best : r === "opp" ? T.blunder : r === "draw" ? "#9C8563" : "rgba(0,0,0,.14)";
+        const active = i === results.length;
+        return <span key={i} aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", background: bg, boxShadow: active ? "0 0 0 2px " + T.brass : "none", flexShrink: 0 }} />;
+      })}
+    </div>
+  );
 }
 // 보드 아래 크게 띄우는 목표 좌표 텍스트 — 라운드가 끝나(승자가 정해져) 다음 좌표를 기다리는
 // 동안에는 자리만 차지하고 비워 둔다.
@@ -9189,18 +9205,19 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   }
   return (
     <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
         <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppScore}</div>
       </div>
+      <MinigameScorePips results={rounds.map((r) => r.winner === myColor ? "me" : r.winner === oppColor ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
       {/* (v0.5.0 기능, 사용자 요청) 정답을 맞혀도 곧장 다음 좌표로 넘어가지 않고(위 useEffect의 최소
           600ms 지연) 초록 반짝임이 보일 시간을 준 뒤 다음 라운드로 넘어간다. 오답은 라운드를 끝내지
           않고 그 칸만 빨갛게 반짝인 뒤 계속 시도할 수 있다. */}
-      <CoordBoardLabel text="내 보드" />
+      <MinigameBoardLabel text="내 보드" />
       <CoordRaceGrid onCell={onCell} flash={myFlash} />
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
-      <CoordBoardLabel text="상대 보드" />
+      <MinigameBoardLabel text="상대 보드" />
       <CoordRaceGrid onCell={() => { }} flash={oppFlash} readOnly />
     </div>
   );
@@ -9280,15 +9297,16 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
   }
   return (
     <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
         <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botScore}</div>
       </div>
-      <CoordBoardLabel text="내 보드" />
+      <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
+      <MinigameBoardLabel text="내 보드" />
       <CoordRaceGrid onCell={onCell} flash={myFlash} />
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
-      <CoordBoardLabel text="봇 보드" />
+      <MinigameBoardLabel text="봇 보드" />
       <CoordRaceGrid onCell={() => { }} flash={botFlash} readOnly />
     </div>
   );
@@ -9406,7 +9424,7 @@ function knightNeighborsClient(sq, blocked) {
 // 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다). (재지적) 칸끼리 간격을 두고
 // 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와 달랐다 — Board와 완전히 같은 틀
 // (BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근 모서리 없음)을 그대로 가져다 쓴다.
-function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell }) {
+function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell, readOnly }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   return (
@@ -9424,8 +9442,8 @@ function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell
         else if (isTarget) overlay = "rgba(60,138,60,.35)";
         else if (isLegal) overlay = "rgba(196,154,80,.25)";
         return (
-          <button key={sq} onClick={() => onCell(sq)} disabled={isBlocked} className="press"
-            style={{ position: "relative", border: "none", borderRadius: 0, cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
+          <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={isBlocked || readOnly} className={readOnly ? undefined : "press"}
+            style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
             {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
             {isPos && <PieceGlyph type="N" color={pieceColor} size={24} style={{ position: "relative", zIndex: 1 }} />}
             {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
@@ -9443,9 +9461,17 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
   const [timeLeftMs, setTimeLeftMs] = useState(() => round.timeLimitMs - (Date.now() - new Date(round.startedAt).getTime()));
   const reportedRef = useRef(false);
   const isWhite = myUid === game.white_uid;
-  const myRep = round.reports && round.reports[isWhite ? "w" : "b"];
-  const oppRep = round.reports && round.reports[isWhite ? "b" : "w"];
+  const myColor = isWhite ? "w" : "b";
+  const oppColor = isWhite ? "b" : "w";
+  const myRep = round.reports && round.reports[myColor];
+  const oppRep = round.reports && round.reports[oppColor];
   const iReported = !!myRep || reported;
+  // (v0.5.0 기능, 사용자 요청) 상대 나이트가 실시간으로 움직이는 걸 보여주기 위해, round.positions에
+  // 서버가 그때그때 기록해 둔 상대의 "지금 위치"를 그대로 읽어 상대 보드에 그린다 — 판정과 무관한
+  // 순수 표시값이라(신뢰 모델은 knight_report와 동일) 검증 없이 그대로 믿는다.
+  const oppPosInfo = round.positions && round.positions[oppColor];
+  const oppPos = (oppPosInfo && oppPosInfo.sq) || round.start;
+  const oppMovesUsed = (oppPosInfo && oppPosInfo.movesUsed) || 0;
   const doReport = useCallback((reached, finalSq, moves) => {
     if (reportedRef.current) return;
     reportedRef.current = true; setReported(true);
@@ -9474,6 +9500,8 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
     if (iReported || !legalTargets.includes(sq)) return;
     const nextMoves = movesUsed + 1;
     setPos(sq); setMovesUsed(nextMoves);
+    // 이 수를 상대에게 실시간으로 중계한다(판정과 무관한 표시용 — 실패해도 그냥 무시).
+    sbRpc("knight_move_ping", { p_game_id: game.id, p_round: roundIdx, p_sq: sq, p_moves_used: nextMoves }).catch(() => { });
     if (sq === round.target) { doReport(true, sq, nextMoves); return; }
     if (nextMoves >= round.moveBudget) doReport(false, sq, nextMoves);
   };
@@ -9491,11 +9519,17 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
           텍스트 기호(♞) 대신 분석 탭 등 사이트 전체가 쓰는 PieceGlyph(classic 기물 스킨)를 그대로
           써서, 미니게임 보드도 실제 체스판·기물처럼 보이게 한다. 목표(★)·방해 칸(✕) 표시는 칸
           위에 얹는 반투명 오버레이로 바꿔 그 밑의 보드 무늬가 그대로 비친다. */}
-      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor={isWhite ? "w" : "b"} onCell={onCell} />
-      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>
-        {round.winner ? (round.winner === "draw" ? "이 라운드는 무승부예요" : (round.winner === (isWhite ? "w" : "b") ? "이 라운드 승리!" : "이 라운드 패배")) :
+      <MinigameBoardLabel text="내 보드" />
+      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor={myColor} onCell={onCell} />
+      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700, marginBottom: 14 }}>
+        {round.winner ? (round.winner === "draw" ? "이 라운드는 무승부예요" : (round.winner === myColor ? "이 라운드 승리!" : "이 라운드 패배")) :
           iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
       </div>
+      {/* (v0.5.0 기능, 사용자 요청) 상대 보드 — 상대 나이트가 실시간으로(knight_move_ping) 움직이는
+          모습을 그대로 따라 그린다. 목표·방해 칸은 이 라운드 공용이라 내 보드와 같다. */}
+      <MinigameBoardLabel text="상대 보드" />
+      <KnightRaceGrid pos={oppPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor={oppColor} onCell={() => { }} readOnly />
+      <div style={{ textAlign: "center", fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>상대 수 {oppMovesUsed}/{round.moveBudget}</div>
     </div>
   );
 }
@@ -9562,6 +9596,8 @@ const KNIGHT_BOT_MOVE_MS_MAX = 1250;
 function KnightRaceBotRound({ round, onRoundDone }) {
   const [pos, setPos] = useState(round.start);
   const [movesUsed, setMovesUsed] = useState(0);
+  const [botPos, setBotPos] = useState(round.start);
+  const [botMovesUsed, setBotMovesUsed] = useState(0);
   const [myReport, setMyReport] = useState(null); // { reached, moves, atMs }
   const [botReport, setBotReport] = useState(null);
   const [timeLeftMs, setTimeLeftMs] = useState(round.timeLimitMs);
@@ -9583,15 +9619,31 @@ function KnightRaceBotRound({ round, onRoundDone }) {
     }, 200);
     return () => clearInterval(t);
   }, [round.timeLimitMs, movesUsed, myReport, doMyReport]);
-  // 봇의 시도 — 라운드가 시작되는 순간 한 번만 계산·예약한다.
+  // (v0.5.0 기능, 사용자 요청) 봇의 시도 — 예전엔 결과만 한 번에 반영했지만, 이제 실제로 한 수씩
+  // 옮겨 다니는 모습을 "봇 보드"에 보여준다. 라운드가 시작되는 순간 최단 경로를 한 번만 계산해,
+  // 그 경로의 각 수마다 0.65~1.25초 무작위 간격으로 botPos를 옮기는 타이머를 미리 전부 예약해 둔다.
   useEffect(() => {
     const path = knightShortestPathLocal(round.start, round.target, round.blocked);
     const moves = path ? path.length - 1 : Infinity;
-    const elapsed = Array.from({ length: moves }, () => KNIGHT_BOT_MOVE_MS_MIN + Math.random() * (KNIGHT_BOT_MOVE_MS_MAX - KNIGHT_BOT_MOVE_MS_MIN)).reduce((a, b) => a + b, 0);
-    if (path && moves <= round.moveBudget && elapsed <= round.timeLimitMs) {
-      timersRef.current.push(setTimeout(() => setBotReport({ reached: true, moves, atMs: elapsed }), elapsed));
+    if (!path || moves > round.moveBudget) {
+      timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: 0, atMs: round.timeLimitMs }), round.timeLimitMs));
+      return;
+    }
+    let cumulative = 0;
+    let stepsWithinTime = 0;
+    for (let i = 0; i < moves; i++) {
+      const delay = KNIGHT_BOT_MOVE_MS_MIN + Math.random() * (KNIGHT_BOT_MOVE_MS_MAX - KNIGHT_BOT_MOVE_MS_MIN);
+      cumulative += delay;
+      if (cumulative > round.timeLimitMs) break;
+      stepsWithinTime = i + 1;
+      const stepSq = path[i + 1];
+      const fireAt = cumulative;
+      timersRef.current.push(setTimeout(() => { setBotPos(stepSq); setBotMovesUsed(i + 1); }, fireAt));
+    }
+    if (stepsWithinTime === moves) {
+      timersRef.current.push(setTimeout(() => setBotReport({ reached: true, moves, atMs: cumulative }), cumulative));
     } else {
-      timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: Math.min(moves, round.moveBudget), atMs: round.timeLimitMs }), round.timeLimitMs));
+      timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: stepsWithinTime, atMs: round.timeLimitMs }), round.timeLimitMs));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -9625,10 +9677,14 @@ function KnightRaceBotRound({ round, onRoundDone }) {
       <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
         <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
       </div>
+      <MinigameBoardLabel text="내 보드" />
       <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor="w" onCell={onCell} />
-      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700, marginBottom: 14 }}>
         {myReport && botReport ? "" : myReport ? "봇이 시도하는 중..." : "목표 칸(★)까지 나이트를 움직여 보세요"}
       </div>
+      <MinigameBoardLabel text="봇 보드" />
+      <KnightRaceGrid pos={botPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor="b" onCell={() => { }} readOnly />
+      <div style={{ textAlign: "center", fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>봇 수 {botMovesUsed}/{round.moveBudget}</div>
     </div>
   );
 }
@@ -9667,11 +9723,12 @@ function KnightRaceBotBoard({ onExit, onStatusChange }) {
   }
   return (
     <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
         <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botWins}</div>
       </div>
+      <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
   );
@@ -9713,11 +9770,12 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   }
   return (
     <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
         <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppWins}</div>
       </div>
+      <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
   );
@@ -20801,6 +20859,8 @@ const CHANGELOG = [
       "좌표 인지 게임·나이트 경주 두 미니게임에도 체스처럼 '봇과 플레이하기'·'친구와 플레이하기'가 생겼어요.",
       "좌표 인지 게임에서 목표 칸이 보드 위에서 빛나는 대신, 그 좌표를 보드 아래에 텍스트로 표시하도록 바꿨어요 — 좌표를 직접 읽고 찾아 눌러야 해요.",
       "좌표 인지 게임에서 오답을 클릭하면 그 칸이 빨갛게, 정답을 클릭하면 초록색으로 반짝여요 — 오답은 라운드가 끝나지 않고 계속 시도할 수 있고, 정답은 잠깐 반짝인 뒤 다음 좌표로 넘어가요. 내 보드 아래에 상대(또는 봇)의 클릭도 실시간으로 반짝이는 보드가 따로 생겼어요.",
+      "나이트 경주에도 내 보드 아래에 상대(또는 봇)의 보드가 따로 생겨서, 상대 나이트가 한 칸씩 움직이는 걸 실시간으로 볼 수 있어요 — 봇도 이제 목표 칸까지 순간이동하지 않고 한 수씩 실제로 이동해요.",
+      "좌표 인지 게임·나이트 경주 두 미니게임 모두, 점수 아래에 전체 라운드를 점(dot)으로 표시해 지금까지 이기고 진 흐름을 한눈에 볼 수 있어요.",
     ]
   },
   {
