@@ -9068,19 +9068,21 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // (버그 수정, 사용자 재지적) 보드 자체는 Board 컴포넌트와 똑같이 SkinContext에서 지금 장착된 보드
 // 스킨을 읽어와 그린다 — classic처럼 단색 스킨이면 단색으로, ocean·grandmaster처럼 실제 이미지
 // 스킨이면 그 이미지 그대로 보이는, 사이트 어디서나 쓰는 바로 그 보드다(하드코딩된 classic 색이
-// 아니다).
+// 아니다). (재지적) 칸끼리 간격을 두고 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와
+// 달랐다 — Board와 완전히 같은 틀(BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근
+// 모서리 없음)을 그대로 가져다 쓴다.
 function CoordRaceGrid({ onCell }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 4, maxWidth: 320, margin: "0 auto" }}>
+    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", maxWidth: 320, aspectRatio: "1 / 1", margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
         const light = (r + c) % 2 === 0;
         return (
           <button key={sq} onClick={() => onCell(sq)} className="press"
-            style={{ aspectRatio: "1", borderRadius: 6, border: "1px solid #C9B58C", cursor: "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }} />
+            style={{ border: "none", borderRadius: 0, cursor: "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }} />
         );
       }))}
     </div>
@@ -9346,12 +9348,14 @@ function knightNeighborsClient(sq, blocked) {
 // 둘 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
 // (버그 수정, 사용자 재지적) 보드·기물 모두 Board/PieceGlyph와 똑같이 SkinContext에서 지금 장착된
 // 스킨을 읽어와 그린다 — ocean·grandmaster처럼 실제 이미지 스킨이면 그 이미지 그대로 보이는, 사이트
-// 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다).
+// 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다). (재지적) 칸끼리 간격을 두고
+// 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와 달랐다 — Board와 완전히 같은 틀
+// (BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근 모서리 없음)을 그대로 가져다 쓴다.
 function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 3, maxWidth: 320, margin: "0 auto 12px" }}>
+    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", maxWidth: 320, aspectRatio: "1 / 1", margin: "0 auto 12px", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
@@ -9366,7 +9370,7 @@ function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell
         else if (isLegal) overlay = "rgba(196,154,80,.25)";
         return (
           <button key={sq} onClick={() => onCell(sq)} disabled={isBlocked} className="press"
-            style={{ position: "relative", aspectRatio: "1", borderRadius: 5, border: "1px solid " + (isPos ? T.brass : isTarget ? "#3C8A3C" : "#C9B58C"), cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
+            style={{ position: "relative", border: "none", borderRadius: 0, cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
             {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
             {isPos && <PieceGlyph type="N" color={pieceColor} size={24} style={{ position: "relative", zIndex: 1 }} />}
             {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
@@ -20738,7 +20742,7 @@ const CHANGELOG = [
       "스페셜 탭에 두 번째 실시간 대전 미니게임 '나이트 경주'가 추가됐어요 — 나이트로 목표 칸까지 상대보다 먼저 도달하는 5전 3선승 대결이에요. 라운드가 진행될수록 방해 칸이 늘어나요.",
       "플레이 탭이 다른 탭처럼 상단 헤더·하단 탭바가 함께 보이도록 바뀌었어요 — 예전엔 화면 전체를 덮는 별도 화면이었어요. 대국 중 다른 탭을 둘러봐도 진행 중이던 대국은 끊기지 않고 그대로 이어져요.",
       "스페셜 미니게임 목록에서 테스트용 예시 게임을 지우고, 한 줄에 게임 하나씩 아이콘·색으로 구분해 보여주도록 정리했어요.",
-      "미니게임의 체스판·나이트가 지금 장착 중인 보드·기물 스킨 그대로 보이도록 바꿨어요 — 예전엔 칸 구분 없는 단색 배경에 나이트도 문자 기호(♞)로만 표시됐어요.",
+      "미니게임의 체스판·나이트가 지금 장착 중인 보드·기물 스킨 그대로, 실제 대국판과 똑같은 모양(금색 테두리, 칸 사이 간격 없음)으로 보이도록 바꿨어요 — 예전엔 칸 구분 없는 단색 배경에 나이트도 문자 기호(♞)로만 표시됐어요.",
       "좌표 인지 게임·나이트 경주 두 미니게임에도 체스처럼 '봇과 플레이하기'·'친구와 플레이하기'가 생겼어요.",
       "좌표 인지 게임에서 목표 칸이 보드 위에서 빛나는 대신, 그 좌표를 보드 아래에 텍스트로 표시하도록 바꿨어요 — 좌표를 직접 읽고 찾아 눌러야 해요.",
     ]
