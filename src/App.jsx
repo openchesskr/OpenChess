@@ -8878,6 +8878,109 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
     </div>
   );
 }
+// (v0.5.0 기능, 사용자 요청) 미니게임의 "친구와 플레이하기" — 체스 PvP(PlayPage)의 친구 로스터와
+// 완전히 같은 데이터·동작(친구 목록 조회·접속 상태순 정렬·도전장 발송/취소·상대 응답 실시간 감시)을
+// 그대로 재사용하도록 그 로직만 훅으로 뽑아냈다. 체스 쪽 PlayPage의 기존 인라인 구현은 잘 동작하고
+// 있어 그대로 두고, 이 훅은 미니게임 두 개(좌표 인지 게임·나이트 경주)가 함께 쓴다 — p_game_type만
+// 다르게 넘기면 pvp_invite_friend/pvp_invite_respond/pvp_invite_cancel이 기존 체스 대국과 똑같이
+// 동작한다(둘 다 애초에 game_type을 몰라도 되게 일반화돼 있다).
+function useFriendPvpInvite({ myUid, gameType, onMatched }) {
+  const [friendList, setFriendList] = useState([]);
+  const [myInvite, setMyInvite] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!myUid) { setFriendList([]); return; }
+    let cancelled = false;
+    (async () => {
+      const edges = await friendEdges();
+      const ids = edges.filter((e) => e.status === "accepted").map((e) => (e.from_uid === myUid ? e.to_uid : e.from_uid));
+      if (!ids.length) { if (!cancelled) setFriendList([]); return; }
+      const profiles = await usersProfiles(ids);
+      if (!cancelled) setFriendList(ids.map((uid) => ({ uid, username: (profiles[uid] || {}).username, pub: (profiles[uid] || {}).pub || {} })));
+    })();
+    return () => { cancelled = true; };
+  }, [myUid]);
+  const friendPresence = usePresenceMap(friendList.map((f) => f.uid));
+  const sortedFriendList = useMemo(() => {
+    const withMeta = friendList.map((f) => {
+      const lastSeenMs = friendPresence[f.uid] || 0;
+      const online = !!lastSeenMs && (Date.now() - lastSeenMs) < ONLINE_WINDOW_MS;
+      const xp = f.pub.xp || 0;
+      return { ...f, lastSeenMs, online, xp, tierIndex: tierFromXp(xp).tierIndex };
+    });
+    withMeta.sort((a, b) => {
+      if (a.online !== b.online) return a.online ? -1 : 1;
+      if (a.online && b.online) { if (b.tierIndex !== a.tierIndex) return b.tierIndex - a.tierIndex; if (b.xp !== a.xp) return b.xp - a.xp; }
+      return (b.lastSeenMs || 0) - (a.lastSeenMs || 0);
+    });
+    return withMeta;
+  }, [friendList, friendPresence]);
+  const sendInvite = async (f) => {
+    if (!myUid) return;
+    setErr("");
+    try {
+      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: "0-0", p_game_type: gameType });
+      setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
+    } catch { setErr("도전장을 보내지 못했어요."); }
+  };
+  const cancelInvite = async () => {
+    if (!myInvite) return;
+    try { await sbRpc("pvp_invite_cancel", { p_invite_id: myInvite.id }); } catch { }
+    setMyInvite(null);
+  };
+  useRealtimeTable("pvp_invites", myInvite ? "id=eq." + myInvite.id : null, async (payload) => {
+    let row = payload && payload.new;
+    if (!row && myInvite) { try { const rows = await sbSelect("pvp_invites?id=eq." + myInvite.id + "&select=*"); row = rows && rows[0]; } catch { } }
+    if (!row) return;
+    if (row.status === "accepted" && row.game_id) {
+      const rows = await sbSelect("pvp_games?id=eq." + row.game_id + "&select=*");
+      if (rows && rows[0]) { setMyInvite(null); onMatched(rows[0]); }
+    } else if (row.status === "declined") { setMyInvite(null); setErr("상대가 도전장을 거절했어요."); }
+    else if (row.status === "cancelled") { setMyInvite(null); }
+  }, !!myInvite, 4000);
+  return { friendList: sortedFriendList, myInvite, sendInvite, cancelInvite, err };
+}
+// 친구 로스터 UI — 체스 PvP 설정 화면의 "친구와 플레이하기" 목록과 똑같은 마크업·동작을 미니게임
+// 설정 화면에서도 그대로 쓴다.
+function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+        <User size={14} color={T.brass} />
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>친구와 플레이하기</span>
+      </div>
+      {!myUid ? (
+        <div style={{ padding: "16px 10px", borderRadius: 10, border: "1px dashed #C9B58C", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용할 수 있어요.</div>
+      ) : (
+        <div style={{ border: "1px solid #DCCBA8", borderRadius: 10, maxHeight: 280, overflowY: "auto", background: "rgba(255,255,255,.4)" }}>
+          {friendList.length === 0 ? (
+            <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>같이 플레이할 친구가 없어요.</div>
+          ) : friendList.map((f, i) => (
+            <motion.div key={f.uid} layout="position"
+              initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.28, delay: Math.min(i, 8) * 0.045, ease: MOTION_EASE }}
+              whileHover={{ backgroundColor: "rgba(196,154,80,.1)" }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i ? "1px solid rgba(0,0,0,.07)" : "none" }}>
+              <button onClick={() => onOpenProfile && onOpenProfile(f.username)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
+                  {f.pub.photo ? <img src={f.pub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
+                    : <span style={{ width: 28, height: 28, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{(f.pub.nickname || f.username || "?")[0].toUpperCase()}</span>}
+                  {f.online && <motion.span animate={{ scale: [1, 1.5], opacity: [0.7, 0] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }} style={{ position: "absolute", right: -1, bottom: -1, width: 8, height: 8, borderRadius: "50%", background: T.brilliant }} />}
+                  <OnlineDot lastSeenMs={f.lastSeenMs} overlay size={8} />
+                </span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
+                  <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
+                </span>
+              </button>
+              <button onClick={() => onInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>도전</button>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 // ============================================================ 스페셜 미니게임 플랫폼 ============================================================
 // (v0.5.0 기능, 사용자 설계) 플레이 페이지 "스페셜" 토글 — 체스보드 위 오리지널 미니게임들을 모아
 // 보여주는 자리. 사용자가 설계한 4개 미니게임은 전부 실시간 PvP라 "최고 기록·점수 보상" 같은 단일
@@ -8889,18 +8992,31 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
 // (실제 파이프라인이 끝까지 동작하는지 증명하기 위해 만들었던 테스트용 예시 게임 "칸 반응속도"와
 // 그 전용 단일 플레이 틀(MinigameShell/useMinigameBest)은 이제 실제 게임 두 개가 갖춰져 더 이상
 // 필요하지 않아 걷어냈다.)
+// gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
+// 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
 const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
-  { key: "knight-race", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
+  { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
+  { key: "knight-race", gameType: "knight", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
 ];
 // (v0.5.0 리디자인, 사용자 요청) 카드 그리드 대신 미니게임 하나당 한 줄을 차지하는 목록으로 바꾸고,
 // 게임마다 그 특성을 드러내는 아이콘·강조색(accent)을 따로 두어 한눈에 구분되게 했다.
-function PlaySpecialGames({ myUid }) {
+// (v0.5.0 기능, 사용자 요청) resume — 다른 화면에 있는 동안 전역 알람 박스(GlobalPvpInviteBanner)로
+// 미니게임 친구 도전장을 수락하면, App 루트가 이 prop으로 "이미 매칭된 대국"을 넘겨준다. gameType이
+// 가리키는 게임을 곧장 활성화하고 그 대국 객체를 initialGame으로 넘겨 매칭 화면 없이 바로 대전
+// 화면부터 보여준다 — 한 번 반영하면 onConsumeResume으로 App 루트에 소비했음을 알려 재적용을 막는다.
+function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume }) {
   const [activeKey, setActiveKey] = useState(null);
+  const [resumeGame, setResumeGame] = useState(null);
+  useEffect(() => {
+    if (!resume) return;
+    const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === resume.gameType);
+    if (g) { setActiveKey(g.key); setResumeGame(resume.game); }
+    onConsumeResume && onConsumeResume();
+  }, [resume, onConsumeResume]);
   const active = PLAY_SPECIAL_GAMES.find((g) => g.key === activeKey) || null;
   if (active) {
     const Game = active.Component;
-    return <Game myUid={myUid} onExit={() => setActiveKey(null)} />;
+    return <Game myUid={myUid} onExit={() => { setActiveKey(null); setResumeGame(null); }} onOpenProfile={onOpenProfile} initialGame={resumeGame} />;
   }
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
@@ -8944,6 +9060,24 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 대전 중 화면 — 매칭이 끝난 뒤(game이 확정된 뒤)만 렌더링된다. pvp_games 행 하나를 실시간
 // 구독하며, sans(라운드 기록 배열)만 보고 내 점수·상대 점수·지금 라운드를 그때그때 다시 계산한다 —
 // 이 컴포넌트 자신은 점수를 세는(mutate) 상태를 갖지 않고 항상 서버 값을 그대로 반영만 한다.
+// 8×8 좌표 그리드 — 순수 표시용. 실시간 PvP(CoordRaceBoard)와 봇 대전(CoordRaceBotBoard) 둘 다 이
+// 컴포넌트로 같은 보드를 그리고, 라운드 진행 로직(누가 어떻게 승자를 정하는지)만 서로 다르게 가져간다.
+function CoordRaceGrid({ targetSq, onCell }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 4, maxWidth: 320, margin: "0 auto" }}>
+      {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
+        const rank = 8 - r;
+        const sq = file + rank;
+        const isTarget = sq === targetSq;
+        const light = (r + c) % 2 === 0;
+        return (
+          <button key={sq} onClick={() => onCell(sq)} className="press"
+            style={{ aspectRatio: "1", borderRadius: 6, border: "1px solid " + (isTarget ? T.brass : "#C9B58C"), cursor: "pointer", padding: 0, ...(isTarget ? { background: "linear-gradient(180deg," + T.brass + ",#A8842F)" } : boardSquareBg(BOARD_SKINS.classic, light, r, c)) }} />
+        );
+      }))}
+    </div>
+  );
+}
 function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const [game, setGame] = useState(initialGame);
   const advanceLockRef = useRef(false);
@@ -9010,26 +9144,82 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
       {/* (v0.5.0 리디자인, 사용자 요청) 칸 배경을 임의의 단색 대신 분석 탭 등 사이트 전체가 쓰는
           기본(classic) 보드 스킨 그대로(boardSquareBg) 써서, 미니게임 보드도 다른 화면과 같은
           체스판으로 보이게 한다. */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 4, maxWidth: 320, margin: "0 auto" }}>
-        {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
-          const rank = 8 - r;
-          const sq = file + rank;
-          const isTarget = !!(round && round.sq === sq && !round.winner);
-          const light = (r + c) % 2 === 0;
-          return (
-            <button key={sq} onClick={() => onCell(sq)} className="press"
-              style={{ aspectRatio: "1", borderRadius: 6, border: "1px solid " + (isTarget ? T.brass : "#C9B58C"), cursor: "pointer", padding: 0, ...(isTarget ? { background: "linear-gradient(180deg," + T.brass + ",#A8842F)" } : boardSquareBg(BOARD_SKINS.classic, light, r, c)) }} />
-          );
-        }))}
+      <CoordRaceGrid targetSq={round && !round.winner ? round.sq : null} onCell={onCell} />
+    </div>
+  );
+}
+// (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버(pvp_games)를 전혀 쓰지 않는 완전한 로컬 시뮬레이션.
+// 체스의 봇 대국과 같은 사상(네트워크 왕복 없이 클라이언트에서 그 자리에서 상대를 흉내 낸다)을 따른다.
+// 라운드마다 무작위 좌표를 하나 고르고, 봇은 무작위 반응 시간(사람이 이길 수 있을 정도로 관대한
+// 0.5~2.6초) 뒤에 "클릭"한다 — 내가 그보다 먼저 실제로 클릭하면 내가, 시간(COORD_ROUND_MS)이 다
+// 지나도록 아무도 못 맞히면 무승부로 그 라운드가 끝난다.
+const COORD_BOT_REACT_MIN_MS = 500;
+const COORD_BOT_REACT_MAX_MS = 2600;
+function CoordRaceBotBoard({ onExit, onStatusChange }) {
+  const [rounds, setRounds] = useState([]); // [{ sq, winner: "w"|"b"|"draw"|null }]
+  const timersRef = useRef([]);
+  const clearTimers = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
+  useEffect(() => () => clearTimers(), []);
+  const roundIdx = rounds.length - 1;
+  const round = rounds[roundIdx] || null;
+  const myScore = rounds.filter((r) => r.winner === "w").length;
+  const botScore = rounds.filter((r) => r.winner === "b").length;
+  const finished = rounds.length >= COORD_TOTAL_ROUNDS && round && round.winner;
+  // (버그 수정) 봇 대전은 pvp_games 행이 없어 game.status가 없으므로, 실제 PvP처럼 onStatusChange로
+  // "끝났다"는 사실을 부모(CoordRaceGame)에 알려야 한다 — 안 그러면 이미 끝난 대전인데도 뒤로가기가
+  // "정말 나가시겠어요?"(기권 확인)를 계속 띄운다.
+  useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
+  const startRound = useCallback(() => {
+    const sq = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
+    setRounds((rs) => [...rs, { sq, winner: null }]);
+    const resolve = (winner) => setRounds((rs) => {
+      const i = rs.length - 1;
+      if (i < 0 || rs[i].winner) return rs;
+      const copy = rs.slice(); copy[i] = { ...copy[i], winner };
+      return copy;
+    });
+    const botDelay = COORD_BOT_REACT_MIN_MS + Math.random() * (COORD_BOT_REACT_MAX_MS - COORD_BOT_REACT_MIN_MS);
+    timersRef.current.push(setTimeout(() => resolve("b"), botDelay));
+    timersRef.current.push(setTimeout(() => resolve("draw"), COORD_ROUND_MS));
+  }, []);
+  useEffect(() => { if (rounds.length === 0) startRound(); }, [startRound, rounds.length]);
+  useEffect(() => {
+    if (!round || !round.winner || rounds.length >= COORD_TOTAL_ROUNDS) return;
+    const t = setTimeout(startRound, 900);
+    timersRef.current.push(t);
+    return () => clearTimeout(t);
+  }, [round && round.winner, rounds.length, startRound]);
+  const onCell = (sq) => {
+    if (!round || round.winner || sq !== round.sq) return;
+    setRounds((rs) => { const i = rs.length - 1; const copy = rs.slice(); copy[i] = { ...copy[i], winner: "w" }; return copy; });
+  };
+  if (finished) {
+    const iWon = myScore > botScore, isDraw = myScore === botScore;
+    return (
+      <div style={{ textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {botScore}</div>
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botScore}</div>
+      </div>
+      <CoordRaceGrid targetSq={round && !round.winner ? round.sq : null} onCell={onCell} />
     </div>
   );
 }
 // 매칭 화면 + 대전 화면을 함께 갖는 최상위 컴포넌트 — PlaySpecialGames가 pvp:true 게임은 이 컴포넌트를
 // (MinigameShell 없이) 직접 렌더링한다. PvP는 점수/보상이 상대적(승·패·무)이라 단일 플레이 전용인
 // MinigameShell의 "최고 기록·점수 보상" 개념과 맞지 않아 헤더·종료 흐름을 이 컴포넌트가 직접 갖는다.
-function CoordRaceGame({ myUid, onExit }) {
-  const [game, setGame] = useState(null);
+function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
+  const [game, setGame] = useState(initialGame || null);
+  const [botGame, setBotGame] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [err, setErr] = useState("");
   const [liveStatus, setLiveStatus] = useState("active");
@@ -9053,10 +9243,13 @@ function CoordRaceGame({ myUid, onExit }) {
   }, [join]);
   useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
   useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
-  const requestExit = () => { if (game && liveStatus === "active") setConfirmForfeit(true); else onExit(); };
+  const { friendList, myInvite, sendInvite, cancelInvite, err: inviteErr } = useFriendPvpInvite({ myUid, gameType: COORD_GAME_TYPE, onMatched: setGame });
+  const active = game || botGame;
+  const requestExit = () => { if (active && liveStatus === "active") setConfirmForfeit(true); else onExit(); };
   const doForfeit = async () => {
     setConfirmForfeit(false);
     if (game) { try { await sbRpc("coord_forfeit", { p_game_id: game.id }); } catch { } }
+    setBotGame(false);
     onExit();
   };
   return (
@@ -9066,21 +9259,25 @@ function CoordRaceGame({ myUid, onExit }) {
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>좌표 인지 게임</div>
         <span style={{ width: 30, flexShrink: 0 }} />
       </div>
-      {!game ? (
-        <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
-          <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭하세요.<br />15라운드를 먼저 더 많이 맞히는 쪽이 승리해요.</p>
-          {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err}</p>}
-          {waiting ? (
-            <div>
-              <div className="flex items-center justify-center" style={{ marginBottom: 14 }}><PendingDots size={12} /></div>
-              <button onClick={leave} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>취소</button>
+      {!active ? (
+        waiting || myInvite ? (
+          <MatchmakingScreen active={waiting || !!myInvite} variant={myInvite ? "invite" : "queue"}
+            opponent={myInvite ? { name: myInvite.toUsername || "상대", photo: myInvite.toPhoto } : null}
+            timeControlLabel="좌표 인지 게임" onCancel={() => { if (waiting) leave(); if (myInvite) cancelInvite(); }} />
+        ) : (
+          <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
+            <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭하세요.<br />15라운드를 먼저 더 많이 맞히는 쪽이 승리해요.</p>
+            {(err || inviteErr) && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err || inviteErr}</p>}
+            <div className="flex gap-2" style={{ marginBottom: 18 }}>
+              <button onClick={join} disabled={!myUid} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대전 상대 찾기"}</button>
+              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
             </div>
-          ) : (
-            <button onClick={join} className="press" style={{ padding: "11px 28px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>대전 상대 찾기</button>
-          )}
-        </div>
+            <FriendPvpRoster myUid={myUid} friendList={friendList} myInvite={myInvite} onInvite={sendInvite} onOpenProfile={onOpenProfile} />
+          </div>
+        )
       ) : (
-        <CoordRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
+        game ? <CoordRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
+          : <CoordRaceBotBoard onExit={onExit} onStatusChange={setLiveStatus} />
       )}
       {confirmForfeit && (
         <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -9123,6 +9320,36 @@ function knightNeighborsClient(sq, blocked) {
 // 라운드 하나 — 내 나이트의 위치·사용한 수는 이 컴포넌트만의 로컬 상태다(서버는 최종 요약 보고
 // 시점에야 알게 된다). roundIdx가 바뀔 때마다(다음 라운드) key로 통째로 새로 마운트돼 이 상태가
 // 깨끗이 리셋된다.
+// 8×8 나이트 이동 그리드 — 순수 표시용. 실시간 PvP(KnightRaceRound)와 봇 대전(KnightRaceBotRound)
+// 둘 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
+function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 3, maxWidth: 320, margin: "0 auto 12px" }}>
+      {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
+        const rank = 8 - r;
+        const sq = file + rank;
+        const isPos = sq === pos;
+        const isTarget = sq === target;
+        const isBlocked = (blocked || []).includes(sq);
+        const isLegal = legalTargets.includes(sq);
+        const light = (r + c) % 2 === 0;
+        let overlay = null;
+        if (isBlocked) overlay = "rgba(20,12,6,.6)";
+        else if (isTarget) overlay = "rgba(60,138,60,.35)";
+        else if (isLegal) overlay = "rgba(196,154,80,.25)";
+        return (
+          <button key={sq} onClick={() => onCell(sq)} disabled={isBlocked} className="press"
+            style={{ position: "relative", aspectRatio: "1", borderRadius: 5, border: "1px solid " + (isPos ? T.brass : isTarget ? "#3C8A3C" : "#C9B58C"), cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(BOARD_SKINS.classic, light, r, c) }}>
+            {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
+            {isPos && <PieceGlyph type="N" color={pieceColor} size={24} pieceSkin="classic" style={{ position: "relative", zIndex: 1 }} />}
+            {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
+            {isBlocked && <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: "#fff" }}>✕</span>}
+          </button>
+        );
+      }))}
+    </div>
+  );
+}
 function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
   const [pos, setPos] = useState(round.start);
   const [movesUsed, setMovesUsed] = useState(0);
@@ -9178,34 +9405,188 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
           텍스트 기호(♞) 대신 분석 탭 등 사이트 전체가 쓰는 PieceGlyph(classic 기물 스킨)를 그대로
           써서, 미니게임 보드도 실제 체스판·기물처럼 보이게 한다. 목표(★)·방해 칸(✕) 표시는 칸
           위에 얹는 반투명 오버레이로 바꿔 그 밑의 보드 무늬가 그대로 비친다. */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 3, maxWidth: 320, margin: "0 auto 12px" }}>
-        {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
-          const rank = 8 - r;
-          const sq = file + rank;
-          const isPos = sq === pos;
-          const isTarget = sq === round.target;
-          const isBlocked = (round.blocked || []).includes(sq);
-          const isLegal = legalTargets.includes(sq);
-          const light = (r + c) % 2 === 0;
-          let overlay = null;
-          if (isBlocked) overlay = "rgba(20,12,6,.6)";
-          else if (isTarget) overlay = "rgba(60,138,60,.35)";
-          else if (isLegal) overlay = "rgba(196,154,80,.25)";
-          return (
-            <button key={sq} onClick={() => onCell(sq)} disabled={isBlocked} className="press"
-              style={{ position: "relative", aspectRatio: "1", borderRadius: 5, border: "1px solid " + (isPos ? T.brass : isTarget ? "#3C8A3C" : "#C9B58C"), cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(BOARD_SKINS.classic, light, r, c) }}>
-              {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
-              {isPos && <PieceGlyph type="N" color={isWhite ? "w" : "b"} size={24} pieceSkin="classic" style={{ position: "relative", zIndex: 1 }} />}
-              {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
-              {isBlocked && <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: "#fff" }}>✕</span>}
-            </button>
-          );
-        }))}
-      </div>
+      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor={isWhite ? "w" : "b"} onCell={onCell} />
       <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>
         {round.winner ? (round.winner === "draw" ? "이 라운드는 무승부예요" : (round.winner === (isWhite ? "w" : "b") ? "이 라운드 승리!" : "이 라운드 패배")) :
           iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
       </div>
+    </div>
+  );
+}
+// (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버 없이 완전히 로컬에서 라운드를 만들고 판정한다.
+// 라운드 생성 규칙(walkLen·blockedCount·moveBudget·timeLimitMs)은 knight_start_round와 정확히 같은
+// 공식을 그대로 옮겨(knightGenRoundLocal), 봇 대전도 실전 PvP와 같은 난이도 곡선을 겪게 한다. 봇은
+// 시작 칸에서 목표 칸까지 최단 나이트 경로(BFS)를 계산해, 한 수당 0.65~1.25초의 무작위 시간을 두고
+// 그 경로를 그대로 밟는다 — 생성 과정 자체가 항상 짧은 정답 경로를 하나 보장하므로 봇은 사실상 항상
+// 성공하고, 오직 사람보다 먼저 도착하는지만으로 라운드 승패가 갈린다(라운드가 진행돼 방해 칸이
+// 늘어날수록 최단 경로도 조금씩 길어져 자연스럽게 더 어려워진다).
+function knightRandomWalkLocal(start, steps) {
+  const path = [start]; let cur = start;
+  for (let i = 0; i < steps; i++) {
+    const nbs = knightNeighborsClient(cur, []);
+    if (!nbs.length) break;
+    cur = nbs[Math.floor(Math.random() * nbs.length)];
+    path.push(cur);
+  }
+  return path;
+}
+function knightPickBlockedLocal(count, exclude) {
+  if (count <= 0) return [];
+  const all = [];
+  for (let f = 0; f < 8; f++) for (let r = 1; r <= 8; r++) all.push(String.fromCharCode(97 + f) + r);
+  let candidates = all.filter((s) => !exclude.includes(s));
+  const result = [];
+  while (result.length < count && candidates.length) {
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    result.push(pick);
+    candidates = candidates.filter((c) => c !== pick);
+  }
+  return result;
+}
+function knightGenRoundLocal(roundIdx) {
+  let walkLen, blockedCount;
+  if (roundIdx < 2) { walkLen = 3; blockedCount = 0; }
+  else if (roundIdx < 4) { walkLen = 4; blockedCount = roundIdx - 1; }
+  else { walkLen = 5; blockedCount = 3; }
+  const start = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
+  const path = knightRandomWalkLocal(start, walkLen);
+  const target = path[path.length - 1];
+  const blocked = knightPickBlockedLocal(blockedCount, path);
+  return { start, target, blocked, moveBudget: path.length - 1 + 2, timeLimitMs: 25000 };
+}
+function knightShortestPathLocal(start, target, blocked) {
+  if (start === target) return [start];
+  const visited = new Set([start]);
+  let frontier = [[start]];
+  while (frontier.length) {
+    const next = [];
+    for (const path of frontier) {
+      const cur = path[path.length - 1];
+      for (const nb of knightNeighborsClient(cur, blocked)) {
+        if (nb === target) return [...path, nb];
+        if (!visited.has(nb)) { visited.add(nb); next.push([...path, nb]); }
+      }
+    }
+    frontier = next;
+  }
+  return null;
+}
+const KNIGHT_BOT_MOVE_MS_MIN = 650;
+const KNIGHT_BOT_MOVE_MS_MAX = 1250;
+function KnightRaceBotRound({ round, onRoundDone }) {
+  const [pos, setPos] = useState(round.start);
+  const [movesUsed, setMovesUsed] = useState(0);
+  const [myReport, setMyReport] = useState(null); // { reached, moves, atMs }
+  const [botReport, setBotReport] = useState(null);
+  const [timeLeftMs, setTimeLeftMs] = useState(round.timeLimitMs);
+  const startRef = useRef(Date.now());
+  const myReportRef = useRef(null);
+  const timersRef = useRef([]);
+  useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
+  const doMyReport = useCallback((reached, moves) => {
+    if (myReportRef.current) return;
+    const rep = { reached, moves, atMs: Date.now() - startRef.current };
+    myReportRef.current = rep; setMyReport(rep);
+  }, []);
+  useEffect(() => {
+    if (myReport) return;
+    const t = setInterval(() => {
+      const left = round.timeLimitMs - (Date.now() - startRef.current);
+      setTimeLeftMs(left);
+      if (left <= 0) { doMyReport(false, movesUsed); clearInterval(t); }
+    }, 200);
+    return () => clearInterval(t);
+  }, [round.timeLimitMs, movesUsed, myReport, doMyReport]);
+  // 봇의 시도 — 라운드가 시작되는 순간 한 번만 계산·예약한다.
+  useEffect(() => {
+    const path = knightShortestPathLocal(round.start, round.target, round.blocked);
+    const moves = path ? path.length - 1 : Infinity;
+    const elapsed = Array.from({ length: moves }, () => KNIGHT_BOT_MOVE_MS_MIN + Math.random() * (KNIGHT_BOT_MOVE_MS_MAX - KNIGHT_BOT_MOVE_MS_MIN)).reduce((a, b) => a + b, 0);
+    if (path && moves <= round.moveBudget && elapsed <= round.timeLimitMs) {
+      timersRef.current.push(setTimeout(() => setBotReport({ reached: true, moves, atMs: elapsed }), elapsed));
+    } else {
+      timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: Math.min(moves, round.moveBudget), atMs: round.timeLimitMs }), round.timeLimitMs));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!myReport || !botReport) return;
+    let winner;
+    if (myReport.reached && botReport.reached) winner = myReport.atMs <= botReport.atMs ? "w" : "b";
+    else if (myReport.reached) winner = "w";
+    else if (botReport.reached) winner = "b";
+    // (설계) 봇은 생성 시점부터 항상 짧은 정답 경로가 보장돼 있어 시간 안에 실패하는 경우가 사실상
+    // 없다 — 둘 다 실패하는 경우까지 서버(knight_resolve_round)와 같은 거리 타이브레이커를 두는 대신
+    // 무승부로 단순화했다(실질적으로 거의 일어나지 않는 경로라 과설계를 피했다).
+    else winner = "draw";
+    onRoundDone(winner);
+  }, [myReport, botReport, onRoundDone]);
+  const legalTargets = useMemo(() => (myReport ? [] : knightNeighborsClient(pos, round.blocked || [])), [pos, round.blocked, myReport]);
+  const onCell = (sq) => {
+    if (myReport || !legalTargets.includes(sq)) return;
+    const nextMoves = movesUsed + 1;
+    setPos(sq); setMovesUsed(nextMoves);
+    if (sq === round.target) { doMyReport(true, nextMoves); return; }
+    if (nextMoves >= round.moveBudget) doMyReport(false, nextMoves);
+  };
+  const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>
+        <span>수 {movesUsed}/{round.moveBudget}</span>
+        <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
+      </div>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
+        <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
+      </div>
+      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor="w" onCell={onCell} />
+      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>
+        {myReport && botReport ? "" : myReport ? "봇이 시도하는 중..." : "목표 칸(★)까지 나이트를 움직여 보세요"}
+      </div>
+    </div>
+  );
+}
+function KnightRaceBotBoard({ onExit, onStatusChange }) {
+  const [rounds, setRounds] = useState([]); // [{ ...round, winner }]
+  const roundIdx = rounds.length - 1;
+  const round = rounds[roundIdx] || null;
+  const myWins = rounds.filter((r) => r.winner === "w").length;
+  const botWins = rounds.filter((r) => r.winner === "b").length;
+  const finished = (myWins >= KNIGHT_BO_TARGET || botWins >= KNIGHT_BO_TARGET || rounds.length >= KNIGHT_BO_TOTAL) && round && round.winner;
+  // (버그 수정) 봇 대전은 pvp_games 행이 없어 실제 PvP처럼 onStatusChange로 "끝났다"는 사실을 부모
+  // (KnightRaceGame)에 알려야 한다 — 안 그러면 이미 끝난 대전인데도 뒤로가기가 "정말 나가시겠어요?"
+  // (기권 확인)를 계속 띄운다.
+  useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
+  useEffect(() => {
+    if (finished) return;
+    if (rounds.length === 0) { setRounds([{ ...knightGenRoundLocal(0), winner: null }]); return; }
+    if (round && round.winner) {
+      const t = setTimeout(() => setRounds((rs) => [...rs, { ...knightGenRoundLocal(rs.length), winner: null }]), 1800);
+      return () => clearTimeout(t);
+    }
+  }, [rounds.length, round && round.winner, finished]);
+  const onRoundDone = useCallback((winner) => {
+    setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const copy = rs.slice(); copy[i] = { ...copy[i], winner }; return copy; });
+  }, []);
+  if (finished) {
+    const iWon = myWins > botWins;
+    const isDraw = myWins === botWins;
+    return (
+      <div style={{ textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {botWins}</div>
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botWins}</div>
+      </div>
+      {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
   );
 }
@@ -9257,8 +9638,9 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
 }
 // 매칭 화면 + 대전 화면 — CoordRaceGame과 완전히 같은 구조(매칭·기권 확인 절차 재사용 패턴)를 game_type만
 // "knight"로 바꿔 그대로 따른다.
-function KnightRaceGame({ myUid, onExit }) {
-  const [game, setGame] = useState(null);
+function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
+  const [game, setGame] = useState(initialGame || null);
+  const [botGame, setBotGame] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [err, setErr] = useState("");
   const [liveStatus, setLiveStatus] = useState("active");
@@ -9281,10 +9663,13 @@ function KnightRaceGame({ myUid, onExit }) {
   }, [join]);
   useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
   useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
-  const requestExit = () => { if (game && liveStatus === "active") setConfirmForfeit(true); else onExit(); };
+  const { friendList, myInvite, sendInvite, cancelInvite, err: inviteErr } = useFriendPvpInvite({ myUid, gameType: KNIGHT_GAME_TYPE, onMatched: setGame });
+  const active = game || botGame;
+  const requestExit = () => { if (active && liveStatus === "active") setConfirmForfeit(true); else onExit(); };
   const doForfeit = async () => {
     setConfirmForfeit(false);
     if (game) { try { await sbRpc("knight_forfeit", { p_game_id: game.id }); } catch { } }
+    setBotGame(false);
     onExit();
   };
   return (
@@ -9294,21 +9679,25 @@ function KnightRaceGame({ myUid, onExit }) {
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>나이트 경주</div>
         <span style={{ width: 30, flexShrink: 0 }} />
       </div>
-      {!game ? (
-        <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
-          <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>나이트로 목표 칸(★)까지 상대보다 먼저 도달하세요.<br />5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.</p>
-          {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err}</p>}
-          {waiting ? (
-            <div>
-              <div className="flex items-center justify-center" style={{ marginBottom: 14 }}><PendingDots size={12} /></div>
-              <button onClick={leave} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>취소</button>
+      {!active ? (
+        waiting || myInvite ? (
+          <MatchmakingScreen active={waiting || !!myInvite} variant={myInvite ? "invite" : "queue"}
+            opponent={myInvite ? { name: myInvite.toUsername || "상대", photo: myInvite.toPhoto } : null}
+            timeControlLabel="나이트 경주" onCancel={() => { if (waiting) leave(); if (myInvite) cancelInvite(); }} />
+        ) : (
+          <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
+            <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>나이트로 목표 칸(★)까지 상대보다 먼저 도달하세요.<br />5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.</p>
+            {(err || inviteErr) && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err || inviteErr}</p>}
+            <div className="flex gap-2" style={{ marginBottom: 18 }}>
+              <button onClick={join} disabled={!myUid} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대전 상대 찾기"}</button>
+              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
             </div>
-          ) : (
-            <button onClick={join} className="press" style={{ padding: "11px 28px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>대전 상대 찾기</button>
-          )}
-        </div>
+            <FriendPvpRoster myUid={myUid} friendList={friendList} myInvite={myInvite} onInvite={sendInvite} onOpenProfile={onOpenProfile} />
+          </div>
+        )
       ) : (
-        <KnightRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
+        game ? <KnightRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
+          : <KnightRaceBotBoard onExit={onExit} onStatusChange={setLiveStatus} />
       )}
       {confirmForfeit && (
         <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -9325,7 +9714,7 @@ function KnightRaceGame({ myUid, onExit }) {
     </div>
   );
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -9334,6 +9723,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // PLAY_SPECIAL_GAMES 배열에 항목만 추가하면 된다. step(setup/playing) 등 기존 상태는 이 토글과
   // 무관하게 그대로 유지되므로, "일반"으로 다시 돌아오면 하던 대국이 그대로 이어진다.
   const [pageMode, setPageMode] = useState("normal"); // "normal" | "special"
+  // (v0.5.0 기능, 사용자 요청) 다른 탭에 있는 동안 전역 알람 박스에서 미니게임 친구 도전장을
+  // 수락하면(specialResume) 곧장 "스페셜" 토글로 전환해 그 대국을 보여준다.
+  useEffect(() => { if (specialResume) setPageMode("special"); }, [specialResume]);
   const [step, setStep] = useState("setup"); // "setup" | "playing"
   const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
   const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
@@ -9910,7 +10302,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
           <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
         </div>
-        {pageMode === "special" && <PlaySpecialGames myUid={myUid} />}
+        {pageMode === "special" && <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} />}
         {pageMode === "normal" && (step === "setup" ? (
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
@@ -20320,6 +20712,7 @@ const CHANGELOG = [
       "플레이 탭이 다른 탭처럼 상단 헤더·하단 탭바가 함께 보이도록 바뀌었어요 — 예전엔 화면 전체를 덮는 별도 화면이었어요. 대국 중 다른 탭을 둘러봐도 진행 중이던 대국은 끊기지 않고 그대로 이어져요.",
       "스페셜 미니게임 목록에서 테스트용 예시 게임을 지우고, 한 줄에 게임 하나씩 아이콘·색으로 구분해 보여주도록 정리했어요.",
       "미니게임의 체스판·나이트가 분석 탭과 똑같은 기본 보드·기물 스킨으로 보이도록 바꿨어요 — 예전엔 칸 구분 없는 단색 배경에 나이트도 문자 기호(♞)로만 표시됐어요.",
+      "좌표 인지 게임·나이트 경주 두 미니게임에도 체스처럼 '봇과 플레이하기'·'친구와 플레이하기'가 생겼어요.",
     ]
   },
   {
@@ -27157,7 +27550,7 @@ function NewPasswordModal({ recovery, onDone, onClose }) {
 // 두어, 상대가 사이트 안에서 어느 탭·화면에 있든(로그인만 돼 있으면) 상단에 뜬다. 자동으로 사라지지
 // 않고 수락·거절하거나(내가) 상대가 취소할 때만(실시간 구독) 닫힌다. 여러 화면에서 각자 따로
 // 구독·응답하면 중복 팝업이나 엇갈린 상태가 생기므로, 응답 로직 전체를 여기 한 곳에만 둔다.
-function GlobalPvpInviteBanner({ myUid, onAccepted }) {
+function GlobalPvpInviteBanner({ myUid, onAccepted, onAcceptedMinigame }) {
   const [invite, setInvite] = useState(null); // { ...pvp_invites 행, fromPub, fromUsername }
   const loadPending = useCallback(async () => {
     if (!myUid) { setInvite(null); return; }
@@ -27180,6 +27573,10 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
     else loadPending();
   }, !!invite, 6000);
   if (!myUid || !invite) return null;
+  // (v0.5.0 기능, 사용자 요청) 미니게임(좌표 인지 게임·나이트 경주) 친구 도전장도 이 전역 알람
+  // 박스로 똑같이 받는다 — game_type으로 체스와 구분해, 수락 시 서로 다른 콜백(onAccepted는 체스용
+  // /play 재개, onAcceptedMinigame은 플레이 탭의 "스페셜" 화면 재개)으로 나눈다.
+  const specialGame = PLAY_SPECIAL_GAMES.find((g) => g.gameType === invite.game_type);
   const respond = async (accept) => {
     const id = invite.id;
     setInvite(null);
@@ -27187,7 +27584,8 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
       const inv = await sbRpc("pvp_invite_respond", { p_invite_id: id, p_accept: accept });
       if (accept && inv && inv.game_id) {
         const rows = await sbSelect("pvp_games?id=eq." + inv.game_id + "&select=*");
-        if (rows && rows[0] && onAccepted) onAccepted(rows[0]);
+        const g = rows && rows[0];
+        if (g) { if (specialGame && onAcceptedMinigame) onAcceptedMinigame(g, invite.game_type); else if (!specialGame && onAccepted) onAccepted(g); }
       }
     } catch { }
   };
@@ -27199,8 +27597,8 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
           {invite.fromPub.photo ? <img src={invite.fromPub.photo} alt="" style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(invite.fromPub.nickname || invite.fromUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            @{invite.fromUsername || "누군가"}님이 대국을 신청했어요
-            <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{tc.label}{tc.cat ? " · " + tc.cat : ""}</span>
+            @{invite.fromUsername || "누군가"}님이 {specialGame ? specialGame.name + " 대결을" : "대국을"} 신청했어요
+            {!specialGame && <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{tc.label}{tc.cat ? " · " + tc.cat : ""}</span>}
           </div>
         </div>
         <div className="flex gap-2">
@@ -28367,6 +28765,9 @@ export default function App() {
   // 보드에 입력된 포지션(sans·fenRoot)을 시드로 넘겨 이 페이지를 연다. /play로 직접 들어오면(주소창에
   // 직접 입력·새로고침) seed 없이 표준 시작 위치로 연다(아래 딥링크 resolver에서 처리).
   const [playGame, setPlayGame] = useState(null); // { sans, fenRoot } | null
+  // (v0.5.0 기능, 사용자 요청) 다른 탭에 있는 동안 전역 알람 박스에서 미니게임(좌표 인지 게임·
+  // 나이트 경주) 친구 도전장을 수락하면, 이미 매칭된 대국을 PlayPage의 "스페셜" 화면으로 넘겨준다.
+  const [specialResume, setSpecialResume] = useState(null); // { gameType, game } | null
   // (v0.5.0 리디자인, 사용자 요청) PlayPage가 더 이상 화면을 통째로 덮는 오버레이가 아니라 다른
   // 탭과 똑같이 <main> 안에서 "플레이" 탭(store)일 때만 그려지는 콘텐츠가 됐으므로, 친구 도전장
   // 수락처럼 어느 탭에 있든 곧장 openPlay를 부르는 진입 경로들도 이제 반드시 함께 탭을 "store"로
@@ -28671,7 +29072,7 @@ export default function App() {
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
-      {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
+      {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onAcceptedMinigame={(g, gameType) => { setSpecialResume({ gameType, game: g }); openPlay({ sans: [], fenRoot: null }); }} />}
       {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
           대신 정말 기권 처리해도 되는지 한 번 확인한다. */}
       <AnimatePresence>
@@ -28813,7 +29214,7 @@ export default function App() {
             않는다(위 openPlay/useLayoutEffect가 이 탭으로 자동 전환해 곧장 보여준다). */}
         {playGame && (
           <div style={tab === "store" ? undefined : { display: "none" }}>
-            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} />
+            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} />
           </div>
         )}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
