@@ -9007,13 +9007,18 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
         <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppScore}</div>
       </div>
+      {/* (v0.5.0 리디자인, 사용자 요청) 칸 배경을 임의의 단색 대신 분석 탭 등 사이트 전체가 쓰는
+          기본(classic) 보드 스킨 그대로(boardSquareBg) 써서, 미니게임 보드도 다른 화면과 같은
+          체스판으로 보이게 한다. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 4, maxWidth: 320, margin: "0 auto" }}>
-        {Array.from({ length: 8 }, (_, rIdx) => 8 - rIdx).flatMap((rank) => COORD_FILES.map((file) => {
+        {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
+          const rank = 8 - r;
           const sq = file + rank;
           const isTarget = !!(round && round.sq === sq && !round.winner);
+          const light = (r + c) % 2 === 0;
           return (
             <button key={sq} onClick={() => onCell(sq)} className="press"
-              style={{ aspectRatio: "1", borderRadius: 6, border: "1px solid " + (isTarget ? T.brass : "#C9B58C"), background: isTarget ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#FBF5E8", cursor: "pointer", padding: 0 }} />
+              style={{ aspectRatio: "1", borderRadius: 6, border: "1px solid " + (isTarget ? T.brass : "#C9B58C"), cursor: "pointer", padding: 0, ...(isTarget ? { background: "linear-gradient(180deg," + T.brass + ",#A8842F)" } : boardSquareBg(BOARD_SKINS.classic, light, r, c)) }} />
           );
         }))}
       </div>
@@ -9169,22 +9174,30 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
       <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
         <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
       </div>
+      {/* (v0.5.0 리디자인, 사용자 요청) 칸은 분석 탭과 같은 기본(classic) 보드 스킨을, 내 나이트는
+          텍스트 기호(♞) 대신 분석 탭 등 사이트 전체가 쓰는 PieceGlyph(classic 기물 스킨)를 그대로
+          써서, 미니게임 보드도 실제 체스판·기물처럼 보이게 한다. 목표(★)·방해 칸(✕) 표시는 칸
+          위에 얹는 반투명 오버레이로 바꿔 그 밑의 보드 무늬가 그대로 비친다. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 3, maxWidth: 320, margin: "0 auto 12px" }}>
-        {Array.from({ length: 8 }, (_, rIdx) => 8 - rIdx).flatMap((rank) => COORD_FILES.map((file) => {
+        {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
+          const rank = 8 - r;
           const sq = file + rank;
           const isPos = sq === pos;
           const isTarget = sq === round.target;
           const isBlocked = (round.blocked || []).includes(sq);
           const isLegal = legalTargets.includes(sq);
-          let bg = "#FBF5E8";
-          if (isBlocked) bg = "#8A6C5C";
-          else if (isPos) bg = "linear-gradient(180deg," + T.brass + ",#A8842F)";
-          else if (isTarget) bg = "rgba(60,138,60,.35)";
-          else if (isLegal) bg = "rgba(196,154,80,.2)";
+          const light = (r + c) % 2 === 0;
+          let overlay = null;
+          if (isBlocked) overlay = "rgba(20,12,6,.6)";
+          else if (isTarget) overlay = "rgba(60,138,60,.35)";
+          else if (isLegal) overlay = "rgba(196,154,80,.25)";
           return (
             <button key={sq} onClick={() => onCell(sq)} disabled={isBlocked} className="press"
-              style={{ aspectRatio: "1", borderRadius: 5, border: "1px solid " + (isPos ? T.brass : isTarget ? "#3C8A3C" : "#C9B58C"), background: bg, cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>
-              {isPos ? "♞" : isTarget ? "★" : isBlocked ? "✕" : ""}
+              style={{ position: "relative", aspectRatio: "1", borderRadius: 5, border: "1px solid " + (isPos ? T.brass : isTarget ? "#3C8A3C" : "#C9B58C"), cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(BOARD_SKINS.classic, light, r, c) }}>
+              {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
+              {isPos && <PieceGlyph type="N" color={isWhite ? "w" : "b"} size={24} pieceSkin="classic" style={{ position: "relative", zIndex: 1 }} />}
+              {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
+              {isBlocked && <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: "#fff" }}>✕</span>}
             </button>
           );
         }))}
@@ -20306,6 +20319,7 @@ const CHANGELOG = [
       "스페셜 탭에 두 번째 실시간 대전 미니게임 '나이트 경주'가 추가됐어요 — 나이트로 목표 칸까지 상대보다 먼저 도달하는 5전 3선승 대결이에요. 라운드가 진행될수록 방해 칸이 늘어나요.",
       "플레이 탭이 다른 탭처럼 상단 헤더·하단 탭바가 함께 보이도록 바뀌었어요 — 예전엔 화면 전체를 덮는 별도 화면이었어요. 대국 중 다른 탭을 둘러봐도 진행 중이던 대국은 끊기지 않고 그대로 이어져요.",
       "스페셜 미니게임 목록에서 테스트용 예시 게임을 지우고, 한 줄에 게임 하나씩 아이콘·색으로 구분해 보여주도록 정리했어요.",
+      "미니게임의 체스판·나이트가 분석 탭과 똑같은 기본 보드·기물 스킨으로 보이도록 바꿨어요 — 예전엔 칸 구분 없는 단색 배경에 나이트도 문자 기호(♞)로만 표시됐어요.",
     ]
   },
   {
