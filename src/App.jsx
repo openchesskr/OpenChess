@@ -5,7 +5,7 @@ import {
   Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, ThumbsDown, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake,
+  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake, Route,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
   Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench,
 } from "lucide-react";
@@ -884,7 +884,13 @@ async function fetchLichess(sans, master) {
   const posTotal = (j.white || 0) + (j.draws || 0) + (j.black || 0);
   const moves = (j.moves || []).map((m) => {
     const tot = (m.white || 0) + (m.draws || 0) + (m.black || 0);
-    return { san: m.san, games: tot, adopt: posTotal ? +(100 * tot / posTotal).toFixed(1) : 0, name: m.opening ? m.opening.name : null, wdl: { w: m.white || 0, d: m.draws || 0, b: m.black || 0 } };
+    // (버그 수정, 사용자 제보) "채택률(%) 표시가 정확한 소수점 단위를 안 보여주고 반올림된 값만
+    // 나온다" — 화면(MoveTile)은 소수점 둘째 자리까지 보여주는데(useCountUp decimals=2), 정작 여기서
+    // 원본 비율을 미리 소수점 첫째 자리로 반올림해(.toFixed(1)) 저장해 뒀던 게 원인이다 — 예를 들어
+    // 실제 12.347%인 수가 여기서 먼저 12.3으로 반올림된 뒤 화면에 "12.30%"로 표시돼, 둘째 자리는
+    // 항상 의미 없는 0이었다. 반올림 없이 원래 비율을 그대로 저장해 화면에서 실제 소수점 둘째 자리까지
+    // 쓸 수 있게 한다(자르는 방식으로 표시하는 것은 아래 useCountUp에서 처리).
+    return { san: m.san, games: tot, adopt: posTotal ? (100 * tot / posTotal) : 0, name: m.opening ? m.opening.name : null, wdl: { w: m.white || 0, d: m.draws || 0, b: m.black || 0 } };
   });
   return { posTotal, opening: j.opening || null, moves, wdl: { w: j.white || 0, d: j.draws || 0, b: j.black || 0 }, master: !!master };
 }
@@ -3746,7 +3752,12 @@ function useCountUp(target, durationMs, decimals = 0) {
     const tick = (now) => {
       const t = Math.min(1, (now - start) / durationMs);
       const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay(Math.round(target * eased * p) / p);
+      // (버그 수정, 사용자 제보) 채택률(%) 등 소수점 표기가 반올림된 값으로 보였다 — 애니메이션이
+      // 끝나는 마지막 프레임(eased=1)의 값이 그대로 최종 표시값이 되는데, 여기서 Math.round를 쓰면
+      // 예를 들어 12.347%가 12.35%로 반올림돼 보였다. 반올림 대신 내림(버림)으로 잘라, 실제 값의
+      // 소수점 이하를 부풀리지 않는 근삿값(항상 실제 값 이하)을 보여준다. games처럼 decimals=0인
+      // 정수 카운터는 target 자체가 정수라 최종값에는 영향이 없다.
+      setDisplay(Math.floor(target * eased * p) / p);
       if (t < 1) rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -4102,10 +4113,22 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // (v0.2.1) 엔진 상위 3줄을 최종 결과 한 번이 아니라 depth마다 실시간으로 갱신한다 — 평가치가 살아
       // 움직이고 수순이 점점 길어진다. 이 effect는 후보 수가 채워질 때마다 재실행되므로(cancelled가 금방
       // true가 됨) cancelled 대신 "지금 포지션 key가 그대로인가"로 가드해 탐색 내내 스트리밍을 유지한다.
-      const toLines3 = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({
-        ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
-        sans: pvUciToSans(sans, pv.pv, 15),
-      }))).slice(0, 3);
+      // (버그 수정, 사용자 제보) "모바일에서 분석 탭 엔진 라인이 안 뜬다"(평가치 바는 정상) — 원인은
+      // pvUciToSans(SAN 변환)가 특정 PV에서 예외를 던지면 이 map() 전체가 중단돼, 그 뒤에 이어지는
+      // setEngineLines(lines)·setLinesPending(false)까지 통째로 실행되지 못했던 것. posEval(평가치
+      // 바)은 SAN 변환이 필요 없는 별도 경로(onEvalProgress)라 영향이 없어, "평가치는 뜨는데 엔진
+      // 3줄만 안 뜬다"는 증상과 정확히 일치한다. 모바일은 CPU가 느려 얕은 depth에서 멈추는 일이
+      // 잦고, 얕은 depth일수록 PV 끝부분에 이런 변환 실패를 유발하는 거친 수순이 섞이기 쉬워
+      // 모바일에서 특히 잘 재현됐을 것으로 보인다. 한 줄의 변환 실패가 나머지 줄·이후 로직 전체를
+      // 막지 않도록, 줄 단위로 감싸 실패한 줄만 걸러낸다.
+      const toLines3 = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => {
+        try {
+          return {
+            ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
+            sans: pvUciToSans(sans, pv.pv, 15),
+          };
+        } catch { return null; }
+      }).filter((l) => l && l.sans && l.sans.length)).slice(0, 3);
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
       // (기능) 사용자 요청으로 MultiPV를 7→5로 더 낮춘다 — 순위가 늘어날수록 노드당 비용이 커져
@@ -4291,7 +4314,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           const child = await fetchLichess([...sans, m.san], false);
           const g = child && child.posTotal != null ? child.posTotal : null;
           if (g != null && !cancelled && statMountedRef.current) {
-            setMoves((prev) => prev.map((x) => x.san === m.san ? { ...x, games: g, adopt: posGames ? +(100 * g / posGames).toFixed(1) : x.adopt } : x));
+            setMoves((prev) => prev.map((x) => x.san === m.san ? { ...x, games: g, adopt: posGames ? (100 * g / posGames) : x.adopt } : x));
           }
         } catch { }
       }
@@ -8855,9 +8878,998 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
     </div>
   );
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange }) {
+// (v0.5.0 기능, 사용자 요청) 미니게임의 "친구와 플레이하기" — 체스 PvP(PlayPage)의 친구 로스터와
+// 완전히 같은 데이터·동작(친구 목록 조회·접속 상태순 정렬·도전장 발송/취소·상대 응답 실시간 감시)을
+// 그대로 재사용하도록 그 로직만 훅으로 뽑아냈다. 체스 쪽 PlayPage의 기존 인라인 구현은 잘 동작하고
+// 있어 그대로 두고, 이 훅은 미니게임 두 개(좌표 인지 게임·나이트 경주)가 함께 쓴다 — p_game_type만
+// 다르게 넘기면 pvp_invite_friend/pvp_invite_respond/pvp_invite_cancel이 기존 체스 대국과 똑같이
+// 동작한다(둘 다 애초에 game_type을 몰라도 되게 일반화돼 있다).
+function useFriendPvpInvite({ myUid, gameType, onMatched }) {
+  const [friendList, setFriendList] = useState([]);
+  const [myInvite, setMyInvite] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!myUid) { setFriendList([]); return; }
+    let cancelled = false;
+    (async () => {
+      const edges = await friendEdges();
+      const ids = edges.filter((e) => e.status === "accepted").map((e) => (e.from_uid === myUid ? e.to_uid : e.from_uid));
+      if (!ids.length) { if (!cancelled) setFriendList([]); return; }
+      const profiles = await usersProfiles(ids);
+      if (!cancelled) setFriendList(ids.map((uid) => ({ uid, username: (profiles[uid] || {}).username, pub: (profiles[uid] || {}).pub || {} })));
+    })();
+    return () => { cancelled = true; };
+  }, [myUid]);
+  const friendPresence = usePresenceMap(friendList.map((f) => f.uid));
+  const sortedFriendList = useMemo(() => {
+    const withMeta = friendList.map((f) => {
+      const lastSeenMs = friendPresence[f.uid] || 0;
+      const online = !!lastSeenMs && (Date.now() - lastSeenMs) < ONLINE_WINDOW_MS;
+      const xp = f.pub.xp || 0;
+      return { ...f, lastSeenMs, online, xp, tierIndex: tierFromXp(xp).tierIndex };
+    });
+    withMeta.sort((a, b) => {
+      if (a.online !== b.online) return a.online ? -1 : 1;
+      if (a.online && b.online) { if (b.tierIndex !== a.tierIndex) return b.tierIndex - a.tierIndex; if (b.xp !== a.xp) return b.xp - a.xp; }
+      return (b.lastSeenMs || 0) - (a.lastSeenMs || 0);
+    });
+    return withMeta;
+  }, [friendList, friendPresence]);
+  const sendInvite = async (f) => {
+    if (!myUid) return;
+    setErr("");
+    try {
+      const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: "0-0", p_game_type: gameType });
+      setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
+    } catch { setErr("도전장을 보내지 못했어요."); }
+  };
+  const cancelInvite = async () => {
+    if (!myInvite) return;
+    try { await sbRpc("pvp_invite_cancel", { p_invite_id: myInvite.id }); } catch { }
+    setMyInvite(null);
+  };
+  useRealtimeTable("pvp_invites", myInvite ? "id=eq." + myInvite.id : null, async (payload) => {
+    let row = payload && payload.new;
+    if (!row && myInvite) { try { const rows = await sbSelect("pvp_invites?id=eq." + myInvite.id + "&select=*"); row = rows && rows[0]; } catch { } }
+    if (!row) return;
+    if (row.status === "accepted" && row.game_id) {
+      const rows = await sbSelect("pvp_games?id=eq." + row.game_id + "&select=*");
+      if (rows && rows[0]) { setMyInvite(null); onMatched(rows[0]); }
+    } else if (row.status === "declined") { setMyInvite(null); setErr("상대가 도전장을 거절했어요."); }
+    else if (row.status === "cancelled") { setMyInvite(null); }
+  }, !!myInvite, 4000);
+  return { friendList: sortedFriendList, myInvite, sendInvite, cancelInvite, err };
+}
+// 친구 로스터 UI — 체스 PvP 설정 화면의 "친구와 플레이하기" 목록과 똑같은 마크업·동작을 미니게임
+// 설정 화면에서도 그대로 쓴다.
+function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+        <User size={14} color={T.brass} />
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>친구와 플레이하기</span>
+      </div>
+      {!myUid ? (
+        <div style={{ padding: "16px 10px", borderRadius: 10, border: "1px dashed #C9B58C", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용할 수 있어요.</div>
+      ) : (
+        <div style={{ border: "1px solid #DCCBA8", borderRadius: 10, maxHeight: 280, overflowY: "auto", background: "rgba(255,255,255,.4)" }}>
+          {friendList.length === 0 ? (
+            <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>같이 플레이할 친구가 없어요.</div>
+          ) : friendList.map((f, i) => (
+            <motion.div key={f.uid} layout="position"
+              initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.28, delay: Math.min(i, 8) * 0.045, ease: MOTION_EASE }}
+              whileHover={{ backgroundColor: "rgba(196,154,80,.1)" }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i ? "1px solid rgba(0,0,0,.07)" : "none" }}>
+              <button onClick={() => onOpenProfile && onOpenProfile(f.username)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                <span style={{ position: "relative", flexShrink: 0, display: "inline-flex" }}>
+                  {f.pub.photo ? <img src={f.pub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
+                    : <span style={{ width: 28, height: 28, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{(f.pub.nickname || f.username || "?")[0].toUpperCase()}</span>}
+                  {f.online && <motion.span animate={{ scale: [1, 1.5], opacity: [0.7, 0] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }} style={{ position: "absolute", right: -1, bottom: -1, width: 8, height: 8, borderRadius: "50%", background: T.brilliant }} />}
+                  <OnlineDot lastSeenMs={f.lastSeenMs} overlay size={8} />
+                </span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
+                  <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
+                </span>
+              </button>
+              <button onClick={() => onInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>도전</button>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+// ============================================================ 스페셜 미니게임 플랫폼 ============================================================
+// (v0.5.0 기능, 사용자 설계) 플레이 페이지 "스페셜" 토글 — 체스보드 위 오리지널 미니게임들을 모아
+// 보여주는 자리. 사용자가 설계한 4개 미니게임은 전부 실시간 PvP라 "최고 기록·점수 보상" 같은 단일
+// 플레이 개념이 없다 — 매칭·대전·종료·헤더를 게임 컴포넌트가 전부 직접 그린다(체스 PvP와 같은
+// pvp_queue_join/leave 재사용 + 전용 RPC 세트 + pvp_games.sans에 게임별 상태 저장 패턴, 각 게임
+// 섹션 주석 참고). 새 미니게임을 추가할 때 할 일은 그 규칙을 구현한 컴포넌트를 하나 만들고(props로
+// { myUid, onExit }를 받는다) 아래 PLAY_SPECIAL_GAMES 배열에 항목 하나만 추가하면 된다 — 카드 목록
+// 노출·클릭 진입·목록 복귀는 전부 자동으로 연결된다.
+// (실제 파이프라인이 끝까지 동작하는지 증명하기 위해 만들었던 테스트용 예시 게임 "칸 반응속도"와
+// 그 전용 단일 플레이 틀(MinigameShell/useMinigameBest)은 이제 실제 게임 두 개가 갖춰져 더 이상
+// 필요하지 않아 걷어냈다.)
+// gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
+// 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
+const PLAY_SPECIAL_GAMES = [
+  { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
+  { key: "knight-race", gameType: "knight", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
+];
+// (v0.5.0 리디자인, 사용자 요청) 카드 그리드 대신 미니게임 하나당 한 줄을 차지하는 목록으로 바꾸고,
+// 게임마다 그 특성을 드러내는 아이콘·강조색(accent)을 따로 두어 한눈에 구분되게 했다.
+// (v0.5.0 기능, 사용자 요청) resume — 다른 화면에 있는 동안 전역 알람 박스(GlobalPvpInviteBanner)로
+// 미니게임 친구 도전장을 수락하면, App 루트가 이 prop으로 "이미 매칭된 대국"을 넘겨준다. gameType이
+// 가리키는 게임을 곧장 활성화하고 그 대국 객체를 initialGame으로 넘겨 매칭 화면 없이 바로 대전
+// 화면부터 보여준다 — 한 번 반영하면 onConsumeResume으로 App 루트에 소비했음을 알려 재적용을 막는다.
+function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume }) {
+  const [activeKey, setActiveKey] = useState(null);
+  const [resumeGame, setResumeGame] = useState(null);
+  useEffect(() => {
+    if (!resume) return;
+    const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === resume.gameType);
+    if (g) { setActiveKey(g.key); setResumeGame(resume.game); }
+    onConsumeResume && onConsumeResume();
+  }, [resume, onConsumeResume]);
+  const active = PLAY_SPECIAL_GAMES.find((g) => g.key === activeKey) || null;
+  if (active) {
+    const Game = active.Component;
+    return <Game myUid={myUid} onExit={() => { setActiveKey(null); setResumeGame(null); }} onOpenProfile={onOpenProfile} initialGame={resumeGame} />;
+  }
+  return (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+        <Sparkles size={15} style={{ color: T.brass }} />
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>스페셜 미니게임</div>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 14 }}>체스보드 위에서 즐기는 오리지널 미니게임들을 이 자리에서 만나보세요.</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {PLAY_SPECIAL_GAMES.map((g) => {
+          const GIcon = g.Icon || Lock;
+          const accent = g.accent || T.brass;
+          return (
+            <button key={g.key} onClick={() => setActiveKey(g.key)} className="press"
+              style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid " + accent, background: "linear-gradient(135deg, " + accent + "22, rgba(255,255,255,.5))", cursor: "pointer", textAlign: "left" }}>
+              <span style={{ width: 40, height: 40, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + accent + ",#241509)", boxShadow: "0 3px 8px -2px rgba(0,0,0,.4)" }}>
+                <GIcon size={19} color="#fff" />
+              </span>
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{g.name}</span>
+                <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.desc}</span>
+              </span>
+              <ChevronRight size={17} color={T.inkSoft} style={{ flexShrink: 0 }} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+// ---- 좌표 인지 게임(coord) — 사용자 설계 1호 실시간 PvP 미니게임. 무작위 좌표가 나타나면 상대보다
+// 먼저 그 칸을 클릭해야 점수를 가져간다(15라운드, 라운드당 4초 제한, 더 많이 맞힌 쪽 승리·동점은
+// 무승부 — 규칙·서버 권위 판정은 supabase-setup.sql의 coord_reveal_next/coord_click/coord_finish
+// 참고). 매칭은 기존 체스 PvP와 같은 pvp_queue_join/pvp_queue_leave RPC를 game_type만 "coord"로
+// 바꿔 그대로 재사용한다 — 친구 초대는 아직 연결하지 않았다(랜덤 매칭만, 나중에 필요해지면 체스와
+// 같은 pvp_invite_friend를 그대로 재사용하면 된다).
+const COORD_GAME_TYPE = "coord";
+const COORD_TOTAL_ROUNDS = 15;
+const COORD_ROUND_MS = 4000;
+const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
+// 대전 중 화면 — 매칭이 끝난 뒤(game이 확정된 뒤)만 렌더링된다. pvp_games 행 하나를 실시간
+// 구독하며, sans(라운드 기록 배열)만 보고 내 점수·상대 점수·지금 라운드를 그때그때 다시 계산한다 —
+// 이 컴포넌트 자신은 점수를 세는(mutate) 상태를 갖지 않고 항상 서버 값을 그대로 반영만 한다.
+// 8×8 좌표 그리드 — 순수 표시용. 실시간 PvP(CoordRaceBoard)와 봇 대전(CoordRaceBotBoard) 둘 다 이
+// 컴포넌트로 같은 보드를 그리고, 라운드 진행 로직(누가 어떻게 승자를 정하는지)만 서로 다르게 가져간다.
+// (v0.5.0 리디자인, 사용자 요청) 목표 칸을 보드 위에서 빛나게 하는 대신, 그 좌표를 보드 아래
+// 텍스트("e4" 형식)로 크게 띄운다 — 실제 좌표를 읽고 찾아 누르는 것 자체가 이 게임의 핵심이라,
+// 칸이 미리 빛나 있으면 "인지" 없이 그 반짝임만 따라 누르는 반응 게임이 돼 버린다는 사용자 지적.
+// (버그 수정, 사용자 재지적) 보드 자체는 Board 컴포넌트와 똑같이 SkinContext에서 지금 장착된 보드
+// 스킨을 읽어와 그린다 — classic처럼 단색 스킨이면 단색으로, ocean·grandmaster처럼 실제 이미지
+// 스킨이면 그 이미지 그대로 보이는, 사이트 어디서나 쓰는 바로 그 보드다(하드코딩된 classic 색이
+// 아니다). (재지적) 칸끼리 간격을 두고 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와
+// 달랐다 — Board와 완전히 같은 틀(BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근
+// 모서리 없음)을 그대로 가져다 쓴다.
+function CoordRaceGrid({ onCell, flash, readOnly }) {
+  const ctx = useContext(SkinContext);
+  const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
+  return (
+    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", maxWidth: 320, aspectRatio: "1 / 1", margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+      {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
+        const rank = 8 - r;
+        const sq = file + rank;
+        const isFlash = flash && flash.sq === sq;
+        const light = (r + c) % 2 === 0;
+        return (
+          <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={readOnly} className={readOnly ? undefined : "press"}
+            style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }}>
+            {isFlash && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: flash.correct ? "rgba(60,168,60,.8)" : "rgba(196,60,50,.8)" }} />}
+          </button>
+        );
+      }))}
+    </div>
+  );
+}
+// 두 보드(내 보드/상대 보드) 위에 붙는 작은 이름표.
+function MinigameBoardLabel({ text }) {
+  return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{text}</div>;
+}
+// (v0.5.0 기능, 사용자 요청) 전체 진행 상황을 점 한 줄로 보여주는 "게임다운" 스코어보드 — 좌표 인지
+// 게임(15라운드)·나이트 경주(Bo5) 둘 다 이 컴포넌트를 재사용한다. results[i]는 그 라운드가 이미
+// 끝났으면 "me"(내 승리)·"opp"(상대/봇 승리)·"draw"(무승부), 아직이면 null — 지금 진행 중인
+// 라운드(= results 배열의 다음 자리)는 금색 테두리로 강조해 어디까지 왔는지 한눈에 보이게 한다.
+function MinigameScorePips({ results, total }) {
+  return (
+    <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap", marginBottom: 10 }}>
+      {Array.from({ length: total }, (_, i) => {
+        const r = results[i];
+        const bg = r === "me" ? T.best : r === "opp" ? T.blunder : r === "draw" ? "#9C8563" : "rgba(0,0,0,.14)";
+        const active = i === results.length;
+        return <span key={i} aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", background: bg, boxShadow: active ? "0 0 0 2px " + T.brass : "none", flexShrink: 0 }} />;
+      })}
+    </div>
+  );
+}
+// 보드 아래 크게 띄우는 목표 좌표 텍스트 — 라운드가 끝나(승자가 정해져) 다음 좌표를 기다리는
+// 동안에는 자리만 차지하고 비워 둔다.
+function CoordTargetLabel({ targetSq }) {
+  return (
+    <div style={{ textAlign: "center", margin: "14px 0", minHeight: 44 }}>
+      {targetSq && (
+        <span style={{ display: "inline-block", padding: "6px 22px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, fontSize: 26, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".04em" }}>{targetSq}</span>
+      )}
+    </div>
+  );
+}
+function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
+  const [game, setGame] = useState(initialGame);
+  const advanceLockRef = useRef(false);
+  useEffect(() => { onStatusChange && onStatusChange(game.status); }, [game.status, onStatusChange]);
+  useRealtimeTable("pvp_games", "id=eq." + initialGame.id, useCallback((payload) => {
+    if (payload && payload.new) setGame(payload.new);
+    else if (!payload) { sbSelect("pvp_games?id=eq." + initialGame.id + "&select=*").then((rows) => { if (rows && rows[0]) setGame(rows[0]); }).catch(() => { }); }
+  }, [initialGame.id]), true, 3000);
+  const isWhite = myUid === game.white_uid;
+  const myColor = isWhite ? "w" : "b";
+  const oppColor = isWhite ? "b" : "w";
+  const rounds = game.sans || [];
+  const roundIdx = Math.max(0, rounds.length - 1);
+  const round = rounds[roundIdx] || null;
+  const myScore = rounds.filter((r) => r.winner === myColor).length;
+  const oppScore = rounds.filter((r) => r.winner === oppColor).length;
+  const finished = game.status !== "active";
+  // (v0.5.0 기능, 사용자 요청) 오답 클릭도 칸이 빨갛게, 정답은 초록색으로 잠깐 반짝이게 한다. 내
+  // 클릭은 좌표가 이미 공개돼 있어(round.sq) 서버 응답을 기다리지 않고 그 자리에서 바로 판정해
+  // 반짝인다. 상대 클릭은 coord_click이 (정답이든 오답이든) 매번 기록해 두는 round.clicks[상대색]을
+  // realtime으로 받아, 그 at(시각)이 바뀔 때마다 "새 클릭이 있었다"로 보고 상대 보드에 반짝인다.
+  const [myFlash, setMyFlash] = useState(null); // { sq, correct } | null
+  const [oppFlash, setOppFlash] = useState(null);
+  const myFlashTimerRef = useRef(null);
+  const oppFlashTimerRef = useRef(null);
+  const lastOppClickAtRef = useRef(null);
+  useEffect(() => { setMyFlash(null); setOppFlash(null); lastOppClickAtRef.current = null; }, [roundIdx]);
+  useEffect(() => {
+    const c = round && round.clicks && round.clicks[oppColor];
+    if (!c || !c.at || c.at === lastOppClickAtRef.current) return;
+    lastOppClickAtRef.current = c.at;
+    setOppFlash({ sq: c.sq, correct: c.correct });
+    clearTimeout(oppFlashTimerRef.current);
+    oppFlashTimerRef.current = setTimeout(() => setOppFlash(null), 550);
+  }, [round, oppColor]);
+  useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(oppFlashTimerRef.current); }, []);
+  // 라운드 자동 진행 — 서버가 기록한 revealedAt/resolvedAt 시각을 기준으로 로컬 타이머를 걸어, 시간이
+  // 다 됐거나(무승부 라운드) 이미 승자가 정해졌으면(짧게 결과를 보여준 뒤) coord_reveal_next로 다음
+  // 라운드를 요청한다. 두 참가자의 클라이언트가 거의 동시에 불러도 서버 쪽 행 잠금이 안전하게 막아준다.
+  useEffect(() => {
+    if (finished) return;
+    if (rounds.length === 0) { sbRpc("coord_reveal_next", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
+    if (!round) return;
+    const revealedAt = new Date(round.revealedAt).getTime();
+    const now = Date.now();
+    const delay = round.winner
+      ? Math.max(600, 900 - (now - new Date(round.resolvedAt || round.revealedAt).getTime()))
+      : Math.max(0, revealedAt + COORD_ROUND_MS - now) + 150;
+    const t = setTimeout(() => {
+      if (advanceLockRef.current) return;
+      advanceLockRef.current = true;
+      sbRpc("coord_reveal_next", { p_game_id: game.id }).then((g) => { advanceLockRef.current = false; if (g) setGame(g); }).catch(() => { advanceLockRef.current = false; });
+    }, delay);
+    return () => clearTimeout(t);
+  }, [game.id, rounds.length, round && round.winner, finished]);
+  // 총 라운드가 다 찼으면 결과를 확정한다 — coord_finish는 sans에 이미 서버가 기록해 둔 라운드
+  // 승자만 다시 세어 계산하므로, 누가(또는 양쪽 다) 불러도 결과는 항상 같다.
+  useEffect(() => {
+    if (finished || rounds.length < COORD_TOTAL_ROUNDS) return;
+    const last = rounds[rounds.length - 1];
+    if (last && (last.winner || last.resolvedAt)) sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
+  }, [game.id, rounds.length, finished]);
+  const onCell = (sq) => {
+    if (finished || !round || round.winner || myFlash) return;
+    const correct = sq === round.sq;
+    setMyFlash({ sq, correct });
+    clearTimeout(myFlashTimerRef.current);
+    myFlashTimerRef.current = setTimeout(() => setMyFlash(null), 550);
+    sbRpc("coord_click", { p_game_id: game.id, p_round: roundIdx, p_sq: sq }).then((g) => g && setGame(g)).catch(() => { });
+  };
+  if (finished) {
+    const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
+    const isDraw = game.status === "draw";
+    return (
+      <div style={{ textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {oppScore}</div>
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppScore}</div>
+      </div>
+      <MinigameScorePips results={rounds.map((r) => r.winner === myColor ? "me" : r.winner === oppColor ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
+      {/* (v0.5.0 기능, 사용자 요청) 정답을 맞혀도 곧장 다음 좌표로 넘어가지 않고(위 useEffect의 최소
+          600ms 지연) 초록 반짝임이 보일 시간을 준 뒤 다음 라운드로 넘어간다. 오답은 라운드를 끝내지
+          않고 그 칸만 빨갛게 반짝인 뒤 계속 시도할 수 있다. */}
+      <MinigameBoardLabel text="내 보드" />
+      <CoordRaceGrid onCell={onCell} flash={myFlash} />
+      <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
+      <MinigameBoardLabel text="상대 보드" />
+      <CoordRaceGrid onCell={() => { }} flash={oppFlash} readOnly />
+    </div>
+  );
+}
+// (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버(pvp_games)를 전혀 쓰지 않는 완전한 로컬 시뮬레이션.
+// 체스의 봇 대국과 같은 사상(네트워크 왕복 없이 클라이언트에서 그 자리에서 상대를 흉내 낸다)을 따른다.
+// 라운드마다 무작위 좌표를 하나 고르고, 봇은 무작위 반응 시간(사람이 이길 수 있을 정도로 관대한
+// 0.5~2.6초) 뒤에 "클릭"한다 — 내가 그보다 먼저 실제로 클릭하면 내가, 시간(COORD_ROUND_MS)이 다
+// 지나도록 아무도 못 맞히면 무승부로 그 라운드가 끝난다.
+const COORD_BOT_REACT_MIN_MS = 500;
+const COORD_BOT_REACT_MAX_MS = 2600;
+function CoordRaceBotBoard({ onExit, onStatusChange }) {
+  const [rounds, setRounds] = useState([]); // [{ sq, winner: "w"|"b"|"draw"|null }]
+  const timersRef = useRef([]);
+  const clearTimers = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
+  useEffect(() => () => clearTimers(), []);
+  const roundIdx = rounds.length - 1;
+  const round = rounds[roundIdx] || null;
+  const myScore = rounds.filter((r) => r.winner === "w").length;
+  const botScore = rounds.filter((r) => r.winner === "b").length;
+  const finished = rounds.length >= COORD_TOTAL_ROUNDS && round && round.winner;
+  // (버그 수정) 봇 대전은 pvp_games 행이 없어 game.status가 없으므로, 실제 PvP처럼 onStatusChange로
+  // "끝났다"는 사실을 부모(CoordRaceGame)에 알려야 한다 — 안 그러면 이미 끝난 대전인데도 뒤로가기가
+  // "정말 나가시겠어요?"(기권 확인)를 계속 띄운다.
+  useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
+  // (v0.5.0 기능, 사용자 요청) 오답은 라운드를 끝내지 않고 그 칸만 빨갛게, 정답은 초록색으로 반짝인
+  // 뒤 잠깐 멈췄다가 다음 좌표로 넘어간다. 봇이 정답을 "클릭"하는 순간에도 봇 보드에 초록 반짝임을
+  // 준다 — 봇은 항상 정답만 맞히므로(오답을 흉내 내지 않는다) 봇 보드에 빨간 반짝임은 없다.
+  const [myFlash, setMyFlash] = useState(null);
+  const [botFlash, setBotFlash] = useState(null);
+  const myFlashTimerRef = useRef(null);
+  const botFlashTimerRef = useRef(null);
+  useEffect(() => { setMyFlash(null); setBotFlash(null); }, [roundIdx]);
+  useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(botFlashTimerRef.current); }, []);
+  const startRound = useCallback(() => {
+    const sq = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
+    setRounds((rs) => [...rs, { sq, winner: null }]);
+    const resolve = (winner) => setRounds((rs) => {
+      const i = rs.length - 1;
+      if (i < 0 || rs[i].winner) return rs;
+      const copy = rs.slice(); copy[i] = { ...copy[i], winner };
+      return copy;
+    });
+    const botDelay = COORD_BOT_REACT_MIN_MS + Math.random() * (COORD_BOT_REACT_MAX_MS - COORD_BOT_REACT_MIN_MS);
+    timersRef.current.push(setTimeout(() => {
+      setBotFlash({ sq, correct: true });
+      clearTimeout(botFlashTimerRef.current);
+      botFlashTimerRef.current = setTimeout(() => setBotFlash(null), 550);
+      resolve("b");
+    }, botDelay));
+    timersRef.current.push(setTimeout(() => resolve("draw"), COORD_ROUND_MS));
+  }, []);
+  useEffect(() => { if (rounds.length === 0) startRound(); }, [startRound, rounds.length]);
+  useEffect(() => {
+    if (!round || !round.winner || rounds.length >= COORD_TOTAL_ROUNDS) return;
+    const t = setTimeout(startRound, 900);
+    timersRef.current.push(t);
+    return () => clearTimeout(t);
+  }, [round && round.winner, rounds.length, startRound]);
+  const onCell = (sq) => {
+    if (!round || round.winner || myFlash) return;
+    const correct = sq === round.sq;
+    setMyFlash({ sq, correct });
+    clearTimeout(myFlashTimerRef.current);
+    myFlashTimerRef.current = setTimeout(() => setMyFlash(null), 550);
+    if (correct) setRounds((rs) => { const i = rs.length - 1; const copy = rs.slice(); copy[i] = { ...copy[i], winner: "w" }; return copy; });
+  };
+  if (finished) {
+    const iWon = myScore > botScore, isDraw = myScore === botScore;
+    return (
+      <div style={{ textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {botScore}</div>
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botScore}</div>
+      </div>
+      <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
+      <MinigameBoardLabel text="내 보드" />
+      <CoordRaceGrid onCell={onCell} flash={myFlash} />
+      <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
+      <MinigameBoardLabel text="봇 보드" />
+      <CoordRaceGrid onCell={() => { }} flash={botFlash} readOnly />
+    </div>
+  );
+}
+// 매칭 화면 + 대전 화면을 함께 갖는 최상위 컴포넌트 — PlaySpecialGames가 pvp:true 게임은 이 컴포넌트를
+// (MinigameShell 없이) 직접 렌더링한다. PvP는 점수/보상이 상대적(승·패·무)이라 단일 플레이 전용인
+// MinigameShell의 "최고 기록·점수 보상" 개념과 맞지 않아 헤더·종료 흐름을 이 컴포넌트가 직접 갖는다.
+function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
+  const [game, setGame] = useState(initialGame || null);
+  const [botGame, setBotGame] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const [err, setErr] = useState("");
+  const [liveStatus, setLiveStatus] = useState("active");
+  const [confirmForfeit, setConfirmForfeit] = useState(false);
+  const waitingRef = useRef(false);
+  useEffect(() => { waitingRef.current = waiting; }, [waiting]);
+  // 매칭 대기 중 이 화면을 벗어나면(뒤로가기 등) 대기열에 남지 않도록 정리한다.
+  useEffect(() => () => { if (waitingRef.current) sbRpc("pvp_queue_leave", {}).catch(() => { }); }, []);
+  const join = useCallback(async () => {
+    if (!myUid) { setErr("로그인 후 이용할 수 있어요."); return; }
+    setErr(""); setWaiting(true);
+    try {
+      const g = await sbRpc("pvp_queue_join", { p_time_control: "0-0", p_game_type: COORD_GAME_TYPE });
+      if (g) { setGame(g); setWaiting(false); }
+    } catch { setErr("매칭에 실패했어요. 다시 시도해 주세요."); setWaiting(false); }
+  }, [myUid]);
+  const leave = () => { setWaiting(false); sbRpc("pvp_queue_leave", {}).catch(() => { }); };
+  const onMatch = useCallback((payload) => {
+    if (payload && payload.new && payload.new.status === "active" && payload.new.game_type === COORD_GAME_TYPE) { setGame(payload.new); setWaiting(false); }
+    else if (!payload) join();
+  }, [join]);
+  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
+  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
+  const { friendList, myInvite, sendInvite, cancelInvite, err: inviteErr } = useFriendPvpInvite({ myUid, gameType: COORD_GAME_TYPE, onMatched: setGame });
+  const active = game || botGame;
+  const requestExit = () => { if (active && liveStatus === "active") setConfirmForfeit(true); else onExit(); };
+  const doForfeit = async () => {
+    setConfirmForfeit(false);
+    if (game) { try { await sbRpc("coord_forfeit", { p_game_id: game.id }); } catch { } }
+    setBotGame(false);
+    onExit();
+  };
+  return (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+        <button onClick={requestExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>좌표 인지 게임</div>
+        <span style={{ width: 30, flexShrink: 0 }} />
+      </div>
+      {!active ? (
+        waiting || myInvite ? (
+          <MatchmakingScreen active={waiting || !!myInvite} variant={myInvite ? "invite" : "queue"}
+            opponent={myInvite ? { name: myInvite.toUsername || "상대", photo: myInvite.toPhoto } : null}
+            timeControlLabel="좌표 인지 게임" onCancel={() => { if (waiting) leave(); if (myInvite) cancelInvite(); }} />
+        ) : (
+          <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
+            <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭하세요.<br />15라운드를 먼저 더 많이 맞히는 쪽이 승리해요.</p>
+            {(err || inviteErr) && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err || inviteErr}</p>}
+            <div className="flex gap-2" style={{ marginBottom: 18 }}>
+              <button onClick={join} disabled={!myUid} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대전 상대 찾기"}</button>
+              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
+            </div>
+            <FriendPvpRoster myUid={myUid} friendList={friendList} myInvite={myInvite} onInvite={sendInvite} onOpenProfile={onOpenProfile} />
+          </div>
+        )
+      ) : (
+        game ? <CoordRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
+          : <CoordRaceBotBoard onExit={onExit} onStatusChange={setLiveStatus} />
+      )}
+      {confirmForfeit && (
+        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
+            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>진행 중인 대전을 포기하게 되고, 상대가 승리해요.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmForfeit(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>계속하기</button>
+              <button onClick={doForfeit} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>나가기</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ---- 나이트 경주(knight) — 사용자 설계 2호 실시간 PvP 미니게임. 두 참가자에게 똑같은 시작 칸·
+// 목표 칸·이동 제한 수·제한시간이 주어지고, 각자 자기 나이트로 먼저 목표 칸에 도달해야 그 라운드를
+// 가져간다(5전 3선승, Bo5). 3라운드부터 방해 칸이 늘어 난이도가 오른다. 규칙·서버 권위 판정은
+// supabase-setup.sql의 knight_start_round/knight_report/knight_resolve_round 참고.
+const KNIGHT_GAME_TYPE = "knight";
+const KNIGHT_BO_TOTAL = 5;
+const KNIGHT_BO_TARGET = 3;
+// 서버(knight_neighbors)와 완전히 같은 규칙의 클라이언트용 나이트 이웃 계산 — 어떤 칸을 눌러도 되는지
+// (합법 수인지) 보드에서 즉시 판정하는 용도일 뿐, 서버는 이 결과를 신뢰하지 않고 최종 요약만 받는다
+// (체스 pvp_move가 SAN을 신뢰하는 것과 같은 모델 — 위 SQL 주석 참고).
+function knightNeighborsClient(sq, blocked) {
+  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
+  const deltas = [[1, 2], [1, -2], [-1, 2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1]];
+  const out = [];
+  for (const [df, dr] of deltas) {
+    const nf = f + df, nr = r + dr;
+    if (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7) {
+      const nsq = String.fromCharCode(97 + nf) + (nr + 1);
+      if (!blocked || !blocked.includes(nsq)) out.push(nsq);
+    }
+  }
+  return out;
+}
+// 라운드 하나 — 내 나이트의 위치·사용한 수는 이 컴포넌트만의 로컬 상태다(서버는 최종 요약 보고
+// 시점에야 알게 된다). roundIdx가 바뀔 때마다(다음 라운드) key로 통째로 새로 마운트돼 이 상태가
+// 깨끗이 리셋된다.
+// 8×8 나이트 이동 그리드 — 순수 표시용. 실시간 PvP(KnightRaceRound)와 봇 대전(KnightRaceBotRound)
+// 둘 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
+// (버그 수정, 사용자 재지적) 보드·기물 모두 Board/PieceGlyph와 똑같이 SkinContext에서 지금 장착된
+// 스킨을 읽어와 그린다 — ocean·grandmaster처럼 실제 이미지 스킨이면 그 이미지 그대로 보이는, 사이트
+// 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다). (재지적) 칸끼리 간격을 두고
+// 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와 달랐다 — Board와 완전히 같은 틀
+// (BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근 모서리 없음)을 그대로 가져다 쓴다.
+function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell, readOnly }) {
+  const ctx = useContext(SkinContext);
+  const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
+  return (
+    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", maxWidth: 320, aspectRatio: "1 / 1", margin: "0 auto 12px", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+      {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
+        const rank = 8 - r;
+        const sq = file + rank;
+        const isPos = sq === pos;
+        const isTarget = sq === target;
+        const isBlocked = (blocked || []).includes(sq);
+        const isLegal = legalTargets.includes(sq);
+        const light = (r + c) % 2 === 0;
+        let overlay = null;
+        if (isBlocked) overlay = "rgba(20,12,6,.6)";
+        else if (isTarget) overlay = "rgba(60,138,60,.35)";
+        else if (isLegal) overlay = "rgba(196,154,80,.25)";
+        return (
+          <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={isBlocked || readOnly} className={readOnly ? undefined : "press"}
+            style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
+            {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
+            {isPos && <PieceGlyph type="N" color={pieceColor} size={24} style={{ position: "relative", zIndex: 1 }} />}
+            {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
+            {isBlocked && <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: "#fff" }}>✕</span>}
+          </button>
+        );
+      }))}
+    </div>
+  );
+}
+function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
+  const [pos, setPos] = useState(round.start);
+  const [movesUsed, setMovesUsed] = useState(0);
+  const [reported, setReported] = useState(false);
+  const [timeLeftMs, setTimeLeftMs] = useState(() => round.timeLimitMs - (Date.now() - new Date(round.startedAt).getTime()));
+  const reportedRef = useRef(false);
+  const isWhite = myUid === game.white_uid;
+  const myColor = isWhite ? "w" : "b";
+  const oppColor = isWhite ? "b" : "w";
+  const myRep = round.reports && round.reports[myColor];
+  const oppRep = round.reports && round.reports[oppColor];
+  const iReported = !!myRep || reported;
+  // (v0.5.0 기능, 사용자 요청) 상대 나이트가 실시간으로 움직이는 걸 보여주기 위해, round.positions에
+  // 서버가 그때그때 기록해 둔 상대의 "지금 위치"를 그대로 읽어 상대 보드에 그린다 — 판정과 무관한
+  // 순수 표시값이라(신뢰 모델은 knight_report와 동일) 검증 없이 그대로 믿는다.
+  const oppPosInfo = round.positions && round.positions[oppColor];
+  const oppPos = (oppPosInfo && oppPosInfo.sq) || round.start;
+  const oppMovesUsed = (oppPosInfo && oppPosInfo.movesUsed) || 0;
+  const doReport = useCallback((reached, finalSq, moves) => {
+    if (reportedRef.current) return;
+    reportedRef.current = true; setReported(true);
+    sbRpc("knight_report", { p_game_id: game.id, p_round: roundIdx, p_reached: reached, p_moves_used: moves, p_final_sq: finalSq }).then((g) => g && onGameUpdate(g)).catch(() => { });
+  }, [game.id, roundIdx, onGameUpdate]);
+  // 제한시간 카운트다운 — 내가 아직 안 끝냈다면 0.2초마다 갱신하고, 다 되면 지금 위치·사용한 수
+  // 그대로 실패로 자동 보고한다(시간 초과도 "시도했다"로 인정 — 위 SQL의 미보고 패널티 참고).
+  useEffect(() => {
+    if (iReported) return;
+    const t = setInterval(() => {
+      const left = round.timeLimitMs - (Date.now() - new Date(round.startedAt).getTime());
+      setTimeLeftMs(left);
+      if (left <= 0) { doReport(false, pos, movesUsed); clearInterval(t); }
+    }, 200);
+    return () => clearInterval(t);
+  }, [round.startedAt, round.timeLimitMs, pos, movesUsed, iReported, doReport]);
+  // 이미 보고했는데 아직 이 라운드 승자가 안 정해졌으면(상대가 아직 진행 중이거나 미보고) 주기적으로
+  // 확정을 시도한다 — 서버가 "둘 다 보고했거나 시간이 다 됐을 때"만 실제로 확정하므로 안전하다.
+  useEffect(() => {
+    if (!iReported || round.winner) return;
+    const t = setInterval(() => { sbRpc("knight_resolve_round", { p_game_id: game.id }).then((g) => g && onGameUpdate(g)).catch(() => { }); }, 1200);
+    return () => clearInterval(t);
+  }, [iReported, round.winner, game.id, onGameUpdate]);
+  const legalTargets = useMemo(() => (iReported ? [] : knightNeighborsClient(pos, round.blocked || [])), [pos, round.blocked, iReported]);
+  const onCell = (sq) => {
+    if (iReported || !legalTargets.includes(sq)) return;
+    const nextMoves = movesUsed + 1;
+    setPos(sq); setMovesUsed(nextMoves);
+    // 이 수를 상대에게 실시간으로 중계한다(판정과 무관한 표시용 — 실패해도 그냥 무시).
+    sbRpc("knight_move_ping", { p_game_id: game.id, p_round: roundIdx, p_sq: sq, p_moves_used: nextMoves }).catch(() => { });
+    if (sq === round.target) { doReport(true, sq, nextMoves); return; }
+    if (nextMoves >= round.moveBudget) doReport(false, sq, nextMoves);
+  };
+  const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>
+        <span>수 {movesUsed}/{round.moveBudget}</span>
+        <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
+      </div>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
+        <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
+      </div>
+      {/* (v0.5.0 리디자인, 사용자 요청) 칸은 분석 탭과 같은 기본(classic) 보드 스킨을, 내 나이트는
+          텍스트 기호(♞) 대신 분석 탭 등 사이트 전체가 쓰는 PieceGlyph(classic 기물 스킨)를 그대로
+          써서, 미니게임 보드도 실제 체스판·기물처럼 보이게 한다. 목표(★)·방해 칸(✕) 표시는 칸
+          위에 얹는 반투명 오버레이로 바꿔 그 밑의 보드 무늬가 그대로 비친다. */}
+      <MinigameBoardLabel text="내 보드" />
+      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor={myColor} onCell={onCell} />
+      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700, marginBottom: 14 }}>
+        {round.winner ? (round.winner === "draw" ? "이 라운드는 무승부예요" : (round.winner === myColor ? "이 라운드 승리!" : "이 라운드 패배")) :
+          iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
+      </div>
+      {/* (v0.5.0 기능, 사용자 요청) 상대 보드 — 상대 나이트가 실시간으로(knight_move_ping) 움직이는
+          모습을 그대로 따라 그린다. 목표·방해 칸은 이 라운드 공용이라 내 보드와 같다. */}
+      <MinigameBoardLabel text="상대 보드" />
+      <KnightRaceGrid pos={oppPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor={oppColor} onCell={() => { }} readOnly />
+      <div style={{ textAlign: "center", fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>상대 수 {oppMovesUsed}/{round.moveBudget}</div>
+    </div>
+  );
+}
+// (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버 없이 완전히 로컬에서 라운드를 만들고 판정한다.
+// 라운드 생성 규칙(walkLen·blockedCount·moveBudget·timeLimitMs)은 knight_start_round와 정확히 같은
+// 공식을 그대로 옮겨(knightGenRoundLocal), 봇 대전도 실전 PvP와 같은 난이도 곡선을 겪게 한다. 봇은
+// 시작 칸에서 목표 칸까지 최단 나이트 경로(BFS)를 계산해, 한 수당 0.65~1.25초의 무작위 시간을 두고
+// 그 경로를 그대로 밟는다 — 생성 과정 자체가 항상 짧은 정답 경로를 하나 보장하므로 봇은 사실상 항상
+// 성공하고, 오직 사람보다 먼저 도착하는지만으로 라운드 승패가 갈린다(라운드가 진행돼 방해 칸이
+// 늘어날수록 최단 경로도 조금씩 길어져 자연스럽게 더 어려워진다).
+function knightRandomWalkLocal(start, steps) {
+  const path = [start]; let cur = start;
+  for (let i = 0; i < steps; i++) {
+    const nbs = knightNeighborsClient(cur, []);
+    if (!nbs.length) break;
+    cur = nbs[Math.floor(Math.random() * nbs.length)];
+    path.push(cur);
+  }
+  return path;
+}
+function knightPickBlockedLocal(count, exclude) {
+  if (count <= 0) return [];
+  const all = [];
+  for (let f = 0; f < 8; f++) for (let r = 1; r <= 8; r++) all.push(String.fromCharCode(97 + f) + r);
+  let candidates = all.filter((s) => !exclude.includes(s));
+  const result = [];
+  while (result.length < count && candidates.length) {
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    result.push(pick);
+    candidates = candidates.filter((c) => c !== pick);
+  }
+  return result;
+}
+function knightGenRoundLocal(roundIdx) {
+  let walkLen, blockedCount;
+  if (roundIdx < 2) { walkLen = 3; blockedCount = 0; }
+  else if (roundIdx < 4) { walkLen = 4; blockedCount = roundIdx - 1; }
+  else { walkLen = 5; blockedCount = 3; }
+  const start = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
+  const path = knightRandomWalkLocal(start, walkLen);
+  const target = path[path.length - 1];
+  const blocked = knightPickBlockedLocal(blockedCount, path);
+  return { start, target, blocked, moveBudget: path.length - 1 + 2, timeLimitMs: 25000 };
+}
+function knightShortestPathLocal(start, target, blocked) {
+  if (start === target) return [start];
+  const visited = new Set([start]);
+  let frontier = [[start]];
+  while (frontier.length) {
+    const next = [];
+    for (const path of frontier) {
+      const cur = path[path.length - 1];
+      for (const nb of knightNeighborsClient(cur, blocked)) {
+        if (nb === target) return [...path, nb];
+        if (!visited.has(nb)) { visited.add(nb); next.push([...path, nb]); }
+      }
+    }
+    frontier = next;
+  }
+  return null;
+}
+const KNIGHT_BOT_MOVE_MS_MIN = 650;
+const KNIGHT_BOT_MOVE_MS_MAX = 1250;
+function KnightRaceBotRound({ round, onRoundDone }) {
+  const [pos, setPos] = useState(round.start);
+  const [movesUsed, setMovesUsed] = useState(0);
+  const [botPos, setBotPos] = useState(round.start);
+  const [botMovesUsed, setBotMovesUsed] = useState(0);
+  const [myReport, setMyReport] = useState(null); // { reached, moves, atMs }
+  const [botReport, setBotReport] = useState(null);
+  const [timeLeftMs, setTimeLeftMs] = useState(round.timeLimitMs);
+  const startRef = useRef(Date.now());
+  const myReportRef = useRef(null);
+  const timersRef = useRef([]);
+  useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
+  const doMyReport = useCallback((reached, moves) => {
+    if (myReportRef.current) return;
+    const rep = { reached, moves, atMs: Date.now() - startRef.current };
+    myReportRef.current = rep; setMyReport(rep);
+  }, []);
+  useEffect(() => {
+    if (myReport) return;
+    const t = setInterval(() => {
+      const left = round.timeLimitMs - (Date.now() - startRef.current);
+      setTimeLeftMs(left);
+      if (left <= 0) { doMyReport(false, movesUsed); clearInterval(t); }
+    }, 200);
+    return () => clearInterval(t);
+  }, [round.timeLimitMs, movesUsed, myReport, doMyReport]);
+  // (v0.5.0 기능, 사용자 요청) 봇의 시도 — 예전엔 결과만 한 번에 반영했지만, 이제 실제로 한 수씩
+  // 옮겨 다니는 모습을 "봇 보드"에 보여준다. 라운드가 시작되는 순간 최단 경로를 한 번만 계산해,
+  // 그 경로의 각 수마다 0.65~1.25초 무작위 간격으로 botPos를 옮기는 타이머를 미리 전부 예약해 둔다.
+  useEffect(() => {
+    const path = knightShortestPathLocal(round.start, round.target, round.blocked);
+    const moves = path ? path.length - 1 : Infinity;
+    if (!path || moves > round.moveBudget) {
+      timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: 0, atMs: round.timeLimitMs }), round.timeLimitMs));
+      return;
+    }
+    let cumulative = 0;
+    let stepsWithinTime = 0;
+    for (let i = 0; i < moves; i++) {
+      const delay = KNIGHT_BOT_MOVE_MS_MIN + Math.random() * (KNIGHT_BOT_MOVE_MS_MAX - KNIGHT_BOT_MOVE_MS_MIN);
+      cumulative += delay;
+      if (cumulative > round.timeLimitMs) break;
+      stepsWithinTime = i + 1;
+      const stepSq = path[i + 1];
+      const fireAt = cumulative;
+      timersRef.current.push(setTimeout(() => { setBotPos(stepSq); setBotMovesUsed(i + 1); }, fireAt));
+    }
+    if (stepsWithinTime === moves) {
+      timersRef.current.push(setTimeout(() => setBotReport({ reached: true, moves, atMs: cumulative }), cumulative));
+    } else {
+      timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: stepsWithinTime, atMs: round.timeLimitMs }), round.timeLimitMs));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!myReport || !botReport) return;
+    let winner;
+    if (myReport.reached && botReport.reached) winner = myReport.atMs <= botReport.atMs ? "w" : "b";
+    else if (myReport.reached) winner = "w";
+    else if (botReport.reached) winner = "b";
+    // (설계) 봇은 생성 시점부터 항상 짧은 정답 경로가 보장돼 있어 시간 안에 실패하는 경우가 사실상
+    // 없다 — 둘 다 실패하는 경우까지 서버(knight_resolve_round)와 같은 거리 타이브레이커를 두는 대신
+    // 무승부로 단순화했다(실질적으로 거의 일어나지 않는 경로라 과설계를 피했다).
+    else winner = "draw";
+    onRoundDone(winner);
+  }, [myReport, botReport, onRoundDone]);
+  const legalTargets = useMemo(() => (myReport ? [] : knightNeighborsClient(pos, round.blocked || [])), [pos, round.blocked, myReport]);
+  const onCell = (sq) => {
+    if (myReport || !legalTargets.includes(sq)) return;
+    const nextMoves = movesUsed + 1;
+    setPos(sq); setMovesUsed(nextMoves);
+    if (sq === round.target) { doMyReport(true, nextMoves); return; }
+    if (nextMoves >= round.moveBudget) doMyReport(false, nextMoves);
+  };
+  const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>
+        <span>수 {movesUsed}/{round.moveBudget}</span>
+        <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
+      </div>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
+        <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
+      </div>
+      <MinigameBoardLabel text="내 보드" />
+      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor="w" onCell={onCell} />
+      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700, marginBottom: 14 }}>
+        {myReport && botReport ? "" : myReport ? "봇이 시도하는 중..." : "목표 칸(★)까지 나이트를 움직여 보세요"}
+      </div>
+      <MinigameBoardLabel text="봇 보드" />
+      <KnightRaceGrid pos={botPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor="b" onCell={() => { }} readOnly />
+      <div style={{ textAlign: "center", fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>봇 수 {botMovesUsed}/{round.moveBudget}</div>
+    </div>
+  );
+}
+function KnightRaceBotBoard({ onExit, onStatusChange }) {
+  const [rounds, setRounds] = useState([]); // [{ ...round, winner }]
+  const roundIdx = rounds.length - 1;
+  const round = rounds[roundIdx] || null;
+  const myWins = rounds.filter((r) => r.winner === "w").length;
+  const botWins = rounds.filter((r) => r.winner === "b").length;
+  const finished = (myWins >= KNIGHT_BO_TARGET || botWins >= KNIGHT_BO_TARGET || rounds.length >= KNIGHT_BO_TOTAL) && round && round.winner;
+  // (버그 수정) 봇 대전은 pvp_games 행이 없어 실제 PvP처럼 onStatusChange로 "끝났다"는 사실을 부모
+  // (KnightRaceGame)에 알려야 한다 — 안 그러면 이미 끝난 대전인데도 뒤로가기가 "정말 나가시겠어요?"
+  // (기권 확인)를 계속 띄운다.
+  useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
+  useEffect(() => {
+    if (finished) return;
+    if (rounds.length === 0) { setRounds([{ ...knightGenRoundLocal(0), winner: null }]); return; }
+    if (round && round.winner) {
+      const t = setTimeout(() => setRounds((rs) => [...rs, { ...knightGenRoundLocal(rs.length), winner: null }]), 1800);
+      return () => clearTimeout(t);
+    }
+  }, [rounds.length, round && round.winner, finished]);
+  const onRoundDone = useCallback((winner) => {
+    setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const copy = rs.slice(); copy[i] = { ...copy[i], winner }; return copy; });
+  }, []);
+  if (finished) {
+    const iWon = myWins > botWins;
+    const isDraw = myWins === botWins;
+    return (
+      <div style={{ textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {botWins}</div>
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botWins}</div>
+      </div>
+      <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
+      {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
+    </div>
+  );
+}
+// 매칭이 끝난 뒤 대전 전체(라운드 진행 + 스코어보드 + 다음 라운드 자동 진행 + 최종 결과)를 관리한다.
+function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
+  const [game, setGame] = useState(initialGame);
+  useEffect(() => { onStatusChange && onStatusChange(game.status); }, [game.status, onStatusChange]);
+  useRealtimeTable("pvp_games", "id=eq." + initialGame.id, useCallback((payload) => {
+    if (payload && payload.new) setGame(payload.new);
+    else if (!payload) { sbSelect("pvp_games?id=eq." + initialGame.id + "&select=*").then((rows) => { if (rows && rows[0]) setGame(rows[0]); }).catch(() => { }); }
+  }, [initialGame.id]), true, 3000);
+  const isWhite = myUid === game.white_uid;
+  const rounds = game.sans || [];
+  const roundIdx = Math.max(0, rounds.length - 1);
+  const round = rounds[roundIdx] || null;
+  const myWins = rounds.filter((r) => r.winner === (isWhite ? "w" : "b")).length;
+  const oppWins = rounds.filter((r) => r.winner === (isWhite ? "b" : "w")).length;
+  const finished = game.status !== "active";
+  // 라운드가 없거나(첫 진입) 방금 끝났으면(승자 있음) 잠깐 결과를 보여준 뒤 다음 라운드를 요청한다.
+  useEffect(() => {
+    if (finished) return;
+    if (rounds.length === 0) { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
+    if (round && round.winner) {
+      const t = setTimeout(() => { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, 1800);
+      return () => clearTimeout(t);
+    }
+  }, [game.id, rounds.length, round && round.winner, finished]);
+  if (finished) {
+    const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
+    const isDraw = game.status === "draw";
+    return (
+      <div style={{ textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {oppWins}</div>
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppWins}</div>
+      </div>
+      <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
+      {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
+    </div>
+  );
+}
+// 매칭 화면 + 대전 화면 — CoordRaceGame과 완전히 같은 구조(매칭·기권 확인 절차 재사용 패턴)를 game_type만
+// "knight"로 바꿔 그대로 따른다.
+function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
+  const [game, setGame] = useState(initialGame || null);
+  const [botGame, setBotGame] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const [err, setErr] = useState("");
+  const [liveStatus, setLiveStatus] = useState("active");
+  const [confirmForfeit, setConfirmForfeit] = useState(false);
+  const waitingRef = useRef(false);
+  useEffect(() => { waitingRef.current = waiting; }, [waiting]);
+  useEffect(() => () => { if (waitingRef.current) sbRpc("pvp_queue_leave", {}).catch(() => { }); }, []);
+  const join = useCallback(async () => {
+    if (!myUid) { setErr("로그인 후 이용할 수 있어요."); return; }
+    setErr(""); setWaiting(true);
+    try {
+      const g = await sbRpc("pvp_queue_join", { p_time_control: "0-0", p_game_type: KNIGHT_GAME_TYPE });
+      if (g) { setGame(g); setWaiting(false); }
+    } catch { setErr("매칭에 실패했어요. 다시 시도해 주세요."); setWaiting(false); }
+  }, [myUid]);
+  const leave = () => { setWaiting(false); sbRpc("pvp_queue_leave", {}).catch(() => { }); };
+  const onMatch = useCallback((payload) => {
+    if (payload && payload.new && payload.new.status === "active" && payload.new.game_type === KNIGHT_GAME_TYPE) { setGame(payload.new); setWaiting(false); }
+    else if (!payload) join();
+  }, [join]);
+  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
+  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
+  const { friendList, myInvite, sendInvite, cancelInvite, err: inviteErr } = useFriendPvpInvite({ myUid, gameType: KNIGHT_GAME_TYPE, onMatched: setGame });
+  const active = game || botGame;
+  const requestExit = () => { if (active && liveStatus === "active") setConfirmForfeit(true); else onExit(); };
+  const doForfeit = async () => {
+    setConfirmForfeit(false);
+    if (game) { try { await sbRpc("knight_forfeit", { p_game_id: game.id }); } catch { } }
+    setBotGame(false);
+    onExit();
+  };
+  return (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+        <button onClick={requestExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>나이트 경주</div>
+        <span style={{ width: 30, flexShrink: 0 }} />
+      </div>
+      {!active ? (
+        waiting || myInvite ? (
+          <MatchmakingScreen active={waiting || !!myInvite} variant={myInvite ? "invite" : "queue"}
+            opponent={myInvite ? { name: myInvite.toUsername || "상대", photo: myInvite.toPhoto } : null}
+            timeControlLabel="나이트 경주" onCancel={() => { if (waiting) leave(); if (myInvite) cancelInvite(); }} />
+        ) : (
+          <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
+            <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>나이트로 목표 칸(★)까지 상대보다 먼저 도달하세요.<br />5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.</p>
+            {(err || inviteErr) && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err || inviteErr}</p>}
+            <div className="flex gap-2" style={{ marginBottom: 18 }}>
+              <button onClick={join} disabled={!myUid} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대전 상대 찾기"}</button>
+              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
+            </div>
+            <FriendPvpRoster myUid={myUid} friendList={friendList} myInvite={myInvite} onInvite={sendInvite} onOpenProfile={onOpenProfile} />
+          </div>
+        )
+      ) : (
+        game ? <KnightRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
+          : <KnightRaceBotBoard onExit={onExit} onStatusChange={setLiveStatus} />
+      )}
+      {confirmForfeit && (
+        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
+            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>진행 중인 대전을 포기하게 되고, 상대가 승리해요.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmForfeit(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>계속하기</button>
+              <button onClick={doForfeit} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>나가기</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
+  // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
+  // 대국 화면 그대로, "스페셜"은 앞으로 추가할 체스보드 위 오리지널 미니게임들을 모아 보여줄 자리다.
+  // 아직 실제 미니게임은 없어 레이아웃(카드 그리드)만 먼저 만들어 둔다 — 나중에 게임이 정해지면
+  // PLAY_SPECIAL_GAMES 배열에 항목만 추가하면 된다. step(setup/playing) 등 기존 상태는 이 토글과
+  // 무관하게 그대로 유지되므로, "일반"으로 다시 돌아오면 하던 대국이 그대로 이어진다.
+  const [pageMode, setPageMode] = useState("normal"); // "normal" | "special"
+  // (v0.5.0 기능, 사용자 요청) 다른 탭에 있는 동안 전역 알람 박스에서 미니게임 친구 도전장을
+  // 수락하면(specialResume) 곧장 "스페셜" 토글로 전환해 그 대국을 보여준다.
+  useEffect(() => { if (specialResume) setPageMode("special"); }, [specialResume]);
   const [step, setStep] = useState("setup"); // "setup" | "playing"
   const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
   const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
@@ -9424,16 +10436,18 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     </div>
   );
 
+  // (v0.5.0 리디자인, 사용자 요청) 예전엔 이 페이지 전체가 화면을 덮는 별도 오버레이(고정 배경 +
+  // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
+  // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 34, height: 34, borderRadius: 10, background: T.ebony2, color: T.ivory, border: "1px solid #000", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><ArrowLeft size={17} /></button>
-          {/* (사용자 요청) 페이지 상단 정중앙에 헤더와 같은 오픈체스 로고를 표시한다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 28, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-          <span style={{ width: 34 }} />
+    <div style={{ maxWidth: 460, margin: "0 auto" }}>
+        {/* (v0.5.0 기능, 사용자 요청) "일반/스페셜" 토글 — 페이지 최상단에 고정. */}
+        <div className="inline-flex" style={{ width: "100%", borderRadius: 11, background: "rgba(0,0,0,.28)", border: "1px solid rgba(196,154,80,.3)", padding: 4, gap: 4, marginBottom: 16 }}>
+          <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
+          <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
         </div>
-        {step === "setup" ? (
+        {pageMode === "special" && <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} />}
+        {pageMode === "normal" && (step === "setup" ? (
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
              (MatchmakingScreen)이다 — 지금 벌어지고 있는 일에 화면 전체가 반응하는 느낌을 준다. */
@@ -9634,8 +10648,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
               <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
-        )}
-      </div>
+        ))}
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
       <AnimatePresence>
@@ -9666,6 +10679,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           </motion.div>
         )}
       </AnimatePresence>
+      {/* (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 화면 밑에 기존 상점 UI를 그대로 이어
+          붙인다(<main> 안의 이 페이지 자신을 아래로 스크롤하면 보인다). 분석 탭 PLAY 버튼 등
+          storeProps 없이 여는 다른 진입 경로는 아무 것도 렌더링하지 않아 지금까지와 완전히
+          동일하다. "스페셜" 토글일 때는 미니게임 그리드만 보여주고 상점은 숨긴다. */}
+      {storeProps && pageMode === "normal" && (
+        <div style={{ maxWidth: 460, margin: "0 auto", padding: "0 16px 60px", borderTop: "1px solid rgba(196,154,80,.25)", marginTop: 8, paddingTop: 22 }}>
+          <StoreTab {...storeProps} />
+        </div>
+      )}
     </div>
   );
 }
@@ -12270,7 +13292,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       const el = boxRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const BOTTOM_SAFE = 66 + 16; // 하단 고정 내비게이션 + 여백
+      // (사용자 요청) 데스크톱에서 모식도 흰 영역을 조금 더 늘려 달라는 요청 — 하단 고정 내비게이션
+      // 높이(66px) 자체는 줄일 수 없지만, 그 위 여백은 모바일처럼 손가락으로 조작할 일이 없는
+      // 데스크톱(마우스 기준)에서는 더 좁혀도 된다. 모바일은 기존 16px 여백을 그대로 유지한다.
+      const BOTTOM_SAFE = 66 + (vertical ? 16 : 4); // 하단 고정 내비게이션 + 여백
       const avail = window.innerHeight - top - BOTTOM_SAFE;
       setPanelH(Math.max(360, Math.round(avail)));
     };
@@ -18384,7 +19409,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             <div className="flex justify-end items-center" style={{ marginTop: 8, gap: 8 }}>
               <ImageSourceMenu onFile={onPcScanFile} disabled={pcScanning} busy={pcScanning} label="이미지 스캔" busyLabel="인식하는 중..."
                 buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, background: pcScanning ? "rgba(0,0,0,.06)" : "transparent", color: pcScanning ? T.inkSoft : T.ink, fontWeight: 700, fontSize: 12, border: "1px solid " + (pcScanning ? "#DCCBA8" : T.brass), cursor: pcScanning ? "default" : "pointer" }} />
-              <button onClick={parsePcInput} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
+              <button onClick={() => parsePcInput()} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
             </div>
             {/* (사용자 요청) "chess.com 대국에서 선택" 토글 버튼을 없애고, 연동돼 있으면 입력 박스 아래에
                 chess.com 통계·최근 대국 목록을 기본으로 펼쳐 둔다 — 유산 만들기처럼 그 자리에서 바로
@@ -19814,6 +20839,31 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.5.0", date: "2026.9.12", dev: ["openchesskr", "G13sus4"], items: [
+      "퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 문제를 고쳤어요 — 같은 원인으로 조용히 실패하고 있던 계정 탈퇴·채팅 메시지 수정/대화 지우기·실시간 대국 대기열 취소 등 다른 몇몇 기능도 함께 정상화됐어요.",
+      "내가 만든 퍼즐이 오늘의 퍼즐로 선정됐는데도 알림이 오지 않던 문제를 고쳤어요.",
+      "'상점' 탭이 '플레이' 탭으로 바뀌었어요 — 분석 탭의 PLAY 버튼과 똑같이 대국 설정 화면으로 곧장 들어가고, 그 화면을 아래로 내리면 기존 상점(스킨) 화면이 그대로 이어져요.",
+      "모바일에서 분석 탭의 엔진 라인(상위 3줄)이 안 뜨던 문제를 고쳤어요.",
+      "도감 탭 오프닝 모식도의 흰 영역이 데스크톱에서 조금 더 넓어졌어요.",
+      "하단 탭 순서를 분석·플레이·퍼즐·학습·도감·설정 순으로 바꿨어요.",
+      "분석 탭의 PLAY 버튼을 누르면 이제 플레이 탭을 누른 것과 똑같이 곧장 /play 페이지로 이동해요.",
+      "플레이 페이지 맨 위에 '일반/스페셜' 토글이 생겼어요 — 스페셜에는 앞으로 추가될 미니게임들이 모일 자리예요.",
+      "분석 탭 수 블록의 리체스 채택률(%)이 반올림돼 실제보다 부정확하게 보이던 문제를 고쳤어요 — 이제 소수점 둘째 자리까지 실제 값에 더 가깝게 표시돼요.",
+      "플레이 페이지 스페셜 탭에 미니게임을 실제로 즐길 수 있는 틀(목록·최고 기록·코인 보상·다시하기)이 생겼어요 — 진짜 미니게임이 정해지기 전까지는 테스트용 예시 게임 '칸 반응속도'로 미리 만나볼 수 있어요.",
+      "스페셜 탭에 첫 실시간 대전 미니게임 '좌표 인지 게임'이 추가됐어요 — 무작위 좌표가 뜨면 상대보다 먼저 클릭해 점수를 겨뤄요.",
+      "스페셜 탭에 두 번째 실시간 대전 미니게임 '나이트 경주'가 추가됐어요 — 나이트로 목표 칸까지 상대보다 먼저 도달하는 5전 3선승 대결이에요. 라운드가 진행될수록 방해 칸이 늘어나요.",
+      "플레이 탭이 다른 탭처럼 상단 헤더·하단 탭바가 함께 보이도록 바뀌었어요 — 예전엔 화면 전체를 덮는 별도 화면이었어요. 대국 중 다른 탭을 둘러봐도 진행 중이던 대국은 끊기지 않고 그대로 이어져요.",
+      "스페셜 미니게임 목록에서 테스트용 예시 게임을 지우고, 한 줄에 게임 하나씩 아이콘·색으로 구분해 보여주도록 정리했어요.",
+      "미니게임의 체스판·나이트가 지금 장착 중인 보드·기물 스킨 그대로, 실제 대국판과 똑같은 모양(금색 테두리, 칸 사이 간격 없음)으로 보이도록 바꿨어요 — 예전엔 칸 구분 없는 단색 배경에 나이트도 문자 기호(♞)로만 표시됐어요.",
+      "좌표 인지 게임·나이트 경주 두 미니게임에도 체스처럼 '봇과 플레이하기'·'친구와 플레이하기'가 생겼어요.",
+      "좌표 인지 게임에서 목표 칸이 보드 위에서 빛나는 대신, 그 좌표를 보드 아래에 텍스트로 표시하도록 바꿨어요 — 좌표를 직접 읽고 찾아 눌러야 해요.",
+      "좌표 인지 게임에서 오답을 클릭하면 그 칸이 빨갛게, 정답을 클릭하면 초록색으로 반짝여요 — 오답은 라운드가 끝나지 않고 계속 시도할 수 있고, 정답은 잠깐 반짝인 뒤 다음 좌표로 넘어가요. 내 보드 아래에 상대(또는 봇)의 클릭도 실시간으로 반짝이는 보드가 따로 생겼어요.",
+      "나이트 경주에도 내 보드 아래에 상대(또는 봇)의 보드가 따로 생겨서, 상대 나이트가 한 칸씩 움직이는 걸 실시간으로 볼 수 있어요 — 봇도 이제 목표 칸까지 순간이동하지 않고 한 수씩 실제로 이동해요.",
+      "좌표 인지 게임·나이트 경주 두 미니게임 모두, 점수 아래에 전체 라운드를 점(dot)으로 표시해 지금까지 이기고 진 흐름을 한눈에 볼 수 있어요.",
+      "퍼즐 만들기 1단계에서 PGN·FEN을 입력하고 '확인'을 눌러도 아무 반응이 없던 문제를 고쳤어요.",
+    ]
+  },
   {
     version: "0.4.9", date: "2026.9.9", dev: ["openchesskr", "G13sus4"], items: [
       "about 페이지 버전 기록에서 빠져 있던 v0.4.8 항목을 채워 넣었어요.",
@@ -21998,14 +23048,18 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
 // (v0.4.0 UI) 사용자 요청 — 탭 이름 개편: 기존 "학습" 탭은 "분석"으로, 기존 "퀘스트" 탭은
 // "학습"으로 이름만 바꾼다(내부 key·라우팅·기능은 그대로 유지 — 이 학습 탭(구 퀘스트 탭)의
 // 메인 퀘스트를 강화하기 위한 개편의 첫 단계).
-const TABS = [{ key: "learn", label: "분석", Icon: null }, { key: "dex", label: "도감", Icon: Library }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "store", label: "상점", Icon: ShoppingBag }, { key: "set", label: "설정", Icon: Settings }];
+// (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 내부 키("store")·경로 매핑 구조는 그대로 두고
+// 라벨·아이콘만 바꾼다(아래 TAB_PATH/PATH_TAB에서 경로도 /store → /play로 함께 바뀐다).
+// (사용자 요청) 하단 탭 순서를 분석/플레이/퍼즐/학습/도감/설정으로 재배치 — 내부 키·경로 매핑은
+// 그대로 두고 배열 순서만 바꾼다(렌더링이 이 배열을 그대로 순회하므로 그 외 변경 불필요).
+const TABS = [{ key: "learn", label: "분석", Icon: null }, { key: "store", label: "플레이", Icon: Play }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "dex", label: "도감", Icon: Library }, { key: "set", label: "설정", Icon: Settings }];
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 // (사용자 요청) 탭 내부 키("learn"=분석, "quest"=학습)와 실제로 화면에 뜨는 URL 경로가 서로
 // 뒤바뀌어 있었다 — 분석 탭이 /learn으로, 학습 탭이 /quest로 보였다. 내부 키 이름은 그대로 두고
 // (다른 코드 전반에서 이미 광범위하게 참조하므로), 경로만 각 탭의 실제 한국어 라벨과 일치하도록
 // 바로잡는다: 분석("learn" 키) → /analysis, 학습("quest" 키) → /learn.
-const TAB_PATH = { learn: "/analysis", dex: "/book", puzzle: "/puzzle", quest: "/learn", store: "/store", set: "/setting" };
-const PATH_TAB = { "/analysis": "learn", "/book": "dex", "/puzzle": "puzzle", "/learn": "quest", "/store": "store", "/setting": "set" };
+const TAB_PATH = { learn: "/analysis", dex: "/book", puzzle: "/puzzle", quest: "/learn", store: "/play", set: "/setting" };
+const PATH_TAB = { "/analysis": "learn", "/book": "dex", "/puzzle": "puzzle", "/learn": "quest", "/play": "store", "/setting": "set" };
 function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
 
 /* ============================================================ 계정 (회원가입/로그인) ============================================================ */
@@ -26645,7 +27699,7 @@ function NewPasswordModal({ recovery, onDone, onClose }) {
 // 두어, 상대가 사이트 안에서 어느 탭·화면에 있든(로그인만 돼 있으면) 상단에 뜬다. 자동으로 사라지지
 // 않고 수락·거절하거나(내가) 상대가 취소할 때만(실시간 구독) 닫힌다. 여러 화면에서 각자 따로
 // 구독·응답하면 중복 팝업이나 엇갈린 상태가 생기므로, 응답 로직 전체를 여기 한 곳에만 둔다.
-function GlobalPvpInviteBanner({ myUid, onAccepted }) {
+function GlobalPvpInviteBanner({ myUid, onAccepted, onAcceptedMinigame }) {
   const [invite, setInvite] = useState(null); // { ...pvp_invites 행, fromPub, fromUsername }
   const loadPending = useCallback(async () => {
     if (!myUid) { setInvite(null); return; }
@@ -26668,6 +27722,10 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
     else loadPending();
   }, !!invite, 6000);
   if (!myUid || !invite) return null;
+  // (v0.5.0 기능, 사용자 요청) 미니게임(좌표 인지 게임·나이트 경주) 친구 도전장도 이 전역 알람
+  // 박스로 똑같이 받는다 — game_type으로 체스와 구분해, 수락 시 서로 다른 콜백(onAccepted는 체스용
+  // /play 재개, onAcceptedMinigame은 플레이 탭의 "스페셜" 화면 재개)으로 나눈다.
+  const specialGame = PLAY_SPECIAL_GAMES.find((g) => g.gameType === invite.game_type);
   const respond = async (accept) => {
     const id = invite.id;
     setInvite(null);
@@ -26675,7 +27733,8 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
       const inv = await sbRpc("pvp_invite_respond", { p_invite_id: id, p_accept: accept });
       if (accept && inv && inv.game_id) {
         const rows = await sbSelect("pvp_games?id=eq." + inv.game_id + "&select=*");
-        if (rows && rows[0] && onAccepted) onAccepted(rows[0]);
+        const g = rows && rows[0];
+        if (g) { if (specialGame && onAcceptedMinigame) onAcceptedMinigame(g, invite.game_type); else if (!specialGame && onAccepted) onAccepted(g); }
       }
     } catch { }
   };
@@ -26687,8 +27746,8 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
           {invite.fromPub.photo ? <img src={invite.fromPub.photo} alt="" style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(invite.fromPub.nickname || invite.fromUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            @{invite.fromUsername || "누군가"}님이 대국을 신청했어요
-            <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{tc.label}{tc.cat ? " · " + tc.cat : ""}</span>
+            @{invite.fromUsername || "누군가"}님이 {specialGame ? specialGame.name + " 대결을" : "대국을"} 신청했어요
+            {!specialGame && <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{tc.label}{tc.cat ? " · " + tc.cat : ""}</span>}
           </div>
         </div>
         <div className="flex gap-2">
@@ -27643,6 +28702,12 @@ export default function App() {
     // 사용자가 직접 다른 탭을 골랐으니, 집중 분석을 닫을 때 도감으로 자동으로 되돌아가는 예약은 취소한다.
     setFocusReturnTab(null);
   };
+  // (v0.5.0 개편, 사용자 요청) 분석 탭 PLAY 버튼 — 예전엔 openPlay를 곧장 호출해 "분석 탭 위에 겹쳐
+  // 뜨는 별도 화면"처럼 동작했다(뒤로가기·닫기를 누르면 분석 탭으로 돌아옴). 이제 플레이 탭과 완전히
+  // 같은 경로(switchTab("store"))로 실제 탭 전환을 일으켜, 다른 탭에서 플레이 탭을 누르는 것과
+  // 똑같이 "그냥 /play 페이지로 이동"하는 느낌을 준다 — 전환 뒤에는 아래 useLayoutEffect(tab==="store"
+  // 감지)가 openPlay를 이어서 호출해 대국 설정 화면을 띄운다.
+  const goToPlayTab = () => switchTab("store");
   // (사용자 요청) 집중 분석이 도감 탭·퍼즐 탭(일일 퍼즐 팝업 포함)에서 시작됐다면(focusReturnTab에
   // 그 탭 이름이 담김), 학습이 닫히는(learnFocus가 null로 바뀌는) 순간 그 탭으로 되돌아간다 —
   // switchTab을 쓰면 navNonce가 올라 CollectionTab/PuzzleTab이 강제로 새로 마운트돼(아래 render의
@@ -27849,15 +28914,30 @@ export default function App() {
   // 보드에 입력된 포지션(sans·fenRoot)을 시드로 넘겨 이 페이지를 연다. /play로 직접 들어오면(주소창에
   // 직접 입력·새로고침) seed 없이 표준 시작 위치로 연다(아래 딥링크 resolver에서 처리).
   const [playGame, setPlayGame] = useState(null); // { sans, fenRoot } | null
+  // (v0.5.0 기능, 사용자 요청) 다른 탭에 있는 동안 전역 알람 박스에서 미니게임(좌표 인지 게임·
+  // 나이트 경주) 친구 도전장을 수락하면, 이미 매칭된 대국을 PlayPage의 "스페셜" 화면으로 넘겨준다.
+  const [specialResume, setSpecialResume] = useState(null); // { gameType, game } | null
+  // (v0.5.0 리디자인, 사용자 요청) PlayPage가 더 이상 화면을 통째로 덮는 오버레이가 아니라 다른
+  // 탭과 똑같이 <main> 안에서 "플레이" 탭(store)일 때만 그려지는 콘텐츠가 됐으므로, 친구 도전장
+  // 수락처럼 어느 탭에 있든 곧장 openPlay를 부르는 진입 경로들도 이제 반드시 함께 탭을 "store"로
+  // 옮겨야 그 자리에서 실제로 보인다(예전엔 오버레이라 탭 값과 무관하게 항상 맨 위에 떴다).
   const openPlay = useCallback((seed) => {
     setSearchOpen(false); setFriendsOpen(false);
     setPlayGame(seed || { sans: [], fenRoot: null });
+    setTab("store"); urlTabRef.current = "store";
     try { if (!window.location.pathname.startsWith("/play")) window.history.pushState({ play: true }, "", "/play"); } catch { }
   }, []);
   const closePlay = useCallback(() => {
     setPlayGame(null);
     try { if (window.location.pathname.startsWith("/play")) window.history.back(); } catch { }
   }, []);
+  // (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 탭으로 처음 전환될 때 분석 탭의 PLAY 버튼과
+  // 완전히 같은 진입 경로(openPlay)로 대국 설정 화면을 연다. seed에 withStore를 실어 보내
+  // PlayPage가 그 화면 밑에 기존 상점 UI를 이어 붙이게 한다(분석 탭 등 다른 진입 경로는 이 플래그가
+  // 없어 지금까지와 완전히 동일하게 동작한다). playGame이 이미 있으면(진행 중인 대국을 두고 다른
+  // 탭에 갔다가 돌아온 경우, 또는 도전장 수락처럼 openPlay가 직접 이 탭으로 이미 옮겨 둔 경우)
+  // 새로 열지 않고 그대로 이어간다 — 그래야 진행 중이던 대국이 탭을 오가도 사라지지 않는다.
+  useLayoutEffect(() => { if (tab === "store" && !playGame) openPlay({ sans: [], fenRoot: null, withStore: true }); }, [tab, playGame, openPlay]);
   // (사용자 요청) /play에서 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인지 — PlayPage가 렌더마다
   // 최신값을 알려준다(popstate 핸들러가 컴포넌트 밖에서도 읽어야 해서 상태 대신 ref로 둔다).
   const pvpPlayActiveRef = useRef(false);
@@ -28033,7 +29113,7 @@ export default function App() {
         }
         return;
       }
-      if (path === "/play") { setPlayGame({ sans: [], fenRoot: null }); return; }
+      if (path === "/play") { setPlayGame({ sans: [], fenRoot: null }); setTab("store"); urlTabRef.current = "store"; return; }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loaded가 false→true로 바뀌는 최초 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없고, openReview/onOpenPuzzle 등은 매번 최신 클로저를 쓰면 충분해 deps에 넣지 않는다).
   }, [loaded]);
@@ -28141,8 +29221,7 @@ export default function App() {
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
-      {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
-      {playGame && <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} />}
+      {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onAcceptedMinigame={(g, gameType) => { setSpecialResume({ gameType, game: g }); openPlay({ sans: [], fenRoot: null }); }} />}
       {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
           대신 정말 기권 처리해도 되는지 한 번 확인한다. */}
       <AnimatePresence>
@@ -28260,7 +29339,7 @@ export default function App() {
             언마운트되지 않고 계속 liveOn 실시간 평가를 돌려, useEngine의 단일 공유 워커 큐를 끝없이
             채워 넣는 바람에 PlayPage의 봉 수 요청(engine.evaluateMulti)이 차례를 영영 못 받고 무한정
             "생각하는 중..."에 멈춰 있던 문제(사용자 제보)의 원인이었다. */}
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={openPlay} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={learnFenSeed} onConsumeFenSeed={() => setLearnFenSeed(null)} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} onLearned={onLearned} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={goToPlayTab} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={learnFenSeed} onConsumeFenSeed={() => setLearnFenSeed(null)} />}
         {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 분석으로 이동한 경우(focusReturnTab === "dex"),
             집중 분석이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
             분석을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다
@@ -28276,7 +29355,17 @@ export default function App() {
             같은 라인 그대로 다시 열어준다. */}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenLearnFen={onOpenLearnFen} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
-        {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
+        {/* (v0.5.0 리디자인, 사용자 요청) 플레이 탭도 다른 탭처럼 상단 헤더·하단 탭바가 보이도록,
+            화면을 통째로 덮는 오버레이 대신 <main> 안에서 그려지는 평범한 탭 콘텐츠로 바꿨다. 도감
+            탭과 같은 이유(위 CollectionTab 주석 참고)로 언마운트는 하지 않고 display:none으로만
+            숨긴다 — 그래야 실시간 대국·봇 대국 도중 다른 탭을 잠깐 둘러보고 돌아와도(친구 도전장
+            수락처럼 다른 탭에서 openPlay를 직접 부르는 경로 포함) 대국이 끊기거나 기권 처리되지
+            않는다(위 openPlay/useLayoutEffect가 이 탭으로 자동 전환해 곧장 보여준다). */}
+        {playGame && (
+          <div style={tab === "store" ? undefined : { display: "none" }}>
+            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} />
+          </div>
+        )}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
       </main>
 
