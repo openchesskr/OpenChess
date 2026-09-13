@@ -5,7 +5,7 @@ import {
   Library, Settings, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp,
   Lock, Crown, Sparkles, Info, Book, BookOpen, ArrowUpDown, Cpu, Wifi, WifiOff,
   ChevronRight as Crumb, Star, ThumbsUp, ThumbsDown, Check, Play, ArrowLeft, RotateCcw, Search, X,
-  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake,
+  Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake, Route,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
   Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench,
 } from "lucide-react";
@@ -8879,102 +8879,28 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
   );
 }
 // ============================================================ 스페셜 미니게임 플랫폼 ============================================================
-// (v0.5.0 기능, 사용자 요청) 플레이 페이지 "스페셜" 토글 — 체스보드 위 오리지널 미니게임들을 모아
-// 보여줄 자리. 실제 미니게임의 규칙(사용자가 나중에 알려주기로 함)은 아직 정해지지 않았지만, 그와
-// 무관하게 항상 필요할 "플랫폼"(게임 목록 카드 그리드 → 게임 실행 화면 → 점수/보상 → 최고 기록
-// 저장 → 목록으로 복귀)은 미리 완성해 둔다. 실제 게임이 정해지면 할 일은 딱 두 가지뿐이다:
-// 1) 그 게임의 규칙을 구현한 컴포넌트를 하나 만든다 — props로 { onFinish(score) }만 받아, 게임이
-//    끝나는 순간 최종 점수로 onFinish를 한 번 호출하면 된다(그 외 UI는 이 컴포넌트가 전부 책임진다).
-// 2) 아래 PLAY_SPECIAL_GAMES 배열에 { key, name, desc, Icon, status:"ready", Component } 항목을
-//    추가한다(또는 기존 "준비 중" 슬롯의 status만 "ready"로 바꾸고 Component를 채운다).
-// 그러면 카드 그리드 노출·클릭 진입·최고 기록(localStorage, 게임별로 분리)·완료 시 OC 나이트 코인
-// 보상 지급·"다시하기"/"목록으로" 흐름이 전부 자동으로 연결된다.
-//
-// 아직 진짜 게임이 없어 이 파이프라인이 실제로 끝까지 동작하는지 증명할 방법이 없었다 — 그래서
-// SquareReflexGame(칸 반응속도 테스트)이라는 아주 단순한 예시 게임 하나를 "테스트용" 표시와 함께
-// 미리 연결해 뒀다. 실제 미니게임이 정해지면 이 예시는 지우고 그 자리에 진짜 게임을 넣으면 된다.
-// (v0.5.0, 사용자 설계) 좌표 인지 게임(coord-race)은 사용자가 설계한 4개 실시간 PvP 미니게임 중
-// 구현이 가장 단순한 첫 번째로, 실제 규칙을 갖춘 첫 게임이다 — pvp:true 항목은 MinigameShell(단일
-// 플레이 전용 점수·보상 틀) 대신 그 컴포넌트가 매칭·대전·종료 전체를 직접 책임진다(아래
-// PlaySpecialGames 참고).
+// (v0.5.0 기능, 사용자 설계) 플레이 페이지 "스페셜" 토글 — 체스보드 위 오리지널 미니게임들을 모아
+// 보여주는 자리. 사용자가 설계한 4개 미니게임은 전부 실시간 PvP라 "최고 기록·점수 보상" 같은 단일
+// 플레이 개념이 없다 — 매칭·대전·종료·헤더를 게임 컴포넌트가 전부 직접 그린다(체스 PvP와 같은
+// pvp_queue_join/leave 재사용 + 전용 RPC 세트 + pvp_games.sans에 게임별 상태 저장 패턴, 각 게임
+// 섹션 주석 참고). 새 미니게임을 추가할 때 할 일은 그 규칙을 구현한 컴포넌트를 하나 만들고(props로
+// { myUid, onExit }를 받는다) 아래 PLAY_SPECIAL_GAMES 배열에 항목 하나만 추가하면 된다 — 카드 목록
+// 노출·클릭 진입·목록 복귀는 전부 자동으로 연결된다.
+// (실제 파이프라인이 끝까지 동작하는지 증명하기 위해 만들었던 테스트용 예시 게임 "칸 반응속도"와
+// 그 전용 단일 플레이 틀(MinigameShell/useMinigameBest)은 이제 실제 게임 두 개가 갖춰져 더 이상
+// 필요하지 않아 걷어냈다.)
 const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, status: "ready", pvp: true, Component: CoordRaceGame },
-  { key: "knight-race", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Crown, status: "ready", pvp: true, Component: KnightRaceGame },
-  { key: "square-reflex", name: "칸 반응속도 (테스트용)", desc: "빛나는 칸을 최대한 빨리 눌러 점수를 쌓아 보세요 — 실제 미니게임이 정해지기 전까지 이 자리를 대신하는 예시 게임이에요.", Icon: Target, status: "ready", Component: SquareReflexGame, example: true },
-  { key: "slot4", name: "미니게임 준비 중", status: "soon" },
+  { key: "coord-race", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
+  { key: "knight-race", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
 ];
-// 게임별 최고 기록 — 게임 key로 네임스페이스를 나눠 localStorage에 저장한다(로그인 여부와 무관하게
-// 이 기기에서 곧장 동작). 나중에 서버 랭킹이 필요해지면 이 훅의 내부 저장소만 Supabase 호출로
-// 바꾸면 되고, 호출부(MinigameShell)는 그대로 쓸 수 있다.
-function useMinigameBest(gameKey) {
-  const storageKey = "occ_minigame_best_" + gameKey;
-  const [best, setBest] = useState(() => {
-    try { const v = Number(window.localStorage.getItem(storageKey)); return Number.isFinite(v) ? v : 0; } catch { return 0; }
-  });
-  const record = useCallback((score) => {
-    setBest((prev) => {
-      if (score <= prev) return prev;
-      try { window.localStorage.setItem(storageKey, String(score)); } catch { }
-      return score;
-    });
-  }, [storageKey]);
-  return [best, record];
-}
-// 미니게임 하나를 실행하는 공용 틀 — 어떤 게임이든 이 틀 안에서 시작·진행·종료·보상·재시작을 똑같은
-// 방식으로 겪는다. 게임 컴포넌트(game.Component)는 진행 화면 UI만 그리고, 끝났을 때 onFinish(score)
-// 한 번만 불러주면 나머지(보상 지급·최고 기록 갱신·결과 화면)는 이 틀이 알아서 처리한다.
-function MinigameShell({ game, coins, onAwardCoins, onExit }) {
-  const [best, recordBest] = useMinigameBest(game.key);
-  const [result, setResult] = useState(null); // { score, reward, isBest } | null
-  const [sessionId, setSessionId] = useState(0); // 이 값을 바꿔 게임 컴포넌트를 완전히 새로 마운트(재시작)한다
-  // (설계) 보상 계산식은 게임마다 다를 수 있으므로, 나중에 진짜 게임이 생기면 이 한 줄만 그 게임에
-  // 맞게 바꾸면 된다 — 지금은 점수 2점당 코인 1개(최대 30개)라는 임시 기준을 둔다.
-  const rewardOf = (score) => Math.max(0, Math.min(30, Math.floor(score / 2)));
-  const handleFinish = useCallback((score) => {
-    const s = Number.isFinite(score) ? score : 0;
-    const isBest = s > best;
-    const reward = rewardOf(s);
-    recordBest(s);
-    if (reward > 0) onAwardCoins && onAwardCoins(reward);
-    setResult({ score: s, reward, isBest });
-  }, [best, recordBest, onAwardCoins]);
-  const retry = () => { setResult(null); setSessionId((n) => n + 1); };
-  const Game = game.Component;
-  return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-        <button onClick={onExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>{game.name}</div>
-        <div title="최고 기록" style={{ fontSize: 11, fontWeight: 800, color: T.brass, flexShrink: 0, minWidth: 30, textAlign: "right" }}>{best}</div>
-      </div>
-      {!result && <Game key={sessionId} onFinish={handleFinish} />}
-      {result && (
-        <div style={{ textAlign: "center", padding: "24px 10px" }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{result.isBest ? "신기록!" : "결과"}</div>
-          <div style={{ fontSize: 34, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 4 }}>{result.score}<span style={{ fontSize: 14, color: T.inkSoft, fontWeight: 700 }}> 점</span></div>
-          <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 18 }}>최고 기록 {best}점</div>
-          {result.reward > 0 && (
-            <div className="inline-flex items-center gap-1" style={{ marginBottom: 18, padding: "5px 12px", borderRadius: 999, background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass }}>
-              <CoinIcon size={16} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>+{result.reward}</span>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button onClick={onExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
-            <button onClick={retry} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>다시하기</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-function PlaySpecialGames({ coins, onAwardCoins, myUid }) {
+// (v0.5.0 리디자인, 사용자 요청) 카드 그리드 대신 미니게임 하나당 한 줄을 차지하는 목록으로 바꾸고,
+// 게임마다 그 특성을 드러내는 아이콘·강조색(accent)을 따로 두어 한눈에 구분되게 했다.
+function PlaySpecialGames({ myUid }) {
   const [activeKey, setActiveKey] = useState(null);
   const active = PLAY_SPECIAL_GAMES.find((g) => g.key === activeKey) || null;
   if (active) {
-    // (v0.5.0) pvp:true 게임(좌표 인지 게임 등)은 승·패·무만 있고 "최고 기록·점수 보상" 개념이 없어
-    // MinigameShell을 거치지 않고 게임 컴포넌트가 매칭·대전·종료·헤더까지 전부 직접 그린다.
-    if (active.pvp) { const Game = active.Component; return <Game myUid={myUid} onExit={() => setActiveKey(null)} />; }
-    return <MinigameShell game={active} coins={coins} onAwardCoins={onAwardCoins} onExit={() => setActiveKey(null)} />;
+    const Game = active.Component;
+    return <Game myUid={myUid} onExit={() => setActiveKey(null)} />;
   }
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
@@ -8983,73 +8909,24 @@ function PlaySpecialGames({ coins, onAwardCoins, myUid }) {
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>스페셜 미니게임</div>
       </div>
       <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 14 }}>체스보드 위에서 즐기는 오리지널 미니게임들을 이 자리에서 만나보세요.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {PLAY_SPECIAL_GAMES.map((g) => {
-          const ready = g.status === "ready";
           const GIcon = g.Icon || Lock;
+          const accent = g.accent || T.brass;
           return (
-            <button key={g.key} onClick={() => ready && setActiveKey(g.key)} disabled={!ready} className={ready ? "press" : undefined}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, aspectRatio: "1", borderRadius: 12, border: ready ? "1px solid " + T.brass : "1px dashed #C9B58C", background: ready ? "rgba(196,154,80,.1)" : "rgba(0,0,0,.03)", color: ready ? T.ink : T.inkSoft, padding: 10, textAlign: "center", cursor: ready ? "pointer" : "default", position: "relative" }}>
-              {g.example && <span style={{ position: "absolute", top: 6, right: 6, fontSize: 8, fontWeight: 800, color: T.brass, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, borderRadius: 999, padding: "1px 5px" }}>테스트용</span>}
-              <GIcon size={20} />
-              <span style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.3 }}>{g.name}</span>
+            <button key={g.key} onClick={() => setActiveKey(g.key)} className="press"
+              style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid " + accent, background: "linear-gradient(135deg, " + accent + "22, rgba(255,255,255,.5))", cursor: "pointer", textAlign: "left" }}>
+              <span style={{ width: 40, height: 40, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + accent + ",#241509)", boxShadow: "0 3px 8px -2px rgba(0,0,0,.4)" }}>
+                <GIcon size={19} color="#fff" />
+              </span>
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{g.name}</span>
+                <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.desc}</span>
+              </span>
+              <ChevronRight size={17} color={T.inkSoft} style={{ flexShrink: 0 }} />
             </button>
           );
         })}
-      </div>
-    </div>
-  );
-}
-// ---- 예시 게임: 칸 반응속도(SquareReflex) — 실제 미니게임이 정해지기 전까지 위 플랫폼이 실제로
-// 끝까지 동작하는지 증명하기 위한 자리채움용 게임. 규칙: 5×5 칸 중 무작위로 하나가 빛나면 그 칸을
-// 누른다 — 맞히면 점수 +1하고 다음 칸이 더 빨리 나타나며, 틀린 칸을 누르거나 시간 안에 못 누르면
-// 그 자리에서 종료된다. onFinish(score) 하나만 부모(MinigameShell)에 보고하면 되는, 이 플랫폼이
-// 요구하는 최소 인터페이스의 예시이기도 하다.
-const REFLEX_GRID = 5;
-const REFLEX_START_MS = 1000;
-const REFLEX_MIN_MS = 350;
-const REFLEX_STEP_MS = 40;
-function SquareReflexGame({ onFinish }) {
-  const [phase, setPhase] = useState("ready"); // "ready" | "playing"
-  const [score, setScore] = useState(0);
-  const [target, setTarget] = useState(null);
-  const timerRef = useRef(null);
-  useEffect(() => () => clearTimeout(timerRef.current), []);
-  const finish = (finalScore) => {
-    clearTimeout(timerRef.current);
-    setTarget(null);
-    setPhase("ready");
-    onFinish(finalScore);
-  };
-  const scheduleNext = (curScore) => {
-    const delay = Math.max(REFLEX_MIN_MS, REFLEX_START_MS - curScore * REFLEX_STEP_MS);
-    const idx = Math.floor(Math.random() * REFLEX_GRID * REFLEX_GRID);
-    setTarget(idx);
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => finish(curScore), delay);
-  };
-  const start = () => { setScore(0); setPhase("playing"); scheduleNext(0); };
-  const onCell = (idx) => {
-    if (phase !== "playing") return;
-    if (idx === target) { const next = score + 1; setScore(next); scheduleNext(next); }
-    else finish(score);
-  };
-  if (phase === "ready") {
-    return (
-      <div style={{ textAlign: "center", padding: "26px 10px" }}>
-        <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>빛나는 칸이 나타나면 최대한 빨리 눌러 점수를 쌓으세요.<br />틀리거나 시간 안에 못 누르면 끝나요.</p>
-        <button onClick={start} className="press" style={{ padding: "11px 28px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>시작</button>
-      </div>
-    );
-  }
-  return (
-    <div>
-      <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 10 }}>점수 {score}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(" + REFLEX_GRID + ",1fr)", gap: 6, maxWidth: 280, margin: "0 auto" }}>
-        {Array.from({ length: REFLEX_GRID * REFLEX_GRID }, (_, i) => (
-          <button key={i} onClick={() => onCell(i)} className="press"
-            style={{ aspectRatio: "1", borderRadius: 8, border: "1px solid " + (i === target ? T.brass : "#C9B58C"), background: i === target ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#FBF5E8", cursor: "pointer", padding: 0 }} />
-        ))}
       </div>
     </div>
   );
@@ -9435,7 +9312,7 @@ function KnightRaceGame({ myUid, onExit }) {
     </div>
   );
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialProps }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -10020,7 +9897,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
           <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
         </div>
-        {pageMode === "special" && <PlaySpecialGames coins={specialProps && specialProps.coins} onAwardCoins={specialProps && specialProps.onAwardCoins} myUid={myUid} />}
+        {pageMode === "special" && <PlaySpecialGames myUid={myUid} />}
         {pageMode === "normal" && (step === "setup" ? (
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
@@ -20428,6 +20305,7 @@ const CHANGELOG = [
       "스페셜 탭에 첫 실시간 대전 미니게임 '좌표 인지 게임'이 추가됐어요 — 무작위 좌표가 뜨면 상대보다 먼저 클릭해 점수를 겨뤄요.",
       "스페셜 탭에 두 번째 실시간 대전 미니게임 '나이트 경주'가 추가됐어요 — 나이트로 목표 칸까지 상대보다 먼저 도달하는 5전 3선승 대결이에요. 라운드가 진행될수록 방해 칸이 늘어나요.",
       "플레이 탭이 다른 탭처럼 상단 헤더·하단 탭바가 함께 보이도록 바뀌었어요 — 예전엔 화면 전체를 덮는 별도 화면이었어요. 대국 중 다른 탭을 둘러봐도 진행 중이던 대국은 끊기지 않고 그대로 이어져요.",
+      "스페셜 미니게임 목록에서 테스트용 예시 게임을 지우고, 한 줄에 게임 하나씩 아이콘·색으로 구분해 보여주도록 정리했어요.",
     ]
   },
   {
@@ -28921,7 +28799,7 @@ export default function App() {
             않는다(위 openPlay/useLayoutEffect가 이 탭으로 자동 전환해 곧장 보여준다). */}
         {playGame && (
           <div style={tab === "store" ? undefined : { display: "none" }}>
-            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialProps={{ coins: ocCoins, onAwardCoins: (amt) => setOcCoins((c) => c + amt) }} />
+            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} />
           </div>
         )}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
