@@ -213,6 +213,10 @@ const ENGINE_PROFILES = {
     urls: ["https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-single.js"],
     mtUrl: "https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-mt.js",
     parts: 2,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
+    // (v0.5.1 버그 수정) 신경망 조각을 합치면 약 108MB(17.1의 80MB보다도 큼)인데 게다가 외부 CDN에서
+    // 받아야 해서, 다른 조각 프로필과 공유하던 45초 타임아웃이 다 받기도 전에 끝나 버려 "연결
+    // 실패"로 보이는 경우가 많았다 — engineBootList 주석 참고.
+    bootTimeoutMs: 90000,
   },
 };
 // (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
@@ -236,7 +240,16 @@ function engineBootList(profileId, threads) {
   // 달해, 다 받아 이어 붙이고 컴파일하는 데 기존 4초 부팅 타임아웃보다 오래 걸릴 수 있다 — 이
   // 타임아웃이 먼저 끝나 워커를 강제 종료하면 파일을 받던 중이라 "연결 실패"로 이어졌다. 신경망이
   // 조각나 있는 프로필(profile.parts)만 훨씬 넉넉한 타임아웃을 준다(가벼운 기존 두 엔진은 그대로 4초).
-  const bootTimeoutMs = profile.parts ? 45000 : 4000;
+  // (v0.5.1 버그 수정, 사용자 제보) "Stockfish 18을 고르면 항상 연결 실패로 멈춘다" — Stockfish
+  // 18(정식)의 신경망은 조각을 다 합치면 약 108MB로, 같은 조각 방식을 쓰는 17.1(약 80MB)보다도 크고
+  // 게다가 앱과 같은 출처가 아닌 외부 CDN(Vercel Blob)에서 받는다(위 ENGINE_PROFILES.full18 주석
+  // 참고) — 그런데도 그 17.1과 똑같이 45초 타임아웃을 나눠 쓰고 있었다. 45초 안에 108MB를 받으려면
+  // 최소 초당 2.4MB(≈19Mbps) 이상 꾸준히 나와야 하는데, 특히 첫 요청이라 캐시도 없는 외부 CDN
+  // 왕복까지 겹치면 흔한 가정용/모바일 환경에서도 이 기준을 못 채우는 경우가 많다 — 17.1의 옛
+  // 버그(README v0.2.0)와 정확히 같은 종류로, 다 받기도 전에 타임아웃이 먼저 끝나 워커를 강제
+  // 종료해 "연결 실패"로 보였다. profile에 개별 부팅 타임아웃을 지정할 수 있게 하고(bootTimeoutMs
+  // 필드, 없으면 기존처럼 parts 여부로 45초/4초 결정), full18만 90초로 넉넉히 늘렸다.
+  const bootTimeoutMs = profile.bootTimeoutMs != null ? profile.bootTimeoutMs : (profile.parts ? 45000 : 4000);
   const list = profile.urls.map((url) => ({ url, threads: 1, bootTimeoutMs }));
   if (profile.mtUrl && crossOriginIsolatedOK()) list.unshift({ url: profile.mtUrl, threads, bootTimeoutMs });
   return list;
@@ -466,7 +479,7 @@ function useEngine(enginePref) {
       }
     }
     function tryNext() {
-      if (idx >= bootList.length) { offRef.current = true; setStatus("off"); pump(); return; }
+      if (idx >= bootList.length) { console.warn("[engine] all boot candidates exhausted, profile:", enginePref); offRef.current = true; setStatus("off"); pump(); return; }
       const { url, threads, bootTimeoutMs } = bootList[idx++];
       try {
         let w;
@@ -474,7 +487,10 @@ function useEngine(enginePref) {
         else { const blob = new Blob(["importScripts('" + url + "');"], { type: "text/javascript" }); w = new Worker(URL.createObjectURL(blob)); }
         let booted = false;
         w.onmessage = (e) => { const line = typeof e.data === "string" ? e.data : ""; if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) { booted = true; ref.current = w; setStatus("ready"); pump(); } handleLine(line); };
-        w.onerror = () => { try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
+        // (v0.5.1 버그 수정) 부팅 실패 경로(여기·아래 타임아웃·바깥 catch) 전부가 지금까지 아무 로그도
+        // 남기지 않고 조용히 다음 후보로 넘어갔다 — 그래서 "엔진이 연결 실패로 멈춘다"는 제보가 와도
+        // 콘솔에서 원인(어떤 URL이, 왜 — 404/CORS 에러였는지 타임아웃이었는지)을 전혀 구분할 수 없었다.
+        w.onerror = (e) => { console.warn("[engine] boot failed:", url, e && e.message); try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
         w.postMessage("uci");
         if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
         // (성능) 스톡피시 WASM 빌드의 기본 Hash(치환 테이블)는 보통 16MB로 아주 작다 — 같은 국면을
@@ -484,8 +500,8 @@ function useEngine(enginePref) {
         // 작다(태블릿·저사양 기기에서도 64MB는 안전한 수준).
         w.postMessage("setoption name Hash value 64");
         w.postMessage("isready"); worker = w;
-        setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
-      } catch (_) { tryNext(); }
+        setTimeout(() => { if (!booted && !killed) { console.warn("[engine] boot timeout(" + (bootTimeoutMs || 4000) + "ms):", url); try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
+      } catch (e) { console.warn("[engine] boot threw:", url, e); tryNext(); }
     }
     tryNext();
     return () => {
@@ -14738,7 +14754,16 @@ async function puzzleShare(p) {
     // 병합하지 않고 그냥 포기한다 — 이 퍼즐은 로컬 상태(setPuzzles)에는 이미 반영돼 있으니 이 세션
     // 안에서 풀이는 계속 가능하고, 서버 공유·번호 공유만 못 하게 된다.
     if (server && server.id && server.id !== p.id) { console.warn("퍼즐 번호 충돌(no=" + no + "), 서버 공유를 건너뜁니다:", p.id, "vs", server.id); return; }
-    const merged = server ? { ...p, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
+    // (v0.5.1 버그 수정, 사용자 제보) "퍼즐 이름을 바꿔도 밖에서는 예전 이름 그대로 보인다" — 원인은
+    // 여기 병합 로직이었다. 위 puzzleCreatorInfo 주석이 이미 경고한 것과 정확히 같은 종류의 함정을
+    // puzzle_set_name(v0.4.9)이 그 뒤 data 안에 이름을 저장하면서 다시 만들었다: p는 호출부가 들고
+    // 있던 그 시점의 스냅샷일 뿐인데(특히 daily_puzzle_cache에 한 번 저장된 "오늘의 퍼즐" 객체는
+    // 그날 처음 계산된 순간의 이름을 영구히 그대로 담고 있다 — resolveDailyPuzzleCached가 캐시
+    // 적중 시 매번 이 함수를 다시 부른다), server.name(방금 puzzle_set_name으로 바뀌었을 수 있는
+    // 실제 최신 이름)이 있는데도 `{...p}`가 그 뒤에 덮어써 매번 옛 이름으로 되돌리고 있었다.
+    // 이름은 puzzle_set_name RPC로만 바뀌고 이 함수(puzzleShare)를 거치지 않으므로, server에 이미
+    // 이름이 있으면 그걸 그대로 지킨다(새로 생성되는 행이라 server가 없을 때만 p.name을 쓴다).
+    const merged = server ? { ...p, name: server.name || p.name, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
     const row = { no, data: merged };
     // (신규 기능) 사용자 요청 — 퍼즐 만들기 마법사 4단계의 공개/비공개 설정. is_public은 별도
     // 보호 컬럼(아래 puzzleSetVisibility 참고)이라 REST로 직접 update할 grant가 없으므로, 이미 있는
@@ -15187,7 +15212,16 @@ const dailyPuzzleResolveCache = new Map(); // dateStr -> Promise<puzzle|null>
 function resolveDailyPuzzleCached(dateStr, engine) {
   if (dailyPuzzleResolveCache.has(dateStr)) return dailyPuzzleResolveCache.get(dateStr);
   const p = fetchDailyPuzzleCache(dateStr).then((cached) => {
-    if (cached) { puzzleShare(cached); return cached; }
+    // (v0.5.1 버그 수정, 사용자 제보) daily_puzzle_cache.data는 그 날짜 몫이 처음 계산된 순간의
+    // 이름을 스냅샷으로 영구히 담고 있다 — 생성자가 나중에 puzzle_set_name으로 이름을 바꿔도 이
+    // 캐시 행 자체는 절대 다시 계산되지 않으므로(날짜별로 딱 한 번만 계산·저장), 캐시가 있는 한
+    // "오늘의 퍼즐" 카드는 옛 이름을 그대로 계속 보여준다(puzzleShare 쪽의 되돌림 버그는 위에서
+    // 이미 고쳤지만, 이 캐시 자체가 보여주는 값은 별개로 여전히 낡아 있다). 이름만은 puzzles
+    // 테이블이 항상 최신 진실 공급원이므로, 캐시를 쓰더라도 이름만 가벼운 puzzleFetch로 다시 얹는다.
+    if (cached) {
+      puzzleShare(cached);
+      return puzzleFetch(puzzleNo(cached.id)).then((live) => (live && live.name && live.name !== cached.name) ? { ...cached, name: live.name } : cached).catch(() => cached);
+    }
     // (v0.5.0 변경) 커뮤니티 선정 경로(daily_puzzle_picks)는 창작 시점에 이미 만들어진 라인을 그대로
     // 쓰므로 로컬 엔진이 필요 없다 — 개발자 오버라이드(daily_puzzles_dev, 드문 경로)만 여전히
     // genPuzzleTree를 돌려야 해서 엔진을 필요로 한다. 엔진이 아직 준비되지 않아 null이 나온 경우는
@@ -20852,6 +20886,8 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 const CHANGELOG = [
   {
     version: "0.5.1", date: "2026.9.13", dev: ["openchesskr", "G13sus4"], items: [
+      "Stockfish 18 엔진을 고르면 항상 '연결 실패'로 멈추던 문제를 고쳤어요 — 신경망 파일이 커서 받는 데 시간이 걸리는데 기다리는 시간이 너무 짧게 잡혀 있었어요.",
+      "퍼즐 이름을 바꿔도 다른 화면(특히 오늘의 퍼즐)에서는 바꾸기 전 이름이 계속 보이던 문제를 고쳤어요.",
       "실시간 대국에서 상대의 시간이 다 됐는데 상대가 결과를 보고하지 않고 화면을 나가버려도(인터넷이 끊기거나 탭을 닫는 등), 이제 내 승리가 확실하게 확정돼요 — 예전엔 이런 경우 대국이 끝나지 않은 것처럼 서버에 남아, 다음에 새 상대를 찾으면 그 끝난 대국으로 자꾸 되돌아가는 문제가 있었어요.",
     ]
   },
