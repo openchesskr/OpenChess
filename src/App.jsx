@@ -8899,8 +8899,9 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
 // PlaySpecialGames 참고).
 const PLAY_SPECIAL_GAMES = [
   { key: "coord-race", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, status: "ready", pvp: true, Component: CoordRaceGame },
+  { key: "knight-race", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Crown, status: "ready", pvp: true, Component: KnightRaceGame },
   { key: "square-reflex", name: "칸 반응속도 (테스트용)", desc: "빛나는 칸을 최대한 빨리 눌러 점수를 쌓아 보세요 — 실제 미니게임이 정해지기 전까지 이 자리를 대신하는 예시 게임이에요.", Icon: Target, status: "ready", Component: SquareReflexGame, example: true },
-  { key: "slot3", name: "미니게임 준비 중", status: "soon" },
+  { key: "slot4", name: "미니게임 준비 중", status: "soon" },
 ];
 // 게임별 최고 기록 — 게임 key로 네임스페이스를 나눠 localStorage에 저장한다(로그인 여부와 무관하게
 // 이 기기에서 곧장 동작). 나중에 서버 랭킹이 필요해지면 이 훅의 내부 저장소만 Supabase 호출로
@@ -9198,6 +9199,226 @@ function CoordRaceGame({ myUid, onExit }) {
         </div>
       ) : (
         <CoordRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
+      )}
+      {confirmForfeit && (
+        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
+            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>진행 중인 대전을 포기하게 되고, 상대가 승리해요.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmForfeit(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>계속하기</button>
+              <button onClick={doForfeit} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>나가기</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ---- 나이트 경주(knight) — 사용자 설계 2호 실시간 PvP 미니게임. 두 참가자에게 똑같은 시작 칸·
+// 목표 칸·이동 제한 수·제한시간이 주어지고, 각자 자기 나이트로 먼저 목표 칸에 도달해야 그 라운드를
+// 가져간다(5전 3선승, Bo5). 3라운드부터 방해 칸이 늘어 난이도가 오른다. 규칙·서버 권위 판정은
+// supabase-setup.sql의 knight_start_round/knight_report/knight_resolve_round 참고.
+const KNIGHT_GAME_TYPE = "knight";
+const KNIGHT_BO_TOTAL = 5;
+const KNIGHT_BO_TARGET = 3;
+// 서버(knight_neighbors)와 완전히 같은 규칙의 클라이언트용 나이트 이웃 계산 — 어떤 칸을 눌러도 되는지
+// (합법 수인지) 보드에서 즉시 판정하는 용도일 뿐, 서버는 이 결과를 신뢰하지 않고 최종 요약만 받는다
+// (체스 pvp_move가 SAN을 신뢰하는 것과 같은 모델 — 위 SQL 주석 참고).
+function knightNeighborsClient(sq, blocked) {
+  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
+  const deltas = [[1, 2], [1, -2], [-1, 2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1]];
+  const out = [];
+  for (const [df, dr] of deltas) {
+    const nf = f + df, nr = r + dr;
+    if (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7) {
+      const nsq = String.fromCharCode(97 + nf) + (nr + 1);
+      if (!blocked || !blocked.includes(nsq)) out.push(nsq);
+    }
+  }
+  return out;
+}
+// 라운드 하나 — 내 나이트의 위치·사용한 수는 이 컴포넌트만의 로컬 상태다(서버는 최종 요약 보고
+// 시점에야 알게 된다). roundIdx가 바뀔 때마다(다음 라운드) key로 통째로 새로 마운트돼 이 상태가
+// 깨끗이 리셋된다.
+function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
+  const [pos, setPos] = useState(round.start);
+  const [movesUsed, setMovesUsed] = useState(0);
+  const [reported, setReported] = useState(false);
+  const [timeLeftMs, setTimeLeftMs] = useState(() => round.timeLimitMs - (Date.now() - new Date(round.startedAt).getTime()));
+  const reportedRef = useRef(false);
+  const isWhite = myUid === game.white_uid;
+  const myRep = round.reports && round.reports[isWhite ? "w" : "b"];
+  const oppRep = round.reports && round.reports[isWhite ? "b" : "w"];
+  const iReported = !!myRep || reported;
+  const doReport = useCallback((reached, finalSq, moves) => {
+    if (reportedRef.current) return;
+    reportedRef.current = true; setReported(true);
+    sbRpc("knight_report", { p_game_id: game.id, p_round: roundIdx, p_reached: reached, p_moves_used: moves, p_final_sq: finalSq }).then((g) => g && onGameUpdate(g)).catch(() => { });
+  }, [game.id, roundIdx, onGameUpdate]);
+  // 제한시간 카운트다운 — 내가 아직 안 끝냈다면 0.2초마다 갱신하고, 다 되면 지금 위치·사용한 수
+  // 그대로 실패로 자동 보고한다(시간 초과도 "시도했다"로 인정 — 위 SQL의 미보고 패널티 참고).
+  useEffect(() => {
+    if (iReported) return;
+    const t = setInterval(() => {
+      const left = round.timeLimitMs - (Date.now() - new Date(round.startedAt).getTime());
+      setTimeLeftMs(left);
+      if (left <= 0) { doReport(false, pos, movesUsed); clearInterval(t); }
+    }, 200);
+    return () => clearInterval(t);
+  }, [round.startedAt, round.timeLimitMs, pos, movesUsed, iReported, doReport]);
+  // 이미 보고했는데 아직 이 라운드 승자가 안 정해졌으면(상대가 아직 진행 중이거나 미보고) 주기적으로
+  // 확정을 시도한다 — 서버가 "둘 다 보고했거나 시간이 다 됐을 때"만 실제로 확정하므로 안전하다.
+  useEffect(() => {
+    if (!iReported || round.winner) return;
+    const t = setInterval(() => { sbRpc("knight_resolve_round", { p_game_id: game.id }).then((g) => g && onGameUpdate(g)).catch(() => { }); }, 1200);
+    return () => clearInterval(t);
+  }, [iReported, round.winner, game.id, onGameUpdate]);
+  const legalTargets = useMemo(() => (iReported ? [] : knightNeighborsClient(pos, round.blocked || [])), [pos, round.blocked, iReported]);
+  const onCell = (sq) => {
+    if (iReported || !legalTargets.includes(sq)) return;
+    const nextMoves = movesUsed + 1;
+    setPos(sq); setMovesUsed(nextMoves);
+    if (sq === round.target) { doReport(true, sq, nextMoves); return; }
+    if (nextMoves >= round.moveBudget) doReport(false, sq, nextMoves);
+  };
+  const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>
+        <span>수 {movesUsed}/{round.moveBudget}</span>
+        <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
+      </div>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
+        <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 3, maxWidth: 320, margin: "0 auto 12px" }}>
+        {Array.from({ length: 8 }, (_, rIdx) => 8 - rIdx).flatMap((rank) => COORD_FILES.map((file) => {
+          const sq = file + rank;
+          const isPos = sq === pos;
+          const isTarget = sq === round.target;
+          const isBlocked = (round.blocked || []).includes(sq);
+          const isLegal = legalTargets.includes(sq);
+          let bg = "#FBF5E8";
+          if (isBlocked) bg = "#8A6C5C";
+          else if (isPos) bg = "linear-gradient(180deg," + T.brass + ",#A8842F)";
+          else if (isTarget) bg = "rgba(60,138,60,.35)";
+          else if (isLegal) bg = "rgba(196,154,80,.2)";
+          return (
+            <button key={sq} onClick={() => onCell(sq)} disabled={isBlocked} className="press"
+              style={{ aspectRatio: "1", borderRadius: 5, border: "1px solid " + (isPos ? T.brass : isTarget ? "#3C8A3C" : "#C9B58C"), background: bg, cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>
+              {isPos ? "♞" : isTarget ? "★" : isBlocked ? "✕" : ""}
+            </button>
+          );
+        }))}
+      </div>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>
+        {round.winner ? (round.winner === "draw" ? "이 라운드는 무승부예요" : (round.winner === (isWhite ? "w" : "b") ? "이 라운드 승리!" : "이 라운드 패배")) :
+          iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
+      </div>
+    </div>
+  );
+}
+// 매칭이 끝난 뒤 대전 전체(라운드 진행 + 스코어보드 + 다음 라운드 자동 진행 + 최종 결과)를 관리한다.
+function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
+  const [game, setGame] = useState(initialGame);
+  useEffect(() => { onStatusChange && onStatusChange(game.status); }, [game.status, onStatusChange]);
+  useRealtimeTable("pvp_games", "id=eq." + initialGame.id, useCallback((payload) => {
+    if (payload && payload.new) setGame(payload.new);
+    else if (!payload) { sbSelect("pvp_games?id=eq." + initialGame.id + "&select=*").then((rows) => { if (rows && rows[0]) setGame(rows[0]); }).catch(() => { }); }
+  }, [initialGame.id]), true, 3000);
+  const isWhite = myUid === game.white_uid;
+  const rounds = game.sans || [];
+  const roundIdx = Math.max(0, rounds.length - 1);
+  const round = rounds[roundIdx] || null;
+  const myWins = rounds.filter((r) => r.winner === (isWhite ? "w" : "b")).length;
+  const oppWins = rounds.filter((r) => r.winner === (isWhite ? "b" : "w")).length;
+  const finished = game.status !== "active";
+  // 라운드가 없거나(첫 진입) 방금 끝났으면(승자 있음) 잠깐 결과를 보여준 뒤 다음 라운드를 요청한다.
+  useEffect(() => {
+    if (finished) return;
+    if (rounds.length === 0) { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
+    if (round && round.winner) {
+      const t = setTimeout(() => { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, 1800);
+      return () => clearTimeout(t);
+    }
+  }, [game.id, rounds.length, round && round.winner, finished]);
+  if (finished) {
+    const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
+    const isDraw = game.status === "draw";
+    return (
+      <div style={{ textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {oppWins}</div>
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppWins}</div>
+      </div>
+      {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
+    </div>
+  );
+}
+// 매칭 화면 + 대전 화면 — CoordRaceGame과 완전히 같은 구조(매칭·기권 확인 절차 재사용 패턴)를 game_type만
+// "knight"로 바꿔 그대로 따른다.
+function KnightRaceGame({ myUid, onExit }) {
+  const [game, setGame] = useState(null);
+  const [waiting, setWaiting] = useState(false);
+  const [err, setErr] = useState("");
+  const [liveStatus, setLiveStatus] = useState("active");
+  const [confirmForfeit, setConfirmForfeit] = useState(false);
+  const waitingRef = useRef(false);
+  useEffect(() => { waitingRef.current = waiting; }, [waiting]);
+  useEffect(() => () => { if (waitingRef.current) sbRpc("pvp_queue_leave", {}).catch(() => { }); }, []);
+  const join = useCallback(async () => {
+    if (!myUid) { setErr("로그인 후 이용할 수 있어요."); return; }
+    setErr(""); setWaiting(true);
+    try {
+      const g = await sbRpc("pvp_queue_join", { p_time_control: "0-0", p_game_type: KNIGHT_GAME_TYPE });
+      if (g) { setGame(g); setWaiting(false); }
+    } catch { setErr("매칭에 실패했어요. 다시 시도해 주세요."); setWaiting(false); }
+  }, [myUid]);
+  const leave = () => { setWaiting(false); sbRpc("pvp_queue_leave", {}).catch(() => { }); };
+  const onMatch = useCallback((payload) => {
+    if (payload && payload.new && payload.new.status === "active" && payload.new.game_type === KNIGHT_GAME_TYPE) { setGame(payload.new); setWaiting(false); }
+    else if (!payload) join();
+  }, [join]);
+  useRealtimeTable("pvp_games", myUid ? "white_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
+  useRealtimeTable("pvp_games", myUid ? "black_uid=eq." + myUid : null, onMatch, waiting && !!myUid, 5000);
+  const requestExit = () => { if (game && liveStatus === "active") setConfirmForfeit(true); else onExit(); };
+  const doForfeit = async () => {
+    setConfirmForfeit(false);
+    if (game) { try { await sbRpc("knight_forfeit", { p_game_id: game.id }); } catch { } }
+    onExit();
+  };
+  return (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+        <button onClick={requestExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>나이트 경주</div>
+        <span style={{ width: 30, flexShrink: 0 }} />
+      </div>
+      {!game ? (
+        <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
+          <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>나이트로 목표 칸(★)까지 상대보다 먼저 도달하세요.<br />5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.</p>
+          {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err}</p>}
+          {waiting ? (
+            <div>
+              <div className="flex items-center justify-center" style={{ marginBottom: 14 }}><PendingDots size={12} /></div>
+              <button onClick={leave} className="press" style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>취소</button>
+            </div>
+          ) : (
+            <button onClick={join} className="press" style={{ padding: "11px 28px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>대전 상대 찾기</button>
+          )}
+        </div>
+      ) : (
+        <KnightRaceBoard game={game} myUid={myUid} onExit={onExit} onStatusChange={setLiveStatus} />
       )}
       {confirmForfeit && (
         <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -20211,6 +20432,7 @@ const CHANGELOG = [
       "분석 탭 수 블록의 리체스 채택률(%)이 반올림돼 실제보다 부정확하게 보이던 문제를 고쳤어요 — 이제 소수점 둘째 자리까지 실제 값에 더 가깝게 표시돼요.",
       "플레이 페이지 스페셜 탭에 미니게임을 실제로 즐길 수 있는 틀(목록·최고 기록·코인 보상·다시하기)이 생겼어요 — 진짜 미니게임이 정해지기 전까지는 테스트용 예시 게임 '칸 반응속도'로 미리 만나볼 수 있어요.",
       "스페셜 탭에 첫 실시간 대전 미니게임 '좌표 인지 게임'이 추가됐어요 — 무작위 좌표가 뜨면 상대보다 먼저 클릭해 점수를 겨뤄요.",
+      "스페셜 탭에 두 번째 실시간 대전 미니게임 '나이트 경주'가 추가됐어요 — 나이트로 목표 칸까지 상대보다 먼저 도달하는 5전 3선승 대결이에요. 라운드가 진행될수록 방해 칸이 늘어나요.",
     ]
   },
   {

@@ -2074,6 +2074,265 @@ end; $$;
 grant execute on function public.coord_forfeit(bigint) to authenticated;
 
 -- ============================================================================
+-- N+3.6) 나이트 경주(knight) — 플레이 페이지 "스페셜" 미니게임 PvP #2 (v0.5.0, 사용자 설계)
+-- ============================================================================
+-- 규칙: 같은 시작 칸·목표 칸·이동 제한 수·제한시간이 두 참가자에게 동일하게 주어지고(서버가 미리
+-- 확정), 각자 자기 나이트로 그 목표 칸까지 먼저 도달하면 그 라운드를 가져간다. 라운드가 진행될수록
+-- (3라운드부터) 방해 칸(착지 금지)이 추가돼 난이도가 오른다. 5전 3선승제(Bo5). 시간·수 제한 안에
+-- 아무도 도달하지 못하면 타이브레이커: ①목표 칸까지 나이트 최단 거리 ②남은 수 ③남은 시간 순.
+--
+-- 매칭은 coord 게임과 동일하게 기존 pvp_queue_join/pvp_queue_leave(p_game_type='knight')를 그대로
+-- 재사용한다. pvp_games.sans에 라운드 기록 배열을 담는다:
+--   [{ start, target, blocked:[...], moveBudget, timeLimitMs, startedAt,
+--      reports:{ w:{reached,movesUsed,finalSq,at}|null, b:{...}|null }, winner:"w"|"b"|"draw"|null,
+--      resolvedAt }, ...]
+-- 각 참가자는 자기 나이트의 실제 수순(어느 칸을 거쳐갔는지)은 서버에 보고하지 않는다 — 체스의
+-- pvp_move가 SAN 합법성을 재검증하지 않고 신뢰하는 것과 같은 모델로, 최종 요약(도달 여부·사용한
+-- 수·마지막 칸)만 knight_report로 한 번 보고하면 된다.
+
+-- 나이트 이동 규칙 헬퍼 — 한 칸에서 갈 수 있는 이웃 칸(보드 밖·방해 칸 제외)을 계산한다.
+create or replace function public.knight_neighbors(p_sq text, p_blocked text[])
+returns text[] language plpgsql immutable as $$
+declare
+  f int := ascii(substr(p_sq,1,1)) - 97;
+  r int := substr(p_sq,2)::int - 1;
+  d int[] := array[1,2, 1,-2, -1,2, -1,-2, 2,1, 2,-1, -2,1, -2,-1];
+  i int; nf int; nr int; nsq text; out text[] := '{}';
+begin
+  for i in 0..7 loop
+    nf := f + d[i*2+1]; nr := r + d[i*2+2];
+    if nf between 0 and 7 and nr between 0 and 7 then
+      nsq := chr(97+nf) || (nr+1)::text;
+      if p_blocked is null or not (nsq = any(p_blocked)) then out := out || nsq; end if;
+    end if;
+  end loop;
+  return out;
+end; $$;
+
+-- 두 칸 사이 나이트 최단 거리(방해 칸 제외 경로) — 반복적 BFS(방문 배열로 재방문 차단). 라운드 설정
+-- 시점(경로 생성)에는 쓰이지 않고, 라운드 종료 시 타이브레이커 계산에만 쓰인다(호출 빈도가 낮아
+-- 비용 걱정 없음). 6수 안에 못 찾으면(방해 칸이 많아 사실상 막힌 경우) null 대신 아주 큰 값으로
+-- 취급하도록 호출부에서 coalesce한다.
+create or replace function public.knight_distance(p_start text, p_target text, p_blocked text[])
+returns int language plpgsql stable as $$
+declare
+  visited text[] := array[p_start]; frontier text[] := array[p_start]; next_frontier text[];
+  dist int := 0; sq text; nb text;
+begin
+  if p_start = p_target then return 0; end if;
+  while array_length(frontier,1) > 0 and dist < 6 loop
+    next_frontier := '{}';
+    foreach sq in array frontier loop
+      foreach nb in array public.knight_neighbors(sq, p_blocked) loop
+        if nb = p_target then return dist + 1; end if;
+        if not (nb = any(visited)) then visited := visited || nb; next_frontier := next_frontier || nb; end if;
+      end loop;
+    end loop;
+    frontier := next_frontier; dist := dist + 1;
+  end loop;
+  return null;
+end; $$;
+
+-- 무작위 나이트 걸음(경로) — 라운드의 시작 칸에서 p_steps만큼 무작위로 이동해 목표 칸을 만든다.
+-- 이렇게 만들면 "이 경로 그대로 따라가면 반드시 p_steps수 안에 도달 가능하다"가 생성 즉시 보장되므로,
+-- 별도의 도달 가능성 검증(무거운 탐색) 없이도 항상 풀 수 있는 라운드만 나온다.
+create or replace function public.knight_random_walk(p_start text, p_steps int)
+returns text[] language plpgsql volatile as $$
+declare path text[] := array[p_start]; cur text := p_start; nbs text[]; i int;
+begin
+  for i in 1..p_steps loop
+    nbs := public.knight_neighbors(cur, '{}');
+    if nbs is null or array_length(nbs,1) = 0 then exit; end if;
+    cur := nbs[1 + floor(random() * array_length(nbs,1))::int];
+    path := path || cur;
+  end loop;
+  return path;
+end; $$;
+
+-- 무작위 방해 칸 p_count개를 p_exclude(시작·목표·생성 경로) 밖에서 고른다 — 그래서 생성 시점의
+-- 정답 경로는 방해 칸이 추가된 뒤에도 항상 그대로 유효하다.
+create or replace function public.knight_pick_blocked(p_count int, p_exclude text[])
+returns text[] language plpgsql volatile as $$
+declare
+  all_sqs text[] := array(select chr(97+f) || r::text from generate_series(0,7) f, generate_series(1,8) r);
+  candidates text[]; result text[] := '{}'; pick text;
+begin
+  if p_count <= 0 then return result; end if;
+  select array_agg(s) into candidates from unnest(all_sqs) s where not (s = any(p_exclude));
+  while (array_length(result,1) is null or array_length(result,1) < p_count) and array_length(candidates,1) > 0 loop
+    pick := candidates[1 + floor(random()*array_length(candidates,1))::int];
+    result := result || pick;
+    candidates := array(select c from unnest(candidates) c where c <> pick);
+  end loop;
+  return result;
+end; $$;
+
+-- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 3승(Bo5)했거나 5라운드를 다
+-- 치렀으면 새 라운드를 만들지 않고 그대로 반환한다(호출부가 knight_resolve_round로 매치를 확정한다).
+create or replace function public.knight_start_round(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; r jsonb;
+  v_w_wins int := 0; v_b_wins int := 0; v_round_idx int;
+  v_walk_len int; v_blocked_count int; v_time_ms constant int := 25000;
+  v_path text[]; v_start text; v_target text; v_blocked text[];
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'knight' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  if jsonb_array_length(v_rounds) > 0 then
+    v_last := v_rounds -> (jsonb_array_length(v_rounds) - 1);
+    if (v_last ->> 'winner') is null then return v_game; end if;
+  end if;
+  for r in select * from jsonb_array_elements(v_rounds) loop
+    if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
+  end loop;
+  if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then return v_game; end if;
+  v_round_idx := jsonb_array_length(v_rounds);
+  if v_round_idx < 2 then v_walk_len := 3; v_blocked_count := 0;
+  elsif v_round_idx < 4 then v_walk_len := 4; v_blocked_count := v_round_idx - 1;
+  else v_walk_len := 5; v_blocked_count := 3;
+  end if;
+  v_start := chr(97 + floor(random()*8)::int) || (floor(random()*8)::int + 1)::text;
+  v_path := public.knight_random_walk(v_start, v_walk_len);
+  v_target := v_path[array_length(v_path,1)];
+  v_blocked := public.knight_pick_blocked(v_blocked_count, v_path);
+  v_rounds := v_rounds || jsonb_build_object(
+    'start', v_start, 'target', v_target, 'blocked', to_jsonb(v_blocked),
+    'moveBudget', array_length(v_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now(),
+    'reports', jsonb_build_object('w', null, 'b', null), 'winner', null, 'resolvedAt', null
+  );
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.knight_start_round(bigint) to authenticated;
+
+-- 내 시도 결과 보고 — 도달했든 못 했든(수 소진·시간 초과) 라운드당 한 번만 허용한다(이미 보고했으면
+-- 조용히 무시). 실제 이동 수순 자체는 검증하지 않고(신뢰 모델은 위 설명 참고) 요약만 기록한다.
+create or replace function public.knight_report(p_game_id bigint, p_round int, p_reached boolean, p_moves_used int, p_final_sq text)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text; v_reports jsonb; v_mine jsonb;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'knight' or v_game.status <> 'active' then return v_game; end if;
+  if v_me = v_game.white_uid then v_mycolor := 'w'; elsif v_me = v_game.black_uid then v_mycolor := 'b'; else raise exception 'not a participant'; end if;
+  v_rounds := v_game.sans;
+  if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
+  v_round := v_rounds -> p_round;
+  if (v_round ->> 'winner') is not null then return v_game; end if;
+  v_reports := v_round -> 'reports';
+  v_mine := v_reports -> v_mycolor;
+  if v_mine is not null and jsonb_typeof(v_mine) <> 'null' then return v_game; end if; -- 이미 보고함
+  v_reports := jsonb_set(v_reports, array[v_mycolor], jsonb_build_object(
+    'reached', coalesce(p_reached, false), 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'finalSq', p_final_sq, 'at', now()
+  ));
+  v_round := jsonb_set(v_round, array['reports'], v_reports);
+  v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.knight_report(bigint, int, boolean, int, text) to authenticated;
+
+-- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초 여유)이 지났을 때만 승자를 정한다. 한쪽만 보고했으면
+-- 보고한 쪽이 이기고(도달 여부 무관 — 시도조차 안 보고한 쪽보다 항상 우선), 둘 다 도달했으면 서버가
+-- 기록한 보고 시각이 빠른 쪽, 둘 다 도달 못 했으면 거리→남은 수→남은 시간 순 타이브레이커로 정한다.
+-- 이 라운드 결과로 한쪽이 3승(Bo5)에 닿거나 5라운드를 다 치렀으면 매치 결과도 함께 확정한다.
+create or replace function public.knight_resolve_round(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_round_idx int;
+  v_wrep jsonb; v_brep jsonb; v_grace constant int := 2000; v_winner text;
+  v_w_reached boolean; v_b_reached boolean; v_w_dist int; v_b_dist int; v_w_remain int; v_b_remain int;
+  v_w_time numeric; v_b_time numeric; v_w_wins int := 0; v_b_wins int := 0; r jsonb;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'knight' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  if jsonb_array_length(v_rounds) = 0 then return v_game; end if;
+  v_round_idx := jsonb_array_length(v_rounds) - 1;
+  v_round := v_rounds -> v_round_idx;
+  if (v_round ->> 'winner') is not null then return v_game; end if;
+  v_wrep := v_round #> '{reports,w}'; if jsonb_typeof(v_wrep) = 'null' then v_wrep := null; end if;
+  v_brep := v_round #> '{reports,b}'; if jsonb_typeof(v_brep) = 'null' then v_brep := null; end if;
+  if not (v_wrep is not null and v_brep is not null)
+     and (v_round ->> 'startedAt')::timestamptz + ((v_round->>'timeLimitMs')::int + v_grace || ' ms')::interval > now() then
+    return v_game; -- 아직 확정할 때가 아니다(둘 다 보고 전이고 시간도 안 지남)
+  end if;
+  v_w_reached := coalesce((v_wrep ->> 'reached')::boolean, false);
+  v_b_reached := coalesce((v_brep ->> 'reached')::boolean, false);
+  if v_wrep is not null and v_brep is null then v_winner := 'w';
+  elsif v_brep is not null and v_wrep is null then v_winner := 'b';
+  elsif v_wrep is null and v_brep is null then v_winner := 'draw';
+  elsif v_w_reached and not v_b_reached then v_winner := 'w';
+  elsif v_b_reached and not v_w_reached then v_winner := 'b';
+  elsif v_w_reached and v_b_reached then
+    v_winner := case when (v_wrep->>'at')::timestamptz <= (v_brep->>'at')::timestamptz then 'w' else 'b' end;
+  else
+    v_w_dist := coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'blocked'))), 99);
+    v_b_dist := coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'blocked'))), 99);
+    if v_w_dist <> v_b_dist then
+      v_winner := case when v_w_dist < v_b_dist then 'w' else 'b' end;
+    else
+      v_w_remain := (v_round->>'moveBudget')::int - (v_wrep->>'movesUsed')::int;
+      v_b_remain := (v_round->>'moveBudget')::int - (v_brep->>'movesUsed')::int;
+      if v_w_remain <> v_b_remain then
+        v_winner := case when v_w_remain > v_b_remain then 'w' else 'b' end;
+      else
+        v_w_time := (v_round->>'timeLimitMs')::int - extract(epoch from ((v_wrep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000;
+        v_b_time := (v_round->>'timeLimitMs')::int - extract(epoch from ((v_brep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000;
+        v_winner := case when v_w_time = v_b_time then 'draw' when v_w_time > v_b_time then 'w' else 'b' end;
+      end if;
+    end if;
+  end if;
+  v_round := jsonb_set(v_round, array['winner'], to_jsonb(v_winner));
+  v_round := jsonb_set(v_round, array['resolvedAt'], to_jsonb(now()));
+  v_rounds := jsonb_set(v_rounds, array[v_round_idx::text], v_round);
+  for r in select * from jsonb_array_elements(v_rounds) loop
+    if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
+  end loop;
+  if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then
+    update public.pvp_games set sans = v_rounds,
+      status = case when v_w_wins > v_b_wins then 'white_won' when v_b_wins > v_w_wins then 'black_won' else 'draw' end,
+      result_reason = 'knight_score', updated_at = now()
+    where id = p_game_id returning * into v_game;
+  else
+    update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  end if;
+  return v_game;
+end; $$;
+grant execute on function public.knight_resolve_round(bigint) to authenticated;
+
+-- 기권 — coord_forfeit과 같은 이유로 "자기 자신을 패자로"만 허용한다.
+create or replace function public.knight_forfeit(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'knight' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  update public.pvp_games set
+    status = case when v_me = v_game.white_uid then 'black_won' else 'white_won' end,
+    result_reason = 'knight_forfeit', updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.knight_forfeit(bigint) to authenticated;
+
+-- ============================================================================
 -- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
 -- ============================================================================
 -- Apple/Facebook 로그인 자체는 Supabase 대시보드 설정(Authentication → Providers)만으로 동작한다 —
