@@ -9071,7 +9071,7 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 아니다). (재지적) 칸끼리 간격을 두고 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와
 // 달랐다 — Board와 완전히 같은 틀(BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근
 // 모서리 없음)을 그대로 가져다 쓴다.
-function CoordRaceGrid({ onCell }) {
+function CoordRaceGrid({ onCell, flash, readOnly }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   return (
@@ -9079,14 +9079,21 @@ function CoordRaceGrid({ onCell }) {
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
+        const isFlash = flash && flash.sq === sq;
         const light = (r + c) % 2 === 0;
         return (
-          <button key={sq} onClick={() => onCell(sq)} className="press"
-            style={{ border: "none", borderRadius: 0, cursor: "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }} />
+          <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={readOnly} className={readOnly ? undefined : "press"}
+            style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }}>
+            {isFlash && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: flash.correct ? "rgba(60,168,60,.8)" : "rgba(196,60,50,.8)" }} />}
+          </button>
         );
       }))}
     </div>
   );
+}
+// 두 보드(내 보드/상대 보드) 위에 붙는 작은 이름표.
+function CoordBoardLabel({ text }) {
+  return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{text}</div>;
 }
 // 보드 아래 크게 띄우는 목표 좌표 텍스트 — 라운드가 끝나(승자가 정해져) 다음 좌표를 기다리는
 // 동안에는 자리만 차지하고 비워 둔다.
@@ -9108,12 +9115,33 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     else if (!payload) { sbSelect("pvp_games?id=eq." + initialGame.id + "&select=*").then((rows) => { if (rows && rows[0]) setGame(rows[0]); }).catch(() => { }); }
   }, [initialGame.id]), true, 3000);
   const isWhite = myUid === game.white_uid;
+  const myColor = isWhite ? "w" : "b";
+  const oppColor = isWhite ? "b" : "w";
   const rounds = game.sans || [];
   const roundIdx = Math.max(0, rounds.length - 1);
   const round = rounds[roundIdx] || null;
-  const myScore = rounds.filter((r) => r.winner === (isWhite ? "w" : "b")).length;
-  const oppScore = rounds.filter((r) => r.winner === (isWhite ? "b" : "w")).length;
+  const myScore = rounds.filter((r) => r.winner === myColor).length;
+  const oppScore = rounds.filter((r) => r.winner === oppColor).length;
   const finished = game.status !== "active";
+  // (v0.5.0 기능, 사용자 요청) 오답 클릭도 칸이 빨갛게, 정답은 초록색으로 잠깐 반짝이게 한다. 내
+  // 클릭은 좌표가 이미 공개돼 있어(round.sq) 서버 응답을 기다리지 않고 그 자리에서 바로 판정해
+  // 반짝인다. 상대 클릭은 coord_click이 (정답이든 오답이든) 매번 기록해 두는 round.clicks[상대색]을
+  // realtime으로 받아, 그 at(시각)이 바뀔 때마다 "새 클릭이 있었다"로 보고 상대 보드에 반짝인다.
+  const [myFlash, setMyFlash] = useState(null); // { sq, correct } | null
+  const [oppFlash, setOppFlash] = useState(null);
+  const myFlashTimerRef = useRef(null);
+  const oppFlashTimerRef = useRef(null);
+  const lastOppClickAtRef = useRef(null);
+  useEffect(() => { setMyFlash(null); setOppFlash(null); lastOppClickAtRef.current = null; }, [roundIdx]);
+  useEffect(() => {
+    const c = round && round.clicks && round.clicks[oppColor];
+    if (!c || !c.at || c.at === lastOppClickAtRef.current) return;
+    lastOppClickAtRef.current = c.at;
+    setOppFlash({ sq: c.sq, correct: c.correct });
+    clearTimeout(oppFlashTimerRef.current);
+    oppFlashTimerRef.current = setTimeout(() => setOppFlash(null), 550);
+  }, [round, oppColor]);
+  useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(oppFlashTimerRef.current); }, []);
   // 라운드 자동 진행 — 서버가 기록한 revealedAt/resolvedAt 시각을 기준으로 로컬 타이머를 걸어, 시간이
   // 다 됐거나(무승부 라운드) 이미 승자가 정해졌으면(짧게 결과를 보여준 뒤) coord_reveal_next로 다음
   // 라운드를 요청한다. 두 참가자의 클라이언트가 거의 동시에 불러도 서버 쪽 행 잠금이 안전하게 막아준다.
@@ -9141,7 +9169,11 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     if (last && (last.winner || last.resolvedAt)) sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
   }, [game.id, rounds.length, finished]);
   const onCell = (sq) => {
-    if (finished || !round || round.winner) return;
+    if (finished || !round || round.winner || myFlash) return;
+    const correct = sq === round.sq;
+    setMyFlash({ sq, correct });
+    clearTimeout(myFlashTimerRef.current);
+    myFlashTimerRef.current = setTimeout(() => setMyFlash(null), 550);
     sbRpc("coord_click", { p_game_id: game.id, p_round: roundIdx, p_sq: sq }).then((g) => g && setGame(g)).catch(() => { });
   };
   if (finished) {
@@ -9162,12 +9194,14 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
         <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppScore}</div>
       </div>
-      {/* (v0.5.0 리디자인, 사용자 요청) 칸 배경을 임의의 단색 대신 분석 탭 등 사이트 전체가 쓰는
-          기본(classic) 보드 스킨 그대로(boardSquareBg) 써서, 미니게임 보드도 다른 화면과 같은
-          체스판으로 보이게 한다. 목표 칸은 더 이상 보드 위에서 빛나지 않고, 그 좌표를 보드 아래
-          텍스트로 띄운다 — 좌표를 실제로 읽고 찾아 누르는 것 자체가 이 게임의 핵심이다. */}
-      <CoordRaceGrid onCell={onCell} />
+      {/* (v0.5.0 기능, 사용자 요청) 정답을 맞혀도 곧장 다음 좌표로 넘어가지 않고(위 useEffect의 최소
+          600ms 지연) 초록 반짝임이 보일 시간을 준 뒤 다음 라운드로 넘어간다. 오답은 라운드를 끝내지
+          않고 그 칸만 빨갛게 반짝인 뒤 계속 시도할 수 있다. */}
+      <CoordBoardLabel text="내 보드" />
+      <CoordRaceGrid onCell={onCell} flash={myFlash} />
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
+      <CoordBoardLabel text="상대 보드" />
+      <CoordRaceGrid onCell={() => { }} flash={oppFlash} readOnly />
     </div>
   );
 }
@@ -9192,6 +9226,15 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
   // "끝났다"는 사실을 부모(CoordRaceGame)에 알려야 한다 — 안 그러면 이미 끝난 대전인데도 뒤로가기가
   // "정말 나가시겠어요?"(기권 확인)를 계속 띄운다.
   useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
+  // (v0.5.0 기능, 사용자 요청) 오답은 라운드를 끝내지 않고 그 칸만 빨갛게, 정답은 초록색으로 반짝인
+  // 뒤 잠깐 멈췄다가 다음 좌표로 넘어간다. 봇이 정답을 "클릭"하는 순간에도 봇 보드에 초록 반짝임을
+  // 준다 — 봇은 항상 정답만 맞히므로(오답을 흉내 내지 않는다) 봇 보드에 빨간 반짝임은 없다.
+  const [myFlash, setMyFlash] = useState(null);
+  const [botFlash, setBotFlash] = useState(null);
+  const myFlashTimerRef = useRef(null);
+  const botFlashTimerRef = useRef(null);
+  useEffect(() => { setMyFlash(null); setBotFlash(null); }, [roundIdx]);
+  useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(botFlashTimerRef.current); }, []);
   const startRound = useCallback(() => {
     const sq = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
     setRounds((rs) => [...rs, { sq, winner: null }]);
@@ -9202,7 +9245,12 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
       return copy;
     });
     const botDelay = COORD_BOT_REACT_MIN_MS + Math.random() * (COORD_BOT_REACT_MAX_MS - COORD_BOT_REACT_MIN_MS);
-    timersRef.current.push(setTimeout(() => resolve("b"), botDelay));
+    timersRef.current.push(setTimeout(() => {
+      setBotFlash({ sq, correct: true });
+      clearTimeout(botFlashTimerRef.current);
+      botFlashTimerRef.current = setTimeout(() => setBotFlash(null), 550);
+      resolve("b");
+    }, botDelay));
     timersRef.current.push(setTimeout(() => resolve("draw"), COORD_ROUND_MS));
   }, []);
   useEffect(() => { if (rounds.length === 0) startRound(); }, [startRound, rounds.length]);
@@ -9213,8 +9261,12 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
     return () => clearTimeout(t);
   }, [round && round.winner, rounds.length, startRound]);
   const onCell = (sq) => {
-    if (!round || round.winner || sq !== round.sq) return;
-    setRounds((rs) => { const i = rs.length - 1; const copy = rs.slice(); copy[i] = { ...copy[i], winner: "w" }; return copy; });
+    if (!round || round.winner || myFlash) return;
+    const correct = sq === round.sq;
+    setMyFlash({ sq, correct });
+    clearTimeout(myFlashTimerRef.current);
+    myFlashTimerRef.current = setTimeout(() => setMyFlash(null), 550);
+    if (correct) setRounds((rs) => { const i = rs.length - 1; const copy = rs.slice(); copy[i] = { ...copy[i], winner: "w" }; return copy; });
   };
   if (finished) {
     const iWon = myScore > botScore, isDraw = myScore === botScore;
@@ -9233,8 +9285,11 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
         <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botScore}</div>
       </div>
-      <CoordRaceGrid onCell={onCell} />
+      <CoordBoardLabel text="내 보드" />
+      <CoordRaceGrid onCell={onCell} flash={myFlash} />
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
+      <CoordBoardLabel text="봇 보드" />
+      <CoordRaceGrid onCell={() => { }} flash={botFlash} readOnly />
     </div>
   );
 }
@@ -20745,6 +20800,7 @@ const CHANGELOG = [
       "미니게임의 체스판·나이트가 지금 장착 중인 보드·기물 스킨 그대로, 실제 대국판과 똑같은 모양(금색 테두리, 칸 사이 간격 없음)으로 보이도록 바꿨어요 — 예전엔 칸 구분 없는 단색 배경에 나이트도 문자 기호(♞)로만 표시됐어요.",
       "좌표 인지 게임·나이트 경주 두 미니게임에도 체스처럼 '봇과 플레이하기'·'친구와 플레이하기'가 생겼어요.",
       "좌표 인지 게임에서 목표 칸이 보드 위에서 빛나는 대신, 그 좌표를 보드 아래에 텍스트로 표시하도록 바꿨어요 — 좌표를 직접 읽고 찾아 눌러야 해요.",
+      "좌표 인지 게임에서 오답을 클릭하면 그 칸이 빨갛게, 정답을 클릭하면 초록색으로 반짝여요 — 오답은 라운드가 끝나지 않고 계속 시도할 수 있고, 정답은 잠깐 반짝인 뒤 다음 좌표로 넘어가요. 내 보드 아래에 상대(또는 봇)의 클릭도 실시간으로 반짝이는 보드가 따로 생겼어요.",
     ]
   },
   {

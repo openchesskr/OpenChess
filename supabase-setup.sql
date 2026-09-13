@@ -1990,21 +1990,27 @@ begin
     return v_game;
   end if;
   v_sq := chr(97 + floor(random() * 8)::int) || (floor(random() * 8)::int + 1)::text;
-  v_rounds := v_rounds || jsonb_build_object('sq', v_sq, 'revealedAt', now(), 'winner', null, 'resolvedAt', null);
+  -- (v0.5.0 기능, 사용자 요청) clicks — 이번 라운드에 각자 마지막으로 시도한 클릭(오답 포함)을 담아
+  -- 둔다. coord_click이 오답이어도 이 필드를 갱신해 두면, 상대 클라이언트가 이 행을 realtime으로
+  -- 받아 "상대가 방금 어느 칸을 클릭했고 맞았는지"를 바로 알 수 있다(빨강/초록 피드백용) — 지금까지는
+  -- 정답을 맞힌 클릭만 기록되고 오답은 서버에 아무 흔적도 안 남아, 상대 화면에 보여줄 방법이 없었다.
+  v_rounds := v_rounds || jsonb_build_object('sq', v_sq, 'revealedAt', now(), 'winner', null, 'resolvedAt', null, 'clicks', jsonb_build_object('w', null, 'b', null));
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
 grant execute on function public.coord_reveal_next(bigint) to authenticated;
 
--- 클릭 보고 — 이 라운드가 아직 안 끝났고 지금이 제한시간 안이며 좌표가 맞을 때만 승자로 기록한다.
--- 서버 시각(now())만 신뢰하고 클라이언트가 보낸 시각은 절대 쓰지 않는다(시계 오차·조작 방지) —
--- 두 참가자가 거의 동시에 호출해도 "for update" 행 잠금이 순서를 강제하므로, 먼저 커밋되는 호출
--- 하나만 승자로 기록되고 그 뒤에 도착하는 호출은 이미 "winner is not null"이라 조용히 무시된다.
+-- 클릭 보고 — 이 라운드가 아직 안 끝났고 지금이 제한시간 안이면, 오답이어도 clicks.<색>에 이번
+-- 시도를 항상 기록해 상대 화면에 실시간으로 보여준다(빨강/초록 피드백용) — 좌표가 맞을 때만 추가로
+-- 승자로도 기록한다. 서버 시각(now())만 신뢰하고 클라이언트가 보낸 시각은 절대 쓰지 않는다(시계
+-- 오차·조작 방지) — 두 참가자가 거의 동시에 정답을 맞혀도 "for update" 행 잠금이 순서를 강제하므로,
+-- 먼저 커밋되는 호출 하나만 승자로 기록되고 그 뒤에 도착하는 호출은 이미 "winner is not null"이라
+-- 조용히 무시된다.
 create or replace function public.coord_click(p_game_id bigint, p_round int, p_sq text)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb;
-  v_round_ms constant int := 4000; v_mycolor text;
+  v_round_ms constant int := 4000; v_mycolor text; v_correct boolean;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2016,8 +2022,16 @@ begin
   v_round := v_rounds -> p_round;
   if (v_round ->> 'winner') is not null then return v_game; end if; -- 이미 끝난 라운드
   if (v_round ->> 'revealedAt')::timestamptz + (v_round_ms || ' ms')::interval < now() then return v_game; end if; -- 시간 초과
-  if v_round ->> 'sq' <> p_sq then return v_game; end if; -- 오답(점수 없이 조용히 무시)
-  v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round || jsonb_build_object('winner', v_mycolor, 'resolvedAt', now()));
+  v_correct := (v_round ->> 'sq' = p_sq);
+  -- clicks 필드가 없는 옛 대국(이 기능 배포 전에 시작된 라운드)도 안전하게 다루도록 없으면 만든다.
+  if v_round -> 'clicks' is null or jsonb_typeof(v_round -> 'clicks') <> 'object' then
+    v_round := jsonb_set(v_round, array['clicks'], jsonb_build_object('w', null, 'b', null));
+  end if;
+  v_round := jsonb_set(v_round, array['clicks', v_mycolor], jsonb_build_object('sq', p_sq, 'correct', v_correct, 'at', now()));
+  if v_correct then
+    v_round := v_round || jsonb_build_object('winner', v_mycolor, 'resolvedAt', now());
+  end if;
+  v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
