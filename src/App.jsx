@@ -10010,16 +10010,12 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     </div>
   );
 
+  // (v0.5.0 리디자인, 사용자 요청) 예전엔 이 페이지 전체가 화면을 덮는 별도 오버레이(고정 배경 +
+  // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
+  // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ maxWidth: 460, margin: "0 auto", padding: "18px 16px 60px" }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 34, height: 34, borderRadius: 10, background: T.ebony2, color: T.ivory, border: "1px solid #000", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><ArrowLeft size={17} /></button>
-          {/* (사용자 요청) 페이지 상단 정중앙에 헤더와 같은 오픈체스 로고를 표시한다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 28, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
-          <span style={{ width: 34 }} />
-        </div>
-        {/* (v0.5.0 기능, 사용자 요청) "일반/스페셜" 토글 — 페이지 최상단(헤더 바로 아래)에 고정. */}
+    <div style={{ maxWidth: 460, margin: "0 auto" }}>
+        {/* (v0.5.0 기능, 사용자 요청) "일반/스페셜" 토글 — 페이지 최상단에 고정. */}
         <div className="inline-flex" style={{ width: "100%", borderRadius: 11, background: "rgba(0,0,0,.28)", border: "1px solid rgba(196,154,80,.3)", padding: 4, gap: 4, marginBottom: 16 }}>
           <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
           <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
@@ -10227,7 +10223,6 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
             </div>
           </div>
         ))}
-      </div>
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
       <AnimatePresence>
@@ -10259,10 +10254,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         )}
       </AnimatePresence>
       {/* (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 화면 밑에 기존 상점 UI를 그대로 이어
-          붙인다(이 fixed 오버레이 자신의 스크롤 영역 안이라, 대국 설정 화면을 내려서 스크롤하면
-          보인다). 분석 탭 PLAY 버튼 등 storeProps 없이 여는 다른 진입 경로는 아무 것도 렌더링하지
-          않아 지금까지와 완전히 동일하다. "스페셜" 토글일 때는 미니게임 그리드만 보여주고 상점은
-          숨긴다. */}
+          붙인다(<main> 안의 이 페이지 자신을 아래로 스크롤하면 보인다). 분석 탭 PLAY 버튼 등
+          storeProps 없이 여는 다른 진입 경로는 아무 것도 렌더링하지 않아 지금까지와 완전히
+          동일하다. "스페셜" 토글일 때는 미니게임 그리드만 보여주고 상점은 숨긴다. */}
       {storeProps && pageMode === "normal" && (
         <div style={{ maxWidth: 460, margin: "0 auto", padding: "0 16px 60px", borderTop: "1px solid rgba(196,154,80,.25)", marginTop: 8, paddingTop: 22 }}>
           <StoreTab {...storeProps} />
@@ -20433,6 +20427,7 @@ const CHANGELOG = [
       "플레이 페이지 스페셜 탭에 미니게임을 실제로 즐길 수 있는 틀(목록·최고 기록·코인 보상·다시하기)이 생겼어요 — 진짜 미니게임이 정해지기 전까지는 테스트용 예시 게임 '칸 반응속도'로 미리 만나볼 수 있어요.",
       "스페셜 탭에 첫 실시간 대전 미니게임 '좌표 인지 게임'이 추가됐어요 — 무작위 좌표가 뜨면 상대보다 먼저 클릭해 점수를 겨뤄요.",
       "스페셜 탭에 두 번째 실시간 대전 미니게임 '나이트 경주'가 추가됐어요 — 나이트로 목표 칸까지 상대보다 먼저 도달하는 5전 3선승 대결이에요. 라운드가 진행될수록 방해 칸이 늘어나요.",
+      "플레이 탭이 다른 탭처럼 상단 헤더·하단 탭바가 함께 보이도록 바뀌었어요 — 예전엔 화면 전체를 덮는 별도 화면이었어요. 대국 중 다른 탭을 둘러봐도 진행 중이던 대국은 끊기지 않고 그대로 이어져요.",
     ]
   },
   {
@@ -28480,20 +28475,27 @@ export default function App() {
   // 보드에 입력된 포지션(sans·fenRoot)을 시드로 넘겨 이 페이지를 연다. /play로 직접 들어오면(주소창에
   // 직접 입력·새로고침) seed 없이 표준 시작 위치로 연다(아래 딥링크 resolver에서 처리).
   const [playGame, setPlayGame] = useState(null); // { sans, fenRoot } | null
+  // (v0.5.0 리디자인, 사용자 요청) PlayPage가 더 이상 화면을 통째로 덮는 오버레이가 아니라 다른
+  // 탭과 똑같이 <main> 안에서 "플레이" 탭(store)일 때만 그려지는 콘텐츠가 됐으므로, 친구 도전장
+  // 수락처럼 어느 탭에 있든 곧장 openPlay를 부르는 진입 경로들도 이제 반드시 함께 탭을 "store"로
+  // 옮겨야 그 자리에서 실제로 보인다(예전엔 오버레이라 탭 값과 무관하게 항상 맨 위에 떴다).
   const openPlay = useCallback((seed) => {
     setSearchOpen(false); setFriendsOpen(false);
     setPlayGame(seed || { sans: [], fenRoot: null });
+    setTab("store"); urlTabRef.current = "store";
     try { if (!window.location.pathname.startsWith("/play")) window.history.pushState({ play: true }, "", "/play"); } catch { }
   }, []);
   const closePlay = useCallback(() => {
     setPlayGame(null);
     try { if (window.location.pathname.startsWith("/play")) window.history.back(); } catch { }
   }, []);
-  // (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 탭으로 전환될 때마다 분석 탭의 PLAY 버튼과
+  // (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 탭으로 처음 전환될 때 분석 탭의 PLAY 버튼과
   // 완전히 같은 진입 경로(openPlay)로 대국 설정 화면을 연다. seed에 withStore를 실어 보내
   // PlayPage가 그 화면 밑에 기존 상점 UI를 이어 붙이게 한다(분석 탭 등 다른 진입 경로는 이 플래그가
-  // 없어 지금까지와 완전히 동일하게 동작한다).
-  useLayoutEffect(() => { if (tab === "store") openPlay({ sans: [], fenRoot: null, withStore: true }); }, [tab, openPlay]);
+  // 없어 지금까지와 완전히 동일하게 동작한다). playGame이 이미 있으면(진행 중인 대국을 두고 다른
+  // 탭에 갔다가 돌아온 경우, 또는 도전장 수락처럼 openPlay가 직접 이 탭으로 이미 옮겨 둔 경우)
+  // 새로 열지 않고 그대로 이어간다 — 그래야 진행 중이던 대국이 탭을 오가도 사라지지 않는다.
+  useLayoutEffect(() => { if (tab === "store" && !playGame) openPlay({ sans: [], fenRoot: null, withStore: true }); }, [tab, playGame, openPlay]);
   // (사용자 요청) /play에서 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인지 — PlayPage가 렌더마다
   // 최신값을 알려준다(popstate 핸들러가 컴포넌트 밖에서도 읽어야 해서 상태 대신 ref로 둔다).
   const pvpPlayActiveRef = useRef(false);
@@ -28669,7 +28671,7 @@ export default function App() {
         }
         return;
       }
-      if (path === "/play") { setPlayGame({ sans: [], fenRoot: null }); return; }
+      if (path === "/play") { setPlayGame({ sans: [], fenRoot: null }); setTab("store"); urlTabRef.current = "store"; return; }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loaded가 false→true로 바뀌는 최초 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없고, openReview/onOpenPuzzle 등은 매번 최신 클로저를 쓰면 충분해 deps에 넣지 않는다).
   }, [loaded]);
@@ -28778,7 +28780,6 @@ export default function App() {
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
       {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} />}
-      {playGame && <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialProps={{ coins: ocCoins, onAwardCoins: (amt) => setOcCoins((c) => c + amt) }} />}
       {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
           대신 정말 기권 처리해도 되는지 한 번 확인한다. */}
       <AnimatePresence>
@@ -28912,7 +28913,17 @@ export default function App() {
             같은 라인 그대로 다시 열어준다. */}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenLearnFen={onOpenLearnFen} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
-        {tab === "store" && <StoreTab coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} />}
+        {/* (v0.5.0 리디자인, 사용자 요청) 플레이 탭도 다른 탭처럼 상단 헤더·하단 탭바가 보이도록,
+            화면을 통째로 덮는 오버레이 대신 <main> 안에서 그려지는 평범한 탭 콘텐츠로 바꿨다. 도감
+            탭과 같은 이유(위 CollectionTab 주석 참고)로 언마운트는 하지 않고 display:none으로만
+            숨긴다 — 그래야 실시간 대국·봇 대국 도중 다른 탭을 잠깐 둘러보고 돌아와도(친구 도전장
+            수락처럼 다른 탭에서 openPlay를 직접 부르는 경로 포함) 대국이 끊기거나 기권 처리되지
+            않는다(위 openPlay/useLayoutEffect가 이 탭으로 자동 전환해 곧장 보여준다). */}
+        {playGame && (
+          <div style={tab === "store" ? undefined : { display: "none" }}>
+            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialProps={{ coins: ocCoins, onAwardCoins: (amt) => setOcCoins((c) => c + amt) }} />
+          </div>
+        )}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
       </main>
 
