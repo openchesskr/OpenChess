@@ -19409,7 +19409,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             <div className="flex justify-end items-center" style={{ marginTop: 8, gap: 8 }}>
               <ImageSourceMenu onFile={onPcScanFile} disabled={pcScanning} busy={pcScanning} label="이미지 스캔" busyLabel="인식하는 중..."
                 buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, background: pcScanning ? "rgba(0,0,0,.06)" : "transparent", color: pcScanning ? T.inkSoft : T.ink, fontWeight: 700, fontSize: 12, border: "1px solid " + (pcScanning ? "#DCCBA8" : T.brass), cursor: pcScanning ? "default" : "pointer" }} />
-              <button onClick={parsePcInput} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
+              <button onClick={() => parsePcInput()} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
             </div>
             {/* (사용자 요청) "chess.com 대국에서 선택" 토글 버튼을 없애고, 연동돼 있으면 입력 박스 아래에
                 chess.com 통계·최근 대국 목록을 기본으로 펼쳐 둔다 — 유산 만들기처럼 그 자리에서 바로
@@ -20861,6 +20861,7 @@ const CHANGELOG = [
       "좌표 인지 게임에서 오답을 클릭하면 그 칸이 빨갛게, 정답을 클릭하면 초록색으로 반짝여요 — 오답은 라운드가 끝나지 않고 계속 시도할 수 있고, 정답은 잠깐 반짝인 뒤 다음 좌표로 넘어가요. 내 보드 아래에 상대(또는 봇)의 클릭도 실시간으로 반짝이는 보드가 따로 생겼어요.",
       "나이트 경주에도 내 보드 아래에 상대(또는 봇)의 보드가 따로 생겨서, 상대 나이트가 한 칸씩 움직이는 걸 실시간으로 볼 수 있어요 — 봇도 이제 목표 칸까지 순간이동하지 않고 한 수씩 실제로 이동해요.",
       "좌표 인지 게임·나이트 경주 두 미니게임 모두, 점수 아래에 전체 라운드를 점(dot)으로 표시해 지금까지 이기고 진 흐름을 한눈에 볼 수 있어요.",
+      "퍼즐 만들기 1단계에서 PGN·FEN을 입력하고 '확인'을 눌러도 아무 반응이 없던 문제를 고쳤어요.",
     ]
   },
   {
