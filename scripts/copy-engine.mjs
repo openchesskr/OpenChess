@@ -39,14 +39,31 @@ writeFileSync(join(out171, "boot-single.js"), "self.enginePartsCount=" + PARTS_1
 writeFileSync(join(out171, "boot-mt.js"), "self.enginePartsCount=" + PARTS_171 + ";importScripts('" + mtJs171 + "');\n");
 console.log("wrote boot-single.js, boot-mt.js (17.1 다중 조각 부트스트랩)");
 
-// (8z5dbt 세션 기능 → v0.4.9 변경) Stockfish 18 정식(비-Lite) 대형 신경망 — npm 패키지가 이 빌드는
-// 조각내지 않고 wasm 파일 하나(~113MB, Vercel의 배포 파일당 100MB 제한을 넘음)로만 배포해서,
-// 예전엔 여기서 빌드 시점마다 100MB 미만 조각(-part-N.wasm)으로 직접 쪼개 public/engine/18에
-// 두었다(약 216MB) — 그런데 이러면 매 배포마다 이 216MB가 통째로 다시 패키징돼 Vercel Deployment
-// Storage(무료 한도 10GB) 초과의 주범이 됐다.
-// (v0.4.9 기능, 사용자 요청) 이 wasm은 스톡피시18 npm 버전을 올릴 때만 바뀌는 정적 자산이라, 매
-// 빌드마다 다시 만들 필요가 없다 — scripts/upload-engine18-blob.mjs로 딱 한 번 Vercel Blob에
-// 업로드해 두고, App.jsx의 ENGINE_PROFILES.full18이 그 고정된 절대 URL을 직접 참조한다. 그래서
-// 이 스크립트(copy-engine.mjs)는 더 이상 engine/18을 건드리지 않는다 — stockfish18 npm 패키지
-// 버전을 올렸다면, 아래 명령으로 새 조각을 다시 올리고 App.jsx의 두 URL만 갱신하면 된다:
-//   BLOB_READ_WRITE_TOKEN=... node scripts/upload-engine18-blob.mjs
+// (8z5dbt 세션 기능 → v0.4.9 → v0.5.1 변경) Stockfish 18 정식(비-Lite) 대형 신경망 — npm 패키지가
+// 이 빌드는 조각내지 않고 wasm 파일 하나(~113MB, Vercel의 배포 파일당 100MB 제한을 넘음)로만
+// 배포한다. v0.4.9에서는 빌드 시점마다 100MB 미만 조각으로 직접 쪼개 public/engine/18에 두었다가
+// (약 216MB, 매 배포마다 다시 패키징돼 Vercel Deployment Storage 10GB 무료 한도 초과의 주범이 됨)
+// Vercel Blob 업로드로 옮겼는데, 그 저장소가 실제 배포 환경에서 다운로드가 몇 분이 지나도 끝나지
+// 않는 문제를 겪어(원인 미상, README v0.5.1 참고) GitHub Release 첨부파일로 다시 옮겼다 — 신경망
+// (wasm, 108MB) 자체는 GitHub Release(태그 engine-sf18-v1)에 올려 두고 그 고정 URL만 참조한다.
+// public/engine 전체가 .gitignore 대상(다른 두 엔진처럼 매번 npm 패키지에서 재생성)이라, 로더
+// 스크립트(stockfish-18-single.js)와 그걸 불러오는 작은 부트스트랩(boot-single.js)도 커밋해 두는
+// 대신 여기서 이 두 파일을 같은 방식으로 매번 생성한다 — wasm만 fetch를 가로채 GitHub Release의
+// 절대 URL로 대신 받아오도록 self.fetch를 오버라이드한다(로더가 계산하는 상대 경로가 무엇이든
+// 상관없이 ".wasm"이 들어간 요청은 전부 이 URL로 연결된다). 스톡피시18 npm 버전을 올렸다면,
+// node_modules/stockfish18/bin의 wasm을 새 릴리스 태그로 다시 올리고 아래 SF18_WASM_URL만 갱신하면
+// 된다(로더 js는 npm 버전이 바뀔 때마다 여기서 자동으로 새로 복사된다).
+const full18 = dirname(require.resolve("stockfish18/package.json")) + "/bin";
+const out18 = "public/engine/18-gh"; mkdirSync(out18, { recursive: true });
+const SF18_LOADER = "stockfish-18-single.js";
+const SF18_WASM_URL = "https://github.com/openchesskr/OpenChess/releases/download/engine-sf18-v1/stockfish-18-single.wasm";
+{
+  const src = join(full18, SF18_LOADER);
+  if (existsSync(src)) { copyFileSync(src, join(out18, SF18_LOADER)); console.log("copied", SF18_LOADER); }
+  else console.warn("missing", SF18_LOADER, "(빌드명이 다를 수 있음 — node_modules/stockfish18/bin 확인)");
+}
+writeFileSync(join(out18, "boot-single.js"),
+  "(function(){var W=" + JSON.stringify(SF18_WASM_URL) + ";var f=self.fetch.bind(self);" +
+  "self.fetch=function(u,o){if(typeof u===\"string\"&&u.indexOf(\".wasm\")!==-1)return f(W,{credentials:\"omit\"});return f(u,o);};" +
+  "importScripts(" + JSON.stringify("./" + SF18_LOADER) + ");})();\n");
+console.log("wrote boot-single.js (18 GitHub Release wasm 리다이렉트)");
