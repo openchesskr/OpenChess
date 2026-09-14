@@ -211,12 +211,21 @@ const ENGINE_PROFILES = {
   full18: {
     id: "full18", label: "Stockfish 18",
     urls: ["https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-single.js"],
-    mtUrl: "https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-mt.js",
     parts: 2,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
-    // (v0.5.1 버그 수정) 신경망 조각을 합치면 약 108MB(17.1의 80MB보다도 큼)인데 게다가 외부 CDN에서
-    // 받아야 해서, 다른 조각 프로필과 공유하던 45초 타임아웃이 다 받기도 전에 끝나 버려 "연결
-    // 실패"로 보이는 경우가 많았다 — engineBootList 주석 참고.
-    bootTimeoutMs: 90000,
+    // (v0.5.1 버그 수정, 사용자 제보로 실제 재현 후 확정) "Stockfish 18을 고르면 항상 연결 실패로
+    // 멈춘다" — 처음엔 45초 타임아웃이 너무 짧다고 보고 90초로 늘렸는데도 여전히 재현됐다. 사용자가
+    // 브라우저 Network 탭을 직접 확인해 준 덕분에 진짜 원인을 확정할 수 있었다: 리소스 자체는
+    // 멀쩡히 살아있고(주소창에 직접 붙여넣으면 즉시 받아짐) 실제로 약 194MB가 전송되고 있었다 —
+    // 즉 다운로드가 "막힌" 게 아니라 그 사용자의 실제 회선 기준으로 108MB(조각 wasm 합계)를 받는 데
+    // 90초로도 부족할 만큼 오래 걸렸을 뿐이었다. 게다가 그 194MB는 mtUrl(멀티스레드 빌드)이 먼저
+    // 시도되다 90초 만에 타임아웃되면, 사실상 같은 크기의 single(단일 스레드) 빌드를 처음부터 또
+    // 받는 구조라 실질적으로 낭비되고 있었다(Network 탭에 boot-mt.js·boot-single.js 둘 다 찍힘) —
+    // 멀티스레드 지원 자체가 안 되는 경우라면 보통 몇 초 안에 명확한 에러로 실패하지 지금처럼 느린
+    // 회선 때문에 90초를 다 채우는 경우는 없으므로, 느린 회선에서는 두 번째 시도가 거의 도움이 안
+    // 되면서 대기 시간만 두 배로 만든다. mtUrl 시도 자체를 없애 한 번만 받게 하고(다른 두 프로필처럼
+    // 자체 wasm CPU 스레드 이득보다 "일단 한 번에 성공하는 것"이 더 중요하다고 판단), 그 한 번의
+    // 시도에는 훨씬 넉넉한 타임아웃(4분)을 준다.
+    bootTimeoutMs: 240000,
   },
 };
 // (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
@@ -20886,7 +20895,7 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 const CHANGELOG = [
   {
     version: "0.5.1", date: "2026.9.13", dev: ["openchesskr", "G13sus4"], items: [
-      "Stockfish 18 엔진을 고르면 항상 '연결 실패'로 멈추던 문제를 고쳤어요 — 신경망 파일이 커서 받는 데 시간이 걸리는데 기다리는 시간이 너무 짧게 잡혀 있었어요.",
+      "Stockfish 18 엔진을 고르면 항상 '연결 실패'로 멈추던 문제를 고쳤어요 — 신경망 파일이 108MB나 돼서 느린 회선에서는 받는 데 몇 분씩 걸릴 수 있는데, 기다려주는 시간이 그보다 훨씬 짧게 잡혀 있었어요.",
       "퍼즐 이름을 바꿔도 다른 화면(특히 오늘의 퍼즐)에서는 바꾸기 전 이름이 계속 보이던 문제를 고쳤어요.",
       "실시간 대국에서 상대의 시간이 다 됐는데 상대가 결과를 보고하지 않고 화면을 나가버려도(인터넷이 끊기거나 탭을 닫는 등), 이제 내 승리가 확실하게 확정돼요 — 예전엔 이런 경우 대국이 끝나지 않은 것처럼 서버에 남아, 다음에 새 상대를 찾으면 그 끝난 대국으로 자꾸 되돌아가는 문제가 있었어요.",
     ]
@@ -22773,6 +22782,12 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
           </span>
         </div>
         <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>분석 엔진</div>
+        {/* (v0.5.1 기능) Stockfish 18은 신경망 파일이 108MB나 돼 느린 회선에서는 부팅에 몇 분씩 걸릴 수
+            있다(실제 재현 사례) — "불러오는 중…"이 오래 떠 있으면 멈춘 것처럼 보이므로, 이 프로필을
+            고른 채 아직 연결되지 않은 동안에는 그 이유를 짧게 안내한다. */}
+        {enginePref === "full18" && engineStatus !== "ready" && engineStatus !== "off" && (
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>신경망 파일이 커서(108MB) 회선에 따라 부팅에 몇 분 걸릴 수 있어요.</div>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ANALYSIS_ENGINE_IDS.map((id) => {
             const p = ENGINE_PROFILES[id];
