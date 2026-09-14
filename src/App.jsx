@@ -198,34 +198,32 @@ const ENGINE_PROFILES = {
   },
   // (8z5dbt 세션 기능) 셋 중 가장 강력한 엔진 — Stockfish 18의 정식(비-Lite) 대형 신경망 빌드. npm
   // 패키지가 이 빌드는 조각내지 않고 wasm 파일 하나(~113MB)로만 배포해서, Vercel의 배포 파일당
-  // 100MB 제한을 넘는다 — 예전엔 scripts/copy-engine.mjs가 빌드 시점에 100MB 미만 조각(-part-N.wasm)
-  // 으로 직접 쪼개 public/engine/18에 커밋해 뒀지만(약 216MB), 이러면 매 배포마다 그 216MB가 통째로
-  // 다시 패키징돼 Vercel Deployment Storage(무료 한도 10GB) 한도를 순식간에 넘겨버렸다.
-  // (v0.4.9 기능, 사용자 요청) scripts/upload-engine18-blob.mjs로 한 번만 Vercel Blob에 조각·부트
-  // 스크립트를 업로드해 두고, 여기서는 그 절대 URL만 참조한다 — public/engine/18은 더 이상 git에
-  // 커밋되지 않는다(.gitignore). boot-single.js/boot-mt.js는 self.location이 아니라 업로드 시점에
-  // 확정된 절대 URL만 참조하도록 다시 생성돼 있어서(App.jsx의 외부 URL 워커 생성 경로 — 467줄
-  // 부근 — 가 blob: 오브젝트 URL로 감싸 self.location을 실제 파일 위치와 다르게 만들기 때문), 이
-  // 절대 URL을 그대로 써도 문제없이 동작한다. 스톡피시18 npm 버전을 올릴 때만 그 업로드 스크립트를
-  // 다시 돌리고 아래 두 URL을 새로 받은 값으로 갱신하면 된다.
+  // 100MB 제한을 넘는다.
+  // (v0.4.9, 폐기됨) 한동안 Vercel Blob에 조각·부트 스크립트를 올려 그 절대 URL을 참조했다
+  // (scripts/upload-engine18-blob.mjs) — 하지만 사용자 제보로 실제 재현해 보니, 재업로드해도 URL이
+  // 그대로였고(스토어 자체는 멀쩡했다는 뜻) 실제로 194MB가 전송되는 것까지 Network 탭으로 확인됐는데도
+  // 몇 분이 지나도 끝나지 않는 문제가 계속됐다(원인은 이 앱 코드 밖의 무언가로 추정되나 끝내 특정하지
+  // 못했다 — Vercel Blob의 그 스토어·리전에 국한된 문제였을 가능성). 45초→90초→240초로 타임아웃을
+  // 늘려도, mtUrl 이중 다운로드를 없애도 해결되지 않아 저장소 자체를 바꿨다.
+  // (v0.5.1 기능) GitHub Release 첨부파일로 교체 — 파일당 2GB까지 허용해 조각낼 필요가 아예 없고
+  // (public/engine/18-gh/boot-single.js가 그 신경망 하나만 절대 URL로 가리킨다), GitHub 자체 CDN이
+  // 서빙한다. 로더 스크립트(21KB)는 작아서 그냥 git에 커밋해 뒀다(public/engine/18-gh/). 이제
+  // urls[0]가 "/"로 시작하는 같은 출처 경로라 워커도 new Worker(url)로 직접 만들어지고(엔진 워커
+  // 생성 로직 참고), self.location도 실제 경로를 그대로 가리켜 boot-single.js 안의 상대 경로
+  // importScripts가 그대로 동작한다 — Vercel Blob 시절처럼 self.location이 blob: URL로 뒤틀리는
+  // 문제 자체가 없다. 신경망 자체(wasm)만 boot-single.js 안에서 GitHub Release의 절대 URL로
+  // fetch를 가로채 받아온다. 스톡피시18 npm 버전을 올릴 때는 새 wasm/js를 새 태그로 릴리스하고
+  // 이 두 파일(boot-single.js의 WASM_URL·public/engine/18-gh/stockfish-18-single.js)을 함께
+  // 갱신하면 된다.
   full18: {
     id: "full18", label: "Stockfish 18",
-    urls: ["https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-single.js"],
-    parts: 2,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
-    // (v0.5.1 버그 수정, 사용자 제보로 실제 재현 후 확정) "Stockfish 18을 고르면 항상 연결 실패로
-    // 멈춘다" — 처음엔 45초 타임아웃이 너무 짧다고 보고 90초로 늘렸는데도 여전히 재현됐다. 사용자가
-    // 브라우저 Network 탭을 직접 확인해 준 덕분에 진짜 원인을 확정할 수 있었다: 리소스 자체는
-    // 멀쩡히 살아있고(주소창에 직접 붙여넣으면 즉시 받아짐) 실제로 약 194MB가 전송되고 있었다 —
-    // 즉 다운로드가 "막힌" 게 아니라 그 사용자의 실제 회선 기준으로 108MB(조각 wasm 합계)를 받는 데
-    // 90초로도 부족할 만큼 오래 걸렸을 뿐이었다. 게다가 그 194MB는 mtUrl(멀티스레드 빌드)이 먼저
-    // 시도되다 90초 만에 타임아웃되면, 사실상 같은 크기의 single(단일 스레드) 빌드를 처음부터 또
-    // 받는 구조라 실질적으로 낭비되고 있었다(Network 탭에 boot-mt.js·boot-single.js 둘 다 찍힘) —
-    // 멀티스레드 지원 자체가 안 되는 경우라면 보통 몇 초 안에 명확한 에러로 실패하지 지금처럼 느린
-    // 회선 때문에 90초를 다 채우는 경우는 없으므로, 느린 회선에서는 두 번째 시도가 거의 도움이 안
-    // 되면서 대기 시간만 두 배로 만든다. mtUrl 시도 자체를 없애 한 번만 받게 하고(다른 두 프로필처럼
-    // 자체 wasm CPU 스레드 이득보다 "일단 한 번에 성공하는 것"이 더 중요하다고 판단), 그 한 번의
-    // 시도에는 훨씬 넉넉한 타임아웃(4분)을 준다.
+    urls: [ENGINE_BASE + "engine/18-gh/boot-single.js"],
+    // 신경망이 108MB라 느린 회선에서는 받는 데 시간이 걸릴 수 있어 넉넉히 둔다(v0.5.1).
     bootTimeoutMs: 240000,
+    // (v0.5.1) 조각(parts)을 더 이상 쓰지 않지만(GitHub Release가 파일 하나를 그대로 서빙), 여전히
+    // 신경망 자체가 커서 게임 리뷰용 풀을 한꺼번에 많이 띄우면 부팅 경합이 심해진다 — analyzePoolSize/
+    // getAnalysisPool이 이 프로필을 "무거운 프로필"로 계속 식별할 수 있도록 parts 대신 이 플래그를 둔다.
+    heavy: true,
   },
 };
 // (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
@@ -1896,7 +1894,7 @@ const HEAVY_ENGINE_BOOT_BATCH = 2;
 function analyzePoolSize(profile) {
   const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
   const prof = ENGINE_PROFILES[profile];
-  if (prof && prof.parts) return HEAVY_ENGINE_POOL_SIZE;
+  if (prof && (prof.parts || prof.heavy)) return HEAVY_ENGINE_POOL_SIZE;
   return Math.max(2, Math.min(cores, 32));
 }
 async function bootWorkersStaggered(urls, size, batch) {
@@ -1913,7 +1911,7 @@ function getAnalysisPool(profile, urls) {
   if (cached) return cached;
   const size = analyzePoolSize(profile);
   const prof = ENGINE_PROFILES[profile];
-  const promise = (prof && prof.parts)
+  const promise = (prof && (prof.parts || prof.heavy))
     ? bootWorkersStaggered(urls, size, HEAVY_ENGINE_BOOT_BATCH)
     : Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
   analysisPoolCache.set(profile, promise);
@@ -20895,7 +20893,7 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 const CHANGELOG = [
   {
     version: "0.5.1", date: "2026.9.13", dev: ["openchesskr", "G13sus4"], items: [
-      "Stockfish 18 엔진을 고르면 항상 '연결 실패'로 멈추던 문제를 고쳤어요 — 신경망 파일이 108MB나 돼서 느린 회선에서는 받는 데 몇 분씩 걸릴 수 있는데, 기다려주는 시간이 그보다 훨씬 짧게 잡혀 있었어요.",
+      "Stockfish 18 엔진을 고르면 항상 '연결 실패'로 멈추던 문제를 고쳤어요 — 신경망 파일을 받아오던 저장소가 느려지거나 응답이 없는 경우가 있어서, 더 안정적인 저장소로 옮겼어요.",
       "퍼즐 이름을 바꿔도 다른 화면(특히 오늘의 퍼즐)에서는 바꾸기 전 이름이 계속 보이던 문제를 고쳤어요.",
       "실시간 대국에서 상대의 시간이 다 됐는데 상대가 결과를 보고하지 않고 화면을 나가버려도(인터넷이 끊기거나 탭을 닫는 등), 이제 내 승리가 확실하게 확정돼요 — 예전엔 이런 경우 대국이 끝나지 않은 것처럼 서버에 남아, 다음에 새 상대를 찾으면 그 끝난 대국으로 자꾸 되돌아가는 문제가 있었어요.",
     ]
