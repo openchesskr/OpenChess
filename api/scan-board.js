@@ -29,6 +29,18 @@ function isModelUnavailableError(err) {
   const msg = ((err && err.message) || "").toLowerCase();
   return /not found|not supported|is not available|deprecated|invalid model|unknown model|no longer|unrecognized model/.test(msg);
 }
+// (v0.5.1 버그 수정, 사용자 제보) "high demand"/과부하 오류를 다른 오류와 똑같이 즉시 실패로 처리하던
+// 문제 — Gemini가 일시적으로 밀려 있을 때 돌려주는 "This model is currently experiencing high
+// demand..." 같은 오류는 잠깐 뒤 같은 요청을 다시 보내면 성공하는 경우가 흔한, 말 그대로 일시적인
+// 문제인데도 isModelUnavailableError에 걸리지 않아 곧장 던져져 전체 요청이 그 자리에서 끝나 버렸다
+// (모델 자체가 없다는 오류만 재시도 대상이었다). 특히 이 세션에서 재시도 3회를 직렬에서 부분
+// 병렬(동시 2회)로 바꾼 뒤로는 짧은 시간에 여러 요청이 한꺼번에 나가 이 과부하 오류를 더 쉽게 유발할
+// 수 있어 더 중요해졌다. 이런 오류는 별도로 감지해 짧게 쉬었다가 한 번 더 시도한다.
+function isTransientOverloadError(err) {
+  const msg = ((err && err.message) || "").toLowerCase();
+  return /high demand|overloaded|rate limit|too many requests|quota exceeded|resource_exhausted|try again later|503|429/.test(msg);
+}
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 // (v0.3.8 기능) 사용자 요청 — 인식률 개선. 예전엔 모델에게 곧장 압축된 FEN 문자열("rnbqkbnr/8/..."
 // 처럼 빈 칸 개수를 숫자로 뭉친 표기)을 만들어 달라고 했는데, 이 압축 과정 자체가 LLM이 흔히 틀리는
@@ -196,6 +208,23 @@ async function callGemini(apiKey, safeMediaType, image) {
   }
   throw lastErr || new Error("사용 가능한 Gemini 모델을 찾지 못했어요.");
 }
+// callGemini를 감싸, "high demand"류 일시적 과부하 오류만 짧게 쉬었다가 한 번 더 시도한다. 그래도
+// 실패하면(또는 다른 종류의 오류면) 예외를 던지는 대신 { failed:true, error } 형태로 돌려준다 — 아래
+// handler가 여러 시도를 병렬로 묶어 보내는 구조라, 한 시도의 실패로 나머지 시도까지 통째로 무산되지
+// 않게 하기 위해서다(예전엔 어느 한 번이라도 이 오류가 나면 그 즉시 전체 요청이 실패했다).
+async function callGeminiResilient(apiKey, safeMediaType, image) {
+  try {
+    return await callGemini(apiKey, safeMediaType, image);
+  } catch (e) {
+    if (!isTransientOverloadError(e)) return { kind: null, fenBoard: null, text: null, confidence: null, failed: true, error: e };
+    await sleep(700 + Math.floor(Math.random() * 500));
+    try {
+      return await callGemini(apiKey, safeMediaType, image);
+    } catch (e2) {
+      return { kind: null, fenBoard: null, text: null, confidence: null, failed: true, error: e2 };
+    }
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 지원합니다." }); return; }
@@ -231,16 +260,17 @@ export default async function handler(req, res) {
       if (r.kind === "board" && isPlausibleBoard(r.fenBoard) && isSanePieceCounts(r.fenBoard) && countTotalPieces(r.fenBoard) >= RESCAN_MIN_PIECES) return true;
       return false;
     };
-    const results = [await callGemini(apiKey, safeMediaType, image)];
+    const results = [await callGeminiResilient(apiKey, safeMediaType, image)];
     if (!isGoodEnough(results[0])) {
       const rest = await Promise.all([
-        callGemini(apiKey, safeMediaType, image),
-        callGemini(apiKey, safeMediaType, image),
+        callGeminiResilient(apiKey, safeMediaType, image),
+        callGeminiResilient(apiKey, safeMediaType, image),
       ]);
       results.push(...rest);
     }
-    let last = null, best = null, bestCount = -1;
+    let last = null, best = null, bestCount = -1, firstError = null;
     for (const r of results) {
+      if (r.failed) { if (!firstError) firstError = r.error; continue; }
       if (r.kind === "text" && r.text) { last = r; break; }
       if (r.kind === "board" && isPlausibleBoard(r.fenBoard) && isSanePieceCounts(r.fenBoard)) {
         const n = countTotalPieces(r.fenBoard);
@@ -253,6 +283,12 @@ export default async function handler(req, res) {
     }
     const finalBoard = best;
     if (!finalBoard) {
+      // 모든 시도가 오류로 실패했다면(인식 자체가 애매해서가 아니라) 그 오류를 그대로 보여준다 —
+      // 사용자가 "인식하지 못했어요"만 보고는 다시 찍어도 소용없는 일시적 서버 문제인지 구분할 수 없다.
+      if (firstError && results.every((r) => r.failed)) {
+        res.status(502).json({ error: String(firstError.message || firstError) });
+        return;
+      }
       res.status(502).json({ error: "이미지에서 체스판이나 PGN·FEN 텍스트를 인식하지 못했어요." });
       return;
     }
