@@ -3788,7 +3788,7 @@ function useCountUp(target, durationMs, decimals = 0) {
   }, [target, durationMs, decimals]);
   return target == null ? null : display;
 }
-function MoveTile({ m, ply, onClick, onFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
+function MoveTile({ m, ply, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);   // 비이론 수는 개발자가 추가한 키워드만 표기
@@ -3815,7 +3815,9 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, statsLoading, questBadge
                 <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? "이론" : "…")}</span>
               </div>
             </div>
-            <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}><Play size={11} /> 분석</button>
+            {!hideFocus && (
+              <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}><Play size={11} /> 분석</button>
+            )}
           </div>
           <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, cursor: "pointer" }}>
             {/* (사용자 요청) "a/b" 회수 표기가 자릿수가 많아지면 잘려 보이던 문제, 그리고 채택률(%)
@@ -11661,9 +11663,14 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 보충이 전부 표준 시작 위치를 전제) 그 훅 자체를 fenRoot 인식하게 고치는 건 위험이 크다 — 대신
   // ReviewPage의 엔진 라인 effect(fenOfRoot·colorOfRoot·pvUciToSans(...,fenRoot) 패턴, 이미 FEN 인식)를
   // 그대로 옮겨온, 훨씬 단순한 별도 effect로 posEval·engineLines·curDepth만 채운다.
+  // (v0.5.1 기능, 사용자 요청) FEN 모드에서도 "다음 수" 블록을 보여준다 — 다만 이 위치는 이론 DB에
+  // 없으므로(book/adopt/games 같은 크라우드소싱 데이터 자체가 존재하지 않는다) 실제 후보 수는 이미
+  // 같은 요청으로 받아 둔 엔진 MultiPV 결과(위 engineLines가 쓰는 것과 같은 raw 배열, multipv 5)에서
+  // 그대로 뽑는다 — 순위 1위는 "최선의 수"(best), 나머지는 "좋은 수"(good)로 표시한다.
+  const [fenMoves, setFenMoves] = useState([]);
   const [fenEval, setFenEval] = useState({ posEval: null, engineLines: [], linesPending: false, curDepth: null });
   useEffect(() => {
-    if (!fenRoot || !liveOn || engine.status !== "ready") { setFenEval({ posEval: null, engineLines: [], linesPending: false, curDepth: null }); return; }
+    if (!fenRoot || !liveOn || engine.status !== "ready") { setFenEval({ posEval: null, engineLines: [], linesPending: false, curDepth: null }); setFenMoves([]); return; }
     let cancelled = false;
     const fen = fenOfRoot(fenRoot, sans);
     const baseWhite = colorOfRoot(fenRoot, sans.length) === "w" ? 1 : -1;
@@ -11672,6 +11679,20 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
       : { cp: ev.cp * baseWhite };
     const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, 15, fenRoot) }))).slice(0, 3);
+    // 엔진 라인과 같은 raw MultiPV 결과에서 각 줄의 첫 수만 뽑아 "다음 수" 블록 형태(MoveTile이
+    // 기대하는 필드)로 바꾼다 — book/adopt/games는 이 위치엔 존재하지 않는 데이터라 그대로 없앤다.
+    const toMoveTiles = (raw) => {
+      const seen = new Set(); const out = [];
+      (raw || []).forEach((pv, i) => {
+        if (!pv || !pv.pv || !pv.pv.length) return;
+        const san = pvUciToSans(sans, pv.pv, 1, fenRoot)[0];
+        if (!san || seen.has(san)) return;
+        seen.add(san);
+        const e = mkEv(pv);
+        out.push({ san, kind: i === 0 ? "best" : "good", evalCp: e.cp != null ? e.cp : null, mate: e.mate != null ? e.mate : null, adopt: null, games: null, book: false });
+      });
+      return out;
+    };
     // (버그 수정) 분석 풀(getAnalysisPool)이 돌려주는 워커 래퍼의 evaluateMulti는 공용 엔진(engine)과
     // 인자 개수가 다르다 — onProgress 없이 (fen,d,multipv,mt,onLines,slot) 6개뿐이다(callEvaluateMulti
     // 주석 참고). 순위 1위 줄(top)의 평가·depth를 posEval·curDepth로도 함께 쓴다.
@@ -11685,6 +11706,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         posEval: (top && (top.cp != null || top.mate != null)) ? mkEv(top) : prev.posEval,
         curDepth: (top && top.depth != null && (prev.curDepth == null || top.depth > prev.curDepth)) ? top.depth : prev.curDepth,
       }));
+      const mt = toMoveTiles(raw);
+      if (mt.length) setFenMoves(mt);
     };
     (async () => {
       try {
@@ -11706,7 +11729,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     return () => { cancelled = true; };
   }, [fenRoot, key, liveOn, engine.status, engine.profile]);
   const { moves, posGames, statsLoading, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
-    ? { moves: [], posGames: null, statsLoading: false, engineNote: null, ...fenEval }
+    ? { moves: fenMoves, posGames: null, statsLoading: false, engineNote: null, ...fenEval }
     : mergedMoves;
   // (v0.2.2) 후보 블록에 지금 떠 있는 각 수의 확정 등급(pending 제외)을 pin — 아래 마지막 수 재평가
   // effect가 이 값을 그대로 재사용해 블록과 보드·현재 수 블록의 수 체계 아이콘을 일치시킨다. 등급은
@@ -12083,7 +12106,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [curStatLoading, setCurStatLoading] = useState(false);
   useEffect(() => {
     let cc = false; setCurStat(null);
-    if (!lastSan || !liveOn) { setCurStatLoading(false); return; }
+    // (v0.5.1 버그 수정) FEN 모드의 sans는 "이 FEN부터 둔 수순"이라 표준 시작 위치 기준의 Lichess
+    // 조회(fetchLichess)와 무관하다 — liveOn만으로는 이 조회 자체를 막지 못해(liveOn은 실시간 엔진
+    // 평가용 플래그일 뿐), FEN 모드 현재 수 블록에 전혀 무관한 위치의 채택률·승률 통계가 섞여
+    // 들었다. fenRoot가 있으면 아예 조회하지 않는다.
+    if (!lastSan || !liveOn || fenRoot) { setCurStatLoading(false); return; }
     setCurStatLoading(true);
     fetchLichess(sans.slice(0, -1)).then((r) => {
       if (cc || !r) return;
@@ -12091,7 +12118,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       if (mm) setCurStat({ wdl: mm.wdl, adopt: mm.adopt, games: mm.games, posTotal: r.posTotal });
     }).catch(() => { }).finally(() => { if (!cc) setCurStatLoading(false); });
     return () => { cc = true; };
-  }, [key, liveOn]);
+  }, [key, liveOn, fenRoot]);
   // (사용자 요청) v0.4.5/0.4.6에서 일반 수 블록(MoveTile)에만 적용됐던 리체스 통계 개선(0에서
   // 실제 값까지 세어 올라가는 애니메이션, 채택률 소수 둘째 자리 표기, 더 진한 강조색)을 이 "현재
   // 수 블록"에도 완전히 동일하게 적용한다.
@@ -12143,7 +12170,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
                 React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
                 감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
-            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} statsLoading={statsLoading} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} onQuestBadgeClick={onQuestBadgeClick ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            {/* (v0.5.1 기능) FEN 모드의 수 블록은 goFen(이론/퀘스트 추적 없이 그냥 그 수를 둠)으로
+                두고, 일일 퀘스트 배지와 "분석"(집중 분석 진입) 버튼은 전부 표준 시작 위치 데이터를
+                전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
+            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} statsLoading={statsLoading} onClick={() => (fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => enterFocus(m)} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
             {nb.length > 3 && (
               <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                 <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -12288,8 +12318,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             <>
               {/* (18차 기능4) 주요 분기점이 설정된 위치는 기존 블록 그대로, 미설정 위치는 같은 디자인의
                   "수 추천" 블록(로고·텍스트만 교체)으로 이 위치의 추천 수와 그 이유를 보여준다.
-                  (18차 UI9) 마스코트는 현재 수 블록에서 이 블록의 우상단으로 이동. */}
-              {(() => {
+                  (18차 UI9) 마스코트는 현재 수 블록에서 이 블록의 우상단으로 이동.
+                  (v0.5.1 버그 수정) branchFor/recommendReasonFor가 순수하게 sans.join(" ")만으로
+                  키를 만드는데, FEN 모드도 아직 한 수도 안 뒀을 때는 sans가 똑같이 []라 표준 시작
+                  위치와 키가 겹친다 — 그 결과 전혀 무관한 FEN 포지션에서 "1.e4·1.d4가 압도적" 같은
+                  표준 오프닝 추천 문구가 그대로 노출됐다(실제 재현 확인). 이 카드 자체가 표준 시작
+                  위치의 큐레이션 데이터를 전제하므로 FEN 모드에서는 통째로 숨긴다. */}
+              {!fenRoot && (() => {
                 const branch = branchFor(key);
                 const rec = !branch ? (moves.find((m) => m.book && m.isMain) || moves.find((m) => m.book) || moves[0] || null) : null;
                 const recSan = rec ? (rec.disp || rec.san) : null;
@@ -12321,7 +12356,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                   </div>
                 );
               })()}
-              {(canEdit || canAdd) && <BranchBanner sentKey={key} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} />}
+              {!fenRoot && (canEdit || canAdd) && <BranchBanner sentKey={key} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} />}
               {/* 헤더(현재 수) 블록 — 마스코트 우상단 + 분석 버튼.
                   (17차) ply(=sans.length)는 "다음에 둘 차례"의 홀짝이므로, 직전에 두어진 수(이 블록이 보여주는 수)를
                   둔 쪽은 그 반대다 — ply 짝수(다음이 백 차례)면 직전 수는 흑이 두었으므로 KOKOA, 그 반대는 MILKU. */}
@@ -20896,6 +20931,7 @@ const CHANGELOG = [
       "Stockfish 18 엔진을 고르면 항상 '연결 실패'로 멈추던 문제를 고쳤어요 — 신경망 파일을 외부 저장소에서 받아오던 방식이 계속 말썽이어서, 다른 두 엔진처럼 사이트와 같은 곳에서 바로 받아오도록 되돌렸어요.",
       "퍼즐 이름을 바꿔도 다른 화면(특히 오늘의 퍼즐)에서는 바꾸기 전 이름이 계속 보이던 문제를 고쳤어요.",
       "실시간 대국에서 상대의 시간이 다 됐는데 상대가 결과를 보고하지 않고 화면을 나가버려도(인터넷이 끊기거나 탭을 닫는 등), 이제 내 승리가 확실하게 확정돼요 — 예전엔 이런 경우 대국이 끝나지 않은 것처럼 서버에 남아, 다음에 새 상대를 찾으면 그 끝난 대국으로 자꾸 되돌아가는 문제가 있었어요.",
+      "분석 탭에서 FEN을 붙여넣어 자유롭게 두는 'FEN 모드'에서도 이제 엔진이 계산한 다음 수 추천과 현재 수 정보가 떠요 — 예전엔 다음 수 칸이 항상 비어 있었고, 그 자리에 전혀 무관한 표준 오프닝 추천 문구가 잘못 섞여 보이기도 했어요.",
     ]
   },
   {
