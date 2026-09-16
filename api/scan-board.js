@@ -221,14 +221,30 @@ export default async function handler(req, res) {
     // 계속 남겨 두고, 충분히 풍부하게(RESCAN_MIN_PIECES 이상) 읽힌 순간에만 재시도를 멈춘다 — 그래도
     // 3번 다 그 문턱을 못 넘으면(사진 자체가 정말 기물이 적은 엔드게임이거나 난독 사진), 그중 가장
     // 나았던 후보를 그대로 쓴다(사용자가 결과 화면에서 직접 확인·수정할 수 있으므로 완전히 막지는 않는다).
+    // (v0.5.1 성능, 사용자 요청) 인식 시간 단축 — 예전엔 최대 3번을 순서대로(직렬) 기다려서, 재시도가
+    // 필요한 사진은 한 번 호출 시간의 최대 3배가 걸렸다. 대부분의 사진은 1번째 시도에서 바로 충분히
+    // 좋은 결과가 나오므로 그 흔한 경우의 속도는 그대로 두고, 1번째가 부족할 때만 나머지 2번을
+    // 동시에(병렬로) 보내 최악의 경우 지연을 3배에서 2배(1번째 + 나머지 병렬 묶음 1번)로 줄인다.
+    const isGoodEnough = (r) => {
+      if (!r) return false;
+      if (r.kind === "text" && r.text) return true;
+      if (r.kind === "board" && isPlausibleBoard(r.fenBoard) && isSanePieceCounts(r.fenBoard) && countTotalPieces(r.fenBoard) >= RESCAN_MIN_PIECES) return true;
+      return false;
+    };
+    const results = [await callGemini(apiKey, safeMediaType, image)];
+    if (!isGoodEnough(results[0])) {
+      const rest = await Promise.all([
+        callGemini(apiKey, safeMediaType, image),
+        callGemini(apiKey, safeMediaType, image),
+      ]);
+      results.push(...rest);
+    }
     let last = null, best = null, bestCount = -1;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      last = await callGemini(apiKey, safeMediaType, image);
-      if (last.kind === "text" && last.text) break;
-      if (last.kind === "board" && isPlausibleBoard(last.fenBoard) && isSanePieceCounts(last.fenBoard)) {
-        const n = countTotalPieces(last.fenBoard);
-        if (n > bestCount) { best = last; bestCount = n; }
-        if (n >= RESCAN_MIN_PIECES) break;
+    for (const r of results) {
+      if (r.kind === "text" && r.text) { last = r; break; }
+      if (r.kind === "board" && isPlausibleBoard(r.fenBoard) && isSanePieceCounts(r.fenBoard)) {
+        const n = countTotalPieces(r.fenBoard);
+        if (n > bestCount) { best = r; bestCount = n; }
       }
     }
     if (last && last.kind === "text" && last.text) {
