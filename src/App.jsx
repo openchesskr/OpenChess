@@ -3106,16 +3106,15 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
 // 붙여넣기와 똑같은 계약(onLoadFen(parseFenFull 결과))으로 그 포지션의 FEN 모드로 들어간다.
 const EDITOR_PALETTE_PIECES = ["K", "Q", "R", "B", "N", "P"];
 function editorEmptyBoard() { return Array.from({ length: 8 }, () => Array(8).fill(null)); }
-// (v0.5.1 기능, 사용자 요청) 보드 편집기 "캐슬링 권리 자동 해제" 옵션 — 켜져 있으면, 그 캐슬링에
-// 필요한 킹·룩이 표준 시작 칸(백 K:e1·h1, Q:e1·a1 / 흑 k:e8·h8, q:e8·a8 — board[r][c]는 r=0이
-// 랭크8, c=0이 파일a이므로 각각 [7,4]/[7,7]/[7,0]과 [0,4]/[0,7]/[0,0])에 정확히 있지 않은 순간
-// 그 권리를 자동으로 꺼 준다. 반대(다시 제자리로 돌아오면 권리가 되살아나는 것)는 절대 하지 않는다
-// — 캐슬링 권리는 "그 기물이 게임 시작 이후 한 번도 움직이지 않았다"는 과거 이력에 관한 정보라,
-// 편집기 조작으로 우연히 다시 표준 칸과 같은 배치가 됐다고 그 이력까지 되살아나는 건 아니기
-// 때문이다(실제 체스 규칙과 같은 태도 — updateCastleRights가 실제 대국에서 하는 일과 동일한 원칙,
-// 다만 이쪽은 "한 수" 단위가 아니라 "지금 이 순간의 배치"만 보고 판단한다는 점이 다르다). 기본값은
-// 꺼짐(체크 안 함) — 기존처럼 캐슬링 권리를 전적으로 사용자가 직접 관리하는 동작을 그대로 유지하고,
-// 원하는 사람만 켜서 쓴다.
+// (v0.5.1 기능, 사용자 요청 → 항상 켜짐으로 변경) 보드 편집기 — 그 캐슬링에 필요한 킹·룩이 표준
+// 시작 칸(백 K:e1·h1, Q:e1·a1 / 흑 k:e8·h8, q:e8·a8 — board[r][c]는 r=0이 랭크8, c=0이 파일a이므로
+// 각각 [7,4]/[7,7]/[7,0]과 [0,4]/[0,7]/[0,0])에 정확히 있지 않은 순간 그 권리를 자동으로 꺼 준다.
+// 반대(다시 제자리로 돌아오면 권리가 되살아나는 것)는 절대 하지 않는다 — 캐슬링 권리는 "그 기물이
+// 게임 시작 이후 한 번도 움직이지 않았다"는 과거 이력에 관한 정보라, 편집기 조작으로 우연히 다시
+// 표준 칸과 같은 배치가 됐다고 그 이력까지 되살아나는 건 아니기 때문이다(실제 체스 규칙과 같은
+// 태도 — updateCastleRights가 실제 대국에서 하는 일과 동일한 원칙, 다만 이쪽은 "한 수" 단위가
+// 아니라 "지금 이 순간의 배치"만 보고 판단한다는 점이 다르다). 처음엔 기본 꺼짐인 opt-in
+// 체크박스로 뒀다가, 사용자 요청으로 옵션 자체를 없애고 항상 적용되도록 바꿨다.
 function clearInvalidCastleRights(board, rights) {
   const has = (r, c, color, type) => { const p = board[r][c]; return !!p && p.c === color && p.t === type; };
   const wK = has(7, 4, "w", "K"), bK = has(0, 4, "b", "K");
@@ -3178,33 +3177,26 @@ function EditorBoardGrid({ board, flipped, size, selected, onSquareClick, gridRe
 }
 function BoardEditorModal({ initialFen, onClose, onApply }) {
   const narrow = useNarrow(760);
+  // (v0.5.1 버그 수정, 사용자 요청) 캐슬링 권리 자동 해제는 이제 옵션이 아니라 항상 켜져 있다 — 초기
+  // 배치를 불러오는 시점부터 이미 무효한 권리(킹·룩이 표준 시작 칸을 벗어났는데 권리는 남아 있는 FEN)가
+  // 있을 수 있으므로, startSnap 계산 시점에도 한 번 정리해 둔다.
   const startSnap = useMemo(() => {
     const p = (initialFen && parseFenFull(initialFen)) || parseFenFull(STANDARD_START_FEN);
-    return { board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null };
+    return { board: p.board, turn: p.turn, rights: clearInvalidCastleRights(p.board, p.rights), ep: p.ep || null };
   }, [initialFen]);
   // (기능) 되감기/빨리감기(◀◀▶▶)·되돌리기/다시하기(↶↷) — 스냅샷 배열 하나 + 인덱스로 관리해
   // board/turn/rights 세 state를 따로 두고 동기화하다 어긋나는 사고를 원천 차단한다.
   const [hist, setHist] = useState({ list: [startSnap], idx: 0 });
   const snap = hist.list[hist.idx];
   const { board, turn, rights, ep } = snap;
-  // (v0.5.1 기능, 사용자 요청) "캐슬링 권리 자동 해제" — 기본값 꺼짐(체크 안 함). 모달을 열 때마다
-  // 항상 꺼진 상태로 시작한다(다른 편집기 옵션과 달리 이전 세션 값을 기억하지 않는다 — 사용자가
-  // 명시적으로 opt-in해야 하는 기능이라는 요청 취지를 그대로 따른다).
-  const [autoClearCastle, setAutoClearCastle] = useState(false);
+  // (v0.5.1 기능, 사용자 요청 → 항상 켜짐으로 변경) "캐슬링 권리 자동 해제" — 처음엔 opt-in 체크박스로
+  // 뒀다가, 사용자 요청으로 옵션 자체를 없애고 항상 적용되도록 바꿨다. pushSnap을 거치는 모든 보드
+  // 변경(팔레트 배치·드래그·FEN 붙여넣기·이미지 스캔 등)이 무조건 이 검사를 받는다.
   const pushSnap = (patch) => setHist((h) => {
-    let next = { ...h.list[h.idx], ...patch };
-    if (autoClearCastle) next = { ...next, rights: clearInvalidCastleRights(next.board, next.rights) };
-    const list = [...h.list.slice(0, h.idx + 1), next];
+    const next = { ...h.list[h.idx], ...patch };
+    const list = [...h.list.slice(0, h.idx + 1), { ...next, rights: clearInvalidCastleRights(next.board, next.rights) }];
     return { list, idx: list.length - 1 };
   });
-  // 옵션을 막 켠 순간엔 지금 배치 기준으로 즉시 한 번 정리한다(꺼져 있는 동안 이미 만들어 둔 무효한
-  // 권리가 있을 수 있으므로) — 바뀌는 게 있을 때만 새 되돌리기 단계를 만든다.
-  const onToggleAutoClearCastle = (on) => {
-    setAutoClearCastle(on);
-    if (!on) return;
-    const cleared = clearInvalidCastleRights(board, rights);
-    if (cleared.K !== rights.K || cleared.Q !== rights.Q || cleared.k !== rights.k || cleared.q !== rights.q) pushSnap({ rights: cleared });
-  };
   const canUndo = hist.idx > 0, canRedo = hist.idx < hist.list.length - 1;
   const undo = () => canUndo && setHist((h) => ({ ...h, idx: h.idx - 1 }));
   const redo = () => canRedo && setHist((h) => ({ ...h, idx: h.idx + 1 }));
@@ -3458,11 +3450,6 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
           </div>
         </React.Fragment>
       ))}
-      <div />
-      <div />
-      <label className="flex items-center" style={{ gap: 6, cursor: "pointer", color: "rgba(244,238,226,.75)", fontWeight: 700 }} title="킹·룩이 표준 시작 칸(e1/h1/a1, e8/h8/a8)을 벗어나면 그 캐슬링 권리를 자동으로 꺼요. 제자리로 돌아와도 권리가 다시 켜지지는 않아요.">
-        <input type="checkbox" checked={autoClearCastle} onChange={(e) => onToggleAutoClearCastle(e.target.checked)} /> 캐슬링 권리 자동 해제
-      </label>
     </div>
   );
   const boardEl = <EditorBoardGrid board={board} flipped={flipped} size={boardSize} selected={pickedSq} onSquareClick={onSqClickGuarded} gridRef={gridRef} onPieceDown={startDragFromBoard} dragOn={{ onMove: onDragPointerMove, onUp: onDragPointerUp, onCancel: onDragPointerCancel }} draggingFrom={ptrDrag && ptrDrag.source === "board" ? ptrDrag.from : null} />;
@@ -11745,10 +11732,19 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 보충이 전부 표준 시작 위치를 전제) 그 훅 자체를 fenRoot 인식하게 고치는 건 위험이 크다 — 대신
   // ReviewPage의 엔진 라인 effect(fenOfRoot·colorOfRoot·pvUciToSans(...,fenRoot) 패턴, 이미 FEN 인식)를
   // 그대로 옮겨온, 훨씬 단순한 별도 effect로 posEval·engineLines·curDepth만 채운다.
-  // (v0.5.1 기능, 사용자 요청) FEN 모드에서도 "다음 수" 블록을 보여준다 — 다만 이 위치는 이론 DB에
-  // 없으므로(book/adopt/games 같은 크라우드소싱 데이터 자체가 존재하지 않는다) 실제 후보 수는 이미
-  // 같은 요청으로 받아 둔 엔진 MultiPV 결과(위 engineLines가 쓰는 것과 같은 raw 배열, multipv 5)에서
-  // 그대로 뽑는다 — 순위 1위는 "최선의 수"(best), 나머지는 "좋은 수"(good)로 표시한다.
+  // (v0.5.1 기능, 사용자 요청 → 버그 수정) FEN 모드에서도 "다음 수" 블록을 보여준다 — 다만 이 위치는
+  // 이론 DB에 없으므로(book/adopt/games 같은 크라우드소싱 데이터 자체가 존재하지 않는다) 실제 후보
+  // 수는 이미 같은 요청으로 받아 둔 엔진 MultiPV 결과(위 engineLines가 쓰는 것과 같은 raw 배열,
+  // multipv 5)에서 그대로 뽑는다.
+  // (버그 수정, 사용자 제보) 처음엔 "순위 1위는 최선의 수(best), 나머지는 전부 좋은 수(good)"로만
+  // 단순하게 표시했는데, 이러면 실제 손실(loss)이나 희생 여부를 전혀 안 보므로 등급이 자주 틀렸다 —
+  // 1위가 아니어도 손실이 미미하면 최선급인데 "좋은 수"로만 뜨고, 반대로 진짜 희생 기반의 "탁월한
+  // 수"는 애초에 이 로직에 그 범주 자체가 없어 절대 뜰 수 없었다. classifyMoveKindDetailed(다른 세
+  // 호출부가 쓰는 표준 채점 로직)와 같은 규칙(tierOf(loss) → 희생 보정 → 결정난 승부 완화 → 언더
+  // 프로모션 보정)을 그대로 적용하되, 그 함수처럼 각 후보 수마다 별도로 engine.evaluate를 두 번씩
+  // 더 부르지 않는다 — 이미 받아 둔 이 MultiPV 배치 자체가 "이 위치에서 그 수를 뒀을 때"의 평가를
+  // 전부 담고 있으므로(raw[i].cp는 UCI 관례상 전부 "지금 둘 차례" 관점으로 서로 비교 가능한 같은
+  // 척도다), loss = raw[0]의 cp(mate면 ±1e5) − raw[i]의 cp로 바로 계산할 수 있다.
   const [fenMoves, setFenMoves] = useState([]);
   const [fenEval, setFenEval] = useState({ posEval: null, engineLines: [], linesPending: false, curDepth: null });
   useEffect(() => {
@@ -11763,15 +11759,34 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, 15, fenRoot) }))).slice(0, 3);
     // 엔진 라인과 같은 raw MultiPV 결과에서 각 줄의 첫 수만 뽑아 "다음 수" 블록 형태(MoveTile이
     // 기대하는 필드)로 바꾼다 — book/adopt/games는 이 위치엔 존재하지 않는 데이터라 그대로 없앤다.
+    const board = boardOfRoot(fenRoot, sans);
+    const col = colorOfRoot(fenRoot, sans.length);
+    const cpOf = (pv) => pv.mate != null ? (pv.mate > 0 ? 1e5 : -1e5) : pv.cp;
     const toMoveTiles = (raw) => {
       const seen = new Set(); const out = [];
+      const bestCp = raw && raw[0] ? cpOf(raw[0]) : null;
       (raw || []).forEach((pv, i) => {
         if (!pv || !pv.pv || !pv.pv.length) return;
         const san = pvUciToSans(sans, pv.pv, 1, fenRoot)[0];
         if (!san || seen.has(san)) return;
         seen.add(san);
         const e = mkEv(pv);
-        out.push({ san, kind: i === 0 ? "best" : "good", evalCp: e.cp != null ? e.cp : null, mate: e.mate != null ? e.mate : null, adopt: null, games: null, book: false });
+        let kind = "good";
+        if (bestCp != null) {
+          const thisCp = cpOf(pv);
+          const matched = i === 0;
+          const loss = matched ? 0 : bestCp - thisCp;
+          kind = tierOf(loss);
+          if (kind === "best" && !matched) kind = "excellent";
+          const decided = Math.abs(bestCp) > 200;
+          try {
+            if (["best", "excellent", "good"].includes(kind) && isSacrifice(board, san, col) && thisCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(sans, col, fenRoot)) kind = "brilliant";
+          } catch { }
+          if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+          const under = /=/.test(san) && !/=Q/.test(san);
+          if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+        }
+        out.push({ san, kind, evalCp: e.cp != null ? e.cp : null, mate: e.mate != null ? e.mate : null, adopt: null, games: null, book: false });
       });
       return out;
     };
@@ -12279,27 +12294,31 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               어느 FEN에서 시작했는지는 화면 어디에도 남지 않았다 — 시작 포지션의 FEN 코드와, 그
               위치부터 이어지는 PGN 기보를 각각 복사할 수 있는 줄을 기보 바로 위에 둔다.
               (v0.5.1 UI, 사용자 요청) 예전엔 이 위에 "FEN 모드 — ..." 안내 배지 + 종료 버튼을 별도
-              박스로 뒀는데, FEN 코드 줄과 중복된 정보였다 — 안내 박스를 없애고, 그 자리에 있던
-              "FEN 모드임을 알리는 역할"과 "종료" 버튼을 FEN 줄 자체로 합쳤다: 라벨을 "FEN"이 아니라
-              "FEN MODE"로 바꿔 한눈에 지금 FEN 모드라는 걸 알리고, 그 줄 맨 끝에 종료 버튼을 둔다. */}
+              박스로 뒀는데, FEN 코드 줄과 중복된 정보였다 — 안내 박스를 없애고 종료 버튼만 이 줄로
+              옮겼다. (v0.5.1 UI, 사용자 요청) FEN·PGN 두 줄을 별도 "column" 컨테이너로 감싸고, 종료
+              버튼은 그 컨테이너의 형제(sibling)로 밖에 둬 — 바깥 flex 컨테이너의 align-items:center
+              덕분에 종료 버튼이 저절로 두 줄을 합친 높이의 정중앙에 오게 한다(각 줄 안에 끼워 넣으면
+              그 줄 하나의 높이에만 맞춰지므로 정중앙이 아니게 된다). 두 줄 모두 이제 "라벨(28px 고정
+              폭) + 코드(flex) + 복사 버튼"으로 구조가 완전히 같아, 복사 버튼의 x좌표도 코드 길이와
+              무관하게 두 줄에서 항상 같은 자리에 온다. */}
           {fenRoot && (
-            <div style={{ marginBottom: 10, padding: "8px 11px", borderRadius: 9, background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", display: "flex", flexDirection: "column", gap: 6 }}>
-              {[
-                { label: "FEN MODE", key: "fen", value: fenRoot.raw },
-                { label: "PGN", key: "pgn", value: sansToPgnText(sans, fenRoot.turn) || "(시작 위치)" },
-              ].map((row) => (
-                <div key={row.key} className="flex items-center gap-2">
-                  <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, flexShrink: 0, width: 58 }}>{row.label}</span>
-                  <code style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 11, color: T.ivoryHi, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>{row.value}</code>
-                  <button onClick={async () => { try { await navigator.clipboard.writeText(row.value); setFenCopied(row.key); setTimeout(() => setFenCopied((c) => (c === row.key ? null : c)), 1500); } catch { } }}
-                    title={row.label + " 복사"} className="press" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                    {fenCopied === row.key ? <Check size={11} /> : <Copy size={11} />}
-                  </button>
-                  {row.key === "fen" && (
-                    <button onClick={exitFenMode} title="FEN 모드 종료" className="press" style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>종료</button>
-                  )}
-                </div>
-              ))}
+            <div style={{ marginBottom: 10, padding: "8px 11px", borderRadius: 9, background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                {[
+                  { label: "FEN", key: "fen", value: fenRoot.raw },
+                  { label: "PGN", key: "pgn", value: sansToPgnText(sans, fenRoot.turn) || "(시작 위치)" },
+                ].map((row) => (
+                  <div key={row.key} className="flex items-center gap-2">
+                    <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, flexShrink: 0, width: 28 }}>{row.label}</span>
+                    <code style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 11, color: T.ivoryHi, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>{row.value}</code>
+                    <button onClick={async () => { try { await navigator.clipboard.writeText(row.value); setFenCopied(row.key); setTimeout(() => setFenCopied((c) => (c === row.key ? null : c)), 1500); } catch { } }}
+                      title={row.label + " 복사"} className="press" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                      {fenCopied === row.key ? <Check size={11} /> : <Copy size={11} />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={exitFenMode} title="FEN 모드 종료" className="press" style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>종료</button>
             </div>
           )}
           <div className="mb-3 flex items-center justify-between gap-2">
@@ -21017,8 +21036,9 @@ const CHANGELOG = [
       "이미지 스캔(체스판·PGN·FEN 사진 인식) 속도를 더 높였어요 — 사진을 서버로 보내기 전에 더 작은 크기로 줄이고, 인식이 애매해 다시 시도할 때도 여러 번을 순서대로 기다리는 대신 한꺼번에 보내도록 바꿨어요.",
       "이미지 스캔이 'This model is currently experiencing high demand...'처럼 인식 엔진이 일시적으로 붐빌 때 나는 오류를 그대로 보여주며 곧장 실패하던 문제를 고쳤어요 — 이런 일시적인 오류는 이제 서버가 잠깐 쉬었다가 자동으로 한 번 더 시도해요.",
       "이미지 스캔 속도를 한 번 더 높였고, 인식이 진행되는 동안 몇 %까지 됐는지 실시간으로 볼 수 있어요.",
-      "보드 편집기에 '캐슬링 권리 자동 해제' 옵션이 생겼어요 — 켜면(기본은 꺼짐) 킹이나 룩을 시작 칸에서 벗어나게 두는 순간 그 캐슬링 권리가 자동으로 꺼져요.",
-      "'FEN 모드' 안내 박스를 없애고, 그 자리에 있던 정보를 FEN 코드 줄로 옮겼어요 — 이제 'FEN' 대신 'FEN MODE'라고 표시되고, 그 옆에 코드와 종료 버튼이 함께 있어요.",
+      "보드 편집기에서 이제 킹이나 룩을 시작 칸에서 벗어나게 두면 그 캐슬링 권리가 항상 자동으로 꺼져요.",
+      "분석 탭 'FEN 모드' 안내 박스를 없애고, 그 자리에 있던 종료 버튼을 FEN 코드 줄로 옮겼어요 — 복사 버튼 위치도 FEN·PGN 두 줄에서 항상 같은 자리에 오도록 정리했어요.",
+      "FEN 모드의 '다음 수' 블록에서 수 체계 아이콘(최선·탁월·좋은 수 등)이 부정확하게 뜨던 문제를 고쳤어요 — 예전엔 1순위 수만 무조건 '최선의 수', 나머지는 전부 '좋은 수'로만 표시했는데, 이제 실제 손실값과 희생 여부까지 반영해 정확한 등급으로 표시돼요.",
     ]
   },
   {
