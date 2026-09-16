@@ -328,7 +328,12 @@ const OVERLAY = {
 // 768px 이하(1타일)보다 토큰 수·처리 시간이 몇 배로 늘어난다. 체스판은 8x8 격자라는 단순한 구조라
 // 768px로도 칸 하나당 90px 이상 확보되어 인식에 충분하고, 아래 재시도 로직(isSanePieceCounts 등)이
 // 여전히 오독을 걸러낸다.
-async function downscaleImageFile(file, maxSide = 768, quality = 0.85) {
+// (v0.5.1 성능, 사용자 요청 → 추가 단축) quality를 0.85→0.72로 더 낮췄다 — JPEG 압축률은 Gemini
+// 쪽 이미지 토큰 수(픽셀 크기로 결정됨)에는 영향이 없지만, 업로드 바이트 수(클라이언트→우리 서버,
+// 우리 서버→Gemini 두 구간 모두)를 줄여 왕복 전송 시간을 단축한다. 체스판은 색이 단순히 나뉜 8x8
+// 격자라 압축률을 더 낮춰도(자잘한 사진 디테일이 뭉개지는 것과 달리) 칸·기물의 윤곽 자체는 여전히
+// 뚜렷하게 남는다.
+async function downscaleImageFile(file, maxSide = 768, quality = 0.72) {
   if (typeof createImageBitmap !== "function" || typeof document === "undefined") return null;
   let bitmap;
   try { bitmap = await createImageBitmap(file); } catch { return null; }
@@ -349,9 +354,20 @@ async function downscaleImageFile(file, maxSide = 768, quality = 0.85) {
 // 서버(api/scan-board.js)가 확장됐다. 보드 편집기·퍼즐 만들기 마법사 양쪽에서 재사용하는 공용 호출
 // 함수 — 파일을 base64로 읽어 서버에 보내고, { type:"board", fen_board } 또는
 // { type:"text", recognized_text }를 그대로 돌려준다(실패 시 throw).
-async function scanImageFile(file) {
+// (v0.5.1 기능, 사용자 요청) 진행도를 퍼센티지로 실시간 표시 — onProgress(0~100)를 부른다. 다만
+// 실제로 "진행률"이라는 신호를 우리가 직접 관찰할 수 있는 구간은 업로드(클라이언트→우리 서버)뿐이다
+// (fetch의 요청 바디 전송률을 알 수 없어 XMLHttpRequest의 upload.onprogress로 바꿨다 — fetch API는
+// 표준적으로 업로드 진행률 이벤트를 제공하지 않는다). 그 뒤 우리 서버가 Gemini 응답을 기다리는
+// 구간은 이 클라이언트 입장에선 완전히 블랙박스라(중간 진행 신호가 전혀 오지 않는 단일 응답) 실제
+// 값이 아니라 "아직 진행 중"이라는 인상을 주기 위한 흉내(서서히 90%까지 다가가되 다 채우지는 않고,
+// 실제 응답이 오면 그제서야 100%로 점프) — 업로드 구간까지는 실측값, 그 뒤는 추정치라는 걸 분명히
+// 해 둔다.
+async function scanImageFile(file, onProgress) {
+  const report = (p) => onProgress && onProgress(Math.max(0, Math.min(100, Math.round(p))));
+  report(2);
   const shrunk = await downscaleImageFile(file);
   const effectiveFile = shrunk || file;
+  report(10);
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -360,13 +376,34 @@ async function scanImageFile(file) {
   });
   const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl || "");
   if (!m) throw new Error("이미지를 읽지 못했어요.");
-  const r = await fetch("/api/scan-board", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ image: m[2], mediaType: m[1] }),
+  report(14);
+  const body = JSON.stringify({ image: m[2], mediaType: m[1] });
+  const data = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let simTimer = null;
+    xhr.open("POST", "/api/scan-board");
+    xhr.setRequestHeader("content-type", "application/json");
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      report(14 + (e.loaded / e.total) * 36); // 업로드 구간: 14~50% (실측)
+    };
+    xhr.upload.onloadend = () => {
+      // 업로드는 끝났지만 서버가 Gemini 응답을 기다리는 동안은 신호가 없다 — 50%에서 시작해
+      // 90%까지 점점 느려지며 다가가는 것처럼 흉내 내다가(가짜), 실제 응답이 오면 곧장 100%.
+      let p = 50;
+      simTimer = setInterval(() => { p += (90 - p) * 0.08; report(p); }, 250);
+    };
+    xhr.onload = () => {
+      if (simTimer) clearInterval(simTimer);
+      let parsed = null;
+      try { parsed = JSON.parse(xhr.responseText); } catch { }
+      if (xhr.status < 200 || xhr.status >= 300 || !parsed) { reject(new Error((parsed && parsed.error) || "이미지 인식에 실패했어요.")); return; }
+      report(100);
+      resolve(parsed);
+    };
+    xhr.onerror = () => { if (simTimer) clearInterval(simTimer); reject(new Error("네트워크 오류로 이미지 인식에 실패했어요.")); };
+    xhr.send(body);
   });
-  const data = await r.json().catch(() => null);
-  if (!r.ok || !data) throw new Error((data && data.error) || "이미지 인식에 실패했어요.");
   return data;
 }
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
@@ -3069,6 +3106,26 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
 // 붙여넣기와 똑같은 계약(onLoadFen(parseFenFull 결과))으로 그 포지션의 FEN 모드로 들어간다.
 const EDITOR_PALETTE_PIECES = ["K", "Q", "R", "B", "N", "P"];
 function editorEmptyBoard() { return Array.from({ length: 8 }, () => Array(8).fill(null)); }
+// (v0.5.1 기능, 사용자 요청) 보드 편집기 "캐슬링 권리 자동 해제" 옵션 — 켜져 있으면, 그 캐슬링에
+// 필요한 킹·룩이 표준 시작 칸(백 K:e1·h1, Q:e1·a1 / 흑 k:e8·h8, q:e8·a8 — board[r][c]는 r=0이
+// 랭크8, c=0이 파일a이므로 각각 [7,4]/[7,7]/[7,0]과 [0,4]/[0,7]/[0,0])에 정확히 있지 않은 순간
+// 그 권리를 자동으로 꺼 준다. 반대(다시 제자리로 돌아오면 권리가 되살아나는 것)는 절대 하지 않는다
+// — 캐슬링 권리는 "그 기물이 게임 시작 이후 한 번도 움직이지 않았다"는 과거 이력에 관한 정보라,
+// 편집기 조작으로 우연히 다시 표준 칸과 같은 배치가 됐다고 그 이력까지 되살아나는 건 아니기
+// 때문이다(실제 체스 규칙과 같은 태도 — updateCastleRights가 실제 대국에서 하는 일과 동일한 원칙,
+// 다만 이쪽은 "한 수" 단위가 아니라 "지금 이 순간의 배치"만 보고 판단한다는 점이 다르다). 기본값은
+// 꺼짐(체크 안 함) — 기존처럼 캐슬링 권리를 전적으로 사용자가 직접 관리하는 동작을 그대로 유지하고,
+// 원하는 사람만 켜서 쓴다.
+function clearInvalidCastleRights(board, rights) {
+  const has = (r, c, color, type) => { const p = board[r][c]; return !!p && p.c === color && p.t === type; };
+  const wK = has(7, 4, "w", "K"), bK = has(0, 4, "b", "K");
+  return {
+    K: !!rights.K && wK && has(7, 7, "w", "R"),
+    Q: !!rights.Q && wK && has(7, 0, "w", "R"),
+    k: !!rights.k && bK && has(0, 7, "b", "R"),
+    q: !!rights.q && bK && has(0, 0, "b", "R"),
+  };
+}
 // (버그 수정) 예전엔 앙파상을 아예 다루지 않아, FEN을 직접 입력·붙여넣기·이미지 스캔해도 그 안의
 // 앙파상 타깃 필드가 항상 "-"로 버려졌다 — 그렇게 만든 포지션으로 곧장 PLAY를 열면(seed.fenRoot로
 // 그대로 전달됨) 원래는 가능해야 할 앙파상 캡처가 그 즉시 불가능해졌다. ep를 받아 그대로 필드에
@@ -3130,11 +3187,24 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const [hist, setHist] = useState({ list: [startSnap], idx: 0 });
   const snap = hist.list[hist.idx];
   const { board, turn, rights, ep } = snap;
+  // (v0.5.1 기능, 사용자 요청) "캐슬링 권리 자동 해제" — 기본값 꺼짐(체크 안 함). 모달을 열 때마다
+  // 항상 꺼진 상태로 시작한다(다른 편집기 옵션과 달리 이전 세션 값을 기억하지 않는다 — 사용자가
+  // 명시적으로 opt-in해야 하는 기능이라는 요청 취지를 그대로 따른다).
+  const [autoClearCastle, setAutoClearCastle] = useState(false);
   const pushSnap = (patch) => setHist((h) => {
-    const next = { ...h.list[h.idx], ...patch };
+    let next = { ...h.list[h.idx], ...patch };
+    if (autoClearCastle) next = { ...next, rights: clearInvalidCastleRights(next.board, next.rights) };
     const list = [...h.list.slice(0, h.idx + 1), next];
     return { list, idx: list.length - 1 };
   });
+  // 옵션을 막 켠 순간엔 지금 배치 기준으로 즉시 한 번 정리한다(꺼져 있는 동안 이미 만들어 둔 무효한
+  // 권리가 있을 수 있으므로) — 바뀌는 게 있을 때만 새 되돌리기 단계를 만든다.
+  const onToggleAutoClearCastle = (on) => {
+    setAutoClearCastle(on);
+    if (!on) return;
+    const cleared = clearInvalidCastleRights(board, rights);
+    if (cleared.K !== rights.K || cleared.Q !== rights.Q || cleared.k !== rights.k || cleared.q !== rights.q) pushSnap({ rights: cleared });
+  };
   const canUndo = hist.idx > 0, canRedo = hist.idx < hist.list.length - 1;
   const undo = () => canUndo && setHist((h) => ({ ...h, idx: h.idx - 1 }));
   const redo = () => canRedo && setHist((h) => ({ ...h, idx: h.idx + 1 }));
@@ -3320,10 +3390,11 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   // 끝까지 재생해 최종 포지션을 보드에 적용한다(보드 편집기는 배치만 다루므로 수순 자체는 저장하지
   // 않는다).
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
   const onScanFile = async (file) => {
-    setScanning(true); setFenErr("");
+    setScanning(true); setScanProgress(0); setFenErr("");
     try {
-      const data = await scanImageFile(file);
+      const data = await scanImageFile(file, setScanProgress);
       if (data.type === "board" && data.fen_board) {
         const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
         if (!p) { setFenErr("인식된 배치를 적용할 수 없었어요."); return; }
@@ -3353,7 +3424,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       }
       setFenErr("이미지에서 체스판이나 기보를 인식하지 못했어요.");
     } catch (e) { setFenErr((e && e.message) || "이미지 스캔에 실패했어요."); }
-    finally { setScanning(false); }
+    finally { setScanning(false); setScanProgress(0); }
   };
   const handleDone = () => { const p = parseFenFull(fenText); if (p) onApply(p); };
   const boardSize = narrow ? Math.min(320, (typeof window !== "undefined" ? window.innerWidth : 360) - 64) : 400;
@@ -3387,6 +3458,11 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
           </div>
         </React.Fragment>
       ))}
+      <div />
+      <div />
+      <label className="flex items-center" style={{ gap: 6, cursor: "pointer", color: "rgba(244,238,226,.75)", fontWeight: 700 }} title="킹·룩이 표준 시작 칸(e1/h1/a1, e8/h8/a8)을 벗어나면 그 캐슬링 권리를 자동으로 꺼요. 제자리로 돌아와도 권리가 다시 켜지지는 않아요.">
+        <input type="checkbox" checked={autoClearCastle} onChange={(e) => onToggleAutoClearCastle(e.target.checked)} /> 캐슬링 권리 자동 해제
+      </label>
     </div>
   );
   const boardEl = <EditorBoardGrid board={board} flipped={flipped} size={boardSize} selected={pickedSq} onSquareClick={onSqClickGuarded} gridRef={gridRef} onPieceDown={startDragFromBoard} dragOn={{ onMove: onDragPointerMove, onUp: onDragPointerUp, onCancel: onDragPointerCancel }} draggingFrom={ptrDrag && ptrDrag.source === "board" ? ptrDrag.from : null} />;
@@ -3437,7 +3513,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   );
   const scanAndHistoryRow = (
     <div className="flex items-center justify-between">
-      <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label="이미지 스캔" busyLabel="인식하는 중..."
+      <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label="이미지 스캔" busyLabel={"인식하는 중... " + scanProgress + "%"}
         buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: scanning ? "rgba(255,255,255,.06)" : T.ebony2, color: scanning ? "rgba(244,238,226,.4)" : T.brassHi, fontWeight: 700, fontSize: 11.5, border: "1px solid " + (scanning ? "rgba(255,255,255,.15)" : "#000"), cursor: scanning ? "default" : "pointer" }} />
       <div className="flex items-center" style={{ gap: 4 }}>
         <button onClick={rewind} disabled={!canUndo} title="처음으로" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsLeft size={15} /></button>
@@ -18968,17 +19044,18 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // (사용자 요청) 1단계 입력 박스에 이미지 스캔 버튼 추가 — 체스판 사진이면 FEN으로, PGN·FEN 텍스트
   // 사진이면 그 텍스트를 그대로 입력 박스에 채워 넣는다(그대로 "확인"을 눌러 검증하는 흐름은 동일).
   const [pcScanning, setPcScanning] = useState(false);
+  const [pcScanProgress, setPcScanProgress] = useState(0);
   const onPcScanFile = async (file) => {
-    setPcScanning(true); setPcErr("");
+    setPcScanning(true); setPcScanProgress(0); setPcErr("");
     try {
-      const data = await scanImageFile(file);
+      const data = await scanImageFile(file, setPcScanProgress);
       let text = null;
       if (data.type === "board" && data.fen_board) text = data.fen_board + " w KQkq - 0 1";
       else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();
       if (!text) { setPcErr("이미지에서 체스판이나 기보를 인식하지 못했어요."); return; }
       setPcInput(text); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcSelectedGameId(null);
     } catch (e) { setPcErr((e && e.message) || "이미지 스캔에 실패했어요."); }
-    finally { setPcScanning(false); }
+    finally { setPcScanning(false); setPcScanProgress(0); }
   };
   const resetPuzzleCreate = () => {
     setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
@@ -19500,7 +19577,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                 체스판 사진이나 PGN/FEN 텍스트 사진을 스캔하면 입력 박스가 채워지고, 그대로 "확인"을
                 눌러 검증한다. */}
             <div className="flex justify-end items-center" style={{ marginTop: 8, gap: 8 }}>
-              <ImageSourceMenu onFile={onPcScanFile} disabled={pcScanning} busy={pcScanning} label="이미지 스캔" busyLabel="인식하는 중..."
+              <ImageSourceMenu onFile={onPcScanFile} disabled={pcScanning} busy={pcScanning} label="이미지 스캔" busyLabel={"인식하는 중... " + pcScanProgress + "%"}
                 buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, background: pcScanning ? "rgba(0,0,0,.06)" : "transparent", color: pcScanning ? T.inkSoft : T.ink, fontWeight: 700, fontSize: 12, border: "1px solid " + (pcScanning ? "#DCCBA8" : T.brass), cursor: pcScanning ? "default" : "pointer" }} />
               <button onClick={() => parsePcInput()} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
             </div>
@@ -20940,6 +21017,8 @@ const CHANGELOG = [
       "분석 탭에서 FEN을 붙여넣어 자유롭게 두는 'FEN 모드'에서도 이제 엔진이 계산한 다음 수 추천과 현재 수 정보가 떠요 — 예전엔 다음 수 칸이 항상 비어 있었고, 그 자리에 전혀 무관한 표준 오프닝 추천 문구가 잘못 섞여 보이기도 했어요.",
       "이미지 스캔(체스판·PGN·FEN 사진 인식) 속도를 더 높였어요 — 사진을 서버로 보내기 전에 더 작은 크기로 줄이고, 인식이 애매해 다시 시도할 때도 여러 번을 순서대로 기다리는 대신 한꺼번에 보내도록 바꿨어요.",
       "이미지 스캔이 'This model is currently experiencing high demand...'처럼 인식 엔진이 일시적으로 붐빌 때 나는 오류를 그대로 보여주며 곧장 실패하던 문제를 고쳤어요 — 이런 일시적인 오류는 이제 서버가 잠깐 쉬었다가 자동으로 한 번 더 시도해요.",
+      "이미지 스캔 속도를 한 번 더 높였고, 인식이 진행되는 동안 몇 %까지 됐는지 실시간으로 볼 수 있어요.",
+      "보드 편집기에 '캐슬링 권리 자동 해제' 옵션이 생겼어요 — 켜면(기본은 꺼짐) 킹이나 룩을 시작 칸에서 벗어나게 두는 순간 그 캐슬링 권리가 자동으로 꺼져요.",
     ]
   },
   {
