@@ -7801,21 +7801,34 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
 }
 // (v0.2.1 기능) 리뷰 보드에서 자유롭게 두다가 폰이 끝 랭크에 닿았을 때의 승격 기물 선택 오버레이 —
 // 분석 탭 메인 보드의 프로모션 UI와 동일한 모양을 그대로 쓴다.
-function ReviewPromoPrompt({ onPick, onCancel }) {
-  return (
-    <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
-      <div className="flex gap-2">
+// (v0.5.1 버그 수정, 사용자 제보) 예전엔 기물 아이콘 색이 항상 흑(color="b")으로 고정돼 있어, 백이
+// 승격할 때도 검은 기물 아이콘이 떴다 — 실제로 승격하는 진영 색을 promoPrompt.to의 랭크로 판단해
+// (도착 칸이 랭크8=board row 0이면 백, 랭크1=row 7이면 흑 — 이 컴포넌트를 호출하는 모든 곳이 이미
+// 이 규칙으로 승격을 감지해 promoPrompt를 만든다) 받아 오도록 color prop을 추가했다.
+// (v0.5.1 UI, 사용자 요청) 버튼·아이콘·글자 크기를 한 단계씩 키웠다(52→68px, 아이콘 26→34).
+// (v0.5.1 UI, 사용자 요청) "체스보드 정중앙에 표시" — 예전엔 이 컴포넌트를 담는 바깥 wrapper div가
+// 보드 자체보다 넓은 영역(잡힌 기물 줄·엔진 평가 줄 등을 포함)까지 함께 감싸고 있어, position:
+// absolute;inset:0으로는 그 wrapper 전체의 정중앙에 뜨지 실제 8x8 체스판의 정중앙에 뜨지 않았다.
+// 호출부가 Board의 gridRef(그 8x8 그리드 DOM 엘리먼트 자체, position:relative)를 얻어 portalTo로
+// 넘기면, 이 오버레이를 그 그리드 엘리먼트 안으로 포털(createPortal)해 그 엘리먼트의 inset:0(=보드
+// 자체의 정중앙)에 정확히 뜨도록 한다. 아직 그리드 참조를 못 받았으면(예: 최초 렌더 극초반) 기존처럼
+// 제자리에서 렌더해 안전하게 폴백한다.
+function ReviewPromoPrompt({ onPick, onCancel, color = "b", portalTo }) {
+  const content = (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, borderRadius: 4, zIndex: 30 }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
+      <div className="flex gap-3">
         {["Q", "R", "B", "N"].map((t) => (
-          <button key={t} onClick={() => onPick(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <PieceGlyph type={t} color="b" size={26} />
-            <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
+          <button key={t} onClick={() => onPick(t)} className="press" style={{ width: 68, height: 68, borderRadius: 12, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 4px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2 }}>
+            <PieceGlyph type={t} color={color} size={34} />
+            <span style={{ fontSize: 10, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
           </button>
         ))}
       </div>
-      <button onClick={onCancel} className="press" style={{ fontSize: 10.5, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 7, padding: "4px 12px", cursor: "pointer" }}>취소</button>
+      <button onClick={onCancel} className="press" style={{ fontSize: 12, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 8, padding: "6px 16px", cursor: "pointer" }}>취소</button>
     </div>
   );
+  return portalTo ? createPortal(content, portalTo) : content;
 }
 // (v0.2.1) /review 전용 색 토큰 — 예전엔 순수 검정(#181818)+흰색이라 사이트의 따뜻한 브라운/크림
 // 테마와 이질감이 컸다. 집중분석 오버레이와 같은 어두운 브라운 그러데이션 배경 위에, 아이보리/브라스
@@ -10863,6 +10876,9 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
+  // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조 — Board의
+  // gridRef 콜백 prop으로 채워진다(모바일/데스크톱 두 렌더 분기가 서로 배타적이라 하나로 공유해도 안전).
+  const [promoGridEl, setPromoGridEl] = useState(null);
   // (v0.2.4 버그 수정) "이 포지션|이 수"를 화면에 보여준 추천을 그대로 따라 뒀는지 기록해 두는
   // 참조 — playFree에서 채우고, 아래 exploreMove 채점 effect가 재검색 결과와 무관하게 신뢰한다.
   const forcedBestRef = useRef(null);
@@ -11529,8 +11545,8 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
                 <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
-                {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
+                  boardRef={mobileBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
+                {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
               </div>
               <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} drawn={gameDrawn} />
               {/* (UI) 사용자 요청 — 코치 블록을 줄여 만든 여백으로, 모바일에서도 평가치 그래프를
@@ -11565,8 +11581,8 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               맞춰 떨어지는 크기로 환산해 돌려준다. */}
           <div style={{ position: "relative" }}>
             <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-              boardRef={desktopBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
-            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
+              boardRef={desktopBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
+            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
           </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
             <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? RV.dim : RV.text, cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
@@ -11652,6 +11668,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null);   // (기능5) 프로모션 선택 대기 {from,to}
+  // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조.
+  const [promoGridEl, setPromoGridEl] = useState(null);
   const [lastMascot, setLastMascot] = useState(EXPLAIN[""]);
   const [lastQ, setLastQ] = useState(null);
   // (v0.2.2 버그 수정) 다음 수 블록(assignTiers)에 표시된 수 체계 아이콘과, 그 수를 실제로 뒀을 때
@@ -12358,21 +12376,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               좌우로 나란히 놓이는 데스크톱)에서만 흘러넘침 없이 기존처럼 360px로 묶어 옆 칼럼과
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
           <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
-            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap
+            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
               belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} />} />
             {promoPrompt && (
-              <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
-                <div className="flex gap-2">
-                  {["Q", "R", "B", "N"].map((t) => (
-                    <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                      <PieceGlyph type={t} color="b" size={26} />
-                      <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
-                    </button>
-                  ))}
-                </div>
-                <button onClick={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} className="press" style={{ fontSize: 10.5, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 7, padding: "4px 12px", cursor: "pointer" }}>취소</button>
-              </div>
+              <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />
             )}
           </div>
           {/* (사용자 요청) 보드가 커진 만큼 그 아래 버튼들(뒤집기·초기화·PLAY·뒤로·앞으로)도 함께
@@ -16458,6 +16465,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   // 구조적으로 풀 수 없었다. ReviewPage·PlayPage와 같은 promoPrompt 패턴을 그대로 들여와, 폰이
   // 마지막 랭크로 이동하는 수는 곧장 두지 않고 먼저 승격 기물을 고르게 한다.
   const [promoPrompt, setPromoPrompt] = useState(null); // { from, to } | null
+  // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조.
+  const [promoGridEl, setPromoGridEl] = useState(null);
   const [wrong, setWrong] = useState(null);     // { board, at:[r,c], from:[r,c], san }
   // (v0.1.2 기능) 오답을 두면 곧장 원위치로 되돌리는 대신, 그 수를 뒀을 때 상대(컴퓨터)가 어떻게
   // 응징하는지 최선 응수를 한 번 보여준 뒤 되돌린다 — wrongReply가 그 응수({san,from,to}), revertStage가
@@ -17271,9 +17280,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               // 단계마다 독립된 연출만 보이도록 각 단계를 정확히 그 단계에서만 켠다 — 1단계: 도착
               // 칸만, 2단계: 기물 흔들림만, 3단계: 기물 흔들림+경로 반짝임(도착 칸 단독 표시는
               // 3단계에서 경로의 마지막 칸이 대신하므로 끈다).
-              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} arrows={puzzleDangerArrows} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove}
+              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} arrows={puzzleDangerArrows} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove} gridRef={setPromoGridEl}
                   hintTo={hintLevel === 1 && hintInfo ? hintInfo.to : null} hintFrom={(hintLevel === 2 || hintLevel === 3) && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel === 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
-            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => setPromoPrompt(null)} />}
+            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => setPromoPrompt(null)} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
@@ -21039,6 +21048,7 @@ const CHANGELOG = [
       "보드 편집기에서 이제 킹이나 룩을 시작 칸에서 벗어나게 두면 그 캐슬링 권리가 항상 자동으로 꺼져요.",
       "분석 탭 'FEN 모드' 안내 박스를 없애고, 그 자리에 있던 종료 버튼을 FEN 코드 줄로 옮겼어요 — 복사 버튼 위치도 FEN·PGN 두 줄에서 항상 같은 자리에 오도록 정리했어요.",
       "FEN 모드의 '다음 수' 블록에서 수 체계 아이콘(최선·탁월·좋은 수 등)이 부정확하게 뜨던 문제를 고쳤어요 — 예전엔 1순위 수만 무조건 '최선의 수', 나머지는 전부 '좋은 수'로만 표시했는데, 이제 실제 손실값과 희생 여부까지 반영해 정확한 등급으로 표시돼요.",
+      "폰이 승격할 때 뜨는 기물 선택 창이 승격하는 진영 색에 맞는 기물 아이콘(백이면 흰 기물, 흑이면 검은 기물)을 보여주도록 고쳤어요 — 예전엔 항상 검은 기물 아이콘만 떴어요. 선택 버튼도 더 크게, 체스보드 정중앙에 정확히 뜨도록 함께 다듬었어요.",
     ]
   },
   {
