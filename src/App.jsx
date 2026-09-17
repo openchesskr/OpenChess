@@ -11964,9 +11964,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     setLastQ({ to, kind: known ? mm.kind : "pending" });
     if (!known) {
       const onKind = (k) => { if (k) setLastQ((q) => (q && q.to && q.to[0] === to[0] && q.to[1] === to[1]) ? { ...q, kind: k } : q); };
-      evalMoveKind(prevSans, san, onKind).then(onKind);
+      // (버그 수정) FEN 모드에서 goFen이 fenMoves에 없는 수(사용자가 직접 둔, 다음 수 블록의 상위
+      // 몇 개 후보 밖의 수)로 이 fallback을 타면, fenRoot를 안 넘겨 evalMoveKind가 표준 시작
+      // 위치를 전제하고 완전히 엉뚱한 포지션을 평가하고 있었다 — 이 콜백은 fenRoot를 직접 클로저로
+      // 갖고 있으므로 그대로 넘긴다.
+      evalMoveKind(prevSans, san, onKind, fenRoot).then(onKind);
     }
-  }, [evalMoveKind]);
+  }, [evalMoveKind, fenRoot]);
 
   // (수 아이콘 지속 + UI5 정확도) 현재 포지션에 도달한 '마지막 수'의 품질을 항상 재계산.
   // 되돌리기/앞으로 등 어떤 방식으로 도달하든 보드 도착칸 아이콘과 헤더 수 체계가 정확히 표시되도록 엔진으로 티어를 다시 평가한다.
@@ -11986,12 +11990,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     // 확인)으로 통일한다. (FEN 모드는 표준 시작 위치를 전제하는 이론 DB 자체가 대응되지 않으므로
     // 이 확인을 건너뛰고 바로 아래 엔진 등급 판정으로 넘어간다.)
     if (!fenRoot && isBookMoveAt(prev.join(" "), lastSan)) { setLastQ({ to, kind: "book" }); return; } // 이론 수는 항상 책 아이콘(평가치 아이콘으로 덮어쓰지 않음)
-    // (v0.2.2 버그 수정) 이 마지막 수가 후보 블록에 떠 있던(=사용자가 등급을 이미 본) 수라면, 블록이
-    // 표시한 그 등급을 그대로 써서 보드·현재 수 블록의 아이콘을 다음 수 블록과 정확히 일치시킨다 —
-    // evalMoveKind로 다시 계산하지 않아 두 곳이 어긋나지 않는다. 블록에 없던 수(사용자가 직접 둔
-    // 비이론 수 등)만 아래 재평가 경로로 넘어간다. (FEN 모드는 후보 블록 자체가 없어 pinned가 항상
-    // 비어 있고, 자연히 아래 재평가 경로로만 간다.)
-    const pinned = !fenRoot && pinnedKindRef.current[prev.join(" ") + "|" + stripSuffix(lastSan)];
+    // (v0.2.2 버그 수정 → v0.5.1 FEN 모드까지 확장) 이 마지막 수가 후보 블록에 떠 있던(=사용자가 등급을
+    // 이미 본) 수라면, 블록이 표시한 그 등급을 그대로 써서 보드·현재 수 블록의 아이콘을 다음 수 블록과
+    // 정확히 일치시킨다 — evalMoveKind로 다시 계산하지 않아 두 곳이 어긋나지 않는다. 블록에 없던 수
+    // (사용자가 직접 둔 비이론 수 등)만 아래 재평가 경로로 넘어간다. (버그 수정, 사용자 제보) FEN
+    // 모드는 처음엔 "후보 블록 자체가 없다"는 이유로 이 pin 자체를 건너뛰었는데, fenMoves(다음 수
+    // 블록)가 생긴 뒤에도 이 예외가 그대로 남아 있어 FEN 모드의 현재 수 블록이 항상 별도의 얕은
+    // 재탐색으로 다시 계산돼 다음 수 블록과 어긋났다 — goFen이 이제 fenMoves에서 찾은 등급을 pin해
+    // 두므로(위 goFen 참고) 여기서도 fenRoot 여부와 무관하게 pin을 그대로 신뢰한다.
+    const pinned = pinnedKindRef.current[prev.join(" ") + "|" + stripSuffix(lastSan)];
     if (pinned && pinned !== "pending") { setLastQ({ to, kind: pinned }); return; }
     setLastQ({ to, kind: "pending" });
     let cancelled = false;
@@ -12022,13 +12029,21 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // (사용자 요청) FEN 모드 전용 — 이론 후보(moves)·수 체계 평가(stampQ/evalMoveKind)·퀘스트 추적 없이
   // 그냥 그 수를 둔다. 이 값들은 전부 "표준 시작 위치에서의 이 sans"를 전제하므로, FEN 모드의 sans에
   // 그대로 적용하면 완전히 엉뚱한 포지션을 기준으로 평가해 버린다.
+  // (v0.5.1 버그 수정, 사용자 제보) FEN 모드에서 "다음 수" 블록(fenMoves)에 뜬 등급과, 그 수를 실제로
+  // 둔 뒤 보드·현재 수 블록에 뜨는 등급이 서로 달랐다("누가 봐도 최선 수인데 좋은 수로 뜬다" 등) —
+  // goFen이 stampQ를 아예 부르지 않아, 이 마지막 수 재평가 effect(아래)가 매번 독립적으로
+  // evalMoveKind(짧은 movetime의 별도 얕은 탐색)를 새로 돌려 fenMoves가 이미 계산해 둔(훨씬 깊은
+  // MultiPV 탐색 결과 기반) 등급과 어긋났다. 표준 모드의 go()가 이미 하는 것과 똑같이, fenMoves에서
+  // 이 수를 찾아 그 등급을 그대로 pin해 두 곳이 항상 일치하게 한다.
   const goFen = useCallback((san) => {
     if (gameDrawn) return;   // (v0.3.5 버그 수정) gameEndState가 fenRoot를 지원하게 되면서 FEN 모드도 이제 정확히 판정되므로, 표준 모드(go)와 똑같이 게이팅한다.
     playMoveSfx(san);
+    const fm = fenMoves.find((x) => stripSuffix(x.san) === stripSuffix(san));
+    stampQ(sans, board, color, san, fm);
     setSans([...sans, san]);
     setFuture((future.length && stripSuffix(future[0]) === stripSuffix(san)) ? future.slice(1) : []);
     setSel(null); setDrag(null);
-  }, [sans, future, gameDrawn]);
+  }, [sans, future, gameDrawn, fenMoves, board, color, stampQ]);
 
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
@@ -21049,6 +21064,7 @@ const CHANGELOG = [
       "분석 탭 'FEN 모드' 안내 박스를 없애고, 그 자리에 있던 종료 버튼을 FEN 코드 줄로 옮겼어요 — 복사 버튼 위치도 FEN·PGN 두 줄에서 항상 같은 자리에 오도록 정리했어요.",
       "FEN 모드의 '다음 수' 블록에서 수 체계 아이콘(최선·탁월·좋은 수 등)이 부정확하게 뜨던 문제를 고쳤어요 — 예전엔 1순위 수만 무조건 '최선의 수', 나머지는 전부 '좋은 수'로만 표시했는데, 이제 실제 손실값과 희생 여부까지 반영해 정확한 등급으로 표시돼요.",
       "폰이 승격할 때 뜨는 기물 선택 창이 승격하는 진영 색에 맞는 기물 아이콘(백이면 흰 기물, 흑이면 검은 기물)을 보여주도록 고쳤어요 — 예전엔 항상 검은 기물 아이콘만 떴어요. 선택 버튼도 더 크게, 체스보드 정중앙에 정확히 뜨도록 함께 다듬었어요.",
+      "FEN 모드에서 '다음 수' 블록에 뜬 등급(최선의 수 등)과, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 등급이 서로 다르게 표시되던 문제를 고쳤어요 — 이제 두 블록이 항상 같은 등급을 보여줘요.",
     ]
   },
   {
