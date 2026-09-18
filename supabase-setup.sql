@@ -2057,8 +2057,9 @@ grant execute on function public.pvp_invite_cancel(bigint) to authenticated;
 -- ============================================================================
 -- 규칙: 무작위 좌표(칸)가 나타나면 두 참가자 중 먼저 그 칸을 클릭한 쪽이 그 라운드를 가져간다.
 -- 총 15라운드, 라운드마다 제한시간(4초) 안에 못 맞히면 아무도 못 가져간 채 다음 라운드로 넘어간다.
--- 15라운드가 끝난 뒤 더 많이 맞힌 쪽이 승리(동점이면 무승부) — 사용자가 이 게임에는 별도 타이브레이커를
--- 두지 않았다.
+-- 15라운드가 끝난 뒤 더 많이 맞힌 쪽이 승리 — 라운드 수가 홀수라 전체 게임이 무승부로 끝나는 경우는
+-- 없다. (v0.5.1 변경, 사용자 요청) 라운드에 제한시간이 없다 — 오답을 눌러도(양쪽 다) 그 라운드가
+-- 끝나지 않고, 누군가 정답을 맞힐 때까지 계속 진행된다(무승부 라운드 자체가 사라졌다).
 --
 -- 매칭(대기열 합류·친구 초대)은 기존 pvp_queue_join/pvp_invite_friend(p_game_type='coord')를 그대로
 -- 재사용한다 — 그 두 함수는 game_type을 몰라도 되게 이미 일반화돼 있다(대국 행을 만들 뿐, 체스에
@@ -2074,7 +2075,6 @@ returns public.pvp_games language plpgsql security definer set search_path = pub
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; v_last_idx int;
   v_total_rounds constant int := 15;
-  v_round_ms constant int := 4000; -- 라운드당 클릭 제한시간(ms)
   v_sq text;
 begin
   if v_me is null then raise exception 'auth required'; end if;
@@ -2087,13 +2087,11 @@ begin
   if jsonb_array_length(v_rounds) > 0 then
     v_last_idx := jsonb_array_length(v_rounds) - 1;
     v_last := v_rounds -> v_last_idx;
-    -- 아직 승자가 없는 마지막 라운드가 제한시간 안이면(=진행 중) 너무 이른 호출이니 그대로 반환한다.
-    if (v_last ->> 'winner') is null and (v_last ->> 'revealedAt')::timestamptz + (v_round_ms || ' ms')::interval > now() then
+    -- (v0.5.1 변경, 사용자 요청) 제한시간이 없으므로, 마지막 라운드에 아직 승자가 없으면(=아직
+    -- 아무도 정답을 못 맞혔으면) 너무 이른 호출이니 그대로 반환한다 — 이 라운드는 누군가 coord_click
+    -- 으로 정답을 맞혀 winner를 채울 때까지 다음 라운드로 넘어가지 않는다.
+    if (v_last ->> 'winner') is null then
       return v_game;
-    end if;
-    -- 승자 없이 시간만 초과된 라운드는 무승부 라운드로 확정 표시한다.
-    if (v_last ->> 'winner') is null and (v_last ->> 'resolvedAt') is null then
-      v_rounds := jsonb_set(v_rounds, array[v_last_idx::text, 'resolvedAt'], to_jsonb(now()));
     end if;
   end if;
   if jsonb_array_length(v_rounds) >= v_total_rounds then
@@ -2111,17 +2109,17 @@ begin
 end; $$;
 grant execute on function public.coord_reveal_next(bigint) to authenticated;
 
--- 클릭 보고 — 이 라운드가 아직 안 끝났고 지금이 제한시간 안이면, 오답이어도 clicks.<색>에 이번
--- 시도를 항상 기록해 상대 화면에 실시간으로 보여준다(빨강/초록 피드백용) — 좌표가 맞을 때만 추가로
--- 승자로도 기록한다. 서버 시각(now())만 신뢰하고 클라이언트가 보낸 시각은 절대 쓰지 않는다(시계
--- 오차·조작 방지) — 두 참가자가 거의 동시에 정답을 맞혀도 "for update" 행 잠금이 순서를 강제하므로,
--- 먼저 커밋되는 호출 하나만 승자로 기록되고 그 뒤에 도착하는 호출은 이미 "winner is not null"이라
--- 조용히 무시된다.
+-- 클릭 보고 — 이 라운드가 아직 안 끝났으면(제한시간은 v0.5.1부터 없다) 오답이어도 clicks.<색>에
+-- 이번 시도를 항상 기록해 상대 화면에 실시간으로 보여준다(정답/오답 표시용) — 좌표가 맞을 때만
+-- 추가로 승자로도 기록한다. 서버 시각(now())만 신뢰하고 클라이언트가 보낸 시각은 절대 쓰지 않는다
+-- (시계 오차·조작 방지) — 두 참가자가 거의 동시에 정답을 맞혀도 "for update" 행 잠금이 순서를
+-- 강제하므로, 먼저 커밋되는 호출 하나만 승자로 기록되고 그 뒤에 도착하는 호출은 이미 "winner is
+-- not null"이라 조용히 무시된다.
 create or replace function public.coord_click(p_game_id bigint, p_round int, p_sq text)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb;
-  v_round_ms constant int := 4000; v_mycolor text; v_correct boolean;
+  v_mycolor text; v_correct boolean;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2132,7 +2130,6 @@ begin
   if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
   v_round := v_rounds -> p_round;
   if (v_round ->> 'winner') is not null then return v_game; end if; -- 이미 끝난 라운드
-  if (v_round ->> 'revealedAt')::timestamptz + (v_round_ms || ' ms')::interval < now() then return v_game; end if; -- 시간 초과
   v_correct := (v_round ->> 'sq' = p_sq);
   -- clicks 필드가 없는 옛 대국(이 기능 배포 전에 시작된 라운드)도 안전하게 다루도록 없으면 만든다.
   if v_round -> 'clicks' is null or jsonb_typeof(v_round -> 'clicks') <> 'object' then
@@ -2149,7 +2146,9 @@ end; $$;
 grant execute on function public.coord_click(bigint, int, text) to authenticated;
 
 -- 최종 승패 확정 — 총 라운드가 다 끝난 뒤에만 호출 가능하고, sans에 이미 기록된 라운드별 승자만 세어
--- 승패를 계산한다(동점이면 무승부). 참가자 아무나 불러도 결과가 항상 같다.
+-- 승패를 계산한다(v0.5.1부터 라운드에 제한시간이 없어 무승부 라운드가 나올 수 없고, 총 라운드 수도
+-- 15로 홀수라 v_w=v_b인 경우 자체가 생기지 않는다 — else 'draw' 분기는 이제 이론상 도달하지 않는
+-- 방어 코드로만 남는다). 참가자 아무나 불러도 결과가 항상 같다.
 create or replace function public.coord_finish(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare

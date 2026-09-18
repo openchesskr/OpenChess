@@ -205,4 +205,74 @@ begin
 end; $$;
 grant execute on function public.pvp_rematch_offer(bigint) to authenticated;
 
+-- ============================================================================
+-- 좌표 인지 게임(coord) 라운드 제한시간 제거 (v0.5.1 후속, 사용자 요청)
+-- ============================================================================
+-- 예전엔 라운드마다 4초 제한이 있어, 그 안에 아무도 정답을 못 맞히면 무승부 라운드로 자동 종료되고
+-- 다음 라운드로 넘어갔다. 이제는 오답을 눌러도(양쪽 다) 라운드가 끝나지 않고, 누군가 정답을 맞힐
+-- 때까지 계속 진행된다 — coord_reveal_next의 "제한시간 초과 시 무승부 확정" 블록과, coord_click의
+-- "제한시간 초과 시 클릭 거부" 검사를 모두 제거했다(총 라운드 수 15가 홀수라 게임 전체가 무승부로
+-- 끝나는 경우도 원래 없었다). 아래 두 함수를 그대로 다시 실행하면 기존 프로젝트에 반영된다.
+
+create or replace function public.coord_reveal_next(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; v_last_idx int;
+  v_total_rounds constant int := 15;
+  v_sq text;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'coord' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  if jsonb_array_length(v_rounds) > 0 then
+    v_last_idx := jsonb_array_length(v_rounds) - 1;
+    v_last := v_rounds -> v_last_idx;
+    if (v_last ->> 'winner') is null then
+      return v_game;
+    end if;
+  end if;
+  if jsonb_array_length(v_rounds) >= v_total_rounds then
+    update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+    return v_game;
+  end if;
+  v_sq := chr(97 + floor(random() * 8)::int) || (floor(random() * 8)::int + 1)::text;
+  v_rounds := v_rounds || jsonb_build_object('sq', v_sq, 'revealedAt', now(), 'winner', null, 'resolvedAt', null, 'clicks', jsonb_build_object('w', null, 'b', null));
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.coord_reveal_next(bigint) to authenticated;
+
+create or replace function public.coord_click(p_game_id bigint, p_round int, p_sq text)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb;
+  v_mycolor text; v_correct boolean;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'coord' or v_game.status <> 'active' then return v_game; end if;
+  if v_me = v_game.white_uid then v_mycolor := 'w'; elsif v_me = v_game.black_uid then v_mycolor := 'b'; else raise exception 'not a participant'; end if;
+  v_rounds := v_game.sans;
+  if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
+  v_round := v_rounds -> p_round;
+  if (v_round ->> 'winner') is not null then return v_game; end if;
+  v_correct := (v_round ->> 'sq' = p_sq);
+  if v_round -> 'clicks' is null or jsonb_typeof(v_round -> 'clicks') <> 'object' then
+    v_round := jsonb_set(v_round, array['clicks'], jsonb_build_object('w', null, 'b', null));
+  end if;
+  v_round := jsonb_set(v_round, array['clicks', v_mycolor], jsonb_build_object('sq', p_sq, 'correct', v_correct, 'at', now()));
+  if v_correct then
+    v_round := v_round || jsonb_build_object('winner', v_mycolor, 'resolvedAt', now());
+  end if;
+  v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.coord_click(bigint, int, text) to authenticated;
+
 -- SQL Editor에 이 파일 전체를 붙여넣고 RUN 하세요.

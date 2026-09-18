@@ -9203,14 +9203,19 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume }) {
   );
 }
 // ---- 좌표 인지 게임(coord) — 사용자 설계 1호 실시간 PvP 미니게임. 무작위 좌표가 나타나면 상대보다
-// 먼저 그 칸을 클릭해야 점수를 가져간다(15라운드, 라운드당 4초 제한, 더 많이 맞힌 쪽 승리·동점은
-// 무승부 — 규칙·서버 권위 판정은 supabase-setup.sql의 coord_reveal_next/coord_click/coord_finish
-// 참고). 매칭은 기존 체스 PvP와 같은 pvp_queue_join/pvp_queue_leave RPC를 game_type만 "coord"로
-// 바꿔 그대로 재사용한다 — 친구 초대는 아직 연결하지 않았다(랜덤 매칭만, 나중에 필요해지면 체스와
-// 같은 pvp_invite_friend를 그대로 재사용하면 된다).
+// 먼저 그 칸을 클릭해야 점수를 가져간다(15라운드, 더 많이 맞힌 쪽 승리 — 라운드 수가 홀수라 게임
+// 전체가 무승부로 끝나는 경우는 없다). 규칙·서버 권위 판정은 supabase-setup.sql의
+// coord_reveal_next/coord_click/coord_finish 참고). 매칭은 기존 체스 PvP와 같은
+// pvp_queue_join/pvp_queue_leave RPC를 game_type만 "coord"로 바꿔 그대로 재사용한다.
+// (v0.5.1 리디자인, 사용자 요청) 내 보드·상대 보드를 따로 그리는 대신, 보드 하나만 화면 정중앙에
+// 크게 쓰고 그 위에 나와 상대(또는 봇)의 클릭을 함께 표시한다 — 두 보드로 나누면 화면이 좁아지고
+// "누가 어디를 눌렀는지"를 두 화면을 번갈아 봐야 알 수 있었는데, 한 보드에 같이 표시하면 그 자리에서
+// 바로 비교된다. 또한 라운드 제한시간을 완전히 없앴다 — 예전엔 4초 안에 아무도 못 맞히면 그 라운드가
+// 무승부로 자동 종료됐는데, 이제는 오답을 눌러도(양쪽 다) 라운드가 끝나지 않고 누군가 정답을 맞힐
+// 때까지 계속 진행된다(coord_reveal_next/coord_click의 시간 기반 로직도 함께 제거 — 아래 SQL 주석
+// 참고).
 const COORD_GAME_TYPE = "coord";
 const COORD_TOTAL_ROUNDS = 15;
-const COORD_ROUND_MS = 4000;
 const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 대전 중 화면 — 매칭이 끝난 뒤(game이 확정된 뒤)만 렌더링된다. pvp_games 행 하나를 실시간
 // 구독하며, sans(라운드 기록 배열)만 보고 내 점수·상대 점수·지금 라운드를 그때그때 다시 계산한다 —
@@ -9226,23 +9231,50 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 아니다). (재지적) 칸끼리 간격을 두고 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와
 // 달랐다 — Board와 완전히 같은 틀(BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근
 // 모서리 없음)을 그대로 가져다 쓴다.
-function CoordRaceGrid({ onCell, flash, readOnly, size = 320 }) {
+// (v0.5.1 리디자인, 사용자 요청) 이 라운드 동안 내가·상대(또는 봇)가 실제로 클릭해 본 칸을 전부
+// myClicks/oppClicks(각각 {sq, correct} 배열, 라운드가 바뀌면 초기화)로 받아, 같은 보드 위에 함께
+// 표시한다 — 내 클릭은 칸 좌상단에 금색 테두리 점으로, 상대(봇) 클릭은 우하단에 파란 테두리 점으로,
+// 맞았으면 초록, 틀렸으면 빨강으로 채운다. 한 칸을 양쪽이 다 눌렀으면 두 점이 같은 칸에 함께 뜬다.
+function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
+  const myBySq = {}; (myClicks || []).forEach((c) => { myBySq[c.sq] = c; });
+  const oppBySq = {}; (oppClicks || []).forEach((c) => { oppBySq[c.sq] = c; });
+  const dotSize = Math.max(9, Math.round(size / 320 * 13));
   return (
     <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
-        const isFlash = flash && flash.sq === sq;
+        const mine = myBySq[sq];
+        const opp = oppBySq[sq];
         const light = (r + c) % 2 === 0;
         return (
-          <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={readOnly} className={readOnly ? undefined : "press"}
-            style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }}>
-            {isFlash && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: flash.correct ? "rgba(60,168,60,.8)" : "rgba(196,60,50,.8)" }} />}
+          <button key={sq} onClick={() => onCell(sq)} className="press"
+            style={{ position: "relative", border: "none", borderRadius: 0, cursor: "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }}>
+            {mine && <span aria-hidden="true" style={{ position: "absolute", top: "10%", left: "10%", width: dotSize, height: dotSize, borderRadius: "50%", background: mine.correct ? "rgba(60,168,60,.92)" : "rgba(196,60,50,.92)", border: "1.5px solid " + T.brassHi, boxShadow: "0 1px 3px rgba(0,0,0,.6)" }} />}
+            {opp && <span aria-hidden="true" style={{ position: "absolute", bottom: "10%", right: "10%", width: dotSize, height: dotSize, borderRadius: "50%", background: opp.correct ? "rgba(60,168,60,.92)" : "rgba(196,60,50,.92)", border: "1.5px solid #6FA8DC", boxShadow: "0 1px 3px rgba(0,0,0,.6)" }} />}
           </button>
         );
       }))}
+    </div>
+  );
+}
+// 보드 위 마커 색이 각각 무슨 뜻인지 알려주는 범례 — "나"는 금색 테두리(좌상단 점), 상대(또는 봇)는
+// 파란 테두리(우하단 점), 초록/빨강은 그 클릭이 정답/오답이었는지를 나타낸다.
+function CoordClickLegend({ oppLabel }) {
+  const chip = (border, fill, label) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", background: fill, border: border ? "1.5px solid " + border : "none", display: "inline-block", flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+  return (
+    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0, marginTop: 6 }}>
+      {chip(T.brassHi, "rgba(255,255,255,.22)", "나")}
+      {chip("#6FA8DC", "rgba(255,255,255,.22)", oppLabel)}
+      {chip(null, "rgba(60,168,60,.92)", "정답")}
+      {chip(null, "rgba(196,60,50,.92)", "오답")}
     </div>
   );
 }
@@ -9299,41 +9331,32 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const myScore = rounds.filter((r) => r.winner === myColor).length;
   const oppScore = rounds.filter((r) => r.winner === oppColor).length;
   const finished = game.status !== "active";
-  // (v0.5.1 UI, 사용자 요청) 상대 보드/내 보드 각각이 화면 세로의 절반씩만 차지하도록, 그 슬롯을
-  // ResizeObserver로 실측해 정사각형 한 변 길이를 구한다.
-  const [oppSize, oppFitRef] = useSquareFit();
-  const [mySize, myFitRef] = useSquareFit();
-  // (v0.5.0 기능, 사용자 요청) 오답 클릭도 칸이 빨갛게, 정답은 초록색으로 잠깐 반짝이게 한다. 내
-  // 클릭은 좌표가 이미 공개돼 있어(round.sq) 서버 응답을 기다리지 않고 그 자리에서 바로 판정해
-  // 반짝인다. 상대 클릭은 coord_click이 (정답이든 오답이든) 매번 기록해 두는 round.clicks[상대색]을
-  // realtime으로 받아, 그 at(시각)이 바뀔 때마다 "새 클릭이 있었다"로 보고 상대 보드에 반짝인다.
-  const [myFlash, setMyFlash] = useState(null); // { sq, correct } | null
-  const [oppFlash, setOppFlash] = useState(null);
-  const myFlashTimerRef = useRef(null);
-  const oppFlashTimerRef = useRef(null);
+  // (v0.5.1 UI, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다 — 그 슬롯을 ResizeObserver로
+  // 실측해 정사각형 한 변 길이를 구한다.
+  const [boardSize, boardFitRef] = useSquareFit();
+  // (v0.5.1 기능, 사용자 요청) 라운드 동안 내가·상대가 실제로 눌러 본 칸을 전부 기록해 보드 위에
+  // 함께 표시한다(오답도 지워지지 않고 계속 남는다) — 라운드가 바뀌면 초기화한다. 내 클릭은 좌표가
+  // 이미 공개돼 있어(round.sq) 서버 응답을 기다리지 않고 그 자리에서 바로 판정해 추가한다. 상대
+  // 클릭은 coord_click이 (정답이든 오답이든) 매번 기록해 두는 round.clicks[상대색]을 realtime으로
+  // 받아, 그 at(시각)이 바뀔 때마다 "새 클릭이 있었다"로 보고 추가한다.
+  const [myClicks, setMyClicks] = useState([]); // [{ sq, correct }]
+  const [oppClicks, setOppClicks] = useState([]);
   const lastOppClickAtRef = useRef(null);
-  useEffect(() => { setMyFlash(null); setOppFlash(null); lastOppClickAtRef.current = null; }, [roundIdx]);
+  useEffect(() => { setMyClicks([]); setOppClicks([]); lastOppClickAtRef.current = null; }, [roundIdx]);
   useEffect(() => {
     const c = round && round.clicks && round.clicks[oppColor];
     if (!c || !c.at || c.at === lastOppClickAtRef.current) return;
     lastOppClickAtRef.current = c.at;
-    setOppFlash({ sq: c.sq, correct: c.correct });
-    clearTimeout(oppFlashTimerRef.current);
-    oppFlashTimerRef.current = setTimeout(() => setOppFlash(null), 550);
+    setOppClicks((cs) => (cs.some((x) => x.sq === c.sq) ? cs : [...cs, { sq: c.sq, correct: c.correct }]));
   }, [round, oppColor]);
-  useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(oppFlashTimerRef.current); }, []);
-  // 라운드 자동 진행 — 서버가 기록한 revealedAt/resolvedAt 시각을 기준으로 로컬 타이머를 걸어, 시간이
-  // 다 됐거나(무승부 라운드) 이미 승자가 정해졌으면(짧게 결과를 보여준 뒤) coord_reveal_next로 다음
-  // 라운드를 요청한다. 두 참가자의 클라이언트가 거의 동시에 불러도 서버 쪽 행 잠금이 안전하게 막아준다.
+  // (v0.5.1 기능, 사용자 요청) 라운드 제한시간을 없앴다 — 누군가 정답을 맞혀 winner가 생길 때까지는
+  // 그대로 두고, winner가 생긴 뒤에만(짧게 결과를 보여준 뒤) coord_reveal_next로 다음 라운드를
+  // 요청한다. 두 참가자의 클라이언트가 거의 동시에 불러도 서버 쪽 행 잠금이 안전하게 막아준다.
   useEffect(() => {
     if (finished) return;
     if (rounds.length === 0) { sbRpc("coord_reveal_next", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
-    if (!round) return;
-    const revealedAt = new Date(round.revealedAt).getTime();
-    const now = Date.now();
-    const delay = round.winner
-      ? Math.max(600, 900 - (now - new Date(round.resolvedAt || round.revealedAt).getTime()))
-      : Math.max(0, revealedAt + COORD_ROUND_MS - now) + 150;
+    if (!round || !round.winner) return;
+    const delay = Math.max(500, 900 - (Date.now() - new Date(round.resolvedAt || round.revealedAt).getTime()));
     const t = setTimeout(() => {
       if (advanceLockRef.current) return;
       advanceLockRef.current = true;
@@ -9346,14 +9369,12 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   useEffect(() => {
     if (finished || rounds.length < COORD_TOTAL_ROUNDS) return;
     const last = rounds[rounds.length - 1];
-    if (last && (last.winner || last.resolvedAt)) sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
+    if (last && last.winner) sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
   }, [game.id, rounds.length, finished]);
   const onCell = (sq) => {
-    if (finished || !round || round.winner || myFlash) return;
+    if (finished || !round || round.winner) return;
     const correct = sq === round.sq;
-    setMyFlash({ sq, correct });
-    clearTimeout(myFlashTimerRef.current);
-    myFlashTimerRef.current = setTimeout(() => setMyFlash(null), 550);
+    setMyClicks((cs) => (cs.some((x) => x.sq === sq) ? cs : [...cs, { sq, correct }]));
     sbRpc("coord_click", { p_game_id: game.id, p_round: roundIdx, p_sq: sq }).then((g) => g && setGame(g)).catch(() => { });
   };
   if (finished) {
@@ -9375,37 +9396,25 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
         <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>상대 {oppScore}</div>
       </div>
       <MinigameScorePips results={rounds.map((r) => r.winner === myColor ? "me" : r.winner === oppColor ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
-      {/* (v0.5.1 UI, 사용자 요청) 모바일에서 상대 보드가 위쪽, 내 보드가 아래쪽에 오도록 순서를 바꿨다.
-          두 보드 슬롯은 각각 flex:1로 남은 세로 공간을 절반씩 나눠 갖고, useSquareFit이 그 슬롯 안에서
-          실제로 꽉 차는 정사각형 크기를 재서 CoordRaceGrid에 전달한다. */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MinigameBoardLabel text="상대 보드" />
-        <div ref={oppFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <CoordRaceGrid size={oppSize} onCell={() => { }} flash={oppFlash} readOnly />
-        </div>
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={oppClicks} />
       </div>
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
-      {/* (v0.5.0 기능, 사용자 요청) 정답을 맞혀도 곧장 다음 좌표로 넘어가지 않고(위 useEffect의 최소
-          600ms 지연) 초록 반짝임이 보일 시간을 준 뒤 다음 라운드로 넘어간다. 오답은 라운드를 끝내지
-          않고 그 칸만 빨갛게 반짝인 뒤 계속 시도할 수 있다. */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MinigameBoardLabel text="내 보드" />
-        <div ref={myFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <CoordRaceGrid size={mySize} onCell={onCell} flash={myFlash} />
-        </div>
-      </div>
+      <CoordClickLegend oppLabel="상대" />
     </div>
   );
 }
 // (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버(pvp_games)를 전혀 쓰지 않는 완전한 로컬 시뮬레이션.
 // 체스의 봇 대국과 같은 사상(네트워크 왕복 없이 클라이언트에서 그 자리에서 상대를 흉내 낸다)을 따른다.
 // 라운드마다 무작위 좌표를 하나 고르고, 봇은 무작위 반응 시간(사람이 이길 수 있을 정도로 관대한
-// 0.5~2.6초) 뒤에 "클릭"한다 — 내가 그보다 먼저 실제로 클릭하면 내가, 시간(COORD_ROUND_MS)이 다
-// 지나도록 아무도 못 맞히면 무승부로 그 라운드가 끝난다.
+// 0.5~2.6초) 뒤에 정답을 "클릭"한다 — 내가 그보다 먼저 실제로 클릭하면 내가 그 라운드를 가져간다.
+// (v0.5.1 기능, 사용자 요청) 제한시간을 없애 무승부 라운드 자체가 사라졌고(누군가 정답을 맞힐 때까지
+// 계속 진행), 봇도 가끔(35% 확률) 정답을 클릭하기 전에 오답을 한 번 눌러 보게 해서 "상대가 어디를
+// 누르든 보드에 표시된다"는 기능이 봇 대전에서도 실제로 보이게 했다.
 const COORD_BOT_REACT_MIN_MS = 500;
 const COORD_BOT_REACT_MAX_MS = 2600;
 function CoordRaceBotBoard({ onExit, onStatusChange }) {
-  const [rounds, setRounds] = useState([]); // [{ sq, winner: "w"|"b"|"draw"|null }]
+  const [rounds, setRounds] = useState([]); // [{ sq, winner: "w"|"b"|null }]
   const timersRef = useRef([]);
   const clearTimers = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
   useEffect(() => () => clearTimers(), []);
@@ -9418,17 +9427,10 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
   // "끝났다"는 사실을 부모(CoordRaceGame)에 알려야 한다 — 안 그러면 이미 끝난 대전인데도 뒤로가기가
   // "정말 나가시겠어요?"(기권 확인)를 계속 띄운다.
   useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
-  // (v0.5.0 기능, 사용자 요청) 오답은 라운드를 끝내지 않고 그 칸만 빨갛게, 정답은 초록색으로 반짝인
-  // 뒤 잠깐 멈췄다가 다음 좌표로 넘어간다. 봇이 정답을 "클릭"하는 순간에도 봇 보드에 초록 반짝임을
-  // 준다 — 봇은 항상 정답만 맞히므로(오답을 흉내 내지 않는다) 봇 보드에 빨간 반짝임은 없다.
-  const [myFlash, setMyFlash] = useState(null);
-  const [botFlash, setBotFlash] = useState(null);
-  const myFlashTimerRef = useRef(null);
-  const botFlashTimerRef = useRef(null);
-  const [botSize, botFitRef] = useSquareFit();
-  const [mySize, myFitRef] = useSquareFit();
-  useEffect(() => { setMyFlash(null); setBotFlash(null); }, [roundIdx]);
-  useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(botFlashTimerRef.current); }, []);
+  const [boardSize, boardFitRef] = useSquareFit();
+  const [myClicks, setMyClicks] = useState([]); // [{ sq, correct }]
+  const [botClicks, setBotClicks] = useState([]);
+  useEffect(() => { setMyClicks([]); setBotClicks([]); }, [roundIdx]);
   const startRound = useCallback(() => {
     const sq = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
     setRounds((rs) => [...rs, { sq, winner: null }]);
@@ -9438,14 +9440,19 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
       const copy = rs.slice(); copy[i] = { ...copy[i], winner };
       return copy;
     });
+    if (Math.random() < 0.35) {
+      const wrongDelay = 250 + Math.random() * 350;
+      timersRef.current.push(setTimeout(() => {
+        let wrongSq;
+        do { wrongSq = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8)); } while (wrongSq === sq);
+        setBotClicks((cs) => (cs.some((x) => x.sq === wrongSq) ? cs : [...cs, { sq: wrongSq, correct: false }]));
+      }, wrongDelay));
+    }
     const botDelay = COORD_BOT_REACT_MIN_MS + Math.random() * (COORD_BOT_REACT_MAX_MS - COORD_BOT_REACT_MIN_MS);
     timersRef.current.push(setTimeout(() => {
-      setBotFlash({ sq, correct: true });
-      clearTimeout(botFlashTimerRef.current);
-      botFlashTimerRef.current = setTimeout(() => setBotFlash(null), 550);
+      setBotClicks((cs) => (cs.some((x) => x.sq === sq) ? cs : [...cs, { sq, correct: true }]));
       resolve("b");
     }, botDelay));
-    timersRef.current.push(setTimeout(() => resolve("draw"), COORD_ROUND_MS));
   }, []);
   useEffect(() => { if (rounds.length === 0) startRound(); }, [startRound, rounds.length]);
   useEffect(() => {
@@ -9455,11 +9462,9 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
     return () => clearTimeout(t);
   }, [round && round.winner, rounds.length, startRound]);
   const onCell = (sq) => {
-    if (!round || round.winner || myFlash) return;
+    if (!round || round.winner) return;
     const correct = sq === round.sq;
-    setMyFlash({ sq, correct });
-    clearTimeout(myFlashTimerRef.current);
-    myFlashTimerRef.current = setTimeout(() => setMyFlash(null), 550);
+    setMyClicks((cs) => (cs.some((x) => x.sq === sq) ? cs : [...cs, { sq, correct }]));
     if (correct) setRounds((rs) => { const i = rs.length - 1; const copy = rs.slice(); copy[i] = { ...copy[i], winner: "w" }; return copy; });
   };
   if (finished) {
@@ -9479,20 +9484,12 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
         <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>봇 {botScore}</div>
       </div>
-      <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MinigameBoardLabel text="봇 보드" />
-        <div ref={botFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <CoordRaceGrid size={botSize} onCell={() => { }} flash={botFlash} readOnly />
-        </div>
+      <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : null)} total={COORD_TOTAL_ROUNDS} />
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={botClicks} />
       </div>
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MinigameBoardLabel text="내 보드" />
-        <div ref={myFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <CoordRaceGrid size={mySize} onCell={onCell} flash={myFlash} />
-        </div>
-      </div>
+      <CoordClickLegend oppLabel="봇" />
     </div>
   );
 }
@@ -21161,8 +21158,8 @@ const CHANGELOG = [
       "FEN 모드에서 '다음 수' 블록에 뜬 등급(최선의 수 등)과, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 등급이 서로 다르게 표시되던 문제를 고쳤어요 — 이제 두 블록이 항상 같은 등급을 보여줘요.",
       "둘 수 있는 수가 1~2개뿐인 국면에서 보드 위 엔진 상위 줄 아래에 불필요한 빈 자리가 남아 마치 가운데 떠 있는 것처럼 보이던 문제를 고쳤어요 — 이제 실제로 있는 수만큼만 자리를 차지해요.",
       "좌표 인지 게임·나이트 경주 두 미니게임을 사이트 헤더·하단 탭바가 함께 보이던 플레이 탭 속 좁은 카드 대신, 화면 전체를 다 쓰는 별도 화면에서 플레이하도록 새로 디자인했어요 — 뒤로가기 버튼만 남기고 그 외에는 온전히 대전에만 집중할 수 있어요.",
-      "위 두 미니게임에서 모바일 화면일 때 내 보드가 아래쪽, 상대(또는 봇) 보드가 위쪽에 오도록 순서를 바꿨어요 — 스마트폰을 쥐고 있을 때 내 보드가 엄지손가락과 더 가까워요.",
-      "위 두 미니게임 모두 두 보드가 화면 크기에 맞춰 자동으로 커지거나 작아지며, 어떤 화면 크기에서도 스크롤 없이 두 보드가 한 번에 다 보이도록 다시 만들었어요 — 예전엔 화면이 작으면 아래쪽 보드를 보려고 스크롤을 내려야 했어요.",
+      "좌표 인지 게임을 내 보드·상대 보드 두 개로 나누던 것을 보드 하나만 화면 정중앙에 크게 쓰는 방식으로 다시 디자인했어요 — 그 한 보드 위에 내가 누른 칸(금색 테두리 점)과 상대(또는 봇)가 누른 칸(파란 테두리 점)이 정답/오답 색(초록/빨강)과 함께 같이 표시돼요.",
+      "좌표 인지 게임에서 오답을 눌러도(나·상대 모두) 그 라운드가 더 이상 끝나지 않아요 — 예전엔 4초 제한시간을 넘기면 아무도 못 맞혀도 무승부로 자동 종료됐는데, 이제는 누군가 정답을 맞힐 때까지 라운드가 계속 진행돼요.",
     ]
   },
   {
